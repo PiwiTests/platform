@@ -91,15 +91,18 @@ API routes follow RESTful conventions and are located in `server/api/`:
 #### Adding a New API Endpoint
 
 1. Create a file in `server/api/` (e.g., `server/api/my-endpoint.get.ts`)
-2. Use the storage utilities from `server/utils/storage.ts`
+2. Use the storage utilities from `server/utils/storage.ts` (auto-imported, no explicit import needed)
 3. Import types from `~/types`
 4. Export a `defineEventHandler` function
+
+**Important**: Server utilities in `server/utils/` are auto-imported by Nuxt. Do NOT explicitly import them - just use them directly.
 
 Example:
 ```typescript
 import type { MyType } from '~/types'
 
 export default defineEventHandler(async (event) => {
+  // readJSON, writeJSON, listFiles, deleteFile are auto-imported from server/utils/storage.ts
   const data = await readJSON<MyType>('path/to/file.json')
   return data
 })
