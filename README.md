@@ -11,7 +11,9 @@ A modern dashboard for storing and visualizing Playwright test results, built wi
 - 📈 **Dashboard Overview** - View test statistics and trends at a glance
 - 🔍 **Detailed Views** - Drill down from projects → test runs → test cases → traces
 - 🔌 **REST API** - Simple JSON API for submitting test results
+- 📦 **Playwright Reporter** - Custom reporter for automatic result submission
 - 💾 **SQLite Database** - Lightweight database storage with Drizzle ORM
+- 📁 **File Upload** - Upload HTML reports and trace files
 - 🎨 **Modern UI** - Beautiful interface with light/dark mode support
 - 🚀 **Auto-create Projects** - Unknown projects are automatically created via API
 
@@ -90,6 +92,57 @@ curl -X POST http://localhost:3000/api/test-runs/upload \
 **Files:**
 - `GET /api/files/[...path]` - Download HTML reports and trace files
 
+## Using the Playwright Reporter
+
+The dashboard includes a custom Playwright reporter for automatic test result submission.
+
+### Installation
+
+```bash
+cd reporter
+npm install
+npm link
+```
+
+In your Playwright project:
+
+```bash
+npm link playwright-dashboard-reporter
+```
+
+### Configuration
+
+Add to your `playwright.config.ts`:
+
+```typescript
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  reporter: [
+    ['list'], // Keep your existing reporters
+    ['playwright-dashboard-reporter', {
+      serverUrl: 'http://localhost:3000',
+      projectName: 'my-test-project',
+      uploadTraces: true,
+      uploadReport: true
+    }]
+  ],
+  
+  use: {
+    trace: 'retain-on-failure', // Enable traces
+  },
+});
+```
+
+### Options
+
+- `serverUrl` (string): Dashboard server URL (default: `http://localhost:3000`)
+- `projectName` (string): Project name in dashboard (default: `default-project`)
+- `uploadTraces` (boolean): Upload trace files (default: `true`)
+- `uploadReport` (boolean): Upload HTML report (default: `true`)
+
+See [`reporter/README.md`](./reporter/README.md) for detailed documentation.
+
 ## Project Structure
 
 ```
@@ -112,8 +165,15 @@ curl -X POST http://localhost:3000/api/test-runs/upload \
 │       ├── projects/[id].get.ts
 │       ├── test-runs/
 │       │   ├── submit.post.ts
+│       │   ├── upload.post.ts
 │       │   └── [id].get.ts
-│       └── test-cases/[id].get.ts
+│       ├── test-cases/[id].get.ts
+│       └── files/[...path].get.ts
+├── reporter/                # Playwright Reporter package
+│   ├── index.js            # Reporter implementation
+│   ├── index.d.ts          # TypeScript definitions
+│   ├── package.json
+│   └── README.md           # Reporter documentation
 └── .github/
     └── copilot-instructions.md  # Instructions for AI assistants
 ```

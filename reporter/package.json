@@ -1,0 +1,21 @@
+{
+  "name": "playwright-dashboard-reporter",
+  "version": "1.0.0",
+  "description": "Playwright reporter for sending test results to Playwright Dashboard",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "keywords": [
+    "playwright",
+    "reporter",
+    "dashboard",
+    "test-results"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "@playwright/test": "^1.40.0"
+  },
+  "dependencies": {
+    "form-data": "^4.0.0"
+  }
+}
