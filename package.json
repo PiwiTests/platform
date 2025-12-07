@@ -1,0 +1,16 @@
+{
+  "name": "playwright-dashboard",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview"
+  },
+  "dependencies": {
+    "@nuxt/icon": "^2.1.0",
+    "@nuxt/ui": "^4.2.1",
+    "nuxt": "^4.2.1"
+  }
+}
