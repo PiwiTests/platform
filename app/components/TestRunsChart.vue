@@ -26,12 +26,12 @@ const chartData = computed(() => {
   if (!props.testRuns || props.testRuns.length === 0) {
     return []
   }
-  
+
   // Sort by date and take last 30 runs
   const sortedRuns = [...props.testRuns]
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
     .slice(-30)
-  
+
   return sortedRuns.map(run => ({
     date: new Date(run.startTime),
     passed: run.passedTests || 0,
@@ -81,8 +81,8 @@ const tooltipTemplate = (d: any) => {
 
 <template>
   <div v-if="chartData.length > 0" class="w-full">
-    <VisXYContainer 
-      :data="chartData" 
+    <VisXYContainer
+      :data="chartData"
       :height="height"
       :padding="{ top: 10, right: 10, bottom: 40, left: 50 }"
     >
@@ -93,7 +93,7 @@ const tooltipTemplate = (d: any) => {
         :color="areaColors"
         :curve-type="CurveType.MonotoneX"
       />
-      
+
       <!-- Lines for better visibility -->
       <VisLine
         :x="x"
@@ -102,23 +102,23 @@ const tooltipTemplate = (d: any) => {
         :curve-type="CurveType.MonotoneX"
         :line-width="2"
       />
-      
+
       <!-- Axes -->
-      <VisAxis 
-        type="x" 
-        :tick-format="(d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })"
+      <VisAxis
+        type="x"
+        :tick-format="(d: Date) => (new Date(d)).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })"
         label="Date"
       />
-      <VisAxis 
-        type="y" 
+      <VisAxis
+        type="y"
         label="Tests"
         :tick-format="(d: number) => d.toString()"
       />
-      
+
       <!-- Tooltip -->
       <VisTooltip />
     </VisXYContainer>
-    
+
     <!-- Legend -->
     <div class="flex items-center justify-center gap-6 mt-4 text-sm">
       <div class="flex items-center gap-2">
@@ -135,7 +135,7 @@ const tooltipTemplate = (d: any) => {
       </div>
     </div>
   </div>
-  
+
   <div v-else class="text-center py-12 text-gray-500">
     <p>No test run data available to display chart</p>
   </div>
