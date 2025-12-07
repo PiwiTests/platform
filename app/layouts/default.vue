@@ -112,6 +112,5 @@ onMounted(async () => {
 
     <slot />
 
-    <NotificationsSlideover />
   </UDashboardGroup>
 </template>

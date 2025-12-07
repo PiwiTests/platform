@@ -1,14 +1,19 @@
 import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import * as schema from './schema'
+import { existsSync, mkdirSync } from 'fs'
 
 let db: ReturnType<typeof drizzle>
 
 export function initDatabase() {
   if (!db) {
+    if (!existsSync('.data')) {
+      mkdirSync('.data')
+    }
+
     const sqlite = new Database('.data/playwright.db')
     db = drizzle(sqlite, { schema })
-    
+
     // Create tables if they don't exist
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS projects (
@@ -61,7 +66,7 @@ export function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_traces_test_case_id ON traces(test_case_id);
     `)
   }
-  
+
   return db
 }
 
