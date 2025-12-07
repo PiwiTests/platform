@@ -1,64 +1,150 @@
-# Nuxt Dashboard Template
+# Playwright Dashboard
 
 [![Nuxt UI](https://img.shields.io/badge/Made%20with-Nuxt%20UI-00DC82?logo=nuxt&labelColor=020420)](https://ui.nuxt.com)
 
-Get started with the Nuxt dashboard template with multiple pages, collapsible sidebar, keyboard shortcuts, light & dark more, command palette and more, powered by [Nuxt UI](https://ui.nuxt.com).
+A modern dashboard for storing and visualizing Playwright test results, built with Nuxt 4 and powered by [Nuxt UI](https://ui.nuxt.com).
 
-- [Live demo](https://dashboard-template.nuxt.dev/)
-- [Documentation](https://ui.nuxt.com/docs/getting-started/installation/nuxt)
+## Features
 
-<a href="https://dashboard-template.nuxt.dev/" target="_blank">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://ui.nuxt.com/assets/templates/nuxt/dashboard-dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="https://ui.nuxt.com/assets/templates/nuxt/dashboard-light.png">
-    <img alt="Nuxt Dashboard Template" src="https://ui.nuxt.com/assets/templates/nuxt/dashboard-light.png">
-  </picture>
-</a>
-
-> The dashboard template for Vue is on https://github.com/nuxt-ui-templates/dashboard-vue.
+- 📊 **Test Results Storage** - Store complete Playwright test run data
+- 🎯 **Project Organization** - Tests organized by projects with automatic project creation
+- 📈 **Dashboard Overview** - View test statistics and trends at a glance
+- 🔍 **Detailed Views** - Drill down from projects → test runs → test cases → traces
+- 🔌 **REST API** - Simple JSON API for submitting test results
+- 💾 **SQLite Database** - Lightweight database storage with Drizzle ORM
+- 🎨 **Modern UI** - Beautiful interface with light/dark mode support
+- 🚀 **Auto-create Projects** - Unknown projects are automatically created via API
 
 ## Quick Start
 
-```bash [Terminal]
-npm create nuxt@latest -- -t github:nuxt-ui-templates/dashboard
-```
-
-## Deploy your own
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-name=dashboard&repository-url=https%3A%2F%2Fgithub.com%2Fnuxt-ui-templates%2Fdashboard&demo-image=https%3A%2F%2Fui.nuxt.com%2Fassets%2Ftemplates%2Fnuxt%2Fdashboard-dark.png&demo-url=https%3A%2F%2Fdashboard-template.nuxt.dev%2F&demo-title=Nuxt%20Dashboard%20Template&demo-description=A%20dashboard%20template%20with%20multi-column%20layout%20for%20building%20sophisticated%20admin%20interfaces.)
-
-## Setup
-
-Make sure to install the dependencies:
+### Installation
 
 ```bash
 npm install
 ```
 
-## Development Server
+### Development Server
 
 Start the development server on `http://localhost:3000`:
 
 ```bash
-npm dev
+npm run dev
 ```
+
+The database will be automatically initialized on first API call.
+
+## API Usage
+
+### Submit Test Results
+
+Send test results to the dashboard via POST request:
+
+```bash
+curl -X POST http://localhost:3000/api/test-runs/submit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "projectName": "my-project",
+    "status": "passed",
+    "startTime": "2024-01-01T12:00:00Z",
+    "duration": 120000,
+    "totalTests": 10,
+    "passedTests": 9,
+    "failedTests": 1,
+    "skippedTests": 0,
+    "testCases": [
+      {
+        "title": "should login successfully",
+        "status": "passed",
+        "duration": 1500,
+        "location": "tests/login.spec.ts:10:5",
+        "retries": 0
+      },
+      {
+        "title": "should handle errors",
+        "status": "failed",
+        "duration": 2300,
+        "location": "tests/errors.spec.ts:5:5",
+        "error": "Expected true but got false",
+        "retries": 1,
+        "traces": [
+          {
+            "tracePath": "/traces/error-test-trace.zip"
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+### API Endpoints
+
+- `POST /api/test-runs/submit` - Submit test run results (auto-creates projects)
+- `GET /api/projects` - List all projects with statistics
+- `GET /api/projects/[id]` - Get project details with test runs
+- `GET /api/test-runs/[id]` - Get test run details with test cases
+- `GET /api/test-cases/[id]` - Get test case details with traces
+
+## Project Structure
+
+```
+├── .data/                    # SQLite database storage (gitignored)
+├── app/
+│   ├── pages/               # Dashboard pages
+│   │   ├── index.vue        # Home dashboard
+│   │   ├── projects.vue     # Projects list
+│   │   ├── projects/[id].vue    # Project details
+│   │   ├── test-runs/[id].vue   # Test run details
+│   │   └── test-cases/[id].vue  # Test case details
+│   └── layouts/
+│       └── default.vue      # Main layout with navigation
+├── server/
+│   ├── database/
+│   │   ├── schema.ts        # Database schema (Drizzle ORM)
+│   │   └── index.ts         # Database initialization
+│   └── api/                 # API endpoints
+│       ├── projects.get.ts
+│       ├── projects/[id].get.ts
+│       ├── test-runs/
+│       │   ├── submit.post.ts
+│       │   └── [id].get.ts
+│       └── test-cases/[id].get.ts
+└── .github/
+    └── copilot-instructions.md  # Instructions for AI assistants
+```
+
+## Database Schema
+
+The dashboard uses SQLite with the following tables:
+
+- **projects** - Test projects
+- **test_runs** - Test execution runs
+- **test_cases** - Individual test cases
+- **traces** - Playwright trace files
 
 ## Production
 
 Build the application for production:
 
 ```bash
-npm build
+npm run build
 ```
 
-Locally preview production build:
+Preview the production build:
 
 ```bash
-npm preview
+npm run preview
 ```
 
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+## Development Commands
 
-## Renovate integration
+```bash
+npm run dev          # Start development server
+npm run build        # Build for production
+npm run preview      # Preview production build
+npm run typecheck    # Run TypeScript type checking
+npm run lint         # Run ESLint
+```
 
-Install [Renovate GitHub app](https://github.com/apps/renovate/installations/select_target) on your repository and you are good to go.
+## Contributing
+
+See [.github/copilot-instructions.md](.github/copilot-instructions.md) for detailed development guidelines and architecture information.
