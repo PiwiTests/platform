@@ -1,11 +1,16 @@
 import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import * as schema from './schema'
+import {existsSync, mkdirSync} from "fs";
 
 let db: ReturnType<typeof drizzle>
 
 export function initDatabase() {
   if (!db) {
+    if (!process.env.DATABASE_PATH && !existsSync('.data')) {
+      mkdirSync('.data')
+    }
+
     // Use environment variable or default to .data/playwright.db
     const dbPath = process.env.DATABASE_PATH || '.data/playwright.db'
     const sqlite = new Database(dbPath)
