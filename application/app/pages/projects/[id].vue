@@ -121,9 +121,21 @@ function getStatusColor(status: string) {
                         </div>
                       </div>
                     </div>
-                    <UButton :to="`/test-runs/${run.id}`" size="sm" variant="outline">
-                      View Details
-                    </UButton>
+                    <div class="flex gap-2">
+                      <UButton :to="`/test-runs/${run.id}`" size="sm" variant="outline">
+                        View Details
+                      </UButton>
+                      <UButton
+                        v-if="run.reportPath"
+                        :to="`/api/files/${getFileApiPath(run.reportPath)}`"
+                        target="_blank"
+                        size="sm"
+                        variant="outline"
+                        icon="i-lucide-external-link"
+                      >
+                        View Report
+                      </UButton>
+                    </div>
                   </div>
                 </div>
               </div>
