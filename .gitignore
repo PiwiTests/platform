@@ -30,3 +30,4 @@ logs
 test-results/
 playwright-report/
 .test-temp/
+.temp-dashboard/
