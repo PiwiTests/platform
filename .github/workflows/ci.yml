@@ -2,6 +2,10 @@ name: ci
 
 on: push
 
+defaults:
+  run:
+    working-directory: ./application
+
 jobs:
   ci:
     runs-on: ${{ matrix.os }}
