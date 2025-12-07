@@ -6,7 +6,9 @@ let db: ReturnType<typeof drizzle>
 
 export function initDatabase() {
   if (!db) {
-    const sqlite = new Database('.data/playwright.db')
+    // Use environment variable or default to .data/playwright.db
+    const dbPath = process.env.DATABASE_PATH || '.data/playwright.db'
+    const sqlite = new Database(dbPath)
     db = drizzle(sqlite, { schema })
     
     // Create tables if they don't exist

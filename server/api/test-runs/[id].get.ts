@@ -14,7 +14,8 @@ export default eventHandler(async (event) => {
 
   const db = getDatabase()
   
-  const testRun = await db.select().from(testRuns).where(eq(testRuns.id, id)).get()
+  const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id))
+  const testRun = testRunResults[0]
   
   if (!testRun) {
     throw createError({
@@ -23,7 +24,8 @@ export default eventHandler(async (event) => {
     })
   }
   
-  const project = await db.select().from(projects).where(eq(projects.id, testRun.projectId)).get()
+  const projectResults = await db.select().from(projects).where(eq(projects.id, testRun.projectId))
+  const project = projectResults[0]
   const cases = await db.select().from(testCases).where(eq(testCases.testRunId, id))
   
   return {

@@ -14,7 +14,8 @@ export default eventHandler(async (event) => {
 
   const db = getDatabase()
   
-  const project = await db.select().from(projects).where(eq(projects.id, id)).get()
+  const projectResults = await db.select().from(projects).where(eq(projects.id, id))
+  const project = projectResults[0]
   
   if (!project) {
     throw createError({

@@ -16,7 +16,8 @@ export default eventHandler(async (event) => {
   const db = getDatabase()
 
   // Get or create project
-  let project = await db.select().from(projects).where(eq(projects.name, body.projectName)).get()
+  const existingProjects = await db.select().from(projects).where(eq(projects.name, body.projectName))
+  let project = existingProjects[0]
   
   if (!project) {
     const result = await db.insert(projects).values({
@@ -57,27 +58,39 @@ export default eventHandler(async (event) => {
   }
 
   // Insert test cases if provided
-  if (body.testCases && Array.isArray(body.testCases)) {
-    for (const testCase of body.testCases) {
-      const testCaseResult = await db.insert(testCases).values({
-        testRunId: testRun.id,
-        title: testCase.title,
-        location: testCase.location || null,
-        status: testCase.status,
-        duration: testCase.duration || null,
-        error: testCase.error || null,
-        retries: testCase.retries || 0
-      }).returning()
+  if (body.testCases && Array.isArray(body.testCases) && body.testCases.length > 0) {
+    // Bulk insert test cases for better performance
+    const testCaseValues = body.testCases.map(testCase => ({
+      testRunId: testRun.id,
+      title: testCase.title,
+      location: testCase.location || null,
+      status: testCase.status,
+      duration: testCase.duration || null,
+      error: testCase.error || null,
+      retries: testCase.retries || 0
+    }))
+    
+    const insertedTestCases = await db.insert(testCases).values(testCaseValues).returning()
 
-      // Insert traces if provided
-      if (testCase.traces && Array.isArray(testCase.traces) && testCaseResult[0]) {
+    // Collect all traces to insert in bulk
+    const allTraces = []
+    for (let i = 0; i < body.testCases.length; i++) {
+      const testCase = body.testCases[i]
+      const insertedCase = insertedTestCases[i]
+      
+      if (testCase.traces && Array.isArray(testCase.traces) && insertedCase) {
         for (const trace of testCase.traces) {
-          await db.insert(traces).values({
-            testCaseId: testCaseResult[0].id,
+          allTraces.push({
+            testCaseId: insertedCase.id,
             tracePath: trace.tracePath
           })
         }
       }
+    }
+
+    // Bulk insert traces if any
+    if (allTraces.length > 0) {
+      await db.insert(traces).values(allTraces)
     }
   }
 
