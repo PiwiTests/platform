@@ -1,10 +1,35 @@
 <script setup lang="ts">
-import { formatBytes } from '~/utils'
+import { h, resolveComponent } from 'vue'
+import type { TableColumn } from '@nuxt/ui'
+import { formatBytes, getFileApiPath } from '~/utils'
+
+interface TestRun {
+  id: number
+  status: string
+  startTime: string
+  duration?: number
+  totalTests: number
+  passedTests: number
+  failedTests: number
+  skippedTests: number
+  flakyTests: number
+  reportPath?: string
+  reportSize?: number
+}
+
+interface Project {
+  id: number
+  name: string
+  description?: string
+  testRuns?: TestRun[]
+}
 
 const route = useRoute()
 const projectId = route.params.id
 
-const { data: project, refresh } = await useFetch(`/api/projects/${projectId}`)
+const { data: project, refresh } = await useFetch<Project>(`/api/projects/${projectId}`)
+
+const UBadge = resolveComponent('UBadge')
 
 function formatDate(date: string | Date) {
   return new Date(date).toLocaleString()
@@ -27,6 +52,94 @@ function getStatusColor(status: string) {
     default: return 'neutral'
   }
 }
+
+const runsColumns: TableColumn<TestRun>[] = [
+  {
+    accessorKey: 'id',
+    header: 'Run',
+    cell: ({ row }) => {
+      return h('a', {
+        href: `/test-runs/${row.original.id}`,
+        class: 'text-primary hover:underline font-medium',
+        onClick: (e: MouseEvent) => {
+          e.preventDefault()
+          navigateTo(`/test-runs/${row.original.id}`)
+        }
+      }, `Run #${row.getValue('id')}`)
+    }
+  },
+  {
+    accessorKey: 'status',
+    header: 'Status',
+    cell: ({ row }) => {
+      const color = getStatusColor(row.getValue('status') as string)
+      return h(UBadge, { color, class: 'capitalize' }, () => row.getValue('status'))
+    }
+  },
+  {
+    accessorKey: 'startTime',
+    header: 'Started',
+    cell: ({ row }) => formatDate(row.getValue('startTime'))
+  },
+  {
+    accessorKey: 'duration',
+    header: 'Duration',
+    cell: ({ row }) => formatDuration(row.getValue('duration'))
+  },
+  {
+    accessorKey: 'tests',
+    header: 'Tests',
+    cell: ({ row }) => {
+      const passed = row.original.passedTests
+      const failed = row.original.failedTests
+      const total = row.original.totalTests
+      return h('div', { class: 'flex gap-2 text-sm' }, [
+        h('span', { class: 'text-gray-500' }, `Total: ${total}`),
+        h('span', { class: 'text-green-600' }, `✓ ${passed}`),
+        h('span', { class: 'text-red-600' }, `✗ ${failed}`)
+      ])
+    }
+  },
+  {
+    accessorKey: 'flakyTests',
+    header: 'Flaky',
+    cell: ({ row }) => {
+      const flaky = row.getValue('flakyTests') as number
+      return flaky > 0 ? h('span', { class: 'text-purple-600' }, flaky.toString()) : ''
+    }
+  },
+  {
+    accessorKey: 'reportSize',
+    header: 'Report',
+    cell: ({ row }) => {
+      const size = row.getValue('reportSize') as number | undefined
+      return size ? formatBytes(size) : ''
+    }
+  },
+  {
+    accessorKey: 'actions',
+    header: () => h('div', { class: 'text-right' }, 'Actions'),
+    cell: ({ row }) => {
+      const UButton = resolveComponent('UButton')
+      return h('div', { class: 'flex justify-end gap-2' }, [
+        h(UButton, {
+          to: `/test-runs/${row.original.id}`,
+          size: 'sm',
+          variant: 'outline'
+        }, () => 'View'),
+        row.original.reportPath
+          ? h(UButton, {
+            to: `/api/files/${getFileApiPath(row.original.reportPath)}`,
+            target: '_blank',
+            size: 'sm',
+            variant: 'outline',
+            icon: 'i-lucide-external-link'
+          }, () => 'Report')
+          : null
+      ].filter(Boolean))
+    }
+  }
+]
 </script>
 
 <template>
@@ -98,65 +211,18 @@ function getStatusColor(status: string) {
                 Test Runs
               </h3>
 
-              <div v-if="project?.testRuns && project.testRuns.length > 0" class="space-y-2">
-                <div v-for="run in project.testRuns" :key="run.id" class="p-4 border border-gray-200 dark:border-gray-800 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                  <div class="flex items-start justify-between">
-                    <div class="flex-1">
-                      <div class="flex items-center gap-3 mb-2">
-                        <NuxtLink :to="`/test-runs/${run.id}`" class="text-primary hover:underline font-medium">
-                          Run #{{ run.id }}
-                        </NuxtLink>
-                        <UBadge :color="getStatusColor(run.status)">
-                          {{ run.status }}
-                        </UBadge>
-                      </div>
-                      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                        <div>
-                          <span class="text-gray-500">Started:</span>
-                          <span class="ml-2">{{ formatDate(run.startTime) }}</span>
-                        </div>
-                        <div>
-                          <span class="text-gray-500">Duration:</span>
-                          <span class="ml-2">{{ formatDuration(run.duration) }}</span>
-                        </div>
-                        <div>
-                          <span class="text-gray-500">Total:</span>
-                          <span class="ml-2">{{ run.totalTests }}</span>
-                        </div>
-                        <div>
-                          <span class="text-gray-500">Passed:</span>
-                          <span class="ml-2 text-green-600">{{ run.passedTests }}</span>
-                          <span class="text-gray-500 ml-2">Failed:</span>
-                          <span class="ml-2 text-red-600">{{ run.failedTests }}</span>
-                        </div>
-                        <div v-if="run.flakyTests > 0">
-                          <span class="text-gray-500">Flaky:</span>
-                          <span class="ml-2 text-purple-600">{{ run.flakyTests }}</span>
-                        </div>
-                        <div v-if="run.reportSize">
-                          <span class="text-gray-500">Report Size:</span>
-                          <span class="ml-2">{{ formatBytes(run.reportSize) }}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="flex gap-2">
-                      <UButton :to="`/test-runs/${run.id}`" size="sm" variant="outline">
-                        View Details
-                      </UButton>
-                      <UButton
-                        v-if="run.reportPath"
-                        :to="`/api/files/${getFileApiPath(run.reportPath)}`"
-                        target="_blank"
-                        size="sm"
-                        variant="outline"
-                        icon="i-lucide-external-link"
-                      >
-                        View Report
-                      </UButton>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <UTable
+                v-if="project?.testRuns && project.testRuns.length > 0"
+                :data="project.testRuns"
+                :columns="runsColumns"
+                :ui="{
+                  base: 'table-fixed border-separate border-spacing-0',
+                  thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
+                  tbody: '[&>tr]:last:[&>td]:border-b-0',
+                  th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
+                  td: 'border-b border-default'
+                }"
+              />
 
               <div v-else class="text-center py-8 text-gray-500">
                 No test runs yet for this project.

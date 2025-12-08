@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { formatBytes } from '~/utils'
+import { h, resolveComponent } from 'vue'
+import type { TableColumn } from '@nuxt/ui'
+import { formatBytes, getFileApiPath } from '~/utils'
 
 interface TestCase {
   id: number
@@ -34,6 +36,8 @@ const runId = route.params.id
 
 const { data: testRun, refresh } = await useFetch<TestRun>(`/api/test-runs/${runId}`)
 
+const UBadge = resolveComponent('UBadge')
+
 function formatDuration(ms?: number | null) {
   if (!ms) return 'N/A'
   return `${(ms / 1000).toFixed(2)}s`
@@ -48,6 +52,66 @@ function getStatusColor(status: string) {
     default: return 'neutral'
   }
 }
+
+const testCasesColumns: TableColumn<TestCase>[] = [
+  {
+    accessorKey: 'title',
+    header: 'Test Case',
+    cell: ({ row }) => {
+      return h('a', {
+        href: `/test-cases/${row.original.id}`,
+        class: 'text-primary hover:underline font-medium',
+        onClick: (e: MouseEvent) => {
+          e.preventDefault()
+          navigateTo(`/test-cases/${row.original.id}`)
+        }
+      }, row.getValue('title'))
+    }
+  },
+  {
+    accessorKey: 'status',
+    header: 'Status',
+    cell: ({ row }) => {
+      const color = getStatusColor(row.getValue('status') as string)
+      return h(UBadge, { color, class: 'capitalize' }, () => row.getValue('status'))
+    }
+  },
+  {
+    accessorKey: 'location',
+    header: 'Location',
+    cell: ({ row }) => {
+      const location = row.getValue('location') as string | undefined
+      return location ? h('code', { class: 'text-xs' }, location) : ''
+    }
+  },
+  {
+    accessorKey: 'duration',
+    header: 'Duration',
+    cell: ({ row }) => formatDuration(row.getValue('duration'))
+  },
+  {
+    accessorKey: 'retries',
+    header: 'Retries',
+    cell: ({ row }) => {
+      const retries = row.getValue('retries') as number | undefined
+      return retries && retries > 0 ? retries.toString() : ''
+    }
+  },
+  {
+    accessorKey: 'actions',
+    header: () => h('div', { class: 'text-right' }, 'Actions'),
+    cell: ({ row }) => {
+      const UButton = resolveComponent('UButton')
+      return h('div', { class: 'flex justify-end' },
+        h(UButton, {
+          to: `/test-cases/${row.original.id}`,
+          size: 'sm',
+          variant: 'outline'
+        }, () => 'View Details')
+      )
+    }
+  }
+]
 </script>
 
 <template>
@@ -181,30 +245,18 @@ function getStatusColor(status: string) {
             </h3>
           </template>
 
-          <div v-if="testRun?.testCases && testRun.testCases.length > 0" class="space-y-2">
-            <div v-for="testCase in testRun.testCases" :key="testCase.id" class="p-4 border border-gray-200 dark:border-gray-800 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50">
-              <div class="flex items-start justify-between">
-                <div class="flex-1">
-                  <div class="flex items-center gap-3 mb-2">
-                    <NuxtLink :to="`/test-cases/${testCase.id}`" class="text-primary hover:underline font-medium">
-                      {{ testCase.title }}
-                    </NuxtLink>
-                    <UBadge :color="getStatusColor(testCase.status)">
-                      {{ testCase.status }}
-                    </UBadge>
-                  </div>
-                  <div class="flex gap-4 text-sm text-gray-600 dark:text-gray-400">
-                    <span v-if="testCase.location">{{ testCase.location }}</span>
-                    <span>Duration: {{ formatDuration(testCase.duration) }}</span>
-                    <span v-if="testCase.retries && testCase.retries > 0">Retries: {{ testCase.retries }}</span>
-                  </div>
-                </div>
-                <UButton :to="`/test-cases/${testCase.id}`" size="sm" variant="outline">
-                  View Details
-                </UButton>
-              </div>
-            </div>
-          </div>
+          <UTable
+            v-if="testRun?.testCases && testRun.testCases.length > 0"
+            :data="testRun.testCases"
+            :columns="testCasesColumns"
+            :ui="{
+              base: 'table-fixed border-separate border-spacing-0',
+              thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
+              tbody: '[&>tr]:last:[&>td]:border-b-0',
+              th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
+              td: 'border-b border-default'
+            }"
+          />
 
           <div v-else class="text-center py-8 text-gray-500">
             No test cases recorded for this run.

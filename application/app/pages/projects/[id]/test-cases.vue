@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { h, resolveComponent } from 'vue'
+import type { TableColumn } from '@nuxt/ui'
+
 const route = useRoute()
 const projectId = route.params.id
 
@@ -17,8 +20,15 @@ interface TestCaseWithStats {
   lastStatus: string
 }
 
+interface Project {
+  id: number
+  name: string
+}
+
 const { data: testCases, refresh } = await useFetch<TestCaseWithStats[]>(`/api/projects/${projectId}/test-cases`)
-const { data: project } = await useFetch(`/api/projects/${projectId}`)
+const { data: project } = await useFetch<Project>(`/api/projects/${projectId}`)
+
+const UBadge = resolveComponent('UBadge')
 
 function formatDuration(ms?: number | null) {
   if (!ms) return 'N/A'
@@ -48,11 +58,71 @@ function getPassRate(testCase: TestCaseWithStats) {
 function getTestCaseStatus(testCase: TestCaseWithStats) {
   // If flaky, show as warning
   if (testCase.flakyRuns > 0) {
-    return { status: 'flaky', color: 'warning' }
+    return { status: 'flaky', color: 'warning' as const }
   }
   // Otherwise use last status
   return { status: testCase.lastStatus || 'unknown', color: getStatusColor(testCase.lastStatus || 'unknown') }
 }
+
+const testCasesColumns: TableColumn<TestCaseWithStats>[] = [
+  {
+    accessorKey: 'title',
+    header: 'Test Case',
+    cell: ({ row }) => {
+      return h('div', {}, [
+        h('div', { class: 'font-medium' }, row.getValue('title')),
+        h('code', { class: 'text-xs bg-gray-100 dark:bg-gray-800 p-1 rounded mt-1 block' }, row.original.filePath)
+      ])
+    }
+  },
+  {
+    accessorKey: 'status',
+    header: 'Status',
+    cell: ({ row }) => {
+      const status = getTestCaseStatus(row.original)
+      return h(UBadge, { color: status.color, class: 'capitalize' }, () => status.status)
+    }
+  },
+  {
+    accessorKey: 'totalRuns',
+    header: 'Runs',
+    cell: ({ row }) => row.getValue('totalRuns')
+  },
+  {
+    accessorKey: 'passRate',
+    header: 'Pass Rate',
+    cell: ({ row }) => {
+      const passRate = getPassRate(row.original)
+      const colorClass = passRate >= 80 ? 'text-green-600' : passRate >= 50 ? 'text-yellow-600' : 'text-red-600'
+      return h('span', { class: `font-medium ${colorClass}` }, `${passRate}%`)
+    }
+  },
+  {
+    accessorKey: 'results',
+    header: 'Results',
+    cell: ({ row }) => {
+      return h('div', { class: 'flex gap-2 text-sm' }, [
+        h('span', { class: 'text-green-600' }, `✓ ${row.original.passedRuns}`),
+        h('span', { class: 'text-red-600' }, `✗ ${row.original.failedRuns}`),
+        row.original.flakyRuns > 0 ? h('span', { class: 'text-purple-600' }, `↻ ${row.original.flakyRuns}`) : null,
+        row.original.skippedRuns > 0 ? h('span', { class: 'text-gray-500' }, `⊘ ${row.original.skippedRuns}`) : null
+      ].filter(Boolean))
+    }
+  },
+  {
+    accessorKey: 'avgDuration',
+    header: 'Avg Duration',
+    cell: ({ row }) => formatDuration(row.getValue('avgDuration'))
+  },
+  {
+    accessorKey: 'lastRun',
+    header: 'Last Run',
+    cell: ({ row }) => {
+      const timestamp = row.getValue('lastRun') as number
+      return h('span', { class: 'text-xs' }, formatDate(timestamp))
+    }
+  }
+]
 </script>
 
 <template>
@@ -94,61 +164,18 @@ function getTestCaseStatus(testCase: TestCaseWithStats) {
             </p>
           </template>
 
-          <div v-if="testCases && testCases.length > 0" class="space-y-2">
-            <div v-for="testCase in testCases" :key="testCase.id" class="p-4 border border-gray-200 dark:border-gray-800 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50">
-              <div class="flex items-start justify-between">
-                <div class="flex-1">
-                  <div class="flex items-center gap-3 mb-2">
-                    <h3 class="font-medium">
-                      {{ testCase.title }}
-                    </h3>
-                    <UBadge :color="getTestCaseStatus(testCase).color">
-                      {{ getTestCaseStatus(testCase).status }}
-                    </UBadge>
-                  </div>
-                  <div class="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                    <code class="text-xs bg-gray-100 dark:bg-gray-800 p-1 rounded">{{ testCase.filePath }}</code>
-                  </div>
-                  <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 text-sm">
-                    <div>
-                      <span class="text-gray-500">Total Runs:</span>
-                      <span class="ml-2 font-medium">{{ testCase.totalRuns }}</span>
-                    </div>
-                    <div>
-                      <span class="text-gray-500">Pass Rate:</span>
-                      <span class="ml-2 font-medium" :class="getPassRate(testCase) >= 80 ? 'text-green-600' : getPassRate(testCase) >= 50 ? 'text-yellow-600' : 'text-red-600'">
-                        {{ getPassRate(testCase) }}%
-                      </span>
-                    </div>
-                    <div>
-                      <span class="text-gray-500">Passed:</span>
-                      <span class="ml-2 text-green-600">{{ testCase.passedRuns }}</span>
-                    </div>
-                    <div>
-                      <span class="text-gray-500">Failed:</span>
-                      <span class="ml-2 text-red-600">{{ testCase.failedRuns }}</span>
-                    </div>
-                    <div v-if="testCase.flakyRuns > 0">
-                      <span class="text-gray-500">Flaky:</span>
-                      <span class="ml-2 text-purple-600">{{ testCase.flakyRuns }}</span>
-                    </div>
-                    <div v-if="testCase.skippedRuns > 0">
-                      <span class="text-gray-500">Skipped:</span>
-                      <span class="ml-2">{{ testCase.skippedRuns }}</span>
-                    </div>
-                    <div>
-                      <span class="text-gray-500">Avg Duration:</span>
-                      <span class="ml-2">{{ formatDuration(testCase.avgDuration) }}</span>
-                    </div>
-                    <div>
-                      <span class="text-gray-500">Last Run:</span>
-                      <span class="ml-2 text-xs">{{ formatDate(testCase.lastRun) }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <UTable
+            v-if="testCases && testCases.length > 0"
+            :data="testCases"
+            :columns="testCasesColumns"
+            :ui="{
+              base: 'table-fixed border-separate border-spacing-0',
+              thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
+              tbody: '[&>tr]:last:[&>td]:border-b-0',
+              th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
+              td: 'border-b border-default'
+            }"
+          />
 
           <div v-else class="text-center py-8 text-gray-500">
             No test cases yet for this project.
