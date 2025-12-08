@@ -78,6 +78,14 @@ function getStatusColor(status: string) {
               <h2 class="text-xl font-semibold">
                 {{ project?.name }}
               </h2>
+              <UButton
+                :to="`/projects/${projectId}/test-cases`"
+                icon="i-lucide-list-checks"
+                size="sm"
+                variant="outline"
+              >
+                View Test Cases
+              </UButton>
             </div>
             <p v-if="project?.description" class="text-gray-600 mt-2">
               {{ project.description }}

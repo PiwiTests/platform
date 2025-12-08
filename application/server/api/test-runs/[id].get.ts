@@ -1,5 +1,5 @@
 import { getDatabase } from '../../database'
-import { testRuns, testCases, projects } from '../../database/schema'
+import { testRuns, testCases, testRunsCases, projects } from '../../database/schema'
 import { eq } from 'drizzle-orm'
 
 export default eventHandler(async (event) => {
@@ -26,11 +26,38 @@ export default eventHandler(async (event) => {
 
   const projectResults = await db.select().from(projects).where(eq(projects.id, testRun.projectId))
   const project = projectResults[0]
-  const cases = await db.select().from(testCases).where(eq(testCases.testRunId, id))
+  
+  // Get test runs cases with joined test case info
+  const runsCases = await db.select({
+    id: testRunsCases.id,
+    testCaseId: testRunsCases.testCaseId,
+    status: testRunsCases.status,
+    duration: testRunsCases.duration,
+    error: testRunsCases.error,
+    retries: testRunsCases.retries,
+    line: testRunsCases.line,
+    column: testRunsCases.column,
+    title: testCases.title,
+    filePath: testCases.filePath
+  })
+    .from(testRunsCases)
+    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+    .where(eq(testRunsCases.testRunId, id))
+
+  // Format test cases to match the expected structure
+  const formattedTestCases = runsCases.map(tc => ({
+    id: tc.id,
+    title: tc.title,
+    status: tc.status,
+    duration: tc.duration,
+    location: tc.line && tc.column ? `${tc.filePath}:${tc.line}:${tc.column}` : tc.filePath,
+    error: tc.error,
+    retries: tc.retries
+  }))
 
   return {
     ...testRun,
     project,
-    testCases: cases
+    testCases: formattedTestCases
   }
 })

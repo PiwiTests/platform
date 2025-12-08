@@ -1,6 +1,6 @@
 import { getDatabase } from '../../database'
-import { projects, testRuns, testCases } from '../../database/schema'
-import { eq } from 'drizzle-orm'
+import { projects, testRuns, testCases, testRunsCases } from '../../database/schema'
+import { eq, and } from 'drizzle-orm'
 
 export default eventHandler(async (event) => {
   const body = await readBody(event)
@@ -66,25 +66,65 @@ export default eventHandler(async (event) => {
       retries?: number
     }) => testCase.status === 'passed' && (testCase.retries || 0) > 0).length
 
-    // Bulk insert test cases for better performance
-    const testCaseValues = body.testCases.map((testCase: {
-      title: string
-      location?: string
-      status: string
-      duration?: number
-      error?: string
-      retries?: number
-    }) => ({
-      testRunId: testRun.id,
-      title: testCase.title,
-      location: testCase.location || null,
-      status: testCase.status,
-      duration: testCase.duration || null,
-      error: testCase.error || null,
-      retries: testCase.retries || 0
-    }))
+    // Process each test case
+    for (const testCase of body.testCases) {
+      // Parse location to extract file path, line, and column
+      let filePath = 'unknown'
+      let line: number | null = null
+      let column: number | null = null
+      
+      if (testCase.location) {
+        const locationParts = testCase.location.split(':')
+        if (locationParts.length >= 1) {
+          filePath = locationParts[0]
+        }
+        if (locationParts.length >= 2) {
+          line = parseInt(locationParts[1], 10) || null
+        }
+        if (locationParts.length >= 3) {
+          column = parseInt(locationParts[2], 10) || null
+        }
+      }
 
-    await db.insert(testCases).values(testCaseValues)
+      // Get or create shared test case
+      const existingTestCases = await db.select()
+        .from(testCases)
+        .where(
+          and(
+            eq(testCases.projectId, project.id),
+            eq(testCases.filePath, filePath),
+            eq(testCases.title, testCase.title)
+          )
+        )
+      
+      let sharedTestCase = existingTestCases[0]
+      
+      if (!sharedTestCase) {
+        const result = await db.insert(testCases).values({
+          projectId: project.id,
+          filePath: filePath,
+          title: testCase.title
+        }).returning()
+        sharedTestCase = result[0]
+      } else {
+        // Update the updatedAt timestamp
+        await db.update(testCases)
+          .set({ updatedAt: new Date() })
+          .where(eq(testCases.id, sharedTestCase.id))
+      }
+
+      // Insert test run case with run-specific data
+      await db.insert(testRunsCases).values({
+        testRunId: testRun.id,
+        testCaseId: sharedTestCase.id,
+        status: testCase.status,
+        duration: testCase.duration || null,
+        error: testCase.error || null,
+        retries: testCase.retries || 0,
+        line: line,
+        column: column
+      })
+    }
   }
 
   // Update test run with flaky test count if any were found
