@@ -70,7 +70,7 @@ test.describe('Dashboard UI Tests', () => {
     await expect(page.getByText('ui-test-project')).toBeVisible()
 
     // Check for test runs section
-    await expect(page.getByText('Test Runs').filter({visible: true})).toBeVisible() // There may be multiple projects
+    await expect(page.getByText('Test Runs').filter({ visible: true })).toBeVisible() // There may be multiple projects
   })
 
   test('should navigate to test run details page', async ({ page }) => {

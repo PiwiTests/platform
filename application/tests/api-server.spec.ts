@@ -207,7 +207,7 @@ test.describe('API Server Tests', () => {
     const testRunResponse = await request.get(`/api/test-runs/${data.testRunId}`)
     expect(testRunResponse.ok()).toBeTruthy()
     const testRunDetails = await testRunResponse.json()
-    
+
     // Should count only tests that passed after retries (2 tests)
     expect(testRunDetails.flakyTests).toBe(2)
   })
@@ -215,10 +215,10 @@ test.describe('API Server Tests', () => {
   test('should include flaky tests in project statistics', async ({ request }) => {
     const projectsResponse = await request.get('/api/projects')
     expect(projectsResponse.ok()).toBeTruthy()
-    
+
     const projects = await projectsResponse.json()
     const flakyProject = projects.find((p: { name: string }) => p.name === 'test-flaky-project')
-    
+
     expect(flakyProject).toBeDefined()
     expect(flakyProject.latestRun).toBeDefined()
     expect(flakyProject.latestRun.flakyTests).toBe(2)

@@ -183,7 +183,7 @@ test.describe('File Upload API Tests', () => {
 
   test('should prevent path traversal in file download', async ({ request }) => {
     const response = await request.get('/api/files/../../../etc/passwd')
-    expect(response.status()).toBeGreaterThan(400);
+    expect(response.status()).toBeGreaterThan(400)
   })
 
   test('should return 404 for non-existent files', async ({ request }) => {
