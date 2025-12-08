@@ -38,9 +38,12 @@ class PlaywrightDashboardReporter {
   onTestEnd(test, result) {
     this.totalTests++;
 
+    // Convert absolute file path to relative path from project root
+    const relativeFilePath = path.relative(process.cwd(), test.location.file);
+
     const testCase = {
       title: test.title,
-      location: `${test.location.file}:${test.location.line}:${test.location.column}`,
+      location: `${relativeFilePath}:${test.location.line}:${test.location.column}`,
       status: result.status,
       duration: result.duration,
       error: result.error ? result.error.message : null,
