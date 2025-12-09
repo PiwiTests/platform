@@ -67,7 +67,7 @@ const columns: TableColumn<Project>[] = [
     cell: ({ row }) => {
       const latestRun = row.original.latestRun
       if (!latestRun) return ''
-      
+
       const color = getStatusColor(latestRun.status)
       return h(UBadge, { color, size: 'md', class: 'capitalize' }, () => latestRun.status)
     }

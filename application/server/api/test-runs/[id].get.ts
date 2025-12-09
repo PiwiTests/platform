@@ -26,7 +26,7 @@ export default eventHandler(async (event) => {
 
   const projectResults = await db.select().from(projects).where(eq(projects.id, testRun.projectId))
   const project = projectResults[0]
-  
+
   // Get test runs cases with joined test case info
   const runsCases = await db.select({
     id: testRunsCases.id,

@@ -227,16 +227,16 @@ export default eventHandler(async (event) => {
       let filePath = 'unknown'
       let line: number | null = null
       let column: number | null = null
-      
+
       if (testCase.location) {
         const locationParts = (testCase.location as string).split(':')
-        if (locationParts.length >= 1) {
+        if (locationParts.length >= 1 && locationParts[0]) {
           filePath = locationParts[0]
         }
-        if (locationParts.length >= 2) {
+        if (locationParts.length >= 2 && locationParts[1]) {
           line = parseInt(locationParts[1], 10) || null
         }
-        if (locationParts.length >= 3) {
+        if (locationParts.length >= 3 && locationParts[2]) {
           column = parseInt(locationParts[2], 10) || null
         }
       }
@@ -251,9 +251,9 @@ export default eventHandler(async (event) => {
             eq(testCases.title, testCase.title as string)
           )
         )
-      
+
       let sharedTestCase = existingTestCases[0]
-      
+
       if (!sharedTestCase) {
         const result = await db.insert(testCases).values({
           projectId: project.id,
@@ -269,6 +269,11 @@ export default eventHandler(async (event) => {
       }
 
       // Insert test run case with run-specific data
+      // Ensure sharedTestCase is defined
+      if (!sharedTestCase) {
+        throw new Error('Failed to create or retrieve test case')
+      }
+
       await db.insert(testRunsCases).values({
         testRunId: testRun.id,
         testCaseId: sharedTestCase.id,

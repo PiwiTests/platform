@@ -15,7 +15,7 @@ test.describe('Zstd Compression Tests', () => {
     // Create a mock HTML report structure
     const reportDir = join(tempDir, 'mock-report')
     mkdirSync(reportDir, { recursive: true })
-    
+
     writeFileSync(join(reportDir, 'index.html'), `
       <!DOCTYPE html>
       <html>
@@ -29,26 +29,26 @@ test.describe('Zstd Compression Tests', () => {
         </body>
       </html>
     `)
-    
+
     writeFileSync(join(reportDir, 'style.css'), `
       body { font-family: Arial, sans-serif; }
       h1 { color: #007bff; }
     `)
-    
+
     writeFileSync(join(reportDir, 'script.js'), `
       console.log('Test report loaded');
     `)
 
     // Create a zstd-compressed archive
-    const files: Array<{ path: string; content: Buffer }> = []
-    
+    const files: Array<{ path: string, content: Buffer }> = []
+
     function collectFiles(dir: string, baseDir = '') {
       const entries = readdirSync(dir, { withFileTypes: true })
-      
+
       for (const entry of entries) {
         const fullPath = join(dir, entry.name)
         const relativePath = join(baseDir, entry.name)
-        
+
         if (entry.isDirectory()) {
           collectFiles(fullPath, relativePath)
         } else if (entry.isFile()) {
@@ -60,32 +60,32 @@ test.describe('Zstd Compression Tests', () => {
         }
       }
     }
-    
+
     collectFiles(reportDir)
-    
+
     // Create simple archive format
     const parts: Buffer[] = []
-    
+
     for (const file of files) {
       const pathBuffer = Buffer.from(file.path, 'utf8')
       const pathLengthBuffer = Buffer.allocUnsafe(4)
       pathLengthBuffer.writeUInt32LE(pathBuffer.length, 0)
-      
+
       const contentLengthBuffer = Buffer.allocUnsafe(4)
       contentLengthBuffer.writeUInt32LE(file.content.length, 0)
-      
+
       parts.push(pathLengthBuffer, pathBuffer, contentLengthBuffer, file.content)
     }
-    
+
     const uncompressed = Buffer.concat(parts)
     const compressed = await compress(uncompressed, 9)
-    
+
     writeFileSync(join(tempDir, 'report.zst'), Buffer.from(compressed))
   })
 
   test('should upload test results with zstd-compressed HTML report', async ({ request }) => {
     const reportBuffer = readFileSync(join(tempDir, 'report.zst'))
-    
+
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
         projectName: 'zstd-test-project',
@@ -124,7 +124,7 @@ test.describe('Zstd Compression Tests', () => {
 
   test('should decompress and serve HTML report files', async ({ request }) => {
     const reportBuffer = readFileSync(join(tempDir, 'report.zst'))
-    
+
     // Upload the report
     const uploadResponse = await request.post('/api/test-runs/upload', {
       multipart: {
@@ -161,7 +161,7 @@ test.describe('Zstd Compression Tests', () => {
 
       expect(downloadResponse.ok()).toBeTruthy()
       expect(downloadResponse.headers()['content-type']).toContain('text/html')
-      
+
       const htmlContent = await downloadResponse.text()
       expect(htmlContent).toContain('Playwright Test Report')
     }
@@ -169,7 +169,7 @@ test.describe('Zstd Compression Tests', () => {
 
   test('should handle zstd file MIME type correctly', async ({ request }) => {
     const reportBuffer = readFileSync(join(tempDir, 'report.zst'))
-    
+
     // Upload and then verify MIME type if served as .zst
     const uploadResponse = await request.post('/api/test-runs/upload', {
       multipart: {
@@ -203,7 +203,7 @@ test.describe('Zstd Compression Tests', () => {
     // Create a simple mock zip file for testing backward compatibility
     // Note: This is just testing that the system doesn't reject .zip files
     const mockZipContent = Buffer.from('PK mock zip content')
-    
+
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
         projectName: 'legacy-zip-test',
