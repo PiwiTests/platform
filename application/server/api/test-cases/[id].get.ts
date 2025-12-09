@@ -37,8 +37,8 @@ export default eventHandler(async (event) => {
   return {
     id: testRunsCase.id,
     title: testCase?.title,
-    location: testRunsCase.line && testRunsCase.column 
-      ? `${testCase?.filePath}:${testRunsCase.line}:${testRunsCase.column}` 
+    location: testRunsCase.line && testRunsCase.column
+      ? `${testCase?.filePath}:${testRunsCase.line}:${testRunsCase.column}`
       : testCase?.filePath,
     status: testRunsCase.status,
     duration: testRunsCase.duration,

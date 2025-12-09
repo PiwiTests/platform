@@ -129,12 +129,12 @@ const runsColumns: TableColumn<TestRun>[] = [
         }, () => 'View'),
         row.original.reportPath
           ? h(UButton, {
-            to: `/api/files/${getFileApiPath(row.original.reportPath)}`,
-            target: '_blank',
-            size: 'sm',
-            variant: 'outline',
-            icon: 'i-lucide-external-link'
-          }, () => 'Report')
+              to: `/api/files/${getFileApiPath(row.original.reportPath)}`,
+              target: '_blank',
+              size: 'sm',
+              variant: 'outline',
+              icon: 'i-lucide-external-link'
+            }, () => 'Report')
           : null
       ].filter(Boolean))
     }

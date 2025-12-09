@@ -106,14 +106,14 @@ export function initDatabase() {
     try {
       const oldTableCheck = sqlite.prepare('SELECT COUNT(*) as count FROM sqlite_master WHERE type=? AND name=?').get('table', 'test_cases_old') as { count: number }
       const newTableCheck = sqlite.prepare('SELECT COUNT(*) as count FROM test_cases').get() as { count: number }
-      
+
       if (oldTableCheck && oldTableCheck.count > 0 && newTableCheck.count === 0) {
         // Check if old table has data
         const oldDataCheck = sqlite.prepare('SELECT COUNT(*) as count FROM test_cases_old').get() as { count: number }
-        
+
         if (oldDataCheck.count > 0) {
           console.log('[Database] Migrating old test_cases data to new schema...')
-          
+
           // Migration query: extract file path and line/column from location, group by project/file/title
           sqlite.exec(`
             -- First, create shared test cases from old data
@@ -168,7 +168,7 @@ export function initDatabase() {
             -- Drop the old table after migration
             DROP TABLE test_cases_old;
           `)
-          
+
           console.log('[Database] Migration completed successfully')
         }
       }
