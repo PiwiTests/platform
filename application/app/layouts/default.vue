@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NavigationMenuItem, NavigationMenuChildItem } from '@nuxt/ui'
+import type { NavigationMenuItem } from '@nuxt/ui'
 
 interface Project {
   id: number
@@ -38,12 +38,11 @@ const projectItems = computed(() => {
     return []
   }
 
-  return projects.value.map(project => {
+  return projects.value.map((project) => {
     const isActive = currentProjectId.value !== null && currentProjectId.value === project.id
     const status = project.latestRun?.status || 'unknown'
     const statusIcon = status === 'passed' ? 'i-lucide-circle-check-big' : status === 'failed' ? 'i-lucide-circle-x' : 'i-lucide-circle'
     const statusColor = status === 'passed' ? 'success' : status === 'failed' ? 'error' : 'neutral'
-    
     return {
       label: project.name,
       icon: 'i-lucide-folder',

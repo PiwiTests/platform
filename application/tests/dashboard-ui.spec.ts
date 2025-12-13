@@ -68,7 +68,7 @@ test.describe('Dashboard UI Tests', () => {
 
     // Check for test results trend section
     await expect(page.getByText('Test Results Trend')).toBeVisible()
-    
+
     // Check project name in sidebar is expanded
     await expect(page.getByRole('link', { name: 'Test Runs' })).toBeVisible()
   })
