@@ -35,6 +35,10 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Install reporter dependencies
+        working-directory: ./reporter
+        run: npm install
+
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps chromium
 
