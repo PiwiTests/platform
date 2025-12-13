@@ -18,40 +18,51 @@ const { data: projects } = await useFetch<Project[]>('/api/projects', {
   default: () => []
 })
 
+// Extract current project ID from route (if viewing a project page)
+const currentProjectId = computed(() => {
+  // Check if route path starts with /projects/:id
+  const match = route.path.match(/^\/projects\/(\d+)/)
+  return match ? parseInt(match[1], 10) : null
+})
+
 // Generate project navigation items with children
 const projectItems = computed(() => {
   if (!projects.value || projects.value.length === 0) {
     return []
   }
 
-  return projects.value.map(project => ({
-    label: project.name,
-    icon: 'i-lucide-folder',
-    value: `project-${project.id}`,
-    type: 'trigger' as const,
-    defaultOpen: false,
-    children: [
-      {
-        label: 'Test Runs',
-        icon: 'i-lucide-play-circle',
-        to: `/projects/${project.id}`,
-        onSelect: () => {
-          open.value = false
+  return projects.value.map(project => {
+    const isActive = currentProjectId.value === project.id
+    return {
+      label: project.name,
+      icon: 'i-lucide-folder',
+      value: `project-${project.id}`,
+      type: 'trigger' as const,
+      defaultOpen: isActive,
+      active: isActive,
+      children: [
+        {
+          label: 'Test Runs',
+          icon: 'i-lucide-play-circle',
+          to: `/projects/${project.id}`,
+          onSelect: () => {
+            open.value = false
+          }
+        },
+        {
+          label: 'Test Cases',
+          icon: 'i-lucide-list-checks',
+          to: `/projects/${project.id}/test-cases`,
+          onSelect: () => {
+            open.value = false
+          }
         }
-      },
-      {
-        label: 'Test Cases',
-        icon: 'i-lucide-list-checks',
-        to: `/projects/${project.id}/test-cases`,
-        onSelect: () => {
-          open.value = false
-        }
+      ],
+      onSelect: () => {
+        // Do nothing - allow children to be shown
       }
-    ],
-    onSelect: () => {
-      // Do nothing - allow children to be shown
     }
-  }))
+  })
 })
 
 const links = computed(() => [[{
