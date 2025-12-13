@@ -29,7 +29,7 @@ const { data: projects } = await useFetch<Project[]>('/api/projects', {
 const currentProjectId = computed(() => {
   // Check if route path starts with /projects/:id
   const match = route.path.match(/^\/projects\/(\d+)/)
-  return match && match[1] ? parseInt(match[1], 10) : null
+  return match?.[1] ? parseInt(match[1], 10) : null
 })
 
 // Generate project navigation items with children
