@@ -20,7 +20,9 @@ interface TestRun {
 interface Project {
   id: number
   name: string
+  label?: string
   description?: string
+  color?: string
   testRuns?: TestRun[]
 }
 
@@ -123,8 +125,16 @@ const runsColumns: TableColumn<TestRun>[] = [
 <template>
   <UDashboardPanel id="project-detail">
     <template #header>
-      <UDashboardNavbar :title="project?.name || 'Project Details'">
+      <UDashboardNavbar :title="project?.label || project?.name || 'Project Details'">
         <template #trailing>
+          <UButton
+            :to="`/projects/${projectId}/edit`"
+            icon="i-lucide-pencil"
+            size="sm"
+            variant="outline"
+          >
+            Edit
+          </UButton>
           <UButton
             :to="`/projects/${projectId}/test-cases`"
             icon="i-lucide-list-checks"
@@ -170,7 +180,7 @@ const runsColumns: TableColumn<TestRun>[] = [
               Test Results Trend
             </h2>
             <p class="text-sm text-gray-600 mt-1">
-              Test run statistics over time for {{ project?.name }}
+              Test run statistics over time for {{ project?.label || project?.name }}
             </p>
           </template>
 

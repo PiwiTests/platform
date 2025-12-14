@@ -5,7 +5,9 @@ import type { TableColumn } from '@nuxt/ui'
 interface Project {
   id: number
   name: string
+  label?: string
   description?: string
+  color?: string
   totalRuns: number
   latestRun?: {
     id: number
@@ -23,14 +25,23 @@ const columns: TableColumn<Project>[] = [
     accessorKey: 'name',
     header: 'Project Name',
     cell: ({ row }) => {
-      return h('a', {
-        href: `/projects/${row.original.id}`,
-        class: 'text-primary hover:underline font-medium text-lg',
-        onClick: (e: MouseEvent) => {
-          e.preventDefault()
-          navigateTo(`/projects/${row.original.id}`)
-        }
-      }, row.getValue('name'))
+      const displayName = row.original.label || row.getValue('name')
+      const color = row.original.color
+      
+      return h('div', { class: 'flex items-center gap-2' }, [
+        color ? h('div', {
+          class: 'w-3 h-3 rounded-full flex-shrink-0',
+          style: { backgroundColor: color }
+        }) : null,
+        h('a', {
+          href: `/projects/${row.original.id}`,
+          class: 'text-primary hover:underline font-medium text-lg',
+          onClick: (e: MouseEvent) => {
+            e.preventDefault()
+            navigateTo(`/projects/${row.original.id}`)
+          }
+        }, displayName)
+      ].filter(Boolean))
     }
   },
   {
@@ -62,13 +73,19 @@ const columns: TableColumn<Project>[] = [
     header: () => h('div', { class: 'text-right' }, 'Actions'),
     cell: ({ row }) => {
       const UButton = resolveComponent('UButton')
-      return h('div', { class: 'flex justify-end' },
+      return h('div', { class: 'flex justify-end gap-2' }, [
         h(UButton, {
           to: `/projects/${row.original.id}`,
           size: 'sm',
           variant: 'outline'
-        }, () => 'View Details')
-      )
+        }, () => 'View Details'),
+        h(UButton, {
+          to: `/projects/${row.original.id}/edit`,
+          size: 'sm',
+          variant: 'ghost',
+          icon: 'i-lucide-pencil'
+        }, () => 'Edit')
+      ])
     }
   }
 ]

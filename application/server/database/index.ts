@@ -21,7 +21,9 @@ export function initDatabase() {
       CREATE TABLE IF NOT EXISTS projects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
+        label TEXT,
         description TEXT,
+        color TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -175,6 +177,26 @@ export function initDatabase() {
     } catch (error) {
       console.error('[Database] Migration error:', error)
       // Continue even if migration fails - the app should work with new data
+    }
+
+    // Add label and color columns if they don't exist (migration for existing databases)
+    try {
+      const columnsCheck = sqlite.prepare('PRAGMA table_info(projects)').all() as { name: string }[]
+      const hasLabel = columnsCheck.some(col => col.name === 'label')
+      const hasColor = columnsCheck.some(col => col.name === 'color')
+
+      if (!hasLabel) {
+        console.log('[Database] Adding label column to projects table...')
+        sqlite.exec('ALTER TABLE projects ADD COLUMN label TEXT')
+      }
+
+      if (!hasColor) {
+        console.log('[Database] Adding color column to projects table...')
+        sqlite.exec('ALTER TABLE projects ADD COLUMN color TEXT')
+      }
+    } catch (error) {
+      console.error('[Database] Migration error for new columns:', error)
+      // Continue even if migration fails
     }
   }
 
