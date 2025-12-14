@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import type { NavigationMenuItem } from '@nuxt/ui'
-import ProjectsMenu from "~/components/ProjectsMenu.vue";
+import ProjectsMenu from '~/components/ProjectsMenu.vue'
 
 interface Project {
   id: number
   name: string
   label?: string
   description?: string
-  color?: string
   totalRuns: number
   totalTestCases: number
   latestRun?: {
@@ -47,14 +46,10 @@ const projectItems = computed(() => {
     const statusIcon = status === 'passed' ? 'i-lucide-circle-check-big' : status === 'failed' ? 'i-lucide-circle-x' : 'i-lucide-circle'
     const statusColor = status === 'passed' ? 'success' : status === 'failed' ? 'error' : 'neutral'
     const displayLabel = project.label || project.name
-    
-    // If project has a color, show it with a colored circle icon
-    // Otherwise use the default folder icon
-    const projectIcon = project.color ? 'i-lucide-circle' : 'i-lucide-folder'
-    
+
     return {
       label: displayLabel,
-      icon: projectIcon,
+      icon: 'i-lucide-circle',
       badge: {
         icon: statusIcon,
         color: statusColor as 'success' | 'error' | 'neutral'
@@ -63,9 +58,6 @@ const projectItems = computed(() => {
       type: 'trigger' as const,
       defaultOpen: isActive,
       active: isActive,
-      // Add custom class for colored icons
-      class: project.color ? `project-color-indicator` : undefined,
-      style: project.color ? `--project-color: ${project.color}` : undefined,
       children: [
         {
           label: 'Test Runs',
@@ -201,10 +193,3 @@ onMounted(async () => {
     <slot />
   </UDashboardGroup>
 </template>
-
-<style scoped>
-/* Color the circle icon for projects with custom colors */
-:deep(.project-color-indicator [class*="i-lucide-circle"]) {
-  color: var(--project-color);
-}
-</style>

@@ -5,8 +5,7 @@ import { z } from 'zod'
 
 const updateProjectSchema = z.object({
   label: z.string().optional().nullable(),
-  description: z.string().optional().nullable(),
-  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().nullable()
+  description: z.string().optional().nullable()
 })
 
 export default eventHandler(async (event) => {
@@ -42,14 +41,13 @@ export default eventHandler(async (event) => {
     })
   }
 
-  const { label, description, color } = validation.data
+  const { label, description } = validation.data
 
   // Update project
   await db.update(projects)
     .set({
       label,
       description,
-      color,
       updatedAt: new Date()
     })
     .where(eq(projects.id, id))

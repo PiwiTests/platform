@@ -42,7 +42,7 @@ test.describe('Project Edit Tests', () => {
 
     expect(response.ok()).toBeTruthy()
     const updatedProject = await response.json()
-    
+
     expect(updatedProject.label).toBe('My Custom Label')
     expect(updatedProject.description).toBe('This is a custom description')
     expect(updatedProject.color).toBe('#3b82f6')
@@ -70,7 +70,7 @@ test.describe('Project Edit Tests', () => {
 
     expect(response.ok()).toBeTruthy()
     const updatedProject = await response.json()
-    
+
     expect(updatedProject.label).toBeNull()
     expect(updatedProject.description).toBeNull()
     expect(updatedProject.color).toBeNull()
@@ -135,11 +135,11 @@ test.describe('Project Edit Tests', () => {
         label: 'API Test Label'
       }
     })
-    
+
     expect(response.ok()).toBeTruthy()
     const updated = await response.json()
     expect(updated.label).toBe('API Test Label')
-    
+
     // Verify by fetching the project
     const getResponse = await request.get(`/api/projects/${projectId}`)
     expect(getResponse.ok()).toBeTruthy()
@@ -153,7 +153,7 @@ test.describe('Project Edit Tests', () => {
     // Check for Edit button in navbar
     const editButton = page.getByRole('link', { name: /Edit/i }).first()
     await expect(editButton).toBeVisible()
-    
+
     // Click should navigate to edit page
     await editButton.click()
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/edit`))
@@ -166,11 +166,11 @@ test.describe('Project Edit Tests', () => {
         color: '#ef4444' // Red
       }
     })
-    
+
     expect(updateResponse.ok()).toBeTruthy()
     const updated = await updateResponse.json()
     expect(updated.color).toBe('#ef4444')
-    
+
     // Verify by fetching the project
     const getResponse = await request.get(`/api/projects/${projectId}`)
     expect(getResponse.ok()).toBeTruthy()

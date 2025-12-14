@@ -7,7 +7,6 @@ interface Project {
   name: string
   label?: string
   description?: string
-  color?: string
   totalRuns: number
   latestRun?: {
     id: number
@@ -26,13 +25,8 @@ const columns: TableColumn<Project>[] = [
     header: 'Project Name',
     cell: ({ row }) => {
       const displayName = row.original.label || row.getValue('name')
-      const color = row.original.color
-      
+
       return h('div', { class: 'flex items-center gap-2' }, [
-        color ? h('div', {
-          class: 'w-3 h-3 rounded-full flex-shrink-0',
-          style: { backgroundColor: color }
-        }) : null,
         h('a', {
           href: `/projects/${row.original.id}`,
           class: 'text-primary hover:underline font-medium text-lg',
@@ -41,7 +35,7 @@ const columns: TableColumn<Project>[] = [
             navigateTo(`/projects/${row.original.id}`)
           }
         }, displayName)
-      ].filter(Boolean))
+      ])
     }
   },
   {

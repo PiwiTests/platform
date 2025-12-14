@@ -23,7 +23,6 @@ export function initDatabase() {
         name TEXT NOT NULL UNIQUE,
         label TEXT,
         description TEXT,
-        color TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -120,12 +119,12 @@ export function initDatabase() {
           sqlite.exec(`
             -- First, create shared test cases from old data
             INSERT INTO test_cases (project_id, file_path, title, created_at, updated_at)
-            SELECT DISTINCT 
+            SELECT DISTINCT
               tr.project_id,
-              CASE 
-                WHEN tc.location IS NOT NULL THEN 
+              CASE
+                WHEN tc.location IS NOT NULL THEN
                   substr(tc.location, 1, instr(tc.location || ':', ':') - 1)
-                ELSE 
+                ELSE
                   'unknown'
               END as file_path,
               tc.title,
@@ -137,19 +136,19 @@ export function initDatabase() {
 
             -- Then, create test_runs_cases linking runs to shared test cases
             INSERT INTO test_runs_cases (test_run_id, test_case_id, status, duration, error, retries, line, column, created_at)
-            SELECT 
+            SELECT
               tc_old.test_run_id,
               tc_new.id as test_case_id,
               tc_old.status,
               tc_old.duration,
               tc_old.error,
               tc_old.retries,
-              CASE 
+              CASE
                 WHEN tc_old.location IS NOT NULL AND instr(substr(tc_old.location, instr(tc_old.location, ':') + 1), ':') > 0 THEN
                   CAST(substr(substr(tc_old.location, instr(tc_old.location, ':') + 1), 1, instr(substr(tc_old.location, instr(tc_old.location, ':') + 1), ':') - 1) AS INTEGER)
                 ELSE NULL
               END as line,
-              CASE 
+              CASE
                 WHEN tc_old.location IS NOT NULL AND instr(substr(tc_old.location, instr(tc_old.location, ':') + 1), ':') > 0 THEN
                   CAST(substr(substr(tc_old.location, instr(tc_old.location, ':') + 1), instr(substr(tc_old.location, instr(tc_old.location, ':') + 1), ':') + 1) AS INTEGER)
                 ELSE NULL
@@ -157,13 +156,13 @@ export function initDatabase() {
               tc_old.created_at
             FROM test_cases_old tc_old
             JOIN test_runs tr ON tc_old.test_run_id = tr.id
-            JOIN test_cases tc_new ON 
+            JOIN test_cases tc_new ON
               tc_new.project_id = tr.project_id AND
               tc_new.title = tc_old.title AND
-              tc_new.file_path = CASE 
-                WHEN tc_old.location IS NOT NULL THEN 
+              tc_new.file_path = CASE
+                WHEN tc_old.location IS NOT NULL THEN
                   substr(tc_old.location, 1, instr(tc_old.location || ':', ':') - 1)
-                ELSE 
+                ELSE
                   'unknown'
               END;
 
@@ -179,20 +178,14 @@ export function initDatabase() {
       // Continue even if migration fails - the app should work with new data
     }
 
-    // Add label and color columns if they don't exist (migration for existing databases)
+    // Add label column if it doesn't exist (migration for existing databases)
     try {
       const columnsCheck = sqlite.prepare('PRAGMA table_info(projects)').all() as { name: string }[]
       const hasLabel = columnsCheck.some(col => col.name === 'label')
-      const hasColor = columnsCheck.some(col => col.name === 'color')
 
       if (!hasLabel) {
         console.log('[Database] Adding label column to projects table...')
         sqlite.exec('ALTER TABLE projects ADD COLUMN label TEXT')
-      }
-
-      if (!hasColor) {
-        console.log('[Database] Adding color column to projects table...')
-        sqlite.exec('ALTER TABLE projects ADD COLUMN color TEXT')
       }
     } catch (error) {
       console.error('[Database] Migration error for new columns:', error)

@@ -17,7 +17,7 @@ export function formatBytes(bytes?: number | null): string {
 }
 
 export function formatDate(date: string | Date | number) {
-  if (!date) return 'N/A';
+  if (!date) return 'N/A'
   if (!isNaN(date as number))
     date = Number(date) * 1000 // convert seconds to milliseconds
   return new Date(date).toLocaleString()
