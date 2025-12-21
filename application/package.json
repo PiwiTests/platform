@@ -19,6 +19,7 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.721.0",
     "@iconify-json/lucide": "^1.2.75",
     "@mongodb-js/zstd": "^7.0.0",
     "@nuxt/hints": "1.0.0-alpha.3",

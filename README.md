@@ -14,6 +14,7 @@ A modern dashboard for storing and visualizing Playwright test results, built wi
 - 📦 **Playwright Reporter** - Custom reporter for automatic result submission
 - 💾 **SQLite Database** - Lightweight database storage with Drizzle ORM
 - 📁 **File Upload** - Upload HTML reports and trace files
+- ☁️ **Flexible Storage** - Local file storage (default) or S3-compatible storage (AWS S3, MinIO, DigitalOcean Spaces, Cloudflare R2)
 - 🎨 **Modern UI** - Beautiful interface with light/dark mode support
 - 🚀 **Auto-create Projects** - Unknown projects are automatically created via API
 - 🔐 **Authentication** - Optional role-based access control (administrator, reporter, user)
@@ -238,6 +239,110 @@ To disable authentication:
 
 When disabled, all endpoints are accessible without authentication.
 
+## File Storage Configuration
+
+The dashboard supports two storage backends for storing test artifacts (HTML reports, trace files, etc.):
+
+- **Local File Storage** (default) - Stores files in the local file system
+- **AWS S3 Storage** - Stores files in an S3 bucket (or S3-compatible services like MinIO, DigitalOcean Spaces, etc.)
+
+### Local Storage (Default)
+
+By default, files are stored locally in the `.data/storage` directory. No configuration is required.
+
+To customize the local storage path:
+
+```bash
+# In .env file
+STORAGE_TYPE=local
+STORAGE_PATH=/custom/path/to/storage
+```
+
+### S3 Storage
+
+To use S3 storage, you need to configure the following environment variables:
+
+```bash
+# In .env file
+STORAGE_TYPE=s3
+
+# Required S3 settings
+S3_BUCKET=your-bucket-name
+S3_REGION=us-east-1
+S3_ACCESS_KEY_ID=your-access-key
+S3_SECRET_ACCESS_KEY=your-secret-key
+
+# Optional: Custom S3 endpoint (for S3-compatible services)
+S3_ENDPOINT=https://s3.example.com
+```
+
+#### AWS Credentials
+
+You can obtain AWS credentials from:
+1. **AWS Console** → IAM → Users → Create User → Create Access Key
+2. Ensure the IAM user has permissions to read/write objects in the specified bucket
+
+Required IAM permissions:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:HeadObject"
+      ],
+      "Resource": "arn:aws:s3:::your-bucket-name/*"
+    }
+  ]
+}
+```
+
+#### S3-Compatible Services
+
+The dashboard works with S3-compatible services by setting the `S3_ENDPOINT` variable:
+
+**MinIO:**
+```bash
+S3_ENDPOINT=http://localhost:9000
+S3_BUCKET=playwright-dashboard
+S3_REGION=us-east-1
+S3_ACCESS_KEY_ID=minioadmin
+S3_SECRET_ACCESS_KEY=minioadmin
+```
+
+**DigitalOcean Spaces:**
+```bash
+S3_ENDPOINT=https://nyc3.digitaloceanspaces.com
+S3_BUCKET=your-space-name
+S3_REGION=nyc3
+S3_ACCESS_KEY_ID=your-spaces-key
+S3_SECRET_ACCESS_KEY=your-spaces-secret
+```
+
+**Cloudflare R2:**
+```bash
+S3_ENDPOINT=https://[account-id].r2.cloudflarestorage.com
+S3_BUCKET=your-bucket-name
+S3_REGION=auto
+S3_ACCESS_KEY_ID=your-r2-access-key
+S3_SECRET_ACCESS_KEY=your-r2-secret-key
+```
+
+### Storage Architecture
+
+The dashboard uses an abstraction layer that allows switching between storage backends without code changes. Files are stored with relative paths (e.g., `project-1/run-123/index.html`) making it easy to migrate between storage backends.
+
+### Installing AWS SDK (if needed)
+
+The AWS SDK is automatically installed as a dependency. If you encounter any issues:
+
+```bash
+npm install @aws-sdk/client-s3
+```
+
 ## Database Management
 
 The dashboard uses Drizzle ORM with SQLite for database storage. Database schema changes are managed through Drizzle migrations.
@@ -306,7 +411,9 @@ DATABASE_PATH=/custom/path/database.db npm run dev
 ## Project Structure
 
 ```
-├── .data/                    # SQLite database storage (gitignored)
+├── .data/                    # SQLite database and local file storage (gitignored)
+│   ├── playwright.db        # SQLite database
+│   └── storage/             # Local file storage (HTML reports, traces)
 ├── app/
 │   ├── pages/               # Dashboard pages
 │   │   ├── index.vue        # Home dashboard
@@ -323,6 +430,11 @@ DATABASE_PATH=/custom/path/database.db npm run dev
 │   │   └── migrations/      # Drizzle migration files
 │   │       ├── 0000_*.sql   # SQL migration files
 │   │       └── meta/         # Migration metadata
+│   ├── storage/             # Storage abstraction layer
+│   │   ├── index.ts         # Storage factory
+│   │   ├── local.ts         # Local file storage adapter
+│   │   ├── s3.ts            # S3 storage adapter
+│   │   └── types.ts         # Storage interfaces
 │   └── api/                 # API endpoints
 │       ├── projects.get.ts
 │       ├── projects/[id].get.ts

@@ -1,6 +1,5 @@
-import { readFile } from 'fs/promises'
-import { existsSync } from 'fs'
 import { extname } from 'path'
+import { getStorage } from '../../storage'
 
 export default eventHandler(async (event) => {
   const path = getRouterParam(event, 'path')
@@ -20,11 +19,9 @@ export default eventHandler(async (event) => {
     })
   }
 
-  const storagePath = process.env.STORAGE_PATH || '.data/storage'
-  const { join } = await import('path')
-  const fullPath = join(storagePath, path)
+  const storage = getStorage()
 
-  if (!existsSync(fullPath)) {
+  if (!await storage.exists(path)) {
     throw createError({
       statusCode: 404,
       message: 'File not found'
@@ -32,8 +29,8 @@ export default eventHandler(async (event) => {
   }
 
   try {
-    const fileContent = await readFile(fullPath)
-    const ext = extname(fullPath).toLowerCase()
+    const fileContent = await storage.readFile(path)
+    const ext = extname(path).toLowerCase()
 
     // Set appropriate content type
     let contentType = 'application/octet-stream'
@@ -66,11 +63,10 @@ export default eventHandler(async (event) => {
 
     return fileContent
   } catch (error: unknown) {
-    console.error('Failed to read file:', fullPath, error)
-    const errorCode = (error as { code?: string })?.code
+    console.error('Failed to read file:', path, error)
     throw createError({
       statusCode: 500,
-      message: errorCode === 'EACCES' ? 'Permission denied' : 'Failed to read file'
+      message: 'Failed to read file'
     })
   }
 })

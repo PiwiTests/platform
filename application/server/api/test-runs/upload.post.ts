@@ -1,12 +1,14 @@
 import { getDatabase } from '../../database'
 import { projects, testRuns, testCases, testRunsCases } from '../../database/schema'
 import { eq, and } from 'drizzle-orm'
-import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
-import { existsSync } from 'fs'
-import { getDirectorySize } from '../../utils/filesize'
 import { decompressDirectory } from '../../utils/compression'
 import { requireAuth } from '../../utils/auth'
+import { getStorage } from '../../storage'
+import { uploadDirectory } from '../../utils/storage-helpers'
+import { mkdirSync, existsSync } from 'fs'
+import { tmpdir } from 'os'
+import { rm } from 'fs/promises'
 
 export default eventHandler(async (event) => {
   // Require reporter or administrator role for uploading test results
@@ -85,6 +87,7 @@ export default eventHandler(async (event) => {
   }
 
   const db = getDatabase()
+  const storage = getStorage()
 
   // Get or create project
   const existingProjects = await db.select().from(projects).where(eq(projects.name, projectName))
@@ -105,13 +108,9 @@ export default eventHandler(async (event) => {
     })
   }
 
-  // Create storage directory structure
-  const storagePath = process.env.STORAGE_PATH || '.data/storage'
-  const projectPath = join(storagePath, `project-${project.id}`)
-
-  if (!existsSync(projectPath)) {
-    await mkdir(projectPath, { recursive: true })
-  }
+  // Create project directory in storage
+  const projectPath = `project-${project.id}`
+  await storage.mkdir(projectPath)
 
   // Save HTML report if provided
   let reportPath: string | null = null
@@ -124,28 +123,38 @@ export default eventHandler(async (event) => {
     } else {
       // Check if it's a zstd compressed file
       if (report.filename.endsWith('.zst')) {
-        // Extract zstd compressed archive
+        // Extract zstd compressed archive to temp directory first
         const reportDirName = `run-${Date.now()}-report`
-        const reportDir = join(projectPath, reportDirName)
-        await mkdir(reportDir, { recursive: true })
+        const tempDir = join(tmpdir(), `playwright-report-${Date.now()}`)
 
-        // Use zstd to decompress the archive
+        // Create temp directory
+        if (!existsSync(tempDir)) {
+          mkdirSync(tempDir, { recursive: true })
+        }
+
+        // Use zstd to decompress the archive to temp
         try {
-          await decompressDirectory(report.data, reportDir)
+          await decompressDirectory(report.data, tempDir)
 
           // Store relative path (without storage path prefix)
           reportPath = join(`project-${project.id}`, reportDirName, 'index.html')
-          console.log(`Extracted HTML report to storage, relative path: ${reportPath}`)
+          console.log(`Extracted HTML report to temp, uploading to storage: ${reportPath}`)
 
-          // Calculate the decompressed report size
-          reportSize = await getDirectorySize(reportDir)
-          console.log(`Report size (decompressed): ${reportSize} bytes`)
+          // Upload directory tree to storage
+          reportSize = await uploadDirectory(
+            tempDir,
+            join(`project-${project.id}`, reportDirName),
+            storage
+          )
+          console.log(`Report size (uploaded): ${reportSize} bytes`)
+
+          // Clean up temp directory
+          await rm(tempDir, { recursive: true, force: true })
         } catch (error) {
           console.error(`Failed to extract HTML report: ${error}`)
           // Save as zst file if extraction fails
           const reportFilename = `run-${Date.now()}-${report.filename}`
-          const fullPath = join(projectPath, reportFilename)
-          await writeFile(fullPath, report.data)
+          await storage.writeFile(join(`project-${project.id}`, reportFilename), report.data)
           // Store relative path
           reportPath = join(`project-${project.id}`, reportFilename)
           // Store the zstd file size
@@ -154,28 +163,38 @@ export default eventHandler(async (event) => {
       } else if (report.filename.endsWith('.zip')) {
         // Legacy support for zip files - extract zip file
         const reportDirName = `run-${Date.now()}-report`
-        const reportDir = join(projectPath, reportDirName)
-        await mkdir(reportDir, { recursive: true })
+        const tempDir = join(tmpdir(), `playwright-report-${Date.now()}`)
+
+        // Create temp directory
+        if (!existsSync(tempDir)) {
+          mkdirSync(tempDir, { recursive: true })
+        }
 
         // Use adm-zip to extract the archive (legacy support)
         try {
           const AdmZip = (await import('adm-zip')).default
           const zip = new AdmZip(report.data)
-          zip.extractAllTo(reportDir, true)
+          zip.extractAllTo(tempDir, true)
 
           // Store relative path (without storage path prefix)
           reportPath = join(`project-${project.id}`, reportDirName, 'index.html')
-          console.log(`Extracted HTML report to storage (legacy zip), relative path: ${reportPath}`)
+          console.log(`Extracted HTML report to temp (legacy zip), uploading to storage: ${reportPath}`)
 
-          // Calculate the unzipped report size
-          reportSize = await getDirectorySize(reportDir)
-          console.log(`Report size (unzipped): ${reportSize} bytes`)
+          // Upload directory tree to storage
+          reportSize = await uploadDirectory(
+            tempDir,
+            join(`project-${project.id}`, reportDirName),
+            storage
+          )
+          console.log(`Report size (uploaded): ${reportSize} bytes`)
+
+          // Clean up temp directory
+          await rm(tempDir, { recursive: true, force: true })
         } catch (error) {
           console.error(`Failed to extract HTML report: ${error}`)
           // Save as zip file if extraction fails
           const reportFilename = `run-${Date.now()}-${report.filename}`
-          const fullPath = join(projectPath, reportFilename)
-          await writeFile(fullPath, report.data)
+          await storage.writeFile(join(`project-${project.id}`, reportFilename), report.data)
           // Store relative path
           reportPath = join(`project-${project.id}`, reportFilename)
           // Store the zip file size
@@ -184,8 +203,7 @@ export default eventHandler(async (event) => {
       } else {
         // Save as regular file (backward compatibility)
         const reportFilename = `run-${Date.now()}-${report.filename}`
-        const fullPath = join(projectPath, reportFilename)
-        await writeFile(fullPath, report.data)
+        await storage.writeFile(join(`project-${project.id}`, reportFilename), report.data)
         // Store relative path
         reportPath = join(`project-${project.id}`, reportFilename)
         // Store file size
@@ -219,10 +237,8 @@ export default eventHandler(async (event) => {
   }
 
   // Create test run directory for traces
-  const testRunPath = join(projectPath, `run-${testRun.id}`)
-  if (!existsSync(testRunPath)) {
-    await mkdir(testRunPath, { recursive: true })
-  }
+  const testRunPath = `project-${project.id}/run-${testRun.id}`
+  await storage.mkdir(testRunPath)
 
   // Insert test cases using the new schema
   if (testCasesData && testCasesData.length > 0) {
