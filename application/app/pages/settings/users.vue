@@ -130,18 +130,20 @@ function getRoleBadgeColor(role: string) {
 
 <template>
   <UDashboardPanel grow>
-    <UDashboardNavbar title="User Management">
-      <template #right>
-        <UButton
-          v-if="isAdmin"
-          label="Add User"
-          icon="i-lucide-user-plus"
-          @click="isAddUserModalOpen = true"
-        />
-      </template>
-    </UDashboardNavbar>
+    <template #header>
+      <UDashboardNavbar title="User Management">
+        <template #right>
+          <UButton
+            v-if="isAdmin"
+            label="Add User"
+            icon="i-lucide-user-plus"
+            @click="isAddUserModalOpen = true"
+          />
+        </template>
+      </UDashboardNavbar>
+    </template>
 
-    <UDashboardPanelContent>
+    <template #body>
       <!-- Info message when auth is disabled -->
       <UAlert
         v-if="!authEnabled"
@@ -220,65 +222,65 @@ function getRoleBadgeColor(role: string) {
           />
         </div>
       </UCard>
-    </UDashboardPanelContent>
-
-    <!-- Add User Modal -->
-    <UModal v-model="isAddUserModalOpen">
-      <UCard>
-        <template #header>
-          <h3 class="text-lg font-semibold">
-            Add New User
-          </h3>
-        </template>
-
-        <UForm :schema="addUserSchema" :state="newUser" @submit="handleAddUser">
-          <UFormField
-            label="Username"
-            name="username"
-            required
-            class="mb-4"
-          >
-            <UInput v-model="newUser.username" placeholder="Enter username" />
-          </UFormField>
-
-          <UFormField
-            label="Password"
-            name="password"
-            required
-            class="mb-4"
-          >
-            <UInput v-model="newUser.password" type="password" placeholder="Enter password" />
-          </UFormField>
-
-          <UFormField label="Display Name" name="name" class="mb-4">
-            <UInput v-model="newUser.name" placeholder="Enter display name (optional)" />
-          </UFormField>
-
-          <UFormField
-            label="Role"
-            name="role"
-            required
-            class="mb-4"
-          >
-            <USelect v-model="newUser.role" :options="roleOptions" />
-          </UFormField>
-
-          <div class="flex justify-end gap-2">
-            <UButton
-              type="button"
-              color="neutral"
-              variant="ghost"
-              label="Cancel"
-              @click="isAddUserModalOpen = false"
-            />
-            <UButton
-              type="submit"
-              label="Create User"
-              icon="i-lucide-user-plus"
-            />
-          </div>
-        </UForm>
-      </UCard>
-    </UModal>
+    </template>
   </UDashboardPanel>
+
+  <!-- Add User Modal -->
+  <UModal v-model="isAddUserModalOpen">
+    <UCard>
+      <template #header>
+        <h3 class="text-lg font-semibold">
+          Add New User
+        </h3>
+      </template>
+
+      <UForm :schema="addUserSchema" :state="newUser" @submit="handleAddUser">
+        <UFormField
+          label="Username"
+          name="username"
+          required
+          class="mb-4"
+        >
+          <UInput v-model="newUser.username" placeholder="Enter username" />
+        </UFormField>
+
+        <UFormField
+          label="Password"
+          name="password"
+          required
+          class="mb-4"
+        >
+          <UInput v-model="newUser.password" type="password" placeholder="Enter password" />
+        </UFormField>
+
+        <UFormField label="Display Name" name="name" class="mb-4">
+          <UInput v-model="newUser.name" placeholder="Enter display name (optional)" />
+        </UFormField>
+
+        <UFormField
+          label="Role"
+          name="role"
+          required
+          class="mb-4"
+        >
+          <USelect v-model="newUser.role" :options="roleOptions" />
+        </UFormField>
+
+        <div class="flex justify-end gap-2">
+          <UButton
+            type="button"
+            color="neutral"
+            variant="ghost"
+            label="Cancel"
+            @click="isAddUserModalOpen = false"
+          />
+          <UButton
+            type="submit"
+            label="Create User"
+            icon="i-lucide-user-plus"
+          />
+        </div>
+      </UForm>
+    </UCard>
+  </UModal>
 </template>
