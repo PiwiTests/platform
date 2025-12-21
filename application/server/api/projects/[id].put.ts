@@ -2,6 +2,7 @@ import { getDatabase } from '../../database'
 import { projects } from '../../database/schema'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
+import { requireAuth } from '../../utils/auth'
 
 const updateProjectSchema = z.object({
   label: z.string().optional().nullable(),
@@ -9,6 +10,9 @@ const updateProjectSchema = z.object({
 })
 
 export default eventHandler(async (event) => {
+  // Require administrator role for updating projects
+  await requireAuth(event, ['administrator'])
+
   const id = parseInt(getRouterParam(event, 'id') || '0')
 
   if (!id) {

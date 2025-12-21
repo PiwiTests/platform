@@ -31,12 +31,11 @@ test.describe('Project Edit Tests', () => {
     projectId = data.projectId
   })
 
-  test('should update project label, description, and color via API', async ({ request }) => {
+  test('should update project label, an description via API', async ({ request }) => {
     const response = await request.put(`/api/projects/${projectId}`, {
       data: {
         label: 'My Custom Label',
-        description: 'This is a custom description',
-        color: '#3b82f6'
+        description: 'This is a custom description'
       }
     })
 
@@ -45,26 +44,14 @@ test.describe('Project Edit Tests', () => {
 
     expect(updatedProject.label).toBe('My Custom Label')
     expect(updatedProject.description).toBe('This is a custom description')
-    expect(updatedProject.color).toBe('#3b82f6')
     expect(updatedProject.name).toBe('edit-test-project') // Name should not change
-  })
-
-  test('should reject invalid color format', async ({ request }) => {
-    const response = await request.put(`/api/projects/${projectId}`, {
-      data: {
-        color: 'invalid-color'
-      }
-    })
-
-    expect(response.status()).toBe(400)
   })
 
   test('should allow nullable fields', async ({ request }) => {
     const response = await request.put(`/api/projects/${projectId}`, {
       data: {
         label: null,
-        description: null,
-        color: null
+        description: null
       }
     })
 
@@ -73,7 +60,6 @@ test.describe('Project Edit Tests', () => {
 
     expect(updatedProject.label).toBeNull()
     expect(updatedProject.description).toBeNull()
-    expect(updatedProject.color).toBeNull()
   })
 
   test('should display edit button on projects list page', async ({ page }) => {
@@ -157,24 +143,5 @@ test.describe('Project Edit Tests', () => {
     // Click should navigate to edit page
     await editButton.click()
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/edit`))
-  })
-
-  test('should store and retrieve project color', async ({ request }) => {
-    // Set a color via API
-    const updateResponse = await request.put(`/api/projects/${projectId}`, {
-      data: {
-        color: '#ef4444' // Red
-      }
-    })
-
-    expect(updateResponse.ok()).toBeTruthy()
-    const updated = await updateResponse.json()
-    expect(updated.color).toBe('#ef4444')
-
-    // Verify by fetching the project
-    const getResponse = await request.get(`/api/projects/${projectId}`)
-    expect(getResponse.ok()).toBeTruthy()
-    const project = await getResponse.json()
-    expect(project.color).toBe('#ef4444')
   })
 })

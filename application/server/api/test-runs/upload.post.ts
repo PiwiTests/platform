@@ -6,8 +6,12 @@ import { join } from 'path'
 import { existsSync } from 'fs'
 import { getDirectorySize } from '../../utils/filesize'
 import { decompressDirectory } from '../../utils/compression'
+import { requireAuth } from '../../utils/auth'
 
 export default eventHandler(async (event) => {
+  // Require reporter or administrator role for uploading test results
+  await requireAuth(event, ['reporter', 'administrator'])
+
   const formData = await readMultipartFormData(event)
 
   if (!formData) {

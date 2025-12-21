@@ -1,0 +1,54 @@
+import { getDatabase } from '../../database'
+import { users } from '../../database/schema'
+import { eq } from 'drizzle-orm'
+import { createUser, requireAuth } from '../../utils/auth'
+import { z } from 'zod'
+
+const createUserSchema = z.object({
+  username: z.string().min(3),
+  password: z.string().min(6),
+  role: z.enum(['administrator', 'reporter', 'user']),
+  name: z.string().optional()
+})
+
+export default eventHandler(async (event) => {
+  // If auth is enabled, require administrator role
+  await requireAuth(event, ['administrator'])
+
+  const body = await readBody(event)
+  const validation = createUserSchema.safeParse(body)
+
+  if (!validation.success) {
+    throw createError({
+      statusCode: 400,
+      message: 'Invalid request body',
+      data: validation.error.issues
+    })
+  }
+
+  const { username, password, role, name } = validation.data
+
+  const db = getDatabase()
+
+  // Check if username already exists
+  const existingUsers = await db.select().from(users).where(eq(users.username, username))
+  if (existingUsers.length > 0) {
+    throw createError({
+      statusCode: 400,
+      message: 'Username already exists'
+    })
+  }
+
+  // Create user
+  const user = await createUser(username, password, role, name)
+
+  return {
+    success: true,
+    user: {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      name: user.name
+    }
+  }
+})

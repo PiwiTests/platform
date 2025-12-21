@@ -1,4 +1,17 @@
-import { defineConfig, devices } from '@playwright/test'
+import { defineConfig, devices, type ReporterDescription } from '@playwright/test'
+
+const reporters: ReporterDescription[] = []
+
+if (!process.env.CI) {
+  reporters.push(['html'])
+  reporters.push(['../reporter', {
+    serverUrl: 'http://localhost:3000',
+    projectName: 'Playwright Dashboard',
+    uploadReport: true
+  }])
+} else {
+  reporters.push(['list'])
+}
 
 /**
  * See https://playwright.dev/docs/test-configuration.
@@ -19,14 +32,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
 
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: [
-    ['html'],
-    ['../reporter', {
-      serverUrl: 'http://localhost:3000',
-      projectName: 'Playwright Dashboard',
-      uploadReport: true
-    }]
-  ],
+  reporter: reporters,
 
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
@@ -50,6 +56,6 @@ export default defineConfig({
     command: 'npm run dev',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000
+    timeout: 60 * 1000
   }
 })

@@ -1,8 +1,12 @@
 import { getDatabase } from '../../database'
 import { projects, testRuns, testCases, testRunsCases } from '../../database/schema'
 import { eq, and } from 'drizzle-orm'
+import { requireAuth } from '../../utils/auth'
 
 export default eventHandler(async (event) => {
+  // Require reporter or administrator role for submitting test results
+  await requireAuth(event, ['reporter', 'administrator'])
+
   const body = await readBody(event)
 
   // Validate required fields

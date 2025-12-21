@@ -95,12 +95,24 @@ export function initDatabase() {
         FOREIGN KEY (test_runs_case_id) REFERENCES test_runs_cases(id)
       );
 
+      -- Users table
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        password TEXT NOT NULL,
+        role TEXT NOT NULL,
+        name TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_test_runs_project_id ON test_runs(project_id);
       CREATE INDEX IF NOT EXISTS idx_test_cases_project_id ON test_cases(project_id);
       CREATE INDEX IF NOT EXISTS idx_test_cases_file_path_title ON test_cases(file_path, title);
       CREATE INDEX IF NOT EXISTS idx_test_runs_cases_test_run_id ON test_runs_cases(test_run_id);
       CREATE INDEX IF NOT EXISTS idx_test_runs_cases_test_case_id ON test_runs_cases(test_case_id);
       CREATE INDEX IF NOT EXISTS idx_traces_test_runs_case_id ON traces(test_runs_case_id);
+      CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
     `)
 
     // Migrate old data if the old table has data and new tables are empty

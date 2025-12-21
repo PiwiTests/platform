@@ -60,6 +60,17 @@ export const traces = sqliteTable('traces', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
 })
 
+// Users table - for authentication
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  username: text('username').notNull().unique(),
+  password: text('password').notNull(), // hashed password
+  role: text('role').notNull(), // 'administrator', 'reporter', 'user'
+  name: text('name'), // Display name
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
+})
+
 // Type exports for TypeScript
 export type Project = typeof projects.$inferSelect
 export type NewProject = typeof projects.$inferInsert
@@ -71,3 +82,5 @@ export type TestRunsCase = typeof testRunsCases.$inferSelect
 export type NewTestRunsCase = typeof testRunsCases.$inferInsert
 export type Trace = typeof traces.$inferSelect
 export type NewTrace = typeof traces.$inferInsert
+export type User = typeof users.$inferSelect
+export type NewUser = typeof users.$inferInsert

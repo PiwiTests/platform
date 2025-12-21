@@ -16,6 +16,7 @@ A modern dashboard for storing and visualizing Playwright test results, built wi
 - 📁 **File Upload** - Upload HTML reports and trace files
 - 🎨 **Modern UI** - Beautiful interface with light/dark mode support
 - 🚀 **Auto-create Projects** - Unknown projects are automatically created via API
+- 🔐 **Authentication** - Optional role-based access control (administrator, reporter, user)
 
 ## Quick Start
 
@@ -142,6 +143,100 @@ export default defineConfig({
 - `uploadReport` (boolean): Upload HTML report (default: `true`)
 
 See [`reporter/README.md`](./reporter/README.md) for detailed documentation.
+
+## Authentication
+
+The dashboard supports optional user authentication with role-based access control.
+
+### Overview
+
+Three user roles are available:
+
+- **Administrator**: Full access to all features including editing projects and managing users
+- **Reporter**: Can only use API endpoints for submitting test results (`/api/test-runs/submit` and `/api/test-runs/upload`)
+- **User**: Read-only access to all dashboard pages and data
+
+### Enabling Authentication
+
+Authentication is **disabled by default**. To enable it:
+
+1. Copy the `.env.example` file to `.env`:
+   ```bash
+   cd application
+   cp .env.example .env
+   ```
+
+2. Edit `.env` and set the following variables:
+   ```bash
+   NUXT_AUTH_ENABLED=true
+   NUXT_AUTH_SECRET=your-secret-key-here
+   ```
+
+   **Important**: Generate a strong secret key for production:
+   ```bash
+   openssl rand -hex 32
+   ```
+
+3. Restart the application
+
+### Initial Setup
+
+When authentication is first enabled, create an administrator account:
+
+```bash
+curl -X POST http://localhost:3000/api/auth/setup \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "admin",
+    "password": "your-secure-password",
+    "name": "Administrator"
+  }'
+```
+
+This endpoint is only available when no users exist in the database.
+
+### Logging In
+
+1. Navigate to `/login` in your browser
+2. Enter your username and password
+3. Upon successful login, you'll be redirected to the dashboard
+
+### User Management
+
+User accounts can be managed through the admin interface at `/settings/users`. This page is accessible to administrators, or to anyone when authentication is disabled (with an informational message).
+
+To create additional users:
+
+1. Navigate to `/settings/users` in the dashboard
+2. Click "Add User" to create a new account
+3. Set username, password, role, and optional display name
+
+### API Authentication
+
+When authentication is enabled:
+
+- API endpoints require authentication via session cookies
+- POST/PUT/DELETE endpoints require appropriate role permissions
+- GET endpoints remain public (read-only access)
+- Sessions are stored in encrypted cookies and last for 7 days
+
+### Security Considerations
+
+- Always use HTTPS in production
+- Use strong, unique passwords
+- Generate a strong random secret for `NUXT_AUTH_SECRET`
+- The default secret should never be used in production
+- Passwords are hashed using scrypt with per-password salts
+
+### Disabling Authentication
+
+To disable authentication:
+
+1. Set `NUXT_AUTH_ENABLED=false` in `.env`
+2. Or remove the environment variable entirely
+3. Restart the application
+
+When disabled, all endpoints are accessible without authentication.
 
 ## Project Structure
 
