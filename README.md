@@ -238,6 +238,71 @@ To disable authentication:
 
 When disabled, all endpoints are accessible without authentication.
 
+## Database Management
+
+The dashboard uses Drizzle ORM with SQLite for database storage. Database schema changes are managed through Drizzle migrations.
+
+### Automatic Migrations
+
+The database is automatically migrated when the application starts. On first API call, Drizzle will:
+1. Check for pending migrations
+2. Apply any new migrations
+3. Track applied migrations in the `__drizzle_migrations` table
+
+No manual intervention is required for normal operation.
+
+### Managing Database Schema
+
+If you need to modify the database schema:
+
+```bash
+# 1. Edit the schema file
+# Edit server/database/schema.ts
+
+# 2. Generate a new migration
+npm run db:generate
+
+# 3. (Optional) Review the generated migration
+# Check server/database/migrations/XXXX_name.sql
+
+# 4. Restart the application
+# Migrations will be applied automatically on next startup
+npm run dev
+```
+
+### Database Scripts
+
+```bash
+# Generate a new migration from schema changes
+npm run db:generate
+
+# Apply migrations to database (automatic on app startup)
+npm run db:migrate
+
+# Push schema changes directly (skip migrations, for dev only)
+npm run db:push
+
+# Open Drizzle Studio to browse database
+npm run db:studio
+```
+
+### Migration Files
+
+Migrations are stored in `server/database/migrations/`:
+- `XXXX_name.sql` - SQL migration files
+- `meta/_journal.json` - Migration history
+- `meta/XXXX_snapshot.json` - Schema snapshots
+
+**Important**: Never delete or modify existing migration files. Always generate new migrations for schema changes.
+
+### Database Location
+
+The SQLite database is stored at `.data/playwright.db` by default. You can customize this location with the `DATABASE_PATH` environment variable:
+
+```bash
+DATABASE_PATH=/custom/path/database.db npm run dev
+```
+
 ## Project Structure
 
 ```
@@ -254,7 +319,10 @@ When disabled, all endpoints are accessible without authentication.
 ├── server/
 │   ├── database/
 │   │   ├── schema.ts        # Database schema (Drizzle ORM)
-│   │   └── index.ts         # Database initialization
+│   │   ├── index.ts         # Database initialization
+│   │   └── migrations/      # Drizzle migration files
+│   │       ├── 0000_*.sql   # SQL migration files
+│   │       └── meta/         # Migration metadata
 │   └── api/                 # API endpoints
 │       ├── projects.get.ts
 │       ├── projects/[id].get.ts
@@ -277,6 +345,7 @@ When disabled, all endpoints are accessible without authentication.
 │       ├── file-upload.spec.ts
 │       └── README.md       # Test documentation
 ├── playwright.config.ts    # Playwright test configuration
+├── drizzle.config.ts       # Drizzle migration configuration
 └── .github/
     └── copilot-instructions.md  # Instructions for AI assistants
 ```

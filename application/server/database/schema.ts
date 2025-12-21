@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core'
 
 // Projects table
 export const projects = sqliteTable('projects', {
@@ -26,7 +26,9 @@ export const testRuns = sqliteTable('test_runs', {
   reportSize: integer('report_size'), // in bytes (decompressed size)
   metadata: text('metadata', { mode: 'json' }), // Additional metadata as JSON
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
-})
+}, table => ({
+  projectIdIdx: index('idx_test_runs_project_id').on(table.projectId)
+}))
 
 // Test cases table - shared test definitions
 export const testCases = sqliteTable('test_cases', {
@@ -36,7 +38,10 @@ export const testCases = sqliteTable('test_cases', {
   title: text('title').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
-})
+}, table => ({
+  projectIdIdx: index('idx_test_cases_project_id').on(table.projectId),
+  filePathTitleIdx: index('idx_test_cases_file_path_title').on(table.filePath, table.title)
+}))
 
 // Test runs cases table - junction table with run-specific data
 export const testRunsCases = sqliteTable('test_runs_cases', {
@@ -50,7 +55,10 @@ export const testRunsCases = sqliteTable('test_runs_cases', {
   line: integer('line'), // line number in file
   column: integer('column'), // column number in file
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
-})
+}, table => ({
+  testRunIdIdx: index('idx_test_runs_cases_test_run_id').on(table.testRunId),
+  testCaseIdIdx: index('idx_test_runs_cases_test_case_id').on(table.testCaseId)
+}))
 
 // Traces table (if exists, keeping for reference)
 export const traces = sqliteTable('traces', {
@@ -58,7 +66,9 @@ export const traces = sqliteTable('traces', {
   testRunsCaseId: integer('test_runs_case_id').notNull().references(() => testRunsCases.id),
   filePath: text('file_path').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
-})
+}, table => ({
+  testRunsCaseIdIdx: index('idx_traces_test_runs_case_id').on(table.testRunsCaseId)
+}))
 
 // Users table - for authentication
 export const users = sqliteTable('users', {

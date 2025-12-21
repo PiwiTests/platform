@@ -35,13 +35,17 @@ The repository is organized into three main parts:
 
 ### Database
 - **ORM**: Drizzle ORM with better-sqlite3
+- **Migrations**: Managed by Drizzle Kit with automatic migration on startup
 - **Location**: `application/.data/playwright.db` (SQLite database)
 - **Schema**: Defined in `application/server/database/schema.ts`
+- **Migrations**: Stored in `application/server/database/migrations/`
 - **Tables**:
   - `projects` - Test projects
   - `test_runs` - Test execution runs
   - `test_cases` - Individual test cases
+  - `test_runs_cases` - Junction table linking test runs to test cases
   - `traces` - Playwright traces for test cases
+  - `users` - User accounts for authentication
 
 ### Backend (Server Directory)
 - **Database**: `application/server/database/` - Schema and database initialization
@@ -132,6 +136,12 @@ npm run lint         # Run ESLint
 npm test             # Run functional tests
 npm run test:ui      # Run tests with UI mode
 npm run test:report  # View test report
+
+# Database migration commands
+npm run db:generate  # Generate new migration from schema changes
+npm run db:migrate   # Apply pending migrations (automatic on startup)
+npm run db:push      # Push schema changes directly (dev only, skip migrations)
+npm run db:studio    # Open Drizzle Studio to browse database
 ```
 
 ### Reporter Package (from `reporter/` directory)
@@ -145,8 +155,10 @@ npm link             # Link package for local development
 
 ### Adding New Database Fields
 1. Update schema in `application/server/database/schema.ts`
-2. Update table creation SQL in `application/server/database/index.ts`
-3. Update TypeScript types (auto-inferred from schema)
+2. Generate a new migration with `npm run db:generate`
+3. Review the generated migration file in `application/server/database/migrations/`
+4. Restart the application - migrations run automatically on startup
+5. TypeScript types are auto-inferred from schema
 
 ### Adding New API Endpoints
 1. Create file in `application/server/api/` following Nuxt file-based routing
