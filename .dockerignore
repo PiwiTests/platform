@@ -1,0 +1,3 @@
+# Exclude everything except .output (which is built outside Docker)
+*
+!application/.output

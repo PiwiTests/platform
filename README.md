@@ -1,6 +1,7 @@
 # Playwright Dashboard
 
 [![Nuxt UI](https://img.shields.io/badge/Made%20with-Nuxt%20UI-00DC82?logo=nuxt&labelColor=020420)](https://ui.nuxt.com)
+[![Docker](https://img.shields.io/badge/Docker-Available-2496ED?logo=docker&labelColor=020420)](https://github.com/PhenX/playwright-dashboard/pkgs/container/playwright-dashboard)
 
 A modern dashboard for storing and visualizing Playwright test results, built with Nuxt 4 and powered by [Nuxt UI](https://ui.nuxt.com).
 
@@ -18,8 +19,22 @@ A modern dashboard for storing and visualizing Playwright test results, built wi
 - 🎨 **Modern UI** - Beautiful interface with light/dark mode support
 - 🚀 **Auto-create Projects** - Unknown projects are automatically created via API
 - 🔐 **Authentication** - Optional role-based access control (administrator, reporter, user)
+- 🐳 **Docker Support** - Pre-built container images (~205MB)
 
 ## Quick Start
+
+### Using Docker (Recommended)
+
+The fastest way to get started:
+
+```bash
+docker pull ghcr.io/phenx/playwright-dashboard:latest
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/playwright-dashboard:latest
+```
+
+Visit `http://localhost:3000` to access the dashboard.
+
+📖 See [DOCKER.md](DOCKER.md) for detailed Docker deployment instructions.
 
 ### Installation
 
