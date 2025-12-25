@@ -17,6 +17,10 @@ export default defineNuxtConfig({
     enabled: true
   },
 
+  experimental: {
+    buildCache: true
+  },
+
   css: ['~/assets/css/main.css'],
 
   runtimeConfig: {

@@ -24,7 +24,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.721.0",
     "@iconify-json/lucide": "^1.2.75",
-    "@libsql/client": "^0.14.0",
+    "@libsql/client": "^0.15.15",
     "@nuxt/hints": "1.0.0-alpha.3",
     "@nuxt/test-utils": "3.21.0",
     "@nuxt/ui": "^4.2.1",
