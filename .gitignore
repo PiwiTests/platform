@@ -31,4 +31,5 @@ test-results/
 playwright-report/
 .test-temp/
 .test-temp-zstd/
+.test-temp-gzip/
 .temp-dashboard/
