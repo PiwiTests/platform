@@ -17,49 +17,26 @@ The dashboard will be available at `http://localhost:3000`.
 
 ## Image Details
 
-- **Base Image**: `node:22-alpine` (minimal Alpine Linux with Node.js 22)
-- **Image Size**: ~200MB (compact without native module dependencies)
+- **Base Image**: `node:24-alpine` (minimal Alpine Linux with Node.js 24)
+- **Build Type**: Multistage build (builder + production stages)
+- **Image Size**: ~200MB (compact without build dependencies)
 - **Architecture**: Multi-platform (linux/amd64, linux/arm64)
 - **Registry**: GitHub Container Registry (ghcr.io)
 
 ## Building the Image Locally
 
-The image is built outside of Docker for optimal size. Follow these steps:
-
-### 1. Build the Application
+The image uses a multistage Docker build that handles all dependencies and building internally. Simply build the image:
 
 ```bash
 cd application
-npm install
-npm run build
-```
-
-This creates the `.output` directory with the production build.
-
-**Note for Multi-Platform Support**: When building for Docker on Alpine Linux (musl), you need to include platform-specific native modules:
-
-```bash
-cd application
-npm install
-# Get the libsql version from package-lock.json
-LIBSQL_VERSION=$(node -p "require('./package-lock.json').packages['node_modules/libsql'].version")
-# Install Alpine-specific native modules
-npm install --no-save --force @libsql/linux-x64-musl@$LIBSQL_VERSION @libsql/linux-arm64-musl@$LIBSQL_VERSION
-npm run build
-# Copy native modules to output (Nitro doesn't auto-include cross-platform modules)
-mkdir -p .output/server/node_modules/@libsql/linux-x64-musl
-mkdir -p .output/server/node_modules/@libsql/linux-arm64-musl
-cp -r node_modules/@libsql/linux-x64-musl/* .output/server/node_modules/@libsql/linux-x64-musl/
-cp -r node_modules/@libsql/linux-arm64-musl/* .output/server/node_modules/@libsql/linux-arm64-musl/
-```
-
-### 2. Build the Docker Image
-
-```bash
 docker build -t playwright-dashboard:local .
 ```
 
-### 3. Run the Container
+The Dockerfile uses a two-stage build:
+1. **Builder stage**: Installs all dependencies and builds the application
+2. **Production stage**: Installs only production dependencies and copies the build artifacts
+
+### Run the Container
 
 ```bash
 docker run -p 3000:3000 -v $(pwd)/.data:/app/.data playwright-dashboard:local
@@ -174,28 +151,24 @@ The container runs as a non-root user (`nodejs:nodejs` with UID/GID 1001) for en
 
 ## Image Optimization
 
-This image is optimized for size:
+This image is optimized for size using a multistage build:
 
-1. **External Build**: Application is built outside Docker to avoid including build dependencies
+1. **Multistage Build**: Application is built in a builder stage, keeping build dependencies separate
 2. **Alpine Base**: Uses minimal Alpine Linux (~55MB base)
-3. **Minimal Layers**: Commands combined to reduce layer count
-4. **No Build Dependencies**: Only runtime dependencies included
-5. **Efficient Copying**: Only `.output` directory copied
-6. **Native Modules**: Platform-specific SQLite bindings included for Alpine (musl) support
+3. **Production Dependencies Only**: Final image contains only runtime dependencies
+4. **Minimal Layers**: Commands combined to reduce layer count
+5. **Cache Mounts**: Uses BuildKit cache mounts for faster npm installs
+6. **Native Modules**: Platform-specific SQLite bindings built correctly for Alpine (musl)
 
 ## Technical Notes
 
 ### SQLite Implementation
 
-The application uses `@libsql/client` which internally depends on the `libsql` package for native SQLite bindings. The `libsql` package requires platform-specific native bindings. When building on non-Alpine systems (glibc), the Alpine-specific bindings (`@libsql/linux-x64-musl` for x64 and `@libsql/linux-arm64-musl` for ARM64) must be explicitly installed and copied to the build output for the Docker image to work on Alpine Linux.
+The application uses `@libsql/client` which internally depends on the `libsql` package for native SQLite bindings. The multistage Docker build ensures that native modules are compiled correctly for Alpine Linux (musl) during the build process.
 
-### Native Module Cross-Platform Support
+### Native Module Multi-Platform Support
 
-Nuxt's Nitro bundler only includes native modules for the current platform during build. For multi-platform Docker images (supporting both x64 and ARM64 on Alpine), the publish workflow explicitly:
-
-1. Installs Alpine-specific native modules with `--force` flag (to bypass platform checks)
-2. Copies these modules to the `.output/server/node_modules` directory after build
-3. Ensures the Docker image can run on both `linux/amd64` and `linux/arm64` platforms
+The Docker build supports both `linux/amd64` and `linux/arm64` platforms. The multistage build ensures that native modules are compiled correctly for each target platform during the Docker build process.
 
 ## Troubleshooting
 

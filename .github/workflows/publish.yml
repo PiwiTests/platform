@@ -20,42 +20,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: ./application/package-lock.json
-
-      - name: Install dependencies and build application
-        working-directory: ./application
-        run: |
-          npm ci
-          # Get libsql version from package-lock.json (it's a transitive dependency of @libsql/client)
-          LIBSQL_VERSION=$(node -p "require('./package-lock.json').packages['node_modules/libsql'].version")
-          echo "Installing Alpine (musl) native modules version: $LIBSQL_VERSION"
-          # Explicitly install Alpine (musl) and ARM native modules for multi-platform support
-          npm install --no-save --force @libsql/linux-x64-musl@$LIBSQL_VERSION @libsql/linux-arm64-musl@$LIBSQL_VERSION
-          npm run build
-          # Manually copy platform-specific native modules to output (Nitro doesn't auto-include them)
-          echo "Copying Alpine native modules to output..."
-          if [ -d "node_modules/@libsql/linux-x64-musl" ]; then
-            mkdir -p .output/server/node_modules/@libsql/linux-x64-musl
-            cp -r node_modules/@libsql/linux-x64-musl/* .output/server/node_modules/@libsql/linux-x64-musl/
-            echo "✓ Copied linux-x64-musl"
-          else
-            echo "⚠ Warning: linux-x64-musl module not found"
-            exit 1
-          fi
-          if [ -d "node_modules/@libsql/linux-arm64-musl" ]; then
-            mkdir -p .output/server/node_modules/@libsql/linux-arm64-musl
-            cp -r node_modules/@libsql/linux-arm64-musl/* .output/server/node_modules/@libsql/linux-arm64-musl/
-            echo "✓ Copied linux-arm64-musl"
-          else
-            echo "⚠ Warning: linux-arm64-musl module not found"
-            exit 1
-          fi
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -81,7 +45,7 @@ jobs:
         uses: docker/build-push-action@v6
         id: build
         with:
-          context: .
+          context: ./application
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
