@@ -38,8 +38,6 @@ export default eventHandler(async (event) => {
       contentType = 'text/html'
     } else if (ext === '.gz') {
       contentType = 'application/gzip'
-    } else if (ext === '.zst') {
-      contentType = 'application/zstd'
     } else if (ext === '.zip') {
       contentType = 'application/zip'
     } else if (ext === '.json') {

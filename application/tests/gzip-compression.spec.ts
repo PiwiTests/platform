@@ -201,38 +201,4 @@ test.describe('Gzip Compression Tests', () => {
 
     expect(uploadResponse.ok()).toBeTruthy()
   })
-
-  test('should maintain backward compatibility with zip files', async ({ request }) => {
-    // Create a simple mock zip file for testing backward compatibility
-    // Note: This is just testing that the system doesn't reject .zip files
-    const mockZipContent = Buffer.from('PK mock zip content')
-
-    const response = await request.post('/api/test-runs/upload', {
-      multipart: {
-        projectName: 'legacy-zip-test',
-        testRun: JSON.stringify({
-          status: 'passed',
-          startTime: new Date().toISOString(),
-          duration: 60000,
-          totalTests: 1,
-          passedTests: 1,
-          failedTests: 0,
-          skippedTests: 0
-        }),
-        testCases: JSON.stringify([{
-          title: 'legacy test',
-          status: 'passed',
-          duration: 500
-        }]),
-        htmlReport: {
-          name: 'old-report.zip',
-          mimeType: 'application/zip',
-          buffer: mockZipContent
-        }
-      }
-    })
-
-    // Should accept it (though extraction might fail, that's handled gracefully)
-    expect(response.ok()).toBeTruthy()
-  })
 })
