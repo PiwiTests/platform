@@ -1,9 +1,12 @@
 import { writeFileSync, mkdirSync, existsSync } from 'fs'
 import { join, dirname } from 'path'
-import { decompress as zstdDecompress } from '@mongodb-js/zstd'
+import { gunzip } from 'zlib'
+import { promisify } from 'util'
+
+const gunzipAsync = promisify(gunzip)
 
 /**
- * Decompress a zstd-compressed archive buffer
+ * Decompress a gzip-compressed archive buffer
  * @param compressedBuffer - Compressed buffer
  * @param targetDir - Directory to extract files to
  * @throws Error if decompression fails or archive is malformed
@@ -11,7 +14,7 @@ import { decompress as zstdDecompress } from '@mongodb-js/zstd'
 export async function decompressDirectory(compressedBuffer: Buffer, targetDir: string): Promise<void> {
   try {
     // Decompress
-    const uncompressed = Buffer.from(await zstdDecompress(compressedBuffer))
+    const uncompressed = await gunzipAsync(compressedBuffer)
 
     // Parse the archive format (little-endian byte order)
     let offset = 0

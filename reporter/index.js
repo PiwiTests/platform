@@ -226,7 +226,7 @@ class PlaywrightDashboardReporter {
           if (compressed) {
             console.log(`[Playwright Dashboard] Adding HTML report archive: ${compressed.length} bytes`);
             form.append('htmlReport', compressed, {
-              filename: 'playwright-report.zst'
+              filename: 'playwright-report.gz'
             });
           }
         } catch (error) {

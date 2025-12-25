@@ -1,10 +1,13 @@
 import { test, expect } from '@playwright/test'
 import { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
-import { compress } from '@mongodb-js/zstd'
+import { gzip } from 'zlib'
+import { promisify } from 'util'
 
-test.describe('Zstd Compression Tests', () => {
-  const tempDir = join(process.cwd(), '.test-temp-zstd')
+const gzipAsync = promisify(gzip)
+
+test.describe('Gzip Compression Tests', () => {
+  const tempDir = join(process.cwd(), '.test-temp-gzip')
 
   test.beforeAll(async () => {
     // Create temp directory for test files
@@ -39,7 +42,7 @@ test.describe('Zstd Compression Tests', () => {
       console.log('Test report loaded');
     `)
 
-    // Create a zstd-compressed archive
+    // Create a gzip-compressed archive
     const files: Array<{ path: string, content: Buffer }> = []
 
     function collectFiles(dir: string, baseDir = '') {
@@ -78,17 +81,17 @@ test.describe('Zstd Compression Tests', () => {
     }
 
     const uncompressed = Buffer.concat(parts)
-    const compressed = await compress(uncompressed, 9)
+    const compressed = await gzipAsync(uncompressed, { level: 9 })
 
-    writeFileSync(join(tempDir, 'report.zst'), Buffer.from(compressed))
+    writeFileSync(join(tempDir, 'report.gz'), compressed)
   })
 
-  test('should upload test results with zstd-compressed HTML report', async ({ request }) => {
-    const reportBuffer = readFileSync(join(tempDir, 'report.zst'))
+  test('should upload test results with gzip-compressed HTML report', async ({ request }) => {
+    const reportBuffer = readFileSync(join(tempDir, 'report.gz'))
 
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: 'zstd-test-project',
+        projectName: 'gzip-test-project',
         testRun: JSON.stringify({
           status: 'passed',
           startTime: new Date().toISOString(),
@@ -100,15 +103,15 @@ test.describe('Zstd Compression Tests', () => {
         }),
         testCases: JSON.stringify([
           {
-            title: 'test with zstd report',
+            title: 'test with gzip report',
             status: 'passed',
             duration: 1000,
             location: 'tests/test.spec.ts:10:5'
           }
         ]),
         htmlReport: {
-          name: 'playwright-report.zst',
-          mimeType: 'application/zstd',
+          name: 'playwright-report.gz',
+          mimeType: 'application/gzip',
           buffer: reportBuffer
         }
       }
@@ -123,12 +126,12 @@ test.describe('Zstd Compression Tests', () => {
   })
 
   test('should decompress and serve HTML report files', async ({ request }) => {
-    const reportBuffer = readFileSync(join(tempDir, 'report.zst'))
+    const reportBuffer = readFileSync(join(tempDir, 'report.gz'))
 
     // Upload the report
     const uploadResponse = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: 'zstd-serve-test-project',
+        projectName: 'gzip-serve-test-project',
         testRun: JSON.stringify({
           status: 'passed',
           startTime: new Date().toISOString(),
@@ -144,8 +147,8 @@ test.describe('Zstd Compression Tests', () => {
           duration: 500
         }]),
         htmlReport: {
-          name: 'playwright-report.zst',
-          mimeType: 'application/zstd',
+          name: 'playwright-report.gz',
+          mimeType: 'application/gzip',
           buffer: reportBuffer
         }
       }
@@ -167,13 +170,13 @@ test.describe('Zstd Compression Tests', () => {
     }
   })
 
-  test('should handle zstd file MIME type correctly', async ({ request }) => {
-    const reportBuffer = readFileSync(join(tempDir, 'report.zst'))
+  test('should handle gzip file MIME type correctly', async ({ request }) => {
+    const reportBuffer = readFileSync(join(tempDir, 'report.gz'))
 
-    // Upload and then verify MIME type if served as .zst
+    // Upload and then verify MIME type if served as .gz
     const uploadResponse = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: 'zstd-mime-test',
+        projectName: 'gzip-mime-test',
         testRun: JSON.stringify({
           status: 'passed',
           startTime: new Date().toISOString(),
@@ -189,8 +192,8 @@ test.describe('Zstd Compression Tests', () => {
           duration: 500
         }]),
         htmlReport: {
-          name: 'report.zst',
-          mimeType: 'application/zstd',
+          name: 'report.gz',
+          mimeType: 'application/gzip',
           buffer: reportBuffer
         }
       }

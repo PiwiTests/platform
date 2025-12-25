@@ -57,7 +57,7 @@ export default defineConfig({
 ## Features
 
 - **Automatic Upload**: Automatically uploads test results after test run completion
-- **Complete HTML Reports**: Compresses and uploads entire HTML report directory with all assets (CSS, JS, images, fonts) using zstd compression
+- **Complete HTML Reports**: Compresses and uploads entire HTML report directory with all assets (CSS, JS, images, fonts) using gzip compression
 - **Trace Files**: Uploads trace files from test attachments (configure with `trace: 'on'` or `trace: 'retain-on-failure'` in Playwright config)
 - **Fallback**: Falls back to JSON-only upload if file upload fails
 - **Status Tracking**: Tracks passed, failed, skipped, and timed-out tests
@@ -67,7 +67,7 @@ export default defineConfig({
 
 1. The reporter collects test results during the test run
 2. After all tests complete, it uploads results to the dashboard
-3. If `uploadReport` is enabled, it compresses the entire `playwright-report` directory using zstd and uploads it
+3. If `uploadReport` is enabled, it compresses the entire `playwright-report` directory using gzip and uploads it
 4. If `uploadTraces` is enabled, it finds and uploads all trace files
 5. The server decompresses the report and makes it available for viewing
 6. Results are visible in the Playwright Dashboard web interface with fully functional HTML reports

@@ -1,10 +1,13 @@
 const fs = require('fs');
 const path = require('path');
-const { compress } = require('@mongodb-js/zstd');
+const zlib = require('zlib');
+const { promisify } = require('util');
+
+const gzipAsync = promisify(zlib.gzip);
 
 /**
- * Compress a directory using zstd compression
- * Creates a tar-like structure in memory and compresses with zstd
+ * Compress a directory using gzip compression
+ * Creates a tar-like structure in memory and compresses with gzip
  * @param {string} sourceDir - Directory to compress
  * @returns {Promise<Buffer>} - Compressed buffer
  */
@@ -52,23 +55,23 @@ async function compressDirectory(sourceDir) {
   
   const uncompressed = Buffer.concat(parts);
   
-  // Compress with zstd
-  const compressed = await compress(uncompressed, 9); // Level 9 for maximum compression
+  // Compress with gzip (level 9 for maximum compression)
+  const compressed = await gzipAsync(uncompressed, { level: 9 });
   
-  return Buffer.from(compressed);
+  return compressed;
 }
 
+const gunzipAsync = promisify(zlib.gunzip);
+
 /**
- * Decompress a zstd-compressed archive buffer
+ * Decompress a gzip-compressed archive buffer
  * @param {Buffer} compressedBuffer - Compressed buffer
  * @param {string} targetDir - Directory to extract files to
  * @returns {Promise<void>}
  */
 async function decompressDirectory(compressedBuffer, targetDir) {
-  const { decompress } = require('@mongodb-js/zstd');
-  
   // Decompress
-  const uncompressed = Buffer.from(await decompress(compressedBuffer));
+  const uncompressed = await gunzipAsync(compressedBuffer);
   
   // Parse the archive format
   let offset = 0;
