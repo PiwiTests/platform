@@ -67,5 +67,39 @@ export default defineNuxtConfig({
         braceStyle: '1tbs'
       }
     }
+  },
+
+  fonts: {
+    // Disable external font providers to speed up build
+    // The project uses system fonts and TailwindCSS utilities only
+    providers: {
+      google: false,
+      googleicons: false,  // Disable Material Symbols fetching
+      bunny: false,
+      fontshare: false,
+      fontsource: false
+    },
+    // Disable automatic font/icon discovery to prevent remote fetching
+    experimental: {
+      processCSSVariables: false
+    },
+    defaults: {
+      // Disable automatic font downloads
+      fallbacks: {},
+      preload: false
+    }
+  },
+
+  icon: {
+    // Use local icon collections only, disable remote fetching
+    provider: 'server',
+    serverBundle: {
+      collections: ['lucide'] // Only use locally installed Lucide icons
+    },
+    clientBundle: {
+      // Disable client-side icon loading for faster builds
+      scan: true,
+      sizeLimitKb: 256
+    }
   }
 })
