@@ -45,7 +45,11 @@ export default defineNuxtConfig({
 
   nitro: {
     experimental: {
-      // https://github.com/nuxt/nuxt/issues/31836
+      // Windows-only workaround to avoid Nitro build issues caused by ESM/CJS externals
+      // resolution on Windows. Enabling legacyExternals here keeps dependency resolution
+      // compatible with older behavior and prevents intermittent build timeouts / failures
+      // during Nitro server bundling on Windows.
+      // See: https://github.com/nuxt/nuxt/issues/31836
       legacyExternals: process.platform === 'win32'
     }
   },
