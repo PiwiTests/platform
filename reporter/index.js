@@ -31,6 +31,20 @@ class PlaywrightDashboardReporter {
     this.failedTests = 0;
     this.skippedTests = 0;
     this.timedOutTests = 0;
+    
+    /**
+     * Collected metadata including SCM, CI, and custom data
+     * @type {Object}
+     * @property {Object} [scm] - Source control information (commit, branch, author, etc.)
+     * @property {Object} [ci] - CI provider information (build number, URL, etc.)
+     * @property {string} [projectDescription] - Project description
+     * @property {string} [relatedIssue] - Related issue reference (e.g., JIRA ticket)
+     * @property {string[]} [tags] - Tags for categorization
+     * @property {Object} [customData] - Custom metadata key-value pairs
+     * @property {Object} [htmlReport] - Playwright HTML report metadata
+     * @property {Object} [playwrightConfig] - Playwright configuration metadata
+     * @property {Object} [playwrightProject] - Playwright project metadata
+     */
     this.metadata = {};
   }
 
