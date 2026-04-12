@@ -2,6 +2,8 @@ import { defineConfig, devices, type ReporterDescription } from '@playwright/tes
 
 const reporters: ReporterDescription[] = []
 
+reporters.push(['list'])
+
 if (!process.env.CI) {
   reporters.push(['html'])
   reporters.push(['../reporter', {
@@ -9,8 +11,6 @@ if (!process.env.CI) {
     projectName: 'Playwright Dashboard',
     uploadReport: true
   }])
-} else {
-  reporters.push(['list'])
 }
 
 /**

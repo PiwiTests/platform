@@ -5,7 +5,7 @@ This is a Playwright test results dashboard built with Nuxt 4, using the Nuxt UI
 
 ## Prerequisites
 Before working on this project, ensure you have:
-- **Node.js**: Version 18 or higher (CI uses Node.js 22)
+- **Node.js**: Version 24 or higher (CI uses Node.js 24)
 - **npm**: Comes with Node.js, used for package management
 - **Git**: For version control
 
