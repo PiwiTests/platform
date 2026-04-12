@@ -262,8 +262,35 @@ export default eventHandler(async (event) => {
         error: (testCase.error as string | null | undefined) || null,
         retries: (testCase.retries as number | undefined) || 0,
         line: line,
-        column: column
+        column: column,
+        steps: (testCase.steps as Array<{ title: string, duration: number, category: string }> | null | undefined) || null,
+        slowestStep: (testCase.slowestStep as string | null | undefined) || null,
+        slowestStepDuration: (testCase.slowestStepDuration as number | null | undefined) || null
       })
+    }
+  }
+
+  // Compute and store performance summary (avgTestDuration, p90TestDuration)
+  if (testCasesData && testCasesData.length > 0) {
+    const durations = testCasesData
+      .filter((tc: Record<string, unknown>) => tc.duration !== null && tc.duration !== undefined)
+      .map((tc: Record<string, unknown>) => tc.duration as number)
+
+    if (durations.length > 0) {
+      const sum = durations.reduce((a: number, b: number) => a + b, 0)
+      const avgTestDuration = Math.round(sum / durations.length)
+      const sortedDurations = [...durations].sort((a: number, b: number) => a - b)
+      const p90Index = Math.max(0, Math.ceil((90 / 100) * sortedDurations.length) - 1)
+      const p90TestDuration = sortedDurations[p90Index]
+
+      // Also update flaky test count
+      const flakyTestCount = testCasesData.filter((tc: Record<string, unknown>) =>
+        tc.status === 'passed' && ((tc.retries as number) || 0) > 0
+      ).length
+
+      await db.update(testRuns)
+        .set({ avgTestDuration, p90TestDuration, flakyTests: flakyTestCount })
+        .where(eq(testRuns.id, testRun.id))
     }
   }
 
