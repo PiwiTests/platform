@@ -42,11 +42,14 @@ export interface ProjectWithStats {
     id: number
     status: string
     startTime: string | Date
+    duration?: number | null
     passedTests: number
     failedTests: number
     skippedTests: number
     flakyTests: number
     totalTests: number
+    reportPath?: string | null
+    reportSize?: number | null
   } | null
   totalRuns: number
   totalTestCases: number

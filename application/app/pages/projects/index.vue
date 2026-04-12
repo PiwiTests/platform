@@ -2,10 +2,12 @@
 import { h, resolveComponent } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
 import type { ProjectWithStats } from '~~/types/api'
+import { formatBytes, formatDuration, getFileApiPath } from '~/utils'
 
 const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/projects')
 
 const UBadge = resolveComponent('UBadge')
+const TestStatusBar = resolveComponent('TestStatusBar')
 
 const columns: TableColumn<ProjectWithStats>[] = [
   {
@@ -40,6 +42,14 @@ const columns: TableColumn<ProjectWithStats>[] = [
     }
   },
   {
+    accessorKey: 'duration',
+    header: 'Duration',
+    cell: ({ row }) => {
+      const latestRun = row.original.latestRun
+      return latestRun?.duration != null ? formatDuration(latestRun.duration) : '—'
+    }
+  },
+  {
     accessorKey: 'status',
     header: 'Status',
     cell: ({ row }) => {
@@ -48,6 +58,41 @@ const columns: TableColumn<ProjectWithStats>[] = [
 
       const color = getStatusColor(latestRun.status)
       return h(UBadge, { color, size: 'md', class: 'capitalize' }, () => latestRun.status)
+    }
+  },
+  {
+    accessorKey: 'testRatio',
+    header: 'Test Status',
+    cell: ({ row }) => {
+      const latestRun = row.original.latestRun
+      if (!latestRun) return h('span', { class: 'text-xs text-gray-400 italic' }, 'No data')
+
+      return h(TestStatusBar, {
+        passed: latestRun.passedTests,
+        failed: latestRun.failedTests,
+        skipped: latestRun.skippedTests,
+        flaky: latestRun.flakyTests,
+        total: latestRun.totalTests
+      })
+    }
+  },
+  {
+    accessorKey: 'report',
+    header: 'Report',
+    cell: ({ row }) => {
+      const latestRun = row.original.latestRun
+      if (!latestRun?.reportPath) return ''
+      const UButton = resolveComponent('UButton')
+      const sizeLabel = latestRun.reportSize ? ` (${formatBytes(latestRun.reportSize)})` : ''
+      return h('div', { class: 'flex items-center gap-1' }, [
+        h(UButton, {
+          to: `/api/files/${getFileApiPath(latestRun.reportPath)}`,
+          target: '_blank',
+          size: 'xs',
+          variant: 'outline',
+          icon: 'i-lucide-external-link'
+        }, () => `HTML${sizeLabel}`)
+      ])
     }
   },
   {

@@ -10,6 +10,7 @@ const projectId = route.params.id
 const { data: project, refresh } = await useFetch<ProjectWithTestRuns>(`/api/projects/${projectId}`)
 
 const UBadge = resolveComponent('UBadge')
+const TestStatusBar = resolveComponent('TestStatusBar')
 
 const runsColumns: TableColumn<TestRunSummary>[] = [
   {
@@ -46,24 +47,15 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
   },
   {
     accessorKey: 'tests',
-    header: 'Tests',
+    header: 'Test Status',
     cell: ({ row }) => {
-      const passed = row.original.passedTests
-      const failed = row.original.failedTests
-      const total = row.original.totalTests
-      return h('div', { class: 'flex gap-2 text-sm' }, [
-        h('span', { class: 'text-gray-500' }, `Total: ${total}`),
-        h('span', { class: 'text-green-600' }, `✓ ${passed}`),
-        h('span', { class: 'text-red-600' }, `✗ ${failed}`)
-      ])
-    }
-  },
-  {
-    accessorKey: 'flakyTests',
-    header: 'Flaky',
-    cell: ({ row }) => {
-      const flaky = row.getValue('flakyTests') as number
-      return flaky > 0 ? h('span', { class: 'text-purple-600' }, flaky.toString()) : ''
+      return h(TestStatusBar, {
+        passed: row.original.passedTests,
+        failed: row.original.failedTests,
+        skipped: row.original.skippedTests,
+        flaky: row.original.flakyTests,
+        total: row.original.totalTests
+      })
     }
   },
   {
@@ -71,7 +63,17 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
     header: 'Report',
     cell: ({ row }) => {
       const size = row.getValue('reportSize') as number | undefined
-      return size ? formatBytes(size) : ''
+      const reportPath = row.original.reportPath
+      if (!reportPath) return size ? formatBytes(size) : ''
+      const UButton = resolveComponent('UButton')
+      const sizeLabel = size ? ` (${formatBytes(size)})` : ''
+      return h(UButton, {
+        to: `/api/files/${getFileApiPath(reportPath)}`,
+        target: '_blank',
+        size: 'xs',
+        variant: 'outline',
+        icon: 'i-lucide-external-link'
+      }, () => `HTML${sizeLabel}`)
     }
   },
   {
@@ -84,17 +86,8 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
           to: `/test-runs/${row.original.id}`,
           size: 'sm',
           variant: 'outline'
-        }, () => 'View'),
-        row.original.reportPath
-          ? h(UButton, {
-              to: `/api/files/${getFileApiPath(row.original.reportPath)}`,
-              target: '_blank',
-              size: 'sm',
-              variant: 'outline',
-              icon: 'i-lucide-external-link'
-            }, () => 'Report')
-          : null
-      ].filter(Boolean))
+        }, () => 'View')
+      ])
     }
   }
 ]
