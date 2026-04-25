@@ -1,5 +1,5 @@
 import { getDatabase } from '../../database'
-import { testRuns, testCases, testRunsCases, projects } from '../../database/schema'
+import { testRuns, testCases, testRunsCases, projects, reports } from '../../database/schema'
 import { eq } from 'drizzle-orm'
 
 export default eventHandler(async (event) => {
@@ -26,6 +26,9 @@ export default eventHandler(async (event) => {
 
   const projectResults = await db.select().from(projects).where(eq(projects.id, testRun.projectId))
   const project = projectResults[0]
+
+  // Get associated reports
+  const reportResults = await db.select().from(reports).where(eq(reports.testRunId, id))
 
   // Get test runs cases with joined test case info
   const runsCases = await db.select({
@@ -68,6 +71,13 @@ export default eventHandler(async (event) => {
   return {
     ...testRun,
     project,
+    reports: reportResults.map(r => ({
+      id: r.id,
+      type: r.type,
+      label: r.label,
+      path: r.path,
+      size: r.size
+    })),
     testCases: formattedTestCases
   }
 })

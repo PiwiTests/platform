@@ -92,22 +92,37 @@ curl -X POST http://localhost:3000/api/test-runs/upload \
   -F "projectName=my-project" \
   -F "testRun={\"status\":\"passed\",\"startTime\":\"2024-01-01T12:00:00Z\",\"duration\":120000,\"totalTests\":10,\"passedTests\":9,\"failedTests\":1,\"skippedTests\":0}" \
   -F "testCases=[{\"title\":\"test 1\",\"status\":\"passed\",\"duration\":1500,\"location\":\"tests/test.spec.ts:10:5\"}]" \
-  -F "htmlReport=@./playwright-report/index.html" \
+  -F "report_html=@./playwright-report.gz" \
   -F "trace_0=@./test-results/test-1/trace.zip"
+```
+
+You can attach **multiple report types** in a single upload:
+
+```bash
+curl -X POST http://localhost:3000/api/test-runs/upload \
+  -F "projectName=my-project" \
+  -F "testRun=..." \
+  -F "testCases=..." \
+  -F "report_html=@./playwright-report.gz" \
+  -F "report_monocart=@./monocart-report.gz" \
+  -F "report_allure=@./allure-results.gz" \
+  -F "report_blob=@./blob-report.zip"
 ```
 
 **Form Fields:**
 - `projectName` - Project name (string)
 - `testRun` - Test run metadata (JSON string)
 - `testCases` - Array of test cases (JSON string)
-- `htmlReport` - HTML report file (optional)
+- `htmlReport` - HTML report archive (legacy, same as `report_html`)
+- `report_<type>` - Report archive for type (e.g. `report_html`, `report_monocart`, `report_allure`, `report_blob`)
+- `report_label_<type>` - Optional display label override for the given report type
 - `trace_N` - Trace file for test case at index N (optional, multiple allowed)
 
 ### API Endpoints
 
 **Submission:**
 - `POST /api/test-runs/submit` - Submit test results as JSON (auto-creates projects)
-- `POST /api/test-runs/upload` - Upload test results with HTML reports and trace files
+- `POST /api/test-runs/upload` - Upload test results with reports and trace files
 
 **Query:**
 - `GET /api/projects` - List all projects with statistics
@@ -163,12 +178,50 @@ export default defineConfig({
 });
 ```
 
+### Multiple Reports
+
+You can attach multiple report types to a single test run. Each report appears as a separate button in the dashboard UI.
+
+```typescript
+export default defineConfig({
+  reporter: [
+    ['list'],
+    ['@playwright/test/reporter-html', { outputFolder: 'playwright-report' }],
+    ['monocart-reporter', { name: 'My Tests', outputFile: 'monocart-report/index.html' }],
+    ['allure-playwright', { resultsDir: 'allure-results' }],
+    ['blob'],
+    ['playwright-dashboard-reporter', {
+      serverUrl: 'http://localhost:3000',
+      projectName: 'my-test-project',
+      reports: [
+        { type: 'html' },                                         // playwright-report/ (default)
+        { type: 'monocart' },                                     // monocart-report/   (default)
+        { type: 'allure', dir: 'allure-results' },                // custom directory
+        { type: 'blob', dir: 'blob-report', label: 'Blob Archive' } // downloadable zip
+      ]
+    }]
+  ],
+});
+```
+
+**Built-in report types with auto-detected directories:**
+
+| Type         | Default directory   | Behaviour in UI       |
+|--------------|---------------------|-----------------------|
+| `html`       | `playwright-report/`| Opens in new tab      |
+| `monocart`   | `monocart-report/`  | Opens in new tab      |
+| `allure`     | `allure-results/`   | Opens in new tab      |
+| `blob`       | `blob-report/`      | Downloaded as archive |
+
+Any other type is also accepted; the directory must be provided via `dir`.
+
 ### Options
 
 - `serverUrl` (string): Dashboard server URL (default: `http://localhost:3000`)
 - `projectName` (string): Project name in dashboard (default: `default-project`)
 - `uploadTraces` (boolean): Upload trace files (default: `true`)
-- `uploadReport` (boolean): Upload HTML report (default: `true`)
+- `uploadReport` (boolean): Upload Playwright HTML report (default: `true`)
+- `reports` (array): Additional report types to upload (see [Multiple Reports](#multiple-reports))
 - `projectDescription` (string): Project description (optional)
 - `relatedIssue` (string): Related issue reference, e.g., "JIRA-123" (optional)
 - `ciInfo` (string): CI job information (optional)

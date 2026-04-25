@@ -1,5 +1,5 @@
 import { getDatabase } from '../../database'
-import { projects, testRuns, testCases, testRunsCases } from '../../database/schema'
+import { projects, testRuns, testCases, testRunsCases, reports } from '../../database/schema'
 import { eq, and } from 'drizzle-orm'
 import { join } from 'path'
 import { decompressDirectory } from '../../utils/compression'
@@ -10,6 +10,14 @@ import { mkdirSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { rm } from 'fs/promises'
 import { sanitizeNetworkRequests, sanitizeWebVitals } from '../../utils/sanitize'
+
+// Default labels for known report types
+const REPORT_TYPE_LABELS: Record<string, string> = {
+  html: 'HTML Report',
+  monocart: 'Monocart Report',
+  allure: 'Allure Report',
+  blob: 'Blob Report'
+}
 
 export default eventHandler(async (event) => {
   // Require reporter or administrator role for uploading test results
@@ -33,7 +41,8 @@ export default eventHandler(async (event) => {
   let projectName: string | undefined
   let testRunData: Record<string, unknown> | undefined
   let testCasesData: Record<string, unknown>[] = []
-  const htmlReports: { filename: string, data: Buffer }[] = []
+  // Map of report type -> { filename, data, label }
+  const reportFiles: Map<string, { filename: string, data: Buffer, label?: string }> = new Map()
   const traceFiles: { testCaseIndex: number, filename: string, data: Buffer }[] = []
 
   for (const part of formData) {
@@ -58,10 +67,27 @@ export default eventHandler(async (event) => {
         })
       }
     } else if (part.name === 'htmlReport' && part.filename) {
-      htmlReports.push({
+      // Backward-compat: treat 'htmlReport' as report type 'html'
+      reportFiles.set('html', {
         filename: sanitizeFilename(part.filename),
         data: part.data
       })
+    } else if (part.name?.startsWith('report_') && part.filename) {
+      // New multi-report format: field name is 'report_<type>'
+      const type = part.name.slice('report_'.length)
+      if (type && /^[a-z0-9_-]+$/i.test(type)) {
+        reportFiles.set(type, {
+          filename: sanitizeFilename(part.filename),
+          data: part.data
+        })
+      }
+    } else if (part.name?.startsWith('report_label_')) {
+      // Optional label override: 'report_label_<type>'
+      const type = part.name.slice('report_label_'.length)
+      if (type && reportFiles.has(type)) {
+        const entry = reportFiles.get(type)!
+        entry.label = part.data.toString('utf-8')
+      }
     } else if (part.name?.startsWith('trace_') && part.filename) {
       // Extract test case index from field name like 'trace_0', 'trace_1', etc.
       const match = part.name.match(/trace_(\d+)/)
@@ -113,63 +139,79 @@ export default eventHandler(async (event) => {
   const projectPath = `project-${project.id}`
   await storage.mkdir(projectPath)
 
-  // Save HTML report if provided
-  let reportPath: string | null = null
-  let reportSize: number | null = null
-  if (htmlReports.length > 0) {
-    const report = htmlReports[0]
+  // Helper: store a report file and return { path, size }
+  async function storeReport(type: string, report: { filename: string, data: Buffer }): Promise<{ path: string, size: number }> {
+    if (report.filename.endsWith('.gz')) {
+      // Extract gzip compressed archive to temp directory first
+      const reportDirName = `run-${Date.now()}-${type}-report`
+      const tempDir = join(tmpdir(), `playwright-report-${Date.now()}`)
 
-    if (!report) {
-      console.error('Report is undefined')
-    } else {
-      // Check if it's a gzip compressed file
-      if (report.filename.endsWith('.gz')) {
-        // Extract gzip compressed archive to temp directory first
-        const reportDirName = `run-${Date.now()}-report`
-        const tempDir = join(tmpdir(), `playwright-report-${Date.now()}`)
-
-        // Create temp directory
-        if (!existsSync(tempDir)) {
-          mkdirSync(tempDir, { recursive: true })
-        }
-
-        // Use gzip to decompress the archive to temp
-        try {
-          await decompressDirectory(report.data, tempDir)
-
-          // Store relative path (without storage path prefix)
-          reportPath = join(`project-${project.id}`, reportDirName, 'index.html')
-          console.log(`Extracted HTML report to temp, uploading to storage: ${reportPath}`)
-
-          // Upload directory tree to storage
-          reportSize = await uploadDirectory(
-            tempDir,
-            join(`project-${project.id}`, reportDirName),
-            storage
-          )
-          console.log(`Report size (uploaded): ${reportSize} bytes`)
-
-          // Clean up temp directory
-          await rm(tempDir, { recursive: true, force: true })
-        } catch (error) {
-          console.error(`Failed to extract HTML report: ${error}`)
-          // Save as gz file if extraction fails
-          const reportFilename = `run-${Date.now()}-${report.filename}`
-          await storage.writeFile(join(`project-${project.id}`, reportFilename), report.data)
-          // Store relative path
-          reportPath = join(`project-${project.id}`, reportFilename)
-          // Store the gzip file size
-          reportSize = report.data.length
-        }
-      } else {
-        // Save as regular file (backward compatibility for unknown formats)
-        const reportFilename = `run-${Date.now()}-${report.filename}`
-        await storage.writeFile(join(`project-${project.id}`, reportFilename), report.data)
-        // Store relative path
-        reportPath = join(`project-${project.id}`, reportFilename)
-        // Store file size
-        reportSize = report.data.length
+      if (!existsSync(tempDir)) {
+        mkdirSync(tempDir, { recursive: true })
       }
+
+      try {
+        await decompressDirectory(report.data, tempDir)
+        const storagePath = join(`project-${project!.id}`, reportDirName, 'index.html')
+
+        const size = await uploadDirectory(
+          tempDir,
+          join(`project-${project!.id}`, reportDirName),
+          storage
+        )
+
+        await rm(tempDir, { recursive: true, force: true })
+        return { path: storagePath, size }
+      } catch (error) {
+        console.error(`Failed to extract ${type} report: ${error}`)
+        // Save as gz file if extraction fails
+        const reportFilename = `run-${Date.now()}-${report.filename}`
+        await storage.writeFile(join(`project-${project!.id}`, reportFilename), report.data)
+        return {
+          path: join(`project-${project!.id}`, reportFilename),
+          size: report.data.length
+        }
+      }
+    } else if (report.filename.endsWith('.zip')) {
+      // Store zip as-is (e.g. blob reports are downloadable zip archives)
+      const reportFilename = `run-${Date.now()}-${report.filename}`
+      await storage.writeFile(join(`project-${project!.id}`, reportFilename), report.data)
+      return {
+        path: join(`project-${project!.id}`, reportFilename),
+        size: report.data.length
+      }
+    } else {
+      // Save as regular file (backward compatibility for unknown formats)
+      const reportFilename = `run-${Date.now()}-${report.filename}`
+      await storage.writeFile(join(`project-${project!.id}`, reportFilename), report.data)
+      return {
+        path: join(`project-${project!.id}`, reportFilename),
+        size: report.data.length
+      }
+    }
+  }
+
+  // Store all reports and collect their metadata
+  const storedReports: { type: string, label: string, path: string, size: number }[] = []
+  // Track the primary HTML report path for backward compat
+  let primaryReportPath: string | null = null
+  let primaryReportSize: number | null = null
+
+  for (const [type, report] of reportFiles.entries()) {
+    try {
+      console.log(`[Upload] Storing ${type} report: ${report.filename}`)
+      const { path: storedPath, size } = await storeReport(type, report)
+      const label = report.label || REPORT_TYPE_LABELS[type] || `${type.charAt(0).toUpperCase() + type.slice(1)} Report`
+      storedReports.push({ type, label, path: storedPath, size })
+      console.log(`[Upload] Stored ${type} report at ${storedPath} (${size} bytes)`)
+
+      // Keep backward-compat fields for HTML report
+      if (type === 'html') {
+        primaryReportPath = storedPath
+        primaryReportSize = size
+      }
+    } catch (error) {
+      console.error(`[Upload] Failed to store ${type} report: ${error}`)
     }
   }
 
@@ -183,8 +225,8 @@ export default eventHandler(async (event) => {
     passedTests: (testRunData.passedTests as number | undefined) || 0,
     failedTests: (testRunData.failedTests as number | undefined) || 0,
     skippedTests: (testRunData.skippedTests as number | undefined) || 0,
-    reportPath: reportPath,
-    reportSize: reportSize,
+    reportPath: primaryReportPath,
+    reportSize: primaryReportSize,
     metadata: testRunData.metadata || null
   }).returning()
 
@@ -194,6 +236,17 @@ export default eventHandler(async (event) => {
     throw createError({
       statusCode: 500,
       message: 'Failed to create test run'
+    })
+  }
+
+  // Insert report records into the reports table
+  for (const r of storedReports) {
+    await db.insert(reports).values({
+      testRunId: testRun.id,
+      type: r.type,
+      label: r.label,
+      path: r.path,
+      size: r.size
     })
   }
 
@@ -306,6 +359,7 @@ export default eventHandler(async (event) => {
     success: true,
     testRunId: testRun.id,
     projectId: project.id,
-    reportPath: reportPath
+    reportPath: primaryReportPath,
+    reports: storedReports.map(r => ({ type: r.type, label: r.label, path: r.path }))
   }
 })

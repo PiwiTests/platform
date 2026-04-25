@@ -13,6 +13,21 @@ export type {
 } from '../server/database/schema'
 
 // ============================================================================
+// Report types (API responses)
+// ============================================================================
+
+/**
+ * Report attached to a test run
+ */
+export interface ReportInfo {
+  id: number
+  type: string
+  label: string
+  path: string
+  size?: number | null
+}
+
+// ============================================================================
 // Period and Range types (used for filtering and date range selection)
 // ============================================================================
 
@@ -133,6 +148,7 @@ export interface TestRunDetails {
     name: string
     label?: string | null
   }
+  reports?: ReportInfo[]
   testCases?: TestCaseResult[]
 }
 

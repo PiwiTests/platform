@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { h, resolveComponent } from 'vue'
+import { h, resolveComponent, computed } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
-import type { TestRunDetails, TestCaseResult, EndpointSummary } from '~~/types/api'
+import type { TestRunDetails, TestCaseResult, EndpointSummary, ReportInfo } from '~~/types/api'
 import { formatBytes, getFileApiPath } from '~/utils'
 
 const route = useRoute()
@@ -16,6 +16,47 @@ const { data: networkEndpoints, pending: loadingEndpoints } = await useFetch<End
 )
 
 const UBadge = resolveComponent('UBadge')
+
+// Merge reports from the new `reports` table with the legacy reportPath field
+const allReports = computed<ReportInfo[]>(() => {
+  if (!testRun.value) return []
+  const list: ReportInfo[] = []
+
+  // New reports from the reports table
+  if (testRun.value.reports && testRun.value.reports.length > 0) {
+    list.push(...testRun.value.reports)
+    return list
+  }
+
+  // Backward compat: fall back to the legacy reportPath field
+  if (testRun.value.reportPath) {
+    list.push({
+      id: 0,
+      type: 'html',
+      label: 'HTML Report',
+      path: testRun.value.reportPath,
+      size: testRun.value.reportSize
+    })
+  }
+
+  return list
+})
+
+// Icon for each report type
+function reportIcon(type: string): string {
+  switch (type) {
+    case 'html': return 'i-lucide-layout-dashboard'
+    case 'monocart': return 'i-lucide-bar-chart-2'
+    case 'allure': return 'i-lucide-flask-conical'
+    case 'blob': return 'i-lucide-download'
+    default: return 'i-lucide-file-text'
+  }
+}
+
+// Whether a report type should be forced-downloaded rather than opened in a tab
+function isBlobDownload(type: string): boolean {
+  return type === 'blob'
+}
 
 const testCasesColumns: TableColumn<TestCaseResult>[] = [
   {
@@ -262,24 +303,26 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
               </div>
             </div>
 
-            <div v-if="testRun?.reportPath" class="pt-4 border-t">
+            <div v-if="allReports.length > 0" class="pt-4 border-t">
               <p class="text-sm text-gray-500 mb-2">
-                HTML Report
+                Reports
               </p>
-              <div class="flex items-center gap-2 mb-2">
-                <code class="text-sm bg-gray-100 dark:bg-gray-800 p-2 rounded flex-1">{{ testRun.reportPath }}</code>
-                <UButton
-                  :to="`/api/files/${getFileApiPath(testRun.reportPath)}`"
-                  target="_blank"
-                  size="sm"
-                  icon="i-lucide-external-link"
-                >
-                  View Report
-                </UButton>
-              </div>
-              <div v-if="testRun?.reportSize" class="text-sm text-gray-600">
-                <span class="text-gray-500">Report Size (decompressed):</span>
-                <span class="ml-2 font-medium">{{ formatBytes(testRun.reportSize) }}</span>
+              <div class="flex flex-wrap gap-2">
+                <template v-for="report in allReports" :key="report.id + '-' + report.type">
+                  <div class="flex items-center gap-2">
+                    <UButton
+                      :to="isBlobDownload(report.type) ? undefined : `/api/files/${getFileApiPath(report.path)}`"
+                      :href="isBlobDownload(report.type) ? `/api/files/${getFileApiPath(report.path)}` : undefined"
+                      :download="isBlobDownload(report.type) ? true : undefined"
+                      :target="isBlobDownload(report.type) ? undefined : '_blank'"
+                      size="sm"
+                      :icon="reportIcon(report.type)"
+                    >
+                      {{ report.label }}
+                    </UButton>
+                    <span v-if="report.size" class="text-xs text-gray-500">{{ formatBytes(report.size) }}</span>
+                  </div>
+                </template>
               </div>
             </div>
 

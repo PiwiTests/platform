@@ -67,6 +67,19 @@ export const testRunsCases = sqliteTable('test_runs_cases', {
   testCaseIdIdx: index('idx_test_runs_cases_test_case_id').on(table.testCaseId)
 }))
 
+// Reports table - stores multiple report types per test run
+export const reports = sqliteTable('reports', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  testRunId: integer('test_run_id').notNull().references(() => testRuns.id),
+  type: text('type').notNull(), // 'html', 'monocart', 'allure', 'blob', etc.
+  label: text('label').notNull(), // Display label e.g. 'HTML Report', 'Monocart Report'
+  path: text('path').notNull(), // Relative path in storage (for browsable) or file path (for blob)
+  size: integer('size'), // File/directory size in bytes
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
+}, table => ({
+  testRunIdIdx: index('idx_reports_test_run_id').on(table.testRunId)
+}))
+
 // Traces table (if exists, keeping for reference)
 export const traces = sqliteTable('traces', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -99,5 +112,7 @@ export type TestRunsCase = typeof testRunsCases.$inferSelect
 export type NewTestRunsCase = typeof testRunsCases.$inferInsert
 export type Trace = typeof traces.$inferSelect
 export type NewTrace = typeof traces.$inferInsert
+export type Report = typeof reports.$inferSelect
+export type NewReport = typeof reports.$inferInsert
 export type User = typeof users.$inferSelect
 export type NewUser = typeof users.$inferInsert

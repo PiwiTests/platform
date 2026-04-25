@@ -15,7 +15,7 @@ export interface DashboardReporterOptions {
   projectName?: string;
 
   /**
-   * Whether to upload HTML report
+   * Whether to upload the Playwright HTML report
    * @default true
    */
   uploadReport?: boolean;
@@ -25,6 +25,32 @@ export interface DashboardReporterOptions {
    * @default true
    */
   uploadTraces?: boolean;
+
+  /**
+   * Additional reports to upload alongside (or instead of) the default HTML report.
+   * Each entry specifies a report type and optionally a custom directory and display label.
+   *
+   * Built-in types with auto-detected default directories:
+   *  - `'html'`       → `playwright-report/`   (same as uploadReport)
+   *  - `'monocart'`   → `monocart-report/`
+   *  - `'allure'`     → `allure-results/`
+   *  - `'blob'`       → `blob-report/`          (stored as a downloadable archive)
+   *
+   * @example
+   * reports: [
+   *   { type: 'monocart' },
+   *   { type: 'allure', dir: 'allure-results', label: 'Allure Report' },
+   *   { type: 'blob', dir: 'blob-report', label: 'Blob Archive' },
+   * ]
+   */
+  reports?: Array<{
+    /** Report type identifier (e.g. 'html', 'monocart', 'allure', 'blob') */
+    type: string;
+    /** Path to the report output directory (overrides the default for this type) */
+    dir?: string;
+    /** Custom display label shown in the dashboard UI */
+    label?: string;
+  }>;
 
   /**
    * Project description
