@@ -45,7 +45,10 @@ export default defineNuxtConfig({
   },
 
   experimental: {
-    buildCache: true
+    // Disable buildCache in demo mode: restoring an SSR cache when generating
+    // a SPA (ssr: false) causes Rollup to look for client.precomputed.mjs
+    // inside the cache directory, which doesn't exist, breaking the build.
+    buildCache: !isDemo
   },
 
   compatibilityDate: '2025-02-23',
