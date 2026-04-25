@@ -2,12 +2,13 @@
 import { h, resolveComponent } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
 import type { ProjectWithStats } from '~~/types/api'
-import { formatBytes, formatDuration, getFileApiPath } from '~/utils'
+import { formatDuration } from '~/utils'
 
 const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/projects')
 
 const UBadge = resolveComponent('UBadge')
 const TestStatusBar = resolveComponent('TestStatusBar')
+const RunReports = resolveComponent('RunReports')
 
 const columns: TableColumn<ProjectWithStats>[] = [
   {
@@ -78,21 +79,15 @@ const columns: TableColumn<ProjectWithStats>[] = [
   },
   {
     accessorKey: 'report',
-    header: 'Report',
+    header: 'Reports',
     cell: ({ row }) => {
       const latestRun = row.original.latestRun
-      if (!latestRun?.reportPath) return ''
-      const UButton = resolveComponent('UButton')
-      const sizeLabel = latestRun.reportSize != null ? ` (${formatBytes(latestRun.reportSize)})` : ''
-      return h('div', { class: 'flex items-center gap-1' }, [
-        h(UButton, {
-          to: `/api/files/${getFileApiPath(latestRun.reportPath)}`,
-          target: '_blank',
-          size: 'xs',
-          variant: 'outline',
-          icon: 'i-lucide-external-link'
-        }, () => `HTML${sizeLabel}`)
-      ])
+      if (!latestRun) return ''
+      return h(RunReports, {
+        reports: latestRun.reports,
+        legacyPath: latestRun.reportPath,
+        legacySize: latestRun.reportSize
+      })
     }
   },
   {

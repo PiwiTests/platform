@@ -65,6 +65,7 @@ export interface ProjectWithStats {
     totalTests: number
     reportPath?: string | null
     reportSize?: number | null
+    reports?: ReportInfo[]
     avgTestDuration?: number | null
     p90TestDuration?: number | null
   } | null
