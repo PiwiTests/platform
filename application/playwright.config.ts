@@ -5,11 +5,21 @@ const reporters: ReporterDescription[] = []
 reporters.push(['list'])
 
 if (!process.env.CI) {
-  reporters.push(['html'])
+  reporters.push(['html', { outputFolder: 'playwright-report' }])
+  reporters.push(['monocart-reporter', { name: 'Playwright Dashboard Tests', outputFile: 'monocart-report/index.html' }])
+  reporters.push(['allure-playwright', { resultsDir: 'allure-results' }])
+  reporters.push(['blob', { outputDir: 'blob-report' }])
   reporters.push(['../reporter', {
     serverUrl: 'http://localhost:3000',
     projectName: 'Playwright Dashboard',
-    uploadReport: true
+    uploadReport: false, // individual reports are listed in `reports` below
+    uploadTraces: true,
+    reports: [
+      { type: 'html' },
+      { type: 'monocart' },
+      { type: 'allure' },
+      { type: 'blob', label: 'Blob Archive' }
+    ]
   }])
 }
 
