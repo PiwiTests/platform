@@ -6,7 +6,7 @@ import { decompressDirectory } from '../../utils/compression'
 import { requireAuth } from '../../utils/auth'
 import { getStorage } from '../../storage'
 import { uploadDirectory } from '../../utils/storage-helpers'
-import { mkdirSync, existsSync } from 'fs'
+import { mkdirSync, existsSync, readdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { rm } from 'fs/promises'
 import { sanitizeNetworkRequests, sanitizeWebVitals } from '../../utils/sanitize'
@@ -158,7 +158,18 @@ export default eventHandler(async (event) => {
 
       try {
         await decompressDirectory(report.data, tempDir)
-        const storagePath = join(`project-${project!.id}`, reportDirName, 'index.html')
+
+        // Determine the correct entry file for this report type.
+        // Blob reports contain .zip archives rather than HTML; find the first one.
+        // All other report types (html, monocart, allure, …) use index.html.
+        let entryFile = 'index.html'
+        if (type === 'blob') {
+          const extracted = readdirSync(tempDir)
+          const zipFile = extracted.find(f => f.endsWith('.zip'))
+          if (zipFile) entryFile = zipFile
+        }
+
+        const storagePath = join(`project-${project!.id}`, reportDirName, entryFile)
 
         const size = await uploadDirectory(
           tempDir,

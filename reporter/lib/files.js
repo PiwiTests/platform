@@ -88,7 +88,7 @@ function findTraceFiles(testCase) {
 const DEFAULT_REPORT_DIRS = {
   html: 'playwright-report',
   monocart: 'monocart-report',
-  allure: 'allure-results',
+  allure: 'allure-report',
   blob: 'blob-report'
 };
 

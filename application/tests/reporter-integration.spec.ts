@@ -125,6 +125,9 @@ test.describe('Reporter Integration Tests', () => {
     expect(source).toContain("monocart")
     expect(source).toContain("allure")
     expect(source).toContain("blob")
+    // allure default dir must be the generated HTML report, NOT the raw results
+    expect(source).toContain("allure: 'allure-report'")
+    expect(source).not.toContain("allure: 'allure-results'")
   })
 })
 
