@@ -2,7 +2,7 @@
 import { h, resolveComponent, computed } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
 import type { TestRunDetails, TestCaseResult, EndpointSummary, ReportInfo } from '~~/types/api'
-import { formatBytes, getFileApiPath } from '~/utils'
+import { getFileApiPath } from '~/utils'
 
 const route = useRoute()
 const runId = route.params.id
@@ -41,22 +41,6 @@ const allReports = computed<ReportInfo[]>(() => {
 
   return list
 })
-
-// Icon for each report type
-function reportIcon(type: string): string {
-  switch (type) {
-    case 'html': return 'i-lucide-layout-dashboard'
-    case 'monocart': return 'i-lucide-bar-chart-2'
-    case 'allure': return 'i-lucide-flask-conical'
-    case 'blob': return 'i-lucide-download'
-    default: return 'i-lucide-file-text'
-  }
-}
-
-// Whether a report type should be forced-downloaded rather than opened in a tab
-function isBlobDownload(type: string): boolean {
-  return type === 'blob'
-}
 
 const testCasesColumns: TableColumn<TestCaseResult>[] = [
   {
@@ -307,23 +291,7 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
               <p class="text-sm text-gray-500 mb-2">
                 Reports
               </p>
-              <div class="flex flex-wrap gap-2">
-                <template v-for="report in allReports" :key="`${report.type}-${report.path}`">
-                  <div class="flex items-center gap-2">
-                    <UButton
-                      :to="isBlobDownload(report.type) ? undefined : `/api/files/${getFileApiPath(report.path)}`"
-                      :href="isBlobDownload(report.type) ? `/api/files/${getFileApiPath(report.path)}` : undefined"
-                      :download="isBlobDownload(report.type) ? true : undefined"
-                      :target="isBlobDownload(report.type) ? undefined : '_blank'"
-                      size="sm"
-                      :icon="reportIcon(report.type)"
-                    >
-                      {{ report.label }}
-                    </UButton>
-                    <span v-if="report.size" class="text-xs text-gray-500">{{ formatBytes(report.size) }}</span>
-                  </div>
-                </template>
-              </div>
+              <RunReports :reports="allReports" />
             </div>
 
             <!-- Metadata Section -->

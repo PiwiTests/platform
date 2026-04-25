@@ -2,7 +2,6 @@
 import { h, resolveComponent } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
 import type { ProjectWithTestRuns, TestRunSummary } from '~~/types/api'
-import { formatBytes, getFileApiPath } from '~/utils'
 
 const route = useRoute()
 const projectId = route.params.id
@@ -11,6 +10,7 @@ const { data: project, refresh } = await useFetch<ProjectWithTestRuns>(`/api/pro
 
 const UBadge = resolveComponent('UBadge')
 const TestStatusBar = resolveComponent('TestStatusBar')
+const RunReports = resolveComponent('RunReports')
 
 const runsColumns: TableColumn<TestRunSummary>[] = [
   {
@@ -59,22 +59,13 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
     }
   },
   {
-    accessorKey: 'reportSize',
-    header: 'Report',
-    cell: ({ row }) => {
-      const size = row.getValue('reportSize') as number | undefined
-      const reportPath = row.original.reportPath
-      if (!reportPath) return size != null ? formatBytes(size) : ''
-      const UButton = resolveComponent('UButton')
-      const sizeLabel = size != null ? ` (${formatBytes(size)})` : ''
-      return h(UButton, {
-        to: `/api/files/${getFileApiPath(reportPath)}`,
-        target: '_blank',
-        size: 'xs',
-        variant: 'outline',
-        icon: 'i-lucide-external-link'
-      }, () => `HTML${sizeLabel}`)
-    }
+    accessorKey: 'reports',
+    header: 'Reports',
+    cell: ({ row }) => h(RunReports, {
+      reports: row.original.reports,
+      legacyPath: row.original.reportPath,
+      legacySize: row.original.reportSize
+    })
   },
   {
     accessorKey: 'actions',

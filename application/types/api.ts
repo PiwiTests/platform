@@ -119,6 +119,7 @@ export interface TestRunSummary {
   p90TestDuration?: number | null
   reportPath?: string | null
   reportSize?: number | null
+  reports?: ReportInfo[]
   createdAt: Date
 }
 
