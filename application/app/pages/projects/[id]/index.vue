@@ -143,6 +143,15 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
           {{ project.description }}
         </p>
 
+        <div v-if="project?.tags && project.tags.length > 0" class="flex flex-wrap gap-1 mt-2">
+          <TagBadge
+            v-for="tag in project.tags"
+            :key="tag.id"
+            :text="tag.text"
+            :color="tag.color"
+          />
+        </div>
+
         <!-- Test Runs Trend Chart -->
         <UCard v-if="project?.testRuns && project.testRuns.length > 0">
           <template #header>

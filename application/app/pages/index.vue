@@ -125,8 +125,16 @@ const allTestRuns = computed(() => {
             <div v-for="project in recentProjects" :key="project.id" class="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded">
               <div>
                 <NuxtLink :to="`/projects/${project.id}`" class="font-medium text-primary hover:underline">
-                  {{ project.name }}
+                  {{ project.label || project.name }}
                 </NuxtLink>
+                <div v-if="project.tags && project.tags.length > 0" class="flex flex-wrap gap-1 mt-1">
+                  <TagBadge
+                    v-for="tag in project.tags"
+                    :key="tag.id"
+                    :text="tag.text"
+                    :color="tag.color"
+                  />
+                </div>
                 <p class="text-sm text-gray-600">
                   {{ project.totalRuns }} test runs
                 </p>

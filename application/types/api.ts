@@ -106,6 +106,7 @@ export interface ProjectWithTestRuns {
   label?: string | null
   description?: string | null
   color?: string | null
+  tags?: TagInfo[]
   createdAt: Date
   updatedAt: Date
   testRuns: TestRunSummary[]
