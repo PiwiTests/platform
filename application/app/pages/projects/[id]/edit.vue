@@ -19,44 +19,63 @@ const state = ref({
   tagIds: (project.value?.tags || []).map((t: TagInfo) => t.id)
 })
 
-// Inline new tag creation
-const newTagText = ref('')
-const creatingTag = ref(false)
+// UInputTags model — array of tag text strings currently selected
+const selectedTagTexts = ref<string[]>(
+  (project.value?.tags || []).map((t: TagInfo) => t.text)
+)
 
-async function handleAddNewTag() {
-  const text = newTagText.value.trim()
+function getTagByText(text: string): TagInfo | undefined {
+  return allTags.value.find(t => t.text.toLowerCase() === String(text).toLowerCase())
+}
+
+async function onAddTag(newText: unknown) {
+  const text = String(newText).trim()
   if (!text) return
 
-  // If tag already exists, just toggle it
-  const existing = allTags.value.find(t => t.text.toLowerCase() === text.toLowerCase())
-  if (existing) {
-    if (!state.value.tagIds.includes(existing.id)) {
-      state.value.tagIds.push(existing.id)
+  let tag = getTagByText(text)
+
+  if (!tag) {
+    // Create a new tag with a random color
+    try {
+      const result = await $fetch<{ tag: TagInfo }>('/api/tags', {
+        method: 'POST',
+        body: { text, color: randomHexColor() }
+      })
+      await refreshTags()
+      tag = result.tag
+    } catch (error: unknown) {
+      // Remove the just-added text from the array since creation failed
+      const idx = selectedTagTexts.value.findIndex(t => t.toLowerCase() === text.toLowerCase())
+      if (idx !== -1) selectedTagTexts.value.splice(idx, 1)
+      const errorMessage = error && typeof error === 'object' && 'data' in error
+        ? (error.data as { message?: string })?.message
+        : undefined
+      toast.add({
+        title: 'Failed to create tag',
+        description: errorMessage || 'An error occurred',
+        color: 'error'
+      })
+      return
     }
-    newTagText.value = ''
-    return
   }
 
-  try {
-    creatingTag.value = true
-    const result = await $fetch<{ tag: TagInfo }>('/api/tags', {
-      method: 'POST',
-      body: { text, color: randomHexColor() }
-    })
-    await refreshTags()
-    state.value.tagIds.push(result.tag.id)
-    newTagText.value = ''
-  } catch (error: unknown) {
-    const errorMessage = error && typeof error === 'object' && 'data' in error
-      ? (error.data as { message?: string })?.message
-      : undefined
-    toast.add({
-      title: 'Failed to create tag',
-      description: errorMessage || 'An error occurred',
-      color: 'error'
-    })
-  } finally {
-    creatingTag.value = false
+  // Normalise the displayed text to the canonical casing from the DB
+  const idx = selectedTagTexts.value.findIndex(t => t.toLowerCase() === text.toLowerCase())
+  if (idx !== -1 && selectedTagTexts.value[idx] !== tag.text) {
+    selectedTagTexts.value[idx] = tag.text
+  }
+
+  if (!state.value.tagIds.includes(tag.id)) {
+    state.value.tagIds.push(tag.id)
+  }
+}
+
+function onRemoveTag(removedText: unknown) {
+  const text = String(removedText)
+  const tag = getTagByText(text)
+  if (tag) {
+    const idx = state.value.tagIds.indexOf(tag.id)
+    if (idx !== -1) state.value.tagIds.splice(idx, 1)
   }
 }
 
@@ -105,19 +124,6 @@ async function onSubmit() {
 
 function onCancel() {
   router.push(`/projects/${projectId}`)
-}
-
-function isTagSelected(tagId: number) {
-  return state.value.tagIds.includes(tagId)
-}
-
-function toggleTag(tagId: number) {
-  const idx = state.value.tagIds.indexOf(tagId)
-  if (idx === -1) {
-    state.value.tagIds.push(tagId)
-  } else {
-    state.value.tagIds.splice(idx, 1)
-  }
 }
 </script>
 
@@ -169,50 +175,26 @@ function toggleTag(tagId: number) {
               <UTextarea v-model="state.description" placeholder="Enter project description" :rows="3" />
             </UFormField>
 
-            <UFormField label="Tags" name="tagIds" description="Click a tag to toggle it on/off. Type a new name and press Enter to create a tag with a random color.">
-              <div class="space-y-2 mt-1">
-                <!-- Existing tags toggle -->
-                <div v-if="allTags.length > 0" class="flex flex-wrap gap-2">
-                  <button
-                    v-for="tag in allTags"
-                    :key="tag.id"
-                    type="button"
-                    class="cursor-pointer focus:outline-none"
-                    @click="toggleTag(tag.id)"
-                  >
-                    <TagBadge
-                      :text="tag.text"
-                      :color="tag.color"
-                      :variant="isTagSelected(tag.id) ? 'solid' : 'outline'"
-                      class="transition-all"
+            <UFormField label="Tags" name="tagIds" description="Type a tag name and press Enter to assign it. If the tag doesn't exist yet it will be created automatically.">
+              <UInputTags
+                v-model="selectedTagTexts"
+                placeholder="Type a tag name and press Enter…"
+                icon="i-lucide-tag"
+                class="w-full"
+                @add-tag="onAddTag"
+                @remove-tag="onRemoveTag"
+              >
+                <template #item-text="{ item }">
+                  <span class="flex items-center gap-1.5">
+                    <span
+                      v-if="getTagByText(String(item))"
+                      class="inline-block size-2 rounded-full shrink-0"
+                      :style="{ backgroundColor: getTagByText(String(item))?.color }"
                     />
-                  </button>
-                </div>
-
-                <!-- Inline new tag creation -->
-                <div class="flex items-center gap-2">
-                  <UInput
-                    v-model="newTagText"
-                    placeholder="Type a new tag name and press Enter..."
-                    size="sm"
-                    class="flex-1"
-                    @keydown.enter.prevent="handleAddNewTag"
-                  />
-                  <UButton
-                    size="sm"
-                    variant="outline"
-                    icon="i-lucide-plus"
-                    :loading="creatingTag"
-                    :disabled="!newTagText.trim()"
-                    @click="handleAddNewTag"
-                  >
-                    Add Tag
-                  </UButton>
-                </div>
-                <p class="text-xs text-muted">
-                  New tags are created with a random color. You can change the color later in <NuxtLink to="/settings/tags" class="text-primary hover:underline">Settings → Tags</NuxtLink>.
-                </p>
-              </div>
+                    {{ item }}
+                  </span>
+                </template>
+              </UInputTags>
             </UFormField>
 
             <div class="flex gap-2 pt-4">
