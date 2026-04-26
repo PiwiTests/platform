@@ -1,7 +1,16 @@
 {
   "name": "@phenx/playwright-dashboard-reporter",
-  "version": "1.0.0",
+  "version": "0.1.1",
   "description": "Playwright reporter for sending test results to Playwright Dashboard",
+  "url": "https://github.com/PhenX/playwright-dashboard",
+  "homepage": "https://phenx.github.io/playwright-dashboard",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PhenX/playwright-dashboard"
+  },
+  "bugs": {
+    "url": "https://github.com/PhenX/playwright-dashboard/issues"
+  },
   "main": "index.js",
   "types": "index.d.ts",
   "keywords": [
@@ -10,7 +19,7 @@
     "dashboard",
     "test-results"
   ],
-  "author": "",
+  "author": "PhenX",
   "license": "MIT",
   "peerDependencies": {
     "@playwright/test": "^1.40.0"
