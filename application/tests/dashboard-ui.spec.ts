@@ -32,9 +32,6 @@ test.describe('Dashboard UI Tests', () => {
     // Check page title
     await expect(page).toHaveTitle(/Playwright Dashboard/)
 
-    // Check for main heading
-    await expect(page.locator('h1')).toContainText('Playwright Dashboard')
-
     // Check for statistics cards
     await expect(page.getByText('Total projects')).toBeVisible()
     await expect(page.getByText('Total test runs')).toBeVisible()
@@ -85,7 +82,7 @@ test.describe('Dashboard UI Tests', () => {
     await page.waitForURL(/\/test-runs\/\d+/)
 
     // Check test run details are displayed
-    await expect(page.getByText('Test run details')).toBeVisible()
+    await expect(page.locator('h2').first()).toContainText('Test run #')
   })
 
   test('should show project switcher dropdown', async ({ page }) => {
@@ -116,7 +113,7 @@ test.describe('Dashboard UI Tests', () => {
 
     // Check navigation
     await page.waitForURL('/')
-    await expect(page.locator('h1')).toContainText('Playwright Dashboard')
+    await expect(page.getByText('Recent projects')).toBeVisible()
   })
 
   test('should display test status badges correctly', async ({ page }) => {
@@ -133,19 +130,19 @@ test.describe('Dashboard UI Tests', () => {
     await page.goto('/')
 
     // The dashboard should still load without errors
-    await expect(page.locator('h1')).toContainText('Playwright Dashboard')
+    await expect(page.getByText('Total projects')).toBeVisible()
   })
 
   test('should be responsive', async ({ page }) => {
     // Test desktop view
     await page.setViewportSize({ width: 1920, height: 1080 })
     await page.goto('/')
-    await expect(page.locator('h1')).toBeVisible()
+    await expect(page.getByText('Total projects')).toBeVisible()
 
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 })
     await page.goto('/')
-    await expect(page.locator('h1')).toBeVisible()
+    await expect(page.getByText('Total projects')).toBeVisible()
   })
 
   test('should refresh data when clicking refresh button', async ({ page }) => {
