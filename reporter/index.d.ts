@@ -141,7 +141,7 @@ export interface DashboardReporterOptions {
  *
  * export default defineConfig({
  *   reporter: [
- *     ['playwright-dashboard-reporter', {
+ *     ['@phenx/playwright-dashboard-reporter', {
  *       serverUrl: 'http://localhost:3000',
  *       projectName: 'my-project',
  *       uploadReport: true
@@ -169,7 +169,7 @@ export default PlaywrightDashboardReporter;
  * ```typescript
  * // fixtures.ts
  * import { test as base } from '@playwright/test';
- * import { dashboardFixtures } from 'playwright-dashboard-reporter/fixtures';
+ * import { dashboardFixtures } from '@phenx/playwright-dashboard-reporter/fixtures';
  *
  * export const test = base.extend(dashboardFixtures);
  * export { expect } from '@playwright/test';

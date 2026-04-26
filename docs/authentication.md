@@ -118,7 +118,7 @@ API keys are the recommended way to authenticate CI pipelines and the Playwright
 // playwright.config.ts
 export default defineConfig({
   reporter: [
-    ['playwright-dashboard-reporter', {
+    ['@phenx/playwright-dashboard-reporter', {
       serverUrl: 'https://your-dashboard.example.com',
       projectName: 'my-project',
       apiKey: process.env.DASHBOARD_API_KEY,
@@ -155,7 +155,7 @@ As an alternative to API keys, create a dedicated user with the **reporter** rol
    // playwright.config.ts
    export default defineConfig({
      reporter: [
-       ['playwright-dashboard-reporter', {
+       ['@phenx/playwright-dashboard-reporter', {
          serverUrl: 'https://your-dashboard.example.com',
          projectName: 'my-project',
          username: process.env.DASHBOARD_USERNAME,

@@ -260,7 +260,7 @@ curl -X POST http://localhost:3000/api/test-runs/submit \
 - **HTML report missing**: Check that Playwright is generating reports with HTML reporter: `reporter: [['html', { outputFolder: 'playwright-report' }]]`
 
 ### Reporter Issues
-- **Reporter not found**: Run `npm link` in `reporter/` directory, then `npm link playwright-dashboard-reporter` in your test project
+- **Reporter not found**: Run `npm link` in `reporter/` directory, then `npm link @phenx/playwright-dashboard-reporter` in your test project
 - **Uploads failing**: Verify `serverUrl` in reporter config points to running dashboard
 - **Authentication errors**: This dashboard has no authentication; check network connectivity
 

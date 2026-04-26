@@ -475,7 +475,7 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
                 </h3>
                 <p class="text-sm text-gray-500 mt-0.5">
                   Network requests grouped by route and HTTP method — requires
-                  <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">playwright-dashboard-reporter/fixtures</code>
+                  <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">@phenx/playwright-dashboard-reporter/fixtures</code>
                 </p>
               </div>
             </div>
@@ -501,7 +501,7 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
 
           <div v-else class="text-center py-8 text-gray-500">
             No network request data. Add the
-            <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">playwright-dashboard-reporter/fixtures</code>
+            <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">@phenx/playwright-dashboard-reporter/fixtures</code>
             to your Playwright config to start collecting endpoint timing.
           </div>
         </UCard>

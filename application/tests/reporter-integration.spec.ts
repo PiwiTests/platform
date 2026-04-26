@@ -18,7 +18,7 @@ test.describe('Reporter Integration Tests', () => {
 
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
 
-    expect(packageJson.name).toBe('playwright-dashboard-reporter')
+    expect(packageJson.name).toBe('@phenx/playwright-dashboard-reporter')
     expect(packageJson.main).toBe('index.js')
     expect(packageJson.types).toBe('index.d.ts')
     expect(packageJson.peerDependencies).toBeDefined()

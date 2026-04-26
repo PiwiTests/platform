@@ -5,7 +5,7 @@ A custom Playwright reporter that sends test results to a Playwright Dashboard s
 ## Installation
 
 ```bash
-npm install --save-dev playwright-dashboard-reporter
+npm install --save-dev @phenx/playwright-dashboard-reporter
 ```
 
 Or if you're using the dashboard from this repository:
@@ -18,7 +18,7 @@ npm install
 Then link it in your test project:
 
 ```bash
-npm link playwright-dashboard-reporter
+npm link @phenx/playwright-dashboard-reporter
 ```
 
 ## Usage
@@ -30,7 +30,7 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   reporter: [
-    ['playwright-dashboard-reporter', {
+    ['@phenx/playwright-dashboard-reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-test-project',
       uploadTraces: true,
@@ -73,7 +73,7 @@ To automatically capture network request timing and browser Web Vitals, use the 
 ```typescript
 // fixtures.ts
 import { test as base, expect } from '@playwright/test';
-import { dashboardFixtures } from 'playwright-dashboard-reporter/fixtures';
+import { dashboardFixtures } from '@phenx/playwright-dashboard-reporter/fixtures';
 
 export const test = base.extend(dashboardFixtures);
 export { expect };
@@ -88,7 +88,7 @@ import { test, expect } from './fixtures';
 **Option B – drop-in replacement for `@playwright/test`:**
 
 ```typescript
-import { test, expect } from 'playwright-dashboard-reporter/fixtures';
+import { test, expect } from '@phenx/playwright-dashboard-reporter/fixtures';
 ```
 
 ### What gets captured
@@ -136,7 +136,7 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   reporter: [
-    ['playwright-dashboard-reporter', {
+    ['@phenx/playwright-dashboard-reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-test-project',
       uploadTraces: true,
@@ -157,7 +157,7 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   reporter: [
-    ['playwright-dashboard-reporter', {
+    ['@phenx/playwright-dashboard-reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-test-project'
     }]
@@ -169,7 +169,7 @@ export default defineConfig({
 
 // tests/fixtures.ts  ← create this file
 import { test as base, expect } from '@playwright/test';
-import { dashboardFixtures } from 'playwright-dashboard-reporter/fixtures';
+import { dashboardFixtures } from '@phenx/playwright-dashboard-reporter/fixtures';
 
 export const test = base.extend(dashboardFixtures);
 export { expect };
@@ -188,7 +188,7 @@ test('homepage loads', async ({ page }) => {
 ```typescript
 export default defineConfig({
   reporter: [
-    ['playwright-dashboard-reporter', {
+    ['@phenx/playwright-dashboard-reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-test-project',
       projectDescription: 'End-to-end tests for the main application',
@@ -208,7 +208,7 @@ export default defineConfig({
 ```typescript
 export default defineConfig({
   reporter: [
-    ['playwright-dashboard-reporter', {
+    ['@phenx/playwright-dashboard-reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-test-project',
       collectScmInfo: false,              // Don't collect git info
@@ -275,7 +275,7 @@ Make sure:
 ### Network/Web Vitals not appearing
 
 Make sure:
-1. You are importing `test` from `playwright-dashboard-reporter/fixtures` (or extending with `dashboardFixtures`)
+1. You are importing `test` from `@phenx/playwright-dashboard-reporter/fixtures` (or extending with `dashboardFixtures`)
 2. The `collectPerformanceMetrics` option is not set to `false`
 3. Your tests navigate to at least one page (`await page.goto(...)`)
 

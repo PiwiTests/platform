@@ -85,7 +85,7 @@ The easiest way to integrate the dashboard into your test workflow is via the cu
 Install it:
 
 ```bash
-npm install --save-dev playwright-dashboard-reporter
+npm install --save-dev @phenx/playwright-dashboard-reporter
 ```
 
 Then add it to your `playwright.config.ts`:
@@ -96,7 +96,7 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   reporter: [
     ['list'],
-    ['playwright-dashboard-reporter', {
+    ['@phenx/playwright-dashboard-reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-project',
     }],

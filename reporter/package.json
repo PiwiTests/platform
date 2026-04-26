@@ -1,5 +1,5 @@
 {
-  "name": "playwright-dashboard-reporter",
+  "name": "@phenx/playwright-dashboard-reporter",
   "version": "1.0.0",
   "description": "Playwright reporter for sending test results to Playwright Dashboard",
   "main": "index.js",
