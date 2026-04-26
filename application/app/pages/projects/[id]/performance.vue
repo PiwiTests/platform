@@ -10,6 +10,8 @@ const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projec
 const { data: performanceData, refresh: refreshPerformance } = await useFetch<PerformanceTrendPoint[]>(`/api/projects/${projectId}/performance`)
 const { data: slowTests, refresh: refreshSlowTests } = await useFetch<SlowTest[]>(`/api/projects/${projectId}/slow-tests`)
 
+useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Performance — Playwright Dashboard` })))
+
 const UBadge = resolveComponent('UBadge')
 
 // Slow tests table columns
@@ -246,9 +248,17 @@ function refresh() {
 <template>
   <UDashboardPanel id="project-performance">
     <template #header>
-      <UDashboardNavbar :title="`${project?.label || project?.name || 'Project'} — Performance`">
+      <UDashboardNavbar>
         <template #leading>
           <UDashboardSidebarCollapse />
+          <UBreadcrumb
+            :items="[
+              { label: 'Home', icon: 'i-lucide-house', to: '/' },
+              { label: 'Projects', to: '/projects' },
+              { label: project?.label || project?.name || 'Project', to: `/projects/${projectId}` },
+              { label: 'Performance' }
+            ]"
+          />
         </template>
         <template #right>
           <UButton
@@ -263,19 +273,10 @@ function refresh() {
 
     <template #body>
       <div class="p-4 space-y-6">
-        <UButton
-          :to="`/projects/${projectId}`"
-          icon="i-lucide-arrow-left"
-          variant="ghost"
-          size="sm"
-        >
-          Back to project
-        </UButton>
-
         <!-- Performance Trend Chart -->
         <UCard>
           <template #header>
-            <h2 class="text-xl font-semibold">
+            <h2>
               Performance trend
             </h2>
             <p class="text-sm text-gray-600 mt-1">

@@ -5,6 +5,8 @@ import type { TableColumn } from '@nuxt/ui'
 import type { ProjectWithStats, TagInfo, TagsResponse } from '~~/types/api'
 import { formatDuration } from '~/utils'
 
+useHead({ title: 'Projects — Playwright Dashboard' })
+
 const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/projects')
 const { data: tagsData, refresh: refreshTags } = await useFetch<TagsResponse>('/api/tags')
 const toast = useToast()
@@ -111,6 +113,8 @@ const UBadge = resolveComponent('UBadge')
 const TestStatusBar = resolveComponent('TestStatusBar')
 const RunReports = resolveComponent('RunReports')
 
+const noData = h('span', { class: 'text-xs text-gray-600 italic' }, 'No data')
+
 const columns: TableColumn<ProjectWithStats>[] = [
   {
     accessorKey: 'name',
@@ -143,14 +147,22 @@ const columns: TableColumn<ProjectWithStats>[] = [
   {
     accessorKey: 'totalRuns',
     header: createSortHeader<ProjectWithStats>('Test runs'),
-    cell: ({ row }) => `${row.getValue('totalRuns')} runs`
+    cell: ({ row }) => {
+      const totalRuns = row.getValue('totalRuns') as ProjectWithStats['totalRuns']
+
+      if (totalRuns === 0) {
+        return noData
+      }
+
+      return `${totalRuns} runs`
+    }
   },
   {
     accessorKey: 'latestRun',
     header: createSortHeader<ProjectWithStats>('Last run'),
     cell: ({ row }) => {
       const latestRun = row.getValue('latestRun') as ProjectWithStats['latestRun']
-      return latestRun ? formatDate(latestRun.startTime) : 'N/A'
+      return latestRun ? formatDate(latestRun.startTime) : noData
     }
   },
   {
@@ -158,7 +170,7 @@ const columns: TableColumn<ProjectWithStats>[] = [
     header: createSortHeader<ProjectWithStats>('Duration'),
     cell: ({ row }) => {
       const latestRun = row.original.latestRun
-      return latestRun?.duration != null ? formatDuration(latestRun.duration) : '—'
+      return latestRun?.duration != null ? formatDuration(latestRun.duration) : noData
     }
   },
   {
@@ -166,7 +178,7 @@ const columns: TableColumn<ProjectWithStats>[] = [
     header: createSortHeader<ProjectWithStats>('Status'),
     cell: ({ row }) => {
       const latestRun = row.original.latestRun
-      if (!latestRun) return ''
+      if (!latestRun) return noData
 
       const color = getStatusColor(latestRun.status)
       return h(UBadge, { color, size: 'md', class: 'capitalize' }, () => latestRun.status)
@@ -174,10 +186,10 @@ const columns: TableColumn<ProjectWithStats>[] = [
   },
   {
     accessorKey: 'testRatio',
-    header: 'Test Status',
+    header: 'Test status',
     cell: ({ row }) => {
       const latestRun = row.original.latestRun
-      if (!latestRun) return h('span', { class: 'text-xs text-gray-400 italic' }, 'No data')
+      if (!latestRun) return noData
 
       return h(TestStatusBar, {
         passed: latestRun.passedTests,
@@ -227,9 +239,10 @@ const columns: TableColumn<ProjectWithStats>[] = [
 <template>
   <UDashboardPanel id="projects">
     <template #header>
-      <UDashboardNavbar title="Projects">
+      <UDashboardNavbar>
         <template #leading>
           <UDashboardSidebarCollapse />
+          <UBreadcrumb :items="[{ label: 'Home', icon: 'i-lucide-house', to: '/' }, { label: 'Projects' }]" />
         </template>
         <template #right>
           <UButton

@@ -8,6 +8,8 @@ const projectId = route.params.id
 
 const { data: project, refresh } = await useFetch<ProjectWithTestRuns>(`/api/projects/${projectId}`)
 
+useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Playwright Dashboard` })))
+
 const toast = useToast()
 const deletingRunId = ref<number | null>(null)
 const confirmDeleteRunId = ref<number | null>(null)
@@ -118,8 +120,18 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
 <template>
   <UDashboardPanel id="project-detail">
     <template #header>
-      <UDashboardNavbar :title="project?.label || project?.name || 'Project Details'">
-        <template #trailing>
+      <UDashboardNavbar>
+        <template #leading>
+          <UDashboardSidebarCollapse />
+          <UBreadcrumb
+            :items="[
+              { label: 'Home', icon: 'i-lucide-house', to: '/' },
+              { label: 'Projects', to: '/projects' },
+              { label: project?.label || project?.name || 'Project' }
+            ]"
+          />
+        </template>
+        <template #right>
           <UButton
             :to="`/projects/${projectId}/edit`"
             icon="i-lucide-pencil"
@@ -144,11 +156,6 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
           >
             Performance
           </UButton>
-        </template>
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
-        <template #right>
           <UButton
             icon="i-lucide-refresh-cw"
             size="md"
@@ -161,15 +168,6 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
 
     <template #body>
       <div class="p-4 space-y-4">
-        <UButton
-          to="/projects"
-          icon="i-lucide-arrow-left"
-          variant="ghost"
-          size="sm"
-        >
-          Back to projects
-        </UButton>
-
         <p v-if="project?.description" class="text-gray-600 mt-2">
           {{ project.description }}
         </p>

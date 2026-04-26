@@ -7,6 +7,10 @@ const testCaseId = route.params.id
 
 const { data: testCase, refresh } = await useFetch(`/api/test-cases/${testCaseId}`)
 
+useHead(computed(() => ({
+  title: `${testCase.value?.title || `Test case #${testCaseId}`} — Playwright Dashboard`
+})))
+
 const performanceHints = computed(() => {
   if (!testCase.value) return []
   return getPerformanceHints(testCase.value)
@@ -72,9 +76,18 @@ const groupedNetworkRequests = computed<GroupedRequest[]>(() => {
 <template>
   <UDashboardPanel id="test-case-detail">
     <template #header>
-      <UDashboardNavbar title="Test case details">
+      <UDashboardNavbar>
         <template #leading>
           <UDashboardSidebarCollapse />
+          <UBreadcrumb
+            :items="[
+              { label: 'Home', icon: 'i-lucide-house', to: '/' },
+              { label: 'Projects', to: '/projects' },
+              ...(testCase?.testRun?.project?.id ? [{ label: testCase.testRun.project.name || 'Project', to: `/projects/${testCase.testRun.project.id}` }] : [{ label: 'Project' }]),
+              ...(testCase?.testRun?.id ? [{ label: `Test run #${testCase.testRun.id}`, to: `/test-runs/${testCase.testRun.id}` }] : [{ label: 'Test run' }]),
+              { label: testCase?.title || `Test case #${testCaseId}` }
+            ]"
+          />
         </template>
         <template #right>
           <UButton
@@ -89,15 +102,6 @@ const groupedNetworkRequests = computed<GroupedRequest[]>(() => {
 
     <template #body>
       <div class="p-4 space-y-4">
-        <UButton
-          :to="`/test-runs/${testCase?.testRun?.id}`"
-          icon="i-lucide-arrow-left"
-          variant="ghost"
-          size="sm"
-        >
-          Back to test run
-        </UButton>
-
         <UCard>
           <template #header>
             <div class="flex justify-between items-center">

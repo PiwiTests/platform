@@ -1,5 +1,5 @@
 import { getDatabase } from '../../database'
-import { testCases, testRuns, testRunsCases } from '../../database/schema'
+import { testCases, testRuns, testRunsCases, projects } from '../../database/schema'
 import { eq } from 'drizzle-orm'
 
 export default eventHandler(async (event) => {
@@ -33,6 +33,13 @@ export default eventHandler(async (event) => {
   const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, testRunsCase.testRunId))
   const testRun = testRunResults[0]
 
+  // Get the project info (only when testRun is available)
+  let project
+  if (testRun) {
+    const projectResults = await db.select().from(projects).where(eq(projects.id, testRun.projectId))
+    project = projectResults[0]
+  }
+
   // Format the response to match the expected structure
   return {
     id: testRunsCase.id,
@@ -49,6 +56,6 @@ export default eventHandler(async (event) => {
     slowestStepDuration: testRunsCase.slowestStepDuration,
     networkRequests: testRunsCase.networkRequests,
     webVitals: testRunsCase.webVitals,
-    testRun
+    testRun: testRun ? { ...testRun, project } : testRun
   }
 })

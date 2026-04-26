@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { ProjectWithStats, TestRunForChart } from '~~/types/api'
 
+useHead({ title: 'Playwright Dashboard' })
+
 const { data: projects } = await useFetch<ProjectWithStats[]>('/api/projects')
 
 const stats = computed(() => {
@@ -66,9 +68,10 @@ const allTestRuns = computed(() => {
 <template>
   <UDashboardPanel id="home">
     <template #header>
-      <UDashboardNavbar title="Playwright Dashboard">
+      <UDashboardNavbar>
         <template #leading>
           <UDashboardSidebarCollapse />
+          <UBreadcrumb :items="[{ label: 'Home', icon: 'i-lucide-house', to: '/' }]" />
         </template>
       </UDashboardNavbar>
     </template>

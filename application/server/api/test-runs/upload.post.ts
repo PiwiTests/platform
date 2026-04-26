@@ -49,7 +49,6 @@ export default eventHandler(async (event) => {
   let testCasesData: Record<string, unknown>[] = []
   // Map of report type -> { filename, data, label }
   const reportFiles: Map<string, { filename: string, data: Buffer, label?: string }> = new Map()
-  const traceFiles: { testCaseIndex: number, filename: string, data: Buffer }[] = []
 
   for (const part of formData) {
     if (part.name === 'projectName') {
@@ -93,20 +92,6 @@ export default eventHandler(async (event) => {
       if (type && reportFiles.has(type)) {
         const entry = reportFiles.get(type)!
         entry.label = part.data.toString('utf-8')
-      }
-    } else if (part.name?.startsWith('trace_') && part.filename) {
-      // Extract test case index from field name like 'trace_0', 'trace_1', etc.
-      const match = part.name.match(/trace_(\d+)/)
-      if (match && match[1]) {
-        const index = parseInt(match[1])
-        // Validate index is reasonable (< 10000)
-        if (index >= 0 && index < 10000) {
-          traceFiles.push({
-            testCaseIndex: index,
-            filename: sanitizeFilename(part.filename),
-            data: part.data
-          })
-        }
       }
     }
   }

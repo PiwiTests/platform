@@ -8,6 +8,10 @@ const runId = route.params.id
 
 const { data: testRun, refresh } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`)
 
+useHead(computed(() => ({
+  title: `Test run #${runId}${testRun.value?.project ? ` — ${testRun.value.project.name}` : ''} — Playwright Dashboard`
+})))
+
 const toast = useToast()
 const isDeleteConfirmOpen = ref(false)
 const deleting = ref(false)
@@ -193,9 +197,17 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
 <template>
   <UDashboardPanel id="test-run-detail">
     <template #header>
-      <UDashboardNavbar title="Test run details">
+      <UDashboardNavbar>
         <template #leading>
           <UDashboardSidebarCollapse />
+          <UBreadcrumb
+            :items="[
+              { label: 'Home', icon: 'i-lucide-house', to: '/' },
+              { label: 'Projects', to: '/projects' },
+              ...(testRun?.project?.id ? [{ label: testRun.project.label || testRun.project.name || 'Project', to: `/projects/${testRun.project.id}` }] : [{ label: 'Project' }]),
+              { label: `Test run #${runId}` }
+            ]"
+          />
         </template>
         <template #right>
           <UButton
@@ -219,15 +231,6 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
 
     <template #body>
       <div class="p-4 space-y-4">
-        <UButton
-          :to="`/projects/${testRun?.project?.id}`"
-          icon="i-lucide-arrow-left"
-          variant="ghost"
-          size="sm"
-        >
-          Back to project
-        </UButton>
-
         <UCard>
           <template #header>
             <div class="flex justify-between items-center">
@@ -247,7 +250,7 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
                   Project
                 </p>
                 <p class="font-medium">
-                  {{ testRun?.project?.name }}
+                  {{ testRun?.project?.label ?? testRun?.project?.name }}
                 </p>
               </div>
               <div>

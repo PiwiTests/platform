@@ -10,6 +10,8 @@ const projectId = route.params.id
 const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`)
 const { data: tagsData, refresh: refreshTags } = await useFetch<TagsResponse>('/api/tags')
 
+useHead(computed(() => ({ title: `Edit ${project.value?.label || project.value?.name || 'Project'} — Playwright Dashboard` })))
+
 const allTags = computed(() => tagsData.value?.tags || [])
 
 const state = ref({
@@ -66,27 +68,26 @@ function onCancel() {
 <template>
   <UDashboardPanel id="project-edit">
     <template #header>
-      <UDashboardNavbar :title="`Edit ${project?.name || 'Project'}`">
+      <UDashboardNavbar>
         <template #leading>
           <UDashboardSidebarCollapse />
+          <UBreadcrumb
+            :items="[
+              { label: 'Home', icon: 'i-lucide-house', to: '/' },
+              { label: 'Projects', to: '/projects' },
+              { label: project?.label || project?.name || 'Project', to: `/projects/${projectId}` },
+              { label: 'Edit' }
+            ]"
+          />
         </template>
       </UDashboardNavbar>
     </template>
 
     <template #body>
       <div class="p-4 space-y-4">
-        <UButton
-          :to="`/projects/${projectId}`"
-          icon="i-lucide-arrow-left"
-          variant="ghost"
-          size="sm"
-        >
-          Back to project
-        </UButton>
-
         <UCard>
           <template #header>
-            <h2 class="text-xl font-semibold">
+            <h2>
               Edit project settings
             </h2>
             <p class="text-sm text-gray-600 mt-1">
