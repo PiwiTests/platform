@@ -100,13 +100,6 @@ test.describe('Gzip Compression Tests', () => {
 
     writeFileSync(join(tempDir, 'report.gz'), compressed)
 
-    // Create a mock allure-report archive (contains index.html like all HTML reports)
-    const allureArchive = await buildArchive([
-      { path: 'index.html', content: Buffer.from('<html><title>Allure Report</title><body>Allure</body></html>') },
-      { path: 'data/suites.json', content: Buffer.from('{}') }
-    ])
-    writeFileSync(join(tempDir, 'allure-report.gz'), allureArchive)
-
     // Create a mock blob-report archive (contains a .zip file, not index.html)
     const blobArchive = await buildArchive([
       { path: 'report.zip', content: Buffer.from('PK\x03\x04mock-zip-content') }
@@ -228,43 +221,6 @@ test.describe('Gzip Compression Tests', () => {
     })
 
     expect(uploadResponse.ok()).toBeTruthy()
-  })
-
-  test('allure report: stored path points to index.html and is servable', async ({ request }) => {
-    const reportBuffer = readFileSync(join(tempDir, 'allure-report.gz'))
-
-    const uploadResponse = await request.post('/api/test-runs/upload', {
-      multipart: {
-        projectName: 'allure-gz-test-project',
-        testRun: JSON.stringify({
-          status: 'passed',
-          startTime: new Date().toISOString(),
-          duration: 30000,
-          totalTests: 1,
-          passedTests: 1,
-          failedTests: 0,
-          skippedTests: 0
-        }),
-        testCases: JSON.stringify([{ title: 'allure test', status: 'passed', duration: 400 }]),
-        report_allure: {
-          name: 'allure-report.gz',
-          mimeType: 'application/gzip',
-          buffer: reportBuffer
-        }
-      }
-    })
-
-    expect(uploadResponse.ok()).toBeTruthy()
-    const uploadData = await uploadResponse.json()
-    const allureReport = uploadData.reports?.find((r: { type: string }) => r.type === 'allure')
-    expect(allureReport).toBeDefined()
-    // Path must end with index.html (the allure HTML report entry point)
-    expect(allureReport.path).toMatch(/index\.html$/)
-
-    // The index.html must be downloadable
-    const downloadResponse = await request.get(`/api/files/${allureReport.path}`)
-    expect(downloadResponse.ok()).toBeTruthy()
-    expect(downloadResponse.headers()['content-type']).toContain('text/html')
   })
 
   test('blob report: stored path points to the zip file, not index.html', async ({ request }) => {

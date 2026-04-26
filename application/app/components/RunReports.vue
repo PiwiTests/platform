@@ -26,7 +26,6 @@ function reportIcon(type: string): string {
   switch (type) {
     case 'html': return 'i-lucide-layout-dashboard'
     case 'monocart': return 'i-lucide-bar-chart-2'
-    case 'allure': return 'i-lucide-flask-conical'
     case 'blob': return 'i-lucide-download'
     default: return 'i-lucide-file-text'
   }

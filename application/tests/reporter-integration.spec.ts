@@ -118,15 +118,11 @@ test.describe('Reporter Integration Tests', () => {
     expect(source).toContain('DEFAULT_REPORT_DIRS')
   })
 
-  test('reporter lib/files.js DEFAULT_REPORT_DIRS should include monocart, allure, and blob', async () => {
+  test('reporter lib/files.js DEFAULT_REPORT_DIRS should include monocart, and blob', async () => {
     const filesPath = join(process.cwd(), '..', 'reporter', 'lib', 'files.js')
     const source = readFileSync(filesPath, 'utf-8')
 
     expect(source).toContain('monocart')
-    expect(source).toContain('allure')
     expect(source).toContain('blob')
-    // allure default dir must be the generated HTML report, NOT the raw results
-    expect(source).toContain('allure: \'allure-report\'')
-    expect(source).not.toContain('allure: \'allure-results\'')
   })
 })

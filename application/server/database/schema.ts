@@ -71,7 +71,7 @@ export const testRunsCases = sqliteTable('test_runs_cases', {
 export const reports = sqliteTable('reports', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   testRunId: integer('test_run_id').notNull().references(() => testRuns.id),
-  type: text('type').notNull(), // 'html', 'monocart', 'allure', 'blob', etc.
+  type: text('type').notNull(), // 'html', 'monocart', 'blob', etc.
   label: text('label').notNull(), // Display label e.g. 'HTML Report', 'Monocart Report'
   path: text('path').notNull(), // Relative path in storage (for browsable) or file path (for blob)
   size: integer('size'), // File/directory size in bytes

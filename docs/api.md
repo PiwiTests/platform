@@ -76,15 +76,15 @@ curl -X POST http://localhost:3000/api/test-runs/upload \
 
 **Form fields**
 
-| Field | Description |
-|-------|-------------|
-| `projectName` | Project name (string) |
-| `testRun` | Test run metadata (JSON string) |
-| `testCases` | Array of test cases (JSON string) |
-| `report_<type>` | Report archive — e.g. `report_html`, `report_monocart`, `report_allure`, `report_blob` |
-| `report_label_<type>` | Optional display label override for the given report type |
-| `htmlReport` | Legacy alias for `report_html` |
-| `trace_N` | Trace file for test case at index N (optional, multiple allowed) |
+| Field                 | Description                                                           |
+|-----------------------|-----------------------------------------------------------------------|
+| `projectName`         | Project name (string)                                                 |
+| `testRun`             | Test run metadata (JSON string)                                       |
+| `testCases`           | Array of test cases (JSON string)                                     |
+| `report_<type>`       | Report archive — e.g. `report_html`, `report_monocart`, `report_blob` |
+| `report_label_<type>` | Optional display label override for the given report type             |
+| `htmlReport`          | Legacy alias for `report_html`                                        |
+| `trace_N`             | Trace file for test case at index N (optional, multiple allowed)      |
 
 Multiple report types can be attached in a single upload:
 
@@ -95,7 +95,6 @@ curl -X POST http://localhost:3000/api/test-runs/upload \
   -F "testCases=..." \
   -F "report_html=@./playwright-report.gz" \
   -F "report_monocart=@./monocart-report.gz" \
-  -F "report_allure=@./allure-results.gz" \
   -F "report_blob=@./blob-report.zip"
 ```
 

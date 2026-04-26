@@ -15,7 +15,6 @@ import { sanitizeNetworkRequests, sanitizeWebVitals } from '../../utils/sanitize
 const REPORT_TYPE_LABELS: Record<string, string> = {
   html: 'HTML Report',
   monocart: 'Monocart Report',
-  allure: 'Allure Report',
   blob: 'Blob Report'
 }
 
@@ -146,7 +145,7 @@ export default eventHandler(async (event) => {
 
         // Determine the correct entry file for this report type.
         // Blob reports contain .zip archives rather than HTML; find the first one.
-        // All other report types (html, monocart, allure, …) use index.html.
+        // All other report types (html, monocart, …) use index.html.
         let entryFile = 'index.html'
         if (type === 'blob') {
           const extracted = readdirSync(tempDir)

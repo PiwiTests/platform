@@ -7,7 +7,6 @@ reporters.push(['list'])
 if (!process.env.CI) {
   reporters.push(['html', { outputFolder: 'playwright-report' }])
   reporters.push(['monocart-reporter', { name: 'Playwright Dashboard Tests', outputFile: 'monocart-report/index.html' }])
-  reporters.push(['allure-playwright', { resultsDir: 'allure-results' }])
   reporters.push(['blob', { outputDir: 'blob-report' }])
   reporters.push(['../reporter', {
     serverUrl: 'http://localhost:3000',
@@ -17,7 +16,6 @@ if (!process.env.CI) {
     reports: [
       { type: 'html' },
       { type: 'monocart' },
-      { type: 'allure' },
       { type: 'blob', label: 'Blob Archive' }
     ]
   }])
@@ -50,7 +48,7 @@ export default defineConfig({
     baseURL: 'http://localhost:3000',
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
-    trace: 'on'
+    trace: 'retain-on-failure'
   },
 
   /* Configure projects for major browsers */

@@ -33,18 +33,16 @@ export interface DashboardReporterOptions {
    * Built-in types with auto-detected default directories:
    *  - `'html'`       → `playwright-report/`   (same as uploadReport)
    *  - `'monocart'`   → `monocart-report/`
-   *  - `'allure'`     → `allure-results/`
    *  - `'blob'`       → `blob-report/`          (stored as a downloadable archive)
    *
    * @example
    * reports: [
    *   { type: 'monocart' },
-   *   { type: 'allure', dir: 'allure-results', label: 'Allure Report' },
    *   { type: 'blob', dir: 'blob-report', label: 'Blob Archive' },
    * ]
    */
   reports?: Array<{
-    /** Report type identifier (e.g. 'html', 'monocart', 'allure', 'blob') */
+    /** Report type identifier (e.g. 'html', 'monocart', 'blob') */
     type: string;
     /** Path to the report output directory (overrides the default for this type) */
     dir?: string;
