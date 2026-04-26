@@ -10,6 +10,8 @@ const projectId = route.params.id
 const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`)
 const { data: tagsData, refresh: refreshTags } = await useFetch<TagsResponse>('/api/tags')
 
+useHead(computed(() => ({ title: `Edit ${project.value?.label || project.value?.name || 'Project'} — Playwright Dashboard` })))
+
 const allTags = computed(() => tagsData.value?.tags || [])
 
 const state = ref({
@@ -70,6 +72,14 @@ function onCancel() {
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
+        <UBreadcrumb
+          :items="[
+            { label: 'Home', icon: 'i-lucide-house', to: '/' },
+            { label: 'Projects', to: '/projects' },
+            { label: project?.label || project?.name || 'Project', to: `/projects/${projectId}` },
+            { label: 'Edit' }
+          ]"
+        />
       </UDashboardNavbar>
     </template>
 

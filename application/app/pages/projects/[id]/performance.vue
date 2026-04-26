@@ -10,6 +10,8 @@ const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projec
 const { data: performanceData, refresh: refreshPerformance } = await useFetch<PerformanceTrendPoint[]>(`/api/projects/${projectId}/performance`)
 const { data: slowTests, refresh: refreshSlowTests } = await useFetch<SlowTest[]>(`/api/projects/${projectId}/slow-tests`)
 
+useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Performance — Playwright Dashboard` })))
+
 const UBadge = resolveComponent('UBadge')
 
 // Slow tests table columns
@@ -250,6 +252,14 @@ function refresh() {
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
+        <UBreadcrumb
+          :items="[
+            { label: 'Home', icon: 'i-lucide-house', to: '/' },
+            { label: 'Projects', to: '/projects' },
+            { label: project?.label || project?.name || 'Project', to: `/projects/${projectId}` },
+            { label: 'Performance' }
+          ]"
+        />
         <template #right>
           <UButton
             icon="i-lucide-refresh-cw"

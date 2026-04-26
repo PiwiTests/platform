@@ -5,6 +5,8 @@ import type { TableColumn } from '@nuxt/ui'
 import type { ProjectWithStats, TagInfo, TagsResponse } from '~~/types/api'
 import { formatDuration } from '~/utils'
 
+useHead({ title: 'Projects — Playwright Dashboard' })
+
 const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/projects')
 const { data: tagsData, refresh: refreshTags } = await useFetch<TagsResponse>('/api/tags')
 const toast = useToast()
@@ -231,6 +233,7 @@ const columns: TableColumn<ProjectWithStats>[] = [
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
+        <UBreadcrumb :items="[{ label: 'Home', icon: 'i-lucide-house', to: '/' }, { label: 'Projects' }]" />
         <template #right>
           <UButton
             icon="i-lucide-plus"

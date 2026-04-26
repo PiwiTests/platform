@@ -8,6 +8,10 @@ const runId = route.params.id
 
 const { data: testRun, refresh } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`)
 
+useHead(computed(() => ({
+  title: `Test run #${runId}${testRun.value?.project ? ` — ${testRun.value.project.name}` : ''} — Playwright Dashboard`
+})))
+
 const toast = useToast()
 const isDeleteConfirmOpen = ref(false)
 const deleting = ref(false)
@@ -197,6 +201,14 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
+        <UBreadcrumb
+          :items="[
+            { label: 'Home', icon: 'i-lucide-house', to: '/' },
+            { label: 'Projects', to: '/projects' },
+            { label: testRun?.project?.name || 'Project', to: `/projects/${testRun?.project?.id}` },
+            { label: `Test run #${runId}` }
+          ]"
+        />
         <template #right>
           <UButton
             icon="i-lucide-refresh-cw"

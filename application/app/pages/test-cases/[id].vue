@@ -7,6 +7,10 @@ const testCaseId = route.params.id
 
 const { data: testCase, refresh } = await useFetch(`/api/test-cases/${testCaseId}`)
 
+useHead(computed(() => ({
+  title: `${testCase.value?.title || `Test case #${testCaseId}`} — Playwright Dashboard`
+})))
+
 const performanceHints = computed(() => {
   if (!testCase.value) return []
   return getPerformanceHints(testCase.value)
@@ -76,6 +80,15 @@ const groupedNetworkRequests = computed<GroupedRequest[]>(() => {
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
+        <UBreadcrumb
+          :items="[
+            { label: 'Home', icon: 'i-lucide-house', to: '/' },
+            { label: 'Projects', to: '/projects' },
+            { label: testCase?.testRun?.project?.name || 'Project', to: `/projects/${testCase?.testRun?.project?.id}` },
+            { label: `Test run #${testCase?.testRun?.id}`, to: `/test-runs/${testCase?.testRun?.id}` },
+            { label: testCase?.title || `Test case #${testCaseId}` }
+          ]"
+        />
         <template #right>
           <UButton
             icon="i-lucide-refresh-cw"

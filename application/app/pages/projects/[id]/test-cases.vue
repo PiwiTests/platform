@@ -9,6 +9,8 @@ const projectId = route.params.id
 const { data: testCases, refresh } = await useFetch<TestCaseWithStats[]>(`/api/projects/${projectId}/test-cases`)
 const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`)
 
+useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Test cases — Playwright Dashboard` })))
+
 const UBadge = resolveComponent('UBadge')
 
 function getPassRate(testCase: TestCaseWithStats) {
@@ -93,6 +95,14 @@ const testCasesColumns: TableColumn<TestCaseWithStats>[] = [
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
+        <UBreadcrumb
+          :items="[
+            { label: 'Home', icon: 'i-lucide-house', to: '/' },
+            { label: 'Projects', to: '/projects' },
+            { label: project?.label || project?.name || 'Project', to: `/projects/${projectId}` },
+            { label: 'Test cases' }
+          ]"
+        />
         <template #right>
           <UButton
             icon="i-lucide-refresh-cw"

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { NavigationMenuItem } from '@nuxt/ui'
 
+useHead({ title: 'Settings — Playwright Dashboard' })
+
 /*
 {
   label: 'General',
@@ -37,6 +39,7 @@ const links = [[{
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
+        <UBreadcrumb :items="[{ label: 'Home', icon: 'i-lucide-house', to: '/' }, { label: 'Settings' }]" />
       </UDashboardNavbar>
 
       <UDashboardToolbar>
