@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { waitForHydration } from './utils'
 
-test.describe('User Management Page Tests', () => {
+test.describe.serial('User Management Page Tests', () => {
   // Clean up test users before running tests to ensure idempotency
   test.beforeAll(async ({ request }) => {
     const usersResponse = await request.get('/api/users')
