@@ -189,8 +189,8 @@ test.describe.serial('Reporter with authentication enabled', () => {
     })
     expect(res.ok()).toBeTruthy()
     const data = await res.json()
-    expect(data.username).toBe('ci-reporter')
-    expect(data.role).toBe('reporter')
+    expect(data.user.username).toBe('ci-reporter')
+    expect(data.user.role).toBe('reporter')
   })
 
   // ---------------------------------------------------------------------------
