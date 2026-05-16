@@ -12,6 +12,9 @@ hero:
       text: Getting started
       link: /getting-started
     - theme: alt
+      text: Live demo
+      link: https://phenx.github.io/playwright-dashboard/demo/
+    - theme: alt
       text: GitHub
       link: https://github.com/PhenX/playwright-dashboard
 

@@ -16,6 +16,7 @@ export default defineConfig({
       { text: 'Getting started', link: '/getting-started' },
       { text: 'Reporter', link: '/reporter' },
       { text: 'API reference', link: '/api' },
+      { text: 'Demo', link: 'https://phenx.github.io/playwright-dashboard/demo/' },
     ],
 
     sidebar: [

@@ -19,7 +19,7 @@ export default defineNuxtConfig({
   devtools: {
     enabled: true
   },
-  app: isDemo ? { baseURL: '/playwright-dashboard/' } : {},
+  app: isDemo ? { baseURL: '/playwright-dashboard/demo/' } : {},
 
   css: ['~/assets/css/main.css'],
 

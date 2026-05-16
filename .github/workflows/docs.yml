@@ -2,9 +2,12 @@ name: Deploy docs to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - copilot/add-demo-mode-to-dashboard
     paths:
       - 'docs/**'
+      - 'application/**'
       - '.github/workflows/docs.yml'
 
   # Allows manual triggering from the Actions tab
@@ -24,28 +27,53 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./docs
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      # ── Build VitePress docs ──────────────────────────────────────────────
+      - name: Setup Node (docs)
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: ./docs/package-lock.json
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-
-      - name: Install dependencies
+      - name: Install docs dependencies
+        working-directory: ./docs
         run: npm ci
 
-      - name: Build with VitePress
+      - name: Build docs with VitePress
+        working-directory: ./docs
         run: npm run docs:build
+        # Output: docs/.vitepress/dist/
+
+      # ── Build Nuxt demo (SPA, deployed at /demo/) ─────────────────────────
+      - name: Setup Node (demo)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ./application/package-lock.json
+
+      - name: Install application dependencies
+        working-directory: ./application
+        run: npm ci
+
+      - name: Generate static demo site
+        working-directory: ./application
+        run: npm run generate:demo
+        env:
+          NUXT_PUBLIC_DEMO_MODE: 'true'
+        # Output: application/.output/public/
+
+      # ── Combine into a single artifact ────────────────────────────────────
+      - name: Copy demo into docs output at /demo/
+        run: cp -r application/.output/public docs/.vitepress/dist/demo
+
+      # ── Upload & deploy ───────────────────────────────────────────────────
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
