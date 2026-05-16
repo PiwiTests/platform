@@ -54,23 +54,23 @@ features:
 
 <div class="screenshot-grid">
   <div class="screenshot-item screenshot-featured">
-    <img src="/playwright-dashboard/screenshots/home.png" alt="Dashboard overview — stats and test results trend chart" />
+    <img src="/screenshots/home.png" alt="Dashboard overview — stats and test results trend chart" />
     <p class="screenshot-caption">Dashboard overview — at-a-glance stats and a test results trend chart across all projects</p>
   </div>
   <div class="screenshot-item">
-    <img src="/playwright-dashboard/screenshots/projects.png" alt="Projects list" />
+    <img src="/screenshots/projects.png" alt="Projects list" />
     <p class="screenshot-caption">Projects list — last-run status, duration, and test pass/fail ratio for every project</p>
   </div>
   <div class="screenshot-item">
-    <img src="/playwright-dashboard/screenshots/project-detail.png" alt="Project detail" />
+    <img src="/screenshots/project-detail.png" alt="Project detail" />
     <p class="screenshot-caption">Project detail — complete run history with status badges and test breakdown</p>
   </div>
   <div class="screenshot-item">
-    <img src="/playwright-dashboard/screenshots/performance.png" alt="Performance page" />
+    <img src="/screenshots/performance.png" alt="Performance page" />
     <p class="screenshot-caption">Performance — avg/P90 duration trend, slowest tests ranking, and side-by-side run comparison</p>
   </div>
   <div class="screenshot-item">
-    <img src="/playwright-dashboard/screenshots/test-run.png" alt="Test run detail" />
+    <img src="/screenshots/test-run.png" alt="Test run detail" />
     <p class="screenshot-caption">Test run detail — every test case with status, duration, location, and error messages</p>
   </div>
 </div>
