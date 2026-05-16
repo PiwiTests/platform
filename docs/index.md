@@ -44,3 +44,78 @@ features:
     title: Docker support
     details: Pre-built multi-platform container images (~200 MB) available on GitHub Container Registry.
 ---
+
+<div class="screenshots">
+
+## See it in action
+
+<div class="screenshot-grid">
+  <div class="screenshot-item screenshot-featured">
+    <img src="/playwright-dashboard/screenshots/home.png" alt="Dashboard overview — stats and test results trend chart" />
+    <p class="screenshot-caption">Dashboard overview — at-a-glance stats and a test results trend chart across all projects</p>
+  </div>
+  <div class="screenshot-item">
+    <img src="/playwright-dashboard/screenshots/projects.png" alt="Projects list" />
+    <p class="screenshot-caption">Projects list — last-run status, duration, and test pass/fail ratio for every project</p>
+  </div>
+  <div class="screenshot-item">
+    <img src="/playwright-dashboard/screenshots/project-detail.png" alt="Project detail" />
+    <p class="screenshot-caption">Project detail — complete run history with status badges and test breakdown</p>
+  </div>
+  <div class="screenshot-item">
+    <img src="/playwright-dashboard/screenshots/performance.png" alt="Performance page" />
+    <p class="screenshot-caption">Performance — avg/P90 duration trend, slowest tests ranking, and side-by-side run comparison</p>
+  </div>
+  <div class="screenshot-item">
+    <img src="/playwright-dashboard/screenshots/test-run.png" alt="Test run detail" />
+    <p class="screenshot-caption">Test run detail — every test case with status, duration, location, and error messages</p>
+  </div>
+</div>
+
+</div>
+
+<style>
+.screenshots {
+  max-width: 1152px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+.screenshots h2 {
+  font-size: 2rem;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.screenshot-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.screenshot-featured {
+  grid-column: 1 / -1;
+}
+
+.screenshot-item img {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--vp-c-divider);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+  display: block;
+}
+
+.screenshot-caption {
+  margin-top: 10px;
+  font-size: 0.875rem;
+  color: var(--vp-c-text-2);
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .screenshot-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

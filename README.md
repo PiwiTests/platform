@@ -7,6 +7,29 @@ A modern dashboard for storing and visualising Playwright test results, built wi
 
 📖 **[Full documentation at phenx.github.io/playwright-dashboard](https://phenx.github.io/playwright-dashboard)**
 
+![Dashboard home — overview stats and test results trend](docs/public/screenshots/home.png)
+
+<details>
+<summary>More screenshots</summary>
+
+**Projects list** — all projects with last-run status and test ratio at a glance:
+
+![Projects list](docs/public/screenshots/projects.png)
+
+**Project detail** — full run history with pass/fail breakdown:
+
+![Project detail](docs/public/screenshots/project-detail.png)
+
+**Performance** — duration trend, slowest tests, and side-by-side run comparison:
+
+![Performance](docs/public/screenshots/performance.png)
+
+**Test run detail** — every test case with status, duration, and error details:
+
+![Test run detail](docs/public/screenshots/test-run.png)
+
+</details>
+
 ## Features
 
 - 📊 **Test results storage** — store complete Playwright test run data
