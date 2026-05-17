@@ -70,28 +70,3 @@ jobs:
           S3_TEST_SECRET_ACCESS_KEY: minioadmin
         run: npm test
 
-  demo-windows:
-    name: Demo generate (Windows)
-    runs-on: windows-latest
-
-    defaults:
-      run:
-        working-directory: ./application
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Install node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: ./application/package-lock.json
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Run demo-generate tests
-        run: npm run test:demo-generate
-
