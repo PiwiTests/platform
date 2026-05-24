@@ -1,16 +1,14 @@
 // Conditional re-export: routes to the correct dialect at runtime.
-// TypeScript type-checking uses the SQLite schema as the canonical reference;
-// runtime will use either SQLite or PostgreSQL tables based on DATABASE_URL.
+// Both schemas are statically imported; the runtime selection is synchronous
+// based on whether DATABASE_URL is set.
+// TypeScript type-checking uses the SQLite schema as the canonical reference.
 
-let schema: typeof import('./schema.sqlite')
+import * as sqliteSchema from './schema.sqlite'
+import * as pgSchema from './schema.pg'
 
-if (process.env.DATABASE_URL) {
-  // Using PostgreSQL — cast to SQLite types so TypeScript is happy
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  schema = (await import('./schema.pg')) as any
-} else {
-  schema = await import('./schema.sqlite')
-}
+// Pick the appropriate schema tables at module initialization time
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const schema: typeof sqliteSchema = (process.env.DATABASE_URL ? pgSchema : sqliteSchema) as any
 
 export const {
   projects,
