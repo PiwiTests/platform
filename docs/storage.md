@@ -108,18 +108,68 @@ The dashboard uses an abstraction layer that allows switching backends without a
 
 ## Database storage
 
-The SQLite database is stored at `.data/playwright.db` by default. To customise the location:
+The dashboard supports two database backends: **SQLite** (default, zero-configuration) and **PostgreSQL** (for production multi-user deployments).
+
+### SQLite (default)
+
+SQLite requires no configuration. The database file is created automatically at `.data/playwright.db`.
+
+To customise the path:
 
 ```bash
 DATABASE_PATH=/custom/path/database.db npm run dev
 ```
 
-### Schema changes
+### PostgreSQL
+
+Set the `DATABASE_URL` environment variable to switch to PostgreSQL:
+
+```bash
+DATABASE_URL=postgresql://user:password@localhost:5432/playwright_dashboard npm run dev
+```
+
+The dashboard creates all required tables automatically on startup via migrations.
+
+#### Local development with Docker
+
+```bash
+docker run -d -p 5432:5432 \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=playwright_dashboard \
+  postgres:16-alpine
+```
+
+Then start the dashboard:
+
+```bash
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/playwright_dashboard npm run dev
+```
+
+#### Schema changes (PostgreSQL)
+
+To generate a new PostgreSQL migration after editing `schema.pg.ts`:
+
+```bash
+DATABASE_URL=postgresql://... npm run db:generate:pg
+npm run db:migrate:pg
+```
+
+| Script | Description |
+|--------|-------------|
+| `npm run db:generate` | Generate SQLite migration |
+| `npm run db:migrate` | Apply SQLite migrations |
+| `npm run db:generate:pg` | Generate PostgreSQL migration |
+| `npm run db:migrate:pg` | Apply PostgreSQL migrations |
+| `npm run db:studio` | Browse SQLite database |
+| `npm run db:studio:pg` | Browse PostgreSQL database |
+
+### Schema changes (SQLite)
 
 If you modify the database schema:
 
 ```bash
-# 1. Edit application/server/database/schema.ts
+# 1. Edit application/server/database/schema.sqlite.ts
 # 2. Generate a new migration
 npm run db:generate
 

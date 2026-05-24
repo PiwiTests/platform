@@ -9,6 +9,7 @@ lang: en-US
 
 - **Node.js 24+** — required for native SQLite support
 - **npm** — for package management
+- **PostgreSQL 14+** — optional; required only when using the PostgreSQL backend
 
 ## Quick start with Docker
 
@@ -120,5 +121,7 @@ Run these from the `application/` directory:
 | `npm run typecheck` | TypeScript type checking |
 | `npm run lint` | Run ESLint |
 | `npm test` | Run functional tests |
-| `npm run db:generate` | Generate migration from schema changes |
-| `npm run db:studio` | Open Drizzle Studio to browse the database |
+| `npm run db:generate` | Generate SQLite migration from schema changes |
+| `npm run db:generate:pg` | Generate PostgreSQL migration from schema changes |
+| `npm run db:studio` | Open Drizzle Studio to browse the SQLite database |
+| `npm run db:studio:pg` | Open Drizzle Studio to browse the PostgreSQL database |

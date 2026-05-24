@@ -60,7 +60,8 @@ The `.data` directory contains:
 | `NUXT_AUTH_ENABLED` | — | Enable authentication |
 | `NUXT_AUTH_SECRET` | — | Secret for authentication (required if auth enabled) |
 | `STORAGE_TYPE` | `local` | Storage backend (`local` or `s3`) |
-| `DATABASE_PATH` | `.data/playwright.db` | SQLite database path |
+| `DATABASE_URL` | — | PostgreSQL connection string (e.g. `postgresql://user:pass@host:5432/db`). When set, PostgreSQL is used instead of SQLite. |
+| `DATABASE_PATH` | `.data/playwright.db` | SQLite database path (ignored when `DATABASE_URL` is set) |
 
 ## Building locally
 
@@ -85,6 +86,45 @@ services:
     environment:
       - NODE_ENV=production
     restart: unless-stopped
+```
+
+Run with:
+
+```bash
+docker-compose up -d
+```
+
+### Docker Compose with PostgreSQL
+
+For production deployments requiring a robust relational database:
+
+```yaml
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: playwright
+      POSTGRES_PASSWORD: playwright
+      POSTGRES_DB: playwright_dashboard
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  playwright-dashboard:
+    image: ghcr.io/phenx/playwright-dashboard:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./storage:/app/.data/storage
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://playwright:playwright@postgres:5432/playwright_dashboard
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+volumes:
+  pg-data:
 ```
 
 Run with:
@@ -169,7 +209,7 @@ docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/playwright-dash
 
 ### Database locked
 
-SQLite doesn't support concurrent writes well. For high-concurrency deployments, run a single instance or consider using a different database backend.
+SQLite doesn't support concurrent writes well. For high-concurrency deployments, run a single instance or switch to PostgreSQL by setting `DATABASE_URL`.
 
 ### Port already in use
 
