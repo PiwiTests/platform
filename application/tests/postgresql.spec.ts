@@ -25,6 +25,7 @@ const POSTGRES_TEST_URL = process.env.POSTGRES_TEST_URL
 const PG_PORT = 3101
 
 test.describe('PostgreSQL integration', () => {
+  test.describe.configure({ mode: 'serial' })
   test.skip(!POSTGRES_TEST_URL, 'Set POSTGRES_TEST_URL to run PostgreSQL tests (see postgresql.spec.ts header for instructions)')
 
   const baseURL = `http://localhost:${PG_PORT}`
@@ -81,11 +82,12 @@ test.describe('PostgreSQL integration', () => {
 
   test('should get project details with test runs', async ({ request }) => {
     const projectsResponse = await request.get(`${baseURL}/api/projects`)
+    expect(projectsResponse.ok()).toBeTruthy()
     const projects = await projectsResponse.json()
     const project = projects.find((p: { name: string, id: number }) => p.name === 'pg-test-project')
     expect(project).toBeDefined()
 
-    const response = await request.get(`${baseURL}/api/projects/${project.id}`)
+    const response = await request.get(`${baseURL}/api/projects/${project!.id}`)
     expect(response.ok()).toBeTruthy()
     const data = await response.json()
     expect(data.testRuns).toBeDefined()
@@ -94,11 +96,16 @@ test.describe('PostgreSQL integration', () => {
 
   test('should get test run details with test cases', async ({ request }) => {
     const projectsResponse = await request.get(`${baseURL}/api/projects`)
+    expect(projectsResponse.ok()).toBeTruthy()
     const projects = await projectsResponse.json()
     const project = projects.find((p: { name: string, id: number }) => p.name === 'pg-test-project')
+    expect(project).toBeDefined()
 
-    const projectResponse = await request.get(`${baseURL}/api/projects/${project.id}`)
+    const projectResponse = await request.get(`${baseURL}/api/projects/${project!.id}`)
+    expect(projectResponse.ok()).toBeTruthy()
     const projectData = await projectResponse.json()
+    expect(projectData.testRuns).toBeDefined()
+    expect(projectData.testRuns.length).toBeGreaterThan(0)
     const runId = projectData.testRuns[0].id
 
     const response = await request.get(`${baseURL}/api/test-runs/${runId}`)
