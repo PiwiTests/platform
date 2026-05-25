@@ -22,7 +22,11 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "db:generate:pg": "drizzle-kit generate --config=drizzle.config.pg.ts",
+    "db:migrate:pg": "drizzle-kit migrate --config=drizzle.config.pg.ts",
+    "db:push:pg": "drizzle-kit push --config=drizzle.config.pg.ts",
+    "db:studio:pg": "drizzle-kit studio --config=drizzle.config.pg.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.721.0",
@@ -38,6 +42,7 @@
     "drizzle-kit": "^0.31.8",
     "drizzle-orm": "^0.45.0",
     "nuxt": "^4.2.1",
+    "postgres": "^3.4.9",
     "zod": "^4.1.13"
   },
   "devDependencies": {

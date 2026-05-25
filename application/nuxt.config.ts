@@ -78,15 +78,25 @@ export default defineNuxtConfig({
 
   hooks: {
     'nitro:build:public-assets': (nitro) => {
-      // Copy migrations folder to output during build
+      // Copy migrations folders to output during build
       const sourceMigrations = resolve(__dirname, 'server/database/migrations')
       const targetMigrations = resolve(nitro.options.output.serverDir, 'database/migrations')
 
       if (existsSync(sourceMigrations)) {
-        console.log('[Build] Copying migrations to output...')
+        console.log('[Build] Copying SQLite migrations to output...')
         mkdirSync(dirname(targetMigrations), { recursive: true })
         cpSync(sourceMigrations, targetMigrations, { recursive: true })
-        console.log('[Build] Migrations copied successfully')
+        console.log('[Build] SQLite migrations copied successfully')
+      }
+
+      const sourceMigrationsPg = resolve(__dirname, 'server/database/migrations-pg')
+      const targetMigrationsPg = resolve(nitro.options.output.serverDir, 'database/migrations-pg')
+
+      if (existsSync(sourceMigrationsPg)) {
+        console.log('[Build] Copying PostgreSQL migrations to output...')
+        mkdirSync(dirname(targetMigrationsPg), { recursive: true })
+        cpSync(sourceMigrationsPg, targetMigrationsPg, { recursive: true })
+        console.log('[Build] PostgreSQL migrations copied successfully')
       }
     }
   },

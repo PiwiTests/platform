@@ -84,6 +84,21 @@ export default defineConfig({
           reuseExistingServer: false,
           timeout: 90 * 1000
         }]
+      : []),
+    // PostgreSQL-backed server used by postgresql.spec.ts.
+    // Only started when POSTGRES_TEST_URL is set; the corresponding tests are skipped otherwise.
+    ...(process.env.POSTGRES_TEST_URL
+      ? [{
+          command: 'npm run dev',
+          url: 'http://localhost:3101',
+          env: {
+            DATABASE_URL: process.env.POSTGRES_TEST_URL,
+            STORAGE_PATH: join(process.cwd(), '.test-temp', 'pg-test-storage'),
+            NITRO_PORT: '3101'
+          },
+          reuseExistingServer: false,
+          timeout: 90 * 1000
+        }]
       : [])
   ]
 })
