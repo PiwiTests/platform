@@ -37,7 +37,7 @@ export default eventHandler(async (event) => {
 
   const runIds = recentRuns.map(r => r.id)
   if (runIds.length === 0) {
-    return []
+    return { flakyTests: [], failingTests: [], neverFailed: 0, totalTestCases: 0 }
   }
 
   // Get all test case results from these runs
@@ -70,6 +70,7 @@ export default eventHandler(async (event) => {
     flakyCount: number
     failureCount: number
     lastFlakyDate: Date | null
+    lastFailureDate: Date | null
     lastError: string | null
   }>()
 
@@ -83,6 +84,7 @@ export default eventHandler(async (event) => {
         flakyCount: 0,
         failureCount: 0,
         lastFlakyDate: null,
+        lastFailureDate: null,
         lastError: null
       })
     }
@@ -102,7 +104,9 @@ export default eventHandler(async (event) => {
     // Failed
     if (row.status === 'failed' || row.status === 'timedOut') {
       entry.failureCount++
-      if (row.error) {
+      const runDate = new Date(row.startTime)
+      if (row.error && (!entry.lastFailureDate || runDate > entry.lastFailureDate)) {
+        entry.lastFailureDate = runDate
         entry.lastError = row.error
       }
     }
@@ -139,7 +143,7 @@ export default eventHandler(async (event) => {
     .slice(0, 20)
 
   // Count tests that never failed
-  const neverFailed = Array.from(testCaseMap.values()).filter(t => t.failureCount === 0 && t.flakyCount === 0).length
+  const neverFailed = Array.from(testCaseMap.values()).filter(t => t.failureCount === 0).length
 
   return {
     flakyTests,

@@ -35,7 +35,7 @@ const chartData = computed(() => {
     failureRate: point.failureRate,
     flakyRate: point.flakyRate,
     status: point.status
-  }))
+  })).sort((a, b) => a.date.getTime() - b.date.getTime())
 })
 
 const x = (d: DataPoint) => d.date
