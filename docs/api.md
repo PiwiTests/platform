@@ -238,7 +238,37 @@ proxy_read_timeout 3600s;
 
 ---
 
-## Query
+### GET `/api/stream`
+
+Global Server-Sent Events endpoint for dashboard-wide run lifecycle notifications. The dashboard connects to this endpoint automatically to refresh pages without polling.
+
+**Headers returned**
+
+- `Content-Type: text/event-stream`
+- `Cache-Control: no-cache`
+- `X-Accel-Buffering: no` (nginx compatibility)
+
+**Event types**
+
+| Event type       | Description                                               |
+|------------------|-----------------------------------------------------------|
+| `run-started`    | A new streaming run has been created                      |
+| `run-finished`   | A streaming run completed (via `/api/test-runs/[id]/finish`) |
+| `run-submitted`  | A run was submitted in one shot (via `/api/test-runs/submit`) |
+
+Each event payload contains `runId`, `projectId`, and (where applicable) `status`.
+
+**Example usage**
+
+```javascript
+const source = new EventSource('/api/stream')
+source.onmessage = (event) => {
+  const data = JSON.parse(event.data)
+  console.log(`Run ${data.runId} event: ${data.type}`)
+}
+```
+
+---
 
 ### GET `/api/projects`
 

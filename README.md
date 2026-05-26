@@ -39,6 +39,7 @@ A modern dashboard for storing and visualising Playwright test results, built wi
 - 🔬 **Browser Web Vitals** — TTFB, DOMContentLoaded, FCP and more via the Performance API
 - 📊 **Run comparison** — side-by-side delta view with improved/regressed/unchanged summary
 - 🔌 **Playwright reporter** — custom reporter for automatic result submission
+- ⚡ **Real-time updates** — live dashboard via Server-Sent Events; pages refresh instantly when a run starts or finishes, with no polling
 - 🔐 **Authentication** — optional role-based access control (administrator, reporter, user)
 - ☁️ **Flexible storage** — local file system or S3-compatible storage
 - 🐳 **Docker support** — pre-built multi-platform container images (~200 MB)
