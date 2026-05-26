@@ -9,10 +9,15 @@ const toast = useToast()
 const open = ref(false)
 
 // Fetch projects for sidebar navigation
-const { data: projects } = await useFetch<ProjectWithStats[]>('/api/projects', {
+const { data: projects, refresh: refreshProjects } = await useFetch<ProjectWithStats[]>('/api/projects', {
   lazy: true,
   default: () => []
 })
+
+const hasRunningProjects = computed(() =>
+  (projects.value as ProjectWithStats[]).some(p => p.latestRun?.status === 'running')
+)
+useAutoRefresh(hasRunningProjects, refreshProjects)
 
 // Extract current project ID from route (if viewing a project page)
 const currentProjectId = computed(() => {
@@ -30,8 +35,8 @@ const projectItems = computed(() => {
   return projects.value.map((project) => {
     const isActive = currentProjectId.value !== null && currentProjectId.value === project.id
     const status = project.latestRun?.status || 'unknown'
-    const statusIcon = status === 'passed' ? 'i-lucide-circle-check-big' : status === 'failed' ? 'i-lucide-circle-x' : 'i-lucide-circle'
-    const statusColor = status === 'passed' ? 'success' : status === 'failed' ? 'error' : 'neutral'
+    const statusIcon = status === 'passed' ? 'i-lucide-circle-check-big' : status === 'failed' ? 'i-lucide-circle-x' : status === 'running' ? 'i-lucide-loader-circle' : 'i-lucide-circle'
+    const statusColor = status === 'passed' ? 'success' : status === 'failed' ? 'error' : status === 'running' ? 'info' : 'neutral'
     const displayLabel = project.label || project.name
 
     return {
@@ -39,7 +44,7 @@ const projectItems = computed(() => {
       icon: 'i-lucide-circle',
       badge: {
         icon: statusIcon,
-        color: statusColor as 'success' | 'error' | 'neutral'
+        color: statusColor as 'success' | 'error' | 'info' | 'neutral'
       },
       value: `project-${project.id}`,
       type: 'trigger' as const,

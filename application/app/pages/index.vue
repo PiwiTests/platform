@@ -3,7 +3,12 @@ import type { ProjectWithStats, TestRunForChart } from '~~/types/api'
 
 useHead({ title: 'Playwright Dashboard' })
 
-const { data: projects } = await useFetch<ProjectWithStats[]>('/api/projects')
+const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/projects')
+
+const hasRunningProjects = computed(() =>
+  projects.value?.some(p => p.latestRun?.status === 'running') ?? false
+)
+useAutoRefresh(hasRunningProjects, refresh)
 
 const stats = computed(() => {
   const totalProjects = projects.value?.length || 0
@@ -142,9 +147,7 @@ const allTestRuns = computed(() => {
                   {{ project.totalRuns }} test runs
                 </p>
               </div>
-              <UBadge v-if="project.latestRun" :color="project.latestRun.status === 'passed' ? 'success' : 'error'">
-                {{ project.latestRun.status }}
-              </UBadge>
+              <RunStatusBadge v-if="project.latestRun" :status="project.latestRun.status" />
             </div>
 
             <div v-if="recentProjects.length === 0" class="text-center py-8 text-gray-500">

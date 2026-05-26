@@ -14,6 +14,11 @@ const toast = useToast()
 const deletingRunId = ref<number | null>(null)
 const confirmDeleteRunId = ref<number | null>(null)
 
+const hasRunningRuns = computed(() =>
+  project.value?.testRuns.some(r => r.status === 'running') ?? false
+)
+useAutoRefresh(hasRunningRuns, refresh)
+
 async function handleDeleteRun(runId: number) {
   confirmDeleteRunId.value = null
   deletingRunId.value = runId
@@ -31,7 +36,7 @@ async function handleDeleteRun(runId: number) {
   }
 }
 
-const UBadge = resolveComponent('UBadge')
+const RunStatusBadge = resolveComponent('RunStatusBadge')
 const TestStatusBar = resolveComponent('TestStatusBar')
 const RunReports = resolveComponent('RunReports')
 
@@ -53,10 +58,7 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
   {
     accessorKey: 'status',
     header: createSortHeader<TestRunSummary>('Status'),
-    cell: ({ row }) => {
-      const color = getStatusColor(row.getValue('status') as string)
-      return h(UBadge, { color, class: 'capitalize' }, () => row.getValue('status'))
-    }
+    cell: ({ row }) => h(RunStatusBadge, { status: row.getValue('status') as string })
   },
   {
     accessorKey: 'startTime',
