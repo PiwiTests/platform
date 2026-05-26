@@ -11,6 +11,7 @@ import { mkdirSync, existsSync, readdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { rm } from 'fs/promises'
 import { sanitizeNetworkRequests, sanitizeWebVitals } from '../../utils/sanitize'
+import { runEventBus } from '../../utils/run-events'
 
 // Default labels for known report types
 const REPORT_TYPE_LABELS: Record<string, string> = {
@@ -279,6 +280,8 @@ export default eventHandler(async (event) => {
       id: resultTestRun.id,
       projectId: resultTestRun.projectId,
     }
+
+    runEventBus.publishGlobal({ type: 'run-submitted', runId: resultTestRun.id, projectId: resultTestRun.projectId, status: resultTestRun.status })
   }
 
   // Insert report records into the reports table

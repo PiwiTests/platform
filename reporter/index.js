@@ -477,12 +477,12 @@ class PlaywrightDashboardReporter {
     // Add trace files if available
     if (this.options.uploadTraces) {
       let traceCount = 0;
-      for (const testCase of this.testCases) {
+      for (const [i, testCase] of this.testCases.entries()) {
         const traceFiles = findTraceFiles(testCase);
         for (const tracePath of traceFiles) {
           if (fs.existsSync(tracePath)) {
             console.log(`[Playwright Dashboard] Adding trace file: ${tracePath}`);
-            form.append(`trace_${testCase.index}`, fs.createReadStream(tracePath), {
+            form.append(`trace_${i}`, fs.createReadStream(tracePath), {
               filename: path.basename(tracePath)
             });
             traceCount++;
