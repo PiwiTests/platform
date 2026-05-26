@@ -95,6 +95,30 @@ export interface DashboardReporterOptions {
   collectPerformanceMetrics?: boolean;
 
   /**
+   * Whether to enable live streaming of test results to the server.
+   * When enabled, test results are sent to the server as they complete, allowing
+   * real-time monitoring in the dashboard UI.
+   *
+   * Falls back to batch mode automatically if the server does not support streaming.
+   * @default true
+   */
+  streaming?: boolean;
+
+  /**
+   * Number of test results to batch before sending to the server during streaming.
+   * Lower values provide more real-time updates but increase HTTP overhead.
+   * @default 5
+   */
+  streamingBatchSize?: number;
+
+  /**
+   * Maximum delay in milliseconds before flushing pending streaming events.
+   * Events are sent either when the batch size is reached or this delay expires.
+   * @default 2000
+   */
+  streamingBatchDelay?: number;
+
+  /**
    * API key for authenticating with the dashboard server.
    *
    * **Preferred over `username`/`password`** for CI environments.
