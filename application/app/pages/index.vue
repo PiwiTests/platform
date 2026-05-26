@@ -7,7 +7,6 @@ const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/pro
 
 useRunStream(refresh)
 
-
 const stats = computed(() => {
   const totalProjects = projects.value?.length || 0
   const totalRuns = projects.value?.reduce((sum, p) => sum + (p.totalRuns || 0), 0) || 0

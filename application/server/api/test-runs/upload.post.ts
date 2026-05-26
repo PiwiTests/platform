@@ -266,13 +266,18 @@ export default eventHandler(async (event) => {
       metadata: testRunData.metadata || null
     }).returning()
 
-    testRun = testRunResult[0]
+    const resultTestRun = testRunResult[0]
 
-    if (!testRun) {
+    if (!resultTestRun) {
       throw createError({
         statusCode: 500,
         message: 'Failed to create test run'
       })
+    }
+
+    testRun = {
+      id: resultTestRun.id,
+      projectId: resultTestRun.projectId,
     }
   }
 

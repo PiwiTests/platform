@@ -99,7 +99,7 @@ export default eventHandler(async (event) => {
   })
 
   // Prefetch all existing test cases for this batch in one query to avoid N+1
-  const uniqueFilePaths = [...new Set(parsedEvents.map((e: { filePath: string }) => e.filePath))]
+  const uniqueFilePaths = [...new Set(parsedEvents.map((e: { filePath: string }) => e.filePath))] as string[]
   const existingCaseRows = uniqueFilePaths.length > 0
     ? await db.select()
         .from(testCases)
@@ -172,10 +172,10 @@ export default eventHandler(async (event) => {
   const updatedRuns = await db.update(testRuns)
     .set({
       updatedAt: new Date(),
-      totalTests: sql`${testRuns.totalTests} + ${validEvents.length}`,
-      passedTests: sql`${testRuns.passedTests} + ${statusCounts['passed'] || 0}`,
-      failedTests: sql`${testRuns.failedTests} + ${statusCounts['failed'] || 0}`,
-      skippedTests: sql`${testRuns.skippedTests} + ${statusCounts['skipped'] || 0}`
+      totalTests: testRuns.totalTests + validEvents.length,
+      passedTests: testRuns.passedTests + statusCounts['passed'] || 0,
+      failedTests: testRuns.failedTests + statusCounts['failed'] || 0,
+      skippedTests: testRuns.skippedTests + statusCounts['skipped'] || 0
     })
     .where(eq(testRuns.id, id))
     .returning()

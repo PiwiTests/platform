@@ -9,7 +9,7 @@ import { onUnmounted } from 'vue'
  * Must be called inside a component's `setup` (or `<script setup>`) context
  * so that `onUnmounted` can clean up the connection.
  */
-export function useRunStream(refresh: () => Promise<unknown> | void) {
+export function useRunStream(refresh: () => Promise<unknown>) {
   if (!import.meta.client) return
 
   const eventSource = new EventSource('/api/stream')

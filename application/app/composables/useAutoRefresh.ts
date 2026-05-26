@@ -13,7 +13,7 @@ const REFRESH_INTERVAL_MS = 5000
  */
 export function useAutoRefresh(
   hasRunning: Ref<boolean> | ComputedRef<boolean>,
-  refresh: () => Promise<unknown> | void
+  refresh: () => Promise<unknown>
 ) {
   useIntervalFn(async () => {
     if (hasRunning.value) {
