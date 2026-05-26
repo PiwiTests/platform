@@ -28,7 +28,8 @@ export const testRuns = sqliteTable('test_runs', {
   reportSize: integer('report_size'), // in bytes (decompressed size)
   metadata: text('metadata', { mode: 'json' }), // Additional metadata as JSON
   streamToken: text('stream_token'), // Token for authenticating streaming updates
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date())
 }, table => ({
   projectIdIdx: index('idx_test_runs_project_id').on(table.projectId)
 }))

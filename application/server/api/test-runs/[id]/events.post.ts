@@ -171,6 +171,7 @@ export default eventHandler(async (event) => {
 
   const updatedRuns = await db.update(testRuns)
     .set({
+      updatedAt: new Date(),
       totalTests: sql`${testRuns.totalTests} + ${validEvents.length}`,
       passedTests: sql`${testRuns.passedTests} + ${statusCounts['passed'] || 0}`,
       failedTests: sql`${testRuns.failedTests} + ${statusCounts['failed'] || 0}`,

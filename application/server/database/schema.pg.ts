@@ -28,7 +28,8 @@ export const testRuns = pgTable('test_runs', {
   reportSize: integer('report_size'), // in bytes (decompressed size)
   metadata: jsonb('metadata'), // Additional metadata as JSON
   streamToken: text('stream_token'), // Token for authenticating streaming updates
-  createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
+  createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date()),
+  updatedAt: timestamp('updated_at', { mode: 'date' }).$defaultFn(() => new Date())
 }, table => ({
   projectIdIdx: index('idx_test_runs_project_id').on(table.projectId)
 }))
