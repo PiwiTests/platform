@@ -26,6 +26,7 @@ let eventSource: EventSource | null = null
 
 // Connect to SSE when run is in 'running' state
 function connectToStream() {
+  if (!import.meta.client) return
   if (eventSource) return
   if (!isLive.value) return
 
