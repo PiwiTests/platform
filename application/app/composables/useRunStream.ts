@@ -18,6 +18,10 @@ export function useRunStream(refresh: () => Promise<unknown> | void) {
     refresh()
   }
 
+  eventSource.onerror = () => {
+    // EventSource will automatically attempt to reconnect on error
+  }
+
   onUnmounted(() => {
     eventSource.close()
   })

@@ -1,5 +1,7 @@
 import { runEventBus } from '../utils/run-events'
 
+const HEARTBEAT_INTERVAL_MS = 15000
+
 export default eventHandler(async (event) => {
   setResponseHeaders(event, {
     'Content-Type': 'text/event-stream',
@@ -27,7 +29,7 @@ export default eventHandler(async (event) => {
           clearInterval(heartbeatInterval)
           unsubscribe()
         }
-      }, 15000)
+      }, HEARTBEAT_INTERVAL_MS)
 
       // Handle client disconnect
       event.node.req.on('close', () => {
