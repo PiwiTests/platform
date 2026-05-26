@@ -26,6 +26,9 @@ class PlaywrightDashboardReporter {
       collectScmInfo: options.collectScmInfo !== false, // default true
       collectCiInfo: options.collectCiInfo !== false, // default true
       collectPerformanceMetrics: options.collectPerformanceMetrics !== false, // default true
+      streaming: options.streaming !== false, // default true - enable live streaming
+      streamingBatchSize: options.streamingBatchSize || 5, // send events in batches of N
+      streamingBatchDelay: options.streamingBatchDelay || 2000, // or every N ms
       username: options.username || null,
       password: options.password || null,
       apiKey: options.apiKey || null,
@@ -40,6 +43,14 @@ class PlaywrightDashboardReporter {
     this.failedTests = 0;
     this.skippedTests = 0;
     this.timedOutTests = 0;
+
+    // Streaming state
+    this.streamingRunId = null;
+    this.streamToken = null;
+    this.streamingEnabled = false;
+    this.pendingEvents = [];
+    this.flushTimer = null;
+    this.flushPromises = [];
 
     /**
      * Collected metadata including SCM, CI, and custom data
@@ -64,6 +75,58 @@ class PlaywrightDashboardReporter {
 
     // Collect metadata
     this.metadata = collectMetadata(config, suite, this.options);
+
+    // Start streaming if enabled
+    if (this.options.streaming) {
+      this._startStreaming();
+    }
+  }
+
+  /**
+   * Authenticate and start a streaming run on the server.
+   * Runs asynchronously and sets this.streamingEnabled on success.
+   */
+  _startStreaming() {
+    const self = this;
+
+    // Determine auth credential
+    let cookieOrApiKey = null;
+    if (this.options.apiKey) {
+      cookieOrApiKey = this.options.apiKey;
+    }
+
+    const payload = {
+      projectName: this.options.projectName,
+      projectDescription: this.options.projectDescription,
+      startTime: this.startTime,
+      metadata: this.metadata
+    };
+
+    // Fire and forget — we'll check this.streamingEnabled later
+    this._streamStartPromise = (async () => {
+      try {
+        // If using username/password, login first
+        if (!cookieOrApiKey && self.options.username && self.options.password) {
+          cookieOrApiKey = await loginUser(self.options.serverUrl, self.options.username, self.options.password, self.options.verbose);
+        }
+        self._streamAuth = cookieOrApiKey;
+
+        const response = await postJSON(self.options.serverUrl, '/api/test-runs/start', payload, self.options.verbose, cookieOrApiKey);
+
+        if (response && response.runId && response.streamToken) {
+          self.streamingRunId = response.runId;
+          self.streamToken = response.streamToken;
+          self.streamingEnabled = true;
+          console.log(`[Playwright Dashboard] Streaming enabled. Run ID: ${response.runId}`);
+        }
+      } catch (error) {
+        // Server might not support streaming — fall back to batch mode
+        if (self.options.verbose) {
+          console.log(`[Playwright Dashboard] Streaming not available: ${error.message}. Will use batch mode.`);
+        }
+        self.streamingEnabled = false;
+      }
+    })();
   }
 
   onTestEnd(test, result) {
@@ -126,6 +189,76 @@ class PlaywrightDashboardReporter {
     }
 
     this.testCases.push(testCase);
+
+    // Queue event for streaming
+    if (this.options.streaming) {
+      this._queueStreamEvent(testCase);
+    }
+  }
+
+  /**
+   * Queue a test case event for streaming to the server.
+   * Sends in batches to reduce HTTP overhead.
+   */
+  _queueStreamEvent(testCase) {
+    this.pendingEvents.push({
+      title: testCase.title,
+      location: testCase.location,
+      status: testCase.status,
+      duration: testCase.duration,
+      error: testCase.error,
+      retries: testCase.retries,
+      steps: testCase.performanceMetrics && testCase.performanceMetrics.steps || null,
+      slowestStep: testCase.performanceMetrics && testCase.performanceMetrics.slowestStep && testCase.performanceMetrics.slowestStep.title || null,
+      slowestStepDuration: testCase.performanceMetrics && testCase.performanceMetrics.slowestStep && testCase.performanceMetrics.slowestStep.duration || null,
+      networkRequests: testCase.networkRequests || null,
+      webVitals: testCase.webVitals || null
+    });
+
+    // Flush when batch size is reached
+    if (this.pendingEvents.length >= this.options.streamingBatchSize) {
+      this._flushStreamEvents();
+    } else if (!this.flushTimer) {
+      // Set a timer to flush after delay
+      this.flushTimer = setTimeout(() => {
+        this._flushStreamEvents();
+      }, this.options.streamingBatchDelay);
+    }
+  }
+
+  /**
+   * Flush pending events to the server.
+   */
+  _flushStreamEvents() {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+
+    if (this.pendingEvents.length === 0) return;
+    if (!this.streamingEnabled || !this.streamingRunId) return;
+
+    const events = this.pendingEvents.splice(0);
+    const payload = {
+      streamToken: this.streamToken,
+      testCases: events
+    };
+
+    const promise = postJSON(
+      this.options.serverUrl,
+      `/api/test-runs/${this.streamingRunId}/events`,
+      payload,
+      this.options.verbose,
+      this._streamAuth
+    ).catch(error => {
+      if (this.options.verbose) {
+        console.warn(`[Playwright Dashboard] Failed to stream events: ${error.message}`);
+      }
+      // Re-queue failed events for the batch upload fallback
+      this.pendingEvents.unshift(...events);
+    });
+
+    this.flushPromises.push(promise);
   }
 
   async onEnd(result) {
@@ -158,25 +291,64 @@ class PlaywrightDashboardReporter {
       this.metadata.performance = computePerformanceSummary(this.testCases);
     }
 
+    // Wait for streaming start to complete if it was initiated
+    if (this._streamStartPromise) {
+      await this._streamStartPromise;
+    }
+
+    // Flush any remaining streaming events
+    if (this.streamingEnabled && this.pendingEvents.length > 0) {
+      this._flushStreamEvents();
+    }
+
+    // Wait for all pending stream flushes to complete
+    if (this.flushPromises.length > 0) {
+      await Promise.allSettled(this.flushPromises);
+      this.flushPromises = [];
+    }
+
     // Authenticate if credentials are provided
-    let sessionCookie = null;
-    if (this.options.apiKey) {
-      // API key – passed directly as a Bearer token, no login step needed
-      sessionCookie = this.options.apiKey;
-      if (this.options.verbose) {
-        console.log('[Playwright Dashboard] Using API key for authentication');
-      }
-    } else if (this.options.username && this.options.password) {
-      try {
-        console.log(`[Playwright Dashboard] Authenticating as ${this.options.username}...`);
-        sessionCookie = await loginUser(this.options.serverUrl, this.options.username, this.options.password, this.options.verbose);
-      } catch (error) {
-        console.error(`[Playwright Dashboard] Authentication failed: ${error.message}`);
-        throw error;
+    let sessionCookie = this._streamAuth || null;
+    if (!sessionCookie) {
+      if (this.options.apiKey) {
+        sessionCookie = this.options.apiKey;
+        if (this.options.verbose) {
+          console.log('[Playwright Dashboard] Using API key for authentication');
+        }
+      } else if (this.options.username && this.options.password) {
+        try {
+          console.log(`[Playwright Dashboard] Authenticating as ${this.options.username}...`);
+          sessionCookie = await loginUser(this.options.serverUrl, this.options.username, this.options.password, this.options.verbose);
+        } catch (error) {
+          console.error(`[Playwright Dashboard] Authentication failed: ${error.message}`);
+          throw error;
+        }
       }
     }
 
-    // Try to upload with files if available
+    // If streaming was enabled, finalize the run on the server
+    if (this.streamingEnabled && this.streamingRunId) {
+      try {
+        await this._finishStreamingRun(overallStatus, duration, sessionCookie);
+
+        // Still upload reports/traces if configured
+        const hasReports = this.options.uploadReport || (this.options.reports && this.options.reports.length > 0);
+        if (this.options.uploadTraces || hasReports) {
+          try {
+            await this._uploadFilesForStreamingRun(sessionCookie);
+          } catch (error) {
+            console.warn(`[Playwright Dashboard] Failed to upload files for streaming run: ${error.message}`);
+          }
+        }
+        return;
+      } catch (error) {
+        console.warn(`[Playwright Dashboard] Failed to finalize streaming run: ${error.message}`);
+        console.log(`[Playwright Dashboard] Falling back to batch upload...`);
+        // Fall through to batch mode
+      }
+    }
+
+    // Try to upload with files if available (batch mode)
     const hasReports = this.options.uploadReport || (this.options.reports && this.options.reports.length > 0);
     if (this.options.uploadTraces || hasReports) {
       try {
@@ -190,6 +362,138 @@ class PlaywrightDashboardReporter {
 
     // Fallback to JSON-only upload
     await this.uploadJSON(overallStatus, duration, sessionCookie);
+  }
+
+  /**
+   * Finalize a streaming run on the server.
+   */
+  async _finishStreamingRun(status, duration, sessionCookie) {
+    // Compute durations for P90 calculation
+    const durations = this.testCases
+      .filter(tc => tc.duration !== null && tc.duration !== undefined)
+      .map(tc => tc.duration);
+
+    // Calculate flaky tests
+    const flakyTests = this.testCases.filter(
+      tc => tc.status === 'passed' && (tc.retries || 0) > 0
+    ).length;
+
+    const payload = {
+      streamToken: this.streamToken,
+      status,
+      duration,
+      totalTests: this.totalTests,
+      passedTests: this.passedTests,
+      failedTests: this.failedTests,
+      skippedTests: this.skippedTests,
+      flakyTests,
+      durations,
+      metadata: this.metadata
+    };
+
+    const response = await postJSON(
+      this.options.serverUrl,
+      `/api/test-runs/${this.streamingRunId}/finish`,
+      payload,
+      this.options.verbose,
+      sessionCookie
+    );
+
+    console.log(`[Playwright Dashboard] Successfully finalized streaming run #${this.streamingRunId}`);
+    return response;
+  }
+
+  /**
+   * Upload report files and traces for a streaming run that is already created.
+   */
+  async _uploadFilesForStreamingRun(sessionCookie) {
+    const form = new FormData();
+
+    // Add run ID to associate files with existing run
+    form.append('testRunId', String(this.streamingRunId));
+    form.append('projectName', this.options.projectName);
+
+    // We don't re-send testRun data or testCases — they're already on the server
+    form.append('testRun', JSON.stringify({
+      status: 'already-submitted',
+      startTime: this.startTime,
+      duration: 0,
+      totalTests: 0,
+      passedTests: 0,
+      failedTests: 0,
+      skippedTests: 0,
+      metadata: {}
+    }));
+    form.append('testCases', JSON.stringify([]));
+
+    // Build the list of reports to upload
+    const reportsToUpload = [];
+    if (this.options.reports && Array.isArray(this.options.reports)) {
+      for (const reportConfig of this.options.reports) {
+        reportsToUpload.push(reportConfig);
+      }
+    }
+
+    const hasHtmlReport = reportsToUpload.some(r => r.type === 'html');
+    if (this.options.uploadReport && !hasHtmlReport) {
+      reportsToUpload.push({ type: 'html' });
+    }
+
+    for (const reportConfig of reportsToUpload) {
+      const type = reportConfig.type;
+      const defaultDir = DEFAULT_REPORT_DIRS[type] || type + '-report';
+      const reportDir = reportConfig.dir
+        ? findReportDirectory(reportConfig.dir)
+        : (type === 'html'
+            ? findHTMLReportDirectory()
+            : findReportDirectory(defaultDir));
+
+      if (!reportDir) {
+        if (this.options.verbose) {
+          console.log(`[Playwright Dashboard] No report directory found for type '${type}'`);
+        }
+        continue;
+      }
+
+      console.log(`[Playwright Dashboard] Compressing ${type} report directory: ${reportDir}`);
+      const compressed = await compressReportDirectory(reportDir);
+      if (compressed) {
+        console.log(`[Playwright Dashboard] Adding ${type} report archive: ${compressed.length} bytes`);
+        form.append(`report_${type}`, compressed, {
+          filename: `${type}-report.gz`
+        });
+
+        if (reportConfig.label) {
+          form.append(`report_label_${type}`, reportConfig.label);
+        }
+      }
+    }
+
+    // Add trace files if available
+    if (this.options.uploadTraces) {
+      let traceCount = 0;
+      for (const testCase of this.testCases) {
+        const traceFiles = findTraceFiles(testCase);
+        for (const tracePath of traceFiles) {
+          if (fs.existsSync(tracePath)) {
+            console.log(`[Playwright Dashboard] Adding trace file: ${tracePath}`);
+            form.append(`trace_${testCase.index}`, fs.createReadStream(tracePath), {
+              filename: path.basename(tracePath)
+            });
+            traceCount++;
+          }
+        }
+      }
+      console.log(`[Playwright Dashboard] Found ${traceCount} trace files`);
+    }
+
+    const response = await postFormData(this.options.serverUrl, '/api/test-runs/upload', form, sessionCookie);
+    console.log(`[Playwright Dashboard] Successfully uploaded files for streaming run #${this.streamingRunId}`);
+    if (response.reports && response.reports.length > 0) {
+      for (const r of response.reports) {
+        console.log(`[Playwright Dashboard] ${r.label}: ${r.path}`);
+      }
+    }
   }
 
   async uploadJSON(overallStatus, duration, sessionCookie) {

@@ -14,7 +14,7 @@ export const projects = sqliteTable('projects', {
 export const testRuns = sqliteTable('test_runs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   projectId: integer('project_id').notNull().references(() => projects.id),
-  status: text('status').notNull(), // 'passed', 'failed', 'timedout', 'interrupted'
+  status: text('status').notNull(), // 'passed', 'failed', 'timedout', 'interrupted', 'running'
   startTime: integer('start_time', { mode: 'timestamp' }).notNull(),
   duration: integer('duration'), // in milliseconds
   totalTests: integer('total_tests').notNull().default(0),
@@ -27,6 +27,7 @@ export const testRuns = sqliteTable('test_runs', {
   reportPath: text('report_path'),
   reportSize: integer('report_size'), // in bytes (decompressed size)
   metadata: text('metadata', { mode: 'json' }), // Additional metadata as JSON
+  streamToken: text('stream_token'), // Token for authenticating streaming updates
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
 }, table => ({
   projectIdIdx: index('idx_test_runs_project_id').on(table.projectId)
