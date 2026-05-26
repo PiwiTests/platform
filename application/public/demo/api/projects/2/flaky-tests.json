@@ -1,0 +1,98 @@
+{
+  "flakyTests": [
+    {
+      "id": 201,
+      "title": "should sync inventory across warehouses",
+      "filePath": "tests/inventory/sync.spec.ts",
+      "flakyCount": 6,
+      "totalRuns": 15,
+      "flakyRate": 40.0,
+      "lastFlakyDate": "2025-04-24T20:00:00.000Z"
+    },
+    {
+      "id": 215,
+      "title": "should bulk import products via CSV",
+      "filePath": "tests/products/import.spec.ts",
+      "flakyCount": 4,
+      "totalRuns": 15,
+      "flakyRate": 26.7,
+      "lastFlakyDate": "2025-04-23T13:30:00.000Z"
+    },
+    {
+      "id": 209,
+      "title": "should generate inventory report",
+      "filePath": "tests/reports/inventory.spec.ts",
+      "flakyCount": 3,
+      "totalRuns": 15,
+      "flakyRate": 20.0,
+      "lastFlakyDate": "2025-04-21T16:45:00.000Z"
+    },
+    {
+      "id": 222,
+      "title": "should notify low stock threshold",
+      "filePath": "tests/notifications/stock.spec.ts",
+      "flakyCount": 2,
+      "totalRuns": 15,
+      "flakyRate": 13.3,
+      "lastFlakyDate": "2025-04-16T14:15:00.000Z"
+    },
+    {
+      "id": 230,
+      "title": "should update product pricing in bulk",
+      "filePath": "tests/products/pricing.spec.ts",
+      "flakyCount": 2,
+      "totalRuns": 15,
+      "flakyRate": 13.3,
+      "lastFlakyDate": "2025-04-10T09:00:00.000Z"
+    },
+    {
+      "id": 245,
+      "title": "should reconcile warehouse transfers",
+      "filePath": "tests/inventory/transfer.spec.ts",
+      "flakyCount": 1,
+      "totalRuns": 15,
+      "flakyRate": 6.7,
+      "lastFlakyDate": "2025-04-06T12:00:00.000Z"
+    }
+  ],
+  "failingTests": [
+    {
+      "id": 205,
+      "title": "should lock inventory during checkout",
+      "filePath": "tests/inventory/checkout.spec.ts",
+      "failureCount": 7,
+      "totalRuns": 15,
+      "failureRate": 46.7,
+      "lastError": "Error: Race condition: inventory lock expired before checkout completed\n  at InventoryService.lock (src/inventory.ts:203)"
+    },
+    {
+      "id": 218,
+      "title": "should handle concurrent stock updates",
+      "filePath": "tests/inventory/concurrent.spec.ts",
+      "failureCount": 6,
+      "totalRuns": 15,
+      "failureRate": 40.0,
+      "lastError": "AssertionError: expected stock quantity 48 to equal 50\n  at tests/inventory/concurrent.spec.ts:72"
+    },
+    {
+      "id": 201,
+      "title": "should sync inventory across warehouses",
+      "filePath": "tests/inventory/sync.spec.ts",
+      "failureCount": 4,
+      "totalRuns": 15,
+      "failureRate": 26.7,
+      "lastError": "TimeoutError: Waiting for sync confirmation exceeded 10000ms"
+    },
+    {
+      "id": 233,
+      "title": "should rollback failed warehouse transfer",
+      "filePath": "tests/inventory/transfer.spec.ts",
+      "failureCount": 3,
+      "totalRuns": 15,
+      "failureRate": 20.0,
+      "lastError": "Error: Transaction rollback failed: deadlock detected"
+    }
+  ],
+  "neverFailed": 36,
+  "totalTestCases": 58
+}

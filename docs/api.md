@@ -143,6 +143,96 @@ Top 20 slowest test cases with avg, max, min duration and trend data.
 
 ---
 
+### GET `/api/projects/[id]/quality`
+
+Quality and stability data for the project. Returns per-run trend data and an aggregate summary.
+
+**Query parameters**
+
+| Parameter | Default | Description                              |
+|-----------|---------|------------------------------------------|
+| `limit`   | `50`    | Number of recent runs to include (max 200) |
+
+**Response**
+
+```json
+{
+  "trend": [
+    {
+      "id": 1,
+      "startTime": "2024-01-01T12:00:00.000Z",
+      "status": "passed",
+      "totalTests": 32,
+      "passedTests": 31,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "flakyTests": 1,
+      "failureRate": 0,
+      "flakyRate": 3.1,
+      "commit": "abc1234",
+      "branch": "main"
+    }
+  ],
+  "summary": {
+    "totalRuns": 15,
+    "totalExecutions": 480,
+    "totalFlaky": 12,
+    "totalFailed": 9,
+    "overallFlakyRate": 2.5,
+    "overallPassRate": 94.0,
+    "overallFailureRate": 1.9,
+    "failureFreeStreak": 3
+  }
+}
+```
+
+---
+
+### GET `/api/projects/[id]/flaky-tests`
+
+Top flaky and failing test cases ranked by occurrence count across recent runs.
+
+**Query parameters**
+
+| Parameter | Default | Description                                |
+|-----------|---------|---------------------------------------------|
+| `runs`    | `20`    | Number of recent runs to analyse (max 100)  |
+
+**Response**
+
+```json
+{
+  "flakyTests": [
+    {
+      "id": 42,
+      "title": "should calculate shipping cost",
+      "filePath": "tests/checkout/shipping.spec.ts",
+      "flakyCount": 4,
+      "totalRuns": 20,
+      "flakyRate": 20.0,
+      "lastFlakyDate": "2024-01-01T12:00:00.000Z"
+    }
+  ],
+  "failingTests": [
+    {
+      "id": 7,
+      "title": "should complete checkout with credit card",
+      "filePath": "tests/checkout/checkout.spec.ts",
+      "failureCount": 3,
+      "totalRuns": 20,
+      "failureRate": 15.0,
+      "lastError": "Error: Payment gateway timeout after 5000ms"
+    }
+  ],
+  "neverFailed": 23,
+  "totalTestCases": 32
+}
+```
+
+A test is considered **flaky** when its `status` is `"passed"` and `retries` is greater than `0`.
+
+---
+
 ### GET `/api/test-runs/[id]`
 
 Get test run details with test cases. Includes `flakyTests` count.

@@ -1,0 +1,80 @@
+{
+  "flakyTests": [
+    {
+      "id": 108,
+      "title": "should calculate shipping cost",
+      "filePath": "tests/checkout/shipping.spec.ts",
+      "flakyCount": 4,
+      "totalRuns": 15,
+      "flakyRate": 26.7,
+      "lastFlakyDate": "2025-04-22T17:45:00.000Z"
+    },
+    {
+      "id": 102,
+      "title": "should complete checkout with PayPal",
+      "filePath": "tests/checkout/checkout.spec.ts",
+      "flakyCount": 3,
+      "totalRuns": 15,
+      "flakyRate": 20.0,
+      "lastFlakyDate": "2025-04-16T10:05:00.000Z"
+    },
+    {
+      "id": 115,
+      "title": "should apply discount coupon",
+      "filePath": "tests/checkout/discount.spec.ts",
+      "flakyCount": 2,
+      "totalRuns": 15,
+      "flakyRate": 13.3,
+      "lastFlakyDate": "2025-04-06T16:00:00.000Z"
+    },
+    {
+      "id": 120,
+      "title": "should send order confirmation email",
+      "filePath": "tests/notifications/email.spec.ts",
+      "flakyCount": 2,
+      "totalRuns": 15,
+      "flakyRate": 13.3,
+      "lastFlakyDate": "2025-04-14T08:30:00.000Z"
+    },
+    {
+      "id": 111,
+      "title": "should update cart quantity",
+      "filePath": "tests/cart/cart.spec.ts",
+      "flakyCount": 1,
+      "totalRuns": 15,
+      "flakyRate": 6.7,
+      "lastFlakyDate": "2025-04-08T09:30:00.000Z"
+    }
+  ],
+  "failingTests": [
+    {
+      "id": 101,
+      "title": "should complete checkout with credit card",
+      "filePath": "tests/checkout/checkout.spec.ts",
+      "failureCount": 4,
+      "totalRuns": 15,
+      "failureRate": 26.7,
+      "lastError": "Error: Payment gateway timeout after 5000ms\n  at PaymentGateway.charge (src/payment.ts:87)"
+    },
+    {
+      "id": 110,
+      "title": "should reject invalid credit card",
+      "filePath": "tests/checkout/payment.spec.ts",
+      "failureCount": 3,
+      "totalRuns": 15,
+      "failureRate": 20.0,
+      "lastError": "AssertionError: expected 'pending' to equal 'rejected'\n  at tests/checkout/payment.spec.ts:45"
+    },
+    {
+      "id": 122,
+      "title": "should display stock availability",
+      "filePath": "tests/products/stock.spec.ts",
+      "failureCount": 2,
+      "totalRuns": 15,
+      "failureRate": 13.3,
+      "lastError": "TimeoutError: Waiting for element to be visible exceeded 30s"
+    }
+  ],
+  "neverFailed": 23,
+  "totalTestCases": 32
+}

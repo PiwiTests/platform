@@ -1,0 +1,53 @@
+{
+  "flakyTests": [
+    {
+      "id": 301,
+      "title": "should load dashboard with live data",
+      "filePath": "tests/dashboard/live-data.spec.ts",
+      "flakyCount": 3,
+      "totalRuns": 15,
+      "flakyRate": 20.0,
+      "lastFlakyDate": "2025-04-21T22:00:00.000Z"
+    },
+    {
+      "id": 315,
+      "title": "should refresh metrics on interval",
+      "filePath": "tests/dashboard/auto-refresh.spec.ts",
+      "flakyCount": 2,
+      "totalRuns": 15,
+      "flakyRate": 13.3,
+      "lastFlakyDate": "2025-04-15T22:00:00.000Z"
+    },
+    {
+      "id": 309,
+      "title": "should export chart as PNG",
+      "filePath": "tests/charts/export.spec.ts",
+      "flakyCount": 2,
+      "totalRuns": 15,
+      "flakyRate": 13.3,
+      "lastFlakyDate": "2025-04-09T22:00:00.000Z"
+    }
+  ],
+  "failingTests": [
+    {
+      "id": 318,
+      "title": "should render real-time chart updates",
+      "filePath": "tests/charts/realtime.spec.ts",
+      "failureCount": 2,
+      "totalRuns": 15,
+      "failureRate": 13.3,
+      "lastError": "TimeoutError: Chart did not update within 5000ms of data change\n  at tests/charts/realtime.spec.ts:58"
+    },
+    {
+      "id": 322,
+      "title": "should handle WebSocket reconnection",
+      "filePath": "tests/dashboard/websocket.spec.ts",
+      "failureCount": 1,
+      "totalRuns": 15,
+      "failureRate": 6.7,
+      "lastError": "Error: WebSocket connection closed unexpectedly\n  at tests/dashboard/websocket.spec.ts:34"
+    }
+  ],
+  "neverFailed": 19,
+  "totalTestCases": 24
+}

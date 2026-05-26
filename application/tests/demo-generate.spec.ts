@@ -64,6 +64,8 @@ test.describe('Demo generate configuration', () => {
     const plugin = readFileSync(pluginPath, 'utf-8')
     expect(plugin).toContain('\'/api/tags\'')
     expect(plugin).toContain('\'/api/admin/stats\'')
+    expect(plugin).toContain('\'/api/projects/1/quality\'')
+    expect(plugin).toContain('\'/api/projects/1/flaky-tests\'')
   })
 
   test('demo fixture files exist for all mapped API endpoints', () => {
@@ -75,6 +77,8 @@ test.describe('Demo generate configuration', () => {
       'demo/api/projects/1/test-cases.json',
       'demo/api/projects/1/performance.json',
       'demo/api/projects/1/slow-tests.json',
+      'demo/api/projects/1/quality.json',
+      'demo/api/projects/1/flaky-tests.json',
       'demo/api/tags.json',
       'demo/api/admin/stats.json',
       'demo/api/test-runs/1.json',
