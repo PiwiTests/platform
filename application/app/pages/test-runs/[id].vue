@@ -19,6 +19,8 @@ const deleting = ref(false)
 // Live streaming state
 const isLive = computed(() => testRun.value?.status === 'running')
 const liveTestCases = ref<TestCaseResult[]>([])
+// Map of `title@@location` → true for O(1) duplicate detection
+const liveTestCaseKeys = new Map<string, true>()
 const liveProgress = ref<{ totalTests: number, passedTests: number, failedTests: number, skippedTests: number } | null>(null)
 let eventSource: EventSource | null = null
 
@@ -33,12 +35,19 @@ function connectToStream() {
     try {
       const parsed = JSON.parse(event.data)
 
-      if (parsed.type === 'test-completed') {
-        // Avoid duplicates (catch-up events have seq 0)
-        const existing = liveTestCases.value.find(
-          tc => tc.title === parsed.data.title && tc.location === parsed.data.location
-        )
-        if (!existing) {
+      if (parsed.type === 'init') {
+        // Initialize live progress with authoritative server-side state
+        liveProgress.value = {
+          totalTests: parsed.data.totalTests,
+          passedTests: parsed.data.passedTests,
+          failedTests: parsed.data.failedTests,
+          skippedTests: parsed.data.skippedTests
+        }
+      } else if (parsed.type === 'test-completed') {
+        // Avoid duplicates using O(1) Map lookup (catch-up events have seq 0)
+        const key = `${parsed.data.title}@@${parsed.data.location}`
+        if (!liveTestCaseKeys.has(key)) {
+          liveTestCaseKeys.set(key, true)
           liveTestCases.value.push({
             id: liveTestCases.value.length + 1,
             title: parsed.data.title,

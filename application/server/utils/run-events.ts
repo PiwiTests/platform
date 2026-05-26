@@ -3,6 +3,13 @@ import { EventEmitter } from 'node:events'
 /**
  * In-memory pub/sub for live test run streaming.
  * Events are keyed by run ID and forwarded to SSE subscribers.
+ *
+ * **Single-instance limitation**: This event bus lives in Node.js process memory.
+ * When the server is scaled to multiple instances, SSE clients connected to one
+ * instance will not receive events published on another instance. For multi-instance
+ * deployments you must either use sticky sessions (ensuring each run's reporter and
+ * its SSE subscribers always hit the same instance) or replace this bus with a
+ * shared pub/sub backend such as Redis.
  */
 
 export interface RunEvent {

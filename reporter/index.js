@@ -296,15 +296,20 @@ class PlaywrightDashboardReporter {
       await this._streamStartPromise;
     }
 
-    // Flush any remaining streaming events
-    if (this.streamingEnabled && this.pendingEvents.length > 0) {
-      this._flushStreamEvents();
-    }
-
-    // Wait for all pending stream flushes to complete
-    if (this.flushPromises.length > 0) {
-      await Promise.allSettled(this.flushPromises);
-      this.flushPromises = [];
+    // Flush any remaining streaming events, then retry re-queued events up to 3 times
+    const MAX_FLUSH_RETRIES = 3;
+    for (let attempt = 0; attempt < MAX_FLUSH_RETRIES; attempt++) {
+      if (this.streamingEnabled && this.pendingEvents.length > 0) {
+        this._flushStreamEvents();
+      }
+      if (this.flushPromises.length > 0) {
+        await Promise.allSettled(this.flushPromises);
+        this.flushPromises = [];
+      }
+      if (this.pendingEvents.length === 0) break;
+      if (this.options.verbose) {
+        console.warn(`[Playwright Dashboard] ${this.pendingEvents.length} events re-queued after flush failure, retrying (attempt ${attempt + 1}/${MAX_FLUSH_RETRIES})...`);
+      }
     }
 
     // Authenticate if credentials are provided

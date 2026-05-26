@@ -1,5 +1,6 @@
 import { getDatabase } from '../../database'
 import { projects, testRuns, testCases, testRunsCases, reports } from '../../database/schema'
+import type { Project } from '../../database/schema'
 import { eq, and } from 'drizzle-orm'
 import { join } from 'path'
 import { decompressDirectory } from '../../utils/compression'
@@ -44,13 +45,17 @@ export default eventHandler(async (event) => {
 
   // Parse form fields
   let projectName: string | undefined
+  let existingTestRunId: number | undefined // Set when attaching uploads to an already-created streaming run
   let testRunData: Record<string, unknown> | undefined
   let testCasesData: Record<string, unknown>[] = []
   // Map of report type -> { filename, data, label }
   const reportFiles: Map<string, { filename: string, data: Buffer, label?: string }> = new Map()
 
   for (const part of formData) {
-    if (part.name === 'projectName') {
+    if (part.name === 'testRunId') {
+      const parsed = parseInt(part.data.toString('utf-8'), 10)
+      if (!isNaN(parsed) && parsed > 0) existingTestRunId = parsed
+    } else if (part.name === 'projectName') {
       projectName = part.data.toString('utf-8')
     } else if (part.name === 'testRun') {
       try {
@@ -106,16 +111,33 @@ export default eventHandler(async (event) => {
   const db = await getDatabase()
   const storage = getStorage()
 
-  // Get or create project
-  const existingProjects = await db.select().from(projects).where(eq(projects.name, projectName))
-  let project = existingProjects[0]
+  // If attaching to an existing streaming run, look up the run and its project
+  let project: Project | undefined
+  let attachingToExistingRun = false
+
+  if (existingTestRunId) {
+    const existingRunRows = await db.select().from(testRuns).where(eq(testRuns.id, existingTestRunId))
+    const existingRun = existingRunRows[0]
+    if (!existingRun) {
+      throw createError({ statusCode: 404, message: 'Existing test run not found' })
+    }
+    const projectRows = await db.select().from(projects).where(eq(projects.id, existingRun.projectId))
+    project = projectRows[0]
+    attachingToExistingRun = true
+  }
 
   if (!project) {
-    const result = await db.insert(projects).values({
-      name: projectName,
-      description: (testRunData.projectDescription as string | null | undefined) || null
-    }).returning()
-    project = result[0]
+    // Get or create project by name
+    const existingProjects = await db.select().from(projects).where(eq(projects.name, projectName))
+    project = existingProjects[0]
+
+    if (!project) {
+      const result = await db.insert(projects).values({
+        name: projectName,
+        description: (testRunData.projectDescription as string | null | undefined) || null
+      }).returning()
+      project = result[0]
+    }
   }
 
   if (!project) {
@@ -216,28 +238,42 @@ export default eventHandler(async (event) => {
     }
   }
 
-  // Create test run
-  const testRunResult = await db.insert(testRuns).values({
-    projectId: project.id,
-    status: testRunData.status as string,
-    startTime: new Date(testRunData.startTime as string | number | Date),
-    duration: (testRunData.duration as number | null | undefined) || null,
-    totalTests: (testRunData.totalTests as number | undefined) || 0,
-    passedTests: (testRunData.passedTests as number | undefined) || 0,
-    failedTests: (testRunData.failedTests as number | undefined) || 0,
-    skippedTests: (testRunData.skippedTests as number | undefined) || 0,
-    reportPath: primaryReportPath,
-    reportSize: primaryReportSize,
-    metadata: testRunData.metadata || null
-  }).returning()
+  // Create or retrieve the test run
+  let testRun: { id: number, projectId: number }
 
-  const testRun = testRunResult[0]
+  if (attachingToExistingRun && existingTestRunId) {
+    // Attach reports to an already-created streaming run — do not create a new run
+    testRun = { id: existingTestRunId, projectId: project.id }
+    // Update the primary report path on the existing run if we have one
+    if (primaryReportPath !== null) {
+      await db.update(testRuns)
+        .set({ reportPath: primaryReportPath, reportSize: primaryReportSize })
+        .where(eq(testRuns.id, existingTestRunId))
+    }
+  } else {
+    // Create a new test run (standard batch upload)
+    const testRunResult = await db.insert(testRuns).values({
+      projectId: project.id,
+      status: testRunData.status as string,
+      startTime: new Date(testRunData.startTime as string | number | Date),
+      duration: (testRunData.duration as number | null | undefined) || null,
+      totalTests: (testRunData.totalTests as number | undefined) || 0,
+      passedTests: (testRunData.passedTests as number | undefined) || 0,
+      failedTests: (testRunData.failedTests as number | undefined) || 0,
+      skippedTests: (testRunData.skippedTests as number | undefined) || 0,
+      reportPath: primaryReportPath,
+      reportSize: primaryReportSize,
+      metadata: testRunData.metadata || null
+    }).returning()
 
-  if (!testRun) {
-    throw createError({
-      statusCode: 500,
-      message: 'Failed to create test run'
-    })
+    testRun = testRunResult[0]
+
+    if (!testRun) {
+      throw createError({
+        statusCode: 500,
+        message: 'Failed to create test run'
+      })
+    }
   }
 
   // Insert report records into the reports table
@@ -255,24 +291,41 @@ export default eventHandler(async (event) => {
   const testRunPath = `project-${project.id}/run-${testRun.id}`
   await storage.mkdir(testRunPath)
 
-  // Insert test cases using the new schema
-  if (testCasesData && testCasesData.length > 0) {
+  // Insert test cases using the new schema (skipped when attaching to an existing streaming run)
+  if (!attachingToExistingRun && testCasesData && testCasesData.length > 0) {
     for (const testCase of testCasesData) {
-      // Parse location to extract file path, line, and column
+      // Parse location — handles Windows paths by reading line/column from the right
+      const locationStr = testCase.location as string | undefined
       let filePath = 'unknown'
       let line: number | null = null
       let column: number | null = null
 
-      if (testCase.location) {
-        const locationParts = (testCase.location as string).split(':')
-        if (locationParts.length >= 1 && locationParts[0]) {
-          filePath = locationParts[0]
-        }
-        if (locationParts.length >= 2 && locationParts[1]) {
-          line = parseInt(locationParts[1], 10) || null
-        }
-        if (locationParts.length >= 3 && locationParts[2]) {
-          column = parseInt(locationParts[2], 10) || null
+      if (locationStr) {
+        const lastColon = locationStr.lastIndexOf(':')
+        if (lastColon > 0) {
+          const lastPart = locationStr.slice(lastColon + 1)
+          if (/^\d+$/.test(lastPart)) {
+            const beforeLast = locationStr.slice(0, lastColon)
+            const secondLastColon = beforeLast.lastIndexOf(':')
+            if (secondLastColon > 0) {
+              const middlePart = beforeLast.slice(secondLastColon + 1)
+              if (/^\d+$/.test(middlePart)) {
+                column = parseInt(lastPart, 10)
+                line = parseInt(middlePart, 10)
+                filePath = beforeLast.slice(0, secondLastColon)
+              } else {
+                line = parseInt(lastPart, 10)
+                filePath = beforeLast
+              }
+            } else {
+              line = parseInt(lastPart, 10)
+              filePath = beforeLast
+            }
+          } else {
+            filePath = locationStr
+          }
+        } else {
+          filePath = locationStr
         }
       }
 
@@ -281,7 +334,7 @@ export default eventHandler(async (event) => {
         .from(testCases)
         .where(
           and(
-            eq(testCases.projectId, project.id),
+            eq(testCases.projectId, project!.id),
             eq(testCases.filePath, filePath),
             eq(testCases.title, testCase.title as string)
           )
@@ -291,7 +344,7 @@ export default eventHandler(async (event) => {
 
       if (!sharedTestCase) {
         const result = await db.insert(testCases).values({
-          projectId: project.id,
+          projectId: project!.id,
           filePath: filePath,
           title: testCase.title as string
         }).returning()
@@ -313,22 +366,23 @@ export default eventHandler(async (event) => {
         testRunId: testRun.id,
         testCaseId: sharedTestCase.id,
         status: testCase.status as string,
-        duration: (testCase.duration as number | null | undefined) || null,
-        error: (testCase.error as string | null | undefined) || null,
-        retries: (testCase.retries as number | undefined) || 0,
+        duration: (testCase.duration as number | null | undefined) ?? null,
+        error: (testCase.error as string | null | undefined) ?? null,
+        retries: (testCase.retries as number | undefined) ?? 0,
         line: line,
         column: column,
-        steps: (testCase.steps as Array<{ title: string, duration: number, category: string }> | null | undefined) || null,
-        slowestStep: (testCase.slowestStep as string | null | undefined) || null,
-        slowestStepDuration: (testCase.slowestStepDuration as number | null | undefined) || null,
-        networkRequests: sanitizeNetworkRequests(testCase.networkRequests as Array<Record<string, unknown>> | null | undefined) || null,
-        webVitals: sanitizeWebVitals(testCase.webVitals as Record<string, unknown> | null | undefined) || null
+        steps: (testCase.steps as Array<{ title: string, duration: number, category: string }> | null | undefined) ?? null,
+        slowestStep: (testCase.slowestStep as string | null | undefined) ?? null,
+        slowestStepDuration: (testCase.slowestStepDuration as number | null | undefined) ?? null,
+        networkRequests: sanitizeNetworkRequests(testCase.networkRequests as Array<Record<string, unknown>> | null | undefined) ?? null,
+        webVitals: sanitizeWebVitals(testCase.webVitals as Record<string, unknown> | null | undefined) ?? null
       })
     }
   }
 
   // Compute and store performance summary (avgTestDuration, p90TestDuration) + flaky count
-  if (testCasesData && testCasesData.length > 0) {
+  // Only applicable for new (non-streaming) runs that include test case data
+  if (!attachingToExistingRun && testCasesData && testCasesData.length > 0) {
     const durations = testCasesData
       .filter((tc: Record<string, unknown>) => tc.duration !== null && tc.duration !== undefined)
       .map((tc: Record<string, unknown>) => tc.duration as number)

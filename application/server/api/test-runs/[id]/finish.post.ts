@@ -51,8 +51,8 @@ export default eventHandler(async (event) => {
   }
 
   // Determine final status
-  const status = body.status || 'failed'
-  const duration = body.duration || (Date.now() - new Date(testRun.startTime).getTime())
+  const status = body.status ?? 'failed'
+  const duration = body.duration ?? (Date.now() - new Date(testRun.startTime).getTime())
 
   // Compute performance metrics
   let avgTestDuration: number | null = null
@@ -72,8 +72,8 @@ export default eventHandler(async (event) => {
     }
   }
 
-  // Calculate flaky tests count
-  const flakyTests = body.flakyTests || 0
+  // Calculate flaky tests count (default to 0 if not provided)
+  const flakyTests = body.flakyTests ?? 0
 
   // Update the test run with final status
   const updateData: Record<string, unknown> = {
@@ -84,7 +84,7 @@ export default eventHandler(async (event) => {
     ...(body.passedTests !== undefined && { passedTests: body.passedTests }),
     ...(body.failedTests !== undefined && { failedTests: body.failedTests }),
     ...(body.skippedTests !== undefined && { skippedTests: body.skippedTests }),
-    ...(flakyTests > 0 && { flakyTests }),
+    ...(body.flakyTests !== undefined && { flakyTests }),
     ...(avgTestDuration !== null && { avgTestDuration }),
     ...(p90TestDuration !== null && { p90TestDuration }),
     ...(body.metadata && { metadata: body.metadata })
