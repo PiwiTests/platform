@@ -108,6 +108,9 @@ export default eventHandler(async (event) => {
     }
   })
 
+  // Broadcast global run-finished event for dashboard pages
+  runEventBus.publishGlobal({ type: 'run-finished', runId: id, projectId: testRun.projectId, status })
+
   // Cleanup event bus for this run
   runEventBus.cleanup(id)
 

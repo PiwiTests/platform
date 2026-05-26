@@ -14,10 +14,7 @@ const { data: projects, refresh: refreshProjects } = await useFetch<ProjectWithS
   default: () => []
 })
 
-const hasRunningProjects = computed(() =>
-  (projects.value as ProjectWithStats[]).some(p => p.latestRun?.status === 'running')
-)
-useAutoRefresh(hasRunningProjects, refreshProjects)
+useRunStream(refreshProjects)
 
 // Extract current project ID from route (if viewing a project page)
 const currentProjectId = computed(() => {

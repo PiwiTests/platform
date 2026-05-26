@@ -3,6 +3,7 @@ import { projects, testRuns, testCases, testRunsCases } from '../../database/sch
 import { eq, and } from 'drizzle-orm'
 import { requireAuth } from '../../utils/auth'
 import { sanitizeNetworkRequests, sanitizeWebVitals } from '../../utils/sanitize'
+import { runEventBus } from '../../utils/run-events'
 
 export default eventHandler(async (event) => {
   // Require reporter or administrator role for submitting test results
@@ -167,6 +168,8 @@ export default eventHandler(async (event) => {
         .where(eq(testRuns.id, testRun.id))
     }
   }
+
+  runEventBus.publishGlobal({ type: 'run-submitted', runId: testRun.id, projectId: project.id, status: body.status })
 
   return {
     success: true,

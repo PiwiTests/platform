@@ -14,10 +14,7 @@ const toast = useToast()
 const deletingRunId = ref<number | null>(null)
 const confirmDeleteRunId = ref<number | null>(null)
 
-const hasRunningRuns = computed(() =>
-  project.value?.testRuns.some(r => r.status === 'running') ?? false
-)
-useAutoRefresh(hasRunningRuns, refresh)
+useRunStream(refresh)
 
 async function handleDeleteRun(runId: number) {
   confirmDeleteRunId.value = null

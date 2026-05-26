@@ -3,6 +3,7 @@ import { getDatabase } from '../../database'
 import { projects, testRuns } from '../../database/schema'
 import { eq } from 'drizzle-orm'
 import { requireAuth } from '../../utils/auth'
+import { runEventBus } from '../../utils/run-events'
 
 export default eventHandler(async (event) => {
   // Require reporter or administrator role
@@ -64,6 +65,8 @@ export default eventHandler(async (event) => {
       message: 'Failed to create test run'
     })
   }
+
+  runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: project.id })
 
   return {
     success: true,

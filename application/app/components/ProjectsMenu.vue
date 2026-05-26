@@ -12,10 +12,7 @@ const router = useRouter()
 // Fetch available projects
 const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/projects')
 
-const hasRunningProjects = computed(() =>
-  projects.value?.some(p => p.latestRun?.status === 'running') ?? false
-)
-useAutoRefresh(hasRunningProjects, refresh)
+useRunStream(refresh)
 
 // Get current project from route
 const currentProjectId = computed(() => {

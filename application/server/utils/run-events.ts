@@ -20,13 +20,22 @@ export interface RunEvent {
   timestamp: number
 }
 
+export interface GlobalRunEvent {
+  type: 'run-started' | 'run-finished' | 'run-submitted'
+  runId: number
+  projectId: number
+  status?: string
+}
+
 class RunEventBus {
   private emitter = new EventEmitter()
+  private globalEmitter = new EventEmitter()
   private sequences = new Map<number, number>()
 
   constructor() {
     // Allow many concurrent listeners (one per SSE connection)
     this.emitter.setMaxListeners(1000)
+    this.globalEmitter.setMaxListeners(1000)
   }
 
   /**
@@ -63,6 +72,24 @@ class RunEventBus {
    */
   cleanup(runId: number): void {
     this.sequences.delete(runId)
+  }
+
+  /**
+   * Broadcast a global run lifecycle event to all dashboard subscribers.
+   */
+  publishGlobal(event: GlobalRunEvent): void {
+    this.globalEmitter.emit('global', event)
+  }
+
+  /**
+   * Subscribe to global run lifecycle events.
+   * Returns an unsubscribe function.
+   */
+  subscribeGlobal(listener: (event: GlobalRunEvent) => void): () => void {
+    this.globalEmitter.on('global', listener)
+    return () => {
+      this.globalEmitter.off('global', listener)
+    }
   }
 }
 

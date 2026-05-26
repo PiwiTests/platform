@@ -11,10 +11,7 @@ const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/pro
 const { data: tagsData, refresh: refreshTags } = await useFetch<TagsResponse>('/api/tags')
 const toast = useToast()
 
-const hasRunningProjects = computed(() =>
-  projects.value?.some(p => p.latestRun?.status === 'running') ?? false
-)
-useAutoRefresh(hasRunningProjects, refresh)
+useRunStream(refresh)
 
 const allTags = computed(() => tagsData.value?.tags || [])
 
