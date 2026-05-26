@@ -73,6 +73,14 @@ const projectItems = computed(() => {
           }
         },
         {
+          label: 'Quality',
+          icon: 'i-lucide-shield-check',
+          to: `/projects/${project.id}/quality`,
+          onSelect: () => {
+            open.value = false
+          }
+        },
+        {
           label: 'Edit project',
           icon: 'i-lucide-edit',
           to: `/projects/${project.id}/edit`,

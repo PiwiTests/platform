@@ -459,3 +459,79 @@ export interface SlowTest {
   trend: 'faster' | 'slower' | 'stable'
   latestDuration: number
 }
+
+/**
+ * Quality trend point - returned by GET /api/projects/[id]/quality
+ */
+export interface QualityTrendPoint {
+  id: number
+  startTime: string | Date
+  status: string
+  totalTests: number
+  passedTests: number
+  failedTests: number
+  skippedTests: number
+  flakyTests: number
+  failureRate: number
+  flakyRate: number
+  commit?: string | null
+  branch?: string | null
+}
+
+/**
+ * Quality summary stats
+ */
+export interface QualitySummary {
+  totalRuns: number
+  totalExecutions: number
+  totalFlaky: number
+  totalFailed: number
+  overallFlakyRate: number
+  overallPassRate: number
+  overallFailureRate: number
+  failureFreeStreak: number
+}
+
+/**
+ * Quality data response - returned by GET /api/projects/[id]/quality
+ */
+export interface QualityData {
+  trend: QualityTrendPoint[]
+  summary: QualitySummary
+}
+
+/**
+ * Flaky test entry - returned by GET /api/projects/[id]/flaky-tests
+ */
+export interface FlakyTest {
+  id: number
+  title: string
+  filePath: string
+  flakyCount: number
+  totalRuns: number
+  flakyRate: number
+  lastFlakyDate: string | Date | null
+}
+
+/**
+ * Failing test entry - returned by GET /api/projects/[id]/flaky-tests
+ */
+export interface FailingTest {
+  id: number
+  title: string
+  filePath: string
+  failureCount: number
+  totalRuns: number
+  failureRate: number
+  lastError: string | null
+}
+
+/**
+ * Flaky tests response - returned by GET /api/projects/[id]/flaky-tests
+ */
+export interface FlakyTestsData {
+  flakyTests: FlakyTest[]
+  failingTests: FailingTest[]
+  neverFailed: number
+  totalTestCases: number
+}
