@@ -52,7 +52,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
   }]
 
   if (projects.value && projects.value.length > 0) {
-    projectItems.push(...projects.value.map(project => {
+    projectItems.push(...projects.value.map((project) => {
       return {
         label: project.label || project.name,
         icon: 'i-lucide-folder',

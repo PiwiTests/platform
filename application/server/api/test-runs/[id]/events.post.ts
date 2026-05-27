@@ -1,6 +1,6 @@
 import { getDatabase } from '../../../database'
 import { testRuns, testCases, testRunsCases } from '../../../database/schema'
-import { eq, and, inArray, sql } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 import { runEventBus } from '../../../utils/run-events'
 import { sanitizeNetworkRequests, sanitizeWebVitals } from '../../../utils/sanitize'
 

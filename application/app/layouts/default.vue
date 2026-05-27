@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NavigationMenuItem } from '@nuxt/ui'
+import type { CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui'
 import type { ProjectWithStats } from '~~/types/api'
 import ProjectsMenu from '~/components/ProjectsMenu.vue'
 
@@ -24,7 +24,7 @@ const currentProjectId = computed(() => {
 })
 
 // Generate project navigation items with children
-const projectItems = computed(() => {
+const projectItems = computed<NavigationMenuItem[]>(() => {
   if (!projects.value || projects.value.length === 0) {
     return []
   }
@@ -39,7 +39,8 @@ const projectItems = computed(() => {
 
     return {
       label: displayLabel,
-      icon: 'i-lucide-circle',
+      icon: isRunning ? 'i-lucide-loader-circle' : 'i-lucide-circle',
+      ui: isRunning ? { linkLeadingIcon: 'animate-spin' } : undefined,
       badge: {
         icon: statusIcon,
         color: statusColor as 'success' | 'error' | 'info' | 'neutral'
@@ -51,8 +52,7 @@ const projectItems = computed(() => {
       children: [
         {
           label: 'Test runs',
-          icon: isRunning ? 'i-lucide-loader-circle' : 'i-lucide-play-circle',
-          ui: isRunning ? { linkLeadingIcon: 'animate-spin' } : undefined,
+          icon: 'i-lucide-play-circle',
           to: `/projects/${project.id}`,
           badge: String(project.totalRuns || 0),
           onSelect: () => {
@@ -113,10 +113,22 @@ const links = computed(() => [[{
   target: '_blank'
 }]] satisfies NavigationMenuItem[][])
 
-const groups = computed(() => [{
+const toCommandPaletteItem = (item: NavigationMenuItem): CommandPaletteItem => ({
+  label: typeof item.label === 'string' ? item.label : undefined,
+  icon: item.icon,
+  to: item.to,
+  target: item.target,
+  active: item.active,
+  disabled: item.disabled,
+  suffix: typeof item.badge === 'string' ? item.badge : undefined,
+  children: item.children?.map(child => toCommandPaletteItem(child)),
+  onSelect: item.onSelect
+})
+
+const groups = computed<CommandPaletteGroup[]>(() => [{
   id: 'links',
   label: 'Go to',
-  items: links.value.flat()
+  items: links.value.flat().map(item => toCommandPaletteItem(item))
 }, {
   id: 'code',
   label: 'Code',
