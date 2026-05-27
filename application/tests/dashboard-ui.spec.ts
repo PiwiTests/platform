@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures'
+import { waitForHydration } from './utils'
 
 test.describe('Dashboard UI Tests', () => {
   test.beforeEach(async ({ request }) => {
@@ -159,7 +160,7 @@ test.describe('Dashboard UI Tests', () => {
 
   test('should display storage settings page', async ({ page }) => {
     await page.goto('/settings/storage')
-    await page.waitForLoadState('load')
+    await waitForHydration(page)
 
     // Check heading and stats section
     await expect(page.getByText('Storage statistics')).toBeVisible()
@@ -188,7 +189,7 @@ test.describe('Dashboard UI Tests', () => {
     const { testRunId } = await submitRes.json()
 
     await page.goto(`/test-runs/${testRunId}`)
-    await page.waitForLoadState('load')
+    await waitForHydration(page)
 
     // Delete button should be visible in the navbar
     const deleteButton = page.getByRole('button', { name: 'Delete', exact: true })
@@ -196,7 +197,7 @@ test.describe('Dashboard UI Tests', () => {
 
     // Click it — confirmation modal should appear
     await deleteButton.click()
-    await expect(page.getByText('Delete test run', { exact: true })).toBeVisible()
+    await expect(page.getByText('Delete test run', { exact: true })).toBeVisible({ timeout: 10000 })
 
     // Close the modal
     await page.getByRole('button', { name: 'Cancel' }).click()

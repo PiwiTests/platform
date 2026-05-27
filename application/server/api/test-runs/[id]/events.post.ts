@@ -1,6 +1,6 @@
 import { getDatabase } from '../../../database'
 import { testRuns, testCases, testRunsCases } from '../../../database/schema'
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, inArray, sql } from 'drizzle-orm'
 import { runEventBus } from '../../../utils/run-events'
 import { sanitizeNetworkRequests, sanitizeWebVitals } from '../../../utils/sanitize'
 
@@ -172,10 +172,10 @@ export default eventHandler(async (event) => {
   const updatedRuns = await db.update(testRuns)
     .set({
       updatedAt: new Date(),
-      totalTests: testRuns.totalTests + validEvents.length,
-      passedTests: testRuns.passedTests + statusCounts['passed'] || 0,
-      failedTests: testRuns.failedTests + statusCounts['failed'] || 0,
-      skippedTests: testRuns.skippedTests + statusCounts['skipped'] || 0
+      totalTests: sql`${testRuns.totalTests} + ${validEvents.length}`,
+      passedTests: sql`${testRuns.passedTests} + ${statusCounts['passed'] || 0}`,
+      failedTests: sql`${testRuns.failedTests} + ${statusCounts['failed'] || 0}`,
+      skippedTests: sql`${testRuns.skippedTests} + ${statusCounts['skipped'] || 0}`
     })
     .where(eq(testRuns.id, id))
     .returning()
