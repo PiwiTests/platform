@@ -115,6 +115,7 @@ export default eventHandler(async (event) => {
   // If attaching to an existing streaming run, look up the run and its project
   let project: Project | undefined
   let attachingToExistingRun = false
+  let existingRunStatus: string | undefined
 
   if (existingTestRunId) {
     const existingRunRows = await db.select().from(testRuns).where(eq(testRuns.id, existingTestRunId))
@@ -125,6 +126,7 @@ export default eventHandler(async (event) => {
     const projectRows = await db.select().from(projects).where(eq(projects.id, existingRun.projectId))
     project = projectRows[0]
     attachingToExistingRun = true
+    existingRunStatus = existingRun.status
   }
 
   if (!project) {
@@ -293,6 +295,14 @@ export default eventHandler(async (event) => {
       path: r.path.replace(/\\/g, '/'), // Ensure path uses forward slashes
       size: r.size
     })
+  }
+
+  // When attaching reports to an existing streaming run, notify the dashboard so it
+  // can refresh and display the newly uploaded reports.  (In streaming mode the run is
+  // finished before this upload happens, so the initial run-finished refresh may have
+  // occurred before the reports were stored in the database.)
+  if (attachingToExistingRun) {
+    runEventBus.publishGlobal({ type: 'run-finished', runId: testRun.id, projectId: testRun.projectId, status: existingRunStatus })
   }
 
   // Create test run directory for traces

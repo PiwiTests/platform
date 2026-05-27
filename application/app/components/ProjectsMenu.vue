@@ -55,6 +55,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
     projectItems.push(...projects.value.map(project => ({
       label: project.label || project.name,
       icon: project.latestRun?.status === 'running' ? 'i-lucide-loader-circle' : 'i-lucide-folder',
+      ui: project.latestRun?.status === 'running' ? { itemLeadingIcon: 'animate-spin' } : undefined,
       onSelect() {
         router.push(`/projects/${project.id}`)
       }
