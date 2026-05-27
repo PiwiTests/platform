@@ -31,8 +31,9 @@ const projectItems = computed(() => {
 
   return projects.value.map((project) => {
     const isActive = currentProjectId.value !== null && currentProjectId.value === project.id
+    const isRunning = project.latestRun?.status === 'running' || project.latestRun?.status === 'initialising'
     const status = project.latestRun?.status || 'unknown'
-    const statusIcon = status === 'passed' ? 'i-lucide-circle-check-big' : status === 'failed' ? 'i-lucide-circle-x' : status === 'running' ? 'i-lucide-loader-circle' : 'i-lucide-circle'
+    const statusIcon = status === 'passed' ? 'i-lucide-circle-check-big' : status === 'failed' ? 'i-lucide-circle-x' : 'i-lucide-circle'
     const statusColor = status === 'passed' ? 'success' : status === 'failed' ? 'error' : status === 'running' ? 'info' : 'neutral'
     const displayLabel = project.label || project.name
 
@@ -50,7 +51,8 @@ const projectItems = computed(() => {
       children: [
         {
           label: 'Test runs',
-          icon: 'i-lucide-play-circle',
+          icon: isRunning ? 'i-lucide-loader-circle' : 'i-lucide-play-circle',
+          ui: isRunning ? { linkLeadingIcon: 'animate-spin' } : undefined,
           to: `/projects/${project.id}`,
           badge: String(project.totalRuns || 0),
           onSelect: () => {

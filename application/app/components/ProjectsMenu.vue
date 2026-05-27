@@ -25,23 +25,19 @@ const selectedProject = computed(() => {
   if (!currentProjectId.value || !projects.value) {
     return {
       label: 'All projects',
-      icon: 'i-lucide-folder-open',
-      loading: false
+      icon: 'i-lucide-folder-open'
     }
   }
 
   const project = projects.value.find(p => p.id === currentProjectId.value)
-  const isActive = project?.latestRun?.status === 'running' || project?.latestRun?.status === 'initialising'
   return project
     ? {
         label: project.label || project.name,
-        icon: isActive ? undefined : 'i-lucide-folder',
-        loading: isActive
+        icon: 'i-lucide-folder'
       }
     : {
         label: 'All projects',
-        icon: 'i-lucide-folder-open',
-        loading: false
+        icon: 'i-lucide-folder-open'
       }
 })
 
@@ -57,11 +53,9 @@ const items = computed<DropdownMenuItem[][]>(() => {
 
   if (projects.value && projects.value.length > 0) {
     projectItems.push(...projects.value.map(project => {
-      const isActive = project.latestRun?.status === 'running' || project.latestRun?.status === 'initialising'
       return {
         label: project.label || project.name,
-        icon: isActive ? undefined : 'i-lucide-folder',
-        loading: isActive,
+        icon: 'i-lucide-folder',
         onSelect() {
           router.push(`/projects/${project.id}`)
         }
