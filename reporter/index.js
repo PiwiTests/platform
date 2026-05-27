@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const FormData = require('form-data');
 const { collectMetadata } = require('./lib/metadata');
 const { collectStepMetrics, computePerformanceSummary } = require('./lib/steps');
@@ -95,6 +96,9 @@ class PlaywrightDashboardReporter {
       cookieOrApiKey = this.options.apiKey;
     }
 
+    // Check if a globalSetup already created an 'initialising' run for us
+    const setupInfo = this._readSetupInfo();
+
     const payload = {
       projectName: this.options.projectName,
       projectDescription: this.options.projectDescription,
@@ -111,7 +115,23 @@ class PlaywrightDashboardReporter {
         }
         self._streamAuth = cookieOrApiKey;
 
-        const response = await postJSON(self.options.serverUrl, '/api/test-runs/start', payload, self.options.verbose, cookieOrApiKey);
+        let response;
+        if (setupInfo) {
+          // Transition the existing 'initialising' run to 'running'
+          response = await postJSON(
+            self.options.serverUrl,
+            `/api/test-runs/${setupInfo.runId}/begin`,
+            {
+              setupToken: setupInfo.setupToken,
+              totalTests: self.totalTests,
+              metadata: self.metadata
+            },
+            self.options.verbose,
+            cookieOrApiKey
+          );
+        } else {
+          response = await postJSON(self.options.serverUrl, '/api/test-runs/start', payload, self.options.verbose, cookieOrApiKey);
+        }
 
         if (response && response.runId && response.streamToken) {
           self.streamingRunId = response.runId;
@@ -664,6 +684,97 @@ class PlaywrightDashboardReporter {
       throw error;
     }
   }
+
+  /**
+   * Read and consume setup info written by createGlobalSetup().
+   * Returns null if no setup file exists or if the project name doesn't match.
+   */
+  _readSetupInfo() {
+    const setupFile = getSetupFilePath(this.options.projectName);
+    try {
+      if (fs.existsSync(setupFile)) {
+        const info = JSON.parse(fs.readFileSync(setupFile, 'utf8'));
+        fs.unlinkSync(setupFile);
+        if (info.projectName === this.options.projectName) {
+          return info;
+        }
+      }
+    } catch {
+      // Ignore errors reading setup file
+    }
+    return null;
+  }
+}
+
+/**
+ * Return the path to the temp file used to share setup info between
+ * createGlobalSetup() and the reporter's _startStreaming().
+ */
+function getSetupFilePath(projectName) {
+  const safe = projectName.replace(/[^a-zA-Z0-9-_]/g, '_');
+  return path.join(os.tmpdir(), `playwright-dashboard-setup-${safe}.json`);
 }
 
 module.exports = PlaywrightDashboardReporter;
+
+/**
+ * Create a Playwright globalSetup function that registers the run as 'initialising'
+ * on the dashboard before tests begin.  The reporter's onBegin hook will then
+ * transition that run to 'running', so the dashboard shows the setup phase.
+ *
+ * @param {import('./index').DashboardReporterOptions} options - Same options as the reporter.
+ * @param {Function} [userSetup] - Optional existing globalSetup function to wrap.
+ * @returns {Function} A globalSetup function to pass to Playwright's config.
+ *
+ * @example
+ * // playwright.config.ts
+ * import { createGlobalSetup } from '@phenx/playwright-dashboard-reporter';
+ * export default defineConfig({
+ *   globalSetup: createGlobalSetup({ serverUrl: '...', projectName: 'my-project', apiKey: '...' }),
+ * });
+ */
+module.exports.createGlobalSetup = function createGlobalSetup(options, userSetup) {
+  return async function globalSetupFn(config) {
+    const serverUrl = options.serverUrl || 'http://localhost:3000';
+    const projectName = options.projectName || 'default-project';
+
+    let cookieOrApiKey = options.apiKey || null;
+
+    try {
+      if (!cookieOrApiKey && options.username && options.password) {
+        cookieOrApiKey = await loginUser(serverUrl, options.username, options.password, options.verbose);
+      }
+
+      const response = await postJSON(
+        serverUrl,
+        '/api/test-runs/setup',
+        {
+          projectName,
+          projectDescription: options.projectDescription,
+          startTime: new Date().toISOString()
+        },
+        options.verbose,
+        cookieOrApiKey
+      );
+
+      if (response && response.runId && response.setupToken) {
+        const setupFile = getSetupFilePath(projectName);
+        fs.writeFileSync(setupFile, JSON.stringify({
+          runId: response.runId,
+          setupToken: response.setupToken,
+          projectName
+        }));
+        if (options.verbose) {
+          console.log(`[Playwright Dashboard] Global setup: initialising run #${response.runId}`);
+        }
+      }
+    } catch (error) {
+      // Non-fatal: if setup registration fails the reporter will create a new run normally
+      console.warn(`[Playwright Dashboard] Could not register global setup: ${error.message}`);
+    }
+
+    if (userSetup) {
+      return userSetup(config);
+    }
+  };
+};

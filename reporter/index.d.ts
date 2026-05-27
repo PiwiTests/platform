@@ -185,6 +185,37 @@ declare class PlaywrightDashboardReporter implements Reporter {
 export default PlaywrightDashboardReporter;
 
 /**
+ * Create a Playwright `globalSetup` function that registers the test run as
+ * `'initialising'` on the dashboard before tests begin.
+ *
+ * The reporter's `onBegin` hook will transition the run to `'running'` so the
+ * dashboard shows the global-setup phase as an animated initialisation step.
+ *
+ * @param options - Same options as `PlaywrightDashboardReporter`.
+ * @param userSetup - Optional existing `globalSetup` function to wrap.
+ * @returns A `globalSetup` function for Playwright's config.
+ *
+ * @example
+ * ```typescript
+ * // playwright.config.ts
+ * import { defineConfig } from '@playwright/test';
+ * import { createGlobalSetup } from '@phenx/playwright-dashboard-reporter';
+ *
+ * export default defineConfig({
+ *   globalSetup: createGlobalSetup({
+ *     serverUrl: process.env.DASHBOARD_URL,
+ *     projectName: 'my-project',
+ *     apiKey: process.env.DASHBOARD_API_KEY,
+ *   }),
+ * });
+ * ```
+ */
+export declare function createGlobalSetup(
+  options: DashboardReporterOptions,
+  userSetup?: (config: FullConfig) => Promise<unknown> | unknown
+): (config: FullConfig) => Promise<void>;
+
+/**
  * Fixtures for automatic network request and web vitals collection.
  *
  * Merge into your existing fixtures with `test.extend(dashboardFixtures)`.

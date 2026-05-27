@@ -25,19 +25,23 @@ const selectedProject = computed(() => {
   if (!currentProjectId.value || !projects.value) {
     return {
       label: 'All projects',
-      icon: 'i-lucide-folder-open'
+      icon: 'i-lucide-folder-open',
+      loading: false
     }
   }
 
   const project = projects.value.find(p => p.id === currentProjectId.value)
+  const isActive = project?.latestRun?.status === 'running' || project?.latestRun?.status === 'initialising'
   return project
     ? {
         label: project.label || project.name,
-        icon: 'i-lucide-folder'
+        icon: isActive ? undefined : 'i-lucide-folder',
+        loading: isActive
       }
     : {
         label: 'All projects',
-        icon: 'i-lucide-folder-open'
+        icon: 'i-lucide-folder-open',
+        loading: false
       }
 })
 
@@ -52,14 +56,17 @@ const items = computed<DropdownMenuItem[][]>(() => {
   }]
 
   if (projects.value && projects.value.length > 0) {
-    projectItems.push(...projects.value.map(project => ({
-      label: project.label || project.name,
-      icon: project.latestRun?.status === 'running' ? 'i-lucide-loader-circle' : 'i-lucide-folder',
-      ui: project.latestRun?.status === 'running' ? { itemLeadingIcon: 'animate-spin' } : undefined,
-      onSelect() {
-        router.push(`/projects/${project.id}`)
+    projectItems.push(...projects.value.map(project => {
+      const isActive = project.latestRun?.status === 'running' || project.latestRun?.status === 'initialising'
+      return {
+        label: project.label || project.name,
+        icon: isActive ? undefined : 'i-lucide-folder',
+        loading: isActive,
+        onSelect() {
+          router.push(`/projects/${project.id}`)
+        }
       }
-    })))
+    }))
   }
 
   return [projectItems]
