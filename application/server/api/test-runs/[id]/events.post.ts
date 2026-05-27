@@ -73,17 +73,17 @@ export default eventHandler(async (event) => {
     })
   }
 
-  if (testRun.streamToken !== body.streamToken) {
-    throw createError({
-      statusCode: 403,
-      message: 'Invalid stream token'
-    })
-  }
-
   if (testRun.status !== 'running') {
     throw createError({
       statusCode: 409,
       message: 'Test run is not in running state'
+    })
+  }
+
+  if (testRun.streamToken !== body.streamToken) {
+    throw createError({
+      statusCode: 403,
+      message: 'Invalid stream token'
     })
   }
 
