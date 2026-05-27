@@ -159,7 +159,7 @@ test.describe('Dashboard UI Tests', () => {
 
   test('should display storage settings page', async ({ page }) => {
     await page.goto('/settings/storage')
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('load')
 
     // Check heading and stats section
     await expect(page.getByText('Storage statistics')).toBeVisible()
@@ -188,7 +188,7 @@ test.describe('Dashboard UI Tests', () => {
     const { testRunId } = await submitRes.json()
 
     await page.goto(`/test-runs/${testRunId}`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('load')
 
     // Delete button should be visible in the navbar
     const deleteButton = page.getByRole('button', { name: 'Delete', exact: true })
