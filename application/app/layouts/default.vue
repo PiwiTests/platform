@@ -34,7 +34,7 @@ const projectItems = computed(() => {
     const isRunning = project.latestRun?.status === 'running' || project.latestRun?.status === 'initialising'
     const status = project.latestRun?.status || 'unknown'
     const statusIcon = status === 'passed' ? 'i-lucide-circle-check-big' : status === 'failed' ? 'i-lucide-circle-x' : 'i-lucide-circle'
-    const statusColor = status === 'passed' ? 'success' : status === 'failed' ? 'error' : status === 'running' ? 'info' : 'neutral'
+    const statusColor = status === 'passed' ? 'success' : status === 'failed' ? 'error' : isRunning ? 'info' : 'neutral'
     const displayLabel = project.label || project.name
 
     return {
