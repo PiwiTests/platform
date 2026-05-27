@@ -1,10 +1,10 @@
 import { test, expect } from './fixtures'
-import { waitForHydration } from './utils'
+import { waitForHydration, retryPost } from './utils'
 
 test.describe('Dashboard UI Tests', () => {
   test.beforeEach(async ({ request }) => {
     // Create test data before each UI test
-    await request.post('/api/test-runs/submit', {
+    await retryPost(request, '/api/test-runs/submit', {
       data: {
         projectName: 'ui-test-project',
         status: 'passed',
@@ -173,7 +173,7 @@ test.describe('Dashboard UI Tests', () => {
 
   test('should show delete confirmation modal on test run page', async ({ page, request }) => {
     // Ensure there is a test run
-    const submitRes = await request.post('/api/test-runs/submit', {
+    const submitRes = await retryPost(request, '/api/test-runs/submit', {
       data: {
         projectName: 'ui-test-project',
         status: 'passed',
