@@ -40,7 +40,7 @@ export default eventHandler(async (event) => {
   if (testRun.status !== 'initialising') {
     throw createError({
       statusCode: 409,
-      message: `Test run is not in initialising state (current: ${testRun.status})`
+      message: 'Test run cannot be transitioned to running state'
     })
   }
 

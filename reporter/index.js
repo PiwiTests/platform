@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 const FormData = require('form-data');
 const { collectMetadata } = require('./lib/metadata');
 const { collectStepMetrics, computePerformanceSummary } = require('./lib/steps');
@@ -699,8 +700,10 @@ class PlaywrightDashboardReporter {
           return info;
         }
       }
-    } catch {
-      // Ignore errors reading setup file
+    } catch (error) {
+      if (this.options.verbose) {
+        console.log(`[Playwright Dashboard] Could not read setup info: ${error.message}`);
+      }
     }
     return null;
   }
@@ -709,10 +712,11 @@ class PlaywrightDashboardReporter {
 /**
  * Return the path to the temp file used to share setup info between
  * createGlobalSetup() and the reporter's _startStreaming().
+ * Uses a hash of the project name to avoid filename collisions.
  */
 function getSetupFilePath(projectName) {
-  const safe = projectName.replace(/[^a-zA-Z0-9-_]/g, '_');
-  return path.join(os.tmpdir(), `playwright-dashboard-setup-${safe}.json`);
+  const hash = crypto.createHash('sha1').update(projectName).digest('hex').slice(0, 16);
+  return path.join(os.tmpdir(), `playwright-dashboard-setup-${hash}.json`);
 }
 
 module.exports = PlaywrightDashboardReporter;
