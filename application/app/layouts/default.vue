@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NavigationMenuItem } from '@nuxt/ui'
+import type { CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui'
 import type { ProjectWithStats } from '~~/types/api'
 import ProjectsMenu from '~/components/ProjectsMenu.vue'
 
@@ -9,10 +9,12 @@ const toast = useToast()
 const open = ref(false)
 
 // Fetch projects for sidebar navigation
-const { data: projects } = await useFetch<ProjectWithStats[]>('/api/projects', {
+const { data: projects, refresh: refreshProjects } = await useFetch<ProjectWithStats[]>('/api/projects', {
   lazy: true,
   default: () => []
 })
+
+useRunStream(refreshProjects)
 
 // Extract current project ID from route (if viewing a project page)
 const currentProjectId = computed(() => {
@@ -22,24 +24,26 @@ const currentProjectId = computed(() => {
 })
 
 // Generate project navigation items with children
-const projectItems = computed(() => {
+const projectItems = computed<NavigationMenuItem[]>(() => {
   if (!projects.value || projects.value.length === 0) {
     return []
   }
 
   return projects.value.map((project) => {
     const isActive = currentProjectId.value !== null && currentProjectId.value === project.id
+    const isRunning = project.latestRun?.status === 'running' || project.latestRun?.status === 'initialising'
     const status = project.latestRun?.status || 'unknown'
     const statusIcon = status === 'passed' ? 'i-lucide-circle-check-big' : status === 'failed' ? 'i-lucide-circle-x' : 'i-lucide-circle'
-    const statusColor = status === 'passed' ? 'success' : status === 'failed' ? 'error' : 'neutral'
+    const statusColor = status === 'passed' ? 'success' : status === 'failed' ? 'error' : isRunning ? 'info' : 'neutral'
     const displayLabel = project.label || project.name
 
     return {
       label: displayLabel,
-      icon: 'i-lucide-circle',
+      icon: isRunning ? 'i-lucide-loader-circle' : 'i-lucide-circle',
+      ui: isRunning ? { linkLeadingIcon: 'animate-spin' } : undefined,
       badge: {
         icon: statusIcon,
-        color: statusColor as 'success' | 'error' | 'neutral'
+        color: statusColor as 'success' | 'error' | 'info' | 'neutral'
       },
       value: `project-${project.id}`,
       type: 'trigger' as const,
@@ -109,10 +113,22 @@ const links = computed(() => [[{
   target: '_blank'
 }]] satisfies NavigationMenuItem[][])
 
-const groups = computed(() => [{
+const toCommandPaletteItem = (item: NavigationMenuItem): CommandPaletteItem => ({
+  label: typeof item.label === 'string' ? item.label : undefined,
+  icon: item.icon,
+  to: item.to,
+  target: item.target,
+  active: item.active,
+  disabled: item.disabled,
+  suffix: typeof item.badge === 'string' ? item.badge : undefined,
+  children: item.children?.map(child => toCommandPaletteItem(child)),
+  onSelect: item.onSelect
+})
+
+const groups = computed<CommandPaletteGroup[]>(() => [{
   id: 'links',
   label: 'Go to',
-  items: links.value.flat()
+  items: links.value.flat().map(item => toCommandPaletteItem(item))
 }, {
   id: 'code',
   label: 'Code',

@@ -43,6 +43,9 @@ export default defineConfig({
 | `uploadTraces`              | boolean  | `true`                    | Upload trace files to the dashboard                                           |
 | `uploadReport`              | boolean  | `true`                    | Upload the Playwright HTML report                                             |
 | `reports`                   | array    | —                         | Additional report types to upload (see [Multiple reports](#multiple-reports)) |
+| `streaming`                 | boolean  | `true`                    | Enable live streaming of results (falls back to batch if unsupported)         |
+| `streamingBatchSize`        | number   | `5`                       | Number of test results to batch before sending                                |
+| `streamingBatchDelay`       | number   | `2000`                    | Max delay (ms) before flushing pending events                                 |
 | `projectDescription`        | string   | —                         | Description of the project                                                    |
 | `relatedIssue`              | string   | —                         | Related issue reference, e.g. `"JIRA-123"`                                    |
 | `ciInfo`                    | string   | —                         | CI job information                                                            |
@@ -54,6 +57,47 @@ export default defineConfig({
 | `username`                  | string   | —                         | Username for dashboard login (use `apiKey` instead when possible)             |
 | `password`                  | string   | —                         | Password for dashboard login (used with `username`)                           |
 | `apiKey`                    | string   | —                         | API key for authentication (preferred over `username`/`password` for CI)      |
+
+## Live streaming
+
+By default, the reporter streams test results to the dashboard in real-time as tests complete. This allows you to monitor test progress live in the dashboard UI.
+
+### How it works
+
+1. When tests start, the reporter creates a run on the server with `running` status
+2. As each test completes, results are sent in batches to the server
+3. The dashboard UI shows a live progress bar and test results as they arrive
+4. When tests finish, the reporter finalises the run with the overall status
+
+### Disabling streaming
+
+If you prefer the original batch-only behaviour (all results sent at the end):
+
+```typescript
+['@phenx/playwright-dashboard-reporter', {
+  serverUrl: 'http://localhost:3000',
+  projectName: 'my-project',
+  streaming: false,
+}]
+```
+
+### Tuning batch parameters
+
+Control how frequently results are sent during streaming:
+
+```typescript
+['@phenx/playwright-dashboard-reporter', {
+  serverUrl: 'http://localhost:3000',
+  projectName: 'my-project',
+  streamingBatchSize: 10,     // send every 10 tests
+  streamingBatchDelay: 5000,  // or every 5 seconds
+}]
+```
+
+### Backward compatibility
+
+- If the server doesn't support streaming (e.g. older version), the reporter automatically falls back to batch mode
+- The existing `submit` and `upload` endpoints continue to work unchanged
 
 ## Multiple reports
 

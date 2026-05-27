@@ -54,6 +54,8 @@ export function getStatusColor(status: string) {
     case 'failed': return 'error'
     case 'timedout': return 'warning'
     case 'interrupted': return 'warning'
+    case 'initialising': return 'info'
+    case 'running': return 'info'
     default: return 'neutral'
   }
 }

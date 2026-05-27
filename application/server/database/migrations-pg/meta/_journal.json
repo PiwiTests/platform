@@ -8,6 +8,13 @@
       "when": 1779656333883,
       "tag": "0000_initial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1748273287000,
+      "tag": "0001_add_stream_token_and_updated_at",
+      "breakpoints": true
     }
   ]
 }

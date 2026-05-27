@@ -95,6 +95,30 @@ export interface DashboardReporterOptions {
   collectPerformanceMetrics?: boolean;
 
   /**
+   * Whether to enable live streaming of test results to the server.
+   * When enabled, test results are sent to the server as they complete, allowing
+   * real-time monitoring in the dashboard UI.
+   *
+   * Falls back to batch mode automatically if the server does not support streaming.
+   * @default true
+   */
+  streaming?: boolean;
+
+  /**
+   * Number of test results to batch before sending to the server during streaming.
+   * Lower values provide more real-time updates but increase HTTP overhead.
+   * @default 5
+   */
+  streamingBatchSize?: number;
+
+  /**
+   * Maximum delay in milliseconds before flushing pending streaming events.
+   * Events are sent either when the batch size is reached or this delay expires.
+   * @default 2000
+   */
+  streamingBatchDelay?: number;
+
+  /**
    * API key for authenticating with the dashboard server.
    *
    * **Preferred over `username`/`password`** for CI environments.
@@ -159,6 +183,37 @@ declare class PlaywrightDashboardReporter implements Reporter {
 }
 
 export default PlaywrightDashboardReporter;
+
+/**
+ * Create a Playwright `globalSetup` function that registers the test run as
+ * `'initialising'` on the dashboard before tests begin.
+ *
+ * The reporter's `onBegin` hook will transition the run to `'running'` so the
+ * dashboard shows the global-setup phase as an animated initialisation step.
+ *
+ * @param options - Same options as `PlaywrightDashboardReporter`.
+ * @param userSetup - Optional existing `globalSetup` function to wrap.
+ * @returns A `globalSetup` function for Playwright's config.
+ *
+ * @example
+ * ```typescript
+ * // playwright.config.ts
+ * import { defineConfig } from '@playwright/test';
+ * import { createGlobalSetup } from '@phenx/playwright-dashboard-reporter';
+ *
+ * export default defineConfig({
+ *   globalSetup: createGlobalSetup({
+ *     serverUrl: process.env.DASHBOARD_URL,
+ *     projectName: 'my-project',
+ *     apiKey: process.env.DASHBOARD_API_KEY,
+ *   }),
+ * });
+ * ```
+ */
+export declare function createGlobalSetup(
+  options: DashboardReporterOptions,
+  userSetup?: (config: FullConfig) => Promise<unknown> | unknown
+): (config: FullConfig) => Promise<void>;
 
 /**
  * Fixtures for automatic network request and web vitals collection.

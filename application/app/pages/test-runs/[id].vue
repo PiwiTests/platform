@@ -16,6 +16,108 @@ const toast = useToast()
 const isDeleteConfirmOpen = ref(false)
 const deleting = ref(false)
 
+// Live streaming state
+const isLive = computed(() => testRun.value?.status === 'running')
+const liveTestCases = ref<TestCaseResult[]>([])
+// Map of `title@@location` → true for O(1) duplicate detection
+const liveTestCaseKeys = new Map<string, true>()
+const liveProgress = ref<{ totalTests: number, passedTests: number, failedTests: number, skippedTests: number } | null>(null)
+let eventSource: EventSource | null = null
+
+// Connect to SSE when run is in 'running' state
+function connectToStream() {
+  if (!import.meta.client) return
+  if (eventSource) return
+  if (!isLive.value) return
+
+  eventSource = new EventSource(`/api/test-runs/${runId}/stream`)
+
+  eventSource.onmessage = (event) => {
+    try {
+      const parsed = JSON.parse(event.data)
+
+      if (parsed.type === 'init') {
+        // Initialize live progress with authoritative server-side state
+        liveProgress.value = {
+          totalTests: parsed.data.totalTests,
+          passedTests: parsed.data.passedTests,
+          failedTests: parsed.data.failedTests,
+          skippedTests: parsed.data.skippedTests
+        }
+      } else if (parsed.type === 'test-completed') {
+        // Avoid duplicates using O(1) Map lookup (catch-up events have seq 0)
+        const key = `${parsed.data.title}@@${parsed.data.location}`
+        if (!liveTestCaseKeys.has(key)) {
+          liveTestCaseKeys.set(key, true)
+          liveTestCases.value.push({
+            id: liveTestCases.value.length + 1,
+            title: parsed.data.title,
+            status: parsed.data.status,
+            duration: parsed.data.duration,
+            location: parsed.data.location,
+            error: parsed.data.error
+          })
+        }
+      } else if (parsed.type === 'run-progress') {
+        liveProgress.value = parsed.data
+      } else if (parsed.type === 'run-finished') {
+        // Run is done — refresh full data from server
+        disconnectStream()
+        refresh()
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
+  eventSource.onerror = () => {
+    // EventSource will auto-reconnect
+  }
+}
+
+function disconnectStream() {
+  if (eventSource) {
+    eventSource.close()
+    eventSource = null
+  }
+}
+
+// Start streaming connection if run is live
+watch(isLive, (live) => {
+  if (live) {
+    connectToStream()
+  } else {
+    disconnectStream()
+  }
+}, { immediate: true })
+
+// Cleanup on unmount
+onUnmounted(() => {
+  disconnectStream()
+})
+
+// Combined test cases: from server data + live stream
+const displayTestCases = computed<TestCaseResult[]>(() => {
+  if (isLive.value && liveTestCases.value.length > 0) {
+    return liveTestCases.value
+  }
+  return testRun.value?.testCases || []
+})
+
+// Display progress: live or from loaded data
+const displayProgress = computed(() => {
+  if (isLive.value && liveProgress.value) {
+    return liveProgress.value
+  }
+  if (!testRun.value) return null
+  return {
+    totalTests: testRun.value.totalTests,
+    passedTests: testRun.value.passedTests,
+    failedTests: testRun.value.failedTests,
+    skippedTests: testRun.value.skippedTests
+  }
+})
+
 async function handleDeleteRun() {
   isDeleteConfirmOpen.value = false
   deleting.value = true
@@ -234,9 +336,18 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
         <UCard>
           <template #header>
             <div class="flex justify-between items-center">
-              <h2 class="text-xl font-semibold">
-                Test run #{{ testRun?.id }}
-              </h2>
+              <div class="flex items-center gap-2">
+                <h2 class="text-xl font-semibold">
+                  Test run #{{ testRun?.id }}
+                </h2>
+                <span v-if="isLive" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                  <span class="relative flex h-2 w-2">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                  </span>
+                  Live
+                </span>
+              </div>
               <UBadge v-if="testRun" :color="getStatusColor(testRun.status)" size="lg">
                 {{ testRun.status }}
               </UBadge>
@@ -258,7 +369,7 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
                   Total tests
                 </p>
                 <p class="font-medium">
-                  {{ testRun?.totalTests }}
+                  {{ displayProgress?.totalTests ?? testRun?.totalTests }}
                 </p>
               </div>
               <div>
@@ -266,7 +377,7 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
                   Passed
                 </p>
                 <p class="font-medium text-green-600">
-                  {{ testRun?.passedTests }}
+                  {{ displayProgress?.passedTests ?? testRun?.passedTests }}
                 </p>
               </div>
               <div>
@@ -274,7 +385,7 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
                   Failed
                 </p>
                 <p class="font-medium text-red-600">
-                  {{ testRun?.failedTests }}
+                  {{ displayProgress?.failedTests ?? testRun?.failedTests }}
                 </p>
               </div>
               <div>
@@ -282,7 +393,7 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
                   Skipped
                 </p>
                 <p class="font-medium">
-                  {{ testRun?.skippedTests }}
+                  {{ displayProgress?.skippedTests ?? testRun?.skippedTests }}
                 </p>
               </div>
               <div>
@@ -441,14 +552,44 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
 
         <UCard>
           <template #header>
-            <h3 class="text-lg font-medium">
-              Test cases
-            </h3>
+            <div class="flex items-center gap-2">
+              <h3 class="text-lg font-medium">
+                Test cases
+              </h3>
+              <span v-if="isLive" class="text-sm text-gray-500">
+                ({{ displayTestCases.length }} completed)
+              </span>
+            </div>
           </template>
 
+          <!-- Live progress bar -->
+          <div v-if="isLive && displayProgress" class="mb-4">
+            <div class="flex justify-between text-xs text-gray-500 mb-1">
+              <span>Progress</span>
+              <span>{{ displayProgress.passedTests + displayProgress.failedTests + displayProgress.skippedTests }} tests completed</span>
+            </div>
+            <div class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden flex">
+              <div
+                v-if="displayProgress.passedTests > 0"
+                class="h-full bg-green-500 transition-all duration-300"
+                :style="{ width: `${(displayProgress.passedTests / Math.max(displayProgress.totalTests || displayProgress.passedTests + displayProgress.failedTests + displayProgress.skippedTests, 1)) * 100}%` }"
+              />
+              <div
+                v-if="displayProgress.failedTests > 0"
+                class="h-full bg-red-500 transition-all duration-300"
+                :style="{ width: `${(displayProgress.failedTests / Math.max(displayProgress.totalTests || displayProgress.passedTests + displayProgress.failedTests + displayProgress.skippedTests, 1)) * 100}%` }"
+              />
+              <div
+                v-if="displayProgress.skippedTests > 0"
+                class="h-full bg-gray-400 transition-all duration-300"
+                :style="{ width: `${(displayProgress.skippedTests / Math.max(displayProgress.totalTests || displayProgress.passedTests + displayProgress.failedTests + displayProgress.skippedTests, 1)) * 100}%` }"
+              />
+            </div>
+          </div>
+
           <UTable
-            v-if="testRun?.testCases && testRun.testCases.length > 0"
-            :data="testRun.testCases"
+            v-if="displayTestCases.length > 0"
+            :data="displayTestCases"
             :columns="testCasesColumns"
             :ui="{
               base: 'table-fixed border-separate border-spacing-0',

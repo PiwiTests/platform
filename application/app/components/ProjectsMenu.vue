@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
+import type { ProjectWithStats } from '~~/types/api'
 
 defineProps<{
   collapsed?: boolean
@@ -9,7 +10,9 @@ const route = useRoute()
 const router = useRouter()
 
 // Fetch available projects
-const { data: projects, refresh } = await useFetch('/api/projects')
+const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/projects')
+
+useRunStream(refresh)
 
 // Get current project from route
 const currentProjectId = computed(() => {
@@ -26,10 +29,10 @@ const selectedProject = computed(() => {
     }
   }
 
-  const project = projects.value.find((p: { id: number, name: string }) => p.id === currentProjectId.value)
+  const project = projects.value.find(p => p.id === currentProjectId.value)
   return project
     ? {
-        label: project.name,
+        label: project.label || project.name,
         icon: 'i-lucide-folder'
       }
     : {
@@ -40,7 +43,7 @@ const selectedProject = computed(() => {
 
 // Create dropdown items
 const items = computed<DropdownMenuItem[][]>(() => {
-  const projectItems = [{
+  const projectItems: DropdownMenuItem[] = [{
     label: 'All projects',
     icon: 'i-lucide-folder-open',
     onSelect() {
@@ -49,13 +52,15 @@ const items = computed<DropdownMenuItem[][]>(() => {
   }]
 
   if (projects.value && projects.value.length > 0) {
-    projectItems.push(...projects.value.map((project: { id: number, name: string }) => ({
-      label: project.name,
-      icon: 'i-lucide-folder',
-      onSelect() {
-        router.push(`/projects/${project.id}`)
+    projectItems.push(...projects.value.map((project) => {
+      return {
+        label: project.label || project.name,
+        icon: 'i-lucide-folder',
+        onSelect() {
+          router.push(`/projects/${project.id}`)
+        }
       }
-    })))
+    }))
   }
 
   return [projectItems]

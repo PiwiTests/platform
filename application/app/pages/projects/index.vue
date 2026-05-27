@@ -11,6 +11,8 @@ const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/pro
 const { data: tagsData, refresh: refreshTags } = await useFetch<TagsResponse>('/api/tags')
 const toast = useToast()
 
+useRunStream(refresh)
+
 const allTags = computed(() => tagsData.value?.tags || [])
 
 // Search and filter state
@@ -109,7 +111,7 @@ async function handleCreateProject() {
 }
 
 const TagBadge = resolveComponent('TagBadge')
-const UBadge = resolveComponent('UBadge')
+const RunStatusBadge = resolveComponent('RunStatusBadge')
 const TestStatusBar = resolveComponent('TestStatusBar')
 const RunReports = resolveComponent('RunReports')
 
@@ -180,8 +182,7 @@ const columns: TableColumn<ProjectWithStats>[] = [
       const latestRun = row.original.latestRun
       if (!latestRun) return noData
 
-      const color = getStatusColor(latestRun.status)
-      return h(UBadge, { color, size: 'md', class: 'capitalize' }, () => latestRun.status)
+      return h(RunStatusBadge, { status: latestRun.status })
     }
   },
   {

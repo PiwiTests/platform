@@ -68,8 +68,11 @@ export default eventHandler(async (event) => {
     webVitals: tc.webVitals
   }))
 
+  // Omit streamToken — it is an internal secret and must not be sent to clients
+  const { streamToken: _streamToken, ...testRunPublic } = testRun
+
   return {
-    ...testRun,
+    ...testRunPublic,
     project,
     reports: reportResults.map(r => ({
       id: r.id,

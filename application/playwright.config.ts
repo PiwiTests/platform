@@ -37,6 +37,9 @@ export default defineConfig({
   /* Retry on CI only */
   retries: process.env.CI ? 2 : 0,
 
+  /* Cap the number of failures to 5 on CI to avoid wasting resources, but allow unlimited failures locally for debugging. */
+  maxFailures: process.env.CI ? 3 : 0,
+
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
 

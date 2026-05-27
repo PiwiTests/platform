@@ -100,7 +100,175 @@ curl -X POST http://localhost:3000/api/test-runs/upload \
 
 ---
 
-## Query
+## Live streaming
+
+The live streaming API allows reporters to send test results in real-time as tests complete, enabling live monitoring in the dashboard UI.
+
+### POST `/api/test-runs/start`
+
+Start a new streaming test run. Returns a `runId` and `streamToken` for subsequent streaming calls.
+
+**Request body**
+
+```json
+{
+  "projectName": "my-project",
+  "projectDescription": "Optional description",
+  "startTime": "2024-01-01T12:00:00Z",
+  "metadata": {}
+}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "runId": 42,
+  "projectId": 7,
+  "streamToken": "abc123..."
+}
+```
+
+---
+
+### POST `/api/test-runs/[id]/events`
+
+Stream test case results as they complete. Supports single or batch submission.
+
+**Request body**
+
+```json
+{
+  "streamToken": "abc123...",
+  "testCases": [
+    {
+      "title": "should login",
+      "status": "passed",
+      "duration": 1500,
+      "location": "tests/login.spec.ts:10:5"
+    }
+  ]
+}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "processed": 1
+}
+```
+
+---
+
+### POST `/api/test-runs/[id]/finish`
+
+Finalize a streaming run with the overall status and summary.
+
+**Request body**
+
+```json
+{
+  "streamToken": "abc123...",
+  "status": "passed",
+  "duration": 120000,
+  "totalTests": 10,
+  "passedTests": 9,
+  "failedTests": 1,
+  "skippedTests": 0,
+  "flakyTests": 0,
+  "durations": [1500, 2300, ...],
+  "metadata": {}
+}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "testRunId": 42,
+  "status": "passed"
+}
+```
+
+---
+
+### GET `/api/test-runs/[id]/stream`
+
+Server-Sent Events (SSE) endpoint for real-time monitoring. Connect with `EventSource` in the browser.
+
+**Headers returned**
+
+- `Content-Type: text/event-stream`
+- `Cache-Control: no-cache`
+- `X-Accel-Buffering: no` (nginx compatibility)
+
+**Event types**
+
+| Event type       | Description                                 |
+|------------------|---------------------------------------------|
+| `init`           | Initial state on connect (catch-up)         |
+| `test-completed` | A test case finished                        |
+| `run-progress`   | Updated run counters                        |
+| `run-finished`   | Run completed — stream will close           |
+
+**Example usage**
+
+```javascript
+const source = new EventSource('/api/test-runs/42/stream')
+source.onmessage = (event) => {
+  const data = JSON.parse(event.data)
+  if (data.type === 'test-completed') {
+    console.log(`${data.data.title}: ${data.data.status}`)
+  }
+}
+```
+
+::: tip Nginx configuration
+For SSE to work behind nginx, add to your proxy configuration:
+```nginx
+proxy_buffering off;
+proxy_cache off;
+proxy_read_timeout 3600s;
+```
+:::
+
+---
+
+### GET `/api/stream`
+
+Global Server-Sent Events endpoint for dashboard-wide run lifecycle notifications. The dashboard connects to this endpoint automatically to refresh pages without polling.
+
+**Headers returned**
+
+- `Content-Type: text/event-stream`
+- `Cache-Control: no-cache`
+- `X-Accel-Buffering: no` (nginx compatibility)
+
+**Event types**
+
+| Event type       | Description                                               |
+|------------------|-----------------------------------------------------------|
+| `run-started`    | A new streaming run has been created                      |
+| `run-finished`   | A streaming run completed (via `/api/test-runs/[id]/finish`) |
+| `run-submitted`  | A run was submitted in one shot (via `/api/test-runs/submit`) |
+
+Each event payload contains `runId`, `projectId`, and (where applicable) `status`.
+
+**Example usage**
+
+```javascript
+const source = new EventSource('/api/stream')
+source.onmessage = (event) => {
+  const data = JSON.parse(event.data)
+  console.log(`Run ${data.runId} event: ${data.type}`)
+}
+```
+
+---
 
 ### GET `/api/projects`
 
