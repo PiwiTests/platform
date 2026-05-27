@@ -130,15 +130,34 @@ test.describe.serial('Streaming API Tests', () => {
 
   // ── /stream (SSE) ───────────────────────────────────────────────────────────
 
-  test('GET /api/test-runs/:id/stream sends an init event', async ({ request }) => {
-    // Read only the first chunk of the SSE stream and check for the init message
-    const response = await request.get(`/api/test-runs/${runId}/stream`)
-    expect(response.ok()).toBeTruthy()
-    expect(response.headers()['content-type']).toContain('text/event-stream')
+  test('GET /api/test-runs/:id/stream sends an init event', async ({ baseURL }) => {
+    // Use native fetch with AbortController so we can read just the init event
+    // without waiting for the infinite SSE stream to close.
+    const controller = new AbortController()
+    const response = await fetch(`${baseURL}/api/test-runs/${runId}/stream`, {
+      signal: controller.signal
+    })
 
-    // Read initial data (the init event is the first thing sent)
-    const body = await response.body()
-    const text = body.toString('utf-8')
+    expect(response.ok).toBeTruthy()
+    expect(response.headers.get('content-type')).toContain('text/event-stream')
+
+    // Read chunks until we have at least one complete data line
+    const reader = response.body!.getReader()
+    const decoder = new TextDecoder()
+    let text = ''
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        text += decoder.decode(value, { stream: true })
+        // Stop as soon as we have the init event
+        if (text.includes('"type":"init"')) break
+      }
+    } finally {
+      reader.releaseLock()
+      controller.abort()
+    }
 
     // The stream should start with a data: line containing a JSON object
     expect(text).toContain('data:')
