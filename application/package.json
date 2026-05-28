@@ -38,6 +38,7 @@
     "@nuxt/ui": "^4.2.1",
     "@unovis/ts": "^1.6.2",
     "@unovis/vue": "^1.6.2",
+    "@vite-pwa/nuxt": "^1.1.1",
     "@vueuse/nuxt": "^14.1.0",
     "date-fns": "^4.1.0",
     "drizzle-kit": "^0.31.8",

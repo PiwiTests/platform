@@ -8,6 +8,11 @@
  * The SQLite database is kept in memory during the session and persisted to
  * IndexedDB so that changes survive page reloads.  On first load the database
  * is seeded from `public/demo/seed.sql`.
+ *
+ * This module is designed to work in both the browser main thread and in a
+ * service worker context.  Call `configureDemoDb(baseUrl)` before the first
+ * `getDemoDb()` call to set the base URL used to locate the WASM binary and
+ * the seed SQL file.
  */
 
 import type { Database as SqlJsDatabase } from 'sql.js'
@@ -70,6 +75,24 @@ let initPromise: Promise<void> | null = null
 let idbInstance: IDBDatabase | null = null
 let persistTimer: ReturnType<typeof setTimeout> | null = null
 
+/**
+ * Base URL used to locate the WASM binary and seed SQL (without trailing
+ * slash).  Defaults to '/' but should be overridden via `configureDemoDb`
+ * before the first `getDemoDb()` call.
+ */
+let demoDbBaseUrl: string = '/'
+
+/**
+ * Set the base URL for the demo database assets (WASM binary and seed SQL).
+ * Must be called before the first `getDemoDb()`.
+ *
+ * In the browser main thread, pass `config.app.baseURL` from `useRuntimeConfig()`.
+ * In a service worker, pass the directory URL derived from `self.location.href`.
+ */
+export function configureDemoDb(baseUrl: string): void {
+  demoDbBaseUrl = baseUrl
+}
+
 async function doPersist(): Promise<void> {
   if (!sqliteDb || !idbInstance) {
     console.warn('[Demo DB] doPersist called but db or IDB not ready – skipping')
@@ -85,8 +108,7 @@ function schedulePersist(): void {
 }
 
 async function initialize(): Promise<void> {
-  const config = useRuntimeConfig()
-  const base = (config.app?.baseURL ?? '/').replace(/\/$/, '')
+  const base = demoDbBaseUrl.replace(/\/$/, '')
 
   const SQL = await initSqlJs({
     locateFile: (file: string) => `${base}/demo/${file}`

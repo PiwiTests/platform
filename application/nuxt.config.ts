@@ -8,11 +8,30 @@ const __dirname = dirname(__filename)
 
 const isDemo = process.env.NUXT_PUBLIC_DEMO_MODE === 'true'
 
+const demoPwaConfig = isDemo
+  ? {
+      strategies: 'injectManifest' as const,
+      srcDir: 'app/service-worker',
+      filename: 'demo-sw.ts',
+      registerType: 'autoUpdate' as const,
+      injectManifest: {
+        // We don't need workbox precaching – the SW only intercepts API calls.
+        injectionPoint: undefined
+      },
+      // No PWA manifest or icons needed for the demo.
+      manifest: false as const,
+      devOptions: {
+        enabled: false
+      }
+    }
+  : { disabled: true }
+
 export default defineNuxtConfig({
   modules: [
     '@nuxt/eslint',
     '@nuxt/ui',
-    '@vueuse/nuxt'
+    '@vueuse/nuxt',
+    '@vite-pwa/nuxt'
   ],
   ssr: isDemo ? false : undefined,
 
@@ -132,4 +151,8 @@ export default defineNuxtConfig({
       }
     }
   },
+
+  // Service worker for demo mode: intercepts /api/ calls and serves them
+  // from the in-browser SQLite database so no real server is needed.
+  pwa: demoPwaConfig,
 })
