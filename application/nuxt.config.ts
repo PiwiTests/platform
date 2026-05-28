@@ -8,11 +8,32 @@ const __dirname = dirname(__filename)
 
 const isDemo = process.env.NUXT_PUBLIC_DEMO_MODE === 'true'
 
+const demoPwaConfig = isDemo
+  ? {
+      strategies: 'injectManifest' as const,
+      srcDir: 'service-worker',
+      filename: 'demo-sw.ts',
+      registerType: 'autoUpdate' as const,
+      injectManifest: {
+        // Setting injectionPoint to undefined prevents vite-pwa/workbox from
+        // injecting a precache manifest into the SW source.  The SW only
+        // intercepts demo API calls and does not use Workbox precaching at all.
+        injectionPoint: undefined
+      },
+      // No PWA manifest or icons needed for the demo.
+      manifest: false as const,
+      devOptions: {
+        enabled: false
+      }
+    }
+  : { disabled: true }
+
 export default defineNuxtConfig({
   modules: [
     '@nuxt/eslint',
     '@nuxt/ui',
-    '@vueuse/nuxt'
+    '@vueuse/nuxt',
+    '@vite-pwa/nuxt'
   ],
   ssr: isDemo ? false : undefined,
 
@@ -76,6 +97,14 @@ export default defineNuxtConfig({
     }
   },
 
+  vite: {
+    optimizeDeps: {
+      // sql.js bundles a WASM binary and must not be pre-bundled by Vite;
+      // excluding it ensures the WASM file is loaded at runtime via locateFile.
+      exclude: ['sql.js']
+    }
+  },
+
   hooks: {
     'nitro:build:public-assets': (nitro) => {
       // Copy migrations folders to output during build
@@ -98,6 +127,21 @@ export default defineNuxtConfig({
         cpSync(sourceMigrationsPg, targetMigrationsPg, { recursive: true })
         console.log('[Build] PostgreSQL migrations copied successfully')
       }
+
+      // Ensure the sql.js WASM file is present in public/demo for the browser demo build
+      if (isDemo) {
+        const wasmSrc = resolve(__dirname, 'node_modules/sql.js/dist/sql-wasm-browser.wasm')
+        const wasmDst = resolve(__dirname, 'public/demo/sql-wasm-browser.wasm')
+        if (existsSync(wasmSrc) && !existsSync(wasmDst)) {
+          console.log('[Build] Copying sql-wasm-browser.wasm to public/demo...')
+          cpSync(wasmSrc, wasmDst)
+          console.log('[Build] sql-wasm-browser.wasm copied successfully')
+        }
+        const seedSrc = resolve(__dirname, 'public/demo/seed.sql')
+        if (!existsSync(seedSrc)) {
+          console.warn('[Build] WARNING: public/demo/seed.sql not found. Run `npm run seed:demo` before building.')
+        }
+      }
     }
   },
 
@@ -109,4 +153,8 @@ export default defineNuxtConfig({
       }
     }
   },
+
+  // Service worker for demo mode: intercepts /api/ calls and serves them
+  // from the in-browser SQLite database so no real server is needed.
+  pwa: demoPwaConfig,
 })

@@ -1,38 +1,19 @@
-import { $fetch as ofetch } from 'ofetch'
+import { configureDemoDb } from '~/demo/db.client'
 
-const DEMO_API_MAP: Record<string, string> = {
-  '/api/projects': '/demo/api/projects.json',
-  '/api/projects/1': '/demo/api/projects/1.json',
-  '/api/projects/1/test-cases': '/demo/api/projects/1/test-cases.json',
-  '/api/projects/1/performance': '/demo/api/projects/1/performance.json',
-  '/api/projects/1/slow-tests': '/demo/api/projects/1/slow-tests.json',
-  '/api/projects/2': '/demo/api/projects/2.json',
-  '/api/projects/2/test-cases': '/demo/api/projects/2/test-cases.json',
-  '/api/projects/2/performance': '/demo/api/projects/2/performance.json',
-  '/api/projects/2/slow-tests': '/demo/api/projects/2/slow-tests.json',
-  '/api/projects/3': '/demo/api/projects/3.json',
-  '/api/projects/3/test-cases': '/demo/api/projects/3/test-cases.json',
-  '/api/projects/3/performance': '/demo/api/projects/3/performance.json',
-  '/api/projects/3/slow-tests': '/demo/api/projects/3/slow-tests.json',
-  '/api/projects/4': '/demo/api/projects/4.json',
-  '/api/projects/4/test-cases': '/demo/api/projects/4/test-cases.json',
-  '/api/projects/4/performance': '/demo/api/projects/4/performance.json',
-  '/api/projects/4/slow-tests': '/demo/api/projects/4/slow-tests.json',
-  '/api/tags': '/demo/api/tags.json',
-  '/api/admin/stats': '/demo/api/admin/stats.json',
-  '/api/test-runs/1': '/demo/api/test-runs/1.json',
-  '/api/test-runs/1/network-requests': '/demo/api/test-runs/1/network-requests.json',
-  '/api/test-runs/2': '/demo/api/test-runs/2.json',
-  '/api/test-runs/2/network-requests': '/demo/api/test-runs/2/network-requests.json',
-  '/api/test-runs/3': '/demo/api/test-runs/3.json',
-  '/api/test-runs/3/network-requests': '/demo/api/test-runs/3/network-requests.json',
-  '/api/test-runs/4': '/demo/api/test-runs/4.json',
-  '/api/test-runs/4/network-requests': '/demo/api/test-runs/4/network-requests.json',
-  '/api/test-cases/1': '/demo/api/test-cases/1.json',
-  '/api/test-cases/2': '/demo/api/test-cases/2.json',
-  '/api/auth/session': '/demo/api/auth/session.json'
-}
-
+/**
+ * Demo-mode fetch plugin.
+ *
+ * In demo mode the app is served from a sub-path (e.g. /playwright-dashboard/demo/).
+ * API calls made by Nuxt components use bare paths like `/api/projects`, but
+ * the service worker's scope is limited to that sub-path.
+ *
+ * This plugin rewrites every `/api/…` call to `[demoBase]/api/…` so the
+ * request URL falls inside the service worker's scope and gets intercepted
+ * by `demo-sw.ts`.
+ *
+ * All actual API handling (sql.js, Drizzle, route logic) lives in the SW;
+ * no backend code is duplicated here.
+ */
 export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig()
 
@@ -40,25 +21,36 @@ export default defineNuxtPlugin(() => {
     return
   }
 
-  const baseURL = config.app.baseURL || '/'
+  // Pass the base URL to the db module so it can locate WASM + seed SQL
+  // in the (unlikely) event a request is handled before the SW is active.
+  const base = (config.app?.baseURL ?? '/').replace(/\/$/, '')
+  configureDemoDb(base)
 
-  const originalFetch = globalThis.$fetch
+  const originalFetch = globalThis.$fetch as (request: unknown, options?: unknown) => Promise<unknown>
 
-  // @ts-expect-error monkey-patching $fetch for demo mode
-  globalThis.$fetch = async (request: string, options?: Record<string, unknown>) => {
-    const path = typeof request === 'string' ? request.split('?')[0] : undefined
-
-    if (path && path.startsWith('/api/')) {
-      const fixtureRelPath = DEMO_API_MAP[path]
-      if (fixtureRelPath) {
-        const fixtureURL = baseURL.replace(/\/$/, '') + fixtureRelPath
-        return ofetch(fixtureURL, { parseResponse: JSON.parse })
-      }
+  function rewritePath(request: unknown): unknown {
+    if (typeof request === 'string' && request.startsWith('/api/')) {
+      return base + request
     }
-
-    return originalFetch(request, options)
+    return request
   }
 
-  // Copy over $fetch properties so useFetch internals still work
+  // @ts-expect-error monkey-patching $fetch for demo mode
+  globalThis.$fetch = (request: unknown, options?: unknown) => {
+    return originalFetch(rewritePath(request), options)
+  }
+
+  // Copy over $fetch properties so useFetch internals still work.
   Object.assign(globalThis.$fetch, originalFetch)
+
+  // Also patch $fetch.raw so useFetch internals that call the raw variant
+  // still have their paths rewritten into the SW's scope.
+  const originalRaw = (originalFetch as unknown as Record<string, unknown>).raw as ((request: unknown, options?: unknown) => Promise<unknown>) | undefined
+  if (typeof originalRaw === 'function') {
+    // @ts-expect-error monkey-patching $fetch.raw for demo mode
+    globalThis.$fetch.raw = (request: unknown, options?: unknown) => {
+      return originalRaw(rewritePath(request), options)
+    }
+    Object.assign(globalThis.$fetch.raw, originalRaw)
+  }
 })

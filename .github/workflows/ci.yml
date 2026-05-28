@@ -8,6 +8,7 @@ defaults:
 
 jobs:
   ci:
+    name: CI Tests
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -71,7 +72,7 @@ jobs:
         run: npm test
 
   demo:
-    name: Demo generate (Linux)
+    name: Test demo generation
     runs-on: ubuntu-latest
 
     defaults:
@@ -92,9 +93,5 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Install Playwright Browsers
-        run: npx playwright install chromium --with-deps --only-shell
-
-      - name: Run demo-generate tests
-        run: npm run test:demo-generate
-
+      - name: Run demo-generate
+        run: npm run generate:demo
