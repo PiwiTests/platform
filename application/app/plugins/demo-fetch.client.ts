@@ -28,15 +28,29 @@ export default defineNuxtPlugin(() => {
 
   const originalFetch = globalThis.$fetch as (request: unknown, options?: unknown) => Promise<unknown>
 
+  function rewritePath(request: unknown): unknown {
+    if (typeof request === 'string' && request.startsWith('/api/')) {
+      return base + request
+    }
+    return request
+  }
+
   // @ts-expect-error monkey-patching $fetch for demo mode
   globalThis.$fetch = (request: unknown, options?: unknown) => {
-    if (typeof request === 'string' && request.startsWith('/api/')) {
-      // Prepend the demo base so the URL falls inside the SW's scope.
-      return originalFetch(base + request, options)
-    }
-    return originalFetch(request, options)
+    return originalFetch(rewritePath(request), options)
   }
 
   // Copy over $fetch properties so useFetch internals still work.
   Object.assign(globalThis.$fetch, originalFetch)
+
+  // Also patch $fetch.raw so useFetch internals that call the raw variant
+  // still have their paths rewritten into the SW's scope.
+  const originalRaw = (originalFetch as Record<string, unknown>).raw as ((request: unknown, options?: unknown) => Promise<unknown>) | undefined
+  if (typeof originalRaw === 'function') {
+    // @ts-expect-error monkey-patching $fetch.raw for demo mode
+    globalThis.$fetch.raw = (request: unknown, options?: unknown) => {
+      return originalRaw(rewritePath(request), options)
+    }
+    Object.assign(globalThis.$fetch.raw, originalRaw)
+  }
 })

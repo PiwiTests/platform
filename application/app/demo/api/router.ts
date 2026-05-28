@@ -37,9 +37,9 @@ const routes: RouteEntry[] = [
   { method: 'POST', pattern: /^\/api\/projects$/, handler: (_, body) => apiCreateProject(body as Parameters<typeof apiCreateProject>[0]) },
   { method: 'GET', pattern: /^\/api\/projects\/(\d+)$/, handler: m => apiGetProject(+m[1]!) },
   { method: 'PUT', pattern: /^\/api\/projects\/(\d+)$/, handler: (m, body) => apiUpdateProject(+m[1]!, body as Parameters<typeof apiUpdateProject>[1]) },
-  { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/performance$/, handler: (m, _, q) => apiGetProjectPerformance(+m[1]!, q ? +q.get('limit')! || 50 : 50) },
+  { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/performance$/, handler: (m, _, q) => apiGetProjectPerformance(+m[1]!, q ? Number(q.get('limit')) || 50 : 50) },
   { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/test-cases$/, handler: m => apiGetProjectTestCases(+m[1]!) },
-  { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/slow-tests$/, handler: (m, _, q) => apiGetProjectSlowTests(+m[1]!, q ? +q.get('runs')! || 10 : 10) },
+  { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/slow-tests$/, handler: (m, _, q) => apiGetProjectSlowTests(+m[1]!, q ? Number(q.get('runs')) || 10 : 10) },
 
   // Test runs
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)$/, handler: m => apiGetTestRun(+m[1]!) },

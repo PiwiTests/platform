@@ -11,7 +11,7 @@ const isDemo = process.env.NUXT_PUBLIC_DEMO_MODE === 'true'
 const demoPwaConfig = isDemo
   ? {
       strategies: 'injectManifest' as const,
-      srcDir: 'app/service-worker',
+      srcDir: 'service-worker',
       filename: 'demo-sw.ts',
       registerType: 'autoUpdate' as const,
       injectManifest: {

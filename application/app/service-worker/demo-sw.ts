@@ -69,7 +69,23 @@ self.addEventListener('fetch', (event) => {
         }
       }
 
-      const result = await handleDemoRequest(apiPath, method, body, queryString)
+      let result: unknown
+      try {
+        result = await handleDemoRequest(apiPath, method, body, queryString)
+      } catch (e) {
+        console.error('[Demo SW] handler error', e)
+        return new Response(
+          JSON.stringify({ statusCode: 500, message: String(e) }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        )
+      }
+
+      if (result === undefined) {
+        return new Response(
+          JSON.stringify({ statusCode: 404, message: 'Not found' }),
+          { status: 404, headers: { 'Content-Type': 'application/json' } }
+        )
+      }
 
       return new Response(JSON.stringify(result), {
         status: 200,

@@ -248,14 +248,28 @@ export async function apiGetProjectSlowTests(id: number, runsCount = 10) {
 }
 
 /** PUT /api/projects/:id — update project */
-export async function apiUpdateProject(id: number, body: { name?: string, label?: string, description?: string }) {
+export async function apiUpdateProject(id: number, body: { label?: string | null, description?: string | null, tagIds?: number[] }) {
   const db = await getDemoDb()
   const now = new Date()
   await db.update(projects)
-    .set({ ...body, updatedAt: now })
+    .set({ label: body.label, description: body.description, updatedAt: now })
     .where(eq(projects.id, id))
+
+  // Update project tags if provided
+  if (body.tagIds !== undefined) {
+    await db.delete(projectTags).where(eq(projectTags.projectId, id))
+    if (body.tagIds.length > 0) {
+      await db.insert(projectTags).values(body.tagIds.map(tagId => ({ projectId: id, tagId })))
+    }
+  }
+
   const updated = await db.select().from(projects).where(eq(projects.id, id))
-  return updated[0] ?? null
+  const projectTagRows = await db
+    .select({ tag: tags })
+    .from(projectTags)
+    .innerJoin(tags, eq(projectTags.tagId, tags.id))
+    .where(eq(projectTags.projectId, id))
+  return { ...updated[0], tags: projectTagRows.map(r => r.tag) } ?? null
 }
 
 /** POST /api/projects — create project */

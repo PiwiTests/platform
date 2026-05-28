@@ -154,7 +154,7 @@ async function initialize(): Promise<void> {
         return { rows }
       } catch (e) {
         console.error('[Demo DB] query error', e, '\nSQL:', sql, '\nParams:', params)
-        return { rows: [] }
+        throw e
       }
     },
     { schema }

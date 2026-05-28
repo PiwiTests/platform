@@ -4,7 +4,7 @@
 
 import { eq } from 'drizzle-orm'
 import { getDemoDb } from '../db.client'
-import { testRuns, testCases, testRunsCases, projects, reports } from '~~/server/database/schema.sqlite'
+import { testRuns, testCases, testRunsCases, projects, reports, traces } from '~~/server/database/schema.sqlite'
 
 /** GET /api/test-runs/:id */
 export async function apiGetTestRun(id: number) {
@@ -177,6 +177,18 @@ export async function apiGetNetworkRequests(id: number) {
 /** DELETE /api/test-runs/:id */
 export async function apiDeleteTestRun(id: number) {
   const db = await getDemoDb()
+
+  // Delete traces for all cases belonging to this run
+  const runsCases = await db.select({ id: testRunsCases.id }).from(testRunsCases).where(eq(testRunsCases.testRunId, id))
+  for (const { id: caseId } of runsCases) {
+    await db.delete(traces).where(eq(traces.testRunsCaseId, caseId))
+  }
+
+  // Delete test run cases and reports
+  await db.delete(testRunsCases).where(eq(testRunsCases.testRunId, id))
+  await db.delete(reports).where(eq(reports.testRunId, id))
+
+  // Delete the run itself
   await db.delete(testRuns).where(eq(testRuns.id, id))
   return { success: true }
 }
