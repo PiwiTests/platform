@@ -269,7 +269,7 @@ export async function apiUpdateProject(id: number, body: { label?: string | null
     .from(projectTags)
     .innerJoin(tags, eq(projectTags.tagId, tags.id))
     .where(eq(projectTags.projectId, id))
-  return { ...updated[0], tags: projectTagRows.map(r => r.tag) } ?? null
+  return { ...updated[0], tags: projectTagRows.map(r => r.tag) }
 }
 
 /** POST /api/projects — create project */

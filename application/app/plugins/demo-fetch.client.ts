@@ -45,7 +45,7 @@ export default defineNuxtPlugin(() => {
 
   // Also patch $fetch.raw so useFetch internals that call the raw variant
   // still have their paths rewritten into the SW's scope.
-  const originalRaw = (originalFetch as Record<string, unknown>).raw as ((request: unknown, options?: unknown) => Promise<unknown>) | undefined
+  const originalRaw = (originalFetch as unknown as Record<string, unknown>).raw as ((request: unknown, options?: unknown) => Promise<unknown>) | undefined
   if (typeof originalRaw === 'function') {
     // @ts-expect-error monkey-patching $fetch.raw for demo mode
     globalThis.$fetch.raw = (request: unknown, options?: unknown) => {
