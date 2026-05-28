@@ -75,7 +75,7 @@ self.addEventListener('fetch', (event) => {
       } catch (e) {
         console.error('[Demo SW] handler error', e)
         return new Response(
-          JSON.stringify({ statusCode: 500, message: String(e) }),
+          JSON.stringify({ statusCode: 500, message: 'Internal server error' }),
           { status: 500, headers: { 'Content-Type': 'application/json' } }
         )
       }
