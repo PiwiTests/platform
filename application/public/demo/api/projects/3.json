@@ -20,7 +20,16 @@
       "flakyTests": 0,
       "avgTestDuration": 3900,
       "p90TestDuration": 6500,
-      "createdAt": "2025-04-24T22:01:35.000Z"
+      "createdAt": "2025-04-24T22:01:35.000Z",
+      "reports": [
+        {
+          "id": 200,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/visual-regression/run-3/index.html",
+          "size": 3636800
+        }
+      ]
     },
     {
       "id": 31,
@@ -35,7 +44,16 @@
       "flakyTests": 0,
       "avgTestDuration": 4200,
       "p90TestDuration": 7000,
-      "createdAt": "2025-04-21T22:01:42.000Z"
+      "createdAt": "2025-04-21T22:01:42.000Z",
+      "reports": [
+        {
+          "id": 201,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/visual-regression/run-31/index.html",
+          "size": 6996800
+        }
+      ]
     },
     {
       "id": 32,
@@ -50,7 +68,16 @@
       "flakyTests": 0,
       "avgTestDuration": 3850,
       "p90TestDuration": 6400,
-      "createdAt": "2025-04-18T22:01:33.000Z"
+      "createdAt": "2025-04-18T22:01:33.000Z",
+      "reports": [
+        {
+          "id": 202,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/visual-regression/run-32/index.html",
+          "size": 7116800
+        }
+      ]
     },
     {
       "id": 33,
@@ -65,7 +92,16 @@
       "flakyTests": 1,
       "avgTestDuration": 3950,
       "p90TestDuration": 6600,
-      "createdAt": "2025-04-15T22:01:37.000Z"
+      "createdAt": "2025-04-15T22:01:37.000Z",
+      "reports": [
+        {
+          "id": 203,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/visual-regression/run-33/index.html",
+          "size": 7236800
+        }
+      ]
     },
     {
       "id": 34,
@@ -80,7 +116,16 @@
       "flakyTests": 0,
       "avgTestDuration": 3750,
       "p90TestDuration": 6200,
-      "createdAt": "2025-04-12T22:01:31.000Z"
+      "createdAt": "2025-04-12T22:01:31.000Z",
+      "reports": [
+        {
+          "id": 204,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/visual-regression/run-34/index.html",
+          "size": 7356800
+        }
+      ]
     },
     {
       "id": 35,
@@ -95,7 +140,16 @@
       "flakyTests": 0,
       "avgTestDuration": 4300,
       "p90TestDuration": 7200,
-      "createdAt": "2025-04-09T22:01:45.000Z"
+      "createdAt": "2025-04-09T22:01:45.000Z",
+      "reports": [
+        {
+          "id": 205,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/visual-regression/run-35/index.html",
+          "size": 7476800
+        }
+      ]
     },
     {
       "id": 36,
@@ -110,7 +164,16 @@
       "flakyTests": 0,
       "avgTestDuration": 3900,
       "p90TestDuration": 6450,
-      "createdAt": "2025-04-06T22:01:34.000Z"
+      "createdAt": "2025-04-06T22:01:34.000Z",
+      "reports": [
+        {
+          "id": 206,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/visual-regression/run-36/index.html",
+          "size": 7596800
+        }
+      ]
     },
     {
       "id": 37,
@@ -125,7 +188,32 @@
       "flakyTests": 0,
       "avgTestDuration": 3700,
       "p90TestDuration": 6100,
-      "createdAt": "2025-04-03T22:01:30.000Z"
+      "createdAt": "2025-04-03T22:01:30.000Z",
+      "reports": [
+        {
+          "id": 207,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/visual-regression/run-37/index.html",
+          "size": 7716800
+        }
+      ]
+    }
+  ],
+  "tags": [
+    {
+      "id": 1,
+      "text": "smoke",
+      "color": "green",
+      "createdAt": "2025-03-01T00:00:00.000Z",
+      "updatedAt": "2025-03-01T00:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "text": "regression",
+      "color": "blue",
+      "createdAt": "2025-03-01T00:00:00.000Z",
+      "updatedAt": "2025-03-01T00:00:00.000Z"
     }
   ]
 }

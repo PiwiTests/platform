@@ -5,7 +5,7 @@ layout: home
 hero:
   name: "Playwright Dashboard"
   text: "Store and visualise your Playwright test results"
-  tagline: A modern dashboard built with Nuxt 4. Organise runs by project, drill down into failures, view traces, compare performance, and analyse network requests — all in one place.
+  tagline: Organise runs by project, drill down into failures, view traces, compare performance, and analyse network requests — all in one place.
 
   actions:
     - theme: brand

@@ -42,8 +42,16 @@
       "error": "Error: Expected status 200 but got 401\n  at Object.<anonymous> (tests/api/auth.spec.ts:18:5)\n  Expected: 200\n  Received: 401",
       "retries": 1,
       "steps": [
-        { "title": "Send POST /api/auth/login", "duration": 1800, "category": "action" },
-        { "title": "Assert response status 200", "duration": 280, "category": "assertion" }
+        {
+          "title": "Send POST /api/auth/login",
+          "duration": 1800,
+          "category": "action"
+        },
+        {
+          "title": "Assert response status 200",
+          "duration": 280,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Send POST /api/auth/login",
       "slowestStepDuration": 1800
@@ -64,8 +72,16 @@
       "error": "Error: Expected array but got object\n  at Object.<anonymous> (tests/api/products.spec.ts:15:7)\n  Expected: Array\n  Received: { error: 'Internal Server Error' }",
       "retries": 2,
       "steps": [
-        { "title": "Send GET /api/products", "duration": 2100, "category": "action" },
-        { "title": "Assert response is array", "duration": 380, "category": "assertion" }
+        {
+          "title": "Send GET /api/products",
+          "duration": 2100,
+          "category": "action"
+        },
+        {
+          "title": "Assert response is array",
+          "duration": 380,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Send GET /api/products",
       "slowestStepDuration": 2100
@@ -79,9 +95,21 @@
       "error": "Error: Expected 201 Created but got 500 Internal Server Error\n  at Object.<anonymous> (tests/api/products.spec.ts:48:7)\n  Response body: {\"error\":\"Database connection failed\"}",
       "retries": 1,
       "steps": [
-        { "title": "Prepare product payload", "duration": 120, "category": "setup" },
-        { "title": "Send POST /api/products", "duration": 3800, "category": "action" },
-        { "title": "Assert response status 201", "duration": 380, "category": "assertion" }
+        {
+          "title": "Prepare product payload",
+          "duration": 120,
+          "category": "setup"
+        },
+        {
+          "title": "Send POST /api/products",
+          "duration": 3800,
+          "category": "action"
+        },
+        {
+          "title": "Assert response status 201",
+          "duration": 380,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Send POST /api/products",
       "slowestStepDuration": 3800
@@ -102,8 +130,16 @@
       "error": "Error: Request timed out after 5000ms\n  at Object.<anonymous> (tests/api/orders.spec.ts:22:7)\n  The POST /api/orders endpoint did not respond within the timeout period.",
       "retries": 2,
       "steps": [
-        { "title": "Prepare order payload", "duration": 150, "category": "setup" },
-        { "title": "Send POST /api/orders", "duration": 4800, "category": "action" }
+        {
+          "title": "Prepare order payload",
+          "duration": 150,
+          "category": "setup"
+        },
+        {
+          "title": "Send POST /api/orders",
+          "duration": 4800,
+          "category": "action"
+        }
       ],
       "slowestStep": "Send POST /api/orders",
       "slowestStepDuration": 4800
@@ -138,9 +174,21 @@
       "error": "AssertionError: Expected stock to decrease by 1\n  at Object.<anonymous> (tests/api/inventory.spec.ts:38:9)\n  Expected: 99\n  Received: 100",
       "retries": 1,
       "steps": [
-        { "title": "Get initial stock level", "duration": 680, "category": "action" },
-        { "title": "Place purchase order", "duration": 2800, "category": "action" },
-        { "title": "Assert stock decremented", "duration": 380, "category": "assertion" }
+        {
+          "title": "Get initial stock level",
+          "duration": 680,
+          "category": "action"
+        },
+        {
+          "title": "Place purchase order",
+          "duration": 2800,
+          "category": "action"
+        },
+        {
+          "title": "Assert stock decremented",
+          "duration": 380,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Place purchase order",
       "slowestStepDuration": 2800
@@ -480,6 +528,15 @@
       "status": "passed",
       "duration": 4600,
       "location": "tests/api/products.spec.ts:485:5"
+    }
+  ],
+  "reports": [
+    {
+      "id": 101,
+      "type": "html",
+      "label": "HTML report",
+      "path": "reports/api-integration/run-2/index.html",
+      "size": 1843200
     }
   ]
 }

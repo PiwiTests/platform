@@ -1,0 +1,178 @@
+{
+  "id": 4,
+  "projectId": 4,
+  "status": "running",
+  "startTime": "2025-05-28T15:10:00.000Z",
+  "duration": null,
+  "totalTests": 20,
+  "passedTests": 12,
+  "failedTests": 0,
+  "skippedTests": 0,
+  "flakyTests": 0,
+  "avgTestDuration": null,
+  "p90TestDuration": null,
+  "metadata": {
+    "ci": {
+      "provider": "GitHub Actions",
+      "buildNumber": "5678",
+      "jobName": "test",
+      "workflow": "CI",
+      "buildUrl": "https://github.com/example/repo/actions/runs/5678"
+    },
+    "scm": {
+      "commit": "d4e8f120ab3c5678",
+      "branch": "main",
+      "author": "Jane Smith",
+      "commitMessage": "feat: add biometric login support"
+    }
+  },
+  "createdAt": "2025-05-28T15:10:00.000Z",
+  "reports": [],
+  "project": {
+    "id": 4,
+    "name": "mobile-e2e",
+    "label": "Mobile E2E"
+  },
+  "testCases": [
+    {
+      "id": 501,
+      "title": "should log in with valid credentials",
+      "status": "passed",
+      "duration": 3200,
+      "location": "tests/mobile/login.spec.ts:8:5"
+    },
+    {
+      "id": 502,
+      "title": "should show error for wrong password",
+      "status": "passed",
+      "duration": 2800,
+      "location": "tests/mobile/login.spec.ts:25:5"
+    },
+    {
+      "id": 503,
+      "title": "should persist login across app restarts",
+      "status": "passed",
+      "duration": 4100,
+      "location": "tests/mobile/login.spec.ts:45:5"
+    },
+    {
+      "id": 504,
+      "title": "should navigate to home screen",
+      "status": "passed",
+      "duration": 1800,
+      "location": "tests/mobile/navigation.spec.ts:8:5"
+    },
+    {
+      "id": 505,
+      "title": "should navigate using bottom tab bar",
+      "status": "passed",
+      "duration": 2400,
+      "location": "tests/mobile/navigation.spec.ts:22:5"
+    },
+    {
+      "id": 506,
+      "title": "should deep-link to product detail",
+      "status": "passed",
+      "duration": 3600,
+      "location": "tests/mobile/navigation.spec.ts:38:5"
+    },
+    {
+      "id": 507,
+      "title": "should complete in-app purchase",
+      "status": "passed",
+      "duration": 7200,
+      "location": "tests/mobile/checkout.spec.ts:10:5"
+    },
+    {
+      "id": 508,
+      "title": "should apply promo code on checkout",
+      "status": "passed",
+      "duration": 5400,
+      "location": "tests/mobile/checkout.spec.ts:45:5"
+    },
+    {
+      "id": 509,
+      "title": "should handle payment failure gracefully",
+      "status": "passed",
+      "duration": 4800,
+      "location": "tests/mobile/checkout.spec.ts:78:5"
+    },
+    {
+      "id": 510,
+      "title": "should receive push notification",
+      "status": "passed",
+      "duration": 6100,
+      "location": "tests/mobile/notifications.spec.ts:10:5"
+    },
+    {
+      "id": 511,
+      "title": "should tap notification to open app",
+      "status": "passed",
+      "duration": 5200,
+      "location": "tests/mobile/notifications.spec.ts:32:5"
+    },
+    {
+      "id": 512,
+      "title": "should update user profile",
+      "status": "passed",
+      "duration": 3900,
+      "location": "tests/mobile/settings.spec.ts:8:5"
+    },
+    {
+      "id": 513,
+      "title": "should toggle dark mode",
+      "status": "running",
+      "duration": null,
+      "location": "tests/mobile/settings.spec.ts:28:5"
+    },
+    {
+      "id": 514,
+      "title": "should log out successfully",
+      "status": "pending",
+      "duration": null,
+      "location": "tests/mobile/settings.spec.ts:45:5"
+    },
+    {
+      "id": 515,
+      "title": "should search for a product",
+      "status": "pending",
+      "duration": null,
+      "location": "tests/mobile/search.spec.ts:8:5"
+    },
+    {
+      "id": 516,
+      "title": "should filter search results by category",
+      "status": "pending",
+      "duration": null,
+      "location": "tests/mobile/search.spec.ts:28:5"
+    },
+    {
+      "id": 517,
+      "title": "should add item to wishlist",
+      "status": "pending",
+      "duration": null,
+      "location": "tests/mobile/wishlist.spec.ts:8:5"
+    },
+    {
+      "id": 518,
+      "title": "should remove item from wishlist",
+      "status": "pending",
+      "duration": null,
+      "location": "tests/mobile/wishlist.spec.ts:28:5"
+    },
+    {
+      "id": 519,
+      "title": "should complete onboarding flow",
+      "status": "pending",
+      "duration": null,
+      "location": "tests/mobile/onboarding.spec.ts:8:5"
+    },
+    {
+      "id": 520,
+      "title": "should skip onboarding as returning user",
+      "status": "pending",
+      "duration": null,
+      "location": "tests/mobile/onboarding.spec.ts:32:5"
+    }
+  ]
+}
