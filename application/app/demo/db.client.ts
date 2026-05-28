@@ -16,9 +16,11 @@
  */
 
 import type { Database as SqlJsDatabase } from 'sql.js'
-import initSqlJs from 'sql.js'
+import * as initSqlJsLib from 'sql.js'
 import { drizzle } from 'drizzle-orm/sqlite-proxy'
 import * as schema from '~~/server/database/schema.sqlite'
+
+const initSqlJs = initSqlJsLib.default || initSqlJsLib
 
 type DemoDB = ReturnType<typeof drizzle<typeof schema>>
 
