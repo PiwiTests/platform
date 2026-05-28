@@ -15,7 +15,9 @@ const demoPwaConfig = isDemo
       filename: 'demo-sw.ts',
       registerType: 'autoUpdate' as const,
       injectManifest: {
-        // We don't need workbox precaching – the SW only intercepts API calls.
+        // Setting injectionPoint to undefined prevents vite-pwa/workbox from
+        // injecting a precache manifest into the SW source.  The SW only
+        // intercepts demo API calls and does not use Workbox precaching at all.
         injectionPoint: undefined
       },
       // No PWA manifest or icons needed for the demo.

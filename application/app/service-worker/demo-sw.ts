@@ -27,7 +27,7 @@ declare const self: ServiceWorkerGlobalScope & typeof globalThis
 //   SW_DIR_URL = 'https://host/playwright-dashboard/demo/'
 //   API_PREFIX  = '/playwright-dashboard/demo/api/'
 const SW_DIR_URL = self.location.href.replace(/\/[^/]*$/, '/')
-const API_PREFIX = new URL(SW_DIR_URL).pathname + 'api/'
+const API_PREFIX = new URL(SW_DIR_URL).pathname.replace(/\/+$/, '') + '/api/'
 
 // Configure the db module to locate WASM + seed SQL relative to the SW.
 configureDemoDb(SW_DIR_URL)
