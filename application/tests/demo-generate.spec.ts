@@ -36,6 +36,13 @@ test.describe('Demo generate configuration', () => {
     expect(pkg.devDependencies['cross-env']).toBeDefined()
   })
 
+  test('package.json has seed:demo script', () => {
+    const packageJsonPath = join(process.cwd(), 'package.json')
+    const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
+    expect(pkg.scripts['seed:demo']).toBeDefined()
+    expect(pkg.scripts['seed:demo']).toContain('generate-demo-seed')
+  })
+
   test('nuxt.config.ts uses memory storage driver for demo prerender cache', () => {
     const configPath = join(process.cwd(), 'nuxt.config.ts')
     expect(existsSync(configPath)).toBe(true)
@@ -57,62 +64,50 @@ test.describe('Demo generate configuration', () => {
     expect(config).toContain('buildCache: !isDemo')
   })
 
-  test('demo-fetch plugin maps /api/tags and /api/admin/stats to fixture files', () => {
+  test('nuxt.config.ts excludes sql.js from Vite optimizeDeps', () => {
+    const configPath = join(process.cwd(), 'nuxt.config.ts')
+    const config = readFileSync(configPath, 'utf-8')
+    expect(config).toContain('sql.js')
+    expect(config).toContain('optimizeDeps')
+  })
+
+  test('demo-fetch plugin uses handleDemoRequest for dynamic API handling', () => {
     const pluginPath = join(process.cwd(), 'app', 'plugins', 'demo-fetch.client.ts')
     expect(existsSync(pluginPath)).toBe(true)
 
     const plugin = readFileSync(pluginPath, 'utf-8')
-    expect(plugin).toContain('\'/api/tags\'')
-    expect(plugin).toContain('\'/api/admin/stats\'')
+    expect(plugin).toContain('handleDemoRequest')
   })
 
-  test('demo fixture files exist for all mapped API endpoints', () => {
-    const publicDir = join(process.cwd(), 'public')
-
-    const expectedFixtures = [
-      'demo/api/projects.json',
-      'demo/api/projects/1.json',
-      'demo/api/projects/1/test-cases.json',
-      'demo/api/projects/1/performance.json',
-      'demo/api/projects/1/slow-tests.json',
-      'demo/api/tags.json',
-      'demo/api/admin/stats.json',
-      'demo/api/test-runs/1.json',
-      'demo/api/test-runs/1/network-requests.json',
-      'demo/api/test-cases/1.json',
-      'demo/api/auth/session.json'
-    ]
-
-    for (const fixture of expectedFixtures) {
-      const fullPath = join(publicDir, fixture)
-      expect(existsSync(fullPath), `Missing fixture: ${fixture}`).toBe(true)
-    }
+  test('demo seed SQL file exists', () => {
+    const seedPath = join(process.cwd(), 'public', 'demo', 'seed.sql')
+    expect(existsSync(seedPath), 'public/demo/seed.sql must exist').toBe(true)
   })
 
-  test('demo fixture /api/tags.json has correct shape', () => {
-    const fixturePath = join(process.cwd(), 'public', 'demo', 'api', 'tags.json')
-    expect(existsSync(fixturePath)).toBe(true)
+  test('demo seed SQL file has correct structure', () => {
+    const seedPath = join(process.cwd(), 'public', 'demo', 'seed.sql')
+    const seed = readFileSync(seedPath, 'utf-8')
 
-    const data = JSON.parse(readFileSync(fixturePath, 'utf-8'))
-    expect(data).toHaveProperty('tags')
-    expect(Array.isArray(data.tags)).toBe(true)
-
-    if (data.tags.length > 0) {
-      const tag = data.tags[0]
-      expect(tag).toHaveProperty('id')
-      expect(tag).toHaveProperty('text')
-      expect(tag).toHaveProperty('color')
-    }
+    expect(seed).toContain('CREATE TABLE IF NOT EXISTS projects')
+    expect(seed).toContain('CREATE TABLE IF NOT EXISTS test_runs')
+    expect(seed).toContain('CREATE TABLE IF NOT EXISTS test_cases')
+    expect(seed).toContain('INSERT INTO projects')
+    expect(seed).toContain('INSERT INTO test_runs')
   })
 
-  test('demo fixture /api/admin/stats.json has correct shape', () => {
-    const fixturePath = join(process.cwd(), 'public', 'demo', 'api', 'admin', 'stats.json')
-    expect(existsSync(fixturePath)).toBe(true)
+  test('sql-wasm-browser.wasm file exists in public/demo', () => {
+    const wasmPath = join(process.cwd(), 'public', 'demo', 'sql-wasm-browser.wasm')
+    expect(existsSync(wasmPath), 'public/demo/sql-wasm-browser.wasm must exist').toBe(true)
+  })
 
-    const data = JSON.parse(readFileSync(fixturePath, 'utf-8'))
-    expect(data).toHaveProperty('totalProjects')
-    expect(data).toHaveProperty('totalRuns')
-    expect(data).toHaveProperty('totalTestCases')
+  test('demo db.client.ts exists', () => {
+    const dbPath = join(process.cwd(), 'app', 'demo', 'db.client.ts')
+    expect(existsSync(dbPath), 'app/demo/db.client.ts must exist').toBe(true)
+  })
+
+  test('demo api router exists', () => {
+    const routerPath = join(process.cwd(), 'app', 'demo', 'api', 'router.ts')
+    expect(existsSync(routerPath), 'app/demo/api/router.ts must exist').toBe(true)
   })
 })
 
@@ -163,9 +158,8 @@ test.describe('Demo static site generation', () => {
     // Custom 404 page
     expect(existsSync(join(outputDir, '404.html')), '404.html missing').toBe(true)
 
-    // Demo fixtures must be copied to the output as static assets
-    expect(existsSync(join(outputDir, 'demo', 'api', 'projects.json')), 'projects.json fixture missing').toBe(true)
-    expect(existsSync(join(outputDir, 'demo', 'api', 'tags.json')), 'tags.json fixture missing').toBe(true)
-    expect(existsSync(join(outputDir, 'demo', 'api', 'admin', 'stats.json')), 'admin/stats.json fixture missing').toBe(true)
+    // Demo assets must be copied to the output
+    expect(existsSync(join(outputDir, 'demo', 'seed.sql')), 'seed.sql missing').toBe(true)
+    expect(existsSync(join(outputDir, 'demo', 'sql-wasm-browser.wasm')), 'sql-wasm-browser.wasm missing').toBe(true)
   })
 })

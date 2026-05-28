@@ -9,6 +9,7 @@
     "build": "nuxt build",
     "generate": "nuxt generate",
     "generate:demo": "cross-env NUXT_PUBLIC_DEMO_MODE=true nuxt generate",
+    "seed:demo": "node scripts/generate-demo-seed.mjs",
     "dev": "nuxt dev",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
@@ -43,12 +44,14 @@
     "drizzle-orm": "^0.45.0",
     "nuxt": "^4.2.1",
     "postgres": "^3.4.9",
+    "sql.js": "^1.14.1",
     "zod": "^4.1.13"
   },
   "devDependencies": {
     "@nuxt/eslint": "^1.10.0",
     "@playwright/test": "^1.58.0",
     "@types/node": "^25.6.0",
+    "@types/sql.js": "^1.4.11",
     "cross-env": "^10.1.0",
     "eslint": "^10.2.0",
     "form-data": "^4.0.0",
