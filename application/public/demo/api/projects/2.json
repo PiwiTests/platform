@@ -20,7 +20,16 @@
       "flakyTests": 3,
       "avgTestDuration": 3800,
       "p90TestDuration": 7200,
-      "createdAt": "2025-04-25T07:18:50.000Z"
+      "createdAt": "2025-04-25T07:18:50.000Z",
+      "reports": [
+        {
+          "id": 100,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/api-integration/run-2/index.html",
+          "size": 2003200
+        }
+      ]
     },
     {
       "id": 21,
@@ -35,7 +44,16 @@
       "flakyTests": 2,
       "avgTestDuration": 3600,
       "p90TestDuration": 6900,
-      "createdAt": "2025-04-24T20:03:38.000Z"
+      "createdAt": "2025-04-24T20:03:38.000Z",
+      "reports": [
+        {
+          "id": 101,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/api-integration/run-21/index.html",
+          "size": 3523200
+        }
+      ]
     },
     {
       "id": 22,
@@ -50,7 +68,16 @@
       "flakyTests": 4,
       "avgTestDuration": 4000,
       "p90TestDuration": 7500,
-      "createdAt": "2025-04-23T13:34:05.000Z"
+      "createdAt": "2025-04-23T13:34:05.000Z",
+      "reports": [
+        {
+          "id": 102,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/api-integration/run-22/index.html",
+          "size": 3603200
+        }
+      ]
     },
     {
       "id": 23,
@@ -65,7 +92,16 @@
       "flakyTests": 1,
       "avgTestDuration": 3500,
       "p90TestDuration": 6700,
-      "createdAt": "2025-04-22T09:03:35.000Z"
+      "createdAt": "2025-04-22T09:03:35.000Z",
+      "reports": [
+        {
+          "id": 103,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/api-integration/run-23/index.html",
+          "size": 3683200
+        }
+      ]
     },
     {
       "id": 24,
@@ -80,7 +116,16 @@
       "flakyTests": 2,
       "avgTestDuration": 3700,
       "p90TestDuration": 7000,
-      "createdAt": "2025-04-21T16:48:40.000Z"
+      "createdAt": "2025-04-21T16:48:40.000Z",
+      "reports": [
+        {
+          "id": 104,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/api-integration/run-24/index.html",
+          "size": 3763200
+        }
+      ]
     },
     {
       "id": 25,
@@ -95,7 +140,16 @@
       "flakyTests": 3,
       "avgTestDuration": 4100,
       "p90TestDuration": 7800,
-      "createdAt": "2025-04-20T11:04:10.000Z"
+      "createdAt": "2025-04-20T11:04:10.000Z",
+      "reports": [
+        {
+          "id": 105,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/api-integration/run-25/index.html",
+          "size": 3843200
+        }
+      ]
     },
     {
       "id": 26,
@@ -110,7 +164,16 @@
       "flakyTests": 0,
       "avgTestDuration": 3450,
       "p90TestDuration": 6600,
-      "createdAt": "2025-04-18T08:33:32.000Z"
+      "createdAt": "2025-04-18T08:33:32.000Z",
+      "reports": [
+        {
+          "id": 106,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/api-integration/run-26/index.html",
+          "size": 3923200
+        }
+      ]
     },
     {
       "id": 27,
@@ -125,7 +188,16 @@
       "flakyTests": 2,
       "avgTestDuration": 3750,
       "p90TestDuration": 7100,
-      "createdAt": "2025-04-16T14:18:45.000Z"
+      "createdAt": "2025-04-16T14:18:45.000Z",
+      "reports": [
+        {
+          "id": 107,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/api-integration/run-27/index.html",
+          "size": 4003200
+        }
+      ]
     },
     {
       "id": 28,
@@ -140,7 +212,16 @@
       "flakyTests": 1,
       "avgTestDuration": 3400,
       "p90TestDuration": 6500,
-      "createdAt": "2025-04-14T10:03:30.000Z"
+      "createdAt": "2025-04-14T10:03:30.000Z",
+      "reports": [
+        {
+          "id": 108,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/api-integration/run-28/index.html",
+          "size": 4083200
+        }
+      ]
     },
     {
       "id": 29,
@@ -155,7 +236,25 @@
       "flakyTests": 2,
       "avgTestDuration": 3950,
       "p90TestDuration": 7400,
-      "createdAt": "2025-04-12T16:34:00.000Z"
+      "createdAt": "2025-04-12T16:34:00.000Z",
+      "reports": [
+        {
+          "id": 109,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/api-integration/run-29/index.html",
+          "size": 4163200
+        }
+      ]
+    }
+  ],
+  "tags": [
+    {
+      "id": 2,
+      "text": "regression",
+      "color": "blue",
+      "createdAt": "2025-03-01T00:00:00.000Z",
+      "updatedAt": "2025-03-01T00:00:00.000Z"
     }
   ]
 }

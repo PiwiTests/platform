@@ -40,10 +40,26 @@
       "duration": 4100,
       "location": "tests/visual/homepage.spec.ts:8:5",
       "steps": [
-        { "title": "Navigate to homepage", "duration": 920, "category": "navigation" },
-        { "title": "Wait for page load", "duration": 680, "category": "wait" },
-        { "title": "Take screenshot", "duration": 1850, "category": "action" },
-        { "title": "Compare with baseline", "duration": 650, "category": "assertion" }
+        {
+          "title": "Navigate to homepage",
+          "duration": 920,
+          "category": "navigation"
+        },
+        {
+          "title": "Wait for page load",
+          "duration": 680,
+          "category": "wait"
+        },
+        {
+          "title": "Take screenshot",
+          "duration": 1850,
+          "category": "action"
+        },
+        {
+          "title": "Compare with baseline",
+          "duration": 650,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Take screenshot",
       "slowestStepDuration": 1850
@@ -55,10 +71,26 @@
       "duration": 3700,
       "location": "tests/visual/homepage.spec.ts:28:5",
       "steps": [
-        { "title": "Set mobile viewport", "duration": 120, "category": "setup" },
-        { "title": "Navigate to homepage", "duration": 850, "category": "navigation" },
-        { "title": "Take screenshot", "duration": 1780, "category": "action" },
-        { "title": "Compare with baseline", "duration": 620, "category": "assertion" }
+        {
+          "title": "Set mobile viewport",
+          "duration": 120,
+          "category": "setup"
+        },
+        {
+          "title": "Navigate to homepage",
+          "duration": 850,
+          "category": "navigation"
+        },
+        {
+          "title": "Take screenshot",
+          "duration": 1780,
+          "category": "action"
+        },
+        {
+          "title": "Compare with baseline",
+          "duration": 620,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Take screenshot",
       "slowestStepDuration": 1780
@@ -70,10 +102,26 @@
       "duration": 5200,
       "location": "tests/visual/checkout.spec.ts:8:5",
       "steps": [
-        { "title": "Log in and add item to cart", "duration": 1800, "category": "setup" },
-        { "title": "Navigate to checkout", "duration": 780, "category": "navigation" },
-        { "title": "Take screenshot", "duration": 1920, "category": "action" },
-        { "title": "Compare with baseline", "duration": 700, "category": "assertion" }
+        {
+          "title": "Log in and add item to cart",
+          "duration": 1800,
+          "category": "setup"
+        },
+        {
+          "title": "Navigate to checkout",
+          "duration": 780,
+          "category": "navigation"
+        },
+        {
+          "title": "Take screenshot",
+          "duration": 1920,
+          "category": "action"
+        },
+        {
+          "title": "Compare with baseline",
+          "duration": 700,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Take screenshot",
       "slowestStepDuration": 1920
@@ -85,10 +133,26 @@
       "duration": 3900,
       "location": "tests/visual/checkout.spec.ts:38:5",
       "steps": [
-        { "title": "Add item to cart", "duration": 950, "category": "setup" },
-        { "title": "Open cart page", "duration": 680, "category": "navigation" },
-        { "title": "Take screenshot", "duration": 1810, "category": "action" },
-        { "title": "Compare with baseline", "duration": 460, "category": "assertion" }
+        {
+          "title": "Add item to cart",
+          "duration": 950,
+          "category": "setup"
+        },
+        {
+          "title": "Open cart page",
+          "duration": 680,
+          "category": "navigation"
+        },
+        {
+          "title": "Take screenshot",
+          "duration": 1810,
+          "category": "action"
+        },
+        {
+          "title": "Compare with baseline",
+          "duration": 460,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Take screenshot",
       "slowestStepDuration": 1810
@@ -100,10 +164,26 @@
       "duration": 4300,
       "location": "tests/visual/product.spec.ts:8:5",
       "steps": [
-        { "title": "Navigate to product listing", "duration": 820, "category": "navigation" },
-        { "title": "Wait for images to load", "duration": 1100, "category": "wait" },
-        { "title": "Take screenshot", "duration": 1890, "category": "action" },
-        { "title": "Compare with baseline", "duration": 490, "category": "assertion" }
+        {
+          "title": "Navigate to product listing",
+          "duration": 820,
+          "category": "navigation"
+        },
+        {
+          "title": "Wait for images to load",
+          "duration": 1100,
+          "category": "wait"
+        },
+        {
+          "title": "Take screenshot",
+          "duration": 1890,
+          "category": "action"
+        },
+        {
+          "title": "Compare with baseline",
+          "duration": 490,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Take screenshot",
       "slowestStepDuration": 1890
@@ -115,10 +195,26 @@
       "duration": 4600,
       "location": "tests/visual/product.spec.ts:38:5",
       "steps": [
-        { "title": "Navigate to product detail", "duration": 780, "category": "navigation" },
-        { "title": "Wait for 3D viewer to load", "duration": 1400, "category": "wait" },
-        { "title": "Take screenshot", "duration": 1900, "category": "action" },
-        { "title": "Compare with baseline", "duration": 520, "category": "assertion" }
+        {
+          "title": "Navigate to product detail",
+          "duration": 780,
+          "category": "navigation"
+        },
+        {
+          "title": "Wait for 3D viewer to load",
+          "duration": 1400,
+          "category": "wait"
+        },
+        {
+          "title": "Take screenshot",
+          "duration": 1900,
+          "category": "action"
+        },
+        {
+          "title": "Compare with baseline",
+          "duration": 520,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Take screenshot",
       "slowestStepDuration": 1900
@@ -130,9 +226,21 @@
       "duration": 2800,
       "location": "tests/visual/auth.spec.ts:8:5",
       "steps": [
-        { "title": "Navigate to login page", "duration": 680, "category": "navigation" },
-        { "title": "Take screenshot", "duration": 1720, "category": "action" },
-        { "title": "Compare with baseline", "duration": 400, "category": "assertion" }
+        {
+          "title": "Navigate to login page",
+          "duration": 680,
+          "category": "navigation"
+        },
+        {
+          "title": "Take screenshot",
+          "duration": 1720,
+          "category": "action"
+        },
+        {
+          "title": "Compare with baseline",
+          "duration": 400,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Take screenshot",
       "slowestStepDuration": 1720
@@ -144,9 +252,21 @@
       "duration": 3100,
       "location": "tests/visual/auth.spec.ts:28:5",
       "steps": [
-        { "title": "Navigate to signup page", "duration": 720, "category": "navigation" },
-        { "title": "Take screenshot", "duration": 1850, "category": "action" },
-        { "title": "Compare with baseline", "duration": 530, "category": "assertion" }
+        {
+          "title": "Navigate to signup page",
+          "duration": 720,
+          "category": "navigation"
+        },
+        {
+          "title": "Take screenshot",
+          "duration": 1850,
+          "category": "action"
+        },
+        {
+          "title": "Compare with baseline",
+          "duration": 530,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Take screenshot",
       "slowestStepDuration": 1850
@@ -158,10 +278,26 @@
       "duration": 6100,
       "location": "tests/visual/dashboard.spec.ts:8:5",
       "steps": [
-        { "title": "Log in and navigate to dashboard", "duration": 2100, "category": "setup" },
-        { "title": "Wait for data to load", "duration": 1500, "category": "wait" },
-        { "title": "Take screenshot", "duration": 1950, "category": "action" },
-        { "title": "Compare with baseline", "duration": 550, "category": "assertion" }
+        {
+          "title": "Log in and navigate to dashboard",
+          "duration": 2100,
+          "category": "setup"
+        },
+        {
+          "title": "Wait for data to load",
+          "duration": 1500,
+          "category": "wait"
+        },
+        {
+          "title": "Take screenshot",
+          "duration": 1950,
+          "category": "action"
+        },
+        {
+          "title": "Compare with baseline",
+          "duration": 550,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Take screenshot",
       "slowestStepDuration": 1950
@@ -173,10 +309,26 @@
       "duration": 3500,
       "location": "tests/visual/dashboard.spec.ts:38:5",
       "steps": [
-        { "title": "Navigate to order history", "duration": 850, "category": "navigation" },
-        { "title": "Wait for orders to load", "duration": 780, "category": "wait" },
-        { "title": "Take screenshot", "duration": 1830, "category": "action" },
-        { "title": "Compare with baseline", "duration": 540, "category": "assertion" }
+        {
+          "title": "Navigate to order history",
+          "duration": 850,
+          "category": "navigation"
+        },
+        {
+          "title": "Wait for orders to load",
+          "duration": 780,
+          "category": "wait"
+        },
+        {
+          "title": "Take screenshot",
+          "duration": 1830,
+          "category": "action"
+        },
+        {
+          "title": "Compare with baseline",
+          "duration": 540,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Take screenshot",
       "slowestStepDuration": 1830
@@ -278,6 +430,15 @@
       "status": "passed",
       "duration": 3300,
       "location": "tests/visual/dashboard.spec.ts:95:5"
+    }
+  ],
+  "reports": [
+    {
+      "id": 201,
+      "type": "html",
+      "label": "HTML report",
+      "path": "reports/visual-regression/run-3/index.html",
+      "size": 3276800
     }
   ]
 }

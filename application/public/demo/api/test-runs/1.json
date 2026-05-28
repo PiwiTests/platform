@@ -40,18 +40,56 @@
       "duration": 4500,
       "location": "tests/checkout/checkout.spec.ts:12:5",
       "steps": [
-        { "title": "Navigate to product page", "duration": 850, "category": "navigation" },
-        { "title": "Add item to cart", "duration": 620, "category": "action" },
-        { "title": "Fill billing details", "duration": 1100, "category": "action" },
-        { "title": "Submit payment", "duration": 1200, "category": "action" },
-        { "title": "Assert order confirmation", "duration": 730, "category": "assertion" }
+        {
+          "title": "Navigate to product page",
+          "duration": 850,
+          "category": "navigation"
+        },
+        {
+          "title": "Add item to cart",
+          "duration": 620,
+          "category": "action"
+        },
+        {
+          "title": "Fill billing details",
+          "duration": 1100,
+          "category": "action"
+        },
+        {
+          "title": "Submit payment",
+          "duration": 1200,
+          "category": "action"
+        },
+        {
+          "title": "Assert order confirmation",
+          "duration": 730,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Submit payment",
       "slowestStepDuration": 1200,
       "networkRequests": [
-        { "method": "GET", "url": "/api/products/42", "status": 200, "duration": 95, "resourceType": "fetch" },
-        { "method": "POST", "url": "/api/cart", "status": 200, "duration": 112, "resourceType": "fetch" },
-        { "method": "POST", "url": "/api/checkout", "status": 200, "duration": 380, "resourceType": "fetch" }
+        {
+          "method": "GET",
+          "url": "/api/products/42",
+          "status": 200,
+          "duration": 95,
+          "resourceType": "fetch"
+        },
+        {
+          "method": "POST",
+          "url": "/api/cart",
+          "status": 200,
+          "duration": 112,
+          "resourceType": "fetch"
+        },
+        {
+          "method": "POST",
+          "url": "/api/checkout",
+          "status": 200,
+          "duration": 380,
+          "resourceType": "fetch"
+        }
       ],
       "webVitals": {
         "navigation": {
@@ -75,11 +113,31 @@
       "duration": 5200,
       "location": "tests/checkout/checkout.spec.ts:45:5",
       "steps": [
-        { "title": "Navigate to product page", "duration": 820, "category": "navigation" },
-        { "title": "Add item to cart", "duration": 590, "category": "action" },
-        { "title": "Select PayPal payment", "duration": 450, "category": "action" },
-        { "title": "Complete PayPal flow", "duration": 2100, "category": "action" },
-        { "title": "Assert order confirmation", "duration": 780, "category": "assertion" }
+        {
+          "title": "Navigate to product page",
+          "duration": 820,
+          "category": "navigation"
+        },
+        {
+          "title": "Add item to cart",
+          "duration": 590,
+          "category": "action"
+        },
+        {
+          "title": "Select PayPal payment",
+          "duration": 450,
+          "category": "action"
+        },
+        {
+          "title": "Complete PayPal flow",
+          "duration": 2100,
+          "category": "action"
+        },
+        {
+          "title": "Assert order confirmation",
+          "duration": 780,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Complete PayPal flow",
       "slowestStepDuration": 2100
@@ -91,11 +149,31 @@
       "duration": 3800,
       "location": "tests/checkout/checkout.spec.ts:78:5",
       "steps": [
-        { "title": "Navigate to cart", "duration": 750, "category": "navigation" },
-        { "title": "Enter discount code SAVE20", "duration": 620, "category": "action" },
-        { "title": "Assert discount applied", "duration": 430, "category": "assertion" },
-        { "title": "Proceed to checkout", "duration": 560, "category": "action" },
-        { "title": "Assert correct total", "duration": 480, "category": "assertion" }
+        {
+          "title": "Navigate to cart",
+          "duration": 750,
+          "category": "navigation"
+        },
+        {
+          "title": "Enter discount code SAVE20",
+          "duration": 620,
+          "category": "action"
+        },
+        {
+          "title": "Assert discount applied",
+          "duration": 430,
+          "category": "assertion"
+        },
+        {
+          "title": "Proceed to checkout",
+          "duration": 560,
+          "category": "action"
+        },
+        {
+          "title": "Assert correct total",
+          "duration": 480,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Navigate to cart",
       "slowestStepDuration": 750
@@ -107,10 +185,26 @@
       "duration": 3200,
       "location": "tests/checkout/checkout.spec.ts:110:5",
       "steps": [
-        { "title": "Complete checkout flow", "duration": 2100, "category": "action" },
-        { "title": "Assert confirmation page", "duration": 450, "category": "assertion" },
-        { "title": "Assert order number visible", "duration": 280, "category": "assertion" },
-        { "title": "Assert email sent", "duration": 370, "category": "assertion" }
+        {
+          "title": "Complete checkout flow",
+          "duration": 2100,
+          "category": "action"
+        },
+        {
+          "title": "Assert confirmation page",
+          "duration": 450,
+          "category": "assertion"
+        },
+        {
+          "title": "Assert order number visible",
+          "duration": 280,
+          "category": "assertion"
+        },
+        {
+          "title": "Assert email sent",
+          "duration": 370,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Complete checkout flow",
       "slowestStepDuration": 2100
@@ -122,11 +216,31 @@
       "duration": 2500,
       "location": "tests/checkout/cart.spec.ts:8:5",
       "steps": [
-        { "title": "Navigate to product listing", "duration": 780, "category": "navigation" },
-        { "title": "Click add to cart button", "duration": 420, "category": "action" },
-        { "title": "Assert cart count incremented", "duration": 340, "category": "assertion" },
-        { "title": "Open cart drawer", "duration": 380, "category": "action" },
-        { "title": "Assert product in cart", "duration": 350, "category": "assertion" }
+        {
+          "title": "Navigate to product listing",
+          "duration": 780,
+          "category": "navigation"
+        },
+        {
+          "title": "Click add to cart button",
+          "duration": 420,
+          "category": "action"
+        },
+        {
+          "title": "Assert cart count incremented",
+          "duration": 340,
+          "category": "assertion"
+        },
+        {
+          "title": "Open cart drawer",
+          "duration": 380,
+          "category": "action"
+        },
+        {
+          "title": "Assert product in cart",
+          "duration": 350,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Navigate to product listing",
       "slowestStepDuration": 780
@@ -145,10 +259,26 @@
       "duration": 2700,
       "location": "tests/checkout/cart.spec.ts:60:5",
       "steps": [
-        { "title": "Add item to cart", "duration": 650, "category": "action" },
-        { "title": "Open cart drawer", "duration": 390, "category": "action" },
-        { "title": "Click remove button", "duration": 420, "category": "action" },
-        { "title": "Assert cart is empty", "duration": 380, "category": "assertion" }
+        {
+          "title": "Add item to cart",
+          "duration": 650,
+          "category": "action"
+        },
+        {
+          "title": "Open cart drawer",
+          "duration": 390,
+          "category": "action"
+        },
+        {
+          "title": "Click remove button",
+          "duration": 420,
+          "category": "action"
+        },
+        {
+          "title": "Assert cart is empty",
+          "duration": 380,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Add item to cart",
       "slowestStepDuration": 650
@@ -160,11 +290,31 @@
       "duration": 9800,
       "location": "tests/checkout/shipping.spec.ts:10:5",
       "steps": [
-        { "title": "Navigate to checkout", "duration": 820, "category": "navigation" },
-        { "title": "Fill shipping address", "duration": 1200, "category": "action" },
-        { "title": "Wait for shipping calculation", "duration": 6200, "category": "wait" },
-        { "title": "Assert shipping cost displayed", "duration": 680, "category": "assertion" },
-        { "title": "Assert free shipping threshold", "duration": 590, "category": "assertion" }
+        {
+          "title": "Navigate to checkout",
+          "duration": 820,
+          "category": "navigation"
+        },
+        {
+          "title": "Fill shipping address",
+          "duration": 1200,
+          "category": "action"
+        },
+        {
+          "title": "Wait for shipping calculation",
+          "duration": 6200,
+          "category": "wait"
+        },
+        {
+          "title": "Assert shipping cost displayed",
+          "duration": 680,
+          "category": "assertion"
+        },
+        {
+          "title": "Assert free shipping threshold",
+          "duration": 590,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Wait for shipping calculation",
       "slowestStepDuration": 6200
@@ -176,11 +326,31 @@
       "duration": 4100,
       "location": "tests/checkout/shipping.spec.ts:38:5",
       "steps": [
-        { "title": "Enter invalid address", "duration": 890, "category": "action" },
-        { "title": "Submit form", "duration": 450, "category": "action" },
-        { "title": "Assert validation error", "duration": 380, "category": "assertion" },
-        { "title": "Enter valid address", "duration": 920, "category": "action" },
-        { "title": "Assert form submitted", "duration": 560, "category": "assertion" }
+        {
+          "title": "Enter invalid address",
+          "duration": 890,
+          "category": "action"
+        },
+        {
+          "title": "Submit form",
+          "duration": 450,
+          "category": "action"
+        },
+        {
+          "title": "Assert validation error",
+          "duration": 380,
+          "category": "assertion"
+        },
+        {
+          "title": "Enter valid address",
+          "duration": 920,
+          "category": "action"
+        },
+        {
+          "title": "Assert form submitted",
+          "duration": 560,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Enter valid address",
       "slowestStepDuration": 920
@@ -192,11 +362,31 @@
       "duration": 5600,
       "location": "tests/checkout/payment.spec.ts:8:5",
       "steps": [
-        { "title": "Navigate to payment page", "duration": 780, "category": "navigation" },
-        { "title": "Enter invalid card number", "duration": 620, "category": "action" },
-        { "title": "Submit payment form", "duration": 2800, "category": "action" },
-        { "title": "Assert error message", "duration": 490, "category": "assertion" },
-        { "title": "Assert form not submitted", "duration": 420, "category": "assertion" }
+        {
+          "title": "Navigate to payment page",
+          "duration": 780,
+          "category": "navigation"
+        },
+        {
+          "title": "Enter invalid card number",
+          "duration": 620,
+          "category": "action"
+        },
+        {
+          "title": "Submit payment form",
+          "duration": 2800,
+          "category": "action"
+        },
+        {
+          "title": "Assert error message",
+          "duration": 490,
+          "category": "assertion"
+        },
+        {
+          "title": "Assert form not submitted",
+          "duration": 420,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Submit payment form",
       "slowestStepDuration": 2800
@@ -208,10 +398,26 @@
       "duration": 8200,
       "location": "tests/checkout/payment.spec.ts:38:5",
       "steps": [
-        { "title": "Configure gateway timeout mock", "duration": 350, "category": "setup" },
-        { "title": "Submit payment", "duration": 5800, "category": "action" },
-        { "title": "Assert timeout error shown", "duration": 420, "category": "assertion" },
-        { "title": "Assert retry option available", "duration": 380, "category": "assertion" }
+        {
+          "title": "Configure gateway timeout mock",
+          "duration": 350,
+          "category": "setup"
+        },
+        {
+          "title": "Submit payment",
+          "duration": 5800,
+          "category": "action"
+        },
+        {
+          "title": "Assert timeout error shown",
+          "duration": 420,
+          "category": "assertion"
+        },
+        {
+          "title": "Assert retry option available",
+          "duration": 380,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Submit payment",
       "slowestStepDuration": 5800
@@ -223,10 +429,26 @@
       "duration": 4800,
       "location": "tests/checkout/payment.spec.ts:65:5",
       "steps": [
-        { "title": "Enter card details", "duration": 980, "category": "action" },
-        { "title": "Check save card option", "duration": 320, "category": "action" },
-        { "title": "Complete checkout", "duration": 2100, "category": "action" },
-        { "title": "Assert card saved", "duration": 480, "category": "assertion" }
+        {
+          "title": "Enter card details",
+          "duration": 980,
+          "category": "action"
+        },
+        {
+          "title": "Check save card option",
+          "duration": 320,
+          "category": "action"
+        },
+        {
+          "title": "Complete checkout",
+          "duration": 2100,
+          "category": "action"
+        },
+        {
+          "title": "Assert card saved",
+          "duration": 480,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Complete checkout",
       "slowestStepDuration": 2100
@@ -238,11 +460,31 @@
       "duration": 3900,
       "location": "tests/checkout/payment.spec.ts:90:5",
       "steps": [
-        { "title": "Log in as returning customer", "duration": 850, "category": "action" },
-        { "title": "Add item and proceed to checkout", "duration": 1200, "category": "action" },
-        { "title": "Select saved card", "duration": 380, "category": "action" },
-        { "title": "Confirm payment", "duration": 890, "category": "action" },
-        { "title": "Assert order placed", "duration": 480, "category": "assertion" }
+        {
+          "title": "Log in as returning customer",
+          "duration": 850,
+          "category": "action"
+        },
+        {
+          "title": "Add item and proceed to checkout",
+          "duration": 1200,
+          "category": "action"
+        },
+        {
+          "title": "Select saved card",
+          "duration": 380,
+          "category": "action"
+        },
+        {
+          "title": "Confirm payment",
+          "duration": 890,
+          "category": "action"
+        },
+        {
+          "title": "Assert order placed",
+          "duration": 480,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Add item and proceed to checkout",
       "slowestStepDuration": 1200
@@ -254,10 +496,26 @@
       "duration": 3200,
       "location": "tests/checkout/cart.spec.ts:88:5",
       "steps": [
-        { "title": "Add products to cart", "duration": 1100, "category": "action" },
-        { "title": "Open cart", "duration": 420, "category": "action" },
-        { "title": "Assert product images visible", "duration": 580, "category": "assertion" },
-        { "title": "Assert image sources correct", "duration": 450, "category": "assertion" }
+        {
+          "title": "Add products to cart",
+          "duration": 1100,
+          "category": "action"
+        },
+        {
+          "title": "Open cart",
+          "duration": 420,
+          "category": "action"
+        },
+        {
+          "title": "Assert product images visible",
+          "duration": 580,
+          "category": "assertion"
+        },
+        {
+          "title": "Assert image sources correct",
+          "duration": 450,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Add products to cart",
       "slowestStepDuration": 1100
@@ -269,9 +527,21 @@
       "duration": 4200,
       "location": "tests/checkout/cart.spec.ts:115:5",
       "steps": [
-        { "title": "Add items to cart", "duration": 1200, "category": "action" },
-        { "title": "Refresh page", "duration": 920, "category": "action" },
-        { "title": "Assert cart items preserved", "duration": 680, "category": "assertion" }
+        {
+          "title": "Add items to cart",
+          "duration": 1200,
+          "category": "action"
+        },
+        {
+          "title": "Refresh page",
+          "duration": 920,
+          "category": "action"
+        },
+        {
+          "title": "Assert cart items preserved",
+          "duration": 680,
+          "category": "assertion"
+        }
       ],
       "slowestStep": "Add items to cart",
       "slowestStepDuration": 1200
@@ -394,6 +664,15 @@
       "status": "passed",
       "duration": 3600,
       "location": "tests/checkout/checkout.spec.ts:420:5"
+    }
+  ],
+  "reports": [
+    {
+      "id": 1,
+      "type": "html",
+      "label": "HTML report",
+      "path": "reports/e2e-checkout/run-1/index.html",
+      "size": 2457600
     }
   ]
 }

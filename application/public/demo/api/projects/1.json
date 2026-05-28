@@ -20,7 +20,16 @@
       "flakyTests": 1,
       "avgTestDuration": 4200,
       "p90TestDuration": 8900,
-      "createdAt": "2025-04-25T08:32:25.000Z"
+      "createdAt": "2025-04-25T08:32:25.000Z",
+      "reports": [
+        {
+          "id": 1,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/e2e-checkout/run-1/index.html",
+          "size": 2557600
+        }
+      ]
     },
     {
       "id": 11,
@@ -35,7 +44,16 @@
       "flakyTests": 0,
       "avgTestDuration": 4400,
       "p90TestDuration": 9100,
-      "createdAt": "2025-04-24T14:17:32.000Z"
+      "createdAt": "2025-04-24T14:17:32.000Z",
+      "reports": [
+        {
+          "id": 2,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/e2e-checkout/run-11/index.html",
+          "size": 3557600
+        }
+      ]
     },
     {
       "id": 12,
@@ -50,7 +68,16 @@
       "flakyTests": 2,
       "avgTestDuration": 4100,
       "p90TestDuration": 8600,
-      "createdAt": "2025-04-23T09:02:18.000Z"
+      "createdAt": "2025-04-23T09:02:18.000Z",
+      "reports": [
+        {
+          "id": 3,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/e2e-checkout/run-12/index.html",
+          "size": 3657600
+        }
+      ]
     },
     {
       "id": 13,
@@ -65,7 +92,16 @@
       "flakyTests": 0,
       "avgTestDuration": 4050,
       "p90TestDuration": 8200,
-      "createdAt": "2025-04-22T17:47:21.000Z"
+      "createdAt": "2025-04-22T17:47:21.000Z",
+      "reports": [
+        {
+          "id": 4,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/e2e-checkout/run-13/index.html",
+          "size": 3757600
+        }
+      ]
     },
     {
       "id": 14,
@@ -80,7 +116,16 @@
       "flakyTests": 1,
       "avgTestDuration": 4700,
       "p90TestDuration": 9800,
-      "createdAt": "2025-04-21T11:32:40.000Z"
+      "createdAt": "2025-04-21T11:32:40.000Z",
+      "reports": [
+        {
+          "id": 5,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/e2e-checkout/run-14/index.html",
+          "size": 3857600
+        }
+      ]
     },
     {
       "id": 15,
@@ -95,7 +140,16 @@
       "flakyTests": 1,
       "avgTestDuration": 4150,
       "p90TestDuration": 8750,
-      "createdAt": "2025-04-20T08:02:23.000Z"
+      "createdAt": "2025-04-20T08:02:23.000Z",
+      "reports": [
+        {
+          "id": 6,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/e2e-checkout/run-15/index.html",
+          "size": 3957600
+        }
+      ]
     },
     {
       "id": 16,
@@ -110,7 +164,16 @@
       "flakyTests": 0,
       "avgTestDuration": 4000,
       "p90TestDuration": 8100,
-      "createdAt": "2025-04-18T16:22:19.000Z"
+      "createdAt": "2025-04-18T16:22:19.000Z",
+      "reports": [
+        {
+          "id": 7,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/e2e-checkout/run-16/index.html",
+          "size": 4057600
+        }
+      ]
     },
     {
       "id": 17,
@@ -125,7 +188,16 @@
       "flakyTests": 2,
       "avgTestDuration": 4300,
       "p90TestDuration": 9000,
-      "createdAt": "2025-04-16T10:07:27.000Z"
+      "createdAt": "2025-04-16T10:07:27.000Z",
+      "reports": [
+        {
+          "id": 8,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/e2e-checkout/run-17/index.html",
+          "size": 4157600
+        }
+      ]
     },
     {
       "id": 18,
@@ -140,7 +212,16 @@
       "flakyTests": 1,
       "avgTestDuration": 4600,
       "p90TestDuration": 9500,
-      "createdAt": "2025-04-14T08:32:36.000Z"
+      "createdAt": "2025-04-14T08:32:36.000Z",
+      "reports": [
+        {
+          "id": 9,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/e2e-checkout/run-18/index.html",
+          "size": 4257600
+        }
+      ]
     },
     {
       "id": 19,
@@ -155,7 +236,32 @@
       "flakyTests": 0,
       "avgTestDuration": 4050,
       "p90TestDuration": 8300,
-      "createdAt": "2025-04-12T15:02:20.000Z"
+      "createdAt": "2025-04-12T15:02:20.000Z",
+      "reports": [
+        {
+          "id": 10,
+          "type": "html",
+          "label": "HTML report",
+          "path": "reports/e2e-checkout/run-19/index.html",
+          "size": 4357600
+        }
+      ]
+    }
+  ],
+  "tags": [
+    {
+      "id": 1,
+      "text": "smoke",
+      "color": "green",
+      "createdAt": "2025-03-01T00:00:00.000Z",
+      "updatedAt": "2025-03-01T00:00:00.000Z"
+    },
+    {
+      "id": 3,
+      "text": "critical",
+      "color": "red",
+      "createdAt": "2025-03-15T00:00:00.000Z",
+      "updatedAt": "2025-03-15T00:00:00.000Z"
     }
   ]
 }

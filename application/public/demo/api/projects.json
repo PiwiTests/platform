@@ -5,8 +5,20 @@
     "label": "E2E Checkout",
     "description": "End-to-end tests for the checkout flow",
     "tags": [
-      { "id": 1, "text": "smoke", "color": "green", "createdAt": "2025-03-01T00:00:00.000Z", "updatedAt": "2025-03-01T00:00:00.000Z" },
-      { "id": 3, "text": "critical", "color": "red", "createdAt": "2025-03-15T00:00:00.000Z", "updatedAt": "2025-03-15T00:00:00.000Z" }
+      {
+        "id": 1,
+        "text": "smoke",
+        "color": "green",
+        "createdAt": "2025-03-01T00:00:00.000Z",
+        "updatedAt": "2025-03-01T00:00:00.000Z"
+      },
+      {
+        "id": 3,
+        "text": "critical",
+        "color": "red",
+        "createdAt": "2025-03-15T00:00:00.000Z",
+        "updatedAt": "2025-03-15T00:00:00.000Z"
+      }
     ],
     "createdAt": "2025-03-01T00:00:00.000Z",
     "updatedAt": "2025-04-25T08:30:00.000Z",
@@ -32,7 +44,13 @@
     "label": "API Integration",
     "description": "Integration tests for REST API endpoints",
     "tags": [
-      { "id": 2, "text": "regression", "color": "blue", "createdAt": "2025-03-01T00:00:00.000Z", "updatedAt": "2025-03-01T00:00:00.000Z" }
+      {
+        "id": 2,
+        "text": "regression",
+        "color": "blue",
+        "createdAt": "2025-03-01T00:00:00.000Z",
+        "updatedAt": "2025-03-01T00:00:00.000Z"
+      }
     ],
     "createdAt": "2025-02-15T00:00:00.000Z",
     "updatedAt": "2025-04-25T07:15:00.000Z",
@@ -58,8 +76,20 @@
     "label": "Visual Regression",
     "description": "Visual snapshot tests across all pages",
     "tags": [
-      { "id": 1, "text": "smoke", "color": "green", "createdAt": "2025-03-01T00:00:00.000Z", "updatedAt": "2025-03-01T00:00:00.000Z" },
-      { "id": 2, "text": "regression", "color": "blue", "createdAt": "2025-03-01T00:00:00.000Z", "updatedAt": "2025-03-01T00:00:00.000Z" }
+      {
+        "id": 1,
+        "text": "smoke",
+        "color": "green",
+        "createdAt": "2025-03-01T00:00:00.000Z",
+        "updatedAt": "2025-03-01T00:00:00.000Z"
+      },
+      {
+        "id": 2,
+        "text": "regression",
+        "color": "blue",
+        "createdAt": "2025-03-01T00:00:00.000Z",
+        "updatedAt": "2025-03-01T00:00:00.000Z"
+      }
     ],
     "createdAt": "2025-03-20T00:00:00.000Z",
     "updatedAt": "2025-04-24T22:00:00.000Z",
@@ -77,6 +107,38 @@
       "totalTests": 24,
       "avgTestDuration": 3900,
       "p90TestDuration": 6500
+    }
+  },
+  {
+    "id": 4,
+    "name": "mobile-e2e",
+    "label": "Mobile E2E",
+    "description": "End-to-end tests for the mobile app",
+    "tags": [
+      {
+        "id": 3,
+        "text": "critical",
+        "color": "red",
+        "createdAt": "2025-03-15T00:00:00.000Z",
+        "updatedAt": "2025-03-15T00:00:00.000Z"
+      }
+    ],
+    "createdAt": "2025-04-01T00:00:00.000Z",
+    "updatedAt": "2025-05-28T15:10:00.000Z",
+    "totalRuns": 31,
+    "totalTestCases": 20,
+    "latestRun": {
+      "id": 4,
+      "status": "running",
+      "startTime": "2025-05-28T15:10:00.000Z",
+      "duration": null,
+      "passedTests": 12,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "flakyTests": 0,
+      "totalTests": 20,
+      "avgTestDuration": null,
+      "p90TestDuration": null
     }
   }
 ]
