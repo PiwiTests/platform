@@ -57,11 +57,14 @@ const routes: RouteEntry[] = [
 
   // Admin
   { method: 'GET', pattern: /^\/api\/admin\/stats$/, handler: () => apiGetAdminStats() },
-
-  // Auth – demo always returns unauthenticated (auth state is managed by useAuth composable)
-  { method: 'GET', pattern: /^\/api\/auth\/me$/, handler: () => Promise.resolve({ authenticated: false, user: null }) },
-  { method: 'GET', pattern: /^\/api\/auth\/session$/, handler: () => Promise.resolve({ authenticated: false, user: null }) }
 ]
+
+// Auth – demo always returns unauthenticated; state is managed by the useAuth composable
+const UNAUTHENTICATED = Promise.resolve({ authenticated: false, user: null })
+routes.push(
+  { method: 'GET', pattern: /^\/api\/auth\/me$/, handler: () => UNAUTHENTICATED },
+  { method: 'GET', pattern: /^\/api\/auth\/session$/, handler: () => UNAUTHENTICATED }
+)
 
 /**
  * Attempt to handle a request with the in-browser demo router.

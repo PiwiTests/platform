@@ -45,10 +45,16 @@ export class OPFSStorageAdapter implements StorageAdapter {
     const dir = parts.length > 0 ? await resolveDir(root, parts, true) : root
     const fh = await dir.getFileHandle(fileName, { create: true })
     const writable = await fh.createWritable()
-    // Copy into a plain ArrayBuffer (Buffer.buffer may be SharedArrayBuffer which
-    // is not accepted by FileSystemWritableFileStream.write())
-    const ab = new ArrayBuffer(data.byteLength)
-    new Uint8Array(ab).set(data)
+    // Buffer.buffer is ArrayBufferLike (may be SharedArrayBuffer) which
+    // FileSystemWritableFileStream.write() does not accept. Copy into a plain
+    // ArrayBuffer only when necessary to avoid the overhead for normal cases.
+    let ab: ArrayBuffer
+    if (data.buffer instanceof ArrayBuffer) {
+      ab = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
+    } else {
+      ab = new ArrayBuffer(data.byteLength)
+      new Uint8Array(ab).set(data)
+    }
     await writable.write(ab)
     await writable.close()
   }

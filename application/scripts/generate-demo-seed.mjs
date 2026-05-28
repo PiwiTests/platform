@@ -29,12 +29,12 @@ function ts(isoDate) {
 function q(v) {
   if (v === null || v === undefined) return 'NULL'
   if (typeof v === 'number') return String(v)
-  if (typeof v === 'object') return `'${JSON.stringify(v).replace(/'/g, "''")}'`
-  return `'${String(v).replace(/'/g, "''")}'`
+  if (typeof v === 'object') return `'${JSON.stringify(v).replace(/'/g, '\'\'')}'`
+  return `'${String(v).replace(/'/g, '\'\'')}'`
 }
 
 function insert(table, rows) {
-  return rows.map(row => {
+  return rows.map((row) => {
     const cols = Object.keys(row).join(', ')
     const vals = Object.values(row).map(q).join(', ')
     return `INSERT INTO ${table} (${cols}) VALUES (${vals});`
@@ -202,7 +202,7 @@ const PROJECT_TAGS = [
   { project_id: 2, tag_id: 2 }, // api-integration → regression
   { project_id: 3, tag_id: 1 }, // ui-components → smoke
   { project_id: 3, tag_id: 4 }, // ui-components → performance
-  { project_id: 4, tag_id: 2 }  // mobile-safari → regression
+  { project_id: 4, tag_id: 2 } // mobile-safari → regression
 ]
 
 // ── Test cases per project ─────────────────────────────────────────────────
@@ -292,6 +292,7 @@ let runId = 1
 let trcId = 1
 let reportId = 1
 
+// 'main' appears 3× to weight it more heavily in the random distribution
 const BRANCHES = ['main', 'main', 'main', 'develop', 'feature/new-ui']
 const AUTHORS = ['Alice Chen', 'Bob Smith', 'Carol White', 'David Lee', 'Eva Brown']
 const COMMIT_MSGS = [

@@ -39,6 +39,7 @@ async function resetDemo() {
       icon: 'i-lucide-refresh-cw',
       color: 'success'
     })
+    // Brief delay so the success toast is visible before the reload clears the page
     setTimeout(() => window.location.reload(), 800)
   } catch (e) {
     toast.add({

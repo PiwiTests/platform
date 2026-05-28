@@ -71,7 +71,10 @@ let idbInstance: IDBDatabase | null = null
 let persistTimer: ReturnType<typeof setTimeout> | null = null
 
 async function doPersist(): Promise<void> {
-  if (!sqliteDb || !idbInstance) return
+  if (!sqliteDb || !idbInstance) {
+    console.warn('[Demo DB] doPersist called but db or IDB not ready – skipping')
+    return
+  }
   const data = sqliteDb.export()
   await idbPut(idbInstance, IDB_DB_KEY, data)
 }
