@@ -4,37 +4,31 @@ import type { ProjectWithStats, TestRunForChart } from '~~/types/api'
 useHead({ title: 'Playwright Dashboard' })
 
 const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/projects')
+const { data: recentTestRuns } = await useFetch<TestRunForChart[]>('/api/test-runs/recent')
 
 useRunStream(refresh)
 
 const stats = computed(() => {
   const totalProjects = projects.value?.length || 0
   const totalRuns = projects.value?.reduce((sum, p) => sum + (p.totalRuns || 0), 0) || 0
-  const recentRuns = projects.value?.filter(p => p.latestRun).length || 0
-  const passedRuns = projects.value?.filter(p => p.latestRun?.status === 'passed').length || 0
   const totalFlakyTests = projects.value?.reduce((sum, p) => sum + (p.latestRun?.flakyTests || 0), 0) || 0
 
-  // Find slowest project by avg test duration in latest run
-  const projectsWithPerf = projects.value?.filter(p => p.latestRun?.avgTestDuration) || []
-  const slowestProject = projectsWithPerf.sort((a, b) =>
-    (b.latestRun?.avgTestDuration || 0) - (a.latestRun?.avgTestDuration || 0)
-  )[0]
+  // Active projects: those with a run in the last 7 days
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+  const activeProjects = projects.value?.filter(p =>
+    p.latestRun && new Date(p.latestRun.startTime).getTime() > sevenDaysAgo
+  ).length || 0
 
-  const statItems: { label: string, value: string | number, icon: string }[] = [
+  // Passing projects: latest run status is 'passed'
+  const passedRuns = projects.value?.filter(p => p.latestRun?.status === 'passed').length || 0
+
+  const statItems: { label: string, value: string | number, icon: string, description?: string }[] = [
     { label: 'Total projects', value: totalProjects, icon: 'i-lucide-folder' },
     { label: 'Total test runs', value: totalRuns, icon: 'i-lucide-play-circle' },
-    { label: 'Active projects', value: recentRuns, icon: 'i-lucide-activity' },
-    { label: 'Passing projects', value: passedRuns, icon: 'i-lucide-check-circle' },
-    { label: 'Flaky tests', value: totalFlakyTests, icon: 'i-lucide-alert-triangle' }
+    { label: 'Active projects', value: activeProjects, icon: 'i-lucide-activity', description: 'Run in last 7 days' },
+    { label: 'Passing projects', value: passedRuns, icon: 'i-lucide-check-circle', description: 'Latest run passed' },
+    { label: 'Flaky tests', value: totalFlakyTests, icon: 'i-lucide-alert-triangle', description: 'In latest runs' }
   ]
-
-  if (slowestProject) {
-    statItems.push({
-      label: 'Slowest project',
-      value: slowestProject.label || slowestProject.name,
-      icon: 'i-lucide-gauge'
-    })
-  }
 
   return statItems
 })
@@ -43,27 +37,9 @@ const recentProjects = computed(() => {
   return projects.value?.slice(0, 5) || []
 })
 
-// Aggregate all test runs from all projects for the overview chart
+// Use the dedicated recent test runs endpoint for actual time-series data
 const allTestRuns = computed(() => {
-  if (!projects.value) return []
-
-  const runs: TestRunForChart[] = []
-  projects.value.forEach((project) => {
-    if (project.latestRun) {
-      runs.push({
-        id: project.latestRun.id,
-        status: project.latestRun.status,
-        startTime: project.latestRun.startTime,
-        passedTests: project.latestRun.passedTests || 0,
-        failedTests: project.latestRun.failedTests || 0,
-        skippedTests: project.latestRun.skippedTests || 0,
-        flakyTests: project.latestRun.flakyTests || 0,
-        totalTests: project.latestRun.totalTests || 0
-      })
-    }
-  })
-
-  return runs.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+  return recentTestRuns.value || []
 })
 </script>
 
@@ -94,6 +70,9 @@ const allTestRuns = computed(() => {
                 <p class="text-sm text-gray-600">
                   {{ stat.label }}
                 </p>
+                <p v-if="stat.description" class="text-xs text-gray-400">
+                  {{ stat.description }}
+                </p>
               </div>
             </div>
           </UCard>
@@ -106,7 +85,7 @@ const allTestRuns = computed(() => {
               Test results trend
             </h2>
             <p class="text-sm text-gray-600 mt-1">
-              Overview of test results across all projects
+              Test results over time across all projects (last 30 runs)
             </p>
           </template>
 
@@ -153,8 +132,8 @@ const allTestRuns = computed(() => {
           </div>
         </UCard>
 
-        <!-- Getting Started -->
-        <UCard>
+        <!-- Getting Started (only shown when no projects exist) -->
+        <UCard v-if="!projects || projects.length === 0">
           <template #header>
             <h2 class="text-xl font-semibold">
               Getting started

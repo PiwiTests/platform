@@ -147,6 +147,8 @@ export interface TestRunSummary {
   reportPath?: string | null
   reportSize?: number | null
   reports?: ReportInfo[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  metadata?: any | null
   createdAt: Date
 }
 
@@ -292,6 +294,7 @@ export interface TestCaseWithStats {
   skippedRuns: number
   timedOutRuns: number
   flakyRuns: number
+  recentFlakyRuns?: number
   avgDuration: number
   lastRun: number
   lastStatus: string

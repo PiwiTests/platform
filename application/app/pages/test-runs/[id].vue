@@ -104,6 +104,25 @@ const displayTestCases = computed<TestCaseResult[]>(() => {
   return testRun.value?.testCases || []
 })
 
+// Search and filter state for test cases
+const testCaseSearch = ref('')
+const testCaseStatusFilter = ref<string>('')
+
+const filteredTestCases = computed<TestCaseResult[]>(() => {
+  let cases = displayTestCases.value
+  if (testCaseStatusFilter.value) {
+    cases = cases.filter(tc => tc.status === testCaseStatusFilter.value)
+  }
+  if (testCaseSearch.value) {
+    const query = testCaseSearch.value.toLowerCase()
+    cases = cases.filter(tc =>
+      tc.title.toLowerCase().includes(query)
+      || (tc.location && tc.location.toLowerCase().includes(query))
+    )
+  }
+  return cases
+})
+
 // Display progress: live or from loaded data
 const displayProgress = computed(() => {
   if (isLive.value && liveProgress.value) {
@@ -559,6 +578,32 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
               <span v-if="isLive" class="text-sm text-gray-500">
                 ({{ displayTestCases.length }} completed)
               </span>
+              <span v-else-if="filteredTestCases.length !== displayTestCases.length" class="text-sm text-gray-500">
+                ({{ filteredTestCases.length }} of {{ displayTestCases.length }})
+              </span>
+            </div>
+
+            <!-- Search and filter controls -->
+            <div class="flex flex-wrap items-center gap-3 mt-3">
+              <UInput
+                v-model="testCaseSearch"
+                placeholder="Search test cases..."
+                icon="i-lucide-search"
+                size="sm"
+                class="w-64"
+              />
+              <USelect
+                v-model="testCaseStatusFilter"
+                :items="[
+                  { label: 'All statuses', value: '' },
+                  { label: 'Passed', value: 'passed' },
+                  { label: 'Failed', value: 'failed' },
+                  { label: 'Skipped', value: 'skipped' },
+                  { label: 'Flaky', value: 'flaky' }
+                ]"
+                size="sm"
+                class="w-40"
+              />
             </div>
           </template>
 
@@ -588,8 +633,8 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
           </div>
 
           <UTable
-            v-if="displayTestCases.length > 0"
-            :data="displayTestCases"
+            v-if="filteredTestCases.length > 0"
+            :data="filteredTestCases"
             :columns="testCasesColumns"
             :ui="{
               base: 'table-fixed border-separate border-spacing-0',
@@ -599,6 +644,10 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
               td: 'border-b border-default'
             }"
           />
+
+          <div v-else-if="displayTestCases.length > 0" class="text-center py-8 text-gray-500">
+            No test cases match your filters.
+          </div>
 
           <div v-else class="text-center py-8 text-gray-500">
             No test cases recorded for this run.

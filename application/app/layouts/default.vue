@@ -136,14 +136,14 @@ const groups = computed<CommandPaletteGroup[]>(() => [{
     id: 'source',
     label: 'View page source',
     icon: 'i-lucide-github',
-    to: `https://github.com/nuxt-ui-templates/dashboard/blob/main/app/pages${route.path === '/' ? '/index' : route.path}.vue`,
+    to: `https://github.com/PhenX/playwright-dashboard/blob/main/application/app/pages${route.path === '/' ? '/index' : route.path}.vue`,
     target: '_blank'
   }]
 }])
 
 onMounted(async () => {
   const cookie = useCookie('cookie-consent')
-  if (cookie.value === 'accepted') {
+  if (cookie.value === 'accepted' || cookie.value === 'opted-out') {
     return
   }
 
@@ -161,7 +161,10 @@ onMounted(async () => {
     }, {
       label: 'Opt out',
       color: 'neutral',
-      variant: 'ghost'
+      variant: 'ghost',
+      onClick: () => {
+        cookie.value = 'opted-out'
+      }
     }]
   })
 })

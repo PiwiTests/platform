@@ -87,6 +87,14 @@ const runOptions = computed<RunOption[]>(() => {
 const selectedRunOptionA = ref<RunOption | undefined>(undefined)
 const selectedRunOptionB = ref<RunOption | undefined>(undefined)
 
+// Quick "compare latest vs previous" action
+function compareLatestWithPrevious() {
+  if (runOptions.value.length >= 2) {
+    selectedRunOptionA.value = runOptions.value[1] // previous (2nd newest)
+    selectedRunOptionB.value = runOptions.value[0] // latest (newest)
+  }
+}
+
 const runADetails = ref<TestRunDetails | null>(null)
 const runBDetails = ref<TestRunDetails | null>(null)
 const loadingRunA = ref(false)
@@ -319,12 +327,24 @@ function refresh() {
         <!-- Run Comparison -->
         <UCard>
           <template #header>
-            <h2 class="text-xl font-semibold">
-              Run comparison
-            </h2>
-            <p class="text-sm text-gray-600 mt-1">
-              Compare two test runs side-by-side to see performance changes
-            </p>
+            <div class="flex items-center justify-between">
+              <div>
+                <h2 class="text-xl font-semibold">
+                  Run comparison
+                </h2>
+                <p class="text-sm text-gray-600 mt-1">
+                  Compare two test runs side-by-side to see performance changes
+                </p>
+              </div>
+              <UButton
+                v-if="runOptions.length >= 2"
+                icon="i-lucide-git-compare-arrows"
+                size="sm"
+                variant="outline"
+                label="Compare latest vs previous"
+                @click="compareLatestWithPrevious"
+              />
+            </div>
           </template>
 
           <div class="space-y-4">

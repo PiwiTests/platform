@@ -19,8 +19,9 @@ function getPassRate(testCase: TestCaseWithStats) {
 }
 
 function getTestCaseStatus(testCase: TestCaseWithStats) {
-  // If flaky, show as warning
-  if (testCase.flakyRuns > 0) {
+  // Show flaky only if there were flaky runs in the last 10 runs
+  const recentFlaky = testCase.recentFlakyRuns ?? testCase.flakyRuns
+  if (recentFlaky > 0) {
     return { status: 'flaky', color: 'warning' }
   }
   // Otherwise use last status
