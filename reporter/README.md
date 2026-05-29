@@ -52,7 +52,7 @@ npx playwright test
 | `projectDescription`        | string   | —                         | Description of the project                                                        |
 | `relatedIssue`              | string   | —                         | Related issue reference (e.g., "PROJ-123")                                        |
 | `ciInfo`                    | string   | —                         | CI job information                                                                |
-| `tags`                      | string[] | —                         | Tags to categorise the test run                                                   |
+| `tags`                      | string[] | —                         | Tags to categorize the test run                                                   |
 | `customData`                | object   | —                         | Additional custom metadata as key-value pairs                                     |
 | `collectScmInfo`            | boolean  | `true`                    | Auto-collect git commit, branch, author                                           |
 | `collectCiInfo`             | boolean  | `true`                    | Auto-collect CI environment info                                                  |
@@ -121,8 +121,8 @@ import { test, expect } from '@phenx/playwright-dashboard-reporter/fixtures'
 
 ### What gets captured
 
-- **Network requests** — method, URL, status, duration, resource type. Aggregated on the dashboard into a *Slow API Endpoints* table grouped by `METHOD + normalised route`.
-- **Browser Web Vitals** — TTFB, DOM Interactive, DOMContentLoaded, Load Complete, First Paint, First Contentful Paint — displayed with colour-coded thresholds.
+- **Network requests** — method, URL, status, duration, resource type. Aggregated on the dashboard into a *Slow API Endpoints* table grouped by `METHOD + normalized route`.
+- **Browser Web Vitals** — TTFB, DOM Interactive, DOMContentLoaded, Load Complete, First Paint, First Contentful Paint — displayed with color-coded thresholds.
 
 Both are only collected when `collectPerformanceMetrics` is `true` (the default).
 

@@ -284,8 +284,8 @@ The project has two documentation surfaces that must stay in sync with code chan
 Update the relevant `docs/` page(s) **in the same commit** as your code change whenever you:
 
 - Add, remove, or change an **API endpoint** (path, method, request/response shape) → `docs/api.md`
-- Add, remove, or change a **reporter option** or fixture behaviour → `docs/reporter.md`
-- Change **authentication** behaviour, roles, or setup steps → `docs/authentication.md`
+- Add, remove, or change a **reporter option** or fixture behavior → `docs/reporter.md`
+- Change **authentication** behavior, roles, or setup steps → `docs/authentication.md`
 - Change **storage** configuration, environment variables, or DB migration workflow → `docs/storage.md`
 - Change **deployment** steps, Docker image tags, environment variables, or compose/k8s examples → `docs/deployment.md`
 - Change **requirements** (Node.js version, dependencies) or the **quick-start** flow → `docs/getting-started.md`
@@ -297,8 +297,8 @@ Update `README.md` only when the top-level feature list or the quick-start Docke
 
 - Internal refactors with no user-visible effect
 - Test-only changes
-- Dependency bumps with no API/behaviour change
-- Bug fixes that restore already-documented behaviour
+- Dependency bumps with no API/behavior change
+- Bug fixes that restore already-documented behavior
 
 ## Important Notes
 - Database is auto-initialized on first API call

@@ -49,7 +49,7 @@ export default defineConfig({
 | `projectDescription`        | string   | —                         | Description of the project                                                    |
 | `relatedIssue`              | string   | —                         | Related issue reference, e.g. `"JIRA-123"`                                    |
 | `ciInfo`                    | string   | —                         | CI job information                                                            |
-| `tags`                      | string[] | —                         | Tags to categorise the test run                                               |
+| `tags`                      | string[] | —                         | Tags to categorize the test run                                               |
 | `customData`                | object   | —                         | Additional custom metadata as key-value pairs                                 |
 | `collectScmInfo`            | boolean  | `true`                    | Auto-collect git commit, branch, author                                       |
 | `collectCiInfo`             | boolean  | `true`                    | Auto-collect CI environment info                                              |
@@ -67,11 +67,11 @@ By default, the reporter streams test results to the dashboard in real-time as t
 1. When tests start, the reporter creates a run on the server with `running` status
 2. As each test completes, results are sent in batches to the server
 3. The dashboard UI shows a live progress bar and test results as they arrive
-4. When tests finish, the reporter finalises the run with the overall status
+4. When tests finish, the reporter finalizes the run with the overall status
 
 ### Disabling streaming
 
-If you prefer the original batch-only behaviour (all results sent at the end):
+If you prefer the original batch-only behavior (all results sent at the end):
 
 ```typescript
 ['@phenx/playwright-dashboard-reporter', {
@@ -125,7 +125,7 @@ export default defineConfig({
 
 Built-in report types with auto-detected directories:
 
-| Type       | Default directory    | Behaviour in UI       |
+| Type       | Default directory    | Behavior in UI        |
 |------------|----------------------|-----------------------|
 | `html`     | `playwright-report/` | Opens in new tab      |
 | `monocart` | `monocart-report/`   | Opens in new tab      |
@@ -167,8 +167,8 @@ import { test, expect } from '@phenx/playwright-dashboard-reporter/fixtures'
 
 ### What gets captured
 
-- **Network requests** — method, URL, status code, duration, resource type. Aggregated on the dashboard into a *Slow API endpoints* table grouped by `METHOD + normalised route` (e.g. `/api/users/:id`).
-- **Browser Web Vitals** — TTFB, DOM Interactive, DOMContentLoaded, Load Complete, First Paint, First Contentful Paint — displayed with colour-coded thresholds.
+- **Network requests** — method, URL, status code, duration, resource type. Aggregated on the dashboard into a *Slow API endpoints* table grouped by `METHOD + normalized route` (e.g. `/api/users/:id`).
+- **Browser Web Vitals** — TTFB, DOM Interactive, DOMContentLoaded, Load Complete, First Paint, First Contentful Paint — displayed with color-coded thresholds.
 
 Both are only collected when `collectPerformanceMetrics` is `true` (the default).
 

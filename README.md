@@ -3,7 +3,7 @@
 [![Nuxt UI](https://img.shields.io/badge/Made%20with-Nuxt%20UI-00DC82?logo=nuxt&labelColor=020420)](https://ui.nuxt.com)
 [![Docker](https://img.shields.io/badge/Docker-Available-2496ED?logo=docker&labelColor=020420)](https://github.com/PhenX/playwright-dashboard/pkgs/container/playwright-dashboard)
 
-**Playwright Dashboard** is a self-hosted web application for collecting, storing, and visualising [Playwright](https://playwright.dev) end-to-end test results over time. It gives your team a central place to monitor test health, investigate failures, track performance regressions, and share reports — without relying on external SaaS services.
+**Playwright Dashboard** is a self-hosted web application for collecting, storing, and visualizing [Playwright](https://playwright.dev) end-to-end test results over time. It gives your team a central place to monitor test health, investigate failures, track performance regressions, and share reports — without relying on external SaaS services.
 
 📖 **[Full documentation](https://phenx.github.io/playwright-dashboard)** · 🎮 **[Live demo](https://phenx.github.io/playwright-dashboard/demo/)**
 
@@ -42,9 +42,9 @@ Running Playwright tests in CI produces HTML reports that are ephemeral — once
 ## Features
 
 - 📊 **Test results storage** — store complete Playwright test run data (status, duration, retries, errors, flaky detection)
-- 🎯 **Project organisation** — tests organised by project with tags, labels, and descriptions; auto-created on first submit
+- 🎯 **Project organization** — tests organized by project with tags, labels, and descriptions; auto-created on first submit
 - 📈 **Performance tracking** — step-level timing, avg/P90 duration trends, slowest-tests analysis
-- 🌐 **Network request analysis** — find slow API endpoints grouped by method + normalised route
+- 🌐 **Network request analysis** — find slow API endpoints grouped by method + normalized route
 - 🔬 **Browser Web Vitals** — TTFB, DOMContentLoaded, FCP and more via the Performance API
 - 📊 **Run comparison** — side-by-side delta view with improved/regressed/unchanged summary
 - 🔌 **Playwright reporter** — drop-in custom reporter for automatic result submission, with HTML report and trace uploads
@@ -110,7 +110,7 @@ Results appear automatically in the dashboard. The project is created on first s
 | **Test run detail** | Every test case in a run with status, duration, location, error messages, traces, and reports |
 | **Settings › Users** | User management and API key generation (when authentication is enabled) |
 | **Settings › Storage** | Storage statistics and cleanup tools for old runs |
-| **Settings › Tags** | Tag management for organising projects |
+| **Settings › Tags** | Tag management for organizing projects |
 
 ## Development
 

@@ -262,7 +262,7 @@ test.describe.serial('Performance API Tests', () => {
     expect(endpoint.errorRate).toBeDefined()
     expect(Array.isArray(endpoint.testCases)).toBe(true)
 
-    // Numeric IDs in routes should be normalised to :id
+    // Numeric IDs in routes should be normalized to :id
     const userEndpoint = data.find((e: { route: string }) => e.route.includes('/api/users'))
     if (userEndpoint) {
       expect(userEndpoint.route).toContain(':id')

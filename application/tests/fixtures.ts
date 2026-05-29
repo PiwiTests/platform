@@ -2,7 +2,7 @@
  * Shared test fixtures for the Playwright Dashboard test suite.
  *
  * Extends the base Playwright `test` with dashboard fixtures that mirror the
- * behaviour of `@phenx/playwright-dashboard-reporter/fixtures` — automatically
+ * behavior of `@phenx/playwright-dashboard-reporter/fixtures` — automatically
  * capturing network request timing and browser performance (Web Vitals) for
  * every page interaction so they appear in the dashboard.
  *

@@ -7,7 +7,7 @@ lang: en-US
 
 ## What is Playwright Dashboard?
 
-Playwright Dashboard is a self-hosted web application that collects, stores, and visualises your [Playwright](https://playwright.dev) test results over time. It replaces the ephemeral HTML reports that CI produces with a permanent, searchable history of every test run — making it easy to spot flaky tests, track regressions, and share results with your team.
+Playwright Dashboard is a self-hosted web application that collects, stores, and visualizes your [Playwright](https://playwright.dev) test results over time. It replaces the ephemeral HTML reports that CI produces with a permanent, searchable history of every test run — making it easy to spot flaky tests, track regressions, and share results with your team.
 
 **Key benefits:**
 - See test health trends across hundreds of runs

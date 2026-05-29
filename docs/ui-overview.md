@@ -86,7 +86,7 @@ Shows everything about a single test execution:
 
 - **Status and duration** — with retries count and flaky detection
 - **Steps** — execution steps with individual timing
-- **Web Vitals** — TTFB, FCP, DOMContentLoaded, etc. with colour-coded thresholds (green/amber/red)
+- **Web Vitals** — TTFB, FCP, DOMContentLoaded, etc. with color-coded thresholds (green/amber/red)
 - **Network requests** — all HTTP requests made during the test with method, URL, status, and duration
 - **Error details** — full error message and stack trace for failed tests
 - **Trace viewer** — link to open the trace file in Playwright's viewer
@@ -114,10 +114,10 @@ Storage statistics and maintenance tools:
 
 ### Tags (`/settings/tags`)
 
-Manage tags used to organise projects:
+Manage tags used to organize projects:
 
-- **Tag table** — tag text, colour, and creation date
-- **Add tag** — create new tags with custom names and colours
+- **Tag table** — tag text, color, and creation date
+- **Add tag** — create new tags with custom names and colors
 - **Edit/Delete** — modify or remove existing tags (administrator only)
 
 ## Real-time updates

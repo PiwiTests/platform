@@ -23,17 +23,17 @@ features:
     title: Test results storage
     details: Store complete Playwright test run data — status, duration, retries, errors, and more — in a lightweight SQLite database.
   - icon: 🎯
-    title: Project organisation
-    details: Tests are organised by project. Unknown projects are automatically created when results are submitted via API.
+    title: Project organization
+    details: Tests are organized by project. Unknown projects are automatically created when results are submitted via API.
   - icon: 📈
     title: Performance tracking
     details: Step-level timing, avg/P90 duration trends, slowest-tests analysis, and side-by-side run comparison.
   - icon: 🌐
     title: Network request analysis
-    details: Find slow API endpoints grouped by HTTP method and normalised route (e.g. `/api/users/:id`).
+    details: Find slow API endpoints grouped by HTTP method and normalized route (e.g. `/api/users/:id`).
   - icon: 🔬
     title: Browser Web Vitals
-    details: Capture TTFB, DOMContentLoaded, FCP and more via the Performance API, displayed with colour-coded thresholds.
+    details: Capture TTFB, DOMContentLoaded, FCP and more via the Performance API, displayed with color-coded thresholds.
   - icon: 🔌
     title: Playwright reporter
     details: Drop-in custom reporter that automatically uploads results, HTML reports, and trace files after each run.
