@@ -8,15 +8,17 @@ const { data: recentTestRuns } = await useFetch<TestRunForChart[]>('/api/test-ru
 
 useRunStream(refresh)
 
+const ACTIVE_WINDOW_DAYS = 7
+
 const stats = computed(() => {
   const totalProjects = projects.value?.length || 0
   const totalRuns = projects.value?.reduce((sum, p) => sum + (p.totalRuns || 0), 0) || 0
   const totalFlakyTests = projects.value?.reduce((sum, p) => sum + (p.latestRun?.flakyTests || 0), 0) || 0
 
-  // Active projects: those with a run in the last 7 days
-  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+  // Active projects: those with a run in the last N days
+  const activeThreshold = Date.now() - ACTIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000
   const activeProjects = projects.value?.filter(p =>
-    p.latestRun && new Date(p.latestRun.startTime).getTime() > sevenDaysAgo
+    p.latestRun && new Date(p.latestRun.startTime).getTime() > activeThreshold
   ).length || 0
 
   // Passing projects: latest run status is 'passed'
@@ -25,7 +27,7 @@ const stats = computed(() => {
   const statItems: { label: string, value: string | number, icon: string, description?: string }[] = [
     { label: 'Total projects', value: totalProjects, icon: 'i-lucide-folder' },
     { label: 'Total test runs', value: totalRuns, icon: 'i-lucide-play-circle' },
-    { label: 'Active projects', value: activeProjects, icon: 'i-lucide-activity', description: 'Run in last 7 days' },
+    { label: 'Active projects', value: activeProjects, icon: 'i-lucide-activity', description: `Run in last ${ACTIVE_WINDOW_DAYS} days` },
     { label: 'Passing projects', value: passedRuns, icon: 'i-lucide-check-circle', description: 'Latest run passed' },
     { label: 'Flaky tests', value: totalFlakyTests, icon: 'i-lucide-alert-triangle', description: 'In latest runs' }
   ]
