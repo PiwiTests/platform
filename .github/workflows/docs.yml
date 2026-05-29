@@ -47,6 +47,12 @@ jobs:
         run: npm run docs:build
         # Output: docs/.vitepress/dist/
 
+      # VitePress generates its own 404.html from the theme, overwriting the
+      # file VitePress copied from docs/public/.  Explicitly replace it so
+      # GitHub Pages serves our lightweight SPA redirect script instead.
+      - name: Override 404.html with SPA redirect
+        run: cp docs/public/404.html docs/.vitepress/dist/404.html
+
       # ── Build Nuxt demo (SPA, deployed at /demo/) ─────────────────────────
       - name: Setup Node (demo)
         uses: actions/setup-node@v4
