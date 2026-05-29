@@ -11,7 +11,7 @@ The dashboard supports two storage backends for test artifacts (HTML reports, tr
 
 Files are stored in the `.data/storage/` directory relative to the application. No configuration is required.
 
-To customise the path:
+To customize the path:
 
 ```bash
 # In application/.env
@@ -66,7 +66,7 @@ S3_ACCESS_KEY_ID=minioadmin
 S3_SECRET_ACCESS_KEY=minioadmin
 ```
 
-Path-style URLs are enabled automatically when `S3_ENDPOINT` is set (as required by MinIO and most self-hosted S3-compatible services). Set `S3_FORCE_PATH_STYLE=false` to override this behaviour.
+Path-style URLs are enabled automatically when `S3_ENDPOINT` is set (as required by MinIO and most self-hosted S3-compatible services). Set `S3_FORCE_PATH_STYLE=false` to override this behavior.
 
 ### DigitalOcean Spaces
 
@@ -114,7 +114,7 @@ The dashboard supports two database backends: **SQLite** (default, zero-configur
 
 SQLite requires no configuration. The database file is created automatically at `.data/playwright.db`.
 
-To customise the path:
+To customize the path:
 
 ```bash
 DATABASE_PATH=/custom/path/database.db npm run dev

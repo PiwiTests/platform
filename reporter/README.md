@@ -1,6 +1,8 @@
 # Playwright Dashboard Reporter
 
-A custom Playwright reporter that sends test results to a Playwright Dashboard server.
+A custom Playwright reporter that sends test results to a [Playwright Dashboard](https://github.com/PhenX/playwright-dashboard) server. It handles uploading test results, HTML reports, trace files, and performance metrics — with optional live streaming of results as tests execute.
+
+📖 **[Full documentation](https://phenx.github.io/playwright-dashboard/reporter)**
 
 ## Installation
 
@@ -8,41 +10,31 @@ A custom Playwright reporter that sends test results to a Playwright Dashboard s
 npm install --save-dev @phenx/playwright-dashboard-reporter
 ```
 
-Or if you're using the dashboard from this repository:
-
-```bash
-cd playwright-dashboard/reporter
-npm install
-```
-
-Then link it in your test project:
-
-```bash
-npm link @phenx/playwright-dashboard-reporter
-```
-
-## Usage
+## Quick start
 
 Add the reporter to your `playwright.config.ts`:
 
 ```typescript
-import { defineConfig } from '@playwright/test';
+import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   reporter: [
+    ['list'],
     ['@phenx/playwright-dashboard-reporter', {
       serverUrl: 'http://localhost:3000',
-      projectName: 'my-test-project',
-      uploadTraces: true,
-      uploadReport: true
-    }]
+      projectName: 'my-project',
+    }],
   ],
-  
-  // Make sure to enable trace and HTML report
   use: {
-    trace: 'retain-on-failure', // or 'on'
+    trace: 'retain-on-failure',
   },
-});
+})
+```
+
+Run your tests — results are uploaded automatically:
+
+```bash
+npx playwright test
 ```
 
 ## Configuration Options
@@ -53,209 +45,131 @@ export default defineConfig({
 | `projectName`               | string   | `'default-project'`       | Name of the project to report results under                                       |
 | `uploadTraces`              | boolean  | `true`                    | Whether to upload trace files to the dashboard                                    |
 | `uploadReport`              | boolean  | `true`                    | Whether to upload the HTML report to the dashboard                                |
-| `projectDescription`        | string   | -                         | Description of the project                                                        |
-| `relatedIssue`              | string   | -                         | Related issue reference (e.g., JIRA ticket like "PROJ-123")                       |
-| `ciInfo`                    | string   | -                         | CI job information (e.g., Jenkins job URL)                                        |
-| `tags`                      | string[] | -                         | Tags to categorize the test run                                                   |
-| `customData`                | object   | -                         | Additional custom metadata as key-value pairs                                     |
-| `collectScmInfo`            | boolean  | `true`                    | Whether to automatically collect SCM info (git commit, branch, author)            |
-| `collectCiInfo`             | boolean  | `true`                    | Whether to automatically collect CI environment info                              |
-| `collectPerformanceMetrics` | boolean  | `true`                    | Whether to collect step timings, network requests and web vitals from the fixture |
+| `reports`                   | array    | —                         | Additional report types to upload (html, monocart, blob, or custom)               |
+| `streaming`                 | boolean  | `true`                    | Enable live streaming of results as tests complete                                |
+| `streamingBatchSize`        | number   | `5`                       | Number of test results to batch before sending                                    |
+| `streamingBatchDelay`       | number   | `2000`                    | Max delay (ms) before flushing pending events                                     |
+| `projectDescription`        | string   | —                         | Description of the project                                                        |
+| `relatedIssue`              | string   | —                         | Related issue reference (e.g., "PROJ-123")                                        |
+| `ciInfo`                    | string   | —                         | CI job information                                                                |
+| `tags`                      | string[] | —                         | Tags to categorize the test run                                                   |
+| `customData`                | object   | —                         | Additional custom metadata as key-value pairs                                     |
+| `collectScmInfo`            | boolean  | `true`                    | Auto-collect git commit, branch, author                                           |
+| `collectCiInfo`             | boolean  | `true`                    | Auto-collect CI environment info                                                  |
+| `collectPerformanceMetrics` | boolean  | `true`                    | Collect step timings, network requests and web vitals from the fixture            |
+| `apiKey`                    | string   | —                         | API key for authentication (preferred for CI)                                     |
+| `username`                  | string   | —                         | Username for dashboard login (use `apiKey` instead when possible)                 |
+| `password`                  | string   | —                         | Password for dashboard login (used with `username`)                               |
 
-## Performance Metrics & Fixture
+## Live streaming
 
-### Network Requests and Web Vitals
+By default, the reporter streams test results to the dashboard in real-time. This allows you to monitor progress live in the dashboard UI while CI is still running.
 
-To automatically capture network request timing and browser Web Vitals, use the `dashboardFixtures` in your test setup:
-
-**Option A – extend your existing fixtures:**
+To disable streaming and send all results at the end:
 
 ```typescript
-// fixtures.ts
-import { test as base, expect } from '@playwright/test';
-import { dashboardFixtures } from '@phenx/playwright-dashboard-reporter/fixtures';
-
-export const test = base.extend(dashboardFixtures);
-export { expect };
+['@phenx/playwright-dashboard-reporter', {
+  serverUrl: 'http://localhost:3000',
+  projectName: 'my-project',
+  streaming: false,
+}]
 ```
 
-Then import `test` from your fixture file in every test:
+If the server doesn't support streaming (older versions), the reporter automatically falls back to batch mode.
+
+## Multiple reports
+
+Attach multiple report types to a single test run:
 
 ```typescript
-import { test, expect } from './fixtures';
+export default defineConfig({
+  reporter: [
+    ['list'],
+    ['@playwright/test/reporter-html', { outputFolder: 'playwright-report' }],
+    ['monocart-reporter', { name: 'My Tests', outputFile: 'monocart-report/index.html' }],
+    ['@phenx/playwright-dashboard-reporter', {
+      serverUrl: 'http://localhost:3000',
+      projectName: 'my-project',
+      reports: [
+        { type: 'html' },
+        { type: 'monocart' },
+        { type: 'blob', dir: 'blob-report', label: 'Blob archive' },
+      ],
+    }],
+  ],
+})
 ```
 
-**Option B – drop-in replacement for `@playwright/test`:**
+## Performance Metrics & Web Vitals
+
+To capture network request timing and browser Web Vitals, use the provided fixtures:
 
 ```typescript
-import { test, expect } from '@phenx/playwright-dashboard-reporter/fixtures';
+// tests/fixtures.ts
+import { test as base, expect } from '@playwright/test'
+import { dashboardFixtures } from '@phenx/playwright-dashboard-reporter/fixtures'
+
+export const test = base.extend(dashboardFixtures)
+export { expect }
+```
+
+Or as a drop-in replacement:
+
+```typescript
+import { test, expect } from '@phenx/playwright-dashboard-reporter/fixtures'
 ```
 
 ### What gets captured
 
-With the fixture active, per-test attachments are automatically added for the reporter to pick up:
-
-- **`playwright-dashboard-network`** – Array of `{ method, url, status, duration, startTime, resourceType }` for every finished request. The dashboard aggregates these into a *Slow API Endpoints* table, grouping by `METHOD + normalised route` (numeric IDs → `:id`, UUIDs → `:uuid`).
-- **`playwright-dashboard-web-vitals`** – Browser performance metrics from the last navigated page: TTFB, DOM Interactive, DOMContentLoaded, Load Complete (from `PerformanceNavigationTiming`), plus First Paint and First Contentful Paint (from `PerformancePaintTiming`).
+- **Network requests** — method, URL, status, duration, resource type. Aggregated on the dashboard into a *Slow API Endpoints* table grouped by `METHOD + normalized route`.
+- **Browser Web Vitals** — TTFB, DOM Interactive, DOMContentLoaded, Load Complete, First Paint, First Contentful Paint — displayed with color-coded thresholds.
 
 Both are only collected when `collectPerformanceMetrics` is `true` (the default).
 
+## Authentication
+
+When the dashboard has authentication enabled, use an API key (recommended for CI):
+
+```typescript
+['@phenx/playwright-dashboard-reporter', {
+  serverUrl: 'https://your-dashboard.example.com',
+  projectName: 'my-project',
+  apiKey: process.env.DASHBOARD_API_KEY,
+}]
+```
+
+Generate a key in the dashboard UI: **Settings → Users → API keys**. Store it as a CI secret.
+
+Alternatively, use `username`/`password` — the reporter will call `/api/auth/login` automatically.
+
 ## Automatic Metadata Collection
 
-The reporter automatically collects metadata from various sources:
-
 ### SCM Information (Git)
-When `collectScmInfo` is enabled (default), the reporter automatically collects:
-- Commit hash
+
+When `collectScmInfo` is enabled (default), the reporter collects:
+- Commit hash and message
 - Branch name
 - Author name
-- Commit message
-- Remote URL (if available)
+- Remote URL
 
 ### CI Information
-When `collectCiInfo` is enabled (default), the reporter automatically detects and collects information from:
-- **Jenkins**: Build number, build URL, job name
-- **GitHub Actions**: Run ID, run number, workflow, actor, repository, ref, SHA
-- **GitLab CI**: Pipeline ID, pipeline URL, job ID, job URL, job name
-- **CircleCI**: Build number, build URL, job name, workflow
-- **Travis CI**: Build number, build URL, job number
-- **Azure Pipelines**: Build number, build ID, build URL, job name
 
-### Playwright Configuration
-The reporter also includes metadata from Playwright's configuration:
-- Project configurations (browser, viewport, etc.)
-- Worker count
-- Test timeout
-- Parallel execution settings
-
-## Usage Examples
-
-### Basic Configuration
-```typescript
-import { defineConfig } from '@playwright/test';
-
-export default defineConfig({
-  reporter: [
-    ['@phenx/playwright-dashboard-reporter', {
-      serverUrl: 'http://localhost:3000',
-      projectName: 'my-test-project',
-      uploadTraces: true,
-      uploadReport: true
-    }]
-  ],
-  
-  use: {
-    trace: 'retain-on-failure',
-  },
-});
-```
-
-### With Performance Metrics Fixture
-```typescript
-// playwright.config.ts
-import { defineConfig } from '@playwright/test';
-
-export default defineConfig({
-  reporter: [
-    ['@phenx/playwright-dashboard-reporter', {
-      serverUrl: 'http://localhost:3000',
-      projectName: 'my-test-project'
-    }]
-  ],
-  use: {
-    trace: 'retain-on-failure',
-  },
-});
-
-// tests/fixtures.ts  ← create this file
-import { test as base, expect } from '@playwright/test';
-import { dashboardFixtures } from '@phenx/playwright-dashboard-reporter/fixtures';
-
-export const test = base.extend(dashboardFixtures);
-export { expect };
-
-// tests/home.spec.ts  ← use the fixture file
-import { test, expect } from './fixtures';
-
-test('homepage loads', async ({ page }) => {
-  await page.goto('/');
-  await expect(page.getByRole('heading')).toBeVisible();
-  // network requests & web vitals are captured automatically
-});
-```
-
-### With Custom Metadata
-```typescript
-export default defineConfig({
-  reporter: [
-    ['@phenx/playwright-dashboard-reporter', {
-      serverUrl: 'http://localhost:3000',
-      projectName: 'my-test-project',
-      projectDescription: 'End-to-end tests for the main application',
-      relatedIssue: 'PROJ-123',
-      tags: ['regression', 'critical'],
-      customData: {
-        environment: 'staging',
-        version: '1.2.3',
-        testSuite: 'smoke-tests'
-      }
-    }]
-  ],
-});
-```
-
-### Disable Automatic Collection
-```typescript
-export default defineConfig({
-  reporter: [
-    ['@phenx/playwright-dashboard-reporter', {
-      serverUrl: 'http://localhost:3000',
-      projectName: 'my-test-project',
-      collectScmInfo: false,              // Don't collect git info
-      collectCiInfo: false,               // Don't collect CI info
-      collectPerformanceMetrics: false    // Don't collect step/network/vitals data
-    }]
-  ],
-});
-```
-
-## Features
-
-- **Automatic Upload**: Automatically uploads test results after test run completion
-- **Complete HTML Reports**: Compresses and uploads entire HTML report directory with all assets (CSS, JS, images, fonts) using gzip compression
-- **Trace Files**: Uploads trace files from test attachments (configure with `trace: 'on'` or `trace: 'retain-on-failure'` in Playwright config)
-- **Performance Metrics**: Collects step-level timing, avg/P90 durations, and top slowest tests
-- **Network Analysis**: Captures and groups network requests by route for finding slow API endpoints
-- **Browser Web Vitals**: Captures TTFB, FCP, DOMContentLoaded and more via the Performance API
-- **Fallback**: Falls back to JSON-only upload if file upload fails
-- **Status Tracking**: Tracks passed, failed, skipped, and timed-out tests
-- **Project Management**: Automatically creates projects if they don't exist
+When `collectCiInfo` is enabled (default), the reporter auto-detects:
+- **GitHub Actions** — run ID, workflow, actor, repository, ref, SHA
+- **Jenkins** — build number, build URL, job name
+- **GitLab CI** — pipeline ID/URL, job ID/URL, job name
+- **CircleCI** — build number/URL, job name, workflow
+- **Travis CI** — build number/URL, job number
+- **Azure Pipelines** — build number, build ID/URL, job name
 
 ## How It Works
 
-1. The reporter collects test results during the test run
-2. After all tests complete, it uploads results to the dashboard
-3. If `uploadReport` is enabled, it compresses the entire `playwright-report` directory using gzip and uploads it
-4. If `uploadTraces` is enabled, it finds and uploads all trace files
-5. If the `dashboardFixtures` are used, network request and web vitals attachments are included per test case
-6. The server decompresses the report and makes it available for viewing
-7. Results are visible in the Playwright Dashboard web interface with fully functional HTML reports
-
-## Example Output
-
-```
-[Playwright Dashboard] Starting test run for project: my-test-project
-[Playwright Dashboard] Test run completed. Status: failed (Playwright result.status: failed)
-[Playwright Dashboard] Total: 10, Passed: 9, Failed: 1, Skipped: 0, TimedOut: 0
-[Playwright Dashboard] Compressing HTML report directory: /path/to/playwright-report
-[Playwright Dashboard] Adding HTML report archive: 2458391 bytes
-[Playwright Dashboard] Adding trace file: test-results/test-1/trace.zip
-[Playwright Dashboard] Found 1 trace files
-[Playwright Dashboard] Successfully uploaded test results with files to http://localhost:3000
-[Playwright Dashboard] Test Run ID: 1, Project ID: 1
-[Playwright Dashboard] HTML Report: .data/storage/project-1/run-1234-index.html
-[Playwright Dashboard] Uploaded 1 trace files
-```
+1. When tests start, the reporter creates a run on the server (streaming mode) or collects results locally (batch mode)
+2. As tests complete, results are streamed in batches to the server
+3. After all tests finish, HTML reports are compressed and uploaded
+4. Trace files from test attachments are uploaded
+5. Network request and web vitals data (from fixtures) are included per test case
+6. The server stores everything and makes it available in the dashboard UI
 
 ## Requirements
 
@@ -267,23 +181,20 @@ export default defineConfig({
 
 ### Reporter not uploading files
 
-Make sure:
-1. HTML report is generated (add `html` reporter to your config)
-2. Traces are enabled in your Playwright config
-3. The dashboard server is running and accessible
+- Ensure an HTML reporter is configured: `['html', { outputFolder: 'playwright-report' }]`
+- Ensure traces are enabled: `use: { trace: 'retain-on-failure' }`
+- Check the dashboard server is running and accessible at `serverUrl`
 
 ### Network/Web Vitals not appearing
 
-Make sure:
-1. You are importing `test` from `@phenx/playwright-dashboard-reporter/fixtures` (or extending with `dashboardFixtures`)
-2. The `collectPerformanceMetrics` option is not set to `false`
-3. Your tests navigate to at least one page (`await page.goto(...)`)
+- Import `test` from `@phenx/playwright-dashboard-reporter/fixtures` (or extend with `dashboardFixtures`)
+- Verify `collectPerformanceMetrics` is not set to `false`
+- Ensure tests navigate to at least one page (`await page.goto(...)`)
 
 ### Connection errors
 
 - Check that `serverUrl` is correct and the server is running
-- Verify network connectivity to the dashboard server
-- Check firewall settings if running on different machines
+- Verify network connectivity and firewall settings
 
 ## License
 

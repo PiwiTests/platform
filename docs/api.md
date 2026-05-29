@@ -319,7 +319,7 @@ Get test run details with test cases. Includes `flakyTests` count.
 
 ### GET `/api/test-runs/[id]/network-requests`
 
-Network requests grouped by `HTTP method + normalised route`.
+Network requests grouped by `HTTP method + normalized route`.
 
 ---
 

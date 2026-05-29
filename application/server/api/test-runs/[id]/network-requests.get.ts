@@ -80,7 +80,7 @@ export default eventHandler(async (event) => {
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.testRunId, id))
 
-  // Aggregate all network requests, keyed by method + normalised route
+  // Aggregate all network requests, keyed by method + normalized route
   const grouped = new Map<string, {
     method: string
     route: string

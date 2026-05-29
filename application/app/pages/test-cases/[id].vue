@@ -29,7 +29,7 @@ const networkRequests = computed<NetworkRequest[]>(() => {
   return (testCase.value?.networkRequests as unknown as NetworkRequest[] | null) ?? []
 })
 
-// Group network requests by method + normalised route for per-test display
+// Group network requests by method + normalized route for per-test display
 function normalizeRoute(url: string): string {
   try {
     const parsed = new URL(url)

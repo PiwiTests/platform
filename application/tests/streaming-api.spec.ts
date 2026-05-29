@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test'
  * Tests for the live-streaming lifecycle:
  *   POST /api/test-runs/start       – create a run in 'running' state
  *   POST /api/test-runs/:id/events  – push test-case results (batch)
- *   POST /api/test-runs/:id/finish  – finalise the run
+ *   POST /api/test-runs/:id/finish  – finalize the run
  *   GET  /api/test-runs/:id/stream  – SSE endpoint (init event check)
  *   GET  /api/test-runs/:id         – streamToken must NOT appear in response
  */
@@ -173,7 +173,7 @@ test.describe.serial('Streaming API Tests', () => {
 
   // ── /finish ──────────────────────────────────────────────────────────────────
 
-  test('POST /api/test-runs/:id/finish finalises the run', async ({ request }) => {
+  test('POST /api/test-runs/:id/finish finalizes the run', async ({ request }) => {
     const response = await request.post(`/api/test-runs/${runId}/finish`, {
       data: {
         streamToken,
@@ -193,7 +193,7 @@ test.describe.serial('Streaming API Tests', () => {
     expect(data.status).toBe('failed')
   })
 
-  test('GET /api/test-runs/:id shows finalised run without streamToken', async ({ request }) => {
+  test('GET /api/test-runs/:id shows finalized run without streamToken', async ({ request }) => {
     const response = await request.get(`/api/test-runs/${runId}`)
     expect(response.ok()).toBeTruthy()
     const data = await response.json()
@@ -207,7 +207,7 @@ test.describe.serial('Streaming API Tests', () => {
     expect(data.flakyTests).toBe(0)
   })
 
-  test('POST /api/test-runs/:id/events is rejected after run is finalised', async ({ request }) => {
+  test('POST /api/test-runs/:id/events is rejected after run is finalized', async ({ request }) => {
     const response = await request.post(`/api/test-runs/${runId}/events`, {
       data: {
         streamToken,
