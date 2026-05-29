@@ -12,11 +12,11 @@
     // redirects the browser to the SPA entry point so Vue Router can render the
     // correct page. For all other paths it falls back to the documentation root.
     ;(function () {
-      var demoBase = '/playwright-dashboard/demo'
-      var path = window.location.pathname
+      const demoBase = '/playwright-dashboard/demo'
+      const path = window.location.pathname
 
       if (path === demoBase || path.startsWith(demoBase + '/')) {
-        var relativePath = path.slice(demoBase.length) || '/'
+        const relativePath = path.slice(demoBase.length) || '/'
         sessionStorage.setItem('spa:redirect', relativePath + window.location.search + window.location.hash)
         window.location.replace(demoBase + '/')
       } else {
