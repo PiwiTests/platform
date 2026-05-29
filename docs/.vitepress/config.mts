@@ -21,6 +21,7 @@ export default defineConfig({
 
     sidebar: [
       { text: 'Getting started', link: '/getting-started' },
+      { text: 'UI overview', link: '/ui-overview' },
       { text: 'Reporter', link: '/reporter' },
       { text: 'API reference', link: '/api' },
       { text: 'Authentication', link: '/authentication' },

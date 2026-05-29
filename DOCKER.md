@@ -2,6 +2,8 @@
 
 This guide explains how to deploy the Playwright Dashboard using Docker.
 
+> **Note:** For the complete deployment reference including Kubernetes and production build from source, see the [full deployment documentation](https://phenx.github.io/playwright-dashboard/deployment).
+
 ## Quick Start with Docker
 
 ### Pull and Run
@@ -25,32 +27,35 @@ The dashboard will be available at `http://localhost:3000`.
 
 ## Building the Image Locally
 
-The image uses a multistage Docker build that handles all dependencies and building internally. Simply build the image:
-
 ```bash
 cd application
 docker build -t playwright-dashboard:local .
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data playwright-dashboard:local
 ```
 
 The Dockerfile uses a two-stage build:
 1. **Builder stage**: Installs all dependencies and builds the application
 2. **Production stage**: Installs only production dependencies and copies the build artifacts
 
-### Run the Container
-
-```bash
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data playwright-dashboard:local
-```
-
 ## Configuration
 
 ### Environment Variables
 
-- `NODE_ENV=production` - Set automatically in the container
-- `HOST=0.0.0.0` - Listens on all interfaces
-- `PORT=3000` - Application port (default)
-- `NUXT_AUTH_ENABLED` - Enable authentication (optional)
-- `NUXT_AUTH_SECRET` - Secret for authentication (required if auth enabled)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NODE_ENV` | `production` | Set automatically in the container |
+| `HOST` | `0.0.0.0` | Listens on all interfaces |
+| `PORT` | `3000` | Application port |
+| `NUXT_AUTH_ENABLED` | — | Enable authentication (`true`/`false`) |
+| `NUXT_AUTH_SECRET` | — | Secret for session encryption (required if auth enabled) |
+| `DATABASE_URL` | — | PostgreSQL connection string; when set, PostgreSQL is used instead of SQLite |
+| `DATABASE_PATH` | `.data/playwright.db` | SQLite database path (ignored when `DATABASE_URL` is set) |
+| `STORAGE_TYPE` | `local` | Storage backend (`local` or `s3`) |
+| `S3_BUCKET` | — | S3 bucket name (when `STORAGE_TYPE=s3`) |
+| `S3_REGION` | — | S3 region |
+| `S3_ACCESS_KEY_ID` | — | S3 access key |
+| `S3_SECRET_ACCESS_KEY` | — | S3 secret key |
+| `S3_ENDPOINT` | — | Custom S3 endpoint (for MinIO, R2, Spaces, etc.) |
 
 ### Volumes
 
@@ -63,18 +68,14 @@ docker run -p 3000:3000 \
 ```
 
 The `.data` directory contains:
-- `playwright.db` - SQLite database
-- `storage/` - Uploaded HTML reports and trace files
+- `playwright.db` — SQLite database (unless using PostgreSQL)
+- `storage/` — Uploaded HTML reports and trace files
 
-## Production Deployment
+## Docker Compose
 
-### Docker Compose
-
-Create a `docker-compose.yml`:
+### SQLite (default)
 
 ```yaml
-version: '3.8'
-
 services:
   playwright-dashboard:
     image: ghcr.io/phenx/playwright-dashboard:latest
@@ -87,108 +88,78 @@ services:
     restart: unless-stopped
 ```
 
+### With PostgreSQL
+
+```yaml
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: playwright
+      POSTGRES_PASSWORD: playwright
+      POSTGRES_DB: playwright_dashboard
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  playwright-dashboard:
+    image: ghcr.io/phenx/playwright-dashboard:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./storage:/app/.data/storage
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=******postgres:5432/playwright_dashboard
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+```
+
 Run with:
 
 ```bash
 docker-compose up -d
 ```
 
-### Kubernetes
-
-Example deployment:
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: playwright-dashboard
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: playwright-dashboard
-  template:
-    metadata:
-      labels:
-        app: playwright-dashboard
-    spec:
-      containers:
-      - name: playwright-dashboard
-        image: ghcr.io/phenx/playwright-dashboard:latest
-        ports:
-        - containerPort: 3000
-        volumeMounts:
-        - name: data
-          mountPath: /app/.data
-      volumes:
-      - name: data
-        persistentVolumeClaim:
-          claimName: playwright-dashboard-data
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: playwright-dashboard
-spec:
-  selector:
-    app: playwright-dashboard
-  ports:
-  - port: 80
-    targetPort: 3000
-  type: LoadBalancer
-```
-
 ## Security
 
 The container runs as a non-root user (`nodejs:nodejs` with UID/GID 1001) for enhanced security.
 
+Best practices:
+- Always use HTTPS in production (use a reverse proxy like nginx or Traefik)
+- Set a strong `NUXT_AUTH_SECRET` with `openssl rand -hex 32`
+- Enable authentication for multi-user or internet-facing deployments
+
 ## Available Tags
 
-- `latest` - Latest stable release
-- `v1.0.0` - Specific version (semver)
-- `v1.0` - Major.minor version
-- `v1` - Major version
-
-## Image Optimization
-
-This image is optimized for size using a multistage build:
-
-1. **Multistage Build**: Application is built in a builder stage, keeping build dependencies separate
-2. **Alpine Base**: Uses minimal Alpine Linux (~55MB base)
-3. **Production Dependencies Only**: Final image contains only runtime dependencies
-4. **Minimal Layers**: Commands combined to reduce layer count
-5. **Cache Mounts**: Uses BuildKit cache mounts for faster npm installs
-6. **Native Modules**: Platform-specific SQLite bindings built correctly for Alpine (musl)
-
-## Technical Notes
-
-### SQLite Implementation
-
-The application uses `@libsql/client` which internally depends on the `libsql` package for native SQLite bindings. The multistage Docker build ensures that native modules are compiled correctly for Alpine Linux (musl) during the build process.
-
-### Native Module Multi-Platform Support
-
-The Docker build supports both `linux/amd64` and `linux/arm64` platforms. The multistage build ensures that native modules are compiled correctly for each target platform during the Docker build process.
+- `latest` — Latest stable release
+- `v1.0.0` — Specific version (semver)
+- `v1.0` — Major.minor version
+- `v1` — Major version
 
 ## Troubleshooting
 
 ### Permission Issues
 
-If you encounter permission issues with volumes, ensure the mounted directory is writable:
+If you encounter permission issues with volumes, ensure the mounted directory is writable by UID 1001:
 
 ```bash
 mkdir -p .data
-chmod 777 .data  # or use appropriate permissions
+chmod 777 .data  # or chown 1001:1001 .data
 docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/playwright-dashboard:latest
 ```
 
 ### Database Locked
 
-SQLite doesn't support concurrent writes well. For high-concurrency deployments, consider using a different database or running a single instance.
+SQLite doesn't support concurrent writes well. For high-concurrency deployments, switch to PostgreSQL by setting `DATABASE_URL`.
 
 ### Port Already in Use
 
-If port 3000 is in use, map to a different port:
+Map to a different host port:
 
 ```bash
 docker run -p 8080:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/playwright-dashboard:latest

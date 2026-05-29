@@ -4,8 +4,8 @@ layout: home
 
 hero:
   name: "Playwright Dashboard"
-  text: "Store and visualise your Playwright test results"
-  tagline: Organise runs by project, drill down into failures, view traces, compare performance, and analyse network requests — all in one place.
+  text: "A self-hosted hub for your Playwright test results"
+  tagline: Persist every test run, stream results live from CI, track performance regressions, and share reports — without relying on external services.
 
   actions:
     - theme: brand
