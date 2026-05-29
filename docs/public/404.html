@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Playwright Dashboard</title>
+  <script>
+    // GitHub Pages SPA redirect.
+    //
+    // GitHub Pages serves this 404.html for any URL that has no matching static
+    // file. For the demo SPA (which is client-side only), every deep link hits
+    // this page. The script below saves the intended path in sessionStorage and
+    // redirects the browser to the SPA entry point so Vue Router can render the
+    // correct page. For all other paths it falls back to the documentation root.
+    ;(function () {
+      var demoBase = '/playwright-dashboard/demo'
+      var path = window.location.pathname
+
+      if (path === demoBase || path.startsWith(demoBase + '/')) {
+        var relativePath = path.slice(demoBase.length) || '/'
+        sessionStorage.setItem('spa:redirect', relativePath + window.location.search + window.location.hash)
+        window.location.replace(demoBase + '/')
+      } else {
+        window.location.replace('/playwright-dashboard/')
+      }
+    })()
+  </script>
+</head>
+<body></body>
+</html>
