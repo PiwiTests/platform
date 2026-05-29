@@ -147,7 +147,7 @@ onMounted(async () => {
     return
   }
 
-  toast.add({
+  const notification = toast.add({
     title: 'We use first-party cookies to enhance your experience on our website.',
     duration: 0,
     close: false,
@@ -157,6 +157,7 @@ onMounted(async () => {
       variant: 'outline',
       onClick: () => {
         cookie.value = 'accepted'
+        toast.remove(notification.id)
       }
     }, {
       label: 'Opt out',
@@ -164,6 +165,7 @@ onMounted(async () => {
       variant: 'ghost',
       onClick: () => {
         cookie.value = 'opted-out'
+        toast.remove(notification.id)
       }
     }]
   })

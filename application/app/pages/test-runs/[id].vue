@@ -107,6 +107,13 @@ const displayTestCases = computed<TestCaseResult[]>(() => {
 // Search and filter state for test cases
 const testCaseSearch = ref('')
 const testCaseStatusFilter = ref<string>('')
+const testCaseStatusOptions = [
+  { label: 'All statuses', value: '' },
+  { label: 'Passed', value: 'passed' },
+  { label: 'Failed', value: 'failed' },
+  { label: 'Skipped', value: 'skipped' },
+  { label: 'Flaky', value: 'flaky' }
+]
 
 const filteredTestCases = computed<TestCaseResult[]>(() => {
   let cases = displayTestCases.value
@@ -594,13 +601,7 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
               />
               <USelect
                 v-model="testCaseStatusFilter"
-                :items="[
-                  { label: 'All statuses', value: '' },
-                  { label: 'Passed', value: 'passed' },
-                  { label: 'Failed', value: 'failed' },
-                  { label: 'Skipped', value: 'skipped' },
-                  { label: 'Flaky', value: 'flaky' }
-                ]"
+                :items="testCaseStatusOptions"
                 size="sm"
                 class="w-40"
               />
