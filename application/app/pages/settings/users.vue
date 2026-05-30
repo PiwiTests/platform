@@ -86,9 +86,15 @@ async function handleAddUser() {
 }
 
 async function handleDeleteUser(user: UserDetails) {
-  if (!confirm(`Are you sure you want to delete user "${user.username}"?`)) {
-    return
-  }
+  userToDelete.value = user
+  isDeleteUserConfirmOpen.value = true
+}
+
+async function confirmDeleteUser() {
+  const user = userToDelete.value
+  if (!user) return
+  isDeleteUserConfirmOpen.value = false
+  userToDelete.value = null
 
   try {
     await $fetch(`/api/users/${user.id}`, {
@@ -113,6 +119,10 @@ async function handleDeleteUser(user: UserDetails) {
     })
   }
 }
+
+// Delete user confirmation
+const isDeleteUserConfirmOpen = ref(false)
+const userToDelete = ref<UserDetails | null>(null)
 
 function getRoleBadgeColor(role: string) {
   switch (role) {
@@ -158,17 +168,22 @@ async function refreshApiKeys() {
   }
 }
 
-// Create API key
-const isCreateKeyModalOpen = ref(false)
+// Create API key (inline in the API keys modal)
+const isCreatingKey = ref(false)
 const newKeyName = ref('')
 const newKeyExpiry = ref('')
 const createdKeyValue = ref<string | null>(null)
 
-function openCreateKeyModal() {
+function startCreateKey() {
   newKeyName.value = ''
   newKeyExpiry.value = ''
   createdKeyValue.value = null
-  isCreateKeyModalOpen.value = true
+  isCreatingKey.value = true
+}
+
+function cancelCreateKey() {
+  isCreatingKey.value = false
+  createdKeyValue.value = null
 }
 
 async function handleCreateApiKey() {
@@ -208,12 +223,23 @@ async function copyKey() {
 
 function dismissCreatedKey() {
   createdKeyValue.value = null
-  isCreateKeyModalOpen.value = false
+  isCreatingKey.value = false
 }
 
-async function handleRevokeApiKey(key: ApiKeySummary) {
-  if (!selectedUserForKeys.value) return
-  if (!confirm(`Revoke API key "${key.name}"? Any CI pipeline using it will stop working immediately.`)) return
+// Revoke API key confirmation
+const isRevokeKeyConfirmOpen = ref(false)
+const keyToRevoke = ref<ApiKeySummary | null>(null)
+
+function confirmRevokeApiKey(key: ApiKeySummary) {
+  keyToRevoke.value = key
+  isRevokeKeyConfirmOpen.value = true
+}
+
+async function handleRevokeApiKey() {
+  if (!selectedUserForKeys.value || !keyToRevoke.value) return
+  const key = keyToRevoke.value
+  isRevokeKeyConfirmOpen.value = false
+  keyToRevoke.value = null
 
   try {
     await $fetch(`/api/users/${selectedUserForKeys.value.id}/api-keys/${key.id}`, {
@@ -404,13 +430,13 @@ function canManageApiKeys(user: UserDetails): boolean {
     </UModal>
   </ClientOnly>
 
-  <!-- API Keys Modal -->
+  <!-- API Keys Modal (single panel with inline create form) -->
   <ClientOnly>
     <UModal
       :open="isApiKeysModalOpen"
       :title="`API keys – ${selectedUserForKeys?.username}`"
       size="xl"
-      @update:open="isApiKeysModalOpen = $event"
+      @update:open="v => { isApiKeysModalOpen = v; if (!v) cancelCreateKey() }"
     >
       <template #body>
         <div class="space-y-4">
@@ -418,6 +444,78 @@ function canManageApiKeys(user: UserDetails): boolean {
             API keys allow the Playwright reporter (and other CI tools) to submit test results without a username/password login.
             Each key is shown <strong>only once</strong> at creation time — store it in a CI secret immediately.
           </p>
+
+          <!-- Inline Create Key Form -->
+          <div v-if="isCreatingKey" class="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-4">
+            <!-- Show new key after creation -->
+            <div v-if="createdKeyValue" class="space-y-4">
+              <UAlert
+                icon="i-lucide-triangle-alert"
+                color="warning"
+                variant="subtle"
+                title="Save your API key now"
+                description="This key will never be shown again. Copy it and store it in your CI secret manager immediately."
+              />
+              <div class="rounded-lg bg-elevated p-3 font-mono text-sm break-all select-all">
+                {{ createdKeyValue }}
+              </div>
+              <div class="flex gap-2">
+                <UButton
+                  label="Copy to clipboard"
+                  icon="i-lucide-copy"
+                  color="primary"
+                  size="sm"
+                  @click="copyKey"
+                />
+                <UButton
+                  label="Done"
+                  variant="ghost"
+                  size="sm"
+                  @click="dismissCreatedKey"
+                />
+              </div>
+            </div>
+
+            <!-- Key creation form -->
+            <div v-else class="space-y-3">
+              <h4 class="font-medium text-sm">
+                Create new API key
+              </h4>
+              <UFormField label="Key name" name="name" required>
+                <UInput
+                  v-model="newKeyName"
+                  placeholder="e.g. GitHub Actions CI"
+                  size="sm"
+                />
+              </UFormField>
+
+              <UFormField label="Expires at (optional)" name="expiresAt">
+                <UInput
+                  v-model="newKeyExpiry"
+                  type="date"
+                  size="sm"
+                  :min="new Date().toISOString().split('T')[0]"
+                />
+              </UFormField>
+
+              <div class="flex gap-2">
+                <UButton
+                  label="Generate key"
+                  icon="i-lucide-key"
+                  size="sm"
+                  :disabled="!newKeyName.trim()"
+                  @click="handleCreateApiKey"
+                />
+                <UButton
+                  color="neutral"
+                  variant="ghost"
+                  label="Cancel"
+                  size="sm"
+                  @click="cancelCreateKey"
+                />
+              </div>
+            </div>
+          </div>
 
           <!-- Key list -->
           <div v-if="apiKeysList.length > 0" class="space-y-2">
@@ -447,12 +545,12 @@ function canManageApiKeys(user: UserDetails): boolean {
                 variant="ghost"
                 size="sm"
                 title="Revoke key"
-                @click="handleRevokeApiKey(key)"
+                @click="confirmRevokeApiKey(key)"
               />
             </div>
           </div>
 
-          <div v-else class="text-center text-muted py-6 text-sm">
+          <div v-else-if="!isCreatingKey" class="text-center text-muted py-6 text-sm">
             No API keys yet. Create one to allow CI access.
           </div>
         </div>
@@ -466,83 +564,59 @@ function canManageApiKeys(user: UserDetails): boolean {
           @click="isApiKeysModalOpen = false"
         />
         <UButton
+          v-if="!isCreatingKey"
           label="Create API key"
           icon="i-lucide-plus"
-          @click="openCreateKeyModal"
+          @click="startCreateKey"
         />
       </template>
     </UModal>
   </ClientOnly>
 
-  <!-- Create API Key Modal -->
+  <!-- Delete User Confirmation Modal -->
   <ClientOnly>
-    <UModal
-      :open="isCreateKeyModalOpen"
-      title="Create API key"
-      @update:open="isCreateKeyModalOpen = $event"
-    >
+    <UModal :open="isDeleteUserConfirmOpen" title="Delete user" @update:open="isDeleteUserConfirmOpen = $event">
       <template #body>
-        <!-- Show new key after creation -->
-        <div v-if="createdKeyValue" class="space-y-4">
-          <UAlert
-            icon="i-lucide-triangle-alert"
-            color="warning"
-            variant="subtle"
-            title="Save your API key now"
-            description="This key will never be shown again. Copy it and store it in your CI secret manager immediately."
-          />
-          <div class="rounded-lg bg-elevated p-3 font-mono text-sm break-all select-all">
-            {{ createdKeyValue }}
-          </div>
-          <UButton
-            label="Copy to clipboard"
-            icon="i-lucide-copy"
-            color="primary"
-            block
-            @click="copyKey"
-          />
-        </div>
-
-        <!-- Key creation form -->
-        <div v-else class="space-y-4">
-          <UFormField label="Key name" name="name" required>
-            <UInput
-              v-model="newKeyName"
-              placeholder="e.g. GitHub Actions CI"
-            />
-          </UFormField>
-
-          <UFormField label="Expires at (optional)" name="expiresAt">
-            <UInput
-              v-model="newKeyExpiry"
-              type="date"
-              :min="new Date().toISOString().split('T')[0]"
-            />
-          </UFormField>
-        </div>
+        <p>Are you sure you want to delete user <strong>{{ userToDelete?.username }}</strong>? This action cannot be undone.</p>
       </template>
 
       <template #footer>
-        <template v-if="createdKeyValue">
-          <UButton
-            label="Done"
-            @click="dismissCreatedKey"
-          />
-        </template>
-        <template v-else>
-          <UButton
-            color="neutral"
-            variant="ghost"
-            label="Cancel"
-            @click="isCreateKeyModalOpen = false"
-          />
-          <UButton
-            label="Generate key"
-            icon="i-lucide-key"
-            :disabled="!newKeyName.trim()"
-            @click="handleCreateApiKey"
-          />
-        </template>
+        <UButton
+          color="neutral"
+          variant="ghost"
+          label="Cancel"
+          @click="isDeleteUserConfirmOpen = false"
+        />
+        <UButton
+          color="error"
+          label="Delete user"
+          icon="i-lucide-trash-2"
+          @click="confirmDeleteUser"
+        />
+      </template>
+    </UModal>
+  </ClientOnly>
+
+  <!-- Revoke API Key Confirmation Modal -->
+  <ClientOnly>
+    <UModal :open="isRevokeKeyConfirmOpen" title="Revoke API key" @update:open="isRevokeKeyConfirmOpen = $event">
+      <template #body>
+        <p>Revoke API key <strong>"{{ keyToRevoke?.name }}"</strong>? Any CI pipeline using it will stop working immediately.</p>
+      </template>
+
+      <template #footer>
+        <UButton
+          color="neutral"
+          variant="ghost"
+          label="Cancel"
+          @click="isRevokeKeyConfirmOpen = false"
+        />
+        <UButton
+          color="error"
+          label="Revoke"
+          icon="i-lucide-trash-2"
+          @click="handleRevokeApiKey"
+        />
       </template>
     </UModal>
   </ClientOnly>

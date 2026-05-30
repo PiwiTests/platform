@@ -24,12 +24,31 @@ const currentProjectId = computed(() => {
 })
 
 // Generate project navigation items with children
+const ACTIVE_WINDOW_DAYS = 10
+
 const projectItems = computed<NavigationMenuItem[]>(() => {
   if (!projects.value || projects.value.length === 0) {
     return []
   }
 
-  return projects.value.map((project) => {
+  const activeThreshold = Date.now() - ACTIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000
+
+  // Sort alphabetically by display label
+  const sorted = [...projects.value].sort((a, b) => {
+    const labelA = (a.label || a.name).toLowerCase()
+    const labelB = (b.label || b.name).toLowerCase()
+    return labelA.localeCompare(labelB)
+  })
+
+  // Split into active and others
+  const active = sorted.filter(p =>
+    p.latestRun && new Date(p.latestRun.startTime).getTime() > activeThreshold
+  )
+  const others = sorted.filter(p =>
+    !p.latestRun || new Date(p.latestRun.startTime).getTime() <= activeThreshold
+  )
+
+  function buildProjectItem(project: ProjectWithStats): NavigationMenuItem {
     const isActive = currentProjectId.value !== null && currentProjectId.value === project.id
     const isRunning = project.latestRun?.status === 'running' || project.latestRun?.status === 'initialising'
     const status = project.latestRun?.status || 'unknown'
@@ -89,7 +108,27 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
         // Do nothing - allow children to be shown
       }
     }
-  })
+  }
+
+  const items: NavigationMenuItem[] = []
+
+  if (active.length > 0) {
+    items.push({
+      label: `Active (${active.length})`,
+      type: 'separator' as const
+    })
+    items.push(...active.map(buildProjectItem))
+  }
+
+  if (others.length > 0) {
+    items.push({
+      label: `Others (${others.length})`,
+      type: 'separator' as const
+    })
+    items.push(...others.map(buildProjectItem))
+  }
+
+  return items
 })
 
 const links = computed(() => [[{

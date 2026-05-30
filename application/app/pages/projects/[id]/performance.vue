@@ -7,7 +7,22 @@ const route = useRoute()
 const projectId = route.params.id
 
 const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`)
-const { data: performanceData, refresh: refreshPerformance } = await useFetch<PerformanceTrendPoint[]>(`/api/projects/${projectId}/performance`)
+
+// Date range filter
+const dateFrom = ref('')
+const dateTo = ref('')
+
+const performanceQueryParams = computed(() => {
+  const params: Record<string, string> = {}
+  if (dateFrom.value) params.from = dateFrom.value
+  if (dateTo.value) params.to = dateTo.value
+  return params
+})
+
+const { data: performanceData, refresh: refreshPerformance } = await useFetch<PerformanceTrendPoint[]>(
+  () => `/api/projects/${projectId}/performance`,
+  { query: performanceQueryParams }
+)
 const { data: slowTests, refresh: refreshSlowTests } = await useFetch<SlowTest[]>(`/api/projects/${projectId}/slow-tests`)
 
 useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Performance — Playwright Dashboard` })))
@@ -281,6 +296,35 @@ function refresh() {
 
     <template #body>
       <div class="p-4 space-y-6">
+        <!-- Date Range Filter -->
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="text-sm text-muted shrink-0">Date range:</span>
+          <UInput
+            v-model="dateFrom"
+            type="date"
+            size="sm"
+            placeholder="From"
+            class="w-40"
+          />
+          <span class="text-sm text-muted">to</span>
+          <UInput
+            v-model="dateTo"
+            type="date"
+            size="sm"
+            placeholder="To"
+            class="w-40"
+          />
+          <UButton
+            v-if="dateFrom || dateTo"
+            size="xs"
+            variant="ghost"
+            color="neutral"
+            icon="i-lucide-x"
+            label="Clear"
+            @click="dateFrom = ''; dateTo = ''"
+          />
+        </div>
+
         <!-- Performance Trend Chart -->
         <UCard>
           <template #header>
