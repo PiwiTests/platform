@@ -14,6 +14,44 @@ export type {
 } from '../server/database/schema'
 
 // ============================================================================
+// Metadata types
+// ============================================================================
+
+/**
+ * SCM (source control) metadata attached to a test run
+ */
+export interface TestRunScmMetadata {
+  commit?: string | null
+  branch?: string | null
+  author?: string | null
+  commitMessage?: string | null
+}
+
+/**
+ * CI metadata attached to a test run
+ */
+export interface TestRunCiMetadata {
+  provider?: string | null
+  buildNumber?: string | null
+  buildUrl?: string | null
+  jobName?: string | null
+  workflow?: string | null
+}
+
+/**
+ * Metadata attached to a test run
+ */
+export interface TestRunMetadata {
+  scm?: TestRunScmMetadata
+  ci?: TestRunCiMetadata
+  projectDescription?: string | null
+  relatedIssue?: string | null
+  tags?: string[]
+  customData?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+// ============================================================================
 // Report types (API responses)
 // ============================================================================
 
