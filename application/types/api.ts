@@ -130,6 +130,7 @@ export interface ProjectWithStats {
     reports?: ReportInfo[]
     avgTestDuration?: number | null
     p90TestDuration?: number | null
+    metadata: TestRunMetadata
   } | null
   totalRuns: number
   totalTestCases: number

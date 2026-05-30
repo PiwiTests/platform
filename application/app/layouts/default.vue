@@ -115,7 +115,7 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
   if (active.length > 0) {
     items.push({
       label: `Active (${active.length})`,
-      type: 'separator' as const
+      type: 'label'
     })
     items.push(...active.map(buildProjectItem))
   }
@@ -123,7 +123,7 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
   if (others.length > 0) {
     items.push({
       label: `Others (${others.length})`,
-      type: 'separator' as const
+      type: 'label'
     })
     items.push(...others.map(buildProjectItem))
   }

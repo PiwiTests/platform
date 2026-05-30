@@ -171,7 +171,7 @@ const columns: TableColumn<ProjectWithStats>[] = [
     accessorKey: 'branch',
     header: 'Branch',
     cell: ({ row }) => {
-      const latestRun = row.original.latestRun as any
+      const latestRun = row.original.latestRun
       const metadata = latestRun?.metadata
       if (!metadata?.scm) return ''
       const parts: ReturnType<typeof h>[] = []

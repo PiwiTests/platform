@@ -33,13 +33,28 @@ export default eventHandler(async (event) => {
   // Build conditions
   const conditions = [eq(testRuns.projectId, id)]
   if (from) {
-    conditions.push(gte(testRuns.startTime, from))
+    const fromDate = new Date(from)
+    if (Number.isNaN(fromDate.getTime())) {
+      throw createError({
+        statusCode: 400,
+        message: 'Invalid from date'
+      })
+    }
+
+    conditions.push(gte(testRuns.startTime, fromDate))
   }
   if (to) {
     // Add a day to include the full "to" date
     const toDate = new Date(to)
+    if (Number.isNaN(toDate.getTime())) {
+      throw createError({
+        statusCode: 400,
+        message: 'Invalid to date'
+      })
+    }
+
     toDate.setDate(toDate.getDate() + 1)
-    conditions.push(lte(testRuns.startTime, toDate.toISOString()))
+    conditions.push(lte(testRuns.startTime, toDate))
   }
 
   // Fetch the most recent N runs (desc), then reverse in-memory so chart plots in chronological order

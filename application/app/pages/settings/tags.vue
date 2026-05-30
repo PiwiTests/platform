@@ -359,7 +359,12 @@ async function handleDeleteTag() {
       <template #body>
         <p>
           Are you sure you want to delete tag
-          <TagBadge v-if="tagToDelete" :text="tagToDelete.text" :color="tagToDelete.color" class="inline-flex" />?
+          <TagBadge
+            v-if="tagToDelete"
+            :text="tagToDelete.text"
+            :color="tagToDelete.color"
+            class="inline-flex"
+          />?
           It will be removed from all projects.
         </p>
       </template>
