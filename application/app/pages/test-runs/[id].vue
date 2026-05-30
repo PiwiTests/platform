@@ -106,9 +106,9 @@ const displayTestCases = computed<TestCaseResult[]>(() => {
 
 // Search and filter state for test cases
 const testCaseSearch = ref('')
-const testCaseStatusFilter = ref<string>('')
+const testCaseStatusFilter = ref<string>('all')
 const testCaseStatusOptions = [
-  { label: 'All statuses', value: '' },
+  { label: 'All statuses', value: 'all' },
   { label: 'Passed', value: 'passed' },
   { label: 'Failed', value: 'failed' },
   { label: 'Skipped', value: 'skipped' },
@@ -117,7 +117,7 @@ const testCaseStatusOptions = [
 
 const filteredTestCases = computed<TestCaseResult[]>(() => {
   let cases = displayTestCases.value
-  if (testCaseStatusFilter.value) {
+  if (testCaseStatusFilter.value !== 'all') {
     cases = cases.filter(tc => tc.status === testCaseStatusFilter.value)
   }
   if (testCaseSearch.value) {
