@@ -85,10 +85,13 @@ test.describe.serial('Tags API Tests', () => {
   })
 
   test('should delete a tag', async ({ request }) => {
+    const deleteTagName = `delete-me-tag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
     // Create a dedicated delete target
     const createRes = await request.post('/api/tags', {
-      data: { text: 'delete-me-tag', color: '#f59e0b' }
+      data: { text: deleteTagName, color: '#f59e0b' }
     })
+    expect(createRes.ok()).toBeTruthy()
     const { tag } = await createRes.json()
 
     const deleteRes = await request.delete(`/api/tags/${tag.id}`)
@@ -96,8 +99,9 @@ test.describe.serial('Tags API Tests', () => {
 
     // Should be gone from list
     const listRes = await request.get('/api/tags')
+    expect(listRes.ok()).toBeTruthy()
     const listData = await listRes.json()
-    const found = listData.tags.find((t: { text: string }) => t.text === 'delete-me-tag')
+    const found = listData.tags.find((t: { text: string }) => t.text === deleteTagName)
     expect(found).toBeUndefined()
   })
 

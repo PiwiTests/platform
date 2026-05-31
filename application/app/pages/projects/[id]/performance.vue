@@ -7,7 +7,22 @@ const route = useRoute()
 const projectId = route.params.id
 
 const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`)
-const { data: performanceData, refresh: refreshPerformance } = await useFetch<PerformanceTrendPoint[]>(`/api/projects/${projectId}/performance`)
+
+// Date range filter
+const dateFrom = ref('')
+const dateTo = ref('')
+
+const performanceQueryParams = computed(() => {
+  const params: Record<string, string> = {}
+  if (dateFrom.value) params.from = dateFrom.value
+  if (dateTo.value) params.to = dateTo.value
+  return params
+})
+
+const { data: performanceData, refresh: refreshPerformance } = await useFetch<PerformanceTrendPoint[]>(
+  () => `/api/projects/${projectId}/performance`,
+  { query: performanceQueryParams }
+)
 const { data: slowTests, refresh: refreshSlowTests } = await useFetch<SlowTest[]>(`/api/projects/${projectId}/slow-tests`)
 
 useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Performance — Playwright Dashboard` })))
@@ -86,6 +101,14 @@ const runOptions = computed<RunOption[]>(() => {
 // Use full option objects — avoids USelectMenu value-key binding issues
 const selectedRunOptionA = ref<RunOption | undefined>(undefined)
 const selectedRunOptionB = ref<RunOption | undefined>(undefined)
+
+// Quick "compare latest vs previous" action
+function compareLatestWithPrevious() {
+  if (runOptions.value.length >= 2) {
+    selectedRunOptionA.value = runOptions.value[1] // previous (2nd newest)
+    selectedRunOptionB.value = runOptions.value[0] // latest (newest)
+  }
+}
 
 const runADetails = ref<TestRunDetails | null>(null)
 const runBDetails = ref<TestRunDetails | null>(null)
@@ -273,6 +296,35 @@ function refresh() {
 
     <template #body>
       <div class="p-4 space-y-6">
+        <!-- Date Range Filter -->
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="text-sm text-muted shrink-0">Date range:</span>
+          <UInput
+            v-model="dateFrom"
+            type="date"
+            size="sm"
+            placeholder="From"
+            class="w-40"
+          />
+          <span class="text-sm text-muted">to</span>
+          <UInput
+            v-model="dateTo"
+            type="date"
+            size="sm"
+            placeholder="To"
+            class="w-40"
+          />
+          <UButton
+            v-if="dateFrom || dateTo"
+            size="xs"
+            variant="ghost"
+            color="neutral"
+            icon="i-lucide-x"
+            label="Clear"
+            @click="dateFrom = ''; dateTo = ''"
+          />
+        </div>
+
         <!-- Performance Trend Chart -->
         <UCard>
           <template #header>
@@ -319,12 +371,24 @@ function refresh() {
         <!-- Run Comparison -->
         <UCard>
           <template #header>
-            <h2 class="text-xl font-semibold">
-              Run comparison
-            </h2>
-            <p class="text-sm text-gray-600 mt-1">
-              Compare two test runs side-by-side to see performance changes
-            </p>
+            <div class="flex items-center justify-between">
+              <div>
+                <h2 class="text-xl font-semibold">
+                  Run comparison
+                </h2>
+                <p class="text-sm text-gray-600 mt-1">
+                  Compare two test runs side-by-side to see performance changes
+                </p>
+              </div>
+              <UButton
+                v-if="runOptions.length >= 2"
+                icon="i-lucide-git-compare-arrows"
+                size="sm"
+                variant="outline"
+                label="Compare latest vs previous"
+                @click="compareLatestWithPrevious"
+              />
+            </div>
           </template>
 
           <div class="space-y-4">

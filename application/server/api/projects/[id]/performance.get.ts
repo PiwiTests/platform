@@ -1,6 +1,6 @@
 import { getDatabase } from '../../../database'
 import { projects, testRuns } from '../../../database/schema'
-import { eq, desc } from 'drizzle-orm'
+import { eq, desc, and, gte, lte } from 'drizzle-orm'
 
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
@@ -14,6 +14,8 @@ export default eventHandler(async (event) => {
 
   const query = getQuery(event)
   const limit = Math.min(parseInt(query.limit as string) || 50, 200)
+  const from = query.from as string | undefined
+  const to = query.to as string | undefined
 
   const db = await getDatabase()
 
@@ -28,6 +30,33 @@ export default eventHandler(async (event) => {
     })
   }
 
+  // Build conditions
+  const conditions = [eq(testRuns.projectId, id)]
+  if (from) {
+    const fromDate = new Date(from)
+    if (Number.isNaN(fromDate.getTime())) {
+      throw createError({
+        statusCode: 400,
+        message: 'Invalid from date'
+      })
+    }
+
+    conditions.push(gte(testRuns.startTime, fromDate))
+  }
+  if (to) {
+    // Add a day to include the full "to" date
+    const toDate = new Date(to)
+    if (Number.isNaN(toDate.getTime())) {
+      throw createError({
+        statusCode: 400,
+        message: 'Invalid to date'
+      })
+    }
+
+    toDate.setDate(toDate.getDate() + 1)
+    conditions.push(lte(testRuns.startTime, toDate))
+  }
+
   // Fetch the most recent N runs (desc), then reverse in-memory so chart plots in chronological order
   const runs = await db.select({
     id: testRuns.id,
@@ -40,7 +69,7 @@ export default eventHandler(async (event) => {
     metadata: testRuns.metadata
   })
     .from(testRuns)
-    .where(eq(testRuns.projectId, id))
+    .where(and(...conditions))
     .orderBy(desc(testRuns.startTime))
     .limit(limit)
 

@@ -63,6 +63,22 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
     cell: ({ row }) => formatDate(row.getValue('startTime'))
   },
   {
+    accessorKey: 'metadata',
+    header: 'Branch / Commit',
+    cell: ({ row }) => {
+      const metadata = row.original.metadata
+      if (!metadata?.scm) return ''
+      const parts: ReturnType<typeof h>[] = []
+      if (metadata.scm.branch) {
+        parts.push(h('span', { class: 'text-xs font-medium bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded' }, metadata.scm.branch))
+      }
+      if (metadata.scm.commit) {
+        parts.push(h('code', { class: 'text-xs text-gray-500 ml-1' }, metadata.scm.commit.substring(0, 7)))
+      }
+      return h('div', { class: 'flex items-center gap-1 flex-wrap' }, parts)
+    }
+  },
+  {
     accessorKey: 'duration',
     header: createSortHeader<TestRunSummary>('Duration'),
     cell: ({ row }) => formatDuration(row.getValue('duration'))

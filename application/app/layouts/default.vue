@@ -24,12 +24,31 @@ const currentProjectId = computed(() => {
 })
 
 // Generate project navigation items with children
+const ACTIVE_WINDOW_DAYS = 10
+
 const projectItems = computed<NavigationMenuItem[]>(() => {
   if (!projects.value || projects.value.length === 0) {
     return []
   }
 
-  return projects.value.map((project) => {
+  const activeThreshold = Date.now() - ACTIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000
+
+  // Sort alphabetically by display label
+  const sorted = [...projects.value].sort((a, b) => {
+    const labelA = (a.label || a.name).toLowerCase()
+    const labelB = (b.label || b.name).toLowerCase()
+    return labelA.localeCompare(labelB)
+  })
+
+  // Split into active and others
+  const active = sorted.filter(p =>
+    p.latestRun && new Date(p.latestRun.startTime).getTime() > activeThreshold
+  )
+  const others = sorted.filter(p =>
+    !p.latestRun || new Date(p.latestRun.startTime).getTime() <= activeThreshold
+  )
+
+  function buildProjectItem(project: ProjectWithStats): NavigationMenuItem {
     const isActive = currentProjectId.value !== null && currentProjectId.value === project.id
     const isRunning = project.latestRun?.status === 'running' || project.latestRun?.status === 'initialising'
     const status = project.latestRun?.status || 'unknown'
@@ -89,7 +108,27 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
         // Do nothing - allow children to be shown
       }
     }
-  })
+  }
+
+  const items: NavigationMenuItem[] = []
+
+  if (active.length > 0) {
+    items.push({
+      label: `Active (${active.length})`,
+      type: 'label'
+    })
+    items.push(...active.map(buildProjectItem))
+  }
+
+  if (others.length > 0) {
+    items.push({
+      label: `Others (${others.length})`,
+      type: 'label'
+    })
+    items.push(...others.map(buildProjectItem))
+  }
+
+  return items
 })
 
 const links = computed(() => [[{
@@ -136,18 +175,18 @@ const groups = computed<CommandPaletteGroup[]>(() => [{
     id: 'source',
     label: 'View page source',
     icon: 'i-lucide-github',
-    to: `https://github.com/nuxt-ui-templates/dashboard/blob/main/app/pages${route.path === '/' ? '/index' : route.path}.vue`,
+    to: `https://github.com/PhenX/playwright-dashboard/blob/main/application/app/pages${route.path === '/' ? '/index' : route.path}.vue`,
     target: '_blank'
   }]
 }])
 
 onMounted(async () => {
   const cookie = useCookie('cookie-consent')
-  if (cookie.value === 'accepted') {
+  if (cookie.value === 'accepted' || cookie.value === 'opted-out') {
     return
   }
 
-  toast.add({
+  const notification = toast.add({
     title: 'We use first-party cookies to enhance your experience on our website.',
     duration: 0,
     close: false,
@@ -157,11 +196,16 @@ onMounted(async () => {
       variant: 'outline',
       onClick: () => {
         cookie.value = 'accepted'
+        toast.remove(notification.id)
       }
     }, {
       label: 'Opt out',
       color: 'neutral',
-      variant: 'ghost'
+      variant: 'ghost',
+      onClick: () => {
+        cookie.value = 'opted-out'
+        toast.remove(notification.id)
+      }
     }]
   })
 })

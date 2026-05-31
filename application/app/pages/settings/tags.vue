@@ -115,10 +115,20 @@ async function handleEditTag() {
   }
 }
 
-async function handleDeleteTag(tag: TagInfo) {
-  if (!confirm(`Are you sure you want to delete tag "${tag.text}"? It will be removed from all projects.`)) {
-    return
-  }
+// Delete confirmation
+const isDeleteTagConfirmOpen = ref(false)
+const tagToDelete = ref<TagInfo | null>(null)
+
+function confirmDeleteTag(tag: TagInfo) {
+  tagToDelete.value = tag
+  isDeleteTagConfirmOpen.value = true
+}
+
+async function handleDeleteTag() {
+  const tag = tagToDelete.value
+  if (!tag) return
+  isDeleteTagConfirmOpen.value = false
+  tagToDelete.value = null
 
   try {
     await $fetch(`/api/tags/${tag.id}`, { method: 'DELETE' })
@@ -205,7 +215,7 @@ async function handleDeleteTag(tag: TagInfo) {
                 color="error"
                 variant="ghost"
                 size="sm"
-                @click="handleDeleteTag(row.original)"
+                @click="confirmDeleteTag(row.original)"
               />
             </div>
           </template>
@@ -340,6 +350,37 @@ async function handleDeleteTag(tag: TagInfo) {
           label="Save changes"
           icon="i-lucide-check"
           @click="handleEditTag"
+        />
+      </template>
+    </UModal>
+
+    <!-- Delete Tag Confirmation Modal -->
+    <UModal :open="isDeleteTagConfirmOpen" title="Delete tag" @update:open="isDeleteTagConfirmOpen = $event">
+      <template #body>
+        <p>
+          Are you sure you want to delete tag
+          <TagBadge
+            v-if="tagToDelete"
+            :text="tagToDelete.text"
+            :color="tagToDelete.color"
+            class="inline-flex"
+          />?
+          It will be removed from all projects.
+        </p>
+      </template>
+
+      <template #footer>
+        <UButton
+          color="neutral"
+          variant="ghost"
+          label="Cancel"
+          @click="isDeleteTagConfirmOpen = false"
+        />
+        <UButton
+          color="error"
+          label="Delete"
+          icon="i-lucide-trash-2"
+          @click="handleDeleteTag"
         />
       </template>
     </UModal>

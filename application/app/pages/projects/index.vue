@@ -31,7 +31,7 @@ const filteredProjects = computed(() => {
 
   if (selectedTagIds.value.length > 0) {
     result = result.filter(p =>
-      selectedTagIds.value.every(tagId =>
+      selectedTagIds.value.some(tagId =>
         (p.tags || []).some(t => t.id === tagId)
       )
     )
@@ -168,6 +168,23 @@ const columns: TableColumn<ProjectWithStats>[] = [
     }
   },
   {
+    accessorKey: 'branch',
+    header: 'Branch',
+    cell: ({ row }) => {
+      const latestRun = row.original.latestRun
+      const metadata = latestRun?.metadata
+      if (!metadata?.scm) return ''
+      const parts: ReturnType<typeof h>[] = []
+      if (metadata.scm.branch) {
+        parts.push(h('span', { class: 'text-xs font-medium bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded' }, metadata.scm.branch))
+      }
+      if (metadata.scm.commit) {
+        parts.push(h('code', { class: 'text-xs text-gray-500 ml-1' }, metadata.scm.commit.substring(0, 7)))
+      }
+      return parts.length > 0 ? h('div', { class: 'flex items-center gap-1 flex-wrap' }, parts) : ''
+    }
+  },
+  {
     accessorKey: 'duration',
     header: createSortHeader<ProjectWithStats>('Duration'),
     cell: ({ row }) => {
@@ -275,7 +292,7 @@ const columns: TableColumn<ProjectWithStats>[] = [
         />
 
         <div v-if="allTags.length > 0" class="flex flex-wrap items-center gap-2">
-          <span class="text-sm text-muted shrink-0">Filter by tag:</span>
+          <span class="text-sm text-muted shrink-0">Filter by tag (any match):</span>
           <button
             v-for="tag in allTags"
             :key="tag.id"

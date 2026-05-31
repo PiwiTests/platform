@@ -25,6 +25,16 @@ export default eventHandler(async (event) => {
     skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`,
     timedOutRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'timedOut' THEN 1 ELSE 0 END)`,
     flakyRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`,
+    // Count flaky runs among the last 10 runs for this test case (recent flakiness)
+    recentFlakyRuns: sql<number>`(
+      SELECT COUNT(*) FROM (
+        SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
+        FROM ${testRunsCases}
+        WHERE ${testRunsCases.testCaseId} = ${testCases.id}
+        ORDER BY ${testRunsCases.createdAt} DESC
+        LIMIT 10
+      ) WHERE s = 'passed' AND r > 0
+    )`,
     avgDuration: sql<number>`AVG(${testRunsCases.duration})`,
     lastRun: sql<number>`MAX(${testRunsCases.createdAt})`,
     lastStatus: sql<string>`(

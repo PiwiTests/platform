@@ -68,7 +68,7 @@ test.describe.serial('Project Creation API Tests', () => {
   })
 })
 
-test.describe('Project Creation UI Tests', () => {
+test.describe.serial('Project Creation UI Tests', () => {
   test('should show New Project button on projects page', async ({ page }) => {
     await page.goto('/projects')
     await waitForHydration(page)
@@ -100,6 +100,7 @@ test.describe('Project Creation UI Tests', () => {
 
   test('should create a new project from the UI', async ({ page }) => {
     const projectName = `ui-created-${Date.now()}`
+    const projectLabel = `My UI Project ${Date.now()}`
     await page.goto('/projects')
     await waitForHydration(page)
 
@@ -107,7 +108,7 @@ test.describe('Project Creation UI Tests', () => {
     await expect(page.getByRole('heading', { name: 'Create new project' })).toBeVisible({ timeout: 10000 })
 
     await page.getByLabel('Project name').fill(projectName)
-    await page.getByLabel('Display label').fill('My UI Project')
+    await page.getByLabel('Display label').fill(projectLabel)
 
     await page.getByRole('button', { name: 'Create project' }).click()
 
@@ -118,7 +119,7 @@ test.describe('Project Creation UI Tests', () => {
     await expect(page.getByRole('heading', { name: 'Create new project' })).not.toBeVisible()
 
     // New project should appear in the list
-    await expect(page.getByRole('link', { name: 'My UI Project' })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole('link', { name: projectLabel })).toBeVisible({ timeout: 5000 })
   })
 
   test('should show error when creating project with duplicate name', async ({ page, request }) => {
@@ -140,7 +141,7 @@ test.describe('Project Creation UI Tests', () => {
   })
 })
 
-test.describe('Tag Management UI Tests', () => {
+test.describe.serial('Tag Management UI Tests', () => {
   // Clean up any test tags before running
   test.beforeAll(async ({ request }) => {
     const res = await request.get('/api/tags')
@@ -229,16 +230,22 @@ test.describe('Tag Management UI Tests', () => {
     const tagRes = await request.post('/api/tags', {
       data: { text: `ui-test-tag-del-${Date.now()}`, color: '#ef4444' }
     })
+    expect(tagRes.ok()).toBeTruthy()
     const { tag } = await tagRes.json()
 
     await page.goto('/settings/tags')
     await waitForHydration(page)
 
-    // Find the row for our tag and click delete
-    page.on('dialog', dialog => dialog.accept())
+    // Find the row for our tag and open delete confirmation modal
     const row = page.locator('tr').filter({ hasText: tag.text })
+    await expect(row).toBeVisible({ timeout: 10000 })
     await row.getByRole('button').last().click()
+    await expect(page.getByRole('heading', { name: 'Delete tag' })).toBeVisible({ timeout: 10000 })
+
+    // Confirm deletion in modal
+    await page.getByRole('button', { name: 'Delete', exact: true }).last().click()
 
     await expect(page.getByText('Tag deleted', { exact: true })).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('tr').filter({ hasText: tag.text })).toHaveCount(0)
   })
 })
