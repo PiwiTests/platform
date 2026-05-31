@@ -119,121 +119,133 @@ const noData = h('span', { class: 'text-xs text-gray-600 italic' }, 'No data')
 
 const columns: TableColumn<ProjectWithStats>[] = [
   {
-    accessorKey: 'name',
-    header: createSortHeader<ProjectWithStats>('Project name'),
-    cell: ({ row }) => {
-      const displayName = (row.original.label || row.getValue('name')) as string
-      const tags = (row.original.tags || []) as TagInfo[]
+    header: 'Project',
+    columns: [
+      {
+        accessorKey: 'name',
+        header: createSortHeader<ProjectWithStats>('Name'),
+        cell: ({ row }) => {
+          const displayName = (row.original.label || row.getValue('name')) as string
+          const tags = (row.original.tags || []) as TagInfo[]
 
-      return h('div', { class: 'flex flex-col gap-1' }, [
-        h('div', { class: 'flex items-center gap-2' }, [
-          h('a', {
-            href: `/projects/${row.original.id}`,
-            class: 'text-primary hover:underline font-medium text-lg',
-            onClick: (e: MouseEvent) => {
-              e.preventDefault()
-              navigateTo(`/projects/${row.original.id}`)
-            }
-          }, displayName)
-        ]),
-        tags.length > 0
-          ? h('div', { class: 'flex flex-wrap gap-1' },
-              tags.map(tag =>
-                h(TagBadge, { text: tag.text, color: tag.color })
-              )
-            )
-          : null
-      ].filter(Boolean))
-    }
-  },
-  {
-    accessorKey: 'totalRuns',
-    header: createSortHeader<ProjectWithStats>('Test runs'),
-    cell: ({ row }) => {
-      const totalRuns = row.getValue('totalRuns') as ProjectWithStats['totalRuns']
+          return h('div', { class: 'flex flex-col gap-1' }, [
+            h('div', { class: 'flex items-center gap-2' }, [
+              h('a', {
+                href: `/projects/${row.original.id}`,
+                class: 'text-primary hover:underline font-medium',
+                onClick: (e: MouseEvent) => {
+                  e.preventDefault()
+                  navigateTo(`/projects/${row.original.id}`)
+                }
+              }, displayName)
+            ]),
+            tags.length > 0
+              ? h('div', { class: 'flex flex-wrap gap-1' },
+                  tags.map(tag =>
+                    h(TagBadge, { text: tag.text, color: tag.color })
+                  )
+                )
+              : null
+          ].filter(Boolean))
+        }
+      },
+      {
+        accessorKey: 'totalRuns',
+        header: createSortHeader<ProjectWithStats>('Runs'),
+        cell: ({ row }) => {
+          const totalRuns = row.getValue('totalRuns') as ProjectWithStats['totalRuns']
 
-      if (totalRuns === 0) {
-        return noData
+          if (totalRuns === 0) {
+            return noData
+          }
+
+          return `${totalRuns} runs`
+        }
       }
+    ]
+  },
+  {
+    accessorKey: 'latestRunData',
+    header: 'Latest run',
+    columns: [
+      {
+        accessorKey: 'latestRun',
+        header: createSortHeader<ProjectWithStats>('Date'),
+        cell: ({ row }) => {
+          const latestRun = row.getValue('latestRun') as ProjectWithStats['latestRun']
+          return latestRun ? formatDate(latestRun.startTime) : noData
+        }
+      },
+      {
+        accessorKey: 'branch',
+        header: 'Branch',
+        cell: ({ row }) => {
+          const latestRun = row.original.latestRun
+          const metadata = latestRun?.metadata
+          if (!metadata?.scm) return ''
+          const parts: ReturnType<typeof h>[] = []
+          if (metadata.scm.branch) {
+            parts.push(h('span', { class: 'text-xs font-medium bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded' }, metadata.scm.branch))
+          }
+          if (metadata.scm.commit) {
+            parts.push(h('code', { class: 'text-xs text-gray-500 ml-1' }, metadata.scm.commit.substring(0, 7)))
+          }
+          return parts.length > 0 ? h('div', { class: 'flex items-center gap-1 flex-wrap' }, parts) : ''
+        }
+      },
 
-      return `${totalRuns} runs`
-    }
-  },
-  {
-    accessorKey: 'latestRun',
-    header: createSortHeader<ProjectWithStats>('Last run'),
-    cell: ({ row }) => {
-      const latestRun = row.getValue('latestRun') as ProjectWithStats['latestRun']
-      return latestRun ? formatDate(latestRun.startTime) : noData
-    }
-  },
-  {
-    accessorKey: 'branch',
-    header: 'Branch',
-    cell: ({ row }) => {
-      const latestRun = row.original.latestRun
-      const metadata = latestRun?.metadata
-      if (!metadata?.scm) return ''
-      const parts: ReturnType<typeof h>[] = []
-      if (metadata.scm.branch) {
-        parts.push(h('span', { class: 'text-xs font-medium bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded' }, metadata.scm.branch))
-      }
-      if (metadata.scm.commit) {
-        parts.push(h('code', { class: 'text-xs text-gray-500 ml-1' }, metadata.scm.commit.substring(0, 7)))
-      }
-      return parts.length > 0 ? h('div', { class: 'flex items-center gap-1 flex-wrap' }, parts) : ''
-    }
-  },
-  {
-    accessorKey: 'duration',
-    header: createSortHeader<ProjectWithStats>('Duration'),
-    cell: ({ row }) => {
-      const latestRun = row.original.latestRun
-      return latestRun?.duration != null ? formatDuration(latestRun.duration) : noData
-    }
-  },
-  {
-    accessorKey: 'status',
-    header: createSortHeader<ProjectWithStats>('Status'),
-    cell: ({ row }) => {
-      const latestRun = row.original.latestRun
-      if (!latestRun) return noData
+      {
+        accessorKey: 'duration',
+        header: createSortHeader<ProjectWithStats>('Duration'),
+        cell: ({ row }) => {
+          const latestRun = row.original.latestRun
+          return latestRun?.duration != null ? formatDuration(latestRun.duration) : noData
+        }
+      },
+      {
+        accessorKey: 'status',
+        header: createSortHeader<ProjectWithStats>('Status'),
+        cell: ({ row }) => {
+          const latestRun = row.original.latestRun
+          if (!latestRun) return noData
 
-      return h(RunStatusBadge, { status: latestRun.status })
-    }
-  },
-  {
-    accessorKey: 'testRatio',
-    header: 'Test status',
-    cell: ({ row }) => {
-      const latestRun = row.original.latestRun
-      if (!latestRun) return noData
+          return h(RunStatusBadge, { status: latestRun.status })
+        }
+      },
+      {
+        accessorKey: 'testRatio',
+        header: 'Test status',
+        cell: ({ row }) => {
+          const latestRun = row.original.latestRun
+          if (!latestRun) return noData
 
-      return h(TestStatusBar, {
-        passed: latestRun.passedTests,
-        failed: latestRun.failedTests,
-        skipped: latestRun.skippedTests,
-        flaky: latestRun.flakyTests,
-        total: latestRun.totalTests
-      })
-    }
-  },
-  {
-    accessorKey: 'report',
-    header: 'Reports',
-    cell: ({ row }) => {
-      const latestRun = row.original.latestRun
-      if (!latestRun) return ''
-      return h(RunReports, {
-        reports: latestRun.reports,
-        legacyPath: latestRun.reportPath,
-        legacySize: latestRun.reportSize
-      })
-    }
+          return h(TestStatusBar, {
+            passed: latestRun.passedTests,
+            failed: latestRun.failedTests,
+            skipped: latestRun.skippedTests,
+            flaky: latestRun.flakyTests,
+            total: latestRun.totalTests
+          })
+        }
+      },
+      {
+        accessorKey: 'report',
+        header: 'Reports',
+        cell: ({ row }) => {
+          const latestRun = row.original.latestRun
+          if (!latestRun) return ''
+          return h(RunReports, {
+            reports: latestRun.reports,
+            legacyPath: latestRun.reportPath,
+            legacySize: latestRun.reportSize
+          })
+        }
+      },
+    ],
   },
   {
     accessorKey: 'actions',
-    header: () => h('div', { class: 'text-right' }, 'Actions'),
+    header: () => h('div', { class: 'text-right' }, 'Project actions'),
     cell: ({ row }) => {
       const UButton = resolveComponent('UButton')
       return h('div', { class: 'flex justify-end gap-2' }, [
