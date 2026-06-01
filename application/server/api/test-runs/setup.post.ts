@@ -54,6 +54,7 @@ export default eventHandler(async (event) => {
     passedTests: 0,
     failedTests: 0,
     skippedTests: 0,
+    environment: body.environment || null,
     metadata: null,
     streamToken: setupToken
   }).returning()

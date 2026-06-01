@@ -26,6 +26,7 @@ export const testRuns = pgTable('test_runs', {
   p90TestDuration: integer('p90_test_duration'), // 90th percentile test duration in ms
   reportPath: text('report_path'),
   reportSize: integer('report_size'), // in bytes (decompressed size)
+  environment: text('environment'), // Deployment environment (e.g. 'production', 'staging', 'development')
   metadata: jsonb('metadata'), // Additional metadata as JSON
   streamToken: text('stream_token'), // Token for authenticating streaming updates
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date()),

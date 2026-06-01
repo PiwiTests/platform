@@ -47,6 +47,7 @@ export default defineConfig({
 | `streamingBatchSize`        | number   | `5`                       | Number of test results to batch before sending                                |
 | `streamingBatchDelay`       | number   | `2000`                    | Max delay (ms) before flushing pending events                                 |
 | `projectDescription`        | string   | —                         | Description of the project                                                    |
+| `environment`               | string   | —                         | Deployment environment for this run, e.g. `"production"`, `"staging"`, `"integration"` |
 | `relatedIssue`              | string   | —                         | Related issue reference, e.g. `"JIRA-123"`                                    |
 | `ciInfo`                    | string   | —                         | CI job information                                                            |
 | `tags`                      | string[] | —                         | Tags to categorize the test run                                               |
@@ -209,10 +210,10 @@ export default defineConfig({
       serverUrl: 'http://localhost:3000',
       projectName: 'my-project',
       projectDescription: 'End-to-end tests for the main application',
+      environment: 'staging',
       relatedIssue: 'PROJ-123',
       tags: ['regression', 'critical'],
       customData: {
-        environment: 'staging',
         version: '1.2.3',
       },
     }],

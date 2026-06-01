@@ -33,6 +33,36 @@ async function handleDeleteRun(runId: number) {
   }
 }
 
+// Environment filter state
+const selectedEnvironments = ref<string[]>([])
+
+const availableEnvironments = computed(() => {
+  const envs = new Set<string>()
+  for (const run of project.value?.testRuns || []) {
+    if (run.environment) envs.add(run.environment)
+  }
+  return [...envs].sort()
+})
+
+function toggleEnvironmentFilter(env: string) {
+  const idx = selectedEnvironments.value.indexOf(env)
+  if (idx === -1) {
+    selectedEnvironments.value.push(env)
+  } else {
+    selectedEnvironments.value.splice(idx, 1)
+  }
+}
+
+function isEnvironmentFilterActive(env: string) {
+  return selectedEnvironments.value.includes(env)
+}
+
+const filteredRuns = computed(() => {
+  const runs = project.value?.testRuns || []
+  if (selectedEnvironments.value.length === 0) return runs
+  return runs.filter(r => r.environment && selectedEnvironments.value.includes(r.environment))
+})
+
 const RunStatusBadge = resolveComponent('RunStatusBadge')
 const TestStatusBar = resolveComponent('TestStatusBar')
 const RunReports = resolveComponent('RunReports')
@@ -61,6 +91,15 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
     accessorKey: 'startTime',
     header: createSortHeader<TestRunSummary>('Started'),
     cell: ({ row }) => formatDate(row.getValue('startTime'))
+  },
+  {
+    accessorKey: 'environment',
+    header: createSortHeader<TestRunSummary>('Environment'),
+    cell: ({ row }) => {
+      const env = row.original.environment
+      if (!env) return ''
+      return h('span', { class: 'text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded' }, env)
+    }
   },
   {
     accessorKey: 'metadata',
@@ -216,9 +255,38 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
               Test runs
             </h2>
           </template>
+
+          <!-- Environment filter -->
+          <div v-if="availableEnvironments.length > 0" class="flex flex-wrap items-center gap-2 mb-4">
+            <span class="text-sm text-muted shrink-0">Filter by environment:</span>
+            <button
+              v-for="env in availableEnvironments"
+              :key="env"
+              type="button"
+              :class="[
+                'text-xs font-medium px-2 py-1 rounded border cursor-pointer focus:outline-none transition-colors',
+                isEnvironmentFilterActive(env)
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-800'
+              ]"
+              @click="toggleEnvironmentFilter(env)"
+            >
+              {{ env }}
+            </button>
+            <UButton
+              v-if="selectedEnvironments.length > 0"
+              size="xs"
+              variant="ghost"
+              color="neutral"
+              icon="i-lucide-x"
+              label="Clear filter"
+              @click="selectedEnvironments = []"
+            />
+          </div>
+
           <UTable
-            v-if="project?.testRuns && project.testRuns.length > 0"
-            :data="project.testRuns"
+            v-if="filteredRuns.length > 0"
+            :data="filteredRuns"
             :columns="runsColumns"
             :ui="{
               base: 'table-fixed border-separate border-spacing-0',
@@ -228,6 +296,10 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
               td: 'border-b border-default'
             }"
           />
+
+          <div v-else-if="project?.testRuns && project.testRuns.length > 0" class="text-center py-8 text-gray-500">
+            No test runs match the selected environment filter.
+          </div>
 
           <div v-else class="text-center py-8 text-gray-500">
             No test runs yet for this project.

@@ -25,6 +25,7 @@ Submit test results as JSON. The project is created automatically if it doesn't 
   "passedTests": 9,
   "failedTests": 1,
   "skippedTests": 0,
+  "environment": "production",
   "testCases": [
     {
       "title": "should login successfully",
@@ -68,7 +69,7 @@ Upload test results together with HTML reports and/or trace files using multipar
 ```bash
 curl -X POST http://localhost:3000/api/test-runs/upload \
   -F "projectName=my-project" \
-  -F 'testRun={"status":"passed","startTime":"2024-01-01T12:00:00Z","duration":120000,"totalTests":1,"passedTests":1,"failedTests":0,"skippedTests":0}' \
+  -F 'testRun={"status":"passed","startTime":"2024-01-01T12:00:00Z","duration":120000,"totalTests":1,"passedTests":1,"failedTests":0,"skippedTests":0,"environment":"production"}' \
   -F 'testCases=[{"title":"test 1","status":"passed","duration":1500,"location":"tests/test.spec.ts:10:5"}]' \
   -F "report_html=@./playwright-report.gz" \
   -F "trace_0=@./test-results/test-1/trace.zip"
@@ -115,6 +116,7 @@ Start a new streaming test run. Returns a `runId` and `streamToken` for subseque
   "projectName": "my-project",
   "projectDescription": "Optional description",
   "startTime": "2024-01-01T12:00:00Z",
+  "environment": "staging",
   "metadata": {}
 }
 ```

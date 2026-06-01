@@ -186,6 +186,7 @@ export interface TestRunSummary {
   reportPath?: string | null
   reportSize?: number | null
   reports?: ReportInfo[]
+  environment?: string | null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null
   createdAt: Date
@@ -211,6 +212,7 @@ export interface TestRunDetails {
   reportSize?: number | null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null
+  environment?: string | null
   createdAt: Date
   project?: {
     id: number
@@ -449,6 +451,7 @@ export interface TestRunSubmitBody {
   failedTests: number
   skippedTests: number
   flakyTests?: number
+  environment?: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any
   testCases?: Array<{

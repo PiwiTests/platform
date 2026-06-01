@@ -266,6 +266,7 @@ export default eventHandler(async (event) => {
       skippedTests: (testRunData.skippedTests as number | undefined) || 0,
       reportPath: primaryReportPath,
       reportSize: primaryReportSize,
+      environment: (testRunData.environment as string | null | undefined) || null,
       metadata: testRunData.metadata || null
     }).returning()
 

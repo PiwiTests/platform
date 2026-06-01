@@ -16,5 +16,12 @@
       "tag": "0001_add_stream_token_and_updated_at",
       "breakpoints": true
     }
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1748750800000,
+      "tag": "0002_add_environment_test_runs",
+      "breakpoints": true
+    }
   ]
 }
