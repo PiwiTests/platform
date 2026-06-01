@@ -58,7 +58,7 @@ const xyContainerRef = ref<any>(null)
 const tooltipData = ref<DataPoint | null>(null)
 const tooltipPos = ref({ x: 0, y: 0 })
 
-const yAccessors: { fn: (d: DataPoint) => number; color: string }[] = [
+const yAccessors: { fn: (d: DataPoint) => number, color: string }[] = [
   { fn: (d: DataPoint) => d.passed, color: areaColors[0] },
   { fn: (d: DataPoint) => d.failed, color: areaColors[1] },
   { fn: (d: DataPoint) => d.skipped, color: areaColors[2] },
@@ -69,7 +69,7 @@ const NS = 'http://www.w3.org/2000/svg'
 
 function addMarkers(
   svgNode: SVGSVGElement,
-  margin: { top: number; bottom: number; left: number; right: number }
+  margin: { top: number, bottom: number, left: number, right: number }
 ) {
   svgNode.querySelectorAll('.chart-marker').forEach(el => el.remove())
 
@@ -128,7 +128,7 @@ function addMarkers(
 
 function onChartRender(
   svgNode: SVGSVGElement,
-  margin: { top: number; bottom: number; left: number; right: number }
+  margin: { top: number, bottom: number, left: number, right: number }
 ) {
   addMarkers(svgNode, margin)
 }

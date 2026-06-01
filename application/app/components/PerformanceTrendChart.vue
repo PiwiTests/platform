@@ -53,7 +53,10 @@ const xyContainerRef = ref<any>(null)
 const tooltipData = ref<DataPoint | null>(null)
 const tooltipPos = ref({ x: 0, y: 0 })
 
-const yAccessors: { fn: (d: DataPoint) => number | null | undefined; color: string }[] = [
+const yAccessors: {
+  fn: (d: DataPoint) => number | null | undefined
+  color: string
+}[] = [
   { fn: (d: DataPoint) => d.duration, color: lineColors[0] },
   { fn: (d: DataPoint) => d.avgTestDuration, color: lineColors[1] },
   { fn: (d: DataPoint) => d.p90TestDuration, color: lineColors[2] },
@@ -63,7 +66,12 @@ const NS = 'http://www.w3.org/2000/svg'
 
 function addMarkers(
   svgNode: SVGSVGElement,
-  margin: { top: number; bottom: number; left: number; right: number }
+  margin: {
+    top: number
+    bottom: number
+    left: number
+    right: number
+  }
 ) {
   svgNode.querySelectorAll('.chart-marker').forEach(el => el.remove())
 
@@ -124,7 +132,12 @@ function addMarkers(
 
 function onChartRender(
   svgNode: SVGSVGElement,
-  margin: { top: number; bottom: number; left: number; right: number }
+  margin: {
+    top: number
+    bottom: number
+    left: number
+    right: number
+  }
 ) {
   addMarkers(svgNode, margin)
 }
