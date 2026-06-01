@@ -21,7 +21,7 @@ export interface RunEvent {
 }
 
 export interface GlobalRunEvent {
-  type: 'run-started' | 'run-initialising' | 'run-finished' | 'run-submitted'
+  type: 'run-started' | 'run-initialising' | 'run-finished' | 'run-submitted' | 'run-cancelled'
   runId: number
   projectId: number
   status?: string

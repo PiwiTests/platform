@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { getDatabase } from '../../../database'
 import { testRuns } from '../../../database/schema'
 import { eq } from 'drizzle-orm'
+import { cancelInstanceRuns } from '../../../utils/cancel-instance-runs'
 import { runEventBus } from '../../../utils/run-events'
 
 export default eventHandler(async (event) => {
@@ -50,6 +51,10 @@ export default eventHandler(async (event) => {
       message: 'Invalid setup token'
     })
   }
+
+  // Cancel other running/initialising runs from the same instance before this
+  // one becomes active — they belong to a previous invocation.
+  await cancelInstanceRuns(db, testRun.projectId, testRun.instanceId, id)
 
   // Generate a new stream token for the running phase
   const streamToken = randomBytes(32).toString('hex')

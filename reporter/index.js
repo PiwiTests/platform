@@ -46,6 +46,8 @@ class PlaywrightDashboardReporter {
     this.skippedTests = 0;
     this.timedOutTests = 0;
 
+    this.instanceId = computeInstanceId(this.options.projectName);
+
     // Streaming state
     this.streamingRunId = null;
     this.streamToken = null;
@@ -106,7 +108,8 @@ class PlaywrightDashboardReporter {
       projectDescription: this.options.projectDescription,
       startTime: this.startTime,
       environment: this.options.environment || null,
-      metadata: this.metadata
+      metadata: this.metadata,
+      instanceId: this.instanceId
     };
 
     // Fire and forget — we'll check this.streamingEnabled later
@@ -567,6 +570,7 @@ class PlaywrightDashboardReporter {
       skippedTests: this.skippedTests,
       environment: this.options.environment || null,
       metadata: this.metadata,
+      instanceId: this.instanceId,
       testCases: this.testCases.map(tc => {
         const { type, ...tcRest } = tc
         return {
@@ -614,7 +618,8 @@ class PlaywrightDashboardReporter {
       skippedTests: this.skippedTests,
       environment: this.options.environment || null,
       metadata: this.metadata,
-      projectDescription: this.options.projectDescription
+      projectDescription: this.options.projectDescription,
+      instanceId: this.instanceId
     };
     form.append('testRun', JSON.stringify(testRunData));
 
@@ -757,6 +762,19 @@ function getSetupFilePath(projectName) {
   return path.join(os.tmpdir(), `playwright-dashboard-setup-${hash}.json`);
 }
 
+/**
+ * Compute a stable instance identifier based on machine and project.
+ * Re-running from the same machine + project produces the same ID,
+ * so the server can cancel previous hung runs without affecting
+ * runs from other machines.
+ */
+function computeInstanceId(projectName) {
+  return crypto.createHash('sha256')
+    .update([os.hostname(), projectName].join('|'))
+    .digest('hex')
+    .slice(0, 16);
+}
+
 module.exports = PlaywrightDashboardReporter;
 
 /**
@@ -794,7 +812,8 @@ module.exports.createGlobalSetup = function createGlobalSetup(options, userSetup
           projectName,
           projectDescription: options.projectDescription,
           environment: options.environment || null,
-          startTime: new Date().toISOString()
+          startTime: new Date().toISOString(),
+          instanceId: computeInstanceId(projectName)
         },
         options.verbose,
         cookieOrApiKey

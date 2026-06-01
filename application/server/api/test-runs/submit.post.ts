@@ -52,7 +52,8 @@ export default eventHandler(async (event) => {
     skippedTests: body.skippedTests || 0,
     reportPath: body.reportPath || null,
     environment: body.environment || null,
-    metadata: body.metadata || null
+    metadata: body.metadata || null,
+    instanceId: body.instanceId || null
   }).returning()
 
   const testRun = testRunResult[0]
