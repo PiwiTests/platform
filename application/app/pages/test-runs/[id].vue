@@ -62,9 +62,10 @@ function connectToStream() {
           // Update the existing "running" entry with final status
           const idx = liveTestCases.value.findIndex(tc => `${tc.title}@@${tc.location}` === key)
           if (idx >= 0) {
-            liveTestCases.value[idx].status = parsed.data.status
-            liveTestCases.value[idx].duration = parsed.data.duration
-            liveTestCases.value[idx].error = parsed.data.error
+            const tc = liveTestCases.value[idx]!
+            tc.status = parsed.data.status
+            tc.duration = parsed.data.duration
+            tc.error = parsed.data.error
           }
         } else {
           // No test-begin event arrived (e.g. catch-up), add fresh
