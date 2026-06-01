@@ -44,10 +44,31 @@ function connectToStream() {
           failedTests: parsed.data.failedTests,
           skippedTests: parsed.data.skippedTests
         }
-      } else if (parsed.type === 'test-completed') {
-        // Avoid duplicates using O(1) Map lookup (catch-up events have seq 0)
+      } else if (parsed.type === 'test-begin') {
+        // Add a "running" entry for this test — visible in the dashboard immediately
         const key = `${parsed.data.title}@@${parsed.data.location}`
         if (!liveTestCaseKeys.has(key)) {
+          liveTestCaseKeys.set(key, true)
+          liveTestCases.value.push({
+            id: liveTestCases.value.length + 1,
+            title: parsed.data.title,
+            status: 'running',
+            location: parsed.data.location
+          })
+        }
+      } else if (parsed.type === 'test-completed') {
+        const key = `${parsed.data.title}@@${parsed.data.location}`
+        if (liveTestCaseKeys.has(key)) {
+          // Update the existing "running" entry with final status
+          const idx = liveTestCases.value.findIndex(tc => `${tc.title}@@${tc.location}` === key)
+          if (idx >= 0) {
+            const tc = liveTestCases.value[idx]!
+            tc.status = parsed.data.status
+            tc.duration = parsed.data.duration
+            tc.error = parsed.data.error
+          }
+        } else {
+          // No test-begin event arrived (e.g. catch-up), add fresh
           liveTestCaseKeys.set(key, true)
           liveTestCases.value.push({
             id: liveTestCases.value.length + 1,

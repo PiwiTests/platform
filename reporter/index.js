@@ -46,11 +46,14 @@ class PlaywrightDashboardReporter {
     this.skippedTests = 0;
     this.timedOutTests = 0;
 
+    this.instanceId = computeInstanceId(this.options.projectName);
+
     // Streaming state
     this.streamingRunId = null;
     this.streamToken = null;
     this.streamingEnabled = false;
     this.pendingEvents = [];
+    this.pendingBeginEvents = [];
     this.flushTimer = null;
     this.flushPromises = [];
 
@@ -105,7 +108,8 @@ class PlaywrightDashboardReporter {
       projectDescription: this.options.projectDescription,
       startTime: this.startTime,
       environment: this.options.environment || null,
-      metadata: this.metadata
+      metadata: this.metadata,
+      instanceId: this.instanceId
     };
 
     // Fire and forget — we'll check this.streamingEnabled later
@@ -140,6 +144,15 @@ class PlaywrightDashboardReporter {
           self.streamToken = response.streamToken;
           self.streamingEnabled = true;
           console.log(`[Playwright Dashboard] Streaming enabled. Run ID: ${response.runId}`);
+
+          // Flush any begin events that arrived before streaming was ready
+          if (self.pendingBeginEvents.length > 0) {
+            for (const evt of self.pendingBeginEvents) {
+              self.pendingEvents.push(evt);
+            }
+            self.pendingBeginEvents = [];
+            self._flushStreamEvents();
+          }
         }
       } catch (error) {
         // Server might not support streaming — fall back to batch mode
@@ -151,6 +164,26 @@ class PlaywrightDashboardReporter {
     })();
   }
 
+  onTestBegin(test) {
+    // Convert absolute file path to relative path from project root
+    const relativeFilePath = path.relative(process.cwd(), test.location.file);
+
+    const beginEvent = {
+      type: 'begin',
+      title: test.title,
+      location: `${relativeFilePath}:${test.location.line}:${test.location.column}`
+    };
+
+    if (this.streamingEnabled && this.streamingRunId) {
+      this._queueStreamEvent(beginEvent);
+      // Flush immediately so the dashboard sees test starts in real-time
+      this._flushStreamEvents();
+    } else {
+      // Streaming not yet ready — buffer for later flush
+      this.pendingBeginEvents.push(beginEvent);
+    }
+  }
+
   onTestEnd(test, result) {
     this.totalTests++;
 
@@ -158,6 +191,7 @@ class PlaywrightDashboardReporter {
     const relativeFilePath = path.relative(process.cwd(), test.location.file);
 
     const testCase = {
+      type: 'complete',
       title: test.title,
       location: `${relativeFilePath}:${test.location.line}:${test.location.column}`,
       status: result.status,
@@ -224,10 +258,10 @@ class PlaywrightDashboardReporter {
    */
   _queueStreamEvent(testCase) {
     this.pendingEvents.push({
+      type: testCase.type || 'complete',
       title: testCase.title,
       location: testCase.location,
       status: testCase.status,
-      duration: testCase.duration,
       error: testCase.error,
       retries: testCase.retries,
       steps: testCase.performanceMetrics && testCase.performanceMetrics.steps || null,
@@ -536,19 +570,23 @@ class PlaywrightDashboardReporter {
       skippedTests: this.skippedTests,
       environment: this.options.environment || null,
       metadata: this.metadata,
-      testCases: this.testCases.map(tc => ({
-        title: tc.title,
-        location: tc.location,
-        status: tc.status,
-        duration: tc.duration,
-        error: tc.error,
-        retries: tc.retries,
-        steps: tc.performanceMetrics && tc.performanceMetrics.steps || null,
-        slowestStep: tc.performanceMetrics && tc.performanceMetrics.slowestStep && tc.performanceMetrics.slowestStep.title || null,
-        slowestStepDuration: tc.performanceMetrics && tc.performanceMetrics.slowestStep && tc.performanceMetrics.slowestStep.duration || null,
-        networkRequests: tc.networkRequests || null,
-        webVitals: tc.webVitals || null
-      }))
+      instanceId: this.instanceId,
+      testCases: this.testCases.map(tc => {
+        const { type, ...tcRest } = tc
+        return {
+          title: tcRest.title,
+          location: tcRest.location,
+          status: tcRest.status,
+          duration: tcRest.duration,
+          error: tcRest.error,
+          retries: tcRest.retries,
+          steps: tcRest.performanceMetrics && tcRest.performanceMetrics.steps || null,
+          slowestStep: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.title || null,
+          slowestStepDuration: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.duration || null,
+          networkRequests: tcRest.networkRequests || null,
+          webVitals: tcRest.webVitals || null
+        }
+      })
     };
 
     try {
@@ -580,26 +618,28 @@ class PlaywrightDashboardReporter {
       skippedTests: this.skippedTests,
       environment: this.options.environment || null,
       metadata: this.metadata,
-      projectDescription: this.options.projectDescription
+      projectDescription: this.options.projectDescription,
+      instanceId: this.instanceId
     };
     form.append('testRun', JSON.stringify(testRunData));
 
     // Add test cases
     const testCasesData = this.testCases.map((tc, index) => {
+      const { type, ...tcRest } = tc;
       // Store the index for trace file mapping
-      tc.index = index;
+      tcRest.index = index;
       return {
-        title: tc.title,
-        location: tc.location,
-        status: tc.status,
-        duration: tc.duration,
-        error: tc.error,
-        retries: tc.retries,
-        steps: tc.performanceMetrics && tc.performanceMetrics.steps || null,
-        slowestStep: tc.performanceMetrics && tc.performanceMetrics.slowestStep && tc.performanceMetrics.slowestStep.title || null,
-        slowestStepDuration: tc.performanceMetrics && tc.performanceMetrics.slowestStep && tc.performanceMetrics.slowestStep.duration || null,
-        networkRequests: tc.networkRequests || null,
-        webVitals: tc.webVitals || null
+        title: tcRest.title,
+        location: tcRest.location,
+        status: tcRest.status,
+        duration: tcRest.duration,
+        error: tcRest.error,
+        retries: tcRest.retries,
+        steps: tcRest.performanceMetrics && tcRest.performanceMetrics.steps || null,
+        slowestStep: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.title || null,
+        slowestStepDuration: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.duration || null,
+        networkRequests: tcRest.networkRequests || null,
+        webVitals: tcRest.webVitals || null
       };
     });
     form.append('testCases', JSON.stringify(testCasesData));
@@ -722,6 +762,19 @@ function getSetupFilePath(projectName) {
   return path.join(os.tmpdir(), `playwright-dashboard-setup-${hash}.json`);
 }
 
+/**
+ * Compute a stable instance identifier based on machine and project.
+ * Re-running from the same machine + project produces the same ID,
+ * so the server can cancel previous hung runs without affecting
+ * runs from other machines.
+ */
+function computeInstanceId(projectName) {
+  return crypto.createHash('sha256')
+    .update([os.hostname(), projectName].join('|'))
+    .digest('hex')
+    .slice(0, 16);
+}
+
 module.exports = PlaywrightDashboardReporter;
 
 /**
@@ -759,7 +812,8 @@ module.exports.createGlobalSetup = function createGlobalSetup(options, userSetup
           projectName,
           projectDescription: options.projectDescription,
           environment: options.environment || null,
-          startTime: new Date().toISOString()
+          startTime: new Date().toISOString(),
+          instanceId: computeInstanceId(projectName)
         },
         options.verbose,
         cookieOrApiKey

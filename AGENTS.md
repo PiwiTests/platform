@@ -32,9 +32,9 @@ SQLite database auto-initializes on first API call.
 ## Architecture
 
 ### Database
-- **ORM**: Drizzle ORM + better-sqlite3
+- **ORM**: Drizzle ORM (SQLite via libSQL, or PostgreSQL via postgres.js)
 - **Schema**: `application/server/database/schema.ts`
-- **Migrations**: `application/server/database/migrations/` (auto-run on startup)
+- **Migrations**: `application/server/database/migrations/` (SQLite) or `migrations-pg/` (PostgreSQL, auto-run on startup based on `DATABASE_URL`)
 - **Tables**: `projects`, `test_runs`, `test_cases`, `test_runs_cases`, `traces`, `users`
 
 ### Backend (server/api/)
@@ -69,6 +69,7 @@ Nuxt file-based routing:
 - Keep it simple (AI-friendly codebase)
 - Full TypeScript, Nuxt 4 conventions, Nuxt UI components
 - Sentence case in UI (e.g., "Test runs"), relative dates with date-fns, human-readable durations
+- Use American English spelling throughout (e.g., "initialize", "organize", "color")
 
 ## Environment
 - `.env.example` in `application/` — `NUXT_PUBLIC_SITE_URL` (optional)
@@ -91,7 +92,8 @@ Nuxt file-based routing:
 
 ## Making Changes
 
-- **DB fields**: Update `schema.ts` → `npm run db:generate` → review migration → restart
+- **DB fields**: Update `schema.ts` → `npm run db:generate` (or `db:generate:pg` for PostgreSQL) → review migration → restart
+  ⚠ Never create migration files or edit `_journal.json` manually — always use `npm run db:generate`.
 - **API endpoints**: Create file in `server/api/` → use `eventHandler()` + `getDatabase()`
 - **Pages**: Create Vue file in `app/pages/` → use `<UDashboardPanel>` + `useFetch()`
 - **Navigation**: Edit `app/layouts/default.vue` links array
@@ -113,6 +115,7 @@ Nuxt file-based routing:
 - Port 3000 in use? Use `PORT=3001 npm run dev`
 - Tests failing? Ensure no dev server on port 3000 (tests start their own)
 - Reporter not found? `npm link` in `reporter/` then in target project
+- Migration not applying? If a migration file or `_journal.json` was created by hand (not via `npm run db:generate`), the Drizzle migrator may silently skip it — delete the hand-written migration, revert the journal entry, run `npm run db:generate` (or `db:generate:pg` for PostgreSQL), and manually run `ALTER TABLE ... ADD COLUMN` on the existing database if needed.
 
 ## Testing API
 

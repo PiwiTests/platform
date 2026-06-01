@@ -14,7 +14,7 @@ export const projects = sqliteTable('projects', {
 export const testRuns = sqliteTable('test_runs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   projectId: integer('project_id').notNull().references(() => projects.id),
-  status: text('status').notNull(), // 'passed', 'failed', 'timedout', 'interrupted', 'running'
+  status: text('status').notNull(), // 'passed', 'failed', 'timedout', 'interrupted', 'running', 'cancelled'
   startTime: integer('start_time', { mode: 'timestamp' }).notNull(),
   duration: integer('duration'), // in milliseconds
   totalTests: integer('total_tests').notNull().default(0),
@@ -29,6 +29,7 @@ export const testRuns = sqliteTable('test_runs', {
   environment: text('environment'), // Deployment environment (e.g. 'production', 'staging', 'development')
   metadata: text('metadata', { mode: 'json' }), // Additional metadata as JSON
   streamToken: text('stream_token'), // Token for authenticating streaming updates
+  instanceId: text('instance_id'), // Unique identifier for the reporter instance that created this run
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date())
 }, table => ({

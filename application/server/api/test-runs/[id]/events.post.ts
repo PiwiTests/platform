@@ -92,8 +92,31 @@ export default eventHandler(async (event) => {
 
   const validEvents = testCaseEvents.filter((tc: { title?: string }) => tc && tc.title)
 
+  // Split into begin events and complete events
+  const beginEvents = validEvents.filter((tc: { type?: string }) => tc.type === 'begin')
+  const completeEvents = validEvents.filter((tc: { type?: string }) => tc.type !== 'begin')
+
+  // --- Handle begin events (test started, no DB persistence needed) ---
+  for (const tc of beginEvents) {
+    runEventBus.publish(id, {
+      type: 'test-begin',
+      data: {
+        title: tc.title,
+        location: tc.location
+      }
+    })
+  }
+
+  // --- Handle complete events (test finished, persist to DB) ---
+  if (completeEvents.length === 0) {
+    return {
+      success: true,
+      processed: beginEvents.length
+    }
+  }
+
   // Parse all locations up front
-  const parsedEvents = validEvents.map((tc: { title: string, location?: string, status?: string, duration?: number, error?: string, retries?: number, steps?: unknown, slowestStep?: string, slowestStepDuration?: number, networkRequests?: unknown, webVitals?: unknown }) => {
+  const parsedEvents = completeEvents.map((tc: { title: string, location?: string, status?: string, duration?: number, error?: string, retries?: number, steps?: unknown, slowestStep?: string, slowestStepDuration?: number, networkRequests?: unknown, webVitals?: unknown }) => {
     const { filePath, line, column } = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null }
     return { ...tc, filePath, line, column }
   })
@@ -164,7 +187,7 @@ export default eventHandler(async (event) => {
   }
 
   // Atomically increment run counters to avoid lost updates under concurrent requests
-  const statusCounts = validEvents.reduce((acc: Record<string, number>, tc: { status?: string }) => {
+  const statusCounts = completeEvents.reduce((acc: Record<string, number>, tc: { status?: string }) => {
     if (tc.status) acc[tc.status] = (acc[tc.status] || 0) + 1
     return acc
   }, {} as Record<string, number>)
@@ -172,7 +195,7 @@ export default eventHandler(async (event) => {
   const updatedRuns = await db.update(testRuns)
     .set({
       updatedAt: new Date(),
-      totalTests: sql`${testRuns.totalTests} + ${validEvents.length}`,
+      totalTests: sql`${testRuns.totalTests} + ${completeEvents.length}`,
       passedTests: sql`${testRuns.passedTests} + ${statusCounts['passed'] || 0}`,
       failedTests: sql`${testRuns.failedTests} + ${statusCounts['failed'] || 0}`,
       skippedTests: sql`${testRuns.skippedTests} + ${statusCounts['skipped'] || 0}`
@@ -182,7 +205,7 @@ export default eventHandler(async (event) => {
 
   const updatedRun = updatedRuns[0] ?? testRun
 
-  // Publish events to SSE subscribers
+  // Publish test-completed events to SSE subscribers
   for (const tc of parsedEvents) {
     runEventBus.publish(id, {
       type: 'test-completed',
@@ -209,6 +232,6 @@ export default eventHandler(async (event) => {
 
   return {
     success: true,
-    processed: results.length
+    processed: results.length + beginEvents.length
   }
 })

@@ -3,6 +3,7 @@ import { getDatabase } from '../../database'
 import { projects, testRuns } from '../../database/schema'
 import { eq } from 'drizzle-orm'
 import { requireAuth } from '../../utils/auth'
+import { cancelInstanceRuns } from '../../utils/cancel-instance-runs'
 import { runEventBus } from '../../utils/run-events'
 
 export default eventHandler(async (event) => {
@@ -40,6 +41,9 @@ export default eventHandler(async (event) => {
     })
   }
 
+  const instanceId = body.instanceId || null
+  await cancelInstanceRuns(db, project.id, instanceId)
+
   // Generate a stream token for authenticating subsequent streaming updates
   const streamToken = randomBytes(32).toString('hex')
 
@@ -55,6 +59,7 @@ export default eventHandler(async (event) => {
     skippedTests: 0,
     environment: body.environment || null,
     metadata: body.metadata || null,
+    instanceId,
     streamToken
   }).returning()
 
