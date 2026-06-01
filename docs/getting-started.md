@@ -158,3 +158,5 @@ Run these from the `application/` directory:
 | `npm run db:studio` | Open Drizzle Studio to browse the SQLite database |
 | `npm run db:studio:pg` | Open Drizzle Studio to browse the PostgreSQL database |
 | `npm run seed:demo` | Regenerate demo seed data for the live demo |
+
+> **Migration workflow:** edit `server/database/schema.ts` → run `npm run db:generate` (SQLite) or `npm run db:generate:pg` (PostgreSQL) → review the generated `.sql` file → restart the app. Never create migration files or edit `meta/_journal.json` by hand — the Drizzle migrator depends on the journal to track which migrations have been applied, and manual entries cause it to silently skip the migration.
