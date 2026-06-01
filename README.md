@@ -43,6 +43,7 @@ Running Playwright tests in CI produces HTML reports that are ephemeral — once
 
 - 📊 **Test results storage** — store complete Playwright test run data (status, duration, retries, errors, flaky detection)
 - 🎯 **Project organization** — tests organized by project with tags, labels, and descriptions; auto-created on first submit
+- 🌍 **Environment tracking** — tag runs with a deployment environment (e.g. `production`, `staging`, `integration`) and filter by it in the run list
 - 📈 **Performance tracking** — step-level timing, avg/P90 duration trends, slowest-tests analysis
 - 🌐 **Network request analysis** — find slow API endpoints grouped by method + normalized route
 - 🔬 **Browser Web Vitals** — TTFB, DOMContentLoaded, FCP and more via the Performance API
@@ -104,7 +105,7 @@ Results appear automatically in the dashboard. The project is created on first s
 |------|---------------|
 | **Home** | Aggregate stats (total projects, runs, passing rate, flaky count), test results trend chart, recent projects |
 | **Projects** | Searchable/filterable table of all projects with last-run status, duration, test ratio, and report links |
-| **Project detail** | Full run history for a single project with status badges and test breakdowns |
+| **Project detail** | Full run history for a single project with status badges, test breakdowns, and environment filter |
 | **Performance** | Avg/P90 duration trend chart, top 20 slowest tests, side-by-side run comparison |
 | **Test cases** | Per-project view of all unique test cases with pass/fail history |
 | **Test run detail** | Every test case in a run with status, duration, location, error messages, traces, and reports |

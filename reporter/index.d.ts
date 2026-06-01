@@ -56,6 +56,11 @@ export interface DashboardReporterOptions {
   projectDescription?: string;
 
   /**
+   * Deployment environment for this test run (e.g. 'production', 'staging', 'development', 'integration')
+   */
+  environment?: string;
+
+  /**
    * Related issue reference (e.g., JIRA ticket)
    */
   relatedIssue?: string;

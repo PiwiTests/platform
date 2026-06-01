@@ -104,6 +104,7 @@ class PlaywrightDashboardReporter {
       projectName: this.options.projectName,
       projectDescription: this.options.projectDescription,
       startTime: this.startTime,
+      environment: this.options.environment || null,
       metadata: this.metadata
     };
 
@@ -533,6 +534,7 @@ class PlaywrightDashboardReporter {
       passedTests: this.passedTests,
       failedTests: this.failedTests,
       skippedTests: this.skippedTests,
+      environment: this.options.environment || null,
       metadata: this.metadata,
       testCases: this.testCases.map(tc => ({
         title: tc.title,
@@ -576,6 +578,7 @@ class PlaywrightDashboardReporter {
       passedTests: this.passedTests,
       failedTests: this.failedTests,
       skippedTests: this.skippedTests,
+      environment: this.options.environment || null,
       metadata: this.metadata,
       projectDescription: this.options.projectDescription
     };
@@ -755,6 +758,7 @@ module.exports.createGlobalSetup = function createGlobalSetup(options, userSetup
         {
           projectName,
           projectDescription: options.projectDescription,
+          environment: options.environment || null,
           startTime: new Date().toISOString()
         },
         options.verbose,

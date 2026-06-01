@@ -454,6 +454,16 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
                   {{ testRun?.startTime ? new Date(testRun.startTime).toLocaleString() : 'N/A' }}
                 </p>
               </div>
+              <div v-if="testRun?.environment">
+                <p class="text-sm text-gray-500">
+                  Environment
+                </p>
+                <p class="font-medium">
+                  <span class="text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded">
+                    {{ testRun.environment }}
+                  </span>
+                </p>
+              </div>
             </div>
 
             <div v-if="allReports.length > 0" class="pt-4 border-t">
