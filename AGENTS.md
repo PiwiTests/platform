@@ -69,6 +69,7 @@ Nuxt file-based routing:
 - Keep it simple (AI-friendly codebase)
 - Full TypeScript, Nuxt 4 conventions, Nuxt UI components
 - Sentence case in UI (e.g., "Test runs"), relative dates with date-fns, human-readable durations
+- Use American English spelling throughout (e.g., "initialize", "organize", "color")
 
 ## Environment
 - `.env.example` in `application/` — `NUXT_PUBLIC_SITE_URL` (optional)

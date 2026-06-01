@@ -14,7 +14,7 @@ export const projects = pgTable('projects', {
 export const testRuns = pgTable('test_runs', {
   id: serial('id').primaryKey(),
   projectId: integer('project_id').notNull().references(() => projects.id),
-  status: text('status').notNull(), // 'passed', 'failed', 'timedout', 'interrupted', 'running'
+  status: text('status').notNull(), // 'passed', 'failed', 'timedout', 'interrupted', 'running', 'cancelled'
   startTime: timestamp('start_time', { mode: 'date' }).notNull(),
   duration: integer('duration'), // in milliseconds
   totalTests: integer('total_tests').notNull().default(0),
@@ -29,6 +29,7 @@ export const testRuns = pgTable('test_runs', {
   environment: text('environment'), // Deployment environment (e.g. 'production', 'staging', 'development')
   metadata: jsonb('metadata'), // Additional metadata as JSON
   streamToken: text('stream_token'), // Token for authenticating streaming updates
+  instanceId: text('instance_id'), // Unique identifier for the reporter instance that created this run
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp('updated_at', { mode: 'date' }).$defaultFn(() => new Date())
 }, table => ({

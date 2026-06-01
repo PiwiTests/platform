@@ -267,7 +267,8 @@ export default eventHandler(async (event) => {
       reportPath: primaryReportPath,
       reportSize: primaryReportSize,
       environment: (testRunData.environment as string | null | undefined) || null,
-      metadata: testRunData.metadata || null
+      metadata: testRunData.metadata || null,
+      instanceId: (testRunData.instanceId as string | null | undefined) || null
     }).returning()
 
     const resultTestRun = testRunResult[0]
