@@ -36,3 +36,6 @@ blob-report/
 .test-temp-zstd/
 .test-temp-gzip/
 .temp-dashboard/
+
+# Plan documents
+docs/plans/
