@@ -1,110 +1,40 @@
 <script setup lang="ts">
 import { h, resolveComponent } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
-import type { PerformanceTrendPoint, SlowTest, TestRunDetails, ProjectDetails } from '~~/types/api'
+import type { TestRunDetails, TestRunSummary, ProjectWithTestRuns } from '~~/types/api'
 import { useRunComparison } from '~/composables/useRunComparison'
 import type { ComparisonRow } from '~/composables/useRunComparison'
 
 const route = useRoute()
-const projectId = route.params.id
+const router = useRouter()
+const projectId = route.params.id as string
 
-const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`)
+const { data: project, refresh: refreshProject } = await useFetch<ProjectWithTestRuns>(`/api/projects/${projectId}`)
 
-// Date range filter
-const dateFrom = ref('')
-const dateTo = ref('')
-
-const performanceQueryParams = computed(() => {
-  const params: Record<string, string> = {}
-  if (dateFrom.value) params.from = dateFrom.value
-  if (dateTo.value) params.to = dateTo.value
-  return params
-})
-
-const { data: performanceData, refresh: refreshPerformance } = await useFetch<PerformanceTrendPoint[]>(
-  () => `/api/projects/${projectId}/performance`,
-  { query: performanceQueryParams }
-)
-const { data: slowTests, refresh: refreshSlowTests } = await useFetch<SlowTest[]>(`/api/projects/${projectId}/slow-tests`)
-
-useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Performance — Playwright Dashboard` })))
-
-const UBadge = resolveComponent('UBadge')
-
-// Slow tests table columns
-const slowTestsColumns: TableColumn<SlowTest>[] = [
-  {
-    accessorKey: 'title',
-    header: createSortHeader<SlowTest>('Test case'),
-    cell: ({ row }) => {
-      return h('div', {}, [
-        h('div', { class: 'font-medium' }, row.getValue('title')),
-        h('code', { class: 'text-xs bg-gray-100 dark:bg-gray-800 p-1 rounded mt-1 block' }, row.original.filePath)
-      ])
-    }
-  },
-  {
-    accessorKey: 'avgDuration',
-    header: createSortHeader<SlowTest>('Avg duration'),
-    cell: ({ row }) => formatDuration(row.getValue('avgDuration'))
-  },
-  {
-    accessorKey: 'maxDuration',
-    header: createSortHeader<SlowTest>('Max'),
-    cell: ({ row }) => formatDuration(row.getValue('maxDuration'))
-  },
-  {
-    accessorKey: 'minDuration',
-    header: createSortHeader<SlowTest>('Min'),
-    cell: ({ row }) => formatDuration(row.getValue('minDuration'))
-  },
-  {
-    accessorKey: 'latestDuration',
-    header: createSortHeader<SlowTest>('Latest'),
-    cell: ({ row }) => formatDuration(row.getValue('latestDuration'))
-  },
-  {
-    accessorKey: 'trend',
-    header: createSortHeader<SlowTest>('Trend'),
-    cell: ({ row }) => {
-      const trend = row.getValue('trend') as string
-      if (trend === 'slower') return h('span', { class: 'text-red-600 font-medium' }, '▲ Slower')
-      if (trend === 'faster') return h('span', { class: 'text-green-600 font-medium' }, '▼ Faster')
-      return h('span', { class: 'text-gray-500' }, '— Stable')
-    }
-  },
-  {
-    accessorKey: 'runCount',
-    header: createSortHeader<SlowTest>('Runs'),
-    cell: ({ row }) => row.getValue('runCount')
-  }
-]
-
-// ---- Run Comparison Feature ----
-function formatRunLabel(run: PerformanceTrendPoint): string {
-  const date = new Date(run.startTime).toLocaleDateString()
-  const commitSuffix = run.commit ? ` (${run.commit.substring(0, 7)})` : ''
-  return `Run #${run.id} — ${date}${commitSuffix}`
-}
+useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Compare runs — Playwright Dashboard` })))
 
 interface RunOption {
   label: string
   value: number
 }
 
+function formatRunLabel(run: TestRunSummary): string {
+  const date = new Date(run.startTime).toLocaleDateString()
+  const commitSuffix = (run.metadata?.scm?.commit) ? ` (${run.metadata.scm.commit.substring(0, 7)})` : ''
+  return `Run #${run.id} — ${date}${commitSuffix}`
+}
+
 const runOptions = computed<RunOption[]>(() => {
-  if (!performanceData.value) return []
-  return [...performanceData.value].reverse().map(run => ({
+  if (!project.value?.testRuns) return []
+  return [...project.value.testRuns].reverse().map(run => ({
     label: formatRunLabel(run),
     value: run.id
   }))
 })
 
-// Use full option objects — avoids USelectMenu value-key binding issues
 const selectedRunOptionA = ref<RunOption | undefined>(undefined)
 const selectedRunOptionB = ref<RunOption | undefined>(undefined)
 
-// Support pre-selecting runs from query params (e.g. from project detail checkboxes)
 const queryRunA = computed(() => route.query.runA ? Number(route.query.runA) : null)
 const queryRunB = computed(() => route.query.runB ? Number(route.query.runB) : null)
 
@@ -119,11 +49,17 @@ watch(runOptions, (options) => {
   }
 }, { immediate: true })
 
-// Quick "compare latest vs previous" action
+function syncQueryParams() {
+  const query: Record<string, string> = {}
+  if (selectedRunOptionA.value) query.runA = String(selectedRunOptionA.value.value)
+  if (selectedRunOptionB.value) query.runB = String(selectedRunOptionB.value.value)
+  router.replace({ query })
+}
+
 function compareLatestWithPrevious() {
   if (runOptions.value.length >= 2) {
-    selectedRunOptionA.value = runOptions.value[1] // previous (2nd newest)
-    selectedRunOptionB.value = runOptions.value[0] // latest (newest)
+    selectedRunOptionA.value = runOptions.value[1]
+    selectedRunOptionB.value = runOptions.value[0]
   }
 }
 
@@ -138,6 +74,7 @@ watch(selectedRunOptionA, async (opt) => {
   loadingRunA.value = true
   try {
     runADetails.value = await $fetch<TestRunDetails>(`/api/test-runs/${opt.value}`)
+    syncQueryParams()
   } catch {
     // ignore
   } finally {
@@ -151,6 +88,7 @@ watch(selectedRunOptionB, async (opt) => {
   loadingRunB.value = true
   try {
     runBDetails.value = await $fetch<TestRunDetails>(`/api/test-runs/${opt.value}`)
+    syncQueryParams()
   } catch {
     // ignore
   } finally {
@@ -160,6 +98,8 @@ watch(selectedRunOptionB, async (opt) => {
 
 const { comparisonData, comparisonSummary } = useRunComparison(runADetails, runBDetails)
 
+const UBadge = resolveComponent('UBadge')
+
 const comparisonColumns: TableColumn<ComparisonRow>[] = [
   {
     accessorKey: 'title',
@@ -167,8 +107,28 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
     cell: ({ row }) => h('span', { class: 'font-medium' }, row.getValue('title'))
   },
   {
+    accessorKey: 'statusA',
+    header: createSortHeader<ComparisonRow>('Status A'),
+    cell: ({ row }) => {
+      const status = row.getValue('statusA') as string | null
+      if (!status) return h('span', { class: 'text-gray-400' }, '—')
+      const color = getStatusColor(status)
+      return h(UBadge, { color, class: 'capitalize' }, () => status)
+    }
+  },
+  {
+    accessorKey: 'statusB',
+    header: createSortHeader<ComparisonRow>('Status B'),
+    cell: ({ row }) => {
+      const status = row.getValue('statusB') as string | null
+      if (!status) return h('span', { class: 'text-gray-400' }, '—')
+      const color = getStatusColor(status)
+      return h(UBadge, { color, class: 'capitalize' }, () => status)
+    }
+  },
+  {
     accessorKey: 'durationA',
-    header: createSortHeader<ComparisonRow>('Run A'),
+    header: createSortHeader<ComparisonRow>('Duration A'),
     cell: ({ row }) => {
       const val = row.getValue('durationA') as number | null
       return val !== null ? formatDuration(val) : h('span', { class: 'text-gray-400' }, '—')
@@ -176,7 +136,7 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
   },
   {
     accessorKey: 'durationB',
-    header: createSortHeader<ComparisonRow>('Run B'),
+    header: createSortHeader<ComparisonRow>('Duration B'),
     cell: ({ row }) => {
       const val = row.getValue('durationB') as number | null
       return val !== null ? formatDuration(val) : h('span', { class: 'text-gray-400' }, '—')
@@ -205,15 +165,10 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
     }
   }
 ]
-
-function refresh() {
-  refreshPerformance()
-  refreshSlowTests()
-}
 </script>
 
 <template>
-  <UDashboardPanel id="project-performance">
+  <UDashboardPanel id="project-compare">
     <template #header>
       <UDashboardNavbar>
         <template #leading>
@@ -223,7 +178,7 @@ function refresh() {
               { label: 'Home', icon: 'i-lucide-house', to: '/' },
               { label: 'Projects', to: '/projects' },
               { label: project?.label || project?.name || 'Project', to: `/projects/${projectId}` },
-              { label: 'Performance' }
+              { label: 'Compare runs' }
             ]"
           />
         </template>
@@ -232,7 +187,7 @@ function refresh() {
             icon="i-lucide-refresh-cw"
             size="md"
             label="Refresh"
-            @click="refresh"
+            @click="refreshProject()"
           />
         </template>
       </UDashboardNavbar>
@@ -240,88 +195,15 @@ function refresh() {
 
     <template #body>
       <div class="p-4 space-y-6">
-        <!-- Date Range Filter -->
-        <div class="flex flex-wrap items-center gap-3">
-          <span class="text-sm text-muted shrink-0">Date range:</span>
-          <UInput
-            v-model="dateFrom"
-            type="date"
-            size="sm"
-            placeholder="From"
-            class="w-40"
-          />
-          <span class="text-sm text-muted">to</span>
-          <UInput
-            v-model="dateTo"
-            type="date"
-            size="sm"
-            placeholder="To"
-            class="w-40"
-          />
-          <UButton
-            v-if="dateFrom || dateTo"
-            size="xs"
-            variant="ghost"
-            color="neutral"
-            icon="i-lucide-x"
-            label="Clear"
-            @click="dateFrom = ''; dateTo = ''"
-          />
-        </div>
-
-        <!-- Performance Trend Chart -->
-        <UCard>
-          <template #header>
-            <h2>
-              Performance trend
-            </h2>
-            <p class="text-sm text-gray-600 mt-1">
-              Duration metrics over time
-            </p>
-          </template>
-
-          <PerformanceTrendChart :data="performanceData || []" :height="350" />
-        </UCard>
-
-        <!-- Slowest Tests -->
-        <UCard>
-          <template #header>
-            <h2 class="text-xl font-semibold">
-              Slowest tests
-            </h2>
-            <p class="text-sm text-gray-600 mt-1">
-              Top 20 slowest test cases across recent runs
-            </p>
-          </template>
-
-          <UTable
-            v-if="slowTests && slowTests.length > 0"
-            :data="slowTests"
-            :columns="slowTestsColumns"
-            :ui="{
-              base: 'table-fixed border-separate border-spacing-0',
-              thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
-              tbody: '[&>tr]:last:[&>td]:border-b-0',
-              th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
-              td: 'border-b border-default'
-            }"
-          />
-
-          <div v-else class="text-center py-8 text-gray-500">
-            No slow test data available yet.
-          </div>
-        </UCard>
-
-        <!-- Run Comparison -->
         <UCard>
           <template #header>
             <div class="flex items-center justify-between">
               <div>
                 <h2 class="text-xl font-semibold">
-                  Run comparison
+                  Compare runs
                 </h2>
                 <p class="text-sm text-gray-600 mt-1">
-                  Compare duration changes between two runs
+                  Compare two test runs side-by-side — status changes and duration deltas
                 </p>
               </div>
               <UButton
@@ -329,7 +211,7 @@ function refresh() {
                 icon="i-lucide-git-compare-arrows"
                 size="sm"
                 variant="outline"
-                label="Compare latest vs previous"
+                label="Latest vs previous"
                 @click="compareLatestWithPrevious"
               />
             </div>
@@ -355,24 +237,66 @@ function refresh() {
               </div>
             </div>
 
-            <!-- Loading states -->
-            <div v-if="loadingRunA || loadingRunB" class="text-center py-4 text-gray-500">
+            <!-- Loading -->
+            <div v-if="loadingRunA || loadingRunB" class="text-center py-8 text-gray-500">
               <UIcon name="i-lucide-loader-2" class="animate-spin mr-2" />
               Loading run data…
             </div>
 
-            <!-- Comparison Summary -->
+            <!-- Comparison results -->
             <div v-else-if="selectedRunOptionA && selectedRunOptionB && comparisonData.length > 0" class="space-y-4">
-              <div class="flex gap-4 text-sm">
-                <UBadge color="success" variant="soft" size="lg">
-                  {{ comparisonSummary.improved }} improved
-                </UBadge>
-                <UBadge color="error" variant="soft" size="lg">
-                  {{ comparisonSummary.regressed }} regressed
-                </UBadge>
-                <UBadge color="neutral" variant="soft" size="lg">
-                  {{ comparisonSummary.unchanged }} unchanged
-                </UBadge>
+              <!-- Summary badges -->
+              <div class="space-y-2">
+                <div class="flex flex-wrap gap-4 text-sm">
+                  <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-1">Status changes</span>
+                  <UBadge
+                    v-if="comparisonSummary.newFailures > 0"
+                    color="error"
+                    variant="soft"
+                    size="lg"
+                  >
+                    {{ comparisonSummary.newFailures }} new failure{{ comparisonSummary.newFailures > 1 ? 's' : '' }}
+                  </UBadge>
+                  <UBadge
+                    v-if="comparisonSummary.recovered > 0"
+                    color="success"
+                    variant="soft"
+                    size="lg"
+                  >
+                    {{ comparisonSummary.recovered }} recovered
+                  </UBadge>
+                  <UBadge
+                    v-if="comparisonSummary.stillFailing > 0"
+                    color="warning"
+                    variant="soft"
+                    size="lg"
+                  >
+                    {{ comparisonSummary.stillFailing }} still failing
+                  </UBadge>
+                  <span v-if="comparisonSummary.newFailures === 0 && comparisonSummary.recovered === 0 && comparisonSummary.stillFailing === 0" class="text-sm text-gray-500">No status changes</span>
+                </div>
+                <div class="flex flex-wrap gap-4 text-sm">
+                  <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-1">Duration changes</span>
+                  <UBadge
+                    v-if="comparisonSummary.regressed > 0"
+                    color="error"
+                    variant="soft"
+                    size="lg"
+                  >
+                    {{ comparisonSummary.regressed }} regressed
+                  </UBadge>
+                  <UBadge
+                    v-if="comparisonSummary.improved > 0"
+                    color="success"
+                    variant="soft"
+                    size="lg"
+                  >
+                    {{ comparisonSummary.improved }} improved
+                  </UBadge>
+                  <UBadge color="neutral" variant="soft" size="lg">
+                    {{ comparisonSummary.unchanged }} unchanged
+                  </UBadge>
+                </div>
               </div>
 
               <UTable
@@ -389,7 +313,7 @@ function refresh() {
             </div>
 
             <div v-else-if="!selectedRunOptionA || !selectedRunOptionB" class="text-center py-8 text-gray-500">
-              Select two runs to compare their performance.
+              Select two runs to compare test results.
             </div>
 
             <div v-else class="text-center py-8 text-gray-500">

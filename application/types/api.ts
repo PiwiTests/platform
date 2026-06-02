@@ -491,6 +491,20 @@ export interface PerformanceTrendPoint {
 }
 
 /**
+ * Test case history point - returned by GET /api/test-cases/[id]/history
+ */
+export interface TestCaseHistoryPoint {
+  id: number
+  runId: number
+  status: string
+  duration: number | null
+  error: string | null
+  retries: number | null
+  startTime: string | Date
+  runStatus: string
+}
+
+/**
  * Slow test entry - returned by GET /api/projects/[id]/slow-tests
  */
 export interface SlowTest {

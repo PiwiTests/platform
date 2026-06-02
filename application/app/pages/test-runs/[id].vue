@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { h, resolveComponent, computed } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
-import type { TestRunDetails, TestCaseResult, EndpointSummary, ReportInfo } from '~~/types/api'
+import type { TestRunDetails, TestCaseResult, EndpointSummary, ReportInfo, ProjectWithTestRuns } from '~~/types/api'
+import { useRunComparison } from '~/composables/useRunComparison'
+import type { ComparisonRow } from '~/composables/useRunComparison'
 
 const route = useRoute()
 const runId = route.params.id
@@ -338,6 +340,137 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
       const rate = row.getValue('errorRate') as number
       if (rate === 0) return h('span', { class: 'text-gray-400' }, '0%')
       return h('span', { class: 'text-red-600 font-medium' }, `${rate}%`)
+    }
+  }
+]
+
+// ---- Run Comparison Feature ----
+interface RunOption {
+  label: string
+  value: number
+}
+
+// Fetch project data to get list of runs for comparison
+const { data: projectData } = await useFetch<ProjectWithTestRuns>(() => `/api/projects/${testRun.value?.projectId}`, {
+  lazy: true
+})
+
+const projectRunOptions = computed<RunOption[]>(() => {
+  if (!projectData.value?.testRuns) return []
+  return projectData.value.testRuns
+    .filter(r => r.id !== Number(runId))
+    .slice(0, 50)
+    .map(r => ({
+      label: `Run #${r.id} — ${new Date(r.startTime).toLocaleDateString()} (${r.status})`,
+      value: r.id
+    }))
+})
+
+// Auto-detect previous run (chronologically previous, not by ID)
+const previousRunId = computed<number | null>(() => {
+  if (!projectData.value?.testRuns) return null
+  const sorted = [...projectData.value.testRuns].sort(
+    (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+  )
+  const currentIdx = sorted.findIndex(r => r.id === Number(runId))
+  if (currentIdx >= 0 && currentIdx < sorted.length - 1) {
+    return sorted[currentIdx + 1]!.id
+  }
+  return null
+})
+
+const compareRunA = ref<RunOption | undefined>(undefined)
+const baselineRun = ref<TestRunDetails | null>(null)
+const loadingBaseline = ref(false)
+
+watch(compareRunA, async (opt) => {
+  if (!opt?.value) {
+    baselineRun.value = null
+    return
+  }
+  loadingBaseline.value = true
+  try {
+    baselineRun.value = await $fetch<TestRunDetails>(`/api/test-runs/${opt.value}`)
+  } catch {
+    // ignore — keep old baselineRun value
+  } finally {
+    loadingBaseline.value = false
+  }
+})
+
+function compareWithPrevious() {
+  if (previousRunId.value) {
+    const match = projectRunOptions.value.find(o => o.value === previousRunId.value)
+    if (match) compareRunA.value = match
+  }
+}
+
+// This run as the baseline ref for the composable
+const currentRunRef = computed<TestRunDetails | null>(() => testRun.value ?? null)
+const { comparisonData, comparisonSummary } = useRunComparison(baselineRun, currentRunRef)
+
+const comparisonColumns: TableColumn<ComparisonRow>[] = [
+  {
+    accessorKey: 'title',
+    header: createSortHeader<ComparisonRow>('Test case'),
+    cell: ({ row }) => h('span', { class: 'font-medium' }, row.getValue('title'))
+  },
+  {
+    accessorKey: 'statusA',
+    header: createSortHeader<ComparisonRow>('Status A'),
+    cell: ({ row }) => {
+      const status = row.getValue('statusA') as string | null
+      if (!status) return h('span', { class: 'text-gray-400' }, '—')
+      const color = getStatusColor(status)
+      return h(resolveComponent('UBadge'), { color, class: 'capitalize' }, () => status)
+    }
+  },
+  {
+    accessorKey: 'statusB',
+    header: createSortHeader<ComparisonRow>('Status B'),
+    cell: ({ row }) => {
+      const status = row.getValue('statusB') as string | null
+      if (!status) return h('span', { class: 'text-gray-400' }, '—')
+      const color = getStatusColor(status)
+      return h(resolveComponent('UBadge'), { color, class: 'capitalize' }, () => status)
+    }
+  },
+  {
+    accessorKey: 'durationA',
+    header: createSortHeader<ComparisonRow>('Duration A'),
+    cell: ({ row }) => {
+      const val = row.getValue('durationA') as number | null
+      return val !== null ? formatDuration(val) : h('span', { class: 'text-gray-400' }, '—')
+    }
+  },
+  {
+    accessorKey: 'durationB',
+    header: createSortHeader<ComparisonRow>('Duration B'),
+    cell: ({ row }) => {
+      const val = row.getValue('durationB') as number | null
+      return val !== null ? formatDuration(val) : h('span', { class: 'text-gray-400' }, '—')
+    }
+  },
+  {
+    accessorKey: 'delta',
+    header: createSortHeader<ComparisonRow>('Delta'),
+    cell: ({ row }) => {
+      const delta = row.getValue('delta') as number | null
+      if (delta === null) return h('span', { class: 'text-gray-400' }, '—')
+      const sign = delta > 0 ? '+' : ''
+      const color = delta > 0 ? 'text-red-600' : delta < 0 ? 'text-green-600' : 'text-gray-500'
+      return h('span', { class: color }, `${sign}${formatDuration(delta)}`)
+    }
+  },
+  {
+    accessorKey: 'percentChange',
+    header: createSortHeader<ComparisonRow>('Change'),
+    cell: ({ row }) => {
+      const pct = row.getValue('percentChange') as number | null
+      if (pct === null) return h('span', { class: 'text-gray-400' }, '—')
+      const sign = pct > 0 ? '+' : ''
+      const color = pct > 10 ? 'text-red-600 font-medium' : pct < -10 ? 'text-green-600 font-medium' : 'text-gray-500'
+      return h('span', { class: color }, `${sign}${pct}%`)
     }
   }
 ]
@@ -683,6 +816,132 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
 
           <div v-else class="text-center py-8 text-gray-500">
             No test cases recorded for this run.
+          </div>
+        </UCard>
+
+        <!-- Compare with another run -->
+        <UCard v-if="testRun && !isLive">
+          <template #header>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <UIcon name="i-lucide-git-compare-arrows" class="w-5 h-5 text-primary" />
+                <div>
+                  <h3 class="text-lg font-medium">
+                    Compare with another run
+                  </h3>
+                  <p class="text-sm text-gray-500 mt-0.5">
+                    Compare test durations side-by-side to identify regressions
+                  </p>
+                </div>
+              </div>
+              <UButton
+                v-if="previousRunId"
+                icon="i-lucide-arrow-left-right"
+                size="sm"
+                variant="outline"
+                label="Compare with previous run"
+                @click="compareWithPrevious"
+              />
+            </div>
+          </template>
+
+          <div class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Run A (baseline)</label>
+                <USelectMenu
+                  v-model="compareRunA"
+                  :items="projectRunOptions"
+                  placeholder="Select baseline..."
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Run B (this run)</label>
+                <p class="text-sm font-medium py-2">
+                  #{{ testRun.id }} — {{ testRun.status }}
+                </p>
+              </div>
+            </div>
+
+            <div v-if="loadingBaseline" class="text-center py-4 text-gray-500">
+              <UIcon name="i-lucide-loader-2" class="animate-spin mr-2" />
+              Loading baseline data…
+            </div>
+
+            <template v-else-if="baselineRun && comparisonData.length > 0">
+              <div class="space-y-2">
+                <div class="flex flex-wrap gap-4 text-sm">
+                  <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-1">Status changes</span>
+                  <UBadge
+                    v-if="comparisonSummary.newFailures > 0"
+                    color="error"
+                    variant="soft"
+                    size="lg"
+                  >
+                    {{ comparisonSummary.newFailures }} new failure{{ comparisonSummary.newFailures > 1 ? 's' : '' }}
+                  </UBadge>
+                  <UBadge
+                    v-if="comparisonSummary.recovered > 0"
+                    color="success"
+                    variant="soft"
+                    size="lg"
+                  >
+                    {{ comparisonSummary.recovered }} recovered
+                  </UBadge>
+                  <UBadge
+                    v-if="comparisonSummary.stillFailing > 0"
+                    color="warning"
+                    variant="soft"
+                    size="lg"
+                  >
+                    {{ comparisonSummary.stillFailing }} still failing
+                  </UBadge>
+                  <span v-if="comparisonSummary.newFailures === 0 && comparisonSummary.recovered === 0 && comparisonSummary.stillFailing === 0" class="text-sm text-gray-500">No status changes</span>
+                </div>
+                <div class="flex flex-wrap gap-4 text-sm">
+                  <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-1">Duration changes</span>
+                  <UBadge
+                    v-if="comparisonSummary.regressed > 0"
+                    color="error"
+                    variant="soft"
+                    size="lg"
+                  >
+                    {{ comparisonSummary.regressed }} regressed
+                  </UBadge>
+                  <UBadge
+                    v-if="comparisonSummary.improved > 0"
+                    color="success"
+                    variant="soft"
+                    size="lg"
+                  >
+                    {{ comparisonSummary.improved }} improved
+                  </UBadge>
+                  <UBadge color="neutral" variant="soft" size="lg">
+                    {{ comparisonSummary.unchanged }} unchanged
+                  </UBadge>
+                </div>
+              </div>
+
+              <UTable
+                :data="comparisonData"
+                :columns="comparisonColumns"
+                :ui="{
+                  base: 'table-fixed border-separate border-spacing-0',
+                  thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
+                  tbody: '[&>tr]:last:[&>td]:border-b-0',
+                  th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
+                  td: 'border-b border-default'
+                }"
+              />
+            </template>
+
+            <div v-else-if="compareRunA && !loadingBaseline" class="text-center py-8 text-gray-500">
+              No comparison data available.
+            </div>
+
+            <div v-else class="text-center py-8 text-gray-500">
+              Select a baseline run to compare.
+            </div>
           </div>
         </UCard>
 

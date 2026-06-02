@@ -33,6 +33,31 @@ async function handleDeleteRun(runId: number) {
   }
 }
 
+// Run selection for comparison
+const selectedRunIds = ref<number[]>([])
+
+const isRunSelected = (runId: number) => selectedRunIds.value.includes(runId)
+
+function toggleRunSelection(runId: number) {
+  const idx = selectedRunIds.value.indexOf(runId)
+  if (idx >= 0) {
+    selectedRunIds.value.splice(idx, 1)
+  } else {
+    if (selectedRunIds.value.length >= 2) {
+      toast.add({ title: 'Maximum 2 runs', description: 'Select at most 2 runs to compare. Deselect one first.', color: 'warning' })
+      return
+    }
+    selectedRunIds.value.push(runId)
+  }
+}
+
+const compareEnabled = computed(() => selectedRunIds.value.length === 2)
+
+function compareSelectedRuns() {
+  if (selectedRunIds.value.length !== 2) return
+  navigateTo(`/projects/${projectId}/compare?runA=${selectedRunIds.value[0]}&runB=${selectedRunIds.value[1]}`)
+}
+
 // Environment filter state
 const selectedEnvironments = ref<string[]>([])
 
@@ -68,6 +93,23 @@ const TestStatusBar = resolveComponent('TestStatusBar')
 const RunReports = resolveComponent('RunReports')
 
 const runsColumns: TableColumn<TestRunSummary>[] = [
+  {
+    accessorKey: 'select',
+    header: '',
+    cell: ({ row }) => {
+      const runId = row.original.id
+      const checked = isRunSelected(runId)
+      return h('input', {
+        type: 'checkbox',
+        checked,
+        class: 'cursor-pointer size-4 accent-primary',
+        onClick: (e: MouseEvent) => {
+          e.stopPropagation()
+          toggleRunSelection(runId)
+        }
+      })
+    }
+  },
   {
     accessorKey: 'id',
     header: createSortHeader<TestRunSummary>('Run'),
@@ -211,6 +253,14 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
             Performance
           </UButton>
           <UButton
+            :to="`/projects/${projectId}/compare`"
+            icon="i-lucide-git-compare-arrows"
+            size="sm"
+            variant="outline"
+          >
+            Compare runs
+          </UButton>
+          <UButton
             icon="i-lucide-refresh-cw"
             size="md"
             label="Refresh"
@@ -281,6 +331,35 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
               icon="i-lucide-x"
               label="Clear filter"
               @click="selectedEnvironments = []"
+            />
+          </div>
+
+          <!-- Comparison action bar -->
+          <div
+            v-if="selectedRunIds.length > 0"
+            class="flex items-center gap-3 px-3 py-2 mb-3 rounded-lg bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800"
+          >
+            <span class="text-sm text-primary-700 dark:text-primary-300">
+              {{ selectedRunIds.length }} run{{ selectedRunIds.length > 1 ? 's' : '' }} selected
+            </span>
+            <UButton
+              v-if="compareEnabled"
+              icon="i-lucide-git-compare-arrows"
+              size="sm"
+              color="primary"
+              label="Compare selected runs"
+              @click="compareSelectedRuns"
+            />
+            <span v-else class="text-xs text-primary-500">
+              Select another run to compare
+            </span>
+            <UButton
+              size="xs"
+              variant="ghost"
+              color="neutral"
+              icon="i-lucide-x"
+              label="Clear"
+              @click="selectedRunIds = []"
             />
           </div>
 

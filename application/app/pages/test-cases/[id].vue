@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import type { PerformanceStep, WebVitals, NetworkRequest } from '~~/types/api'
+import type { PerformanceStep, WebVitals, NetworkRequest, TestCaseHistoryPoint } from '~~/types/api'
+import type { TableColumn } from '@nuxt/ui'
+import { h, resolveComponent } from 'vue'
 import { getPerformanceHints } from '~/utils/performance-hints'
 
 const route = useRoute()
 const testCaseId = route.params.id
 
 const { data: testCase, refresh } = await useFetch(`/api/test-cases/${testCaseId}`)
+const { data: historyData } = await useFetch<TestCaseHistoryPoint[]>(`/api/test-cases/${testCaseId}/history`)
 
 useHead(computed(() => ({
   title: `${testCase.value?.title || `Test case #${testCaseId}`} — Playwright Dashboard`
@@ -71,6 +74,73 @@ const groupedNetworkRequests = computed<GroupedRequest[]>(() => {
     }))
     .sort((a, b) => b.avgDuration - a.avgDuration)
 })
+
+const UBadge = resolveComponent('UBadge')
+
+const historyColumns: TableColumn<TestCaseHistoryPoint>[] = [
+  {
+    accessorKey: 'startTime',
+    header: () => h('span', 'Date'),
+    cell: ({ row }) => {
+      const ts = row.getValue('startTime') as string | Date
+      const d = new Date(ts)
+      return h('span', { class: 'text-xs whitespace-nowrap' }, [
+        h('span', { class: 'text-gray-500' }, d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })),
+        h('span', { class: 'text-gray-400 ml-1' }, d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }))
+      ])
+    }
+  },
+  {
+    accessorKey: 'status',
+    header: () => h('span', 'Status'),
+    cell: ({ row }) => {
+      const status = row.getValue('status') as string
+      const color = getStatusColor(status)
+      return h(UBadge, { color, class: 'capitalize' }, () => status)
+    }
+  },
+  {
+    accessorKey: 'duration',
+    header: () => h('span', 'Duration'),
+    cell: ({ row }) => {
+      const val = row.getValue('duration') as number | null
+      return val !== null ? formatDuration(val) : h('span', { class: 'text-gray-400' }, '—')
+    }
+  },
+  {
+    accessorKey: 'retries',
+    header: () => h('span', 'Retries'),
+    cell: ({ row }) => {
+      const retries = row.getValue('retries') as number | null
+      return retries && retries > 0 ? retries.toString() : ''
+    }
+  },
+  {
+    accessorKey: 'runId',
+    header: () => h('span', 'Run'),
+    cell: ({ row }) => {
+      const runId = row.getValue('runId') as number
+      return h('a', {
+        href: `/test-runs/${runId}`,
+        class: 'text-primary hover:underline',
+        onClick: (e: MouseEvent) => {
+          e.preventDefault()
+          navigateTo(`/test-runs/${runId}`)
+        }
+      }, `#${runId}`)
+    }
+  },
+  {
+    accessorKey: 'error',
+    header: () => h('span', 'Error'),
+    cell: ({ row }) => {
+      const err = row.getValue('error') as string | null
+      if (!err) return ''
+      const truncated = err.length > 80 ? `${err.substring(0, 80)}…` : err
+      return h('span', { class: 'text-red-600 text-xs truncate max-w-xs block', title: err }, truncated)
+    }
+  }
+]
 </script>
 
 <template>
@@ -175,6 +245,34 @@ const groupedNetworkRequests = computed<GroupedRequest[]>(() => {
               </p>
               <pre class="text-sm bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 p-4 rounded overflow-x-auto">{{ testCase.error }}</pre>
             </div>
+          </div>
+        </UCard>
+
+        <!-- Test Case History -->
+        <UCard v-if="historyData && historyData.length > 0">
+          <template #header>
+            <div class="flex items-center gap-2">
+              <UIcon name="i-lucide-trending-up" class="w-5 h-5 text-primary" />
+              <h3 class="text-lg font-medium">
+                History ({{ historyData.length }} runs)
+              </h3>
+            </div>
+          </template>
+
+          <div class="space-y-4">
+            <TestCaseHistoryChart :data="historyData" :height="200" />
+
+            <UTable
+              :data="historyData"
+              :columns="historyColumns"
+              :ui="{
+                base: 'table-fixed border-separate border-spacing-0',
+                thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
+                tbody: '[&>tr]:last:[&>td]:border-b-0',
+                th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
+                td: 'border-b border-default'
+              }"
+            />
           </div>
         </UCard>
 

@@ -44,15 +44,15 @@ export function formatDate(date: string | Date | number) {
 
 export function formatDuration(ms?: number | null) {
   if (ms === null || ms === undefined) return 'N/A'
-
-  return formatDurationLib({ seconds: ms / 1000 })
+  const sign = ms < 0 ? '−' : ''
+  return sign + formatDurationLib({ seconds: Math.abs(ms) / 1000 })
 }
 
 export function getStatusColor(status: string) {
   switch (status) {
     case 'passed': return 'success'
     case 'failed': return 'error'
-    case 'timedout': return 'warning'
+    case 'timedOut': return 'warning'
     case 'interrupted': return 'warning'
     case 'cancelled': return 'neutral'
     case 'initialising': return 'info'
