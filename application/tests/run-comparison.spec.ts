@@ -180,8 +180,8 @@ test.describe.serial('Run Comparison', () => {
     await expect(page.getByText('1 regressed')).toBeVisible()
     await expect(page.getByText('1 unchanged')).toBeVisible()
 
-    // Verify table columns
-    await expect(page.getByRole('table')).toBeVisible()
+    // Verify comparison table is visible (the "Test case" column header is specific to comparison tables)
+    await expect(page.getByRole('table').last()).toBeVisible()
 
     // Check specific data in table
     await expect(page.getByText('login works')).toBeVisible()
@@ -281,7 +281,7 @@ test.describe.serial('Run Comparison', () => {
     await expect(page.getByRole('button', { name: 'Latest vs previous' })).not.toBeVisible()
   })
 
-  test('compare page shows fallback message when no overlapping tests', async ({ page }) => {
+  test('compare page shows non-overlapping tests with missing data markers', async ({ page }) => {
     // Create a project with 2 runs that have completely different test cases
     const projectName = `no-overlap-${Date.now()}`
     const r1 = await page.request.post('/api/test-runs/submit', {
@@ -339,7 +339,12 @@ test.describe.serial('Run Comparison', () => {
     await page.locator('button').filter({ hasText: 'Select run B...' }).click()
     await page.getByRole('option').filter({ hasText: `Run #${r2Data.testRunId}` }).click({ force: true })
 
-    await expect(page.getByText('No overlapping test cases found between the selected runs')).toBeVisible({ timeout: 30000 })
+    // Non-overlapping tests still appear in the comparison table — each has null/dash for the missing side
+    // "alpha test" (only in run A) should show with a dash for Duration B
+    // "beta test" (only in run B) should show with a dash for Duration A
+    await expect(page.getByText('Duration changes', { exact: true })).toBeVisible({ timeout: 30000 })
+    await expect(page.getByText('alpha test')).toBeVisible()
+    await expect(page.getByText('beta test')).toBeVisible()
   })
 
   test('performance page shows comparison section', async ({ page }) => {
@@ -351,8 +356,8 @@ test.describe.serial('Run Comparison', () => {
     // Use "Compare latest vs previous" button
     await page.getByRole('button', { name: 'Compare latest vs previous' }).click()
 
-    // Should load comparison data
-    await expect(page.getByText('improved').or(page.getByText('regressed'))).toBeVisible({ timeout: 15000 })
-    await expect(page.getByRole('table')).toBeVisible()
+    // Should load comparison data — the comparison table has a "Test case" column header
+    await expect(page.getByText('improved').first()).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText('Test case').first()).toBeVisible()
   })
 })
