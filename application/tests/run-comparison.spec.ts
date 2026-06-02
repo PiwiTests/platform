@@ -227,7 +227,7 @@ test.describe.serial('Run Comparison', () => {
     await page.getByRole('button', { name: 'Latest vs previous' }).click()
 
     // Should show comparison data
-    await expect(page.getByText('Duration changes')).toBeVisible({ timeout: 30000 })
+    await expect(page.getByText('Duration changes', { exact: true })).toBeVisible({ timeout: 30000 })
     await expect(page.getByRole('table')).toBeVisible()
   })
 
@@ -242,7 +242,7 @@ test.describe.serial('Run Comparison', () => {
     await page.getByRole('button', { name: 'Compare with previous run' }).click()
 
     // Should show comparison data
-    await expect(page.getByText('Duration changes')).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText('Duration changes', { exact: true })).toBeVisible({ timeout: 15000 })
     await expect(page.getByRole('table')).toBeVisible()
   })
 
