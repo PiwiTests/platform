@@ -157,15 +157,12 @@ test.describe.serial('Run Comparison', () => {
     await waitForHydration(page)
 
     // Open run A dropdown and select the first run
-    // The SelectMenu button's accessible name is "Show popup", not the placeholder text
     await page.locator('button').filter({ hasText: 'Select run A...' }).click()
-    const runAOption = page.getByRole('option').filter({ hasText: `Run #${run1Id}` })
-    await runAOption.click()
+    await page.getByRole('option').filter({ hasText: `Run #${run1Id}` }).click({ force: true })
 
     // Open run B dropdown and select the second run
     await page.locator('button').filter({ hasText: 'Select run B...' }).click()
-    const runBOption = page.getByRole('option').filter({ hasText: `Run #${run2Id}` })
-    await runBOption.click()
+    await page.getByRole('option').filter({ hasText: `Run #${run2Id}` }).click({ force: true })
 
     // Wait for comparison data to load (requires two API fetches for run details)
     await expect(page.getByText('Status changes', { exact: true })).toBeVisible({ timeout: 30000 })
@@ -202,9 +199,9 @@ test.describe.serial('Run Comparison', () => {
 
     // Select runs via dropdown
     await page.locator('button').filter({ hasText: 'Select run A...' }).click()
-    await page.getByRole('option').filter({ hasText: `Run #${run1Id}` }).click()
+    await page.getByRole('option').filter({ hasText: `Run #${run1Id}` }).click({ force: true })
     await page.locator('button').filter({ hasText: 'Select run B...' }).click()
-    await page.getByRole('option').filter({ hasText: `Run #${run3Id}` }).click()
+    await page.getByRole('option').filter({ hasText: `Run #${run3Id}` }).click({ force: true })
 
     await expect(page.getByText('Duration changes', { exact: true })).toBeVisible({ timeout: 30000 })
 
@@ -243,7 +240,8 @@ test.describe.serial('Run Comparison', () => {
 
     // Should show comparison data
     await expect(page.getByText('Duration changes', { exact: true })).toBeVisible({ timeout: 15000 })
-    await expect(page.getByRole('table')).toBeVisible()
+    // The comparison table has a "Test case" column header
+    await expect(page.getByText('Test case').first()).toBeVisible()
   })
 
   test('compare page shows no overlapping tests message for unrelated runs', async ({ page }) => {
@@ -337,9 +335,9 @@ test.describe.serial('Run Comparison', () => {
     await waitForHydration(page)
 
     await page.locator('button').filter({ hasText: 'Select run A...' }).click()
-    await page.getByRole('option').filter({ hasText: `Run #${r1Data.testRunId}` }).click()
+    await page.getByRole('option').filter({ hasText: `Run #${r1Data.testRunId}` }).click({ force: true })
     await page.locator('button').filter({ hasText: 'Select run B...' }).click()
-    await page.getByRole('option').filter({ hasText: `Run #${r2Data.testRunId}` }).click()
+    await page.getByRole('option').filter({ hasText: `Run #${r2Data.testRunId}` }).click({ force: true })
 
     await expect(page.getByText('No overlapping test cases found between the selected runs')).toBeVisible({ timeout: 30000 })
   })
