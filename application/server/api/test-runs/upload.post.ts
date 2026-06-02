@@ -395,7 +395,8 @@ export default eventHandler(async (event) => {
         slowestStep: (testCase.slowestStep as string | null | undefined) ?? null,
         slowestStepDuration: (testCase.slowestStepDuration as number | null | undefined) ?? null,
         networkRequests: sanitizeNetworkRequests(testCase.networkRequests as Array<Record<string, unknown>> | null | undefined) ?? null,
-        webVitals: sanitizeWebVitals(testCase.webVitals as Record<string, unknown> | null | undefined) ?? null
+        webVitals: sanitizeWebVitals(testCase.webVitals as Record<string, unknown> | null | undefined) ?? null,
+        workerIndex: (testCase.workerIndex as number | null | undefined) ?? null
       })
     }
   }

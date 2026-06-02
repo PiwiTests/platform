@@ -320,6 +320,8 @@ export interface TestCaseResult {
   slowestStepDuration?: number | null
   networkRequests?: NetworkRequest[] | null
   webVitals?: WebVitals | null
+  workerIndex?: number | null
+  startedAt?: number
 }
 
 /**
@@ -468,6 +470,7 @@ export interface TestRunSubmitBody {
     slowestStepDuration?: number
     networkRequests?: NetworkRequest[]
     webVitals?: WebVitals
+    workerIndex?: number
   }>
 }
 

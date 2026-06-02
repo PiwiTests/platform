@@ -140,7 +140,8 @@ export default eventHandler(async (event) => {
         slowestStep: testCase.slowestStep || null,
         slowestStepDuration: testCase.slowestStepDuration || null,
         networkRequests: sanitizeNetworkRequests(testCase.networkRequests) || null,
-        webVitals: sanitizeWebVitals(testCase.webVitals) || null
+        webVitals: sanitizeWebVitals(testCase.webVitals) || null,
+        workerIndex: testCase.workerIndex ?? null
       })
     }
   }
