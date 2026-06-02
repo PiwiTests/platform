@@ -391,6 +391,10 @@ function refresh() {
             <div v-else-if="!selectedRunOptionA || !selectedRunOptionB" class="text-center py-8 text-gray-500">
               Select two runs to compare their performance.
             </div>
+
+            <div v-else class="text-center py-8 text-gray-500">
+              No overlapping test cases found between the selected runs.
+            </div>
           </div>
         </UCard>
       </div>

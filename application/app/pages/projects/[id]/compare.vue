@@ -56,9 +56,6 @@ function syncQueryParams() {
   router.replace({ query })
 }
 
-watch(selectedRunOptionA, syncQueryParams)
-watch(selectedRunOptionB, syncQueryParams)
-
 function compareLatestWithPrevious() {
   if (runOptions.value.length >= 2) {
     selectedRunOptionA.value = runOptions.value[1]
@@ -77,6 +74,7 @@ watch(selectedRunOptionA, async (opt) => {
   loadingRunA.value = true
   try {
     runADetails.value = await $fetch<TestRunDetails>(`/api/test-runs/${opt.value}`)
+    syncQueryParams()
   } catch {
     // ignore
   } finally {
@@ -90,6 +88,7 @@ watch(selectedRunOptionB, async (opt) => {
   loadingRunB.value = true
   try {
     runBDetails.value = await $fetch<TestRunDetails>(`/api/test-runs/${opt.value}`)
+    syncQueryParams()
   } catch {
     // ignore
   } finally {
@@ -315,6 +314,10 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
 
             <div v-else-if="!selectedRunOptionA || !selectedRunOptionB" class="text-center py-8 text-gray-500">
               Select two runs to compare test results.
+            </div>
+
+            <div v-else class="text-center py-8 text-gray-500">
+              No overlapping test cases found between the selected runs.
             </div>
           </div>
         </UCard>
