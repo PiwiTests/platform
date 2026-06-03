@@ -232,7 +232,7 @@ function resetView() {
 </script>
 
 <template>
-  <div class="relative select-none">
+  <div v-if="timelineData.length > 0" class="relative select-none">
     <div class="flex items-center justify-between mb-2">
       <span class="text-xs text-gray-500">{{ workers.length }} worker{{ workers.length > 1 ? 's' : '' }} &middot; {{ timelineData.length }} tests</span>
       <UButton
@@ -368,5 +368,9 @@ function resetView() {
         </div>
       </div>
     </Teleport>
+  </div>
+  <div v-else class="text-center py-10 text-gray-500">
+    <UIcon name="i-lucide-rows-3" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+    <p>No worker data available for this run.</p>
   </div>
 </template>

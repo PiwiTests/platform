@@ -269,48 +269,28 @@ function handleSelectTestCase(id: number) {
       />
 
       <!-- ===== TABBED CONTENT PANEL ===== -->
-      <UCard>
-        <template #header>
-          <UTabs v-model="activeTab" :items="tabItems" size="sm" />
-        </template>
+      <UTabs v-model="activeTab" :items="tabItems" size="sm" />
 
-        <div class="overflow-y-auto" style="max-height: calc(100vh - 22rem)">
-          <!-- Tab: Test cases -->
-          <div v-if="activeTab === 'test-cases'">
-            <TestCasesList
-              ref="testCasesListRef"
-              :test-cases="displayTestCases"
-              :is-live="isLive"
-            />
-          </div>
+      <!-- Tab: Test cases -->
+      <TestCasesList
+        v-if="activeTab === 'test-cases'"
+        ref="testCasesListRef"
+        :test-cases="displayTestCases"
+        :is-live="isLive"
+      />
 
-          <!-- Tab: Workers -->
-          <div v-if="activeTab === 'workers'">
-            <WorkersTimeline
-              v-if="displayTestCases.length > 0"
-              :test-cases="displayTestCases"
-              @select-test-case="handleSelectTestCase"
-            />
-            <div v-else class="text-center py-10 text-gray-500">
-              <UIcon name="i-lucide-rows-3" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
-              <p>No worker data available for this run.</p>
-            </div>
-          </div>
+      <!-- Tab: Workers -->
+      <WorkersTimeline
+        v-if="activeTab === 'workers'"
+        :test-cases="displayTestCases"
+        @select-test-case="handleSelectTestCase"
+      />
 
-          <!-- Tab: Compare -->
-          <div v-if="activeTab === 'compare'">
-            <RunCompare
-              :test-run="testRun!"
-              :is-live="isLive"
-            />
-          </div>
+      <!-- Tab: Compare -->
+      <RunCompare v-if="activeTab === 'compare'" :test-run="testRun!" :is-live="isLive" />
 
-          <!-- Tab: Slow endpoints -->
-          <div v-if="activeTab === 'endpoints'">
-            <SlowEndpoints />
-          </div>
-        </div>
-      </UCard>
+      <!-- Tab: Slow endpoints -->
+      <SlowEndpoints v-if="activeTab === 'endpoints'" />
     </template>
   </UDashboardPanel>
 
