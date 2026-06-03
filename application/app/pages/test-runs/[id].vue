@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, watch, onUnmounted } from 'vue'
-import type { TestRunDetails, TestCaseResult, ReportInfo } from '~~/types/api'
+import type { TestRunDetails, TestCaseResult, ReportInfo, ProjectWithTestRuns } from '~~/types/api'
 
 const route = useRoute()
 const runId = route.params.id
@@ -200,6 +200,36 @@ const allReports = computed<ReportInfo[]>(() => {
   return list
 })
 
+interface RunOption {
+  label: string
+  value: number
+}
+
+const { data: projectData } = await useFetch<ProjectWithTestRuns>(() => `/api/projects/${testRun.value?.projectId}`)
+
+const projectRunOptions = computed<RunOption[]>(() => {
+  if (!projectData.value?.testRuns) return []
+  return projectData.value.testRuns
+    .filter(r => r.id !== Number(runId))
+    .slice(0, 50)
+    .map(r => ({
+      label: `Run #${r.id} — ${new Date(r.startTime).toLocaleDateString()} (${r.status})`,
+      value: r.id
+    }))
+})
+
+const previousRunId = computed<number | null>(() => {
+  if (!projectData.value?.testRuns) return null
+  const sorted = [...projectData.value.testRuns].sort(
+    (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+  )
+  const currentIdx = sorted.findIndex(r => r.id === Number(runId))
+  if (currentIdx >= 0 && currentIdx < sorted.length - 1) {
+    return sorted[currentIdx + 1]!.id
+  }
+  return null
+})
+
 // Right panel tabs
 const activeTab = ref('test-cases')
 const tabItems = [
@@ -287,7 +317,13 @@ function handleSelectTestCase(id: number) {
       />
 
       <!-- Tab: Compare -->
-      <RunCompare v-if="activeTab === 'compare'" :test-run="testRun!" :is-live="isLive" />
+      <RunCompare
+        v-if="activeTab === 'compare'"
+        :test-run="testRun!"
+        :is-live="isLive"
+        :project-run-options="projectRunOptions"
+        :previous-run-id="previousRunId"
+      />
 
       <!-- Tab: Slow endpoints -->
       <SlowEndpoints v-if="activeTab === 'endpoints'" />

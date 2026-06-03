@@ -88,8 +88,8 @@ test.describe('Performance UI Tests', () => {
     await page.goto(`/test-runs/${testRunId}`)
 
     // Should show avg and p90 test duration
-    await expect(page.getByText('Avg test duration')).toBeVisible()
-    await expect(page.getByText('P90 test duration')).toBeVisible()
+    await expect(page.getByText('Avg', { exact: true })).toBeVisible()
+    await expect(page.getByText('P90', { exact: true })).toBeVisible()
 
     // Should show slowest step column
     await expect(page.getByText('Slowest step')).toBeVisible()

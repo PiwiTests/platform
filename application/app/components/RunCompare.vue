@@ -1,48 +1,20 @@
 <script setup lang="ts">
 import { h, resolveComponent, computed, watch, ref } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
-import type { TestRunDetails, ProjectWithTestRuns } from '~~/types/api'
+import type { TestRunDetails } from '~~/types/api'
 import type { ComparisonRow } from '~/composables/useRunComparison'
-
-const props = defineProps<{
-  testRun: TestRunDetails
-  isLive: boolean
-}>()
 
 interface RunOption {
   label: string
   value: number
 }
 
-const route = useRoute()
-const runId = route.params.id
-
-const { data: projectData } = await useFetch<ProjectWithTestRuns>(() => `/api/projects/${props.testRun.projectId}`, {
-  lazy: true
-})
-
-const projectRunOptions = computed<RunOption[]>(() => {
-  if (!projectData.value?.testRuns) return []
-  return projectData.value.testRuns
-    .filter(r => r.id !== Number(runId))
-    .slice(0, 50)
-    .map(r => ({
-      label: `Run #${r.id} — ${new Date(r.startTime).toLocaleDateString()} (${r.status})`,
-      value: r.id
-    }))
-})
-
-const previousRunId = computed<number | null>(() => {
-  if (!projectData.value?.testRuns) return null
-  const sorted = [...projectData.value.testRuns].sort(
-    (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
-  )
-  const currentIdx = sorted.findIndex(r => r.id === Number(runId))
-  if (currentIdx >= 0 && currentIdx < sorted.length - 1) {
-    return sorted[currentIdx + 1]!.id
-  }
-  return null
-})
+const props = defineProps<{
+  testRun: TestRunDetails
+  isLive: boolean
+  projectRunOptions: RunOption[]
+  previousRunId: number | null
+}>()
 
 const compareRunA = ref<RunOption | undefined>(undefined)
 const baselineRun = ref<TestRunDetails | null>(null)
@@ -64,8 +36,8 @@ watch(compareRunA, async (opt) => {
 })
 
 function compareWithPrevious() {
-  if (previousRunId.value) {
-    const match = projectRunOptions.value.find(o => o.value === previousRunId.value)
+  if (props.previousRunId) {
+    const match = props.projectRunOptions.find(o => o.value === props.previousRunId)
     if (match) compareRunA.value = match
   }
 }
@@ -206,7 +178,7 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
           <span v-if="comparisonSummary.newFailures === 0 && comparisonSummary.recovered === 0 && comparisonSummary.stillFailing === 0" class="text-sm text-gray-500">No status changes</span>
         </div>
         <div class="flex flex-wrap gap-4 text-sm">
-          <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-1">Duration</span>
+          <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-1">Duration changes</span>
           <UBadge
             v-if="comparisonSummary.regressed > 0"
             color="error"
