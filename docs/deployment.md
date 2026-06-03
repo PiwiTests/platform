@@ -47,7 +47,7 @@ docker run -p 3000:3000 \
 
 The `.data` directory contains:
 
-- `playwright.db` — SQLite database
+- `piwi.db` — SQLite database
 - `storage/` — HTML reports and trace files
 
 ### Environment variables

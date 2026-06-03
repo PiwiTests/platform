@@ -48,7 +48,7 @@ export async function initDatabase() {
         mkdirSync('.data')
       }
 
-      const dbPath = process.env.DATABASE_PATH || '.data/playwright.db'
+      const dbPath = process.env.DATABASE_PATH || '.data/piwi.db'
       const absolutePath = resolve(dbPath)
       const dbUrl = pathToFileURL(absolutePath).href
       db = sqliteDrizzle(dbUrl, { schema: sqliteSchema })

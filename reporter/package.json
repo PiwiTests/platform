@@ -9,7 +9,7 @@
     "url": "https://github.com/PhenX/piwi-dashboard"
   },
   "bugs": {
-    "url": "https://github.com/PhenX/playwright-dashboard/issues"
+    "url": "https://github.com/PhenX/piwi-dashboard/issues"
   },
   "main": "index.js",
   "types": "index.d.ts",

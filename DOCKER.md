@@ -68,7 +68,7 @@ docker run -p 3000:3000 \
 ```
 
 The `.data` directory contains:
-- `playwright.db` — SQLite database (unless using PostgreSQL)
+- `piwi.db` — SQLite database (unless using PostgreSQL)
 - `storage/` — Uploaded HTML reports and trace files
 
 ## Docker Compose

@@ -270,18 +270,18 @@ test.describe.serial('Reporter with authentication enabled', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // Full PlaywrightDashboardReporter flow with username/password options
+  // Full PiwiDashboardReporter flow with username/password options
   // The reporter package is CommonJS, so we run it in a dedicated Node.js
   // subprocess using --input-type=commonjs to avoid ESM/CJS interop issues.
   // ---------------------------------------------------------------------------
 
-  test('PlaywrightDashboardReporter submits results with username/password options', async ({ request }) => {
+  test('PiwiDashboardReporter submits results with username/password options', async ({ request }) => {
     const reporterPath = resolve(process.cwd(), '..', 'reporter', 'index.js')
     const testFilePath = join(resolve(process.cwd()), 'tests', 'home.spec.ts')
 
     const { exitCode, stderr } = await runReporterScript(`
-      const PlaywrightDashboardReporter = require(${JSON.stringify(reporterPath)});
-      const reporter = new PlaywrightDashboardReporter({
+      const PiwiDashboardReporter = require(${JSON.stringify(reporterPath)});
+      const reporter = new PiwiDashboardReporter({
         serverUrl: ${JSON.stringify(AUTH_SERVER_URL)},
         projectName: 'reporter-full-auth-test',
         uploadReport: false,
@@ -318,12 +318,12 @@ test.describe.serial('Reporter with authentication enabled', () => {
     expect(projects.find(p => p.name === 'reporter-full-auth-test')).toBeDefined()
   })
 
-  test('PlaywrightDashboardReporter fails when auth is required but no credentials given', async () => {
+  test('PiwiDashboardReporter fails when auth is required but no credentials given', async () => {
     const reporterPath = resolve(process.cwd(), '..', 'reporter', 'index.js')
 
     const { exitCode } = await runReporterScript(`
-      const PlaywrightDashboardReporter = require(${JSON.stringify(reporterPath)});
-      const reporter = new PlaywrightDashboardReporter({
+      const PiwiDashboardReporter = require(${JSON.stringify(reporterPath)});
+      const reporter = new PiwiDashboardReporter({
         serverUrl: ${JSON.stringify(AUTH_SERVER_URL)},
         projectName: 'reporter-no-auth-test',
         uploadReport: false,
@@ -504,15 +504,15 @@ test.describe.serial('Reporter with authentication enabled', () => {
     expect(result.testRunId).toBeDefined()
   })
 
-  test('PlaywrightDashboardReporter submits results with apiKey option', async ({ request }) => {
+  test('PiwiDashboardReporter submits results with apiKey option', async ({ request }) => {
     expect(reporterApiKey).not.toBeNull()
 
     const reporterPath = resolve(process.cwd(), '..', 'reporter', 'index.js')
     const testFilePath = join(resolve(process.cwd()), 'tests', 'api-key.spec.ts')
 
     const { exitCode, stderr } = await runReporterScript(`
-      const PlaywrightDashboardReporter = require(${JSON.stringify(reporterPath)});
-      const reporter = new PlaywrightDashboardReporter({
+      const PiwiDashboardReporter = require(${JSON.stringify(reporterPath)});
+      const reporter = new PiwiDashboardReporter({
         serverUrl: ${JSON.stringify(AUTH_SERVER_URL)},
         projectName: 'reporter-api-key-e2e-test',
         uploadReport: false,

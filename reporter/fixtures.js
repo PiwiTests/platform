@@ -2,7 +2,7 @@ const { test: base } = require('@playwright/test');
 
 /**
  * Playwright fixture that automatically collects network request timing
- * and browser performance metrics for the Playwright Dashboard reporter.
+ * and browser performance metrics for the Piwi Dashboard reporter.
  *
  * Usage in playwright.config.ts:
  * ```ts

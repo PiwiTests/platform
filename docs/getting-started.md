@@ -40,7 +40,7 @@ See [Deployment](./deployment) for detailed Docker, Docker Compose, PostgreSQL, 
 ```bash
 # Clone the repository
 git clone https://github.com/PhenX/piwi-dashboard.git
-cd playwright-dashboard/application
+cd piwi-dashboard/application
 
 # Install dependencies
 npm install
