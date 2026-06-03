@@ -224,6 +224,8 @@ const { data: networkEndpoints, pending: loadingEndpoints } = await useFetch<End
   { lazy: true, server: false }
 )
 
+const showCustomData = ref(false)
+
 const UBadge = resolveComponent('UBadge')
 
 // Merge reports from the new `reports` table with the legacy reportPath field
@@ -250,6 +252,14 @@ const allReports = computed<ReportInfo[]>(() => {
 
   return list
 })
+
+// Right panel tabs
+const activeTab = ref('test-cases')
+const tabItems = [
+  { label: 'Test cases', icon: 'i-lucide-beaker', value: 'test-cases' },
+  { label: 'Compare', icon: 'i-lucide-git-compare-arrows', value: 'compare' },
+  { label: 'Slow endpoints', icon: 'i-lucide-network', value: 'endpoints' }
+]
 
 const testCasesColumns: TableColumn<TestCaseResult>[] = [
   {
@@ -560,478 +570,459 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4">
-        <UCard>
-          <template #header>
-            <div class="flex justify-between items-center">
-              <div class="flex items-center gap-2">
-                <h2 class="text-xl font-semibold">
-                  Test run #{{ testRun?.id }}
-                </h2>
-                <span v-if="isLive" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                  <span class="relative flex h-2 w-2">
-                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                    <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
-                  </span>
-                  Live
-                </span>
+      <div class="p-3 lg:p-4 space-y-4">
+        <!-- ===== COMPACT SUMMARY CARD ===== -->
+        <UCard class="shadow-xs">
+          <div class="space-y-3">
+            <!-- Top header row -->
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <div
+                  class="shrink-0 size-8 rounded-lg flex items-center justify-center"
+                  :class="{
+                    'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400': testRun?.status === 'passed',
+                    'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400': testRun?.status === 'failed' || testRun?.status === 'timedOut',
+                    'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400': testRun?.status === 'cancelled' || testRun?.status === 'skipped',
+                    'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400': testRun?.status === 'running' || testRun?.status === 'initialising'
+                  }"
+                >
+                  <UIcon
+                    :name="testRun?.status === 'passed' ? 'i-lucide-check-circle-2'
+                      : testRun?.status === 'failed' || testRun?.status === 'timedOut' ? 'i-lucide-x-circle'
+                        : testRun?.status === 'running' || testRun?.status === 'initialising' ? 'i-lucide-loader-circle'
+                          : 'i-lucide-minus-circle'"
+                    class="size-4.5"
+                    :class="{ 'animate-spin': testRun?.status === 'running' || testRun?.status === 'initialising' }"
+                  />
+                </div>
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <h2 class="text-base font-bold truncate">
+                      Test run #{{ testRun?.id }}
+                    </h2>
+                    <RunStatusBadge :status="testRun?.status ?? ''" />
+                    <span v-if="isLive" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 animate-pulse">
+                      <span class="relative flex h-1.5 w-1.5">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                        <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
+                      </span>
+                      Live
+                    </span>
+                    <span v-if="testRun?.environment" class="text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-1.5 py-0.5 rounded-full border border-blue-200 dark:border-blue-800">
+                      {{ testRun.environment }}
+                    </span>
+                  </div>
+                  <p class="text-xs text-gray-500 mt-0.5">
+                    {{ testRun?.project?.label ?? testRun?.project?.name }}
+                    &middot;
+                    Started {{ testRun?.startTime ? new Date(testRun.startTime).toLocaleString() : 'N/A' }}
+                  </p>
+                </div>
               </div>
-              <UBadge v-if="testRun" :color="getStatusColor(testRun.status)" size="lg">
-                {{ testRun.status }}
-              </UBadge>
+              <div v-if="allReports.length > 0" class="shrink-0 hidden sm:flex items-start gap-2">
+                <RunReports :reports="allReports" />
+              </div>
             </div>
-          </template>
 
-          <div class="space-y-4">
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <p class="text-sm text-gray-500">
-                  Project
+            <!-- Stat boxes row -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Total
                 </p>
-                <p class="font-medium">
-                  {{ testRun?.project?.label ?? testRun?.project?.name }}
-                </p>
-              </div>
-              <div>
-                <p class="text-sm text-gray-500">
-                  Total tests
-                </p>
-                <p class="font-medium">
-                  {{ displayProgress?.totalTests ?? testRun?.totalTests }}
+                <p class="text-xl font-bold mt-0.5">
+                  {{ displayProgress?.totalTests ?? testRun?.totalTests ?? 0 }}
                 </p>
               </div>
-              <div>
-                <p class="text-sm text-gray-500">
+              <div class="rounded-lg bg-green-50 dark:bg-green-900/20 p-3">
+                <p class="text-xs font-medium text-green-700 dark:text-green-400 uppercase tracking-wider">
+                  <span class="inline-block size-1.5 rounded-full bg-green-500 mr-1 align-middle" />
                   Passed
                 </p>
-                <p class="font-medium text-green-600">
-                  {{ displayProgress?.passedTests ?? testRun?.passedTests }}
+                <p class="text-xl font-bold mt-0.5 text-green-600 dark:text-green-400">
+                  {{ displayProgress?.passedTests ?? testRun?.passedTests ?? 0 }}
                 </p>
               </div>
-              <div>
-                <p class="text-sm text-gray-500">
+              <div class="rounded-lg bg-red-50 dark:bg-red-900/20 p-3">
+                <p class="text-xs font-medium text-red-700 dark:text-red-400 uppercase tracking-wider">
+                  <span class="inline-block size-1.5 rounded-full bg-red-500 mr-1 align-middle" />
                   Failed
                 </p>
-                <p class="font-medium text-red-600">
-                  {{ displayProgress?.failedTests ?? testRun?.failedTests }}
+                <p class="text-xl font-bold mt-0.5 text-red-600 dark:text-red-400">
+                  {{ displayProgress?.failedTests ?? testRun?.failedTests ?? 0 }}
                 </p>
               </div>
-              <div>
-                <p class="text-sm text-gray-500">
+              <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <span class="inline-block size-1.5 rounded-full bg-gray-400 mr-1 align-middle" />
                   Skipped
                 </p>
-                <p class="font-medium">
-                  {{ displayProgress?.skippedTests ?? testRun?.skippedTests }}
-                </p>
-              </div>
-              <div>
-                <p class="text-sm text-gray-500">
-                  Duration
-                </p>
-                <p class="font-medium">
-                  {{ formatDuration(testRun?.duration) }}
-                </p>
-              </div>
-              <div v-if="testRun?.avgTestDuration">
-                <p class="text-sm text-gray-500">
-                  Avg test duration
-                </p>
-                <p class="font-medium">
-                  {{ formatDuration(testRun.avgTestDuration) }}
-                </p>
-              </div>
-              <div v-if="testRun?.p90TestDuration">
-                <p class="text-sm text-gray-500">
-                  P90 test duration
-                </p>
-                <p class="font-medium text-orange-600">
-                  {{ formatDuration(testRun.p90TestDuration) }}
-                </p>
-              </div>
-              <div>
-                <p class="text-sm text-gray-500">
-                  Start time
-                </p>
-                <p class="font-medium">
-                  {{ testRun?.startTime ? new Date(testRun.startTime).toLocaleString() : 'N/A' }}
-                </p>
-              </div>
-              <div v-if="testRun?.environment">
-                <p class="text-sm text-gray-500">
-                  Environment
-                </p>
-                <p class="font-medium">
-                  <span class="text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded">
-                    {{ testRun.environment }}
-                  </span>
+                <p class="text-xl font-bold mt-0.5 text-gray-600 dark:text-gray-400">
+                  {{ displayProgress?.skippedTests ?? testRun?.skippedTests ?? 0 }}
                 </p>
               </div>
             </div>
 
-            <div v-if="allReports.length > 0" class="pt-4 border-t">
-              <p class="text-sm text-gray-500 mb-2">
+            <!-- Progress bar row compact -->
+            <div>
+              <div v-if="testRun" class="flex items-center gap-3">
+                <div class="flex-1 max-w-md">
+                  <TestStatusBar
+                    :passed="displayProgress?.passedTests ?? testRun?.passedTests ?? 0"
+                    :failed="displayProgress?.failedTests ?? testRun?.failedTests ?? 0"
+                    :skipped="displayProgress?.skippedTests ?? testRun?.skippedTests ?? 0"
+                    :flaky="testRun?.flakyTests ?? 0"
+                    :total="displayProgress?.totalTests ?? testRun?.totalTests ?? 0"
+                  />
+                </div>
+                <div class="flex items-center gap-3 text-xs shrink-0">
+                  <div class="flex items-center gap-1">
+                    <UIcon name="i-lucide-clock" class="size-3.5 text-gray-400" />
+                    <span class="font-medium tabular-nums">{{ formatDuration(testRun?.duration) }}</span>
+                  </div>
+                  <div v-if="testRun?.avgTestDuration" class="flex items-center gap-1">
+                    <UIcon name="i-lucide-gauge" class="size-3.5 text-gray-400" />
+                    <span class="text-gray-500 hidden sm:inline">Avg</span>
+                    <span class="font-medium tabular-nums">{{ formatDuration(testRun.avgTestDuration) }}</span>
+                  </div>
+                  <div v-if="testRun?.p90TestDuration" class="flex items-center gap-1">
+                    <UIcon name="i-lucide-arrow-up-right" class="size-3.5 text-orange-500" />
+                    <span class="text-gray-500 hidden sm:inline">P90</span>
+                    <span class="font-medium tabular-nums text-orange-600 dark:text-orange-400">{{ formatDuration(testRun.p90TestDuration) }}</span>
+                  </div>
+                </div>
+              </div>
+              <!-- Live progress bar -->
+              <div v-if="isLive && displayProgress" class="mt-2">
+                <div class="flex justify-between text-xs text-gray-500 mb-1">
+                  <span class="font-medium">Progress</span>
+                  <span class="tabular-nums">{{ displayProgress.passedTests + displayProgress.failedTests + displayProgress.skippedTests }} / {{ displayProgress.totalTests || '?' }}</span>
+                </div>
+                <div class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden flex">
+                  <div
+                    v-if="displayProgress.passedTests > 0"
+                    class="h-full bg-green-500 transition-all duration-500"
+                    :style="{ width: `${(displayProgress.passedTests / Math.max(displayProgress.totalTests || displayProgress.passedTests + displayProgress.failedTests + displayProgress.skippedTests, 1)) * 100}%` }"
+                  />
+                  <div
+                    v-if="displayProgress.failedTests > 0"
+                    class="h-full bg-red-500 transition-all duration-500"
+                    :style="{ width: `${(displayProgress.failedTests / Math.max(displayProgress.totalTests || displayProgress.passedTests + displayProgress.failedTests + displayProgress.skippedTests, 1)) * 100}%` }"
+                  />
+                  <div
+                    v-if="displayProgress.skippedTests > 0"
+                    class="h-full bg-gray-400 transition-all duration-500"
+                    :style="{ width: `${(displayProgress.skippedTests / Math.max(displayProgress.totalTests || displayProgress.passedTests + displayProgress.failedTests + displayProgress.skippedTests, 1)) * 100}%` }"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div v-if="allReports.length > 0" class="sm:hidden">
+              <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
                 Reports
               </p>
               <RunReports :reports="allReports" />
             </div>
-
-            <!-- Metadata Section -->
-            <div v-if="testRun?.metadata" class="pt-4 border-t">
-              <p class="text-sm text-gray-500 mb-3">
-                Metadata
-              </p>
-              <div class="space-y-3">
-                <!-- Project Description -->
-                <div v-if="testRun.metadata.projectDescription">
-                  <p class="text-xs text-gray-500 uppercase">
-                    Description
-                  </p>
-                  <p class="text-sm">
-                    {{ testRun.metadata.projectDescription }}
-                  </p>
-                </div>
-
-                <!-- Related Issue -->
-                <div v-if="testRun.metadata.relatedIssue">
-                  <p class="text-xs text-gray-500 uppercase">
-                    Related issue
-                  </p>
-                  <p class="text-sm">
-                    {{ testRun.metadata.relatedIssue }}
-                  </p>
-                </div>
-
-                <!-- CI Info -->
-                <div v-if="testRun.metadata.ci" class="space-y-2">
-                  <p class="text-xs text-gray-500 uppercase">
-                    CI information
-                  </p>
-                  <div class="grid grid-cols-2 gap-2 text-sm">
-                    <div v-if="testRun.metadata.ci.provider">
-                      <span class="text-gray-500">Provider:</span>
-                      <span class="ml-2 font-medium">{{ testRun.metadata.ci.provider }}</span>
-                    </div>
-                    <div v-if="testRun.metadata.ci.buildNumber">
-                      <span class="text-gray-500">Build:</span>
-                      <span class="ml-2 font-medium">{{ testRun.metadata.ci.buildNumber }}</span>
-                    </div>
-                    <div v-if="testRun.metadata.ci.buildUrl" class="col-span-2">
-                      <a :href="testRun.metadata.ci.buildUrl" target="_blank" class="text-primary hover:underline flex items-center gap-1">
-                        <span>View Build</span>
-                        <UIcon name="i-lucide-external-link" class="w-3 h-3" />
-                      </a>
-                    </div>
-                    <div v-if="testRun.metadata.ci.jobName">
-                      <span class="text-gray-500">Job:</span>
-                      <span class="ml-2 font-medium">{{ testRun.metadata.ci.jobName }}</span>
-                    </div>
-                    <div v-if="testRun.metadata.ci.workflow">
-                      <span class="text-gray-500">Workflow:</span>
-                      <span class="ml-2 font-medium">{{ testRun.metadata.ci.workflow }}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- SCM Info -->
-                <div v-if="testRun.metadata.scm" class="space-y-2">
-                  <p class="text-xs text-gray-500 uppercase">
-                    Source control
-                  </p>
-                  <div class="space-y-1 text-sm">
-                    <div v-if="testRun.metadata.scm.commit">
-                      <span class="text-gray-500">Commit:</span>
-                      <code class="ml-2 text-xs bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">{{ testRun.metadata.scm.commit.length >= 8 ? testRun.metadata.scm.commit.substring(0, 8) : testRun.metadata.scm.commit }}</code>
-                    </div>
-                    <div v-if="testRun.metadata.scm.branch">
-                      <span class="text-gray-500">Branch:</span>
-                      <span class="ml-2 font-medium">{{ testRun.metadata.scm.branch }}</span>
-                    </div>
-                    <div v-if="testRun.metadata.scm.author">
-                      <span class="text-gray-500">Author:</span>
-                      <span class="ml-2 font-medium">{{ testRun.metadata.scm.author }}</span>
-                    </div>
-                    <div v-if="testRun.metadata.scm.commitMessage">
-                      <span class="text-gray-500">Message:</span>
-                      <span class="ml-2">{{ testRun.metadata.scm.commitMessage }}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Tags -->
-                <div v-if="testRun.metadata.tags && testRun.metadata.tags.length > 0">
-                  <p class="text-xs text-gray-500 uppercase mb-2">
-                    Tags
-                  </p>
-                  <div class="flex flex-wrap gap-2">
-                    <UBadge
-                      v-for="tag in testRun.metadata.tags"
-                      :key="tag"
-                      color="gray"
-                      variant="soft"
-                    >
-                      {{ tag }}
-                    </UBadge>
-                  </div>
-                </div>
-
-                <!-- Custom Data -->
-                <div v-if="testRun.metadata.customData">
-                  <p class="text-xs text-gray-500 uppercase mb-2">
-                    Custom data
-                  </p>
-                  <div class="bg-gray-50 dark:bg-gray-900 p-3 rounded text-xs font-mono overflow-x-auto">
-                    <pre>{{ JSON.stringify(testRun.metadata.customData, null, 2) }}</pre>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </UCard>
 
+        <!-- ===== METADATA HEADER AREA (tags, SCM, CI, details) ===== -->
+        <div
+          v-if="testRun?.metadata"
+          class="flex flex-wrap items-start gap-x-6 gap-y-2 text-xs text-gray-600 dark:text-gray-400"
+        >
+          <!-- Tags -->
+          <div v-if="testRun.metadata.tags && testRun.metadata.tags.length > 0" class="flex items-center gap-1.5 flex-wrap">
+            <UBadge
+              v-for="tag in testRun.metadata.tags"
+              :key="tag"
+              color="gray"
+              variant="soft"
+              size="sm"
+            >
+              {{ tag }}
+            </UBadge>
+          </div>
+
+          <!-- Source control -->
+          <template v-if="testRun.metadata.scm">
+            <span v-if="testRun.metadata.scm.branch" class="flex items-center gap-1">
+              <UIcon name="i-lucide-git-branch" class="size-3.5 shrink-0" />
+              <span class="font-medium">{{ testRun.metadata.scm.branch }}</span>
+            </span>
+            <span v-if="testRun.metadata.scm.commit" class="flex items-center gap-1">
+              <UIcon name="i-lucide-git-commit-horizontal" class="size-3.5 shrink-0" />
+              <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded font-mono text-xs">{{ testRun.metadata.scm.commit.length >= 8 ? testRun.metadata.scm.commit.substring(0, 8) : testRun.metadata.scm.commit }}</code>
+            </span>
+            <span v-if="testRun.metadata.scm.author" class="flex items-center gap-1">
+              <UIcon name="i-lucide-user" class="size-3.5 shrink-0" />
+              <span>{{ testRun.metadata.scm.author }}</span>
+            </span>
+            <span v-if="testRun.metadata.scm.commitMessage" class="text-gray-400 italic truncate max-w-64 hidden sm:inline" :title="testRun.metadata.scm.commitMessage">
+              {{ testRun.metadata.scm.commitMessage }}
+            </span>
+          </template>
+
+          <!-- CI -->
+          <template v-if="testRun.metadata.ci">
+            <span v-if="testRun.metadata.ci.provider" class="flex items-center gap-1">
+              <UIcon name="i-lucide-cloud" class="size-3.5 shrink-0" />
+              <span>{{ testRun.metadata.ci.provider }}{{ testRun.metadata.ci.buildNumber ? ` #${testRun.metadata.ci.buildNumber}` : '' }}</span>
+            </span>
+            <span v-if="testRun.metadata.ci.jobName" class="text-gray-500">
+              Job: {{ testRun.metadata.ci.jobName }}
+            </span>
+            <a
+              v-if="testRun.metadata.ci.buildUrl"
+              :href="testRun.metadata.ci.buildUrl"
+              target="_blank"
+              class="text-primary hover:underline inline-flex items-center gap-0.5"
+            >
+              <UIcon name="i-lucide-external-link" class="size-3" /> Build
+            </a>
+          </template>
+
+          <!-- Description / Related issue -->
+          <span v-if="testRun.metadata.projectDescription" class="text-gray-500 truncate max-w-64 hidden sm:inline">
+            {{ testRun.metadata.projectDescription }}
+          </span>
+          <span v-if="testRun.metadata.relatedIssue" class="flex items-center gap-1">
+            <UIcon name="i-lucide-link" class="size-3.5 shrink-0" />
+            <span>{{ testRun.metadata.relatedIssue }}</span>
+          </span>
+
+          <!-- Custom Data toggle -->
+          <UButton
+            v-if="testRun.metadata.customData"
+            size="xs"
+            variant="ghost"
+            color="neutral"
+            icon="i-lucide-chevron-down"
+            @click="showCustomData = !showCustomData"
+          >
+            Custom data
+          </UButton>
+        </div>
+
+        <!-- Custom data expandable -->
+        <div v-if="showCustomData && testRun?.metadata?.customData" class="-mt-2">
+          <div class="bg-gray-50 dark:bg-gray-900 p-3 rounded text-xs font-mono overflow-x-auto max-h-48 overflow-y-auto">
+            <pre class="m-0">{{ JSON.stringify(testRun.metadata.customData, null, 2) }}</pre>
+          </div>
+        </div>
+
+        <!-- ===== TABBED CONTENT PANEL ===== -->
         <UCard>
           <template #header>
-            <div class="flex items-center gap-2">
-              <h3 class="text-lg font-medium">
-                Test cases
-              </h3>
-              <span v-if="isLive" class="text-sm text-gray-500">
-                ({{ displayTestCases.length }} completed)
-              </span>
-              <span v-else-if="filteredTestCases.length !== displayTestCases.length" class="text-sm text-gray-500">
-                ({{ filteredTestCases.length }} of {{ displayTestCases.length }})
-              </span>
-            </div>
-
-            <!-- Search and filter controls -->
-            <div class="flex flex-wrap items-center gap-3 mt-3">
-              <UInput
-                v-model="testCaseSearch"
-                placeholder="Search test cases..."
-                icon="i-lucide-search"
-                size="sm"
-                class="w-64"
-              />
-              <USelect
-                v-model="testCaseStatusFilter"
-                :items="testCaseStatusOptions"
-                size="sm"
-                class="w-40"
-              />
-            </div>
+            <UTabs
+              v-model="activeTab"
+              :items="tabItems"
+              size="sm"
+            />
           </template>
 
-          <!-- Live progress bar -->
-          <div v-if="isLive && displayProgress" class="mb-4">
-            <div class="flex justify-between text-xs text-gray-500 mb-1">
-              <span>Progress</span>
-              <span>{{ displayProgress.passedTests + displayProgress.failedTests + displayProgress.skippedTests }} tests completed</span>
-            </div>
-            <div class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden flex">
-              <div
-                v-if="displayProgress.passedTests > 0"
-                class="h-full bg-green-500 transition-all duration-300"
-                :style="{ width: `${(displayProgress.passedTests / Math.max(displayProgress.totalTests || displayProgress.passedTests + displayProgress.failedTests + displayProgress.skippedTests, 1)) * 100}%` }"
-              />
-              <div
-                v-if="displayProgress.failedTests > 0"
-                class="h-full bg-red-500 transition-all duration-300"
-                :style="{ width: `${(displayProgress.failedTests / Math.max(displayProgress.totalTests || displayProgress.passedTests + displayProgress.failedTests + displayProgress.skippedTests, 1)) * 100}%` }"
-              />
-              <div
-                v-if="displayProgress.skippedTests > 0"
-                class="h-full bg-gray-400 transition-all duration-300"
-                :style="{ width: `${(displayProgress.skippedTests / Math.max(displayProgress.totalTests || displayProgress.passedTests + displayProgress.failedTests + displayProgress.skippedTests, 1)) * 100}%` }"
-              />
-            </div>
-          </div>
-
-          <UTable
-            v-if="filteredTestCases.length > 0"
-            :data="filteredTestCases"
-            :columns="testCasesColumns"
-            :ui="{
-              base: 'table-fixed border-separate border-spacing-0',
-              thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
-              tbody: '[&>tr]:last:[&>td]:border-b-0',
-              th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
-              td: 'border-b border-default'
-            }"
-          />
-
-          <div v-else-if="displayTestCases.length > 0" class="text-center py-8 text-gray-500">
-            No test cases match your filters.
-          </div>
-
-          <div v-else class="text-center py-8 text-gray-500">
-            No test cases recorded for this run.
-          </div>
-        </UCard>
-
-        <!-- Compare with another run -->
-        <UCard v-if="testRun && !isLive">
-          <template #header>
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <UIcon name="i-lucide-git-compare-arrows" class="w-5 h-5 text-primary" />
-                <div>
-                  <h3 class="text-lg font-medium">
-                    Compare with another run
-                  </h3>
-                  <p class="text-sm text-gray-500 mt-0.5">
-                    Compare test durations side-by-side to identify regressions
-                  </p>
+          <div class="overflow-y-auto" style="max-height: calc(100vh - 22rem)">
+            <!-- Tab: Test cases -->
+            <div v-if="activeTab === 'test-cases'">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div class="flex items-center gap-2">
+                  <span v-if="isLive" class="text-sm text-gray-500 tabular-nums">
+                    {{ displayTestCases.length }} completed
+                  </span>
+                  <span v-else class="text-sm text-gray-500 tabular-nums">
+                    {{ filteredTestCases.length }}{{ filteredTestCases.length !== displayTestCases.length ? ` / ${displayTestCases.length}` : '' }} cases
+                  </span>
                 </div>
-              </div>
-              <UButton
-                v-if="previousRunId"
-                icon="i-lucide-arrow-left-right"
-                size="sm"
-                variant="outline"
-                label="Compare with previous run"
-                @click="compareWithPrevious"
-              />
-            </div>
-          </template>
-
-          <div class="space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Run A (baseline)</label>
-                <USelectMenu
-                  v-model="compareRunA"
-                  :items="projectRunOptions"
-                  placeholder="Select baseline..."
-                />
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Run B (this run)</label>
-                <p class="text-sm font-medium py-2">
-                  #{{ testRun.id }} — {{ testRun.status }}
-                </p>
-              </div>
-            </div>
-
-            <div v-if="loadingBaseline" class="text-center py-4 text-gray-500">
-              <UIcon name="i-lucide-loader-2" class="animate-spin mr-2" />
-              Loading baseline data…
-            </div>
-
-            <template v-else-if="baselineRun && comparisonData.length > 0">
-              <div class="space-y-2">
-                <div class="flex flex-wrap gap-4 text-sm">
-                  <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-1">Status changes</span>
-                  <UBadge
-                    v-if="comparisonSummary.newFailures > 0"
-                    color="error"
-                    variant="soft"
-                    size="lg"
-                  >
-                    {{ comparisonSummary.newFailures }} new failure{{ comparisonSummary.newFailures > 1 ? 's' : '' }}
-                  </UBadge>
-                  <UBadge
-                    v-if="comparisonSummary.recovered > 0"
-                    color="success"
-                    variant="soft"
-                    size="lg"
-                  >
-                    {{ comparisonSummary.recovered }} recovered
-                  </UBadge>
-                  <UBadge
-                    v-if="comparisonSummary.stillFailing > 0"
-                    color="warning"
-                    variant="soft"
-                    size="lg"
-                  >
-                    {{ comparisonSummary.stillFailing }} still failing
-                  </UBadge>
-                  <span v-if="comparisonSummary.newFailures === 0 && comparisonSummary.recovered === 0 && comparisonSummary.stillFailing === 0" class="text-sm text-gray-500">No status changes</span>
-                </div>
-                <div class="flex flex-wrap gap-4 text-sm">
-                  <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-1">Duration changes</span>
-                  <UBadge
-                    v-if="comparisonSummary.regressed > 0"
-                    color="error"
-                    variant="soft"
-                    size="lg"
-                  >
-                    {{ comparisonSummary.regressed }} regressed
-                  </UBadge>
-                  <UBadge
-                    v-if="comparisonSummary.improved > 0"
-                    color="success"
-                    variant="soft"
-                    size="lg"
-                  >
-                    {{ comparisonSummary.improved }} improved
-                  </UBadge>
-                  <UBadge color="neutral" variant="soft" size="lg">
-                    {{ comparisonSummary.unchanged }} unchanged
-                  </UBadge>
+                <div class="flex items-center gap-2">
+                  <UInput
+                    v-model="testCaseSearch"
+                    placeholder="Search test cases..."
+                    icon="i-lucide-search"
+                    size="sm"
+                    class="min-w-48"
+                  />
+                  <USelect
+                    v-model="testCaseStatusFilter"
+                    :items="testCaseStatusOptions"
+                    size="sm"
+                    class="w-32"
+                  />
                 </div>
               </div>
 
               <UTable
-                :data="comparisonData"
-                :columns="comparisonColumns"
+                v-if="filteredTestCases.length > 0"
+                :data="filteredTestCases"
+                :columns="testCasesColumns"
                 :ui="{
                   base: 'table-fixed border-separate border-spacing-0',
                   thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
-                  tbody: '[&>tr]:last:[&>td]:border-b-0',
+                  tbody: '[&>tr]:last:[&>td]:border-b-0 [&>tr]:hover:bg-gray-50 dark:[&>tr]:hover:bg-gray-900/50',
                   th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
                   td: 'border-b border-default'
                 }"
               />
-            </template>
 
-            <div v-else-if="compareRunA && !loadingBaseline" class="text-center py-8 text-gray-500">
-              No comparison data available.
+              <div v-else-if="displayTestCases.length > 0" class="text-center py-10 text-gray-500">
+                <UIcon name="i-lucide-search-x" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+                <p>No test cases match your filters.</p>
+              </div>
+
+              <div v-else class="text-center py-10 text-gray-500">
+                <UIcon name="i-lucide-beaker" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+                <p>No test cases recorded for this run.</p>
+              </div>
             </div>
 
-            <div v-else class="text-center py-8 text-gray-500">
-              Select a baseline run to compare.
-            </div>
-          </div>
-        </UCard>
+            <!-- Tab: Compare -->
+            <div v-if="activeTab === 'compare'">
+              <template v-if="testRun && !isLive">
+                <div class="space-y-4">
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Run A (baseline)</label>
+                      <USelectMenu
+                        v-model="compareRunA"
+                        :items="projectRunOptions"
+                        placeholder="Select a baseline run..."
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Run B (this run)</label>
+                      <div class="flex items-center gap-2 py-1.5">
+                        <RunStatusBadge :status="testRun.status" />
+                        <span class="font-medium">#{{ testRun.id }}</span>
+                      </div>
+                    </div>
+                  </div>
 
-        <!-- Slow API Endpoints -->
-        <UCard>
-          <template #header>
-            <div class="flex items-center gap-2">
-              <UIcon name="i-lucide-network" class="w-5 h-5 text-primary" />
-              <div>
-                <h3 class="text-lg font-medium">
-                  Slow API endpoints
-                </h3>
-                <p class="text-sm text-gray-500 mt-0.5">
-                  Network requests grouped by route and HTTP method — requires
-                  <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">@phenx/playwright-dashboard-reporter/fixtures</code>
+                  <div v-if="previousRunId" class="flex">
+                    <UButton
+                      icon="i-lucide-arrow-left-right"
+                      size="sm"
+                      variant="outline"
+                      label="Compare with previous run"
+                      @click="compareWithPrevious"
+                    />
+                  </div>
+
+                  <div v-if="loadingBaseline" class="flex items-center justify-center py-6 text-gray-500 gap-2">
+                    <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
+                    <span>Loading baseline data...</span>
+                  </div>
+
+                  <template v-else-if="baselineRun && comparisonData.length > 0">
+                    <div class="flex flex-wrap gap-4 text-sm">
+                      <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-1">Status</span>
+                      <UBadge
+                        v-if="comparisonSummary.newFailures > 0"
+                        color="error"
+                        variant="soft"
+                        size="lg"
+                      >
+                        {{ comparisonSummary.newFailures }} new failure{{ comparisonSummary.newFailures > 1 ? 's' : '' }}
+                      </UBadge>
+                      <UBadge
+                        v-if="comparisonSummary.recovered > 0"
+                        color="success"
+                        variant="soft"
+                        size="lg"
+                      >
+                        {{ comparisonSummary.recovered }} recovered
+                      </UBadge>
+                      <UBadge
+                        v-if="comparisonSummary.stillFailing > 0"
+                        color="warning"
+                        variant="soft"
+                        size="lg"
+                      >
+                        {{ comparisonSummary.stillFailing }} still failing
+                      </UBadge>
+                      <span v-if="comparisonSummary.newFailures === 0 && comparisonSummary.recovered === 0 && comparisonSummary.stillFailing === 0" class="text-sm text-gray-500">No status changes</span>
+                    </div>
+                    <div class="flex flex-wrap gap-4 text-sm">
+                      <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-1">Duration</span>
+                      <UBadge
+                        v-if="comparisonSummary.regressed > 0"
+                        color="error"
+                        variant="soft"
+                        size="lg"
+                      >
+                        {{ comparisonSummary.regressed }} regressed
+                      </UBadge>
+                      <UBadge
+                        v-if="comparisonSummary.improved > 0"
+                        color="success"
+                        variant="soft"
+                        size="lg"
+                      >
+                        {{ comparisonSummary.improved }} improved
+                      </UBadge>
+                      <UBadge color="neutral" variant="soft" size="lg">
+                        {{ comparisonSummary.unchanged }} unchanged
+                      </UBadge>
+                    </div>
+
+                    <UTable
+                      :data="comparisonData"
+                      :columns="comparisonColumns"
+                      :ui="{
+                        base: 'table-fixed border-separate border-spacing-0',
+                        thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
+                        tbody: '[&>tr]:last:[&>td]:border-b-0',
+                        th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
+                        td: 'border-b border-default'
+                      }"
+                    />
+                  </template>
+
+                  <div v-else-if="compareRunA && !loadingBaseline" class="text-center py-8 text-gray-500">
+                    <UIcon name="i-lucide-git-compare-arrows" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+                    <p>No comparison data available.</p>
+                  </div>
+
+                  <div v-else class="text-center py-8 text-gray-500">
+                    <UIcon name="i-lucide-arrow-left-right" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+                    <p>Select a baseline run to compare.</p>
+                  </div>
+                </div>
+              </template>
+              <div v-else-if="isLive" class="text-center py-10 text-gray-500">
+                <UIcon name="i-lucide-git-compare-arrows" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+                <p>Comparison is available after the run finishes.</p>
+              </div>
+            </div>
+
+            <!-- Tab: Slow endpoints -->
+            <div v-if="activeTab === 'endpoints'">
+              <div v-if="loadingEndpoints" class="flex items-center justify-center py-8 text-gray-500 gap-2">
+                <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
+                <span>Loading network data...</span>
+              </div>
+
+              <UTable
+                v-else-if="networkEndpoints && networkEndpoints.length > 0"
+                :data="networkEndpoints"
+                :columns="endpointColumns"
+                :ui="{
+                  base: 'table-fixed border-separate border-spacing-0',
+                  thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
+                  tbody: '[&>tr]:last:[&>td]:border-b-0 [&>tr]:hover:bg-gray-50 dark:[&>tr]:hover:bg-gray-900/50',
+                  th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
+                  td: 'border-b border-default'
+                }"
+              />
+
+              <div v-else class="text-center py-8 text-gray-500">
+                <UIcon name="i-lucide-wifi-off" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+                <p>
+                  No network request data. Add the
+                  <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded font-mono">@phenx/playwright-dashboard-reporter/fixtures</code>
+                  to your Playwright config.
                 </p>
               </div>
             </div>
-          </template>
-
-          <div v-if="loadingEndpoints" class="text-center py-8 text-gray-500">
-            <UIcon name="i-lucide-loader-2" class="animate-spin mr-2" />
-            Loading…
-          </div>
-
-          <UTable
-            v-else-if="networkEndpoints && networkEndpoints.length > 0"
-            :data="networkEndpoints"
-            :columns="endpointColumns"
-            :ui="{
-              base: 'table-fixed border-separate border-spacing-0',
-              thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
-              tbody: '[&>tr]:last:[&>td]:border-b-0',
-              th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
-              td: 'border-b border-default'
-            }"
-          />
-
-          <div v-else class="text-center py-8 text-gray-500">
-            No network request data. Add the
-            <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">@phenx/playwright-dashboard-reporter/fixtures</code>
-            to your Playwright config to start collecting endpoint timing.
           </div>
         </UCard>
       </div>
