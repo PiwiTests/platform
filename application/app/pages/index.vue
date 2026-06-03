@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ProjectWithStats, TestRunForChart } from '~~/types/api'
 
-useHead({ title: 'Playwright Dashboard' })
+useHead({ title: 'Piwi Dashboard' })
 
 const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/projects')
 const { data: recentTestRuns } = await useFetch<TestRunForChart[]>('/api/test-runs/recent')

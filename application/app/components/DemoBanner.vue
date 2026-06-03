@@ -19,7 +19,7 @@ if (config.public.demoMode) {
 
 <template>
   <div v-if="config.public.demoMode" ref="banner" class="demo-banner">
-    ⚠️ <strong>Demo mode</strong> — showing sample data only. Forms, actions, and file uploads are disabled. <a href="https://github.com/PhenX/playwright-dashboard" target="_blank" class="underline">Deploy your own instance</a> for live data.
+    ⚠️ <strong>Demo mode</strong> — showing sample data only. Forms, actions, and file uploads are disabled. <a href="https://github.com/PhenX/piwi-dashboard" target="_blank" class="underline">Deploy your own instance</a> for live data.
   </div>
 </template>
 

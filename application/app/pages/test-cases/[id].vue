@@ -11,7 +11,7 @@ const { data: testCase, refresh } = await useFetch(`/api/test-cases/${testCaseId
 const { data: historyData } = await useFetch<TestCaseHistoryPoint[]>(`/api/test-cases/${testCaseId}/history`)
 
 useHead(computed(() => ({
-  title: `${testCase.value?.title || `Test case #${testCaseId}`} — Playwright Dashboard`
+  title: `${testCase.value?.title || `Test case #${testCaseId}`} — Piwi Dashboard`
 })))
 
 const performanceHints = computed(() => {

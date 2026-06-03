@@ -11,7 +11,7 @@ const projectId = route.params.id as string
 
 const { data: project, refresh: refreshProject } = await useFetch<ProjectWithTestRuns>(`/api/projects/${projectId}`)
 
-useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Compare runs — Playwright Dashboard` })))
+useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Compare runs — Piwi Dashboard` })))
 
 interface RunOption {
   label: string

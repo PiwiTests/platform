@@ -31,7 +31,7 @@ test.describe('Dashboard UI Tests', () => {
     await page.goto('/')
 
     // Check page title
-    await expect(page).toHaveTitle(/Playwright Dashboard/)
+    await expect(page).toHaveTitle(/Piwi Dashboard/)
 
     // Check for statistics cards
     await expect(page.getByText('Total projects')).toBeVisible()

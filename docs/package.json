@@ -1,5 +1,5 @@
 {
-  "name": "playwright-dashboard-docs",
+  "name": "piwi-dashboard-docs",
   "private": true,
   "scripts": {
     "docs:dev": "vitepress dev",

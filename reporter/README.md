@@ -1,13 +1,13 @@
-# Playwright Dashboard Reporter
+# Piwi Dashboard Reporter
 
-A custom Playwright reporter that sends test results to a [Playwright Dashboard](https://github.com/PhenX/playwright-dashboard) server. It handles uploading test results, HTML reports, trace files, and performance metrics — with optional live streaming of results as tests execute.
+A custom Playwright reporter that sends test results to a [Piwi Dashboard](https://github.com/PhenX/piwi-dashboard) server. It handles uploading test results, HTML reports, trace files, and performance metrics — with optional live streaming of results as tests execute.
 
-📖 **[Full documentation](https://phenx.github.io/playwright-dashboard/reporter)**
+📖 **[Full documentation](https://phenx.github.io/piwi-dashboard/reporter)**
 
 ## Installation
 
 ```bash
-npm install --save-dev @phenx/playwright-dashboard-reporter
+npm install --save-dev @phenx/piwi-dashboard-reporter
 ```
 
 ## Quick start
@@ -20,7 +20,7 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   reporter: [
     ['list'],
-    ['@phenx/playwright-dashboard-reporter', {
+    ['@phenx/piwi-dashboard-reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-project',
     }],
@@ -39,27 +39,27 @@ npx playwright test
 
 ## Configuration Options
 
-| Option                      | Type     | Default                   | Description                                                                       |
-|-----------------------------|----------|---------------------------|-----------------------------------------------------------------------------------|
-| `serverUrl`                 | string   | `'http://localhost:3000'` | URL of the Playwright Dashboard server                                            |
-| `projectName`               | string   | `'default-project'`       | Name of the project to report results under                                       |
-| `uploadTraces`              | boolean  | `true`                    | Whether to upload trace files to the dashboard                                    |
-| `uploadReport`              | boolean  | `true`                    | Whether to upload the HTML report to the dashboard                                |
-| `reports`                   | array    | —                         | Additional report types to upload (html, monocart, blob, or custom)               |
-| `streaming`                 | boolean  | `true`                    | Enable live streaming of results as tests complete                                |
-| `streamingBatchSize`        | number   | `5`                       | Number of test results to batch before sending                                    |
-| `streamingBatchDelay`       | number   | `2000`                    | Max delay (ms) before flushing pending events                                     |
-| `projectDescription`        | string   | —                         | Description of the project                                                        |
-| `relatedIssue`              | string   | —                         | Related issue reference (e.g., "PROJ-123")                                        |
-| `ciInfo`                    | string   | —                         | CI job information                                                                |
-| `tags`                      | string[] | —                         | Tags to categorize the test run                                                   |
-| `customData`                | object   | —                         | Additional custom metadata as key-value pairs                                     |
-| `collectScmInfo`            | boolean  | `true`                    | Auto-collect git commit, branch, author                                           |
-| `collectCiInfo`             | boolean  | `true`                    | Auto-collect CI environment info                                                  |
-| `collectPerformanceMetrics` | boolean  | `true`                    | Collect step timings, network requests and web vitals from the fixture            |
-| `apiKey`                    | string   | —                         | API key for authentication (preferred for CI)                                     |
-| `username`                  | string   | —                         | Username for dashboard login (use `apiKey` instead when possible)                 |
-| `password`                  | string   | —                         | Password for dashboard login (used with `username`)                               |
+| Option                      | Type     | Default                   | Description                                                            |
+|-----------------------------|----------|---------------------------|------------------------------------------------------------------------|
+| `serverUrl`                 | string   | `'http://localhost:3000'` | URL of the Piwi Dashboard server                                       |
+| `projectName`               | string   | `'default-project'`       | Name of the project to report results under                            |
+| `uploadTraces`              | boolean  | `true`                    | Whether to upload trace files to the dashboard                         |
+| `uploadReport`              | boolean  | `true`                    | Whether to upload the HTML report to the dashboard                     |
+| `reports`                   | array    | —                         | Additional report types to upload (html, monocart, blob, or custom)    |
+| `streaming`                 | boolean  | `true`                    | Enable live streaming of results as tests complete                     |
+| `streamingBatchSize`        | number   | `5`                       | Number of test results to batch before sending                         |
+| `streamingBatchDelay`       | number   | `2000`                    | Max delay (ms) before flushing pending events                          |
+| `projectDescription`        | string   | —                         | Description of the project                                             |
+| `relatedIssue`              | string   | —                         | Related issue reference (e.g., "PROJ-123")                             |
+| `ciInfo`                    | string   | —                         | CI job information                                                     |
+| `tags`                      | string[] | —                         | Tags to categorize the test run                                        |
+| `customData`                | object   | —                         | Additional custom metadata as key-value pairs                          |
+| `collectScmInfo`            | boolean  | `true`                    | Auto-collect git commit, branch, author                                |
+| `collectCiInfo`             | boolean  | `true`                    | Auto-collect CI environment info                                       |
+| `collectPerformanceMetrics` | boolean  | `true`                    | Collect step timings, network requests and web vitals from the fixture |
+| `apiKey`                    | string   | —                         | API key for authentication (preferred for CI)                          |
+| `username`                  | string   | —                         | Username for dashboard login (use `apiKey` instead when possible)      |
+| `password`                  | string   | —                         | Password for dashboard login (used with `username`)                    |
 
 ## Live streaming
 
@@ -68,7 +68,7 @@ By default, the reporter streams test results to the dashboard in real-time. Thi
 To disable streaming and send all results at the end:
 
 ```typescript
-['@phenx/playwright-dashboard-reporter', {
+['@phenx/piwi-dashboard-reporter', {
   serverUrl: 'http://localhost:3000',
   projectName: 'my-project',
   streaming: false,
@@ -87,7 +87,7 @@ export default defineConfig({
     ['list'],
     ['@playwright/test/reporter-html', { outputFolder: 'playwright-report' }],
     ['monocart-reporter', { name: 'My Tests', outputFile: 'monocart-report/index.html' }],
-    ['@phenx/playwright-dashboard-reporter', {
+    ['@phenx/piwi-dashboard-reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-project',
       reports: [
@@ -107,7 +107,7 @@ To capture network request timing and browser Web Vitals, use the provided fixtu
 ```typescript
 // tests/fixtures.ts
 import { test as base, expect } from '@playwright/test'
-import { dashboardFixtures } from '@phenx/playwright-dashboard-reporter/fixtures'
+import { dashboardFixtures } from '@phenx/piwi-dashboard-reporter/fixtures'
 
 export const test = base.extend(dashboardFixtures)
 export { expect }
@@ -116,7 +116,7 @@ export { expect }
 Or as a drop-in replacement:
 
 ```typescript
-import { test, expect } from '@phenx/playwright-dashboard-reporter/fixtures'
+import { test, expect } from '@phenx/piwi-dashboard-reporter/fixtures'
 ```
 
 ### What gets captured
@@ -131,7 +131,7 @@ Both are only collected when `collectPerformanceMetrics` is `true` (the default)
 When the dashboard has authentication enabled, use an API key (recommended for CI):
 
 ```typescript
-['@phenx/playwright-dashboard-reporter', {
+['@phenx/piwi-dashboard-reporter', {
   serverUrl: 'https://your-dashboard.example.com',
   projectName: 'my-project',
   apiKey: process.env.DASHBOARD_API_KEY,
@@ -175,7 +175,7 @@ When `collectCiInfo` is enabled (default), the reporter auto-detects:
 
 - Node.js 18 or higher
 - Playwright Test 1.40 or higher
-- Running Playwright Dashboard server
+- Running Piwi Dashboard server
 
 ## Troubleshooting
 
@@ -187,7 +187,7 @@ When `collectCiInfo` is enabled (default), the reporter auto-detects:
 
 ### Network/Web Vitals not appearing
 
-- Import `test` from `@phenx/playwright-dashboard-reporter/fixtures` (or extend with `dashboardFixtures`)
+- Import `test` from `@phenx/piwi-dashboard-reporter/fixtures` (or extend with `dashboardFixtures`)
 - Verify `collectPerformanceMetrics` is not set to `false`
 - Ensure tests navigate to at least one page (`await page.goto(...)`)
 

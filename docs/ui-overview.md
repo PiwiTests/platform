@@ -5,7 +5,7 @@ lang: en-US
 
 # UI overview
 
-The Playwright Dashboard is a single-page application built with [Nuxt UI](https://ui.nuxt.com). It uses a sidebar navigation layout with real-time updates via Server-Sent Events — pages refresh automatically when test runs start or finish, without requiring manual reload.
+The Piwi Dashboard is a single-page application built with [Nuxt UI](https://ui.nuxt.com). It uses a sidebar navigation layout with real-time updates via Server-Sent Events — pages refresh automatically when test runs start or finish, without requiring manual reload.
 
 ## Navigation structure
 

@@ -3,7 +3,7 @@
 layout: home
 
 hero:
-  name: "Playwright Dashboard"
+  name: "Piwi Dashboard"
   text: "A self-hosted hub for your Playwright test results"
   tagline: Persist every test run, stream results live from CI, track performance regressions, and share reports — without relying on external services.
 
@@ -13,10 +13,10 @@ hero:
       link: /getting-started
     - theme: alt
       text: Live demo
-      link: https://phenx.github.io/playwright-dashboard/demo/
+      link: https://phenx.github.io/piwi-dashboard/demo/
     - theme: alt
       text: GitHub
-      link: https://github.com/PhenX/playwright-dashboard
+      link: https://github.com/PhenX/piwi-dashboard
 
 features:
   - icon: 📊

@@ -17,8 +17,8 @@ useHead({
   }
 })
 
-const title = 'Playwright Dashboard'
-const description = 'The Playwright Dashboard with statistics and test management.'
+const title = 'Piwi Dashboard'
+const description = 'The Piwi Dashboard with statistics and test management.'
 
 useSeoMeta({
   title,

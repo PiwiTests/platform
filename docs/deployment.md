@@ -10,8 +10,8 @@ lang: en-US
 ### Quick start
 
 ```bash
-docker pull ghcr.io/phenx/playwright-dashboard:latest
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/playwright-dashboard:latest
+docker pull ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
 
 The dashboard will be available at `http://localhost:3000`.
@@ -33,7 +33,7 @@ The dashboard will be available at `http://localhost:3000`.
 | Build type | Multistage (builder + production stages) |
 | Image size | ~200 MB |
 | Platforms | `linux/amd64`, `linux/arm64` |
-| Registry | `ghcr.io/phenx/playwright-dashboard` |
+| Registry | `ghcr.io/phenx/piwi-dashboard` |
 
 ### Volumes
 
@@ -42,12 +42,12 @@ Mount a volume to persist data:
 ```bash
 docker run -p 3000:3000 \
   -v /path/to/data:/app/.data \
-  ghcr.io/phenx/playwright-dashboard:latest
+  ghcr.io/phenx/piwi-dashboard:latest
 ```
 
 The `.data` directory contains:
 
-- `playwright.db` — SQLite database
+- `piwi.db` — SQLite database
 - `storage/` — HTML reports and trace files
 
 ### Environment variables
@@ -61,14 +61,14 @@ The `.data` directory contains:
 | `NUXT_AUTH_SECRET` | — | Secret for authentication (required if auth enabled) |
 | `STORAGE_TYPE` | `local` | Storage backend (`local` or `s3`) |
 | `DATABASE_URL` | — | PostgreSQL connection string (e.g. `postgresql://user:pass@host:5432/db`). When set, PostgreSQL is used instead of SQLite. |
-| `DATABASE_PATH` | `.data/playwright.db` | SQLite database path (ignored when `DATABASE_URL` is set) |
+| `DATABASE_PATH` | `.data/piwi.db` | SQLite database path (ignored when `DATABASE_URL` is set) |
 
 ## Building locally
 
 ```bash
 cd application
-docker build -t playwright-dashboard:local .
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data playwright-dashboard:local
+docker build -t piwi-dashboard:local .
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data piwi-dashboard:local
 ```
 
 ## Docker Compose
@@ -77,8 +77,8 @@ Create a `docker-compose.yml`:
 
 ```yaml
 services:
-  playwright-dashboard:
-    image: ghcr.io/phenx/playwright-dashboard:latest
+  piwi-dashboard:
+    image: ghcr.io/phenx/piwi-dashboard:latest
     ports:
       - "3000:3000"
     volumes:
@@ -105,20 +105,20 @@ services:
     environment:
       POSTGRES_USER: playwright
       POSTGRES_PASSWORD: playwright
-      POSTGRES_DB: playwright_dashboard
+      POSTGRES_DB: piwi_dashboard
     volumes:
       - pg-data:/var/lib/postgresql/data
     restart: unless-stopped
 
-  playwright-dashboard:
-    image: ghcr.io/phenx/playwright-dashboard:latest
+  piwi-dashboard:
+    image: ghcr.io/phenx/piwi-dashboard:latest
     ports:
       - "3000:3000"
     volumes:
       - ./storage:/app/.data/storage
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://playwright:playwright@postgres:5432/playwright_dashboard
+      - DATABASE_URL=postgresql://playwright:playwright@postgres:5432/piwi_dashboard
     depends_on:
       - postgres
     restart: unless-stopped
@@ -141,20 +141,20 @@ Example deployment manifest:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: playwright-dashboard
+  name: piwi-dashboard
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: playwright-dashboard
+      app: piwi-dashboard
   template:
     metadata:
       labels:
-        app: playwright-dashboard
+        app: piwi-dashboard
     spec:
       containers:
-      - name: playwright-dashboard
-        image: ghcr.io/phenx/playwright-dashboard:latest
+      - name: piwi-dashboard
+        image: ghcr.io/phenx/piwi-dashboard:latest
         ports:
         - containerPort: 3000
         volumeMounts:
@@ -163,15 +163,15 @@ spec:
       volumes:
       - name: data
         persistentVolumeClaim:
-          claimName: playwright-dashboard-data
+          claimName: piwi-dashboard-data
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: playwright-dashboard
+  name: piwi-dashboard
 spec:
   selector:
-    app: playwright-dashboard
+    app: piwi-dashboard
   ports:
   - port: 80
     targetPort: 3000
@@ -204,7 +204,7 @@ Security best practices:
 ```bash
 mkdir -p .data
 chmod 777 .data
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/playwright-dashboard:latest
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
 
 ### Database locked
@@ -216,7 +216,7 @@ SQLite doesn't support concurrent writes well. For high-concurrency deployments,
 Map to a different host port:
 
 ```bash
-docker run -p 8080:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/playwright-dashboard:latest
+docker run -p 8080:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
 
 The dashboard will be available at `http://localhost:8080`.

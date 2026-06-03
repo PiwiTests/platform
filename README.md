@@ -1,11 +1,15 @@
-# Playwright Dashboard
+# Piwi Dashboard
+
+> **Disclaimer:** Piwi Dashboard is **not affiliated with, endorsed by, or connected to Microsoft Corporation** in any way.  
+> The name "Piwi" is a playful, unrelated name with no connection to any existing product or brand.  
+> This project was originally called "Playwright Dashboard" and was renamed to avoid any confusion with Microsoft's Playwright testing framework.
 
 [![Nuxt UI](https://img.shields.io/badge/Made%20with-Nuxt%20UI-00DC82?logo=nuxt&labelColor=020420)](https://ui.nuxt.com)
-[![Docker](https://img.shields.io/badge/Docker-Available-2496ED?logo=docker&labelColor=020420)](https://github.com/PhenX/playwright-dashboard/pkgs/container/playwright-dashboard)
+[![Docker](https://img.shields.io/badge/Docker-Available-2496ED?logo=docker&labelColor=020420)](https://github.com/PhenX/piwi-dashboard/pkgs/container/piwi-dashboard)
 
-**Playwright Dashboard** is a self-hosted web application for collecting, storing, and visualizing [Playwright](https://playwright.dev) end-to-end test results over time. It gives your team a central place to monitor test health, investigate failures, track performance regressions, and share reports — without relying on external SaaS services.
+**Piwi Dashboard** is a self-hosted web application for collecting, storing, and visualizing [Playwright](https://playwright.dev) end-to-end test results over time. It gives your team a central place to monitor test health, investigate failures, track performance regressions, and share reports — without relying on external SaaS services.
 
-📖 **[Full documentation](https://phenx.github.io/playwright-dashboard)** · 🎮 **[Live demo](https://phenx.github.io/playwright-dashboard/demo/)**
+📖 **[Full documentation](https://phenx.github.io/piwi-dashboard)** · 🎮 **[Live demo](https://phenx.github.io/piwi-dashboard/demo/)**
 
 ![Dashboard home — overview stats and test results trend](docs/public/screenshots/home.png)
 
@@ -30,9 +34,9 @@
 
 </details>
 
-## Why Playwright Dashboard?
+## Why Piwi Dashboard?
 
-Running Playwright tests in CI produces HTML reports that are ephemeral — once a new build runs, the old report is gone. Playwright Dashboard solves this by:
+Running Playwright tests in CI produces HTML reports that are ephemeral — once a new build runs, the old report is gone. Piwi Dashboard solves this by:
 
 1. **Persisting every test run** — results, traces, and reports are stored permanently and browsable at any time.
 2. **Showing trends** — spot flaky tests, performance regressions, and failure patterns across dozens or hundreds of runs.
@@ -59,8 +63,8 @@ Running Playwright tests in CI produces HTML reports that are ephemeral — once
 ### 1. Start the dashboard
 
 ```bash
-docker pull ghcr.io/phenx/playwright-dashboard:latest
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/playwright-dashboard:latest
+docker pull ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
 
 Visit `http://localhost:3000`.
@@ -68,7 +72,7 @@ Visit `http://localhost:3000`.
 ### 2. Install the reporter in your test project
 
 ```bash
-npm install --save-dev @phenx/playwright-dashboard-reporter
+npm install --save-dev @phenx/piwi-dashboard-reporter
 ```
 
 ### 3. Configure Playwright
@@ -80,7 +84,7 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   reporter: [
     ['list'],
-    ['@phenx/playwright-dashboard-reporter', {
+    ['@phenx/piwi-dashboard-reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-project',
     }],
@@ -147,13 +151,13 @@ npm run dev
 ### Project structure
 
 ```
-playwright-dashboard/
+piwi-dashboard/
 ├── application/          # Nuxt 4 web application
 │   ├── app/              # Frontend (Vue components, pages, composables)
 │   ├── server/           # Backend (API routes, database, storage)
 │   ├── public/           # Static assets
 │   └── Dockerfile        # Production container image
-├── reporter/             # @phenx/playwright-dashboard-reporter npm package
+├── reporter/             # @phenx/piwi-dashboard-reporter npm package
 ├── docs/                 # VitePress documentation site
 ├── DOCKER.md             # Docker deployment guide
 └── README.md             # This file
@@ -163,12 +167,12 @@ playwright-dashboard/
 
 | Topic | Link |
 |-------|------|
-| Getting started | [phenx.github.io/playwright-dashboard/getting-started](https://phenx.github.io/playwright-dashboard/getting-started) |
-| Playwright reporter | [phenx.github.io/playwright-dashboard/reporter](https://phenx.github.io/playwright-dashboard/reporter) |
-| API reference | [phenx.github.io/playwright-dashboard/api](https://phenx.github.io/playwright-dashboard/api) |
-| Authentication | [phenx.github.io/playwright-dashboard/authentication](https://phenx.github.io/playwright-dashboard/authentication) |
-| Storage configuration | [phenx.github.io/playwright-dashboard/storage](https://phenx.github.io/playwright-dashboard/storage) |
-| Deployment | [phenx.github.io/playwright-dashboard/deployment](https://phenx.github.io/playwright-dashboard/deployment) |
+| Getting started | [phenx.github.io/piwi-dashboard/getting-started](https://phenx.github.io/piwi-dashboard/getting-started) |
+| Playwright reporter | [phenx.github.io/piwi-dashboard/reporter](https://phenx.github.io/piwi-dashboard/reporter) |
+| API reference | [phenx.github.io/piwi-dashboard/api](https://phenx.github.io/piwi-dashboard/api) |
+| Authentication | [phenx.github.io/piwi-dashboard/authentication](https://phenx.github.io/piwi-dashboard/authentication) |
+| Storage configuration | [phenx.github.io/piwi-dashboard/storage](https://phenx.github.io/piwi-dashboard/storage) |
+| Deployment | [phenx.github.io/piwi-dashboard/deployment](https://phenx.github.io/piwi-dashboard/deployment) |
 
 ## Contributing
 

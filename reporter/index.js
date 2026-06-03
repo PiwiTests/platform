@@ -15,10 +15,10 @@ const {
 } = require('./lib/files');
 
 /**
- * Playwright Dashboard Reporter
- * Sends test results to a Playwright Dashboard server
+ * Piwi Dashboard Reporter
+ * Sends test results to a Piwi Dashboard server
  */
-class PlaywrightDashboardReporter {
+class PiwiDashboardReporter {
   constructor(options = {}) {
     this.options = {
       serverUrl: options.serverUrl || 'http://localhost:3000',
@@ -76,7 +76,7 @@ class PlaywrightDashboardReporter {
 
   onBegin(config, suite) {
     this.startTime = new Date().toISOString();
-    console.log(`[Playwright Dashboard] Starting test run for project: ${this.options.projectName}`);
+    console.log(`[Piwi Dashboard] Starting test run for project: ${this.options.projectName}`);
 
     // Collect metadata
     this.metadata = collectMetadata(config, suite, this.options);
@@ -143,7 +143,7 @@ class PlaywrightDashboardReporter {
           self.streamingRunId = response.runId;
           self.streamToken = response.streamToken;
           self.streamingEnabled = true;
-          console.log(`[Playwright Dashboard] Streaming enabled. Run ID: ${response.runId}`);
+          console.log(`[Piwi Dashboard] Streaming enabled. Run ID: ${response.runId}`);
 
           // Flush any begin events that arrived before streaming was ready
           if (self.pendingBeginEvents.length > 0) {
@@ -157,7 +157,7 @@ class PlaywrightDashboardReporter {
       } catch (error) {
         // Server might not support streaming — fall back to batch mode
         if (self.options.verbose) {
-          console.log(`[Playwright Dashboard] Streaming not available: ${error.message}. Will use batch mode.`);
+          console.log(`[Piwi Dashboard] Streaming not available: ${error.message}. Will use batch mode.`);
         }
         self.streamingEnabled = false;
       }
@@ -210,7 +210,7 @@ class PlaywrightDashboardReporter {
 
     // Parse network requests from fixture attachment (reporter/fixtures.js)
     if (this.options.collectPerformanceMetrics && result.attachments) {
-      const networkAttachment = result.attachments.find(a => a.name === 'playwright-dashboard-network');
+      const networkAttachment = result.attachments.find(a => a.name === 'piwi-dashboard-network');
       if (networkAttachment && networkAttachment.body) {
         try {
           testCase.networkRequests = JSON.parse(networkAttachment.body.toString());
@@ -220,7 +220,7 @@ class PlaywrightDashboardReporter {
       }
 
       // Parse web vitals from fixture attachment
-      const webVitalsAttachment = result.attachments.find(a => a.name === 'playwright-dashboard-web-vitals');
+      const webVitalsAttachment = result.attachments.find(a => a.name === 'piwi-dashboard-web-vitals');
       if (webVitalsAttachment && webVitalsAttachment.body) {
         try {
           testCase.webVitals = JSON.parse(webVitalsAttachment.body.toString());
@@ -312,7 +312,7 @@ class PlaywrightDashboardReporter {
       this._streamAuth
     ).catch(error => {
       if (this.options.verbose) {
-        console.warn(`[Playwright Dashboard] Failed to stream events: ${error.message}`);
+        console.warn(`[Piwi Dashboard] Failed to stream events: ${error.message}`);
       }
       // Re-queue failed events for the batch upload fallback
       this.pendingEvents.unshift(...events);
@@ -343,8 +343,8 @@ class PlaywrightDashboardReporter {
       }
     }
 
-    console.log(`[Playwright Dashboard] Test run completed. Status: ${overallStatus} (Playwright result.status: ${result && result.status || 'undefined'})`);
-    console.log(`[Playwright Dashboard] Total: ${this.totalTests}, Passed: ${this.passedTests}, Failed: ${this.failedTests}, Skipped: ${this.skippedTests}, TimedOut: ${this.timedOutTests}`);
+    console.log(`[Piwi Dashboard] Test run completed. Status: ${overallStatus} (Playwright result.status: ${result && result.status || 'undefined'})`);
+    console.log(`[Piwi Dashboard] Total: ${this.totalTests}, Passed: ${this.passedTests}, Failed: ${this.failedTests}, Skipped: ${this.skippedTests}, TimedOut: ${this.timedOutTests}`);
 
     // Compute performance summary if enabled
     if (this.options.collectPerformanceMetrics) {
@@ -368,7 +368,7 @@ class PlaywrightDashboardReporter {
       }
       if (this.pendingEvents.length === 0) break;
       if (this.options.verbose) {
-        console.warn(`[Playwright Dashboard] ${this.pendingEvents.length} events re-queued after flush failure, retrying (attempt ${attempt + 1}/${MAX_FLUSH_RETRIES})...`);
+        console.warn(`[Piwi Dashboard] ${this.pendingEvents.length} events re-queued after flush failure, retrying (attempt ${attempt + 1}/${MAX_FLUSH_RETRIES})...`);
       }
     }
 
@@ -378,14 +378,14 @@ class PlaywrightDashboardReporter {
       if (this.options.apiKey) {
         sessionCookie = this.options.apiKey;
         if (this.options.verbose) {
-          console.log('[Playwright Dashboard] Using API key for authentication');
+          console.log('[Piwi Dashboard] Using API key for authentication');
         }
       } else if (this.options.username && this.options.password) {
         try {
-          console.log(`[Playwright Dashboard] Authenticating as ${this.options.username}...`);
+          console.log(`[Piwi Dashboard] Authenticating as ${this.options.username}...`);
           sessionCookie = await loginUser(this.options.serverUrl, this.options.username, this.options.password, this.options.verbose);
         } catch (error) {
-          console.error(`[Playwright Dashboard] Authentication failed: ${error.message}`);
+          console.error(`[Piwi Dashboard] Authentication failed: ${error.message}`);
           throw error;
         }
       }
@@ -402,13 +402,13 @@ class PlaywrightDashboardReporter {
           try {
             await this._uploadFilesForStreamingRun(sessionCookie);
           } catch (error) {
-            console.warn(`[Playwright Dashboard] Failed to upload files for streaming run: ${error.message}`);
+            console.warn(`[Piwi Dashboard] Failed to upload files for streaming run: ${error.message}`);
           }
         }
         return;
       } catch (error) {
-        console.warn(`[Playwright Dashboard] Failed to finalize streaming run: ${error.message}`);
-        console.log(`[Playwright Dashboard] Falling back to batch upload...`);
+        console.warn(`[Piwi Dashboard] Failed to finalize streaming run: ${error.message}`);
+        console.log(`[Piwi Dashboard] Falling back to batch upload...`);
         // Fall through to batch mode
       }
     }
@@ -420,8 +420,8 @@ class PlaywrightDashboardReporter {
         await this.uploadWithFiles(overallStatus, duration, sessionCookie);
         return;
       } catch (error) {
-        console.warn(`[Playwright Dashboard] Failed to upload with files: ${error.message}`);
-        console.log(`[Playwright Dashboard] Falling back to JSON upload...`);
+        console.warn(`[Piwi Dashboard] Failed to upload with files: ${error.message}`);
+        console.log(`[Piwi Dashboard] Falling back to JSON upload...`);
       }
     }
 
@@ -464,7 +464,7 @@ class PlaywrightDashboardReporter {
       sessionCookie
     );
 
-    console.log(`[Playwright Dashboard] Successfully finalized streaming run #${this.streamingRunId}`);
+    console.log(`[Piwi Dashboard] Successfully finalized streaming run #${this.streamingRunId}`);
     return response;
   }
 
@@ -515,15 +515,15 @@ class PlaywrightDashboardReporter {
 
       if (!reportDir) {
         if (this.options.verbose) {
-          console.log(`[Playwright Dashboard] No report directory found for type '${type}'`);
+          console.log(`[Piwi Dashboard] No report directory found for type '${type}'`);
         }
         continue;
       }
 
-      console.log(`[Playwright Dashboard] Compressing ${type} report directory: ${reportDir}`);
+      console.log(`[Piwi Dashboard] Compressing ${type} report directory: ${reportDir}`);
       const compressed = await compressReportDirectory(reportDir);
       if (compressed) {
-        console.log(`[Playwright Dashboard] Adding ${type} report archive: ${compressed.length} bytes`);
+        console.log(`[Piwi Dashboard] Adding ${type} report archive: ${compressed.length} bytes`);
         form.append(`report_${type}`, compressed, {
           filename: `${type}-report.gz`
         });
@@ -541,7 +541,7 @@ class PlaywrightDashboardReporter {
         const traceFiles = findTraceFiles(testCase);
         for (const tracePath of traceFiles) {
           if (fs.existsSync(tracePath)) {
-            console.log(`[Playwright Dashboard] Adding trace file: ${tracePath}`);
+            console.log(`[Piwi Dashboard] Adding trace file: ${tracePath}`);
             form.append(`trace_${i}`, fs.createReadStream(tracePath), {
               filename: path.basename(tracePath)
             });
@@ -549,14 +549,14 @@ class PlaywrightDashboardReporter {
           }
         }
       }
-      console.log(`[Playwright Dashboard] Found ${traceCount} trace files`);
+      console.log(`[Piwi Dashboard] Found ${traceCount} trace files`);
     }
 
     const response = await postFormData(this.options.serverUrl, '/api/test-runs/upload', form, sessionCookie);
-    console.log(`[Playwright Dashboard] Successfully uploaded files for streaming run #${this.streamingRunId}`);
+    console.log(`[Piwi Dashboard] Successfully uploaded files for streaming run #${this.streamingRunId}`);
     if (response.reports && response.reports.length > 0) {
       for (const r of response.reports) {
-        console.log(`[Playwright Dashboard] ${r.label}: ${r.path}`);
+        console.log(`[Piwi Dashboard] ${r.label}: ${r.path}`);
       }
     }
   }
@@ -596,12 +596,12 @@ class PlaywrightDashboardReporter {
 
     try {
       const response = await postJSON(this.options.serverUrl, '/api/test-runs/submit', payload, this.options.verbose, sessionCookie);
-      console.log(`[Playwright Dashboard] Successfully uploaded test results to ${this.options.serverUrl}`);
+      console.log(`[Piwi Dashboard] Successfully uploaded test results to ${this.options.serverUrl}`);
       if (response.testRunId) {
-        console.log(`[Playwright Dashboard] Test Run ID: ${response.testRunId}, Project ID: ${response.projectId}`);
+        console.log(`[Piwi Dashboard] Test Run ID: ${response.testRunId}, Project ID: ${response.projectId}`);
       }
     } catch (error) {
-      console.error(`[Playwright Dashboard] Error uploading test results:`, error.message);
+      console.error(`[Piwi Dashboard] Error uploading test results:`, error.message);
       throw error;
     }
   }
@@ -677,15 +677,15 @@ class PlaywrightDashboardReporter {
 
       if (!reportDir) {
         if (this.options.verbose) {
-          console.log(`[Playwright Dashboard] No report directory found for type '${type}'`);
+          console.log(`[Piwi Dashboard] No report directory found for type '${type}'`);
         }
         continue;
       }
 
-      console.log(`[Playwright Dashboard] Compressing ${type} report directory: ${reportDir}`);
+      console.log(`[Piwi Dashboard] Compressing ${type} report directory: ${reportDir}`);
       const compressed = await compressReportDirectory(reportDir);
       if (compressed) {
-        console.log(`[Playwright Dashboard] Adding ${type} report archive: ${compressed.length} bytes`);
+        console.log(`[Piwi Dashboard] Adding ${type} report archive: ${compressed.length} bytes`);
         form.append(`report_${type}`, compressed, {
           filename: `${type}-report.gz`
         });
@@ -704,7 +704,7 @@ class PlaywrightDashboardReporter {
         const traceFiles = findTraceFiles(testCase);
         for (const tracePath of traceFiles) {
           if (fs.existsSync(tracePath)) {
-            console.log(`[Playwright Dashboard] Adding trace file: ${tracePath}`);
+            console.log(`[Piwi Dashboard] Adding trace file: ${tracePath}`);
             form.append(`trace_${testCase.index}`, fs.createReadStream(tracePath), {
               filename: path.basename(tracePath)
             });
@@ -712,25 +712,25 @@ class PlaywrightDashboardReporter {
           }
         }
       }
-      console.log(`[Playwright Dashboard] Found ${traceCount} trace files`);
+      console.log(`[Piwi Dashboard] Found ${traceCount} trace files`);
     }
 
     try {
       const response = await postFormData(this.options.serverUrl, '/api/test-runs/upload', form, sessionCookie);
-      console.log(`[Playwright Dashboard] Successfully uploaded test results with files to ${this.options.serverUrl}`);
+      console.log(`[Piwi Dashboard] Successfully uploaded test results with files to ${this.options.serverUrl}`);
       if (response.testRunId) {
-        console.log(`[Playwright Dashboard] Test Run ID: ${response.testRunId}, Project ID: ${response.projectId}`);
+        console.log(`[Piwi Dashboard] Test Run ID: ${response.testRunId}, Project ID: ${response.projectId}`);
       }
       if (response.reportPath) {
-        console.log(`[Playwright Dashboard] HTML Report: ${response.reportPath}`);
+        console.log(`[Piwi Dashboard] HTML Report: ${response.reportPath}`);
       }
       if (response.reports && response.reports.length > 0) {
         for (const r of response.reports) {
-          console.log(`[Playwright Dashboard] ${r.label}: ${r.path}`);
+          console.log(`[Piwi Dashboard] ${r.label}: ${r.path}`);
         }
       }
     } catch (error) {
-      console.error(`[Playwright Dashboard] Error uploading test results with files:`, error.message);
+      console.error(`[Piwi Dashboard] Error uploading test results with files:`, error.message);
       throw error;
     }
   }
@@ -751,7 +751,7 @@ class PlaywrightDashboardReporter {
       }
     } catch (error) {
       if (this.options.verbose) {
-        console.log(`[Playwright Dashboard] Could not read setup info: ${error.message}`);
+        console.log(`[Piwi Dashboard] Could not read setup info: ${error.message}`);
       }
     }
     return null;
@@ -765,7 +765,7 @@ class PlaywrightDashboardReporter {
  */
 function getSetupFilePath(projectName) {
   const hash = crypto.createHash('sha1').update(projectName).digest('hex').slice(0, 16);
-  return path.join(os.tmpdir(), `playwright-dashboard-setup-${hash}.json`);
+  return path.join(os.tmpdir(), `piwi-dashboard-setup-${hash}.json`);
 }
 
 /**
@@ -781,11 +781,11 @@ function computeInstanceId(projectName) {
     .slice(0, 16);
 }
 
-module.exports = PlaywrightDashboardReporter;
+module.exports = PiwiDashboardReporter;
 
 /**
  * Create a Playwright globalSetup function that registers the run as 'initialising'
- * on the dashboard before tests begin.  The reporter's onBegin hook will then
+ * on the Piwi Dashboard before tests begin.  The reporter's onBegin hook will then
  * transition that run to 'running', so the dashboard shows the setup phase.
  *
  * @param {import('./index').DashboardReporterOptions} options - Same options as the reporter.
@@ -794,7 +794,7 @@ module.exports = PlaywrightDashboardReporter;
  *
  * @example
  * // playwright.config.ts
- * import { createGlobalSetup } from '@phenx/playwright-dashboard-reporter';
+ * import { createGlobalSetup } from '@phenx/piwi-dashboard-reporter';
  * export default defineConfig({
  *   globalSetup: createGlobalSetup({ serverUrl: '...', projectName: 'my-project', apiKey: '...' }),
  * });
@@ -833,12 +833,12 @@ module.exports.createGlobalSetup = function createGlobalSetup(options, userSetup
           projectName
         }));
         if (options.verbose) {
-          console.log(`[Playwright Dashboard] Global setup: initialising run #${response.runId}`);
+          console.log(`[Piwi Dashboard] Global setup: initialising run #${response.runId}`);
         }
       }
     } catch (error) {
       // Non-fatal: if setup registration fails the reporter will create a new run normally
-      console.warn(`[Playwright Dashboard] Could not register global setup: ${error.message}`);
+      console.warn(`[Piwi Dashboard] Could not register global setup: ${error.message}`);
     }
 
     if (userSetup) {

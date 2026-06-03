@@ -11,7 +11,7 @@ const runId = route.params.id
 const { data: testRun, refresh } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`)
 
 useHead(computed(() => ({
-  title: `Test run #${runId}${testRun.value?.project ? ` — ${testRun.value.project.name}` : ''} — Playwright Dashboard`
+  title: `Test run #${runId}${testRun.value?.project ? ` — ${testRun.value.project.name}` : ''} — Piwi Dashboard`
 })))
 
 const toast = useToast()
@@ -1018,7 +1018,7 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                 <UIcon name="i-lucide-wifi-off" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
                 <p>
                   No network request data. Add the
-                  <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded font-mono">@phenx/playwright-dashboard-reporter/fixtures</code>
+                  <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded font-mono">@phenx/piwi-dashboard-reporter/fixtures</code>
                   to your Playwright config.
                 </p>
               </div>

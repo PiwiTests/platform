@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { NavigationMenuItem } from '@nuxt/ui'
 
-useHead({ title: 'Settings — Playwright Dashboard' })
+useHead({ title: 'Settings — Piwi Dashboard' })
 
 /*
 {
@@ -27,7 +27,7 @@ const links = [[{
 }], [{
   label: 'Documentation',
   icon: 'i-lucide-book-open',
-  to: 'https://github.com/PhenX/playwright-dashboard',
+  to: 'https://github.com/PhenX/piwi-dashboard',
   target: '_blank'
 }]] satisfies NavigationMenuItem[][]
 </script>

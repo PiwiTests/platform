@@ -3,7 +3,7 @@ import type { Fixtures, PlaywrightTestArgs, PlaywrightTestOptions, PlaywrightWor
 
 export interface DashboardReporterOptions {
   /**
-   * URL of the Playwright Dashboard server
+   * URL of the Piwi Dashboard server
    * @default 'http://localhost:3000'
    */
   serverUrl?: string;
@@ -159,9 +159,9 @@ export interface DashboardReporterOptions {
 }
 
 /**
- * Playwright Dashboard Reporter
+ * Piwi Dashboard Reporter
  *
- * A custom reporter that sends test results to a Playwright Dashboard server.
+ * A custom reporter that sends test results to a Piwi Dashboard server.
  *
  * @example
  * ```typescript
@@ -170,7 +170,7 @@ export interface DashboardReporterOptions {
  *
  * export default defineConfig({
  *   reporter: [
- *     ['@phenx/playwright-dashboard-reporter', {
+ *     ['@phenx/piwi-dashboard-reporter', {
  *       serverUrl: 'http://localhost:3000',
  *       projectName: 'my-project',
  *       uploadReport: true
@@ -179,7 +179,7 @@ export interface DashboardReporterOptions {
  * });
  * ```
  */
-declare class PlaywrightDashboardReporter implements Reporter {
+declare class PiwiDashboardReporter implements Reporter {
   constructor(options?: DashboardReporterOptions);
 
   onBegin(config: FullConfig, suite: Suite): void;
@@ -187,7 +187,7 @@ declare class PlaywrightDashboardReporter implements Reporter {
   onEnd(result: FullResult): Promise<void>;
 }
 
-export default PlaywrightDashboardReporter;
+export default PiwiDashboardReporter;
 
 /**
  * Create a Playwright `globalSetup` function that registers the test run as
@@ -196,7 +196,7 @@ export default PlaywrightDashboardReporter;
  * The reporter's `onBegin` hook will transition the run to `'running'` so the
  * dashboard shows the global-setup phase as an animated initialisation step.
  *
- * @param options - Same options as `PlaywrightDashboardReporter`.
+ * @param options - Same options as `PiwiDashboardReporter`.
  * @param userSetup - Optional existing `globalSetup` function to wrap.
  * @returns A `globalSetup` function for Playwright's config.
  *
@@ -204,7 +204,7 @@ export default PlaywrightDashboardReporter;
  * ```typescript
  * // playwright.config.ts
  * import { defineConfig } from '@playwright/test';
- * import { createGlobalSetup } from '@phenx/playwright-dashboard-reporter';
+ * import { createGlobalSetup } from '@phenx/piwi-dashboard-reporter';
  *
  * export default defineConfig({
  *   globalSetup: createGlobalSetup({
@@ -229,7 +229,7 @@ export declare function createGlobalSetup(
  * ```typescript
  * // fixtures.ts
  * import { test as base } from '@playwright/test';
- * import { dashboardFixtures } from '@phenx/playwright-dashboard-reporter/fixtures';
+ * import { dashboardFixtures } from '@phenx/piwi-dashboard-reporter/fixtures';
  *
  * export const test = base.extend(dashboardFixtures);
  * export { expect } from '@playwright/test';
