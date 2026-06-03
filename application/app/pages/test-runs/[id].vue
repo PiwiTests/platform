@@ -288,45 +288,54 @@ function handleSelectTestCase(id: number) {
     </template>
 
     <template #body>
-      <RunSummary
-        :test-run="testRun!"
-        :display-progress="displayProgress"
-        :all-reports="allReports"
-        :show-custom-data="showCustomData"
-        :summary-col-span-class="summaryColSpanClass"
-        :block-col-span-class="blockColSpanClass"
-        @update:show-custom-data="showCustomData = $event"
-      />
+      <div class="flex flex-col h-full overflow-hidden">
+        <RunSummary
+          :test-run="testRun!"
+          :display-progress="displayProgress"
+          :all-reports="allReports"
+          :show-custom-data="showCustomData"
+          :summary-col-span-class="summaryColSpanClass"
+          :block-col-span-class="blockColSpanClass"
+          @update:show-custom-data="showCustomData = $event"
+        />
 
-      <!-- ===== TABBED CONTENT PANEL ===== -->
-      <UTabs v-model="activeTab" :items="tabItems" size="sm" />
+        <!-- ===== TABBED CONTENT PANEL ===== -->
+        <UTabs
+          v-model="activeTab"
+          :items="tabItems"
+          size="sm"
+          class="shrink-0"
+        />
 
-      <!-- Tab: Test cases -->
-      <TestCasesList
-        v-if="activeTab === 'test-cases'"
-        ref="testCasesListRef"
-        :test-cases="displayTestCases"
-        :is-live="isLive"
-      />
+        <div class="flex-1 min-h-0">
+          <!-- Tab: Test cases -->
+          <TestCasesList
+            v-if="activeTab === 'test-cases'"
+            ref="testCasesListRef"
+            :test-cases="displayTestCases"
+            :is-live="isLive"
+          />
 
-      <!-- Tab: Workers -->
-      <WorkersTimeline
-        v-if="activeTab === 'workers'"
-        :test-cases="displayTestCases"
-        @select-test-case="handleSelectTestCase"
-      />
+          <!-- Tab: Workers -->
+          <WorkersTimeline
+            v-if="activeTab === 'workers'"
+            :test-cases="displayTestCases"
+            @select-test-case="handleSelectTestCase"
+          />
 
-      <!-- Tab: Compare -->
-      <RunCompare
-        v-if="activeTab === 'compare'"
-        :test-run="testRun!"
-        :is-live="isLive"
-        :project-run-options="projectRunOptions"
-        :previous-run-id="previousRunId"
-      />
+          <!-- Tab: Compare -->
+          <RunCompare
+            v-if="activeTab === 'compare'"
+            :test-run="testRun!"
+            :is-live="isLive"
+            :project-run-options="projectRunOptions"
+            :previous-run-id="previousRunId"
+          />
 
-      <!-- Tab: Slow endpoints -->
-      <SlowEndpoints v-if="activeTab === 'endpoints'" />
+          <!-- Tab: Slow endpoints -->
+          <SlowEndpoints v-if="activeTab === 'endpoints'" />
+        </div>
+      </div>
     </template>
   </UDashboardPanel>
 

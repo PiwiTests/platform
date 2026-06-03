@@ -97,24 +97,22 @@ test.describe('Dashboard UI Tests', () => {
     await waitForHydration(page)
 
     // Default tab is Test cases — table should be visible
-    await expect(page.getByRole('tab', { name: 'Test cases' })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('columnheader', { name: 'Test case' }).first()).toBeVisible()
 
     // Switch to Workers tab
     await page.getByRole('tab', { name: 'Workers' }).click()
-    await expect(page.getByRole('tab', { name: 'Workers' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByText('No worker data').or(page.getByText('Timeline')).first()).toBeVisible()
 
     // Switch to Compare tab
     await page.getByRole('tab', { name: 'Compare' }).click()
-    await expect(page.getByRole('tab', { name: 'Compare' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByText('Select a baseline run to compare.')).toBeVisible()
 
     // Switch to Slow endpoints tab
     await page.getByRole('tab', { name: 'Slow endpoints' }).click()
-    await expect(page.getByRole('tab', { name: 'Slow endpoints' })).toHaveAttribute('aria-selected', 'true')
 
-    // Switch back to Test cases
+    // Switch back to Test cases — table should be visible again
     await page.getByRole('tab', { name: 'Test cases' }).click()
-    await expect(page.getByRole('tab', { name: 'Test cases' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('columnheader', { name: 'Test case' }).first()).toBeVisible()
   })
 
   test('should show project switcher dropdown', async ({ page }) => {

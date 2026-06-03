@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, resolveComponent, computed, nextTick, watch, onUnmounted } from 'vue'
+import { h, resolveComponent, computed, nextTick, watch, ref, onUnmounted } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
 import type { TestCaseResult } from '~~/types/api'
 
@@ -75,6 +75,55 @@ watch(() => props.isLive, (live) => {
 
 onUnmounted(() => {
   stopLiveRefreshTimer()
+})
+
+// Auto-scroll to bottom during live runs, unless user has scrolled away
+const tableScrollRef = ref<{ $el: HTMLElement } | null>(null)
+const userScrolledAway = ref(false)
+let scrollListenerCleanup: (() => void) | null = null
+
+function getScrollEl(): HTMLElement | null {
+  return tableScrollRef.value?.$el ?? null
+}
+
+function isAtBottom(el: HTMLElement): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 50
+}
+
+function onTableScroll() {
+  const el = getScrollEl()
+  if (!el) return
+  userScrolledAway.value = !isAtBottom(el)
+}
+
+watch(tableScrollRef, (instance) => {
+  scrollListenerCleanup?.()
+  if (instance?.$el) {
+    instance.$el.addEventListener('scroll', onTableScroll, { passive: true })
+    scrollListenerCleanup = () => instance.$el.removeEventListener('scroll', onTableScroll)
+  }
+})
+
+onUnmounted(() => {
+  scrollListenerCleanup?.()
+})
+
+watch(filteredTestCases, () => {
+  if (!props.isLive || userScrolledAway.value) return
+  nextTick(() => {
+    const el = getScrollEl()
+    if (el) el.scrollTop = el.scrollHeight
+  })
+})
+
+watch(() => props.isLive, (live) => {
+  if (!live) userScrolledAway.value = false
+})
+
+watch(() => props.isLive, (live) => {
+  if (!live) {
+    userScrolledAway.value = false
+  }
 })
 
 const paginatedTestCases = computed<TestCaseResult[]>(() => {
