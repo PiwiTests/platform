@@ -1,8 +1,8 @@
 # Docker Deployment Guide
 
-This guide explains how to deploy the Playwright Dashboard using Docker.
+This guide explains how to deploy the Piwi Dashboard using Docker.
 
-> **Note:** For the complete deployment reference including Kubernetes and production build from source, see the [full deployment documentation](https://phenx.github.io/playwright-dashboard/deployment).
+> **Note:** For the complete deployment reference including Kubernetes and production build from source, see the [full deployment documentation](https://phenx.github.io/piwi-dashboard/deployment).
 
 ## Quick Start with Docker
 
@@ -11,8 +11,8 @@ This guide explains how to deploy the Playwright Dashboard using Docker.
 Pull the latest image from GitHub Container Registry and run it:
 
 ```bash
-docker pull ghcr.io/phenx/playwright-dashboard:latest
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/playwright-dashboard:latest
+docker pull ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
 
 The dashboard will be available at `http://localhost:3000`.
@@ -29,8 +29,8 @@ The dashboard will be available at `http://localhost:3000`.
 
 ```bash
 cd application
-docker build -t playwright-dashboard:local .
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data playwright-dashboard:local
+docker build -t piwi-dashboard:local .
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data piwi-dashboard:local
 ```
 
 The Dockerfile uses a two-stage build:
@@ -41,21 +41,21 @@ The Dockerfile uses a two-stage build:
 
 ### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NODE_ENV` | `production` | Set automatically in the container |
-| `HOST` | `0.0.0.0` | Listens on all interfaces |
-| `PORT` | `3000` | Application port |
-| `NUXT_AUTH_ENABLED` | — | Enable authentication (`true`/`false`) |
-| `NUXT_AUTH_SECRET` | — | Secret for session encryption (required if auth enabled) |
-| `DATABASE_URL` | — | PostgreSQL connection string; when set, PostgreSQL is used instead of SQLite |
-| `DATABASE_PATH` | `.data/playwright.db` | SQLite database path (ignored when `DATABASE_URL` is set) |
-| `STORAGE_TYPE` | `local` | Storage backend (`local` or `s3`) |
-| `S3_BUCKET` | — | S3 bucket name (when `STORAGE_TYPE=s3`) |
-| `S3_REGION` | — | S3 region |
-| `S3_ACCESS_KEY_ID` | — | S3 access key |
-| `S3_SECRET_ACCESS_KEY` | — | S3 secret key |
-| `S3_ENDPOINT` | — | Custom S3 endpoint (for MinIO, R2, Spaces, etc.) |
+| Variable               | Default         | Description                                                                  |
+|------------------------|-----------------|------------------------------------------------------------------------------|
+| `NODE_ENV`             | `production`    | Set automatically in the container                                           |
+| `HOST`                 | `0.0.0.0`       | Listens on all interfaces                                                    |
+| `PORT`                 | `3000`          | Application port                                                             |
+| `NUXT_AUTH_ENABLED`    | —               | Enable authentication (`true`/`false`)                                       |
+| `NUXT_AUTH_SECRET`     | —               | Secret for session encryption (required if auth enabled)                     |
+| `DATABASE_URL`         | —               | PostgreSQL connection string; when set, PostgreSQL is used instead of SQLite |
+| `DATABASE_PATH`        | `.data/piwi.db` | SQLite database path (ignored when `DATABASE_URL` is set)                    |
+| `STORAGE_TYPE`         | `local`         | Storage backend (`local` or `s3`)                                            |
+| `S3_BUCKET`            | —               | S3 bucket name (when `STORAGE_TYPE=s3`)                                      |
+| `S3_REGION`            | —               | S3 region                                                                    |
+| `S3_ACCESS_KEY_ID`     | —               | S3 access key                                                                |
+| `S3_SECRET_ACCESS_KEY` | —               | S3 secret key                                                                |
+| `S3_ENDPOINT`          | —               | Custom S3 endpoint (for MinIO, R2, Spaces, etc.)                             |
 
 ### Volumes
 
@@ -64,11 +64,11 @@ Mount a volume to persist data:
 ```bash
 docker run -p 3000:3000 \
   -v /path/to/data:/app/.data \
-  ghcr.io/phenx/playwright-dashboard:latest
+  ghcr.io/phenx/piwi-dashboard:latest
 ```
 
 The `.data` directory contains:
-- `playwright.db` — SQLite database (unless using PostgreSQL)
+- `piwi.db` — SQLite database (unless using PostgreSQL)
 - `storage/` — Uploaded HTML reports and trace files
 
 ## Docker Compose
@@ -77,8 +77,8 @@ The `.data` directory contains:
 
 ```yaml
 services:
-  playwright-dashboard:
-    image: ghcr.io/phenx/playwright-dashboard:latest
+  piwi-dashboard:
+    image: ghcr.io/phenx/piwi-dashboard:latest
     ports:
       - "3000:3000"
     volumes:
@@ -97,20 +97,20 @@ services:
     environment:
       POSTGRES_USER: playwright
       POSTGRES_PASSWORD: playwright
-      POSTGRES_DB: playwright_dashboard
+      POSTGRES_DB: piwi_dashboard
     volumes:
       - pg-data:/var/lib/postgresql/data
     restart: unless-stopped
 
-  playwright-dashboard:
-    image: ghcr.io/phenx/playwright-dashboard:latest
+  piwi-dashboard:
+    image: ghcr.io/phenx/piwi-dashboard:latest
     ports:
       - "3000:3000"
     volumes:
       - ./storage:/app/.data/storage
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=******postgres:5432/playwright_dashboard
+      - DATABASE_URL=******postgres:5432/piwi_dashboard
     depends_on:
       - postgres
     restart: unless-stopped
@@ -150,7 +150,7 @@ If you encounter permission issues with volumes, ensure the mounted directory is
 ```bash
 mkdir -p .data
 chmod 777 .data  # or chown 1001:1001 .data
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/playwright-dashboard:latest
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
 
 ### Database Locked
@@ -162,7 +162,7 @@ SQLite doesn't support concurrent writes well. For high-concurrency deployments,
 Map to a different host port:
 
 ```bash
-docker run -p 8080:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/playwright-dashboard:latest
+docker run -p 8080:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
 
 The dashboard will be available at `http://localhost:8080`.

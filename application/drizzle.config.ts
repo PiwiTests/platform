@@ -5,7 +5,7 @@ export default {
   out: './server/database/migrations',
   dialect: 'sqlite',
   dbCredentials: {
-    url: process.env.DATABASE_PATH || '.data/playwright.db'
+    url: process.env.DATABASE_PATH || '.data/piwi.db'
   },
   verbose: true,
   strict: true

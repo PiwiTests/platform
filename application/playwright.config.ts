@@ -7,11 +7,11 @@ reporters.push(['list'])
 
 if (!process.env.CI) {
   reporters.push(['html', { outputFolder: 'playwright-report' }])
-  reporters.push(['monocart-reporter', { name: 'Playwright Dashboard Tests', outputFile: 'monocart-report/index.html' }])
+  reporters.push(['monocart-reporter', { name: 'Piwi Dashboard Tests', outputFile: 'monocart-report/index.html' }])
   reporters.push(['blob', { outputDir: 'blob-report' }])
   reporters.push(['../reporter', {
     serverUrl: 'http://localhost:3000',
-    projectName: 'Playwright Dashboard',
+    projectName: 'Piwi Dashboard',
     uploadReport: false, // individual reports are listed in `reports` below
     uploadTraces: true,
     reports: [

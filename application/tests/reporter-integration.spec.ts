@@ -18,7 +18,7 @@ test.describe('Reporter Integration Tests', () => {
 
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
 
-    expect(packageJson.name).toBe('@phenx/playwright-dashboard-reporter')
+    expect(packageJson.name).toBe('@phenx/piwi-dashboard-reporter')
     expect(packageJson.main).toBe('index.js')
     expect(packageJson.types).toBe('index.d.ts')
     expect(packageJson.peerDependencies).toBeDefined()
@@ -67,8 +67,8 @@ test.describe('Reporter Integration Tests', () => {
     expect(fixturesSource).toContain('module.exports')
     expect(fixturesSource).toContain('page.on')
     expect(fixturesSource).toContain('requestfinished')
-    expect(fixturesSource).toContain('playwright-dashboard-network')
-    expect(fixturesSource).toContain('playwright-dashboard-web-vitals')
+    expect(fixturesSource).toContain('piwi-dashboard-network')
+    expect(fixturesSource).toContain('piwi-dashboard-web-vitals')
   })
 
   test('reporter TypeScript definitions should export dashboardFixtures type', async () => {

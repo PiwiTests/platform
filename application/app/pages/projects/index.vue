@@ -5,7 +5,7 @@ import type { TableColumn } from '@nuxt/ui'
 import type { ProjectWithStats, TagInfo, TagsResponse } from '~~/types/api'
 import { formatDuration } from '~/utils'
 
-useHead({ title: 'Projects — Playwright Dashboard' })
+useHead({ title: 'Projects — Piwi Dashboard' })
 
 const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/projects')
 const { data: tagsData, refresh: refreshTags } = await useFetch<TagsResponse>('/api/tags')

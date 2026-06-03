@@ -31,7 +31,7 @@ function collectScmInfo(options) {
   } catch (error) {
     // Git not available or not a git repository
     if (options && options.verbose) {
-      console.log('[Playwright Dashboard] Git info not available:', error.message);
+      console.log('[Piwi Dashboard] Git info not available:', error.message);
     }
   }
   return Object.keys(scm).length > 0 ? scm : undefined;

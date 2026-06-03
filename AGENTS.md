@@ -1,10 +1,14 @@
-# Playwright Dashboard — Agent Instructions
+# Piwi Dashboard — Agent Instructions
+
+> **Note:** Piwi Dashboard is **not affiliated with, endorsed by, or connected to Microsoft Corporation** in any way.  
+> The name "Piwi" was chosen as a playful, unrelated name — it has no connection to any existing product or brand.  
+> Piwi Dashboard was originally called "Playwright Dashboard" and was renamed to avoid any confusion with Microsoft's Playwright testing framework.
 
 This file provides project context for any AI agent (opencode, Copilot, Cursor, etc.).
 
 ## Project Overview
 
-Playwright test results dashboard built with **Nuxt 4**, Nuxt UI dashboard template. Stores and displays Playwright test results organized by projects.
+Piwi test results dashboard built with **Nuxt 4**, Nuxt UI dashboard template. Stores and displays Playwright test results organized by projects.
 
 ## Prerequisites
 
@@ -111,7 +115,7 @@ Nuxt file-based routing:
 - Update the relevant doc in the same commit as code changes (see `docs/` files for what each covers)
 
 ## Troubleshooting
-- DB locked? Stop other processes accessing `.data/playwright.db`
+- DB locked? Stop other processes accessing `.data/piwi.db`
 - Port 3000 in use? Use `PORT=3001 npm run dev`
 - Tests failing? Ensure no dev server on port 3000 (tests start their own)
 - Reporter not found? `npm link` in `reporter/` then in target project

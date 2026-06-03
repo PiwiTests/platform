@@ -27,7 +27,7 @@ const { data: performanceData, refresh: refreshPerformance } = await useFetch<Pe
 )
 const { data: slowTests, refresh: refreshSlowTests } = await useFetch<SlowTest[]>(`/api/projects/${projectId}/slow-tests`)
 
-useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Performance — Playwright Dashboard` })))
+useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Performance — Piwi Dashboard` })))
 
 const UBadge = resolveComponent('UBadge')
 

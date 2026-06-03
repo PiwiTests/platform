@@ -10,7 +10,7 @@ const projectId = route.params.id
 const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`)
 const { data: tagsData, refresh: refreshTags } = await useFetch<TagsResponse>('/api/tags')
 
-useHead(computed(() => ({ title: `Edit ${project.value?.label || project.value?.name || 'Project'} — Playwright Dashboard` })))
+useHead(computed(() => ({ title: `Edit ${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard` })))
 
 const allTags = computed(() => tagsData.value?.tags || [])
 
