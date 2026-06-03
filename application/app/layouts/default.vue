@@ -148,7 +148,7 @@ const links = computed(() => [[{
 }, ...projectItems.value], [{
   label: 'Documentation',
   icon: 'i-lucide-book',
-  to: 'https://github.com/PhenX/playwright-dashboard',
+  to: 'https://github.com/PhenX/piwi-dashboard',
   target: '_blank'
 }]] satisfies NavigationMenuItem[][])
 
@@ -175,7 +175,7 @@ const groups = computed<CommandPaletteGroup[]>(() => [{
     id: 'source',
     label: 'View page source',
     icon: 'i-lucide-github',
-    to: `https://github.com/PhenX/playwright-dashboard/blob/main/application/app/pages${route.path === '/' ? '/index' : route.path}.vue`,
+    to: `https://github.com/PhenX/piwi-dashboard/blob/main/application/app/pages${route.path === '/' ? '/index' : route.path}.vue`,
     target: '_blank'
   }]
 }])

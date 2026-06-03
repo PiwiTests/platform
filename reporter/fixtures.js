@@ -6,14 +6,14 @@ const { test: base } = require('@playwright/test');
  *
  * Usage in playwright.config.ts:
  * ```ts
- * import { test } from 'playwright-dashboard-reporter/fixtures';
+ * import { test } from 'piwi-dashboard-reporter/fixtures';
  * export { test };
  * ```
  *
  * Or in a fixture file:
  * ```ts
  * import { test as base } from '@playwright/test';
- * import { dashboardFixtures } from 'playwright-dashboard-reporter/fixtures';
+ * import { dashboardFixtures } from 'piwi-dashboard-reporter/fixtures';
  * export const test = base.extend(dashboardFixtures);
  * ```
  */
@@ -58,7 +58,7 @@ const dashboardFixtures = {
 
     // Attach network requests after the test finishes
     if (networkRequests.length > 0) {
-      await testInfo.attach('playwright-dashboard-network', {
+      await testInfo.attach('piwi-dashboard-network', {
         contentType: 'application/json',
         body: Buffer.from(JSON.stringify(networkRequests)),
       });
@@ -96,7 +96,7 @@ const dashboardFixtures = {
       });
 
       if (webVitals) {
-        await testInfo.attach('playwright-dashboard-web-vitals', {
+        await testInfo.attach('piwi-dashboard-web-vitals', {
           contentType: 'application/json',
           body: Buffer.from(JSON.stringify(webVitals)),
         });

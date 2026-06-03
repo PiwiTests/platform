@@ -3,7 +3,7 @@ import { configureDemoDb } from '~/demo/db.client'
 /**
  * Demo-mode fetch plugin.
  *
- * In demo mode the app is served from a sub-path (e.g. /playwright-dashboard/demo/).
+ * In demo mode the app is served from a sub-path (e.g. /piwi-dashboard/demo/).
  * API calls made by Nuxt components use bare paths like `/api/projects`, but
  * the service worker's scope is limited to that sub-path.
  *

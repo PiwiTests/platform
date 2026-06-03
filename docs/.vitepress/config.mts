@@ -2,9 +2,9 @@ import { defineConfig } from 'vitepress'
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
-  title: 'Playwright Dashboard',
+  title: 'Piwi Dashboard',
   description: 'A modern dashboard for storing and visualising Playwright test results',
-  base: '/playwright-dashboard/',
+  base: '/piwi-dashboard/',
   themeConfig: {
     outline: 'deep',
     search: {
@@ -16,7 +16,7 @@ export default defineConfig({
       { text: 'Getting started', link: '/getting-started' },
       { text: 'Reporter', link: '/reporter' },
       { text: 'API reference', link: '/api' },
-      { text: 'Demo', link: 'https://phenx.github.io/playwright-dashboard/demo/' },
+      { text: 'Demo', link: 'https://phenx.github.io/piwi-dashboard/demo/' },
     ],
 
     sidebar: [
@@ -30,7 +30,7 @@ export default defineConfig({
     ],
 
     editLink: {
-      pattern: 'https://github.com/PhenX/playwright-dashboard/edit/main/docs/:path',
+      pattern: 'https://github.com/PhenX/piwi-dashboard/edit/main/docs/:path',
       text: 'Edit this page on GitHub',
     },
 
@@ -43,7 +43,7 @@ export default defineConfig({
     },
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/PhenX/playwright-dashboard' },
+      { icon: 'github', link: 'https://github.com/PhenX/piwi-dashboard' },
     ],
 
     externalLinkIcon: true,

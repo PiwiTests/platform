@@ -1,8 +1,8 @@
 /**
- * Shared test fixtures for the Playwright Dashboard test suite.
+ * Shared test fixtures for the Piwi Dashboard test suite.
  *
  * Extends the base Playwright `test` with dashboard fixtures that mirror the
- * behavior of `@phenx/playwright-dashboard-reporter/fixtures` — automatically
+ * behavior of `@phenx/piwi-dashboard-reporter/fixtures` — automatically
  * capturing network request timing and browser performance (Web Vitals) for
  * every page interaction so they appear in the dashboard.
  *
@@ -51,7 +51,7 @@ async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
 
   return async () => {
     if (networkRequests.length > 0) {
-      await testInfo.attach('playwright-dashboard-network', {
+      await testInfo.attach('piwi-dashboard-network', {
         contentType: 'application/json',
         body: Buffer.from(JSON.stringify(networkRequests)),
       })
@@ -87,7 +87,7 @@ async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
       })
 
       if (webVitals) {
-        await testInfo.attach('playwright-dashboard-web-vitals', {
+        await testInfo.attach('piwi-dashboard-web-vitals', {
           contentType: 'application/json',
           body: Buffer.from(JSON.stringify(webVitals)),
         })

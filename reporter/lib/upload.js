@@ -47,12 +47,12 @@ function loginUser(serverUrl, username, password, verbose) {
           // Nuxt may set multiple cookies (session + CSRF); join them all into one Cookie header
           const cookie = setCookie.map(c => c.split(';')[0]).join('; ');
           if (verbose) {
-            console.log('[Playwright Dashboard] Logged in successfully');
+            console.log('[Piwi Dashboard] Logged in successfully');
           }
           resolve(cookie);
         } else {
           if (verbose) {
-            console.error(`[Playwright Dashboard] Login response: ${data}`);
+            console.error(`[Piwi Dashboard] Login response: ${data}`);
           }
           reject(new Error(`Login failed with status ${res.statusCode}`));
         }
@@ -122,7 +122,7 @@ function postJSON(serverUrl, pathname, payload, verbose, cookieOrApiKey) {
           }
         } else {
           if (verbose) {
-            console.error(`[Playwright Dashboard] Response: ${data}`);
+            console.error(`[Piwi Dashboard] Response: ${data}`);
           }
           reject(new Error(`Request failed with status ${res.statusCode}`));
         }

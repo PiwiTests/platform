@@ -43,12 +43,12 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           echo "## NPM Package Published :package:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Package**: \`@phenx/playwright-dashboard-reporter\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package**: \`@phenx/piwi-dashboard-reporter\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Version**: \`${VERSION}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Install" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "npm install @phenx/playwright-dashboard-reporter" >> $GITHUB_STEP_SUMMARY
+          echo "npm install @phenx/piwi-dashboard-reporter" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
   build-and-push:

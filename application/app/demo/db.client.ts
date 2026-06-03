@@ -25,7 +25,7 @@ const initSqlJs = initSqlJsLib.default || initSqlJsLib
 type DemoDB = ReturnType<typeof drizzle<typeof schema>>
 
 // ── IndexedDB helpers ──────────────────────────────────────────────────────
-const IDB_NAME = 'playwright-dashboard-demo'
+const IDB_NAME = 'piwi-dashboard-demo'
 const IDB_STORE = 'state'
 const IDB_DB_KEY = 'sqlite'
 

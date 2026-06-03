@@ -25,8 +25,8 @@ export default defineConfig({
     ['list'],
     ['html'],
 
-    // Playwright Dashboard Reporter
-    ['@phenx/playwright-dashboard-reporter', {
+    // Piwi Dashboard Reporter
+    ['@phenx/piwi-dashboard-reporter', {
       serverUrl: process.env.DASHBOARD_URL || 'http://localhost:3000',
       projectName: process.env.PROJECT_NAME || 'my-test-project',
       uploadTraces: true,

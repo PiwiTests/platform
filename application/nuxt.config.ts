@@ -40,7 +40,7 @@ export default defineNuxtConfig({
   devtools: {
     enabled: true
   },
-  app: isDemo ? { baseURL: '/playwright-dashboard/demo/' } : {},
+  app: isDemo ? { baseURL: '/piwi-dashboard/demo/' } : {},
 
   css: ['~/assets/css/main.css'],
 

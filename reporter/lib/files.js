@@ -55,7 +55,7 @@ async function compressReportDirectory(reportDir) {
     const compressed = await compressDirectory(reportDir);
     return compressed || null;
   } catch (error) {
-    console.warn(`[Playwright Dashboard] Failed to compress report directory ${reportDir}: ${error.message}`);
+    console.warn(`[Piwi Dashboard] Failed to compress report directory ${reportDir}: ${error.message}`);
     return null;
   }
 }

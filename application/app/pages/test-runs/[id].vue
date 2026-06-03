@@ -11,7 +11,7 @@ const runId = route.params.id
 const { data: testRun, refresh } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`)
 
 useHead(computed(() => ({
-  title: `Test run #${runId}${testRun.value?.project ? ` — ${testRun.value.project.name}` : ''} — Playwright Dashboard`
+  title: `Test run #${runId}${testRun.value?.project ? ` — ${testRun.value.project.name}` : ''} — Piwi Dashboard`
 })))
 
 const toast = useToast()
@@ -1004,7 +1004,7 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                 </h3>
                 <p class="text-sm text-gray-500 mt-0.5">
                   Network requests grouped by route and HTTP method — requires
-                  <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">@phenx/playwright-dashboard-reporter/fixtures</code>
+                  <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">@phenx/piwi-dashboard-reporter/fixtures</code>
                 </p>
               </div>
             </div>
@@ -1030,7 +1030,7 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
 
           <div v-else class="text-center py-8 text-gray-500">
             No network request data. Add the
-            <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">@phenx/playwright-dashboard-reporter/fixtures</code>
+            <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">@phenx/piwi-dashboard-reporter/fixtures</code>
             to your Playwright config to start collecting endpoint timing.
           </div>
         </UCard>

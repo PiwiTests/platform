@@ -5,9 +5,9 @@ lang: en-US
 
 # Getting started
 
-## What is Playwright Dashboard?
+## What is Piwi Dashboard?
 
-Playwright Dashboard is a self-hosted web application that collects, stores, and visualizes your [Playwright](https://playwright.dev) test results over time. It replaces the ephemeral HTML reports that CI produces with a permanent, searchable history of every test run — making it easy to spot flaky tests, track regressions, and share results with your team.
+Piwi Dashboard is a self-hosted web application that collects, stores, and visualizes your [Playwright](https://playwright.dev) test results over time. It replaces the ephemeral HTML reports that CI produces with a permanent, searchable history of every test run — making it easy to spot flaky tests, track regressions, and share results with your team.
 
 **Key benefits:**
 - See test health trends across hundreds of runs
@@ -27,8 +27,8 @@ Playwright Dashboard is a self-hosted web application that collects, stores, and
 The fastest way to get started is with the pre-built container image:
 
 ```bash
-docker pull ghcr.io/phenx/playwright-dashboard:latest
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/playwright-dashboard:latest
+docker pull ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
 
 Visit `http://localhost:3000` to access the dashboard.
@@ -39,7 +39,7 @@ See [Deployment](./deployment) for detailed Docker, Docker Compose, PostgreSQL, 
 
 ```bash
 # Clone the repository
-git clone https://github.com/PhenX/playwright-dashboard.git
+git clone https://github.com/PhenX/piwi-dashboard.git
 cd playwright-dashboard/application
 
 # Install dependencies
@@ -90,14 +90,14 @@ curl -X POST http://localhost:3000/api/test-runs/submit \
 
 The project `my-project` is created automatically if it doesn't exist yet.
 
-## Using the Playwright reporter
+## Using the Piwi Dashboard reporter
 
 The recommended way to integrate is via the custom reporter package — it handles uploading results, HTML reports, and trace files automatically.
 
 Install it:
 
 ```bash
-npm install --save-dev @phenx/playwright-dashboard-reporter
+npm install --save-dev @phenx/piwi-dashboard-reporter
 ```
 
 Then add it to your `playwright.config.ts`:
@@ -108,7 +108,7 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   reporter: [
     ['list'],
-    ['@phenx/playwright-dashboard-reporter', {
+    ['@phenx/piwi-dashboard-reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-project',
     }],

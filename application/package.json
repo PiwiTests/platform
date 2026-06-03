@@ -1,5 +1,5 @@
 {
-  "name": "@phenx/playwright-dashboard",
+  "name": "@phenx/piwi-dashboard",
   "private": true,
   "type": "module",
   "engines": {

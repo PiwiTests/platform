@@ -60,7 +60,7 @@ Minimum required IAM permissions:
 ```bash
 STORAGE_TYPE=s3
 S3_ENDPOINT=http://localhost:9000
-S3_BUCKET=playwright-dashboard
+S3_BUCKET=piwi-dashboard
 S3_REGION=us-east-1
 S3_ACCESS_KEY_ID=minioadmin
 S3_SECRET_ACCESS_KEY=minioadmin
@@ -112,7 +112,7 @@ The dashboard supports two database backends: **SQLite** (default, zero-configur
 
 ### SQLite (default)
 
-SQLite requires no configuration. The database file is created automatically at `.data/playwright.db`.
+SQLite requires no configuration. The database file is created automatically at `.data/piwi.db`.
 
 To customize the path:
 
@@ -125,7 +125,7 @@ DATABASE_PATH=/custom/path/database.db npm run dev
 Set the `DATABASE_URL` environment variable to switch to PostgreSQL:
 
 ```bash
-DATABASE_URL=postgresql://user:password@localhost:5432/playwright_dashboard npm run dev
+DATABASE_URL=postgresql://user:password@localhost:5432/piwi_dashboard npm run dev
 ```
 
 The dashboard creates all required tables automatically on startup via migrations.
@@ -136,14 +136,14 @@ The dashboard creates all required tables automatically on startup via migration
 docker run -d -p 5432:5432 \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=playwright_dashboard \
+  -e POSTGRES_DB=piwi_dashboard \
   postgres:16-alpine
 ```
 
 Then start the dashboard:
 
 ```bash
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/playwright_dashboard npm run dev
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/piwi_dashboard npm run dev
 ```
 
 #### Schema changes (PostgreSQL)

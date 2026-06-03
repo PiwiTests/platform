@@ -9,7 +9,7 @@ const projectId = route.params.id
 const { data: testCases, refresh } = await useFetch<TestCaseWithStats[]>(`/api/projects/${projectId}/test-cases`)
 const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`)
 
-useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Test cases — Playwright Dashboard` })))
+useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Test cases — Piwi Dashboard` })))
 
 const UBadge = resolveComponent('UBadge')
 

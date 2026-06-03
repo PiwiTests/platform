@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Playwright Dashboard</title>
+  <title>Piwi Dashboard</title>
   <script>
     // GitHub Pages SPA redirect.
     //
@@ -12,7 +12,7 @@
     // redirects the browser to the SPA entry point so Vue Router can render the
     // correct page. For all other paths it falls back to the documentation root.
     ;(function () {
-      const demoBase = '/playwright-dashboard/demo'
+      const demoBase = '/piwi-dashboard/demo'
       const path = window.location.pathname
 
       if (path === demoBase || path.startsWith(demoBase + '/')) {
@@ -20,7 +20,7 @@
         sessionStorage.setItem('spa:redirect', relativePath + window.location.search + window.location.hash)
         window.location.replace(demoBase + '/')
       } else {
-        window.location.replace('/playwright-dashboard/')
+        window.location.replace('/piwi-dashboard/')
       }
     })()
   </script>
