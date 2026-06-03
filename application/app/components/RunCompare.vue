@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { h, resolveComponent, computed, watch, ref } from 'vue'
+import { h, resolveComponent, computed, ref, onMounted } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
-import type { TestRunDetails } from '~~/types/api'
+import type { TestRunDetails, ProjectWithTestRuns } from '~~/types/api'
 import type { ComparisonRow } from '~/composables/useRunComparison'
 
 interface RunOption {
@@ -12,9 +12,46 @@ interface RunOption {
 const props = defineProps<{
   testRun: TestRunDetails
   isLive: boolean
-  projectRunOptions: RunOption[]
-  previousRunId: number | null
 }>()
+
+const route = useRoute()
+const runId = route.params.id
+
+const projectData = ref<ProjectWithTestRuns | null>(null)
+
+onMounted(async () => {
+  if (!props.testRun?.projectId) { console.error('No projectId in testRun', props.testRun); return }
+  console.log('RunCompare onMounted: fetching project data for projectId', props.testRun.projectId)
+  try {
+    projectData.value = await $fetch<ProjectWithTestRuns>(`/api/projects/${props.testRun.projectId}`)
+    console.log('RunCompare onMounted: projectData fetched, runs count', projectData.value?.testRuns?.length)
+  } catch (e) {
+    console.error('Failed to fetch project data for RunCompare', e)
+  }
+})
+
+const projectRunOptions = computed<RunOption[]>(() => {
+  if (!projectData.value?.testRuns) return []
+  return projectData.value.testRuns
+    .filter(r => r.id !== Number(runId))
+    .slice(0, 50)
+    .map(r => ({
+      label: `Run #${r.id} — ${new Date(r.startTime).toLocaleDateString()} (${r.status})`,
+      value: r.id
+    }))
+})
+
+const previousRunId = computed<number | null>(() => {
+  if (!projectData.value?.testRuns) return null
+  const sorted = [...projectData.value.testRuns].sort(
+    (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+  )
+  const currentIdx = sorted.findIndex(r => r.id === Number(runId))
+  if (currentIdx >= 0 && currentIdx < sorted.length - 1) {
+    return sorted[currentIdx + 1]!.id
+  }
+  return null
+})
 
 const compareRunA = ref<RunOption | undefined>(undefined)
 const baselineRun = ref<TestRunDetails | null>(null)
@@ -36,8 +73,8 @@ watch(compareRunA, async (opt) => {
 })
 
 function compareWithPrevious() {
-  if (props.previousRunId) {
-    const match = props.projectRunOptions.find(o => o.value === props.previousRunId)
+  if (previousRunId.value) {
+    const match = projectRunOptions.value.find(o => o.value === previousRunId.value)
     if (match) compareRunA.value = match
   }
 }

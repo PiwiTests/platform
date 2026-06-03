@@ -229,11 +229,25 @@ test.describe.serial('Run Comparison', () => {
   })
 
   test('run detail page shows comparison section', async ({ page }) => {
+    const messages: string[] = []
+    page.on('console', msg => {
+      if (msg.type() === 'error') messages.push(`[ERROR] ${msg.text()}`)
+      if (msg.text().includes('RunCompare')) messages.push(`[LOG] ${msg.text()}`)
+    })
+
     await page.goto(`/test-runs/${run2Id}`)
     await waitForHydration(page)
 
     // Switch to the Compare tab
     await page.getByRole('tab', { name: 'Compare' }).click()
+    await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(2000)
+
+    // Print captured console messages
+    if (messages.length > 0) {
+      console.log('=== Console messages ===')
+      for (const m of messages) console.log(m)
+    }
 
     // Use "Compare with previous run" button
     await page.getByRole('button', { name: 'Compare with previous run' }).click()
