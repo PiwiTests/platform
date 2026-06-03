@@ -171,21 +171,30 @@ const testCasesColumns: TableColumn<TestCaseResult>[] = [
   }
 ]
 
+const highlightedCaseId = ref<number | null>(null)
+
 function scrollToCase(id: number) {
   const idx = filteredTestCases.value.findIndex(tc => tc.id === id)
   if (idx < 0) return
   const page = Math.floor(idx / pageSize) + 1
   currentPage.value = page
+  highlightedCaseId.value = id
   nextTick(() => {
-    const link = document.querySelector<HTMLAnchorElement>(`a[href="/test-cases/${id}"]`)
-    if (link) {
-      const tr = link.closest('tr')
-      tr?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      tr?.classList.add('animate-pulse', 'bg-yellow-100', 'dark:bg-yellow-900/30')
-      setTimeout(() => {
-        tr?.classList.remove('animate-pulse', 'bg-yellow-100', 'dark:bg-yellow-900/30')
-      }, 3000)
+    const row = document.querySelector<HTMLElement>(`tr:has(a[href="/test-cases/${id}"])`)
+    if (row) {
+      const container = row.closest('table')?.parentElement
+      if (container) {
+        const containerTop = container.getBoundingClientRect().top
+        const rowTop = row.getBoundingClientRect().top
+        container.scrollBy({
+          top: rowTop - containerTop - container.clientHeight / 2 + row.clientHeight / 2,
+          behavior: 'smooth'
+        })
+      }
     }
+    setTimeout(() => {
+      highlightedCaseId.value = null
+    }, 3000)
   })
 }
 
@@ -222,8 +231,11 @@ defineExpose({ scrollToCase })
 
     <UTable
       v-if="filteredTestCases.length > 0"
+      ref="tableScrollRef"
+      sticky
       :data="paginatedTestCases"
       :columns="testCasesColumns"
+      class="max-h-[calc(100vh-28rem)]"
       :ui="{
         base: 'table-fixed border-separate border-spacing-0',
         thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
@@ -231,6 +243,7 @@ defineExpose({ scrollToCase })
         th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
         td: 'border-b border-default'
       }"
+      :meta="{ class: { tr: (row: any) => highlightedCaseId === row.original.id ? 'animate-pulse bg-yellow-100 dark:bg-yellow-900/30' : '' } }"
     />
 
     <div v-if="filteredTestCases.length > pageSize" class="flex items-center justify-between mt-4">

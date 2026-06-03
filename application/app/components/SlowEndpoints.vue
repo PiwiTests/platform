@@ -77,8 +77,10 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
 
     <UTable
       v-else-if="endpoints && endpoints.length > 0"
+      sticky
       :data="endpoints"
       :columns="endpointColumns"
+      class="max-h-[calc(100vh-28rem)]"
       :ui="{
         base: 'table-fixed border-separate border-spacing-0',
         thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
