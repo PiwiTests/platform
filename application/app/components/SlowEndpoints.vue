@@ -3,10 +3,13 @@ import { h, resolveComponent } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
 import type { EndpointSummary } from '~~/types/api'
 
-defineProps<{
-  endpoints: EndpointSummary[] | null
-  loading: boolean
-}>()
+const route = useRoute()
+const runId = route.params.id
+
+const { data: endpoints, pending: loading } = await useFetch<EndpointSummary[]>(
+  `/api/test-runs/${runId}/network-requests`,
+  { lazy: true, server: false }
+)
 
 const UBadge = resolveComponent('UBadge')
 

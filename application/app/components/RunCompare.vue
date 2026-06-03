@@ -1,30 +1,77 @@
 <script setup lang="ts">
-import { h, resolveComponent } from 'vue'
+import { h, resolveComponent, computed, watch, ref } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
-import type { TestRunDetails } from '~~/types/api'
-import type { ComparisonRow, ComparisonSummary } from '~/composables/useRunComparison'
+import type { TestRunDetails, ProjectWithTestRuns } from '~~/types/api'
+import type { ComparisonRow } from '~/composables/useRunComparison'
+
+const props = defineProps<{
+  testRun: TestRunDetails
+  isLive: boolean
+}>()
 
 interface RunOption {
   label: string
   value: number
 }
 
-defineProps<{
-  testRun: TestRunDetails
-  isLive: boolean
-  projectRunOptions: RunOption[]
-  previousRunId: number | null
-  compareRunA: RunOption | undefined
-  baselineRun: TestRunDetails | null
-  loadingBaseline: boolean
-  comparisonData: ComparisonRow[]
-  comparisonSummary: ComparisonSummary
-}>()
+const route = useRoute()
+const runId = route.params.id
 
-const emit = defineEmits<{
-  'update:compareRunA': [value: RunOption | undefined]
-  'compareWithPrevious': []
-}>()
+const { data: projectData } = await useFetch<ProjectWithTestRuns>(() => `/api/projects/${props.testRun.projectId}`, {
+  lazy: true
+})
+
+const projectRunOptions = computed<RunOption[]>(() => {
+  if (!projectData.value?.testRuns) return []
+  return projectData.value.testRuns
+    .filter(r => r.id !== Number(runId))
+    .slice(0, 50)
+    .map(r => ({
+      label: `Run #${r.id} — ${new Date(r.startTime).toLocaleDateString()} (${r.status})`,
+      value: r.id
+    }))
+})
+
+const previousRunId = computed<number | null>(() => {
+  if (!projectData.value?.testRuns) return null
+  const sorted = [...projectData.value.testRuns].sort(
+    (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+  )
+  const currentIdx = sorted.findIndex(r => r.id === Number(runId))
+  if (currentIdx >= 0 && currentIdx < sorted.length - 1) {
+    return sorted[currentIdx + 1]!.id
+  }
+  return null
+})
+
+const compareRunA = ref<RunOption | undefined>(undefined)
+const baselineRun = ref<TestRunDetails | null>(null)
+const loadingBaseline = ref(false)
+
+watch(compareRunA, async (opt) => {
+  if (!opt?.value) {
+    baselineRun.value = null
+    return
+  }
+  loadingBaseline.value = true
+  try {
+    baselineRun.value = await $fetch<TestRunDetails>(`/api/test-runs/${opt.value}`)
+  } catch {
+    // ignore
+  } finally {
+    loadingBaseline.value = false
+  }
+})
+
+function compareWithPrevious() {
+  if (previousRunId.value) {
+    const match = projectRunOptions.value.find(o => o.value === previousRunId.value)
+    if (match) compareRunA.value = match
+  }
+}
+
+const currentRunRef = computed<TestRunDetails | null>(() => props.testRun ?? null)
+const { comparisonData, comparisonSummary } = useRunComparison(baselineRun, currentRunRef)
 
 const comparisonColumns: TableColumn<ComparisonRow>[] = [
   {
@@ -100,10 +147,9 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Run A (baseline)</label>
           <USelectMenu
-            :model-value="compareRunA"
+            v-model="compareRunA"
             :items="projectRunOptions"
             placeholder="Select a baseline run..."
-            @update:model-value="emit('update:compareRunA', $event)"
           />
         </div>
         <div>
@@ -121,7 +167,7 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
           size="sm"
           variant="outline"
           label="Compare with previous run"
-          @click="emit('compareWithPrevious')"
+          @click="compareWithPrevious"
         />
       </div>
 
