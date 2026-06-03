@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, resolveComponent, computed } from 'vue'
+import { h, resolveComponent, computed, nextTick } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
 import type { TestRunDetails, TestCaseResult, EndpointSummary, ReportInfo, ProjectWithTestRuns } from '~~/types/api'
 import { useRunComparison } from '~/composables/useRunComparison'
@@ -295,10 +295,30 @@ const allReports = computed<ReportInfo[]>(() => {
   return list
 })
 
+function handleSelectTestCase(id: number) {
+  activeTab.value = 'test-cases'
+  const idx = filteredTestCases.value.findIndex(tc => tc.id === id)
+  if (idx < 0) return
+  const page = Math.floor(idx / pageSize) + 1
+  currentPage.value = page
+  nextTick(() => {
+    const link = document.querySelector<HTMLAnchorElement>(`a[href="/test-cases/${id}"]`)
+    if (link) {
+      const tr = link.closest('tr')
+      tr?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      tr?.classList.add('animate-pulse', 'bg-yellow-100', 'dark:bg-yellow-900/30')
+      setTimeout(() => {
+        tr?.classList.remove('animate-pulse', 'bg-yellow-100', 'dark:bg-yellow-900/30')
+      }, 3000)
+    }
+  })
+}
+
 // Right panel tabs
 const activeTab = ref('test-cases')
 const tabItems = [
   { label: 'Test cases', icon: 'i-lucide-beaker', value: 'test-cases' },
+  { label: 'Workers', icon: 'i-lucide-rows-3', value: 'workers' },
   { label: 'Compare', icon: 'i-lucide-git-compare-arrows', value: 'compare' },
   { label: 'Slow endpoints', icon: 'i-lucide-network', value: 'endpoints' }
 ]
@@ -940,6 +960,19 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
             <div v-else class="text-center py-10 text-gray-500">
               <UIcon name="i-lucide-beaker" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
               <p>No test cases recorded for this run.</p>
+            </div>
+          </div>
+
+          <!-- Tab: Workers -->
+          <div v-if="activeTab === 'workers'">
+            <WorkersTimeline
+              v-if="displayTestCases.length > 0"
+              :test-cases="displayTestCases"
+              @select-test-case="handleSelectTestCase"
+            />
+            <div v-else class="text-center py-10 text-gray-500">
+              <UIcon name="i-lucide-rows-3" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+              <p>No worker data available for this run.</p>
             </div>
           </div>
 
