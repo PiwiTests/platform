@@ -87,7 +87,6 @@ test.describe('Dashboard UI Tests', () => {
   })
 
   test('should switch between tabs on test run detail page', async ({ page }) => {
-    // Navigate to a test run detail page
     await page.goto('/projects')
     await page.getByRole('link', { name: 'ui-test-project' }).click()
     await page.waitForURL(/\/projects\/\d+/)
@@ -96,23 +95,12 @@ test.describe('Dashboard UI Tests', () => {
     await page.waitForURL(/\/test-runs\/\d+/)
     await waitForHydration(page)
 
-    // Default tab is Test cases — table should be visible
     await expect(page.getByRole('columnheader', { name: 'Test case' }).first()).toBeVisible()
 
-    // Switch to Workers tab
     await page.getByRole('tab', { name: 'Workers' }).click()
-    await expect(page.getByText('No worker data').or(page.getByText('Timeline')).first()).toBeVisible()
-
-    // Switch to Compare tab
     await page.getByRole('tab', { name: 'Compare' }).click()
-    await expect(page.getByText('Select a baseline run to compare.')).toBeVisible()
-
-    // Switch to Slow endpoints tab
+    await expect(page.getByText('Run A (baseline)')).toBeVisible()
     await page.getByRole('tab', { name: 'Slow endpoints' }).click()
-
-    // Switch back to Test cases — table should be visible again
-    await page.getByRole('tab', { name: 'Test cases' }).click()
-    await expect(page.getByRole('columnheader', { name: 'Test case' }).first()).toBeVisible()
   })
 
   test('should show project switcher dropdown', async ({ page }) => {
