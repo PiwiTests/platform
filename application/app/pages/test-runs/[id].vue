@@ -296,8 +296,6 @@ function handleSelectTestCase(id: number) {
           <!-- Tab: Compare -->
           <RunCompare
             v-if="activeTab === 'compare'"
-            :test-run="testRun!"
-            :is-live="isLive"
           />
 
           <!-- Tab: Slow endpoints -->
