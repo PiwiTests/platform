@@ -55,7 +55,9 @@ function connectToStream() {
             id: liveTestCases.value.length + 1,
             title: parsed.data.title,
             status: 'running',
-            location: parsed.data.location
+            location: parsed.data.location,
+            workerIndex: parsed.data.workerIndex ?? null,
+            startedAt: Date.now()
           })
         }
       } else if (parsed.type === 'test-completed') {
@@ -68,6 +70,7 @@ function connectToStream() {
             tc.status = parsed.data.status
             tc.duration = parsed.data.duration
             tc.error = parsed.data.error
+            tc.workerIndex = parsed.data.workerIndex ?? tc.workerIndex
           }
         } else {
           // No test-begin event arrived (e.g. catch-up), add fresh
@@ -78,7 +81,8 @@ function connectToStream() {
             status: parsed.data.status,
             duration: parsed.data.duration,
             location: parsed.data.location,
-            error: parsed.data.error
+            error: parsed.data.error,
+            workerIndex: parsed.data.workerIndex ?? null
           })
         }
       } else if (parsed.type === 'run-progress') {
@@ -125,6 +129,36 @@ const displayTestCases = computed<TestCaseResult[]>(() => {
     return liveTestCases.value
   }
   return testRun.value?.testCases || []
+})
+
+// Elapsed time timer for running tests
+const elapsedNow = ref(Date.now())
+let elapsedTimer: ReturnType<typeof setInterval> | null = null
+
+function startElapsedTimer() {
+  if (elapsedTimer) return
+  elapsedTimer = setInterval(() => {
+    elapsedNow.value = Date.now()
+  }, 1000)
+}
+
+function stopElapsedTimer() {
+  if (elapsedTimer) {
+    clearInterval(elapsedTimer)
+    elapsedTimer = null
+  }
+}
+
+watch(() => displayTestCases.value.some(tc => tc.status === 'running'), (hasRunning) => {
+  if (hasRunning) {
+    startElapsedTimer()
+  } else {
+    stopElapsedTimer()
+  }
+}, { immediate: true })
+
+onUnmounted(() => {
+  stopElapsedTimer()
 })
 
 // Search and filter state for test cases
@@ -251,7 +285,21 @@ const testCasesColumns: TableColumn<TestCaseResult>[] = [
   {
     accessorKey: 'duration',
     header: createSortHeader<TestCaseResult>('Duration'),
-    cell: ({ row }) => formatDuration(row.getValue('duration'))
+    cell: ({ row }) => {
+      if (row.original.status === 'running' && row.original.startedAt) {
+        return formatDuration(Math.max(0, elapsedNow.value - row.original.startedAt))
+      }
+      return formatDuration(row.getValue('duration'))
+    }
+  },
+  {
+    accessorKey: 'workerIndex',
+    header: createSortHeader<TestCaseResult>('Worker'),
+    cell: ({ row }) => {
+      const wi = row.getValue('workerIndex') as number | null | undefined
+      if (wi === null || wi === undefined) return ''
+      return h(UBadge, { color: 'neutral', variant: 'soft', class: 'font-mono text-xs' }, () => `${wi}`)
+    }
   },
   {
     accessorKey: 'slowestStep',

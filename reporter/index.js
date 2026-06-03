@@ -164,14 +164,15 @@ class PlaywrightDashboardReporter {
     })();
   }
 
-  onTestBegin(test) {
+  onTestBegin(test, result) {
     // Convert absolute file path to relative path from project root
     const relativeFilePath = path.relative(process.cwd(), test.location.file);
 
     const beginEvent = {
       type: 'begin',
       title: test.title,
-      location: `${relativeFilePath}:${test.location.line}:${test.location.column}`
+      location: `${relativeFilePath}:${test.location.line}:${test.location.column}`,
+      workerIndex: result?.workerIndex ?? result?.parallelIndex ?? null
     };
 
     if (this.streamingEnabled && this.streamingRunId) {
@@ -198,6 +199,7 @@ class PlaywrightDashboardReporter {
       duration: result.duration,
       error: result.error ? result.error.message : null,
       retries: result.retry,
+      workerIndex: result.workerIndex ?? result.parallelIndex ?? null,
       attachments: result.attachments || []
     };
 
@@ -262,8 +264,10 @@ class PlaywrightDashboardReporter {
       title: testCase.title,
       location: testCase.location,
       status: testCase.status,
+      duration: testCase.duration,
       error: testCase.error,
       retries: testCase.retries,
+      workerIndex: testCase.workerIndex ?? null,
       steps: testCase.performanceMetrics && testCase.performanceMetrics.steps || null,
       slowestStep: testCase.performanceMetrics && testCase.performanceMetrics.slowestStep && testCase.performanceMetrics.slowestStep.title || null,
       slowestStepDuration: testCase.performanceMetrics && testCase.performanceMetrics.slowestStep && testCase.performanceMetrics.slowestStep.duration || null,
@@ -580,6 +584,7 @@ class PlaywrightDashboardReporter {
           duration: tcRest.duration,
           error: tcRest.error,
           retries: tcRest.retries,
+          workerIndex: tcRest.workerIndex ?? null,
           steps: tcRest.performanceMetrics && tcRest.performanceMetrics.steps || null,
           slowestStep: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.title || null,
           slowestStepDuration: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.duration || null,
@@ -635,6 +640,7 @@ class PlaywrightDashboardReporter {
         duration: tcRest.duration,
         error: tcRest.error,
         retries: tcRest.retries,
+        workerIndex: tcRest.workerIndex ?? null,
         steps: tcRest.performanceMetrics && tcRest.performanceMetrics.steps || null,
         slowestStep: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.title || null,
         slowestStepDuration: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.duration || null,

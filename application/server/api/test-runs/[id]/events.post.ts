@@ -102,7 +102,8 @@ export default eventHandler(async (event) => {
       type: 'test-begin',
       data: {
         title: tc.title,
-        location: tc.location
+        location: tc.location,
+        workerIndex: tc.workerIndex ?? null
       }
     })
   }
@@ -180,7 +181,8 @@ export default eventHandler(async (event) => {
       slowestStep: tc.slowestStep ?? null,
       slowestStepDuration: tc.slowestStepDuration ?? null,
       networkRequests: sanitizeNetworkRequests(tc.networkRequests) ?? null,
-      webVitals: sanitizeWebVitals(tc.webVitals) ?? null
+      webVitals: sanitizeWebVitals(tc.webVitals) ?? null,
+      workerIndex: tc.workerIndex ?? null
     }).returning()
 
     results.push(runCaseResult[0])
@@ -214,7 +216,8 @@ export default eventHandler(async (event) => {
         status: tc.status,
         duration: tc.duration,
         location: tc.location,
-        error: tc.error ?? null
+        error: tc.error ?? null,
+        workerIndex: tc.workerIndex ?? null
       }
     })
   }
