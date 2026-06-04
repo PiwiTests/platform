@@ -286,6 +286,16 @@ export interface WebVitals {
 }
 
 /**
+ * A single console message captured during test execution (via dashboard fixture)
+ */
+export interface ConsoleEntry {
+  type: string
+  text: string
+  timestamp: number
+  location?: string | null
+}
+
+/**
  * Grouped endpoint summary returned by GET /api/test-runs/[id]/network-requests
  */
 export interface EndpointSummary {
@@ -320,6 +330,7 @@ export interface TestCaseResult {
   slowestStepDuration?: number | null
   networkRequests?: NetworkRequest[] | null
   webVitals?: WebVitals | null
+  consoleLogs?: ConsoleEntry[] | null
   workerIndex?: number | null
   startedAt?: number
 }
@@ -505,6 +516,15 @@ export interface TestCaseHistoryPoint {
   retries: number | null
   startTime: string | Date
   runStatus: string
+}
+
+/**
+ * Trace file attached to a test case result
+ */
+export interface TraceInfo {
+  id: number
+  filePath: string
+  createdAt: Date
 }
 
 /**

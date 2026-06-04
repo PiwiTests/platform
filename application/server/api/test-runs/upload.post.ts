@@ -1,5 +1,5 @@
 import { getDatabase } from '../../database'
-import { projects, testRuns, testCases, testRunsCases, reports } from '../../database/schema'
+import { projects, testRuns, testCases, testRunsCases, reports, traces } from '../../database/schema'
 import type { Project } from '../../database/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { join } from 'path'
@@ -50,6 +50,8 @@ export default eventHandler(async (event) => {
   let testCasesData: Record<string, unknown>[] = []
   // Map of report type -> { filename, data, label }
   const reportFiles: Map<string, { filename: string, data: Buffer, label?: string }> = new Map()
+  // Trace files attached for specific test case indices: index -> { filename, data }
+  const traceFiles: Map<number, { filename: string, data: Buffer }> = new Map()
 
   for (const part of formData) {
     if (part.name === 'testRunId') {
@@ -96,6 +98,14 @@ export default eventHandler(async (event) => {
       if (type && reportFiles.has(type)) {
         const entry = reportFiles.get(type)!
         entry.label = part.data.toString('utf-8')
+      }
+    } else if (part.name?.startsWith('trace_') && part.filename) {
+      const traceIndex = parseInt(part.name.slice('trace_'.length), 10)
+      if (!isNaN(traceIndex)) {
+        traceFiles.set(traceIndex, {
+          filename: sanitizeFilename(part.filename),
+          data: part.data
+        })
       }
     }
   }
@@ -327,11 +337,13 @@ export default eventHandler(async (event) => {
       duration?: number | null
       error?: string | null
       retries?: number
+      index?: number
       steps?: Array<{ title: string, duration: number, category: string }> | null
       slowestStep?: string | null
       slowestStepDuration?: number | null
       networkRequests?: Array<Record<string, unknown>> | null
       webVitals?: Record<string, unknown> | null
+      consoleLogs?: Array<Record<string, unknown>> | null
       workerIndex?: number | null
       filePath: string
       line: number | null
@@ -450,13 +462,36 @@ export default eventHandler(async (event) => {
         slowestStepDuration: (tc.slowestStepDuration as number | null | undefined) ?? null,
         networkRequests: sanitizeNetworkRequests(tc.networkRequests as Array<Record<string, unknown>> | null | undefined) ?? null,
         webVitals: sanitizeWebVitals(tc.webVitals as Record<string, unknown> | null | undefined) ?? null,
+        consoleLogs: (tc.consoleLogs as Array<Record<string, unknown>> | null | undefined) ?? null,
         workerIndex: (tc.workerIndex as number | null | undefined) ?? null
       })
     }
 
     // Batch insert all test run cases in a single statement
-    if (runCasesRows.length > 0) {
-      await db.insert(testRunsCases).values(runCasesRows)
+    const insertedRunCases = runCasesRows.length > 0
+      ? await db.insert(testRunsCases).values(runCasesRows).returning()
+      : []
+
+    // Store trace files linked to their test run case
+    if (insertedRunCases.length > 0 && traceFiles.size > 0) {
+      for (const [index, traceFile] of traceFiles) {
+        if (index >= 0 && index < insertedRunCases.length) {
+          const inserted = insertedRunCases[index]
+          if (!inserted?.id) continue
+          const testRunsCaseId = inserted.id
+          const storagePath = `${testRunPath}/${testRunsCaseId}-${traceFile.filename}`
+          try {
+            await storage.writeFile(storagePath, traceFile.data)
+            await db.insert(traces).values({
+              testRunsCaseId,
+              filePath: storagePath.replace(/\\/g, '/')
+            })
+            console.log(`[Upload] Stored trace for case #${testRunsCaseId} at ${storagePath}`)
+          } catch (error) {
+            console.error(`[Upload] Failed to store trace: ${error}`)
+          }
+        }
+      }
     }
   }
 

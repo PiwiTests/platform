@@ -177,8 +177,6 @@ class PiwiDashboardReporter {
 
     if (this.streamingEnabled && this.streamingRunId) {
       this._queueStreamEvent(beginEvent);
-      // Flush immediately so the dashboard sees test starts in real-time
-      this._flushStreamEvents();
     } else {
       // Streaming not yet ready — buffer for later flush
       this.pendingBeginEvents.push(beginEvent);
@@ -228,6 +226,16 @@ class PiwiDashboardReporter {
           // Ignore parse errors
         }
       }
+
+      // Parse console logs from fixture attachment
+      const consoleAttachment = result.attachments.find(a => a.name === 'piwi-dashboard-console');
+      if (consoleAttachment && consoleAttachment.body) {
+        try {
+          testCase.consoleLogs = JSON.parse(consoleAttachment.body.toString());
+        } catch {
+          // Ignore parse errors
+        }
+      }
     }
 
     // Track test status
@@ -272,7 +280,8 @@ class PiwiDashboardReporter {
       slowestStep: testCase.performanceMetrics && testCase.performanceMetrics.slowestStep && testCase.performanceMetrics.slowestStep.title || null,
       slowestStepDuration: testCase.performanceMetrics && testCase.performanceMetrics.slowestStep && testCase.performanceMetrics.slowestStep.duration || null,
       networkRequests: testCase.networkRequests || null,
-      webVitals: testCase.webVitals || null
+      webVitals: testCase.webVitals || null,
+      consoleLogs: testCase.consoleLogs || null
     });
 
     // Flush when batch size is reached
@@ -589,7 +598,8 @@ class PiwiDashboardReporter {
           slowestStep: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.title || null,
           slowestStepDuration: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.duration || null,
           networkRequests: tcRest.networkRequests || null,
-          webVitals: tcRest.webVitals || null
+          webVitals: tcRest.webVitals || null,
+          consoleLogs: tcRest.consoleLogs || null
         }
       })
     };
@@ -645,7 +655,8 @@ class PiwiDashboardReporter {
         slowestStep: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.title || null,
         slowestStepDuration: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.duration || null,
         networkRequests: tcRest.networkRequests || null,
-        webVitals: tcRest.webVitals || null
+        webVitals: tcRest.webVitals || null,
+        consoleLogs: tcRest.consoleLogs || null
       };
     });
     form.append('testCases', JSON.stringify(testCasesData));

@@ -141,7 +141,7 @@ function onChartRender(
         ref="xyContainerRef"
         :data="chartData"
         :height="height"
-        :padding="{ top: 10, right: 10, bottom: 40, left: 50 }"
+        :padding="{ top: 10, right: 10, bottom: 0, left: 0 }"
         :on-render-complete="onChartRender"
       >
         <VisArea

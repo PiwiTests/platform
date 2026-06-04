@@ -48,7 +48,9 @@ Nuxt file-based routing:
 - `GET /api/projects` — List projects with stats
 - `GET /api/projects/[id]` — Project details + runs
 - `GET /api/test-runs/[id]` — Run details + cases
-- `GET /api/test-cases/[id]` — Case details + traces
+- `GET /api/test-cases/[id]` — Case details + steps, web vitals, network requests
+- `GET /api/test-cases/[id]/traces` — Trace files for a test case
+- `GET /api/test-cases/[id]/history` — Execution history across runs
 - `GET /api/files/[...path]` — Download reports/traces
 
 ### Frontend (app/)
@@ -57,7 +59,7 @@ Nuxt file-based routing:
   - `/projects` — Project list
   - `/projects/[id]` — Project detail
   - `/test-runs/[id]` — Run detail
-  - `/test-cases/[id]` — Case detail
+  - `/test-cases/[id]` — Case detail (detailed revamp: traces, run context, AI fix prompt, timing comparison, improved error display)
 - **Components** (`app/components/`):
   - `RunSummary.vue` — Summary card + CI/Source/Other metadata blocks on test run detail page
   - `TestCasesList.vue` — Paginated test case table with sticky headers, row highlighting via `meta.class.tr`
@@ -65,6 +67,15 @@ Nuxt file-based routing:
   - `RunCompare.vue` — Self-contained comparison component (watches internal `compareRunA`, fetches baseline run)
   - `SlowEndpoints.vue` — Self-contained network endpoints table (fetches `/api/test-runs/:id/network-requests` internally)
   - `RunStatusBadge.vue`, `TestStatusBar.vue`, `RunReports.vue` — Shared UI primitives
+  - `TestCaseStatusCard.vue` — Header card: title, location, duration, retries, worker, slowest step, timing vs historical avg
+  - `TestCaseRunContext.vue` — Run metadata: environment, CI provider, branch, commit, browser info
+  - `TestCaseTracesCard.vue` — Trace file list with "Open trace" buttons
+  - `TestCaseErrorCard.vue` — Error details with copy button and collapsible long errors
+  - `TestCaseFixPromptCard.vue` — AI debug prompt with copy button for failed tests
+- **Utilities** (`app/utils/`):
+  - `performance-hints.ts` — Generates performance warnings for slow/flaky tests
+  - `fix-prompt.ts` — Generates structured AI debug prompts from test failure context
+  - `index.ts` — Shared helpers: `formatDuration`, `getStatusColor`, `getFileApiPath`, `formatRelativeTime`, `createSortHeader`, `formatBytes`
 
 ### Reporter
 - `reporter/index.js` — Custom Playwright reporter

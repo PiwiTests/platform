@@ -65,6 +65,7 @@ export const testRunsCases = sqliteTable('test_runs_cases', {
   slowestStepDuration: integer('slowest_step_duration'), // Duration of the slowest step in ms
   networkRequests: text('network_requests', { mode: 'json' }), // Array of { method, url, status, duration, resourceType }
   webVitals: text('web_vitals', { mode: 'json' }), // { navigation: {...}, paint: {...} }
+  consoleLogs: text('console_logs', { mode: 'json' }), // Array of { type, text, timestamp, location } console entries
   workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
 }, table => ({

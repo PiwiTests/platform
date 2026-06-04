@@ -279,7 +279,7 @@ test.describe('Environment UI Tests', () => {
 
     await page.goto(`/test-runs/${firstRun.id}`)
     await page.waitForURL(/\/test-runs\/\d+/)
-    await expect(page.locator('span.bg-blue-50').filter({ hasText: firstRun.environment })).toBeVisible()
+    await expect(page.locator('span.rounded-full').filter({ hasText: firstRun.environment })).toBeVisible()
   })
 
   test('should show environment filter on project detail page', async ({ page, request }) => {

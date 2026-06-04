@@ -117,7 +117,7 @@ export default eventHandler(async (event) => {
   }
 
   // Parse all locations up front
-  const parsedEvents = completeEvents.map((tc: { title: string, location?: string, status?: string, duration?: number, error?: string, retries?: number, steps?: unknown, slowestStep?: string, slowestStepDuration?: number, networkRequests?: unknown, webVitals?: unknown }) => {
+  const parsedEvents = completeEvents.map((tc: { title: string, location?: string, status?: string, duration?: number, error?: string, retries?: number, steps?: unknown, slowestStep?: string, slowestStepDuration?: number, networkRequests?: unknown, webVitals?: unknown, consoleLogs?: unknown }) => {
     const { filePath, line, column } = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null }
     return { ...tc, filePath, line, column }
   })
@@ -181,6 +181,7 @@ export default eventHandler(async (event) => {
       slowestStepDuration: tc.slowestStepDuration ?? null,
       networkRequests: sanitizeNetworkRequests(tc.networkRequests) ?? null,
       webVitals: sanitizeWebVitals(tc.webVitals) ?? null,
+      consoleLogs: tc.consoleLogs ?? null,
       workerIndex: tc.workerIndex ?? null
     })
   }

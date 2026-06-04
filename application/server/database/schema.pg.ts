@@ -65,6 +65,7 @@ export const testRunsCases = pgTable('test_runs_cases', {
   slowestStepDuration: integer('slowest_step_duration'), // Duration of the slowest step in ms
   networkRequests: jsonb('network_requests'), // Array of { method, url, status, duration, resourceType }
   webVitals: jsonb('web_vitals'), // { navigation: {...}, paint: {...} }
+  consoleLogs: jsonb('console_logs'), // Array of { type, text, timestamp, location } console entries
   workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
 }, table => ({
