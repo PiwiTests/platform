@@ -22,6 +22,13 @@
       "when": 1748750800000,
       "tag": "0002_add_environment_test_runs",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1780520683697,
+      "tag": "0003_rapid_bloodstorm",
+      "breakpoints": true
     }
   ]
 }

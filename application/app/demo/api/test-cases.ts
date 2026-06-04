@@ -41,6 +41,7 @@ export async function apiGetTestCase(id: number) {
     slowestStepDuration: testRunsCase.slowestStepDuration,
     networkRequests: testRunsCase.networkRequests,
     webVitals: testRunsCase.webVitals,
+    workerIndex: testRunsCase.workerIndex,
     testRun: testRun ? { ...testRun, project } : testRun
   }
 }

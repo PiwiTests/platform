@@ -1,9 +1,6 @@
 <script setup lang="ts">
-import { h, resolveComponent, computed } from 'vue'
-import type { TableColumn } from '@nuxt/ui'
-import type { TestRunDetails, TestCaseResult, EndpointSummary, ReportInfo, ProjectWithTestRuns } from '~~/types/api'
-import { useRunComparison } from '~/composables/useRunComparison'
-import type { ComparisonRow } from '~/composables/useRunComparison'
+import { computed, nextTick, watch, onUnmounted } from 'vue'
+import type { TestRunDetails, TestCaseResult, ReportInfo } from '~~/types/api'
 
 const route = useRoute()
 const runId = route.params.id
@@ -21,12 +18,10 @@ const deleting = ref(false)
 // Live streaming state
 const isLive = computed(() => testRun.value?.status === 'running')
 const liveTestCases = ref<TestCaseResult[]>([])
-// Map of `title@@location` → true for O(1) duplicate detection
 const liveTestCaseKeys = new Map<string, true>()
 const liveProgress = ref<{ totalTests: number, passedTests: number, failedTests: number, skippedTests: number } | null>(null)
 let eventSource: EventSource | null = null
 
-// Connect to SSE when run is in 'running' state
 function connectToStream() {
   if (!import.meta.client) return
   if (eventSource) return
@@ -39,7 +34,6 @@ function connectToStream() {
       const parsed = JSON.parse(event.data)
 
       if (parsed.type === 'init') {
-        // Initialize live progress with authoritative server-side state
         liveProgress.value = {
           totalTests: parsed.data.totalTests,
           passedTests: parsed.data.passedTests,
@@ -47,7 +41,6 @@ function connectToStream() {
           skippedTests: parsed.data.skippedTests
         }
       } else if (parsed.type === 'test-begin') {
-        // Add a "running" entry for this test — visible in the dashboard immediately
         const key = `${parsed.data.title}@@${parsed.data.location}`
         if (!liveTestCaseKeys.has(key)) {
           liveTestCaseKeys.set(key, true)
@@ -63,7 +56,6 @@ function connectToStream() {
       } else if (parsed.type === 'test-completed') {
         const key = `${parsed.data.title}@@${parsed.data.location}`
         if (liveTestCaseKeys.has(key)) {
-          // Update the existing "running" entry with final status
           const idx = liveTestCases.value.findIndex(tc => `${tc.title}@@${tc.location}` === key)
           if (idx >= 0) {
             const tc = liveTestCases.value[idx]!
@@ -73,7 +65,6 @@ function connectToStream() {
             tc.workerIndex = parsed.data.workerIndex ?? tc.workerIndex
           }
         } else {
-          // No test-begin event arrived (e.g. catch-up), add fresh
           liveTestCaseKeys.set(key, true)
           liveTestCases.value.push({
             id: liveTestCases.value.length + 1,
@@ -88,7 +79,6 @@ function connectToStream() {
       } else if (parsed.type === 'run-progress') {
         liveProgress.value = parsed.data
       } else if (parsed.type === 'run-finished') {
-        // Run is done — refresh full data from server
         disconnectStream()
         refresh()
       }
@@ -109,7 +99,6 @@ function disconnectStream() {
   }
 }
 
-// Start streaming connection if run is live
 watch(isLive, (live) => {
   if (live) {
     connectToStream()
@@ -118,7 +107,6 @@ watch(isLive, (live) => {
   }
 }, { immediate: true })
 
-// Cleanup on unmount
 onUnmounted(() => {
   disconnectStream()
 })
@@ -129,62 +117,6 @@ const displayTestCases = computed<TestCaseResult[]>(() => {
     return liveTestCases.value
   }
   return testRun.value?.testCases || []
-})
-
-// Elapsed time timer for running tests
-const elapsedNow = ref(Date.now())
-let elapsedTimer: ReturnType<typeof setInterval> | null = null
-
-function startElapsedTimer() {
-  if (elapsedTimer) return
-  elapsedTimer = setInterval(() => {
-    elapsedNow.value = Date.now()
-  }, 1000)
-}
-
-function stopElapsedTimer() {
-  if (elapsedTimer) {
-    clearInterval(elapsedTimer)
-    elapsedTimer = null
-  }
-}
-
-watch(() => displayTestCases.value.some(tc => tc.status === 'running'), (hasRunning) => {
-  if (hasRunning) {
-    startElapsedTimer()
-  } else {
-    stopElapsedTimer()
-  }
-}, { immediate: true })
-
-onUnmounted(() => {
-  stopElapsedTimer()
-})
-
-// Search and filter state for test cases
-const testCaseSearch = ref('')
-const testCaseStatusFilter = ref<string>('all')
-const testCaseStatusOptions = [
-  { label: 'All statuses', value: 'all' },
-  { label: 'Passed', value: 'passed' },
-  { label: 'Failed', value: 'failed' },
-  { label: 'Skipped', value: 'skipped' },
-  { label: 'Flaky', value: 'flaky' }
-]
-
-const filteredTestCases = computed<TestCaseResult[]>(() => {
-  let cases = displayTestCases.value
-  if (testCaseStatusFilter.value !== 'all') {
-    cases = cases.filter(tc => tc.status === testCaseStatusFilter.value)
-  }
-  if (testCaseSearch.value) {
-    const query = testCaseSearch.value.toLowerCase()
-    cases = cases.filter(tc =>
-      tc.title.toLowerCase().includes(query)
-      || (tc.location && tc.location.toLowerCase().includes(query))
-    )
-  }
-  return cases
 })
 
 // Display progress: live or from loaded data
@@ -218,26 +150,43 @@ async function handleDeleteRun() {
   }
 }
 
-// Load network requests data lazily (not during SSR) to avoid blocking page load
-const { data: networkEndpoints, pending: loadingEndpoints } = await useFetch<EndpointSummary[]>(
-  `/api/test-runs/${runId}/network-requests`,
-  { lazy: true, server: false }
-)
+const showCustomData = ref(false)
 
-const UBadge = resolveComponent('UBadge')
+// Count visible metadata blocks to distribute grid space
+const metadataBlockCount = computed(() => {
+  let count = 0
+  if (testRun.value?.metadata?.ci || testRun.value?.environment) count++
+  if (testRun.value?.metadata?.scm) count++
+  if (testRun.value?.metadata?.tags?.length || testRun.value?.metadata?.projectDescription || testRun.value?.metadata?.relatedIssue || testRun.value?.metadata?.customData) count++
+  return count
+})
+
+const summaryColSpanClass = computed(() => {
+  const n = metadataBlockCount.value
+  if (n === 0) return 'lg:col-span-8'
+  if (n === 3) return 'lg:col-span-5'
+  if (n === 2) return 'lg:col-span-4'
+  return 'lg:col-span-5'
+})
+
+const blockColSpanClass = computed(() => {
+  const n = metadataBlockCount.value
+  if (n === 3) return 'lg:col-span-1'
+  if (n === 2) return 'lg:col-span-2'
+  if (n === 1) return 'lg:col-span-3'
+  return ''
+})
 
 // Merge reports from the new `reports` table with the legacy reportPath field
 const allReports = computed<ReportInfo[]>(() => {
   if (!testRun.value) return []
   const list: ReportInfo[] = []
 
-  // New reports from the reports table
   if (testRun.value.reports && testRun.value.reports.length > 0) {
     list.push(...testRun.value.reports)
     return list
   }
 
-  // Backward compat: fall back to the legacy reportPath field
   if (testRun.value.reportPath) {
     list.push({
       id: 0,
@@ -251,277 +200,26 @@ const allReports = computed<ReportInfo[]>(() => {
   return list
 })
 
-const testCasesColumns: TableColumn<TestCaseResult>[] = [
-  {
-    accessorKey: 'title',
-    header: createSortHeader<TestCaseResult>('Test case'),
-    cell: ({ row }) => {
-      return h('a', {
-        href: `/test-cases/${row.original.id}`,
-        class: 'text-primary hover:underline font-medium',
-        onClick: (e: MouseEvent) => {
-          e.preventDefault()
-          navigateTo(`/test-cases/${row.original.id}`)
-        }
-      }, row.getValue('title'))
-    }
-  },
-  {
-    accessorKey: 'status',
-    header: createSortHeader<TestCaseResult>('Status'),
-    cell: ({ row }) => {
-      const color = getStatusColor(row.getValue('status') as string)
-      return h(UBadge, { color, class: 'capitalize' }, () => row.getValue('status'))
-    }
-  },
-  {
-    accessorKey: 'location',
-    header: createSortHeader<TestCaseResult>('Location'),
-    cell: ({ row }) => {
-      const location = row.getValue('location') as string | undefined
-      return location ? h('code', { class: 'text-xs' }, location) : ''
-    }
-  },
-  {
-    accessorKey: 'duration',
-    header: createSortHeader<TestCaseResult>('Duration'),
-    cell: ({ row }) => {
-      if (row.original.status === 'running' && row.original.startedAt) {
-        return formatDuration(Math.max(0, elapsedNow.value - row.original.startedAt))
-      }
-      return formatDuration(row.getValue('duration'))
-    }
-  },
-  {
-    accessorKey: 'workerIndex',
-    header: createSortHeader<TestCaseResult>('Worker'),
-    cell: ({ row }) => {
-      const wi = row.getValue('workerIndex') as number | null | undefined
-      if (wi === null || wi === undefined) return ''
-      return h(UBadge, { color: 'neutral', variant: 'soft', class: 'font-mono text-xs' }, () => `${wi}`)
-    }
-  },
-  {
-    accessorKey: 'slowestStep',
-    header: createSortHeader<TestCaseResult>('Slowest step'),
-    cell: ({ row }) => {
-      const step = row.getValue('slowestStep') as string | null
-      const stepDuration = row.original.slowestStepDuration
-      if (!step) return ''
-      return h('div', { class: 'text-xs' }, [
-        h('span', { class: 'text-gray-600 dark:text-gray-400' }, step),
-        stepDuration ? h('span', { class: 'ml-1 text-orange-600 font-medium' }, `(${formatDuration(stepDuration)})`) : null
-      ].filter(Boolean))
-    }
-  },
-  {
-    accessorKey: 'retries',
-    header: createSortHeader<TestCaseResult>('Retries'),
-    cell: ({ row }) => {
-      const retries = row.getValue('retries') as number | undefined
-      return retries && retries > 0 ? retries.toString() : ''
-    }
-  },
-  {
-    accessorKey: 'actions',
-    header: () => h('div', { class: 'text-right' }, 'Actions'),
-    cell: ({ row }) => {
-      const UButton = resolveComponent('UButton')
-      return h('div', { class: 'flex justify-end' },
-        h(UButton, {
-          to: `/test-cases/${row.original.id}`,
-          size: 'sm',
-          variant: 'outline'
-        }, () => 'View details')
-      )
-    }
-  }
+// Right panel tabs
+const activeTab = ref('test-cases')
+const tabItems = [
+  { label: 'Test cases', icon: 'i-lucide-beaker', value: 'test-cases' },
+  { label: 'Workers', icon: 'i-lucide-rows-3', value: 'workers' },
+  { label: 'Compare', icon: 'i-lucide-git-compare-arrows', value: 'compare' },
+  { label: 'Slow endpoints', icon: 'i-lucide-network', value: 'endpoints' }
 ]
 
-const endpointColumns: TableColumn<EndpointSummary>[] = [
-  {
-    accessorKey: 'method',
-    header: createSortHeader<EndpointSummary>('Method'),
-    cell: ({ row }) => {
-      const method = row.getValue('method') as string
-      const color = method === 'GET' ? 'sky' : method === 'POST' ? 'green' : method === 'PUT' || method === 'PATCH' ? 'amber' : method === 'DELETE' ? 'red' : 'gray'
-      return h(UBadge, { color, variant: 'soft', class: 'font-mono text-xs' }, () => method)
-    }
-  },
-  {
-    accessorKey: 'route',
-    header: createSortHeader<EndpointSummary>('Route'),
-    cell: ({ row }) => h('code', { class: 'text-xs font-mono break-all' }, row.getValue('route'))
-  },
-  {
-    accessorKey: 'count',
-    header: createSortHeader<EndpointSummary>('Calls'),
-    cell: ({ row }) => row.getValue('count')
-  },
-  {
-    accessorKey: 'avgDuration',
-    header: createSortHeader<EndpointSummary>('Avg'),
-    cell: ({ row }) => {
-      const val = row.getValue('avgDuration') as number
-      const color = val > 1000 ? 'text-red-600 font-medium' : val > 500 ? 'text-orange-500 font-medium' : ''
-      return h('span', { class: color }, formatDuration(val))
-    }
-  },
-  {
-    accessorKey: 'p90Duration',
-    header: createSortHeader<EndpointSummary>('P90'),
-    cell: ({ row }) => {
-      const val = row.getValue('p90Duration') as number
-      const color = val > 2000 ? 'text-red-600 font-medium' : val > 1000 ? 'text-orange-500' : ''
-      return h('span', { class: color }, formatDuration(val))
-    }
-  },
-  {
-    accessorKey: 'maxDuration',
-    header: createSortHeader<EndpointSummary>('Max'),
-    cell: ({ row }) => formatDuration(row.getValue('maxDuration'))
-  },
-  {
-    accessorKey: 'errorRate',
-    header: createSortHeader<EndpointSummary>('Errors'),
-    cell: ({ row }) => {
-      const rate = row.getValue('errorRate') as number
-      if (rate === 0) return h('span', { class: 'text-gray-400' }, '0%')
-      return h('span', { class: 'text-red-600 font-medium' }, `${rate}%`)
-    }
-  }
-]
+// Ref for TestCasesList to call scrollToCase
+const testCasesListRef: {
+  value: { scrollToCase: (id: number) => void } | null
+} = ref(null)
 
-// ---- Run Comparison Feature ----
-interface RunOption {
-  label: string
-  value: number
+function handleSelectTestCase(id: number) {
+  activeTab.value = 'test-cases'
+  nextTick(() => {
+    testCasesListRef.value?.scrollToCase(id)
+  })
 }
-
-// Fetch project data to get list of runs for comparison
-const { data: projectData } = await useFetch<ProjectWithTestRuns>(() => `/api/projects/${testRun.value?.projectId}`, {
-  lazy: true
-})
-
-const projectRunOptions = computed<RunOption[]>(() => {
-  if (!projectData.value?.testRuns) return []
-  return projectData.value.testRuns
-    .filter(r => r.id !== Number(runId))
-    .slice(0, 50)
-    .map(r => ({
-      label: `Run #${r.id} — ${new Date(r.startTime).toLocaleDateString()} (${r.status})`,
-      value: r.id
-    }))
-})
-
-// Auto-detect previous run (chronologically previous, not by ID)
-const previousRunId = computed<number | null>(() => {
-  if (!projectData.value?.testRuns) return null
-  const sorted = [...projectData.value.testRuns].sort(
-    (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
-  )
-  const currentIdx = sorted.findIndex(r => r.id === Number(runId))
-  if (currentIdx >= 0 && currentIdx < sorted.length - 1) {
-    return sorted[currentIdx + 1]!.id
-  }
-  return null
-})
-
-const compareRunA = ref<RunOption | undefined>(undefined)
-const baselineRun = ref<TestRunDetails | null>(null)
-const loadingBaseline = ref(false)
-
-watch(compareRunA, async (opt) => {
-  if (!opt?.value) {
-    baselineRun.value = null
-    return
-  }
-  loadingBaseline.value = true
-  try {
-    baselineRun.value = await $fetch<TestRunDetails>(`/api/test-runs/${opt.value}`)
-  } catch {
-    // ignore — keep old baselineRun value
-  } finally {
-    loadingBaseline.value = false
-  }
-})
-
-function compareWithPrevious() {
-  if (previousRunId.value) {
-    const match = projectRunOptions.value.find(o => o.value === previousRunId.value)
-    if (match) compareRunA.value = match
-  }
-}
-
-// This run as the baseline ref for the composable
-const currentRunRef = computed<TestRunDetails | null>(() => testRun.value ?? null)
-const { comparisonData, comparisonSummary } = useRunComparison(baselineRun, currentRunRef)
-
-const comparisonColumns: TableColumn<ComparisonRow>[] = [
-  {
-    accessorKey: 'title',
-    header: createSortHeader<ComparisonRow>('Test case'),
-    cell: ({ row }) => h('span', { class: 'font-medium' }, row.getValue('title'))
-  },
-  {
-    accessorKey: 'statusA',
-    header: createSortHeader<ComparisonRow>('Status A'),
-    cell: ({ row }) => {
-      const status = row.getValue('statusA') as string | null
-      if (!status) return h('span', { class: 'text-gray-400' }, '—')
-      const color = getStatusColor(status)
-      return h(resolveComponent('UBadge'), { color, class: 'capitalize' }, () => status)
-    }
-  },
-  {
-    accessorKey: 'statusB',
-    header: createSortHeader<ComparisonRow>('Status B'),
-    cell: ({ row }) => {
-      const status = row.getValue('statusB') as string | null
-      if (!status) return h('span', { class: 'text-gray-400' }, '—')
-      const color = getStatusColor(status)
-      return h(resolveComponent('UBadge'), { color, class: 'capitalize' }, () => status)
-    }
-  },
-  {
-    accessorKey: 'durationA',
-    header: createSortHeader<ComparisonRow>('Duration A'),
-    cell: ({ row }) => {
-      const val = row.getValue('durationA') as number | null
-      return val !== null ? formatDuration(val) : h('span', { class: 'text-gray-400' }, '—')
-    }
-  },
-  {
-    accessorKey: 'durationB',
-    header: createSortHeader<ComparisonRow>('Duration B'),
-    cell: ({ row }) => {
-      const val = row.getValue('durationB') as number | null
-      return val !== null ? formatDuration(val) : h('span', { class: 'text-gray-400' }, '—')
-    }
-  },
-  {
-    accessorKey: 'delta',
-    header: createSortHeader<ComparisonRow>('Delta'),
-    cell: ({ row }) => {
-      const delta = row.getValue('delta') as number | null
-      if (delta === null) return h('span', { class: 'text-gray-400' }, '—')
-      const sign = delta > 0 ? '+' : ''
-      const color = delta > 0 ? 'text-red-600' : delta < 0 ? 'text-green-600' : 'text-gray-500'
-      return h('span', { class: color }, `${sign}${formatDuration(delta)}`)
-    }
-  },
-  {
-    accessorKey: 'percentChange',
-    header: createSortHeader<ComparisonRow>('Change'),
-    cell: ({ row }) => {
-      const pct = row.getValue('percentChange') as number | null
-      if (pct === null) return h('span', { class: 'text-gray-400' }, '—')
-      const sign = pct > 0 ? '+' : ''
-      const color = pct > 10 ? 'text-red-600 font-medium' : pct < -10 ? 'text-green-600 font-medium' : 'text-gray-500'
-      return h('span', { class: color }, `${sign}${pct}%`)
-    }
-  }
-]
 </script>
 
 <template>
@@ -560,480 +258,49 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4">
-        <UCard>
-          <template #header>
-            <div class="flex justify-between items-center">
-              <div class="flex items-center gap-2">
-                <h2 class="text-xl font-semibold">
-                  Test run #{{ testRun?.id }}
-                </h2>
-                <span v-if="isLive" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                  <span class="relative flex h-2 w-2">
-                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                    <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
-                  </span>
-                  Live
-                </span>
-              </div>
-              <UBadge v-if="testRun" :color="getStatusColor(testRun.status)" size="lg">
-                {{ testRun.status }}
-              </UBadge>
-            </div>
-          </template>
+      <div class="flex flex-col h-full overflow-hidden">
+        <RunSummary
+          :test-run="testRun!"
+          :display-progress="displayProgress"
+          :all-reports="allReports"
+          :show-custom-data="showCustomData"
+          :summary-col-span-class="summaryColSpanClass"
+          :block-col-span-class="blockColSpanClass"
+          @update:show-custom-data="showCustomData = $event"
+        />
 
-          <div class="space-y-4">
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <p class="text-sm text-gray-500">
-                  Project
-                </p>
-                <p class="font-medium">
-                  {{ testRun?.project?.label ?? testRun?.project?.name }}
-                </p>
-              </div>
-              <div>
-                <p class="text-sm text-gray-500">
-                  Total tests
-                </p>
-                <p class="font-medium">
-                  {{ displayProgress?.totalTests ?? testRun?.totalTests }}
-                </p>
-              </div>
-              <div>
-                <p class="text-sm text-gray-500">
-                  Passed
-                </p>
-                <p class="font-medium text-green-600">
-                  {{ displayProgress?.passedTests ?? testRun?.passedTests }}
-                </p>
-              </div>
-              <div>
-                <p class="text-sm text-gray-500">
-                  Failed
-                </p>
-                <p class="font-medium text-red-600">
-                  {{ displayProgress?.failedTests ?? testRun?.failedTests }}
-                </p>
-              </div>
-              <div>
-                <p class="text-sm text-gray-500">
-                  Skipped
-                </p>
-                <p class="font-medium">
-                  {{ displayProgress?.skippedTests ?? testRun?.skippedTests }}
-                </p>
-              </div>
-              <div>
-                <p class="text-sm text-gray-500">
-                  Duration
-                </p>
-                <p class="font-medium">
-                  {{ formatDuration(testRun?.duration) }}
-                </p>
-              </div>
-              <div v-if="testRun?.avgTestDuration">
-                <p class="text-sm text-gray-500">
-                  Avg test duration
-                </p>
-                <p class="font-medium">
-                  {{ formatDuration(testRun.avgTestDuration) }}
-                </p>
-              </div>
-              <div v-if="testRun?.p90TestDuration">
-                <p class="text-sm text-gray-500">
-                  P90 test duration
-                </p>
-                <p class="font-medium text-orange-600">
-                  {{ formatDuration(testRun.p90TestDuration) }}
-                </p>
-              </div>
-              <div>
-                <p class="text-sm text-gray-500">
-                  Start time
-                </p>
-                <p class="font-medium">
-                  {{ testRun?.startTime ? new Date(testRun.startTime).toLocaleString() : 'N/A' }}
-                </p>
-              </div>
-              <div v-if="testRun?.environment">
-                <p class="text-sm text-gray-500">
-                  Environment
-                </p>
-                <p class="font-medium">
-                  <span class="text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded">
-                    {{ testRun.environment }}
-                  </span>
-                </p>
-              </div>
-            </div>
+        <!-- ===== TABBED CONTENT PANEL ===== -->
+        <UTabs
+          v-model="activeTab"
+          :items="tabItems"
+          size="sm"
+          class="shrink-0"
+        />
 
-            <div v-if="allReports.length > 0" class="pt-4 border-t">
-              <p class="text-sm text-gray-500 mb-2">
-                Reports
-              </p>
-              <RunReports :reports="allReports" />
-            </div>
-
-            <!-- Metadata Section -->
-            <div v-if="testRun?.metadata" class="pt-4 border-t">
-              <p class="text-sm text-gray-500 mb-3">
-                Metadata
-              </p>
-              <div class="space-y-3">
-                <!-- Project Description -->
-                <div v-if="testRun.metadata.projectDescription">
-                  <p class="text-xs text-gray-500 uppercase">
-                    Description
-                  </p>
-                  <p class="text-sm">
-                    {{ testRun.metadata.projectDescription }}
-                  </p>
-                </div>
-
-                <!-- Related Issue -->
-                <div v-if="testRun.metadata.relatedIssue">
-                  <p class="text-xs text-gray-500 uppercase">
-                    Related issue
-                  </p>
-                  <p class="text-sm">
-                    {{ testRun.metadata.relatedIssue }}
-                  </p>
-                </div>
-
-                <!-- CI Info -->
-                <div v-if="testRun.metadata.ci" class="space-y-2">
-                  <p class="text-xs text-gray-500 uppercase">
-                    CI information
-                  </p>
-                  <div class="grid grid-cols-2 gap-2 text-sm">
-                    <div v-if="testRun.metadata.ci.provider">
-                      <span class="text-gray-500">Provider:</span>
-                      <span class="ml-2 font-medium">{{ testRun.metadata.ci.provider }}</span>
-                    </div>
-                    <div v-if="testRun.metadata.ci.buildNumber">
-                      <span class="text-gray-500">Build:</span>
-                      <span class="ml-2 font-medium">{{ testRun.metadata.ci.buildNumber }}</span>
-                    </div>
-                    <div v-if="testRun.metadata.ci.buildUrl" class="col-span-2">
-                      <a :href="testRun.metadata.ci.buildUrl" target="_blank" class="text-primary hover:underline flex items-center gap-1">
-                        <span>View Build</span>
-                        <UIcon name="i-lucide-external-link" class="w-3 h-3" />
-                      </a>
-                    </div>
-                    <div v-if="testRun.metadata.ci.jobName">
-                      <span class="text-gray-500">Job:</span>
-                      <span class="ml-2 font-medium">{{ testRun.metadata.ci.jobName }}</span>
-                    </div>
-                    <div v-if="testRun.metadata.ci.workflow">
-                      <span class="text-gray-500">Workflow:</span>
-                      <span class="ml-2 font-medium">{{ testRun.metadata.ci.workflow }}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- SCM Info -->
-                <div v-if="testRun.metadata.scm" class="space-y-2">
-                  <p class="text-xs text-gray-500 uppercase">
-                    Source control
-                  </p>
-                  <div class="space-y-1 text-sm">
-                    <div v-if="testRun.metadata.scm.commit">
-                      <span class="text-gray-500">Commit:</span>
-                      <code class="ml-2 text-xs bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">{{ testRun.metadata.scm.commit.length >= 8 ? testRun.metadata.scm.commit.substring(0, 8) : testRun.metadata.scm.commit }}</code>
-                    </div>
-                    <div v-if="testRun.metadata.scm.branch">
-                      <span class="text-gray-500">Branch:</span>
-                      <span class="ml-2 font-medium">{{ testRun.metadata.scm.branch }}</span>
-                    </div>
-                    <div v-if="testRun.metadata.scm.author">
-                      <span class="text-gray-500">Author:</span>
-                      <span class="ml-2 font-medium">{{ testRun.metadata.scm.author }}</span>
-                    </div>
-                    <div v-if="testRun.metadata.scm.commitMessage">
-                      <span class="text-gray-500">Message:</span>
-                      <span class="ml-2">{{ testRun.metadata.scm.commitMessage }}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Tags -->
-                <div v-if="testRun.metadata.tags && testRun.metadata.tags.length > 0">
-                  <p class="text-xs text-gray-500 uppercase mb-2">
-                    Tags
-                  </p>
-                  <div class="flex flex-wrap gap-2">
-                    <UBadge
-                      v-for="tag in testRun.metadata.tags"
-                      :key="tag"
-                      color="gray"
-                      variant="soft"
-                    >
-                      {{ tag }}
-                    </UBadge>
-                  </div>
-                </div>
-
-                <!-- Custom Data -->
-                <div v-if="testRun.metadata.customData">
-                  <p class="text-xs text-gray-500 uppercase mb-2">
-                    Custom data
-                  </p>
-                  <div class="bg-gray-50 dark:bg-gray-900 p-3 rounded text-xs font-mono overflow-x-auto">
-                    <pre>{{ JSON.stringify(testRun.metadata.customData, null, 2) }}</pre>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </UCard>
-
-        <UCard>
-          <template #header>
-            <div class="flex items-center gap-2">
-              <h3 class="text-lg font-medium">
-                Test cases
-              </h3>
-              <span v-if="isLive" class="text-sm text-gray-500">
-                ({{ displayTestCases.length }} completed)
-              </span>
-              <span v-else-if="filteredTestCases.length !== displayTestCases.length" class="text-sm text-gray-500">
-                ({{ filteredTestCases.length }} of {{ displayTestCases.length }})
-              </span>
-            </div>
-
-            <!-- Search and filter controls -->
-            <div class="flex flex-wrap items-center gap-3 mt-3">
-              <UInput
-                v-model="testCaseSearch"
-                placeholder="Search test cases..."
-                icon="i-lucide-search"
-                size="sm"
-                class="w-64"
-              />
-              <USelect
-                v-model="testCaseStatusFilter"
-                :items="testCaseStatusOptions"
-                size="sm"
-                class="w-40"
-              />
-            </div>
-          </template>
-
-          <!-- Live progress bar -->
-          <div v-if="isLive && displayProgress" class="mb-4">
-            <div class="flex justify-between text-xs text-gray-500 mb-1">
-              <span>Progress</span>
-              <span>{{ displayProgress.passedTests + displayProgress.failedTests + displayProgress.skippedTests }} tests completed</span>
-            </div>
-            <div class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden flex">
-              <div
-                v-if="displayProgress.passedTests > 0"
-                class="h-full bg-green-500 transition-all duration-300"
-                :style="{ width: `${(displayProgress.passedTests / Math.max(displayProgress.totalTests || displayProgress.passedTests + displayProgress.failedTests + displayProgress.skippedTests, 1)) * 100}%` }"
-              />
-              <div
-                v-if="displayProgress.failedTests > 0"
-                class="h-full bg-red-500 transition-all duration-300"
-                :style="{ width: `${(displayProgress.failedTests / Math.max(displayProgress.totalTests || displayProgress.passedTests + displayProgress.failedTests + displayProgress.skippedTests, 1)) * 100}%` }"
-              />
-              <div
-                v-if="displayProgress.skippedTests > 0"
-                class="h-full bg-gray-400 transition-all duration-300"
-                :style="{ width: `${(displayProgress.skippedTests / Math.max(displayProgress.totalTests || displayProgress.passedTests + displayProgress.failedTests + displayProgress.skippedTests, 1)) * 100}%` }"
-              />
-            </div>
-          </div>
-
-          <UTable
-            v-if="filteredTestCases.length > 0"
-            :data="filteredTestCases"
-            :columns="testCasesColumns"
-            :ui="{
-              base: 'table-fixed border-separate border-spacing-0',
-              thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
-              tbody: '[&>tr]:last:[&>td]:border-b-0',
-              th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
-              td: 'border-b border-default'
-            }"
+        <div class="flex-1 min-h-0">
+          <!-- Tab: Test cases -->
+          <TestCasesList
+            v-if="activeTab === 'test-cases'"
+            ref="testCasesListRef"
+            :test-cases="displayTestCases"
+            :is-live="isLive"
           />
 
-          <div v-else-if="displayTestCases.length > 0" class="text-center py-8 text-gray-500">
-            No test cases match your filters.
-          </div>
-
-          <div v-else class="text-center py-8 text-gray-500">
-            No test cases recorded for this run.
-          </div>
-        </UCard>
-
-        <!-- Compare with another run -->
-        <UCard v-if="testRun && !isLive">
-          <template #header>
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <UIcon name="i-lucide-git-compare-arrows" class="w-5 h-5 text-primary" />
-                <div>
-                  <h3 class="text-lg font-medium">
-                    Compare with another run
-                  </h3>
-                  <p class="text-sm text-gray-500 mt-0.5">
-                    Compare test durations side-by-side to identify regressions
-                  </p>
-                </div>
-              </div>
-              <UButton
-                v-if="previousRunId"
-                icon="i-lucide-arrow-left-right"
-                size="sm"
-                variant="outline"
-                label="Compare with previous run"
-                @click="compareWithPrevious"
-              />
-            </div>
-          </template>
-
-          <div class="space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Run A (baseline)</label>
-                <USelectMenu
-                  v-model="compareRunA"
-                  :items="projectRunOptions"
-                  placeholder="Select baseline..."
-                />
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Run B (this run)</label>
-                <p class="text-sm font-medium py-2">
-                  #{{ testRun.id }} — {{ testRun.status }}
-                </p>
-              </div>
-            </div>
-
-            <div v-if="loadingBaseline" class="text-center py-4 text-gray-500">
-              <UIcon name="i-lucide-loader-2" class="animate-spin mr-2" />
-              Loading baseline data…
-            </div>
-
-            <template v-else-if="baselineRun && comparisonData.length > 0">
-              <div class="space-y-2">
-                <div class="flex flex-wrap gap-4 text-sm">
-                  <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-1">Status changes</span>
-                  <UBadge
-                    v-if="comparisonSummary.newFailures > 0"
-                    color="error"
-                    variant="soft"
-                    size="lg"
-                  >
-                    {{ comparisonSummary.newFailures }} new failure{{ comparisonSummary.newFailures > 1 ? 's' : '' }}
-                  </UBadge>
-                  <UBadge
-                    v-if="comparisonSummary.recovered > 0"
-                    color="success"
-                    variant="soft"
-                    size="lg"
-                  >
-                    {{ comparisonSummary.recovered }} recovered
-                  </UBadge>
-                  <UBadge
-                    v-if="comparisonSummary.stillFailing > 0"
-                    color="warning"
-                    variant="soft"
-                    size="lg"
-                  >
-                    {{ comparisonSummary.stillFailing }} still failing
-                  </UBadge>
-                  <span v-if="comparisonSummary.newFailures === 0 && comparisonSummary.recovered === 0 && comparisonSummary.stillFailing === 0" class="text-sm text-gray-500">No status changes</span>
-                </div>
-                <div class="flex flex-wrap gap-4 text-sm">
-                  <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-1">Duration changes</span>
-                  <UBadge
-                    v-if="comparisonSummary.regressed > 0"
-                    color="error"
-                    variant="soft"
-                    size="lg"
-                  >
-                    {{ comparisonSummary.regressed }} regressed
-                  </UBadge>
-                  <UBadge
-                    v-if="comparisonSummary.improved > 0"
-                    color="success"
-                    variant="soft"
-                    size="lg"
-                  >
-                    {{ comparisonSummary.improved }} improved
-                  </UBadge>
-                  <UBadge color="neutral" variant="soft" size="lg">
-                    {{ comparisonSummary.unchanged }} unchanged
-                  </UBadge>
-                </div>
-              </div>
-
-              <UTable
-                :data="comparisonData"
-                :columns="comparisonColumns"
-                :ui="{
-                  base: 'table-fixed border-separate border-spacing-0',
-                  thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
-                  tbody: '[&>tr]:last:[&>td]:border-b-0',
-                  th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
-                  td: 'border-b border-default'
-                }"
-              />
-            </template>
-
-            <div v-else-if="compareRunA && !loadingBaseline" class="text-center py-8 text-gray-500">
-              No comparison data available.
-            </div>
-
-            <div v-else class="text-center py-8 text-gray-500">
-              Select a baseline run to compare.
-            </div>
-          </div>
-        </UCard>
-
-        <!-- Slow API Endpoints -->
-        <UCard>
-          <template #header>
-            <div class="flex items-center gap-2">
-              <UIcon name="i-lucide-network" class="w-5 h-5 text-primary" />
-              <div>
-                <h3 class="text-lg font-medium">
-                  Slow API endpoints
-                </h3>
-                <p class="text-sm text-gray-500 mt-0.5">
-                  Network requests grouped by route and HTTP method — requires
-                  <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">@phenx/piwi-dashboard-reporter/fixtures</code>
-                </p>
-              </div>
-            </div>
-          </template>
-
-          <div v-if="loadingEndpoints" class="text-center py-8 text-gray-500">
-            <UIcon name="i-lucide-loader-2" class="animate-spin mr-2" />
-            Loading…
-          </div>
-
-          <UTable
-            v-else-if="networkEndpoints && networkEndpoints.length > 0"
-            :data="networkEndpoints"
-            :columns="endpointColumns"
-            :ui="{
-              base: 'table-fixed border-separate border-spacing-0',
-              thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
-              tbody: '[&>tr]:last:[&>td]:border-b-0',
-              th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
-              td: 'border-b border-default'
-            }"
+          <!-- Tab: Workers -->
+          <WorkersTimeline
+            v-if="activeTab === 'workers'"
+            :test-cases="displayTestCases"
+            @select-test-case="handleSelectTestCase"
           />
 
-          <div v-else class="text-center py-8 text-gray-500">
-            No network request data. Add the
-            <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">@phenx/piwi-dashboard-reporter/fixtures</code>
-            to your Playwright config to start collecting endpoint timing.
-          </div>
-        </UCard>
+          <!-- Tab: Compare -->
+          <RunCompare
+            v-if="activeTab === 'compare'"
+          />
+
+          <!-- Tab: Slow endpoints -->
+          <SlowEndpoints v-if="activeTab === 'endpoints'" />
+        </div>
       </div>
     </template>
   </UDashboardPanel>

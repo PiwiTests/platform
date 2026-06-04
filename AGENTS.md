@@ -51,12 +51,20 @@ Nuxt file-based routing:
 - `GET /api/test-cases/[id]` — Case details + traces
 - `GET /api/files/[...path]` — Download reports/traces
 
-### Frontend (app/pages/)
-- `/` — Dashboard home with stats
-- `/projects` — Project list
-- `/projects/[id]` — Project detail
-- `/test-runs/[id]` — Run detail
-- `/test-cases/[id]` — Case detail
+### Frontend (app/)
+- **Pages** (`app/pages/`):
+  - `/` — Dashboard home with stats
+  - `/projects` — Project list
+  - `/projects/[id]` — Project detail
+  - `/test-runs/[id]` — Run detail
+  - `/test-cases/[id]` — Case detail
+- **Components** (`app/components/`):
+  - `RunSummary.vue` — Summary card + CI/Source/Other metadata blocks on test run detail page
+  - `TestCasesList.vue` — Paginated test case table with sticky headers, row highlighting via `meta.class.tr`
+  - `WorkersTimeline.vue` — Worker timeline with clickable bars (emits `selectTestCase`)
+  - `RunCompare.vue` — Self-contained comparison component (watches internal `compareRunA`, fetches baseline run)
+  - `SlowEndpoints.vue` — Self-contained network endpoints table (fetches `/api/test-runs/:id/network-requests` internally)
+  - `RunStatusBadge.vue`, `TestStatusBar.vue`, `RunReports.vue` — Shared UI primitives
 
 ### Reporter
 - `reporter/index.js` — Custom Playwright reporter
@@ -100,9 +108,20 @@ Nuxt file-based routing:
   ⚠ Never create migration files or edit `_journal.json` manually — always use `npm run db:generate`.
 - **API endpoints**: Create file in `server/api/` → use `eventHandler()` + `getDatabase()`
 - **Pages**: Create Vue file in `app/pages/` → use `<UDashboardPanel>` + `useFetch()`
+- **Components**: Create Vue file in `app/components/` → follow existing patterns:
+  - Self-contained data fetching is preferred for tab content (use `watch` + `$fetch` or `useFetch` with `lazy: true`)
+  - Pass props from parent page only for data already fetched at the page level
+  - Use `v-if` for tab-switched components to ensure clean mount/unmount
 - **Navigation**: Edit `app/layouts/default.vue` links array
 - **Tests**: Create `.spec.ts` in `application/tests/` → run `npm test`
 - **Reporter**: Edit `reporter/index.js` + `index.d.ts` → test with `npm link`
+
+## UI Patterns
+
+- **UTable sticky headers**: Use the `sticky` boolean prop + `max-h-*` class on the table root element. Do NOT wrap tables in `overflow-y-auto` divs — UTable's own root handles overflow when `max-h` is set.
+- **Row highlighting**: Use `:meta="{ class: { tr: 'highlight-class' } }"` on UTable, NOT `:row-attrs` (which is unsupported in Nuxt UI v4).
+- **Tab panels**: Use `<UTabs>` + `v-if` on each panel component to keep component lifecycle clean.
+- **Data fetching in children**: For self-contained components rendered conditionally (e.g., tab content), use `watch` + `$fetch` with reactive triggers rather than `useFetch` with `lazy: true`, since `useFetch` may not fire until the component is mounted.
 
 ## UI Best Practices
 - Sentence case headings/labels

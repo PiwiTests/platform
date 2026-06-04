@@ -86,6 +86,23 @@ test.describe('Dashboard UI Tests', () => {
     await expect(page.locator('h2').first()).toContainText('Test run #')
   })
 
+  test('should switch between tabs on test run detail page', async ({ page }) => {
+    await page.goto('/projects')
+    await page.getByRole('link', { name: 'ui-test-project' }).click()
+    await page.waitForURL(/\/projects\/\d+/)
+    const viewButton = page.locator('table').getByRole('link', { name: 'View' }).first()
+    await viewButton.click()
+    await page.waitForURL(/\/test-runs\/\d+/)
+    await waitForHydration(page)
+
+    await expect(page.getByRole('columnheader', { name: 'Test case' }).first()).toBeVisible()
+
+    await page.getByRole('tab', { name: 'Workers' }).click()
+    await page.getByRole('tab', { name: 'Compare' }).click()
+    await expect(page.getByText('Run A (baseline)')).toBeVisible()
+    await page.getByRole('tab', { name: 'Slow endpoints' }).click()
+  })
+
   test('should show project switcher dropdown', async ({ page }) => {
     await page.goto('/')
 

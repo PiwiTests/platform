@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS test_runs (
   p90_test_duration INTEGER,
   report_path TEXT,
   report_size INTEGER,
+  environment TEXT,
   metadata TEXT,
   stream_token TEXT,
   created_at INTEGER NOT NULL,
@@ -103,6 +104,7 @@ CREATE TABLE IF NOT EXISTS test_runs_cases (
   slowest_step_duration INTEGER,
   network_requests TEXT,
   web_vitals TEXT,
+  worker_index INTEGER,
   created_at INTEGER NOT NULL,
   FOREIGN KEY (test_run_id) REFERENCES test_runs(id),
   FOREIGN KEY (test_case_id) REFERENCES test_cases(id)
@@ -312,6 +314,8 @@ function randomCommit() {
   return Math.random().toString(16).slice(2, 10)
 }
 
+const ENVIRONMENTS = ['production', 'staging', 'integration', 'development']
+
 const STEPS_TEMPLATES = [
   [
     { title: 'Navigate to page', duration: 850, category: 'navigation' },
@@ -429,6 +433,7 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
       p90_test_duration: p90TestDuration,
       report_path: null,
       report_size: null,
+      environment: ENVIRONMENTS[i % ENVIRONMENTS.length],
       metadata,
       stream_token: null,
       created_at: startTime,
@@ -486,6 +491,7 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
         slowest_step_duration: slowestStep.duration,
         network_requests: netTemplate,
         web_vitals: { lcp: 1200 + Math.floor(Math.random() * 800), fid: 15 + Math.floor(Math.random() * 30), cls: +(Math.random() * 0.1).toFixed(3) },
+        worker_index: j % 4,
         created_at: startTime + Math.floor(j * caseDuration / 1000)
       }
       TEST_RUNS_CASES.push(trc)

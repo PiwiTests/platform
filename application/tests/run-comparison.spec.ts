@@ -232,8 +232,8 @@ test.describe.serial('Run Comparison', () => {
     await page.goto(`/test-runs/${run2Id}`)
     await waitForHydration(page)
 
-    // Scroll down to the comparison section
-    await expect(page.getByText('Compare with another run')).toBeVisible()
+    // Switch to the Compare tab
+    await page.getByRole('tab', { name: 'Compare' }).click()
 
     // Use "Compare with previous run" button
     await page.getByRole('button', { name: 'Compare with previous run' }).click()
