@@ -51,7 +51,13 @@ export async function initDatabase() {
       const dbPath = process.env.DATABASE_PATH || '.data/piwi.db'
       const absolutePath = resolve(dbPath)
       const dbUrl = pathToFileURL(absolutePath).href
-      db = sqliteDrizzle(dbUrl, { schema: sqliteSchema })
+
+      // Create client with WAL mode for better concurrent read/write performance
+      const { createClient } = await import('@libsql/client')
+      const client = createClient({ url: dbUrl })
+      await client.execute('PRAGMA journal_mode=WAL')
+      await client.execute('PRAGMA synchronous=NORMAL')
+      db = sqliteDrizzle(client, { schema: sqliteSchema })
 
       migrationPromise = (async () => {
         try {

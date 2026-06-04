@@ -3,7 +3,7 @@ import { join } from 'path'
 import type { StorageAdapter } from '../storage/types'
 
 /**
- * Upload a directory tree to storage
+ * Upload a directory tree to storage.
  * @param localDir - Local directory path to upload
  * @param storagePrefix - Prefix path in storage
  * @param storage - Storage adapter
@@ -14,24 +14,25 @@ export async function uploadDirectory(
   storagePrefix: string,
   storage: StorageAdapter
 ): Promise<number> {
-  let totalSize = 0
-
   const entries = await readdir(localDir, { withFileTypes: true })
 
-  for (const entry of entries) {
+  const uploadTasks = entries.map(async (entry) => {
     const localPath = join(localDir, entry.name)
     const storagePath = join(storagePrefix, entry.name)
 
     if (entry.isDirectory()) {
-      // Recursively upload subdirectory
-      totalSize += await uploadDirectory(localPath, storagePath, storage)
-    } else if (entry.isFile()) {
-      // Upload file
+      return uploadDirectory(localPath, storagePath, storage)
+    }
+
+    if (entry.isFile()) {
       const fileContent = await readFile(localPath)
       await storage.writeFile(storagePath, fileContent)
-      totalSize += fileContent.length
+      return fileContent.length
     }
-  }
 
-  return totalSize
+    return 0
+  })
+
+  const sizes = await Promise.all(uploadTasks)
+  return sizes.reduce((a, b) => a + b, 0)
 }

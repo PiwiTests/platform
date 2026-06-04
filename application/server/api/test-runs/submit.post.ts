@@ -1,6 +1,6 @@
 import { getDatabase } from '../../database'
 import { projects, testRuns, testCases, testRunsCases } from '../../database/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 import { requireAuth } from '../../utils/auth'
 import { sanitizeNetworkRequests, sanitizeWebVitals } from '../../utils/sanitize'
 import { runEventBus } from '../../utils/run-events'
@@ -74,9 +74,38 @@ export default eventHandler(async (event) => {
       retries?: number
     }) => testCase.status === 'passed' && (testCase.retries || 0) > 0).length
 
-    // Process each test case
-    for (const testCase of body.testCases) {
-      // Parse location to extract file path, line, and column
+    // Parse all locations upfront
+    interface ParsedTestCase {
+      title: string
+      status: string
+      duration?: number | null
+      error?: string | null
+      retries?: number
+      steps?: unknown
+      slowestStep?: string
+      slowestStepDuration?: number
+      networkRequests?: Array<Record<string, unknown>> | null
+      webVitals?: Record<string, unknown> | null
+      workerIndex?: number | null
+      filePath: string
+      line: number | null
+      column: number | null
+    }
+
+    const parsedTestCases: ParsedTestCase[] = body.testCases.map((testCase: {
+      title: string
+      status: string
+      duration?: number
+      error?: string
+      location?: string
+      retries?: number
+      steps?: unknown
+      slowestStep?: string
+      slowestStepDuration?: number
+      networkRequests?: unknown
+      webVitals?: unknown
+      workerIndex?: number | null
+    }) => {
       let filePath = 'unknown'
       let line: number | null = null
       let column: number | null = null
@@ -84,65 +113,100 @@ export default eventHandler(async (event) => {
       if (testCase.location) {
         const locationParts = testCase.location.split(':')
         if (locationParts.length >= 1) {
-          filePath = locationParts[0]
+          filePath = locationParts[0]!
         }
         if (locationParts.length >= 2) {
-          line = parseInt(locationParts[1], 10) || null
+          line = parseInt(locationParts[1]!, 10) || null
         }
         if (locationParts.length >= 3) {
-          column = parseInt(locationParts[2], 10) || null
+          column = parseInt(locationParts[2]!, 10) || null
         }
       }
 
-      // Get or create shared test case
-      const existingTestCases = await db.select()
-        .from(testCases)
-        .where(
-          and(
-            eq(testCases.projectId, project.id),
-            eq(testCases.filePath, filePath),
-            eq(testCases.title, testCase.title)
-          )
-        )
+      return {
+        title: testCase.title,
+        status: testCase.status,
+        duration: testCase.duration,
+        error: testCase.error,
+        retries: testCase.retries,
+        steps: testCase.steps,
+        slowestStep: testCase.slowestStep,
+        slowestStepDuration: testCase.slowestStepDuration,
+        networkRequests: testCase.networkRequests as Array<Record<string, unknown>> | null | undefined,
+        webVitals: testCase.webVitals as Record<string, unknown> | null | undefined,
+        workerIndex: testCase.workerIndex,
+        filePath,
+        line,
+        column
+      }
+    })
 
-      let sharedTestCase = existingTestCases[0]
+    // Prefetch existing test cases in one query to avoid N+1
+    const uniqueFilePaths = [...new Set(parsedTestCases.map((tc: { filePath: string }) => tc.filePath))] as string[]
+    const existingCaseRows = uniqueFilePaths.length > 0
+      ? await db.select()
+          .from(testCases)
+          .where(
+            and(
+              eq(testCases.projectId, project.id),
+              inArray(testCases.filePath, uniqueFilePaths)
+            )
+          )
+      : []
+
+    // Build lookup map: `${filePath}::${title}` → testCase
+    const existingCaseMap = new Map<string, typeof existingCaseRows[0]>()
+    for (const tc of existingCaseRows) {
+      existingCaseMap.set(`${tc.filePath}::${tc.title}`, tc)
+    }
+
+    const runCasesRows: Array<typeof testRunsCases.$inferInsert> = []
+
+    for (const tc of parsedTestCases) {
+      const cacheKey = `${tc.filePath}::${tc.title}`
+      let sharedTestCase = existingCaseMap.get(cacheKey)
 
       if (!sharedTestCase) {
         const result = await db.insert(testCases).values({
           projectId: project.id,
-          filePath: filePath,
-          title: testCase.title
+          filePath: tc.filePath,
+          title: tc.title
         }).returning()
         sharedTestCase = result[0]
+        if (sharedTestCase) {
+          existingCaseMap.set(cacheKey, sharedTestCase)
+        }
       } else {
-        // Update the updatedAt timestamp
         await db.update(testCases)
           .set({ updatedAt: new Date() })
           .where(eq(testCases.id, sharedTestCase.id))
       }
 
-      // Insert test run case with run-specific data
-      // Ensure sharedTestCase is defined
       if (!sharedTestCase) {
         throw new Error('Failed to create or retrieve test case')
       }
 
-      await db.insert(testRunsCases).values({
+      runCasesRows.push({
         testRunId: testRun.id,
         testCaseId: sharedTestCase.id,
-        status: testCase.status,
-        duration: testCase.duration || null,
-        error: testCase.error || null,
-        retries: testCase.retries || 0,
-        line: line,
-        column: column,
-        steps: testCase.steps || null,
-        slowestStep: testCase.slowestStep || null,
-        slowestStepDuration: testCase.slowestStepDuration || null,
-        networkRequests: sanitizeNetworkRequests(testCase.networkRequests) || null,
-        webVitals: sanitizeWebVitals(testCase.webVitals) || null,
-        workerIndex: testCase.workerIndex ?? null
+        status: tc.status,
+        duration: tc.duration || null,
+        error: tc.error || null,
+        retries: tc.retries || 0,
+        line: tc.line,
+        column: tc.column,
+        steps: tc.steps || null,
+        slowestStep: tc.slowestStep || null,
+        slowestStepDuration: tc.slowestStepDuration || null,
+        networkRequests: sanitizeNetworkRequests(tc.networkRequests) || null,
+        webVitals: sanitizeWebVitals(tc.webVitals) || null,
+        workerIndex: tc.workerIndex ?? null
       })
+    }
+
+    // Batch insert all test run cases in a single statement
+    if (runCasesRows.length > 0) {
+      await db.insert(testRunsCases).values(runCasesRows)
     }
   }
 

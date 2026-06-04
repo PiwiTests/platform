@@ -1,20 +1,18 @@
-import { writeFileSync, mkdirSync, existsSync } from 'fs'
 import { join, dirname } from 'path'
+import { mkdir, writeFile } from 'fs/promises'
 import { gunzip } from 'zlib'
 import { promisify } from 'util'
 
 const gunzipAsync = promisify(gunzip)
 
 /**
- * Decompress a gzip-compressed archive buffer
- * @param compressedBuffer - Compressed buffer
- * @param targetDir - Directory to extract files to
- * @throws Error if decompression fails or archive is malformed
+ * Decompress a gzip-compressed archive buffer into a target directory.
  */
 export async function decompressDirectory(compressedBuffer: Buffer, targetDir: string): Promise<void> {
   try {
-    // Decompress
     const uncompressed = await gunzipAsync(compressedBuffer)
+
+    await mkdir(targetDir, { recursive: true })
 
     // Parse the archive format (little-endian byte order)
     let offset = 0
@@ -61,11 +59,8 @@ export async function decompressDirectory(compressedBuffer: Buffer, targetDir: s
       const fullPath = join(targetDir, filePath)
       const dirPath = dirname(fullPath)
 
-      if (!existsSync(dirPath)) {
-        mkdirSync(dirPath, { recursive: true })
-      }
-
-      writeFileSync(fullPath, content)
+      await mkdir(dirPath, { recursive: true })
+      await writeFile(fullPath, content)
       fileCount++
     }
 

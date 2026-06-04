@@ -1,28 +1,66 @@
 import { onUnmounted } from 'vue'
 
 /**
- * Subscribes to the global run-lifecycle SSE stream and calls `refresh`
- * whenever a run starts, finishes, or is submitted.  This replaces the
- * previous polling approach (`useAutoRefresh`) with a push-based model so
- * the page only re-fetches when something actually changes.
+ * Shared SSE connection and subscriber list.
+ * All components share a single EventSource connection to /api/stream,
+ * preventing redundant connections on every page/component mount.
+ * Refreshes are debounced to coalesce rapid successive events, and
+ * non-terminal run events are filtered out to avoid unnecessary re-fetches.
  *
  * Must be called inside a component's `setup` (or `<script setup>`) context
- * so that `onUnmounted` can clean up the connection.
+ * so that `onUnmounted` can deregister the callback.
  */
+let sharedEventSource: EventSource | null = null
+const subscribers = new Set<() => void>()
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+const TERMINAL_EVENTS = new Set(['run-finished', 'run-submitted', 'run-cancelled'])
+
+function ensureConnection() {
+  if (sharedEventSource) return
+  if (!import.meta.client) return
+
+  sharedEventSource = new EventSource('/api/stream')
+
+  sharedEventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      if (!TERMINAL_EVENTS.has(data.type)) return
+
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        for (const fn of subscribers) fn()
+      }, 300)
+    } catch {
+      // Ignore non-JSON messages (e.g. heartbeat comments)
+    }
+  }
+
+  sharedEventSource.onerror = () => {
+    // EventSource will automatically attempt to reconnect on error
+  }
+}
+
+function closeConnection() {
+  if (sharedEventSource && subscribers.size === 0) {
+    sharedEventSource.close()
+    sharedEventSource = null
+    if (debounceTimer) {
+      clearTimeout(debounceTimer)
+      debounceTimer = null
+    }
+  }
+}
+
 export function useRunStream(refresh: () => Promise<unknown>) {
   if (!import.meta.client) return
 
-  const eventSource = new EventSource('/api/stream')
+  ensureConnection()
 
-  eventSource.onmessage = () => {
-    refresh()
-  }
-
-  eventSource.onerror = () => {
-    // EventSource will automatically attempt to reconnect on error
-  }
+  subscribers.add(refresh)
 
   onUnmounted(() => {
-    eventSource.close()
+    subscribers.delete(refresh)
+    closeConnection()
   })
 }
