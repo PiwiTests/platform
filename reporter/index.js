@@ -177,8 +177,6 @@ class PiwiDashboardReporter {
 
     if (this.streamingEnabled && this.streamingRunId) {
       this._queueStreamEvent(beginEvent);
-      // Flush immediately so the dashboard sees test starts in real-time
-      this._flushStreamEvents();
     } else {
       // Streaming not yet ready — buffer for later flush
       this.pendingBeginEvents.push(beginEvent);

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, resolveComponent, computed, nextTick, watch, ref, onUnmounted } from 'vue'
+import { computed, nextTick, watch, ref, onUnmounted } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
 import type { TestCaseResult } from '~~/types/api'
 
@@ -7,8 +7,6 @@ const props = defineProps<{
   testCases: TestCaseResult[]
   isLive: boolean
 }>()
-
-const UBadge = resolveComponent('UBadge')
 
 // Search and filter
 const testCaseSearch = ref('')
@@ -82,91 +80,39 @@ watch(() => filteredTestCases.value.length, () => {
   })
 })
 
-// Columns
+// Columns (without cell render functions — using template slots for custom cells)
 const testCasesColumns: TableColumn<TestCaseResult>[] = [
   {
     accessorKey: 'title',
     header: createSortHeader<TestCaseResult>('Test case'),
-    cell: ({ row }) => {
-      return h('a', {
-        href: `/test-cases/${row.original.id}`,
-        class: 'text-primary hover:underline font-medium',
-        onClick: (e: MouseEvent) => {
-          e.preventDefault()
-          navigateTo(`/test-cases/${row.original.id}`)
-        }
-      }, row.getValue('title'))
-    }
   },
   {
     accessorKey: 'status',
     header: createSortHeader<TestCaseResult>('Status'),
-    cell: ({ row }) => {
-      const color = getStatusColor(row.getValue('status') as string)
-      return h(UBadge, { color, class: 'capitalize' }, () => row.getValue('status'))
-    }
   },
   {
     accessorKey: 'location',
     header: createSortHeader<TestCaseResult>('Location'),
-    cell: ({ row }) => {
-      const location = row.getValue('location') as string | undefined
-      return location ? h('code', { class: 'text-xs' }, location) : ''
-    }
   },
   {
     accessorKey: 'duration',
     header: createSortHeader<TestCaseResult>('Duration'),
-    cell: ({ row }) => {
-      if (row.original.status === 'running') {
-        return h('span', { class: 'text-info text-xs' }, 'In progress...')
-      }
-      return formatDuration(row.getValue('duration'))
-    }
   },
   {
     accessorKey: 'workerIndex',
     header: createSortHeader<TestCaseResult>('Worker'),
-    cell: ({ row }) => {
-      const wi = row.getValue('workerIndex') as number | null | undefined
-      if (wi === null || wi === undefined) return ''
-      return h(UBadge, { color: 'neutral', variant: 'soft', class: 'font-mono text-xs' }, () => `${wi}`)
-    }
   },
   {
     accessorKey: 'slowestStep',
     header: createSortHeader<TestCaseResult>('Slowest step'),
-    cell: ({ row }) => {
-      const step = row.getValue('slowestStep') as string | null
-      const stepDuration = row.original.slowestStepDuration
-      if (!step) return ''
-      return h('div', { class: 'text-xs' }, [
-        h('span', { class: 'text-gray-600 dark:text-gray-400' }, step),
-        stepDuration ? h('span', { class: 'ml-1 text-orange-600 font-medium' }, `(${formatDuration(stepDuration)})`) : null
-      ].filter(Boolean))
-    }
   },
   {
     accessorKey: 'retries',
     header: createSortHeader<TestCaseResult>('Retries'),
-    cell: ({ row }) => {
-      const retries = row.getValue('retries') as number | undefined
-      return retries && retries > 0 ? retries.toString() : ''
-    }
   },
   {
-    accessorKey: 'actions',
+    id: 'actions',
     header: () => h('div', { class: 'text-right' }, 'Actions'),
-    cell: ({ row }) => {
-      const UButton = resolveComponent('UButton')
-      return h('div', { class: 'flex justify-end' },
-        h(UButton, {
-          to: `/test-cases/${row.original.id}`,
-          size: 'sm',
-          variant: 'outline'
-        }, () => 'View details')
-      )
-    }
   }
 ]
 
@@ -239,7 +185,58 @@ defineExpose({ scrollToCase })
         td: 'border-b border-default'
       }"
       :meta="{ class: { tr: (row: any) => highlightedCaseId === row.original.id ? 'animate-pulse bg-yellow-100 dark:bg-yellow-900/30' : '' } }"
-    />
+    >
+      <template #title-cell="{ row }">
+        <a
+          :href="`/test-cases/${row.original.id}`"
+          class="text-primary hover:underline font-medium"
+          @click.prevent="navigateTo(`/test-cases/${row.original.id}`)"
+        >{{ row.original.title }}</a>
+      </template>
+
+      <template #status-cell="{ row }">
+        <UBadge :color="getStatusColor(row.original.status)" class="capitalize">{{ row.original.status }}</UBadge>
+      </template>
+
+      <template #location-cell="{ row }">
+        <code v-if="row.original.location" class="text-xs">{{ row.original.location }}</code>
+      </template>
+
+      <template #duration-cell="{ row }">
+        <span v-if="row.original.status === 'running'" class="text-info text-xs">In progress...</span>
+        <span v-else>{{ formatDuration(row.original.duration) }}</span>
+      </template>
+
+      <template #workerIndex-cell="{ row }">
+        <UBadge
+          v-if="row.original.workerIndex != null"
+          color="neutral"
+          variant="soft"
+          class="font-mono text-xs"
+        >{{ row.original.workerIndex }}</UBadge>
+      </template>
+
+      <template #slowestStep-cell="{ row }">
+        <div v-if="row.original.slowestStep" class="text-xs">
+          <span class="text-gray-600 dark:text-gray-400">{{ row.original.slowestStep }}</span>
+          <span v-if="row.original.slowestStepDuration" class="ml-1 text-orange-600 font-medium">({{ formatDuration(row.original.slowestStepDuration) }})</span>
+        </div>
+      </template>
+
+      <template #retries-cell="{ row }">
+        {{ row.original.retries && row.original.retries > 0 ? row.original.retries : '' }}
+      </template>
+
+      <template #actions-cell="{ row }">
+        <div class="flex justify-end">
+          <UButton
+            :to="`/test-cases/${row.original.id}`"
+            size="sm"
+            variant="outline"
+          >View details</UButton>
+        </div>
+      </template>
+    </UTable>
 
     <div v-if="testCases.length > 0 && filteredTestCases.length === 0" class="text-center py-10 text-gray-500">
       <UIcon name="i-lucide-search-x" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />

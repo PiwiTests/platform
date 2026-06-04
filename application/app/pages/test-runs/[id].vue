@@ -22,6 +22,70 @@ const liveTestCaseKeys = new Map<string, true>()
 const liveProgress = ref<{ totalTests: number, passedTests: number, failedTests: number, skippedTests: number } | null>(null)
 let eventSource: EventSource | null = null
 
+// Debounced batch processing of SSE events to avoid cascading re-renders
+let pendingEvents: Record<string, unknown>[] = []
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+function flushPendingEvents() {
+  if (pendingEvents.length === 0) return
+  const events = pendingEvents
+  pendingEvents = []
+  for (const parsed of events) {
+    const data = parsed.data as Record<string, unknown>
+    if (parsed.type === 'init') {
+      liveProgress.value = {
+        totalTests: data.totalTests as number,
+        passedTests: data.passedTests as number,
+        failedTests: data.failedTests as number,
+        skippedTests: data.skippedTests as number
+      }
+    } else if (parsed.type === 'test-begin') {
+      const d = data as { title: string, location: string, workerIndex?: number }
+      const key = `${d.title}@@${d.location}`
+      if (!liveTestCaseKeys.has(key)) {
+        liveTestCaseKeys.set(key, true)
+        liveTestCases.value.push({
+          id: liveTestCases.value.length + 1,
+          title: d.title,
+          status: 'running',
+          location: d.location,
+          workerIndex: d.workerIndex ?? null,
+          startedAt: Date.now()
+        })
+      }
+    } else if (parsed.type === 'test-completed') {
+      const d = data as { title: string, location: string, status: string, duration?: number, error?: string | null, workerIndex?: number }
+      const key = `${d.title}@@${d.location}`
+      if (liveTestCaseKeys.has(key)) {
+        const idx = liveTestCases.value.findIndex(tc => `${tc.title}@@${tc.location}` === key)
+        if (idx >= 0) {
+          const tc = liveTestCases.value[idx]!
+          tc.status = d.status
+          tc.duration = d.duration
+          tc.error = d.error
+          tc.workerIndex = d.workerIndex ?? tc.workerIndex
+        }
+      } else {
+        liveTestCaseKeys.set(key, true)
+        liveTestCases.value.push({
+          id: liveTestCases.value.length + 1,
+          title: d.title,
+          status: d.status,
+          duration: d.duration,
+          location: d.location,
+          error: d.error,
+          workerIndex: d.workerIndex ?? null
+        })
+      }
+    } else if (parsed.type === 'run-progress') {
+      liveProgress.value = data as { totalTests: number, passedTests: number, failedTests: number, skippedTests: number }
+    } else if (parsed.type === 'run-finished') {
+      disconnectStream()
+      refresh()
+    }
+  }
+}
+
 function connectToStream() {
   if (!import.meta.client) return
   if (eventSource) return
@@ -31,57 +95,9 @@ function connectToStream() {
 
   eventSource.onmessage = (event) => {
     try {
-      const parsed = JSON.parse(event.data)
-
-      if (parsed.type === 'init') {
-        liveProgress.value = {
-          totalTests: parsed.data.totalTests,
-          passedTests: parsed.data.passedTests,
-          failedTests: parsed.data.failedTests,
-          skippedTests: parsed.data.skippedTests
-        }
-      } else if (parsed.type === 'test-begin') {
-        const key = `${parsed.data.title}@@${parsed.data.location}`
-        if (!liveTestCaseKeys.has(key)) {
-          liveTestCaseKeys.set(key, true)
-          liveTestCases.value.push({
-            id: liveTestCases.value.length + 1,
-            title: parsed.data.title,
-            status: 'running',
-            location: parsed.data.location,
-            workerIndex: parsed.data.workerIndex ?? null,
-            startedAt: Date.now()
-          })
-        }
-      } else if (parsed.type === 'test-completed') {
-        const key = `${parsed.data.title}@@${parsed.data.location}`
-        if (liveTestCaseKeys.has(key)) {
-          const idx = liveTestCases.value.findIndex(tc => `${tc.title}@@${tc.location}` === key)
-          if (idx >= 0) {
-            const tc = liveTestCases.value[idx]!
-            tc.status = parsed.data.status
-            tc.duration = parsed.data.duration
-            tc.error = parsed.data.error
-            tc.workerIndex = parsed.data.workerIndex ?? tc.workerIndex
-          }
-        } else {
-          liveTestCaseKeys.set(key, true)
-          liveTestCases.value.push({
-            id: liveTestCases.value.length + 1,
-            title: parsed.data.title,
-            status: parsed.data.status,
-            duration: parsed.data.duration,
-            location: parsed.data.location,
-            error: parsed.data.error,
-            workerIndex: parsed.data.workerIndex ?? null
-          })
-        }
-      } else if (parsed.type === 'run-progress') {
-        liveProgress.value = parsed.data
-      } else if (parsed.type === 'run-finished') {
-        disconnectStream()
-        refresh()
-      }
+      pendingEvents.push(JSON.parse(event.data) as Record<string, unknown>)
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(flushPendingEvents, 200)
     } catch {
       // Ignore parse errors
     }
@@ -112,14 +128,29 @@ onUnmounted(() => {
 })
 
 // Combined test cases: from server data + live stream.
-// Returns a new array reference in live mode so the child component detects
-// mutations and auto-scrolls to new items.
+// Uses a requestAnimationFrame throttle so the UI doesn't re-render on every SSE event.
 const displayTestCases = computed<TestCaseResult[]>(() => {
   if (isLive.value && liveTestCases.value.length > 0) {
     return [...liveTestCases.value]
   }
   return testRun.value?.testCases || []
 })
+
+// Throttled version for child components that don't need frame-perfect reactivity
+let rafId: number | null = null
+const throttledTestCases = ref<TestCaseResult[]>([])
+
+watch(displayTestCases, (val) => {
+  if (!import.meta.client) {
+    throttledTestCases.value = val
+    return
+  }
+  if (rafId !== null) return
+  rafId = requestAnimationFrame(() => {
+    throttledTestCases.value = val
+    rafId = null
+  })
+}, { immediate: true })
 
 // Display progress: live or from loaded data
 const displayProgress = computed(() => {
@@ -291,7 +322,7 @@ function handleSelectTestCase(id: number) {
           <!-- Tab: Workers -->
           <WorkersTimeline
             v-if="activeTab === 'workers'"
-            :test-cases="displayTestCases"
+            :test-cases="throttledTestCases"
             @select-test-case="handleSelectTestCase"
           />
 
