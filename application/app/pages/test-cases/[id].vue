@@ -588,54 +588,76 @@ const stepColumns: TableColumn<PerformanceStep>[] = [
                 <div class="space-y-4">
                   <div v-if="webVitals.navigation" class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div>
-                      <p class="text-xs text-gray-500 uppercase tracking-wide">TTFB</p>
+                      <p class="text-xs text-gray-500 uppercase tracking-wide">
+                        TTFB
+                      </p>
                       <p
                         class="text-xl font-semibold"
                         :class="webVitals.navigation.ttfb > 600 ? 'text-red-600' : webVitals.navigation.ttfb > 200 ? 'text-orange-500' : 'text-green-600'"
                       >
                         {{ formatDuration(webVitals.navigation.ttfb) }}
                       </p>
-                      <p class="text-xs text-gray-400 mt-1">Time to first byte</p>
+                      <p class="text-xs text-gray-400 mt-1">
+                        Time to first byte
+                      </p>
                     </div>
                     <div>
-                      <p class="text-xs text-gray-500 uppercase tracking-wide">DOM Interactive</p>
+                      <p class="text-xs text-gray-500 uppercase tracking-wide">
+                        DOM Interactive
+                      </p>
                       <p
                         class="text-xl font-semibold"
                         :class="webVitals.navigation.domInteractive > 3000 ? 'text-red-600' : webVitals.navigation.domInteractive > 1500 ? 'text-orange-500' : 'text-green-600'"
                       >
                         {{ formatDuration(webVitals.navigation.domInteractive) }}
                       </p>
-                      <p class="text-xs text-gray-400 mt-1">DOM interactive</p>
+                      <p class="text-xs text-gray-400 mt-1">
+                        DOM interactive
+                      </p>
                     </div>
                     <div>
-                      <p class="text-xs text-gray-500 uppercase tracking-wide">DOMContentLoaded</p>
+                      <p class="text-xs text-gray-500 uppercase tracking-wide">
+                        DOMContentLoaded
+                      </p>
                       <p
                         class="text-xl font-semibold"
                         :class="webVitals.navigation.domContentLoaded > 3000 ? 'text-red-600' : webVitals.navigation.domContentLoaded > 1500 ? 'text-orange-500' : 'text-green-600'"
                       >
                         {{ formatDuration(webVitals.navigation.domContentLoaded) }}
                       </p>
-                      <p class="text-xs text-gray-400 mt-1">DOMContentLoaded</p>
+                      <p class="text-xs text-gray-400 mt-1">
+                        DOMContentLoaded
+                      </p>
                     </div>
                     <div>
-                      <p class="text-xs text-gray-500 uppercase tracking-wide">Load Complete</p>
+                      <p class="text-xs text-gray-500 uppercase tracking-wide">
+                        Load Complete
+                      </p>
                       <p
                         class="text-xl font-semibold"
                         :class="webVitals.navigation.loadComplete > 5000 ? 'text-red-600' : webVitals.navigation.loadComplete > 3000 ? 'text-orange-500' : 'text-green-600'"
                       >
                         {{ formatDuration(webVitals.navigation.loadComplete) }}
                       </p>
-                      <p class="text-xs text-gray-400 mt-1">Page fully loaded</p>
+                      <p class="text-xs text-gray-400 mt-1">
+                        Page fully loaded
+                      </p>
                     </div>
                   </div>
 
                   <div v-if="webVitals.paint && (webVitals.paint.firstPaint || webVitals.paint.firstContentfulPaint)" class="grid grid-cols-2 gap-4 pt-2 border-t">
                     <div v-if="webVitals.paint.firstPaint !== undefined">
-                      <p class="text-xs text-gray-500 uppercase tracking-wide">First Paint (FP)</p>
-                      <p class="text-xl font-semibold">{{ formatDuration(webVitals.paint.firstPaint) }}</p>
+                      <p class="text-xs text-gray-500 uppercase tracking-wide">
+                        First Paint (FP)
+                      </p>
+                      <p class="text-xl font-semibold">
+                        {{ formatDuration(webVitals.paint.firstPaint) }}
+                      </p>
                     </div>
                     <div v-if="webVitals.paint.firstContentfulPaint !== undefined">
-                      <p class="text-xs text-gray-500 uppercase tracking-wide">First Contentful Paint (FCP)</p>
+                      <p class="text-xs text-gray-500 uppercase tracking-wide">
+                        First Contentful Paint (FCP)
+                      </p>
                       <p
                         class="text-xl font-semibold"
                         :class="webVitals.paint.firstContentfulPaint > 3000 ? 'text-red-600' : webVitals.paint.firstContentfulPaint > 1800 ? 'text-orange-500' : 'text-green-600'"
@@ -664,7 +686,9 @@ const stepColumns: TableColumn<PerformanceStep>[] = [
                 <template #header>
                   <div class="flex items-center gap-2">
                     <UIcon name="i-lucide-network" class="w-5 h-5 text-primary" />
-                    <h3 class="text-lg font-medium">Network requests</h3>
+                    <h3 class="text-lg font-medium">
+                      Network requests
+                    </h3>
                   </div>
                 </template>
 

@@ -195,7 +195,9 @@ defineExpose({ scrollToCase })
       </template>
 
       <template #status-cell="{ row }">
-        <UBadge :color="getStatusColor(row.original.status)" class="capitalize">{{ row.original.status }}</UBadge>
+        <UBadge :color="getStatusColor(row.original.status)" class="capitalize">
+          {{ row.original.status }}
+        </UBadge>
       </template>
 
       <template #location-cell="{ row }">
@@ -213,7 +215,9 @@ defineExpose({ scrollToCase })
           color="neutral"
           variant="soft"
           class="font-mono text-xs"
-        >{{ row.original.workerIndex }}</UBadge>
+        >
+          {{ row.original.workerIndex }}
+        </UBadge>
       </template>
 
       <template #slowestStep-cell="{ row }">
@@ -233,7 +237,9 @@ defineExpose({ scrollToCase })
             :to="`/test-cases/${row.original.id}`"
             size="sm"
             variant="outline"
-          >View details</UButton>
+          >
+            View details
+          </UButton>
         </div>
       </template>
     </UTable>
