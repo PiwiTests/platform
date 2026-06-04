@@ -1,15 +1,14 @@
 import { getDatabase } from '../../database'
 import { projects, testRuns, testCases, testRunsCases, reports } from '../../database/schema'
 import type { Project } from '../../database/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 import { join } from 'path'
 import { decompressDirectory } from '../../utils/compression'
 import { requireAuth } from '../../utils/auth'
 import { getStorage } from '../../storage'
 import { uploadDirectory } from '../../utils/storage-helpers'
-import { mkdirSync, existsSync, readdirSync } from 'fs'
 import { tmpdir } from 'os'
-import { rm } from 'fs/promises'
+import { rm, mkdir, readdir } from 'fs/promises'
 import { sanitizeNetworkRequests, sanitizeWebVitals } from '../../utils/sanitize'
 import { runEventBus } from '../../utils/run-events'
 
@@ -161,9 +160,7 @@ export default eventHandler(async (event) => {
       const reportDirName = `run-${Date.now()}-${type}-report`
       const tempDir = join(tmpdir(), `playwright-report-${Date.now()}`)
 
-      if (!existsSync(tempDir)) {
-        mkdirSync(tempDir, { recursive: true })
-      }
+      await mkdir(tempDir, { recursive: true })
 
       try {
         await decompressDirectory(report.data, tempDir)
@@ -173,7 +170,7 @@ export default eventHandler(async (event) => {
         // All other report types (html, monocart, …) use index.html.
         let entryFile = 'index.html'
         if (type === 'blob') {
-          const extracted = readdirSync(tempDir)
+          const extracted = await readdir(tempDir)
           const zipFile = extracted.find(f => f.endsWith('.zip'))
           if (zipFile) entryFile = zipFile
         }
@@ -223,22 +220,30 @@ export default eventHandler(async (event) => {
   let primaryReportPath: string | null = null
   let primaryReportSize: number | null = null
 
-  for (const [type, report] of reportFiles.entries()) {
-    try {
-      console.log(`[Upload] Storing ${type} report: ${report.filename}`)
-      const { path: storedPath, size } = await storeReport(type, report)
-      const label = getReportLabel(type, report.label)
-      storedReports.push({ type, label, path: storedPath, size })
-      console.log(`[Upload] Stored ${type} report at ${storedPath} (${size} bytes)`)
+  const reportResults = await Promise.all(
+    [...reportFiles.entries()].map(async ([type, report]) => {
+      try {
+        console.log(`[Upload] Storing ${type} report: ${report.filename}`)
+        const { path: storedPath, size } = await storeReport(type, report)
+        const label = getReportLabel(type, report.label)
+        console.log(`[Upload] Stored ${type} report at ${storedPath} (${size} bytes)`)
 
-      // Keep backward-compat fields for HTML report
-      if (type === 'html') {
-        primaryReportPath = storedPath
-        primaryReportSize = size
+        // Keep backward-compat fields for HTML report
+        if (type === 'html') {
+          primaryReportPath = storedPath
+          primaryReportSize = size
+        }
+
+        return { type, label, path: storedPath, size }
+      } catch (error) {
+        console.error(`[Upload] Failed to store ${type} report: ${error}`)
+        return null
       }
-    } catch (error) {
-      console.error(`[Upload] Failed to store ${type} report: ${error}`)
-    }
+    })
+  )
+
+  for (const r of reportResults) {
+    if (r) storedReports.push(r)
   }
 
   // Create or retrieve the test run
@@ -288,15 +293,17 @@ export default eventHandler(async (event) => {
     runEventBus.publishGlobal({ type: 'run-submitted', runId: resultTestRun.id, projectId: resultTestRun.projectId, status: resultTestRun.status })
   }
 
-  // Insert report records into the reports table
-  for (const r of storedReports) {
-    await db.insert(reports).values({
-      testRunId: testRun.id,
-      type: r.type,
-      label: r.label,
-      path: r.path.replace(/\\/g, '/'), // Ensure path uses forward slashes
-      size: r.size
-    })
+  // Batch insert report records into the reports table
+  if (storedReports.length > 0) {
+    await db.insert(reports).values(
+      storedReports.map(r => ({
+        testRunId: testRun.id,
+        type: r.type,
+        label: r.label,
+        path: r.path.replace(/\\/g, '/'),
+        size: r.size
+      }))
+    )
   }
 
   // When attaching reports to an existing streaming run, notify the dashboard so it
@@ -313,8 +320,25 @@ export default eventHandler(async (event) => {
 
   // Insert test cases using the new schema (skipped when attaching to an existing streaming run)
   if (!attachingToExistingRun && testCasesData && testCasesData.length > 0) {
-    for (const testCase of testCasesData) {
-      // Parse location — handles Windows paths by reading line/column from the right
+    // Parse all locations upfront
+    interface ParsedTestCase {
+      title: string
+      status: string
+      duration?: number | null
+      error?: string | null
+      retries?: number
+      steps?: Array<{ title: string, duration: number, category: string }> | null
+      slowestStep?: string | null
+      slowestStepDuration?: number | null
+      networkRequests?: Array<Record<string, unknown>> | null
+      webVitals?: Record<string, unknown> | null
+      workerIndex?: number | null
+      filePath: string
+      line: number | null
+      column: number | null
+    }
+
+    const parsedTestCases: ParsedTestCase[] = testCasesData.map((testCase: Record<string, unknown>) => {
       const locationStr = testCase.location as string | undefined
       let filePath = 'unknown'
       let line: number | null = null
@@ -349,55 +373,90 @@ export default eventHandler(async (event) => {
         }
       }
 
-      // Get or create shared test case
-      const existingTestCases = await db.select()
-        .from(testCases)
-        .where(
-          and(
-            eq(testCases.projectId, project!.id),
-            eq(testCases.filePath, filePath),
-            eq(testCases.title, testCase.title as string)
-          )
-        )
+      return {
+        title: testCase.title as string,
+        status: testCase.status as string,
+        duration: testCase.duration as number | null | undefined,
+        error: testCase.error as string | null | undefined,
+        retries: testCase.retries as number | undefined,
+        steps: testCase.steps as Array<{ title: string, duration: number, category: string }> | null | undefined,
+        slowestStep: testCase.slowestStep as string | null | undefined,
+        slowestStepDuration: testCase.slowestStepDuration as number | null | undefined,
+        networkRequests: testCase.networkRequests as Array<Record<string, unknown>> | null | undefined,
+        webVitals: testCase.webVitals as Record<string, unknown> | null | undefined,
+        workerIndex: testCase.workerIndex as number | null | undefined,
+        filePath,
+        line,
+        column
+      }
+    })
 
-      let sharedTestCase = existingTestCases[0]
+    // Prefetch existing test cases in one query to avoid N+1
+    const uniqueFilePaths = [...new Set(parsedTestCases.map((tc: { filePath: string }) => tc.filePath))] as string[]
+    const existingCaseRows = uniqueFilePaths.length > 0
+      ? await db.select()
+          .from(testCases)
+          .where(
+            and(
+              eq(testCases.projectId, project!.id),
+              inArray(testCases.filePath, uniqueFilePaths)
+            )
+          )
+      : []
+
+    // Build lookup map: `${filePath}::${title}` → testCase
+    const existingCaseMap = new Map<string, typeof existingCaseRows[0]>()
+    for (const tc of existingCaseRows) {
+      existingCaseMap.set(`${tc.filePath}::${tc.title}`, tc)
+    }
+
+    const runCasesRows: Array<typeof testRunsCases.$inferInsert> = []
+
+    for (const tc of parsedTestCases) {
+      const cacheKey = `${tc.filePath}::${tc.title}`
+      let sharedTestCase = existingCaseMap.get(cacheKey)
 
       if (!sharedTestCase) {
         const result = await db.insert(testCases).values({
           projectId: project!.id,
-          filePath: filePath,
-          title: testCase.title as string
+          filePath: tc.filePath,
+          title: tc.title as string
         }).returning()
         sharedTestCase = result[0]
+        if (sharedTestCase) {
+          existingCaseMap.set(cacheKey, sharedTestCase)
+        }
       } else {
-        // Update the updatedAt timestamp
         await db.update(testCases)
           .set({ updatedAt: new Date() })
           .where(eq(testCases.id, sharedTestCase.id))
       }
 
-      // Insert test run case with run-specific data
-      // Ensure sharedTestCase is defined
       if (!sharedTestCase) {
         throw new Error('Failed to create or retrieve test case')
       }
 
-      await db.insert(testRunsCases).values({
+      runCasesRows.push({
         testRunId: testRun.id,
         testCaseId: sharedTestCase.id,
-        status: testCase.status as string,
-        duration: (testCase.duration as number | null | undefined) ?? null,
-        error: (testCase.error as string | null | undefined) ?? null,
-        retries: (testCase.retries as number | undefined) ?? 0,
-        line: line,
-        column: column,
-        steps: (testCase.steps as Array<{ title: string, duration: number, category: string }> | null | undefined) ?? null,
-        slowestStep: (testCase.slowestStep as string | null | undefined) ?? null,
-        slowestStepDuration: (testCase.slowestStepDuration as number | null | undefined) ?? null,
-        networkRequests: sanitizeNetworkRequests(testCase.networkRequests as Array<Record<string, unknown>> | null | undefined) ?? null,
-        webVitals: sanitizeWebVitals(testCase.webVitals as Record<string, unknown> | null | undefined) ?? null,
-        workerIndex: (testCase.workerIndex as number | null | undefined) ?? null
+        status: tc.status as string,
+        duration: (tc.duration as number | null | undefined) ?? null,
+        error: (tc.error as string | null | undefined) ?? null,
+        retries: (tc.retries as number | undefined) ?? 0,
+        line: tc.line,
+        column: tc.column,
+        steps: (tc.steps as Array<{ title: string, duration: number, category: string }> | null | undefined) ?? null,
+        slowestStep: (tc.slowestStep as string | null | undefined) ?? null,
+        slowestStepDuration: (tc.slowestStepDuration as number | null | undefined) ?? null,
+        networkRequests: sanitizeNetworkRequests(tc.networkRequests as Array<Record<string, unknown>> | null | undefined) ?? null,
+        webVitals: sanitizeWebVitals(tc.webVitals as Record<string, unknown> | null | undefined) ?? null,
+        workerIndex: (tc.workerIndex as number | null | undefined) ?? null
       })
+    }
+
+    // Batch insert all test run cases in a single statement
+    if (runCasesRows.length > 0) {
+      await db.insert(testRunsCases).values(runCasesRows)
     }
   }
 

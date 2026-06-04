@@ -141,7 +141,7 @@ export default eventHandler(async (event) => {
     existingCaseMap.set(`${tc.filePath}::${tc.title}`, tc)
   }
 
-  const results = []
+  const runCasesRows: Array<typeof testRunsCases.$inferInsert> = []
 
   for (const tc of parsedEvents) {
     const cacheKey = `${tc.filePath}::${tc.title}`
@@ -167,8 +167,7 @@ export default eventHandler(async (event) => {
       continue
     }
 
-    // Insert test run case
-    const runCaseResult = await db.insert(testRunsCases).values({
+    runCasesRows.push({
       testRunId: id,
       testCaseId: sharedTestCase.id,
       status: tc.status,
@@ -183,9 +182,12 @@ export default eventHandler(async (event) => {
       networkRequests: sanitizeNetworkRequests(tc.networkRequests) ?? null,
       webVitals: sanitizeWebVitals(tc.webVitals) ?? null,
       workerIndex: tc.workerIndex ?? null
-    }).returning()
+    })
+  }
 
-    results.push(runCaseResult[0])
+  // Batch insert all test run cases in a single statement
+  if (runCasesRows.length > 0) {
+    await db.insert(testRunsCases).values(runCasesRows)
   }
 
   // Atomically increment run counters to avoid lost updates under concurrent requests
@@ -235,6 +237,6 @@ export default eventHandler(async (event) => {
 
   return {
     success: true,
-    processed: results.length + beginEvents.length
+    processed: runCasesRows.length + beginEvents.length
   }
 })

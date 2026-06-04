@@ -47,34 +47,9 @@ watch([testCaseSearch, testCaseStatusFilter], () => {
   currentPage.value = 1
 })
 
-// Refresh tick for live running test durations
-const liveRefreshTick = ref(0)
-let liveRefreshTimer: ReturnType<typeof setInterval> | null = null
-
-function startLiveRefreshTimer() {
-  if (liveRefreshTimer) return
-  liveRefreshTimer = setInterval(() => {
-    liveRefreshTick.value++
-  }, 1000)
-}
-
-function stopLiveRefreshTimer() {
-  if (liveRefreshTimer) {
-    clearInterval(liveRefreshTimer)
-    liveRefreshTimer = null
-  }
-}
-
+// Reset scroll lock when live mode ends
 watch(() => props.isLive, (live) => {
-  if (live) {
-    startLiveRefreshTimer()
-  } else {
-    stopLiveRefreshTimer()
-  }
-})
-
-onUnmounted(() => {
-  stopLiveRefreshTimer()
+  if (!live) userScrolledAway.value = false
 })
 
 // Auto-scroll to bottom during live runs, unless user has scrolled away
@@ -98,9 +73,10 @@ function onTableScroll() {
 
 watch(tableScrollRef, (instance) => {
   scrollListenerCleanup?.()
-  if (instance?.$el) {
-    instance.$el.addEventListener('scroll', onTableScroll, { passive: true })
-    scrollListenerCleanup = () => instance.$el.removeEventListener('scroll', onTableScroll)
+  const el = instance?.$el
+  if (el) {
+    el.addEventListener('scroll', onTableScroll, { passive: true })
+    scrollListenerCleanup = () => el?.removeEventListener('scroll', onTableScroll)
   }
 })
 
@@ -116,18 +92,7 @@ watch(filteredTestCases, () => {
   })
 })
 
-watch(() => props.isLive, (live) => {
-  if (!live) userScrolledAway.value = false
-})
-
-watch(() => props.isLive, (live) => {
-  if (!live) {
-    userScrolledAway.value = false
-  }
-})
-
 const paginatedTestCases = computed<TestCaseResult[]>(() => {
-  void liveRefreshTick.value
   const start = (currentPage.value - 1) * pageSize
   return filteredTestCases.value.slice(start, start + pageSize)
 })
@@ -168,8 +133,8 @@ const testCasesColumns: TableColumn<TestCaseResult>[] = [
     accessorKey: 'duration',
     header: createSortHeader<TestCaseResult>('Duration'),
     cell: ({ row }) => {
-      if (row.original.status === 'running' && row.original.startedAt) {
-        return formatDuration(Math.max(0, Date.now() - row.original.startedAt))
+      if (row.original.status === 'running') {
+        return h('span', { class: 'text-info text-xs' }, 'In progress...')
       }
       return formatDuration(row.getValue('duration'))
     }

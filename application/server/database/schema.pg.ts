@@ -46,7 +46,7 @@ export const testCases = pgTable('test_cases', {
   updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
 }, table => ({
   projectIdIdx: index('idx_test_cases_project_id').on(table.projectId),
-  filePathTitleIdx: index('idx_test_cases_file_path_title').on(table.filePath, table.title)
+  filePathTitleIdx: index('idx_test_cases_file_path_title').on(table.projectId, table.filePath, table.title)
 }))
 
 // Test runs cases table - junction table with run-specific data
