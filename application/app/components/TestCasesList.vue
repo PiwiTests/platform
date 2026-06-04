@@ -36,17 +36,6 @@ const filteredTestCases = computed<TestCaseResult[]>(() => {
   return cases
 })
 
-// Pagination
-const currentPage = ref(1)
-const pageSize = 50
-
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredTestCases.value.length / pageSize)))
-
-// Reset to page 1 when search/filter changes
-watch([testCaseSearch, testCaseStatusFilter], () => {
-  currentPage.value = 1
-})
-
 // Reset scroll lock when live mode ends
 watch(() => props.isLive, (live) => {
   if (!live) userScrolledAway.value = false
@@ -84,17 +73,13 @@ onUnmounted(() => {
   scrollListenerCleanup?.()
 })
 
-watch(filteredTestCases, () => {
+// Auto-scroll to bottom when new items appear during a live run
+watch(() => filteredTestCases.value.length, () => {
   if (!props.isLive || userScrolledAway.value) return
   nextTick(() => {
     const el = getScrollEl()
     if (el) el.scrollTop = el.scrollHeight
   })
-})
-
-const paginatedTestCases = computed<TestCaseResult[]>(() => {
-  const start = (currentPage.value - 1) * pageSize
-  return filteredTestCases.value.slice(start, start + pageSize)
 })
 
 // Columns
@@ -188,10 +173,6 @@ const testCasesColumns: TableColumn<TestCaseResult>[] = [
 const highlightedCaseId = ref<number | null>(null)
 
 function scrollToCase(id: number) {
-  const idx = filteredTestCases.value.findIndex(tc => tc.id === id)
-  if (idx < 0) return
-  const page = Math.floor(idx / pageSize) + 1
-  currentPage.value = page
   highlightedCaseId.value = id
   nextTick(() => {
     const row = document.querySelector<HTMLElement>(`tr:has(a[href="/test-cases/${id}"])`)
@@ -247,7 +228,7 @@ defineExpose({ scrollToCase })
       v-if="filteredTestCases.length > 0"
       ref="tableScrollRef"
       sticky
-      :data="paginatedTestCases"
+      :data="filteredTestCases"
       :columns="testCasesColumns"
       class="max-h-[calc(100vh-28rem)]"
       :ui="{
@@ -260,48 +241,7 @@ defineExpose({ scrollToCase })
       :meta="{ class: { tr: (row: any) => highlightedCaseId === row.original.id ? 'animate-pulse bg-yellow-100 dark:bg-yellow-900/30' : '' } }"
     />
 
-    <div v-if="filteredTestCases.length > pageSize" class="flex items-center justify-between mt-4">
-      <span class="text-xs text-gray-500 tabular-nums">
-        Page {{ currentPage }} of {{ totalPages }}
-        &middot; {{ filteredTestCases.length }} total
-      </span>
-      <div class="flex items-center gap-1">
-        <UButton
-          size="sm"
-          color="neutral"
-          variant="soft"
-          icon="i-lucide-chevron-first"
-          :disabled="currentPage === 1"
-          @click="currentPage = 1"
-        />
-        <UButton
-          size="sm"
-          color="neutral"
-          variant="soft"
-          icon="i-lucide-chevron-left"
-          :disabled="currentPage === 1"
-          @click="currentPage = Math.max(1, currentPage - 1)"
-        />
-        <UButton
-          size="sm"
-          color="neutral"
-          variant="soft"
-          icon="i-lucide-chevron-right"
-          :disabled="currentPage === totalPages"
-          @click="currentPage = Math.min(totalPages, currentPage + 1)"
-        />
-        <UButton
-          size="sm"
-          color="neutral"
-          variant="soft"
-          icon="i-lucide-chevron-last"
-          :disabled="currentPage === totalPages"
-          @click="currentPage = totalPages"
-        />
-      </div>
-    </div>
-
-    <div v-else-if="testCases.length > 0" class="text-center py-10 text-gray-500">
+    <div v-if="testCases.length > 0 && filteredTestCases.length === 0" class="text-center py-10 text-gray-500">
       <UIcon name="i-lucide-search-x" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
       <p>No test cases match your filters.</p>
     </div>

@@ -111,10 +111,12 @@ onUnmounted(() => {
   disconnectStream()
 })
 
-// Combined test cases: from server data + live stream
+// Combined test cases: from server data + live stream.
+// Returns a new array reference in live mode so the child component detects
+// mutations and auto-scrolls to new items.
 const displayTestCases = computed<TestCaseResult[]>(() => {
   if (isLive.value && liveTestCases.value.length > 0) {
-    return liveTestCases.value
+    return [...liveTestCases.value]
   }
   return testRun.value?.testCases || []
 })
