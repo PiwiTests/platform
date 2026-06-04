@@ -72,6 +72,21 @@ export default eventHandler(async (event) => {
   if (await storage.exists(path)) {
     const fileContent = await storage.readFile(path)
     const ext = extname(path).toLowerCase()
+
+    // If the file is a .gz archive, try to serve index.html from inside
+    if (ext === '.gz') {
+      try {
+        const htmlContent = await findInArchive(fileContent, 'index.html')
+        if (htmlContent) {
+          setResponseHeader(event, 'Content-Type', 'text/html')
+          setResponseHeader(event, 'Content-Length', htmlContent.length)
+          return htmlContent
+        }
+      } catch {
+        // Fall through to serve raw gzip
+      }
+    }
+
     setResponseHeader(event, 'Content-Type', setContentType(ext))
     setResponseHeader(event, 'Content-Length', fileContent.length)
     return fileContent
