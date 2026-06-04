@@ -25,6 +25,21 @@ const { test: base } = require('@playwright/test');
 const dashboardFixtures = {
   page: async ({ page }, use, testInfo) => {
     const networkRequests = [];
+    const consoleEntries = [];
+
+    // Capture console messages (warnings, errors, and other notable messages)
+    page.on('console', (msg) => {
+      const type = msg.type();
+      // Only capture warnings, errors, and assertions — filter out verbose info
+      if (['warning', 'error', 'assert'].includes(type)) {
+        consoleEntries.push({
+          type,
+          text: msg.text(),
+          timestamp: Date.now(),
+          location: msg.location() ? `${msg.location().url}:${msg.location().lineNumber}:${msg.location().columnNumber}` : null
+        });
+      }
+    });
 
     // Capture each finished network request with timing
     page.on('requestfinished', async (request) => {
@@ -55,6 +70,14 @@ const dashboardFixtures = {
     });
 
     await use(page);
+
+    // Attach console messages after the test finishes
+    if (consoleEntries.length > 0) {
+      await testInfo.attach('piwi-dashboard-console', {
+        contentType: 'application/json',
+        body: Buffer.from(JSON.stringify(consoleEntries)),
+      });
+    }
 
     // Attach network requests after the test finishes
     if (networkRequests.length > 0) {

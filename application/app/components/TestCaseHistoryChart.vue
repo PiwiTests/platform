@@ -69,8 +69,9 @@ function onChartRender(
 
   svgNode.querySelectorAll('.chart-marker').forEach(el => el.remove())
 
-  const xScale = container.xScale
-  const yScale = container.yScale
+  const comp = container.components?.[0]
+  const xScale = comp?.xScale
+  const yScale = comp?.yScale
   if (!xScale || !yScale) return
 
   const group = document.createElementNS(NS, 'g')
@@ -118,7 +119,7 @@ function onChartRender(
         ref="xyContainerRef"
         :data="chartData"
         :height="height"
-        :padding="{ top: 10, right: 10, bottom: 30, left: 60 }"
+        :padding="{ top: 10, right: 10, bottom: 0, left: 0 }"
         :on-render-complete="onChartRender"
       >
         <VisLine

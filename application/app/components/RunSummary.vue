@@ -135,73 +135,76 @@ const emit = defineEmits<{
 
     <!-- Block 1: CI + Environment -->
     <UCard v-if="testRun?.metadata?.ci || testRun?.environment" :class="blockColSpanClass">
-      <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-        <UIcon name="i-lucide-cloud" class="size-3.5 inline mr-1" /> CI / Env
-      </h4>
-      <div class="space-y-2 text-xs">
+      <template #header>
+        <div class="flex items-center gap-2">
+          <UIcon name="i-lucide-cloud" class="w-4 h-4 text-primary" />
+          <span class="text-sm font-medium">CI / Env</span>
+        </div>
+      </template>
+      <div class="space-y-2 text-sm">
         <div v-if="testRun?.environment" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-server" class="size-3.5 text-gray-400 shrink-0" />
-          <span class="font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-1.5 py-0.5 rounded-full border border-blue-200 dark:border-blue-800">{{ testRun.environment }}</span>
+          <UIcon name="i-lucide-server" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
+          <span class="rounded-full border px-2 py-0.5 text-xs bg-gray-50 dark:bg-gray-800">{{ testRun.environment }}</span>
         </div>
         <div v-if="testRun?.metadata?.ci?.provider" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-cloud" class="size-3.5 text-gray-400 shrink-0" />
+          <UIcon name="i-lucide-cloud" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
           <span>{{ testRun.metadata.ci.provider }}</span>
         </div>
         <div v-if="testRun?.metadata?.ci?.buildNumber" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-hash" class="size-3.5 text-gray-400 shrink-0" />
+          <UIcon name="i-lucide-hash" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
           <span>Build #{{ testRun.metadata.ci.buildNumber }}</span>
         </div>
         <div v-if="testRun?.metadata?.ci?.jobName" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-notebook-pen" class="size-3.5 text-gray-400 shrink-0" />
+          <UIcon name="i-lucide-notebook-pen" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
           <span>{{ testRun.metadata.ci.jobName }}</span>
         </div>
         <div v-if="testRun?.metadata?.ci?.workflow" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-workflow" class="size-3.5 text-gray-400 shrink-0" />
+          <UIcon name="i-lucide-workflow" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
           <span>{{ testRun.metadata.ci.workflow }}</span>
         </div>
-        <a
-          v-if="testRun?.metadata?.ci?.buildUrl"
-          :href="testRun.metadata.ci.buildUrl"
-          target="_blank"
-          class="text-primary hover:underline inline-flex items-center gap-1 text-xs mt-1"
-        >
-          <UIcon name="i-lucide-external-link" class="size-3" /> View build
-        </a>
+        <div v-if="testRun?.metadata?.ci?.buildUrl" class="flex items-center gap-1.5">
+          <UIcon name="i-lucide-external-link" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
+          <a :href="testRun.metadata.ci.buildUrl" target="_blank" class="text-primary hover:underline text-xs">View build</a>
+        </div>
       </div>
     </UCard>
 
     <!-- Block 2: Source control -->
     <UCard v-if="testRun?.metadata?.scm" :class="blockColSpanClass">
-      <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-        <UIcon name="i-lucide-git-branch" class="size-3.5 inline mr-1" /> Source
-      </h4>
-      <div class="space-y-2 text-xs">
+      <template #header>
+        <div class="flex items-center gap-2">
+          <UIcon name="i-lucide-git-branch" class="w-4 h-4 text-primary" />
+          <span class="text-sm font-medium">Source</span>
+        </div>
+      </template>
+      <div class="space-y-2 text-sm">
         <div v-if="testRun.metadata.scm.branch" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-git-branch" class="size-3.5 text-gray-400 shrink-0" />
+          <UIcon name="i-lucide-git-branch" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
           <span class="font-medium">{{ testRun.metadata.scm.branch }}</span>
         </div>
         <div v-if="testRun.metadata.scm.commit" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-git-commit-horizontal" class="size-3.5 text-gray-400 shrink-0" />
-          <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded font-mono">{{ testRun.metadata.scm.commit.length >= 8 ? testRun.metadata.scm.commit.substring(0, 8) : testRun.metadata.scm.commit }}</code>
+          <UIcon name="i-lucide-git-commit-horizontal" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
+          <code class="text-xs font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">{{ testRun.metadata.scm.commit.length >= 8 ? testRun.metadata.scm.commit.substring(0, 8) : testRun.metadata.scm.commit }}</code>
         </div>
         <div v-if="testRun.metadata.scm.author" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-user" class="size-3.5 text-gray-400 shrink-0" />
-          <span>{{ testRun.metadata.scm.author }}</span>
+          <UIcon name="i-lucide-user" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
+          <span class="text-gray-600 dark:text-gray-400">{{ testRun.metadata.scm.author }}</span>
         </div>
-        <div v-if="testRun.metadata.scm.commitMessage">
-          <p class="text-gray-400 mt-1 break-words">
-            {{ testRun.metadata.scm.commitMessage }}
-          </p>
-        </div>
+        <p v-if="testRun.metadata.scm.commitMessage" class="text-gray-400 text-xs break-words pl-1">
+          {{ testRun.metadata.scm.commitMessage }}
+        </p>
       </div>
     </UCard>
 
     <!-- Block 3: Tags / Details / Custom data -->
     <UCard v-if="testRun?.metadata?.tags?.length || testRun?.metadata?.projectDescription || testRun?.metadata?.relatedIssue || testRun?.metadata?.customData" :class="blockColSpanClass">
-      <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-        <UIcon name="i-lucide-tags" class="size-3.5 inline mr-1" /> Other
-      </h4>
-      <div class="space-y-3 text-xs">
+      <template #header>
+        <div class="flex items-center gap-2">
+          <UIcon name="i-lucide-tags" class="w-4 h-4 text-primary" />
+          <span class="text-sm font-medium">Other</span>
+        </div>
+      </template>
+      <div class="space-y-3 text-sm">
         <div v-if="testRun.metadata.tags && testRun.metadata.tags.length > 0">
           <div class="flex flex-wrap gap-1.5">
             <UBadge
@@ -219,7 +222,7 @@ const emit = defineEmits<{
           {{ testRun.metadata.projectDescription }}
         </p>
         <p v-if="testRun.metadata.relatedIssue" class="flex items-center gap-1">
-          <UIcon name="i-lucide-link" class="size-3.5 text-gray-400 shrink-0" />
+          <UIcon name="i-lucide-link" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
           <span>{{ testRun.metadata.relatedIssue }}</span>
         </p>
         <UButton

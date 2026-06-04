@@ -1,7 +1,7 @@
 import { h } from 'vue'
 import { UIcon } from '#components'
 import type { Column } from '@tanstack/vue-table'
-import { formatDuration as formatDurationLib } from 'date-fns'
+import { formatDuration as formatDurationLib, formatDistanceToNow } from 'date-fns'
 
 /**
  * Creates a sortable column header render function.
@@ -40,6 +40,11 @@ export function formatDate(date: string | Date | number) {
   if (!isNaN(date as number))
     date = Number(date) * 1000 // convert seconds to milliseconds
   return new Date(date).toLocaleString()
+}
+
+export function formatRelativeTime(date: string | Date | number | null | undefined): string {
+  if (!date) return 'N/A'
+  return formatDistanceToNow(new Date(date), { addSuffix: true })
 }
 
 export function formatDuration(ms?: number | null) {

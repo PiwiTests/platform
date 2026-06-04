@@ -1,0 +1,1 @@
+ALTER TABLE "test_runs_cases" ADD COLUMN "console_logs" jsonb;

@@ -327,7 +327,50 @@ Network requests grouped by `HTTP method + normalized route`.
 
 ### GET `/api/test-cases/[id]`
 
-Get test case details with traces, steps, web vitals, and network requests.
+Get test case details with steps, web vitals, and network requests.
+
+---
+
+### GET `/api/test-cases/[id]/traces`
+
+Get trace files attached to a specific test case result.
+
+**Response**
+
+```json
+[
+  {
+    "id": 1,
+    "filePath": "project-1/run-42/1-trace.zip",
+    "createdAt": "2024-01-01T12:00:00.000Z"
+  }
+]
+```
+
+Use the `filePath` value with the `/api/files/[...path]` endpoint to open traces in the Playwright trace viewer.
+
+---
+
+### GET `/api/test-cases/[id]/history`
+
+Get execution history for a test case across all runs. Returns up to 50 entries sorted by most recent first.
+
+**Response**
+
+```json
+[
+  {
+    "id": 123,
+    "runId": 42,
+    "status": "passed",
+    "duration": 1500,
+    "error": null,
+    "retries": 0,
+    "startTime": "2024-01-01T12:00:00.000Z",
+    "runStatus": "passed"
+  }
+]
+```
 
 ---
 

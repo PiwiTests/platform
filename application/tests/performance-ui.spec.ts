@@ -110,7 +110,7 @@ test.describe('Performance UI Tests', () => {
       await expect(page.getByText('Slowest step')).toBeVisible()
 
       // Should show steps section
-      await expect(page.getByText('Steps')).toBeVisible()
+      await expect(page.getByRole('tab', { name: /Steps/ })).toBeVisible()
     }
   })
 
