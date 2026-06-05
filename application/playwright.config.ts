@@ -41,7 +41,7 @@ export default defineConfig({
   maxFailures: process.env.CI ? 3 : 0,
 
   /* Opt out of parallel tests. */
-  workers: 1,
+  workers: 3,
 
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: reporters,

@@ -66,6 +66,7 @@ export default eventHandler(async (event) => {
     networkRequests: testRunsCase.networkRequests,
     webVitals: testRunsCase.webVitals,
     consoleLogs: testRunsCase.consoleLogs,
+    ariaSnapshot: testRunsCase.ariaSnapshot,
     workerIndex: testRunsCase.workerIndex,
     testRun: testRun ? { ...testRun, project, reports: runReports } : testRun
   }

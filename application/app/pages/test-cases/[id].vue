@@ -109,7 +109,7 @@ const browserInfo = computed(() => {
   const project = htmlReport?.projects?.[0]
   if (!project) return null
   return {
-    browserName: project.use?.browserName,
+    browserName: project.use?.browserName || project.name,
     viewport: project.use?.viewport
   }
 })
@@ -125,6 +125,7 @@ const fixPrompt = computed(() => {
     steps: testCase.value.steps as unknown as FixPromptStep[] | null,
     networkRequests: testCase.value.networkRequests as unknown as FixPromptNetwork[] | null,
     webVitals: testCase.value.webVitals as unknown as FixPromptVitals | null,
+    ariaSnapshot: testCase.value.ariaSnapshot as string | null | undefined,
     duration: testCase.value.duration,
     slowestStep: testCase.value.slowestStep,
     slowestStepDuration: testCase.value.slowestStepDuration
@@ -706,6 +707,16 @@ const stepColumns: TableColumn<PerformanceStep>[] = [
                   </div>
                 </div>
               </UCard>
+
+              <div
+                v-if="!(traceData as any[])?.length && !(testCase as any)?.consoleLogs?.length && !groupedNetworkRequests.length"
+                class="flex flex-col items-center justify-center py-12 text-gray-400"
+              >
+                <UIcon name="i-lucide-inbox" class="size-8 mb-2" />
+                <p class="text-sm">
+                  No traces, console logs, or network requests captured for this test case.
+                </p>
+              </div>
             </div>
           </template>
 

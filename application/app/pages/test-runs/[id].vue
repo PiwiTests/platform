@@ -40,42 +40,51 @@ function flushPendingEvents() {
         skippedTests: data.skippedTests as number
       }
     } else if (parsed.type === 'test-begin') {
-      const d = data as { title: string, location: string, workerIndex?: number }
+      const d = data as { title: string, location: string, workerIndex?: number, startedAt?: number }
       const key = `${d.title}@@${d.location}`
       if (!liveTestCaseKeys.has(key)) {
         liveTestCaseKeys.set(key, true)
-        liveTestCases.value.push({
+        liveTestCases.value = [...liveTestCases.value, {
           id: liveTestCases.value.length + 1,
           title: d.title,
           status: 'running',
           location: d.location,
           workerIndex: d.workerIndex ?? null,
-          startedAt: Date.now()
-        })
+          startedAt: d.startedAt ?? Date.now()
+        }]
+        displayTestCases.value = [...liveTestCases.value]
       }
     } else if (parsed.type === 'test-completed') {
-      const d = data as { title: string, location: string, status: string, duration?: number, error?: string | null, workerIndex?: number }
+      const d = data as { title: string, location: string, status: string, duration?: number, error?: string | null, workerIndex?: number, startedAt?: number }
       const key = `${d.title}@@${d.location}`
       if (liveTestCaseKeys.has(key)) {
         const idx = liveTestCases.value.findIndex(tc => `${tc.title}@@${tc.location}` === key)
         if (idx >= 0) {
-          const tc = liveTestCases.value[idx]!
-          tc.status = d.status
-          tc.duration = d.duration
-          tc.error = d.error
-          tc.workerIndex = d.workerIndex ?? tc.workerIndex
+          const copy = [...liveTestCases.value]
+          copy[idx] = {
+            ...copy[idx]!,
+            status: d.status,
+            duration: d.duration,
+            error: d.error,
+            workerIndex: d.workerIndex ?? copy[idx]!.workerIndex,
+            startedAt: d.startedAt ? d.startedAt : copy[idx]!.startedAt
+          }
+          liveTestCases.value = copy
+          displayTestCases.value = [...copy]
         }
       } else {
         liveTestCaseKeys.set(key, true)
-        liveTestCases.value.push({
+        liveTestCases.value = [...liveTestCases.value, {
           id: liveTestCases.value.length + 1,
           title: d.title,
           status: d.status,
           duration: d.duration,
           location: d.location,
           error: d.error,
-          workerIndex: d.workerIndex ?? null
-        })
+          workerIndex: d.workerIndex ?? null,
+          startedAt: d.startedAt ?? undefined
+        }]
+        displayTestCases.value = [...liveTestCases.value]
       }
     } else if (parsed.type === 'run-progress') {
       liveProgress.value = data as { totalTests: number, passedTests: number, failedTests: number, skippedTests: number }
@@ -128,13 +137,17 @@ onUnmounted(() => {
 })
 
 // Combined test cases: from server data + live stream.
-// Uses a requestAnimationFrame throttle so the UI doesn't re-render on every SSE event.
-const displayTestCases = computed<TestCaseResult[]>(() => {
+const displayTestCases = ref<TestCaseResult[]>([])
+
+watch([isLive, testRun], () => {
   if (isLive.value && liveTestCases.value.length > 0) {
-    return [...liveTestCases.value]
+    displayTestCases.value = [...liveTestCases.value]
+  } else if (testRun.value?.testCases) {
+    displayTestCases.value = testRun.value.testCases
+  } else {
+    displayTestCases.value = []
   }
-  return testRun.value?.testCases || []
-})
+}, { immediate: true })
 
 // Throttled version for child components that don't need frame-perfect reactivity
 let rafId: number | null = null
@@ -323,6 +336,7 @@ function handleSelectTestCase(id: number) {
           <WorkersTimeline
             v-if="activeTab === 'workers'"
             :test-cases="throttledTestCases"
+            :live="isLive"
             @select-test-case="handleSelectTestCase"
           />
 

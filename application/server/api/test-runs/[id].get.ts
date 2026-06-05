@@ -46,6 +46,7 @@ export default eventHandler(async (event) => {
     networkRequests: testRunsCases.networkRequests,
     webVitals: testRunsCases.webVitals,
     workerIndex: testRunsCases.workerIndex,
+    startedAt: testRunsCases.startedAt,
     title: testCases.title,
     filePath: testCases.filePath
   })
@@ -67,7 +68,8 @@ export default eventHandler(async (event) => {
     slowestStepDuration: tc.slowestStepDuration,
     networkRequests: tc.networkRequests,
     webVitals: tc.webVitals,
-    workerIndex: tc.workerIndex
+    workerIndex: tc.workerIndex,
+    startedAt: tc.startedAt
   }))
 
   // Omit streamToken — it is an internal secret and must not be sent to clients

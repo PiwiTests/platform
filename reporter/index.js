@@ -198,6 +198,7 @@ class PiwiDashboardReporter {
       error: result.error ? result.error.message : null,
       retries: result.retry,
       workerIndex: result.workerIndex ?? result.parallelIndex ?? null,
+      startedAt: result.startTime ? result.startTime.getTime() : null,
       attachments: result.attachments || []
     };
 
@@ -235,6 +236,12 @@ class PiwiDashboardReporter {
         } catch {
           // Ignore parse errors
         }
+      }
+
+      // Parse ARIA snapshot from fixture attachment
+      const ariaAttachment = result.attachments.find(a => a.name === 'piwi-dashboard-aria-snapshot');
+      if (ariaAttachment && ariaAttachment.body) {
+        testCase.ariaSnapshot = ariaAttachment.body.toString();
       }
     }
 
@@ -276,12 +283,14 @@ class PiwiDashboardReporter {
       error: testCase.error,
       retries: testCase.retries,
       workerIndex: testCase.workerIndex ?? null,
+      startedAt: testCase.startedAt ?? null,
       steps: testCase.performanceMetrics && testCase.performanceMetrics.steps || null,
       slowestStep: testCase.performanceMetrics && testCase.performanceMetrics.slowestStep && testCase.performanceMetrics.slowestStep.title || null,
       slowestStepDuration: testCase.performanceMetrics && testCase.performanceMetrics.slowestStep && testCase.performanceMetrics.slowestStep.duration || null,
       networkRequests: testCase.networkRequests || null,
       webVitals: testCase.webVitals || null,
-      consoleLogs: testCase.consoleLogs || null
+      consoleLogs: testCase.consoleLogs || null,
+      ariaSnapshot: testCase.ariaSnapshot || null
     });
 
     // Flush when batch size is reached
@@ -594,12 +603,14 @@ class PiwiDashboardReporter {
           error: tcRest.error,
           retries: tcRest.retries,
           workerIndex: tcRest.workerIndex ?? null,
+          startedAt: tcRest.startedAt ?? null,
           steps: tcRest.performanceMetrics && tcRest.performanceMetrics.steps || null,
           slowestStep: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.title || null,
           slowestStepDuration: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.duration || null,
           networkRequests: tcRest.networkRequests || null,
           webVitals: tcRest.webVitals || null,
-          consoleLogs: tcRest.consoleLogs || null
+          consoleLogs: tcRest.consoleLogs || null,
+          ariaSnapshot: tcRest.ariaSnapshot || null
         }
       })
     };
@@ -651,12 +662,14 @@ class PiwiDashboardReporter {
         error: tcRest.error,
         retries: tcRest.retries,
         workerIndex: tcRest.workerIndex ?? null,
+        startedAt: tcRest.startedAt ?? null,
         steps: tcRest.performanceMetrics && tcRest.performanceMetrics.steps || null,
         slowestStep: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.title || null,
         slowestStepDuration: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.duration || null,
         networkRequests: tcRest.networkRequests || null,
         webVitals: tcRest.webVitals || null,
-        consoleLogs: tcRest.consoleLogs || null
+        consoleLogs: tcRest.consoleLogs || null,
+        ariaSnapshot: tcRest.ariaSnapshot || null
       };
     });
     form.append('testCases', JSON.stringify(testCasesData));

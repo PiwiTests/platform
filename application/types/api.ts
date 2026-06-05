@@ -331,6 +331,7 @@ export interface TestCaseResult {
   networkRequests?: NetworkRequest[] | null
   webVitals?: WebVitals | null
   consoleLogs?: ConsoleEntry[] | null
+  ariaSnapshot?: string | null
   workerIndex?: number | null
   startedAt?: number
 }

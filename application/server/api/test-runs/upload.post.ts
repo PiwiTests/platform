@@ -344,7 +344,9 @@ export default eventHandler(async (event) => {
       networkRequests?: Array<Record<string, unknown>> | null
       webVitals?: Record<string, unknown> | null
       consoleLogs?: Array<Record<string, unknown>> | null
+      ariaSnapshot?: string | null
       workerIndex?: number | null
+      startedAt?: number | null
       filePath: string
       line: number | null
       column: number | null
@@ -397,6 +399,7 @@ export default eventHandler(async (event) => {
         networkRequests: testCase.networkRequests as Array<Record<string, unknown>> | null | undefined,
         webVitals: testCase.webVitals as Record<string, unknown> | null | undefined,
         workerIndex: testCase.workerIndex as number | null | undefined,
+        startedAt: testCase.startedAt as number | null | undefined,
         filePath,
         line,
         column
@@ -463,7 +466,9 @@ export default eventHandler(async (event) => {
         networkRequests: sanitizeNetworkRequests(tc.networkRequests as Array<Record<string, unknown>> | null | undefined) ?? null,
         webVitals: sanitizeWebVitals(tc.webVitals as Record<string, unknown> | null | undefined) ?? null,
         consoleLogs: (tc.consoleLogs as Array<Record<string, unknown>> | null | undefined) ?? null,
-        workerIndex: (tc.workerIndex as number | null | undefined) ?? null
+        ariaSnapshot: (tc.ariaSnapshot as string | null | undefined) ?? null,
+        workerIndex: (tc.workerIndex as number | null | undefined) ?? null,
+        startedAt: (tc.startedAt as number | null | undefined) ?? null
       })
     }
 

@@ -134,7 +134,7 @@ function extractHtmlReportMetadata(config) {
       name: p.name,
       testDir: p.testDir,
       use: {
-        browserName: p.use?.browserName,
+        browserName: p.use?.browserName || p.name,
         viewport: p.use?.viewport,
         deviceScaleFactor: p.use?.deviceScaleFactor
       }

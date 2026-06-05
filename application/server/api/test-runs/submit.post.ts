@@ -86,7 +86,10 @@ export default eventHandler(async (event) => {
       slowestStepDuration?: number
       networkRequests?: Array<Record<string, unknown>> | null
       webVitals?: Record<string, unknown> | null
+      consoleLogs?: Array<Record<string, unknown>> | null
+      ariaSnapshot?: string | null
       workerIndex?: number | null
+      startedAt?: number | null
       filePath: string
       line: number | null
       column: number | null
@@ -104,6 +107,9 @@ export default eventHandler(async (event) => {
       slowestStepDuration?: number
       networkRequests?: unknown
       webVitals?: unknown
+      consoleLogs?: unknown
+      ariaSnapshot?: unknown
+      startedAt?: number | null
       workerIndex?: number | null
     }) => {
       let filePath = 'unknown'
@@ -134,6 +140,9 @@ export default eventHandler(async (event) => {
         slowestStepDuration: testCase.slowestStepDuration,
         networkRequests: testCase.networkRequests as Array<Record<string, unknown>> | null | undefined,
         webVitals: testCase.webVitals as Record<string, unknown> | null | undefined,
+        consoleLogs: testCase.consoleLogs as Array<Record<string, unknown>> | null | undefined,
+        ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
+        startedAt: testCase.startedAt ?? null,
         workerIndex: testCase.workerIndex,
         filePath,
         line,
@@ -200,7 +209,10 @@ export default eventHandler(async (event) => {
         slowestStepDuration: tc.slowestStepDuration || null,
         networkRequests: sanitizeNetworkRequests(tc.networkRequests) || null,
         webVitals: sanitizeWebVitals(tc.webVitals) || null,
-        workerIndex: tc.workerIndex ?? null
+        consoleLogs: tc.consoleLogs ?? null,
+        ariaSnapshot: tc.ariaSnapshot ?? null,
+        workerIndex: tc.workerIndex ?? null,
+        startedAt: tc.startedAt ?? null
       })
     }
 

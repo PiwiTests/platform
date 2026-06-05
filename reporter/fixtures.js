@@ -71,6 +71,21 @@ const dashboardFixtures = {
 
     await use(page);
 
+    // Capture ARIA snapshot for AI debug prompts (only on failure to save time)
+    if (testInfo.status !== 'passed' && testInfo.status !== 'skipped') {
+      try {
+        const snapshot = await page.locator(':root').ariaSnapshot();
+        if (snapshot) {
+          await testInfo.attach('piwi-dashboard-aria-snapshot', {
+            contentType: 'text/plain',
+            body: snapshot,
+          });
+        }
+      } catch {
+        // Page may be closed or snapshot not available (e.g. non-browser tests)
+      }
+    }
+
     // Attach console messages after the test finishes
     if (consoleEntries.length > 0) {
       await testInfo.attach('piwi-dashboard-console', {
