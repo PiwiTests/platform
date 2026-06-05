@@ -194,7 +194,7 @@ function onBarLeave() {
 // Wheel zoom (lateral only)
 function onWheel(event: WheelEvent) {
   event.preventDefault()
-  const delta = event.deltaY > 0 ? -0.15 : 0.15
+  const delta = event.deltaY > 0 ? -0.02 : 0.02
   const fitZoom = computeFitZoom()
   const newZoom = Math.max(fitZoom, Math.min(10, zoom.value + delta))
 

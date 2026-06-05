@@ -176,11 +176,11 @@ const blockColSpanClass = computed(() => {
 })
 
 const tabItems = computed(() => [
-  { label: `Steps (${steps.value.length})`, icon: 'i-lucide-list-checks', slot: 'steps' },
-  { label: 'Error & Fix', icon: 'i-lucide-bug', slot: 'error', disabled: !testCase.value?.error },
-  { label: 'Traces & Console', icon: 'i-lucide-terminal', slot: 'traces' },
-  { label: `Performance (${performanceHints.value.length})`, icon: 'i-lucide-gauge', slot: 'performance', disabled: performanceHints.value.length === 0 },
-  { label: `History (${historyData.value?.length ?? 0})`, icon: 'i-lucide-trending-up', slot: 'history', disabled: !historyData.value?.length }
+  { label: `Steps (${steps.value.length})`, icon: 'i-lucide-list-checks', slot: 'steps', value: 'steps' },
+  { label: 'Error & Fix', icon: 'i-lucide-bug', slot: 'error', value: 'error', disabled: !testCase.value?.error },
+  { label: 'Traces & Console', icon: 'i-lucide-terminal', slot: 'traces', value: 'traces' },
+  { label: `Performance (${performanceHints.value.length})`, icon: 'i-lucide-gauge', slot: 'performance', value: 'performance', disabled: performanceHints.value.length === 0 },
+  { label: `History (${historyData.value?.length ?? 0})`, icon: 'i-lucide-trending-up', slot: 'history', value: 'history', disabled: !historyData.value?.length }
 ])
 
 const historyColumns: TableColumn<TestCaseHistoryPoint>[] = [
@@ -399,17 +399,6 @@ const stepColumns: TableColumn<PerformanceStep>[] = [
                   <span class="font-medium text-amber-700 dark:text-amber-300">Slowest step:</span>
                   <span class="text-gray-700 dark:text-gray-300 truncate">{{ testCase.slowestStep }}</span>
                   <span v-if="testCase.slowestStepDuration" class="text-gray-500 shrink-0">({{ formatDuration(testCase.slowestStepDuration) }})</span>
-                </div>
-
-                <div v-if="historicalTiming" class="flex items-center gap-1.5 text-xs">
-                  <UIcon name="i-lucide-clock" class="size-3.5 text-gray-400" />
-                  <span class="text-gray-500">Current: <strong>{{ formatDuration(historicalTiming.current) }}</strong></span>
-                  <span class="text-gray-300 mx-0.5">|</span>
-                  <span class="text-gray-500">Avg: <strong>{{ formatDuration(historicalTiming.avg) }}</strong></span>
-                  <span class="text-gray-300 mx-0.5">|</span>
-                  <span :class="historicalTiming.diff > 0 ? 'text-red-600 font-medium' : 'text-green-600 font-medium'">
-                    {{ historicalTiming.diff > 0 ? '+' : '' }}{{ historicalTiming.pct }}%
-                  </span>
                 </div>
               </div>
             </UCard>
