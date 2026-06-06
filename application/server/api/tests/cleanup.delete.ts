@@ -1,5 +1,5 @@
 import { getDatabase } from '../../database'
-import { projects, testRuns, testRunsCases, traces, reports, testCases, tags, projectTags } from '../../database/schema'
+import { projects, testRuns, testRunsCases, files, testCases, tags, projectTags } from '../../database/schema'
 import { eq, inArray, like } from 'drizzle-orm'
 import { getStorage } from '../../storage'
 import { TEST_PROJECT_NAMES } from '../../../shared/test-project-names'
@@ -18,47 +18,38 @@ export default eventHandler(async (_event) => {
     const runRows = await db.select().from(testRuns).where(eq(testRuns.projectId, project.id))
 
     for (const run of runRows) {
-      // Get report paths
-      const reportRows = await db.select().from(reports).where(eq(reports.testRunId, run.id))
+      // Get all files for this run
+      const fileRows = await db.select().from(files).where(eq(files.testRunId, run.id))
 
-      // Get test run cases to find traces
+      // Get test run cases
       const runsCases = await db.select({ id: testRunsCases.id }).from(testRunsCases).where(eq(testRunsCases.testRunId, run.id))
       const caseIds = runsCases.map(c => c.id)
 
-      // Delete traces from DB and storage
-      for (const caseId of caseIds) {
-        const traceRows = await db.select().from(traces).where(eq(traces.testRunsCaseId, caseId))
-        for (const trace of traceRows) {
+      // Delete trace files linked to cases
+      if (caseIds.length > 0) {
+        const traceFiles = await db.select().from(files).where(inArray(files.testRunsCaseId, caseIds))
+        for (const trace of traceFiles) {
           try {
-            await storage.deleteDirectory(trace.filePath)
+            await storage.deleteDirectory(trace.path)
           } catch {
             /* ignore */
           }
         }
-        await db.delete(traces).where(eq(traces.testRunsCaseId, caseId))
+        await db.delete(files).where(inArray(files.testRunsCaseId, caseIds))
       }
 
       // Delete test run cases
       await db.delete(testRunsCases).where(eq(testRunsCases.testRunId, run.id))
 
       // Delete report files from storage and DB
-      for (const report of reportRows) {
+      for (const file of fileRows) {
         try {
-          await storage.deleteDirectory(report.path)
+          await storage.deleteDirectory(file.path)
         } catch {
           /* ignore */
         }
       }
-      await db.delete(reports).where(eq(reports.testRunId, run.id))
-
-      // Delete legacy report path
-      if (run.reportPath) {
-        try {
-          await storage.deleteDirectory(run.reportPath)
-        } catch {
-          /* ignore */
-        }
-      }
+      await db.delete(files).where(eq(files.testRunId, run.id))
 
       // Delete the test run
       await db.delete(testRuns).where(eq(testRuns.id, run.id))

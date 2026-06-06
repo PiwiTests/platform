@@ -1,6 +1,6 @@
 import { getDatabase } from '../../database'
-import { testRuns, testCases, testRunsCases, projects, reports } from '../../database/schema'
-import { eq } from 'drizzle-orm'
+import { testRuns, testCases, testRunsCases, projects, files } from '../../database/schema'
+import { eq, sql } from 'drizzle-orm'
 
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
@@ -27,8 +27,25 @@ export default eventHandler(async (event) => {
   const projectResults = await db.select().from(projects).where(eq(projects.id, testRun.projectId))
   const project = projectResults[0]
 
-  // Get associated reports
-  const reportResults = await db.select().from(reports).where(eq(reports.testRunId, id))
+  // Get associated reports (files with type='report')
+  const reportResults = await db.select()
+    .from(files)
+    .where(
+      sql`${files.testRunId} = ${id} AND ${files.type} = 'report'`
+    )
+
+  // Get storage stats for this run
+  const storageStatsResult = await db.select({
+    totalFiles: sql<number>`count(*)`,
+    totalSize: sql<number>`coalesce(sum(${files.size}), 0)`
+  })
+    .from(files)
+    .where(eq(files.testRunId, id))
+
+  const storageStats = {
+    totalFiles: Number(storageStatsResult[0]?.totalFiles ?? 0),
+    totalSize: Number(storageStatsResult[0]?.totalSize ?? 0)
+  }
 
   // Get test runs cases with joined test case info
   // NOTE: steps, networkRequests, webVitals, consoleLogs, ariaSnapshot are intentionally
@@ -77,11 +94,12 @@ export default eventHandler(async (event) => {
     project,
     reports: reportResults.map(r => ({
       id: r.id,
-      type: r.type,
-      label: r.label,
+      type: r.subtype || r.type,
+      label: r.label || r.type,
       path: r.path,
       size: r.size
     })),
-    testCases: formattedTestCases
+    testCases: formattedTestCases,
+    storageStats
   }
 })

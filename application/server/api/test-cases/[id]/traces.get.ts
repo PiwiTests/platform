@@ -1,6 +1,6 @@
 import { getDatabase } from '../../../database'
-import { testRunsCases, traces } from '../../../database/schema'
-import { eq } from 'drizzle-orm'
+import { testRunsCases, files } from '../../../database/schema'
+import { eq, sql } from 'drizzle-orm'
 
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
@@ -24,11 +24,13 @@ export default eventHandler(async (event) => {
     })
   }
 
-  const traceRows = await db.select().from(traces).where(eq(traces.testRunsCaseId, id))
+  const traceRows = await db.select()
+    .from(files)
+    .where(sql`${files.testRunsCaseId} = ${id} AND ${files.type} = 'trace'`)
 
   return traceRows.map(t => ({
     id: t.id,
-    filePath: t.filePath,
+    filePath: t.path,
     createdAt: t.createdAt
   }))
 })

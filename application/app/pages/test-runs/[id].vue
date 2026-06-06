@@ -206,28 +206,8 @@ const { summaryColSpanClass, blockColSpanClass } = useDetailGrid(() => {
   return count
 })
 
-// Merge reports from the new `reports` table with the legacy reportPath field
-const allReports = computed<ReportInfo[]>(() => {
-  if (!testRun.value) return []
-  const list: ReportInfo[] = []
-
-  if (testRun.value.reports && testRun.value.reports.length > 0) {
-    list.push(...testRun.value.reports)
-    return list
-  }
-
-  if (testRun.value.reportPath) {
-    list.push({
-      id: 0,
-      type: 'html',
-      label: 'HTML Report',
-      path: testRun.value.reportPath,
-      size: testRun.value.reportSize
-    })
-  }
-
-  return list
-})
+// Reports from the files table
+const allReports = computed<ReportInfo[]>(() => testRun.value?.reports || [])
 
 // Right panel tabs
 const activeTab = ref('test-cases')

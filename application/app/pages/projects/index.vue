@@ -235,9 +235,7 @@ const columns: TableColumn<ProjectWithStats>[] = [
           const latestRun = row.original.latestRun
           if (!latestRun) return ''
           return h(RunReports, {
-            reports: latestRun.reports,
-            legacyPath: latestRun.reportPath,
-            legacySize: latestRun.reportSize
+            reports: latestRun.reports
           })
         }
       },

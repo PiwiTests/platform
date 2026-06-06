@@ -1,5 +1,5 @@
 import { getDatabase } from '../../database'
-import { testRuns, testCases, testRunsCases, traces, reports, projects } from '../../database/schema'
+import { testRuns, testCases, testRunsCases, files, projects } from '../../database/schema'
 import { sql } from 'drizzle-orm'
 import { requireAuth } from '../../utils/auth'
 import { getStorage } from '../../storage'
@@ -16,23 +16,21 @@ export default eventHandler(async (event) => {
     totalRuns,
     totalTestCases,
     totalRunsCases,
-    totalTraces,
-    totalReports
+    totalFiles
   ] = await Promise.all([
     db.select({ count: sql<number>`count(*)` }).from(projects),
     db.select({ count: sql<number>`count(*)` }).from(testRuns),
     db.select({ count: sql<number>`count(*)` }).from(testCases),
     db.select({ count: sql<number>`count(*)` }).from(testRunsCases),
-    db.select({ count: sql<number>`count(*)` }).from(traces),
-    db.select({ count: sql<number>`count(*)` }).from(reports)
+    db.select({ count: sql<number>`count(*)` }).from(files)
   ])
 
-  // Sum stored report sizes from DB
-  const reportSizeResult = await db.select({
+  // Sum stored file sizes from DB
+  const fileSizeResult = await db.select({
     total: sql<number>`coalesce(sum(size), 0)`
-  }).from(reports)
+  }).from(files)
 
-  const reportSizeFromDb = Number(reportSizeResult[0]?.total ?? 0)
+  const totalFileSize = Number(fileSizeResult[0]?.total ?? 0)
 
   // Try to get actual storage size on disk (local storage only)
   let storageSizeOnDisk: number | null = null
@@ -50,9 +48,8 @@ export default eventHandler(async (event) => {
     totalRuns: Number(totalRuns[0]?.count ?? 0),
     totalTestCases: Number(totalTestCases[0]?.count ?? 0),
     totalRunsCases: Number(totalRunsCases[0]?.count ?? 0),
-    totalTraces: Number(totalTraces[0]?.count ?? 0),
-    totalReports: Number(totalReports[0]?.count ?? 0),
-    reportSizeFromDb,
+    totalFiles: Number(totalFiles[0]?.count ?? 0),
+    totalFileSize,
     storageSizeOnDisk
   }
 })

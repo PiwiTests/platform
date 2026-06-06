@@ -2,25 +2,9 @@
 import type { ReportInfo } from '~~/types/api'
 import { formatBytes, getFileApiPath } from '~/utils'
 
-const props = defineProps<{
+defineProps<{
   reports?: ReportInfo[] | null
-  legacyPath?: string | null
-  legacySize?: number | null
 }>()
-
-const normalizedReports = computed<ReportInfo[]>(() => {
-  if (props.reports && props.reports.length > 0) return props.reports
-  if (props.legacyPath) {
-    return [{
-      id: 0,
-      type: 'html',
-      label: 'HTML report',
-      path: props.legacyPath,
-      size: props.legacySize
-    }]
-  }
-  return []
-})
 
 function reportIcon(type: string): string {
   switch (type) {
@@ -33,9 +17,9 @@ function reportIcon(type: string): string {
 </script>
 
 <template>
-  <div v-if="normalizedReports.length" class="flex flex-wrap gap-1">
+  <div v-if="reports?.length" class="flex flex-wrap gap-1">
     <UButton
-      v-for="report in normalizedReports"
+      v-for="report in reports"
       :key="`${report.type}-${report.path}`"
       :to="report.type !== 'blob' ? `/api/files/${getFileApiPath(report.path)}` : undefined"
       :href="report.type === 'blob' ? `/api/files/${getFileApiPath(report.path)}` : undefined"

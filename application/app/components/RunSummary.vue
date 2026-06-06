@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { TestRunDetails, ReportInfo } from '~~/types/api'
 
-defineProps<{
+const props = defineProps<{
   testRun: TestRunDetails
   displayProgress: { totalTests: number, passedTests: number, failedTests: number, skippedTests: number } | null
   allReports: ReportInfo[]
@@ -13,6 +13,8 @@ defineProps<{
 const emit = defineEmits<{
   'update:showCustomData': [value: boolean]
 }>()
+
+const storageStats = computed(() => props.testRun?.storageStats)
 </script>
 
 <template>
@@ -141,14 +143,36 @@ const emit = defineEmits<{
       :class="blockColSpanClass"
     />
 
-    <!-- Block 2: Source control -->
-    <SourceInfoCard
-      v-if="testRun?.metadata?.scm"
-      :scm="testRun.metadata.scm"
-      :class="blockColSpanClass"
-    />
+    <!-- Block 2: Source control + Storage stats -->
+    <div v-if="testRun?.metadata?.scm || storageStats" :class="blockColSpanClass">
+      <div class="grid grid-cols-2 gap-4">
+        <SourceInfoCard
+          v-if="testRun?.metadata?.scm"
+          :scm="testRun.metadata.scm"
+          class="h-full"
+        />
+        <UCard v-if="storageStats" class="h-full shadow-xs">
+          <template #header>
+            <div class="flex items-center gap-2">
+              <UIcon name="i-lucide-database" class="w-4 h-4 text-primary" />
+              <span class="text-sm font-medium">Storage</span>
+            </div>
+          </template>
+          <div class="flex gap-4 text-sm">
+            <div>
+              <p class="text-muted text-xs">Files</p>
+              <p class="font-semibold text-lg">{{ storageStats.totalFiles }}</p>
+            </div>
+            <div>
+              <p class="text-muted text-xs">Total size</p>
+              <p class="font-semibold text-lg">{{ formatBytes(storageStats.totalSize) }}</p>
+            </div>
+          </div>
+        </UCard>
+      </div>
+    </div>
 
-    <!-- Block 3: Tags / Details / Custom data -->
+    <!-- Block 4: Tags / Details / Custom data -->
     <UCard v-if="testRun?.metadata?.tags?.length || testRun?.metadata?.projectDescription || testRun?.metadata?.relatedIssue || testRun?.metadata?.customData" :class="blockColSpanClass">
       <template #header>
         <div class="flex items-center gap-2">

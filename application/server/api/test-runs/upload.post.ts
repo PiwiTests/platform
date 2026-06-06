@@ -1,5 +1,5 @@
 import { getDatabase } from '../../database'
-import { projects, testRuns, reports, traces } from '../../database/schema'
+import { projects, testRuns, files } from '../../database/schema'
 import type { Project } from '../../database/schema'
 import { eq } from 'drizzle-orm'
 import { join } from 'path'
@@ -227,9 +227,6 @@ export default eventHandler(async (event) => {
 
   // Store all reports and collect their metadata
   const storedReports: { type: string, label: string, path: string, size: number }[] = []
-  // Track the primary HTML report path for backward compat
-  let primaryReportPath: string | null = null
-  let primaryReportSize: number | null = null
 
   const reportResults = await Promise.all(
     [...reportFiles.entries()].map(async ([type, report]) => {
@@ -238,13 +235,6 @@ export default eventHandler(async (event) => {
         const { path: storedPath, size } = await storeReport(type, report)
         const label = getReportLabel(type, report.label)
         console.log(`[Upload] Stored ${type} report at ${storedPath} (${size} bytes)`)
-
-        // Keep backward-compat fields for HTML report
-        if (type === 'html') {
-          primaryReportPath = storedPath
-          primaryReportSize = size
-        }
-
         return { type, label, path: storedPath, size }
       } catch (error) {
         console.error(`[Upload] Failed to store ${type} report: ${error}`)
@@ -263,12 +253,6 @@ export default eventHandler(async (event) => {
   if (attachingToExistingRun && existingTestRunId) {
     // Attach reports to an already-created streaming run — do not create a new run
     testRun = { id: existingTestRunId, projectId: project.id }
-    // Update the primary report path on the existing run if we have one
-    if (primaryReportPath !== null) {
-      await db.update(testRuns)
-        .set({ reportPath: primaryReportPath, reportSize: primaryReportSize })
-        .where(eq(testRuns.id, existingTestRunId))
-    }
   } else {
     // Create a new test run (standard batch upload)
     const testRunResult = await db.insert(testRuns).values({
@@ -280,8 +264,6 @@ export default eventHandler(async (event) => {
       passedTests: (testRunData.passedTests as number | undefined) || 0,
       failedTests: (testRunData.failedTests as number | undefined) || 0,
       skippedTests: (testRunData.skippedTests as number | undefined) || 0,
-      reportPath: primaryReportPath,
-      reportSize: primaryReportSize,
       environment: (testRunData.environment as string | null | undefined) || null,
       metadata: testRunData.metadata || null,
       instanceId: (testRunData.instanceId as string | null | undefined) || null
@@ -304,12 +286,13 @@ export default eventHandler(async (event) => {
     runEventBus.publishGlobal({ type: 'run-submitted', runId: resultTestRun.id, projectId: resultTestRun.projectId, status: resultTestRun.status })
   }
 
-  // Batch insert report records into the reports table
+  // Batch insert report records into the files table
   if (storedReports.length > 0) {
-    await db.insert(reports).values(
+    await db.insert(files).values(
       storedReports.map(r => ({
         testRunId: testRun.id,
-        type: r.type,
+        type: 'report',
+        subtype: r.type,
         label: r.label,
         path: r.path.replace(/\\/g, '/'),
         size: r.size
@@ -370,9 +353,11 @@ export default eventHandler(async (event) => {
           const storagePath = `${testRunPath}/${testRunsCaseId}-${traceFile.filename}`
           try {
             await storage.writeFile(storagePath, traceFile.data)
-            await db.insert(traces).values({
+            await db.insert(files).values({
               testRunsCaseId,
-              filePath: storagePath.replace(/\\/g, '/')
+              testRunId: testRun.id,
+              type: 'trace',
+              path: storagePath.replace(/\\/g, '/')
             })
             console.log(`[Upload] Stored trace for case #${testRunsCaseId} at ${storagePath}`)
           } catch (error) {
@@ -410,7 +395,6 @@ export default eventHandler(async (event) => {
     success: true,
     testRunId: testRun.id,
     projectId: project.id,
-    reportPath: primaryReportPath,
     reports: storedReports.map(r => ({ type: r.type, label: r.label, path: r.path }))
   }
 })

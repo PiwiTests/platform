@@ -83,8 +83,6 @@ CREATE TABLE IF NOT EXISTS test_runs (
   flaky_tests INTEGER DEFAULT 0 NOT NULL,
   avg_test_duration INTEGER,
   p90_test_duration INTEGER,
-  report_path TEXT,
-  report_size INTEGER,
   environment TEXT,
   metadata TEXT,
   stream_token TEXT,
@@ -120,26 +118,21 @@ CREATE TABLE IF NOT EXISTS test_runs_cases (
 CREATE INDEX IF NOT EXISTS idx_test_runs_cases_test_run_id ON test_runs_cases (test_run_id);
 CREATE INDEX IF NOT EXISTS idx_test_runs_cases_test_case_id ON test_runs_cases (test_case_id);
 
-CREATE TABLE IF NOT EXISTS reports (
+CREATE TABLE IF NOT EXISTS files (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  test_run_id INTEGER NOT NULL,
+  test_run_id INTEGER,
+  test_runs_case_id INTEGER,
   type TEXT NOT NULL,
-  label TEXT NOT NULL,
+  subtype TEXT,
+  label TEXT,
   path TEXT NOT NULL,
   size INTEGER,
   created_at INTEGER NOT NULL,
-  FOREIGN KEY (test_run_id) REFERENCES test_runs(id)
-);
-CREATE INDEX IF NOT EXISTS idx_reports_test_run_id ON reports (test_run_id);
-
-CREATE TABLE IF NOT EXISTS traces (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  test_runs_case_id INTEGER NOT NULL,
-  file_path TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
+  FOREIGN KEY (test_run_id) REFERENCES test_runs(id),
   FOREIGN KEY (test_runs_case_id) REFERENCES test_runs_cases(id)
 );
-CREATE INDEX IF NOT EXISTS idx_traces_test_runs_case_id ON traces (test_runs_case_id);
+CREATE INDEX IF NOT EXISTS idx_files_test_run_id ON files (test_run_id);
+CREATE INDEX IF NOT EXISTS idx_files_test_runs_case_id ON files (test_runs_case_id);
 
 CREATE TABLE IF NOT EXISTS tags (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -439,8 +432,7 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
       flaky_tests: flakyTests,
       avg_test_duration: avgTestDuration,
       p90_test_duration: p90TestDuration,
-      report_path: null,
-      report_size: null,
+
       environment: ENVIRONMENTS[i % ENVIRONMENTS.length],
       metadata,
       stream_token: null,
@@ -454,7 +446,8 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
       REPORTS.push({
         id: reportId++,
         test_run_id: runId,
-        type: 'html',
+        type: 'report',
+        subtype: 'html',
         label: 'HTML Report',
         path: `reports/${projectId}/${runId}/index.html`,
         size: Math.floor(Math.random() * 500000) + 100000,
@@ -551,8 +544,8 @@ const lines = [
   '-- Test runs',
   insert('test_runs', TEST_RUNS),
   '',
-  '-- Reports',
-  insert('reports', REPORTS),
+  '-- Files (reports)',
+  insert('files', REPORTS),
   '',
   '-- Test run cases',
   insert('test_runs_cases', TEST_RUNS_CASES),

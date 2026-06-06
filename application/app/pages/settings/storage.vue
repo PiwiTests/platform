@@ -98,26 +98,18 @@ async function handleCleanup() {
         </div>
         <div class="space-y-1">
           <p class="text-sm text-muted">
-            Traces
+            Stored files
           </p>
           <p class="text-2xl font-semibold">
-            {{ stats.totalTraces }}
+            {{ stats.totalFiles }}
           </p>
         </div>
         <div class="space-y-1">
           <p class="text-sm text-muted">
-            Stored reports
+            File size (DB)
           </p>
           <p class="text-2xl font-semibold">
-            {{ stats.totalReports }}
-          </p>
-        </div>
-        <div class="space-y-1">
-          <p class="text-sm text-muted">
-            Report size (DB)
-          </p>
-          <p class="text-2xl font-semibold">
-            {{ formatBytes(stats.reportSizeFromDb) }}
+            {{ formatBytes(stats.totalFileSize) }}
           </p>
         </div>
         <div class="space-y-1">

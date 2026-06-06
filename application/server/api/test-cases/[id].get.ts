@@ -1,6 +1,6 @@
 import { getDatabase } from '../../database'
-import { testCases, testRuns, testRunsCases, projects, reports } from '../../database/schema'
-import { eq } from 'drizzle-orm'
+import { testCases, testRuns, testRunsCases, projects, files } from '../../database/schema'
+import { eq, sql } from 'drizzle-orm'
 
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
@@ -29,9 +29,11 @@ export default eventHandler(async (event) => {
   const [[testCase], [testRun], reportList] = await Promise.all([
     db.select().from(testCases).where(eq(testCases.id, testRunsCase.testCaseId)).then(r => r.length > 0 ? [r[0]] : [undefined]),
     db.select().from(testRuns).where(eq(testRuns.id, testRunsCase.testRunId)).then(r => r.length > 0 ? [r[0]] : [undefined]),
-    db.select().from(reports).where(eq(reports.testRunId, testRunsCase.testRunId)).then(r =>
-      r.map(rep => ({ id: rep.id, type: rep.type, label: rep.label, path: rep.path, size: rep.size }))
-    )
+    db.select().from(files)
+      .where(sql`${files.testRunId} = ${testRunsCase.testRunId} AND ${files.type} = 'report'`)
+      .then(r =>
+        r.map(rep => ({ id: rep.id, type: rep.subtype || rep.type, label: rep.label || rep.type, path: rep.path, size: rep.size }))
+      )
   ])
 
   // Get project info (only when testRun is available)

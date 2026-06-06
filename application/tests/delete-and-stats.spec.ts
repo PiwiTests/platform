@@ -103,9 +103,8 @@ test.describe('Admin Stats API', () => {
     expect(typeof stats.totalRuns).toBe('number')
     expect(typeof stats.totalTestCases).toBe('number')
     expect(typeof stats.totalRunsCases).toBe('number')
-    expect(typeof stats.totalTraces).toBe('number')
-    expect(typeof stats.totalReports).toBe('number')
-    expect(typeof stats.reportSizeFromDb).toBe('number')
+    expect(typeof stats.totalFiles).toBe('number')
+    expect(typeof stats.totalFileSize).toBe('number')
 
     expect(stats.totalProjects).toBeGreaterThan(0)
     expect(stats.totalRuns).toBeGreaterThan(0)
