@@ -1,5 +1,5 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
-import { cpSync, existsSync, mkdirSync } from 'fs'
+import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -7,6 +7,19 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 const isDemo = process.env.NUXT_PUBLIC_DEMO_MODE === 'true'
+
+// Read the demo seed version hash at build time so it can be injected into
+// runtimeConfig for staleness detection in the browser.
+let demoDataVersion = ''
+if (isDemo) {
+  try {
+    const versionFile = resolve(__dirname, 'public/demo/seed.version.json')
+    const versionInfo = JSON.parse(readFileSync(versionFile, 'utf-8'))
+    demoDataVersion = versionInfo.hash
+  } catch {
+    console.warn('[Config] public/demo/seed.version.json not found or invalid. Run `npm run seed:demo` before building.')
+  }
+}
 
 const demoPwaConfig = isDemo
   ? {
@@ -55,7 +68,8 @@ export default defineNuxtConfig({
     })(),
     public: {
       authEnabled: process.env.NUXT_AUTH_ENABLED === 'true',
-      demoMode: process.env.NUXT_PUBLIC_DEMO_MODE === 'true'
+      demoMode: process.env.NUXT_PUBLIC_DEMO_MODE === 'true',
+      demoDataVersion
     }
   },
 

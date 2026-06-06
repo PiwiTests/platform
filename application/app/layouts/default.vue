@@ -2,9 +2,29 @@
 import type { CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui'
 import type { ProjectWithStats } from '~~/types/api'
 import ProjectsMenu from '~/components/ProjectsMenu.vue'
+import { getStoredDemoVersion, resetDemoDb } from '~/demo/db.client'
 
 const route = useRoute()
 const toast = useToast()
+const config = useRuntimeConfig()
+
+// ── Demo data staleness detection ──────────────────────────────────────────
+const isDemo = config.public.demoMode
+const demoDataVersion = config.public.demoDataVersion as string
+const demoDataStale = ref(false)
+const demoDataRefreshing = ref(false)
+
+if (isDemo && demoDataVersion) {
+  getStoredDemoVersion().then((stored) => {
+    demoDataStale.value = stored !== null && stored !== demoDataVersion
+  })
+}
+
+async function refreshDemoData() {
+  demoDataRefreshing.value = true
+  await resetDemoDb()
+  window.location.reload()
+}
 
 const open = ref(false)
 
@@ -258,6 +278,21 @@ onMounted(async () => {
       </template>
 
       <template #footer="{ collapsed }">
+        <div v-if="demoDataStale" class="px-3 pb-2">
+          <UButton
+            color="warning"
+            variant="soft"
+            size="sm"
+            block
+            :loading="demoDataRefreshing"
+            @click="refreshDemoData"
+          >
+            <template #leading>
+              <UIcon name="i-lucide-rotate-ccw" />
+            </template>
+            New demo data available
+          </UButton>
+        </div>
         <UserMenu :collapsed="collapsed" />
       </template>
     </UDashboardSidebar>

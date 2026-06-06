@@ -9,13 +9,18 @@
  *  1. CREATE TABLE statements (complete current schema)
  *  2. INSERT statements for realistic demo data
  *
- * The generated file is committed to the repository so `npm run generate:demo`
+ * It also writes public/demo/seed.version.json containing a SHA-256 hash of
+ * the generated SQL content.  The Nuxt build reads this hash and exposes it
+ * as runtime config so the demo SPA can detect stale IndexedDB data.
+ *
+ * The generated files are committed to the repository so `npm run generate:demo`
  * does not need a running server.
  */
 
 import { writeFileSync, mkdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { createHash } from 'crypto'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const OUTPUT = join(__dirname, '../public/demo/seed.sql')
@@ -554,13 +559,22 @@ const lines = [
   ''
 ]
 
+const content = lines.join('\n')
+const hash = createHash('sha256').update(content, 'utf-8').digest('hex')
+
+const versionInfo = { hash, generatedAt: new Date().toISOString() }
+const VERSION_OUTPUT = join(__dirname, '../public/demo/seed.version.json')
+
 mkdirSync(join(__dirname, '../public/demo'), { recursive: true })
-writeFileSync(OUTPUT, lines.join('\n'), 'utf-8')
+writeFileSync(OUTPUT, content, 'utf-8')
+writeFileSync(VERSION_OUTPUT, JSON.stringify(versionInfo, null, 2), 'utf-8')
 
 console.log(`✅  Demo seed written to ${OUTPUT}`)
-console.log(`   Projects : ${PROJECTS.length}`)
-console.log(`   Tags     : ${TAGS.length}`)
-console.log(`   TestCases: ${TEST_CASES.length}`)
-console.log(`   TestRuns : ${TEST_RUNS.length}`)
-console.log(`   TRC rows : ${TEST_RUNS_CASES.length}`)
-console.log(`   Reports  : ${REPORTS.length}`)
+console.log(`✅  Version file written to ${VERSION_OUTPUT}`)
+console.log(`   Hash       : ${hash}`)
+console.log(`   Projects   : ${PROJECTS.length}`)
+console.log(`   Tags       : ${TAGS.length}`)
+console.log(`   TestCases  : ${TEST_CASES.length}`)
+console.log(`   TestRuns   : ${TEST_RUNS.length}`)
+console.log(`   TRC rows   : ${TEST_RUNS_CASES.length}`)
+console.log(`   Reports    : ${REPORTS.length}`)

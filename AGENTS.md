@@ -163,6 +163,16 @@ curl -X POST http://localhost:3000/api/test-runs/submit \
   -d '{"projectName":"my-project","status":"passed","startTime":"2024-01-01T12:00:00Z","duration":120000,"totalTests":10,"passedTests":9,"failedTests":1,"skippedTests":0,"testCases":[{"title":"should login","status":"passed","duration":1500,"location":"tests/login.spec.ts:10:5"}]}'
 ```
 
+## Demo Mode
+
+The app can be built as a fully client-side SPA (no server needed) by setting `NUXT_PUBLIC_DEMO_MODE=true`. The demo build:
+
+1. **`npm run seed:demo`** — Generates `public/demo/seed.sql` (SQLite dump with 4 projects, 43 test cases, 61 test runs, 698 test-run-case rows) and `public/demo/seed.version.json` (SHA-256 hash of the SQL content + timestamp).
+2. **`npm run generate:demo`** — Builds the SPA with `ssr: false` and PWA service worker that intercepts `/api/` calls, serving them from in-browser sql.js (WASM SQLite) via Drizzle ORM.
+3. The SQLite database is persisted in IndexedDB across page loads and re-seeded only when no persisted data exists.
+4. **Staleness detection**: The build injects `demoDataVersion` (the SHA-256 hash from `seed.version.json`) into `runtimeConfig.public`. At runtime, the layout compares it against the version stored in IndexedDB and shows a "New demo data available" button in the sidebar footer. Clicking it wipes IndexedDB and reloads the page.
+5. The service worker (`app/service-worker/demo-sw.ts`) handles API fetches via `app/demo/api/router.ts`. Both SW and main thread share `app/demo/db.client.ts` for DB initialization.
+
 ## Important Notes
 - DB auto-initialized on first API call
 - Projects auto-created on first submission
