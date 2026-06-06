@@ -270,27 +270,38 @@ class PiwiDashboardReporter {
   }
 
   /**
+   * Map a test case object to the API payload format shared by streaming,
+   * JSON upload, and multipart upload.
+   */
+  _mapTestCase(tc) {
+    const { type, ...tcRest } = tc
+    return {
+      title: tcRest.title,
+      location: tcRest.location,
+      status: tcRest.status,
+      duration: tcRest.duration,
+      error: tcRest.error,
+      retries: tcRest.retries,
+      workerIndex: tcRest.workerIndex ?? null,
+      startedAt: tcRest.startedAt ?? null,
+      steps: tcRest.performanceMetrics && tcRest.performanceMetrics.steps || null,
+      slowestStep: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.title || null,
+      slowestStepDuration: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.duration || null,
+      networkRequests: tcRest.networkRequests || null,
+      webVitals: tcRest.webVitals || null,
+      consoleLogs: tcRest.consoleLogs || null,
+      ariaSnapshot: tcRest.ariaSnapshot || null
+    }
+  }
+
+  /**
    * Queue a test case event for streaming to the server.
    * Sends in batches to reduce HTTP overhead.
    */
   _queueStreamEvent(testCase) {
     this.pendingEvents.push({
       type: testCase.type || 'complete',
-      title: testCase.title,
-      location: testCase.location,
-      status: testCase.status,
-      duration: testCase.duration,
-      error: testCase.error,
-      retries: testCase.retries,
-      workerIndex: testCase.workerIndex ?? null,
-      startedAt: testCase.startedAt ?? null,
-      steps: testCase.performanceMetrics && testCase.performanceMetrics.steps || null,
-      slowestStep: testCase.performanceMetrics && testCase.performanceMetrics.slowestStep && testCase.performanceMetrics.slowestStep.title || null,
-      slowestStepDuration: testCase.performanceMetrics && testCase.performanceMetrics.slowestStep && testCase.performanceMetrics.slowestStep.duration || null,
-      networkRequests: testCase.networkRequests || null,
-      webVitals: testCase.webVitals || null,
-      consoleLogs: testCase.consoleLogs || null,
-      ariaSnapshot: testCase.ariaSnapshot || null
+      ...this._mapTestCase(testCase)
     });
 
     // Flush when batch size is reached
@@ -487,29 +498,10 @@ class PiwiDashboardReporter {
   }
 
   /**
-   * Upload report files and traces for a streaming run that is already created.
+   * Scan configured report directories, compress them, and append to a FormData
+   * instance. Shared by _uploadFilesForStreamingRun and uploadWithFiles.
    */
-  async _uploadFilesForStreamingRun(sessionCookie) {
-    const form = new FormData();
-
-    // Add run ID to associate files with existing run
-    form.append('testRunId', String(this.streamingRunId));
-    form.append('projectName', this.options.projectName);
-
-    // We don't re-send testRun data or testCases — they're already on the server
-    form.append('testRun', JSON.stringify({
-      status: 'already-submitted',
-      startTime: this.startTime,
-      duration: 0,
-      totalTests: 0,
-      passedTests: 0,
-      failedTests: 0,
-      skippedTests: 0,
-      metadata: {}
-    }));
-    form.append('testCases', JSON.stringify([]));
-
-    // Build the list of reports to upload
+  async _appendReportsToForm(form) {
     const reportsToUpload = [];
     if (this.options.reports && Array.isArray(this.options.reports)) {
       for (const reportConfig of this.options.reports) {
@@ -551,24 +543,56 @@ class PiwiDashboardReporter {
         }
       }
     }
+  }
 
-    // Add trace files if available
-    if (this.options.uploadTraces) {
-      let traceCount = 0;
-      for (const [i, testCase] of this.testCases.entries()) {
-        const traceFiles = findTraceFiles(testCase);
-        for (const tracePath of traceFiles) {
-          if (fs.existsSync(tracePath)) {
-            console.log(`[Piwi Dashboard] Adding trace file: ${tracePath}`);
-            form.append(`trace_${i}`, fs.createReadStream(tracePath), {
-              filename: path.basename(tracePath)
-            });
-            traceCount++;
-          }
+  /**
+   * Find trace files for each test case and append them to a FormData instance.
+   * Shared by _uploadFilesForStreamingRun and uploadWithFiles.
+   */
+  _appendTracesToForm(form) {
+    if (!this.options.uploadTraces) return
+
+    let traceCount = 0
+    for (const [i, testCase] of this.testCases.entries()) {
+      const traceFiles = findTraceFiles(testCase)
+      for (const tracePath of traceFiles) {
+        if (fs.existsSync(tracePath)) {
+          console.log(`[Piwi Dashboard] Adding trace file: ${tracePath}`)
+          form.append(`trace_${i}`, fs.createReadStream(tracePath), {
+            filename: path.basename(tracePath)
+          })
+          traceCount++
         }
       }
-      console.log(`[Piwi Dashboard] Found ${traceCount} trace files`);
     }
+    console.log(`[Piwi Dashboard] Found ${traceCount} trace files`)
+  }
+
+  /**
+   * Upload report files and traces for a streaming run that is already created.
+   */
+  async _uploadFilesForStreamingRun(sessionCookie) {
+    const form = new FormData();
+
+    // Add run ID to associate files with existing run
+    form.append('testRunId', String(this.streamingRunId));
+    form.append('projectName', this.options.projectName);
+
+    // We don't re-send testRun data or testCases — they're already on the server
+    form.append('testRun', JSON.stringify({
+      status: 'already-submitted',
+      startTime: this.startTime,
+      duration: 0,
+      totalTests: 0,
+      passedTests: 0,
+      failedTests: 0,
+      skippedTests: 0,
+      metadata: {}
+    }));
+    form.append('testCases', JSON.stringify([]));
+
+    await this._appendReportsToForm(form);
+    this._appendTracesToForm(form);
 
     const response = await postFormData(this.options.serverUrl, '/api/test-runs/upload', form, sessionCookie);
     console.log(`[Piwi Dashboard] Successfully uploaded files for streaming run #${this.streamingRunId}`);
@@ -593,26 +617,7 @@ class PiwiDashboardReporter {
       environment: this.options.environment || null,
       metadata: this.metadata,
       instanceId: this.instanceId,
-      testCases: this.testCases.map(tc => {
-        const { type, ...tcRest } = tc
-        return {
-          title: tcRest.title,
-          location: tcRest.location,
-          status: tcRest.status,
-          duration: tcRest.duration,
-          error: tcRest.error,
-          retries: tcRest.retries,
-          workerIndex: tcRest.workerIndex ?? null,
-          startedAt: tcRest.startedAt ?? null,
-          steps: tcRest.performanceMetrics && tcRest.performanceMetrics.steps || null,
-          slowestStep: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.title || null,
-          slowestStepDuration: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.duration || null,
-          networkRequests: tcRest.networkRequests || null,
-          webVitals: tcRest.webVitals || null,
-          consoleLogs: tcRest.consoleLogs || null,
-          ariaSnapshot: tcRest.ariaSnapshot || null
-        }
-      })
+      testCases: this.testCases.map(tc => this._mapTestCase(tc))
     };
 
     try {
@@ -650,94 +655,11 @@ class PiwiDashboardReporter {
     form.append('testRun', JSON.stringify(testRunData));
 
     // Add test cases
-    const testCasesData = this.testCases.map((tc, index) => {
-      const { type, ...tcRest } = tc;
-      // Store the index for trace file mapping
-      tcRest.index = index;
-      return {
-        title: tcRest.title,
-        location: tcRest.location,
-        status: tcRest.status,
-        duration: tcRest.duration,
-        error: tcRest.error,
-        retries: tcRest.retries,
-        workerIndex: tcRest.workerIndex ?? null,
-        startedAt: tcRest.startedAt ?? null,
-        steps: tcRest.performanceMetrics && tcRest.performanceMetrics.steps || null,
-        slowestStep: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.title || null,
-        slowestStepDuration: tcRest.performanceMetrics && tcRest.performanceMetrics.slowestStep && tcRest.performanceMetrics.slowestStep.duration || null,
-        networkRequests: tcRest.networkRequests || null,
-        webVitals: tcRest.webVitals || null,
-        consoleLogs: tcRest.consoleLogs || null,
-        ariaSnapshot: tcRest.ariaSnapshot || null
-      };
-    });
+    const testCasesData = this.testCases.map(tc => this._mapTestCase(tc));
     form.append('testCases', JSON.stringify(testCasesData));
 
-    // Build the list of reports to upload
-    // First, from the new `reports` option (array of { type, dir?, label? })
-    const reportsToUpload = [];
-    if (this.options.reports && Array.isArray(this.options.reports)) {
-      for (const reportConfig of this.options.reports) {
-        reportsToUpload.push(reportConfig);
-      }
-    }
-
-    // Backward compat: if uploadReport is true and 'html' not already in reports, add it
-    const hasHtmlReport = reportsToUpload.some(r => r.type === 'html');
-    if (this.options.uploadReport && !hasHtmlReport) {
-      reportsToUpload.push({ type: 'html' });
-    }
-
-    // Upload each report
-    for (const reportConfig of reportsToUpload) {
-      const type = reportConfig.type;
-      const defaultDir = DEFAULT_REPORT_DIRS[type] || type + '-report';
-      const reportDir = reportConfig.dir
-        ? findReportDirectory(reportConfig.dir)
-        : (type === 'html'
-            ? findHTMLReportDirectory()
-            : findReportDirectory(defaultDir));
-
-      if (!reportDir) {
-        if (this.options.verbose) {
-          console.log(`[Piwi Dashboard] No report directory found for type '${type}'`);
-        }
-        continue;
-      }
-
-      console.log(`[Piwi Dashboard] Compressing ${type} report directory: ${reportDir}`);
-      const compressed = await compressReportDirectory(reportDir);
-      if (compressed) {
-        console.log(`[Piwi Dashboard] Adding ${type} report archive: ${compressed.length} bytes`);
-        form.append(`report_${type}`, compressed, {
-          filename: `${type}-report.gz`
-        });
-
-        // Attach optional label override
-        if (reportConfig.label) {
-          form.append(`report_label_${type}`, reportConfig.label);
-        }
-      }
-    }
-
-    // Add trace files if available
-    if (this.options.uploadTraces) {
-      let traceCount = 0;
-      for (const testCase of this.testCases) {
-        const traceFiles = findTraceFiles(testCase);
-        for (const tracePath of traceFiles) {
-          if (fs.existsSync(tracePath)) {
-            console.log(`[Piwi Dashboard] Adding trace file: ${tracePath}`);
-            form.append(`trace_${testCase.index}`, fs.createReadStream(tracePath), {
-              filename: path.basename(tracePath)
-            });
-            traceCount++;
-          }
-        }
-      }
-      console.log(`[Piwi Dashboard] Found ${traceCount} trace files`);
-    }
+    await this._appendReportsToForm(form);
+    this._appendTracesToForm(form);
 
     try {
       const response = await postFormData(this.options.serverUrl, '/api/test-runs/upload', form, sessionCookie);

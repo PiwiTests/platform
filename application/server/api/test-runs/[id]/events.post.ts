@@ -83,7 +83,28 @@ export default eventHandler(async (event) => {
   }
 
   // Parse all locations up front
-  const parsedEvents = completeEvents.map((tc: { title: string, location?: string, status?: string, duration?: number, error?: string, retries?: number, steps?: unknown, slowestStep?: string, slowestStepDuration?: number, networkRequests?: unknown, webVitals?: unknown, consoleLogs?: unknown, ariaSnapshot?: unknown, startedAt?: number | null }) => {
+  interface ParsedEvent {
+    title: string
+    filePath: string
+    line: number | null
+    column: number | null
+    location?: string
+    status?: string
+    duration?: number
+    error?: string
+    retries?: number
+    steps?: unknown
+    slowestStep?: string
+    slowestStepDuration?: number
+    networkRequests?: unknown
+    webVitals?: unknown
+    consoleLogs?: unknown
+    ariaSnapshot?: unknown
+    workerIndex?: number | null
+    startedAt?: number | null
+  }
+
+  const parsedEvents: ParsedEvent[] = completeEvents.map((tc: Omit<ParsedEvent, 'filePath' | 'line' | 'column'>) => {
     const { filePath, line, column } = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null }
     return { ...tc, filePath, line, column }
   })

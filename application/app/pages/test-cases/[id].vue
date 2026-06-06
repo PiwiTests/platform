@@ -34,18 +34,6 @@ const networkRequests = computed<NetworkRequest[]>(() => {
   return (testCase.value?.networkRequests as unknown as NetworkRequest[] | null) ?? []
 })
 
-function normalizeRoute(url: string): string {
-  try {
-    const parsed = new URL(url)
-    let pathname = parsed.pathname
-    pathname = pathname.replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\/|$)/gi, '/:uuid')
-    pathname = pathname.replace(/\/\d+(?=\/|$)/g, '/:id')
-    return `${parsed.protocol}//${parsed.host}${pathname}`
-  } catch {
-    return url
-  }
-}
-
 interface GroupedRequest {
   key: string
   method: string
