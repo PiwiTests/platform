@@ -48,3 +48,20 @@ export function sanitizeWebVitals(vitals: Record<string, unknown> | null | undef
     }
   }
 }
+
+/**
+ * Sanitize console log entries by stripping the query string from the URL part
+ * of each entry's `location` (formatted as `url:line:column`).
+ */
+export function sanitizeConsoleLogs(
+  logs: Array<Record<string, unknown>> | null | undefined
+): Array<Record<string, unknown>> | null {
+  if (!logs || !Array.isArray(logs)) return null
+  return logs.map((log) => {
+    if (typeof log.location !== 'string') return log
+    // location is `url:line:column`; the URL itself contains colons (https://…)
+    const match = log.location.match(/^(.*):(\d+):(\d+)$/)
+    if (!match) return log
+    return { ...log, location: `${sanitizeUrl(match[1]!)}:${match[2]}:${match[3]}` }
+  })
+}

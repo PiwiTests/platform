@@ -1,8 +1,9 @@
 import { getDatabase } from '../../database'
-import { projects, testRuns, testCases, testRunsCases } from '../../database/schema'
-import { eq, and, inArray } from 'drizzle-orm'
+import { projects, testRuns } from '../../database/schema'
+import { eq } from 'drizzle-orm'
 import { requireAuth } from '../../utils/auth'
-import { sanitizeNetworkRequests, sanitizeWebVitals } from '../../utils/sanitize'
+import { parseLocation } from '../../utils/parse-location'
+import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases'
 import { runEventBus } from '../../utils/run-events'
 
 export default eventHandler(async (event) => {
@@ -74,28 +75,7 @@ export default eventHandler(async (event) => {
       retries?: number
     }) => testCase.status === 'passed' && (testCase.retries || 0) > 0).length
 
-    // Parse all locations upfront
-    interface ParsedTestCase {
-      title: string
-      status: string
-      duration?: number | null
-      error?: string | null
-      retries?: number
-      steps?: unknown
-      slowestStep?: string
-      slowestStepDuration?: number
-      networkRequests?: Array<Record<string, unknown>> | null
-      webVitals?: Record<string, unknown> | null
-      consoleLogs?: Array<Record<string, unknown>> | null
-      ariaSnapshot?: string | null
-      workerIndex?: number | null
-      startedAt?: number | null
-      filePath: string
-      line: number | null
-      column: number | null
-    }
-
-    const parsedTestCases: ParsedTestCase[] = body.testCases.map((testCase: {
+    const cases: RunCaseInput[] = body.testCases.map((testCase: {
       title: string
       status: string
       duration?: number
@@ -112,114 +92,32 @@ export default eventHandler(async (event) => {
       startedAt?: number | null
       workerIndex?: number | null
     }) => {
-      let filePath = 'unknown'
-      let line: number | null = null
-      let column: number | null = null
-
-      if (testCase.location) {
-        const locationParts = testCase.location.split(':')
-        if (locationParts.length >= 1) {
-          filePath = locationParts[0]!
-        }
-        if (locationParts.length >= 2) {
-          line = parseInt(locationParts[1]!, 10) || null
-        }
-        if (locationParts.length >= 3) {
-          column = parseInt(locationParts[2]!, 10) || null
-        }
-      }
+      const { filePath, line, column } = testCase.location
+        ? parseLocation(testCase.location)
+        : { filePath: 'unknown', line: null, column: null }
 
       return {
+        filePath,
         title: testCase.title,
         status: testCase.status,
         duration: testCase.duration,
         error: testCase.error,
         retries: testCase.retries,
+        line,
+        column,
         steps: testCase.steps,
         slowestStep: testCase.slowestStep,
         slowestStepDuration: testCase.slowestStepDuration,
-        networkRequests: testCase.networkRequests as Array<Record<string, unknown>> | null | undefined,
-        webVitals: testCase.webVitals as Record<string, unknown> | null | undefined,
-        consoleLogs: testCase.consoleLogs as Array<Record<string, unknown>> | null | undefined,
+        networkRequests: testCase.networkRequests,
+        webVitals: testCase.webVitals,
+        consoleLogs: testCase.consoleLogs,
         ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
-        startedAt: testCase.startedAt ?? null,
         workerIndex: testCase.workerIndex,
-        filePath,
-        line,
-        column
+        startedAt: testCase.startedAt ?? null
       }
     })
 
-    // Prefetch existing test cases in one query to avoid N+1
-    const uniqueFilePaths = [...new Set(parsedTestCases.map((tc: { filePath: string }) => tc.filePath))] as string[]
-    const existingCaseRows = uniqueFilePaths.length > 0
-      ? await db.select()
-          .from(testCases)
-          .where(
-            and(
-              eq(testCases.projectId, project.id),
-              inArray(testCases.filePath, uniqueFilePaths)
-            )
-          )
-      : []
-
-    // Build lookup map: `${filePath}::${title}` → testCase
-    const existingCaseMap = new Map<string, typeof existingCaseRows[0]>()
-    for (const tc of existingCaseRows) {
-      existingCaseMap.set(`${tc.filePath}::${tc.title}`, tc)
-    }
-
-    const runCasesRows: Array<typeof testRunsCases.$inferInsert> = []
-
-    for (const tc of parsedTestCases) {
-      const cacheKey = `${tc.filePath}::${tc.title}`
-      let sharedTestCase = existingCaseMap.get(cacheKey)
-
-      if (!sharedTestCase) {
-        const result = await db.insert(testCases).values({
-          projectId: project.id,
-          filePath: tc.filePath,
-          title: tc.title
-        }).returning()
-        sharedTestCase = result[0]
-        if (sharedTestCase) {
-          existingCaseMap.set(cacheKey, sharedTestCase)
-        }
-      } else {
-        await db.update(testCases)
-          .set({ updatedAt: new Date() })
-          .where(eq(testCases.id, sharedTestCase.id))
-      }
-
-      if (!sharedTestCase) {
-        throw new Error('Failed to create or retrieve test case')
-      }
-
-      runCasesRows.push({
-        testRunId: testRun.id,
-        testCaseId: sharedTestCase.id,
-        status: tc.status,
-        duration: tc.duration || null,
-        error: tc.error || null,
-        retries: tc.retries || 0,
-        line: tc.line,
-        column: tc.column,
-        steps: tc.steps || null,
-        slowestStep: tc.slowestStep || null,
-        slowestStepDuration: tc.slowestStepDuration || null,
-        networkRequests: sanitizeNetworkRequests(tc.networkRequests) || null,
-        webVitals: sanitizeWebVitals(tc.webVitals) || null,
-        consoleLogs: tc.consoleLogs ?? null,
-        ariaSnapshot: tc.ariaSnapshot ?? null,
-        workerIndex: tc.workerIndex ?? null,
-        startedAt: tc.startedAt ?? null
-      })
-    }
-
-    // Batch insert all test run cases in a single statement
-    if (runCasesRows.length > 0) {
-      await db.insert(testRunsCases).values(runCasesRows)
-    }
+    await persistRunCases(db, project.id, testRun.id, cases)
   }
 
   // Update test run with flaky test count if any were found
@@ -231,19 +129,10 @@ export default eventHandler(async (event) => {
 
   // Compute and store performance summary (avgTestDuration, p90TestDuration)
   if (body.testCases && Array.isArray(body.testCases) && body.testCases.length > 0) {
-    const durations = body.testCases
-      .filter((tc: { duration?: number }) => tc.duration !== null && tc.duration !== undefined)
-      .map((tc: { duration: number }) => tc.duration)
-
-    if (durations.length > 0) {
-      const sum = durations.reduce((a: number, b: number) => a + b, 0)
-      const avgTestDuration = Math.round(sum / durations.length)
-      const sortedDurations = [...durations].sort((a: number, b: number) => a - b)
-      const p90Index = Math.max(0, Math.ceil((90 / 100) * sortedDurations.length) - 1)
-      const p90TestDuration = sortedDurations[p90Index]
-
+    const stats = durationStats(body.testCases.map((tc: { duration?: number | null }) => tc.duration))
+    if (stats) {
       await db.update(testRuns)
-        .set({ avgTestDuration, p90TestDuration })
+        .set({ avgTestDuration: stats.avg, p90TestDuration: stats.p90 })
         .where(eq(testRuns.id, testRun.id))
     }
   }

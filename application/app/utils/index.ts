@@ -35,11 +35,40 @@ export function formatBytes(bytes?: number | null): string {
   return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`
 }
 
-export function formatDate(date: string | Date | number) {
-  if (!date) return 'N/A'
-  if (!isNaN(date as number))
-    date = Number(date) * 1000 // convert seconds to milliseconds
-  return new Date(date).toLocaleString()
+/**
+ * Format an absolute timestamp for display.
+ *
+ * Accepts a `Date`, an ISO string, a numeric string, or a number. Numeric
+ * values are auto-detected as Unix seconds (`< 1e12`) or milliseconds, so it
+ * works for both `integer(timestamp)` columns (seconds) and raw millisecond
+ * fields such as `startedAt`, as well as `Date` objects (e.g. PostgreSQL).
+ *
+ * @param date The value to format.
+ * @param options.dateOnly Omit the time component (date only).
+ * @returns A locale string, or `'N/A'` for empty/invalid input.
+ */
+export function prettyDateFormat(
+  date: string | Date | number | null | undefined,
+  options: { dateOnly?: boolean } = {}
+): string {
+  if (date === null || date === undefined || date === '') return 'N/A'
+
+  let d: Date
+  if (date instanceof Date) {
+    d = date
+  } else {
+    const n = typeof date === 'number' ? date : Number(date)
+    if (!Number.isNaN(n) && String(date).trim() !== '') {
+      // Numeric input: values below 1e12 are Unix seconds, otherwise milliseconds
+      d = new Date(n < 1e12 ? n * 1000 : n)
+    } else {
+      // Non-numeric string (ISO 8601, etc.)
+      d = new Date(date)
+    }
+  }
+
+  if (Number.isNaN(d.getTime())) return 'N/A'
+  return options.dateOnly ? d.toLocaleDateString() : d.toLocaleString()
 }
 
 export function formatRelativeTime(date: string | Date | number | null | undefined): string {

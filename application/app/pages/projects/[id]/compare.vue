@@ -19,7 +19,7 @@ interface RunOption {
 }
 
 function formatRunLabel(run: TestRunSummary): string {
-  const date = new Date(run.startTime).toLocaleDateString()
+  const date = prettyDateFormat(run.startTime, { dateOnly: true })
   const commitSuffix = (run.metadata?.scm?.commit) ? ` (${run.metadata.scm.commit.substring(0, 7)})` : ''
   return `Run #${run.id} — ${date}${commitSuffix}`
 }

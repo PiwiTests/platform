@@ -38,7 +38,7 @@ const projectRunOptions = computed<RunOption[]>(() => {
     .filter(r => r.id !== Number(runId))
     .slice(0, 50)
     .map(r => ({
-      label: `Run #${r.id} — ${new Date(r.startTime).toLocaleDateString()} (${r.status})`,
+      label: `Run #${r.id} — ${prettyDateFormat(r.startTime, { dateOnly: true })} (${r.status})`,
       value: r.id
     }))
 })

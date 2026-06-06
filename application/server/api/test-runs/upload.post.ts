@@ -9,7 +9,8 @@ import { getStorage } from '../../storage'
 import { uploadDirectory } from '../../utils/storage-helpers'
 import { tmpdir } from 'os'
 import { rm, mkdir, readdir } from 'fs/promises'
-import { sanitizeNetworkRequests, sanitizeWebVitals } from '../../utils/sanitize'
+import { sanitizeNetworkRequests, sanitizeWebVitals, sanitizeConsoleLogs } from '../../utils/sanitize'
+import { parseLocation } from '../../utils/parse-location'
 import { runEventBus } from '../../utils/run-events'
 
 // Default labels for known report types
@@ -354,38 +355,9 @@ export default eventHandler(async (event) => {
 
     const parsedTestCases: ParsedTestCase[] = testCasesData.map((testCase: Record<string, unknown>) => {
       const locationStr = testCase.location as string | undefined
-      let filePath = 'unknown'
-      let line: number | null = null
-      let column: number | null = null
-
-      if (locationStr) {
-        const lastColon = locationStr.lastIndexOf(':')
-        if (lastColon > 0) {
-          const lastPart = locationStr.slice(lastColon + 1)
-          if (/^\d+$/.test(lastPart)) {
-            const beforeLast = locationStr.slice(0, lastColon)
-            const secondLastColon = beforeLast.lastIndexOf(':')
-            if (secondLastColon > 0) {
-              const middlePart = beforeLast.slice(secondLastColon + 1)
-              if (/^\d+$/.test(middlePart)) {
-                column = parseInt(lastPart, 10)
-                line = parseInt(middlePart, 10)
-                filePath = beforeLast.slice(0, secondLastColon)
-              } else {
-                line = parseInt(lastPart, 10)
-                filePath = beforeLast
-              }
-            } else {
-              line = parseInt(lastPart, 10)
-              filePath = beforeLast
-            }
-          } else {
-            filePath = locationStr
-          }
-        } else {
-          filePath = locationStr
-        }
-      }
+      const { filePath, line, column } = locationStr
+        ? parseLocation(locationStr)
+        : { filePath: 'unknown', line: null, column: null }
 
       return {
         title: testCase.title as string,
@@ -465,7 +437,7 @@ export default eventHandler(async (event) => {
         slowestStepDuration: (tc.slowestStepDuration as number | null | undefined) ?? null,
         networkRequests: sanitizeNetworkRequests(tc.networkRequests as Array<Record<string, unknown>> | null | undefined) ?? null,
         webVitals: sanitizeWebVitals(tc.webVitals as Record<string, unknown> | null | undefined) ?? null,
-        consoleLogs: (tc.consoleLogs as Array<Record<string, unknown>> | null | undefined) ?? null,
+        consoleLogs: sanitizeConsoleLogs(tc.consoleLogs as Array<Record<string, unknown>> | null | undefined) ?? null,
         ariaSnapshot: (tc.ariaSnapshot as string | null | undefined) ?? null,
         workerIndex: (tc.workerIndex as number | null | undefined) ?? null,
         startedAt: (tc.startedAt as number | null | undefined) ?? null

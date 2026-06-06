@@ -83,7 +83,7 @@ To create additional users:
 When authentication is enabled:
 
 - `POST` / `PUT` / `DELETE` endpoints require an active session with appropriate role permissions.
-- `GET` endpoints remain publicly accessible (read-only).
+- `GET` endpoints remain publicly accessible (read-only), **except** `GET /api/users`, which requires an authenticated session so the user list (usernames and roles) is not exposed to anonymous callers.
 - The reporter's submission endpoints (`/api/test-runs/submit` and `/api/test-runs/upload`) accept both session cookies and API keys.
 
 ## API keys

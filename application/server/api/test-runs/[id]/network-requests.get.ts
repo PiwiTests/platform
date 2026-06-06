@@ -23,37 +23,6 @@ interface EndpointSummary {
   testCases: string[]
 }
 
-/**
- * Normalise a URL to a route pattern by:
- * 1. Stripping the query string and fragment
- * 2. Replacing numeric path segments with :id
- * 3. Replacing UUID path segments with :uuid
- * 4. Returning only the pathname (to avoid splitting identical endpoints across hosts/environments)
- */
-function normalizeRoute(url: string): string {
-  try {
-    const parsed = new URL(url)
-    let pathname = parsed.pathname
-    // Replace UUIDs first (more specific)
-    pathname = pathname.replace(
-      /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\/|$)/gi,
-      '/:uuid'
-    )
-    // Replace pure numeric segments
-    pathname = pathname.replace(/\/\d+(?=\/|$)/g, '/:id')
-    // Return only the pathname — avoids splitting identical routes across environments/hosts
-    return pathname
-  } catch {
-    return url
-  }
-}
-
-function percentile(sorted: number[], p: number): number {
-  if (sorted.length === 0) return 0
-  const idx = Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)
-  return sorted[idx] ?? 0
-}
-
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
 

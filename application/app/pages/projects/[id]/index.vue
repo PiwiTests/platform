@@ -132,7 +132,7 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
   {
     accessorKey: 'startTime',
     header: createSortHeader<TestRunSummary>('Started'),
-    cell: ({ row }) => formatDate(row.getValue('startTime'))
+    cell: ({ row }) => prettyDateFormat(row.getValue('startTime'))
   },
   {
     accessorKey: 'environment',

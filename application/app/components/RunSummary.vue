@@ -49,7 +49,7 @@ const emit = defineEmits<{
                 </div>
                 <p class="text-xs text-gray-500 mt-0.5">
                   {{ testRun?.project?.label ?? testRun?.project?.name }}
-                  &middot; Started {{ testRun?.startTime ? new Date(testRun.startTime).toLocaleString() : 'N/A' }}
+                  &middot; Started {{ prettyDateFormat(testRun?.startTime) }}
                 </p>
               </div>
             </div>

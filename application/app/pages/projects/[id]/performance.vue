@@ -82,7 +82,7 @@ const slowTestsColumns: TableColumn<SlowTest>[] = [
 
 // ---- Run Comparison Feature ----
 function formatRunLabel(run: PerformanceTrendPoint): string {
-  const date = new Date(run.startTime).toLocaleDateString()
+  const date = prettyDateFormat(run.startTime, { dateOnly: true })
   const commitSuffix = run.commit ? ` (${run.commit.substring(0, 7)})` : ''
   return `Run #${run.id} — ${date}${commitSuffix}`
 }

@@ -7,7 +7,7 @@ export const useAuth = () => {
 
   const demoUser: AuthState = {
     authenticated: true,
-    user: { id: 0, username: 'demo', role: 'admin', name: 'Demo User' }
+    user: { id: 0, username: 'demo', role: 'administrator', name: 'Demo User' }
   }
 
   const authState = useState<AuthState>('auth', () => {
