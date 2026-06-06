@@ -28,6 +28,7 @@ type DemoDB = ReturnType<typeof drizzle<typeof schema>>
 const IDB_NAME = 'piwi-dashboard-demo'
 const IDB_STORE = 'state'
 const IDB_DB_KEY = 'sqlite'
+const IDB_VERSION_KEY = 'seed-version'
 
 function openIDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -76,6 +77,7 @@ let drizzleDb: DemoDB | null = null
 let initPromise: Promise<void> | null = null
 let idbInstance: IDBDatabase | null = null
 let persistTimer: ReturnType<typeof setTimeout> | null = null
+let cachedStoredVersion: string | null = null
 
 /**
  * Base URL used to locate the WASM binary and seed SQL (without trailing
@@ -122,6 +124,9 @@ async function initialize(): Promise<void> {
   if (savedData instanceof Uint8Array && savedData.length > 0) {
     // Restore persisted database
     sqliteDb = new SQL.Database(savedData)
+    // Read previously stored seed version
+    const v = await idbGet(idbInstance, IDB_VERSION_KEY)
+    cachedStoredVersion = typeof v === 'string' ? v : null
   } else {
     // First run: seed from the static SQL dump
     const resp = await fetch(`${base}/demo/seed.sql`)
@@ -132,6 +137,16 @@ async function initialize(): Promise<void> {
     sqliteDb = new SQL.Database()
     sqliteDb.run(seedSql)
     await doPersist()
+
+    // Fetch the seed version hash and persist it alongside the database
+    const versionResp = await fetch(`${base}/demo/seed.version.json`)
+    if (versionResp.ok) {
+      const versionInfo = await versionResp.json() as { hash?: string }
+      if (versionInfo.hash) {
+        cachedStoredVersion = versionInfo.hash
+        await idbPut(idbInstance, IDB_VERSION_KEY, cachedStoredVersion)
+      }
+    }
   }
 
   drizzleDb = drizzle(
@@ -177,6 +192,23 @@ export async function getDemoDb(): Promise<DemoDB> {
 }
 
 /**
+ * Returns the seed version hash stored alongside the demo database in
+ * IndexedDB.  Returns `null` if no version has been persisted yet (e.g.
+ * first load or legacy data from before version tracking was added).
+ *
+ * Callers can compare this value against the current build's version
+ * (e.g. `runtimeConfig.public.demoDataVersion`) to detect stale data.
+ */
+export async function getStoredDemoVersion(): Promise<string | null> {
+  if (cachedStoredVersion !== null) return cachedStoredVersion
+  // Open IDB independently if not yet initialized
+  const idb = idbInstance ?? await openIDB()
+  const v = await idbGet(idb, IDB_VERSION_KEY)
+  cachedStoredVersion = typeof v === 'string' ? v : null
+  return cachedStoredVersion
+}
+
+/**
  * Wipes the persisted database from IndexedDB so the next call to
  * getDemoDb() re-seeds from the original seed.sql.
  */
@@ -187,8 +219,10 @@ export async function resetDemoDb(): Promise<void> {
   sqliteDb = null
   drizzleDb = null
   initPromise = null
+  cachedStoredVersion = null
   if (idbInstance) {
     await idbDelete(idbInstance, IDB_DB_KEY)
+    await idbDelete(idbInstance, IDB_VERSION_KEY)
     idbInstance.close()
     idbInstance = null
   }
