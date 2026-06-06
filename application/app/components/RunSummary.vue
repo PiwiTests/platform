@@ -160,12 +160,20 @@ const storageStats = computed(() => props.testRun?.storageStats)
           </template>
           <div class="flex gap-4 text-sm">
             <div>
-              <p class="text-muted text-xs">Files</p>
-              <p class="font-semibold text-lg">{{ storageStats.totalFiles }}</p>
+              <p class="text-muted text-xs">
+                Files
+              </p>
+              <p class="font-semibold text-lg">
+                {{ storageStats.totalFiles }}
+              </p>
             </div>
             <div>
-              <p class="text-muted text-xs">Total size</p>
-              <p class="font-semibold text-lg">{{ formatBytes(storageStats.totalSize) }}</p>
+              <p class="text-muted text-xs">
+                Total size
+              </p>
+              <p class="font-semibold text-lg">
+                {{ formatBytes(storageStats.totalSize) }}
+              </p>
             </div>
           </div>
         </UCard>
