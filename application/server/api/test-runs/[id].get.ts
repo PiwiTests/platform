@@ -31,6 +31,9 @@ export default eventHandler(async (event) => {
   const reportResults = await db.select().from(reports).where(eq(reports.testRunId, id))
 
   // Get test runs cases with joined test case info
+  // NOTE: steps, networkRequests, webVitals, consoleLogs, ariaSnapshot are intentionally
+  // omitted here — they are only needed on the individual test-case detail page
+  // and add significant payload size (~12KB per test case).
   const runsCases = await db.select({
     id: testRunsCases.id,
     testCaseId: testRunsCases.testCaseId,
@@ -40,11 +43,8 @@ export default eventHandler(async (event) => {
     retries: testRunsCases.retries,
     line: testRunsCases.line,
     column: testRunsCases.column,
-    steps: testRunsCases.steps,
     slowestStep: testRunsCases.slowestStep,
     slowestStepDuration: testRunsCases.slowestStepDuration,
-    networkRequests: testRunsCases.networkRequests,
-    webVitals: testRunsCases.webVitals,
     workerIndex: testRunsCases.workerIndex,
     startedAt: testRunsCases.startedAt,
     title: testCases.title,
@@ -63,11 +63,8 @@ export default eventHandler(async (event) => {
     location: tc.line && tc.column ? `${tc.filePath}:${tc.line}:${tc.column}` : tc.filePath,
     error: tc.error,
     retries: tc.retries,
-    steps: tc.steps,
     slowestStep: tc.slowestStep,
     slowestStepDuration: tc.slowestStepDuration,
-    networkRequests: tc.networkRequests,
-    webVitals: tc.webVitals,
     workerIndex: tc.workerIndex,
     startedAt: tc.startedAt
   }))

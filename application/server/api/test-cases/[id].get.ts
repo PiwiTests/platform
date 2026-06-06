@@ -25,28 +25,20 @@ export default eventHandler(async (event) => {
     })
   }
 
-  // Get the shared test case info
-  const testCaseResults = await db.select().from(testCases).where(eq(testCases.id, testRunsCase.testCaseId))
-  const testCase = testCaseResults[0]
+  // Fetch test case + test run in parallel (both depend on testRunsCase IDs)
+  const [[testCase], [testRun], reportList] = await Promise.all([
+    db.select().from(testCases).where(eq(testCases.id, testRunsCase.testCaseId)).then(r => r.length > 0 ? [r[0]] : [undefined]),
+    db.select().from(testRuns).where(eq(testRuns.id, testRunsCase.testRunId)).then(r => r.length > 0 ? [r[0]] : [undefined]),
+    db.select().from(reports).where(eq(reports.testRunId, testRunsCase.testRunId)).then(r =>
+      r.map(rep => ({ id: rep.id, type: rep.type, label: rep.label, path: rep.path, size: rep.size }))
+    )
+  ])
 
-  // Get the test run info
-  const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, testRunsCase.testRunId))
-  const testRun = testRunResults[0]
-
-  // Get the project info (only when testRun is available)
+  // Get project info (only when testRun is available)
   let project
-  let runReports
   if (testRun) {
-    const projectResults = await db.select().from(projects).where(eq(projects.id, testRun.projectId))
-    project = projectResults[0]
-    const reportResults = await db.select().from(reports).where(eq(reports.testRunId, testRun.id))
-    runReports = reportResults.map(r => ({
-      id: r.id,
-      type: r.type,
-      label: r.label,
-      path: r.path,
-      size: r.size
-    }))
+    const [projectResult] = await db.select().from(projects).where(eq(projects.id, testRun.projectId))
+    project = projectResult
   }
 
   // Format the response to match the expected structure
@@ -68,6 +60,6 @@ export default eventHandler(async (event) => {
     consoleLogs: testRunsCase.consoleLogs,
     ariaSnapshot: testRunsCase.ariaSnapshot,
     workerIndex: testRunsCase.workerIndex,
-    testRun: testRun ? { ...testRun, project, reports: runReports } : testRun
+    testRun: testRun ? { ...testRun, project, reports: reportList } : testRun
   }
 })

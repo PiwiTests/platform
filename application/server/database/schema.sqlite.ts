@@ -8,7 +8,9 @@ export const projects = sqliteTable('projects', {
   description: text('description'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
-})
+}, table => ({
+  updatedAtIdx: index('idx_projects_updated_at').on(table.updatedAt)
+}))
 
 // Test runs table
 export const testRuns = sqliteTable('test_runs', {
@@ -33,7 +35,8 @@ export const testRuns = sqliteTable('test_runs', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date())
 }, table => ({
-  projectIdIdx: index('idx_test_runs_project_id').on(table.projectId)
+  projectIdIdx: index('idx_test_runs_project_id').on(table.projectId),
+  startTimeIdx: index('idx_test_runs_start_time').on(table.startTime)
 }))
 
 // Test cases table - shared test definitions

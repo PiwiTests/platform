@@ -8,7 +8,9 @@ export const projects = pgTable('projects', {
   description: text('description'),
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
-})
+}, table => ({
+  updatedAtIdx: index('idx_projects_updated_at').on(table.updatedAt)
+}))
 
 // Test runs table
 export const testRuns = pgTable('test_runs', {
@@ -33,7 +35,8 @@ export const testRuns = pgTable('test_runs', {
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp('updated_at', { mode: 'date' }).$defaultFn(() => new Date())
 }, table => ({
-  projectIdIdx: index('idx_test_runs_project_id').on(table.projectId)
+  projectIdIdx: index('idx_test_runs_project_id').on(table.projectId),
+  startTimeIdx: index('idx_test_runs_start_time').on(table.startTime)
 }))
 
 // Test cases table - shared test definitions
@@ -105,7 +108,9 @@ export const tags = pgTable('tags', {
   color: text('color').notNull().default('neutral'),
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
-})
+}, table => ({
+  updatedAtIdx: index('idx_projects_updated_at').on(table.updatedAt)
+}))
 
 // Project tags junction table
 export const projectTags = pgTable('project_tags', {
@@ -126,7 +131,9 @@ export const users = pgTable('users', {
   name: text('name'), // Display name
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
-})
+}, table => ({
+  updatedAtIdx: index('idx_projects_updated_at').on(table.updatedAt)
+}))
 
 // API keys table - for reporter/CI authentication
 export const apiKeys = pgTable('api_keys', {

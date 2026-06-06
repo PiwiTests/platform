@@ -80,13 +80,13 @@ test.describe.serial('Performance API Tests', () => {
     expect(data.p90TestDuration).toBeDefined()
     expect(data.avgTestDuration).toBeGreaterThan(0)
 
-    // Check test cases have performance data
+    // Check test cases have summary data (steps omitted from list endpoint for performance)
     const slowTest = data.testCases.find((tc: { title: string }) => tc.title === 'slow test')
     expect(slowTest).toBeDefined()
     expect(slowTest.slowestStep).toBe('page.goto(http://localhost/heavy)')
     expect(slowTest.slowestStepDuration).toBe(5000)
-    expect(slowTest.steps).toBeDefined()
-    expect(slowTest.steps.length).toBe(3)
+    // steps, networkRequests, webVitals are only available on the test-case detail endpoint
+    expect(slowTest.steps).toBeUndefined()
   })
 
   test('should return performance trend data', async ({ request }) => {
@@ -224,13 +224,22 @@ test.describe.serial('Performance API Tests', () => {
   })
 
   test('should return test case with network and web vitals data', async ({ request }) => {
-    // Get the test run we just submitted
+    // Get the test run to find the test case ID (steps, networkRequests, webVitals are
+    // intentionally omitted from the list endpoint; fetch test-case detail for full data)
     const runResponse = await request.get(`/api/test-runs/${networkTestRunId}`)
     expect(runResponse.ok()).toBeTruthy()
     const run = await runResponse.json()
 
-    const tc = run.testCases.find((t: { title: string }) => t.title === 'homepage loads')
-    expect(tc).toBeDefined()
+    const tcSummary = run.testCases.find((t: { title: string }) => t.title === 'homepage loads')
+    expect(tcSummary).toBeDefined()
+    expect(tcSummary.networkRequests).toBeUndefined()
+    expect(tcSummary.webVitals).toBeUndefined()
+
+    // Fetch test-case detail for full data including network and web vitals
+    const tcResponse = await request.get(`/api/test-cases/${tcSummary.id}`)
+    expect(tcResponse.ok()).toBeTruthy()
+    const tc = await tcResponse.json()
+
     expect(tc.networkRequests).toBeDefined()
     expect(tc.networkRequests.length).toBe(3)
     expect(tc.webVitals).toBeDefined()
@@ -306,11 +315,17 @@ test.describe.serial('Performance API Tests', () => {
     expect(response.ok()).toBeTruthy()
     const data = await response.json()
 
-    // Fetch back the stored test case and verify the URL was sanitized
+    // Fetch back the stored test case detail to verify URL sanitization
+    // (networkRequests is omitted from the test-run list endpoint for performance)
     const runResponse = await request.get(`/api/test-runs/${data.testRunId}`)
+    expect(runResponse.ok()).toBeTruthy()
     const run = await runResponse.json()
-    const tc = run.testCases.find((t: { title: string }) => t.title === 'search page')
-    expect(tc).toBeDefined()
+    const tcSummary = run.testCases.find((t: { title: string }) => t.title === 'search page')
+    expect(tcSummary).toBeDefined()
+
+    const tcResponse = await request.get(`/api/test-cases/${tcSummary.id}`)
+    expect(tcResponse.ok()).toBeTruthy()
+    const tc = await tcResponse.json()
     expect(tc.networkRequests[0].url).not.toContain('secret')
     expect(tc.networkRequests[0].url).not.toContain('token')
     expect(tc.networkRequests[0].url).toBe('http://localhost:3000/api/search')

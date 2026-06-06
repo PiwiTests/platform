@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { h, resolveComponent } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
-import type { TestRunDetails, TestRunSummary, ProjectWithTestRuns } from '~~/types/api'
+import type { TestRunForCompare, TestRunSummary, ProjectWithTestRuns } from '~~/types/api'
 import { useRunComparison } from '~/composables/useRunComparison'
 import type { ComparisonRow } from '~/composables/useRunComparison'
 
@@ -63,37 +63,37 @@ function compareLatestWithPrevious() {
   }
 }
 
-const runADetails = ref<TestRunDetails | null>(null)
-const runBDetails = ref<TestRunDetails | null>(null)
-const loadingRunA = ref(false)
-const loadingRunB = ref(false)
+const runADetails = ref<TestRunForCompare | null>(null)
+const runBDetails = ref<TestRunForCompare | null>(null)
+const loading = ref(false)
 
-watch(selectedRunOptionA, async (opt) => {
-  runADetails.value = null
-  if (!opt?.value) return
-  loadingRunA.value = true
+async function fetchBothRuns() {
+  const optA = selectedRunOptionA.value
+  const optB = selectedRunOptionB.value
+  if (!optA?.value && !optB?.value) return
+  loading.value = true
   try {
-    runADetails.value = await $fetch<TestRunDetails>(`/api/test-runs/${opt.value}`)
+    const ids: number[] = []
+    if (optA?.value) ids.push(optA.value)
+    if (optB?.value) ids.push(optB.value)
+    const results = await Promise.all(
+      ids.map(id => $fetch<TestRunForCompare>(`/api/test-runs/${id}/summary`))
+    )
+    const map = new Map<number, TestRunForCompare>()
+    for (const r of results) map.set(r.id, r)
+    runADetails.value = optA?.value ? (map.get(optA.value) ?? null) : null
+    runBDetails.value = optB?.value ? (map.get(optB.value) ?? null) : null
     syncQueryParams()
   } catch {
-    // ignore
+    runADetails.value = null
+    runBDetails.value = null
   } finally {
-    loadingRunA.value = false
+    loading.value = false
   }
-})
+}
 
-watch(selectedRunOptionB, async (opt) => {
-  runBDetails.value = null
-  if (!opt?.value) return
-  loadingRunB.value = true
-  try {
-    runBDetails.value = await $fetch<TestRunDetails>(`/api/test-runs/${opt.value}`)
-    syncQueryParams()
-  } catch {
-    // ignore
-  } finally {
-    loadingRunB.value = false
-  }
+watch([selectedRunOptionA, selectedRunOptionB], () => {
+  fetchBothRuns()
 })
 
 const { comparisonData, comparisonSummary } = useRunComparison(runADetails, runBDetails)
@@ -238,7 +238,7 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
             </div>
 
             <!-- Loading -->
-            <div v-if="loadingRunA || loadingRunB" class="text-center py-8 text-gray-500">
+            <div v-if="loading" class="text-center py-8 text-gray-500">
               <UIcon name="i-lucide-loader-2" class="animate-spin mr-2" />
               Loading run data…
             </div>
