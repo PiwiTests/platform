@@ -161,7 +161,7 @@ test.describe.serial('Run Comparison', () => {
 
     // Open run B dropdown and select the second run
     await page.locator('button').filter({ hasText: 'Select run B...' }).click()
-    await page.getByRole('option').filter({ hasText: `Run #${run2Id}` }).click({ force: true })
+    await page.getByRole('option').filter({ hasText: `Run #${run2Id}` }).last().click({ force: true })
 
     // Wait for comparison data to load (requires two API fetches for run details)
     await expect(page.getByText('Status changes', { exact: true })).toBeVisible({ timeout: 30000 })
@@ -200,7 +200,7 @@ test.describe.serial('Run Comparison', () => {
     await page.locator('button').filter({ hasText: 'Select run A...' }).click()
     await page.getByRole('option').filter({ hasText: `Run #${run1Id}` }).click({ force: true })
     await page.locator('button').filter({ hasText: 'Select run B...' }).click()
-    await page.getByRole('option').filter({ hasText: `Run #${run3Id}` }).click({ force: true })
+    await page.getByRole('option').filter({ hasText: `Run #${run3Id}` }).last().click({ force: true })
 
     await expect(page.getByText('Duration changes', { exact: true })).toBeVisible({ timeout: 30000 })
 
@@ -336,7 +336,7 @@ test.describe.serial('Run Comparison', () => {
     await page.locator('button').filter({ hasText: 'Select run A...' }).click()
     await page.getByRole('option').filter({ hasText: `Run #${r1Data.testRunId}` }).click({ force: true })
     await page.locator('button').filter({ hasText: 'Select run B...' }).click()
-    await page.getByRole('option').filter({ hasText: `Run #${r2Data.testRunId}` }).click({ force: true })
+    await page.getByRole('option').filter({ hasText: `Run #${r2Data.testRunId}` }).last().click({ force: true })
 
     // Non-overlapping tests still appear in the comparison table — each has null/dash for the missing side
     // "alpha test" (only in run A) should show with a dash for Duration B

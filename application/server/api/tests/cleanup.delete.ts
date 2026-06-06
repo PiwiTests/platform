@@ -63,7 +63,7 @@ export default eventHandler(async (event) => {
   }
 
   // Delete test tags with known prefixes
-  const testTagPatterns = ['ui-test-tag-%', 'delete-me-tag-%']
+  const testTagPatterns = ['ui-test-tag%', 'delete-me-tag%']
   for (const pattern of testTagPatterns) {
     const tagRows = await db.select().from(tags).where(like(tags.text, pattern))
     for (const tag of tagRows) {
