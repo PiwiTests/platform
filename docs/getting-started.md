@@ -18,7 +18,7 @@ Piwi Dashboard is a self-hosted web application that collects, stores, and visua
 
 ## Requirements
 
-- **Node.js 24+** — required for native SQLite support (`node:sqlite`)
+- **Node.js 24+** — the runtime the dashboard targets (CI and the Docker image both use Node 24)
 - **npm** — for package management
 - **PostgreSQL 14+** — optional; required only when using the PostgreSQL backend
 

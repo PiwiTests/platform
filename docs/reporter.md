@@ -58,6 +58,7 @@ export default defineConfig({
 | `username`                  | string   | —                         | Username for dashboard login (use `apiKey` instead when possible)             |
 | `password`                  | string   | —                         | Password for dashboard login (used with `username`)                           |
 | `apiKey`                    | string   | —                         | API key for authentication (preferred over `username`/`password` for CI)      |
+| `verbose`                   | boolean  | `false`                   | Enable verbose logging for debugging                                          |
 
 ## Live streaming
 
@@ -99,6 +100,42 @@ Control how frequently results are sent during streaming:
 
 - If the server doesn't support streaming (e.g. older version), the reporter automatically falls back to batch mode
 - The existing `submit` and `upload` endpoints continue to work unchanged
+
+## Global setup phase
+
+By default a run appears on the dashboard as soon as the first test starts. If your Playwright config has a `globalSetup` step (seeding a database, authenticating, building the app under test, etc.), you can register the run *before* `globalSetup` runs so the dashboard shows an animated **initialising** state during setup.
+
+Wrap your config's `globalSetup` with `createGlobalSetup`, passing the same options you give the reporter:
+
+```typescript
+// playwright.config.ts
+import { defineConfig } from '@playwright/test'
+import { createGlobalSetup } from '@phenx/piwi-dashboard-reporter'
+
+const dashboard = {
+  serverUrl: 'http://localhost:3000',
+  projectName: 'my-project',
+  apiKey: process.env.DASHBOARD_API_KEY,
+}
+
+export default defineConfig({
+  globalSetup: createGlobalSetup(dashboard),
+  reporter: [
+    ['list'],
+    ['@phenx/piwi-dashboard-reporter', dashboard],
+  ],
+})
+```
+
+To keep an existing `globalSetup`, pass it as the second argument — it runs after the run is registered:
+
+```typescript
+globalSetup: createGlobalSetup(dashboard, async (config) => {
+  // your existing setup logic
+}),
+```
+
+Registration is best-effort: if the server is unreachable the error is non-fatal and the reporter simply creates the run normally once tests begin.
 
 ## Multiple reports
 

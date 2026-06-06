@@ -121,7 +121,7 @@ Results appear automatically in the dashboard. The project is created on first s
 
 ### Requirements
 
-- **Node.js 24+** (uses native SQLite via `node:sqlite`)
+- **Node.js 24+** (the version used by CI and the Docker image)
 - **npm**
 
 ### Running locally
@@ -176,7 +176,7 @@ piwi-dashboard/
 
 ## Contributing
 
-See [.github/copilot-instructions.md](.github/copilot-instructions.md) for detailed development guidelines and architecture information.
+See [AGENTS.md](AGENTS.md) for detailed development guidelines and architecture information.
 
 ## License
 

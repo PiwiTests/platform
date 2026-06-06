@@ -39,7 +39,7 @@ SQLite database auto-initializes on first API call.
 - **ORM**: Drizzle ORM (SQLite via libSQL, or PostgreSQL via postgres.js)
 - **Schema**: `application/server/database/schema.ts`
 - **Migrations**: `application/server/database/migrations/` (SQLite) or `migrations-pg/` (PostgreSQL, auto-run on startup based on `DATABASE_URL`)
-- **Tables**: `projects`, `test_runs`, `test_cases`, `test_runs_cases`, `traces`, `users`
+- **Tables**: `projects`, `test_runs`, `test_cases`, `test_runs_cases`, `reports`, `traces`, `tags`, `project_tags`, `users`, `api_keys`
 
 ### Backend (server/api/)
 Nuxt file-based routing:
@@ -150,6 +150,7 @@ Nuxt file-based routing:
 - Tests failing? Ensure no dev server on port 3000 (tests start their own)
 - Reporter not found? `npm link` in `reporter/` then in target project
 - Migration not applying? If a migration file or `_journal.json` was created by hand (not via `npm run db:generate`), the Drizzle migrator may silently skip it — delete the hand-written migration, revert the journal entry, run `npm run db:generate` (or `db:generate:pg` for PostgreSQL), and manually run `ALTER TABLE ... ADD COLUMN` on the existing database if needed.
+- Command appears frozen / no output? It probably launched an interactive pager. Use `git --no-pager <cmd>` for `diff`/`log`/`show`, and avoid commands that open an editor or wait for input (non-interactive shells hang on them).
 
 ## Testing API
 
