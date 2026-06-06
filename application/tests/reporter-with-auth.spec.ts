@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import { spawn } from 'child_process'
 import { join, resolve } from 'path'
 import { existsSync, rmSync } from 'fs'
+import { PROJECT } from '../shared/test-project-names'
 
 const AUTH_PORT = 3099
 const AUTH_SERVER_URL = `http://localhost:${AUTH_PORT}`
@@ -34,6 +35,12 @@ test.describe.serial('Reporter with authentication enabled', () => {
   // The auth server (port 3099) is only started by the playwright webServer config
   // when running in CI. Skip all tests in this file when not in CI.
   test.skip(!process.env.CI, 'Auth server tests only run in CI (see playwright.config.ts webServer)')
+
+  test.beforeAll(() => {
+    // Clean up test database and storage before running, in case of retries from a previous run
+    if (existsSync(DB_PATH)) rmSync(DB_PATH)
+    if (existsSync(STORAGE_PATH)) rmSync(STORAGE_PATH, { recursive: true, force: true })
+  })
 
   test.afterAll(() => {
     // Clean up test database and storage created by the auth server
@@ -108,7 +115,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
   test('submit endpoint should return 401 without authentication', async ({ request }) => {
     const res = await request.post(`${AUTH_SERVER_URL}/api/test-runs/submit`, {
       data: {
-        projectName: 'reporter-auth-test',
+        projectName: PROJECT.REPORTER_AUTH,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 1000,
@@ -162,7 +169,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     // Submit test results in the same authenticated session
     const submitRes = await request.post(`${AUTH_SERVER_URL}/api/test-runs/submit`, {
       data: {
-        projectName: 'reporter-auth-test',
+        projectName: PROJECT.REPORTER_AUTH,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 5000,
@@ -228,7 +235,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     // Submit is accepted because the session cookie is sent automatically
     const submitRes = await request.post(`${AUTH_SERVER_URL}/api/test-runs/submit`, {
       data: {
-        projectName: 'reporter-auth-lib-test',
+        projectName: PROJECT.REPORTER_AUTH_LIB,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 3000,
@@ -255,7 +262,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     // A fresh request context has no session cookie, so submit must be rejected
     const submitRes = await request.post(`${AUTH_SERVER_URL}/api/test-runs/submit`, {
       data: {
-        projectName: 'reporter-auth-lib-test',
+        projectName: PROJECT.REPORTER_AUTH_LIB,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 1000,
@@ -283,7 +290,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
       const PiwiDashboardReporter = require(${JSON.stringify(reporterPath)});
       const reporter = new PiwiDashboardReporter({
         serverUrl: ${JSON.stringify(AUTH_SERVER_URL)},
-        projectName: 'reporter-full-auth-test',
+        projectName: ${JSON.stringify(PROJECT.REPORTER_FULL_AUTH)},
         uploadReport: false,
         uploadTraces: false,
         collectScmInfo: false,
@@ -315,7 +322,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     const projectsRes = await request.get(`${AUTH_SERVER_URL}/api/projects`)
     expect(projectsRes.ok()).toBeTruthy()
     const projects = await projectsRes.json() as Array<{ name: string }>
-    expect(projects.find(p => p.name === 'reporter-full-auth-test')).toBeDefined()
+    expect(projects.find(p => p.name === PROJECT.REPORTER_FULL_AUTH)).toBeDefined()
   })
 
   test('PiwiDashboardReporter fails when auth is required but no credentials given', async () => {
@@ -325,7 +332,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
       const PiwiDashboardReporter = require(${JSON.stringify(reporterPath)});
       const reporter = new PiwiDashboardReporter({
         serverUrl: ${JSON.stringify(AUTH_SERVER_URL)},
-        projectName: 'reporter-no-auth-test',
+        projectName: ${JSON.stringify(PROJECT.REPORTER_NO_AUTH)},
         uploadReport: false,
         uploadTraces: false,
         collectScmInfo: false,
@@ -411,7 +418,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     const submitRes = await request.post(`${AUTH_SERVER_URL}/api/test-runs/submit`, {
       headers: { Authorization: `Bearer ${reporterApiKey}` },
       data: {
-        projectName: 'api-key-submit-test',
+        projectName: PROJECT.API_KEY_SUBMIT,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 2000,
@@ -439,7 +446,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     const submitRes = await request.post(`${AUTH_SERVER_URL}/api/test-runs/submit`, {
       headers: { 'X-API-Key': reporterApiKey! },
       data: {
-        projectName: 'api-key-submit-test',
+        projectName: PROJECT.API_KEY_SUBMIT,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 1000,
@@ -459,7 +466,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     const res = await request.post(`${AUTH_SERVER_URL}/api/test-runs/submit`, {
       headers: { Authorization: 'Bearer pd_0000000000000000000000000000000000000000000000000000000000000000' },
       data: {
-        projectName: 'invalid-key-test',
+        projectName: PROJECT.INVALID_KEY,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 1000,
@@ -481,7 +488,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     const submitRes = await request.post(`${AUTH_SERVER_URL}/api/test-runs/submit`, {
       headers: { Authorization: `Bearer ${reporterApiKey}` },
       data: {
-        projectName: 'reporter-api-key-lib-test',
+        projectName: PROJECT.REPORTER_API_KEY_LIB,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 1000,
@@ -514,7 +521,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
       const PiwiDashboardReporter = require(${JSON.stringify(reporterPath)});
       const reporter = new PiwiDashboardReporter({
         serverUrl: ${JSON.stringify(AUTH_SERVER_URL)},
-        projectName: 'reporter-api-key-e2e-test',
+        projectName: ${JSON.stringify(PROJECT.REPORTER_API_KEY_E2E)},
         uploadReport: false,
         uploadTraces: false,
         collectScmInfo: false,
@@ -545,7 +552,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     const projectsRes = await request.get(`${AUTH_SERVER_URL}/api/projects`)
     expect(projectsRes.ok()).toBeTruthy()
     const projects = await projectsRes.json() as Array<{ name: string }>
-    expect(projects.find(p => p.name === 'reporter-api-key-e2e-test')).toBeDefined()
+    expect(projects.find(p => p.name === PROJECT.REPORTER_API_KEY_E2E)).toBeDefined()
   })
 
   test('admin can revoke the API key', async ({ request }) => {
@@ -584,7 +591,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     const res = await request.post(`${AUTH_SERVER_URL}/api/test-runs/submit`, {
       headers: { Authorization: `Bearer ${reporterApiKey}` },
       data: {
-        projectName: 'revoked-key-test',
+        projectName: PROJECT.REVOKED_KEY,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 100,

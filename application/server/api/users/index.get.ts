@@ -1,8 +1,13 @@
 import { getDatabase } from '../../database'
 import { users } from '../../database/schema'
-import { isAuthEnabled } from '../../utils/auth'
+import { isAuthEnabled, requireAuth } from '../../utils/auth'
 
 export default eventHandler(async (event) => {
+  // Require authentication (when enabled) so the user list — usernames and
+  // roles — is not exposed to anonymous callers. When auth is disabled,
+  // requireAuth returns a virtual admin, so this is a no-op.
+  await requireAuth(event)
+
   const db = await getDatabase()
 
   // Get all users (exclude password field)

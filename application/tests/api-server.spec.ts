@@ -1,10 +1,11 @@
 import { test, expect } from '@playwright/test'
+import { PROJECT } from '../shared/test-project-names'
 
 test.describe.serial('API Server Tests', () => {
   test('should submit test results via JSON API', async ({ request }) => {
     const response = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'test-api-project',
+        projectName: PROJECT.TEST_API,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 120000,
@@ -138,7 +139,7 @@ test.describe.serial('API Server Tests', () => {
   test('should reject malformed JSON in submit endpoint', async ({ request }) => {
     const response = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'test-project'
+        projectName: PROJECT.TEST_PROJECT
         // Missing required fields
       }
     })
@@ -149,7 +150,7 @@ test.describe.serial('API Server Tests', () => {
   test('should calculate and store flaky tests correctly', async ({ request }) => {
     const response = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'test-flaky-project',
+        projectName: PROJECT.TEST_FLAKY,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 150000,

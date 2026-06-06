@@ -1,4 +1,4 @@
-import { join, dirname } from 'path'
+import { dirname, resolve, relative, isAbsolute } from 'path'
 import { mkdir, writeFile } from 'fs/promises'
 import { gunzip } from 'zlib'
 import { promisify } from 'util'
@@ -55,8 +55,15 @@ export async function decompressDirectory(compressedBuffer: Buffer, targetDir: s
       const content = uncompressed.subarray(offset, offset + contentLength)
       offset += contentLength
 
-      // Write file
-      const fullPath = join(targetDir, filePath)
+      // Write file — guard against path traversal (zip-slip). The archive is
+      // attacker-controllable (uploaded to /api/test-runs/upload, which is open
+      // when auth is disabled), so a malicious entry path like `../../evil` must
+      // not be allowed to escape targetDir.
+      const fullPath = resolve(targetDir, filePath)
+      const rel = relative(targetDir, fullPath)
+      if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
+        throw new Error(`Unsafe path in archive (path traversal blocked): ${filePath}`)
+      }
       const dirPath = dirname(fullPath)
 
       await mkdir(dirPath, { recursive: true })

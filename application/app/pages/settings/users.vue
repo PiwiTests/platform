@@ -324,7 +324,7 @@ function canManageApiKeys(user: UserDetails): boolean {
 
           <template #createdAt-cell="{ row }">
             <span class="text-sm text-muted">
-              {{ new Date(row.original.createdAt).toLocaleDateString() }}
+              {{ prettyDateFormat(row.original.createdAt, { dateOnly: true }) }}
             </span>
           </template>
 
@@ -531,11 +531,11 @@ function canManageApiKeys(user: UserDetails): boolean {
                 </div>
                 <div class="text-xs text-muted mt-1 flex flex-wrap gap-x-4">
                   <span>Prefix: <code class="font-mono">pd_{{ key.keyPrefix }}…</code></span>
-                  <span>Created: {{ new Date(key.createdAt).toLocaleDateString() }}</span>
-                  <span v-if="key.lastUsedAt">Last used: {{ new Date(key.lastUsedAt).toLocaleDateString() }}</span>
+                  <span>Created: {{ prettyDateFormat(key.createdAt, { dateOnly: true }) }}</span>
+                  <span v-if="key.lastUsedAt">Last used: {{ prettyDateFormat(key.lastUsedAt, { dateOnly: true }) }}</span>
                   <span v-else class="italic">Never used</span>
                   <span v-if="key.expiresAt" :class="new Date(key.expiresAt) < new Date() ? 'text-error' : ''">
-                    Expires: {{ new Date(key.expiresAt).toLocaleDateString() }}
+                    Expires: {{ prettyDateFormat(key.expiresAt, { dateOnly: true }) }}
                   </span>
                 </div>
               </div>

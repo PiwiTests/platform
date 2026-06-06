@@ -164,6 +164,17 @@ const toCommandPaletteItem = (item: NavigationMenuItem): CommandPaletteItem => (
   onSelect: item.onSelect
 })
 
+// The source file for a dynamic route (e.g. /projects/:id) can't be derived
+// from the URL — it may be `[id].vue` or `[id]/index.vue` — so for dynamic
+// routes we link to the pages directory instead of a guessed (404-ing) file.
+const pageSourceUrl = computed(() => {
+  const blobBase = 'https://github.com/PhenX/piwi-dashboard/blob/main/application/app/pages'
+  const treeBase = 'https://github.com/PhenX/piwi-dashboard/tree/main/application/app/pages'
+  const pattern = route.matched[route.matched.length - 1]?.path ?? route.path
+  if (pattern.includes(':')) return treeBase
+  return `${blobBase}${pattern === '/' ? '/index' : pattern}.vue`
+})
+
 const groups = computed<CommandPaletteGroup[]>(() => [{
   id: 'links',
   label: 'Go to',
@@ -175,7 +186,7 @@ const groups = computed<CommandPaletteGroup[]>(() => [{
     id: 'source',
     label: 'View page source',
     icon: 'i-lucide-github',
-    to: `https://github.com/PhenX/piwi-dashboard/blob/main/application/app/pages${route.path === '/' ? '/index' : route.path}.vue`,
+    to: pageSourceUrl.value,
     target: '_blank'
   }]
 }])

@@ -40,42 +40,51 @@ function flushPendingEvents() {
         skippedTests: data.skippedTests as number
       }
     } else if (parsed.type === 'test-begin') {
-      const d = data as { title: string, location: string, workerIndex?: number }
+      const d = data as { title: string, location: string, workerIndex?: number, startedAt?: number }
       const key = `${d.title}@@${d.location}`
       if (!liveTestCaseKeys.has(key)) {
         liveTestCaseKeys.set(key, true)
-        liveTestCases.value.push({
+        liveTestCases.value = [...liveTestCases.value, {
           id: liveTestCases.value.length + 1,
           title: d.title,
           status: 'running',
           location: d.location,
           workerIndex: d.workerIndex ?? null,
-          startedAt: Date.now()
-        })
+          startedAt: d.startedAt ?? Date.now()
+        }]
+        displayTestCases.value = [...liveTestCases.value]
       }
     } else if (parsed.type === 'test-completed') {
-      const d = data as { title: string, location: string, status: string, duration?: number, error?: string | null, workerIndex?: number }
+      const d = data as { title: string, location: string, status: string, duration?: number, error?: string | null, workerIndex?: number, startedAt?: number }
       const key = `${d.title}@@${d.location}`
       if (liveTestCaseKeys.has(key)) {
         const idx = liveTestCases.value.findIndex(tc => `${tc.title}@@${tc.location}` === key)
         if (idx >= 0) {
-          const tc = liveTestCases.value[idx]!
-          tc.status = d.status
-          tc.duration = d.duration
-          tc.error = d.error
-          tc.workerIndex = d.workerIndex ?? tc.workerIndex
+          const copy = [...liveTestCases.value]
+          copy[idx] = {
+            ...copy[idx]!,
+            status: d.status,
+            duration: d.duration,
+            error: d.error,
+            workerIndex: d.workerIndex ?? copy[idx]!.workerIndex,
+            startedAt: d.startedAt ? d.startedAt : copy[idx]!.startedAt
+          }
+          liveTestCases.value = copy
+          displayTestCases.value = [...copy]
         }
       } else {
         liveTestCaseKeys.set(key, true)
-        liveTestCases.value.push({
+        liveTestCases.value = [...liveTestCases.value, {
           id: liveTestCases.value.length + 1,
           title: d.title,
           status: d.status,
           duration: d.duration,
           location: d.location,
           error: d.error,
-          workerIndex: d.workerIndex ?? null
-        })
+          workerIndex: d.workerIndex ?? null,
+          startedAt: d.startedAt ?? undefined
+        }]
+        displayTestCases.value = [...liveTestCases.value]
       }
     } else if (parsed.type === 'run-progress') {
       liveProgress.value = data as { totalTests: number, passedTests: number, failedTests: number, skippedTests: number }
@@ -128,13 +137,17 @@ onUnmounted(() => {
 })
 
 // Combined test cases: from server data + live stream.
-// Uses a requestAnimationFrame throttle so the UI doesn't re-render on every SSE event.
-const displayTestCases = computed<TestCaseResult[]>(() => {
+const displayTestCases = ref<TestCaseResult[]>([])
+
+watch([isLive, testRun], () => {
   if (isLive.value && liveTestCases.value.length > 0) {
-    return [...liveTestCases.value]
+    displayTestCases.value = [...liveTestCases.value]
+  } else if (testRun.value?.testCases) {
+    displayTestCases.value = testRun.value.testCases
+  } else {
+    displayTestCases.value = []
   }
-  return testRun.value?.testCases || []
-})
+}, { immediate: true })
 
 // Throttled version for child components that don't need frame-perfect reactivity
 let rafId: number | null = null
@@ -185,29 +198,12 @@ async function handleDeleteRun() {
 
 const showCustomData = ref(false)
 
-// Count visible metadata blocks to distribute grid space
-const metadataBlockCount = computed(() => {
+const { summaryColSpanClass, blockColSpanClass } = useDetailGrid(() => {
   let count = 0
   if (testRun.value?.metadata?.ci || testRun.value?.environment) count++
   if (testRun.value?.metadata?.scm) count++
   if (testRun.value?.metadata?.tags?.length || testRun.value?.metadata?.projectDescription || testRun.value?.metadata?.relatedIssue || testRun.value?.metadata?.customData) count++
   return count
-})
-
-const summaryColSpanClass = computed(() => {
-  const n = metadataBlockCount.value
-  if (n === 0) return 'lg:col-span-8'
-  if (n === 3) return 'lg:col-span-5'
-  if (n === 2) return 'lg:col-span-4'
-  return 'lg:col-span-5'
-})
-
-const blockColSpanClass = computed(() => {
-  const n = metadataBlockCount.value
-  if (n === 3) return 'lg:col-span-1'
-  if (n === 2) return 'lg:col-span-2'
-  if (n === 1) return 'lg:col-span-3'
-  return ''
 })
 
 // Merge reports from the new `reports` table with the legacy reportPath field
@@ -236,10 +232,10 @@ const allReports = computed<ReportInfo[]>(() => {
 // Right panel tabs
 const activeTab = ref('test-cases')
 const tabItems = [
-  { label: 'Test cases', icon: 'i-lucide-beaker', value: 'test-cases' },
-  { label: 'Workers', icon: 'i-lucide-rows-3', value: 'workers' },
-  { label: 'Compare', icon: 'i-lucide-git-compare-arrows', value: 'compare' },
-  { label: 'Slow endpoints', icon: 'i-lucide-network', value: 'endpoints' }
+  { label: 'Test cases', icon: 'i-lucide-beaker', value: 'test-cases', slot: 'test-cases' },
+  { label: 'Workers', icon: 'i-lucide-rows-3', value: 'workers', slot: 'workers' },
+  { label: 'Compare', icon: 'i-lucide-git-compare-arrows', value: 'compare', slot: 'compare' },
+  { label: 'Slow endpoints', icon: 'i-lucide-network', value: 'endpoints', slot: 'endpoints' }
 ]
 
 // Ref for TestCasesList to call scrollToCase
@@ -291,9 +287,10 @@ function handleSelectTestCase(id: number) {
     </template>
 
     <template #body>
-      <div class="flex flex-col h-full overflow-hidden">
+      <div class="flex flex-col h-full overflow-hidden gap-4 p-4">
         <RunSummary
-          :test-run="testRun!"
+          v-if="testRun"
+          :test-run="testRun"
           :display-progress="displayProgress"
           :all-reports="allReports"
           :show-custom-data="showCustomData"
@@ -308,32 +305,31 @@ function handleSelectTestCase(id: number) {
           :items="tabItems"
           size="sm"
           class="shrink-0"
-        />
+        >
+          <template #test-cases>
+            <TestCasesList
+              ref="testCasesListRef"
+              :test-cases="displayTestCases"
+              :is-live="isLive"
+            />
+          </template>
 
-        <div class="flex-1 min-h-0">
-          <!-- Tab: Test cases -->
-          <TestCasesList
-            v-if="activeTab === 'test-cases'"
-            ref="testCasesListRef"
-            :test-cases="displayTestCases"
-            :is-live="isLive"
-          />
+          <template #workers>
+            <WorkersTimeline
+              :test-cases="throttledTestCases"
+              :live="isLive"
+              @select-test-case="handleSelectTestCase"
+            />
+          </template>
 
-          <!-- Tab: Workers -->
-          <WorkersTimeline
-            v-if="activeTab === 'workers'"
-            :test-cases="throttledTestCases"
-            @select-test-case="handleSelectTestCase"
-          />
+          <template #compare>
+            <RunCompare />
+          </template>
 
-          <!-- Tab: Compare -->
-          <RunCompare
-            v-if="activeTab === 'compare'"
-          />
-
-          <!-- Tab: Slow endpoints -->
-          <SlowEndpoints v-if="activeTab === 'endpoints'" />
-        </div>
+          <template #endpoints>
+            <SlowEndpoints />
+          </template>
+        </UTabs>
       </div>
     </template>
   </UDashboardPanel>

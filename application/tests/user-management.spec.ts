@@ -137,7 +137,7 @@ test.describe.serial('User Management Page Tests', () => {
       await page.getByLabel('Role', { exact: true }).click()
       await page.getByRole('option', { name: 'User' }).click()
       await page.getByRole('button', { name: 'Create user' }).click()
-      await page.waitForTimeout(2000)
+      await expect(page.getByText('User created')).toBeVisible({ timeout: 10000 })
     }
 
     // Now check if there's a delete button (trash icon)

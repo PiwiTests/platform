@@ -224,6 +224,22 @@ export interface TestRunDetails {
 }
 
 /**
+ * Lightweight test run summary for comparison pages — omits heavy JSON blobs
+ * returned by GET /api/test-runs/[id]/summary
+ */
+export interface TestRunForCompare {
+  id: number
+  status: string
+  totalTests: number
+  testCases: Array<{
+    title: string
+    status: string
+    duration?: number | null
+    location?: string
+  }>
+}
+
+/**
  * Test run for charts and visualization
  */
 export interface TestRunForChart {
@@ -331,6 +347,7 @@ export interface TestCaseResult {
   networkRequests?: NetworkRequest[] | null
   webVitals?: WebVitals | null
   consoleLogs?: ConsoleEntry[] | null
+  ariaSnapshot?: string | null
   workerIndex?: number | null
   startedAt?: number
 }

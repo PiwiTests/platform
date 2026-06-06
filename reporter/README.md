@@ -50,6 +50,7 @@ npx playwright test
 | `streamingBatchSize`        | number   | `5`                       | Number of test results to batch before sending                         |
 | `streamingBatchDelay`       | number   | `2000`                    | Max delay (ms) before flushing pending events                          |
 | `projectDescription`        | string   | —                         | Description of the project                                             |
+| `environment`               | string   | —                         | Deployment environment for the run, e.g. `production`, `staging`       |
 | `relatedIssue`              | string   | —                         | Related issue reference (e.g., "PROJ-123")                             |
 | `ciInfo`                    | string   | —                         | CI job information                                                     |
 | `tags`                      | string[] | —                         | Tags to categorize the test run                                        |
@@ -60,6 +61,7 @@ npx playwright test
 | `apiKey`                    | string   | —                         | API key for authentication (preferred for CI)                          |
 | `username`                  | string   | —                         | Username for dashboard login (use `apiKey` instead when possible)      |
 | `password`                  | string   | —                         | Password for dashboard login (used with `username`)                    |
+| `verbose`                   | boolean  | `false`                   | Enable verbose logging for debugging                                   |
 
 ## Live streaming
 

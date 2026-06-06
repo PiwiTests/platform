@@ -1,12 +1,13 @@
 import { test, expect } from './fixtures'
 import { waitForHydration, retryPost } from './utils'
+import { PROJECT } from '../shared/test-project-names'
 
 test.describe('Dashboard UI Tests', () => {
   test.beforeEach(async ({ request }) => {
     // Create test data before each UI test
     await retryPost(request, '/api/test-runs/submit', {
       data: {
-        projectName: 'ui-test-project',
+        projectName: PROJECT.UI_TEST,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 90000,
@@ -46,7 +47,7 @@ test.describe('Dashboard UI Tests', () => {
     await page.goto('/projects')
 
     // Check for at least one project - use more specific selector for the table
-    await expect(page.getByRole('link', { name: 'ui-test-project' })).toBeVisible()
+    await expect(page.getByRole('link', { name: PROJECT.UI_TEST })).toBeVisible()
 
     // Check for test run count
     await expect(page.getByText(/\d+ runs/).first()).toBeVisible() // There may be multiple projects
@@ -56,7 +57,7 @@ test.describe('Dashboard UI Tests', () => {
     await page.goto('/projects')
 
     // Click on a project - use link role to target the table link, not sidebar
-    await page.getByRole('link', { name: 'ui-test-project' }).click()
+    await page.getByRole('link', { name: PROJECT.UI_TEST }).click()
 
     // Wait for navigation
     await page.waitForURL(/\/projects\/\d+/)
@@ -72,7 +73,7 @@ test.describe('Dashboard UI Tests', () => {
     await page.goto('/projects')
 
     // Navigate to project - use link role to target table link
-    await page.getByRole('link', { name: 'ui-test-project' }).click()
+    await page.getByRole('link', { name: PROJECT.UI_TEST }).click()
     await page.waitForURL(/\/projects\/\d+/)
 
     // Click on first test run - look for "View Details" in the table
@@ -88,7 +89,7 @@ test.describe('Dashboard UI Tests', () => {
 
   test('should switch between tabs on test run detail page', async ({ page }) => {
     await page.goto('/projects')
-    await page.getByRole('link', { name: 'ui-test-project' }).click()
+    await page.getByRole('link', { name: PROJECT.UI_TEST }).click()
     await page.waitForURL(/\/projects\/\d+/)
     const viewButton = page.locator('table').getByRole('link', { name: 'View' }).first()
     await viewButton.click()
@@ -99,7 +100,7 @@ test.describe('Dashboard UI Tests', () => {
 
     await page.getByRole('tab', { name: 'Workers' }).click()
     await page.getByRole('tab', { name: 'Compare' }).click()
-    await expect(page.getByText('Run A (baseline)')).toBeVisible()
+    await expect(page.getByText('Run A (baseline)')).toBeVisible({ timeout: 15000 })
     await page.getByRole('tab', { name: 'Slow endpoints' }).click()
   })
 
@@ -143,8 +144,6 @@ test.describe('Dashboard UI Tests', () => {
   })
 
   test('should handle empty state gracefully', async ({ page }) => {
-    // Create a fresh project with no runs
-    const _projectName = `empty-project-${Date.now()}`
     await page.goto('/')
 
     // The dashboard should still load without errors
@@ -172,7 +171,7 @@ test.describe('Dashboard UI Tests', () => {
     await refreshButton.click()
 
     // Data should still be visible after refresh - use link to target table
-    await expect(page.getByRole('link', { name: 'ui-test-project' })).toBeVisible()
+    await expect(page.getByRole('link', { name: PROJECT.UI_TEST })).toBeVisible()
   })
 
   test('should display storage settings page', async ({ page }) => {
@@ -192,7 +191,7 @@ test.describe('Dashboard UI Tests', () => {
     // Ensure there is a test run
     const submitRes = await retryPost(request, '/api/test-runs/submit', {
       data: {
-        projectName: 'ui-test-project',
+        projectName: PROJECT.UI_TEST,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 5000,

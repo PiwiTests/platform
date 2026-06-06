@@ -195,7 +195,7 @@ async function handleDeleteTag() {
 
           <template #createdAt-cell="{ row }">
             <span class="text-sm text-muted">
-              {{ new Date(row.original.createdAt).toLocaleDateString() }}
+              {{ prettyDateFormat(row.original.createdAt, { dateOnly: true }) }}
             </span>
           </template>
 

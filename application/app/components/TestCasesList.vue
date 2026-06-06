@@ -116,12 +116,13 @@ const testCasesColumns: TableColumn<TestCaseResult>[] = [
   }
 ]
 
+const listRef = ref<HTMLElement | null>(null)
 const highlightedCaseId = ref<number | null>(null)
 
 function scrollToCase(id: number) {
   highlightedCaseId.value = id
   nextTick(() => {
-    const row = document.querySelector<HTMLElement>(`tr:has(a[href="/test-cases/${id}"])`)
+    const row = listRef.value?.querySelector<HTMLElement>(`tr:has(a[href="/test-cases/${id}"])`)
     if (row) {
       const container = row.closest('table')?.parentElement
       if (container) {
@@ -143,7 +144,7 @@ defineExpose({ scrollToCase })
 </script>
 
 <template>
-  <div>
+  <div ref="listRef">
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
       <div class="flex items-center gap-2">
         <span v-if="isLive" class="text-sm text-gray-500 tabular-nums">

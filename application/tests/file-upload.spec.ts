@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import FormData from 'form-data'
+import { PROJECT } from '../shared/test-project-names'
 
 test.describe('File Upload API Tests', () => {
   const tempDir = join(process.cwd(), '.test-temp')
@@ -67,7 +68,7 @@ test.describe('File Upload API Tests', () => {
 
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: 'upload-test-project',
+        projectName: PROJECT.UPLOAD_TEST,
         testRun: JSON.stringify({
           status: 'passed',
           startTime: new Date().toISOString(),
@@ -105,7 +106,7 @@ test.describe('File Upload API Tests', () => {
 
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: 'multi-report-project',
+        projectName: PROJECT.MULTI_REPORT,
         testRun: JSON.stringify({
           status: 'passed',
           startTime: new Date().toISOString(),
@@ -146,7 +147,7 @@ test.describe('File Upload API Tests', () => {
 
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: 'multi-report-project',
+        projectName: PROJECT.MULTI_REPORT,
         testRun: JSON.stringify({
           status: 'passed',
           startTime: new Date().toISOString(),
@@ -193,7 +194,7 @@ test.describe('File Upload API Tests', () => {
     const htmlReport = readFileSync(join(tempDir, 'test-report.html'))
     const uploadResponse = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: 'reports-details-project',
+        projectName: PROJECT.REPORTS_DETAILS,
         testRun: JSON.stringify({
           status: 'passed',
           startTime: new Date().toISOString(),
@@ -233,7 +234,7 @@ test.describe('File Upload API Tests', () => {
 
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: 'label-override-project',
+        projectName: PROJECT.LABEL_OVERRIDE,
         testRun: JSON.stringify({
           status: 'passed',
           startTime: new Date().toISOString(),
@@ -261,7 +262,7 @@ test.describe('File Upload API Tests', () => {
   test('should handle upload without files', async ({ request }) => {
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: 'no-files-project',
+        projectName: PROJECT.NO_FILES,
         testRun: JSON.stringify({
           status: 'passed',
           startTime: new Date().toISOString(),
@@ -292,7 +293,7 @@ test.describe('File Upload API Tests', () => {
   test('should reject upload with missing required fields', async ({ request }) => {
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: 'incomplete-project'
+        projectName: PROJECT.INCOMPLETE
         // Missing testRun and testCases
       }
     })
@@ -303,7 +304,7 @@ test.describe('File Upload API Tests', () => {
   test('should reject upload with malformed JSON', async ({ request }) => {
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: 'malformed-project',
+        projectName: PROJECT.MALFORMED,
         testRun: '{invalid json}',
         testCases: '[]'
       }
@@ -316,7 +317,7 @@ test.describe('File Upload API Tests', () => {
     // First upload a report
     const uploadResponse = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: 'download-test-project',
+        projectName: PROJECT.DOWNLOAD_TEST,
         testRun: JSON.stringify({
           status: 'passed',
           startTime: new Date().toISOString(),

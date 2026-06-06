@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, nextTick } from 'vue'
+import { onMounted, onUnmounted, nextTick, watchEffect } from 'vue'
 import type { TestCaseResult } from '~~/types/api'
 
 interface TimelineItem {
@@ -14,6 +14,7 @@ interface TimelineItem {
 
 const props = defineProps<{
   testCases: TestCaseResult[]
+  live?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -32,22 +33,56 @@ const timelineData = computed<TimelineItem[]>(() => {
 
   const sortedWorkers = [...byWorker.entries()].sort(([a], [b]) => a - b)
 
-  const result: TimelineItem[] = []
-  for (let ri = 0; ri < sortedWorkers.length; ri++) {
-    const [, cases] = sortedWorkers[ri]!
-    let cursor = 0
+  // Find global minimum startedAt if any test case has actual timestamps
+  let minStartedAt = Infinity
+  let hasStartedAt = false
+  for (const [, cases] of sortedWorkers) {
     for (const tc of cases) {
-      const dur = tc.duration ?? 1000
-      result.push({
-        id: tc.id,
-        title: tc.title,
-        status: tc.status,
-        workerIndex: tc.workerIndex ?? 0,
-        start: cursor,
-        duration: dur,
-        rowIndex: ri,
-      })
-      cursor += dur
+      if (tc.startedAt != null && tc.startedAt > 0) {
+        minStartedAt = Math.min(minStartedAt, tc.startedAt)
+        hasStartedAt = true
+      }
+    }
+  }
+
+  const result: TimelineItem[] = []
+  if (hasStartedAt && !props.live) {
+    // Aligned timeline: position bars by offset from global min startedAt
+    for (let ri = 0; ri < sortedWorkers.length; ri++) {
+      const [, cases] = sortedWorkers[ri]!
+      for (const tc of cases) {
+        const dur = tc.duration ?? 1000
+        result.push({
+          id: tc.id,
+          title: tc.title,
+          status: tc.status,
+          workerIndex: tc.workerIndex ?? 0,
+          start: Math.max(0, (tc.startedAt ?? minStartedAt) - minStartedAt),
+          duration: dur,
+          rowIndex: ri,
+        })
+      }
+    }
+  } else {
+    // Fallback: sequential stacking per worker when timestamps unavailable
+    for (let ri = 0; ri < sortedWorkers.length; ri++) {
+      const [, rawCases] = sortedWorkers[ri]!
+      // Sort by startedAt so running tests (newer startedAt) appear at the end
+      const sortedCases = [...rawCases].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0))
+      let cursor = 0
+      for (const tc of sortedCases) {
+        const dur = tc.duration ?? 1000
+        result.push({
+          id: tc.id,
+          title: tc.title,
+          status: tc.status,
+          workerIndex: tc.workerIndex ?? 0,
+          start: cursor,
+          duration: dur,
+          rowIndex: ri,
+        })
+        cursor += dur
+      }
     }
   }
 
@@ -123,15 +158,23 @@ onUnmounted(() => {
   resizeObserver?.disconnect()
 })
 
+// Auto-fit zoom when live — always show the full timeline
+watchEffect(() => {
+  if (props.live && timelineData.value.length > 0) {
+    nextTick(applyFitZoom)
+  }
+})
+
 const barHeight = 24
 const rowGap = 8
 const labelWidth = 80
+const sidePadding = 16
 const axisHeight = 28
 const rowHeight = barHeight + rowGap
 
 const pxPerMs = computed(() => 0.5 * zoom.value)
 
-const contentWidth = computed(() => maxTime.value * pxPerMs.value + labelWidth)
+const contentWidth = computed(() => maxTime.value * pxPerMs.value + labelWidth + sidePadding)
 
 const contentHeight = computed(() => workers.value.length * rowHeight + axisHeight)
 
@@ -191,10 +234,18 @@ function onBarLeave() {
   hoveredItem.value = null
 }
 
+// Auto-fit zoom when live — always show the full timeline
+watchEffect(() => {
+  if (props.live && timelineData.value.length > 0) {
+    nextTick(applyFitZoom)
+  }
+})
+
 // Wheel zoom (lateral only)
 function onWheel(event: WheelEvent) {
+  if (props.live) return
   event.preventDefault()
-  const delta = event.deltaY > 0 ? -0.15 : 0.15
+  const delta = event.deltaY > 0 ? -0.02 : 0.02
   const fitZoom = computeFitZoom()
   const newZoom = Math.max(fitZoom, Math.min(10, zoom.value + delta))
 
@@ -210,6 +261,7 @@ function onWheel(event: WheelEvent) {
 
 // Drag pan (lateral only)
 function onMouseDown(event: MouseEvent) {
+  if (props.live) return
   if (event.button !== 0) return
   isPanning.value = true
   panStartX.value = event.clientX
@@ -236,6 +288,7 @@ function resetView() {
     <div class="flex items-center justify-between mb-2">
       <span class="text-xs text-gray-500">{{ workers.length }} worker{{ workers.length > 1 ? 's' : '' }} &middot; {{ timelineData.length }} tests</span>
       <UButton
+        v-if="!live"
         size="xs"
         color="neutral"
         variant="ghost"
@@ -263,6 +316,15 @@ function resetView() {
         :width="contentWidth"
         :height="contentHeight"
       >
+        <defs>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="2.5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
         <!-- Alternating row backgrounds -->
         <rect
           v-for="(w, i) in workers"
@@ -323,26 +385,53 @@ function resetView() {
           @mousemove="onBarMove"
           @mouseleave="onBarLeave"
         >
-          <rect
-            :x="getBarX(item)"
-            :y="getBarTop(item)"
-            :width="getBarWidth(item)"
-            :height="barHeight"
-            :rx="3"
-            :ry="3"
-            :fill="getStatusHex(item.status)"
-            class="transition-opacity duration-100 cursor-pointer"
-            :class="hoveredItem && hoveredItem.id !== item.id ? 'opacity-40' : 'opacity-90'"
-            @click="emit('selectTestCase', item.id)"
-          />
-          <text
-            v-if="getBarWidth(item) > 40"
-            :x="getBarX(item) + 4"
-            :y="getBarTop(item) + barHeight / 2 + 4"
-            class="fill-white text-[10px] font-medium pointer-events-none"
-          >
-            {{ formatTime(item.duration) }}
-          </text>
+          <template v-if="item.status === 'running'">
+            <circle
+              :cx="getBarX(item) + 300 * pxPerMs"
+              :cy="getBarTop(item) + barHeight / 2"
+              r="3"
+              fill="#2563eb"
+              filter="url(#glow)"
+              class="cursor-pointer"
+              :class="hoveredItem && hoveredItem.id !== item.id ? 'opacity-40' : 'opacity-90'"
+              @click="emit('selectTestCase', item.id)"
+            />
+            <circle
+              :cx="getBarX(item) + 300 * pxPerMs"
+              :cy="getBarTop(item) + barHeight / 2"
+              r="5"
+              fill="none"
+              stroke="#2563eb"
+              stroke-width="1.5"
+              stroke-opacity="0.4"
+              filter="url(#glow)"
+              class="cursor-pointer"
+              :class="hoveredItem && hoveredItem.id !== item.id ? 'opacity-40' : 'opacity-90'"
+              @click="emit('selectTestCase', item.id)"
+            />
+          </template>
+          <template v-else>
+            <rect
+              :x="getBarX(item)"
+              :y="getBarTop(item)"
+              :width="getBarWidth(item)"
+              :height="barHeight"
+              :rx="3"
+              :ry="3"
+              :fill="getStatusHex(item.status)"
+              class="transition-opacity duration-100 cursor-pointer"
+              :class="hoveredItem && hoveredItem.id !== item.id ? 'opacity-40' : 'opacity-90'"
+              @click="emit('selectTestCase', item.id)"
+            />
+            <text
+              v-if="getBarWidth(item) > 40"
+              :x="getBarX(item) + 4"
+              :y="getBarTop(item) + barHeight / 2 + 4"
+              class="fill-white text-[10px] font-medium pointer-events-none"
+            >
+              {{ formatTime(item.duration) }}
+            </text>
+          </template>
         </g>
       </svg>
     </div>

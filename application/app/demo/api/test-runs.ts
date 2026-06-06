@@ -86,27 +86,6 @@ interface NetworkRequest {
   resourceType: string
 }
 
-function normalizeRoute(url: string): string {
-  try {
-    const parsed = new URL(url)
-    let pathname = parsed.pathname
-    pathname = pathname.replace(
-      /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\/|$)/gi,
-      '/:uuid'
-    )
-    pathname = pathname.replace(/\/\d+(?=\/|$)/g, '/:id')
-    return pathname
-  } catch {
-    return url
-  }
-}
-
-function percentile(sorted: number[], p: number): number {
-  if (sorted.length === 0) return 0
-  const idx = Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)
-  return sorted[idx] ?? 0
-}
-
 /** GET /api/test-runs/:id/network-requests */
 export async function apiGetNetworkRequests(id: number) {
   const db = await getDemoDb()

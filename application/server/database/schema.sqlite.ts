@@ -8,7 +8,9 @@ export const projects = sqliteTable('projects', {
   description: text('description'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
-})
+}, table => ({
+  updatedAtIdx: index('idx_projects_updated_at').on(table.updatedAt)
+}))
 
 // Test runs table
 export const testRuns = sqliteTable('test_runs', {
@@ -33,7 +35,8 @@ export const testRuns = sqliteTable('test_runs', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date())
 }, table => ({
-  projectIdIdx: index('idx_test_runs_project_id').on(table.projectId)
+  projectIdIdx: index('idx_test_runs_project_id').on(table.projectId),
+  startTimeIdx: index('idx_test_runs_start_time').on(table.startTime)
 }))
 
 // Test cases table - shared test definitions
@@ -66,7 +69,9 @@ export const testRunsCases = sqliteTable('test_runs_cases', {
   networkRequests: text('network_requests', { mode: 'json' }), // Array of { method, url, status, duration, resourceType }
   webVitals: text('web_vitals', { mode: 'json' }), // { navigation: {...}, paint: {...} }
   consoleLogs: text('console_logs', { mode: 'json' }), // Array of { type, text, timestamp, location } console entries
+  ariaSnapshot: text('aria_snapshot'), // ARIA snapshot of the page (YAML-like string from locator.ariaSnapshot())
   workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
+  startedAt: integer('started_at'), // Unix timestamp in ms when the test started
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
 }, table => ({
   testRunIdIdx: index('idx_test_runs_cases_test_run_id').on(table.testRunId),

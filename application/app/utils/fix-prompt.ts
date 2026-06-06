@@ -9,6 +9,7 @@ interface FixPromptInput {
   webVitals?: {
     navigation?: { ttfb?: number, domInteractive?: number, domContentLoaded?: number, loadComplete?: number } | null
   } | null
+  ariaSnapshot?: string | null
   duration?: number | null
   slowestStep?: string | null
   slowestStepDuration?: number | null
@@ -32,6 +33,14 @@ export function generateFixPrompt(tc: FixPromptInput): string {
     lines.push('Error:')
     lines.push('```')
     lines.push(error)
+    lines.push('```')
+    lines.push('')
+  }
+
+  if (tc.ariaSnapshot) {
+    lines.push('ARIA snapshot of the page at failure:')
+    lines.push('```')
+    lines.push(tc.ariaSnapshot)
     lines.push('```')
     lines.push('')
   }

@@ -83,7 +83,7 @@ const testCasesColumns: TableColumn<TestCaseWithStats>[] = [
     header: createSortHeader<TestCaseWithStats>('Last run'),
     cell: ({ row }) => {
       const timestamp = row.getValue('lastRun') as number
-      return h('span', { class: 'text-xs' }, formatDate(timestamp))
+      return h('span', { class: 'text-xs' }, prettyDateFormat(timestamp))
     }
   }
 ]

@@ -3,6 +3,7 @@ import { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync } from 
 import { join } from 'path'
 import { gzip } from 'zlib'
 import { promisify } from 'util'
+import { PROJECT } from '../shared/test-project-names'
 
 const gzipAsync = promisify(gzip)
 
@@ -112,7 +113,7 @@ test.describe('Gzip Compression Tests', () => {
 
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: 'gzip-test-project',
+        projectName: PROJECT.GZIP_TEST,
         testRun: JSON.stringify({
           status: 'passed',
           startTime: new Date().toISOString(),
@@ -152,7 +153,7 @@ test.describe('Gzip Compression Tests', () => {
     // Upload the report
     const uploadResponse = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: 'gzip-serve-test-project',
+        projectName: PROJECT.GZIP_SERVE,
         testRun: JSON.stringify({
           status: 'passed',
           startTime: new Date().toISOString(),
@@ -197,7 +198,7 @@ test.describe('Gzip Compression Tests', () => {
     // Upload and then verify MIME type if served as .gz
     const uploadResponse = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: 'gzip-mime-test',
+        projectName: PROJECT.GZIP_MIME,
         testRun: JSON.stringify({
           status: 'passed',
           startTime: new Date().toISOString(),
@@ -228,7 +229,7 @@ test.describe('Gzip Compression Tests', () => {
 
     const uploadResponse = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: 'blob-gz-test-project',
+        projectName: PROJECT.BLOB_GZ,
         testRun: JSON.stringify({
           status: 'passed',
           startTime: new Date().toISOString(),

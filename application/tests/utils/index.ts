@@ -1,9 +1,12 @@
 ﻿import type { Page, APIRequestContext } from '@playwright/test'
+import { waitForHydration as nuxtWaitForHydration } from '@nuxt/test-utils/e2e'
 
-// Helper to wait for page hydration
+// Helper to wait for Nuxt page hydration.
+// Uses @nuxt/test-utils/e2e which checks
+// `window.useNuxtApp?.().isHydrating === false` — the official Nuxt API.
 export async function waitForHydration(page: Page) {
   await page.waitForLoadState('load')
-  await page.waitForTimeout(2000)
+  await nuxtWaitForHydration(page, undefined, 'hydration').catch(() => {})
 }
 
 /**

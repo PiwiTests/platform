@@ -18,9 +18,10 @@ Piwi test results dashboard built with **Nuxt 4**, Nuxt UI dashboard template. S
 ## Repository Structure
 
 ```
-application/       — Nuxt 4 dashboard app
-application/tests/ — Functional tests (Playwright)
-reporter/          — Custom Playwright reporter package
+application/            — Nuxt 4 dashboard app
+application/shared/     — Shared constants & utilities (auto-imported)
+application/tests/      — Functional tests (Playwright)
+reporter/               — Custom Playwright reporter package
 ```
 
 ## Quick Start
@@ -39,7 +40,7 @@ SQLite database auto-initializes on first API call.
 - **ORM**: Drizzle ORM (SQLite via libSQL, or PostgreSQL via postgres.js)
 - **Schema**: `application/server/database/schema.ts`
 - **Migrations**: `application/server/database/migrations/` (SQLite) or `migrations-pg/` (PostgreSQL, auto-run on startup based on `DATABASE_URL`)
-- **Tables**: `projects`, `test_runs`, `test_cases`, `test_runs_cases`, `traces`, `users`
+- **Tables**: `projects`, `test_runs`, `test_cases`, `test_runs_cases`, `reports`, `traces`, `tags`, `project_tags`, `users`, `api_keys`
 
 ### Backend (server/api/)
 Nuxt file-based routing:
@@ -125,6 +126,8 @@ Nuxt file-based routing:
   - Use `v-if` for tab-switched components to ensure clean mount/unmount
 - **Navigation**: Edit `app/layouts/default.vue` links array
 - **Tests**: Create `.spec.ts` in `application/tests/` → run `npm test`
+  - If the test creates a project, **add its name to `shared/test-project-names.ts`** (alphabetically sorted) so the global setup cleanup deletes it before the next run. Tests must use static project names, not `Date.now()` suffixes.
+  - Use `PROJECT.YOUR_KEY` from `../shared/test-project-names` in test code instead of raw string literals. This ensures every project name is tracked in one place.
 - **Reporter**: Edit `reporter/index.js` + `index.d.ts` → test with `npm link`
 
 ## UI Patterns
@@ -150,6 +153,7 @@ Nuxt file-based routing:
 - Tests failing? Ensure no dev server on port 3000 (tests start their own)
 - Reporter not found? `npm link` in `reporter/` then in target project
 - Migration not applying? If a migration file or `_journal.json` was created by hand (not via `npm run db:generate`), the Drizzle migrator may silently skip it — delete the hand-written migration, revert the journal entry, run `npm run db:generate` (or `db:generate:pg` for PostgreSQL), and manually run `ALTER TABLE ... ADD COLUMN` on the existing database if needed.
+- Command appears frozen / no output? It probably launched an interactive pager. Use `git --no-pager <cmd>` for `diff`/`log`/`show`, and avoid commands that open an editor or wait for input (non-interactive shells hang on them).
 
 ## Testing API
 

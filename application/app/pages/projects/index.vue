@@ -173,7 +173,7 @@ const columns: TableColumn<ProjectWithStats>[] = [
         header: createSortHeader<ProjectWithStats>('Date'),
         cell: ({ row }) => {
           const latestRun = row.getValue('latestRun') as ProjectWithStats['latestRun']
-          return latestRun ? formatDate(latestRun.startTime) : noData
+          return latestRun ? prettyDateFormat(latestRun.startTime) : noData
         }
       },
       {

@@ -1,53 +1,84 @@
 import { getDatabase } from '../database'
-import { projects, testRuns, testCases, reports, tags, projectTags, type Project } from '../database/schema'
-import { eq, desc, sql } from 'drizzle-orm'
+import { projects, testRuns, testCases, reports, tags, projectTags } from '../database/schema'
+import { eq, desc, sql, inArray } from 'drizzle-orm'
 
 export default eventHandler(async () => {
   const db = await getDatabase()
 
-  // Get all projects with their latest test run info
   const allProjects = await db.select().from(projects).orderBy(desc(projects.updatedAt))
 
-  const projectsWithStats = await Promise.all(
-    allProjects.map(async (project: Project) => {
-      const runs = await db.select().from(testRuns)
-        .where(eq(testRuns.projectId, project.id))
-        .orderBy(desc(testRuns.startTime))
-        .limit(1)
+  if (allProjects.length === 0) return []
 
-      const totalRuns = await db.select({ count: sql<number>`count(*)` })
-        .from(testRuns)
-        .where(eq(testRuns.projectId, project.id))
+  const projectIds = allProjects.map(p => p.id)
 
-      const totalTestCases = await db.select({ count: sql<number>`count(*)` })
-        .from(testCases)
-        .where(eq(testCases.projectId, project.id))
+  // 1. Fetch ALL runs for all projects (sorted so first per project is latest)
+  const allRuns = await db.select().from(testRuns)
+    .where(inArray(testRuns.projectId, projectIds))
+    .orderBy(desc(testRuns.startTime))
 
-      const latestRun = runs[0] || null
+  // Derive latest run + total runs count per project from the single result
+  const latestRunByProjectId = new Map<number, typeof testRuns.$inferSelect>()
+  const runCountByProjectId = new Map<number, number>()
+  for (const r of allRuns) {
+    runCountByProjectId.set(r.projectId, (runCountByProjectId.get(r.projectId) ?? 0) + 1)
+    if (!latestRunByProjectId.has(r.projectId)) {
+      latestRunByProjectId.set(r.projectId, r)
+    }
+  }
 
-      let runReports: { id: number, type: string, label: string, path: string, size: number | null }[] = []
-      if (latestRun) {
-        const reportRows = await db.select().from(reports).where(eq(reports.testRunId, latestRun.id))
-        runReports = reportRows.map(r => ({ id: r.id, type: r.type, label: r.label, path: r.path, size: r.size }))
-      }
+  // 2. Total test cases per project (batched GROUP BY)
+  const caseCounts = await db.select({
+    projectId: testCases.projectId,
+    count: sql<number>`COUNT(*)`
+  })
+    .from(testCases)
+    .where(inArray(testCases.projectId, projectIds))
+    .groupBy(testCases.projectId)
 
-      // Get tags for this project
-      const projectTagRows = await db
-        .select({ tag: tags })
-        .from(projectTags)
-        .innerJoin(tags, eq(projectTags.tagId, tags.id))
-        .where(eq(projectTags.projectId, project.id))
-      const projectTagList = projectTagRows.map(r => r.tag)
+  const caseCountByProjectId = new Map<number, number>()
+  for (const r of caseCounts) {
+    caseCountByProjectId.set(r.projectId, r.count)
+  }
 
-      return {
-        ...project,
-        latestRun: latestRun ? { ...latestRun, reports: runReports } : null,
-        totalRuns: totalRuns[0]?.count || 0,
-        totalTestCases: totalTestCases[0]?.count || 0,
-        tags: projectTagList
-      }
+  // 3. Reports for all latest runs (batched)
+  const latestRunIds = [...latestRunByProjectId.values()].map(r => r.id)
+  const reportRows = latestRunIds.length > 0
+    ? await db.select().from(reports).where(inArray(reports.testRunId, latestRunIds))
+    : []
+  const reportsByRunId = new Map<number, { id: number, type: string, label: string, path: string, size: number | null }[]>()
+  for (const r of reportRows) {
+    const list = reportsByRunId.get(r.testRunId) ?? []
+    list.push({ id: r.id, type: r.type, label: r.label, path: r.path, size: r.size })
+    reportsByRunId.set(r.testRunId, list)
+  }
+
+  // 4. Tags per project (batched)
+  const tagRows = await db
+    .select({
+      projectId: projectTags.projectId,
+      tag: tags
     })
-  )
+    .from(projectTags)
+    .innerJoin(tags, eq(projectTags.tagId, tags.id))
+    .where(inArray(projectTags.projectId, projectIds))
 
-  return projectsWithStats
+  const tagsByProjectId = new Map<number, typeof tags.$inferSelect[]>()
+  for (const r of tagRows) {
+    const list = tagsByProjectId.get(r.projectId) ?? []
+    list.push(r.tag)
+    tagsByProjectId.set(r.projectId, list)
+  }
+
+  return allProjects.map((project) => {
+    const latestRun = latestRunByProjectId.get(project.id) ?? null
+    return {
+      ...project,
+      latestRun: latestRun
+        ? { ...latestRun, reports: reportsByRunId.get(latestRun.id) ?? [] }
+        : null,
+      totalRuns: runCountByProjectId.get(project.id) ?? 0,
+      totalTestCases: caseCountByProjectId.get(project.id) ?? 0,
+      tags: tagsByProjectId.get(project.id) ?? []
+    }
+  })
 })

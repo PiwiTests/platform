@@ -1,4 +1,13 @@
-import type { TestCaseResult, TestRunDetails } from '~~/types/api'
+interface TestCaseSummary {
+  title: string
+  location?: string
+  status: string
+  duration?: number | null
+}
+
+interface RunWithCases {
+  testCases?: TestCaseSummary[]
+}
 
 export interface ComparisonRow {
   title: string
@@ -20,7 +29,7 @@ export interface ComparisonSummary {
   stillFailing: number
 }
 
-function caseKey(tc: TestCaseResult): string {
+function caseKey(tc: TestCaseSummary): string {
   if (!tc.location) return tc.title
   // location format: filepath:line:column
   // On Windows, filepath may contain a drive letter (e.g., C:\path\to\file.ts)
@@ -34,11 +43,11 @@ function caseKey(tc: TestCaseResult): string {
  * Computes per-test-case comparison data between two runs.
  * Includes status awareness (new failures, recovered, still failing).
  */
-export function useRunComparison(runA: Ref<TestRunDetails | null>, runB: Ref<TestRunDetails | null>) {
+export function useRunComparison(runA: Ref<RunWithCases | null>, runB: Ref<RunWithCases | null>) {
   const comparisonData = computed<ComparisonRow[]>(() => {
     if (!runA.value?.testCases || !runB.value?.testCases) return []
 
-    const mapA = new Map<string, TestCaseResult>()
+    const mapA = new Map<string, TestCaseSummary>()
     for (const tc of runA.value.testCases) {
       mapA.set(caseKey(tc), tc)
     }

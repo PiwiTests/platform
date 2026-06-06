@@ -58,17 +58,11 @@ export default eventHandler(async (event) => {
   let avgTestDuration: number | null = null
   let p90TestDuration: number | null = null
 
-  if (testRun.totalTests > 0 || body.totalTests) {
-    // Try to compute from actual data if we have durations available
-    if (body.durations && Array.isArray(body.durations) && body.durations.length > 0) {
-      const durations = body.durations.filter((d: number) => d !== null && d !== undefined)
-      if (durations.length > 0) {
-        const sum = durations.reduce((a: number, b: number) => a + b, 0)
-        avgTestDuration = Math.round(sum / durations.length)
-        const sorted = [...durations].sort((a: number, b: number) => a - b)
-        const p90Index = Math.max(0, Math.ceil((90 / 100) * sorted.length) - 1)
-        p90TestDuration = sorted[p90Index]
-      }
+  if (body.durations && Array.isArray(body.durations)) {
+    const stats = durationStats(body.durations)
+    if (stats) {
+      avgTestDuration = stats.avg
+      p90TestDuration = stats.p90
     }
   }
 

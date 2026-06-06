@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test'
-
-const PROJECT_NAME = `history-test-${Date.now()}`
+import { PROJECT } from '../shared/test-project-names'
 
 test.describe.serial('Test Case History API', () => {
   let firstRunId: number
@@ -12,7 +11,7 @@ test.describe.serial('Test Case History API', () => {
     // Run 1
     const res1 = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: PROJECT_NAME,
+        projectName: PROJECT.HISTORY,
         status: 'passed',
         startTime: new Date(Date.now() - 120000).toISOString(),
         duration: 30000,
@@ -45,7 +44,7 @@ test.describe.serial('Test Case History API', () => {
     // Run 2 — same test cases, different durations, one failure
     const res2 = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: PROJECT_NAME,
+        projectName: PROJECT.HISTORY,
         status: 'failed',
         startTime: new Date(Date.now() - 60000).toISOString(),
         duration: 40000,
@@ -79,7 +78,7 @@ test.describe.serial('Test Case History API', () => {
     // Run 3 — test alpha passes with different duration
     const res3 = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: PROJECT_NAME,
+        projectName: PROJECT.HISTORY,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 25000,
@@ -185,7 +184,7 @@ test.describe.serial('Test Case History API', () => {
     // Submit a single run with a unique test case
     const res = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: PROJECT_NAME,
+        projectName: PROJECT.HISTORY,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 5000,

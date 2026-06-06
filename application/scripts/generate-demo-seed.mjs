@@ -104,7 +104,10 @@ CREATE TABLE IF NOT EXISTS test_runs_cases (
   slowest_step_duration INTEGER,
   network_requests TEXT,
   web_vitals TEXT,
+  console_logs TEXT,
+  aria_snapshot TEXT,
   worker_index INTEGER,
+  started_at INTEGER,
   created_at INTEGER NOT NULL,
   FOREIGN KEY (test_run_id) REFERENCES test_runs(id),
   FOREIGN KEY (test_case_id) REFERENCES test_cases(id)
@@ -490,8 +493,25 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
         slowest_step: slowestStep.title,
         slowest_step_duration: slowestStep.duration,
         network_requests: netTemplate,
-        web_vitals: { lcp: 1200 + Math.floor(Math.random() * 800), fid: 15 + Math.floor(Math.random() * 30), cls: +(Math.random() * 0.1).toFixed(3) },
+        web_vitals: {
+          navigation: {
+            url: 'https://app.example.com/',
+            ttfb: 90 + Math.floor(Math.random() * 120),
+            domInteractive: 700 + Math.floor(Math.random() * 600),
+            domContentLoaded: 1000 + Math.floor(Math.random() * 800),
+            loadComplete: 1500 + Math.floor(Math.random() * 1000)
+          },
+          paint: {
+            firstPaint: 600 + Math.floor(Math.random() * 400),
+            firstContentfulPaint: 800 + Math.floor(Math.random() * 500)
+          }
+        },
+        console_logs: isFailedCase
+          ? [{ type: 'error', text: 'Error: expect(received).toBe(expected)', timestamp: (startTime + Math.floor(j * caseDuration / 1000)) * 1000, location: null }]
+          : null,
+        aria_snapshot: null,
         worker_index: j % 4,
+        started_at: (startTime + Math.floor(j * caseDuration / 1000)) * 1000,
         created_at: startTime + Math.floor(j * caseDuration / 1000)
       }
       TEST_RUNS_CASES.push(trc)
