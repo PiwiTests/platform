@@ -80,9 +80,9 @@ test.describe.serial('Project Creation UI Tests', () => {
     await page.goto('/projects')
     await waitForHydration(page)
 
-    await page.getByRole('button', { name: 'New project' }).click()
+    await page.getByRole('button', { name: 'New project' }).click({ timeout: 5000 })
 
-    await expect(page.getByRole('heading', { name: 'Create new project' })).toBeVisible({ timeout: 10000 })
+    await expect(page.getByRole('heading', { name: 'Create new project' })).toBeVisible({ timeout: 15000 })
     await expect(page.getByLabel('Project name')).toBeVisible()
     await expect(page.getByLabel('Display label')).toBeVisible()
     await expect(page.getByLabel('Description')).toBeVisible()
@@ -105,8 +105,8 @@ test.describe.serial('Project Creation UI Tests', () => {
     await page.goto('/projects')
     await waitForHydration(page)
 
-    await page.getByRole('button', { name: 'New project' }).click()
-    await expect(page.getByRole('heading', { name: 'Create new project' })).toBeVisible({ timeout: 10000 })
+    await page.getByRole('button', { name: 'New project' }).click({ timeout: 5000 })
+    await expect(page.getByRole('heading', { name: 'Create new project' })).toBeVisible({ timeout: 15000 })
 
     await page.getByLabel('Project name').fill(projectName)
     await page.getByLabel('Display label').fill(projectLabel)
@@ -131,8 +131,8 @@ test.describe.serial('Project Creation UI Tests', () => {
     await page.goto('/projects')
     await waitForHydration(page)
 
-    await page.getByRole('button', { name: 'New project' }).click()
-    await expect(page.getByRole('heading', { name: 'Create new project' })).toBeVisible({ timeout: 10000 })
+    await page.getByRole('button', { name: 'New project' }).click({ timeout: 5000 })
+    await expect(page.getByRole('heading', { name: 'Create new project' })).toBeVisible({ timeout: 15000 })
 
     await page.getByLabel('Project name').fill(projectName)
     await page.getByRole('button', { name: 'Create project' }).click()

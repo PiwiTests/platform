@@ -36,6 +36,12 @@ test.describe.serial('Reporter with authentication enabled', () => {
   // when running in CI. Skip all tests in this file when not in CI.
   test.skip(!process.env.CI, 'Auth server tests only run in CI (see playwright.config.ts webServer)')
 
+  test.beforeAll(() => {
+    // Clean up test database and storage before running, in case of retries from a previous run
+    if (existsSync(DB_PATH)) rmSync(DB_PATH)
+    if (existsSync(STORAGE_PATH)) rmSync(STORAGE_PATH, { recursive: true, force: true })
+  })
+
   test.afterAll(() => {
     // Clean up test database and storage created by the auth server
     if (existsSync(DB_PATH)) rmSync(DB_PATH)
@@ -284,7 +290,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
       const PiwiDashboardReporter = require(${JSON.stringify(reporterPath)});
       const reporter = new PiwiDashboardReporter({
         serverUrl: ${JSON.stringify(AUTH_SERVER_URL)},
-        projectName: PROJECT.REPORTER_FULL_AUTH,
+        projectName: ${JSON.stringify(PROJECT.REPORTER_FULL_AUTH)},
         uploadReport: false,
         uploadTraces: false,
         collectScmInfo: false,
@@ -326,7 +332,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
       const PiwiDashboardReporter = require(${JSON.stringify(reporterPath)});
       const reporter = new PiwiDashboardReporter({
         serverUrl: ${JSON.stringify(AUTH_SERVER_URL)},
-        projectName: PROJECT.REPORTER_NO_AUTH,
+        projectName: ${JSON.stringify(PROJECT.REPORTER_NO_AUTH)},
         uploadReport: false,
         uploadTraces: false,
         collectScmInfo: false,
@@ -515,7 +521,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
       const PiwiDashboardReporter = require(${JSON.stringify(reporterPath)});
       const reporter = new PiwiDashboardReporter({
         serverUrl: ${JSON.stringify(AUTH_SERVER_URL)},
-        projectName: PROJECT.REPORTER_API_KEY_E2E,
+        projectName: ${JSON.stringify(PROJECT.REPORTER_API_KEY_E2E)},
         uploadReport: false,
         uploadTraces: false,
         collectScmInfo: false,
