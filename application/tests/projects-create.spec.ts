@@ -1,12 +1,13 @@
 import { test, expect } from '@playwright/test'
 import { waitForHydration } from './utils'
+import { PROJECT } from '../shared/test-project-names'
 
 test.describe.serial('Project Creation API Tests', () => {
   test('should create a project via API', async ({ request }) => {
-    const name = `api-created-project-${Date.now()}`
+    const projectName = PROJECT.API_CREATED
     const res = await request.post('/api/projects', {
       data: {
-        name,
+        name: projectName,
         label: 'My API Project',
         description: 'Created via API in tests'
       }
@@ -14,7 +15,7 @@ test.describe.serial('Project Creation API Tests', () => {
     expect(res.ok()).toBeTruthy()
     const data = await res.json()
     expect(data.project).toBeDefined()
-    expect(data.project.name).toBe(name)
+    expect(data.project.name).toBe(projectName)
     expect(data.project.label).toBe('My API Project')
     expect(data.project.description).toBe('Created via API in tests')
     expect(data.project.id).toBeDefined()
@@ -37,31 +38,31 @@ test.describe.serial('Project Creation API Tests', () => {
   })
 
   test('should reject duplicate project name', async ({ request }) => {
-    const name = `duplicate-project-${Date.now()}`
-    await request.post('/api/projects', { data: { name } })
-    const res = await request.post('/api/projects', { data: { name } })
+    const projectName = PROJECT.DUPLICATE
+    await request.post('/api/projects', { data: { name: projectName } })
+    const res = await request.post('/api/projects', { data: { name: projectName } })
     expect(res.ok()).toBeFalsy()
     expect(res.status()).toBe(400)
   })
 
   test('should create a project with only name (optional fields omitted)', async ({ request }) => {
-    const name = `minimal-project-${Date.now()}`
-    const res = await request.post('/api/projects', { data: { name } })
+    const projectName = PROJECT.MINIMAL
+    const res = await request.post('/api/projects', { data: { name: projectName } })
     expect(res.ok()).toBeTruthy()
     const data = await res.json()
-    expect(data.project.name).toBe(name)
+    expect(data.project.name).toBe(projectName)
     expect(data.project.label).toBeNull()
     expect(data.project.description).toBeNull()
   })
 
   test('new project should appear in projects list', async ({ request }) => {
-    const name = `list-visible-project-${Date.now()}`
-    await request.post('/api/projects', { data: { name, label: 'Listed Project' } })
+    const projectName = PROJECT.LIST_VISIBLE
+    await request.post('/api/projects', { data: { name: projectName, label: 'Listed Project' } })
 
     const listRes = await request.get('/api/projects')
     expect(listRes.ok()).toBeTruthy()
     const projects = await listRes.json()
-    const found = projects.find((p: { name: string }) => p.name === name)
+    const found = projects.find((p: { name: string }) => p.name === projectName)
     expect(found).toBeDefined()
     expect(found.label).toBe('Listed Project')
     expect(found.totalRuns).toBe(0)
@@ -99,8 +100,8 @@ test.describe.serial('Project Creation UI Tests', () => {
   })
 
   test('should create a new project from the UI', async ({ page }) => {
-    const projectName = `ui-created-${Date.now()}`
-    const projectLabel = `My UI Project ${Date.now()}`
+    const projectName = PROJECT.UI_CREATED
+    const projectLabel = 'My UI Project'
     await page.goto('/projects')
     await waitForHydration(page)
 
@@ -123,7 +124,7 @@ test.describe.serial('Project Creation UI Tests', () => {
   })
 
   test('should show error when creating project with duplicate name', async ({ page, request }) => {
-    const projectName = `dup-ui-project-${Date.now()}`
+    const projectName = PROJECT.DUP_UI
     // Pre-create the project
     await request.post('/api/projects', { data: { name: projectName } })
 
@@ -184,7 +185,7 @@ test.describe.serial('Tag Management UI Tests', () => {
   })
 
   test('should create a new tag from the UI', async ({ page }) => {
-    const tagName = `ui-test-tag-${Date.now()}`
+    const tagName = 'ui-test-tag'
     await page.goto('/settings/tags')
     await waitForHydration(page)
 
@@ -228,7 +229,7 @@ test.describe.serial('Tag Management UI Tests', () => {
   test('should delete a tag', async ({ page, request }) => {
     // Create a tag to delete
     const tagRes = await request.post('/api/tags', {
-      data: { text: `ui-test-tag-del-${Date.now()}`, color: '#ef4444' }
+      data: { text: 'ui-test-tag-del', color: '#ef4444' }
     })
     expect(tagRes.ok()).toBeTruthy()
     const { tag } = await tagRes.json()

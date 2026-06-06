@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { waitForHydration } from './utils'
-
-const PROJECT_NAME = `run-compare-${Date.now()}`
+import { PROJECT } from '../shared/test-project-names'
 
 test.describe.serial('Run Comparison', () => {
   let projectId: number
@@ -13,7 +12,7 @@ test.describe.serial('Run Comparison', () => {
     // Run 1 — 3 tests, all passed
     const res1 = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: PROJECT_NAME,
+        projectName: PROJECT.RUN_COMPARE,
         status: 'passed',
         startTime: new Date(Date.now() - 180000).toISOString(),
         duration: 30000,
@@ -54,7 +53,7 @@ test.describe.serial('Run Comparison', () => {
     // Run 2 — same 3 tests, different durations, one failure
     const res2 = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: PROJECT_NAME,
+        projectName: PROJECT.RUN_COMPARE,
         status: 'failed',
         startTime: new Date(Date.now() - 120000).toISOString(),
         duration: 35000,
@@ -95,7 +94,7 @@ test.describe.serial('Run Comparison', () => {
     // Run 3 — 2 tests (subset), new test added, one removed
     const res3 = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: PROJECT_NAME,
+        projectName: PROJECT.RUN_COMPARE,
         status: 'passed',
         startTime: new Date(Date.now() - 60000).toISOString(),
         duration: 25000,
@@ -248,7 +247,7 @@ test.describe.serial('Run Comparison', () => {
     // Create a separate independent project with no shared test cases
     const res = await page.request.post('/api/test-runs/submit', {
       data: {
-        projectName: `unrelated-${Date.now()}`,
+        projectName: PROJECT.UNRELATED,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 5000,
@@ -283,7 +282,7 @@ test.describe.serial('Run Comparison', () => {
 
   test('compare page shows non-overlapping tests with missing data markers', async ({ page }) => {
     // Create a project with 2 runs that have completely different test cases
-    const projectName = `no-overlap-${Date.now()}`
+    const projectName = PROJECT.NO_OVERLAP
     const r1 = await page.request.post('/api/test-runs/submit', {
       data: {
         projectName,

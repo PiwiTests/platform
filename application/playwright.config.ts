@@ -43,6 +43,8 @@ export default defineConfig({
   /* Opt out of parallel tests. */
   workers: 1,
 
+  globalSetup: './tests/globalSetup',
+
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: reporters,
 

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { PROJECT } from '../shared/test-project-names'
 
 test.describe.serial('Performance API Tests', () => {
   let projectId: number
@@ -8,7 +9,7 @@ test.describe.serial('Performance API Tests', () => {
   test('should submit test results with performance data', async ({ request }) => {
     const response = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'perf-test-project',
+        projectName: PROJECT.PERF_TEST,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 60000,
@@ -92,7 +93,7 @@ test.describe.serial('Performance API Tests', () => {
     // Submit a second test run to have trend data
     await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'perf-test-project',
+        projectName: PROJECT.PERF_TEST,
         status: 'passed',
         startTime: new Date(Date.now() + 60000).toISOString(),
         duration: 50000,
@@ -179,7 +180,7 @@ test.describe.serial('Performance API Tests', () => {
   test('should submit test results with network requests and web vitals', async ({ request }) => {
     const response = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'perf-test-project',
+        projectName: PROJECT.PERF_TEST,
         status: 'passed',
         startTime: new Date(Date.now() + 120000).toISOString(),
         duration: 30000,
@@ -275,7 +276,7 @@ test.describe.serial('Performance API Tests', () => {
   test('should sanitize network request URLs (strip query string) before storing', async ({ request }) => {
     const response = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'perf-test-project',
+        projectName: PROJECT.PERF_TEST,
         status: 'passed',
         startTime: new Date(Date.now() + 200000).toISOString(),
         duration: 5000,

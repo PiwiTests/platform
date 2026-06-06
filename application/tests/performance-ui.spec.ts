@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures'
+import { PROJECT } from '../shared/test-project-names'
 
 test.describe('Performance UI Tests', () => {
   let projectId: number
@@ -7,7 +8,7 @@ test.describe('Performance UI Tests', () => {
     // Submit test data with performance metrics
     const response = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'dashboard-perf-tracking',
+        projectName: PROJECT.DASHBOARD_PERF,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 60000,

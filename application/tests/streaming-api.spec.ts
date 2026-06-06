@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { PROJECT } from '../shared/test-project-names'
 
 /**
  * Tests for the live-streaming lifecycle:
@@ -17,7 +18,7 @@ test.describe.serial('Streaming API Tests', () => {
   test('POST /api/test-runs/start creates a run with running status', async ({ request }) => {
     const response = await request.post('/api/test-runs/start', {
       data: {
-        projectName: 'streaming-test-project',
+        projectName: PROJECT.STREAMING_TEST,
         startTime: new Date().toISOString()
       }
     })
@@ -233,7 +234,7 @@ test.describe.serial('Streaming API Tests', () => {
   test('POST /api/test-runs/:id/finish preserves flakyTests of 0 explicitly', async ({ request }) => {
     // Create a fresh run
     const startResp = await request.post('/api/test-runs/start', {
-      data: { projectName: 'streaming-flaky-test', startTime: new Date().toISOString() }
+      data: { projectName: PROJECT.STREAMING_FLAKY, startTime: new Date().toISOString() }
     })
     const { runId: freshRunId, streamToken: freshToken } = await startResp.json()
 
@@ -254,7 +255,7 @@ test.describe.serial('Streaming API Tests', () => {
 
   test('POST /api/test-runs/:id/finish with duration 0 does not fall back to elapsed time', async ({ request }) => {
     const startResp = await request.post('/api/test-runs/start', {
-      data: { projectName: 'streaming-duration-test', startTime: new Date().toISOString() }
+      data: { projectName: PROJECT.STREAMING_DURATION, startTime: new Date().toISOString() }
     })
     const { runId: freshRunId, streamToken: freshToken } = await startResp.json()
 

@@ -18,9 +18,10 @@ Piwi test results dashboard built with **Nuxt 4**, Nuxt UI dashboard template. S
 ## Repository Structure
 
 ```
-application/       — Nuxt 4 dashboard app
-application/tests/ — Functional tests (Playwright)
-reporter/          — Custom Playwright reporter package
+application/            — Nuxt 4 dashboard app
+application/shared/     — Shared constants & utilities (auto-imported)
+application/tests/      — Functional tests (Playwright)
+reporter/               — Custom Playwright reporter package
 ```
 
 ## Quick Start
@@ -125,6 +126,8 @@ Nuxt file-based routing:
   - Use `v-if` for tab-switched components to ensure clean mount/unmount
 - **Navigation**: Edit `app/layouts/default.vue` links array
 - **Tests**: Create `.spec.ts` in `application/tests/` → run `npm test`
+  - If the test creates a project, **add its name to `shared/test-project-names.ts`** (alphabetically sorted) so the global setup cleanup deletes it before the next run. Tests must use static project names, not `Date.now()` suffixes.
+  - Use `PROJECT.YOUR_KEY` from `../shared/test-project-names` in test code instead of raw string literals. This ensures every project name is tracked in one place.
 - **Reporter**: Edit `reporter/index.js` + `index.d.ts` → test with `npm link`
 
 ## UI Patterns

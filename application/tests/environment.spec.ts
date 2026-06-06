@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { readFileSync } from 'fs'
 import { join } from 'path'
+import { PROJECT } from '../shared/test-project-names'
 
 test.describe('Environment API Tests', () => {
   const envValues = ['production', 'staging', 'development', 'integration']
@@ -8,7 +9,7 @@ test.describe('Environment API Tests', () => {
   test('should accept test run with environment via JSON submission', async ({ request }) => {
     const response = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'env-api-test',
+        projectName: PROJECT.ENV_API,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 5000,
@@ -33,7 +34,7 @@ test.describe('Environment API Tests', () => {
   test('should retrieve environment from test run details', async ({ request }) => {
     const submitResponse = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'env-retrieval-test',
+        projectName: PROJECT.ENV_RETRIEVAL,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 3000,
@@ -103,7 +104,7 @@ test.describe('Environment API Tests', () => {
   test('should set environment to null when not provided', async ({ request }) => {
     const response = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'env-null-test',
+        projectName: PROJECT.ENV_NULL,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 1000,
@@ -125,7 +126,7 @@ test.describe('Environment API Tests', () => {
   test('should handle empty string environment as null', async ({ request }) => {
     const response = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'env-empty-test',
+        projectName: PROJECT.ENV_EMPTY,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 1000,
@@ -148,7 +149,7 @@ test.describe('Environment API Tests', () => {
   test('should include environment in project latestRun', async ({ request }) => {
     const submitRes = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'env-latestrun-test',
+        projectName: PROJECT.ENV_LATEST_RUN,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 2000,
@@ -173,7 +174,7 @@ test.describe('Environment API Tests', () => {
   test('should accept environment via upload endpoint', async ({ request }) => {
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: 'env-upload-test',
+        projectName: PROJECT.ENV_UPLOAD,
         testRun: JSON.stringify({
           status: 'passed',
           startTime: new Date().toISOString(),
@@ -200,7 +201,7 @@ test.describe('Environment API Tests', () => {
   test('should accept environment via streaming start endpoint', async ({ request }) => {
     const response = await request.post('/api/test-runs/start', {
       data: {
-        projectName: 'env-stream-start-test',
+        projectName: PROJECT.ENV_STREAM_START,
         startTime: new Date().toISOString(),
         environment: 'development'
       }
@@ -218,7 +219,7 @@ test.describe('Environment API Tests', () => {
   test('should accept environment via setup endpoint', async ({ request }) => {
     const response = await request.post('/api/test-runs/setup', {
       data: {
-        projectName: 'env-setup-test',
+        projectName: PROJECT.ENV_SETUP,
         startTime: new Date().toISOString(),
         environment: 'staging'
       }
@@ -244,14 +245,12 @@ test.describe('Environment API Tests', () => {
 })
 
 test.describe('Environment UI Tests', () => {
-  const projectName = `env-ui-test-${Date.now()}`
-
   test.beforeAll(async ({ request }) => {
     // Create runs with different environments
     for (const env of ['production', 'staging', 'development']) {
       await request.post('/api/test-runs/submit', {
         data: {
-          projectName,
+          projectName: PROJECT.ENV_UI,
           status: 'passed',
           startTime: new Date().toISOString(),
           duration: 3000,
@@ -269,7 +268,7 @@ test.describe('Environment UI Tests', () => {
   test('should display environment badge on test run detail page', async ({ page, request }) => {
     const projectsRes = await request.get('/api/projects')
     const projects = await projectsRes.json()
-    const project = projects.find((p: { name: string }) => p.name === projectName)
+    const project = projects.find((p: { name: string }) => p.name === PROJECT.ENV_UI)
     expect(project).toBeDefined()
 
     const projectDetailRes = await request.get(`/api/projects/${project.id}`)
@@ -285,7 +284,7 @@ test.describe('Environment UI Tests', () => {
   test('should show environment filter on project detail page', async ({ page, request }) => {
     const projectsRes = await request.get('/api/projects')
     const projects = await projectsRes.json()
-    const project = projects.find((p: { name: string }) => p.name === projectName)
+    const project = projects.find((p: { name: string }) => p.name === PROJECT.ENV_UI)
     expect(project).toBeDefined()
 
     await page.goto(`/projects/${project.id}`)
@@ -299,7 +298,7 @@ test.describe('Environment UI Tests', () => {
   test('should filter test runs by environment', async ({ page, request }) => {
     const projectsRes = await request.get('/api/projects')
     const projects = await projectsRes.json()
-    const project = projects.find((p: { name: string }) => p.name === projectName)
+    const project = projects.find((p: { name: string }) => p.name === PROJECT.ENV_UI)
     expect(project).toBeDefined()
 
     await page.goto(`/projects/${project.id}`)

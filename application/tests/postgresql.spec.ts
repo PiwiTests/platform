@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { PROJECT } from '../shared/test-project-names'
 
 /**
  * PostgreSQL integration tests.
@@ -33,7 +34,7 @@ test.describe('PostgreSQL integration', () => {
   test('should submit test results via JSON API', async ({ request }) => {
     const response = await request.post(`${baseURL}/api/test-runs/submit`, {
       data: {
-        projectName: 'pg-test-project',
+        projectName: PROJECT.PG_TEST,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 120000,
@@ -76,7 +77,7 @@ test.describe('PostgreSQL integration', () => {
     expect(Array.isArray(projects)).toBe(true)
     expect(projects.length).toBeGreaterThan(0)
 
-    const project = projects.find((p: { name: string }) => p.name === 'pg-test-project')
+    const project = projects.find((p: { name: string }) => p.name === PROJECT.PG_TEST)
     expect(project).toBeDefined()
   })
 
@@ -84,7 +85,7 @@ test.describe('PostgreSQL integration', () => {
     const projectsResponse = await request.get(`${baseURL}/api/projects`)
     expect(projectsResponse.ok()).toBeTruthy()
     const projects = await projectsResponse.json()
-    const project = projects.find((p: { name: string, id: number }) => p.name === 'pg-test-project')
+    const project = projects.find((p: { name: string, id: number }) => p.name === PROJECT.PG_TEST)
     expect(project).toBeDefined()
 
     const response = await request.get(`${baseURL}/api/projects/${project!.id}`)
@@ -98,7 +99,7 @@ test.describe('PostgreSQL integration', () => {
     const projectsResponse = await request.get(`${baseURL}/api/projects`)
     expect(projectsResponse.ok()).toBeTruthy()
     const projects = await projectsResponse.json()
-    const project = projects.find((p: { name: string, id: number }) => p.name === 'pg-test-project')
+    const project = projects.find((p: { name: string, id: number }) => p.name === PROJECT.PG_TEST)
     expect(project).toBeDefined()
 
     const projectResponse = await request.get(`${baseURL}/api/projects/${project!.id}`)
@@ -124,7 +125,7 @@ test.describe('PostgreSQL integration', () => {
   test('should submit test results with metadata', async ({ request }) => {
     const response = await request.post(`${baseURL}/api/test-runs/submit`, {
       data: {
-        projectName: 'pg-test-project',
+        projectName: PROJECT.PG_TEST,
         status: 'failed',
         startTime: new Date().toISOString(),
         duration: 60000,
@@ -163,7 +164,7 @@ test.describe('PostgreSQL integration', () => {
     const submissions = Array.from({ length: 5 }, (_, i) =>
       request.post(`${baseURL}/api/test-runs/submit`, {
         data: {
-          projectName: 'pg-concurrent-project',
+           projectName: PROJECT.PG_CONCURRENT,
           status: 'passed',
           startTime: new Date().toISOString(),
           duration: 1000 * (i + 1),

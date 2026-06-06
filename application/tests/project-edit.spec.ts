@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { PROJECT } from '../shared/test-project-names'
 
 test.describe.serial('Project Edit Tests', () => {
   let projectId: number
@@ -7,7 +8,7 @@ test.describe.serial('Project Edit Tests', () => {
     // Create a test project
     const response = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'edit-test-project',
+        projectName: PROJECT.EDIT_TEST,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 120000,
@@ -44,7 +45,7 @@ test.describe.serial('Project Edit Tests', () => {
 
     expect(updatedProject.label).toBe('My Custom Label')
     expect(updatedProject.description).toBe('This is a custom description')
-    expect(updatedProject.name).toBe('edit-test-project') // Name should not change
+    expect(updatedProject.name).toBe(PROJECT.EDIT_TEST) // Name should not change
   })
 
   test('should allow nullable fields', async ({ request }) => {

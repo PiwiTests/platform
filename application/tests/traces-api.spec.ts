@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test'
-
-const PROJECT_NAME = `traces-api-test-${Date.now()}`
+import { PROJECT } from '../shared/test-project-names'
 
 test.describe('Traces API', () => {
   let testRunsCaseId: number
@@ -11,7 +10,7 @@ test.describe('Traces API', () => {
     const traceContent = Buffer.from('Mock Playwright trace data')
     const uploadResponse = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: PROJECT_NAME,
+        projectName: PROJECT.TRACES_API,
         testRun: JSON.stringify({
           status: 'passed',
           startTime: new Date().toISOString(),

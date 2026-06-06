@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { PROJECT } from '../shared/test-project-names'
 
 test.describe('Metadata Tests', () => {
   const baseUrl = process.env.BASE_URL || 'http://localhost:3000'
@@ -6,7 +7,7 @@ test.describe('Metadata Tests', () => {
   test('should accept test run with metadata via JSON submission', async ({ request }) => {
     const response = await request.post(`${baseUrl}/api/test-runs/submit`, {
       data: {
-        projectName: 'metadata-test-project',
+        projectName: PROJECT.METADATA_TEST,
         projectDescription: 'Test project for metadata validation',
         status: 'passed',
         startTime: new Date().toISOString(),
@@ -56,7 +57,7 @@ test.describe('Metadata Tests', () => {
     // First, create a test run with metadata
     const submitResponse = await request.post(`${baseUrl}/api/test-runs/submit`, {
       data: {
-        projectName: 'metadata-retrieval-test',
+        projectName: PROJECT.METADATA_RETRIEVAL,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 3000,
@@ -106,7 +107,7 @@ test.describe('Metadata Tests', () => {
   test('should handle empty metadata gracefully', async ({ request }) => {
     const response = await request.post(`${baseUrl}/api/test-runs/submit`, {
       data: {
-        projectName: 'empty-metadata-test',
+        projectName: PROJECT.EMPTY_METADATA,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 1000,
@@ -127,7 +128,7 @@ test.describe('Metadata Tests', () => {
   test('should handle missing metadata field', async ({ request }) => {
     const response = await request.post(`${baseUrl}/api/test-runs/submit`, {
       data: {
-        projectName: 'no-metadata-test',
+        projectName: PROJECT.NO_METADATA,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 1000,

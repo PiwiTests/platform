@@ -290,7 +290,7 @@ const environment = computed(() => testCase.value?.testRun?.environment)
     <template #body>
       <div class="flex flex-col h-full overflow-hidden gap-4 p-4">
         <TestCaseSummary
-          :test-case="testCase as any"
+          :test-case="(testCase ?? null) as any"
           :scm-info="scmInfo"
           :ci-info="ciInfo"
           :browser-info="browserInfo"

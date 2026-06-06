@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { PROJECT } from '../shared/test-project-names'
 
 test.describe.serial('Tags API Tests', () => {
   let createdTagId: number
@@ -85,7 +86,7 @@ test.describe.serial('Tags API Tests', () => {
   })
 
   test('should delete a tag', async ({ request }) => {
-    const deleteTagName = `delete-me-tag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const deleteTagName = 'delete-me-tag'
 
     // Create a dedicated delete target
     const createRes = await request.post('/api/tags', {
@@ -119,7 +120,7 @@ test.describe.serial('Tags assigned to projects', () => {
     // Create a project via test-run submit
     const runRes = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'tag-assignment-test-project',
+        projectName: PROJECT.TAG_ASSIGNMENT,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 10000,

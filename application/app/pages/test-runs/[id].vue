@@ -289,7 +289,8 @@ function handleSelectTestCase(id: number) {
     <template #body>
       <div class="flex flex-col h-full overflow-hidden gap-4 p-4">
         <RunSummary
-          :test-run="testRun!"
+          v-if="testRun"
+          :test-run="testRun"
           :display-progress="displayProgress"
           :all-reports="allReports"
           :show-custom-data="showCustomData"

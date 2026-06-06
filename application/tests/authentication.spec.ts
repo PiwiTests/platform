@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { PROJECT } from '../shared/test-project-names'
 
 test.describe('Authentication Tests', () => {
   test('should work without authentication when disabled', async ({ request }) => {
@@ -15,7 +16,7 @@ test.describe('Authentication Tests', () => {
     // First create a project
     const createResponse = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'auth-test-project',
+        projectName: PROJECT.AUTH_TEST,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 1000,

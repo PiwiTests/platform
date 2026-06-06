@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { PROJECT } from '../shared/test-project-names'
 
 test.describe.serial('Delete test run API', () => {
   let testRunId: number
@@ -8,7 +9,7 @@ test.describe.serial('Delete test run API', () => {
     // Create a test run to delete
     const response = await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'delete-test-project',
+        projectName: PROJECT.DELETE_TEST,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 60000,
@@ -73,7 +74,7 @@ test.describe('Admin Stats API', () => {
     // Ensure there is at least one test run
     await request.post('/api/test-runs/submit', {
       data: {
-        projectName: 'stats-test-project',
+        projectName: PROJECT.STATS_TEST,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 30000,
