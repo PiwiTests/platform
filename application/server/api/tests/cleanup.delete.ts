@@ -4,7 +4,7 @@ import { eq, inArray, like } from 'drizzle-orm'
 import { getStorage } from '../../storage'
 import { TEST_PROJECT_NAMES } from '../../../shared/test-project-names'
 
-export default eventHandler(async (event) => {
+export default eventHandler(async (_event) => {
   const db = await getDatabase()
   const storage = getStorage()
 
@@ -29,7 +29,11 @@ export default eventHandler(async (event) => {
       for (const caseId of caseIds) {
         const traceRows = await db.select().from(traces).where(eq(traces.testRunsCaseId, caseId))
         for (const trace of traceRows) {
-          try { await storage.deleteDirectory(trace.filePath) } catch { /* ignore */ }
+          try {
+            await storage.deleteDirectory(trace.filePath)
+          } catch {
+            /* ignore */
+          }
         }
         await db.delete(traces).where(eq(traces.testRunsCaseId, caseId))
       }
@@ -39,13 +43,21 @@ export default eventHandler(async (event) => {
 
       // Delete report files from storage and DB
       for (const report of reportRows) {
-        try { await storage.deleteDirectory(report.path) } catch { /* ignore */ }
+        try {
+          await storage.deleteDirectory(report.path)
+        } catch {
+          /* ignore */
+        }
       }
       await db.delete(reports).where(eq(reports.testRunId, run.id))
 
       // Delete legacy report path
       if (run.reportPath) {
-        try { await storage.deleteDirectory(run.reportPath) } catch { /* ignore */ }
+        try {
+          await storage.deleteDirectory(run.reportPath)
+        } catch {
+          /* ignore */
+        }
       }
 
       // Delete the test run

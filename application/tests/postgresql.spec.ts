@@ -164,7 +164,7 @@ test.describe('PostgreSQL integration', () => {
     const submissions = Array.from({ length: 5 }, (_, i) =>
       request.post(`${baseURL}/api/test-runs/submit`, {
         data: {
-           projectName: PROJECT.PG_CONCURRENT,
+          projectName: PROJECT.PG_CONCURRENT,
           status: 'passed',
           startTime: new Date().toISOString(),
           duration: 1000 * (i + 1),
