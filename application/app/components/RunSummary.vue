@@ -134,67 +134,19 @@ const emit = defineEmits<{
     </div>
 
     <!-- Block 1: CI + Environment -->
-    <UCard v-if="testRun?.metadata?.ci || testRun?.environment" :class="blockColSpanClass">
-      <template #header>
-        <div class="flex items-center gap-2">
-          <UIcon name="i-lucide-cloud" class="w-4 h-4 text-primary" />
-          <span class="text-sm font-medium">CI / Env</span>
-        </div>
-      </template>
-      <div class="space-y-2 text-sm">
-        <div v-if="testRun?.environment" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-server" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-          <span class="rounded-full border px-2 py-0.5 text-xs bg-gray-50 dark:bg-gray-800">{{ testRun.environment }}</span>
-        </div>
-        <div v-if="testRun?.metadata?.ci?.provider" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-cloud" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-          <span>{{ testRun.metadata.ci.provider }}</span>
-        </div>
-        <div v-if="testRun?.metadata?.ci?.buildNumber" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-hash" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-          <span>Build #{{ testRun.metadata.ci.buildNumber }}</span>
-        </div>
-        <div v-if="testRun?.metadata?.ci?.jobName" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-notebook-pen" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-          <span>{{ testRun.metadata.ci.jobName }}</span>
-        </div>
-        <div v-if="testRun?.metadata?.ci?.workflow" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-workflow" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-          <span>{{ testRun.metadata.ci.workflow }}</span>
-        </div>
-        <div v-if="testRun?.metadata?.ci?.buildUrl" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-external-link" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-          <a :href="testRun.metadata.ci.buildUrl" target="_blank" class="text-primary hover:underline text-xs">View build</a>
-        </div>
-      </div>
-    </UCard>
+    <CiEnvCard
+      v-if="testRun?.metadata?.ci || testRun?.environment"
+      :ci="testRun?.metadata?.ci"
+      :environment="testRun?.environment"
+      :class="blockColSpanClass"
+    />
 
     <!-- Block 2: Source control -->
-    <UCard v-if="testRun?.metadata?.scm" :class="blockColSpanClass">
-      <template #header>
-        <div class="flex items-center gap-2">
-          <UIcon name="i-lucide-git-branch" class="w-4 h-4 text-primary" />
-          <span class="text-sm font-medium">Source</span>
-        </div>
-      </template>
-      <div class="space-y-2 text-sm">
-        <div v-if="testRun.metadata.scm.branch" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-git-branch" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-          <span class="font-medium">{{ testRun.metadata.scm.branch }}</span>
-        </div>
-        <div v-if="testRun.metadata.scm.commit" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-git-commit-horizontal" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-          <code class="text-xs font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">{{ testRun.metadata.scm.commit.length >= 8 ? testRun.metadata.scm.commit.substring(0, 8) : testRun.metadata.scm.commit }}</code>
-        </div>
-        <div v-if="testRun.metadata.scm.author" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-user" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-          <span class="text-gray-600 dark:text-gray-400">{{ testRun.metadata.scm.author }}</span>
-        </div>
-        <p v-if="testRun.metadata.scm.commitMessage" class="text-gray-400 text-xs break-words pl-1">
-          {{ testRun.metadata.scm.commitMessage }}
-        </p>
-      </div>
-    </UCard>
+    <SourceInfoCard
+      v-if="testRun?.metadata?.scm"
+      :scm="testRun.metadata.scm"
+      :class="blockColSpanClass"
+    />
 
     <!-- Block 3: Tags / Details / Custom data -->
     <UCard v-if="testRun?.metadata?.tags?.length || testRun?.metadata?.projectDescription || testRun?.metadata?.relatedIssue || testRun?.metadata?.customData" :class="blockColSpanClass">

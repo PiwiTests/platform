@@ -198,29 +198,12 @@ async function handleDeleteRun() {
 
 const showCustomData = ref(false)
 
-// Count visible metadata blocks to distribute grid space
-const metadataBlockCount = computed(() => {
+const { summaryColSpanClass, blockColSpanClass } = useDetailGrid(() => {
   let count = 0
   if (testRun.value?.metadata?.ci || testRun.value?.environment) count++
   if (testRun.value?.metadata?.scm) count++
   if (testRun.value?.metadata?.tags?.length || testRun.value?.metadata?.projectDescription || testRun.value?.metadata?.relatedIssue || testRun.value?.metadata?.customData) count++
   return count
-})
-
-const summaryColSpanClass = computed(() => {
-  const n = metadataBlockCount.value
-  if (n === 0) return 'lg:col-span-8'
-  if (n === 3) return 'lg:col-span-5'
-  if (n === 2) return 'lg:col-span-4'
-  return 'lg:col-span-5'
-})
-
-const blockColSpanClass = computed(() => {
-  const n = metadataBlockCount.value
-  if (n === 3) return 'lg:col-span-1'
-  if (n === 2) return 'lg:col-span-2'
-  if (n === 1) return 'lg:col-span-3'
-  return ''
 })
 
 // Merge reports from the new `reports` table with the legacy reportPath field
@@ -249,10 +232,10 @@ const allReports = computed<ReportInfo[]>(() => {
 // Right panel tabs
 const activeTab = ref('test-cases')
 const tabItems = [
-  { label: 'Test cases', icon: 'i-lucide-beaker', value: 'test-cases' },
-  { label: 'Workers', icon: 'i-lucide-rows-3', value: 'workers' },
-  { label: 'Compare', icon: 'i-lucide-git-compare-arrows', value: 'compare' },
-  { label: 'Slow endpoints', icon: 'i-lucide-network', value: 'endpoints' }
+  { label: 'Test cases', icon: 'i-lucide-beaker', value: 'test-cases', slot: 'test-cases' },
+  { label: 'Workers', icon: 'i-lucide-rows-3', value: 'workers', slot: 'workers' },
+  { label: 'Compare', icon: 'i-lucide-git-compare-arrows', value: 'compare', slot: 'compare' },
+  { label: 'Slow endpoints', icon: 'i-lucide-network', value: 'endpoints', slot: 'endpoints' }
 ]
 
 // Ref for TestCasesList to call scrollToCase
@@ -304,7 +287,7 @@ function handleSelectTestCase(id: number) {
     </template>
 
     <template #body>
-      <div class="flex flex-col h-full overflow-hidden">
+      <div class="flex flex-col h-full overflow-hidden gap-4 p-4">
         <RunSummary
           :test-run="testRun!"
           :display-progress="displayProgress"
@@ -321,33 +304,31 @@ function handleSelectTestCase(id: number) {
           :items="tabItems"
           size="sm"
           class="shrink-0"
-        />
+        >
+          <template #test-cases>
+            <TestCasesList
+              ref="testCasesListRef"
+              :test-cases="displayTestCases"
+              :is-live="isLive"
+            />
+          </template>
 
-        <div class="flex-1 min-h-0">
-          <!-- Tab: Test cases -->
-          <TestCasesList
-            v-if="activeTab === 'test-cases'"
-            ref="testCasesListRef"
-            :test-cases="displayTestCases"
-            :is-live="isLive"
-          />
+          <template #workers>
+            <WorkersTimeline
+              :test-cases="throttledTestCases"
+              :live="isLive"
+              @select-test-case="handleSelectTestCase"
+            />
+          </template>
 
-          <!-- Tab: Workers -->
-          <WorkersTimeline
-            v-if="activeTab === 'workers'"
-            :test-cases="throttledTestCases"
-            :live="isLive"
-            @select-test-case="handleSelectTestCase"
-          />
+          <template #compare>
+            <RunCompare />
+          </template>
 
-          <!-- Tab: Compare -->
-          <RunCompare
-            v-if="activeTab === 'compare'"
-          />
-
-          <!-- Tab: Slow endpoints -->
-          <SlowEndpoints v-if="activeTab === 'endpoints'" />
-        </div>
+          <template #endpoints>
+            <SlowEndpoints />
+          </template>
+        </UTabs>
       </div>
     </template>
   </UDashboardPanel>

@@ -139,7 +139,7 @@ const UBadge = resolveComponent('UBadge')
 
 const activeTab = ref('steps')
 
-const metadataBlockCount = computed(() => {
+const { summaryColSpanClass, blockColSpanClass } = useDetailGrid(() => {
   let count = 0
   if (scmInfo.value) count++
   if (ciInfo.value || testCase.value?.testRun?.environment) count++
@@ -148,28 +148,12 @@ const metadataBlockCount = computed(() => {
   return count
 })
 
-const summaryColSpanClass = computed(() => {
-  const c = metadataBlockCount.value
-  if (c === 0) return 'lg:col-span-8'
-  if (c === 3) return 'lg:col-span-5'
-  if (c === 2) return 'lg:col-span-4'
-  return 'lg:col-span-5'
-})
-
-const blockColSpanClass = computed(() => {
-  const c = metadataBlockCount.value
-  if (c === 3) return 'lg:col-span-1'
-  if (c === 2) return 'lg:col-span-2'
-  if (c === 1) return 'lg:col-span-3'
-  return ''
-})
-
 const tabItems = computed(() => [
-  { label: `Steps (${steps.value.length})`, icon: 'i-lucide-list-checks', slot: 'steps', value: 'steps' },
-  { label: 'Error & Fix', icon: 'i-lucide-bug', slot: 'error', value: 'error', disabled: !testCase.value?.error },
-  { label: 'Traces & Console', icon: 'i-lucide-terminal', slot: 'traces', value: 'traces' },
-  { label: `Performance (${performanceHints.value.length})`, icon: 'i-lucide-gauge', slot: 'performance', value: 'performance', disabled: performanceHints.value.length === 0 },
-  { label: `History (${historyData.value?.length ?? 0})`, icon: 'i-lucide-trending-up', slot: 'history', value: 'history', disabled: !historyData.value?.length }
+  { label: `Steps (${steps.value.length})`, icon: 'i-lucide-list-checks', value: 'steps', slot: 'steps' },
+  { label: 'Error & Fix', icon: 'i-lucide-bug', value: 'error', slot: 'error', disabled: !testCase.value?.error },
+  { label: 'Traces & Console', icon: 'i-lucide-terminal', value: 'traces', slot: 'traces' },
+  { label: `Performance (${performanceHints.value.length})`, icon: 'i-lucide-gauge', value: 'performance', slot: 'performance', disabled: performanceHints.value.length === 0 },
+  { label: `History (${historyData.value?.length ?? 0})`, icon: 'i-lucide-trending-up', value: 'history', slot: 'history', disabled: !historyData.value?.length }
 ])
 
 const historyColumns: TableColumn<TestCaseHistoryPoint>[] = [
@@ -271,6 +255,9 @@ const stepColumns: TableColumn<PerformanceStep>[] = [
     }
   }
 ]
+
+// Calculated metadata for template
+const environment = computed(() => testCase.value?.testRun?.environment)
 </script>
 
 <template>
@@ -301,203 +288,26 @@ const stepColumns: TableColumn<PerformanceStep>[] = [
     </template>
 
     <template #body>
-      <div class="p-4">
-        <!-- Hero section: summary card + metadata cards -->
-        <div class="grid grid-cols-1 lg:grid-cols-8 gap-4 mb-4">
-          <!-- Main summary card -->
-          <div :class="summaryColSpanClass">
-            <UCard class="shadow-xs h-full">
-              <div class="space-y-3">
-                <div class="flex items-start gap-3">
-                  <div
-                    class="shrink-0 size-8 rounded-lg flex items-center justify-center"
-                    :class="{
-                      'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400': testCase?.status === 'passed',
-                      'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400': testCase?.status === 'failed' || testCase?.status === 'timedOut',
-                      'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400': testCase?.status === 'cancelled' || testCase?.status === 'skipped',
-                      'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400': testCase?.status === 'running' || testCase?.status === 'initialising'
-                    }"
-                  >
-                    <UIcon
-                      :name="testCase?.status === 'passed' ? 'i-lucide-check-circle-2'
-                        : testCase?.status === 'failed' || testCase?.status === 'timedOut' ? 'i-lucide-x-circle'
-                          : testCase?.status === 'running' || testCase?.status === 'initialising' ? 'i-lucide-loader-circle'
-                            : 'i-lucide-minus-circle'"
-                      class="size-4.5"
-                      :class="{ 'animate-spin': testCase?.status === 'running' || testCase?.status === 'initialising' }"
-                    />
-                  </div>
-                  <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-2 flex-wrap">
-                      <h2 class="text-base font-bold truncate">
-                        {{ testCase?.title }}
-                      </h2>
-                      <UBadge v-if="testCase" :color="getStatusColor(testCase.status)" class="capitalize">
-                        {{ testCase.status }}
-                      </UBadge>
-                    </div>
-                    <p class="text-xs text-gray-500 mt-0.5">
-                      <span v-if="testCase?.location">{{ testCase.location }}</span>
-                      <span v-if="historicalTiming" class="ml-2">
-                        Avg {{ formatDuration(historicalTiming.avg) }} &middot;
-                        <span :class="historicalTiming.diff > 0 ? 'text-red-600' : 'text-green-600'">
-                          {{ historicalTiming.diff > 0 ? '+' : '' }}{{ historicalTiming.pct }}%
-                        </span>
-                      </span>
-                    </p>
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
-                    <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Duration
-                    </p>
-                    <p class="text-xl font-bold mt-0.5">
-                      {{ formatDuration(testCase?.duration) }}
-                    </p>
-                  </div>
-                  <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
-                    <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Retries
-                    </p>
-                    <p class="text-xl font-bold mt-0.5">
-                      {{ testCase?.retries ?? 0 }}
-                    </p>
-                  </div>
-                  <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
-                    <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Steps
-                    </p>
-                    <p class="text-xl font-bold mt-0.5">
-                      {{ steps.length }}
-                    </p>
-                  </div>
-                  <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
-                    <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Worker
-                    </p>
-                    <p class="text-xl font-bold mt-0.5">
-                      {{ testCase?.workerIndex ?? '—' }}
-                    </p>
-                  </div>
-                </div>
-
-                <div v-if="testCase?.slowestStep" class="flex items-center gap-2 text-sm">
-                  <UIcon name="i-lucide-zap" class="size-4 text-amber-500 shrink-0" />
-                  <span class="font-medium text-amber-700 dark:text-amber-300">Slowest step:</span>
-                  <span class="text-gray-700 dark:text-gray-300 truncate">{{ testCase.slowestStep }}</span>
-                  <span v-if="testCase.slowestStepDuration" class="text-gray-500 shrink-0">({{ formatDuration(testCase.slowestStepDuration) }})</span>
-                </div>
-              </div>
-            </UCard>
-          </div>
-
-          <!-- Source -->
-          <UCard v-if="scmInfo" :class="blockColSpanClass">
-            <template #header>
-              <div class="flex items-center gap-2">
-                <UIcon name="i-lucide-git-branch" class="w-4 h-4 text-primary" />
-                <span class="text-sm font-medium">Source</span>
-              </div>
-            </template>
-            <div class="space-y-2 text-sm">
-              <div v-if="scmInfo.branch" class="flex items-center gap-1.5">
-                <UIcon name="i-lucide-git-branch" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                <span class="font-medium">{{ scmInfo.branch }}</span>
-              </div>
-              <div v-if="scmInfo.commit" class="flex items-center gap-1.5">
-                <UIcon name="i-lucide-git-commit-horizontal" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                <code class="text-xs font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">{{ scmInfo.commit.length >= 8 ? scmInfo.commit.substring(0, 8) : scmInfo.commit }}</code>
-              </div>
-              <div v-if="scmInfo.author" class="flex items-center gap-1.5">
-                <UIcon name="i-lucide-user" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                <span class="text-gray-600 dark:text-gray-400">{{ scmInfo.author }}</span>
-              </div>
-              <p v-if="scmInfo.commitMessage" class="text-gray-400 text-xs break-words pl-1">
-                {{ scmInfo.commitMessage }}
-              </p>
-            </div>
-          </UCard>
-
-          <!-- CI / Env -->
-          <UCard v-if="ciInfo || testCase?.testRun?.environment" :class="blockColSpanClass">
-            <template #header>
-              <div class="flex items-center gap-2">
-                <UIcon name="i-lucide-cloud" class="w-4 h-4 text-primary" />
-                <span class="text-sm font-medium">CI / Env</span>
-              </div>
-            </template>
-            <div class="space-y-2 text-sm">
-              <div v-if="testCase?.testRun?.environment" class="flex items-center gap-1.5">
-                <UIcon name="i-lucide-server" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                <span class="rounded-full border px-2 py-0.5 text-xs bg-gray-50 dark:bg-gray-800">{{ testCase.testRun.environment }}</span>
-              </div>
-              <div v-if="ciInfo?.provider" class="flex items-center gap-1.5">
-                <UIcon name="i-lucide-cloud" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                <span>{{ ciInfo.provider }}</span>
-              </div>
-              <div v-if="ciInfo?.buildNumber" class="flex items-center gap-1.5">
-                <UIcon name="i-lucide-hash" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                <span>Build #{{ ciInfo.buildNumber }}</span>
-              </div>
-              <div v-if="ciInfo?.workflow" class="flex items-center gap-1.5">
-                <UIcon name="i-lucide-workflow" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                <span>{{ ciInfo.workflow }}</span>
-              </div>
-              <div v-if="ciInfo?.buildUrl" class="flex items-center gap-1.5">
-                <UIcon name="i-lucide-external-link" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                <a :href="ciInfo.buildUrl" target="_blank" class="text-primary hover:underline text-xs">View build</a>
-              </div>
-            </div>
-          </UCard>
-
-          <!-- Browser -->
-          <UCard v-if="browserInfo" :class="blockColSpanClass">
-            <template #header>
-              <div class="flex items-center gap-2">
-                <UIcon name="i-lucide-globe" class="w-4 h-4 text-primary" />
-                <span class="text-sm font-medium">Browser</span>
-              </div>
-            </template>
-            <div class="space-y-2 text-sm">
-              <div class="flex items-center gap-1.5">
-                <UIcon name="i-lucide-chrome" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                <span class="capitalize">{{ browserInfo.browserName || 'Unknown' }}</span>
-              </div>
-              <div v-if="browserInfo.viewport" class="flex items-center gap-1.5">
-                <UIcon name="i-lucide-maximize-2" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                <span class="text-gray-600 dark:text-gray-400">{{ browserInfo.viewport.width }} × {{ browserInfo.viewport.height }}</span>
-              </div>
-            </div>
-          </UCard>
-
-          <!-- Attachments -->
-          <UCard v-if="reportPath" :class="blockColSpanClass">
-            <template #header>
-              <div class="flex items-center gap-2">
-                <UIcon name="i-lucide-paperclip" class="w-4 h-4 text-primary" />
-                <span class="text-sm font-medium">Attachments</span>
-              </div>
-            </template>
-            <div class="space-y-2 text-sm">
-              <UButton
-                :to="reportPath"
-                target="_blank"
-                icon="i-lucide-external-link"
-                label="Open in HTML report"
-                color="primary"
-                variant="outline"
-                size="sm"
-                class="w-full"
-              />
-            </div>
-          </UCard>
-        </div>
+      <div class="flex flex-col h-full overflow-hidden gap-4 p-4">
+        <TestCaseSummary
+          :test-case="testCase as any"
+          :scm-info="scmInfo"
+          :ci-info="ciInfo"
+          :browser-info="browserInfo"
+          :environment="environment"
+          :report-path="reportPath"
+          :steps-count="steps.length"
+          :historical-timing="historicalTiming"
+          :summary-col-span-class="summaryColSpanClass"
+          :block-col-span-class="blockColSpanClass"
+          @refresh="refresh()"
+        />
 
         <UTabs
           v-model="activeTab"
           :items="tabItems"
+          size="sm"
+          class="shrink-0"
         >
           <template #error>
             <div class="space-y-4 pt-4">
@@ -569,10 +379,7 @@ const stepColumns: TableColumn<PerformanceStep>[] = [
                       <p class="text-xs text-gray-500 uppercase tracking-wide">
                         TTFB
                       </p>
-                      <p
-                        class="text-xl font-semibold"
-                        :class="webVitals.navigation.ttfb > 600 ? 'text-red-600' : webVitals.navigation.ttfb > 200 ? 'text-orange-500' : 'text-green-600'"
-                      >
+                      <p class="text-xl font-semibold" :class="webVitals.navigation.ttfb > 600 ? 'text-red-600' : webVitals.navigation.ttfb > 200 ? 'text-orange-500' : 'text-green-600'">
                         {{ formatDuration(webVitals.navigation.ttfb) }}
                       </p>
                       <p class="text-xs text-gray-400 mt-1">
@@ -583,10 +390,7 @@ const stepColumns: TableColumn<PerformanceStep>[] = [
                       <p class="text-xs text-gray-500 uppercase tracking-wide">
                         DOM Interactive
                       </p>
-                      <p
-                        class="text-xl font-semibold"
-                        :class="webVitals.navigation.domInteractive > 3000 ? 'text-red-600' : webVitals.navigation.domInteractive > 1500 ? 'text-orange-500' : 'text-green-600'"
-                      >
+                      <p class="text-xl font-semibold" :class="webVitals.navigation.domInteractive > 3000 ? 'text-red-600' : webVitals.navigation.domInteractive > 1500 ? 'text-orange-500' : 'text-green-600'">
                         {{ formatDuration(webVitals.navigation.domInteractive) }}
                       </p>
                       <p class="text-xs text-gray-400 mt-1">
@@ -597,10 +401,7 @@ const stepColumns: TableColumn<PerformanceStep>[] = [
                       <p class="text-xs text-gray-500 uppercase tracking-wide">
                         DOMContentLoaded
                       </p>
-                      <p
-                        class="text-xl font-semibold"
-                        :class="webVitals.navigation.domContentLoaded > 3000 ? 'text-red-600' : webVitals.navigation.domContentLoaded > 1500 ? 'text-orange-500' : 'text-green-600'"
-                      >
+                      <p class="text-xl font-semibold" :class="webVitals.navigation.domContentLoaded > 3000 ? 'text-red-600' : webVitals.navigation.domContentLoaded > 1500 ? 'text-orange-500' : 'text-green-600'">
                         {{ formatDuration(webVitals.navigation.domContentLoaded) }}
                       </p>
                       <p class="text-xs text-gray-400 mt-1">
@@ -611,10 +412,7 @@ const stepColumns: TableColumn<PerformanceStep>[] = [
                       <p class="text-xs text-gray-500 uppercase tracking-wide">
                         Load Complete
                       </p>
-                      <p
-                        class="text-xl font-semibold"
-                        :class="webVitals.navigation.loadComplete > 5000 ? 'text-red-600' : webVitals.navigation.loadComplete > 3000 ? 'text-orange-500' : 'text-green-600'"
-                      >
+                      <p class="text-xl font-semibold" :class="webVitals.navigation.loadComplete > 5000 ? 'text-red-600' : webVitals.navigation.loadComplete > 3000 ? 'text-orange-500' : 'text-green-600'">
                         {{ formatDuration(webVitals.navigation.loadComplete) }}
                       </p>
                       <p class="text-xs text-gray-400 mt-1">
@@ -636,10 +434,7 @@ const stepColumns: TableColumn<PerformanceStep>[] = [
                       <p class="text-xs text-gray-500 uppercase tracking-wide">
                         First Contentful Paint (FCP)
                       </p>
-                      <p
-                        class="text-xl font-semibold"
-                        :class="webVitals.paint.firstContentfulPaint > 3000 ? 'text-red-600' : webVitals.paint.firstContentfulPaint > 1800 ? 'text-orange-500' : 'text-green-600'"
-                      >
+                      <p class="text-xl font-semibold" :class="webVitals.paint.firstContentfulPaint > 3000 ? 'text-red-600' : webVitals.paint.firstContentfulPaint > 1800 ? 'text-orange-500' : 'text-green-600'">
                         {{ formatDuration(webVitals.paint.firstContentfulPaint) }}
                       </p>
                     </div>
@@ -686,7 +481,7 @@ const stepColumns: TableColumn<PerformanceStep>[] = [
                         {{ req.method }}
                       </UBadge>
                       <code class="truncate text-xs">{{ req.route }}</code>
-                      <span v-if="req.count > 1" class="text-gray-400 text-xs shrink-0">×{{ req.count }}</span>
+                      <span v-if="req.count > 1" class="text-gray-400 text-xs shrink-0">&times;{{ req.count }}</span>
                     </div>
                     <span
                       class="ml-2 shrink-0"
@@ -713,7 +508,6 @@ const stepColumns: TableColumn<PerformanceStep>[] = [
               <div v-if="historyData && historyData.length > 0">
                 <div class="space-y-4">
                   <TestCaseHistoryChart :data="historyData" :height="200" />
-
                   <UTable
                     :data="historyData"
                     :columns="historyColumns"
