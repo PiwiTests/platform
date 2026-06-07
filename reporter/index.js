@@ -667,9 +667,6 @@ class PiwiDashboardReporter {
       if (response.testRunId) {
         console.log(`[Piwi Dashboard] Test Run ID: ${response.testRunId}, Project ID: ${response.projectId}`);
       }
-      if (response.reportPath) {
-        console.log(`[Piwi Dashboard] HTML Report: ${response.reportPath}`);
-      }
       if (response.reports && response.reports.length > 0) {
         for (const r of response.reports) {
           console.log(`[Piwi Dashboard] ${r.label}: ${r.path}`);

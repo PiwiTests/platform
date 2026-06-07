@@ -175,11 +175,13 @@ test.describe('Storage Abstraction Tests', () => {
       expect(response.ok()).toBeTruthy()
       const data = await response.json()
       expect(data.success).toBe(true)
-      expect(data.reportPath).toBeDefined()
+      expect(Array.isArray(data.reports)).toBe(true)
+      expect(data.reports.length).toBeGreaterThan(0)
 
       // Try to retrieve the file via API
-      if (data.reportPath) {
-        const fileResponse = await request.get(`/api/files/${data.reportPath}`)
+      const firstReport = data.reports[0]
+      if (firstReport?.path) {
+        const fileResponse = await request.get(`/api/files/${firstReport.path}`)
         expect(fileResponse.ok()).toBeTruthy()
         const fileContent = await fileResponse.text()
         expect(fileContent).toContain('Storage Test Report')

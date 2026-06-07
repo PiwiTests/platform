@@ -181,9 +181,7 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
     accessorKey: 'reports',
     header: 'Reports',
     cell: ({ row }) => h(RunReports, {
-      reports: row.original.reports,
-      legacyPath: row.original.reportPath,
-      legacySize: row.original.reportSize
+      reports: row.original.reports
     })
   },
   {

@@ -2,9 +2,9 @@
  * Client-side implementations of the /api/test-runs* endpoints for demo mode.
  */
 
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { getDemoDb } from '../db.client'
-import { testRuns, testCases, testRunsCases, projects, reports, traces } from '~~/server/database/schema.sqlite'
+import { testRuns, testCases, testRunsCases, projects, files } from '~~/server/database/schema.sqlite'
 
 /** GET /api/test-runs/:id */
 export async function apiGetTestRun(id: number) {
@@ -17,7 +17,8 @@ export async function apiGetTestRun(id: number) {
   const projectResults = await db.select().from(projects).where(eq(projects.id, testRun.projectId))
   const project = projectResults[0]
 
-  const reportResults = await db.select().from(reports).where(eq(reports.testRunId, id))
+  const reportResults = await db.select().from(files)
+    .where(sql`${files.testRunId} = ${id} AND ${files.type} = 'report'`)
 
   const runsCases = await db.select({
     id: testRunsCases.id,
@@ -62,17 +63,31 @@ export async function apiGetTestRun(id: number) {
   // Omit streamToken — internal field
   const { streamToken: _st, ...testRunPublic } = testRun
 
+  // Get storage stats for this run
+  const storageStatsResult = await db.select({
+    totalFiles: sql<number>`count(*)`,
+    totalSize: sql<number>`coalesce(sum(${files.size}), 0)`
+  })
+    .from(files)
+    .where(eq(files.testRunId, id))
+
+  const storageStats = {
+    totalFiles: Number(storageStatsResult[0]?.totalFiles ?? 0),
+    totalSize: Number(storageStatsResult[0]?.totalSize ?? 0)
+  }
+
   return {
     ...testRunPublic,
     project,
     reports: reportResults.map(r => ({
       id: r.id,
-      type: r.type,
-      label: r.label,
+      type: r.subtype || r.type,
+      label: r.label || r.type,
       path: r.path,
       size: r.size
     })),
-    testCases: formattedTestCases
+    testCases: formattedTestCases,
+    storageStats
   }
 }
 
@@ -159,15 +174,16 @@ export async function apiGetNetworkRequests(id: number) {
 export async function apiDeleteTestRun(id: number) {
   const db = await getDemoDb()
 
-  // Delete traces for all cases belonging to this run
+  // Delete files linked to this run's cases
   const runsCases = await db.select({ id: testRunsCases.id }).from(testRunsCases).where(eq(testRunsCases.testRunId, id))
-  for (const { id: caseId } of runsCases) {
-    await db.delete(traces).where(eq(traces.testRunsCaseId, caseId))
+  const caseIds = runsCases.map(c => c.id)
+  if (caseIds.length > 0) {
+    await db.delete(files).where(sql`${files.testRunsCaseId} IN (${sql.join(caseIds.map(c => sql`${c}`), sql`, `)})`)
   }
 
-  // Delete test run cases and reports
+  // Delete files linked to the run (reports) and test run cases
+  await db.delete(files).where(eq(files.testRunId, id))
   await db.delete(testRunsCases).where(eq(testRunsCases.testRunId, id))
-  await db.delete(reports).where(eq(reports.testRunId, id))
 
   // Delete the run itself
   await db.delete(testRuns).where(eq(testRuns.id, id))

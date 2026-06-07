@@ -66,6 +66,21 @@ export interface ReportInfo {
   size?: number | null
 }
 
+/**
+ * File stored in the unified files table
+ */
+export interface FileInfo {
+  id: number
+  testRunId?: number | null
+  testRunsCaseId?: number | null
+  type: string
+  subtype?: string | null
+  label?: string | null
+  path: string
+  size?: number | null
+  createdAt: Date
+}
+
 // ============================================================================
 // Tag types (API responses)
 // ============================================================================
@@ -125,8 +140,6 @@ export interface ProjectWithStats {
     skippedTests: number
     flakyTests: number
     totalTests: number
-    reportPath?: string | null
-    reportSize?: number | null
     reports?: ReportInfo[]
     avgTestDuration?: number | null
     p90TestDuration?: number | null
@@ -183,8 +196,6 @@ export interface TestRunSummary {
   flakyTests: number
   avgTestDuration?: number | null
   p90TestDuration?: number | null
-  reportPath?: string | null
-  reportSize?: number | null
   reports?: ReportInfo[]
   environment?: string | null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -208,8 +219,6 @@ export interface TestRunDetails {
   flakyTests: number
   avgTestDuration?: number | null
   p90TestDuration?: number | null
-  reportPath?: string | null
-  reportSize?: number | null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null
   environment?: string | null
@@ -221,6 +230,10 @@ export interface TestRunDetails {
   }
   reports?: ReportInfo[]
   testCases?: TestCaseResult[]
+  storageStats?: {
+    totalFiles: number
+    totalSize: number
+  }
 }
 
 /**
@@ -457,9 +470,8 @@ export interface AdminStats {
   totalRuns: number
   totalTestCases: number
   totalRunsCases: number
-  totalTraces: number
-  totalReports: number
-  reportSizeFromDb: number
+  totalFiles: number
+  totalFileSize: number
   storageSizeOnDisk: number | null
 }
 

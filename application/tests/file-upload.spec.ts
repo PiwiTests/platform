@@ -341,12 +341,13 @@ test.describe('File Upload API Tests', () => {
     })
 
     const uploadData = await uploadResponse.json()
-    expect(uploadData.reportPath).toBeDefined()
+    expect(Array.isArray(uploadData.reports)).toBe(true)
+    expect(uploadData.reports.length).toBeGreaterThan(0)
 
     // Try to download the report
-    if (uploadData.reportPath) {
-      const reportPath = uploadData.reportPath.replace('.data/storage/', '')
-      const downloadResponse = await request.get(`/api/files/${reportPath}`)
+    const firstReport = uploadData.reports[0]
+    if (firstReport?.path) {
+      const downloadResponse = await request.get(`/api/files/${firstReport.path}`)
 
       expect(downloadResponse.ok()).toBeTruthy()
       expect(downloadResponse.headers()['content-type']).toContain('text/html')

@@ -1,6 +1,6 @@
 import { getDatabase } from '../../database'
-import { projects, testRuns, reports, tags, projectTags } from '../../database/schema'
-import { eq, desc, inArray } from 'drizzle-orm'
+import { projects, testRuns, files, tags, projectTags } from '../../database/schema'
+import { eq, desc, inArray, and } from 'drizzle-orm'
 
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
@@ -31,14 +31,15 @@ export default eventHandler(async (event) => {
   // Fetch reports for all runs in a single query
   const runIds = runs.map(r => r.id)
   const reportResults = runIds.length > 0
-    ? await db.select().from(reports).where(inArray(reports.testRunId, runIds))
+    ? await db.select().from(files)
+        .where(and(inArray(files.testRunId, runIds), eq(files.type, 'report')))
     : []
 
   const reportsByRunId = new Map<number, { id: number, type: string, label: string, path: string, size: number | null }[]>()
   for (const r of reportResults) {
-    const list = reportsByRunId.get(r.testRunId) ?? []
-    list.push({ id: r.id, type: r.type, label: r.label, path: r.path, size: r.size })
-    reportsByRunId.set(r.testRunId, list)
+    const list = reportsByRunId.get(r.testRunId!) ?? []
+    list.push({ id: r.id, type: r.subtype || r.type, label: r.label || r.type, path: r.path, size: r.size })
+    reportsByRunId.set(r.testRunId!, list)
   }
 
   // Get tags for this project

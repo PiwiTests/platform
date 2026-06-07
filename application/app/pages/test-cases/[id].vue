@@ -131,8 +131,7 @@ const reportPath = computed(() => {
     const htmlReport = reports.find((r: { type: string }) => r.type === 'html')
     if (htmlReport) return `/api/files/${getFileApiPath(htmlReport.path)}`
   }
-  const runReportPath = run?.reportPath as string | undefined
-  return runReportPath ? `/api/files/${getFileApiPath(runReportPath)}` : null
+  return null
 })
 
 const UBadge = resolveComponent('UBadge')

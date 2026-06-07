@@ -26,8 +26,7 @@ export const testRuns = pgTable('test_runs', {
   flakyTests: integer('flaky_tests').notNull().default(0),
   avgTestDuration: integer('avg_test_duration'), // average test case duration in ms
   p90TestDuration: integer('p90_test_duration'), // 90th percentile test duration in ms
-  reportPath: text('report_path'),
-  reportSize: integer('report_size'), // in bytes (decompressed size)
+
   environment: text('environment'), // Deployment environment (e.g. 'production', 'staging', 'development')
   metadata: jsonb('metadata'), // Additional metadata as JSON
   streamToken: text('stream_token'), // Token for authenticating streaming updates
@@ -78,27 +77,20 @@ export const testRunsCases = pgTable('test_runs_cases', {
   testCaseIdIdx: index('idx_test_runs_cases_test_case_id').on(table.testCaseId)
 }))
 
-// Reports table - stores multiple report types per test run
-export const reports = pgTable('reports', {
+// Files table - unified storage for all file references (reports, traces, screenshots, etc.)
+export const files = pgTable('files', {
   id: serial('id').primaryKey(),
-  testRunId: integer('test_run_id').notNull().references(() => testRuns.id),
-  type: text('type').notNull(), // 'html', 'monocart', 'blob', etc.
-  label: text('label').notNull(), // Display label e.g. 'HTML Report', 'Monocart Report'
-  path: text('path').notNull(), // Relative path in storage (for browsable) or file path (for blob)
+  testRunId: integer('test_run_id').references(() => testRuns.id),
+  testRunsCaseId: integer('test_runs_case_id').references(() => testRunsCases.id),
+  type: text('type').notNull(), // 'report', 'trace', 'screenshot', etc.
+  subtype: text('subtype'), // 'html', 'monocart', 'blob' for reports; null for traces
+  label: text('label'), // Display label e.g. 'HTML Report'
+  path: text('path').notNull(), // Relative path in storage
   size: integer('size'), // File/directory size in bytes
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
 }, table => ({
-  testRunIdIdx: index('idx_reports_test_run_id').on(table.testRunId)
-}))
-
-// Traces table
-export const traces = pgTable('traces', {
-  id: serial('id').primaryKey(),
-  testRunsCaseId: integer('test_runs_case_id').notNull().references(() => testRunsCases.id),
-  filePath: text('file_path').notNull(),
-  createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
-}, table => ({
-  testRunsCaseIdIdx: index('idx_traces_test_runs_case_id').on(table.testRunsCaseId)
+  testRunIdIdx: index('idx_files_test_run_id').on(table.testRunId),
+  testRunsCaseIdIdx: index('idx_files_test_runs_case_id').on(table.testRunsCaseId)
 }))
 
 // Tags table - for labeling projects
@@ -159,10 +151,8 @@ export type TestCase = typeof testCases.$inferSelect
 export type NewTestCase = typeof testCases.$inferInsert
 export type TestRunsCase = typeof testRunsCases.$inferSelect
 export type NewTestRunsCase = typeof testRunsCases.$inferInsert
-export type Trace = typeof traces.$inferSelect
-export type NewTrace = typeof traces.$inferInsert
-export type Report = typeof reports.$inferSelect
-export type NewReport = typeof reports.$inferInsert
+export type File = typeof files.$inferSelect
+export type NewFile = typeof files.$inferInsert
 export type User = typeof users.$inferSelect
 export type NewUser = typeof users.$inferInsert
 export type ApiKey = typeof apiKeys.$inferSelect

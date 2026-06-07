@@ -5,9 +5,9 @@
  * in the browser against the in-browser SQLite database.
  */
 
-import { eq, desc, sql, inArray, asc } from 'drizzle-orm'
+import { eq, desc, sql, inArray, asc, and } from 'drizzle-orm'
 import { getDemoDb } from '../db.client'
-import { projects, testRuns, testCases, testRunsCases, reports, tags, projectTags } from '~~/server/database/schema.sqlite'
+import { projects, testRuns, testCases, testRunsCases, files, tags, projectTags } from '~~/server/database/schema.sqlite'
 import type { Project } from '~~/server/database/schema.sqlite'
 
 /** GET /api/projects */
@@ -35,8 +35,9 @@ export async function apiGetProjects() {
 
       let runReports: { id: number, type: string, label: string, path: string, size: number | null }[] = []
       if (latestRun) {
-        const reportRows = await db.select().from(reports).where(eq(reports.testRunId, latestRun.id))
-        runReports = reportRows.map(r => ({ id: r.id, type: r.type, label: r.label, path: r.path, size: r.size }))
+        const reportRows = await db.select().from(files)
+          .where(and(eq(files.testRunId, latestRun.id), eq(files.type, 'report')))
+        runReports = reportRows.map(r => ({ id: r.id, type: r.subtype || r.type, label: r.label || r.type, path: r.path, size: r.size }))
       }
 
       const projectTagRows = await db
@@ -72,14 +73,15 @@ export async function apiGetProject(id: number) {
 
   const runIds = runs.map(r => r.id)
   const reportResults = runIds.length > 0
-    ? await db.select().from(reports).where(inArray(reports.testRunId, runIds))
+    ? await db.select().from(files)
+        .where(and(inArray(files.testRunId, runIds), eq(files.type, 'report')))
     : []
 
   const reportsByRunId = new Map<number, { id: number, type: string, label: string, path: string, size: number | null }[]>()
   for (const r of reportResults) {
-    const list = reportsByRunId.get(r.testRunId) ?? []
-    list.push({ id: r.id, type: r.type, label: r.label, path: r.path, size: r.size })
-    reportsByRunId.set(r.testRunId, list)
+    const list = reportsByRunId.get(r.testRunId!) ?? []
+    list.push({ id: r.id, type: r.subtype || r.type, label: r.label || r.type, path: r.path, size: r.size })
+    reportsByRunId.set(r.testRunId!, list)
   }
 
   const projectTagRows = await db

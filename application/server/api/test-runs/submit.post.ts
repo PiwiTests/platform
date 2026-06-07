@@ -51,7 +51,7 @@ export default eventHandler(async (event) => {
     passedTests: body.passedTests || 0,
     failedTests: body.failedTests || 0,
     skippedTests: body.skippedTests || 0,
-    reportPath: body.reportPath || null,
+
     environment: body.environment || null,
     metadata: body.metadata || null,
     instanceId: body.instanceId || null
