@@ -2,6 +2,7 @@ import { extname } from 'path'
 import { getStorage } from '../../storage'
 import { gunzip } from 'zlib'
 import { promisify } from 'util'
+import { parseZip, buildZip } from '../../utils/trace-zip'
 
 const gunzipAsync = promisify(gunzip)
 
@@ -30,6 +31,52 @@ async function findInArchive(buffer: Buffer, targetName: string): Promise<Buffer
     offset += contentLength
   }
   return null
+}
+
+/**
+ * Reconstruct a full Playwright trace ZIP from a slim ZIP and its shared resource pool.
+ *
+ * The slim ZIP contains only the event/network/stack entries; the manifest lists the
+ * resource filenames that were extracted to the project-wide shared pool.  We fetch
+ * the resources in parallel and rebuild a complete ZIP that the trace viewer can open.
+ *
+ * Returns null if any required component is missing so the caller can fall back.
+ */
+async function reconstructTraceZip(
+  storage: ReturnType<typeof getStorage>,
+  slimZipData: Buffer,
+  manifestPath: string,
+  projectPrefix: string // e.g. "project-1/"
+): Promise<Buffer | null> {
+  try {
+    const manifestData = await storage.readFile(manifestPath)
+    const manifest = JSON.parse(manifestData.toString('utf8')) as { resources?: string[] }
+    const resourceNames = manifest.resources ?? []
+
+    // Parse slim ZIP to recover event entries
+    const slimEntries = parseZip(slimZipData)
+
+    // Fetch all shared resources in parallel; skip any that are missing
+    const resourceEntries = (
+      await Promise.all(
+        resourceNames.map(async (name) => {
+          const resourcePath = `${projectPrefix}trace-resources/${name}`
+          try {
+            const data = await storage.readFile(resourcePath)
+            return { name: `resources/${name}`, data }
+          } catch {
+            console.warn(`[TraceZip] Missing shared resource: ${resourcePath}`)
+            return null
+          }
+        })
+      )
+    ).filter((e): e is NonNullable<typeof e> => e !== null)
+
+    return buildZip([...slimEntries, ...resourceEntries])
+  } catch (err) {
+    console.warn(`[TraceZip] Reconstruction failed: ${err}`)
+    return null
+  }
 }
 
 export default eventHandler(async (event) => {
@@ -72,6 +119,21 @@ export default eventHandler(async (event) => {
   if (await storage.exists(path)) {
     const fileContent = await storage.readFile(path)
     const ext = extname(path).toLowerCase()
+
+    // Slim trace blob: reconstruct full ZIP from shared resource pool
+    if (ext === '.zip' && path.includes('/blobs/')) {
+      const manifestPath = path.replace(/\.zip$/, '.manifest.json')
+      const projectPrefix = path.split('/blobs/')[0] + '/'
+      if (await storage.exists(manifestPath)) {
+        const fullZip = await reconstructTraceZip(storage, fileContent, manifestPath, projectPrefix)
+        if (fullZip) {
+          setResponseHeader(event, 'Content-Type', 'application/zip')
+          setResponseHeader(event, 'Content-Length', fullZip.length)
+          return fullZip
+        }
+        // Reconstruction failed — fall through to serve the slim ZIP as-is
+      }
+    }
 
     // If the file is a .gz archive, try to serve index.html from inside
     if (ext === '.gz') {

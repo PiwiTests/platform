@@ -11,6 +11,7 @@ const {
   findReportDirectory,
   compressReportDirectory,
   findTraceFiles,
+  computeTraceHashes,
   DEFAULT_REPORT_DIRS
 } = require('./lib/files');
 
@@ -547,31 +548,103 @@ class PiwiDashboardReporter {
 
   /**
    * Find trace files for each test case and append them to a FormData instance.
-   * Shared by _uploadFilesForStreamingRun and uploadWithFiles.
+   * When traceHashMap and missingHashes are provided, only traces whose hash is
+   * in missingHashes are uploaded; all hashes are still sent as trace_hashes
+   * metadata so the server can create files records for deduplicated traces too.
+   *
+   * @param {FormData} form
+   * @param {Set<string>|null} missingHashes - Hashes the server needs uploaded; null means upload all.
+   * @param {Map<number, { tracePath: string, hash: string, size: number }>|null} traceHashMap
    */
-  _appendTracesToForm(form) {
+  _appendTracesToForm(form, missingHashes, traceHashMap) {
     if (!this.options.uploadTraces) return
 
-    let traceCount = 0
-    for (const [i, testCase] of this.testCases.entries()) {
-      const traceFiles = findTraceFiles(testCase)
-      for (const tracePath of traceFiles) {
-        if (fs.existsSync(tracePath)) {
-          console.log(`[Piwi Dashboard] Adding trace file: ${tracePath}`)
-          form.append(`trace_${i}`, fs.createReadStream(tracePath), {
-            filename: path.basename(tracePath)
-          })
-          traceCount++
+    // Legacy path: no hash map available, upload everything as before
+    if (!traceHashMap) {
+      let traceCount = 0
+      for (const [i, testCase] of this.testCases.entries()) {
+        const traceFiles = findTraceFiles(testCase)
+        for (const tracePath of traceFiles) {
+          if (fs.existsSync(tracePath)) {
+            form.append(`trace_${i}`, fs.createReadStream(tracePath), {
+              filename: path.basename(tracePath)
+            })
+            traceCount++
+          }
         }
       }
+      console.log(`[Piwi Dashboard] Found ${traceCount} trace files`)
+      return
     }
-    console.log(`[Piwi Dashboard] Found ${traceCount} trace files`)
+
+    let uploadCount = 0
+    let deduplicatedCount = 0
+    const hashesObj = {}
+
+    for (const [i, hashInfo] of traceHashMap.entries()) {
+      hashesObj[i] = hashInfo.hash
+      const isNew = !missingHashes || missingHashes.has(hashInfo.hash)
+      if (isNew) {
+        form.append(`trace_${i}`, fs.createReadStream(hashInfo.tracePath), {
+          filename: path.basename(hashInfo.tracePath)
+        })
+        uploadCount++
+      } else {
+        deduplicatedCount++
+      }
+    }
+
+    // Always send hashes so the server can link files records for reused blobs
+    if (Object.keys(hashesObj).length > 0) {
+      form.append('trace_hashes', JSON.stringify(hashesObj))
+    }
+
+    console.log(`[Piwi Dashboard] Uploading ${uploadCount} trace files (${deduplicatedCount} already stored, skipped)`)
+  }
+
+  /**
+   * Preflight check: ask the server which of the given hashes it already has stored.
+   * Returns a Set of hashes that need to be uploaded.
+   * Falls back to returning all hashes as missing on any network or parse error.
+   *
+   * @param {string} projectName
+   * @param {Map<number, { hash: string }>} traceHashMap
+   * @param {string|null} sessionCookie
+   * @returns {Promise<Set<string>>}
+   */
+  async _checkMissingTraces(projectName, traceHashMap, sessionCookie) {
+    if (traceHashMap.size === 0) return new Set()
+
+    const hashes = [...traceHashMap.values()].map(h => h.hash)
+
+    try {
+      const response = await postJSON(
+        this.options.serverUrl,
+        '/api/traces/check',
+        { projectName, hashes },
+        this.options.verbose,
+        sessionCookie
+      )
+      const missing = Array.isArray(response.missing) ? response.missing : hashes
+      if (this.options.verbose) {
+        console.log(`[Piwi Dashboard] Trace preflight: ${missing.length}/${hashes.length} need upload`)
+      }
+      return new Set(missing)
+    } catch (error) {
+      if (this.options.verbose) {
+        console.warn(`[Piwi Dashboard] Trace preflight failed, uploading all: ${error.message}`)
+      }
+      return new Set(hashes)
+    }
   }
 
   /**
    * Upload report files and traces for a streaming run that is already created.
    */
   async _uploadFilesForStreamingRun(sessionCookie) {
+    const traceHashMap = this.options.uploadTraces ? await computeTraceHashes(this.testCases) : new Map();
+    const missingHashes = await this._checkMissingTraces(this.options.projectName, traceHashMap, sessionCookie);
+
     const form = new FormData();
 
     // Add run ID to associate files with existing run
@@ -592,7 +665,7 @@ class PiwiDashboardReporter {
     form.append('testCases', JSON.stringify([]));
 
     await this._appendReportsToForm(form);
-    this._appendTracesToForm(form);
+    this._appendTracesToForm(form, missingHashes, traceHashMap);
 
     const response = await postFormData(this.options.serverUrl, '/api/test-runs/upload', form, sessionCookie);
     console.log(`[Piwi Dashboard] Successfully uploaded files for streaming run #${this.streamingRunId}`);
@@ -633,6 +706,9 @@ class PiwiDashboardReporter {
   }
 
   async uploadWithFiles(overallStatus, duration, sessionCookie) {
+    const traceHashMap = this.options.uploadTraces ? await computeTraceHashes(this.testCases) : new Map();
+    const missingHashes = await this._checkMissingTraces(this.options.projectName, traceHashMap, sessionCookie);
+
     const form = new FormData();
 
     // Add project name
@@ -659,7 +735,7 @@ class PiwiDashboardReporter {
     form.append('testCases', JSON.stringify(testCasesData));
 
     await this._appendReportsToForm(form);
-    this._appendTracesToForm(form);
+    this._appendTracesToForm(form, missingHashes, traceHashMap);
 
     try {
       const response = await postFormData(this.options.serverUrl, '/api/test-runs/upload', form, sessionCookie);
