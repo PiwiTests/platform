@@ -11,6 +11,7 @@ const {
   findReportDirectory,
   compressReportDirectory,
   findTraceFiles,
+  findAllAttachments,
   computeTraceHashes,
   DEFAULT_REPORT_DIRS
 } = require('./lib/files');
@@ -552,6 +553,9 @@ class PiwiDashboardReporter {
    * in missingHashes are uploaded; all hashes are still sent as trace_hashes
    * metadata so the server can create files records for deduplicated traces too.
    *
+   * Also uploads all other file-based attachments (screenshots, videos, etc.)
+   * as attach_file_<index> / attach_meta_<index> form fields.
+   *
    * @param {FormData} form
    * @param {Set<string>|null} missingHashes - Hashes the server needs uploaded; null means upload all.
    * @param {Map<number, { tracePath: string, hash: string, size: number }>|null} traceHashMap
@@ -559,6 +563,33 @@ class PiwiDashboardReporter {
   _appendTracesToForm(form, missingHashes, traceHashMap) {
     if (!this.options.uploadTraces) return
 
+    // --- Non-trace attachments (screenshots, videos, custom files) ---
+    let attachmentCount = 0
+    for (const [i, testCase] of this.testCases.entries()) {
+      const attachments = findAllAttachments(testCase)
+      if (attachments.length === 0) continue
+
+      // Metadata: array of { name, contentType, originalName }
+      form.append(`attach_meta_${i}`, JSON.stringify(
+        attachments.map(a => ({
+          name: a.name,
+          contentType: a.contentType,
+          originalName: a.originalName
+        }))
+      ))
+
+      for (const attachment of attachments) {
+        form.append(`attach_file_${i}`, fs.createReadStream(attachment.path), {
+          filename: attachment.originalName
+        })
+        attachmentCount++
+      }
+    }
+    if (attachmentCount > 0) {
+      console.log(`[Piwi Dashboard] Uploading ${attachmentCount} non-trace attachments`)
+    }
+
+    // --- Trace files ---
     // Legacy path: no hash map available, upload everything as before
     if (!traceHashMap) {
       let traceCount = 0

@@ -557,6 +557,17 @@ export interface TraceInfo {
 }
 
 /**
+ * Attachment file (screenshot, video, custom) attached to a test case result
+ */
+export interface AttachmentInfo {
+  id: number
+  name: string | null
+  contentType: string | null
+  path: string
+  size: number | null
+}
+
+/**
  * Slow test entry - returned by GET /api/projects/[id]/slow-tests
  */
 export interface SlowTest {

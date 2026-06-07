@@ -69,7 +69,6 @@ async function compressReportDirectory(reportDir) {
 function findTraceFiles(testCase) {
   const traceFilesSet = new Set();
 
-  // Look in attachments for trace files
   if (testCase.attachments && testCase.attachments.length > 0) {
     for (const attachment of testCase.attachments) {
       if (attachment.name === 'trace' && attachment.path) {
@@ -80,6 +79,34 @@ function findTraceFiles(testCase) {
   }
 
   return Array.from(traceFilesSet);
+}
+
+/**
+ * Find all non-trace file attachments for a test case.
+ * Returns each attachment with its metadata and resolved path.
+ *
+ * @param {Object} testCase - Test case object with attachments
+ * @returns {Object[]} Array of { name, path, contentType, originalName }
+ */
+function findAllAttachments(testCase) {
+  const result = [];
+
+  if (testCase.attachments && testCase.attachments.length > 0) {
+    for (const attachment of testCase.attachments) {
+      if (attachment.name === 'trace') continue
+      if (attachment.name?.startsWith('piwi-dashboard-')) continue
+      if (attachment.path && fs.existsSync(attachment.path)) {
+        result.push({
+          name: attachment.name || 'attachment',
+          path: path.resolve(attachment.path),
+          contentType: attachment.contentType || 'application/octet-stream',
+          originalName: path.basename(attachment.path)
+        });
+      }
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -135,6 +162,7 @@ module.exports = {
   findReportDirectory,
   compressReportDirectory,
   findTraceFiles,
+  findAllAttachments,
   computeTraceHashes,
   DEFAULT_REPORT_DIRS
 };

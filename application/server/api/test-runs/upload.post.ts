@@ -57,6 +57,9 @@ export default eventHandler(async (event) => {
   // SHA-256 hashes for traces, keyed by the same index as traceFiles.
   // Sent by the reporter for all traces (including those not uploaded due to deduplication).
   const traceHashes: Map<number, string> = new Map()
+  // Non-trace attachments: test case index -> array of { name, contentType, originalName, data }
+  const attachmentMeta: Map<number, { name: string, contentType: string, originalName: string }[]> = new Map()
+  const attachmentFiles: Map<number, { originalName: string, data: Buffer }[]> = new Map()
 
   for (const part of formData) {
     if (part.name === 'testRunId') {
@@ -123,6 +126,31 @@ export default eventHandler(async (event) => {
         }
       } catch {
         // Deduplication metadata is optional; ignore parse errors
+      }
+    } else if (part.name?.startsWith('attach_meta_')) {
+      const idx = parseInt(part.name.slice('attach_meta_'.length), 10)
+      if (!isNaN(idx)) {
+        try {
+          const parsed = JSON.parse(part.data.toString('utf-8'))
+          if (Array.isArray(parsed)) {
+            attachmentMeta.set(idx, parsed.map((a: Record<string, unknown>) => ({
+              name: String(a.name || 'attachment'),
+              contentType: String(a.contentType || 'application/octet-stream'),
+              originalName: String(a.originalName || 'attachment')
+            })))
+          }
+        } catch {
+          // Metadata is optional; ignore parse errors
+        }
+      }
+    } else if (part.name?.startsWith('attach_file_') && part.filename) {
+      const idx = parseInt(part.name.slice('attach_file_'.length), 10)
+      if (!isNaN(idx)) {
+        if (!attachmentFiles.has(idx)) attachmentFiles.set(idx, [])
+        attachmentFiles.get(idx)!.push({
+          originalName: sanitizeFilename(part.filename),
+          data: part.data
+        })
       }
     }
   }
@@ -416,6 +444,41 @@ export default eventHandler(async (event) => {
           })
         } catch (error) {
           console.error(`[Upload] Failed to store trace for case #${testRunsCaseId}: ${error}`)
+        }
+      }
+    }
+
+    // Store non-trace attachments (screenshots, videos, custom files) linked to test run cases
+    if (insertedRunCases.length > 0 && attachmentMeta.size > 0) {
+      for (const [index, metaList] of attachmentMeta) {
+        if (index < 0 || index >= insertedRunCases.length) continue
+        const inserted = insertedRunCases[index]
+        if (!inserted?.id) continue
+        const testRunsCaseId = inserted.id
+        const filesList = attachmentFiles.get(index) || []
+
+        for (let fi = 0; fi < Math.min(metaList.length, filesList.length); fi++) {
+          const meta = metaList[fi]!
+          const fileEntry = filesList[fi]!
+          const attachmentDir = `${testRunPath}/${testRunsCaseId}`
+          await storage.mkdir(attachmentDir)
+          const storagePath = `${attachmentDir}/${fileEntry.originalName}`
+
+          try {
+            await storage.writeFile(storagePath, fileEntry.data)
+            await db.insert(files).values({
+              testRunsCaseId,
+              testRunId: testRun.id,
+              type: 'attachment',
+              subtype: meta.name,
+              label: meta.contentType,
+              path: storagePath.replace(/\\/g, '/'),
+              size: fileEntry.data.length
+            })
+            console.log(`[Upload] Stored attachment "${meta.name}" for case #${testRunsCaseId}`)
+          } catch (error) {
+            console.error(`[Upload] Failed to store attachment for case #${testRunsCaseId}: ${error}`)
+          }
         }
       }
     }
