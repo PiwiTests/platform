@@ -50,6 +50,13 @@
       "when": 1780694885973,
       "tag": "0006_clumsy_wong",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1781500000000,
+      "tag": "0007_trace_blobs",
+      "breakpoints": true
     }
   ]
 }

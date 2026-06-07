@@ -26,13 +26,18 @@ export default eventHandler(async (event) => {
   }
 
   // Fetch test case + test run in parallel (both depend on testRunsCase IDs)
-  const [[testCase], [testRun], reportList] = await Promise.all([
+  const [[testCase], [testRun], reportList, attachmentList] = await Promise.all([
     db.select().from(testCases).where(eq(testCases.id, testRunsCase.testCaseId)).then(r => r.length > 0 ? [r[0]] : [undefined]),
     db.select().from(testRuns).where(eq(testRuns.id, testRunsCase.testRunId)).then(r => r.length > 0 ? [r[0]] : [undefined]),
     db.select().from(files)
       .where(sql`${files.testRunId} = ${testRunsCase.testRunId} AND ${files.type} = 'report'`)
       .then(r =>
         r.map(rep => ({ id: rep.id, type: rep.subtype || rep.type, label: rep.label || rep.type, path: rep.path, size: rep.size }))
+      ),
+    db.select().from(files)
+      .where(sql`${files.testRunsCaseId} = ${testRunsCase.id} AND ${files.type} = 'attachment'`)
+      .then(r =>
+        r.map(att => ({ id: att.id, name: att.subtype, contentType: att.label, path: att.path, size: att.size }))
       )
   ])
 
@@ -62,6 +67,7 @@ export default eventHandler(async (event) => {
     consoleLogs: testRunsCase.consoleLogs,
     ariaSnapshot: testRunsCase.ariaSnapshot,
     workerIndex: testRunsCase.workerIndex,
-    testRun: testRun ? { ...testRun, project, reports: reportList } : testRun
+    testRun: testRun ? { ...testRun, project, reports: reportList } : testRun,
+    attachments: attachmentList
   }
 })

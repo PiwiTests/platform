@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, primaryKey } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core'
 
 // Projects table
 export const projects = sqliteTable('projects', {
@@ -77,6 +77,31 @@ export const testRunsCases = sqliteTable('test_runs_cases', {
   testCaseIdIdx: index('idx_test_runs_cases_test_case_id').on(table.testCaseId)
 }))
 
+// Trace resources table - shared pool of individual resource files extracted from trace ZIPs
+// Playwright names resources by content hash, so the filename IS the dedup key
+export const traceResources = sqliteTable('trace_resources', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(), // filename as stored in resources/ dir, e.g. "abc123.net"
+  path: text('path').notNull(), // project-{id}/trace-resources/{name}
+  size: integer('size').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
+}, table => ({
+  projectNameIdx: uniqueIndex('idx_trace_resources_project_name').on(table.projectId, table.name)
+}))
+
+// Trace blobs table - content-addressed storage deduplicating trace files across runs
+export const traceBlobs = sqliteTable('trace_blobs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  hash: text('hash').notNull(), // SHA-256 hex digest of the trace file content
+  path: text('path').notNull(), // content-addressed path: project-{id}/blobs/{hash}.zip
+  size: integer('size').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
+}, table => ({
+  projectHashIdx: uniqueIndex('idx_trace_blobs_project_hash').on(table.projectId, table.hash)
+}))
+
 // Files table - unified storage for all file references (reports, traces, screenshots, etc.)
 export const files = sqliteTable('files', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -87,6 +112,7 @@ export const files = sqliteTable('files', {
   label: text('label'), // Display label e.g. 'HTML Report'
   path: text('path').notNull(), // Relative path in storage
   size: integer('size'), // File/directory size in bytes
+  blobId: integer('blob_id').references(() => traceBlobs.id), // Set when the file is a deduplicated trace blob
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
 }, table => ({
   testRunIdIdx: index('idx_files_test_run_id').on(table.testRunId),
@@ -149,6 +175,10 @@ export type TestRunsCase = typeof testRunsCases.$inferSelect
 export type NewTestRunsCase = typeof testRunsCases.$inferInsert
 export type File = typeof files.$inferSelect
 export type NewFile = typeof files.$inferInsert
+export type TraceBlob = typeof traceBlobs.$inferSelect
+export type NewTraceBlob = typeof traceBlobs.$inferInsert
+export type TraceResource = typeof traceResources.$inferSelect
+export type NewTraceResource = typeof traceResources.$inferInsert
 export type User = typeof users.$inferSelect
 export type NewUser = typeof users.$inferInsert
 export type ApiKey = typeof apiKeys.$inferSelect

@@ -450,6 +450,7 @@ const environment = computed(() => testCase.value?.testRun?.environment)
           <template #traces>
             <div class="space-y-4 pt-4">
               <TestCaseTracesCard :traces="(traceData as any[]) || []" />
+              <TestCaseAttachmentsCard :attachments="(testCase as any)?.attachments ?? []" />
               <TestCaseConsoleCard
                 v-if="(testCase as any)?.consoleLogs?.length"
                 :entries="(testCase as any)?.consoleLogs ?? []"

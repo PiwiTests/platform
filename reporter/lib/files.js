@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { compressDirectory } = require('../compression');
 
 /**
@@ -68,7 +69,6 @@ async function compressReportDirectory(reportDir) {
 function findTraceFiles(testCase) {
   const traceFilesSet = new Set();
 
-  // Look in attachments for trace files
   if (testCase.attachments && testCase.attachments.length > 0) {
     for (const attachment of testCase.attachments) {
       if (attachment.name === 'trace' && attachment.path) {
@@ -82,6 +82,34 @@ function findTraceFiles(testCase) {
 }
 
 /**
+ * Find all non-trace file attachments for a test case.
+ * Returns each attachment with its metadata and resolved path.
+ *
+ * @param {Object} testCase - Test case object with attachments
+ * @returns {Object[]} Array of { name, path, contentType, originalName }
+ */
+function findAllAttachments(testCase) {
+  const result = [];
+
+  if (testCase.attachments && testCase.attachments.length > 0) {
+    for (const attachment of testCase.attachments) {
+      if (attachment.name === 'trace') continue
+      if (attachment.name?.startsWith('piwi-dashboard-')) continue
+      if (attachment.path && fs.existsSync(attachment.path)) {
+        result.push({
+          name: attachment.name || 'attachment',
+          path: path.resolve(attachment.path),
+          contentType: attachment.contentType || 'application/octet-stream',
+          originalName: path.basename(attachment.path)
+        });
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
  * Default report directory guesses for known report types
  * @type {Object<string, string>}
  */
@@ -92,10 +120,49 @@ const DEFAULT_REPORT_DIRS = {
   blob: 'blob-report'
 };
 
+/**
+ * Compute SHA-256 hashes for all trace files, indexed by test case position.
+ * Mirrors the index semantics of trace_N form fields and _appendTracesToForm:
+ * when a test case has multiple trace attachments the last valid path wins,
+ * matching FormData's last-write-wins behaviour for duplicate field names.
+ *
+ * Uses streaming reads to avoid loading large files into memory.
+ *
+ * @param {Object[]} testCases - Array of test case objects with attachments
+ * @returns {Promise<Map<number, { tracePath: string, hash: string, size: number }>>}
+ */
+async function computeTraceHashes(testCases) {
+  const result = new Map();
+
+  for (let i = 0; i < testCases.length; i++) {
+    const tracePaths = findTraceFiles(testCases[i]);
+    let lastPath = null;
+    for (const tracePath of tracePaths) {
+      if (fs.existsSync(tracePath)) {
+        lastPath = tracePath;
+      }
+    }
+    if (!lastPath) continue;
+
+    const hash = crypto.createHash('sha256');
+    await new Promise((resolve, reject) => {
+      fs.createReadStream(lastPath)
+        .on('data', (chunk) => hash.update(chunk))
+        .on('end', resolve)
+        .on('error', reject)
+    });
+    result.set(i, { tracePath: lastPath, hash: hash.digest('hex'), size: fs.statSync(lastPath).size });
+  }
+
+  return result;
+}
+
 module.exports = {
   findHTMLReportDirectory,
   findReportDirectory,
   compressReportDirectory,
   findTraceFiles,
+  findAllAttachments,
+  computeTraceHashes,
   DEFAULT_REPORT_DIRS
 };

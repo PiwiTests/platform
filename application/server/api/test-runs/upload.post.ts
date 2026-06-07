@@ -2,6 +2,7 @@ import { getDatabase } from '../../database'
 import { projects, testRuns, files } from '../../database/schema'
 import type { Project } from '../../database/schema'
 import { eq } from 'drizzle-orm'
+import { upsertTraceBlob, findTraceBlob } from '../../utils/trace-blobs'
 import { join } from 'path'
 import { decompressDirectory } from '../../utils/compression'
 import { requireAuth } from '../../utils/auth'
@@ -53,6 +54,12 @@ export default eventHandler(async (event) => {
   const reportFiles: Map<string, { filename: string, data: Buffer, label?: string }> = new Map()
   // Trace files attached for specific test case indices: index -> { filename, data }
   const traceFiles: Map<number, { filename: string, data: Buffer }> = new Map()
+  // SHA-256 hashes for traces, keyed by the same index as traceFiles.
+  // Sent by the reporter for all traces (including those not uploaded due to deduplication).
+  const traceHashes: Map<number, string> = new Map()
+  // Non-trace attachments: test case index -> array of { name, contentType, originalName, data }
+  const attachmentMeta: Map<number, { name: string, contentType: string, originalName: string }[]> = new Map()
+  const attachmentFiles: Map<number, { originalName: string, data: Buffer }[]> = new Map()
 
   for (const part of formData) {
     if (part.name === 'testRunId') {
@@ -105,6 +112,43 @@ export default eventHandler(async (event) => {
       if (!isNaN(traceIndex)) {
         traceFiles.set(traceIndex, {
           filename: sanitizeFilename(part.filename),
+          data: part.data
+        })
+      }
+    } else if (part.name === 'trace_hashes') {
+      try {
+        const parsed = JSON.parse(part.data.toString('utf-8'))
+        for (const [indexStr, hash] of Object.entries(parsed)) {
+          const idx = parseInt(indexStr, 10)
+          if (!isNaN(idx) && typeof hash === 'string' && /^[0-9a-f]{64}$/i.test(hash)) {
+            traceHashes.set(idx, hash)
+          }
+        }
+      } catch {
+        // Deduplication metadata is optional; ignore parse errors
+      }
+    } else if (part.name?.startsWith('attach_meta_')) {
+      const idx = parseInt(part.name.slice('attach_meta_'.length), 10)
+      if (!isNaN(idx)) {
+        try {
+          const parsed = JSON.parse(part.data.toString('utf-8'))
+          if (Array.isArray(parsed)) {
+            attachmentMeta.set(idx, parsed.map((a: Record<string, unknown>) => ({
+              name: String(a.name || 'attachment'),
+              contentType: String(a.contentType || 'application/octet-stream'),
+              originalName: String(a.originalName || 'attachment')
+            })))
+          }
+        } catch {
+          // Metadata is optional; ignore parse errors
+        }
+      }
+    } else if (part.name?.startsWith('attach_file_') && part.filename) {
+      const idx = parseInt(part.name.slice('attach_file_'.length), 10)
+      if (!isNaN(idx)) {
+        if (!attachmentFiles.has(idx)) attachmentFiles.set(idx, [])
+        attachmentFiles.get(idx)!.push({
+          originalName: sanitizeFilename(part.filename),
           data: part.data
         })
       }
@@ -343,25 +387,97 @@ export default eventHandler(async (event) => {
 
     const insertedRunCases = await persistRunCases(db, project.id, testRun.id, cases)
 
-    // Store trace files linked to their test run case
-    if (insertedRunCases.length > 0 && traceFiles.size > 0) {
-      for (const [index, traceFile] of traceFiles) {
-        if (index >= 0 && index < insertedRunCases.length) {
-          const inserted = insertedRunCases[index]
-          if (!inserted?.id) continue
-          const testRunsCaseId = inserted.id
-          const storagePath = `${testRunPath}/${testRunsCaseId}-${traceFile.filename}`
-          try {
+    // Store trace files linked to their test run case, with content-addressed deduplication.
+    // traceHashes may contain entries for indices where no file was uploaded (reporter
+    // determined the blob already exists); those still need a files record pointing at
+    // the existing blob path.
+    const allTraceIndices = new Set([...traceFiles.keys(), ...traceHashes.keys()])
+    if (insertedRunCases.length > 0 && allTraceIndices.size > 0) {
+      for (const index of allTraceIndices) {
+        if (index < 0 || index >= insertedRunCases.length) continue
+        const inserted = insertedRunCases[index]
+        if (!inserted?.id) continue
+        const testRunsCaseId = inserted.id
+        const traceFile = traceFiles.get(index)
+        const hash = traceHashes.get(index)
+
+        try {
+          let storagePath: string
+          let blobId: number | null = null
+          let size: number | null = null
+
+          if (hash && traceFile) {
+            // New content with known hash: upsert into the blob store
+            const blob = await upsertTraceBlob(project!.id, hash, traceFile.data)
+            storagePath = blob.path
+            blobId = blob.id
+            size = blob.size
+            console.log(`[Upload] Stored trace blob ${hash.slice(0, 8)}… for case #${testRunsCaseId}`)
+          } else if (hash && !traceFile) {
+            // Reporter said this blob already exists on the server — look it up
+            const blob = await findTraceBlob(project!.id, hash)
+            if (!blob) {
+              console.warn(`[Upload] Hash ${hash.slice(0, 8)}… referenced but blob not found, skipping`)
+              continue
+            }
+            storagePath = blob.path
+            blobId = blob.id
+            size = blob.size
+            console.log(`[Upload] Reused trace blob ${hash.slice(0, 8)}… for case #${testRunsCaseId}`)
+          } else if (traceFile) {
+            // Legacy path: no hash metadata, store at run-specific location
+            storagePath = `${testRunPath}/${testRunsCaseId}-${traceFile.filename}`
             await storage.writeFile(storagePath, traceFile.data)
+            size = traceFile.data.length
+            console.log(`[Upload] Stored trace for case #${testRunsCaseId} at ${storagePath}`)
+          } else {
+            continue
+          }
+
+          await db.insert(files).values({
+            testRunsCaseId,
+            testRunId: testRun.id,
+            type: 'trace',
+            path: storagePath.replace(/\\/g, '/'),
+            size,
+            blobId
+          })
+        } catch (error) {
+          console.error(`[Upload] Failed to store trace for case #${testRunsCaseId}: ${error}`)
+        }
+      }
+    }
+
+    // Store non-trace attachments (screenshots, videos, custom files) linked to test run cases
+    if (insertedRunCases.length > 0 && attachmentMeta.size > 0) {
+      for (const [index, metaList] of attachmentMeta) {
+        if (index < 0 || index >= insertedRunCases.length) continue
+        const inserted = insertedRunCases[index]
+        if (!inserted?.id) continue
+        const testRunsCaseId = inserted.id
+        const filesList = attachmentFiles.get(index) || []
+
+        for (let fi = 0; fi < Math.min(metaList.length, filesList.length); fi++) {
+          const meta = metaList[fi]!
+          const fileEntry = filesList[fi]!
+          const attachmentDir = `${testRunPath}/${testRunsCaseId}`
+          await storage.mkdir(attachmentDir)
+          const storagePath = `${attachmentDir}/${fileEntry.originalName}`
+
+          try {
+            await storage.writeFile(storagePath, fileEntry.data)
             await db.insert(files).values({
               testRunsCaseId,
               testRunId: testRun.id,
-              type: 'trace',
-              path: storagePath.replace(/\\/g, '/')
+              type: 'attachment',
+              subtype: meta.name,
+              label: meta.contentType,
+              path: storagePath.replace(/\\/g, '/'),
+              size: fileEntry.data.length
             })
-            console.log(`[Upload] Stored trace for case #${testRunsCaseId} at ${storagePath}`)
+            console.log(`[Upload] Stored attachment "${meta.name}" for case #${testRunsCaseId}`)
           } catch (error) {
-            console.error(`[Upload] Failed to store trace: ${error}`)
+            console.error(`[Upload] Failed to store attachment for case #${testRunsCaseId}: ${error}`)
           }
         }
       }

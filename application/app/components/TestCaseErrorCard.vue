@@ -106,6 +106,7 @@ function highlightPath(text: string): string {
             >
               {{ renderLine(line, index) }}
             </div>
+            <!-- eslint-disable vue/no-v-html -->
             <div
               v-else-if="isStackFrame(line)"
               class="text-gray-500 dark:text-gray-400 pl-4 border-l-2 border-gray-300 dark:border-gray-600 mb-0.5"
@@ -117,6 +118,7 @@ function highlightPath(text: string): string {
               class="text-red-600 dark:text-red-400"
               v-html="highlightPath(renderLine(line, index))"
             />
+            <!-- eslint-enable vue/no-v-html -->
           </div>
         </div>
       </div>
