@@ -33,7 +33,8 @@
   "license": "MIT",
   "scripts": {
     "reporter:build": "tsc",
-    "reporter:dev": "tsc --watch"
+    "reporter:dev": "tsc --watch",
+    "reporter:format": "oxfmt --config oxfmt.config.mts --write \"src/\""
   },
   "files": [
     "dist/"
@@ -46,6 +47,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.9.2",
+    "oxfmt": "^0.53.0",
     "typescript": "^6.0.3"
   }
 }

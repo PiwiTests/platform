@@ -138,6 +138,7 @@ Nuxt file-based routing:
 |---------|---------|
 | `npm run reporter:build` | Compile TypeScript (from `src/`) to `.js` + `.d.ts` (in `dist/`) |
 | `npm run reporter:dev`   | Watch mode — auto-recompile on changes |
+| `npm run reporter:format`| Format source code with oxfmt |
 
 ## Making Changes
 

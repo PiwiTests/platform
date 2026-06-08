@@ -1,65 +1,78 @@
-import { test as base } from '@playwright/test'
+import { test as base } from "@playwright/test";
 
 export const dashboardFixtures = {
   page: async ({ page }: any, use: any, testInfo: any) => {
-    const networkRequests: Array<Record<string, unknown>> = []
-    const consoleEntries: Array<Record<string, unknown>> = []
+    const networkRequests: Array<Record<string, unknown>> = [];
+    const consoleEntries: Array<Record<string, unknown>> = [];
 
-    page.on('console', (msg: any) => {
-      const type = msg.type()
-      if (['warning', 'error', 'assert'].includes(type)) {
+    page.on("console", (msg: any) => {
+      const type = msg.type();
+      if (["warning", "error", "assert"].includes(type)) {
         consoleEntries.push({
           type,
           text: msg.text(),
           timestamp: Date.now(),
           location: msg.location()
             ? `${msg.location().url}:${msg.location().lineNumber}:${msg.location().columnNumber}`
-            : null
-        })
+            : null,
+        });
       }
-    })
+    });
 
-    page.on('requestfinished', async (request: any) => {
+    page.on("requestfinished", async (request: any) => {
       try {
-        const url = request.url()
-        if (url.startsWith('data:') || url.startsWith('blob:')) return
-        const timing = request.timing()
-        const response = await request.response()
+        const url = request.url();
+        if (url.startsWith("data:") || url.startsWith("blob:")) return;
+        const timing = request.timing();
+        const response = await request.response();
         networkRequests.push({
           method: request.method(),
           url,
           status: response ? response.status() : 0,
           duration: timing.responseEnd > 0 ? Math.round(timing.responseEnd - timing.requestStart) : 0,
           startTime: timing.startTime,
-          resourceType: request.resourceType()
-        })
-      } catch { /* ignore */ }
-    })
+          resourceType: request.resourceType(),
+        });
+      } catch {
+        /* ignore */
+      }
+    });
 
-    await use(page)
+    await use(page);
 
-    if (testInfo.status !== 'passed' && testInfo.status !== 'skipped') {
+    if (testInfo.status !== "passed" && testInfo.status !== "skipped") {
       try {
-        const snapshot = await page.locator(':root').ariaSnapshot()
+        const snapshot = await page.locator(":root").ariaSnapshot();
         if (snapshot) {
-          await testInfo.attach('piwi-dashboard-aria-snapshot', { contentType: 'text/plain', body: snapshot })
+          await testInfo.attach("piwi-dashboard-aria-snapshot", {
+            contentType: "text/plain",
+            body: snapshot,
+          });
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
 
     if (consoleEntries.length > 0) {
-      await testInfo.attach('piwi-dashboard-console', { contentType: 'application/json', body: Buffer.from(JSON.stringify(consoleEntries)) })
+      await testInfo.attach("piwi-dashboard-console", {
+        contentType: "application/json",
+        body: Buffer.from(JSON.stringify(consoleEntries)),
+      });
     }
 
     if (networkRequests.length > 0) {
-      await testInfo.attach('piwi-dashboard-network', { contentType: 'application/json', body: Buffer.from(JSON.stringify(networkRequests)) })
+      await testInfo.attach("piwi-dashboard-network", {
+        contentType: "application/json",
+        body: Buffer.from(JSON.stringify(networkRequests)),
+      });
     }
 
     try {
       const webVitals = await page.evaluate(() => {
-        const navEntries = performance.getEntriesByType('navigation' as any)
-        const paintEntries = performance.getEntriesByType('paint' as any)
-        const nav = navEntries[0] as any
+        const navEntries = performance.getEntriesByType("navigation" as any);
+        const paintEntries = performance.getEntriesByType("paint" as any);
+        const nav = navEntries[0] as any;
         const navigation = nav
           ? {
               url: nav.name,
@@ -69,25 +82,30 @@ export const dashboardFixtures = {
               loadComplete: Math.round(nav.loadEventEnd - nav.fetchStart),
               transferSize: nav.transferSize || 0,
               encodedBodySize: nav.encodedBodySize || 0,
-              decodedBodySize: nav.decodedBodySize || 0
+              decodedBodySize: nav.decodedBodySize || 0,
             }
-          : null
+          : null;
 
-        const paint: Record<string, number> = {}
+        const paint: Record<string, number> = {};
         for (const entry of paintEntries) {
-          const key = (entry as any).name.replace(/-([a-z])/g, (_: string, l: string) => l.toUpperCase())
-          paint[key] = Math.round((entry as any).startTime)
+          const key = (entry as any).name.replace(/-([a-z])/g, (_: string, l: string) => l.toUpperCase());
+          paint[key] = Math.round((entry as any).startTime);
         }
 
-        if (!navigation && Object.keys(paint).length === 0) return null
-        return { navigation, paint }
-      })
+        if (!navigation && Object.keys(paint).length === 0) return null;
+        return { navigation, paint };
+      });
 
       if (webVitals) {
-        await testInfo.attach('piwi-dashboard-web-vitals', { contentType: 'application/json', body: Buffer.from(JSON.stringify(webVitals)) })
+        await testInfo.attach("piwi-dashboard-web-vitals", {
+          contentType: "application/json",
+          body: Buffer.from(JSON.stringify(webVitals)),
+        });
       }
-    } catch { /* ignore */ }
-  }
-}
+    } catch {
+      /* ignore */
+    }
+  },
+};
 
-export const test = base.extend(dashboardFixtures)
+export const test = base.extend(dashboardFixtures);

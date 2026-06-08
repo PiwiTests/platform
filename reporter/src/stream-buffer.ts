@@ -1,21 +1,21 @@
-import * as path from 'path'
-import * as os from 'os'
-import * as fs from 'fs'
-import * as crypto from 'crypto'
+import * as path from "path";
+import * as os from "os";
+import * as fs from "fs";
+import * as crypto from "crypto";
 
 export class StreamBuffer {
-  private filePath: string
+  private filePath: string;
 
   constructor(projectName: string) {
-    const hash = crypto.createHash('sha1').update(projectName).digest('hex').slice(0, 16)
-    this.filePath = path.join(os.tmpdir(), `piwi-dashboard-stream-${hash}.jsonl`)
+    const hash = crypto.createHash("sha1").update(projectName).digest("hex").slice(0, 16);
+    this.filePath = path.join(os.tmpdir(), `piwi-dashboard-stream-${hash}.jsonl`);
   }
 
   append(events: any[]): void {
-    if (events.length === 0) return
+    if (events.length === 0) return;
     try {
-      const lines = events.map(e => JSON.stringify(e) + '\n').join('')
-      fs.appendFileSync(this.filePath, lines, 'utf8')
+      const lines = events.map((e) => JSON.stringify(e) + "\n").join("");
+      fs.appendFileSync(this.filePath, lines, "utf8");
     } catch {
       // Non-fatal
     }
@@ -24,18 +24,21 @@ export class StreamBuffer {
   load(): any[] {
     try {
       if (fs.existsSync(this.filePath)) {
-        const content = fs.readFileSync(this.filePath, 'utf8')
-        return content.split('\n').filter(Boolean).map(line => JSON.parse(line))
+        const content = fs.readFileSync(this.filePath, "utf8");
+        return content
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line));
       }
     } catch {
       // Non-fatal
     }
-    return []
+    return [];
   }
 
   clear(): void {
     try {
-      if (fs.existsSync(this.filePath)) fs.unlinkSync(this.filePath)
+      if (fs.existsSync(this.filePath)) fs.unlinkSync(this.filePath);
     } catch {
       // Non-fatal
     }
@@ -44,9 +47,9 @@ export class StreamBuffer {
   clearStale(maxAgeMs: number = 7200000): void {
     try {
       if (fs.existsSync(this.filePath)) {
-        const stats = fs.statSync(this.filePath)
+        const stats = fs.statSync(this.filePath);
         if (Date.now() - stats.mtimeMs > maxAgeMs) {
-          fs.unlinkSync(this.filePath)
+          fs.unlinkSync(this.filePath);
         }
       }
     } catch {
