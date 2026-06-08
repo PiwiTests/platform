@@ -32,6 +32,10 @@ jobs:
           npm version "$VERSION" --no-git-tag-version
         working-directory: reporter
 
+      - name: Build reporter
+        working-directory: reporter
+        run: npm run reporter:build
+
       - name: Publish to npm
         run: npm publish --access public --provenance
         working-directory: reporter

@@ -34,7 +34,8 @@
   "scripts": {
     "reporter:build": "tsc",
     "reporter:dev": "tsc --watch",
-    "reporter:format": "oxfmt --config oxfmt.config.mts --write \"src/\""
+    "reporter:format": "oxfmt --config oxfmt.config.mts --write \"src/\"",
+    "prepublishOnly": "npm run reporter:build"
   },
   "files": [
     "dist/"

@@ -1,6 +1,4 @@
 import * as path from "path";
-import * as crypto from "crypto";
-import * as os from "os";
 import * as fs from "fs";
 import { resolveOptions, type DashboardReporterOptions } from "./config.js";
 import { HttpClient } from "./http-client.js";

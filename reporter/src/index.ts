@@ -1,3 +1,3 @@
-import PiwiDashboardReporter from "./reporter.js";
+import PiwiDashboardReporter from "./reporter";
 
 export = PiwiDashboardReporter;
