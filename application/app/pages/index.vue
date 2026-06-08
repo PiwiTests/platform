@@ -59,7 +59,7 @@ const allTestRuns = computed(() => {
     <template #body>
       <div class="p-4 space-y-6">
         <!-- Stats Overview -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <UCard v-for="stat in stats" :key="stat.label">
             <div class="flex items-center gap-4">
               <div class="p-3 bg-primary/10 rounded-full">
@@ -142,19 +142,18 @@ const allTestRuns = computed(() => {
             </h2>
           </template>
 
-          <div class="space-y-4">
-            <p>Submit test results to the dashboard using the REST API:</p>
-            <pre class="bg-gray-100 dark:bg-gray-800 p-4 rounded text-sm overflow-x-auto"><code>POST /api/test-runs/submit
-{
-  "projectName": "my-project",
-  "status": "passed",
-  "startTime": "2024-01-01T00:00:00Z",
-  "duration": 120000,
-  "totalTests": 10,
-  "passedTests": 10,
-  "failedTests": 0,
-  "testCases": [...]
-}</code></pre>
+          <div class="flex items-center justify-between">
+            <p class="text-gray-600 dark:text-gray-400">
+              Learn how to install the reporter and submit test results.
+            </p>
+            <UButton
+              to="https://phenx.github.io/piwi-dashboard/getting-started"
+              target="_blank"
+              icon="i-lucide-external-link"
+              trailing
+            >
+              Read the docs
+            </UButton>
           </div>
         </UCard>
       </div>

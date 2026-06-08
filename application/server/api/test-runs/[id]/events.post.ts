@@ -4,6 +4,7 @@ import { eq, sql } from 'drizzle-orm'
 import { runEventBus } from '../../../utils/run-events'
 import { parseLocation } from '../../../utils/parse-location'
 import { persistRunCases, type RunCaseInput } from '../../../utils/persist-run-cases'
+import { validateAndReviveRun } from '../../../utils/revive-run'
 
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
@@ -38,19 +39,7 @@ export default eventHandler(async (event) => {
     })
   }
 
-  if (testRun.status !== 'running') {
-    throw createError({
-      statusCode: 409,
-      message: 'Test run is not in running state'
-    })
-  }
-
-  if (testRun.streamToken !== body.streamToken) {
-    throw createError({
-      statusCode: 403,
-      message: 'Invalid stream token'
-    })
-  }
+  await validateAndReviveRun(db, id, testRun, body.streamToken)
 
   // Process test cases (supports single or batch)
   const testCaseEvents = Array.isArray(body.testCases) ? body.testCases : [body.testCase]

@@ -2,6 +2,7 @@ import { getDatabase } from '../../../database'
 import { testRuns } from '../../../database/schema'
 import { eq } from 'drizzle-orm'
 import { runEventBus } from '../../../utils/run-events'
+import { validateAndReviveRun } from '../../../utils/revive-run'
 
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
@@ -36,19 +37,7 @@ export default eventHandler(async (event) => {
     })
   }
 
-  if (testRun.streamToken !== body.streamToken) {
-    throw createError({
-      statusCode: 403,
-      message: 'Invalid stream token'
-    })
-  }
-
-  if (testRun.status !== 'running') {
-    throw createError({
-      statusCode: 409,
-      message: 'Test run is not in running state'
-    })
-  }
+  await validateAndReviveRun(db, id, testRun, body.streamToken)
 
   // Determine final status
   const status = body.status ?? 'failed'
