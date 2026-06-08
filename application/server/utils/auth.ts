@@ -136,7 +136,10 @@ export function hasRole(user: User | null, requiredRoles: string[]): boolean {
 // Check if authentication is enabled
 export function isAuthEnabled(event?: H3Event): boolean {
   const config = event ? useRuntimeConfig(event) : useRuntimeConfig()
-  return config.authEnabled === true
+  // Nitro overrides runtimeConfig from NUXT_* env vars at startup. Since
+  // environment variables are always strings, a boolean `true` from the
+  // config file becomes the string `"true"` after the override.
+  return String(config.authEnabled) === 'true'
 }
 
 // ---------------------------------------------------------------------------

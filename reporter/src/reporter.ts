@@ -409,6 +409,9 @@ class PiwiDashboardReporter {
       this.recovery.clear();
       return true;
     } catch (error: any) {
+      if (error.message?.includes("401") && !sessionCookie) {
+        throw error;
+      }
       console.warn(`[Piwi Dashboard] Failed to upload with files: ${error.message}`);
       console.log("[Piwi Dashboard] Falling back to JSON upload...");
       return false;
@@ -437,6 +440,11 @@ class PiwiDashboardReporter {
       );
       this.recovery.clear();
     } catch (error: any) {
+      // If the server returned 401 and no auth was configured, this is a
+      // configuration error — throw so the caller knows it's fatal.
+      if (error.message?.includes("401") && !sessionCookie) {
+        throw error;
+      }
       console.error(`[Piwi Dashboard] All upload methods failed: ${error.message}`);
       this.recovery.save({
         projectName: this.options.projectName,
