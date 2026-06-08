@@ -73,6 +73,10 @@ export default defineNuxtConfig({
     }
   },
 
+  // Allow overriding build directory to avoid conflicts when running multiple
+  // dev servers (e.g., auth server in CI, demo build).
+  buildDir: process.env.NUXT_BUILD_DIR || undefined,
+
   routeRules: {
     '/api/**': {
       cors: true

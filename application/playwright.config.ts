@@ -84,7 +84,8 @@ export default defineConfig({
             NUXT_AUTH_SECRET: 'test-auth-secret-key-for-reporter-tests',
             DATABASE_PATH: join(process.cwd(), '.test-temp', 'auth-test.db'),
             STORAGE_PATH: join(process.cwd(), '.test-temp', 'auth-test-storage'),
-            NITRO_PORT: '3099'
+            NITRO_PORT: '3099',
+            NUXT_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-auth')
           },
           reuseExistingServer: false,
           timeout: 90 * 1000
