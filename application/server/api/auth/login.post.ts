@@ -48,7 +48,8 @@ export default eventHandler(async (event) => {
       id: user.id,
       username: user.username,
       role: user.role,
-      name: user.name
+      name: user.name,
+      avatarUrl: user.avatarUrl
     }
   }
 })

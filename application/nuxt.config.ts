@@ -66,10 +66,24 @@ export default defineNuxtConfig({
       }
       return process.env.NUXT_AUTH_SECRET || 'default-secret-change-in-production-use-random-string'
     })(),
+    oauth: {
+      google: {
+        clientId: process.env.NUXT_OAUTH_GOOGLE_CLIENT_ID || '',
+        clientSecret: process.env.NUXT_OAUTH_GOOGLE_CLIENT_SECRET || ''
+      },
+      github: {
+        clientId: process.env.NUXT_OAUTH_GITHUB_CLIENT_ID || '',
+        clientSecret: process.env.NUXT_OAUTH_GITHUB_CLIENT_SECRET || ''
+      }
+    },
     public: {
       authEnabled: process.env.NUXT_AUTH_ENABLED === 'true',
       demoMode: process.env.NUXT_PUBLIC_DEMO_MODE === 'true',
-      demoDataVersion
+      demoDataVersion,
+      oauthProviders: [
+        ...(process.env.NUXT_OAUTH_GOOGLE_CLIENT_ID ? ['google'] as const : []),
+        ...(process.env.NUXT_OAUTH_GITHUB_CLIENT_ID ? ['github'] as const : [])
+      ]
     }
   },
 

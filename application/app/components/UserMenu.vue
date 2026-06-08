@@ -15,9 +15,11 @@ const neutrals = ['slate', 'gray', 'zinc', 'neutral', 'stone']
 
 const user = computed(() => {
   if (config.public.authEnabled && authState.value.authenticated && authState.value.user) {
+    const avatarUrl = authState.value.user.avatarUrl
     return {
       name: authState.value.user.name || authState.value.user.username,
-      icon: 'i-lucide-user',
+      icon: avatarUrl ? undefined : 'i-lucide-user',
+      avatar: avatarUrl ? { src: avatarUrl } : undefined,
       role: authState.value.user.role
     }
   }

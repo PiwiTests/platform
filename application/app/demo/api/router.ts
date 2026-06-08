@@ -66,6 +66,13 @@ routes.push(
   { method: 'GET', pattern: /^\/api\/auth\/session$/, handler: () => UNAUTHENTICATED }
 )
 
+// OAuth – demo mode does not support OAuth; redirect to login
+const DEMO_LOGIN_REDIRECT = Promise.resolve({ url: '/login', status: 302 })
+routes.push(
+  { method: 'GET', pattern: /^\/api\/auth\/oauth\/[^/]+\/login$/, handler: () => DEMO_LOGIN_REDIRECT },
+  { method: 'GET', pattern: /^\/api\/auth\/oauth\/[^/]+\/callback$/, handler: () => DEMO_LOGIN_REDIRECT }
+)
+
 /**
  * Attempt to handle a request with the in-browser demo router.
  *

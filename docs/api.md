@@ -461,3 +461,34 @@ curl -X POST http://localhost:3000/api/auth/login \
 ### POST `/api/auth/logout`
 
 Invalidate the current session.
+
+---
+
+### OAuth endpoints
+
+OAuth flows require authentication to be enabled (`NUXT_AUTH_ENABLED=true`) and the corresponding provider credentials configured.
+
+#### GET `/api/auth/oauth/:provider/login`
+
+Initiate an OAuth sign-in. Redirects the browser to the provider's authorization page.
+
+Supported providers: `google`, `github`.
+
+```bash
+# Redirects to Google's OAuth consent screen
+GET http://localhost:3000/api/auth/oauth/google/login
+```
+
+#### GET `/api/auth/oauth/:provider/callback`
+
+OAuth callback endpoint — the provider redirects here after the user authorizes. The server validates the state parameter, exchanges the authorization code for a token, creates or links a local user, sets a session cookie, and redirects to the dashboard homepage.
+
+Provider must be configured via `NUXT_OAUTH_GOOGLE_CLIENT_ID` / `NUXT_OAUTH_GITHUB_CLIENT_ID` and their corresponding secrets.
+
+On error, the browser is redirected to `/login?error=<reason>` with one of:
+- `access-denied` — user denied the authorization request
+- `invalid-state` — CSRF state parameter mismatch
+- `missing-code` — no authorization code received
+- `oauth-failed` — token exchange or user info fetch failed
+- `auth-disabled` — authentication is not enabled
+- `invalid-provider` — unknown or unconfigured provider

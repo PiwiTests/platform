@@ -396,6 +396,7 @@ export interface AuthUser {
   username: string
   role: string
   name?: string | null
+  avatarUrl?: string | null
 }
 
 /**
