@@ -59,6 +59,15 @@ class PiwiDashboardReporter {
     this.flushTimer = null;
     this.flushPromises = [];
 
+    // Retry state for server-down resilience
+    this._retryCount = 0;
+    this._retryTimer = null;
+    this._maxRetryDelay = 30000;
+
+    // Clean up stale streaming buffer only if untouched for 2 hours
+    // (avoids deleting a buffer still in use by a concurrent run)
+    this._clearStaleStreamBuffer();
+
     /**
      * Collected metadata including SCM, CI, and custom data
      * @type {Object}
@@ -122,6 +131,13 @@ class PiwiDashboardReporter {
           cookieOrApiKey = await loginUser(self.options.serverUrl, self.options.username, self.options.password, self.options.verbose);
         }
         self._streamAuth = cookieOrApiKey;
+
+        // Try to upload any recovery data from a previous failed run
+        try {
+          await self._tryUploadRecoveryData();
+        } catch {
+          // Non-fatal — continue with streaming setup
+        }
 
         let response;
         if (setupInfo) {
@@ -341,15 +357,44 @@ class PiwiDashboardReporter {
       payload,
       this.options.verbose,
       this._streamAuth
-    ).catch(error => {
+    ).then(() => {
+      // Success — reset retry count and clear persistent buffer
+      this._retryCount = 0;
+      this._clearStreamBuffer();
+    }).catch(error => {
       if (this.options.verbose) {
         console.warn(`[Piwi Dashboard] Failed to stream events: ${error.message}`);
       }
-      // Re-queue failed events for the batch upload fallback
-      this.pendingEvents.unshift(...events);
+      // Save to persistent buffer and schedule a retry with backoff
+      this._saveStreamBuffer(events);
+      this._scheduleRetryFlush();
     });
 
     this.flushPromises.push(promise);
+  }
+
+  /**
+   * Schedule a retry of the flush with exponential backoff.
+   */
+  _scheduleRetryFlush() {
+    if (this._retryTimer) return;
+    this._retryCount++;
+    const delay = Math.min(1000 * Math.pow(2, this._retryCount - 1), this._maxRetryDelay);
+    if (this.options.verbose) {
+      console.log(`[Piwi Dashboard] Will retry streaming flush in ${delay}ms (attempt ${this._retryCount})`);
+    }
+    this._retryTimer = setTimeout(() => {
+      this._retryTimer = null;
+      // Load buffered events and merge with any new pending events
+      const buffered = this._loadStreamBuffer();
+      if (buffered.length > 0) {
+        this._clearStreamBuffer();
+        this.pendingEvents = buffered.concat(this.pendingEvents);
+      }
+      if (this.pendingEvents.length > 0) {
+        this._flushStreamEvents();
+      }
+    }, delay);
   }
 
   async onEnd(result) {
@@ -387,8 +432,8 @@ class PiwiDashboardReporter {
       await this._streamStartPromise;
     }
 
-    // Flush any remaining streaming events, then retry re-queued events up to 3 times
-    const MAX_FLUSH_RETRIES = 3;
+    // Flush any remaining streaming events with retries and persistent buffer
+    const MAX_FLUSH_RETRIES = 10;
     for (let attempt = 0; attempt < MAX_FLUSH_RETRIES; attempt++) {
       if (this.streamingEnabled && this.pendingEvents.length > 0) {
         this._flushStreamEvents();
@@ -397,10 +442,26 @@ class PiwiDashboardReporter {
         await Promise.allSettled(this.flushPromises);
         this.flushPromises = [];
       }
-      if (this.pendingEvents.length === 0) break;
-      if (this.options.verbose) {
-        console.warn(`[Piwi Dashboard] ${this.pendingEvents.length} events re-queued after flush failure, retrying (attempt ${attempt + 1}/${MAX_FLUSH_RETRIES})...`);
+      if (this.pendingEvents.length === 0) {
+        // Also drain any events from the persistent buffer
+        const buffered = this._loadStreamBuffer();
+        if (buffered.length > 0) {
+          this.pendingEvents = buffered;
+          this._clearStreamBuffer();
+          continue;
+        }
+        break;
       }
+      if (this.options.verbose) {
+        console.warn(`[Piwi Dashboard] ${this.pendingEvents.length} events pending, retrying (attempt ${attempt + 1}/${MAX_FLUSH_RETRIES})...`);
+      }
+      await new Promise(resolve => setTimeout(resolve, Math.min(1000 * Math.pow(2, attempt), 10000)));
+    }
+
+    // If streaming events remain after all retries, persist to buffer
+    if (this.pendingEvents.length > 0) {
+      this._saveStreamBuffer(this.pendingEvents);
+      this.pendingEvents = [];
     }
 
     // Authenticate if credentials are provided
@@ -426,6 +487,7 @@ class PiwiDashboardReporter {
     if (this.streamingEnabled && this.streamingRunId) {
       try {
         await this._finishStreamingRun(overallStatus, duration, sessionCookie);
+        this._clearRecoveryData();
 
         // Still upload reports/traces if configured
         const hasReports = this.options.uploadReport || (this.options.reports && this.options.reports.length > 0);
@@ -449,6 +511,7 @@ class PiwiDashboardReporter {
     if (this.options.uploadTraces || hasReports) {
       try {
         await this.uploadWithFiles(overallStatus, duration, sessionCookie);
+        this._clearRecoveryData();
         return;
       } catch (error) {
         console.warn(`[Piwi Dashboard] Failed to upload with files: ${error.message}`);
@@ -457,7 +520,14 @@ class PiwiDashboardReporter {
     }
 
     // Fallback to JSON-only upload
-    await this.uploadJSON(overallStatus, duration, sessionCookie);
+    try {
+      await this.uploadJSON(overallStatus, duration, sessionCookie);
+      this._clearRecoveryData();
+    } catch (error) {
+      console.error(`[Piwi Dashboard] All upload methods failed: ${error.message}`);
+      // Save to disk so a future run can retry
+      this._saveRecoveryData(overallStatus, duration);
+    }
   }
 
   /**
@@ -805,6 +875,163 @@ class PiwiDashboardReporter {
       }
     }
     return null;
+  }
+
+  // ── Persistent streaming buffer ─────────────────────────────────────────────
+
+  _getStreamBufferPath() {
+    const hash = crypto.createHash('sha1').update(this.options.projectName).digest('hex').slice(0, 16);
+    return path.join(os.tmpdir(), `piwi-dashboard-stream-${hash}.jsonl`);
+  }
+
+  _saveStreamBuffer(events) {
+    if (events.length === 0) return;
+    const filePath = this._getStreamBufferPath();
+    try {
+      const lines = events.map(e => JSON.stringify(e) + '\n').join('');
+      fs.appendFileSync(filePath, lines, 'utf8');
+    } catch (error) {
+      if (this.options.verbose) {
+        console.warn(`[Piwi Dashboard] Failed to save events to buffer: ${error.message}`);
+      }
+    }
+  }
+
+  _loadStreamBuffer() {
+    const filePath = this._getStreamBufferPath();
+    try {
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, 'utf8');
+        return content.split('\n').filter(Boolean).map(line => JSON.parse(line));
+      }
+    } catch (error) {
+      if (this.options.verbose) {
+        console.warn(`[Piwi Dashboard] Failed to load buffered events: ${error.message}`);
+      }
+    }
+    return [];
+  }
+
+  _clearStreamBuffer() {
+    const filePath = this._getStreamBufferPath();
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch (error) {
+      if (this.options.verbose) {
+        console.warn(`[Piwi Dashboard] Failed to clear buffer: ${error.message}`);
+      }
+    }
+  }
+
+  /**
+   * Delete the streaming buffer only if it hasn't been modified in the last 2
+   * hours.  This avoids removing a buffer still in use by a concurrent run of
+   * the same project (e.g. CI shards).
+   */
+  _clearStaleStreamBuffer() {
+    const filePath = this._getStreamBufferPath();
+    try {
+      if (fs.existsSync(filePath)) {
+        const stats = fs.statSync(filePath);
+        const twoHours = 2 * 60 * 60 * 1000;
+        if (Date.now() - stats.mtimeMs > twoHours) {
+          fs.unlinkSync(filePath);
+          if (this.options.verbose) {
+            console.log(`[Piwi Dashboard] Removed stale stream buffer`);
+          }
+        }
+      }
+    } catch (error) {
+      if (this.options.verbose) {
+        console.warn(`[Piwi Dashboard] Failed to check stale buffer: ${error.message}`);
+      }
+    }
+  }
+
+  // ── Crash recovery ──────────────────────────────────────────────────────────
+
+  _getRecoveryPath() {
+    const hash = crypto.createHash('sha1').update(this.options.projectName).digest('hex').slice(0, 16);
+    return path.join(os.tmpdir(), `piwi-dashboard-recovery-${hash}.json`);
+  }
+
+  /**
+   * Save all test data to disk so a future run can upload it.
+   */
+  _saveRecoveryData(overallStatus, duration) {
+    const data = {
+      projectName: this.options.projectName,
+      projectDescription: this.options.projectDescription,
+      status: overallStatus,
+      startTime: this.startTime,
+      duration,
+      totalTests: this.totalTests,
+      passedTests: this.passedTests,
+      failedTests: this.failedTests,
+      skippedTests: this.skippedTests,
+      environment: this.options.environment || null,
+      metadata: this.metadata,
+      instanceId: this.instanceId,
+      testCases: this.testCases.map(tc => this._mapTestCase(tc))
+    };
+    try {
+      fs.writeFileSync(this._getRecoveryPath(), JSON.stringify(data), 'utf8');
+      console.log(`[Piwi Dashboard] Saved recovery data for later upload`);
+    } catch (error) {
+      console.error(`[Piwi Dashboard] Failed to save recovery data: ${error.message}`);
+    }
+  }
+
+  _loadRecoveryData() {
+    const filePath = this._getRecoveryPath();
+    try {
+      if (fs.existsSync(filePath)) {
+        return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      }
+    } catch {}
+    return null;
+  }
+
+  _clearRecoveryData() {
+    const filePath = this._getRecoveryPath();
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch {}
+  }
+
+  /**
+   * Upload recovery data left by a previous run that couldn't reach the server.
+   */
+  async _tryUploadRecoveryData() {
+    const data = this._loadRecoveryData();
+    if (!data) return;
+
+    console.log(`[Piwi Dashboard] Found saved test data from a previous run, uploading...`);
+
+    let cookieOrApiKey = this._streamAuth || null;
+    if (!cookieOrApiKey && this.options.apiKey) {
+      cookieOrApiKey = this.options.apiKey;
+    }
+    if (!cookieOrApiKey && this.options.username && this.options.password) {
+      try {
+        cookieOrApiKey = await loginUser(this.options.serverUrl, this.options.username, this.options.password, this.options.verbose);
+      } catch {
+        console.warn(`[Piwi Dashboard] Cannot authenticate to upload recovery data`);
+        return;
+      }
+    }
+
+    try {
+      await postJSON(this.options.serverUrl, '/api/test-runs/submit', data, this.options.verbose, cookieOrApiKey);
+      console.log(`[Piwi Dashboard] Successfully uploaded saved test data`);
+      this._clearRecoveryData();
+    } catch (error) {
+      console.warn(`[Piwi Dashboard] Could not upload saved test data: ${error.message}`);
+    }
   }
 }
 
