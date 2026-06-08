@@ -51,7 +51,7 @@ export default defineNuxtConfig({
   ssr: isDemo ? false : undefined,
 
   devtools: {
-    enabled: true
+    enabled: false
   },
   app: isDemo ? { baseURL: '/piwi-dashboard/demo/' } : {},
 
@@ -113,6 +113,11 @@ export default defineNuxtConfig({
 
   vite: {
     optimizeDeps: {
+      include: [
+        'drizzle-orm/sqlite-core',
+        'drizzle-orm/sqlite-proxy',
+      ],
+
       // sql.js bundles a WASM binary and must not be pre-bundled by Vite;
       // excluding it ensures the WASM file is loaded at runtime via locateFile.
       exclude: ['sql.js']
