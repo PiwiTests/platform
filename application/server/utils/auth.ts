@@ -27,7 +27,7 @@ async function verifyPassword(password: string, hash: string): Promise<boolean> 
 }
 
 // Session management using encrypted cookies
-interface SessionData {
+export interface SessionData {
   userId: number
   username: string
   role: string
@@ -94,6 +94,11 @@ export async function verifyUser(username: string, password: string): Promise<Us
   const user = userResults[0]
 
   if (!user) {
+    return null
+  }
+
+  // OAuth-only users have empty password and cannot log in with credentials
+  if (!user.password) {
     return null
   }
 
@@ -236,6 +241,9 @@ export async function requireAuth(event: H3Event, allowedRoles?: string[]): Prom
       password: '',
       role: 'administrator',
       name: 'System',
+      avatarUrl: null,
+      oauthProvider: null,
+      oauthProviderId: null,
       createdAt: new Date(),
       updatedAt: new Date()
     }

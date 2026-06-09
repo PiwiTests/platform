@@ -67,6 +67,49 @@ curl -X POST http://localhost:3000/api/auth/login \
 
 Sessions are stored in encrypted cookies and last for 7 days.
 
+## OAuth (Google, GitHub)
+
+The dashboard supports signing in with Google or GitHub as an alternative to username/password authentication.
+
+### Configuring OAuth
+
+1. **Register an OAuth application** with each provider you want to use:
+
+   - **Google**: Go to the [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create an OAuth 2.0 Client ID, and add `https://your-domain.com/api/auth/oauth/google/callback` to the authorized redirect URIs.
+   - **GitHub**: Go to **Settings → Developer settings → OAuth Apps** on GitHub, create a new OAuth app, and set the callback URL to `https://your-domain.com/api/auth/oauth/github/callback`.
+
+2. **Add the credentials to your `.env` file:**
+
+   ```bash
+   NUXT_OAUTH_GOOGLE_CLIENT_ID=your-google-client-id
+   NUXT_OAUTH_GOOGLE_CLIENT_SECRET=your-google-client-secret
+   NUXT_OAUTH_GITHUB_CLIENT_ID=your-github-client-id
+   NUXT_OAUTH_GITHUB_CLIENT_SECRET=your-github-client-secret
+   ```
+
+   Only configure the providers you actually want to use. OAuth buttons appear automatically on the login page when both a provider's `CLIENT_ID` and `CLIENT_SECRET` are set.
+
+3. **Restart the application.** The login page now shows **Sign in with Google** and/or **Sign in with GitHub** buttons above the password form.
+
+### How it works
+
+1. User clicks an OAuth button on the login page.
+2. The server redirects to the provider's authorization page with a cryptographically random `state` parameter stored in an httpOnly cookie.
+3. After authorization, the provider redirects back to the callback URL.
+4. The server validates the `state` cookie (CSRF protection), exchanges the code for an access token, and fetches the user's profile (name, email, avatar).
+5. A local user is created or linked:
+   - If a user with the same OAuth provider + ID exists, their name/avatar are updated.
+   - If a user with the same email exists, the existing account is linked to the OAuth provider.
+   - Otherwise, a new user is created with the **user** role and an empty password (password login disabled for OAuth-only users).
+6. A session is established (same encrypted cookie as password login), and the browser is redirected to the dashboard homepage.
+
+### Notes
+
+- OAuth users have an empty password and **cannot sign in with username/password**. They must always use their OAuth provider.
+- The reporter (CI/CD) authentication is unaffected — it continues to use API keys or username/password.
+- OAuth is **not available in demo mode**; the buttons are not shown.
+- Avatar URLs from the provider are displayed in the user menu when available.
+
 ## User management
 
 User accounts are managed through the admin interface at `/settings/users`.  

@@ -142,12 +142,17 @@ export const projectTags = sqliteTable('project_tags', {
 export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   username: text('username').notNull().unique(),
-  password: text('password').notNull(), // hashed password
+  password: text('password').notNull(), // hashed password (empty string for OAuth-only users)
   role: text('role').notNull(), // 'administrator', 'reporter', 'user'
   name: text('name'), // Display name
+  avatarUrl: text('avatar_url'), // Avatar from OAuth provider
+  oauthProvider: text('oauth_provider'), // 'google', 'github', etc.
+  oauthProviderId: text('oauth_provider_id'), // User ID from the OAuth provider
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
-})
+}, table => ({
+  oauthIdx: uniqueIndex('idx_users_oauth').on(table.oauthProvider, table.oauthProviderId)
+}))
 
 // API keys table - for reporter/CI authentication
 export const apiKeys = sqliteTable('api_keys', {

@@ -143,13 +143,16 @@ export const projectTags = pgTable('project_tags', {
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   username: text('username').notNull().unique(),
-  password: text('password').notNull(), // hashed password
+  password: text('password').notNull(), // hashed password (empty string for OAuth-only users)
   role: text('role').notNull(), // 'administrator', 'reporter', 'user'
   name: text('name'), // Display name
+  avatarUrl: text('avatar_url'), // Avatar from OAuth provider
+  oauthProvider: text('oauth_provider'), // 'google', 'github', etc.
+  oauthProviderId: text('oauth_provider_id'), // User ID from the OAuth provider
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
 }, table => ({
-  updatedAtIdx: index('idx_projects_updated_at').on(table.updatedAt)
+  oauthIdx: uniqueIndex('idx_users_oauth').on(table.oauthProvider, table.oauthProviderId)
 }))
 
 // API keys table - for reporter/CI authentication

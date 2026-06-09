@@ -120,6 +120,13 @@
       "when": 1781500000000,
       "tag": "0016_trace_blobs",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1788300000000,
+      "tag": "0017_add_oauth_fields",
+      "breakpoints": true
     }
   ]
 }

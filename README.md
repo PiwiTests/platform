@@ -54,7 +54,7 @@ Running Playwright tests in CI produces HTML reports that are ephemeral — once
 - 📊 **Run comparison** — side-by-side delta view with improved/regressed/unchanged summary
 - 🔌 **Playwright reporter** — drop-in custom reporter for automatic result submission, with HTML report and trace uploads
 - ⚡ **Real-time streaming** — live dashboard via Server-Sent Events; pages refresh instantly when a run starts or finishes, with no polling
-- 🔐 **Authentication** — optional role-based access control (administrator, reporter, user) with API key support for CI
+- 🔐 **Authentication** — optional role-based access control (administrator, reporter, user) with API key support for CI and OAuth (Google, GitHub)
 - ☁️ **Flexible storage** — SQLite or PostgreSQL database; local file system or S3-compatible object storage for artifacts
 - 🐳 **Docker support** — pre-built multi-platform container images (~200 MB) on GitHub Container Registry
 
