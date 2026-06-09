@@ -176,7 +176,9 @@ class PiwiDashboardReporter {
 
     this.streamStartPromise = (async () => {
       try {
-        if (!this.options.apiKey && this.options.username && this.options.password) {
+        if (this.options.apiKey) {
+          this.streamAuth = this.options.apiKey;
+        } else if (this.options.username && this.options.password) {
           this.streamAuth = await this.httpClient.login(this.options.username!, this.options.password!);
         }
 
@@ -284,6 +286,12 @@ class PiwiDashboardReporter {
   }
 
   private async drainPendingEvents(): Promise<void> {
+    if (!this.streamingEnabled) {
+      this.pendingEvents = [];
+      this.flushPromises = [];
+      return;
+    }
+
     const MAX_ATTEMPTS = 10;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       if (this.streamingEnabled && this.pendingEvents.length > 0) this.flushStreamEvents();
