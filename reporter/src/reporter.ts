@@ -182,7 +182,7 @@ class PiwiDashboardReporter {
           this.streamAuth = await this.httpClient.login(this.options.username!, this.options.password!);
         }
 
-        await this.recovery.tryUpload(this.httpClient);
+        await this.recovery.tryUpload(this.httpClient, this.streamAuth);
 
         let response: any;
         if (setupInfo) {
@@ -256,12 +256,6 @@ class PiwiDashboardReporter {
       )
       .then(() => {
         this.retryCount = 0;
-        this.streamBuffer.clear();
-      })
-      .catch((error: any) => {
-        if (this.options.verbose) console.warn(`[Piwi Dashboard] Failed to stream events: ${error.message}`);
-        this.streamBuffer.append(events);
-        this.scheduleRetryFlush();
       });
 
     this.flushPromises.push(promise);
@@ -493,6 +487,7 @@ class PiwiDashboardReporter {
   private mapTestCase(tc: any): any {
     const { type, ...rest } = tc;
     return {
+      type,
       title: rest.title,
       location: rest.location,
       status: rest.status,
