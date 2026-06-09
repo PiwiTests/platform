@@ -1,4 +1,4 @@
-﻿import type { H3Event } from 'h3'
+import type { H3Event } from 'h3'
 import { randomBytes } from 'node:crypto'
 import { getDatabase } from '../database'
 import { users } from '../database/schema'
@@ -76,8 +76,10 @@ const STATE_COOKIE = 'oauth_state'
 const STATE_EXPIRY_SEC = 600 // 10 minutes
 
 function setOAuthState(event: H3Event, state: string): void {
+  const url = getRequestURL(event)
   setCookie(event, STATE_COOKIE, state ?? '', {
     httpOnly: true,
+    secure: url.protocol === 'https:',
     sameSite: 'lax',
     path: '/',
     maxAge: STATE_EXPIRY_SEC
@@ -285,6 +287,11 @@ async function findOrCreateOAuthUser(
 export async function handleOAuthCallback(event: H3Event, provider: string): Promise<string> {
   if (!isAuthEnabled(event)) {
     return '/login?error=auth-disabled'
+  }
+
+  // Check provider is configured before proceeding
+  if (!getProviderConfig(event, provider)) {
+    return '/login?error=invalid-provider'
   }
 
   const query = getQuery(event) as { code?: string, state?: string, error?: string }

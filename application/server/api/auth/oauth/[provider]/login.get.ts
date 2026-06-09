@@ -1,4 +1,4 @@
-﻿import { isAuthEnabled } from '../../../../utils/auth'
+import { isAuthEnabled } from '../../../../utils/auth'
 import { initiateOAuth } from '../../../../utils/oauth'
 
 export default eventHandler(async (event) => {

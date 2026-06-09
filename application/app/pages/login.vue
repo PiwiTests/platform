@@ -13,7 +13,10 @@ const state = reactive({
 const loading = ref(false)
 const error = ref('')
 
-const oauthProviders = computed(() => (config.public.oauthProviders as string[]) || [])
+const oauthProviders = computed(() => {
+  if (config.public.demoMode) return []
+  return (config.public.oauthProviders as string[]) || []
+})
 
 // Check for OAuth error from callback redirect
 onMounted(() => {

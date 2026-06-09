@@ -87,14 +87,14 @@ The dashboard supports signing in with Google or GitHub as an alternative to use
    NUXT_OAUTH_GITHUB_CLIENT_SECRET=your-github-client-secret
    ```
 
-   Only configure the providers you actually want to use. OAuth buttons appear automatically on the login page when a provider's `CLIENT_ID` is set.
+   Only configure the providers you actually want to use. OAuth buttons appear automatically on the login page when both a provider's `CLIENT_ID` and `CLIENT_SECRET` are set.
 
 3. **Restart the application.** The login page now shows **Sign in with Google** and/or **Sign in with GitHub** buttons above the password form.
 
 ### How it works
 
 1. User clicks an OAuth button on the login page.
-2. The server redirects to the provider's authorization page with a cryptographically random `state` parameter stored in a signed cookie.
+2. The server redirects to the provider's authorization page with a cryptographically random `state` parameter stored in an httpOnly cookie.
 3. After authorization, the provider redirects back to the callback URL.
 4. The server validates the `state` cookie (CSRF protection), exchanges the code for an access token, and fetches the user's profile (name, email, avatar).
 5. A local user is created or linked:

@@ -81,8 +81,8 @@ export default defineNuxtConfig({
       demoMode: process.env.NUXT_PUBLIC_DEMO_MODE === 'true',
       demoDataVersion,
       oauthProviders: [
-        ...(process.env.NUXT_OAUTH_GOOGLE_CLIENT_ID ? ['google'] as const : []),
-        ...(process.env.NUXT_OAUTH_GITHUB_CLIENT_ID ? ['github'] as const : [])
+        ...(process.env.NUXT_OAUTH_GOOGLE_CLIENT_ID && process.env.NUXT_OAUTH_GOOGLE_CLIENT_SECRET ? ['google'] as const : []),
+        ...(process.env.NUXT_OAUTH_GITHUB_CLIENT_ID && process.env.NUXT_OAUTH_GITHUB_CLIENT_SECRET ? ['github'] as const : [])
       ]
     }
   },
