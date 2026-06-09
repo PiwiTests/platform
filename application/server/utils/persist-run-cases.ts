@@ -82,7 +82,7 @@ export async function persistRunCases(
     runCasesRows.push({
       testRunId,
       testCaseId: shared.id,
-      status: c.status || 'passed',
+      status: c.status,
       duration: c.duration ?? null,
       error: c.error ?? null,
       retries: c.retries ?? 0,

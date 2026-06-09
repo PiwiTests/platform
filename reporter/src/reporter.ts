@@ -42,22 +42,28 @@ class PiwiDashboardReporter {
   private metadataCollector: MetadataCollector;
   private streamAuth: string | null = null;
   private streamStartPromise: Promise<void> | null = null;
+  private enabled: boolean;
 
   constructor(rawOptions: Record<string, any> = {}) {
     this.options = resolveOptions(rawOptions);
+    this.enabled = !!this.options.serverUrl;
     this.instanceId = computeInstanceId(this.options.projectName!);
 
-    this.httpClient = new HttpClient(this.options.serverUrl!, this.options.verbose);
+    this.httpClient = new HttpClient(this.options.serverUrl ?? "http://localhost:3000", this.options.verbose);
     this.fileHandler = new FileHandler();
     this.uploader = new Uploader(this.httpClient, this.fileHandler, this.options.verbose);
     this.streamBuffer = new StreamBuffer(this.options.projectName!);
-    this.recovery = new CrashRecovery(this.options.serverUrl!, this.options.projectName!, this.options.verbose);
+    this.recovery = new CrashRecovery(this.options.serverUrl ?? "http://localhost:3000", this.options.projectName!, this.options.verbose);
     this.metadataCollector = new MetadataCollector();
 
     this.streamBuffer.clearStale();
   }
 
   onBegin(config: any, suite: any): void {
+    if (!this.enabled) {
+      console.log("[Piwi Dashboard] Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.");
+      return;
+    }
     this.startTime = new Date().toISOString();
     console.log(`[Piwi Dashboard] Starting test run for project: ${this.options.projectName}`);
     this.metadata = this.metadataCollector.collect(config, suite, this.options);
@@ -127,6 +133,7 @@ class PiwiDashboardReporter {
   }
 
   async onEnd(result: any): Promise<void> {
+    if (!this.enabled) return;
     this.endTime = new Date().toISOString();
     const duration = new Date(this.endTime).getTime() - new Date(this.startTime!).getTime();
 
@@ -169,11 +176,13 @@ class PiwiDashboardReporter {
 
     this.streamStartPromise = (async () => {
       try {
-        if (!this.options.apiKey && this.options.username && this.options.password) {
+        if (this.options.apiKey) {
+          this.streamAuth = this.options.apiKey;
+        } else if (this.options.username && this.options.password) {
           this.streamAuth = await this.httpClient.login(this.options.username!, this.options.password!);
         }
 
-        await this.recovery.tryUpload(this.httpClient);
+        await this.recovery.tryUpload(this.httpClient, this.streamAuth);
 
         let response: any;
         if (setupInfo) {
@@ -247,12 +256,6 @@ class PiwiDashboardReporter {
       )
       .then(() => {
         this.retryCount = 0;
-        this.streamBuffer.clear();
-      })
-      .catch((error: any) => {
-        if (this.options.verbose) console.warn(`[Piwi Dashboard] Failed to stream events: ${error.message}`);
-        this.streamBuffer.append(events);
-        this.scheduleRetryFlush();
       });
 
     this.flushPromises.push(promise);
@@ -277,6 +280,12 @@ class PiwiDashboardReporter {
   }
 
   private async drainPendingEvents(): Promise<void> {
+    if (!this.streamingEnabled) {
+      this.pendingEvents = [];
+      this.flushPromises = [];
+      return;
+    }
+
     const MAX_ATTEMPTS = 10;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       if (this.streamingEnabled && this.pendingEvents.length > 0) this.flushStreamEvents();
@@ -478,6 +487,7 @@ class PiwiDashboardReporter {
   private mapTestCase(tc: any): any {
     const { type, ...rest } = tc;
     return {
+      type,
       title: rest.title,
       location: rest.location,
       status: rest.status,
@@ -545,12 +555,32 @@ class PiwiDashboardReporter {
   }
 
   static createGlobalSetup(
-    options: DashboardReporterOptions,
+    options?: DashboardReporterOptions,
     userSetup?: (config: any) => any,
   ): (config: any) => Promise<any> {
     return async function globalSetupFn(config: any) {
       const opts = resolveOptions(options as any);
-      const httpClient = new HttpClient(opts.serverUrl!, opts.verbose);
+
+      if (!opts.serverUrl) {
+        console.log("[Piwi Dashboard] Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.");
+        if (userSetup) return userSetup(config);
+        return;
+      }
+
+      const hasPiwi =
+        Array.isArray(config?.reporter) &&
+        config.reporter.some(
+          (r: any) =>
+            Array.isArray(r) && typeof r[0] === "string" && r[0].toLowerCase().includes("piwi"),
+        );
+      if (!hasPiwi) {
+        if (opts.verbose)
+          console.log("[Piwi Dashboard] Not reporting — Piwi is not in the Playwright reporters list.");
+        if (userSetup) return userSetup(config);
+        return;
+      }
+
+      const httpClient = new HttpClient(opts.serverUrl, opts.verbose);
 
       try {
         let auth: string | null = opts.apiKey || null;

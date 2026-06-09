@@ -42,14 +42,14 @@ export class CrashRecovery {
     }
   }
 
-  async tryUpload(httpClient: HttpClient): Promise<void> {
+  async tryUpload(httpClient: HttpClient, auth?: string | null): Promise<void> {
     const data = this.load();
     if (!data) return;
 
     console.log("[Piwi Dashboard] Found saved test data from a previous run, uploading...");
 
     try {
-      await httpClient.postJSON("/api/test-runs/submit", data);
+      await httpClient.postJSON("/api/test-runs/submit", data, auth);
       console.log("[Piwi Dashboard] Successfully uploaded saved test data");
       this.clear();
     } catch (error: any) {
