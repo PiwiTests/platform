@@ -155,6 +155,7 @@ piwi-dashboard/
 ├── application/          # Nuxt 4 web application
 │   ├── app/              # Frontend (Vue components, pages, composables)
 │   ├── server/           # Backend (API routes, database, storage)
+│   ├── shared/           # Types & utilities shared between server and reporter
 │   ├── public/           # Static assets
 │   └── Dockerfile        # Production container image
 ├── reporter/             # @phenx/piwi-dashboard-reporter npm package
@@ -162,6 +163,39 @@ piwi-dashboard/
 ├── DOCKER.md             # Docker deployment guide
 └── README.md             # This file
 ```
+
+### Reporter development
+
+The reporter (`reporter/`) is written in TypeScript. Source files are in `src/`; compiled output goes to `dist/`.
+
+```bash
+cd reporter
+npm install
+npm run reporter:build         # compile TypeScript to dist/
+npm run reporter:dev           # watch mode — auto-recompile on changes
+```
+
+The build produces `.js` + `.d.ts` files in `dist/`. The `package.json` `exports` field maps `@phenx/piwi-dashboard-reporter` and `@phenx/piwi-dashboard-reporter/fixtures` to their `dist/` counterparts.
+
+Source layout (13 modules):
+
+| Module               | Kind     | Purpose                                      |
+|----------------------|----------|----------------------------------------------|
+| `config.ts`          | Interface + function | `DashboardReporterOptions` + defaults merger |
+| `reporter.ts`        | Class    | Main orchestrator (Playwright hooks, streaming, upload fallback) |
+| `http-client.ts`     | Class    | HTTP/HTTPS transport (login, JSON, FormData) |
+| `uploader.ts`        | Class    | Upload strategies (JSON, multipart, streaming files) |
+| `stream-buffer.ts`   | Class    | Persistent JSONL event buffer                |
+| `crash-recovery.ts`  | Class    | Recovery data save/load/retry                |
+| `file-handler.ts`    | Class    | Report directory, trace/attachment file ops  |
+| `metadata-collector.ts` | Class | CI, SCM, Playwright config metadata          |
+| `step-analyzer.ts`   | Functions | Step categorization, flattening, performance |
+| `helpers.ts`         | Functions | `getSetupFilePath`, `computeInstanceId`, `createGlobalSetup` |
+| `compression.ts`     | Function  | Directory gzip archiver                      |
+| `fixtures.ts`        | Fixtures  | Playwright network/web-vitals/console fixtures |
+| `index.ts`           | Entry     | Re-exports class + `createGlobalSetup`       |
+
+**Important:** Do not use `import type` from `../application/shared/` in reporter method signatures — it would leak the monorepo path into published `.d.ts` files. The shared types define the wire contract; the reporter stays loosely typed (`any`) since it handles Playwright internals.
 
 ## Documentation
 

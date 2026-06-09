@@ -11,8 +11,20 @@
   "bugs": {
     "url": "https://github.com/PhenX/piwi-dashboard/issues"
   },
-  "main": "index.js",
-  "types": "index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./fixtures": {
+      "types": "./dist/fixtures.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/fixtures.js"
+    }
+  },
   "keywords": [
     "playwright",
     "reporter",
@@ -21,10 +33,24 @@
   ],
   "author": "PhenX",
   "license": "MIT",
+  "scripts": {
+    "reporter:build": "tsc",
+    "reporter:dev": "tsc --watch",
+    "reporter:format": "oxfmt --config oxfmt.config.mts --write \"src/\"",
+    "prepublishOnly": "npm run reporter:build"
+  },
+  "files": [
+    "dist/"
+  ],
   "peerDependencies": {
     "@playwright/test": "^1.40.0"
   },
   "dependencies": {
     "form-data": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.2",
+    "oxfmt": "^0.53.0",
+    "typescript": "^6.0.3"
   }
 }

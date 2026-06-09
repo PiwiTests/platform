@@ -59,6 +59,10 @@ jobs:
         working-directory: ./reporter
         run: npm install
 
+      - name: Build reporter
+        working-directory: ./reporter
+        run: npm run reporter:build
+
       - name: Install Playwright Browsers
         run: npx playwright install chromium --with-deps --only-shell
 

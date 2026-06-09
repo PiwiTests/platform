@@ -16,7 +16,7 @@ export const projects = pgTable('projects', {
 export const testRuns = pgTable('test_runs', {
   id: serial('id').primaryKey(),
   projectId: integer('project_id').notNull().references(() => projects.id),
-  status: text('status').notNull(), // 'passed', 'failed', 'timedout', 'interrupted', 'running', 'cancelled'
+  status: text('status').notNull(), // 'passed', 'failed', 'timedout', 'interrupted', 'running', 'cancelled', 'initialising'
   startTime: timestamp('start_time', { mode: 'date' }).notNull(),
   duration: integer('duration'), // in milliseconds
   totalTests: integer('total_tests').notNull().default(0),

@@ -1,4 +1,6 @@
-import { createGlobalSetup } from '../../reporter/index.js'
+import reporter from '../../reporter/dist/index.js'
+
+const { createGlobalSetup } = reporter
 
 async function cleanup() {
   try {

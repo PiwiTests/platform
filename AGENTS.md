@@ -19,9 +19,9 @@ Piwi test results dashboard built with **Nuxt 4**, Nuxt UI dashboard template. S
 
 ```
 application/            — Nuxt 4 dashboard app
-application/shared/     — Shared constants & utilities (auto-imported)
+application/shared/     — Shared types, constants & utilities
 application/tests/      — Functional tests (Playwright)
-reporter/               — Custom Playwright reporter package
+reporter/               — Custom Playwright reporter package (TypeScript → compiled JS)
 ```
 
 ## Quick Start
@@ -35,6 +35,12 @@ npm run dev          # http://localhost:3000
 SQLite database auto-initializes on first API call.
 
 ## Architecture
+
+### Shared types (`application/shared/types.ts`)
+- `TestCasePayload`, `StreamEventPayload`, `TestRunFinishPayload` — API payload shapes
+- `TestRunStatus`, `TestCaseStatus` — status type unions
+- Server endpoints import directly from `../../../shared/types`
+- Reporter uses structural typing (no direct import) to avoid leaking paths into `.d.ts`
 
 ### Database
 - **ORM**: Drizzle ORM (SQLite via libSQL, or PostgreSQL via postgres.js)
@@ -79,9 +85,21 @@ Nuxt file-based routing:
   - `index.ts` — Shared helpers: `formatDuration`, `getStatusColor`, `getFileApiPath`, `formatRelativeTime`, `createSortHeader`, `formatBytes`
 
 ### Reporter
-- `reporter/index.js` — Custom Playwright reporter
-- `reporter/index.d.ts` — TypeScript types
+- `reporter/src/index.ts` — Entry point (re-exports class + `createGlobalSetup`)
+- `reporter/src/reporter.ts` — Main `PiwiDashboardReporter` orchestrator class
+- `reporter/src/config.ts` — `DashboardReporterOptions` interface + defaults
+- `reporter/src/helpers.ts` — `getSetupFilePath`, `computeInstanceId`, `createGlobalSetup`
+- `reporter/src/http-client.ts` — `HttpClient` class (HTTP transport)
+- `reporter/src/uploader.ts` — `Uploader` class (upload strategies)
+- `reporter/src/stream-buffer.ts` — `StreamBuffer` class (persistent event buffer)
+- `reporter/src/crash-recovery.ts` — `CrashRecovery` class (recovery data)
+- `reporter/src/file-handler.ts` — `FileHandler` class (report/trace/attachment ops)
+- `reporter/src/metadata-collector.ts` — `MetadataCollector` class (CI/SCM metadata)
+- `reporter/src/step-analyzer.ts` — Pure functions (step analysis, performance)
+- `reporter/src/compression.ts` — Directory gzip archiver
+- `reporter/src/fixtures.ts` — Playwright fixtures for network/web-vitals/console
 - `reporter/package.json` — NPM package
+- Source is TypeScript (`.ts` in `src/`); compile with `npm run reporter:build` to produce `.js` + `.d.ts` in `dist/`
 
 ## Key Features
 - Auto-create projects on submission
@@ -114,6 +132,36 @@ Nuxt file-based routing:
 | `npm run db:push` | Push schema (dev only) |
 | `npm run db:studio` | Drizzle Studio |
 
+### Reporter commands (from `reporter/`)
+
+| Command | Purpose |
+|---------|---------|
+| `npm run reporter:build` | Compile TypeScript (from `src/`) to `.js` + `.d.ts` (in `dist/`) |
+| `npm run reporter:dev`   | Watch mode — auto-recompile on changes |
+| `npm run reporter:format`| Format source code with oxfmt |
+
+## Making Changes
+
+...**Reporter**: Edit `.ts` files in `reporter/src/` → `npm run reporter:build` (from `reporter/`) → test with `npm link`
+
+### Source files
+
+| Path                          | Responsibility                              |
+|-------------------------------|---------------------------------------------|
+| `src/reporter.ts`             | Orchestrator — Playwright hooks + fallback  |
+| `src/config.ts`               | Options interface + defaults                |
+| `src/http-client.ts`          | HTTP transport layer                        |
+| `src/uploader.ts`             | Upload strategies (JSON, multipart)         |
+| `src/stream-buffer.ts`        | Persistent JSONL buffer                     |
+| `src/crash-recovery.ts`       | Recovery data management                    |
+| `src/file-handler.ts`         | Report/trace/attachment file operations     |
+| `src/metadata-collector.ts`   | CI, SCM, Playwright config metadata         |
+| `src/step-analyzer.ts`        | Step categorization + performance analysis  |
+| `src/helpers.ts`              | Pure utility functions                      |
+| `src/compression.ts`          | Directory gzip archiver                     |
+| `src/fixtures.ts`             | Playwright fixtures                         |
+| `src/index.ts`                | Package entry point                         |
+
 ## Making Changes
 
 - **DB fields**: Update `schema.ts` → `npm run db:generate` (or `db:generate:pg` for PostgreSQL) → review migration → restart
@@ -128,7 +176,8 @@ Nuxt file-based routing:
 - **Tests**: Create `.spec.ts` in `application/tests/` → run `npm test`
   - If the test creates a project, **add its name to `shared/test-project-names.ts`** (alphabetically sorted) so the global setup cleanup deletes it before the next run. Tests must use static project names, not `Date.now()` suffixes.
   - Use `PROJECT.YOUR_KEY` from `../shared/test-project-names` in test code instead of raw string literals. This ensures every project name is tracked in one place.
-- **Reporter**: Edit `reporter/index.js` + `index.d.ts` → test with `npm link`
+- **Reporter**: Edit `.ts` files in `reporter/src/` → `npm run reporter:build` (from `reporter/`) → test with `npm link`
+- **Shared types** (`application/shared/types.ts`): Wire contract between reporter and server. Server imports directly; reporter uses structural typing (do NOT add `import type` from shared in reporter method signatures — it leaks the monorepo path into published `.d.ts` files)
 
 ## UI Patterns
 

@@ -1,0 +1,8 @@
+﻿{
+  "extends": "../.nuxt/tsconfig.node.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "verbatimModuleSyntax": false
+  },
+  "include": ["**/*.ts"]
+}

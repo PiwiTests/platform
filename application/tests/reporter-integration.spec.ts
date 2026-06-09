@@ -19,14 +19,14 @@ test.describe('Reporter Integration Tests', () => {
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
 
     expect(packageJson.name).toBe('@phenx/piwi-dashboard-reporter')
-    expect(packageJson.main).toBe('index.js')
-    expect(packageJson.types).toBe('index.d.ts')
+    expect(packageJson.main).toBe('dist/index.js')
+    expect(packageJson.types).toBe('dist/index.d.ts')
     expect(packageJson.peerDependencies).toBeDefined()
     expect(packageJson.peerDependencies['@playwright/test']).toBeDefined()
   })
 
   test('reporter should have TypeScript definitions', async () => {
-    const typeDefsPath = join(process.cwd(), '..', 'reporter', 'index.d.ts')
+    const typeDefsPath = join(process.cwd(), '..', 'reporter', 'dist', 'config.d.ts')
     expect(existsSync(typeDefsPath)).toBe(true)
 
     const typeDefs = readFileSync(typeDefsPath, 'utf-8')
@@ -41,7 +41,7 @@ test.describe('Reporter Integration Tests', () => {
   })
 
   test('reporter TypeScript definitions should include reports array option', async () => {
-    const typeDefsPath = join(process.cwd(), '..', 'reporter', 'index.d.ts')
+    const typeDefsPath = join(process.cwd(), '..', 'reporter', 'dist', 'config.d.ts')
     const typeDefs = readFileSync(typeDefsPath, 'utf-8')
 
     // Verify the new multi-report option is documented
@@ -51,20 +51,20 @@ test.describe('Reporter Integration Tests', () => {
     expect(typeDefs).toContain('label?: string')
   })
 
-  test('reporter fixtures.js should exist', async () => {
-    const fixturesPath = join(process.cwd(), '..', 'reporter', 'fixtures.js')
+  test('reporter dist/fixtures.js should exist', async () => {
+    const fixturesPath = join(process.cwd(), '..', 'reporter', 'dist', 'fixtures.js')
     expect(existsSync(fixturesPath)).toBe(true)
   })
 
-  test('reporter fixtures should export dashboardFixtures and test', async () => {
-    const fixturesPath = join(process.cwd(), '..', 'reporter', 'fixtures.js')
+  test('reporter dist/fixtures.js should export dashboardFixtures and test', async () => {
+    const fixturesPath = join(process.cwd(), '..', 'reporter', 'dist', 'fixtures.js')
     expect(existsSync(fixturesPath)).toBe(true)
 
     // Verify fixture exports by inspecting the source (avoids resolving @playwright/test
     // from the reporter directory which has no node_modules)
     const fixturesSource = readFileSync(fixturesPath, 'utf-8')
     expect(fixturesSource).toContain('dashboardFixtures')
-    expect(fixturesSource).toContain('module.exports')
+    expect(fixturesSource).toContain('exports.dashboardFixtures')
     expect(fixturesSource).toContain('page.on')
     expect(fixturesSource).toContain('requestfinished')
     expect(fixturesSource).toContain('piwi-dashboard-network')
@@ -72,15 +72,21 @@ test.describe('Reporter Integration Tests', () => {
   })
 
   test('reporter TypeScript definitions should export dashboardFixtures type', async () => {
-    const typeDefsPath = join(process.cwd(), '..', 'reporter', 'index.d.ts')
+    const typeDefsPath = join(process.cwd(), '..', 'reporter', 'dist', 'fixtures.d.ts')
     const typeDefs = readFileSync(typeDefsPath, 'utf-8')
 
     expect(typeDefs).toContain('dashboardFixtures')
+  })
+
+  test('reporter TypeScript definitions should include collectPerformanceMetrics', async () => {
+    const typeDefsPath = join(process.cwd(), '..', 'reporter', 'dist', 'config.d.ts')
+    const typeDefs = readFileSync(typeDefsPath, 'utf-8')
+
     expect(typeDefs).toContain('collectPerformanceMetrics')
   })
 
-  test('reporter lib/steps.js should exist with step metrics functions', async () => {
-    const stepsPath = join(process.cwd(), '..', 'reporter', 'lib', 'steps.js')
+  test('reporter dist/step-analyzer.js should exist with step metrics functions', async () => {
+    const stepsPath = join(process.cwd(), '..', 'reporter', 'dist', 'step-analyzer.js')
     expect(existsSync(stepsPath)).toBe(true)
 
     const source = readFileSync(stepsPath, 'utf-8')
@@ -90,28 +96,29 @@ test.describe('Reporter Integration Tests', () => {
     expect(source).toContain('categorizeStep')
   })
 
-  test('reporter lib/metadata.js should exist with metadata collection functions', async () => {
-    const metadataPath = join(process.cwd(), '..', 'reporter', 'lib', 'metadata.js')
+  test('reporter dist/metadata-collector.js should exist with metadata collection', async () => {
+    const metadataPath = join(process.cwd(), '..', 'reporter', 'dist', 'metadata-collector.js')
     expect(existsSync(metadataPath)).toBe(true)
 
     const source = readFileSync(metadataPath, 'utf-8')
-    expect(source).toContain('collectMetadata')
+    expect(source).toContain('class MetadataCollector')
     expect(source).toContain('collectScmInfo')
     expect(source).toContain('collectCiInfo')
   })
 
-  test('reporter lib/upload.js should exist with HTTP helpers', async () => {
-    const uploadPath = join(process.cwd(), '..', 'reporter', 'lib', 'upload.js')
-    expect(existsSync(uploadPath)).toBe(true)
+  test('reporter dist/http-client.js should exist with HTTP helpers', async () => {
+    const httpPath = join(process.cwd(), '..', 'reporter', 'dist', 'http-client.js')
+    expect(existsSync(httpPath)).toBe(true)
 
-    const source = readFileSync(uploadPath, 'utf-8')
+    const source = readFileSync(httpPath, 'utf-8')
+    expect(source).toContain('class HttpClient')
     expect(source).toContain('postJSON')
     expect(source).toContain('postFormData')
-    expect(source).toContain('loginUser')
+    expect(source).toContain('login')
   })
 
-  test('reporter lib/files.js should exist with file discovery functions', async () => {
-    const filesPath = join(process.cwd(), '..', 'reporter', 'lib', 'files.js')
+  test('reporter dist/file-handler.js should exist with file discovery functions', async () => {
+    const filesPath = join(process.cwd(), '..', 'reporter', 'dist', 'file-handler.js')
     expect(existsSync(filesPath)).toBe(true)
 
     const source = readFileSync(filesPath, 'utf-8')
@@ -119,11 +126,11 @@ test.describe('Reporter Integration Tests', () => {
     expect(source).toContain('findReportDirectory')
     expect(source).toContain('compressReportDirectory')
     expect(source).toContain('findTraceFiles')
-    expect(source).toContain('DEFAULT_REPORT_DIRS')
+    expect(source).toContain('getDefaultReportDirs')
   })
 
-  test('reporter lib/files.js DEFAULT_REPORT_DIRS should include monocart, and blob', async () => {
-    const filesPath = join(process.cwd(), '..', 'reporter', 'lib', 'files.js')
+  test('reporter dist/file-handler.js getDefaultReportDirs should include monocart and blob', async () => {
+    const filesPath = join(process.cwd(), '..', 'reporter', 'dist', 'file-handler.js')
     const source = readFileSync(filesPath, 'utf-8')
 
     expect(source).toContain('monocart')

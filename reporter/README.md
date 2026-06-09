@@ -179,6 +179,37 @@ When `collectCiInfo` is enabled (default), the reporter auto-detects:
 - Playwright Test 1.40 or higher
 - Running Piwi Dashboard server
 
+## Development
+
+This package is written in TypeScript. Source files live in `src/` and compile to `dist/`.
+
+```bash
+cd reporter
+npm install
+npm run reporter:build   # compile TypeScript src/ → dist/
+npm run reporter:dev     # watch mode — auto-recompile on changes
+```
+
+### Source layout
+
+| File                       | Responsibility                              |
+|----------------------------|---------------------------------------------|
+| `src/reporter.ts`          | Orchestrator — Playwright hooks + fallback  |
+| `src/config.ts`            | Options interface + defaults                |
+| `src/http-client.ts`       | HTTP transport layer                        |
+| `src/uploader.ts`          | Upload strategies (JSON, multipart)         |
+| `src/stream-buffer.ts`     | Persistent JSONL buffer                     |
+| `src/crash-recovery.ts`    | Recovery data management                    |
+| `src/file-handler.ts`      | Report/trace/attachment file operations     |
+| `src/metadata-collector.ts`| CI, SCM, Playwright config metadata         |
+| `src/step-analyzer.ts`     | Step categorization + performance analysis  |
+| `src/helpers.ts`           | Pure utility functions                      |
+| `src/compression.ts`       | Directory gzip archiver                     |
+| `src/fixtures.ts`          | Playwright fixtures                         |
+| `src/index.ts`             | Package entry point                         |
+
+The `package.json` `exports` field maps the main entry and `./fixtures` to their `dist/` counterparts.
+
 ## Troubleshooting
 
 ### Reporter not uploading files

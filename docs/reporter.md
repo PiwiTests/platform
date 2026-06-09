@@ -342,3 +342,42 @@ export default defineConfig({
 The reporter calls `/api/auth/login` automatically before each upload.
 
 See [Authentication](/authentication) for details on enabling auth, creating users, and managing API keys.
+
+## Development
+
+The reporter source uses TypeScript (`.ts`) in `src/` and compiles to CommonJS JavaScript (`.js`) with type declarations (`.d.ts`) in `dist/` via the TypeScript compiler.
+
+### Building
+
+```bash
+cd reporter
+npm install
+npm run reporter:build   # compile TypeScript from src/ to dist/
+npm run reporter:dev     # watch mode — auto-recompile on changes
+```
+
+This produces 13 `.js` + 13 `.d.ts` files in `dist/` — one for each `.ts` source in `src/`.
+
+The compiled output is what Playwright loads at runtime. The `package.json` `exports` field maps `@phenx/piwi-dashboard-reporter/fixtures` directly to `dist/fixtures.js`.
+
+### Source layout
+
+| File                      | Purpose                                              |
+|---------------------------|------------------------------------------------------|
+| `src/index.ts`            | Entry point — re-exports the class with `createGlobalSetup` attached |
+| `src/reporter.ts`         | Main `PiwiDashboardReporter` orchestrator class (Playwright hooks, streaming lifecycle, upload fallback) |
+| `src/config.ts`           | `DashboardReporterOptions` interface + `resolveOptions()` defaults merger |
+| `src/helpers.ts`          | Utility functions: `getSetupFilePath`, `computeInstanceId`, `createGlobalSetup` |
+| `src/http-client.ts`      | `HttpClient` class — HTTP/HTTPS transport (login, postJSON, postFormData) |
+| `src/uploader.ts`         | `Uploader` class — upload strategies (JSON, multipart, streaming files) |
+| `src/stream-buffer.ts`    | `StreamBuffer` class — persistent JSONL event buffer with staleness cleanup |
+| `src/crash-recovery.ts`   | `CrashRecovery` class — save/load/retry recovery data after total failure |
+| `src/file-handler.ts`     | `FileHandler` class — report directory detection, trace/attachment file ops |
+| `src/metadata-collector.ts` | `MetadataCollector` class — CI, SCM, and Playwright config metadata |
+| `src/step-analyzer.ts`    | Pure functions — step categorization, flattening, performance summary |
+| `src/compression.ts`      | Directory gzip archiver |
+| `src/fixtures.ts`         | Playwright fixtures for network/web-vitals/console capture |
+
+### Shared types
+
+Wire contract types are defined in `application/shared/types.ts` and used by the server for request validation. The reporter does not import them directly — it uses structural `any` typing (Playwright's runtime API is inherently untyped from the reporter's perspective). When making changes, keep the two sides consistent: the reporter's payload shapes must match the server's `TestCasePayload`, `StreamEventPayload`, and `TestRunFinishPayload`.
