@@ -4,6 +4,14 @@ import { join, resolve } from 'path'
 import { existsSync, rmSync } from 'fs'
 import { PROJECT } from '../shared/test-project-names'
 
+function safeRmSync(path: string, options?: Parameters<typeof rmSync>[1]) {
+  try {
+    if (existsSync(path)) rmSync(path, options)
+  } catch {
+    // File may be locked by another process (e.g. auth server's SQLite on Windows)
+  }
+}
+
 const AUTH_PORT = 3099
 const AUTH_SERVER_URL = `http://localhost:${AUTH_PORT}`
 const DB_PATH = join(process.cwd(), '.test-temp', 'auth-test.db')
@@ -38,14 +46,14 @@ test.describe.serial('Reporter with authentication enabled', () => {
 
   test.beforeAll(() => {
     // Clean up test database and storage before running, in case of retries from a previous run
-    if (existsSync(DB_PATH)) rmSync(DB_PATH)
-    if (existsSync(STORAGE_PATH)) rmSync(STORAGE_PATH, { recursive: true, force: true })
+    safeRmSync(DB_PATH)
+    safeRmSync(STORAGE_PATH, { recursive: true, force: true })
   })
 
   test.afterAll(() => {
     // Clean up test database and storage created by the auth server
-    if (existsSync(DB_PATH)) rmSync(DB_PATH)
-    if (existsSync(STORAGE_PATH)) rmSync(STORAGE_PATH, { recursive: true, force: true })
+    safeRmSync(DB_PATH)
+    safeRmSync(STORAGE_PATH, { recursive: true, force: true })
   })
 
   // ---------------------------------------------------------------------------

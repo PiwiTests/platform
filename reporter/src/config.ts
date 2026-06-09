@@ -24,7 +24,6 @@ export interface DashboardReporterOptions {
 }
 
 const DEFAULTS = {
-  serverUrl: "http://localhost:3000",
   projectName: "default-project",
   uploadTraces: true,
   uploadReport: true,
@@ -41,8 +40,14 @@ const DEFAULTS = {
 } as const;
 
 export function resolveOptions(raw: Record<string, any>): DashboardReporterOptions {
-  return {
+  const opts: DashboardReporterOptions = {
     ...DEFAULTS,
     ...raw,
   };
+
+  if (!opts.serverUrl && process.env.PIWI_DASHBOARD_URL) {
+    opts.serverUrl = process.env.PIWI_DASHBOARD_URL;
+  }
+
+  return opts;
 }
