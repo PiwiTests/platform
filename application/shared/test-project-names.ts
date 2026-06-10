@@ -35,6 +35,7 @@ export const PROJECT = {
   ENV_STREAM_START: 'env-stream-start-test',
   ENV_UI: 'env-ui-test',
   ENV_UPLOAD: 'env-upload-test',
+  FAILURE_CLUSTERS: 'failure-clusters-test',
   GZIP_MIME: 'gzip-mime-test',
   GZIP_SERVE: 'gzip-serve-test-project',
   GZIP_TEST: 'gzip-test-project',

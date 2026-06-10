@@ -51,6 +51,27 @@ export const testCases = pgTable('test_cases', {
   filePathTitleIdx: index('idx_test_cases_file_path_title').on(table.projectId, table.filePath, table.title)
 }))
 
+// Failure clusters table - failed run cases grouped by normalized error fingerprint
+export const failureClusters = pgTable('failure_clusters', {
+  id: serial('id').primaryKey(),
+  projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  fingerprint: text('fingerprint').notNull(), // SHA-256 over FINGERPRINT_VERSION + normalized error signals (shared/error-fingerprint.ts)
+  signature: text('signature').notNull(), // normalized first error line — human-readable cluster name
+  errorType: text('error_type'), // 'timeout', 'assertion', 'strict-mode', 'navigation', 'crash', 'unknown'
+  selector: text('selector'), // locator extracted from the error, if any
+  sampleError: text('sample_error'), // one full raw error kept for display
+  // Run ids are intentionally NOT foreign keys: runs are deleted independently
+  // and clusters must survive them (stale ids are tolerated)
+  firstSeenRunId: integer('first_seen_run_id').notNull(),
+  lastSeenRunId: integer('last_seen_run_id').notNull(),
+  occurrences: integer('occurrences').notNull().default(0), // denormalized count of linked test_runs_cases rows (not decremented on run deletion)
+  createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date()),
+  updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
+}, table => ({
+  projectFingerprintIdx: uniqueIndex('idx_failure_clusters_project_fingerprint').on(table.projectId, table.fingerprint),
+  projectLastSeenIdx: index('idx_failure_clusters_project_last_seen').on(table.projectId, table.lastSeenRunId)
+}))
+
 // Test runs cases table - junction table with run-specific data
 export const testRunsCases = pgTable('test_runs_cases', {
   id: serial('id').primaryKey(),
@@ -59,6 +80,7 @@ export const testRunsCases = pgTable('test_runs_cases', {
   status: text('status').notNull(), // 'passed', 'failed', 'timedout', 'skipped'
   duration: integer('duration'), // in milliseconds
   error: text('error'),
+  failureClusterId: integer('failure_cluster_id').references(() => failureClusters.id), // set for failed rows with an error — groups rows sharing a fingerprint
   retries: integer('retries').default(0),
   line: integer('line'), // line number in file
   column: integer('column'), // column number in file
@@ -74,7 +96,8 @@ export const testRunsCases = pgTable('test_runs_cases', {
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
 }, table => ({
   testRunIdIdx: index('idx_test_runs_cases_test_run_id').on(table.testRunId),
-  testCaseIdIdx: index('idx_test_runs_cases_test_case_id').on(table.testCaseId)
+  testCaseIdIdx: index('idx_test_runs_cases_test_case_id').on(table.testCaseId),
+  failureClusterIdIdx: index('idx_test_runs_cases_failure_cluster_id').on(table.failureClusterId)
 }))
 
 // Trace resources table - shared pool of individual resource files extracted from trace ZIPs
@@ -126,7 +149,7 @@ export const tags = pgTable('tags', {
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
 }, table => ({
-  updatedAtIdx: index('idx_projects_updated_at').on(table.updatedAt)
+  updatedAtIdx: index('idx_tags_updated_at').on(table.updatedAt)
 }))
 
 // Project tags junction table
@@ -179,6 +202,8 @@ export type TestCase = typeof testCases.$inferSelect
 export type NewTestCase = typeof testCases.$inferInsert
 export type TestRunsCase = typeof testRunsCases.$inferSelect
 export type NewTestRunsCase = typeof testRunsCases.$inferInsert
+export type FailureCluster = typeof failureClusters.$inferSelect
+export type NewFailureCluster = typeof failureClusters.$inferInsert
 export type File = typeof files.$inferSelect
 export type NewFile = typeof files.$inferInsert
 export type TraceBlob = typeof traceBlobs.$inferSelect

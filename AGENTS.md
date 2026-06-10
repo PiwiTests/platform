@@ -46,7 +46,7 @@ SQLite database auto-initializes on first API call.
 - **ORM**: Drizzle ORM (SQLite via libSQL, or PostgreSQL via postgres.js)
 - **Schema**: `application/server/database/schema.ts`
 - **Migrations**: `application/server/database/migrations/` (SQLite) or `migrations-pg/` (PostgreSQL, auto-run on startup based on `DATABASE_URL`)
-- **Tables**: `projects`, `test_runs`, `test_cases`, `test_runs_cases`, `reports`, `traces`, `tags`, `project_tags`, `users`, `api_keys`
+- **Tables**: `projects`, `test_runs`, `test_cases`, `test_runs_cases`, `failure_clusters`, `files`, `trace_resources`, `trace_blobs`, `tags`, `project_tags`, `users`, `api_keys`
 
 ### Backend (server/api/)
 Nuxt file-based routing:

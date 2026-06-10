@@ -315,7 +315,7 @@ Top 20 slowest test cases with avg, max, min duration and trend data.
 
 ### GET `/api/test-runs/[id]`
 
-Get test run details with test cases. Includes `flakyTests` count.
+Get test run details with test cases. Includes `flakyTests` count. Failed test cases carry a `failureClusterId` that groups failures sharing the same normalized error fingerprint (see `shared/error-fingerprint.ts`).
 
 ---
 

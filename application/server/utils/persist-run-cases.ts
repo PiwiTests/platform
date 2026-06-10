@@ -1,6 +1,7 @@
-import { testCases, testRunsCases } from '../database/schema'
-import { eq, and, inArray } from 'drizzle-orm'
+import { testCases, testRunsCases, failureClusters } from '../database/schema'
+import { eq, and, inArray, sql } from 'drizzle-orm'
 import { sanitizeNetworkRequests, sanitizeWebVitals, sanitizeConsoleLogs } from './sanitize'
+import { computeErrorFingerprint, type ErrorFingerprint } from '../../shared/error-fingerprint'
 import type { getDatabase } from '../database'
 
 type DB = Awaited<ReturnType<typeof getDatabase>>
@@ -30,10 +31,86 @@ export interface RunCaseInput {
   startedAt?: number | null
 }
 
+/** Per-fingerprint accumulator for the batch being persisted. */
+interface PendingCluster {
+  fp: ErrorFingerprint
+  sampleError: string
+  count: number
+}
+
+/**
+ * Get-or-create the `failure_clusters` rows for a batch of fingerprints and
+ * return fingerprint → cluster id. Existing clusters get their lastSeenRunId
+ * and occurrences bumped; new ones start at this run. Insert races with
+ * concurrent streaming batches are resolved via the unique
+ * (projectId, fingerprint) index + onConflictDoNothing.
+ */
+async function getOrCreateFailureClusters(
+  db: DB,
+  projectId: number,
+  testRunId: number,
+  pending: Map<string, PendingCluster>
+): Promise<Map<string, number>> {
+  const ids = new Map<string, number>()
+  if (pending.size === 0) return ids
+
+  const bumpExisting = async (clusterId: number, count: number) => {
+    await db.update(failureClusters).set({
+      lastSeenRunId: testRunId,
+      occurrences: sql`${failureClusters.occurrences} + ${count}`,
+      updatedAt: new Date()
+    }).where(eq(failureClusters.id, clusterId))
+  }
+
+  const existing = await db.select({ id: failureClusters.id, fingerprint: failureClusters.fingerprint })
+    .from(failureClusters)
+    .where(and(eq(failureClusters.projectId, projectId), inArray(failureClusters.fingerprint, [...pending.keys()])))
+
+  for (const cluster of existing) {
+    const p = pending.get(cluster.fingerprint)
+    if (!p) continue
+    ids.set(cluster.fingerprint, cluster.id)
+    await bumpExisting(cluster.id, p.count)
+  }
+
+  for (const [fingerprint, p] of pending) {
+    if (ids.has(fingerprint)) continue
+    const inserted = await db.insert(failureClusters).values({
+      projectId,
+      fingerprint,
+      signature: p.fp.signature,
+      errorType: p.fp.errorType,
+      selector: p.fp.selector,
+      sampleError: p.sampleError,
+      firstSeenRunId: testRunId,
+      lastSeenRunId: testRunId,
+      occurrences: p.count
+    }).onConflictDoNothing().returning({ id: failureClusters.id })
+
+    if (inserted[0]) {
+      ids.set(fingerprint, inserted[0].id)
+      continue
+    }
+
+    // Lost the insert race — another batch created the cluster; bump it instead
+    const winner = await db.select({ id: failureClusters.id })
+      .from(failureClusters)
+      .where(and(eq(failureClusters.projectId, projectId), eq(failureClusters.fingerprint, fingerprint)))
+    if (winner[0]) {
+      ids.set(fingerprint, winner[0].id)
+      await bumpExisting(winner[0].id, p.count)
+    }
+  }
+
+  return ids
+}
+
 /**
  * Get-or-create the shared `test_cases` rows for a batch and insert the per-run
  * `test_runs_cases` rows in a single statement. Network requests, web vitals and
- * console logs are sanitised here (stripping query strings from URLs).
+ * console logs are sanitised here (stripping query strings from URLs). Failed
+ * cases with error text are fingerprinted and linked to a `failure_clusters`
+ * row so failures sharing a root cause can be grouped.
  *
  * Shared by the submit, upload and streaming-events endpoints. Returns the
  * inserted junction rows in input order so callers can link attachments (e.g.
@@ -77,6 +154,9 @@ export async function persistRunCases(
   }
 
   const runCasesRows: Array<typeof testRunsCases.$inferInsert> = []
+  // Fingerprint of each pushed row (parallel to runCasesRows), null for non-failures
+  const rowFingerprints: Array<ErrorFingerprint | null> = []
+  const pendingClusters = new Map<string, PendingCluster>()
 
   for (const c of cases) {
     const cacheKey = `${c.filePath}::${c.title}`
@@ -102,6 +182,19 @@ export async function persistRunCases(
       if (existingRunCaseSet.has(rowKey)) continue
     }
 
+    // Fingerprint failed cases so they can be linked to a failure cluster
+    let fingerprint: ErrorFingerprint | null = null
+    if (c.error && c.status !== 'passed' && c.status !== 'skipped') {
+      fingerprint = await computeErrorFingerprint(c.error)
+      const pending = pendingClusters.get(fingerprint.fingerprint)
+      if (pending) {
+        pending.count++
+      } else {
+        pendingClusters.set(fingerprint.fingerprint, { fp: fingerprint, sampleError: c.error, count: 1 })
+      }
+    }
+    rowFingerprints.push(fingerprint)
+
     runCasesRows.push({
       testRunId,
       testCaseId: shared.id,
@@ -124,5 +217,12 @@ export async function persistRunCases(
   }
 
   if (runCasesRows.length === 0) return []
+
+  const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters)
+  runCasesRows.forEach((row, i) => {
+    const fingerprint = rowFingerprints[i]
+    if (fingerprint) row.failureClusterId = clusterIds.get(fingerprint.fingerprint) ?? null
+  })
+
   return await db.insert(testRunsCases).values(runCasesRows).returning({ id: testRunsCases.id })
 }
