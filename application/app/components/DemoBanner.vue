@@ -8,7 +8,7 @@ if (config.public.demoMode) {
   useResizeObserver(bannerEl, (entries) => {
     const entry = entries[0]
     if (!entry) return
-    document.documentElement.style.setProperty('--demo-banner-height', `${entry.contentRect.height}px`)
+    document.documentElement.style.setProperty('--demo-banner-height', `${entry.contentRect.height + 6}px`)
   })
 
   onUnmounted(() => {
@@ -28,11 +28,10 @@ if (config.public.demoMode) {
   background-color: #fef3c7;
   color: #92400e;
   text-align: center;
-  padding: 0.5rem 1rem 0.75rem;
+  padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 500;
   border-bottom: 1px solid #fcd34d;
-  margin-bottom: 0.25rem;
   position: relative;
   z-index: 60;
 }
