@@ -4,7 +4,8 @@ import {
   GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
-  DeleteObjectsCommand
+  DeleteObjectsCommand,
+  DeleteObjectCommand
 } from '@aws-sdk/client-s3'
 import type { StorageAdapter, S3Config } from './types'
 
@@ -96,6 +97,19 @@ export class S3StorageAdapter implements StorageAdapter {
   getFullPath(path: string): string {
     // For S3, return the key as-is (relative path)
     return path
+  }
+
+  async deleteFile(path: string): Promise<void> {
+    try {
+      const command = new DeleteObjectCommand({
+        Bucket: this.config.bucket,
+        Key: path
+      })
+      await this.s3Client.send(command)
+    } catch (error) {
+      console.error(`Failed to delete file from S3: ${path}`, error)
+      throw error
+    }
   }
 
   async deleteDirectory(path: string): Promise<void> {

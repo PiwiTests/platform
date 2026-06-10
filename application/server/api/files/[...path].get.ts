@@ -99,6 +99,9 @@ export default eventHandler(async (event) => {
 
   const storage = getStorage()
 
+  // Security headers applied to all file responses
+  setResponseHeader(event, 'X-Content-Type-Options', 'nosniff')
+
   // Helper to serve a file with the right content type
   function setContentType(ext: string): string {
     if (ext === '.html' || ext === '.htm') return 'text/html'
@@ -113,6 +116,17 @@ export default eventHandler(async (event) => {
     if (ext === '.woff' || ext === '.woff2') return 'font/woff2'
     if (ext === '.ttf') return 'font/ttf'
     return 'application/octet-stream'
+  }
+
+  /**
+   * Apply a Content-Security-Policy sandbox to untrusted HTML responses.
+   * User-uploaded report HTML can contain arbitrary scripts; sandboxing
+   * prevents them from executing in the dashboard's origin.
+   */
+  function applyHtmlCsp(): void {
+    // The sandbox directive without any tokens enables all restrictions:
+    // no scripts, no forms, no popups, no navigation, etc.
+    setResponseHeader(event, 'Content-Security-Policy', 'sandbox')
   }
 
   // 1. Try exact path
@@ -141,6 +155,7 @@ export default eventHandler(async (event) => {
         const htmlContent = await findInArchive(fileContent, 'index.html')
         if (htmlContent) {
           setResponseHeader(event, 'Content-Type', 'text/html')
+          applyHtmlCsp()
           setResponseHeader(event, 'Content-Length', htmlContent.length)
           return htmlContent
         }
@@ -149,8 +164,12 @@ export default eventHandler(async (event) => {
       }
     }
 
-    setResponseHeader(event, 'Content-Type', setContentType(ext))
+    const contentType = setContentType(ext)
+    setResponseHeader(event, 'Content-Type', contentType)
     setResponseHeader(event, 'Content-Length', fileContent.length)
+    if (contentType === 'text/html') {
+      applyHtmlCsp()
+    }
     return fileContent
   }
 
@@ -159,6 +178,7 @@ export default eventHandler(async (event) => {
   if (await storage.exists(indexPath)) {
     const fileContent = await storage.readFile(indexPath)
     setResponseHeader(event, 'Content-Type', 'text/html')
+    applyHtmlCsp()
     setResponseHeader(event, 'Content-Length', fileContent.length)
     return fileContent
   }
@@ -171,6 +191,7 @@ export default eventHandler(async (event) => {
       const htmlContent = await findInArchive(gzContent, 'index.html')
       if (htmlContent) {
         setResponseHeader(event, 'Content-Type', 'text/html')
+        applyHtmlCsp()
         setResponseHeader(event, 'Content-Length', htmlContent.length)
         return htmlContent
       }

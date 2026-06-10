@@ -52,6 +52,15 @@ export class LocalStorageAdapter implements StorageAdapter {
     return join(this.basePath, path)
   }
 
+  async deleteFile(path: string): Promise<void> {
+    const fullPath = join(this.basePath, path)
+    try {
+      await rm(fullPath, { force: true })
+    } catch {
+      // Ignore if it doesn't exist
+    }
+  }
+
   async deleteDirectory(path: string): Promise<void> {
     const fullPath = join(this.basePath, path)
     if (existsSync(fullPath)) {

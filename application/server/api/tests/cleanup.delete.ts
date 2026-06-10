@@ -1,12 +1,23 @@
 import { getDatabase } from '../../database'
 import { projects, testRuns, testRunsCases, files, testCases, tags, projectTags } from '../../database/schema'
 import { eq, inArray, like } from 'drizzle-orm'
-import { getStorage } from '../../storage'
+import { requireAuth } from '../../utils/auth'
+import { deleteFileRow } from '../../utils/delete-run-files'
 import { TEST_PROJECT_NAMES } from '../../../shared/test-project-names'
 
-export default eventHandler(async (_event) => {
+export default eventHandler(async (event) => {
+  // This endpoint is only intended for test suites — guard against accidental
+  // use in production by requiring administrator role AND a non-production env
+  await requireAuth(event, ['administrator'])
+
+  if (process.env.NODE_ENV === 'production') {
+    throw createError({
+      statusCode: 403,
+      message: 'Cleanup endpoint is disabled in production'
+    })
+  }
+
   const db = await getDatabase()
-  const storage = getStorage()
 
   // Delete test projects by name
   const projectRows = await db.select()
@@ -25,15 +36,11 @@ export default eventHandler(async (_event) => {
       const runsCases = await db.select({ id: testRunsCases.id }).from(testRunsCases).where(eq(testRunsCases.testRunId, run.id))
       const caseIds = runsCases.map(c => c.id)
 
-      // Delete trace files linked to cases
+      // Delete trace files linked to cases from storage
       if (caseIds.length > 0) {
         const traceFiles = await db.select().from(files).where(inArray(files.testRunsCaseId, caseIds))
         for (const trace of traceFiles) {
-          try {
-            await storage.deleteDirectory(trace.path)
-          } catch {
-            /* ignore */
-          }
+          await deleteFileRow(trace)
         }
         await db.delete(files).where(inArray(files.testRunsCaseId, caseIds))
       }
@@ -41,13 +48,9 @@ export default eventHandler(async (_event) => {
       // Delete test run cases
       await db.delete(testRunsCases).where(eq(testRunsCases.testRunId, run.id))
 
-      // Delete report files from storage and DB
+      // Delete report files from storage
       for (const file of fileRows) {
-        try {
-          await storage.deleteDirectory(file.path)
-        } catch {
-          /* ignore */
-        }
+        await deleteFileRow(file)
       }
       await db.delete(files).where(eq(files.testRunId, run.id))
 
