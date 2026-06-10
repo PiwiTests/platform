@@ -28,10 +28,11 @@ if (config.public.demoMode) {
   background-color: #fef3c7;
   color: #92400e;
   text-align: center;
-  padding: 0.5rem 1rem;
+  padding: 0.5rem 1rem 0.75rem;
   font-size: 0.875rem;
   font-weight: 500;
   border-bottom: 1px solid #fcd34d;
+  margin-bottom: 0.25rem;
   position: relative;
   z-index: 60;
 }
