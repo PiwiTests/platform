@@ -19,6 +19,7 @@ const TERMINAL_EVENTS = new Set(['run-finished', 'run-submitted', 'run-cancelled
 function ensureConnection() {
   if (sharedEventSource) return
   if (!import.meta.client) return
+  if (useRuntimeConfig().public.demoMode) return
 
   sharedEventSource = new EventSource('/api/stream')
 
