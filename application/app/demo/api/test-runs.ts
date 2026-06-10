@@ -2,7 +2,7 @@
  * Client-side implementations of the /api/test-runs* endpoints for demo mode.
  */
 
-import { eq, sql } from 'drizzle-orm'
+import { eq, sql, desc } from 'drizzle-orm'
 import { getDemoDb } from '../db.client'
 import { testRuns, testCases, testRunsCases, projects, files } from '~~/server/database/schema.sqlite'
 
@@ -168,6 +168,28 @@ export async function apiGetNetworkRequests(id: number) {
 
   summaries.sort((a, b) => b.avgDuration - a.avgDuration)
   return summaries
+}
+
+/** GET /api/test-runs/recent */
+export async function apiGetRecentTestRuns() {
+  const db = await getDemoDb()
+
+  return db.select({
+    id: testRuns.id,
+    status: testRuns.status,
+    startTime: testRuns.startTime,
+    totalTests: testRuns.totalTests,
+    passedTests: testRuns.passedTests,
+    failedTests: testRuns.failedTests,
+    skippedTests: testRuns.skippedTests,
+    flakyTests: testRuns.flakyTests,
+    duration: testRuns.duration,
+    avgTestDuration: testRuns.avgTestDuration,
+    p90TestDuration: testRuns.p90TestDuration
+  })
+    .from(testRuns)
+    .orderBy(desc(testRuns.startTime))
+    .limit(30)
 }
 
 /** DELETE /api/test-runs/:id */

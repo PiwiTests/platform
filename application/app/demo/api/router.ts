@@ -19,8 +19,8 @@ import {
   apiUpdateTag,
   apiDeleteTag
 } from './projects'
-import { apiGetTestRun, apiGetNetworkRequests, apiDeleteTestRun } from './test-runs'
-import { apiGetTestCase } from './test-cases'
+import { apiGetTestRun, apiGetNetworkRequests, apiGetRecentTestRuns, apiDeleteTestRun } from './test-runs'
+import { apiGetTestCase, apiGetTestCaseHistory, apiGetTestCaseTraces } from './test-cases'
 import { apiGetAdminStats } from './admin'
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
@@ -42,12 +42,15 @@ const routes: RouteEntry[] = [
   { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/slow-tests$/, handler: (m, _, q) => apiGetProjectSlowTests(+m[1]!, q ? Number(q.get('runs')) || 10 : 10) },
 
   // Test runs
+  { method: 'GET', pattern: /^\/api\/test-runs\/recent$/, handler: () => apiGetRecentTestRuns() },
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)$/, handler: m => apiGetTestRun(+m[1]!) },
   { method: 'DELETE', pattern: /^\/api\/test-runs\/(\d+)$/, handler: m => apiDeleteTestRun(+m[1]!) },
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/network-requests$/, handler: m => apiGetNetworkRequests(+m[1]!) },
 
   // Test cases
   { method: 'GET', pattern: /^\/api\/test-cases\/(\d+)$/, handler: m => apiGetTestCase(+m[1]!) },
+  { method: 'GET', pattern: /^\/api\/test-cases\/(\d+)\/history$/, handler: m => apiGetTestCaseHistory(+m[1]!) },
+  { method: 'GET', pattern: /^\/api\/test-cases\/(\d+)\/traces$/, handler: m => apiGetTestCaseTraces(+m[1]!) },
 
   // Tags
   { method: 'GET', pattern: /^\/api\/tags$/, handler: () => apiGetTags() },

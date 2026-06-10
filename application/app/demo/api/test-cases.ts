@@ -2,9 +2,9 @@
  * Client-side implementations of the /api/test-cases* endpoints for demo mode.
  */
 
-import { eq } from 'drizzle-orm'
+import { eq, desc, sql } from 'drizzle-orm'
 import { getDemoDb } from '../db.client'
-import { testCases, testRunsCases, testRuns, projects } from '~~/server/database/schema.sqlite'
+import { testCases, testRunsCases, testRuns, projects, files } from '~~/server/database/schema.sqlite'
 
 /** GET /api/test-cases/:id — returns a single test_runs_case (not test_case) */
 export async function apiGetTestCase(id: number) {
@@ -44,4 +44,47 @@ export async function apiGetTestCase(id: number) {
     workerIndex: testRunsCase.workerIndex,
     testRun: testRun ? { ...testRun, project } : testRun
   }
+}
+
+/** GET /api/test-cases/:id/history */
+export async function apiGetTestCaseHistory(id: number) {
+  const db = await getDemoDb()
+
+  const sourceResult = await db.select({ testCaseId: testRunsCases.testCaseId })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.id, id))
+
+  if (sourceResult.length === 0) return null
+
+  const testCaseId = sourceResult[0]!.testCaseId
+
+  return db.select({
+    id: testRunsCases.id,
+    runId: testRuns.id,
+    status: testRunsCases.status,
+    duration: testRunsCases.duration,
+    error: testRunsCases.error,
+    retries: testRunsCases.retries,
+    startTime: testRuns.startTime,
+    runStatus: testRuns.status
+  })
+    .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+    .where(eq(testRunsCases.testCaseId, testCaseId))
+    .orderBy(desc(testRuns.startTime))
+    .limit(50)
+}
+
+/** GET /api/test-cases/:id/traces */
+export async function apiGetTestCaseTraces(id: number) {
+  const db = await getDemoDb()
+
+  const found = await db.select({ id: testRunsCases.id }).from(testRunsCases).where(eq(testRunsCases.id, id))
+  if (!found[0]) return null
+
+  const traceRows = await db.select()
+    .from(files)
+    .where(sql`${files.testRunsCaseId} = ${id} AND ${files.type} = 'trace'`)
+
+  return traceRows.map(t => ({ id: t.id, filePath: t.path, createdAt: t.createdAt }))
 }
