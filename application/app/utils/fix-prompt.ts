@@ -13,6 +13,10 @@ interface FixPromptInput {
   duration?: number | null
   slowestStep?: string | null
   slowestStepDuration?: number | null
+  cluster?: {
+    sameRunCaseCount: number
+    isNew: boolean
+  } | null
 }
 
 export function generateFixPrompt(tc: FixPromptInput): string {
@@ -34,6 +38,16 @@ export function generateFixPrompt(tc: FixPromptInput): string {
     lines.push('```')
     lines.push(error)
     lines.push('```')
+    lines.push('')
+  }
+
+  if (tc.cluster) {
+    if (tc.cluster.sameRunCaseCount > 1) {
+      lines.push(`${tc.cluster.sameRunCaseCount} tests in this run failed with this same normalized error — likely one shared root cause.`)
+    }
+    lines.push(tc.cluster.isNew
+      ? 'This error signature is new in this run (it did not occur in previous runs).'
+      : 'This error signature is a known failure that already occurred in previous runs.')
     lines.push('')
   }
 
