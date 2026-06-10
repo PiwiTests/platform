@@ -4,6 +4,7 @@ import { projects, testRuns } from '../../database/schema'
 import { eq } from 'drizzle-orm'
 import { requireAuth } from '../../utils/auth'
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs'
+import { sanitizeMetadata } from '../../utils/sanitize'
 import { runEventBus } from '../../utils/run-events'
 
 export default eventHandler(async (event) => {
@@ -58,7 +59,7 @@ export default eventHandler(async (event) => {
     failedTests: 0,
     skippedTests: 0,
     environment: body.environment || null,
-    metadata: body.metadata || null,
+    metadata: sanitizeMetadata(body.metadata || null),
     instanceId,
     streamToken
   }).returning()

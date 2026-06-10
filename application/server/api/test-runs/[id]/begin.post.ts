@@ -3,6 +3,7 @@ import { getDatabase } from '../../../database'
 import { testRuns } from '../../../database/schema'
 import { eq } from 'drizzle-orm'
 import { cancelInstanceRuns } from '../../../utils/cancel-instance-runs'
+import { sanitizeMetadata } from '../../../utils/sanitize'
 import { runEventBus } from '../../../utils/run-events'
 
 export default eventHandler(async (event) => {
@@ -65,7 +66,7 @@ export default eventHandler(async (event) => {
       status: 'running',
       streamToken,
       totalTests: body.totalTests || 0,
-      metadata: body.metadata || testRun.metadata
+      metadata: sanitizeMetadata(body.metadata || testRun.metadata)
     })
     .where(eq(testRuns.id, id))
 

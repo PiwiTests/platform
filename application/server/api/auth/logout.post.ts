@@ -8,7 +8,7 @@ export default eventHandler(async (event) => {
     })
   }
 
-  clearUserSession(event)
+  await clearUserSession(event)
 
   return {
     success: true

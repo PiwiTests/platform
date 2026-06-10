@@ -2,6 +2,7 @@ import { getDatabase } from '../../../database'
 import { testRuns } from '../../../database/schema'
 import { eq } from 'drizzle-orm'
 import { runEventBus } from '../../../utils/run-events'
+import { sanitizeMetadata } from '../../../utils/sanitize'
 import { validateAndReviveRun } from '../../../utils/revive-run'
 
 export default eventHandler(async (event) => {
@@ -70,7 +71,7 @@ export default eventHandler(async (event) => {
     ...(body.flakyTests !== undefined && { flakyTests }),
     ...(avgTestDuration !== null && { avgTestDuration }),
     ...(p90TestDuration !== null && { p90TestDuration }),
-    ...(body.metadata && { metadata: body.metadata })
+    ...(body.metadata && { metadata: sanitizeMetadata(body.metadata) })
   }
 
   await db.update(testRuns)

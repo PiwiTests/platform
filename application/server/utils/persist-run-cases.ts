@@ -38,12 +38,17 @@ export interface RunCaseInput {
  * Shared by the submit, upload and streaming-events endpoints. Returns the
  * inserted junction rows in input order so callers can link attachments (e.g.
  * trace files) by index.
+ *
+ * When `deduplicate` is true (used by the streaming events endpoint), existing
+ * `(testRunId, testCaseId, retries)` rows are queried first and duplicates are
+ * skipped. This prevents duplicate rows when the reporter retries a failed batch.
  */
 export async function persistRunCases(
   db: DB,
   projectId: number,
   testRunId: number,
-  cases: RunCaseInput[]
+  cases: RunCaseInput[],
+  deduplicate?: boolean
 ): Promise<Array<{ id: number }>> {
   if (cases.length === 0) return []
 
@@ -57,6 +62,18 @@ export async function persistRunCases(
   const existingCaseMap = new Map<string, typeof existingCaseRows[0]>()
   for (const tc of existingCaseRows) {
     existingCaseMap.set(`${tc.filePath}::${tc.title}`, tc)
+  }
+
+  // If deduplicating, prefetch existing (testRunId, testCaseId, retries) rows
+  let existingRunCaseSet: Set<string> | null = null
+  if (deduplicate) {
+    const existingRunCases = await db
+      .select({ testCaseId: testRunsCases.testCaseId, retries: testRunsCases.retries })
+      .from(testRunsCases)
+      .where(eq(testRunsCases.testRunId, testRunId))
+    existingRunCaseSet = new Set(
+      existingRunCases.map(r => `${r.testCaseId}::${r.retries}`)
+    )
   }
 
   const runCasesRows: Array<typeof testRunsCases.$inferInsert> = []
@@ -78,6 +95,12 @@ export async function persistRunCases(
     }
 
     if (!shared) continue
+
+    // Skip duplicate (testRunId, testCaseId, retries) when deduplicating
+    if (deduplicate && existingRunCaseSet) {
+      const rowKey = `${shared.id}::${c.retries ?? 0}`
+      if (existingRunCaseSet.has(rowKey)) continue
+    }
 
     runCasesRows.push({
       testRunId,
