@@ -18,7 +18,7 @@ const storageStats = computed(() => props.testRun?.storageStats)
 </script>
 
 <template>
-  <div class="grid grid-cols-1 lg:grid-cols-8 gap-4">
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
     <div :class="summaryColSpanClass">
       <UCard class="shadow-xs h-full">
         <div class="space-y-3">
@@ -143,42 +143,40 @@ const storageStats = computed(() => props.testRun?.storageStats)
       :class="blockColSpanClass"
     />
 
-    <!-- Block 2: Source control + Storage stats -->
-    <div v-if="testRun?.metadata?.scm || storageStats" :class="blockColSpanClass">
-      <div class="grid grid-cols-2 gap-4">
-        <SourceInfoCard
-          v-if="testRun?.metadata?.scm"
-          :scm="testRun.metadata.scm"
-          class="h-full"
-        />
-        <UCard v-if="storageStats" class="h-full shadow-xs">
-          <template #header>
-            <div class="flex items-center gap-2">
-              <UIcon name="i-lucide-database" class="w-4 h-4 text-primary" />
-              <span class="text-sm font-medium">Storage</span>
-            </div>
-          </template>
-          <div class="flex gap-4 text-sm">
-            <div>
-              <p class="text-muted text-xs">
-                Files
-              </p>
-              <p class="font-semibold text-lg">
-                {{ storageStats.totalFiles }}
-              </p>
-            </div>
-            <div>
-              <p class="text-muted text-xs">
-                Total size
-              </p>
-              <p class="font-semibold text-lg">
-                {{ formatBytes(storageStats.totalSize) }}
-              </p>
-            </div>
-          </div>
-        </UCard>
+    <!-- Block 2: Source control -->
+    <SourceInfoCard
+      v-if="testRun?.metadata?.scm"
+      :scm="testRun.metadata.scm"
+      :class="blockColSpanClass"
+    />
+
+    <!-- Block 3: Storage stats -->
+    <UCard v-if="storageStats?.totalFiles" :class="blockColSpanClass" class="shadow-xs">
+      <template #header>
+        <div class="flex items-center gap-2">
+          <UIcon name="i-lucide-database" class="w-4 h-4 text-primary" />
+          <span class="text-sm font-medium">Storage</span>
+        </div>
+      </template>
+      <div class="flex gap-4 text-sm">
+        <div>
+          <p class="text-muted text-xs">
+            Files
+          </p>
+          <p class="font-semibold text-lg">
+            {{ storageStats.totalFiles }}
+          </p>
+        </div>
+        <div>
+          <p class="text-muted text-xs">
+            Total size
+          </p>
+          <p class="font-semibold text-lg">
+            {{ formatBytes(storageStats.totalSize) }}
+          </p>
+        </div>
       </div>
-    </div>
+    </UCard>
 
     <!-- Block 4: Tags / Details / Custom data -->
     <UCard v-if="testRun?.metadata?.tags?.length || testRun?.metadata?.projectDescription || testRun?.metadata?.relatedIssue || testRun?.metadata?.customData" :class="blockColSpanClass">

@@ -219,4 +219,64 @@ test.describe('Dashboard UI Tests', () => {
     await page.getByRole('button', { name: 'Cancel' }).click()
     await expect(page.getByText('Delete test run', { exact: true })).not.toBeVisible()
   })
+
+  test('metadata blocks remain on the same row when all are displayed', async ({ page, request }) => {
+    // Submit a run with CI, SCM, tags and environment so all 4 metadata blocks render
+    const submitRes = await retryPost(request, '/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.BLOCK_LAYOUT,
+        status: 'failed',
+        startTime: new Date().toISOString(),
+        duration: 60000,
+        totalTests: 2,
+        passedTests: 0,
+        failedTests: 2,
+        skippedTests: 0,
+        environment: 'staging',
+        testCases: [
+          { title: 'block-layout-test-a', status: 'failed', duration: 1000, location: 'tests/a.spec.ts:1:1', error: 'Error: failure' },
+          { title: 'block-layout-test-b', status: 'passed', duration: 500, location: 'tests/b.spec.ts:1:1' }
+        ],
+        metadata: {
+          ci: { provider: 'GitHub Actions', buildNumber: '42' },
+          scm: { commit: 'abc123def456', branch: 'main', author: 'test' },
+          tags: ['smoke', 'regression'],
+          projectDescription: 'Block layout verification'
+        }
+      }
+    })
+    const { testRunId } = await submitRes.json()
+
+    await page.goto(`/test-runs/${testRunId}`)
+    await waitForHydration(page)
+
+    // Wait for the RunSummary grid to render
+    const runSummary = page.locator('[class*="grid"][class*="lg:grid-cols-8"]').first()
+    await expect(runSummary).toBeVisible()
+
+    // Get the metadata block cards (direct children of the grid with col-span classes)
+    const blocks = runSummary.locator('> [class*="lg:col-span"]')
+    const blockCount = await blocks.count()
+
+    // Should have at least 3 blocks (CI, SCM, Tags/Other) — storage may not show
+    expect(blockCount).toBeGreaterThanOrEqual(3)
+
+    // All visible blocks should share the same Y position (same row at lg breakpoint)
+    const positions = await blocks.evaluateAll((els) => {
+      return els.map((el) => {
+        const rect = el.getBoundingClientRect()
+        return { y: rect.top, height: rect.height }
+      })
+    })
+
+    // Group by row (any blocks whose top edge is within 5px of each other)
+    const rows = new Map<number, number>()
+    for (const p of positions) {
+      const key = Math.round(p.y / 5) * 5
+      rows.set(key, (rows.get(key) || 0) + 1)
+    }
+
+    // All metadata blocks should be in a single row (not wrapped)
+    expect(rows.size).toBe(1)
+  })
 })

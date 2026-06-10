@@ -6,6 +6,7 @@ import type { TestCaseResult } from '~~/types/api'
 const props = defineProps<{
   testCases: TestCaseResult[]
   isLive: boolean
+  failureClusterFilter?: number | null
 }>()
 
 // Search and filter
@@ -21,6 +22,9 @@ const testCaseStatusOptions = [
 
 const filteredTestCases = computed<TestCaseResult[]>(() => {
   let cases = props.testCases
+  if (props.failureClusterFilter != null) {
+    cases = cases.filter(tc => tc.failureClusterId === props.failureClusterFilter)
+  }
   if (testCaseStatusFilter.value !== 'all') {
     cases = cases.filter(tc => tc.status === testCaseStatusFilter.value)
   }

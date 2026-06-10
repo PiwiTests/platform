@@ -1,25 +1,24 @@
 export function useDetailGrid(blockCount: () => number) {
   const metadataBlockCount = computed(blockCount)
 
-  // Every block gets the same fixed span so right-side cards always have
-  // consistent width regardless of how many are visible.  The summary card
-  // fills the remaining columns.  8-column grid total.
+  // Uses a 12-column grid. Blocks get a fixed span; the summary fills what's left.
+  // 0 or 4+ blocks → summary full row (12), blocks wrap below (span-3 each)
+  // 1 block        → summary=9 (75%), block=3
+  // 2 blocks       → summary=6 (50%), each block=3
+  // 3 blocks       → summary=6 (50%), each block=2 → 6+2+2+2 = 12
   const summaryColSpanClass = computed(() => {
     const c = metadataBlockCount.value
-    // Every block spans 2 cols; summary fills the rest.
-    // 0 blocks → summary takes full row
-    // 1 block  → summary=6, block=2
-    // 2 blocks → summary=4, each block=2
-    // 3 blocks → summary=2, each block=2
-    // 4+       → summary full row, blocks wrap below
-    if (c === 0 || c >= 4) return 'lg:col-span-8'
-    if (c === 1) return 'lg:col-span-6'
-    if (c === 2) return 'lg:col-span-4'
-    return 'lg:col-span-2'
+    if (c === 0 || c >= 4) return 'lg:col-span-12'
+    if (c === 1) return 'lg:col-span-9'
+    if (c === 2) return 'lg:col-span-6'
+    return 'lg:col-span-6'
   })
 
   const blockColSpanClass = computed(() => {
-    return metadataBlockCount.value === 0 ? '' : 'lg:col-span-2'
+    const c = metadataBlockCount.value
+    if (c === 0) return ''
+    if (c === 3) return 'lg:col-span-2'
+    return 'lg:col-span-3'
   })
 
   return { metadataBlockCount, summaryColSpanClass, blockColSpanClass }

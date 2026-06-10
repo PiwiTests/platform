@@ -25,6 +25,7 @@ export const PROJECT = {
   EDIT_TEST: 'edit-test-project',
   EMPTY_METADATA: 'empty-metadata-test',
   EMPTY_PROJECT: 'empty-project',
+  BLOCK_LAYOUT: 'block-layout-test',
   ENV_API: 'env-api-test',
   ENV_EMPTY: 'env-empty-test',
   ENV_LATEST_RUN: 'env-latestrun-test',

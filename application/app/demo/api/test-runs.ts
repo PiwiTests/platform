@@ -2,9 +2,9 @@
  * Client-side implementations of the /api/test-runs* endpoints for demo mode.
  */
 
-import { eq, sql, desc } from 'drizzle-orm'
+import { eq, sql, desc, and, isNotNull, inArray } from 'drizzle-orm'
 import { getDemoDb } from '../db.client'
-import { testRuns, testCases, testRunsCases, projects, files } from '~~/server/database/schema.sqlite'
+import { testRuns, testCases, testRunsCases, projects, files, failureClusters } from '~~/server/database/schema.sqlite'
 
 /** GET /api/test-runs/:id */
 export async function apiGetTestRun(id: number) {
@@ -89,6 +89,142 @@ export async function apiGetTestRun(id: number) {
     testCases: formattedTestCases,
     storageStats
   }
+}
+
+// ── Failure groups (mirrors server handler) ────────────────────────────────────
+
+interface GroupCase {
+  testRunsCaseId: number
+  testCaseId: number
+  title: string
+  filePath: string
+  retries: number
+  workerIndex: number | null
+  passedOnRetry: boolean
+}
+
+interface FailureGroupResult {
+  clusterId: number
+  signature: string
+  errorType: string | null
+  selector: string | null
+  caseCount: number
+  isNew: boolean
+  firstSeenRunId: number
+  firstSeenAt: string | null
+  occurrences: number
+  flaky: boolean
+  workerCorrelated: boolean
+  cases: GroupCase[]
+}
+
+/** GET /api/test-runs/:id/failure-groups */
+export async function apiGetFailureGroups(id: number) {
+  const db = await getDemoDb()
+
+  const runResults = await db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.id, id))
+  if (!runResults[0]) return []
+
+  // All rows of the run (any status) — used for retry-pass and worker analysis
+  const allRows = await db.select({
+    testCaseId: testRunsCases.testCaseId,
+    status: testRunsCases.status,
+    retries: testRunsCases.retries,
+    workerIndex: testRunsCases.workerIndex
+  })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.testRunId, id))
+
+  const passedCaseIds = new Set(allRows.filter(r => r.status === 'passed').map(r => r.testCaseId))
+  const runWorkers = new Set(allRows.map(r => r.workerIndex).filter(w => w !== null))
+
+  const clusteredRows = await db.select({
+    testRunsCaseId: testRunsCases.id,
+    testCaseId: testRunsCases.testCaseId,
+    retries: testRunsCases.retries,
+    workerIndex: testRunsCases.workerIndex,
+    title: testCases.title,
+    filePath: testCases.filePath,
+    clusterId: failureClusters.id,
+    signature: failureClusters.signature,
+    errorType: failureClusters.errorType,
+    selector: failureClusters.selector,
+    firstSeenRunId: failureClusters.firstSeenRunId,
+    occurrences: failureClusters.occurrences
+  })
+    .from(testRunsCases)
+    .innerJoin(failureClusters, eq(testRunsCases.failureClusterId, failureClusters.id))
+    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+    .where(and(eq(testRunsCases.testRunId, id), isNotNull(testRunsCases.failureClusterId)))
+
+  if (clusteredRows.length === 0) return []
+
+  const firstSeenRunIds = [...new Set(clusteredRows.map(r => r.firstSeenRunId))]
+  const firstSeenRuns = await db.select({ id: testRuns.id, startTime: testRuns.startTime })
+    .from(testRuns)
+    .where(inArray(testRuns.id, firstSeenRunIds))
+  const firstSeenAtById = new Map(firstSeenRuns.map(r => [r.id, r.startTime]))
+
+  const groups = new Map<number, FailureGroupResult & { caseById: Map<number, GroupCase> }>()
+
+  for (const row of clusteredRows) {
+    let group = groups.get(row.clusterId)
+    if (!group) {
+      group = {
+        clusterId: row.clusterId,
+        signature: row.signature,
+        errorType: row.errorType,
+        selector: row.selector,
+        caseCount: 0,
+        isNew: row.firstSeenRunId === id,
+        firstSeenRunId: row.firstSeenRunId,
+        firstSeenAt: firstSeenAtById.get(row.firstSeenRunId)?.toString() ?? null,
+        occurrences: row.occurrences,
+        flaky: false,
+        workerCorrelated: false,
+        cases: [],
+        caseById: new Map()
+      }
+      groups.set(row.clusterId, group)
+    }
+
+    const existing = group.caseById.get(row.testCaseId)
+    if (existing) {
+      if ((row.retries ?? 0) > existing.retries) {
+        existing.retries = row.retries ?? 0
+        existing.testRunsCaseId = row.testRunsCaseId
+        existing.workerIndex = row.workerIndex
+      }
+    } else {
+      group.caseById.set(row.testCaseId, {
+        testRunsCaseId: row.testRunsCaseId,
+        testCaseId: row.testCaseId,
+        title: row.title,
+        filePath: row.filePath,
+        retries: row.retries ?? 0,
+        workerIndex: row.workerIndex,
+        passedOnRetry: passedCaseIds.has(row.testCaseId)
+      })
+    }
+  }
+
+  const result: FailureGroupResult[] = []
+  for (const group of groups.values()) {
+    const { caseById, ...rest } = group
+    const cases = [...caseById.values()].sort((a, b) => a.title.localeCompare(b.title))
+    const caseWorkers = new Set(cases.map(c => c.workerIndex).filter(w => w !== null))
+
+    result.push({
+      ...rest,
+      cases,
+      caseCount: cases.length,
+      flaky: cases.some(c => c.passedOnRetry),
+      workerCorrelated: cases.length >= 2 && caseWorkers.size === 1 && runWorkers.size > 1
+    })
+  }
+
+  result.sort((a, b) => b.caseCount - a.caseCount)
+  return result
 }
 
 // ── Network request aggregation (mirrors server handler) ──────────────────

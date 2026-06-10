@@ -6,10 +6,16 @@ import type { EndpointSummary } from '~~/types/api'
 const route = useRoute()
 const runId = route.params.id
 
+const emitSlow = defineEmits<{ endpointsCount: [count: number] }>()
+
 const { data: endpoints, pending: loading } = await useFetch<EndpointSummary[]>(
   `/api/test-runs/${runId}/network-requests`,
   { lazy: true, server: false }
 )
+
+watch(endpoints, (val) => {
+  emitSlow('endpointsCount', val?.length ?? 0)
+})
 
 const UBadge = resolveComponent('UBadge')
 

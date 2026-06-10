@@ -106,7 +106,12 @@ function highlightPath(text: string): string {
       <span v-if="cluster.sameRunCaseCount > 1">
         Matches {{ cluster.sameRunCaseCount - 1 }} other failing {{ cluster.sameRunCaseCount - 1 === 1 ? 'test' : 'tests' }} in this run
       </span>
-      <UBadge v-if="cluster.isNew" color="warning" variant="subtle" size="sm">
+      <UBadge
+        v-if="cluster.isNew"
+        color="warning"
+        variant="subtle"
+        size="sm"
+      >
         New failure
       </UBadge>
       <span v-else>

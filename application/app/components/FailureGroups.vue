@@ -24,7 +24,10 @@ interface FailureGroup {
   cases: GroupCase[]
 }
 
-const emit = defineEmits<{ selectTestCase: [id: number] }>()
+const emit = defineEmits<{
+  selectTestCase: [id: number]
+  selectCluster: [clusterId: number]
+}>()
 
 const route = useRoute()
 const runId = route.params.id
@@ -85,7 +88,7 @@ const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' |
       <UCard v-for="group in groups" :key="group.clusterId" :ui="{ body: 'p-0 sm:p-0' }">
         <button
           type="button"
-          class="w-full flex items-start gap-3 p-4 text-left cursor-pointer hover:bg-elevated/50 transition-colors"
+          class="w-full flex items-start gap-3 p-4 text-left cursor-pointer hover:bg-elevated/50 transition-colors group"
           @click="toggleGroup(group.clusterId)"
         >
           <UIcon
@@ -108,7 +111,12 @@ const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' |
               >
                 {{ group.errorType }}
               </UBadge>
-              <UBadge v-if="group.isNew" color="warning" variant="subtle" size="sm">
+              <UBadge
+                v-if="group.isNew"
+                color="warning"
+                variant="subtle"
+                size="sm"
+              >
                 New in this run
               </UBadge>
               <span v-else class="text-xs text-gray-500 dark:text-gray-400">
@@ -120,7 +128,12 @@ const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' |
                 >run #{{ group.firstSeenRunId }}</NuxtLink>
                 <template v-if="group.firstSeenAt"> ({{ formatRelativeTime(group.firstSeenAt) }})</template>
               </span>
-              <UBadge v-if="group.flaky" color="warning" variant="outline" size="sm">
+              <UBadge
+                v-if="group.flaky"
+                color="warning"
+                variant="outline"
+                size="sm"
+              >
                 Flaky — passed on retry
               </UBadge>
               <UBadge
@@ -132,6 +145,15 @@ const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' |
               >
                 Same worker
               </UBadge>
+              <UButton
+                variant="soft"
+                color="primary"
+                size="xs"
+                title="Show only this group in the test cases list"
+                @click.stop="emit('selectCluster', group.clusterId)"
+              >
+                Filter
+              </UButton>
             </div>
           </div>
         </button>
@@ -156,10 +178,20 @@ const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' |
               </NuxtLink>
               <span class="text-xs text-gray-400 truncate hidden sm:inline">{{ testCase.filePath }}</span>
               <span class="grow" />
-              <UBadge v-if="testCase.passedOnRetry" color="warning" variant="subtle" size="sm">
+              <UBadge
+                v-if="testCase.passedOnRetry"
+                color="warning"
+                variant="subtle"
+                size="sm"
+              >
                 Passed on retry
               </UBadge>
-              <UBadge v-else-if="testCase.retries > 0" color="neutral" variant="subtle" size="sm">
+              <UBadge
+                v-else-if="testCase.retries > 0"
+                color="neutral"
+                variant="subtle"
+                size="sm"
+              >
                 {{ testCase.retries }} {{ testCase.retries === 1 ? 'retry' : 'retries' }}
               </UBadge>
               <UButton

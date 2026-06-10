@@ -283,6 +283,12 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
           />
         </div>
 
+        <!-- Failure clusters (only when the project has failed runs) -->
+        <FailureClustersList
+          v-if="project?.testRuns?.some(r => r.failedTests > 0)"
+          :project-id="String(projectId)"
+        />
+
         <!-- Test Runs Trend Chart -->
         <UCard v-if="project?.testRuns && project.testRuns.length > 0">
           <template #header>

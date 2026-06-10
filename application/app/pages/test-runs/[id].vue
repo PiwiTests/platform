@@ -202,6 +202,7 @@ const { summaryColSpanClass, blockColSpanClass } = useDetailGrid(() => {
   let count = 0
   if (testRun.value?.metadata?.ci || testRun.value?.environment) count++
   if (testRun.value?.metadata?.scm) count++
+  if (testRun.value?.storageStats && testRun.value.storageStats.totalFiles > 0) count++
   if (testRun.value?.metadata?.tags?.length || testRun.value?.metadata?.projectDescription || testRun.value?.metadata?.relatedIssue || testRun.value?.metadata?.customData) count++
   return count
 })
@@ -211,12 +212,46 @@ const allReports = computed<ReportInfo[]>(() => testRun.value?.reports || [])
 
 // Right panel tabs
 const activeTab = ref('test-cases')
-const tabItems = [
-  { label: 'Test cases', icon: 'i-lucide-beaker', value: 'test-cases', slot: 'test-cases' },
-  { label: 'Workers', icon: 'i-lucide-rows-3', value: 'workers', slot: 'workers' },
+
+// Cluster filter state — set by FailureGroups, consumed by TestCasesList
+const selectedClusterFilter = ref<number | null>(null)
+
+// Endpoints count from SlowEndpoints
+const endpointsCount = ref(0)
+
+function clearClusterFilter() {
+  selectedClusterFilter.value = null
+}
+
+const hasFailures = computed(() =>
+  testRun.value && testRun.value.failedTests > 0
+)
+
+const failureGroupCount = computed(() => {
+  if (!testRun.value?.testCases) return 0
+  const clusterIds = new Set<number>()
+  for (const tc of testRun.value.testCases) {
+    if (tc.failureClusterId != null) clusterIds.add(tc.failureClusterId)
+  }
+  return clusterIds.size
+})
+
+const uniqueWorkerCount = computed(() => {
+  if (!testRun.value?.testCases) return 0
+  const workers = new Set<number>()
+  for (const tc of testRun.value.testCases) {
+    if (tc.workerIndex != null) workers.add(tc.workerIndex)
+  }
+  return workers.size
+})
+
+const tabItems = computed(() => [
+  { label: `Test cases (${displayTestCases.value.length})`, icon: 'i-lucide-beaker', value: 'test-cases', slot: 'test-cases' },
+  ...(hasFailures.value ? [{ label: `Failure groups (${failureGroupCount.value})`, icon: 'i-lucide-layers', value: 'failure-groups', slot: 'failure-groups' }] : []),
+  { label: `Workers${uniqueWorkerCount.value > 0 ? ` (${uniqueWorkerCount.value})` : ''}`, icon: 'i-lucide-rows-3', value: 'workers', slot: 'workers' },
   { label: 'Compare', icon: 'i-lucide-git-compare-arrows', value: 'compare', slot: 'compare' },
-  { label: 'Slow endpoints', icon: 'i-lucide-network', value: 'endpoints', slot: 'endpoints' }
-]
+  { label: `Slow endpoints${endpointsCount.value > 0 ? ` (${endpointsCount.value})` : ''}`, icon: 'i-lucide-network', value: 'endpoints', slot: 'endpoints' }
+])
 
 // Ref for TestCasesList to call scrollToCase
 const testCasesListRef: {
@@ -228,6 +263,11 @@ function handleSelectTestCase(id: number) {
   nextTick(() => {
     testCasesListRef.value?.scrollToCase(id)
   })
+}
+
+function handleSelectCluster(clusterId: number) {
+  selectedClusterFilter.value = clusterId
+  activeTab.value = 'test-cases'
 }
 </script>
 
@@ -267,7 +307,7 @@ function handleSelectTestCase(id: number) {
     </template>
 
     <template #body>
-      <div class="flex flex-col h-full overflow-hidden gap-4 p-4">
+      <div class="flex flex-col h-full overflow-y-auto gap-4 p-1">
         <RunSummary
           v-if="testRun"
           :test-run="testRun"
@@ -287,10 +327,31 @@ function handleSelectTestCase(id: number) {
           class="shrink-0"
         >
           <template #test-cases>
+            <div v-if="selectedClusterFilter != null" class="flex items-center gap-2 mb-3 pt-4">
+              <UBadge color="info" variant="subtle" size="sm">
+                Filtered by failure group
+              </UBadge>
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-x"
+                label="Clear filter"
+                @click="clearClusterFilter"
+              />
+            </div>
             <TestCasesList
               ref="testCasesListRef"
               :test-cases="displayTestCases"
               :is-live="isLive"
+              :failure-cluster-filter="selectedClusterFilter"
+            />
+          </template>
+
+          <template #failure-groups>
+            <FailureGroups
+              @select-test-case="handleSelectTestCase"
+              @select-cluster="handleSelectCluster"
             />
           </template>
 
@@ -307,7 +368,7 @@ function handleSelectTestCase(id: number) {
           </template>
 
           <template #endpoints>
-            <SlowEndpoints />
+            <SlowEndpoints @endpoints-count="endpointsCount = $event" />
           </template>
         </UTabs>
       </div>
