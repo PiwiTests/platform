@@ -64,15 +64,23 @@ export default defineNuxtPlugin(() => {
 
   let initCalled = false
 
-  // @ts-expect-error monkey-patching $fetch for demo mode
-  globalThis.$fetch = async (request: unknown, options?: unknown) => {
-    await swReady
-    const response = await originalFetch(rewritePath(request), options)
+  // Helper: mark the demo as ready on the first resolved API call, regardless
+  // of whether it succeeded or threw (so the loading screen doesn't lock).
+  function markReady(): void {
     if (!initCalled) {
       initCalled = true
       demoReady.value = true
     }
-    return response
+  }
+
+  // @ts-expect-error monkey-patching $fetch for demo mode
+  globalThis.$fetch = async (request: unknown, options?: unknown) => {
+    await swReady
+    try {
+      return await originalFetch(rewritePath(request), options)
+    } finally {
+      markReady()
+    }
   }
 
   // Copy over $fetch properties so useFetch internals still work.
@@ -85,12 +93,11 @@ export default defineNuxtPlugin(() => {
     // @ts-expect-error monkey-patching $fetch.raw for demo mode
     globalThis.$fetch.raw = async (request: unknown, options?: unknown) => {
       await swReady
-      const response = await originalRaw(rewritePath(request), options)
-      if (!initCalled) {
-        initCalled = true
-        demoReady.value = true
+      try {
+        return await originalRaw(rewritePath(request), options)
+      } finally {
+        markReady()
       }
-      return response
     }
     Object.assign(globalThis.$fetch.raw, originalRaw)
   }
