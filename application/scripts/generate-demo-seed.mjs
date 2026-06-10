@@ -535,6 +535,8 @@ const lines = [
   '',
   SCHEMA,
   '',
+  'BEGIN TRANSACTION;',
+  '',
   '-- Tags',
   insert('tags', TAGS),
   '',
@@ -555,7 +557,8 @@ const lines = [
   '',
   '-- Test run cases',
   insert('test_runs_cases', TEST_RUNS_CASES),
-  ''
+  '',
+  'COMMIT;'
 ]
 
 const content = lines.join('\n')

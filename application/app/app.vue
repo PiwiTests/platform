@@ -31,6 +31,7 @@ useSeoMeta({
 
 <template>
   <UApp>
+    <DemoInitScreen />
     <NuxtLoadingIndicator />
     <DemoBanner />
 

@@ -21,6 +21,11 @@ export default defineNuxtPlugin(() => {
     return
   }
 
+  // Track whether the demo DB has finished initialising.
+  // The first intercepted API call will be slow (WASM download + seed SQL).
+  // Components can check this ref to show/hide a loading overlay.
+  const demoReady = useState('demoReady', () => false)
+
   // Pass the base URL to the db module so it can locate WASM + seed SQL
   // in the (unlikely) event a request is handled before the SW is active.
   const base = (config.app?.baseURL ?? '/').replace(/\/$/, '')
@@ -35,9 +40,16 @@ export default defineNuxtPlugin(() => {
     return request
   }
 
+  let initCalled = false
+
   // @ts-expect-error monkey-patching $fetch for demo mode
   globalThis.$fetch = (request: unknown, options?: unknown) => {
-    return originalFetch(rewritePath(request), options)
+    const response = originalFetch(rewritePath(request), options)
+    if (!initCalled) {
+      initCalled = true
+      response.finally(() => { demoReady.value = true })
+    }
+    return response
   }
 
   // Copy over $fetch properties so useFetch internals still work.
@@ -49,7 +61,12 @@ export default defineNuxtPlugin(() => {
   if (typeof originalRaw === 'function') {
     // @ts-expect-error monkey-patching $fetch.raw for demo mode
     globalThis.$fetch.raw = (request: unknown, options?: unknown) => {
-      return originalRaw(rewritePath(request), options)
+      const response = originalRaw(rewritePath(request), options)
+      if (!initCalled) {
+        initCalled = true
+        response.finally(() => { demoReady.value = true })
+      }
+      return response
     }
     Object.assign(globalThis.$fetch.raw, originalRaw)
   }
