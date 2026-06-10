@@ -91,6 +91,13 @@ routes.push(
   { method: 'GET', pattern: /^\/api\/stream$/, handler: () => Promise.resolve({ ok: true }) }
 )
 
+// Files – demo mode has no actual report/trace files on disk; return a
+// 200 response so the SW doesn't log 404 errors for image/video/link
+// fetches on the test-case detail page.
+routes.push(
+  { method: 'GET', pattern: /^\/api\/files\//, handler: () => Promise.resolve({ available: false, message: 'Files not available in demo mode' }) }
+)
+
 // OAuth – demo mode does not support OAuth; redirect to login
 const DEMO_LOGIN_REDIRECT = Promise.resolve({ url: '/login', status: 302 })
 routes.push(

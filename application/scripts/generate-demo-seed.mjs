@@ -561,7 +561,12 @@ const lines = [
   'COMMIT;'
 ]
 
-const content = lines.join('\n')
+// Compute the hash from all lines *excluding* the timestamp comment so that
+// identical data produces the same hash even across regenerations.  Without
+// this, the "New demo data" staleness indicator always appears because every
+// `seed:demo` run changes the timestamp comment.
+const hashLines = lines.filter(l => !l.startsWith('-- Generated at:'))
+const content = hashLines.join('\n')
 const hash = createHash('sha256').update(content, 'utf-8').digest('hex')
 
 const versionInfo = { hash, generatedAt: new Date().toISOString() }

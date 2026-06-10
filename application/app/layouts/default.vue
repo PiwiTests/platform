@@ -8,24 +8,6 @@ const route = useRoute()
 const toast = useToast()
 const config = useRuntimeConfig()
 
-// ── Demo data staleness detection ──────────────────────────────────────────
-const isDemo = config.public.demoMode
-const demoDataVersion = config.public.demoDataVersion as string
-const demoDataStale = ref(false)
-const demoDataRefreshing = ref(false)
-
-if (isDemo && demoDataVersion) {
-  getStoredDemoVersion().then((stored) => {
-    demoDataStale.value = stored !== null && stored !== demoDataVersion
-  })
-}
-
-async function refreshDemoData() {
-  demoDataRefreshing.value = true
-  await resetDemoDb()
-  window.location.reload()
-}
-
 const open = ref(false)
 
 // Fetch projects for sidebar navigation
@@ -211,34 +193,60 @@ const groups = computed<CommandPaletteGroup[]>(() => [{
   }]
 }])
 
+const isDemo = config.public.demoMode
+const demoDataVersion = config.public.demoDataVersion as string
+
 onMounted(async () => {
+  // ── Cookie consent ──
   const cookie = useCookie('cookie-consent')
-  if (cookie.value === 'accepted' || cookie.value === 'opted-out') {
-    return
+  if (cookie.value !== 'accepted' && cookie.value !== 'opted-out') {
+    const notification = toast.add({
+      title: 'We use first-party cookies to enhance your experience on our website.',
+      duration: 0,
+      close: false,
+      actions: [{
+        label: 'Accept',
+        color: 'neutral',
+        variant: 'outline',
+        onClick: () => {
+          cookie.value = 'accepted'
+          toast.remove(notification.id)
+        }
+      }, {
+        label: 'Opt out',
+        color: 'neutral',
+        variant: 'ghost',
+        onClick: () => {
+          cookie.value = 'opted-out'
+          toast.remove(notification.id)
+        }
+      }]
+    })
   }
 
-  const notification = toast.add({
-    title: 'We use first-party cookies to enhance your experience on our website.',
-    duration: 0,
-    close: false,
-    actions: [{
-      label: 'Accept',
-      color: 'neutral',
-      variant: 'outline',
-      onClick: () => {
-        cookie.value = 'accepted'
-        toast.remove(notification.id)
-      }
-    }, {
-      label: 'Opt out',
-      color: 'neutral',
-      variant: 'ghost',
-      onClick: () => {
-        cookie.value = 'opted-out'
-        toast.remove(notification.id)
-      }
-    }]
-  })
+  // ── Demo data staleness ──
+  if (isDemo && demoDataVersion) {
+    const stored = await getStoredDemoVersion()
+    if (stored !== null && stored !== demoDataVersion) {
+      toast.add({
+        title: 'New demo data available',
+        description: 'The demo seed data has been updated since your last visit. Click "Refresh" to reload with the latest data.',
+        duration: 0,
+        color: 'warning',
+        actions: [{
+          label: 'Refresh',
+          color: 'warning',
+          onClick: () => {
+            resetDemoDb().then(() => window.location.reload())
+          }
+        }, {
+          label: 'Dismiss',
+          color: 'neutral',
+          variant: 'ghost'
+        }]
+      })
+    }
+  }
 })
 </script>
 
@@ -278,21 +286,6 @@ onMounted(async () => {
       </template>
 
       <template #footer="{ collapsed }">
-        <div v-if="demoDataStale" class="px-3 pb-2">
-          <UButton
-            color="warning"
-            variant="soft"
-            size="sm"
-            block
-            :loading="demoDataRefreshing"
-            @click="refreshDemoData"
-          >
-            <template #leading>
-              <UIcon name="i-lucide-rotate-ccw" />
-            </template>
-            New demo data available
-          </UButton>
-        </div>
         <UserMenu :collapsed="collapsed" />
       </template>
     </UDashboardSidebar>
