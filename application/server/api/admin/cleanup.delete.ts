@@ -2,7 +2,7 @@ import { getDatabase } from '../../database'
 import { testRuns, testRunsCases, files } from '../../database/schema'
 import { lt, inArray } from 'drizzle-orm'
 import { requireAuth } from '../../utils/auth'
-import { getStorage } from '../../storage'
+import { deleteFileRow } from '../../utils/delete-run-files'
 
 export default eventHandler(async (event) => {
   await requireAuth(event, ['administrator'])
@@ -24,7 +24,6 @@ export default eventHandler(async (event) => {
   const cutoffDate = new Date(Date.now() - olderThanDays * MS_PER_DAY)
 
   const db = await getDatabase()
-  const storage = getStorage()
 
   // Find all runs older than the cutoff
   const oldRuns = await db.select({ id: testRuns.id })
@@ -50,11 +49,7 @@ export default eventHandler(async (event) => {
       .where(inArray(files.testRunsCaseId, caseIds))
 
     for (const file of traceFiles) {
-      try {
-        await storage.deleteDirectory(file.path)
-      } catch {
-        // Ignore missing files
-      }
+      await deleteFileRow(file)
     }
     await db.delete(files).where(inArray(files.testRunsCaseId, caseIds))
     await db.delete(testRunsCases).where(inArray(testRunsCases.testRunId, runIds))
@@ -65,11 +60,7 @@ export default eventHandler(async (event) => {
     .where(inArray(files.testRunId, runIds))
 
   for (const file of reportFiles) {
-    try {
-      await storage.deleteDirectory(file.path)
-    } catch {
-      // Ignore missing files
-    }
+    await deleteFileRow(file)
   }
   await db.delete(files).where(inArray(files.testRunId, runIds))
 

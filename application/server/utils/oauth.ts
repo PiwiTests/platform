@@ -19,7 +19,7 @@ interface OAuthProviderConfig {
   userInfoUrl: string
   scopes: string[]
   extraParams?: Record<string, string>
-  mapUser: (raw: Record<string, unknown>) => { id: string, email: string, name: string, avatar: string }
+  mapUser: (raw: Record<string, unknown>) => { id: string, email: string, emailVerified: boolean, name: string, avatar: string }
 }
 
 function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfig | null {
@@ -42,6 +42,7 @@ function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfi
         mapUser: raw => ({
           id: String(raw.id),
           email: String(raw.email ?? ''),
+          emailVerified: raw.email_verified === true,
           name: String(raw.name ?? raw.email ?? ''),
           avatar: String(raw.picture ?? '')
         })
@@ -58,6 +59,7 @@ function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfi
         mapUser: raw => ({
           id: String(raw.id),
           email: String(raw.email ?? raw.login ?? ''),
+          emailVerified: false, // Overridden by /user/emails call in fetchProviderUser
           name: String(raw.name ?? raw.login ?? ''),
           avatar: String(raw.avatar_url ?? '')
         })
@@ -187,7 +189,7 @@ async function exchangeCode(event: H3Event, provider: string, code: string): Pro
 // Fetch user info from the provider
 // ---------------------------------------------------------------------------
 
-async function fetchProviderUser(event: H3Event, provider: string, accessToken: string): Promise<{ id: string, email: string, name: string, avatar: string }> {
+async function fetchProviderUser(event: H3Event, provider: string, accessToken: string): Promise<{ id: string, email: string, emailVerified: boolean, name: string, avatar: string }> {
   const providerCfg = getProviderConfig(event, provider)
   if (!providerCfg) {
     throw createError({ statusCode: 400, message: `Unknown OAuth provider: ${provider}` })
@@ -203,7 +205,31 @@ async function fetchProviderUser(event: H3Event, provider: string, accessToken: 
   }
 
   const raw = await res.json() as Record<string, unknown>
-  return providerCfg.mapUser(raw)
+  const user = providerCfg.mapUser(raw)
+
+  // For GitHub, the primary user info endpoint may return an unverified public email.
+  // Fetch the verified emails list from /user/emails and use the primary verified one.
+  if (provider === 'github') {
+    try {
+      const emailsRes = await fetch('https://api.github.com/user/emails', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      })
+      if (emailsRes.ok) {
+        const emails = await emailsRes.json() as Array<{ email: string, primary: boolean, verified: boolean }>
+        const primaryVerified = emails.find(e => e.primary && e.verified)
+        if (primaryVerified) {
+          user.email = primaryVerified.email
+          user.emailVerified = true
+        } else {
+          user.emailVerified = false
+        }
+      }
+    } catch {
+      // Fall back to the public email from the user info endpoint
+    }
+  }
+
+  return user
 }
 
 // ---------------------------------------------------------------------------
@@ -214,6 +240,7 @@ async function findOrCreateOAuthUser(
   provider: string,
   providerId: string,
   email: string,
+  emailVerified: boolean,
   name: string,
   avatar: string
 ): Promise<User> {
@@ -235,26 +262,30 @@ async function findOrCreateOAuthUser(
     return updated[0]!
   }
 
-  // Check if a user with this email/username already exists (for linking)
-  const byUsername = await db
-    .select()
-    .from(users)
-    .where(eq(users.username, email))
+  // Check if a user with this email/username already exists (for linking).
+  // Only auto-link when the provider asserts the email is verified, preventing
+  // account takeover via an attacker-controlled public email (§1.3).
+  if (emailVerified) {
+    const byUsername = await db
+      .select()
+      .from(users)
+      .where(eq(users.username, email))
 
-  if (byUsername[0]) {
-    // Link existing user to OAuth provider
-    const updated = await db
-      .update(users)
-      .set({
-        oauthProvider: provider,
-        oauthProviderId: providerId,
-        avatarUrl: avatar || null,
-        name: name || null,
-        updatedAt: new Date()
-      })
-      .where(eq(users.id, byUsername[0].id))
-      .returning()
-    return updated[0]!
+    if (byUsername[0]) {
+      // Link existing user to OAuth provider
+      const updated = await db
+        .update(users)
+        .set({
+          oauthProvider: provider,
+          oauthProviderId: providerId,
+          avatarUrl: avatar || null,
+          name: name || null,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, byUsername[0].id))
+        .returning()
+      return updated[0]!
+    }
   }
 
   // Create new user with empty password (OAuth-only)
@@ -325,6 +356,7 @@ export async function handleOAuthCallback(event: H3Event, provider: string): Pro
       provider,
       providerUser.id,
       providerUser.email,
+      providerUser.emailVerified,
       providerUser.name,
       providerUser.avatar
     )

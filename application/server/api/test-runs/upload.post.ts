@@ -12,6 +12,7 @@ import { tmpdir } from 'os'
 import { rm, mkdir, readdir } from 'fs/promises'
 import { parseLocation } from '../../utils/parse-location'
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases'
+import { sanitizeMetadata } from '../../utils/sanitize'
 import { runEventBus } from '../../utils/run-events'
 
 // Default labels for known report types
@@ -309,7 +310,7 @@ export default eventHandler(async (event) => {
       failedTests: (testRunData.failedTests as number | undefined) || 0,
       skippedTests: (testRunData.skippedTests as number | undefined) || 0,
       environment: (testRunData.environment as string | null | undefined) || null,
-      metadata: testRunData.metadata || null,
+      metadata: sanitizeMetadata((testRunData.metadata || null) as Record<string, unknown> | null),
       instanceId: (testRunData.instanceId as string | null | undefined) || null
     }).returning()
 

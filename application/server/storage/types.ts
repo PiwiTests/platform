@@ -33,6 +33,13 @@ export interface StorageAdapter {
   mkdir(path: string): Promise<void>
 
   /**
+   * Delete a single file from storage
+   * @param path - Relative path of the file to delete
+   * @returns Promise that resolves when the file is deleted
+   */
+  deleteFile(path: string): Promise<void>
+
+  /**
    * Delete a directory and all its contents recursively
    * @param path - Relative path of the directory to delete
    * @returns Promise that resolves when the directory is deleted

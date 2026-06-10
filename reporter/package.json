@@ -21,7 +21,7 @@
     },
     "./fixtures": {
       "types": "./dist/fixtures.d.ts",
-      "import": "./dist/index.js",
+      "import": "./dist/fixtures.js",
       "require": "./dist/fixtures.js"
     }
   },

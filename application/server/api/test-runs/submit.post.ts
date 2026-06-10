@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm'
 import { requireAuth } from '../../utils/auth'
 import { parseLocation } from '../../utils/parse-location'
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases'
+import { sanitizeMetadata } from '../../utils/sanitize'
 import { runEventBus } from '../../utils/run-events'
 
 export default eventHandler(async (event) => {
@@ -53,7 +54,7 @@ export default eventHandler(async (event) => {
     skippedTests: body.skippedTests || 0,
 
     environment: body.environment || null,
-    metadata: body.metadata || null,
+    metadata: sanitizeMetadata(body.metadata || null),
     instanceId: body.instanceId || null
   }).returning()
 

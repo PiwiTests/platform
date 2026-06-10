@@ -53,6 +53,42 @@ export function sanitizeWebVitals(vitals: Record<string, unknown> | null | undef
  * Sanitize console log entries by stripping the query string from the URL part
  * of each entry's `location` (formatted as `url:line:column`).
  */
+/**
+ * Strip userinfo (username:password) from a Git remote URL.
+ * Handles `https://token@host/repo` and `https://user:pass@host/repo` patterns.
+ * Returns the sanitised URL, or the original string if parsing fails.
+ */
+export function sanitizeGitRemoteUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    if (parsed.username) {
+      parsed.username = ''
+      parsed.password = ''
+    }
+    return parsed.toString()
+  } catch {
+    return url
+  }
+}
+
+/**
+ * Sanitize run-level metadata by stripping credentials from SCM remote URLs.
+ * This prevents token-leakage through public GET endpoints (§1.7).
+ */
+export function sanitizeMetadata(metadata: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  if (!metadata || typeof metadata !== 'object') return null
+
+  const meta = { ...metadata }
+
+  // Sanitize scm.remoteUrl
+  const scm = meta.scm as Record<string, unknown> | null | undefined
+  if (scm && typeof scm.remoteUrl === 'string') {
+    meta.scm = { ...scm, remoteUrl: sanitizeGitRemoteUrl(scm.remoteUrl) }
+  }
+
+  return meta
+}
+
 export function sanitizeConsoleLogs(
   logs: Array<Record<string, unknown>> | null | undefined
 ): Array<Record<string, unknown>> | null {

@@ -2,7 +2,7 @@ import { getDatabase } from '../../database'
 import { testRuns, testRunsCases, files } from '../../database/schema'
 import { eq, inArray } from 'drizzle-orm'
 import { requireAuth } from '../../utils/auth'
-import { getStorage } from '../../storage'
+import { deleteFileRow } from '../../utils/delete-run-files'
 
 export default eventHandler(async (event) => {
   await requireAuth(event, ['administrator'])
@@ -28,38 +28,24 @@ export default eventHandler(async (event) => {
     })
   }
 
-  // Collect all files for this test run
+  // Delete run-level files (reports, etc.) from storage
   const fileRows = await db.select().from(files).where(eq(files.testRunId, id))
-
-  const storage = getStorage()
-
-  // Delete all file data from storage
   for (const file of fileRows) {
-    try {
-      await storage.deleteDirectory(file.path)
-    } catch {
-      // Ignore missing files
-    }
+    await deleteFileRow(file)
   }
-
-  // Delete files from DB
   await db.delete(files).where(eq(files.testRunId, id))
 
   // Get test run cases to delete
   const runsCases = await db.select({ id: testRunsCases.id }).from(testRunsCases).where(eq(testRunsCases.testRunId, id))
   const caseIds = runsCases.map(c => c.id)
 
-  // Delete trace files linked to cases
+  // Delete trace files linked to cases from storage
   if (caseIds.length > 0) {
     const traceFiles = await db.select()
       .from(files)
       .where(inArray(files.testRunsCaseId, caseIds))
     for (const trace of traceFiles) {
-      try {
-        await storage.deleteDirectory(trace.path)
-      } catch {
-        // Ignore missing files
-      }
+      await deleteFileRow(trace)
     }
     await db.delete(files).where(inArray(files.testRunsCaseId, caseIds))
   }

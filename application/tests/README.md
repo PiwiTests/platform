@@ -36,7 +36,7 @@ Tests are configured in `playwright.config.ts` at the project root. Key settings
 - **baseURL**: `http://localhost:3000`
 - **webServer**: Automatically starts the dev server before tests
 - **retries**: 2 retries on CI, 0 locally
-- **fullyParallel**: Tests run in parallel for speed
+- **workers**: 1 (serial execution — the suite uses static project names shared across tests, requiring sequential cleanup)
 
 ## Prerequisites
 

@@ -104,10 +104,12 @@ export default eventHandler(async (event) => {
     startedAt: tc.startedAt ?? null
   }))
 
-  const insertedRunCases = await persistRunCases(db, testRun.projectId, id, cases)
+  const insertedRunCases = await persistRunCases(db, testRun.projectId, id, cases, true)
 
-  // Atomically increment run counters to avoid lost updates under concurrent requests
-  const statusCounts = completeEvents.reduce((acc: Record<string, number>, tc: { status?: string }) => {
+  // Increment counters only for newly inserted rows (not deduplicated ones)
+  const insertedCount = insertedRunCases.length
+  // Map inserted testCase IDs back to their statuses for accurate status counts
+  const insertedStatusCounts = cases.slice(0, insertedCount).reduce((acc: Record<string, number>, tc: { status?: string }) => {
     if (tc.status) acc[tc.status] = (acc[tc.status] || 0) + 1
     return acc
   }, {} as Record<string, number>)
@@ -115,10 +117,10 @@ export default eventHandler(async (event) => {
   const updatedRuns = await db.update(testRuns)
     .set({
       updatedAt: new Date(),
-      totalTests: sql`${testRuns.totalTests} + ${completeEvents.length}`,
-      passedTests: sql`${testRuns.passedTests} + ${statusCounts['passed'] || 0}`,
-      failedTests: sql`${testRuns.failedTests} + ${statusCounts['failed'] || 0}`,
-      skippedTests: sql`${testRuns.skippedTests} + ${statusCounts['skipped'] || 0}`
+      totalTests: sql`${testRuns.totalTests} + ${insertedCount}`,
+      passedTests: sql`${testRuns.passedTests} + ${insertedStatusCounts['passed'] || 0}`,
+      failedTests: sql`${testRuns.failedTests} + ${insertedStatusCounts['failed'] || 0}`,
+      skippedTests: sql`${testRuns.skippedTests} + ${insertedStatusCounts['skipped'] || 0}`
     })
     .where(eq(testRuns.id, id))
     .returning()

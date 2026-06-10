@@ -110,7 +110,7 @@ services:
       - ./storage:/app/.data/storage
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=******postgres:5432/piwi_dashboard
+      - DATABASE_URL=postgresql://playwright:playwright@postgres:5432/piwi_dashboard
     depends_on:
       - postgres
     restart: unless-stopped
