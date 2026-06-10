@@ -11,8 +11,10 @@ import { configureDemoDb } from '~/demo/db.client'
  * request URL falls inside the service worker's scope and gets intercepted
  * by `demo-sw.ts`.
  *
- * All actual API handling (sql.js, Drizzle, route logic) lives in the SW;
- * no backend code is duplicated here.
+ * Important timing concern: on the very first page load the service worker
+ * hasn't claimed the page yet, so rewritten API calls would hit the real
+ * server and return 404.  We wait for `controllerchange` before allowing
+ * any fetch through, keeping the loading screen visible until then.
  */
 export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig()
@@ -31,6 +33,26 @@ export default defineNuxtPlugin(() => {
   const base = (config.app?.baseURL ?? '/').replace(/\/$/, '')
   configureDemoDb(base)
 
+  // ── Wait for service worker to claim this page ───────────────────────
+  // Without this, rewritten /api/ calls hit the real server → 404.
+  const swReady = (
+    !import.meta.client
+    || !('serviceWorker' in navigator)
+    || navigator.serviceWorker.controller
+  )
+    ? Promise.resolve()
+    : new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 4000)
+        navigator.serviceWorker.addEventListener(
+          'controllerchange',
+          () => {
+            clearTimeout(timer)
+            resolve()
+          },
+          { once: true }
+        )
+      })
+
   const originalFetch = globalThis.$fetch as (request: unknown, options?: unknown) => Promise<unknown>
 
   function rewritePath(request: unknown): unknown {
@@ -43,11 +65,12 @@ export default defineNuxtPlugin(() => {
   let initCalled = false
 
   // @ts-expect-error monkey-patching $fetch for demo mode
-  globalThis.$fetch = (request: unknown, options?: unknown) => {
-    const response = originalFetch(rewritePath(request), options)
+  globalThis.$fetch = async (request: unknown, options?: unknown) => {
+    await swReady
+    const response = await originalFetch(rewritePath(request), options)
     if (!initCalled) {
       initCalled = true
-      response.finally(() => { demoReady.value = true })
+      demoReady.value = true
     }
     return response
   }
@@ -60,11 +83,12 @@ export default defineNuxtPlugin(() => {
   const originalRaw = (originalFetch as unknown as Record<string, unknown>).raw as ((request: unknown, options?: unknown) => Promise<unknown>) | undefined
   if (typeof originalRaw === 'function') {
     // @ts-expect-error monkey-patching $fetch.raw for demo mode
-    globalThis.$fetch.raw = (request: unknown, options?: unknown) => {
-      const response = originalRaw(rewritePath(request), options)
+    globalThis.$fetch.raw = async (request: unknown, options?: unknown) => {
+      await swReady
+      const response = await originalRaw(rewritePath(request), options)
       if (!initCalled) {
         initCalled = true
-        response.finally(() => { demoReady.value = true })
+        demoReady.value = true
       }
       return response
     }
