@@ -19,7 +19,8 @@ import {
   apiUpdateTag,
   apiDeleteTag
 } from './projects'
-import { apiGetTestRun, apiGetNetworkRequests, apiGetRecentTestRuns, apiDeleteTestRun } from './test-runs'
+import { apiGetTestRun, apiGetNetworkRequests, apiGetRecentTestRuns, apiGetTestRunSummary, apiDeleteTestRun } from './test-runs'
+import { apiGetUsers, apiCreateUser, apiDeleteUser, apiGetUserApiKeys, apiCreateUserApiKey, apiDeleteUserApiKey } from './users'
 import { apiGetTestCase, apiGetTestCaseHistory, apiGetTestCaseTraces } from './test-cases'
 import { apiGetAdminStats } from './admin'
 
@@ -46,6 +47,10 @@ const routes: RouteEntry[] = [
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)$/, handler: m => apiGetTestRun(+m[1]!) },
   { method: 'DELETE', pattern: /^\/api\/test-runs\/(\d+)$/, handler: m => apiDeleteTestRun(+m[1]!) },
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/network-requests$/, handler: m => apiGetNetworkRequests(+m[1]!) },
+  { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/summary$/, handler: m => apiGetTestRunSummary(+m[1]!) },
+
+  // Test-run streaming (no-op in demo mode; only terminal-status runs exist)
+  { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/stream$/, handler: () => Promise.resolve({ ok: true }) },
 
   // Test cases
   { method: 'GET', pattern: /^\/api\/test-cases\/(\d+)$/, handler: m => apiGetTestCase(+m[1]!) },
@@ -58,15 +63,32 @@ const routes: RouteEntry[] = [
   { method: 'PUT', pattern: /^\/api\/tags\/(\d+)$/, handler: (m, body) => apiUpdateTag(+m[1]!, body as Parameters<typeof apiUpdateTag>[1]) },
   { method: 'DELETE', pattern: /^\/api\/tags\/(\d+)$/, handler: m => apiDeleteTag(+m[1]!) },
 
+  // Users
+  { method: 'GET', pattern: /^\/api\/users$/, handler: () => apiGetUsers() },
+  { method: 'POST', pattern: /^\/api\/users$/, handler: (_, body) => apiCreateUser(body as Parameters<typeof apiCreateUser>[0]) },
+  { method: 'DELETE', pattern: /^\/api\/users\/(\d+)$/, handler: m => apiDeleteUser(+m[1]!) },
+  { method: 'GET', pattern: /^\/api\/users\/(\d+)\/api-keys$/, handler: m => apiGetUserApiKeys(+m[1]!) },
+  { method: 'POST', pattern: /^\/api\/users\/(\d+)\/api-keys$/, handler: (m, body) => apiCreateUserApiKey(+m[1]!, body as Parameters<typeof apiCreateUserApiKey>[1]) },
+  { method: 'DELETE', pattern: /^\/api\/users\/(\d+)\/api-keys\/(\d+)$/, handler: m => apiDeleteUserApiKey(+m[1]!, +m[2]!) },
+
   // Admin
   { method: 'GET', pattern: /^\/api\/admin\/stats$/, handler: () => apiGetAdminStats() },
+  { method: 'DELETE', pattern: /^\/api\/admin\/cleanup$/, handler: () => Promise.resolve({ success: true, itemsDeleted: 0 }) },
 ]
 
-// Auth – demo always returns unauthenticated; state is managed by the useAuth composable
+// Auth – demo mode manages state via the useAuth composable; endpoints here
+// provide stubs for the non-demo code paths in case auth is enabled alongside demo.
 const UNAUTHENTICATED = Promise.resolve({ authenticated: false, user: null })
 routes.push(
   { method: 'GET', pattern: /^\/api\/auth\/me$/, handler: () => UNAUTHENTICATED },
-  { method: 'GET', pattern: /^\/api\/auth\/session$/, handler: () => UNAUTHENTICATED }
+  { method: 'GET', pattern: /^\/api\/auth\/session$/, handler: () => UNAUTHENTICATED },
+  { method: 'POST', pattern: /^\/api\/auth\/login$/, handler: () => Promise.resolve({ success: false, message: 'Login not available in demo mode' }) },
+  { method: 'POST', pattern: /^\/api\/auth\/logout$/, handler: () => Promise.resolve({ success: true }) }
+)
+
+// Global SSE stream – no-op in demo mode (useRunStream skips it)
+routes.push(
+  { method: 'GET', pattern: /^\/api\/stream$/, handler: () => Promise.resolve({ ok: true }) }
 )
 
 // OAuth – demo mode does not support OAuth; redirect to login

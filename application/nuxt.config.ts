@@ -120,6 +120,7 @@ export default defineNuxtConfig({
     // at runtime, and every prerender request returns 500. Using memory avoids the
     // Windows file-URL resolution issue entirely (and is equivalent for a single build
     // run since the prerender cache is discarded after each generate anyway).
+    prerender: isDemo ? { failOnError: false } : undefined,
     storage: isDemo ? { 'internal:nuxt:prerender': { driver: 'memory' } } : undefined,
     experimental: {
       // Windows-only workaround to avoid Nitro build issues caused by ESM/CJS externals

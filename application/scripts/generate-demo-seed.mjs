@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS test_runs (
   environment TEXT,
   metadata TEXT,
   stream_token TEXT,
+  instance_id TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER,
   FOREIGN KEY (project_id) REFERENCES projects(id)
@@ -127,6 +128,7 @@ CREATE TABLE IF NOT EXISTS files (
   label TEXT,
   path TEXT NOT NULL,
   size INTEGER,
+  blob_id INTEGER,
   created_at INTEGER NOT NULL,
   FOREIGN KEY (test_run_id) REFERENCES test_runs(id),
   FOREIGN KEY (test_runs_case_id) REFERENCES test_runs_cases(id)
@@ -159,6 +161,9 @@ CREATE TABLE IF NOT EXISTS users (
   password TEXT NOT NULL,
   role TEXT NOT NULL,
   name TEXT,
+  avatar_url TEXT,
+  oauth_provider TEXT,
+  oauth_provider_id TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -436,6 +441,7 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
       environment: ENVIRONMENTS[i % ENVIRONMENTS.length],
       metadata,
       stream_token: null,
+      instance_id: null,
       created_at: startTime,
       updated_at: startTime + Math.floor(duration / 1000)
     }

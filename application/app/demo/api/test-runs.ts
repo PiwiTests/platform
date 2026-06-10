@@ -192,6 +192,39 @@ export async function apiGetRecentTestRuns() {
     .limit(30)
 }
 
+/** GET /api/test-runs/:id/summary */
+export async function apiGetTestRunSummary(id: number) {
+  const db = await getDemoDb()
+
+  const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id))
+  const testRun = testRunResults[0]
+  if (!testRun) return null
+
+  const runsCases = await db.select({
+    title: testCases.title,
+    location: testCases.filePath,
+    line: testRunsCases.line,
+    column: testRunsCases.column,
+    status: testRunsCases.status,
+    duration: testRunsCases.duration
+  })
+    .from(testRunsCases)
+    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+    .where(eq(testRunsCases.testRunId, id))
+
+  const { streamToken: _st, ...testRunPublic } = testRun
+
+  return {
+    ...testRunPublic,
+    testCases: runsCases.map(tc => ({
+      title: tc.title,
+      status: tc.status,
+      duration: tc.duration,
+      location: tc.line && tc.column ? `${tc.location}:${tc.line}:${tc.column}` : tc.location
+    }))
+  }
+}
+
 /** DELETE /api/test-runs/:id */
 export async function apiDeleteTestRun(id: number) {
   const db = await getDemoDb()
