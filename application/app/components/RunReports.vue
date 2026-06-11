@@ -21,8 +21,7 @@ function reportIcon(type: string): string {
     <UButton
       v-for="report in reports"
       :key="`${report.type}-${report.path}`"
-      :to="report.type !== 'blob' ? `/api/files/${getFileApiPath(report.path)}` : undefined"
-      :href="report.type === 'blob' ? `/api/files/${getFileApiPath(report.path)}` : undefined"
+      :href="`/api/files/${getFileApiPath(report.path)}`"
       :icon="reportIcon(report.type)"
       :title="report.size ? formatBytes(report.size) : report.label"
       target="_blank"

@@ -6,6 +6,8 @@ export type TestRunStatus = 'passed' | 'failed' | 'timedout' | 'interrupted' | '
 
 export type TestCaseStatus = 'passed' | 'failed' | 'skipped' | 'timedout'
 
+export type ClusterStatus = 'open' | 'resolved' | 'ignored'
+
 // ── Test case payload ─────────────────────────────────────────────────────────
 // The JSON shape exchanged between the reporter and the server APIs.
 // The reporter uses `location` (combined "file:line:col" string); the server

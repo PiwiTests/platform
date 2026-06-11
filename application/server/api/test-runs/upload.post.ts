@@ -213,8 +213,9 @@ export default eventHandler(async (event) => {
   async function storeReport(type: string, report: { filename: string, data: Buffer }): Promise<{ path: string, size: number }> {
     if (report.filename.endsWith('.gz')) {
       // Extract gzip compressed archive to temp directory first
-      const reportDirName = `run-${Date.now()}-${type}-report`
-      const tempDir = join(tmpdir(), `playwright-report-${Date.now()}`)
+      const ts = Date.now()
+      const reportDirName = `run-${ts}-${type}-report`
+      const tempDir = join(tmpdir(), `playwright-report-${ts}-${type}`)
 
       await mkdir(tempDir, { recursive: true })
 

@@ -144,15 +144,15 @@ test.describe.serial('Run Comparison', () => {
   })
 
   test('compare page shows selection UI and Latest vs Previous button', async ({ page }) => {
-    await page.goto(`/projects/${projectId}/compare`)
-    await expect(page.getByRole('heading', { name: 'Compare runs' })).toBeVisible()
+    await page.goto(`/projects/${projectId}?tab=compare`)
+    await waitForHydration(page)
     await expect(page.getByText('Select run A...')).toBeVisible()
     await expect(page.getByText('Select run B...')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Latest vs previous' })).toBeVisible()
   })
 
   test('compare page loads comparison via dropdown selection', async ({ page }) => {
-    await page.goto(`/projects/${projectId}/compare`)
+    await page.goto(`/projects/${projectId}?tab=compare`)
     await waitForHydration(page)
 
     // Open run A dropdown and select the first run
@@ -193,7 +193,7 @@ test.describe.serial('Run Comparison', () => {
     // Run 3 has "login works", "settings page"
     // So Run 1 has "dashboard loads" and "profile page" not in Run 3
     // Run 3 has "settings page" not in Run 1
-    await page.goto(`/projects/${projectId}/compare`)
+    await page.goto(`/projects/${projectId}?tab=compare`)
     await waitForHydration(page)
 
     // Select runs via dropdown
@@ -216,7 +216,7 @@ test.describe.serial('Run Comparison', () => {
   })
 
   test('Latest vs previous button selects runs and shows comparison', async ({ page }) => {
-    await page.goto(`/projects/${projectId}/compare`)
+    await page.goto(`/projects/${projectId}?tab=compare`)
     await waitForHydration(page)
 
     // Click "Latest vs previous"
@@ -271,7 +271,8 @@ test.describe.serial('Run Comparison', () => {
     const unrelatedProjectId = data.projectId
 
     // Navigate to compare page for this unrelated project (only 1 run, nothing to compare)
-    await page.goto(`/projects/${unrelatedProjectId}/compare`)
+    await page.goto(`/projects/${unrelatedProjectId}?tab=compare`)
+    await waitForHydration(page)
 
     // Should show "select two runs" since there's only 1 run
     await expect(page.getByText('Select two runs to compare test results')).toBeVisible()
@@ -330,7 +331,7 @@ test.describe.serial('Run Comparison', () => {
     const r2Data = await r2.json()
 
     // Navigate and select runs via dropdown
-    await page.goto(`/projects/${r1Data.projectId}/compare`)
+    await page.goto(`/projects/${r1Data.projectId}?tab=compare`)
     await waitForHydration(page)
 
     await page.locator('button').filter({ hasText: 'Select run A...' }).click()

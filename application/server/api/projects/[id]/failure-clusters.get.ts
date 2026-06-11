@@ -1,6 +1,6 @@
 import { getDatabase } from '../../../database'
 import { projects, testRuns, testRunsCases, failureClusters } from '../../../database/schema'
-import { eq, desc, inArray, sql } from 'drizzle-orm'
+import { eq, and, desc, inArray, sql } from 'drizzle-orm'
 
 interface ProjectCluster {
   id: number
@@ -9,6 +9,8 @@ interface ProjectCluster {
   errorType: string | null
   selector: string | null
   sampleError: string | null
+  status: string
+  triageNote: string | null
   firstSeenRunId: number
   lastSeenRunId: number
   occurrences: number
@@ -19,6 +21,7 @@ interface ProjectCluster {
 
 export default eventHandler(async (event) => {
   const projectId = parseInt(getRouterParam(event, 'id') || '0')
+  const statusFilter = getQuery(event).status as string | undefined
 
   if (!projectId) {
     throw createError({ statusCode: 400, message: 'Invalid project ID' })
@@ -33,6 +36,11 @@ export default eventHandler(async (event) => {
     throw createError({ statusCode: 404, message: 'Project not found' })
   }
 
+  const whereClauses = [eq(failureClusters.projectId, projectId)]
+  if (statusFilter && ['open', 'resolved', 'ignored'].includes(statusFilter)) {
+    whereClauses.push(eq(failureClusters.status, statusFilter))
+  }
+
   const clusters = await db.select({
     id: failureClusters.id,
     fingerprint: failureClusters.fingerprint,
@@ -40,12 +48,14 @@ export default eventHandler(async (event) => {
     errorType: failureClusters.errorType,
     selector: failureClusters.selector,
     sampleError: failureClusters.sampleError,
+    status: failureClusters.status,
+    triageNote: failureClusters.triageNote,
     firstSeenRunId: failureClusters.firstSeenRunId,
     lastSeenRunId: failureClusters.lastSeenRunId,
     occurrences: failureClusters.occurrences
   })
     .from(failureClusters)
-    .where(eq(failureClusters.projectId, projectId))
+    .where(and(...whereClauses))
     .orderBy(desc(failureClusters.lastSeenRunId))
     .limit(100)
 

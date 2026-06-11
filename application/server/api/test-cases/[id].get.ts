@@ -70,6 +70,8 @@ export default eventHandler(async (event) => {
         signature: cluster.signature,
         errorType: cluster.errorType,
         selector: cluster.selector,
+        status: cluster.status ?? 'open',
+        triageNote: cluster.triageNote ?? null,
         occurrences: cluster.occurrences,
         firstSeenRunId: cluster.firstSeenRunId,
         firstSeenAt: firstSeenRun?.startTime ?? null,

@@ -167,12 +167,74 @@ by hand: they have **no snapshots** and **future-dated journal timestamps**
   hand-written era may differ in details such as the `updated_at` indexes,
   which were never created by any PG migration.)
 
-## Not yet implemented (next phases)
+## Implemented (June 11, 2026 — afternoon)
 
-- Cluster `status` column (open/resolved/ignored) with a triage workflow on
-  the project board.
-- **Pillar 2 (full)**: last-green resolution + run diff view (the
-  `isNew`/known-since flags cover the basic case).
+- **Cluster status**: `status` column (`open`/`resolved`/`ignored`) with
+  optional `triage_note` on `failure_clusters`.
+- Schema + migrations (SQLite 0019, PG 0010): `ALTER TABLE ADD COLUMN status`,
+  `triage_note`, and index on `status`.
+- `PATCH /api/failure-clusters/[id]/status` — update status + optional triage
+  note; validates status values, returns 400/404.
+- `GET /api/projects/[id]/failure-clusters` now returns `status` + `triageNote`
+  and supports `?status=open|resolved|ignored` filter.
+- `GET /api/test-runs/[id]/failure-groups` returns `status` + `triageNote` per
+  group.
+- `GET /api/test-cases/[id]` returns `status` + `triageNote` in the
+  `failureCluster` block.
+- UI: status badges on `FailureClustersList.vue`, `FailureGroups.vue`,
+  `TestCaseErrorCard.vue`. `FailureClustersList.vue` has a status filter
+  dropdown and an inline triage panel (status selector + optional note +
+  save/cancel) that calls the PATCH endpoint.
+- Demo seed updated: `status` column in CREATE TABLE, `status: 'open'` on all
+  clusters, `triage_note: null`.
+- Demo router + handlers for the PATCH endpoint, including the missing
+  `failureCluster` block in `apiGetTestCase`.
+- Tests: 5 new e2e tests (status default, PATCH update, PATCH validation,
+  status filter, failure-groups status field).
+- Docs: `docs/api.md` updated with the PATCH endpoint docs and new fields.
+
+## Implemented — Pillar 2 (June 11, 2026)
+
+### What changed since green?
+
+- **`GET /api/test-runs/[id]/regression-context`** — for any failing run,
+  resolves the most recent prior passing run (`status = 'passed'`) for the
+  same project, then computes:
+  - `commitRange` — `fromSha`/`toSha`, `fromShort`/`toShort`, `repositoryUrl`
+    (SSH URLs normalized to HTTPS, credentials stripped), `compareUrl`
+    (GitHub / GitLab / Bitbucket compare links auto-constructed), and
+    `gitCommand` (`git log --oneline <from>..<to>`) for copy-paste.
+    `null` when SCM metadata is absent or commits are identical.
+  - `metadataDiff` — array of `{ key, label, before, after }` entries for
+    fields that changed between the two runs: `environment`, `branch`,
+    `ci_provider`, `browsers` (from `htmlReport.projects[*].use.browserName`).
+  - `newFailures` — count of test cases that were `passed` in the last green
+    run but `failed` or `timedOut` here (deduped per `test_case_id` across
+    retries).
+  - Returns `{ hasGreen: false }` when no prior passing run exists.
+
+- **`app/components/RegressionContext.vue`** — "Regression" tab on the run
+  detail page (shown when the run has failures):
+  - Last green run link + relative time.
+  - New-failures badge or "no new regressions" note.
+  - Commit range card: `from` → `to` SHA badges, "View commits" button
+    (GitHub/GitLab compare URL), copyable `git log` command.
+  - Metadata changes table (environment / branch / CI / browser changes).
+  - No-commit-info hint pointing to `collectScmInfo: true`.
+
+- **Demo mode**: `apiGetRegressionContext` in `app/demo/api/test-runs.ts`
+  mirrors the server logic; route registered in `app/demo/api/router.ts`.
+
+- **Tests**: `application/tests/regression-context.spec.ts` — 7 serial e2e
+  tests: no-prior-green, last-green + new-failures count, GitHub compare URL,
+  SSH remote normalization, metadata diff, empty diff, identical-SHA null
+  range, 404. Project `regression-context-test` registered in
+  `shared/test-project-names.ts`.
+
+- **Docs**: `docs/api.md` documents the new endpoint with full field table and
+  compare-URL behavior.
+
+## Not yet implemented (next phases)
 - **Pillar 3 (full)**: cross-run flakiness scoring + dedicated flaky board
   (the per-run flaky/worker-correlated flags cover the basic case).
 - **Pillar 4**: server-side AI diagnosis per cluster.

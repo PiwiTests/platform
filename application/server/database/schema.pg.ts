@@ -64,6 +64,8 @@ export const failureClusters = pgTable('failure_clusters', {
   // and clusters must survive them (stale ids are tolerated)
   firstSeenRunId: integer('first_seen_run_id').notNull(),
   lastSeenRunId: integer('last_seen_run_id').notNull(),
+  status: text('status').notNull().default('open'), // 'open', 'resolved', 'ignored' — triage workflow
+  triageNote: text('triage_note'), // Optional comment attached when triaging (status change)
   occurrences: integer('occurrences').notNull().default(0), // denormalized count of linked test_runs_cases rows (not decremented on run deletion)
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())

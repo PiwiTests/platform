@@ -61,9 +61,10 @@ test.describe('Dashboard UI Tests', () => {
 
     // Wait for navigation
     await page.waitForURL(/\/projects\/\d+/)
+    await page.waitForTimeout(2000)
 
-    // Check for test results trend section
-    await expect(page.getByText('Test results trend')).toBeVisible()
+    // Check for test runs tab content
+    await expect(page.getByText('Test run statistics over time')).toBeVisible()
 
     // Check project name in sidebar is expanded
     await expect(page.getByRole('link', { name: 'Test runs' })).toBeVisible()

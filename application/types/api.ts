@@ -387,6 +387,8 @@ export interface FailureGroup {
   signature: string
   errorType: string | null
   selector: string | null
+  status: string
+  triageNote: string | null
   caseCount: number
   isNew: boolean
   firstSeenRunId: number
@@ -407,6 +409,8 @@ export interface ProjectFailureCluster {
   errorType: string | null
   selector: string | null
   sampleError: string | null
+  status: string
+  triageNote: string | null
   firstSeenRunId: number
   lastSeenRunId: number
   occurrences: number
@@ -616,6 +620,50 @@ export interface AttachmentInfo {
   contentType: string | null
   path: string
   size: number | null
+}
+
+// ============================================================================
+// Regression context types (Pillar 2)
+// ============================================================================
+
+/**
+ * Commit range between last passing run and this run
+ */
+export interface RegressionContextCommitRange {
+  fromSha: string
+  toSha: string
+  fromShort: string
+  toShort: string
+  repositoryUrl: string | null
+  compareUrl: string | null
+  gitCommand: string
+}
+
+/**
+ * A single field that changed between the last passing run and this run
+ */
+export interface RegressionContextMetaDiff {
+  key: string
+  label: string
+  before: string | null
+  after: string | null
+}
+
+/**
+ * Regression context for a test run — returned by GET /api/test-runs/[id]/regression-context.
+ * hasGreen: false means no prior passing run exists for this project.
+ */
+export interface RegressionContext {
+  hasGreen: boolean
+  lastGreenRunId?: number
+  lastGreenRunAt?: string | Date | null
+  lastGreenCommit?: string | null
+  lastGreenBranch?: string | null
+  currentCommit?: string | null
+  currentBranch?: string | null
+  commitRange?: RegressionContextCommitRange | null
+  metadataDiff?: RegressionContextMetaDiff[]
+  newFailures?: number
 }
 
 /**
