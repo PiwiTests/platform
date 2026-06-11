@@ -59,48 +59,95 @@ export default eventHandler(async (event) => {
   // Calculate flaky tests count (default to 0 if not provided)
   const flakyTests = body.flakyTests ?? 0
 
-  // Update the test run with final status
-  const updateData: Record<string, unknown> = {
-    status,
-    duration,
-    streamToken: null, // Clear stream token - run is finished
-    ...(body.totalTests !== undefined && { totalTests: body.totalTests }),
-    ...(body.passedTests !== undefined && { passedTests: body.passedTests }),
-    ...(body.failedTests !== undefined && { failedTests: body.failedTests }),
-    ...(body.skippedTests !== undefined && { skippedTests: body.skippedTests }),
-    ...(body.flakyTests !== undefined && { flakyTests }),
-    ...(avgTestDuration !== null && { avgTestDuration }),
-    ...(p90TestDuration !== null && { p90TestDuration }),
-    ...(body.metadata && { metadata: sanitizeMetadata(body.metadata) })
-  }
+  const hasPendingUploads = body.hasPendingUploads === true
 
-  await db.update(testRuns)
-    .set(updateData)
-    .where(eq(testRuns.id, id))
+  if (hasPendingUploads) {
+    // Reporter will upload reports/traces after this call.
+    // Set status to finalizing instead of the final status; the upload endpoint
+    // will transition to the actual final status once files are stored.
+    // Store the final status in memory so the upload endpoint can retrieve it.
+    runEventBus.setFinalStatus(id, status)
 
-  // Publish run-finished event to SSE subscribers
-  runEventBus.publish(id, {
-    type: 'run-finished',
-    data: {
+    const updateData: Record<string, unknown> = {
+      status: 'finalizing',
+      duration,
+      streamToken: null, // Clear stream token - prevents further streaming
+      ...(body.totalTests !== undefined && { totalTests: body.totalTests }),
+      ...(body.passedTests !== undefined && { passedTests: body.passedTests }),
+      ...(body.failedTests !== undefined && { failedTests: body.failedTests }),
+      ...(body.skippedTests !== undefined && { skippedTests: body.skippedTests }),
+      ...(body.flakyTests !== undefined && { flakyTests }),
+      ...(avgTestDuration !== null && { avgTestDuration }),
+      ...(p90TestDuration !== null && { p90TestDuration }),
+      ...(body.metadata && { metadata: sanitizeMetadata(body.metadata) })
+    }
+
+    await db.update(testRuns)
+      .set(updateData)
+      .where(eq(testRuns.id, id))
+
+    // Notify per-run SSE subscribers that finalization has begun
+    runEventBus.publish(id, {
+      type: 'run-finalizing',
+      data: {
+        status,
+        duration,
+        totalTests: body.totalTests ?? testRun.totalTests,
+        passedTests: body.passedTests ?? testRun.passedTests,
+        failedTests: body.failedTests ?? testRun.failedTests,
+        skippedTests: body.skippedTests ?? testRun.skippedTests,
+        flakyTests
+      }
+    })
+
+    // Broadcast global run-finalizing event
+    runEventBus.publishGlobal({ type: 'run-finalizing', runId: id, projectId: testRun.projectId, status })
+
+    // Keep event bus alive — the upload endpoint will emit run-finished and clean up
+  } else {
+    // No pending uploads — set final status directly (legacy/default behavior)
+    const updateData: Record<string, unknown> = {
       status,
       duration,
-      totalTests: body.totalTests ?? testRun.totalTests,
-      passedTests: body.passedTests ?? testRun.passedTests,
-      failedTests: body.failedTests ?? testRun.failedTests,
-      skippedTests: body.skippedTests ?? testRun.skippedTests,
-      flakyTests
+      streamToken: null, // Clear stream token - run is finished
+      ...(body.totalTests !== undefined && { totalTests: body.totalTests }),
+      ...(body.passedTests !== undefined && { passedTests: body.passedTests }),
+      ...(body.failedTests !== undefined && { failedTests: body.failedTests }),
+      ...(body.skippedTests !== undefined && { skippedTests: body.skippedTests }),
+      ...(body.flakyTests !== undefined && { flakyTests }),
+      ...(avgTestDuration !== null && { avgTestDuration }),
+      ...(p90TestDuration !== null && { p90TestDuration }),
+      ...(body.metadata && { metadata: sanitizeMetadata(body.metadata) })
     }
-  })
 
-  // Broadcast global run-finished event for dashboard pages
-  runEventBus.publishGlobal({ type: 'run-finished', runId: id, projectId: testRun.projectId, status })
+    await db.update(testRuns)
+      .set(updateData)
+      .where(eq(testRuns.id, id))
 
-  // Cleanup event bus for this run
-  runEventBus.cleanup(id)
+    // Publish run-finished event to SSE subscribers
+    runEventBus.publish(id, {
+      type: 'run-finished',
+      data: {
+        status,
+        duration,
+        totalTests: body.totalTests ?? testRun.totalTests,
+        passedTests: body.passedTests ?? testRun.passedTests,
+        failedTests: body.failedTests ?? testRun.failedTests,
+        skippedTests: body.skippedTests ?? testRun.skippedTests,
+        flakyTests
+      }
+    })
+
+    // Broadcast global run-finished event for dashboard pages
+    runEventBus.publishGlobal({ type: 'run-finished', runId: id, projectId: testRun.projectId, status })
+
+    // Cleanup event bus for this run
+    runEventBus.cleanup(id)
+  }
 
   return {
     success: true,
     testRunId: id,
-    status
+    status: hasPendingUploads ? 'finalizing' : status
   }
 })

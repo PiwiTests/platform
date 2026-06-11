@@ -8,6 +8,7 @@ const props = defineProps<{
   showCustomData: boolean
   summaryColSpanClass: string
   blockColSpanClass: string
+  finalizing?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -28,18 +29,18 @@ const storageStats = computed(() => props.testRun?.storageStats)
                 class="shrink-0 size-8 rounded-lg flex items-center justify-center"
                 :class="{
                   'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400': testRun?.status === 'passed',
-                  'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400': testRun?.status === 'failed' || testRun?.status === 'timedOut',
+                  'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400': testRun?.status === 'failed' || testRun?.status === 'timedout',
                   'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400': testRun?.status === 'cancelled' || testRun?.status === 'skipped',
-                  'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400': testRun?.status === 'running' || testRun?.status === 'initialising'
+                  'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400': testRun?.status === 'running' || testRun?.status === 'initialising' || testRun?.status === 'finalizing'
                 }"
               >
                 <UIcon
                   :name="testRun?.status === 'passed' ? 'i-lucide-check-circle-2'
-                    : testRun?.status === 'failed' || testRun?.status === 'timedOut' ? 'i-lucide-x-circle'
-                      : testRun?.status === 'running' || testRun?.status === 'initialising' ? 'i-lucide-loader-circle'
+                    : testRun?.status === 'failed' || testRun?.status === 'timedout' ? 'i-lucide-x-circle'
+                      : testRun?.status === 'running' || testRun?.status === 'initialising' || testRun?.status === 'finalizing' ? 'i-lucide-loader-circle'
                         : 'i-lucide-minus-circle'"
                   class="size-4.5"
-                  :class="{ 'animate-spin': testRun?.status === 'running' || testRun?.status === 'initialising' }"
+                  :class="{ 'animate-spin': testRun?.status === 'running' || testRun?.status === 'initialising' || testRun?.status === 'finalizing' }"
                 />
               </div>
               <div class="min-w-0">
@@ -151,14 +152,29 @@ const storageStats = computed(() => props.testRun?.storageStats)
     />
 
     <!-- Block 3: Storage stats -->
-    <UCard v-if="storageStats?.totalFiles" :class="blockColSpanClass" class="shadow-xs">
+    <UCard v-if="storageStats?.totalFiles || finalizing" :class="blockColSpanClass" class="shadow-xs">
       <template #header>
         <div class="flex items-center gap-2">
           <UIcon name="i-lucide-database" class="w-4 h-4 text-primary" />
           <span class="text-sm font-medium">Storage</span>
         </div>
       </template>
-      <div class="flex gap-4 text-sm">
+      <div v-if="finalizing" class="flex items-center gap-3">
+        <UIcon name="i-lucide-upload" class="size-5 text-info shrink-0 animate-pulse" />
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-sm font-medium">Finalizing test run</span>
+            <span class="text-xs text-gray-500">Uploading reports &amp; traces…</span>
+          </div>
+          <UProgress
+            :value="null"
+            size="sm"
+            color="info"
+            class="rounded-full animate-pulse"
+          />
+        </div>
+      </div>
+      <div v-if="storageStats?.totalFiles" class="flex gap-4 text-sm">
         <div>
           <p class="text-muted text-xs">
             Files

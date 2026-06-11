@@ -20,7 +20,8 @@ async function cleanupStaleRuns() {
         and(
           or(
             eq(testRuns.status, 'running'),
-            eq(testRuns.status, 'initialising')
+            eq(testRuns.status, 'initialising'),
+            eq(testRuns.status, 'finalizing')
           ),
           or(
             lt(testRuns.updatedAt, staleThreshold),

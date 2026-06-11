@@ -339,6 +339,8 @@ class PiwiDashboardReporter {
 
       const flakyTests = this.testCases.filter((tc: any) => tc.status === "passed" && (tc.retries || 0) > 0).length;
 
+      const hasReports = this.options.uploadReport || (this.options.reports && this.options.reports.length > 0);
+
       await this.httpClient.postJSON(
         `/api/test-runs/${this.streamingRunId}/finish`,
         {
@@ -352,6 +354,7 @@ class PiwiDashboardReporter {
           flakyTests,
           durations,
           metadata: this.metadata,
+          hasPendingUploads: !!(this.options.uploadTraces || hasReports),
         },
         sessionCookie,
       );
@@ -359,7 +362,6 @@ class PiwiDashboardReporter {
       console.log(`[Piwi Dashboard] Successfully finalized streaming run #${this.streamingRunId}`);
       this.recovery.clear();
 
-      const hasReports = this.options.uploadReport || (this.options.reports && this.options.reports.length > 0);
       if (this.options.uploadTraces || hasReports) {
         try {
           await this.uploader.uploadFilesForStreamingRun(

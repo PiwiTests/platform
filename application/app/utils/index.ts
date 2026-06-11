@@ -86,11 +86,13 @@ export function getStatusColor(status: string) {
   switch (status) {
     case 'passed': return 'success'
     case 'failed': return 'error'
+    case 'timedout': return 'warning'
     case 'timedOut': return 'warning'
     case 'interrupted': return 'warning'
     case 'cancelled': return 'neutral'
     case 'initialising': return 'info'
     case 'running': return 'info'
+    case 'finalizing': return 'info'
     default: return 'neutral'
   }
 }

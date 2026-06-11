@@ -2,7 +2,7 @@
 // These mirror the values stored in the test_runs.status column and the
 // Playwright result.status values.
 
-export type TestRunStatus = 'passed' | 'failed' | 'timedout' | 'interrupted' | 'running' | 'cancelled' | 'initialising'
+export type TestRunStatus = 'passed' | 'failed' | 'timedout' | 'interrupted' | 'running' | 'cancelled' | 'initialising' | 'finalizing'
 
 export type TestCaseStatus = 'passed' | 'failed' | 'skipped' | 'timedout'
 
