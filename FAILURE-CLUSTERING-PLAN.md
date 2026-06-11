@@ -193,9 +193,48 @@ by hand: they have **no snapshots** and **future-dated journal timestamps**
   status filter, failure-groups status field).
 - Docs: `docs/api.md` updated with the PATCH endpoint docs and new fields.
 
+## Implemented — Pillar 2 (June 11, 2026)
+
+### What changed since green?
+
+- **`GET /api/test-runs/[id]/regression-context`** — for any failing run,
+  resolves the most recent prior passing run (`status = 'passed'`) for the
+  same project, then computes:
+  - `commitRange` — `fromSha`/`toSha`, `fromShort`/`toShort`, `repositoryUrl`
+    (SSH URLs normalized to HTTPS, credentials stripped), `compareUrl`
+    (GitHub / GitLab / Bitbucket compare links auto-constructed), and
+    `gitCommand` (`git log --oneline <from>..<to>`) for copy-paste.
+    `null` when SCM metadata is absent or commits are identical.
+  - `metadataDiff` — array of `{ key, label, before, after }` entries for
+    fields that changed between the two runs: `environment`, `branch`,
+    `ci_provider`, `browsers` (from `htmlReport.projects[*].use.browserName`).
+  - `newFailures` — count of test cases that were `passed` in the last green
+    run but `failed` or `timedOut` here (deduped per `test_case_id` across
+    retries).
+  - Returns `{ hasGreen: false }` when no prior passing run exists.
+
+- **`app/components/RegressionContext.vue`** — "Regression" tab on the run
+  detail page (shown when the run has failures):
+  - Last green run link + relative time.
+  - New-failures badge or "no new regressions" note.
+  - Commit range card: `from` → `to` SHA badges, "View commits" button
+    (GitHub/GitLab compare URL), copyable `git log` command.
+  - Metadata changes table (environment / branch / CI / browser changes).
+  - No-commit-info hint pointing to `collectScmInfo: true`.
+
+- **Demo mode**: `apiGetRegressionContext` in `app/demo/api/test-runs.ts`
+  mirrors the server logic; route registered in `app/demo/api/router.ts`.
+
+- **Tests**: `application/tests/regression-context.spec.ts` — 7 serial e2e
+  tests: no-prior-green, last-green + new-failures count, GitHub compare URL,
+  SSH remote normalization, metadata diff, empty diff, identical-SHA null
+  range, 404. Project `regression-context-test` registered in
+  `shared/test-project-names.ts`.
+
+- **Docs**: `docs/api.md` documents the new endpoint with full field table and
+  compare-URL behavior.
+
 ## Not yet implemented (next phases)
-- **Pillar 2 (full)**: last-green resolution + run diff view (the
-  `isNew`/known-since flags cover the basic case).
 - **Pillar 3 (full)**: cross-run flakiness scoring + dedicated flaky board
   (the per-run flaky/worker-correlated flags cover the basic case).
 - **Pillar 4**: server-side AI diagnosis per cluster.

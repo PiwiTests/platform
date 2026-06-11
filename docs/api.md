@@ -445,6 +445,57 @@ Returns 400 for invalid status values, 404 for unknown clusters.
 
 ---
 
+### GET `/api/test-runs/[id]/regression-context`
+
+Identifies the last passing run for the same project and computes what changed between that run and the current one. Designed to answer the question *"what changed since green?"*
+
+**Response — no prior passing run**
+
+```json
+{ "hasGreen": false }
+```
+
+**Response — prior passing run found**
+
+```json
+{
+  "hasGreen": true,
+  "lastGreenRunId": 41,
+  "lastGreenRunAt": "2024-01-10T09:00:00.000Z",
+  "lastGreenCommit": "aaa1111aaa1111a",
+  "lastGreenBranch": "main",
+  "currentCommit": "bbb2222bbb2222b",
+  "currentBranch": "main",
+  "commitRange": {
+    "fromSha": "aaa1111aaa1111a",
+    "toSha": "bbb2222bbb2222b",
+    "fromShort": "aaa1111",
+    "toShort": "bbb2222",
+    "repositoryUrl": "https://github.com/owner/repo",
+    "compareUrl": "https://github.com/owner/repo/compare/aaa1111aaa1111a...bbb2222bbb2222b",
+    "gitCommand": "git log --oneline aaa1111aaa1111a..bbb2222bbb2222b"
+  },
+  "metadataDiff": [
+    { "key": "environment", "label": "Environment", "before": null, "after": "staging" }
+  ],
+  "newFailures": 3
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `hasGreen` | `false` if no prior passing run exists |
+| `lastGreenRunId` | ID of the most recent passing run before this one |
+| `lastGreenRunAt` | Start time of that run |
+| `lastGreenCommit` / `currentCommit` | SCM commit SHAs, if `collectScmInfo: true` was set in the reporter |
+| `commitRange` | Commit range info; `null` if commits are missing or identical. `compareUrl` is constructed for GitHub, GitLab, and Bitbucket; `null` for other hosts. SSH remote URLs are normalized to HTTPS automatically |
+| `metadataDiff` | Fields that changed between the two runs: `environment`, `branch`, `ci_provider`, `browsers` |
+| `newFailures` | Number of test cases that passed in the last green run but failed in this one |
+
+Requires commit metadata — enable `collectScmInfo: true` in the reporter config to populate `commitRange`.
+
+---
+
 ### GET `/api/test-runs/[id]/network-requests`
 
 Network requests grouped by `HTTP method + normalized route`.

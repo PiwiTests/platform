@@ -248,6 +248,7 @@ const uniqueWorkerCount = computed(() => {
 const tabItems = computed(() => [
   { label: `Test cases (${displayTestCases.value.length})`, icon: 'i-lucide-beaker', value: 'test-cases', slot: 'test-cases' },
   ...(hasFailures.value ? [{ label: `Failure groups (${failureGroupCount.value})`, icon: 'i-lucide-layers', value: 'failure-groups', slot: 'failure-groups' }] : []),
+  ...(hasFailures.value ? [{ label: 'Regression', icon: 'i-lucide-git-pull-request-arrow', value: 'regression', slot: 'regression' }] : []),
   { label: `Workers${uniqueWorkerCount.value > 0 ? ` (${uniqueWorkerCount.value})` : ''}`, icon: 'i-lucide-rows-3', value: 'workers', slot: 'workers' },
   { label: 'Compare', icon: 'i-lucide-git-compare-arrows', value: 'compare', slot: 'compare' },
   { label: `Slow endpoints${endpointsCount.value > 0 ? ` (${endpointsCount.value})` : ''}`, icon: 'i-lucide-network', value: 'endpoints', slot: 'endpoints' }
@@ -353,6 +354,10 @@ function handleSelectCluster(clusterId: number) {
               @select-test-case="handleSelectTestCase"
               @select-cluster="handleSelectCluster"
             />
+          </template>
+
+          <template #regression>
+            <RegressionContext />
           </template>
 
           <template #workers>

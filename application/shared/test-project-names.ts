@@ -56,6 +56,7 @@ export const PROJECT = {
   PERF_TEST: 'perf-test-project',
   PG_CONCURRENT: 'pg-concurrent-project',
   PG_TEST: 'pg-test-project',
+  REGRESSION_CONTEXT: 'regression-context-test',
   REPORTER_API_KEY_E2E: 'reporter-api-key-e2e-test',
   REPORTER_API_KEY_LIB: 'reporter-api-key-lib-test',
   REPORTER_AUTH_LIB: 'reporter-auth-lib-test',
