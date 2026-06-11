@@ -19,7 +19,12 @@ if (config.public.demoMode) {
 
 <template>
   <div v-if="config.public.demoMode" ref="banner" class="demo-banner">
-    ⚠️ <strong>Demo mode</strong> — showing sample data only. Forms, actions, and file uploads are disabled. <a href="https://github.com/PhenX/piwi-dashboard" target="_blank" class="underline">Deploy your own instance</a> for live data.
+    <div class="demo-banner-inner">
+      <span>
+        ⚠️ <strong>Demo mode</strong> — sample data running entirely in your browser. <a href="https://github.com/PhenX/piwi-dashboard" target="_blank" class="underline">Deploy your own instance</a> for live data.
+      </span>
+      <DemoSimulator />
+    </div>
   </div>
 </template>
 
@@ -28,12 +33,20 @@ if (config.public.demoMode) {
   background-color: #fef3c7;
   color: #92400e;
   text-align: center;
-  padding: 0.5rem 1rem;
+  padding: 0.375rem 1rem;
   font-size: 0.875rem;
   font-weight: 500;
   border-bottom: 1px solid #fcd34d;
   position: relative;
   z-index: 60;
+}
+
+.demo-banner-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem 1rem;
 }
 
 .dark .demo-banner {

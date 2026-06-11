@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, watch, onUnmounted } from 'vue'
 import type { TestRunDetails, TestCaseResult, ReportInfo } from '~~/types/api'
+import { subscribeDemoEvents } from '~/demo/run-events'
 
 const route = useRoute()
 const runId = route.params.id
+const isDemoMode = Boolean(useRuntimeConfig().public.demoMode)
 
 const { data: testRun, refresh } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`)
 
@@ -105,6 +107,7 @@ function flushPendingEvents() {
 function pollForReports(attempts = 0): void {
   // The reporter may upload HTML/Monocart reports AFTER the run finishes.
   // Poll briefly so they appear without requiring a manual refresh.
+  if (isDemoMode) return // demo mode has no file uploads
   if (attempts >= 10) return
   setTimeout(async () => {
     await refresh()
@@ -114,8 +117,54 @@ function pollForReports(attempts = 0): void {
   }, 1500 * (attempts + 1))
 }
 
+function enqueueEvent(event: Record<string, unknown>) {
+  pendingEvents.push(event)
+  if (debounceTimer) clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(flushPendingEvents, 200)
+}
+
+// Demo mode: live events arrive over a BroadcastChannel from the service
+// worker instead of an SSE stream (see app/demo/run-events.ts).
+let demoUnsubscribe: (() => void) | null = null
+
+function connectToDemoStream() {
+  if (demoUnsubscribe) return
+
+  // Catch-up: the server SSE replays already-persisted cases on connect;
+  // mirror that from the data already fetched with the run.
+  for (const tc of testRun.value?.testCases ?? []) {
+    enqueueEvent({
+      type: 'test-completed',
+      data: {
+        title: tc.title,
+        status: tc.status,
+        duration: tc.duration,
+        location: tc.location,
+        error: tc.error || null,
+        workerIndex: tc.workerIndex ?? null
+      }
+    })
+  }
+
+  demoUnsubscribe = subscribeDemoEvents((message) => {
+    if (message.scope === 'run' && message.runId === Number(runId)) {
+      enqueueEvent(message.event as unknown as Record<string, unknown>)
+    } else if (message.scope === 'global' && message.event.runId === Number(runId) && message.event.type === 'run-started') {
+      // Run transitioned from 'initialising' to 'running' — refetch so
+      // isLive flips and progress counters appear.
+      refresh()
+    }
+  })
+}
+
 function connectToStream() {
   if (!import.meta.client) return
+
+  if (isDemoMode) {
+    connectToDemoStream()
+    return
+  }
+
   if (eventSource) return
   if (!isLive.value) return
 
@@ -123,9 +172,7 @@ function connectToStream() {
 
   eventSource.onmessage = (event) => {
     try {
-      pendingEvents.push(JSON.parse(event.data) as Record<string, unknown>)
-      if (debounceTimer) clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(flushPendingEvents, 200)
+      enqueueEvent(JSON.parse(event.data) as Record<string, unknown>)
     } catch {
       // Ignore parse errors
     }
@@ -141,9 +188,17 @@ function disconnectStream() {
     eventSource.close()
     eventSource = null
   }
+  if (demoUnsubscribe) {
+    demoUnsubscribe()
+    demoUnsubscribe = null
+  }
 }
 
-watch(isLive, (live) => {
+// In demo mode also stream while 'initialising' so the page picks up the
+// transition to 'running' pushed by the simulator.
+const shouldStream = computed(() => isLive.value || (isDemoMode && testRun.value?.status === 'initialising'))
+
+watch(shouldStream, (live) => {
   if (live) {
     connectToStream()
   } else {
