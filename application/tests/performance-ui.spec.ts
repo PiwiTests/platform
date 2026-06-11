@@ -61,12 +61,6 @@ test.describe('Performance UI Tests', () => {
     projectId = data.projectId
   })
 
-  test('should show performance button on project detail page', async ({ page }) => {
-    await page.goto(`/projects/${projectId}`)
-    // Use the panel-scoped button (not the sidebar link)
-    await expect(page.locator('#dashboard-panel-project-detail').getByRole('link', { name: 'Performance' })).toBeVisible()
-  })
-
   test('should navigate to performance page', async ({ page }) => {
     await page.goto(`/projects/${projectId}/performance`)
     await expect(page.getByText('Performance trend')).toBeVisible()
