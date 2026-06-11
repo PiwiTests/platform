@@ -333,15 +333,16 @@ for (const [pid, cases] of ALL_CASE_DEFS) {
 }
 
 // ── Failure cluster definitions ────────────────────────────────────────────
+// NOTE: caseIndices must be in [0, 2] because max failed tests per run is 3
 const CLUSTER_DEFS = [
-  { projectId: 1, errorText: 'TimeoutError: locator.click: Timeout 30000ms exceeded.\n    at tests/checkout/checkout.spec.ts:42', caseIndices: [0, 1, 2] },
-  { projectId: 1, errorText: 'expect(received).toBe(expected)\n\nExpected: 3\nReceived: 0', caseIndices: [3, 4, 8, 9] },
+  { projectId: 1, errorText: 'TimeoutError: locator.click: Timeout 30000ms exceeded.\n    at tests/checkout/checkout.spec.ts:42', caseIndices: [0, 1] },
+  { projectId: 1, errorText: 'expect(received).toBe(expected)\n\nExpected: 3\nReceived: 0', caseIndices: [2] },
   { projectId: 2, errorText: 'expect(received).toBe(expected)\n\nExpected: 200\nReceived: 500', caseIndices: [0, 1] },
-  { projectId: 2, errorText: 'expect(received).toBe(expected)\n\nExpected: truthy\nReceived: undefined', caseIndices: [4, 5] },
-  { projectId: 3, errorText: 'TimeoutError: page.waitForSelector: Timeout 5000ms exceeded.\n    at tests/ui/modal.spec.ts:18', caseIndices: [3, 4] },
+  { projectId: 2, errorText: 'expect(received).toBe(expected)\n\nExpected: truthy\nReceived: undefined', caseIndices: [2] },
+  { projectId: 3, errorText: 'TimeoutError: page.waitForSelector: Timeout 5000ms exceeded.\n    at tests/ui/modal.spec.ts:18', caseIndices: [1, 2] },
   { projectId: 3, errorText: 'Error: strict mode violation: getByRole(\'button\') resolved to 3 elements\n\n    at tests/ui/button.spec.ts:55', caseIndices: [0] },
   { projectId: 4, errorText: 'TimeoutError: page.goto: Timeout 30000ms exceeded.\n    at tests/mobile/navigation.spec.ts:15', caseIndices: [0, 1] },
-  { projectId: 4, errorText: 'Error: page.fill: Element not found\n    at tests/mobile/forms.spec.ts:28', caseIndices: [4, 5] }
+  { projectId: 4, errorText: 'Error: page.fill: Element not found\n    at tests/mobile/forms.spec.ts:28', caseIndices: [2] }
 ]
 
 const CLUSTERS = CLUSTER_DEFS.map((def, i) => ({
@@ -614,6 +615,17 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
 }
 
 // ── Build failure_clusters rows ────────────────────────────────────────────
+// Ensure all clusters have valid first/last run IDs. Use any run from the
+// project as fallback (no FK constraint on failure_clusters → test_runs).
+const firstRunByProject = {}
+const lastRunByProject = {}
+for (const run of TEST_RUNS) {
+  if (!(run.project_id in firstRunByProject)) {
+    firstRunByProject[run.project_id] = run.id
+  }
+  lastRunByProject[run.project_id] = run.id
+}
+
 const clusterNow = ts('2025-04-25T09:00:00')
 for (const cl of CLUSTERS) {
   const stats = clusterStats[cl.id]
@@ -626,9 +638,9 @@ for (const cl of CLUSTERS) {
     error_type: cl.errorType,
     selector,
     sample_error: cl.errorText,
-    first_seen_run_id: stats.firstRunId,
-    last_seen_run_id: stats.lastRunId,
-    occurrences: stats.occurrences,
+    first_seen_run_id: stats.firstRunId ?? firstRunByProject[cl.projectId],
+    last_seen_run_id: stats.lastRunId ?? lastRunByProject[cl.projectId],
+    occurrences: stats.occurrences || 1,
     created_at: clusterNow,
     updated_at: clusterNow
   })
