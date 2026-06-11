@@ -21,6 +21,7 @@ import {
   apiDeleteTag
 } from './projects'
 import { apiGetTestRun, apiGetNetworkRequests, apiGetRecentTestRuns, apiGetTestRunSummary, apiDeleteTestRun, apiGetFailureGroups, apiGetRegressionContext } from './test-runs'
+import { apiSetupTestRun, apiBeginTestRun, apiPostRunEvents, apiFinishTestRun, apiCancelStaleSimulatorRuns } from './reporter'
 import { apiGetUsers, apiCreateUser, apiDeleteUser, apiGetUserApiKeys, apiCreateUserApiKey, apiDeleteUserApiKey } from './users'
 import { apiGetTestCase, apiGetTestCaseHistory, apiGetTestCaseTraces } from './test-cases'
 import { apiPatchClusterStatus } from './failure-clusters'
@@ -44,6 +45,13 @@ const routes: RouteEntry[] = [
   { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/test-cases$/, handler: m => apiGetProjectTestCases(+m[1]!) },
   { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/slow-tests$/, handler: (m, _, q) => apiGetProjectSlowTests(+m[1]!, q ? Number(q.get('runs')) || 10 : 10) },
   { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/failure-clusters$/, handler: m => apiGetProjectFailureClusters(+m[1]!) },
+
+  // Reporter streaming protocol (used by the demo run simulator)
+  { method: 'POST', pattern: /^\/api\/test-runs\/setup$/, handler: (_, body) => apiSetupTestRun(body as Parameters<typeof apiSetupTestRun>[0]) },
+  { method: 'POST', pattern: /^\/api\/test-runs\/(\d+)\/begin$/, handler: (m, body) => apiBeginTestRun(+m[1]!, body as Parameters<typeof apiBeginTestRun>[1]) },
+  { method: 'POST', pattern: /^\/api\/test-runs\/(\d+)\/events$/, handler: (m, body) => apiPostRunEvents(+m[1]!, body as Parameters<typeof apiPostRunEvents>[1]) },
+  { method: 'POST', pattern: /^\/api\/test-runs\/(\d+)\/finish$/, handler: (m, body) => apiFinishTestRun(+m[1]!, body as Parameters<typeof apiFinishTestRun>[1]) },
+  { method: 'POST', pattern: /^\/api\/demo\/cancel-stale-runs$/, handler: (_, body) => apiCancelStaleSimulatorRuns(body as Parameters<typeof apiCancelStaleSimulatorRuns>[0]) },
 
   // Test runs
   { method: 'GET', pattern: /^\/api\/test-runs\/recent$/, handler: () => apiGetRecentTestRuns() },

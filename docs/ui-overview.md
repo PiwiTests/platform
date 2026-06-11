@@ -137,6 +137,18 @@ The dashboard uses Server-Sent Events (SSE) for live updates:
 
 This means you never need to manually refresh the dashboard — it updates itself whenever CI submits new results.
 
+## Demo run simulator
+
+The [live demo](https://phenx.github.io/piwi-dashboard/demo/) includes a **Simulate a test run** menu in the demo banner. It replays the exact streaming protocol a Piwi reporter speaks during a real Playwright run — entirely in your browser — so you can watch a run arrive live. Available scenarios:
+
+- **Passing run** — all tests pass across 4 parallel workers
+- **Run with failures** — failures joining a known failure cluster, plus a brand-new cluster
+- **Flaky retries** — tests that fail and then pass on retry
+- **Performance regression** — a green run that is ~2× slower, with degraded endpoints
+- **Interrupted run** — a CI job killed partway through the suite
+
+Each simulation creates a real run in the in-browser database: initialization status, live per-test updates, worker timeline, failure groups, regression context, and history-based comparisons all behave exactly as they would against a real server.
+
 ## Responsive design
 
 The dashboard is fully responsive:
