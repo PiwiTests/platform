@@ -251,7 +251,7 @@ test.describe('Dashboard UI Tests', () => {
     await waitForHydration(page)
 
     // Wait for the RunSummary grid to render
-    const runSummary = page.locator('[class*="grid"][class*="lg:grid-cols-8"]').first()
+    const runSummary = page.locator('[class*="grid"][class*="lg:grid-cols-12"]').first()
     await expect(runSummary).toBeVisible()
 
     // Get the metadata block cards (direct children of the grid with col-span classes)
