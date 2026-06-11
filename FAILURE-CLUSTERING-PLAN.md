@@ -95,6 +95,24 @@ substrate that makes pillar 4 genuinely smart.
 Verification: typecheck ✓, lint ✓, full functional suite ✓ (216 passed,
 42 skipped — PG/S3 suites that need external services).
 
+### Phase 2 — API endpoint for failure groups
+
+- `GET /api/test-runs/[id]/failure-groups` endpoint implemented with:
+  - Grouped by cluster with signature, error type, selector
+  - `caseCount` (distinct test cases), `occurrences` (total runs-case rows)
+  - `isNew` flag (first-seen in this run), `firstSeenAt` timestamp
+  - `flaky` detection (a test in the cluster passed on retry in this run)
+  - `workerCorrelated` heuristic (multiple tests failing on the same worker suggests infra)
+  - Cases sorted by title with testRunsCaseId, retries, worker, passedOnRetry
+  - Results sorted by caseCount descending
+
+### Demo seed
+
+The demo seed now generates 8 failure clusters with diverse error patterns
+(timeouts, assertions, strict-mode violations) and links them to failed
+`test_runs_cases` rows via `failure_cluster_id`. The demo router doesn't
+query `failure_clusters` yet (column-select-only ref needed for phase 2 UI).
+
 ### Migration state notes (important for future schema changes)
 
 The pre-existing migrations 0015–0017 (SQLite) and 0007–0008 (PG) were written
@@ -116,20 +134,20 @@ by hand: they have **no snapshots** and **future-dated journal timestamps**
 
 ### Demo mode
 
-Untouched in phase 1: the demo router uses explicit column selects only and
-never queries `failure_clusters`, so stale IndexedDB seeds keep working. When
-phase 2 adds cluster endpoints, add handlers in `app/demo/api/router.ts` and
-regenerate the seed (`npm run seed:demo`).
+The demo seed now includes 8 failure clusters with realistic error patterns
+(e.g. timeout errors for checkout flows, assertion errors for API endpoints,
+strict-mode violations for UI components). Each cluster is linked to its
+affected `test_runs_cases` rows via `failure_cluster_id`.
+
+The demo router doesn't query `failure_clusters` yet (column-select-only ref
+needed for phase 2 UI).
 
 ## Not yet implemented (next phases)
 
-- **Phase 2 — surface clustering**: `GET /api/test-runs/[id]/failure-groups`
-  (clusters touching a run: signature, count as
-  `COUNT(DISTINCT test_case_id)` — retries produce one row each — affected
-  cases, `isNew` vs `knownSince`); `FailureGroups.vue` on the run detail page
-  (cards with "New in this run" / "Known since run #X" badges, click to filter
-  `TestCasesList`); cluster line in `TestCaseErrorCard.vue`; cluster context in
-  `app/utils/fix-prompt.ts`; demo router handlers + seed regen.
+- **Phase 2 — surface clustering UI**: `FailureGroups.vue` on the run detail
+  page (cards with "New in this run" / "Known since run #X" badges, click to
+  filter `TestCasesList`); cluster line in `TestCaseErrorCard.vue`; cluster
+  context in `app/utils/fix-prompt.ts`; demo router handlers.
 - **Phase 3 — project-level board**: `GET /api/projects/[id]/failure-clusters`
   (ongoing failures, trends), cluster `status` column (open/resolved/ignored).
 - **Pillar 2**: last-green resolution + run diff view.

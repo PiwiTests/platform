@@ -319,6 +319,62 @@ Get test run details with test cases. Includes `flakyTests` count. Failed test c
 
 ---
 
+### GET `/api/test-runs/[id]/failure-groups`
+
+Returns failures grouped by root cause using error fingerprinting. Each group represents a distinct failure pattern (e.g. a specific timeout or assertion) shared by one or more test cases.
+
+**Response** — array of failure groups:
+
+```json
+[
+  {
+    "clusterId": 7,
+    "signature": "TimeoutError: page.goto: Timeout <N>ms exceeded.",
+    "errorType": "timeout",
+    "selector": null,
+    "caseCount": 3,
+    "isNew": true,
+    "firstSeenRunId": 142,
+    "firstSeenAt": 1704067200,
+    "occurrences": 3,
+    "flaky": false,
+    "workerCorrelated": false,
+    "cases": [
+      {
+        "testRunsCaseId": 891,
+        "testCaseId": 45,
+        "title": "Tab bar navigation works correctly",
+        "filePath": "tests/mobile/navigation.spec.ts",
+        "retries": 0,
+        "workerIndex": 2,
+        "passedOnRetry": false
+      }
+    ]
+  }
+]
+```
+
+**Fields**
+
+| Field | Description |
+|-------|-------------|
+| `clusterId` | ID of the `failure_clusters` row |
+| `signature` | First line of the normalized error message (human-readable cluster name) |
+| `errorType` | Heuristic category: `timeout`, `assertion`, `strict-mode`, `navigation`, `crash`, `unknown` |
+| `selector` | Playwright locator extracted from the error, if any |
+| `caseCount` | Number of distinct test cases in this group |
+| `isNew` | `true` if this cluster was first seen in this run |
+| `firstSeenRunId` | The run where this cluster first appeared |
+| `firstSeenAt` | Unix timestamp of the first-seen run's start time (`null` if that run was deleted) |
+| `occurrences` | Total `test_runs_cases` rows linked to this cluster (not decremented on run deletion) |
+| `flaky` | `true` if any test in this group also passed on a later retry in this run |
+| `workerCorrelated` | `true` if multiple tests failed on the same worker while the run used several workers (suggests infrastructure issue) |
+| `cases` | Array of affected test case results with retry and worker info |
+
+**Sort order**: groups are sorted by `caseCount` descending.
+
+---
+
 ### GET `/api/test-runs/[id]/network-requests`
 
 Network requests grouped by `HTTP method + normalized route`.

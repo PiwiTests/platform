@@ -75,11 +75,12 @@ Deep dive into a single test execution:
 - **Summary header** — status, duration, start time, test counts, duration metrics (Avg P90), and metadata blocks (CI/Environment, Source control, Tags/Other) in a responsive card grid
 - **Live progress** — if the run is still in progress (`running` status), a live progress bar and streaming test results appear in real time
 - **Reports** — buttons to open attached HTML reports (Playwright, Monocart) in a new tab or download blob archives
-- **Tabbed right panel** with four tabs:
+- **Tabbed right panel** with five tabs:
   - **Test cases** — every test with status, duration, file location, error messages, traces; scrollable table with sticky header, searchable, filterable by status, and paginated
   - **Workers** — horizontal timeline showing worker assignment per test case; click a bar to jump to that test case in the table
   - **Compare** — select a baseline run for side-by-side delta view showing new failures, recovered tests, and duration changes (improved/regressed/unchanged)
   - **Slow endpoints** — aggregated network request table showing slow API calls grouped by method + normalized route, with avg/p90/max duration and error rate
+  - **Failure groups** — failures grouped by root cause via error fingerprinting; each group shows signature, error type, count, flaky/worker-correlation indicators, and the list of affected test cases with retry info
 - **Delete** — administrators can delete the entire run and associated files
 
 ## Test case detail

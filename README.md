@@ -52,6 +52,7 @@ Running Playwright tests in CI produces HTML reports that are ephemeral — once
 - 🌐 **Network request analysis** — find slow API endpoints grouped by method + normalized route
 - 🔬 **Browser Web Vitals** — TTFB, DOMContentLoaded, FCP and more via the Performance API
 - 📊 **Run comparison** — side-by-side delta view with improved/regressed/unchanged summary
+- 🔗 **Failure clustering** — failed tests sharing the same root cause are grouped automatically via error fingerprinting; run page shows failure groups with flaky and worker-correlation heuristics
 - 🔌 **Playwright reporter** — drop-in custom reporter for automatic result submission, with HTML report and trace uploads
 - ⚡ **Real-time streaming** — live dashboard via Server-Sent Events; pages refresh instantly when a run starts or finishes, with no polling
 - 🔐 **Authentication** — optional role-based access control (administrator, reporter, user) with API key support for CI and OAuth (Google, GitHub)
