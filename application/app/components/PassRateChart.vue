@@ -43,7 +43,7 @@ const y = (d: DataPoint) => d.passRate
 
 const color = 'rgb(34, 197, 94)'
 
-const xyContainerRef = ref<any>(null)
+const xyContainerRef = useTemplateRef('xyContainerRef')
 const tooltipData = ref<DataPoint | null>(null)
 const tooltipPos = ref({ x: 0, y: 0 })
 
@@ -153,9 +153,13 @@ function onChartRender(
           <div class="space-y-0.5 text-xs">
             <div><span class="text-green-500">&#9679;</span> Passed: {{ tooltipData.passed }}</div>
             <div><span class="text-red-500">&#9679;</span> Failed: {{ tooltipData.failed }}</div>
-            <div class="font-medium mt-1">Total: {{ tooltipData.total }}</div>
+            <div class="font-medium mt-1">
+              Total: {{ tooltipData.total }}
+            </div>
           </div>
-          <div class="text-gray-400 text-xs mt-1">Click to view run details</div>
+          <div class="text-gray-400 text-xs mt-1">
+            Click to view run details
+          </div>
         </div>
       </div>
     </div>

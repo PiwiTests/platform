@@ -172,8 +172,12 @@ const allTestRuns = computed(() => {
                   </div>
 
                   <div class="text-right text-sm min-w-[60px]">
-                    <div class="tabular-nums">{{ formatDuration(project.latestRun.duration) }}</div>
-                    <div class="text-xs text-gray-400">{{ project.latestRun.totalTests }} tests</div>
+                    <div class="tabular-nums">
+                      {{ formatDuration(project.latestRun.duration) }}
+                    </div>
+                    <div class="text-xs text-gray-400">
+                      {{ project.latestRun.totalTests }} tests
+                    </div>
                   </div>
 
                   <RunStatusBadge :status="project.latestRun.status" />
