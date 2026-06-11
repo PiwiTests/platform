@@ -41,6 +41,12 @@ const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' |
   'crash': 'error',
   'unknown': 'neutral'
 }
+
+const statusColors: Record<string, 'success' | 'warning' | 'neutral'> = {
+  open: 'warning',
+  resolved: 'success',
+  ignored: 'neutral'
+}
 </script>
 
 <template>
@@ -79,6 +85,14 @@ const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' |
             <div class="flex flex-wrap items-center gap-1.5">
               <UBadge color="neutral" variant="subtle" size="sm">
                 {{ group.caseCount }} {{ group.caseCount === 1 ? 'test' : 'tests' }}
+              </UBadge>
+              <UBadge
+                v-if="group.status"
+                :color="statusColors[group.status] || 'neutral'"
+                variant="subtle"
+                size="sm"
+              >
+                {{ group.status }}
               </UBadge>
               <UBadge
                 v-if="group.errorType"

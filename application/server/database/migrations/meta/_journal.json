@@ -134,6 +134,13 @@
       "when": 1788400000000,
       "tag": "0018_failure_clusters",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1788500000000,
+      "tag": "0019_cluster_status",
+      "breakpoints": true
     }
   ]
 }

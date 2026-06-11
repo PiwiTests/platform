@@ -387,6 +387,8 @@ export interface FailureGroup {
   signature: string
   errorType: string | null
   selector: string | null
+  status: string
+  triageNote: string | null
   caseCount: number
   isNew: boolean
   firstSeenRunId: number
@@ -407,6 +409,8 @@ export interface ProjectFailureCluster {
   errorType: string | null
   selector: string | null
   sampleError: string | null
+  status: string
+  triageNote: string | null
   firstSeenRunId: number
   lastSeenRunId: number
   occurrences: number

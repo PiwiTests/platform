@@ -317,6 +317,12 @@ Top 20 slowest test cases with avg, max, min duration and trend data.
 
 Failure clusters recorded for a project (up to 100, most recently seen first). Each cluster groups failures sharing the same normalized error fingerprint across all runs.
 
+**Query parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `status` | `string` | Optional filter: `open`, `resolved`, or `ignored` |
+
 **Response** — array of clusters:
 
 ```json
@@ -328,6 +334,8 @@ Failure clusters recorded for a project (up to 100, most recently seen first). E
     "errorType": "timeout",
     "selector": null,
     "sampleError": "TimeoutError: page.goto: Timeout 30000ms exceeded.\n…",
+    "status": "open",
+    "triageNote": null,
     "firstSeenRunId": 142,
     "lastSeenRunId": 198,
     "occurrences": 12,
@@ -338,7 +346,7 @@ Failure clusters recorded for a project (up to 100, most recently seen first). E
 ]
 ```
 
-`occurrences` counts every linked `test_runs_cases` row (retries included, not decremented on run deletion); `affectedTests` is the number of distinct test cases that ever hit the cluster. Returns 404 for unknown projects.
+`occurrences` counts every linked `test_runs_cases` row (retries included, not decremented on run deletion); `affectedTests` is the number of distinct test cases that ever hit the cluster. `status` can be `open`, `resolved`, or `ignored` — managed via the PATCH endpoint below. Returns 404 for unknown projects.
 
 ---
 
@@ -361,6 +369,8 @@ Returns failures grouped by root cause using error fingerprinting. Each group re
     "signature": "TimeoutError: page.goto: Timeout <N>ms exceeded.",
     "errorType": "timeout",
     "selector": null,
+    "status": "open",
+    "triageNote": null,
     "caseCount": 3,
     "isNew": true,
     "firstSeenRunId": 142,
@@ -391,7 +401,8 @@ Returns failures grouped by root cause using error fingerprinting. Each group re
 | `signature` | First line of the normalized error message (human-readable cluster name) |
 | `errorType` | Heuristic category: `timeout`, `assertion`, `strict-mode`, `navigation`, `crash`, `unknown` |
 | `selector` | Playwright locator extracted from the error, if any |
-| `caseCount` | Number of distinct test cases in this group |
+| `status` | Triage status: `open`, `resolved`, or `ignored` |
+| `triageNote` | Optional comment attached when the cluster was triaged |
 | `isNew` | `true` if this cluster was first seen in this run |
 | `firstSeenRunId` | The run where this cluster first appeared |
 | `firstSeenAt` | Start time of the first-seen run (`null` if that run was deleted) |
@@ -401,6 +412,36 @@ Returns failures grouped by root cause using error fingerprinting. Each group re
 | `cases` | Array of affected test case results with retry and worker info |
 
 **Sort order**: groups are sorted by `caseCount` descending.
+
+---
+
+### PATCH `/api/failure-clusters/[id]/status`
+
+Update the triage status and optional note for a failure cluster. Used by the triage workflow on the project board.
+
+**Request body**
+
+```json
+{
+  "status": "resolved",
+  "triageNote": "Investigated — flaky test infrastructure"
+}
+```
+
+`status` is required and must be one of `open`, `resolved`, or `ignored`. `triageNote` is optional (set to `null` to clear).
+
+**Response**
+
+```json
+{
+  "success": true,
+  "id": 7,
+  "status": "resolved",
+  "triageNote": "Investigated — flaky test infrastructure"
+}
+```
+
+Returns 400 for invalid status values, 404 for unknown clusters.
 
 ---
 

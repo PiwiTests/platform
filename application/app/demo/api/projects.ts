@@ -335,6 +335,8 @@ export async function apiGetProjectFailureClusters(id: number) {
     errorType: failureClusters.errorType,
     selector: failureClusters.selector,
     sampleError: failureClusters.sampleError,
+    status: failureClusters.status,
+    triageNote: failureClusters.triageNote,
     firstSeenRunId: failureClusters.firstSeenRunId,
     lastSeenRunId: failureClusters.lastSeenRunId,
     occurrences: failureClusters.occurrences

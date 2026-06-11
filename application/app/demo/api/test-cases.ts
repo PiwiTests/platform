@@ -2,9 +2,9 @@
  * Client-side implementations of the /api/test-cases* endpoints for demo mode.
  */
 
-import { eq, desc, sql } from 'drizzle-orm'
+import { eq, and, desc, sql } from 'drizzle-orm'
 import { getDemoDb } from '../db.client'
-import { testCases, testRunsCases, testRuns, projects, files } from '~~/server/database/schema.sqlite'
+import { testCases, testRunsCases, testRuns, projects, files, failureClusters } from '~~/server/database/schema.sqlite'
 
 /** GET /api/test-cases/:id — returns a single test_runs_case (not test_case) */
 export async function apiGetTestCase(id: number) {
@@ -26,6 +26,35 @@ export async function apiGetTestCase(id: number) {
     project = projectResults[0]
   }
 
+  // Failure cluster context (only for clustered failures)
+  let failureCluster = null
+  if (testRunsCase.failureClusterId) {
+    const [cluster] = await db.select().from(failureClusters)
+      .where(eq(failureClusters.id, testRunsCase.failureClusterId))
+    if (cluster) {
+      const [sameRun] = await db.select({
+        count: sql<number>`count(distinct ${testRunsCases.testCaseId})`
+      })
+        .from(testRunsCases)
+        .where(and(
+          eq(testRunsCases.testRunId, testRunsCase.testRunId),
+          eq(testRunsCases.failureClusterId, cluster.id)
+        ))
+      failureCluster = {
+        id: cluster.id,
+        signature: cluster.signature,
+        errorType: cluster.errorType,
+        selector: cluster.selector,
+        status: cluster.status ?? 'open',
+        triageNote: cluster.triageNote ?? null,
+        occurrences: cluster.occurrences,
+        firstSeenRunId: cluster.firstSeenRunId,
+        isNew: cluster.firstSeenRunId === testRunsCase.testRunId,
+        sameRunCaseCount: Number(sameRun?.count ?? 0)
+      }
+    }
+  }
+
   return {
     id: testRunsCase.id,
     title: testCase?.title,
@@ -42,6 +71,7 @@ export async function apiGetTestCase(id: number) {
     networkRequests: testRunsCase.networkRequests,
     webVitals: testRunsCase.webVitals,
     workerIndex: testRunsCase.workerIndex,
+    failureCluster,
     testRun: testRun ? { ...testRun, project } : testRun
   }
 }

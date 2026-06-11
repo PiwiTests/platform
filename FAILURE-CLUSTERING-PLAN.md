@@ -167,10 +167,33 @@ by hand: they have **no snapshots** and **future-dated journal timestamps**
   hand-written era may differ in details such as the `updated_at` indexes,
   which were never created by any PG migration.)
 
-## Not yet implemented (next phases)
+## Implemented (June 11, 2026 — afternoon)
 
-- Cluster `status` column (open/resolved/ignored) with a triage workflow on
-  the project board.
+- **Cluster status**: `status` column (`open`/`resolved`/`ignored`) with
+  optional `triage_note` on `failure_clusters`.
+- Schema + migrations (SQLite 0019, PG 0010): `ALTER TABLE ADD COLUMN status`,
+  `triage_note`, and index on `status`.
+- `PATCH /api/failure-clusters/[id]/status` — update status + optional triage
+  note; validates status values, returns 400/404.
+- `GET /api/projects/[id]/failure-clusters` now returns `status` + `triageNote`
+  and supports `?status=open|resolved|ignored` filter.
+- `GET /api/test-runs/[id]/failure-groups` returns `status` + `triageNote` per
+  group.
+- `GET /api/test-cases/[id]` returns `status` + `triageNote` in the
+  `failureCluster` block.
+- UI: status badges on `FailureClustersList.vue`, `FailureGroups.vue`,
+  `TestCaseErrorCard.vue`. `FailureClustersList.vue` has a status filter
+  dropdown and an inline triage panel (status selector + optional note +
+  save/cancel) that calls the PATCH endpoint.
+- Demo seed updated: `status` column in CREATE TABLE, `status: 'open'` on all
+  clusters, `triage_note: null`.
+- Demo router + handlers for the PATCH endpoint, including the missing
+  `failureCluster` block in `apiGetTestCase`.
+- Tests: 5 new e2e tests (status default, PATCH update, PATCH validation,
+  status filter, failure-groups status field).
+- Docs: `docs/api.md` updated with the PATCH endpoint docs and new fields.
+
+## Not yet implemented (next phases)
 - **Pillar 2 (full)**: last-green resolution + run diff view (the
   `isNew`/known-since flags cover the basic case).
 - **Pillar 3 (full)**: cross-run flakiness scoring + dedicated flaky board

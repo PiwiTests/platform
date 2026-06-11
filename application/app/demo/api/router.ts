@@ -23,6 +23,7 @@ import {
 import { apiGetTestRun, apiGetNetworkRequests, apiGetRecentTestRuns, apiGetTestRunSummary, apiDeleteTestRun, apiGetFailureGroups } from './test-runs'
 import { apiGetUsers, apiCreateUser, apiDeleteUser, apiGetUserApiKeys, apiCreateUserApiKey, apiDeleteUserApiKey } from './users'
 import { apiGetTestCase, apiGetTestCaseHistory, apiGetTestCaseTraces } from './test-cases'
+import { apiPatchClusterStatus } from './failure-clusters'
 import { apiGetAdminStats } from './admin'
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
@@ -53,6 +54,9 @@ const routes: RouteEntry[] = [
 
   // Failure groups
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/failure-groups$/, handler: m => apiGetFailureGroups(+m[1]!) },
+
+  // Failure cluster status
+  { method: 'PATCH', pattern: /^\/api\/failure-clusters\/(\d+)\/status$/, handler: (m, body) => apiPatchClusterStatus(+m[1]!, body as Parameters<typeof apiPatchClusterStatus>[1]) },
 
   // Test-run streaming (no-op in demo mode; only terminal-status runs exist)
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/stream$/, handler: () => Promise.resolve({ ok: true }) },

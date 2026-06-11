@@ -71,6 +71,13 @@
       "when": 1788400000000,
       "tag": "0009_failure_clusters",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788500000000,
+      "tag": "0010_cluster_status",
+      "breakpoints": true
     }
   ]
 }

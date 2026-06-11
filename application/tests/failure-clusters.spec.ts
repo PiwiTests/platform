@@ -205,4 +205,65 @@ test.describe.serial('Failure clustering', () => {
     const missing = await request.get('/api/projects/999999/failure-clusters')
     expect(missing.status()).toBe(404)
   })
+
+  test('cluster status defaults to open and is exposed in project endpoint', async ({ request }) => {
+    const response = await request.get(`/api/projects/${projectId}/failure-clusters`)
+    const clusters: Array<{ id: number, status: string, triageNote: string | null }> = await response.json()
+
+    const login = clusters.find(c => c.id === firstRunClusterId)!
+    expect(login).toBeDefined()
+    expect(login.status).toBe('open')
+    expect(login.triageNote).toBeNull()
+  })
+
+  test('PATCH cluster status updates status and triage note', async ({ request }) => {
+    const note = 'Investigated — flaky test infrastructure'
+    const patchRes = await request.patch(`/api/failure-clusters/${firstRunClusterId}/status`, {
+      data: { status: 'resolved', triageNote: note }
+    })
+    expect(patchRes.ok()).toBeTruthy()
+    const patch = await patchRes.json()
+    expect(patch.status).toBe('resolved')
+    expect(patch.triageNote).toBe(note)
+
+    // Verify the update is persisted
+    const getRes = await request.get(`/api/projects/${projectId}/failure-clusters`)
+    const clusters: Array<{ id: number, status: string, triageNote: string | null }> = await getRes.json()
+    const login = clusters.find(c => c.id === firstRunClusterId)!
+    expect(login.status).toBe('resolved')
+    expect(login.triageNote).toBe(note)
+  })
+
+  test('PATCH cluster status rejects invalid status values', async ({ request }) => {
+    const res = await request.patch(`/api/failure-clusters/${firstRunClusterId}/status`, {
+      data: { status: 'invalid' }
+    })
+    expect(res.status()).toBe(400)
+  })
+
+  test('status filter on project clusters endpoint', async ({ request }) => {
+    // After the previous test, the login timeout cluster is resolved
+    const resolved = await request.get(`/api/projects/${projectId}/failure-clusters?status=resolved`)
+    expect(resolved.ok()).toBeTruthy()
+    const resolvedClusters: Array<{ id: number }> = await resolved.json()
+    expect(resolvedClusters.some(c => c.id === firstRunClusterId)).toBeTruthy()
+
+    const open = await request.get(`/api/projects/${projectId}/failure-clusters?status=open`)
+    expect(open.ok()).toBeTruthy()
+    const openClusters: Array<{ id: number }> = await open.json()
+    expect(openClusters.some(c => c.id === firstRunClusterId)).toBeFalsy()
+  })
+
+  test('failure-groups endpoint exposes cluster status', async ({ request }) => {
+    const { testRunId: runId } = await submitRun(request, [
+      { title: 'login via header', status: 'failed', duration: 31000, location: 'tests/auth.spec.ts:10:5', error: loginTimeout(30000) },
+      { title: 'homepage loads', status: 'passed', duration: 900, location: 'tests/home.spec.ts:5:5' }
+    ])
+
+    const groupsRes = await request.get(`/api/test-runs/${runId}/failure-groups`)
+    const groups: Array<{ status: string, triageNote: string | null }> = await groupsRes.json()
+    expect(groups[0]).toBeDefined()
+    expect(groups[0].status).toBe('resolved')
+    expect(groups[0].triageNote).toBe('Investigated — flaky test infrastructure')
+  })
 })

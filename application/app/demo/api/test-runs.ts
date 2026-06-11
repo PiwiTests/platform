@@ -110,6 +110,8 @@ interface FailureGroupResult {
   signature: string
   errorType: string | null
   selector: string | null
+  status: string
+  triageNote: string | null
   caseCount: number
   isNew: boolean
   firstSeenRunId: number
@@ -151,6 +153,8 @@ export async function apiGetFailureGroups(id: number) {
     signature: failureClusters.signature,
     errorType: failureClusters.errorType,
     selector: failureClusters.selector,
+    status: failureClusters.status,
+    triageNote: failureClusters.triageNote,
     firstSeenRunId: failureClusters.firstSeenRunId,
     occurrences: failureClusters.occurrences
   })
@@ -177,6 +181,8 @@ export async function apiGetFailureGroups(id: number) {
         signature: row.signature,
         errorType: row.errorType,
         selector: row.selector,
+        status: row.status ?? 'open',
+        triageNote: row.triageNote ?? null,
         caseCount: 0,
         isNew: row.firstSeenRunId === id,
         firstSeenRunId: row.firstSeenRunId,

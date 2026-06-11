@@ -168,6 +168,8 @@ CREATE TABLE IF NOT EXISTS failure_clusters (
   error_type TEXT,
   selector TEXT,
   sample_error TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  triage_note TEXT,
   first_seen_run_id INTEGER NOT NULL,
   last_seen_run_id INTEGER NOT NULL,
   occurrences INTEGER NOT NULL DEFAULT 0,
@@ -177,6 +179,7 @@ CREATE TABLE IF NOT EXISTS failure_clusters (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_failure_clusters_project_fingerprint ON failure_clusters (project_id, fingerprint);
 CREATE INDEX IF NOT EXISTS idx_failure_clusters_project_last_seen ON failure_clusters (project_id, last_seen_run_id);
+CREATE INDEX IF NOT EXISTS idx_failure_clusters_status ON failure_clusters (status);
 
 CREATE TABLE IF NOT EXISTS tags (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -638,6 +641,8 @@ for (const cl of CLUSTERS) {
     error_type: cl.errorType,
     selector,
     sample_error: cl.errorText,
+    status: 'open',
+    triage_note: null,
     first_seen_run_id: stats.firstRunId ?? firstRunByProject[cl.projectId],
     last_seen_run_id: stats.lastRunId ?? lastRunByProject[cl.projectId],
     occurrences: stats.occurrences || 1,
