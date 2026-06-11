@@ -13,7 +13,7 @@ import { EventEmitter } from 'node:events'
  */
 
 export interface RunEvent {
-  type: 'test-begin' | 'test-completed' | 'run-progress' | 'run-finished'
+  type: 'test-begin' | 'test-completed' | 'run-progress' | 'run-finalizing' | 'run-finished'
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: Record<string, any>
   seq: number
@@ -21,7 +21,7 @@ export interface RunEvent {
 }
 
 export interface GlobalRunEvent {
-  type: 'run-started' | 'run-initialising' | 'run-finished' | 'run-submitted' | 'run-cancelled'
+  type: 'run-started' | 'run-initialising' | 'run-finalizing' | 'run-finished' | 'run-submitted' | 'run-cancelled'
   runId: number
   projectId: number
   status?: string
@@ -31,6 +31,8 @@ class RunEventBus {
   private emitter = new EventEmitter()
   private globalEmitter = new EventEmitter()
   private sequences = new Map<number, number>()
+  /** Stores pending final status for runs in `finalizing` state, keyed by run ID */
+  private finalStatuses = new Map<number, string>()
 
   constructor() {
     // Allow many concurrent listeners (one per SSE connection)
@@ -68,10 +70,29 @@ class RunEventBus {
   }
 
   /**
+   * Store a final status for a run entering the `finalizing` state.
+   * The upload endpoint will consume this to transition to the actual final status.
+   */
+  setFinalStatus(runId: number, status: string): void {
+    this.finalStatuses.set(runId, status)
+  }
+
+  /**
+   * Read and remove the stored final status for a run.
+   * Returns undefined if no status was stored (e.g., the run wasn't finalizing).
+   */
+  consumeFinalStatus(runId: number): string | undefined {
+    const status = this.finalStatuses.get(runId)
+    this.finalStatuses.delete(runId)
+    return status
+  }
+
+  /**
    * Clean up sequences for a finished run.
    */
   cleanup(runId: number): void {
     this.sequences.delete(runId)
+    this.finalStatuses.delete(runId)
   }
 
   /**

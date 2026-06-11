@@ -18,7 +18,8 @@ export async function cancelInstanceRuns(
     eq(testRuns.instanceId, instanceId),
     or(
       eq(testRuns.status, 'running'),
-      eq(testRuns.status, 'initialising')
+      eq(testRuns.status, 'initialising'),
+      eq(testRuns.status, 'finalizing')
     )
   ]
 

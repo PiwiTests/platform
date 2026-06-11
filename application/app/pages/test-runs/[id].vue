@@ -16,7 +16,8 @@ const isDeleteConfirmOpen = ref(false)
 const deleting = ref(false)
 
 // Live streaming state
-const isLive = computed(() => testRun.value?.status === 'running')
+const isLive = computed(() => testRun.value?.status === 'running' || testRun.value?.status === 'finalizing')
+const isFinalizing = ref(false)
 const liveTestCases = ref<TestCaseResult[]>([])
 const liveTestCaseKeys = new Map<string, true>()
 const liveProgress = ref<{ totalTests: number, passedTests: number, failedTests: number, skippedTests: number } | null>(null)
@@ -88,11 +89,29 @@ function flushPendingEvents() {
       }
     } else if (parsed.type === 'run-progress') {
       liveProgress.value = data as { totalTests: number, passedTests: number, failedTests: number, skippedTests: number }
+    } else if (parsed.type === 'run-finalizing') {
+      // Tests are done, reports/traces are uploading — show progress bar
+      isFinalizing.value = true
+      liveProgress.value = data as { totalTests: number, passedTests: number, failedTests: number, skippedTests: number }
     } else if (parsed.type === 'run-finished') {
+      isFinalizing.value = false
       disconnectStream()
       refresh()
+      pollForReports()
     }
   }
+}
+
+function pollForReports(attempts = 0): void {
+  // The reporter may upload HTML/Monocart reports AFTER the run finishes.
+  // Poll briefly so they appear without requiring a manual refresh.
+  if (attempts >= 10) return
+  setTimeout(async () => {
+    await refresh()
+    if (allReports.value.length === 0) {
+      pollForReports(attempts + 1)
+    }
+  }, 1500 * (attempts + 1))
 }
 
 function connectToStream() {
@@ -202,7 +221,7 @@ const { summaryColSpanClass, blockColSpanClass } = useDetailGrid(() => {
   let count = 0
   if (testRun.value?.metadata?.ci || testRun.value?.environment) count++
   if (testRun.value?.metadata?.scm) count++
-  if (testRun.value?.storageStats && testRun.value.storageStats.totalFiles > 0) count++
+  if ((testRun.value?.storageStats && testRun.value.storageStats.totalFiles > 0) || isFinalizing.value) count++
   if (testRun.value?.metadata?.tags?.length || testRun.value?.metadata?.projectDescription || testRun.value?.metadata?.relatedIssue || testRun.value?.metadata?.customData) count++
   return count
 })
@@ -317,6 +336,7 @@ function handleSelectCluster(clusterId: number) {
           :show-custom-data="showCustomData"
           :summary-col-span-class="summaryColSpanClass"
           :block-col-span-class="blockColSpanClass"
+          :finalizing="isFinalizing"
           @update:show-custom-data="showCustomData = $event"
         />
 

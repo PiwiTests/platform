@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS projects (
   updated_at INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS projects_name_unique ON projects (name);
+CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects (updated_at);
 
 CREATE TABLE IF NOT EXISTS test_cases (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -91,7 +92,7 @@ CREATE TABLE IF NOT EXISTS test_cases (
   FOREIGN KEY (project_id) REFERENCES projects(id)
 );
 CREATE INDEX IF NOT EXISTS idx_test_cases_project_id ON test_cases (project_id);
-CREATE INDEX IF NOT EXISTS idx_test_cases_file_path_title ON test_cases (file_path, title);
+CREATE INDEX IF NOT EXISTS idx_test_cases_file_path_title ON test_cases (project_id, file_path, title);
 
 CREATE TABLE IF NOT EXISTS test_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -115,6 +116,7 @@ CREATE TABLE IF NOT EXISTS test_runs (
   FOREIGN KEY (project_id) REFERENCES projects(id)
 );
 CREATE INDEX IF NOT EXISTS idx_test_runs_project_id ON test_runs (project_id);
+CREATE INDEX IF NOT EXISTS idx_test_runs_start_time ON test_runs (start_time);
 
 CREATE TABLE IF NOT EXISTS test_runs_cases (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -142,6 +144,7 @@ CREATE TABLE IF NOT EXISTS test_runs_cases (
 );
 CREATE INDEX IF NOT EXISTS idx_test_runs_cases_test_run_id ON test_runs_cases (test_run_id);
 CREATE INDEX IF NOT EXISTS idx_test_runs_cases_test_case_id ON test_runs_cases (test_case_id);
+CREATE INDEX IF NOT EXISTS idx_test_runs_cases_failure_cluster_id ON test_runs_cases (failure_cluster_id);
 
 CREATE TABLE IF NOT EXISTS files (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -159,6 +162,28 @@ CREATE TABLE IF NOT EXISTS files (
 );
 CREATE INDEX IF NOT EXISTS idx_files_test_run_id ON files (test_run_id);
 CREATE INDEX IF NOT EXISTS idx_files_test_runs_case_id ON files (test_runs_case_id);
+
+CREATE TABLE IF NOT EXISTS trace_resources (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  project_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  path TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trace_resources_project_name ON trace_resources (project_id, name);
+
+CREATE TABLE IF NOT EXISTS trace_blobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  project_id INTEGER NOT NULL,
+  hash TEXT NOT NULL,
+  path TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trace_blobs_project_hash ON trace_blobs (project_id, hash);
 
 CREATE TABLE IF NOT EXISTS failure_clusters (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -213,6 +238,7 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_unique ON users (username);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_oauth ON users (oauth_provider, oauth_provider_id);
 
 CREATE TABLE IF NOT EXISTS api_keys (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,

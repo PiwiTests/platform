@@ -346,12 +346,47 @@ export default eventHandler(async (event) => {
     )
   }
 
-  // When attaching reports to an existing streaming run, notify the dashboard so it
-  // can refresh and display the newly uploaded reports.  (In streaming mode the run is
-  // finished before this upload happens, so the initial run-finished refresh may have
-  // occurred before the reports were stored in the database.)
+  // When attaching reports to an existing streaming run, either transition from
+  // finalizing to the actual final status, or re-notify if already finished.
   if (attachingToExistingRun) {
-    runEventBus.publishGlobal({ type: 'run-finished', runId: testRun.id, projectId: testRun.projectId, status: existingRunStatus })
+    const finalStatus = existingRunStatus === 'finalizing'
+      ? runEventBus.consumeFinalStatus(existingTestRunId!)
+      : undefined
+
+    if (finalStatus) {
+      // Run was in finalizing state — transition to actual final status now
+      await db.update(testRuns)
+        .set({ status: finalStatus })
+        .where(eq(testRuns.id, existingTestRunId!))
+
+      // Notify per-run SSE subscribers that the run is fully finished
+      runEventBus.publish(existingTestRunId!, {
+        type: 'run-finished',
+        data: { status: finalStatus }
+      })
+
+      // Broadcast global run-finished event with the actual final status
+      runEventBus.publishGlobal({
+        type: 'run-finished',
+        runId: existingTestRunId!,
+        projectId: testRun.projectId,
+        status: finalStatus
+      })
+
+      // Cleanup event bus for this run
+      runEventBus.cleanup(existingTestRunId!)
+    } else if (existingRunStatus === 'finalizing') {
+      // Server restarted between finish and upload — final status map was lost.
+      // Set a temporary "failed" status so the run doesn't stay finalizing forever.
+      console.warn(`[Upload] Run #${existingTestRunId} was finalizing but final status not found; marking as failed`)
+      await db.update(testRuns)
+        .set({ status: 'failed' })
+        .where(eq(testRuns.id, existingTestRunId!))
+      runEventBus.publishGlobal({ type: 'run-finished', runId: existingTestRunId!, projectId: testRun.projectId, status: 'failed' })
+    } else {
+      // Run already had a final status — just re-notify for dashboard refresh
+      runEventBus.publishGlobal({ type: 'run-finished', runId: testRun.id, projectId: testRun.projectId, status: existingRunStatus! })
+    }
   }
 
   // Create test run directory for traces

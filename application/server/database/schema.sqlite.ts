@@ -16,7 +16,7 @@ export const projects = sqliteTable('projects', {
 export const testRuns = sqliteTable('test_runs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   projectId: integer('project_id').notNull().references(() => projects.id),
-  status: text('status').notNull(), // 'passed', 'failed', 'timedout', 'interrupted', 'running', 'cancelled', 'initialising'
+  status: text('status').notNull(), // 'passed', 'failed', 'timedout', 'interrupted', 'running', 'cancelled', 'initialising', 'finalizing'
   startTime: integer('start_time', { mode: 'timestamp' }).notNull(),
   duration: integer('duration'), // in milliseconds
   totalTests: integer('total_tests').notNull().default(0),

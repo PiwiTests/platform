@@ -8,6 +8,7 @@ const props = defineProps<{
   showCustomData: boolean
   summaryColSpanClass: string
   blockColSpanClass: string
+  finalizing?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -22,41 +23,37 @@ const storageStats = computed(() => props.testRun?.storageStats)
     <div :class="summaryColSpanClass">
       <UCard class="shadow-xs h-full">
         <div class="space-y-3">
-          <div class="flex items-start justify-between gap-3">
-            <div class="flex items-center gap-2.5 min-w-0">
+          <div class="flex items-start gap-3">
+            <div class="flex items-center gap-2.5 min-w-0 flex-1">
               <div
                 class="shrink-0 size-8 rounded-lg flex items-center justify-center"
                 :class="{
                   'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400': testRun?.status === 'passed',
-                  'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400': testRun?.status === 'failed' || testRun?.status === 'timedOut',
+                  'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400': testRun?.status === 'failed' || testRun?.status === 'timedout',
                   'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400': testRun?.status === 'cancelled' || testRun?.status === 'skipped',
-                  'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400': testRun?.status === 'running' || testRun?.status === 'initialising'
+                  'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400': testRun?.status === 'running' || testRun?.status === 'initialising' || testRun?.status === 'finalizing'
                 }"
               >
                 <UIcon
                   :name="testRun?.status === 'passed' ? 'i-lucide-check-circle-2'
-                    : testRun?.status === 'failed' || testRun?.status === 'timedOut' ? 'i-lucide-x-circle'
-                      : testRun?.status === 'running' || testRun?.status === 'initialising' ? 'i-lucide-loader-circle'
+                    : testRun?.status === 'failed' || testRun?.status === 'timedout' ? 'i-lucide-x-circle'
+                      : testRun?.status === 'running' || testRun?.status === 'initialising' || testRun?.status === 'finalizing' ? 'i-lucide-loader-circle'
                         : 'i-lucide-minus-circle'"
                   class="size-4.5"
-                  :class="{ 'animate-spin': testRun?.status === 'running' || testRun?.status === 'initialising' }"
+                  :class="{ 'animate-spin': testRun?.status === 'running' || testRun?.status === 'initialising' || testRun?.status === 'finalizing' }"
                 />
               </div>
-              <div class="min-w-0">
-                <div class="flex items-center gap-2 flex-wrap">
-                  <h2 class="text-base font-bold truncate">
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <h2 class="text-base font-bold shrink-0">
                     Test run #{{ testRun?.id }}
                   </h2>
                   <RunStatusBadge :status="testRun?.status ?? ''" />
+                  <span class="text-xs text-gray-500 ml-auto whitespace-nowrap">
+                    {{ testRun?.project?.label ?? testRun?.project?.name }} · Started {{ prettyDateFormat(testRun?.startTime) }}
+                  </span>
                 </div>
-                <p class="text-xs text-gray-500 mt-0.5">
-                  {{ testRun?.project?.label ?? testRun?.project?.name }}
-                  &middot; Started {{ prettyDateFormat(testRun?.startTime) }}
-                </p>
               </div>
-            </div>
-            <div v-if="allReports.length > 0" class="shrink-0 hidden sm:flex items-start gap-2">
-              <RunReports :reports="allReports" />
             </div>
           </div>
 
@@ -124,13 +121,6 @@ const storageStats = computed(() => props.testRun?.storageStats)
               </div>
             </div>
           </div>
-
-          <div v-if="allReports.length > 0" class="sm:hidden">
-            <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
-              Reports
-            </p>
-            <RunReports :reports="allReports" />
-          </div>
         </div>
       </UCard>
     </div>
@@ -151,29 +141,47 @@ const storageStats = computed(() => props.testRun?.storageStats)
     />
 
     <!-- Block 3: Storage stats -->
-    <UCard v-if="storageStats?.totalFiles" :class="blockColSpanClass" class="shadow-xs">
+    <UCard v-if="storageStats?.totalFiles || finalizing" :class="blockColSpanClass" class="shadow-xs">
       <template #header>
         <div class="flex items-center gap-2">
           <UIcon name="i-lucide-database" class="w-4 h-4 text-primary" />
           <span class="text-sm font-medium">Storage</span>
+          <span v-if="storageStats?.totalFiles" class="text-xs text-gray-400">
+            · {{ storageStats.totalFiles }} files · {{ formatBytes(storageStats.totalSize) }}
+          </span>
         </div>
       </template>
-      <div class="flex gap-4 text-sm">
-        <div>
-          <p class="text-muted text-xs">
-            Files
-          </p>
-          <p class="font-semibold text-lg">
-            {{ storageStats.totalFiles }}
-          </p>
+      <div v-if="finalizing" class="flex items-center gap-3">
+        <UIcon name="i-lucide-upload" class="size-5 text-info shrink-0 animate-pulse" />
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-sm font-medium">Finalizing test run</span>
+            <span class="text-xs text-gray-500">Uploading reports &amp; traces…</span>
+          </div>
+          <UProgress
+            :value="null"
+            size="sm"
+            color="info"
+            class="rounded-full animate-pulse"
+          />
         </div>
-        <div>
-          <p class="text-muted text-xs">
-            Total size
-          </p>
-          <p class="font-semibold text-lg">
-            {{ formatBytes(storageStats.totalSize) }}
-          </p>
+      </div>
+      <div v-if="storageStats?.totalFiles" class="space-y-1.5 text-sm">
+        <div v-for="report in allReports" :key="report.label" class="flex items-center justify-between">
+          <UButton
+            :href="`/api/files/${getFileApiPath(report.path)}`"
+            :icon="reportIcon(report.type)"
+            target="_blank"
+            size="xs"
+            variant="outline"
+          >
+            {{ report.label }}
+          </UButton>
+          <span class="font-medium tabular-nums text-gray-600 dark:text-gray-400">{{ formatBytes(report.size) }}</span>
+        </div>
+        <div v-if="storageStats.testCaseFilesCount > 0" class="flex items-center justify-between">
+          <span>Test files ({{ storageStats.testCaseFilesCount }})</span>
+          <span class="font-medium tabular-nums text-gray-600 dark:text-gray-400">{{ formatBytes(storageStats.testCaseFilesSize) }}</span>
         </div>
       </div>
     </UCard>

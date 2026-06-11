@@ -20,7 +20,7 @@ defineProps<{
         <span class="text-sm font-medium">Source</span>
       </div>
     </template>
-    <div class="space-y-2 text-sm">
+    <div class="space-y-1.5 text-sm">
       <div v-if="scm.branch" class="flex items-center gap-1.5">
         <UIcon name="i-lucide-git-branch" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
         <span class="font-medium">{{ scm.branch }}</span>

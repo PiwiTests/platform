@@ -44,8 +44,9 @@ export default eventHandler(async (event) => {
     }
     controller.enqueue(encoder.encode(`data: ${JSON.stringify(initialData)}\n\n`))
 
-    // If the run is already finished, send that and close
-    if (testRun.status !== 'running') {
+    // If the run is already in a final state, send that and close
+    const isActive = testRun.status === 'running' || testRun.status === 'finalizing'
+    if (!isActive) {
       const finishedData = {
         type: 'run-finished',
         data: {
