@@ -90,7 +90,7 @@ test.describe.serial('Regression context endpoint', () => {
 
   test('identifies last green run and counts new failures', async ({ request }) => {
     // Submit a passing run (green baseline)
-    const { testRunId: greenId } = await submitRun(request, {
+    await submitRun(request, {
       status: 'passed',
       commit: 'aaa1111aaa1111a',
       branch: 'main',
