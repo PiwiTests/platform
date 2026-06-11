@@ -127,6 +127,13 @@
       "when": 1788300000000,
       "tag": "0017_add_oauth_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1788400000000,
+      "tag": "0018_failure_clusters",
+      "breakpoints": true
     }
   ]
 }

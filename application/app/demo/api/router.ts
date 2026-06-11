@@ -12,6 +12,7 @@ import {
   apiGetProjectPerformance,
   apiGetProjectTestCases,
   apiGetProjectSlowTests,
+  apiGetProjectFailureClusters,
   apiUpdateProject,
   apiCreateProject,
   apiGetTags,
@@ -19,7 +20,7 @@ import {
   apiUpdateTag,
   apiDeleteTag
 } from './projects'
-import { apiGetTestRun, apiGetNetworkRequests, apiGetRecentTestRuns, apiGetTestRunSummary, apiDeleteTestRun } from './test-runs'
+import { apiGetTestRun, apiGetNetworkRequests, apiGetRecentTestRuns, apiGetTestRunSummary, apiDeleteTestRun, apiGetFailureGroups } from './test-runs'
 import { apiGetUsers, apiCreateUser, apiDeleteUser, apiGetUserApiKeys, apiCreateUserApiKey, apiDeleteUserApiKey } from './users'
 import { apiGetTestCase, apiGetTestCaseHistory, apiGetTestCaseTraces } from './test-cases'
 import { apiGetAdminStats } from './admin'
@@ -41,6 +42,7 @@ const routes: RouteEntry[] = [
   { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/performance$/, handler: (m, _, q) => apiGetProjectPerformance(+m[1]!, q ? Number(q.get('limit')) || 50 : 50) },
   { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/test-cases$/, handler: m => apiGetProjectTestCases(+m[1]!) },
   { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/slow-tests$/, handler: (m, _, q) => apiGetProjectSlowTests(+m[1]!, q ? Number(q.get('runs')) || 10 : 10) },
+  { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/failure-clusters$/, handler: m => apiGetProjectFailureClusters(+m[1]!) },
 
   // Test runs
   { method: 'GET', pattern: /^\/api\/test-runs\/recent$/, handler: () => apiGetRecentTestRuns() },
@@ -48,6 +50,9 @@ const routes: RouteEntry[] = [
   { method: 'DELETE', pattern: /^\/api\/test-runs\/(\d+)$/, handler: m => apiDeleteTestRun(+m[1]!) },
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/network-requests$/, handler: m => apiGetNetworkRequests(+m[1]!) },
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/summary$/, handler: m => apiGetTestRunSummary(+m[1]!) },
+
+  // Failure groups
+  { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/failure-groups$/, handler: m => apiGetFailureGroups(+m[1]!) },
 
   // Test-run streaming (no-op in demo mode; only terminal-status runs exist)
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/stream$/, handler: () => Promise.resolve({ ok: true }) },

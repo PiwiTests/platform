@@ -46,6 +46,29 @@ function insert(table, rows) {
   }).join('\n')
 }
 
+// ── Fingerprint helpers (mirrors shared/error-fingerprint.ts) ──────────────
+const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi
+const HEX_RE = /\b[0-9a-f]{8,}\b/gi
+
+function computeDemoFingerprint(rawError) {
+  const FINGERPRINT_VERSION = 1
+  let errorType = 'unknown'
+  if (/strict mode violation/i.test(rawError)) errorType = 'strict-mode'
+  else if (/\bexpect\(|\.toBe|\.toContain|\.toEqual/.test(rawError)) errorType = 'assertion'
+  else if (/Timeout \d+m?s exceeded|TimeoutError/i.test(rawError)) errorType = 'timeout'
+  else if (/page\.goto|Navigation failed|net::ERR_/i.test(rawError)) errorType = 'navigation'
+  let head = rawError
+  const stackIdx = head.search(/\n\s+at /)
+  if (stackIdx !== -1) head = head.slice(0, stackIdx)
+  const lines = head.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+  const messageHead = lines.slice(0, 5).join('\n')
+  const masked = messageHead.replace(UUID_RE, '<UUID>').replace(HEX_RE, '<HASH>').replace(/\d+/g, '<N>')
+  const signature = (masked.split('\n')[0] || '').slice(0, 200) || 'Unknown error'
+  const input = `v${FINGERPRINT_VERSION}\0${errorType}\0${masked}\0\0`
+  const hash = createHash('sha256').update(input, 'utf-8').digest('hex')
+  return { fingerprint: hash, errorType, signature }
+}
+
 // ── Schema ─────────────────────────────────────────────────────────────────
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -100,6 +123,7 @@ CREATE TABLE IF NOT EXISTS test_runs_cases (
   status TEXT NOT NULL,
   duration INTEGER,
   error TEXT,
+  failure_cluster_id INTEGER,
   retries INTEGER DEFAULT 0,
   line INTEGER,
   column INTEGER,
@@ -135,6 +159,24 @@ CREATE TABLE IF NOT EXISTS files (
 );
 CREATE INDEX IF NOT EXISTS idx_files_test_run_id ON files (test_run_id);
 CREATE INDEX IF NOT EXISTS idx_files_test_runs_case_id ON files (test_runs_case_id);
+
+CREATE TABLE IF NOT EXISTS failure_clusters (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  project_id INTEGER NOT NULL,
+  fingerprint TEXT NOT NULL,
+  signature TEXT NOT NULL,
+  error_type TEXT,
+  selector TEXT,
+  sample_error TEXT,
+  first_seen_run_id INTEGER NOT NULL,
+  last_seen_run_id INTEGER NOT NULL,
+  occurrences INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_failure_clusters_project_fingerprint ON failure_clusters (project_id, fingerprint);
+CREATE INDEX IF NOT EXISTS idx_failure_clusters_project_last_seen ON failure_clusters (project_id, last_seen_run_id);
 
 CREATE TABLE IF NOT EXISTS tags (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -290,11 +332,43 @@ for (const [pid, cases] of ALL_CASE_DEFS) {
   }
 }
 
+// ── Failure cluster definitions ────────────────────────────────────────────
+const CLUSTER_DEFS = [
+  { projectId: 1, errorText: 'TimeoutError: locator.click: Timeout 30000ms exceeded.\n    at tests/checkout/checkout.spec.ts:42', caseIndices: [0, 1, 2] },
+  { projectId: 1, errorText: 'expect(received).toBe(expected)\n\nExpected: 3\nReceived: 0', caseIndices: [3, 4, 8, 9] },
+  { projectId: 2, errorText: 'expect(received).toBe(expected)\n\nExpected: 200\nReceived: 500', caseIndices: [0, 1] },
+  { projectId: 2, errorText: 'expect(received).toBe(expected)\n\nExpected: truthy\nReceived: undefined', caseIndices: [4, 5] },
+  { projectId: 3, errorText: 'TimeoutError: page.waitForSelector: Timeout 5000ms exceeded.\n    at tests/ui/modal.spec.ts:18', caseIndices: [3, 4] },
+  { projectId: 3, errorText: 'Error: strict mode violation: getByRole(\'button\') resolved to 3 elements\n\n    at tests/ui/button.spec.ts:55', caseIndices: [0] },
+  { projectId: 4, errorText: 'TimeoutError: page.goto: Timeout 30000ms exceeded.\n    at tests/mobile/navigation.spec.ts:15', caseIndices: [0, 1] },
+  { projectId: 4, errorText: 'Error: page.fill: Element not found\n    at tests/mobile/forms.spec.ts:28', caseIndices: [4, 5] }
+]
+
+const CLUSTERS = CLUSTER_DEFS.map((def, i) => ({
+  id: i + 1,
+  ...def,
+  ...computeDemoFingerprint(def.errorText)
+}))
+
+const clusterLookup = {}
+for (const cl of CLUSTERS) {
+  if (!clusterLookup[cl.projectId]) clusterLookup[cl.projectId] = {}
+  for (const ci of cl.caseIndices) {
+    clusterLookup[cl.projectId][ci] = cl.id
+  }
+}
+
 // ── Test runs + test_runs_cases ────────────────────────────────────────────
 
 const TEST_RUNS = []
 const TEST_RUNS_CASES = []
 const REPORTS = []
+const FAILURE_CLUSTERS = []
+
+const clusterStats = {}
+for (const cl of CLUSTERS) {
+  clusterStats[cl.id] = { occurrences: 0, firstRunId: null, lastRunId: null }
+}
 
 let runId = 1
 let trcId = 1
@@ -464,6 +538,7 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
     // Generate test_runs_cases for this run
     const stepsTemplate = STEPS_TEMPLATES[i % STEPS_TEMPLATES.length]
     const netTemplate = NETWORK_TEMPLATES[i % NETWORK_TEMPLATES.length]
+    const lookup = clusterLookup[projectId] || {}
 
     for (let j = 0; j < caseIds.length; j++) {
       const caseId = caseIds[j]
@@ -473,6 +548,18 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
       const caseStatus = isFailedCase ? 'failed' : 'passed'
       const caseDurationVariance = (Math.random() - 0.5) * 0.3 * avgTestDuration
       const caseDuration = Math.max(500, Math.round(avgTestDuration + caseDurationVariance))
+
+      // Determine cluster and error text for this case
+      const clusterId = isFailedCase ? (lookup[j] || null) : null
+      const clusterDef = clusterId ? CLUSTERS.find(c => c.id === clusterId) : null
+      const error = isFailedCase ? (clusterDef ? clusterDef.errorText : 'expect(received).toBe(expected)\n\nExpected: true\nReceived: false') : null
+
+      if (clusterId && clusterDef) {
+        const stats = clusterStats[clusterId]
+        stats.occurrences++
+        if (stats.firstRunId === null) stats.firstRunId = runId
+        stats.lastRunId = runId
+      }
 
       // Scale steps durations proportionally
       const scaleFactor = caseDuration / stepsTemplate.reduce((s, st) => s + st.duration, 0)
@@ -489,7 +576,8 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
         test_case_id: caseId,
         status: caseStatus,
         duration: caseDuration,
-        error: isFailedCase ? 'expect(received).toBe(expected)\n\nExpected: true\nReceived: false' : null,
+        error,
+        failure_cluster_id: clusterId,
         retries: isFlakyCase ? 1 : 0,
         line: 10 + (j * 8),
         column: 5,
@@ -511,7 +599,7 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
           }
         },
         console_logs: isFailedCase
-          ? [{ type: 'error', text: 'Error: expect(received).toBe(expected)', timestamp: (startTime + Math.floor(j * caseDuration / 1000)) * 1000, location: null }]
+          ? [{ type: 'error', text: error ? error.split('\n')[0] : 'Unknown error', timestamp: (startTime + Math.floor(j * caseDuration / 1000)) * 1000, location: null }]
           : null,
         aria_snapshot: null,
         worker_index: j % 4,
@@ -523,6 +611,27 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
 
     runId++
   }
+}
+
+// ── Build failure_clusters rows ────────────────────────────────────────────
+const clusterNow = ts('2025-04-25T09:00:00')
+for (const cl of CLUSTERS) {
+  const stats = clusterStats[cl.id]
+  const selector = cl.errorType === 'strict-mode' ? 'getByRole(\'button\')' : null
+  FAILURE_CLUSTERS.push({
+    id: cl.id,
+    project_id: cl.projectId,
+    fingerprint: cl.fingerprint,
+    signature: cl.signature,
+    error_type: cl.errorType,
+    selector,
+    sample_error: cl.errorText,
+    first_seen_run_id: stats.firstRunId,
+    last_seen_run_id: stats.lastRunId,
+    occurrences: stats.occurrences,
+    created_at: clusterNow,
+    updated_at: clusterNow
+  })
 }
 
 // ── Assemble SQL ───────────────────────────────────────────────────────────
@@ -555,6 +664,9 @@ const lines = [
   '-- Files (reports)',
   insert('files', REPORTS),
   '',
+  '-- Failure clusters',
+  insert('failure_clusters', FAILURE_CLUSTERS),
+  '',
   '-- Test run cases',
   insert('test_runs_cases', TEST_RUNS_CASES),
   '',
@@ -585,3 +697,4 @@ console.log(`   TestCases  : ${TEST_CASES.length}`)
 console.log(`   TestRuns   : ${TEST_RUNS.length}`)
 console.log(`   TRC rows   : ${TEST_RUNS_CASES.length}`)
 console.log(`   Reports    : ${REPORTS.length}`)
+console.log(`   Clusters   : ${FAILURE_CLUSTERS.length}`)

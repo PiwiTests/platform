@@ -46,7 +46,7 @@ SQLite database auto-initializes on first API call.
 - **ORM**: Drizzle ORM (SQLite via libSQL, or PostgreSQL via postgres.js)
 - **Schema**: `application/server/database/schema.ts`
 - **Migrations**: `application/server/database/migrations/` (SQLite) or `migrations-pg/` (PostgreSQL, auto-run on startup based on `DATABASE_URL`)
-- **Tables**: `projects`, `test_runs`, `test_cases`, `test_runs_cases`, `reports`, `traces`, `tags`, `project_tags`, `users`, `api_keys`
+- **Tables**: `projects`, `test_runs`, `test_cases`, `test_runs_cases`, `failure_clusters`, `files`, `trace_resources`, `trace_blobs`, `tags`, `project_tags`, `users`, `api_keys`
 
 ### Backend (server/api/)
 Nuxt file-based routing:
@@ -216,7 +216,7 @@ curl -X POST http://localhost:3000/api/test-runs/submit \
 
 The app can be built as a fully client-side SPA (no server needed) by setting `NUXT_PUBLIC_DEMO_MODE=true`. The demo build:
 
-1. **`npm run seed:demo`** — Generates `public/demo/seed.sql` (SQLite dump with 4 projects, 43 test cases, 61 test runs, 698 test-run-case rows) and `public/demo/seed.version.json` (SHA-256 hash of the SQL content + timestamp).
+1. **`npm run seed:demo`** — Generates `public/demo/seed.sql` (SQLite dump with 4 projects, 43 test cases, 61 test runs, 698 test-run-case rows, 8 failure clusters) and `public/demo/seed.version.json` (SHA-256 hash of the SQL content + timestamp).
 2. **`npm run generate:demo`** — Builds the SPA with `ssr: false` and PWA service worker that intercepts `/api/` calls, serving them from in-browser sql.js (WASM SQLite) via Drizzle ORM.
 3. The SQLite database is persisted in IndexedDB across page loads and re-seeded only when no persisted data exists.
 4. **Staleness detection**: The build injects `demoDataVersion` (the SHA-256 hash from `seed.version.json`) into `runtimeConfig.public`. At runtime, the layout compares it against the version stored in IndexedDB and shows a "New demo data available" button in the sidebar footer. Clicking it wipes IndexedDB and reloads the page.

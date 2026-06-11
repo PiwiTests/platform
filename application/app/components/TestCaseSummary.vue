@@ -46,7 +46,7 @@ defineEmits<{
 </script>
 
 <template>
-  <div class="grid grid-cols-1 lg:grid-cols-8 gap-4">
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
     <!-- Main summary card -->
     <div :class="summaryColSpanClass">
       <UCard class="shadow-xs h-full">

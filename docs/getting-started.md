@@ -137,7 +137,7 @@ After submitting results, the dashboard provides:
 | **Projects** (`/projects`) | Searchable table of all projects with status, duration, and tag filters |
 | **Project detail** (`/projects/:id`) | Run history for a single project with breakdown charts |
 | **Performance** (`/projects/:id/performance`) | Duration trends, slowest tests ranking, side-by-side run comparison |
-| **Test run** (`/test-runs/:id`) | Individual test cases with status, errors, traces, and reports |
+| **Test run** (`/test-runs/:id`) | Individual test cases with status, errors, traces, failure groups, and reports |
 | **Test case** (`/test-cases/:id`) | Detailed view of a single test including steps, web vitals, and network data |
 | **Settings** (`/settings`) | User management, storage stats, tag management, and cleanup tools |
 

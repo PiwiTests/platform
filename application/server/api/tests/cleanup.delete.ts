@@ -1,5 +1,5 @@
 import { getDatabase } from '../../database'
-import { projects, testRuns, testRunsCases, files, testCases, tags, projectTags } from '../../database/schema'
+import { projects, testRuns, testRunsCases, files, testCases, failureClusters, tags, projectTags } from '../../database/schema'
 import { eq, inArray, like } from 'drizzle-orm'
 import { requireAuth } from '../../utils/auth'
 import { deleteFileRow } from '../../utils/delete-run-files'
@@ -60,6 +60,9 @@ export default eventHandler(async (event) => {
 
     // Delete project_tags associations
     await db.delete(projectTags).where(eq(projectTags.projectId, project.id))
+
+    // Delete failure clusters (after test_runs_cases, which reference them)
+    await db.delete(failureClusters).where(eq(failureClusters.projectId, project.id))
 
     // Delete test_cases for this project
     await db.delete(testCases).where(eq(testCases.projectId, project.id))

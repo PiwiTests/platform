@@ -116,8 +116,19 @@ const fixPrompt = computed(() => {
     ariaSnapshot: testCase.value.ariaSnapshot as string | null | undefined,
     duration: testCase.value.duration,
     slowestStep: testCase.value.slowestStep,
-    slowestStepDuration: testCase.value.slowestStepDuration
+    slowestStepDuration: testCase.value.slowestStepDuration,
+    cluster: failureCluster.value
   })
+})
+
+const failureCluster = computed(() => {
+  return (testCase.value?.failureCluster ?? null) as {
+    id: number
+    sameRunCaseCount: number
+    isNew: boolean
+    firstSeenRunId: number
+    firstSeenAt: string | null
+  } | null
 })
 
 interface FixPromptStep { title: string, duration: number, category: string }
@@ -287,7 +298,7 @@ const environment = computed(() => testCase.value?.testRun?.environment)
     </template>
 
     <template #body>
-      <div class="flex flex-col h-full overflow-hidden gap-4 p-4">
+      <div class="flex flex-col h-full overflow-hidden gap-4 p-1">
         <TestCaseSummary
           :test-case="(testCase ?? null) as any"
           :scm-info="scmInfo"
@@ -310,7 +321,7 @@ const environment = computed(() => testCase.value?.testRun?.environment)
         >
           <template #error>
             <div class="space-y-4 pt-4">
-              <TestCaseErrorCard v-if="testCase?.error" :error="testCase.error" />
+              <TestCaseErrorCard v-if="testCase?.error" :error="testCase.error" :cluster="failureCluster" />
               <TestCaseFixPromptCard v-if="fixPrompt" :prompt="fixPrompt" />
             </div>
           </template>

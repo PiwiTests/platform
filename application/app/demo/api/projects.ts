@@ -7,7 +7,7 @@
 
 import { eq, desc, sql, inArray, asc, and } from 'drizzle-orm'
 import { getDemoDb } from '../db.client'
-import { projects, testRuns, testCases, testRunsCases, files, tags, projectTags } from '~~/server/database/schema.sqlite'
+import { projects, testRuns, testCases, testRunsCases, files, tags, projectTags, failureClusters } from '~~/server/database/schema.sqlite'
 import type { Project } from '~~/server/database/schema.sqlite'
 
 /** GET /api/projects */
@@ -322,4 +322,59 @@ export async function apiDeleteTag(id: number) {
   const db = await getDemoDb()
   await db.delete(tags).where(eq(tags.id, id))
   return { success: true }
+}
+
+/** GET /api/projects/:id/failure-clusters */
+export async function apiGetProjectFailureClusters(id: number) {
+  const db = await getDemoDb()
+
+  const clusters = await db.select({
+    id: failureClusters.id,
+    fingerprint: failureClusters.fingerprint,
+    signature: failureClusters.signature,
+    errorType: failureClusters.errorType,
+    selector: failureClusters.selector,
+    sampleError: failureClusters.sampleError,
+    firstSeenRunId: failureClusters.firstSeenRunId,
+    lastSeenRunId: failureClusters.lastSeenRunId,
+    occurrences: failureClusters.occurrences
+  })
+    .from(failureClusters)
+    .where(eq(failureClusters.projectId, id))
+    .orderBy(desc(failureClusters.lastSeenRunId))
+    .limit(100)
+
+  if (clusters.length === 0) return []
+
+  // Distinct affected test cases per cluster (occurrences counts retries too)
+  const clusterIds = clusters.map(c => c.id)
+  const counts = await db.select({
+    clusterId: testRunsCases.failureClusterId,
+    affectedTests: sql<number>`count(distinct ${testRunsCases.testCaseId})`
+  })
+    .from(testRunsCases)
+    .where(inArray(testRunsCases.failureClusterId, clusterIds))
+    .groupBy(testRunsCases.failureClusterId)
+  const affectedById = new Map(counts.map(c => [c.clusterId, Number(c.affectedTests)]))
+
+  const lastSeenRunIds = [...new Set(clusters.map(c => c.lastSeenRunId))]
+  const lastSeenRuns = await db.select({
+    id: testRuns.id,
+    status: testRuns.status,
+    startTime: testRuns.startTime
+  })
+    .from(testRuns)
+    .where(inArray(testRuns.id, lastSeenRunIds))
+
+  const runDataById = new Map(lastSeenRuns.map(r => [r.id, { status: r.status, startTime: r.startTime }]))
+
+  return clusters.map((c) => {
+    const runData = runDataById.get(c.lastSeenRunId)
+    return {
+      ...c,
+      affectedTests: affectedById.get(c.id) ?? 0,
+      lastSeenRunStatus: runData?.status ?? null,
+      lastSeenAt: runData?.startTime ?? null
+    }
+  })
 }

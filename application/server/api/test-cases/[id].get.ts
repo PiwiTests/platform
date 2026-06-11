@@ -1,6 +1,6 @@
 import { getDatabase } from '../../database'
-import { testCases, testRuns, testRunsCases, projects, files } from '../../database/schema'
-import { eq, sql } from 'drizzle-orm'
+import { testCases, testRuns, testRunsCases, projects, files, failureClusters } from '../../database/schema'
+import { eq, and, sql } from 'drizzle-orm'
 
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
@@ -48,6 +48,37 @@ export default eventHandler(async (event) => {
     project = projectResult
   }
 
+  // Failure cluster context (only for clustered failures)
+  let failureCluster = null
+  if (testRunsCase.failureClusterId) {
+    const [cluster] = await db.select().from(failureClusters)
+      .where(eq(failureClusters.id, testRunsCase.failureClusterId))
+    if (cluster) {
+      const [sameRun] = await db.select({
+        count: sql<number>`count(distinct ${testRunsCases.testCaseId})`
+      })
+        .from(testRunsCases)
+        .where(and(
+          eq(testRunsCases.testRunId, testRunsCase.testRunId),
+          eq(testRunsCases.failureClusterId, cluster.id)
+        ))
+      const [firstSeenRun] = await db.select({ startTime: testRuns.startTime })
+        .from(testRuns).where(eq(testRuns.id, cluster.firstSeenRunId))
+
+      failureCluster = {
+        id: cluster.id,
+        signature: cluster.signature,
+        errorType: cluster.errorType,
+        selector: cluster.selector,
+        occurrences: cluster.occurrences,
+        firstSeenRunId: cluster.firstSeenRunId,
+        firstSeenAt: firstSeenRun?.startTime ?? null,
+        isNew: cluster.firstSeenRunId === testRunsCase.testRunId,
+        sameRunCaseCount: Number(sameRun?.count ?? 0)
+      }
+    }
+  }
+
   // Format the response to match the expected structure
   return {
     id: testRunsCase.id,
@@ -67,6 +98,7 @@ export default eventHandler(async (event) => {
     consoleLogs: testRunsCase.consoleLogs,
     ariaSnapshot: testRunsCase.ariaSnapshot,
     workerIndex: testRunsCase.workerIndex,
+    failureCluster,
     testRun: testRun ? { ...testRun, project, reports: reportList } : testRun,
     attachments: attachmentList
   }

@@ -353,6 +353,7 @@ export interface TestCaseResult {
   duration?: number | null
   location?: string
   error?: string | null
+  failureClusterId?: number | null
   retries?: number | null
   steps?: PerformanceStep[] | null
   slowestStep?: string | null
@@ -363,6 +364,55 @@ export interface TestCaseResult {
   ariaSnapshot?: string | null
   workerIndex?: number | null
   startedAt?: number
+}
+
+/**
+ * One affected test case inside a failure group — part of GET /api/test-runs/[id]/failure-groups
+ */
+export interface FailureGroupCase {
+  testRunsCaseId: number
+  testCaseId: number
+  title: string
+  filePath: string
+  retries: number
+  workerIndex: number | null
+  passedOnRetry: boolean
+}
+
+/**
+ * Failure group summary for a test run — returned by GET /api/test-runs/[id]/failure-groups
+ */
+export interface FailureGroup {
+  clusterId: number
+  signature: string
+  errorType: string | null
+  selector: string | null
+  caseCount: number
+  isNew: boolean
+  firstSeenRunId: number
+  firstSeenAt: string | null
+  occurrences: number
+  flaky: boolean
+  workerCorrelated: boolean
+  cases: FailureGroupCase[]
+}
+
+/**
+ * Failure cluster summary for a project page — returned by GET /api/projects/[id]/failure-clusters
+ */
+export interface ProjectFailureCluster {
+  id: number
+  fingerprint: string
+  signature: string
+  errorType: string | null
+  selector: string | null
+  sampleError: string | null
+  firstSeenRunId: number
+  lastSeenRunId: number
+  occurrences: number
+  affectedTests: number
+  lastSeenRunStatus: string | null
+  lastSeenAt: string | Date | null
 }
 
 /**
