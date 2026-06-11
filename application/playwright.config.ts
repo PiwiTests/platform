@@ -12,6 +12,7 @@ if (!process.env.CI) {
   reporters.push(['../reporter', {
     serverUrl: 'http://localhost:3000',
     projectName: 'Piwi Dashboard',
+    streaming: true,
     uploadReport: false, // individual reports are listed in `reports` below
     uploadTraces: true,
     reports: [

@@ -569,12 +569,18 @@ class PiwiDashboardReporter {
         return;
       }
 
+      const piwiReporterPath = path.resolve(__dirname, "index.js");
       const hasPiwi =
         Array.isArray(config?.reporter) &&
-        config.reporter.some(
-          (r: any) =>
-            Array.isArray(r) && typeof r[0] === "string" && r[0].toLowerCase().includes("piwi"),
-        );
+        config.reporter.some((r: any) => {
+          if (!Array.isArray(r) || typeof r[0] !== "string") return false;
+          if (r[0].toLowerCase().includes("piwi")) return true;
+          try {
+            return path.resolve(require.resolve(r[0])) === piwiReporterPath;
+          } catch {
+            return false;
+          }
+        });
       if (!hasPiwi) {
         if (opts.verbose)
           console.log("[Piwi Dashboard] Not reporting — Piwi is not in the Playwright reporters list.");
