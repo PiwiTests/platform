@@ -233,6 +233,9 @@ export interface TestRunDetails {
   storageStats?: {
     totalFiles: number
     totalSize: number
+    reportSizes: Array<{ label: string, size: number }>
+    testCaseFilesSize: number
+    testCaseFilesCount: number
   }
 }
 
@@ -257,6 +260,9 @@ export interface TestRunForCompare {
  */
 export interface TestRunForChart {
   id: number
+  projectId?: number
+  projectName?: string
+  projectLabel?: string | null
   status: string
   startTime: string | Date
   passedTests: number

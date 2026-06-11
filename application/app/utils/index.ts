@@ -82,6 +82,15 @@ export function formatDuration(ms?: number | null) {
   return sign + formatDurationLib({ seconds: Math.abs(ms) / 1000 })
 }
 
+export function reportIcon(type: string): string {
+  switch (type) {
+    case 'html': return 'i-lucide-layout-dashboard'
+    case 'monocart': return 'i-lucide-bar-chart-2'
+    case 'blob': return 'i-lucide-download'
+    default: return 'i-lucide-file-text'
+  }
+}
+
 export function getStatusColor(status: string) {
   switch (status) {
     case 'passed': return 'success'

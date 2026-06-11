@@ -14,7 +14,7 @@ let sharedEventSource: EventSource | null = null
 const subscribers = new Set<() => void>()
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
-const TERMINAL_EVENTS = new Set(['run-finished', 'run-submitted', 'run-cancelled'])
+const REFRESH_EVENTS = new Set(['run-initialising', 'run-finalizing', 'run-finished', 'run-submitted', 'run-cancelled'])
 
 function ensureConnection() {
   if (sharedEventSource) return
@@ -26,7 +26,7 @@ function ensureConnection() {
   sharedEventSource.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data)
-      if (!TERMINAL_EVENTS.has(data.type)) return
+      if (!REFRESH_EVENTS.has(data.type)) return
 
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = setTimeout(() => {

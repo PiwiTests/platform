@@ -23,8 +23,8 @@ const storageStats = computed(() => props.testRun?.storageStats)
     <div :class="summaryColSpanClass">
       <UCard class="shadow-xs h-full">
         <div class="space-y-3">
-          <div class="flex items-start justify-between gap-3">
-            <div class="flex items-center gap-2.5 min-w-0">
+          <div class="flex items-start gap-3">
+            <div class="flex items-center gap-2.5 min-w-0 flex-1">
               <div
                 class="shrink-0 size-8 rounded-lg flex items-center justify-center"
                 :class="{
@@ -43,21 +43,17 @@ const storageStats = computed(() => props.testRun?.storageStats)
                   :class="{ 'animate-spin': testRun?.status === 'running' || testRun?.status === 'initialising' || testRun?.status === 'finalizing' }"
                 />
               </div>
-              <div class="min-w-0">
-                <div class="flex items-center gap-2 flex-wrap">
-                  <h2 class="text-base font-bold truncate">
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <h2 class="text-base font-bold shrink-0">
                     Test run #{{ testRun?.id }}
                   </h2>
                   <RunStatusBadge :status="testRun?.status ?? ''" />
+                  <span class="text-xs text-gray-500 ml-auto whitespace-nowrap">
+                    {{ testRun?.project?.label ?? testRun?.project?.name }} · Started {{ prettyDateFormat(testRun?.startTime) }}
+                  </span>
                 </div>
-                <p class="text-xs text-gray-500 mt-0.5">
-                  {{ testRun?.project?.label ?? testRun?.project?.name }}
-                  &middot; Started {{ prettyDateFormat(testRun?.startTime) }}
-                </p>
               </div>
-            </div>
-            <div v-if="allReports.length > 0" class="shrink-0 hidden sm:flex items-start gap-2">
-              <RunReports :reports="allReports" />
             </div>
           </div>
 
@@ -125,13 +121,6 @@ const storageStats = computed(() => props.testRun?.storageStats)
               </div>
             </div>
           </div>
-
-          <div v-if="allReports.length > 0" class="sm:hidden">
-            <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
-              Reports
-            </p>
-            <RunReports :reports="allReports" />
-          </div>
         </div>
       </UCard>
     </div>
@@ -157,6 +146,9 @@ const storageStats = computed(() => props.testRun?.storageStats)
         <div class="flex items-center gap-2">
           <UIcon name="i-lucide-database" class="w-4 h-4 text-primary" />
           <span class="text-sm font-medium">Storage</span>
+          <span v-if="storageStats?.totalFiles" class="text-xs text-gray-400">
+            · {{ storageStats.totalFiles }} files · {{ formatBytes(storageStats.totalSize) }}
+          </span>
         </div>
       </template>
       <div v-if="finalizing" class="flex items-center gap-3">
@@ -174,22 +166,22 @@ const storageStats = computed(() => props.testRun?.storageStats)
           />
         </div>
       </div>
-      <div v-if="storageStats?.totalFiles" class="flex gap-4 text-sm">
-        <div>
-          <p class="text-muted text-xs">
-            Files
-          </p>
-          <p class="font-semibold text-lg">
-            {{ storageStats.totalFiles }}
-          </p>
+      <div v-if="storageStats?.totalFiles" class="space-y-1.5 text-sm">
+        <div v-for="report in allReports" :key="report.label" class="flex items-center justify-between">
+          <UButton
+            :href="`/api/files/${getFileApiPath(report.path)}`"
+            :icon="reportIcon(report.type)"
+            target="_blank"
+            size="xs"
+            variant="outline"
+          >
+            {{ report.label }}
+          </UButton>
+          <span class="font-medium tabular-nums text-gray-600 dark:text-gray-400">{{ formatBytes(report.size) }}</span>
         </div>
-        <div>
-          <p class="text-muted text-xs">
-            Total size
-          </p>
-          <p class="font-semibold text-lg">
-            {{ formatBytes(storageStats.totalSize) }}
-          </p>
+        <div v-if="storageStats.testCaseFilesCount > 0" class="flex items-center justify-between">
+          <span>Test files ({{ storageStats.testCaseFilesCount }})</span>
+          <span class="font-medium tabular-nums text-gray-600 dark:text-gray-400">{{ formatBytes(storageStats.testCaseFilesSize) }}</span>
         </div>
       </div>
     </UCard>

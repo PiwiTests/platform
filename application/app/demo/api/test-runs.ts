@@ -320,6 +320,9 @@ export async function apiGetRecentTestRuns() {
 
   return db.select({
     id: testRuns.id,
+    projectId: testRuns.projectId,
+    projectName: projects.name,
+    projectLabel: projects.label,
     status: testRuns.status,
     startTime: testRuns.startTime,
     totalTests: testRuns.totalTests,
@@ -332,6 +335,7 @@ export async function apiGetRecentTestRuns() {
     p90TestDuration: testRuns.p90TestDuration
   })
     .from(testRuns)
+    .innerJoin(projects, eq(testRuns.projectId, projects.id))
     .orderBy(desc(testRuns.startTime))
     .limit(30)
 }

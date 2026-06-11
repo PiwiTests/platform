@@ -5,15 +5,6 @@ import { formatBytes, getFileApiPath } from '~/utils'
 defineProps<{
   reports?: ReportInfo[] | null
 }>()
-
-function reportIcon(type: string): string {
-  switch (type) {
-    case 'html': return 'i-lucide-layout-dashboard'
-    case 'monocart': return 'i-lucide-bar-chart-2'
-    case 'blob': return 'i-lucide-download'
-    default: return 'i-lucide-file-text'
-  }
-}
 </script>
 
 <template>
