@@ -308,7 +308,7 @@ function handleSelectCluster(clusterId: number) {
     </template>
 
     <template #body>
-      <div class="flex flex-col h-full overflow-y-auto gap-4 p-1">
+      <div class="flex flex-col h-full overflow-hidden gap-4 p-1">
         <RunSummary
           v-if="testRun"
           :test-run="testRun"
@@ -325,55 +325,67 @@ function handleSelectCluster(clusterId: number) {
           v-model="activeTab"
           :items="tabItems"
           size="sm"
-          class="shrink-0"
+          class="flex-1 min-h-0 flex flex-col"
         >
           <template #test-cases>
-            <div v-if="selectedClusterFilter != null" class="flex items-center gap-2 mb-3 pt-4">
-              <UBadge color="info" variant="subtle" size="sm">
-                Filtered by failure group
-              </UBadge>
-              <UButton
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-x"
-                label="Clear filter"
-                @click="clearClusterFilter"
+            <div class="overflow-y-auto h-full">
+              <div v-if="selectedClusterFilter != null" class="flex items-center gap-2 mb-3 pt-4">
+                <UBadge color="info" variant="subtle" size="sm">
+                  Filtered by failure group
+                </UBadge>
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="ghost"
+                  icon="i-lucide-x"
+                  label="Clear filter"
+                  @click="clearClusterFilter"
+                />
+              </div>
+              <TestCasesList
+                ref="testCasesListRef"
+                :test-cases="displayTestCases"
+                :is-live="isLive"
+                :failure-cluster-filter="selectedClusterFilter"
               />
             </div>
-            <TestCasesList
-              ref="testCasesListRef"
-              :test-cases="displayTestCases"
-              :is-live="isLive"
-              :failure-cluster-filter="selectedClusterFilter"
-            />
           </template>
 
           <template #failure-groups>
-            <FailureGroups
-              @select-test-case="handleSelectTestCase"
-              @select-cluster="handleSelectCluster"
-            />
+            <div class="overflow-y-auto h-full">
+              <FailureGroups
+                @select-test-case="handleSelectTestCase"
+                @select-cluster="handleSelectCluster"
+              />
+            </div>
           </template>
 
           <template #regression>
-            <RegressionContext />
+            <div class="overflow-y-auto h-full">
+              <RegressionContext />
+            </div>
           </template>
 
           <template #workers>
-            <WorkersTimeline
-              :test-cases="throttledTestCases"
-              :live="isLive"
-              @select-test-case="handleSelectTestCase"
-            />
+            <div class="overflow-y-auto h-full">
+              <WorkersTimeline
+                :test-cases="throttledTestCases"
+                :live="isLive"
+                @select-test-case="handleSelectTestCase"
+              />
+            </div>
           </template>
 
           <template #compare>
-            <RunCompare />
+            <div class="overflow-y-auto h-full">
+              <RunCompare />
+            </div>
           </template>
 
           <template #endpoints>
-            <SlowEndpoints @endpoints-count="endpointsCount = $event" />
+            <div class="overflow-y-auto h-full">
+              <SlowEndpoints @endpoints-count="endpointsCount = $event" />
+            </div>
           </template>
         </UTabs>
       </div>

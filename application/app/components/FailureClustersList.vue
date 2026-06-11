@@ -80,34 +80,16 @@ async function saveTriage() {
     </template>
   </UCard>
 
-  <UCard v-else-if="!clusters || clusters.length === 0">
-    <template #header>
-      <div class="flex items-center gap-2">
-        <UIcon name="i-lucide-check-circle" class="size-5 text-green-500" />
-        <h2>Failure clusters</h2>
-      </div>
-    </template>
-    <p class="text-sm text-gray-500">
-      No failure clusters recorded for this project.
-    </p>
-  </UCard>
-
-  <UCard v-else>
+  <UCard>
     <template #header>
       <div class="flex items-center justify-between">
-        <div>
-          <div class="flex items-center gap-2">
-            <UIcon name="i-lucide-layers" class="size-5 text-primary" />
-            <h2>Failure clusters ({{ clusters.length }})</h2>
-          </div>
-          <p class="text-sm text-gray-500 mt-1">
-            Ongoing failure signatures grouped by normalized error. Each cluster represents a distinct root cause.
-          </p>
-        </div>
+        <p class="text-sm text-gray-500 mt-1">
+          Ongoing failure signatures grouped by normalized error. Each cluster represents a distinct root cause.
+        </p>
         <div class="flex items-center gap-2">
           <USelect
             v-model="statusFilter"
-            :options="[
+            :items="[
               { label: 'All', value: undefined },
               { label: 'Open', value: 'open' },
               { label: 'Resolved', value: 'resolved' },
@@ -120,7 +102,7 @@ async function saveTriage() {
       </div>
     </template>
 
-    <div class="divide-y divide-default">
+    <div v-if="clusters && clusters.length" class="divide-y divide-default">
       <div
         v-for="cluster in clusters"
         :key="cluster.id"
@@ -182,6 +164,9 @@ async function saveTriage() {
         </div>
       </div>
     </div>
+    <p v-else class="text-sm text-gray-500">
+      No failure clusters recorded for this project.
+    </p>
   </UCard>
 
   <UModal :open="!!triageCluster" title="Triage cluster" @update:open="closeTriage">
