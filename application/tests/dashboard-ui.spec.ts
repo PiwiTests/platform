@@ -39,8 +39,8 @@ test.describe('Dashboard UI Tests', () => {
     await expect(page.getByText('Total test runs')).toBeVisible()
     await expect(page.getByText('Active projects')).toBeVisible()
 
-    // Check for recent projects section
-    await expect(page.getByText('Recent projects')).toBeVisible()
+    // Check for projects section
+    await expect(page.getByText('Project health')).toBeVisible()
   })
 
   test('should display projects list page', async ({ page }) => {
@@ -133,7 +133,7 @@ test.describe('Dashboard UI Tests', () => {
 
     // Check navigation
     await page.waitForURL('/')
-    await expect(page.getByText('Recent projects')).toBeVisible()
+    await expect(page.getByText('Project health')).toBeVisible()
   })
 
   test('should display test status badges correctly', async ({ page }) => {
