@@ -73,6 +73,8 @@ test.describe.serial('Failure clustering', () => {
     = `Error: expect(locator).toHaveText(expected)\n\nLocator: getByTestId('cart-total')\nExpected string: "3 items"\nReceived string: "0 items"`
 
   let firstRunClusterId: number | null = null
+  let firstRunId: number | null = null
+  let projectId: number | null = null
 
   async function submitRun(request: APIRequestContext, cases: object[]) {
     const response = await request.post('/api/test-runs/submit', {
@@ -89,11 +91,11 @@ test.describe.serial('Failure clustering', () => {
       }
     })
     expect(response.ok()).toBeTruthy()
-    return (await response.json()).testRunId as number
+    return await response.json() as { testRunId: number, projectId: number }
   }
 
   test('groups failures sharing a root cause on submission', async ({ request }) => {
-    const runId = await submitRun(request, [
+    const { testRunId: runId, projectId: pid } = await submitRun(request, [
       { title: 'login via header', status: 'failed', duration: 31000, location: 'tests/auth.spec.ts:10:5', error: loginTimeout(30000) },
       { title: 'login via modal', status: 'failed', duration: 16000, location: 'tests/auth.spec.ts:30:5', error: loginTimeout(15000) },
       { title: 'cart shows items', status: 'failed', duration: 2000, location: 'tests/cart.spec.ts:12:5', error: cartAssertion },
@@ -117,10 +119,12 @@ test.describe.serial('Failure clustering', () => {
     expect(byTitle['homepage loads']!.failureClusterId).toBeNull()
 
     firstRunClusterId = byTitle['login via header']!.failureClusterId
+    firstRunId = runId
+    projectId = pid
   })
 
   test('reuses the cluster across runs of the same project', async ({ request }) => {
-    const runId = await submitRun(request, [
+    const { testRunId: runId } = await submitRun(request, [
       { title: 'login via header', status: 'failed', duration: 31000, location: 'tests/auth.spec.ts:10:5', error: loginTimeout(30000) },
       { title: 'homepage loads', status: 'passed', duration: 900, location: 'tests/home.spec.ts:5:5' }
     ])
@@ -129,5 +133,76 @@ test.describe.serial('Failure clustering', () => {
     const failed = run.testCases.find((tc: { title: string }) => tc.title === 'login via header')
 
     expect(failed.failureClusterId).toBe(firstRunClusterId)
+  })
+
+  test('failure-groups endpoint classifies known, new and flaky groups', async ({ request }) => {
+    const checkoutError = 'Error: page.goto: net::ERR_CONNECTION_REFUSED at https://checkout.example.com/'
+
+    const { testRunId: runId } = await submitRun(request, [
+      { title: 'login via header', status: 'failed', duration: 31000, location: 'tests/auth.spec.ts:10:5', error: loginTimeout(30000) },
+      // Failed first attempt + passed retry of the same test → flaky signal
+      { title: 'checkout works', status: 'failed', duration: 5000, location: 'tests/checkout.spec.ts:8:3', error: checkoutError, retries: 0 },
+      { title: 'checkout works', status: 'passed', duration: 4000, location: 'tests/checkout.spec.ts:8:3', retries: 1 },
+      { title: 'homepage loads', status: 'passed', duration: 900, location: 'tests/home.spec.ts:5:5' }
+    ])
+
+    const response = await request.get(`/api/test-runs/${runId}/failure-groups`)
+    expect(response.ok()).toBeTruthy()
+    const groups: Array<{
+      clusterId: number
+      signature: string
+      selector: string | null
+      caseCount: number
+      isNew: boolean
+      firstSeenRunId: number
+      flaky: boolean
+      cases: Array<{ title: string, passedOnRetry: boolean }>
+    }> = await response.json()
+
+    expect(groups).toHaveLength(2)
+
+    // The login timeout is a known cluster carried over from the first run
+    const loginGroup = groups.find(g => g.signature.includes('TimeoutError'))!
+    expect(loginGroup).toBeDefined()
+    expect(loginGroup.clusterId).toBe(firstRunClusterId)
+    expect(loginGroup.isNew).toBe(false)
+    expect(loginGroup.firstSeenRunId).toBe(firstRunId)
+    expect(loginGroup.caseCount).toBe(1)
+    expect(loginGroup.selector).toBe('getByTestId(\'login-button\')')
+
+    // The checkout failure is new and passed on retry → flagged flaky
+    const checkoutGroup = groups.find(g => g.clusterId !== firstRunClusterId)!
+    expect(checkoutGroup).toBeDefined()
+    expect(checkoutGroup.isNew).toBe(true)
+    expect(checkoutGroup.flaky).toBe(true)
+    expect(checkoutGroup.caseCount).toBe(1)
+    expect(checkoutGroup.cases[0]!.title).toBe('checkout works')
+    expect(checkoutGroup.cases[0]!.passedOnRetry).toBe(true)
+  })
+
+  test('project failure-clusters endpoint aggregates across runs', async ({ request }) => {
+    const response = await request.get(`/api/projects/${projectId}/failure-clusters`)
+    expect(response.ok()).toBeTruthy()
+    const clusters: Array<{
+      id: number
+      errorType: string | null
+      occurrences: number
+      affectedTests: number
+      lastSeenRunId: number
+      lastSeenAt: string | null
+    }> = await response.json()
+
+    const login = clusters.find(c => c.id === firstRunClusterId)!
+    expect(login).toBeDefined()
+    expect(login.errorType).toBe('timeout')
+    // Two distinct tests ever hit this cluster (login via header + login via modal)
+    expect(login.affectedTests).toBe(2)
+    // Rows across runs 1-3: 2 + 1 + 1
+    expect(login.occurrences).toBe(4)
+    expect(login.lastSeenAt).not.toBeNull()
+
+    // Unknown project → 404, matching the other project endpoints
+    const missing = await request.get('/api/projects/999999/failure-clusters')
+    expect(missing.status()).toBe(404)
   })
 })

@@ -95,23 +95,58 @@ substrate that makes pillar 4 genuinely smart.
 Verification: typecheck ✓, lint ✓, full functional suite ✓ (216 passed,
 42 skipped — PG/S3 suites that need external services).
 
-### Phase 2 — API endpoint for failure groups
+## Implemented — phases 2 + 3 (June 11, 2026)
 
-- `GET /api/test-runs/[id]/failure-groups` endpoint implemented with:
-  - Grouped by cluster with signature, error type, selector
-  - `caseCount` (distinct test cases), `occurrences` (total runs-case rows)
-  - `isNew` flag (first-seen in this run), `firstSeenAt` timestamp
-  - `flaky` detection (a test in the cluster passed on retry in this run)
-  - `workerCorrelated` heuristic (multiple tests failing on the same worker suggests infra)
-  - Cases sorted by title with testRunsCaseId, retries, worker, passedOnRetry
-  - Results sorted by caseCount descending
+### Endpoints
 
-### Demo seed
+- `GET /api/test-runs/[id]/failure-groups` — clusters touching a run:
+  signature, error type, selector, `caseCount` (distinct test cases),
+  `isNew`/`firstSeenAt`, `flaky` (a test in the cluster passed on retry in
+  this run), `workerCorrelated` heuristic (multiple tests failing on the same
+  worker while the run used several), affected cases with `passedOnRetry`.
+  Sorted by `caseCount` descending.
+- `GET /api/projects/[id]/failure-clusters` — project-level board data:
+  signature, error type, `occurrences` (raw row count incl. retries),
+  `affectedTests` (distinct test cases ever hit), last-seen run id/status/
+  start time. 404 for unknown projects, like the sibling project endpoints.
+- `GET /api/test-cases/[id]` now returns a `failureCluster` block
+  (signature, `sameRunCaseCount`, `isNew`, first-seen run) for clustered
+  failures.
 
-The demo seed now generates 8 failure clusters with diverse error patterns
-(timeouts, assertions, strict-mode violations) and links them to failed
-`test_runs_cases` rows via `failure_cluster_id`. The demo router doesn't
-query `failure_clusters` yet (column-select-only ref needed for phase 2 UI).
+### UI
+
+- Run detail page: conditional "Failure groups" tab (`FailureGroups.vue`) —
+  card per cluster with New/Known-since/Flaky/Same-worker badges, expandable
+  affected-test list, and a Filter action that filters `TestCasesList` by
+  `failureClusterId`.
+- Project detail page: `FailureClustersList.vue` card (shown when the project
+  has failed runs) listing clusters with affected-test counts and last-seen
+  links.
+- Test case page: cluster line in `TestCaseErrorCard.vue` ("Matches N other
+  failing tests in this run · known since run #X"), cluster context appended
+  to the AI fix prompt (`app/utils/fix-prompt.ts`).
+
+### Demo mode
+
+- Seed generates 8 failure clusters with diverse error patterns and links
+  failed `test_runs_cases` rows via `failure_cluster_id`.
+- Demo router handles both new endpoints (`apiGetFailureGroups`,
+  `apiGetProjectFailureClusters`) mirroring the server logic, and the demo
+  run-detail handler returns `failureClusterId` so the cluster filter works
+  in demo builds.
+
+### Post-review adaptations (second pass)
+
+- Demo `apiGetTestRun` was missing `failureClusterId` → cluster filter and
+  tab count were broken in demo mode; fixed.
+- `types/api.ts` `FailureGroup` type didn't match the actual endpoint
+  response; replaced with the real shape (+ `FailureGroupCase`) and
+  `FailureGroups.vue` now imports it instead of a local copy.
+- Project clusters endpoint: restored the 404 for unknown projects and the
+  `affectedTests` distinct count (server + demo + UI display) — `occurrences`
+  alone over-counts retries and goes stale after run deletion.
+- Endpoint tests added in `tests/failure-clusters.spec.ts` (grouping flags,
+  flaky-on-retry, cross-run aggregation, 404).
 
 ### Migration state notes (important for future schema changes)
 
@@ -132,26 +167,14 @@ by hand: they have **no snapshots** and **future-dated journal timestamps**
   hand-written era may differ in details such as the `updated_at` indexes,
   which were never created by any PG migration.)
 
-### Demo mode
-
-The demo seed now includes 8 failure clusters with realistic error patterns
-(e.g. timeout errors for checkout flows, assertion errors for API endpoints,
-strict-mode violations for UI components). Each cluster is linked to its
-affected `test_runs_cases` rows via `failure_cluster_id`.
-
-The demo router doesn't query `failure_clusters` yet (column-select-only ref
-needed for phase 2 UI).
-
 ## Not yet implemented (next phases)
 
-- **Phase 2 — surface clustering UI**: `FailureGroups.vue` on the run detail
-  page (cards with "New in this run" / "Known since run #X" badges, click to
-  filter `TestCasesList`); cluster line in `TestCaseErrorCard.vue`; cluster
-  context in `app/utils/fix-prompt.ts`; demo router handlers.
-- **Phase 3 — project-level board**: `GET /api/projects/[id]/failure-clusters`
-  (ongoing failures, trends), cluster `status` column (open/resolved/ignored).
-- **Pillar 2**: last-green resolution + run diff view.
-- **Pillar 3**: flaky/new/known/infra classification + flaky board.
+- Cluster `status` column (open/resolved/ignored) with a triage workflow on
+  the project board.
+- **Pillar 2 (full)**: last-green resolution + run diff view (the
+  `isNew`/known-since flags cover the basic case).
+- **Pillar 3 (full)**: cross-run flakiness scoring + dedicated flaky board
+  (the per-run flaky/worker-correlated flags cover the basic case).
 - **Pillar 4**: server-side AI diagnosis per cluster.
 - Optional: backfill endpoint for pre-existing failures (explicitly skipped —
   "ignore existing data") and lazy re-clustering on `FINGERPRINT_VERSION`

@@ -313,6 +313,35 @@ Top 20 slowest test cases with avg, max, min duration and trend data.
 
 ---
 
+### GET `/api/projects/[id]/failure-clusters`
+
+Failure clusters recorded for a project (up to 100, most recently seen first). Each cluster groups failures sharing the same normalized error fingerprint across all runs.
+
+**Response** — array of clusters:
+
+```json
+[
+  {
+    "id": 7,
+    "fingerprint": "9f2c…",
+    "signature": "TimeoutError: page.goto: Timeout <N>ms exceeded.",
+    "errorType": "timeout",
+    "selector": null,
+    "sampleError": "TimeoutError: page.goto: Timeout 30000ms exceeded.\n…",
+    "firstSeenRunId": 142,
+    "lastSeenRunId": 198,
+    "occurrences": 12,
+    "affectedTests": 3,
+    "lastSeenRunStatus": "failed",
+    "lastSeenAt": "2024-01-01T12:00:00.000Z"
+  }
+]
+```
+
+`occurrences` counts every linked `test_runs_cases` row (retries included, not decremented on run deletion); `affectedTests` is the number of distinct test cases that ever hit the cluster. Returns 404 for unknown projects.
+
+---
+
 ### GET `/api/test-runs/[id]`
 
 Get test run details with test cases. Includes `flakyTests` count. Failed test cases carry a `failureClusterId` that groups failures sharing the same normalized error fingerprint (see `shared/error-fingerprint.ts`).
@@ -335,7 +364,7 @@ Returns failures grouped by root cause using error fingerprinting. Each group re
     "caseCount": 3,
     "isNew": true,
     "firstSeenRunId": 142,
-    "firstSeenAt": 1704067200,
+    "firstSeenAt": "2024-01-01T12:00:00.000Z",
     "occurrences": 3,
     "flaky": false,
     "workerCorrelated": false,
@@ -365,7 +394,7 @@ Returns failures grouped by root cause using error fingerprinting. Each group re
 | `caseCount` | Number of distinct test cases in this group |
 | `isNew` | `true` if this cluster was first seen in this run |
 | `firstSeenRunId` | The run where this cluster first appeared |
-| `firstSeenAt` | Unix timestamp of the first-seen run's start time (`null` if that run was deleted) |
+| `firstSeenAt` | Start time of the first-seen run (`null` if that run was deleted) |
 | `occurrences` | Total `test_runs_cases` rows linked to this cluster (not decremented on run deletion) |
 | `flaky` | `true` if any test in this group also passed on a later retry in this run |
 | `workerCorrelated` | `true` if multiple tests failed on the same worker while the run used several workers (suggests infrastructure issue) |

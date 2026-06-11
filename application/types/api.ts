@@ -367,21 +367,34 @@ export interface TestCaseResult {
 }
 
 /**
+ * One affected test case inside a failure group — part of GET /api/test-runs/[id]/failure-groups
+ */
+export interface FailureGroupCase {
+  testRunsCaseId: number
+  testCaseId: number
+  title: string
+  filePath: string
+  retries: number
+  workerIndex: number | null
+  passedOnRetry: boolean
+}
+
+/**
  * Failure group summary for a test run — returned by GET /api/test-runs/[id]/failure-groups
  */
 export interface FailureGroup {
-  id: number
-  fingerprint: string
+  clusterId: number
   signature: string
   errorType: string | null
   selector: string | null
-  sampleError: string | null
-  sameRunCaseCount: number
+  caseCount: number
   isNew: boolean
   firstSeenRunId: number
-  lastSeenRunId: number
+  firstSeenAt: string | null
   occurrences: number
-  affectedCaseIds: number[]
+  flaky: boolean
+  workerCorrelated: boolean
+  cases: FailureGroupCase[]
 }
 
 /**
@@ -397,6 +410,7 @@ export interface ProjectFailureCluster {
   firstSeenRunId: number
   lastSeenRunId: number
   occurrences: number
+  affectedTests: number
   lastSeenRunStatus: string | null
   lastSeenAt: string | Date | null
 }

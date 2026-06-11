@@ -346,6 +346,17 @@ export async function apiGetProjectFailureClusters(id: number) {
 
   if (clusters.length === 0) return []
 
+  // Distinct affected test cases per cluster (occurrences counts retries too)
+  const clusterIds = clusters.map(c => c.id)
+  const counts = await db.select({
+    clusterId: testRunsCases.failureClusterId,
+    affectedTests: sql<number>`count(distinct ${testRunsCases.testCaseId})`
+  })
+    .from(testRunsCases)
+    .where(inArray(testRunsCases.failureClusterId, clusterIds))
+    .groupBy(testRunsCases.failureClusterId)
+  const affectedById = new Map(counts.map(c => [c.clusterId, Number(c.affectedTests)]))
+
   const lastSeenRunIds = [...new Set(clusters.map(c => c.lastSeenRunId))]
   const lastSeenRuns = await db.select({
     id: testRuns.id,
@@ -361,6 +372,7 @@ export async function apiGetProjectFailureClusters(id: number) {
     const runData = runDataById.get(c.lastSeenRunId)
     return {
       ...c,
+      affectedTests: affectedById.get(c.id) ?? 0,
       lastSeenRunStatus: runData?.status ?? null,
       lastSeenAt: runData?.startTime ?? null
     }

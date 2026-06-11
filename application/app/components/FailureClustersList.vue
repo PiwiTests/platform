@@ -73,6 +73,9 @@ const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' |
               {{ cluster.errorType }}
             </UBadge>
             <UBadge color="neutral" variant="subtle" size="sm">
+              {{ cluster.affectedTests }} {{ cluster.affectedTests === 1 ? 'test' : 'tests' }} affected
+            </UBadge>
+            <UBadge color="neutral" variant="outline" size="sm">
               {{ cluster.occurrences }} occurrence{{ cluster.occurrences === 1 ? '' : 's' }}
             </UBadge>
             <span class="text-xs text-gray-500">

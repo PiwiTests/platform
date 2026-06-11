@@ -26,6 +26,7 @@ export async function apiGetTestRun(id: number) {
     status: testRunsCases.status,
     duration: testRunsCases.duration,
     error: testRunsCases.error,
+    failureClusterId: testRunsCases.failureClusterId,
     retries: testRunsCases.retries,
     line: testRunsCases.line,
     column: testRunsCases.column,
@@ -51,6 +52,7 @@ export async function apiGetTestRun(id: number) {
       ? `${tc.filePath}:${tc.line}:${tc.column}`
       : tc.filePath,
     error: tc.error,
+    failureClusterId: tc.failureClusterId,
     retries: tc.retries,
     steps: tc.steps,
     slowestStep: tc.slowestStep,

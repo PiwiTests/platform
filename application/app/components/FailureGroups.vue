@@ -1,28 +1,5 @@
 <script setup lang="ts">
-interface GroupCase {
-  testRunsCaseId: number
-  testCaseId: number
-  title: string
-  filePath: string
-  retries: number
-  workerIndex: number | null
-  passedOnRetry: boolean
-}
-
-interface FailureGroup {
-  clusterId: number
-  signature: string
-  errorType: string | null
-  selector: string | null
-  caseCount: number
-  isNew: boolean
-  firstSeenRunId: number
-  firstSeenAt: string | null
-  occurrences: number
-  flaky: boolean
-  workerCorrelated: boolean
-  cases: GroupCase[]
-}
+import type { FailureGroup } from '~~/types/api'
 
 const emit = defineEmits<{
   selectTestCase: [id: number]
