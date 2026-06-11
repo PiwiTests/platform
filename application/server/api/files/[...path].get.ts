@@ -101,6 +101,7 @@ export default eventHandler(async (event) => {
 
   // Security headers applied to all file responses
   setResponseHeader(event, 'X-Content-Type-Options', 'nosniff')
+  setResponseHeader(event, 'Cache-Control', 'no-store')
 
   // Helper to serve a file with the right content type
   function setContentType(ext: string): string {
@@ -124,9 +125,12 @@ export default eventHandler(async (event) => {
    * prevents them from executing in the dashboard's origin.
    */
   function applyHtmlCsp(): void {
-    // The sandbox directive without any tokens enables all restrictions:
-    // no scripts, no forms, no popups, no navigation, etc.
-    setResponseHeader(event, 'Content-Security-Policy', 'sandbox')
+    // Sandbox with allow-scripts so Playwright/Monocart reports (which rely on
+    // JavaScript to render) are usable.  allow-same-origin is needed for
+    // self-contained resource loads (CSS, JS, fonts, images bundled in the
+    // same directory).  All other sandbox restrictions — no forms, no popups,
+    // no navigation — remain in place.
+    setResponseHeader(event, 'Content-Security-Policy', 'sandbox allow-scripts allow-same-origin')
   }
 
   // 1. Try exact path

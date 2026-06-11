@@ -74,7 +74,6 @@ async function submitRun(
 }
 
 test.describe.serial('Regression context endpoint', () => {
-  let greenRunId: number
   let failingRunId: number
 
   test('returns hasGreen: false when no prior passing run exists', async ({ request }) => {
@@ -101,7 +100,6 @@ test.describe.serial('Regression context endpoint', () => {
         { title: 'test B', status: 'passed', location: 'tests/b.spec.ts:1:1' }
       ]
     })
-    greenRunId = greenId
 
     // Submit a failing run (regression)
     const { testRunId: failId } = await submitRun(request, {
