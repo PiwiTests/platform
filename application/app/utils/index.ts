@@ -104,6 +104,16 @@ export function getBrowserIcon(browserName?: string | null): string {
   return 'i-lucide-globe'
 }
 
+export function getBrowserHexColor(browserName?: string | null): string {
+  if (!browserName) return '#6b7280'
+  const name = browserName.toLowerCase()
+  if (name.includes('chrome') || name.includes('chromium')) return '#4285F4'
+  if (name.includes('firefox')) return '#FF7139'
+  if (name.includes('safari') || name.includes('webkit')) return '#007AFF'
+  if (name.includes('edge')) return '#0078D7'
+  return '#6b7280'
+}
+
 export function getStatusColor(status: string) {
   switch (status) {
     case 'passed': return 'success'

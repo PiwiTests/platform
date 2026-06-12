@@ -11,7 +11,7 @@ export type ClusterStatus = 'open' | 'resolved' | 'ignored'
 // ── Browser/project config ────────────────────────────────────────────────────
 
 export interface BrowserConfig {
-  projectName: string
+  projectName?: string
   browserName?: string | null
   channel?: string | null
   viewport?: { width: number, height: number } | null

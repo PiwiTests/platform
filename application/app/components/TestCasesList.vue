@@ -255,15 +255,7 @@ defineExpose({ scrollToCase })
       </template>
 
       <template #browser-cell="{ row }">
-        <UBadge
-          v-if="row.original.browser?.projectName"
-          color="neutral"
-          variant="subtle"
-          class="font-mono text-xs capitalize flex items-center gap-1"
-        >
-          <UIcon :name="getBrowserIcon(row.original.browser.projectName)" class="size-3.5 shrink-0" />
-          {{ row.original.browser.projectName }}
-        </UBadge>
+        <BrowserBadge :browser="row.original.browser" />
       </template>
 
       <template #slowestStep-cell="{ row }">

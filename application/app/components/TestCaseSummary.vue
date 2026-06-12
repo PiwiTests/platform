@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TestCaseResult } from '~~/types/api'
+import type { BrowserConfig } from '~~/shared/types'
 
 interface ScmInfo {
   commit?: string
@@ -15,11 +16,6 @@ interface CiInfo {
   workflow?: string
 }
 
-interface BrowserInfo {
-  browserName?: string | null
-  viewport?: { width?: number, height?: number } | null
-}
-
 interface HistoricalTiming {
   avg: number
   current: number
@@ -31,7 +27,7 @@ defineProps<{
   testCase: TestCaseResult | null
   scmInfo: ScmInfo | null
   ciInfo: CiInfo | null
-  browserInfo: BrowserInfo | null
+  browser: BrowserConfig | null
   environment: string | null | undefined
   reportPath: string | null
   stepsCount: number
@@ -148,22 +144,18 @@ defineEmits<{
     />
 
     <!-- Browser -->
-    <UCard v-if="browserInfo" :class="blockColSpanClass">
+    <UCard v-if="browser" :class="blockColSpanClass">
       <template #header>
         <div class="flex items-center gap-2">
           <UIcon name="i-lucide-globe" class="w-4 h-4 text-primary" />
           <span class="text-sm font-medium">Browser</span>
         </div>
       </template>
-      <div class="space-y-2 text-sm">
-        <div class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-chrome" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-          <span class="capitalize">{{ browserInfo?.browserName || 'Unknown' }}</span>
-        </div>
-        <div v-if="browserInfo?.viewport" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-maximize-2" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-          <span class="text-gray-600 dark:text-gray-400">{{ browserInfo.viewport.width }} × {{ browserInfo.viewport.height }}</span>
-        </div>
+      <div class="flex items-center gap-2">
+        <BrowserBadge :browser="browser ? { ...browser, viewport: undefined } : null" size="md" />
+        <span v-if="browser?.viewport" class="text-xs text-gray-500">
+          {{ browser.viewport.width }} × {{ browser.viewport.height }}
+        </span>
       </div>
     </UCard>
 
