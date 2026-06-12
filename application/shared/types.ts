@@ -15,6 +15,20 @@ export interface BrowserConfig {
   browserName?: string | null
   channel?: string | null
   viewport?: { width: number, height: number } | null
+  deviceScaleFactor?: number | null
+  isMobile?: boolean | null
+  hasTouch?: boolean | null
+  locale?: string | null
+  timezoneId?: string | null
+  geolocation?: { longitude: number, latitude: number, accuracy?: number } | null
+  colorScheme?: string | null
+  reducedMotion?: string | null
+  forcedColors?: string | null
+  offline?: boolean | null
+  bypassCSP?: boolean | null
+  javaScriptEnabled?: boolean | null
+  serviceWorkers?: string | null
+  userAgent?: string | null
 }
 
 // ── Test case payload ─────────────────────────────────────────────────────────
