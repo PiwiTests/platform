@@ -1,9 +1,10 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type APIRequestContext } from '@playwright/test'
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PROJECT } from '../shared/test-project-names'
+import { buildZip, parseZip } from '../server/utils/trace-zip'
 
 /**
  * Tests for live per-case file uploads during a streaming run:
@@ -247,6 +248,117 @@ test.describe.serial('Live case file uploads', () => {
     const response = await request.get(`/api/files/${traces[0].filePath}`)
     expect(response.ok()).toBeTruthy()
     expect(response.headers()['access-control-allow-origin']).toBe('*')
+  })
+})
+
+test.describe.serial('Live upload trace resource deduplication', () => {
+  let runId: number
+  let streamToken: string
+
+  /** Build a minimal valid Playwright-like trace ZIP with resources/. */
+  function buildTraceZip(resources: Array<{ name: string, data: Buffer }>): Buffer {
+    return buildZip([
+      { name: 'trace.trace', data: Buffer.from('{"type":"contextOptions","callId":"ctx@1"}\n') },
+      { name: 'trace.network', data: Buffer.from('') },
+      ...resources.map(r => ({ name: `resources/${r.name}`, data: r.data }))
+    ])
+  }
+
+  const sharedResource = { name: 'shared-resource.dat', data: Buffer.from('shared resource payload for live dedup') }
+  const zipA = buildTraceZip([sharedResource, { name: 'only-a.dat', data: Buffer.from('payload A') }])
+  const zipB = buildTraceZip([sharedResource, { name: 'only-b.dat', data: Buffer.from('payload B') }])
+  const hashA = createHash('sha256').update(zipA).digest('hex')
+  const hashB = createHash('sha256').update(zipB).digest('hex')
+
+  const caseA = { title: 'live dedup case A', location: 'tests/live-dedup.spec.ts:5:3', retries: 0 }
+  const caseB = { title: 'live dedup case B', location: 'tests/live-dedup.spec.ts:15:3', retries: 0 }
+
+  async function uploadTrace(request: APIRequestContext, testCase: object, zip: Buffer, hash: string) {
+    return request.post(`/api/test-runs/${runId}/case-files`, {
+      multipart: {
+        streamToken,
+        testCase: JSON.stringify(testCase),
+        trace_hash: hash,
+        trace: { name: 'trace.zip', mimeType: 'application/zip', buffer: zip }
+      }
+    })
+  }
+
+  async function downloadTraceEntries(request: APIRequestContext, testCase: { title: string }) {
+    const runData = await (await request.get(`/api/test-runs/${runId}`)).json()
+    const runCase = runData.testCases.find((tc: { title: string }) => tc.title === testCase.title)
+    expect(runCase).toBeDefined()
+    const traces = await (await request.get(`/api/test-cases/${runCase.id}/traces`)).json()
+    expect(traces.length).toBe(1)
+    const response = await request.get(`/api/files/${traces[0].filePath}`)
+    expect(response.ok()).toBeTruthy()
+    return parseZip(Buffer.from(await response.body()))
+  }
+
+  test('start a streaming run and push the cases', async ({ request }) => {
+    const startResponse = await request.post('/api/test-runs/start', {
+      data: {
+        projectName: PROJECT.CASE_FILES_LIVE,
+        startTime: new Date().toISOString()
+      }
+    })
+    expect(startResponse.ok()).toBeTruthy()
+    const startData = await startResponse.json()
+    runId = startData.runId
+    streamToken = startData.streamToken
+
+    const eventsResponse = await request.post(`/api/test-runs/${runId}/events`, {
+      data: {
+        streamToken,
+        testCases: [
+          { ...caseA, status: 'passed', duration: 1000 },
+          { ...caseB, status: 'passed', duration: 1000 }
+        ]
+      }
+    })
+    expect(eventsResponse.ok()).toBeTruthy()
+  })
+
+  test('both live-uploaded traces are reconstructed with their resources', async ({ request }) => {
+    // Upload A first so its resources land in the shared pool, then B whose
+    // shared resource should be deduplicated against the pool
+    expect((await uploadTrace(request, caseA, zipA, hashA)).ok()).toBeTruthy()
+    expect((await uploadTrace(request, caseB, zipB, hashB)).ok()).toBeTruthy()
+
+    const entriesA = await downloadTraceEntries(request, caseA)
+    const entriesB = await downloadTraceEntries(request, caseB)
+
+    // Event entries survive the slim-zip rewrite
+    expect(entriesA.find(e => e.name === 'trace.trace')).toBeDefined()
+    expect(entriesB.find(e => e.name === 'trace.trace')).toBeDefined()
+
+    // Each trace keeps its unique resource
+    expect(entriesA.find(e => e.name === 'resources/only-a.dat')).toBeDefined()
+    expect(entriesB.find(e => e.name === 'resources/only-b.dat')).toBeDefined()
+
+    // The shared resource is reconstructed identically in both, served from
+    // the shared per-project pool
+    const sharedA = entriesA.find(e => e.name === 'resources/shared-resource.dat')
+    const sharedB = entriesB.find(e => e.name === 'resources/shared-resource.dat')
+    expect(sharedA).toBeDefined()
+    expect(sharedB).toBeDefined()
+    expect(Buffer.compare(sharedA!.data, sharedB!.data)).toBe(0)
+    expect(Buffer.compare(sharedA!.data, sharedResource.data)).toBe(0)
+  })
+
+  test('finish the dedup run', async ({ request }) => {
+    const finishResponse = await request.post(`/api/test-runs/${runId}/finish`, {
+      data: {
+        streamToken,
+        status: 'passed',
+        duration: 2000,
+        totalTests: 2,
+        passedTests: 2,
+        failedTests: 0,
+        skippedTests: 0
+      }
+    })
+    expect(finishResponse.ok()).toBeTruthy()
   })
 })
 

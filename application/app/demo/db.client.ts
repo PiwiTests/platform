@@ -30,17 +30,47 @@ const IDB_STORE = 'state'
 const IDB_DB_KEY = 'sqlite'
 const IDB_VERSION_KEY = 'seed-version'
 
+function adoptConnection(db: IDBDatabase): IDBDatabase {
+  // Auto-close when another context (window vs service worker) runs an
+  // upgrade, otherwise its open request would stay blocked forever.
+  db.onversionchange = () => {
+    db.close()
+    if (idbInstance === db) idbInstance = null
+  }
+  return db
+}
+
+function createStoreOnUpgrade(req: IDBOpenDBRequest): void {
+  req.onupgradeneeded = () => {
+    if (!req.result.objectStoreNames.contains(IDB_STORE)) {
+      req.result.createObjectStore(IDB_STORE)
+    }
+  }
+}
+
 function openIDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(IDB_NAME, 1)
-    req.onupgradeneeded = (e) => {
-      const db = (e.target as IDBOpenDBRequest).result
-      if (!db.objectStoreNames.contains(IDB_STORE)) {
-        db.createObjectStore(IDB_STORE)
-      }
-    }
-    req.onsuccess = e => resolve((e.target as IDBOpenDBRequest).result)
+    // No explicit version: creates the DB at version 1 on first run and
+    // opens whatever version exists otherwise.
+    const req = indexedDB.open(IDB_NAME)
+    createStoreOnUpgrade(req)
     req.onerror = () => reject(req.error)
+    req.onsuccess = () => {
+      const db = req.result
+      if (db.objectStoreNames.contains(IDB_STORE)) {
+        resolve(adoptConnection(db))
+        return
+      }
+      // The DB exists but the store is missing: Firefox can leave an empty
+      // database behind when the initial upgrade transaction is interrupted.
+      // Re-open with a bumped version so onupgradeneeded fires and heals it.
+      const retry = indexedDB.open(IDB_NAME, db.version + 1)
+      db.close()
+      createStoreOnUpgrade(retry)
+      retry.onblocked = () => console.warn('[Demo DB] store repair blocked by another open connection')
+      retry.onerror = () => reject(retry.error)
+      retry.onsuccess = () => resolve(adoptConnection(retry.result))
+    }
   })
 }
 
@@ -98,11 +128,14 @@ export function configureDemoDb(baseUrl: string): void {
 }
 
 async function doPersist(): Promise<void> {
-  if (!sqliteDb || !idbInstance) {
-    console.warn('[Demo DB] doPersist called but db or IDB not ready – skipping')
+  if (!sqliteDb) {
+    console.warn('[Demo DB] doPersist called but db not ready – skipping')
     return
   }
   const data = sqliteDb.export()
+  // The connection may have been closed by a versionchange from another
+  // context; reopen on demand.
+  idbInstance ??= await openIDB()
   await idbPut(idbInstance, IDB_DB_KEY, data)
 }
 
@@ -202,8 +235,8 @@ export async function getDemoDb(): Promise<DemoDB> {
 export async function getStoredDemoVersion(): Promise<string | null> {
   if (cachedStoredVersion !== null) return cachedStoredVersion
   // Open IDB independently if not yet initialized
-  const idb = idbInstance ?? await openIDB()
-  const v = await idbGet(idb, IDB_VERSION_KEY)
+  idbInstance ??= await openIDB()
+  const v = await idbGet(idbInstance, IDB_VERSION_KEY)
   cachedStoredVersion = typeof v === 'string' ? v : null
   return cachedStoredVersion
 }
