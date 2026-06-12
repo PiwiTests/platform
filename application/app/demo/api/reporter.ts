@@ -165,6 +165,7 @@ interface RunCaseInput {
   ariaSnapshot?: string | null
   workerIndex?: number | null
   startedAt?: number | null
+  browser?: unknown
 }
 
 interface PendingCluster {
@@ -316,6 +317,7 @@ async function persistRunCases(
       webVitals: sanitizeWebVitals(c.webVitals as Record<string, unknown> | null | undefined) ?? null,
       consoleLogs: sanitizeConsoleLogs(c.consoleLogs as Array<Record<string, unknown>> | null | undefined) ?? null,
       ariaSnapshot: c.ariaSnapshot ?? null,
+      browser: c.browser ?? null,
       workerIndex: c.workerIndex ?? null,
       startedAt: c.startedAt ?? null
     })
@@ -358,7 +360,8 @@ export async function apiPostRunEvents(
         title: tc.title,
         location: tc.location,
         workerIndex: tc.workerIndex ?? null,
-        startedAt: tc.startedAt ?? null
+        startedAt: tc.startedAt ?? null,
+        browser: tc.browser ?? null
       }
     })
   }
@@ -389,7 +392,8 @@ export async function apiPostRunEvents(
     consoleLogs: tc.consoleLogs,
     ariaSnapshot: tc.ariaSnapshot as string | null | undefined,
     workerIndex: tc.workerIndex ?? null,
-    startedAt: tc.startedAt ?? null
+    startedAt: tc.startedAt ?? null,
+    browser: tc.browser ?? null
   }))
 
   const insertedRunCases = await persistRunCases(db, testRun.projectId, id, cases, true)
@@ -423,7 +427,8 @@ export async function apiPostRunEvents(
         location: tc.location,
         error: tc.error ?? null,
         workerIndex: tc.workerIndex ?? null,
-        startedAt: tc.startedAt ?? null
+        startedAt: tc.startedAt ?? null,
+        browser: tc.browser ?? null
       }
     })
   }

@@ -20,6 +20,21 @@ const testCaseStatusOptions = [
   { label: 'Flaky', value: 'flaky' },
 ]
 
+const testCaseBrowserFilter = ref<string>('all')
+
+const testCaseBrowserOptions = computed(() => {
+  const browsers = new Set<string>()
+  for (const tc of props.testCases) {
+    const name = tc.browser?.projectName
+    if (name) browsers.add(name)
+  }
+  const items = [{ label: 'All browsers', value: 'all' }]
+  for (const b of [...browsers].sort()) {
+    items.push({ label: b, value: b })
+  }
+  return items
+})
+
 const filteredTestCases = computed<TestCaseResult[]>(() => {
   let cases = props.testCases
   if (props.failureClusterFilter != null) {
@@ -27,6 +42,9 @@ const filteredTestCases = computed<TestCaseResult[]>(() => {
   }
   if (testCaseStatusFilter.value !== 'all') {
     cases = cases.filter(tc => tc.status === testCaseStatusFilter.value)
+  }
+  if (testCaseBrowserFilter.value !== 'all') {
+    cases = cases.filter(tc => tc.browser?.projectName === testCaseBrowserFilter.value)
   }
   if (testCaseSearch.value) {
     const query = testCaseSearch.value.toLowerCase()
@@ -86,6 +104,11 @@ watch(() => filteredTestCases.value.length, () => {
 
 // Columns (without cell render functions — using template slots for custom cells)
 const testCasesColumns: TableColumn<TestCaseResult>[] = [
+  {
+    id: 'browser',
+    accessorFn: (row: TestCaseResult) => row.browser?.projectName ?? '',
+    header: createSortHeader<TestCaseResult>('Browser'),
+  },
   {
     accessorKey: 'title',
     header: createSortHeader<TestCaseResult>('Test case'),
@@ -172,6 +195,12 @@ defineExpose({ scrollToCase })
           size="sm"
           class="w-32"
         />
+        <USelect
+          v-model="testCaseBrowserFilter"
+          :items="testCaseBrowserOptions"
+          size="sm"
+          class="w-36"
+        />
       </div>
     </div>
 
@@ -222,6 +251,18 @@ defineExpose({ scrollToCase })
           class="font-mono text-xs"
         >
           {{ row.original.workerIndex }}
+        </UBadge>
+      </template>
+
+      <template #browser-cell="{ row }">
+        <UBadge
+          v-if="row.original.browser?.projectName"
+          color="neutral"
+          variant="subtle"
+          class="font-mono text-xs capitalize flex items-center gap-1"
+        >
+          <UIcon :name="getBrowserIcon(row.original.browser.projectName)" class="size-3.5 shrink-0" />
+          {{ row.original.browser.projectName }}
         </UBadge>
       </template>
 

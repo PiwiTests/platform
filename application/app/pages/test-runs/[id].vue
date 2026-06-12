@@ -25,6 +25,31 @@ const liveTestCaseKeys = new Map<string, true>()
 const liveProgress = ref<{ totalTests: number, passedTests: number, failedTests: number, skippedTests: number } | null>(null)
 let eventSource: EventSource | null = null
 
+// Combined test cases: from server data + live stream.
+const displayTestCases = ref<TestCaseResult[]>([])
+
+watch([isLive, testRun], () => {
+  if (isLive.value && liveTestCases.value.length > 0) {
+    displayTestCases.value = [...liveTestCases.value]
+  } else if (testRun.value?.testCases) {
+    displayTestCases.value = testRun.value.testCases
+  } else {
+    displayTestCases.value = []
+  }
+}, { immediate: true })
+
+// Initialise liveTestCases from persisted data when SSE connects
+function seedLiveFromPersisted(cases: TestCaseResult[]) {
+  for (const tc of cases) {
+    const key = `${tc.title}@@${tc.location}`
+    if (!liveTestCaseKeys.has(key)) {
+      liveTestCaseKeys.set(key, true)
+      liveTestCases.value = [...liveTestCases.value, tc]
+    }
+  }
+  displayTestCases.value = [...liveTestCases.value]
+}
+
 // Debounced batch processing of SSE events to avoid cascading re-renders
 let pendingEvents: Record<string, unknown>[] = []
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -43,7 +68,7 @@ function flushPendingEvents() {
         skippedTests: data.skippedTests as number
       }
     } else if (parsed.type === 'test-begin') {
-      const d = data as { title: string, location: string, workerIndex?: number, startedAt?: number }
+      const d = data as { title: string, location: string, workerIndex?: number, startedAt?: number, browser?: { projectName?: string } | null }
       const key = `${d.title}@@${d.location}`
       if (!liveTestCaseKeys.has(key)) {
         liveTestCaseKeys.set(key, true)
@@ -53,24 +78,28 @@ function flushPendingEvents() {
           status: 'running',
           location: d.location,
           workerIndex: d.workerIndex ?? null,
-          startedAt: d.startedAt ?? Date.now()
+          startedAt: d.startedAt ?? Date.now(),
+          browser: d.browser ?? null
         }]
         displayTestCases.value = [...liveTestCases.value]
       }
     } else if (parsed.type === 'test-completed') {
-      const d = data as { title: string, location: string, status: string, duration?: number, error?: string | null, workerIndex?: number, startedAt?: number }
+      const d = data as { title: string, location: string, status: string, duration?: number, error?: string | null, workerIndex?: number, startedAt?: number, browser?: { projectName?: string } | null }
       const key = `${d.title}@@${d.location}`
       if (liveTestCaseKeys.has(key)) {
         const idx = liveTestCases.value.findIndex(tc => `${tc.title}@@${tc.location}` === key)
         if (idx >= 0) {
+          const existing = liveTestCases.value[idx]!
+          if (existing.status === d.status) continue
           const copy = [...liveTestCases.value]
           copy[idx] = {
-            ...copy[idx]!,
+            ...existing,
             status: d.status,
             duration: d.duration,
             error: d.error,
-            workerIndex: d.workerIndex ?? copy[idx]!.workerIndex,
-            startedAt: d.startedAt ? d.startedAt : copy[idx]!.startedAt
+            workerIndex: d.workerIndex ?? existing.workerIndex,
+            startedAt: d.startedAt ? d.startedAt : existing.startedAt,
+            browser: d.browser ?? existing.browser
           }
           liveTestCases.value = copy
           displayTestCases.value = [...copy]
@@ -85,7 +114,8 @@ function flushPendingEvents() {
           location: d.location,
           error: d.error,
           workerIndex: d.workerIndex ?? null,
-          startedAt: d.startedAt ?? undefined
+          startedAt: d.startedAt ?? undefined,
+          browser: d.browser ?? null
         }]
         displayTestCases.value = [...liveTestCases.value]
       }
@@ -130,20 +160,10 @@ let demoUnsubscribe: (() => void) | null = null
 function connectToDemoStream() {
   if (demoUnsubscribe) return
 
-  // Catch-up: the server SSE replays already-persisted cases on connect;
-  // mirror that from the data already fetched with the run.
-  for (const tc of testRun.value?.testCases ?? []) {
-    enqueueEvent({
-      type: 'test-completed',
-      data: {
-        title: tc.title,
-        status: tc.status,
-        duration: tc.duration,
-        location: tc.location,
-        error: tc.error || null,
-        workerIndex: tc.workerIndex ?? null
-      }
-    })
+  // Seed liveTestCases from persisted data so existing cases are visible
+  // immediately with correct ids, browser, startedAt, etc.
+  if (testRun.value?.testCases?.length) {
+    seedLiveFromPersisted(testRun.value.testCases)
   }
 
   demoUnsubscribe = subscribeDemoEvents((message) => {
@@ -167,6 +187,12 @@ function connectToStream() {
 
   if (eventSource) return
   if (!isLive.value) return
+
+  // Seed liveTestCases from persisted data so existing cases are visible
+  // immediately with correct ids, browser, startedAt, etc.
+  if (testRun.value?.testCases?.length) {
+    seedLiveFromPersisted(testRun.value.testCases)
+  }
 
   eventSource = new EventSource(`/api/test-runs/${runId}/stream`)
 
@@ -209,19 +235,6 @@ watch(shouldStream, (live) => {
 onUnmounted(() => {
   disconnectStream()
 })
-
-// Combined test cases: from server data + live stream.
-const displayTestCases = ref<TestCaseResult[]>([])
-
-watch([isLive, testRun], () => {
-  if (isLive.value && liveTestCases.value.length > 0) {
-    displayTestCases.value = [...liveTestCases.value]
-  } else if (testRun.value?.testCases) {
-    displayTestCases.value = testRun.value.testCases
-  } else {
-    displayTestCases.value = []
-  }
-}, { immediate: true })
 
 // Throttled version for child components that don't need frame-perfect reactivity
 let rafId: number | null = null

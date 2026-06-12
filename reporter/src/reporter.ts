@@ -75,12 +75,15 @@ class PiwiDashboardReporter {
 
   onTestBegin(test: any, result: any): void {
     const relativeFilePath = path.relative(process.cwd(), test.location.file);
+    const browser = this.getBrowserConfig(test);
     const beginEvent = {
       type: "begin",
       title: test.title,
       location: `${relativeFilePath}:${test.location.line}:${test.location.column}`,
       workerIndex: result?.workerIndex ?? result?.parallelIndex ?? null,
+      browser: browser || undefined,
     };
+
 
     if (this.streamingEnabled && this.streamingRunId) {
       this.queueStreamEvent(beginEvent);
@@ -105,6 +108,9 @@ class PiwiDashboardReporter {
       startedAt: result.startTime ? result.startTime.getTime() : null,
       attachments: result.attachments || [],
     };
+
+    const browser = this.getBrowserConfig(test);
+    if (browser) testCase.browser = browser;
 
     if (this.options.collectPerformanceMetrics && result.steps?.length > 0) {
       testCase.performanceMetrics = collectStepMetrics(result.steps);
@@ -592,6 +598,7 @@ class PiwiDashboardReporter {
       webVitals: rest.webVitals || null,
       consoleLogs: rest.consoleLogs || null,
       ariaSnapshot: rest.ariaSnapshot || null,
+      browser: rest.browser || null,
     };
   }
 
@@ -641,6 +648,24 @@ class PiwiDashboardReporter {
       /* ignore */
     }
     return null;
+  }
+
+  private getBrowserConfig(test: any): Record<string, any> | null {
+    try {
+      const project = test.parent?.project?.();
+      if (!project) return null;
+      const config: Record<string, any> = {
+        projectName: project.name,
+      };
+      if (project.use?.browserName) config.browserName = project.use.browserName;
+      if (project.use?.channel) config.channel = project.use.channel;
+      if (project.use?.viewport) {
+        config.viewport = { width: project.use.viewport.width, height: project.use.viewport.height };
+      }
+      return Object.keys(config).length > 0 ? config : null;
+    } catch {
+      return null;
+    }
   }
 
   static createGlobalSetup(

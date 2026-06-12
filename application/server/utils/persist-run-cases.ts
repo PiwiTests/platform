@@ -29,6 +29,7 @@ export interface RunCaseInput {
   ariaSnapshot?: string | null
   workerIndex?: number | null
   startedAt?: number | null
+  browser?: unknown
 }
 
 /** Per-fingerprint accumulator for the batch being persisted. */
@@ -211,6 +212,7 @@ export async function persistRunCases(
       webVitals: sanitizeWebVitals(c.webVitals as Record<string, unknown> | null | undefined) ?? null,
       consoleLogs: sanitizeConsoleLogs(c.consoleLogs as Array<Record<string, unknown>> | null | undefined) ?? null,
       ariaSnapshot: c.ariaSnapshot ?? null,
+      browser: c.browser ?? null,
       workerIndex: c.workerIndex ?? null,
       startedAt: c.startedAt ?? null
     })

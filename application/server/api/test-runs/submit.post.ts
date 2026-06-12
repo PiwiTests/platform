@@ -92,6 +92,7 @@ export default eventHandler(async (event) => {
       ariaSnapshot?: unknown
       startedAt?: number | null
       workerIndex?: number | null
+      browser?: unknown
     }) => {
       const { filePath, line, column } = testCase.location
         ? parseLocation(testCase.location)
@@ -114,7 +115,8 @@ export default eventHandler(async (event) => {
         consoleLogs: testCase.consoleLogs,
         ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
         workerIndex: testCase.workerIndex,
-        startedAt: testCase.startedAt ?? null
+        startedAt: testCase.startedAt ?? null,
+        browser: testCase.browser ?? null
       }
     })
 

@@ -36,6 +36,7 @@ export async function apiGetTestRun(id: number) {
     networkRequests: testRunsCases.networkRequests,
     webVitals: testRunsCases.webVitals,
     workerIndex: testRunsCases.workerIndex,
+    browser: testRunsCases.browser,
     title: testCases.title,
     filePath: testCases.filePath
   })
@@ -59,7 +60,8 @@ export async function apiGetTestRun(id: number) {
     slowestStepDuration: tc.slowestStepDuration,
     networkRequests: tc.networkRequests,
     webVitals: tc.webVitals,
-    workerIndex: tc.workerIndex
+    workerIndex: tc.workerIndex,
+    browser: tc.browser
   }))
 
   // Omit streamToken — internal field

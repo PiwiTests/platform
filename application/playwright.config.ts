@@ -41,8 +41,8 @@ export default defineConfig({
   /* Cap the number of failures to 3 on CI to avoid wasting resources, but allow unlimited failures locally for debugging. */
   maxFailures: process.env.CI ? 3 : 0,
 
-  /* Opt out of parallel tests. */
-  workers: 1,
+  /* Run tests in parallel across projects */
+  workers: 4,
 
   globalSetup: './tests/globalSetup',
 
@@ -63,6 +63,10 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] }
+    },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] }
     }
   ],
 

@@ -91,6 +91,19 @@ export function reportIcon(type: string): string {
   }
 }
 
+/**
+ * Map a browser project name to a recognizable icon.
+ */
+export function getBrowserIcon(browserName?: string | null): string {
+  if (!browserName) return 'i-lucide-globe'
+  const name = browserName.toLowerCase()
+  if (name.includes('chrome') || name.includes('chromium')) return 'i-simple-icons-googlechrome'
+  if (name.includes('firefox')) return 'i-simple-icons-firefoxbrowser'
+  if (name.includes('safari') || name.includes('webkit')) return 'i-simple-icons-safari'
+  if (name.includes('edge')) return 'i-simple-icons-microsoftedge'
+  return 'i-lucide-globe'
+}
+
 export function getStatusColor(status: string) {
   switch (status) {
     case 'passed': return 'success'

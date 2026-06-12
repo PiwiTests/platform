@@ -370,6 +370,12 @@ export interface TestCaseResult {
   ariaSnapshot?: string | null
   workerIndex?: number | null
   startedAt?: number
+  browser?: {
+    projectName?: string
+    browserName?: string | null
+    channel?: string | null
+    viewport?: { width: number, height: number } | null
+  } | null
 }
 
 /**

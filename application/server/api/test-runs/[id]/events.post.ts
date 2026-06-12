@@ -59,7 +59,8 @@ export default eventHandler(async (event) => {
         title: tc.title,
         location: tc.location,
         workerIndex: tc.workerIndex ?? null,
-        startedAt: tc.startedAt ?? null
+        startedAt: tc.startedAt ?? null,
+        browser: tc.browser ?? null
       }
     })
   }
@@ -101,7 +102,8 @@ export default eventHandler(async (event) => {
     consoleLogs: tc.consoleLogs,
     ariaSnapshot: tc.ariaSnapshot as string | null | undefined,
     workerIndex: tc.workerIndex ?? null,
-    startedAt: tc.startedAt ?? null
+    startedAt: tc.startedAt ?? null,
+    browser: tc.browser ?? null
   }))
 
   const insertedRunCases = await persistRunCases(db, testRun.projectId, id, cases, true)
@@ -138,7 +140,8 @@ export default eventHandler(async (event) => {
         location: tc.location,
         error: tc.error ?? null,
         workerIndex: tc.workerIndex ?? null,
-        startedAt: tc.startedAt ?? null
+        startedAt: tc.startedAt ?? null,
+        browser: tc.browser ?? null
       }
     })
   }
