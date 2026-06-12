@@ -15,6 +15,7 @@ if (!process.env.CI) {
     streaming: true,
     uploadReport: false, // individual reports are listed in `reports` below
     uploadTraces: true,
+    verbose: true,
     reports: [
       { type: 'html' },
       { type: 'monocart' },

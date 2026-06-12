@@ -136,6 +136,7 @@ CREATE TABLE IF NOT EXISTS test_runs_cases (
   web_vitals TEXT,
   console_logs TEXT,
   aria_snapshot TEXT,
+  browser TEXT,
   worker_index INTEGER,
   started_at INTEGER,
   created_at INTEGER NOT NULL,
@@ -468,6 +469,23 @@ const PROJECT_CONFIGS = {
   4: { numRuns: 8, totalTests: 7, baseDuration: 190000, baseAvg: 5800, baseP90: 12000, failRate: 0.25, flakyRate: 0.05 }
 }
 
+// Browser configs per project
+const BROWSER_CONFIGS = {
+  1: [ // e2e-checkout — Chromium most runs, Firefox occasionally
+    { projectName: 'Chromium', browserName: 'chromium', channel: null, viewport: { width: 1280, height: 720 } },
+    { projectName: 'Firefox', browserName: 'firefox', channel: null, viewport: { width: 1280, height: 720 } }
+  ],
+  2: [ // api-integration — always Chromium
+    { projectName: 'Chromium', browserName: 'chromium', channel: null, viewport: { width: 1280, height: 720 } }
+  ],
+  3: [ // ui-components — always Chromium
+    { projectName: 'Chromium', browserName: 'chromium', channel: null, viewport: { width: 1280, height: 720 } }
+  ],
+  4: [ // mobile-safari — always WebKit with iPhone viewport
+    { projectName: 'Mobile Safari', browserName: 'webkit', channel: null, viewport: { width: 390, height: 844 } }
+  ]
+}
+
 // Base start time (most recent run is at this time, older runs go backwards)
 const BASE_START_MS = new Date('2025-04-25T08:30:00Z').getTime()
 
@@ -600,6 +618,9 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
       }))
       const slowestStep = steps.reduce((a, b) => a.duration > b.duration ? a : b)
 
+      const browserConfigs = BROWSER_CONFIGS[projectId] || BROWSER_CONFIGS[1]
+      const browser = browserConfigs[projectId === 1 ? (i % browserConfigs.length) : 0]
+
       const trc = {
         id: trcId++,
         test_run_id: runId,
@@ -611,6 +632,7 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
         retries: isFlakyCase ? 1 : 0,
         line: 10 + (j * 8),
         column: 5,
+        browser,
         steps,
         slowest_step: slowestStep.title,
         slowest_step_duration: slowestStep.duration,

@@ -142,15 +142,18 @@ export async function persistRunCases(
     existingCaseMap.set(`${tc.filePath}::${tc.title}`, tc)
   }
 
-  // If deduplicating, prefetch existing (testRunId, testCaseId, retries) rows
+  // If deduplicating, prefetch existing (testRunId, testCaseId, retries, browser) rows
   let existingRunCaseSet: Set<string> | null = null
   if (deduplicate) {
     const existingRunCases = await db
-      .select({ testCaseId: testRunsCases.testCaseId, retries: testRunsCases.retries })
+      .select({ testCaseId: testRunsCases.testCaseId, retries: testRunsCases.retries, browser: testRunsCases.browser })
       .from(testRunsCases)
       .where(eq(testRunsCases.testRunId, testRunId))
     existingRunCaseSet = new Set(
-      existingRunCases.map(r => `${r.testCaseId}::${r.retries}`)
+      existingRunCases.map(r => {
+        const browserKey = r.browser ? JSON.stringify(r.browser) : 'null'
+        return `${r.testCaseId}::${r.retries}::${browserKey}`
+      })
     )
   }
 
@@ -177,9 +180,10 @@ export async function persistRunCases(
 
     if (!shared) continue
 
-    // Skip duplicate (testRunId, testCaseId, retries) when deduplicating
+    // Skip duplicate (testRunId, testCaseId, retries, browser) when deduplicating
     if (deduplicate && existingRunCaseSet) {
-      const rowKey = `${shared.id}::${c.retries ?? 0}`
+      const browserKey = c.browser ? JSON.stringify(c.browser) : 'null'
+      const rowKey = `${shared.id}::${c.retries ?? 0}::${browserKey}`
       if (existingRunCaseSet.has(rowKey)) continue
     }
 

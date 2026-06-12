@@ -49,6 +49,7 @@ interface SimTest {
   slowestStepDuration: number
   networkRequests: Array<Record<string, unknown>>
   webVitals: Record<string, unknown>
+  browser?: Record<string, unknown> | null
 }
 
 export interface DemoScenario {
@@ -94,6 +95,13 @@ const CHECKOUT_TESTS: Array<{ file: string, title: string, duration: number }> =
   { file: 'tests/checkout/address.spec.ts', title: 'should fill and save shipping address', duration: 4100 },
   { file: 'tests/checkout/address.spec.ts', title: 'should validate required address fields', duration: 2700 }
 ]
+
+/** Browser configs for multi-browser scenarios */
+const BROWSER_CONFIGS: Record<string, Record<string, unknown>> = {
+  chromium: { projectName: 'Chromium', browserName: 'chromium', channel: null, viewport: { width: 1280, height: 720 } },
+  firefox: { projectName: 'Firefox', browserName: 'firefox', channel: null, viewport: { width: 1280, height: 720 } },
+  webkit: { projectName: 'WebKit', browserName: 'webkit', channel: null, viewport: { width: 1280, height: 720 } }
+}
 
 /**
  * Matches the seeded failure cluster of the e2e-checkout project
@@ -359,6 +367,27 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
       commitMessage: 'ci: bump runner image to ubuntu-26.04'
     }),
     tests: () => baseTests()
+  },
+  {
+    id: 'cross-browser',
+    label: 'Cross-browser run',
+    description: 'Tests spread across Chromium, Firefox, and WebKit in parallel',
+    icon: 'i-lucide-smartphone',
+    speed: 2,
+    workers: 3,
+    environment: 'staging',
+    metadata: () => buildMetadata({
+      branch: 'main',
+      author: 'Alice Chen',
+      commitMessage: 'feat: cross-browser checkout flow'
+    }),
+    tests: () => {
+      const browserKeys = ['chromium', 'firefox', 'webkit']
+      return baseTests().map((t, i) => ({
+        ...t,
+        browser: BROWSER_CONFIGS[browserKeys[i % browserKeys.length]!]
+      }))
+    }
   }
 ]
 
@@ -456,7 +485,8 @@ export async function runSimulation(
           title: test.title,
           location: test.location,
           workerIndex,
-          startedAt
+          startedAt,
+          browser: test.browser ?? null
         }])
 
         await sleep(attemptDuration / scenario.speed)
@@ -477,6 +507,7 @@ export async function runSimulation(
           webVitals: test.webVitals,
           consoleLogs: a.consoleLogs ?? null,
           ariaSnapshot: a.ariaSnapshot ?? null,
+          browser: test.browser ?? null,
           workerIndex,
           startedAt
         }])

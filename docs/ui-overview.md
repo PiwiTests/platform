@@ -76,7 +76,7 @@ Deep dive into a single test execution:
 - **Live progress** — if the run is still in progress (`running` status), a live progress bar and streaming test results appear in real time
 - **Reports** — buttons to open attached HTML reports (Playwright, Monocart) in a new tab or download blob archives
 - **Tabbed right panel** with five tabs:
-  - **Test cases** — every test with status, duration, file location, error messages, traces; scrollable table with sticky header, searchable, filterable by status, and paginated
+  - **Test cases** — every test with browser icon (first column), status, duration, file location, error messages, traces; scrollable table with sticky header, searchable, filterable by status and browser, and paginated
   - **Workers** — horizontal timeline showing worker assignment per test case; click a bar to jump to that test case in the table
   - **Compare** — select a baseline run for side-by-side delta view showing new failures, recovered tests, and duration changes (improved/regressed/unchanged)
   - **Slow endpoints** — aggregated network request table showing slow API calls grouped by method + normalized route, with avg/p90/max duration and error rate
@@ -146,6 +146,7 @@ The [live demo](https://phenx.github.io/piwi-dashboard/demo/) includes a **Simul
 - **Flaky retries** — tests that fail and then pass on retry
 - **Performance regression** — a green run that is ~2× slower, with degraded endpoints
 - **Interrupted run** — a CI job killed partway through the suite
+- **Cross-browser run** — tests distributed across Chromium, Firefox, and WebKit to showcase the browser column and filter
 
 Each simulation creates a real run in the in-browser database: initialization status, live per-test updates, worker timeline, failure groups, regression context, and history-based comparisons all behave exactly as they would against a real server.
 

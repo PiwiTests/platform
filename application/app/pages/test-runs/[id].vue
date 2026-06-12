@@ -41,7 +41,7 @@ watch([isLive, testRun], () => {
 // Initialise liveTestCases from persisted data when SSE connects
 function seedLiveFromPersisted(cases: TestCaseResult[]) {
   for (const tc of cases) {
-    const key = `${tc.title}@@${tc.location}`
+    const key = `${tc.title}@@${tc.location}@@${JSON.stringify(tc.browser)}`
     if (!liveTestCaseKeys.has(key)) {
       liveTestCaseKeys.set(key, true)
       liveTestCases.value = [...liveTestCases.value, tc]
@@ -69,7 +69,7 @@ function flushPendingEvents() {
       }
     } else if (parsed.type === 'test-begin') {
       const d = data as { title: string, location: string, workerIndex?: number, startedAt?: number, browser?: { projectName?: string } | null }
-      const key = `${d.title}@@${d.location}`
+      const key = `${d.title}@@${d.location}@@${JSON.stringify(d.browser)}`
       if (!liveTestCaseKeys.has(key)) {
         liveTestCaseKeys.set(key, true)
         liveTestCases.value = [...liveTestCases.value, {
@@ -85,12 +85,11 @@ function flushPendingEvents() {
       }
     } else if (parsed.type === 'test-completed') {
       const d = data as { title: string, location: string, status: string, duration?: number, error?: string | null, workerIndex?: number, startedAt?: number, browser?: { projectName?: string } | null }
-      const key = `${d.title}@@${d.location}`
+      const key = `${d.title}@@${d.location}@@${JSON.stringify(d.browser)}`
       if (liveTestCaseKeys.has(key)) {
-        const idx = liveTestCases.value.findIndex(tc => `${tc.title}@@${tc.location}` === key)
+        const idx = liveTestCases.value.findIndex(tc => `${tc.title}@@${tc.location}@@${JSON.stringify(tc.browser)}` === key)
         if (idx >= 0) {
           const existing = liveTestCases.value[idx]!
-          if (existing.status === d.status) continue
           const copy = [...liveTestCases.value]
           copy[idx] = {
             ...existing,

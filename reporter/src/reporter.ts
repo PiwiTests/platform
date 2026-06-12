@@ -652,18 +652,26 @@ class PiwiDashboardReporter {
 
   private getBrowserConfig(test: any): Record<string, any> | null {
     try {
-      const project = test.parent?.project?.();
-      if (!project) return null;
-      const config: Record<string, any> = {
-        projectName: project.name,
-      };
-      if (project.use?.browserName) config.browserName = project.use.browserName;
-      if (project.use?.channel) config.channel = project.use.channel;
-      if (project.use?.viewport) {
-        config.viewport = { width: project.use.viewport.width, height: project.use.viewport.height };
+      let suite = test.parent;
+      let depth = 0;
+      while (suite && depth < 20) {
+        depth++;
+        const project = suite.project?.();
+        if (project) {
+          const config: Record<string, any> = {
+            projectName: project.name,
+          };
+          if (project.use?.browserName) config.browserName = project.use.browserName;
+          if (project.use?.channel) config.channel = project.use.channel;
+          if (project.use?.viewport) {
+            config.viewport = { width: project.use.viewport.width, height: project.use.viewport.height };
+          }
+          return Object.keys(config).length > 0 ? config : null;
+        }
+        suite = suite.parent;
       }
-      return Object.keys(config).length > 0 ? config : null;
-    } catch {
+      return null;
+    } catch (e: any) {
       return null;
     }
   }

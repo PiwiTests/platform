@@ -1,8 +1,6 @@
 # Piwi Dashboard
 
 > **Disclaimer:** Piwi Dashboard is **not affiliated with, endorsed by, or connected to Microsoft Corporation** in any way.  
-> The name "Piwi" is a playful, unrelated name with no connection to any existing product or brand.  
-> This project was originally called "Playwright Dashboard" and was renamed to avoid any confusion with Microsoft's Playwright testing framework.
 
 [![Nuxt UI](https://img.shields.io/badge/Made%20with-Nuxt%20UI-00DC82?logo=nuxt&labelColor=020420)](https://ui.nuxt.com)
 [![Docker](https://img.shields.io/badge/Docker-Available-2496ED?logo=docker&labelColor=020420)](https://github.com/PhenX/piwi-dashboard/pkgs/container/piwi-dashboard)
@@ -51,6 +49,7 @@ Running Playwright tests in CI produces HTML reports that are ephemeral — once
 - 📈 **Performance tracking** — step-level timing, avg/P90 duration trends, slowest-tests analysis
 - 🌐 **Network request analysis** — find slow API endpoints grouped by method + normalized route
 - 🔬 **Browser Web Vitals** — TTFB, DOMContentLoaded, FCP and more via the Performance API
+- 🌐 **Multi-browser support** — every test case records its browser config (project name, browser, channel, viewport); filter and sort by browser in the test run detail page
 - 📊 **Run comparison** — side-by-side delta view with improved/regressed/unchanged summary
 - 🔗 **Failure clustering** — failed tests sharing the same root cause are grouped automatically via error fingerprinting; run page shows failure groups with flaky and worker-correlation heuristics
 - 🔌 **Playwright reporter** — drop-in custom reporter for automatic result submission, with HTML report and trace uploads
@@ -113,7 +112,7 @@ Results appear automatically in the dashboard. The project is created on first s
 | **Project detail** | Full run history for a single project with status badges, test breakdowns, and environment filter |
 | **Performance** | Avg/P90 duration trend chart, top 20 slowest tests, side-by-side run comparison |
 | **Test cases** | Per-project view of all unique test cases with pass/fail history |
-| **Test run detail** | Every test case in a run with status, duration, location, error messages, traces, and reports |
+| **Test run detail** | Every test case in a run with browser icon, status, duration, location, error messages, traces, and reports; filter by browser |
 | **Settings › Users** | User management and API key generation (when authentication is enabled) |
 | **Settings › Storage** | Storage statistics and cleanup tools for old runs |
 | **Settings › Tags** | Tag management for organizing projects |
