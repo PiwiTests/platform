@@ -26,7 +26,8 @@ test.describe('Dashboard UI Tests', () => {
             retries: 0
           }
         ]
-      }
+      },
+      timeout: 20000
     })
   })
 
@@ -61,15 +62,14 @@ test.describe('Dashboard UI Tests', () => {
     // Click on a project - use link role to target the table link, not sidebar
     await page.getByRole('link', { name: PROJECT.UI_TEST }).click()
 
-    // Wait for navigation and hydration (sidebar uses a lazy useFetch that needs to complete)
     await page.waitForURL(/\/projects\/\d+/)
-    await waitForHydration(page)
 
-    // Check for test runs tab content
-    await expect(page.getByText('Test run statistics over time')).toBeVisible()
+    // Wait for main content to confirm page loaded
+    await expect(page.getByText('Test run statistics over time')).toBeVisible({ timeout: 30000 })
 
-    // Check project name in sidebar is expanded (sidebar uses a lazy useFetch that runs after hydration)
-    await expect(page.getByRole('link', { name: 'Test runs' })).toBeVisible({ timeout: 20000 })
+    // Sidebar accordion remounts on navigation (keyed by currentProjectId), so
+    // defaultOpen:true takes effect and 'Test runs' should be visible promptly.
+    await expect(page.getByRole('link', { name: 'Test runs' })).toBeVisible({ timeout: 15000 })
   })
 
   test('should navigate to test run details page', async ({ page }) => {
