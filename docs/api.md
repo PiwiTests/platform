@@ -32,7 +32,13 @@ Submit test results as JSON. The project is created automatically if it doesn't 
       "status": "passed",
       "duration": 1500,
       "location": "tests/login.spec.ts:10:5",
-      "retries": 0
+      "retries": 0,
+      "browser": {
+        "projectName": "Chromium",
+        "browserName": "chromium",
+        "channel": null,
+        "viewport": { "width": 1280, "height": 720 }
+      }
     },
     {
       "title": "should handle errors",
@@ -40,7 +46,13 @@ Submit test results as JSON. The project is created automatically if it doesn't 
       "duration": 2300,
       "location": "tests/errors.spec.ts:5:5",
       "error": "Expected true but got false",
-      "retries": 1
+      "retries": 1,
+      "browser": {
+        "projectName": "Firefox",
+        "browserName": "firefox",
+        "channel": null,
+        "viewport": { "width": 1280, "height": 720 }
+      }
     }
   ]
 }
@@ -148,7 +160,13 @@ Stream test case results as they complete. Supports single or batch submission.
       "title": "should login",
       "status": "passed",
       "duration": 1500,
-      "location": "tests/login.spec.ts:10:5"
+      "location": "tests/login.spec.ts:10:5",
+      "browser": {
+        "projectName": "Chromium",
+        "browserName": "chromium",
+        "channel": null,
+        "viewport": { "width": 1280, "height": 720 }
+      }
     }
   ]
 }

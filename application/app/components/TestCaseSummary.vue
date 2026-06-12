@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TestCaseResult } from '~~/types/api'
+import type { BrowserConfig } from '~~/shared/types'
 
 interface ScmInfo {
   commit?: string
@@ -15,11 +16,6 @@ interface CiInfo {
   workflow?: string
 }
 
-interface BrowserInfo {
-  browserName?: string | null
-  viewport?: { width?: number, height?: number } | null
-}
-
 interface HistoricalTiming {
   avg: number
   current: number
@@ -31,7 +27,7 @@ defineProps<{
   testCase: TestCaseResult | null
   scmInfo: ScmInfo | null
   ciInfo: CiInfo | null
-  browserInfo: BrowserInfo | null
+  browser: BrowserConfig | null
   environment: string | null | undefined
   reportPath: string | null
   stepsCount: number
@@ -148,21 +144,64 @@ defineEmits<{
     />
 
     <!-- Browser -->
-    <UCard v-if="browserInfo" :class="blockColSpanClass">
+    <UCard v-if="browser" :class="blockColSpanClass">
       <template #header>
         <div class="flex items-center gap-2">
           <UIcon name="i-lucide-globe" class="w-4 h-4 text-primary" />
           <span class="text-sm font-medium">Browser</span>
         </div>
       </template>
-      <div class="space-y-2 text-sm">
-        <div class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-chrome" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-          <span class="capitalize">{{ browserInfo?.browserName || 'Unknown' }}</span>
+      <div class="space-y-2">
+        <div class="flex items-center gap-2 flex-wrap">
+          <BrowserBadge :browser="browser ? { ...browser, viewport: undefined } : null" size="md" />
+          <span v-if="browser?.channel" class="text-xs text-gray-500">{{ browser.channel }}</span>
         </div>
-        <div v-if="browserInfo?.viewport" class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-maximize-2" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
-          <span class="text-gray-600 dark:text-gray-400">{{ browserInfo.viewport.width }} × {{ browserInfo.viewport.height }}</span>
+        <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-gray-400">
+          <div v-if="browser?.viewport" class="flex items-center gap-1">
+            <UIcon name="i-lucide-maximize-2" class="size-3 shrink-0 text-gray-400" />
+            {{ browser.viewport.width }}×{{ browser.viewport.height }}
+            <span v-if="browser.deviceScaleFactor && browser.deviceScaleFactor !== 1" class="text-gray-400">@{{ browser.deviceScaleFactor }}x</span>
+          </div>
+          <div v-if="browser?.isMobile" class="flex items-center gap-1">
+            <UIcon name="i-lucide-smartphone" class="size-3 shrink-0 text-gray-400" />
+            Mobile
+            <span v-if="browser.hasTouch" class="text-gray-400">· Touch</span>
+          </div>
+          <div v-else-if="browser?.hasTouch" class="flex items-center gap-1">
+            <UIcon name="i-lucide-hand" class="size-3 shrink-0 text-gray-400" />
+            Touch
+          </div>
+          <div v-if="browser?.locale" class="flex items-center gap-1">
+            <UIcon name="i-lucide-languages" class="size-3 shrink-0 text-gray-400" />
+            {{ browser.locale }}
+          </div>
+          <div v-if="browser?.timezoneId" class="flex items-center gap-1">
+            <UIcon name="i-lucide-clock" class="size-3 shrink-0 text-gray-400" />
+            {{ browser.timezoneId }}
+          </div>
+          <div v-if="browser?.colorScheme && browser.colorScheme !== 'light'" class="flex items-center gap-1">
+            <UIcon name="i-lucide-moon" class="size-3 shrink-0 text-gray-400" />
+            {{ browser.colorScheme }}
+          </div>
+          <div v-if="browser?.reducedMotion && browser.reducedMotion !== 'no-preference'" class="flex items-center gap-1">
+            <UIcon name="i-lucide-pause-circle" class="size-3 shrink-0 text-gray-400" />
+            Reduced motion
+          </div>
+          <div v-if="browser?.offline" class="flex items-center gap-1">
+            <UIcon name="i-lucide-wifi-off" class="size-3 shrink-0 text-gray-400" />
+            Offline
+          </div>
+          <div v-if="browser?.javaScriptEnabled === false" class="flex items-center gap-1">
+            <UIcon name="i-lucide-code-xml" class="size-3 shrink-0 text-gray-400" />
+            JS disabled
+          </div>
+          <div v-if="browser?.geolocation" class="flex items-center gap-1">
+            <UIcon name="i-lucide-map-pin" class="size-3 shrink-0 text-gray-400" />
+            {{ browser.geolocation.latitude.toFixed(2) }}, {{ browser.geolocation.longitude.toFixed(2) }}
+          </div>
+        </div>
+        <div v-if="browser?.userAgent" class="text-xs text-gray-400 break-all leading-snug pt-1 border-t border-default">
+          {{ browser.userAgent }}
         </div>
       </div>
     </UCard>

@@ -75,6 +75,7 @@ export default eventHandler(async (event) => {
     slowestStepDuration: testRunsCases.slowestStepDuration,
     workerIndex: testRunsCases.workerIndex,
     startedAt: testRunsCases.startedAt,
+    browser: testRunsCases.browser,
     title: testCases.title,
     filePath: testCases.filePath
   })
@@ -95,7 +96,8 @@ export default eventHandler(async (event) => {
     slowestStep: tc.slowestStep,
     slowestStepDuration: tc.slowestStepDuration,
     workerIndex: tc.workerIndex,
-    startedAt: tc.startedAt
+    startedAt: tc.startedAt,
+    browser: tc.browser
   }))
 
   // Omit streamToken — it is an internal secret and must not be sent to clients

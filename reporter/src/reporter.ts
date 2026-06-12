@@ -75,12 +75,15 @@ class PiwiDashboardReporter {
 
   onTestBegin(test: any, result: any): void {
     const relativeFilePath = path.relative(process.cwd(), test.location.file);
+    const browser = this.getBrowserConfig(test);
     const beginEvent = {
       type: "begin",
       title: test.title,
       location: `${relativeFilePath}:${test.location.line}:${test.location.column}`,
       workerIndex: result?.workerIndex ?? result?.parallelIndex ?? null,
+      browser: browser || undefined,
     };
+
 
     if (this.streamingEnabled && this.streamingRunId) {
       this.queueStreamEvent(beginEvent);
@@ -105,6 +108,9 @@ class PiwiDashboardReporter {
       startedAt: result.startTime ? result.startTime.getTime() : null,
       attachments: result.attachments || [],
     };
+
+    const browser = this.getBrowserConfig(test);
+    if (browser) testCase.browser = browser;
 
     if (this.options.collectPerformanceMetrics && result.steps?.length > 0) {
       testCase.performanceMetrics = collectStepMetrics(result.steps);
@@ -592,6 +598,7 @@ class PiwiDashboardReporter {
       webVitals: rest.webVitals || null,
       consoleLogs: rest.consoleLogs || null,
       ariaSnapshot: rest.ariaSnapshot || null,
+      browser: rest.browser || null,
     };
   }
 
@@ -641,6 +648,43 @@ class PiwiDashboardReporter {
       /* ignore */
     }
     return null;
+  }
+
+  private getBrowserConfig(test: any): Record<string, any> | null {
+    try {
+      let suite = test.parent;
+      let depth = 0;
+      while (suite && depth < 20) {
+        depth++;
+        const project = suite.project?.();
+        if (project) {
+          const use = project.use ?? {};
+          const config: Record<string, any> = { projectName: project.name };
+          if (use.browserName) config.browserName = use.browserName;
+          if (use.channel) config.channel = use.channel;
+          if (use.viewport) config.viewport = { width: use.viewport.width, height: use.viewport.height };
+          if (use.deviceScaleFactor != null) config.deviceScaleFactor = use.deviceScaleFactor;
+          if (use.isMobile != null) config.isMobile = use.isMobile;
+          if (use.hasTouch != null) config.hasTouch = use.hasTouch;
+          if (use.locale) config.locale = use.locale;
+          if (use.timezoneId) config.timezoneId = use.timezoneId;
+          if (use.geolocation) config.geolocation = { longitude: use.geolocation.longitude, latitude: use.geolocation.latitude, ...(use.geolocation.accuracy != null && { accuracy: use.geolocation.accuracy }) };
+          if (use.colorScheme) config.colorScheme = use.colorScheme;
+          if (use.reducedMotion) config.reducedMotion = use.reducedMotion;
+          if (use.forcedColors) config.forcedColors = use.forcedColors;
+          if (use.offline) config.offline = use.offline;
+          if (use.bypassCSP) config.bypassCSP = use.bypassCSP;
+          if (use.javaScriptEnabled === false) config.javaScriptEnabled = false;
+          if (use.serviceWorkers) config.serviceWorkers = use.serviceWorkers;
+          if (use.userAgent) config.userAgent = use.userAgent;
+          return config;
+        }
+        suite = suite.parent;
+      }
+      return null;
+    } catch (e: any) {
+      return null;
+    }
   }
 
   static createGlobalSetup(

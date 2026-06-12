@@ -91,17 +91,6 @@ const ciInfo = computed(() => {
   return m.ci as { provider?: string, buildNumber?: string, buildUrl?: string, workflow?: string }
 })
 
-const browserInfo = computed(() => {
-  const m = metadata.value
-  const htmlReport = m?.htmlReport as { projects?: Array<{ name?: string, use?: { browserName?: string, viewport?: { width?: number, height?: number } } }> } | undefined
-  const project = htmlReport?.projects?.[0]
-  if (!project) return null
-  return {
-    browserName: project.use?.browserName || project.name,
-    viewport: project.use?.viewport
-  }
-})
-
 const fixPrompt = computed(() => {
   if (!testCase.value || testCase.value.status === 'passed') return null
   return generateFixPrompt({
@@ -153,7 +142,7 @@ const { summaryColSpanClass, blockColSpanClass } = useDetailGrid(() => {
   let count = 0
   if (scmInfo.value) count++
   if (ciInfo.value || testCase.value?.testRun?.environment) count++
-  if (browserInfo.value) count++
+  if (testCase.value?.browser) count++
   if (reportPath.value) count++
   return count
 })
@@ -354,7 +343,7 @@ onUnmounted(disconnectRunStream)
           :test-case="(testCase ?? null) as any"
           :scm-info="scmInfo"
           :ci-info="ciInfo"
-          :browser-info="browserInfo"
+          :browser="testCase?.browser ?? null"
           :environment="environment"
           :report-path="reportPath"
           :steps-count="steps.length"

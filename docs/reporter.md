@@ -240,6 +240,12 @@ When `collectCiInfo` is enabled (default), the reporter auto-detects:
 
 The reporter also records browser project configs, worker count, test timeout, and parallel settings.
 
+### Browser configuration per test case
+
+The reporter automatically captures each test case's Playwright project configuration — `projectName`, `browserName`, `channel`, and `viewport` — via `test.parent.project()`. This is stored in the `browser` field of every test case result.
+
+In the dashboard UI, the test run detail page shows a browser icon and project name as the first column of the test cases table, and you can filter by browser using the dropdown above the table.
+
 ## With custom metadata
 
 ```typescript

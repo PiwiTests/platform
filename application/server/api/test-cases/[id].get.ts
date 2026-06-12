@@ -100,6 +100,7 @@ export default eventHandler(async (event) => {
     consoleLogs: testRunsCase.consoleLogs,
     ariaSnapshot: testRunsCase.ariaSnapshot,
     workerIndex: testRunsCase.workerIndex,
+    browser: testRunsCase.browser,
     failureCluster,
     testRun: testRun ? { ...testRun, project, reports: reportList } : testRun,
     attachments: attachmentList

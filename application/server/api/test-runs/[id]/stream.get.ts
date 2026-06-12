@@ -76,7 +76,8 @@ export default eventHandler(async (event) => {
           line: testRunsCases.line,
           column: testRunsCases.column,
           error: testRunsCases.error,
-          workerIndex: testRunsCases.workerIndex
+          workerIndex: testRunsCases.workerIndex,
+          browser: testRunsCases.browser
         })
           .from(testRunsCases)
           .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
@@ -92,7 +93,8 @@ export default eventHandler(async (event) => {
               duration: tc.duration,
               location,
               error: tc.error || null,
-              workerIndex: tc.workerIndex ?? null
+              workerIndex: tc.workerIndex ?? null,
+              browser: tc.browser ?? null
             },
             seq: 0, // Catch-up events have seq 0
             timestamp: Date.now()

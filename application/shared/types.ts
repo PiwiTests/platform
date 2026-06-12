@@ -8,6 +8,29 @@ export type TestCaseStatus = 'passed' | 'failed' | 'skipped' | 'timedout'
 
 export type ClusterStatus = 'open' | 'resolved' | 'ignored'
 
+// ── Browser/project config ────────────────────────────────────────────────────
+
+export interface BrowserConfig {
+  projectName?: string
+  browserName?: string | null
+  channel?: string | null
+  viewport?: { width: number, height: number } | null
+  deviceScaleFactor?: number | null
+  isMobile?: boolean | null
+  hasTouch?: boolean | null
+  locale?: string | null
+  timezoneId?: string | null
+  geolocation?: { longitude: number, latitude: number, accuracy?: number } | null
+  colorScheme?: string | null
+  reducedMotion?: string | null
+  forcedColors?: string | null
+  offline?: boolean | null
+  bypassCSP?: boolean | null
+  javaScriptEnabled?: boolean | null
+  serviceWorkers?: string | null
+  userAgent?: string | null
+}
+
 // ── Test case payload ─────────────────────────────────────────────────────────
 // The JSON shape exchanged between the reporter and the server APIs.
 // The reporter uses `location` (combined "file:line:col" string); the server
@@ -29,6 +52,7 @@ export interface TestCasePayload {
   ariaSnapshot?: unknown
   workerIndex?: number | null
   startedAt?: number | null
+  browser?: BrowserConfig | null
 }
 
 // ── Test run counters ─────────────────────────────────────────────────────────
@@ -79,6 +103,8 @@ export interface StreamEventPayload {
   webVitals?: unknown
   consoleLogs?: unknown
   ariaSnapshot?: unknown
+  projectName?: string | null
+  browser?: BrowserConfig | null
 }
 
 // ── Finish payload ────────────────────────────────────────────────────────────

@@ -126,6 +126,7 @@ const filteredRuns = computed(() => {
 const RunStatusBadge = resolveComponent('RunStatusBadge')
 const TestStatusBar = resolveComponent('TestStatusBar')
 const RunReports = resolveComponent('RunReports')
+const BrowserBadge = resolveComponent('BrowserBadge')
 
 const runsColumns: TableColumn<TestRunSummary>[] = [
   {
@@ -163,6 +164,18 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
     accessorKey: 'status',
     header: createSortHeader<TestRunSummary>('Status'),
     cell: ({ row }) => h(RunStatusBadge, { status: row.getValue('status') as string })
+  },
+  {
+    id: 'browsers',
+    accessorFn: row => row.browsers,
+    header: '',
+    cell: ({ row }) => {
+      const browsers = row.original.browsers
+      if (!browsers?.length) return ''
+      return h('div', { class: 'flex items-center gap-1' },
+        browsers.map(name => h(BrowserBadge, { browser: { projectName: name }, size: 'sm' }))
+      )
+    }
   },
   {
     accessorKey: 'startTime',

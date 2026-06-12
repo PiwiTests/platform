@@ -197,6 +197,7 @@ export interface TestRunSummary {
   avgTestDuration?: number | null
   p90TestDuration?: number | null
   reports?: ReportInfo[]
+  browsers?: string[]
   environment?: string | null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null
@@ -370,6 +371,12 @@ export interface TestCaseResult {
   ariaSnapshot?: string | null
   workerIndex?: number | null
   startedAt?: number
+  browser?: {
+    projectName?: string
+    browserName?: string | null
+    channel?: string | null
+    viewport?: { width: number, height: number } | null
+  } | null
 }
 
 /**

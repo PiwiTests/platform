@@ -59,7 +59,8 @@ export default eventHandler(async (event) => {
         title: tc.title,
         location: tc.location,
         workerIndex: tc.workerIndex ?? null,
-        startedAt: tc.startedAt ?? null
+        startedAt: tc.startedAt ?? null,
+        browser: tc.browser ?? null
       }
     })
   }
@@ -101,16 +102,17 @@ export default eventHandler(async (event) => {
     consoleLogs: tc.consoleLogs,
     ariaSnapshot: tc.ariaSnapshot as string | null | undefined,
     workerIndex: tc.workerIndex ?? null,
-    startedAt: tc.startedAt ?? null
+    startedAt: tc.startedAt ?? null,
+    browser: tc.browser ?? null
   }))
 
-  const insertedRunCases = await persistRunCases(db, testRun.projectId, id, cases, true)
+  const insertedRunCases = await persistRunCases(db, testRun.projectId, id, cases)
 
-  // Increment counters only for newly inserted rows (not deduplicated ones)
+  // Increment counters only for newly inserted rows (DB unique constraint skips duplicates)
   const insertedCount = insertedRunCases.length
-  // Map inserted testCase IDs back to their statuses for accurate status counts
-  const insertedStatusCounts = cases.slice(0, insertedCount).reduce((acc: Record<string, number>, tc: { status?: string }) => {
-    if (tc.status) acc[tc.status] = (acc[tc.status] || 0) + 1
+  // Derive status counts directly from the inserted rows
+  const insertedStatusCounts = insertedRunCases.reduce((acc: Record<string, number>, row: { status: string }) => {
+    acc[row.status] = (acc[row.status] || 0) + 1
     return acc
   }, {} as Record<string, number>)
 
@@ -138,7 +140,8 @@ export default eventHandler(async (event) => {
         location: tc.location,
         error: tc.error ?? null,
         workerIndex: tc.workerIndex ?? null,
-        startedAt: tc.startedAt ?? null
+        startedAt: tc.startedAt ?? null,
+        browser: tc.browser ?? null
       }
     })
   }
