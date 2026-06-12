@@ -8,7 +8,7 @@ import { CrashRecovery } from "./crash-recovery.js";
 import { FileHandler } from "./file-handler.js";
 import { MetadataCollector } from "./metadata-collector.js";
 import { collectStepMetrics, computePerformanceSummary } from "./step-analyzer.js";
-import { getSetupFilePath, computeInstanceId } from "./helpers.js";
+import { getSetupFilePath, computeInstanceId, createLimiter } from "./helpers.js";
 
 class PiwiDashboardReporter {
   private options: DashboardReporterOptions;
@@ -29,6 +29,8 @@ class PiwiDashboardReporter {
   private pendingBeginEvents: any[] = [];
   private flushTimer: any = null;
   private flushPromises: Array<Promise<any>> = [];
+  private liveUploadPromises: Array<Promise<void>> = [];
+  private limitLiveUpload = createLimiter(2);
   private retryCount = 0;
   private retryTimer: any = null;
   private readonly maxRetryDelay = 30000;
@@ -129,7 +131,10 @@ class PiwiDashboardReporter {
 
     this.testCases.push(testCase);
 
-    if (this.options.streaming) this.queueStreamEvent(testCase);
+    if (this.options.streaming) {
+      this.queueStreamEvent(testCase);
+      if (this.options.liveFileUploads) this.scheduleLiveFileUpload(testCase);
+    }
   }
 
   async onEnd(result: any): Promise<void> {
@@ -240,25 +245,105 @@ class PiwiDashboardReporter {
     }
   }
 
-  private flushStreamEvents(): void {
+  private flushStreamEvents(): Promise<boolean> | null {
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
-    if (this.pendingEvents.length === 0 || !this.streamingEnabled || !this.streamingRunId) return;
+    if (this.pendingEvents.length === 0 || !this.streamingEnabled || !this.streamingRunId) return null;
 
     const events = this.pendingEvents.splice(0);
+    // Never rejects: failed events are re-queued so the retry timer or the
+    // end-of-run drain can resend them (the server deduplicates).
     const promise = this.httpClient
       .postJSON(
         `/api/test-runs/${this.streamingRunId}/events`,
         { streamToken: this.streamToken, testCases: events },
         this.streamAuth,
       )
-      .then(() => {
-        this.retryCount = 0;
-      });
+      .then(
+        () => {
+          this.retryCount = 0;
+          return true;
+        },
+        () => {
+          this.pendingEvents = events.concat(this.pendingEvents);
+          this.scheduleRetryFlush();
+          return false;
+        },
+      );
 
     this.flushPromises.push(promise);
+    return promise;
+  }
+
+  private scheduleLiveFileUpload(tc: any): void {
+    const hasTrace = !!this.options.uploadTraces && this.fileHandler.findTraceFiles(tc).some((p) => fs.existsSync(p));
+    const hasAttachments = this.fileHandler.findAllAttachments(tc).length > 0;
+    if (!hasTrace && !hasAttachments) return;
+
+    const promise = (async () => {
+      if (this.streamStartPromise) await this.streamStartPromise;
+      if (!this.streamingEnabled || !this.streamingRunId || !this.streamToken) return;
+
+      // The complete event must reach the server before it can link files
+      const flush = this.flushStreamEvents();
+      if (flush) await flush;
+
+      // Retry on 404: the events batch carrying this case may still be in flight
+      const delays = [0, 1000, 3000];
+      for (let attempt = 0; attempt < delays.length; attempt++) {
+        if (delays[attempt]) await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+        try {
+          await this.limitLiveUpload(() =>
+            this.uploader.uploadCaseFiles(
+              this.options.projectName!,
+              this.streamingRunId!,
+              this.streamToken!,
+              tc,
+              this.options.uploadTraces,
+              this.streamAuth,
+            ),
+          );
+          tc._filesUploaded = true;
+          return;
+        } catch (error: any) {
+          const retryable = error.message?.includes("404");
+          if (!retryable || attempt === delays.length - 1) {
+            if (this.options.verbose)
+              console.log(`[Piwi Dashboard] Live file upload failed for "${tc.title}": ${error.message}`);
+            return; // The end-of-run pass retries cases that failed here
+          }
+        }
+      }
+    })();
+
+    this.liveUploadPromises.push(promise);
+  }
+
+  private async uploadRemainingCaseFiles(): Promise<void> {
+    if (this.liveUploadPromises.length > 0) {
+      await Promise.allSettled(this.liveUploadPromises);
+      this.liveUploadPromises = [];
+    }
+    if (!this.streamingEnabled || !this.streamingRunId || !this.streamToken) return;
+
+    for (const tc of this.testCases) {
+      if (tc._filesUploaded) continue;
+      try {
+        const uploaded = await this.uploader.uploadCaseFiles(
+          this.options.projectName!,
+          this.streamingRunId,
+          this.streamToken,
+          tc,
+          this.options.uploadTraces,
+          this.streamAuth,
+        );
+        if (uploaded) tc._filesUploaded = true;
+      } catch (error: any) {
+        console.warn(`[Piwi Dashboard] Failed to upload files for "${tc.title}": ${error.message}`);
+      }
+    }
   }
 
   private scheduleRetryFlush(): void {
@@ -341,6 +426,10 @@ class PiwiDashboardReporter {
 
       const hasReports = this.options.uploadReport || (this.options.reports && this.options.reports.length > 0);
 
+      // Upload remaining traces/attachments while the stream token is still
+      // valid — cases uploaded live during the run are skipped.
+      await this.uploadRemainingCaseFiles();
+
       await this.httpClient.postJSON(
         `/api/test-runs/${this.streamingRunId}/finish`,
         {
@@ -354,7 +443,7 @@ class PiwiDashboardReporter {
           flakyTests,
           durations,
           metadata: this.metadata,
-          hasPendingUploads: !!(this.options.uploadTraces || hasReports),
+          hasPendingUploads: !!hasReports,
         },
         sessionCookie,
       );
@@ -362,14 +451,12 @@ class PiwiDashboardReporter {
       console.log(`[Piwi Dashboard] Successfully finalized streaming run #${this.streamingRunId}`);
       this.recovery.clear();
 
-      if (this.options.uploadTraces || hasReports) {
+      if (hasReports) {
         try {
-          await this.uploader.uploadFilesForStreamingRun(
+          await this.uploader.uploadReportsForStreamingRun(
             this.options.projectName!,
             this.streamingRunId,
-            this.testCases,
             {
-              uploadTraces: this.options.uploadTraces,
               uploadReport: this.options.uploadReport,
               reports: this.options.reports,
             },
@@ -377,7 +464,7 @@ class PiwiDashboardReporter {
             sessionCookie,
           );
         } catch (error: any) {
-          console.warn(`[Piwi Dashboard] Failed to upload files for streaming run: ${error.message}`);
+          console.warn(`[Piwi Dashboard] Failed to upload reports for streaming run: ${error.message}`);
         }
       }
       return true;

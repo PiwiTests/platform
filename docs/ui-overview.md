@@ -90,7 +90,7 @@ Shows everything about a single test execution:
 - **Status card** — test ID, title, location (copyable), duration, worker index, retries, slowest step, and duration vs historical average comparison
 - **Run context** — environment, CI provider, build number, branch, commit, author, browser, viewport — all from the parent test run's metadata
 - **HTML report** — direct link to the specific test in the full HTML report (with screenshots, video, and interactive trace viewer)
-- **Traces** — attached trace files with "Open trace" buttons that launch the Playwright trace viewer
+- **Traces** — attached trace files with "View trace" buttons that open them in the Playwright trace viewer (trace.playwright.dev), plus download buttons; while the parent run is still in progress, traces and attachments appear live as soon as each test uploads them
 - **Error details** — full error message with copy button and expandable view for long errors
 - **Debug prompt for AI** — for failed tests, a pre-generated prompt with all relevant context (error, steps, network failures) ready to paste into an AI assistant for help fixing the issue
 - **Performance hints** — actionable suggestions for slow navigations, flaky tests, slow assertions, and long step sequences

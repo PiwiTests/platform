@@ -165,6 +165,36 @@ Stream test case results as they complete. Supports single or batch submission.
 
 ---
 
+### POST `/api/test-runs/[id]/case-files`
+
+Upload one test case's trace and attachments while the run is still streaming, so files are viewable in the dashboard as soon as the test finishes. The test case must already have been sent to `/events` — the files are linked to that row.
+
+**Request body** (`multipart/form-data`)
+
+| Field         | Description                                                              |
+|---------------|--------------------------------------------------------------------------|
+| `streamToken` | The token returned by `/api/test-runs/start`                             |
+| `testCase`    | JSON: `{ "title", "location", "retries" }` identifying the streamed case |
+| `trace`       | Trace zip file (optional)                                                |
+| `trace_hash`  | SHA-256 of the trace content (optional). If the server already has a blob with this hash, the `trace` file can be omitted entirely — the existing blob is linked. |
+| `attach_meta` | JSON array of `{ "name", "contentType", "originalName" }` (optional)     |
+| `attach_file` | Attachment files, one per `attach_meta` entry, in the same order         |
+
+**Response**
+
+```json
+{
+  "success": true,
+  "testRunsCaseId": 123,
+  "traces": 1,
+  "attachments": 2
+}
+```
+
+Repeated uploads for the same case are idempotent (already-stored files are skipped). Returns `404` if the test case has not been streamed yet, `422` if `trace_hash` is provided without a file and no blob with that hash exists, and `409` once the run has finished.
+
+---
+
 ### POST `/api/test-runs/[id]/finish`
 
 Finalize a streaming run with the overall status and summary.
@@ -215,6 +245,7 @@ Server-Sent Events (SSE) endpoint for real-time monitoring. Connect with `EventS
 | `init`           | Initial state on connect (catch-up)         |
 | `test-completed` | A test case finished                        |
 | `run-progress`   | Updated run counters                        |
+| `case-files`     | A trace/attachments were uploaded for a case |
 | `run-finished`   | Run completed — stream will close           |
 
 **Example usage**
