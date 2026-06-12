@@ -67,7 +67,7 @@ jobs:
         run: npm run reporter:build
 
       - name: Install Playwright Browsers
-        run: npx playwright install chromium --with-deps --only-shell
+        run: npx playwright install chromium firefox --with-deps --only-shell
 
       - name: Run Playwright Tests
         env:
