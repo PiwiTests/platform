@@ -127,7 +127,7 @@ export async function persistRunCases(
   projectId: number,
   testRunId: number,
   cases: RunCaseInput[]
-): Promise<Array<{ id: number; status: string }>> {
+): Promise<Array<{ id: number, status: string }>> {
   if (cases.length === 0) return []
 
   // Prefetch existing shared test cases for this batch in one query (avoids N+1)

@@ -167,7 +167,7 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
   },
   {
     id: 'browsers',
-    accessorFn: (row) => row.browsers,
+    accessorFn: row => row.browsers,
     header: '',
     cell: ({ row }) => {
       const browsers = row.original.browsers
