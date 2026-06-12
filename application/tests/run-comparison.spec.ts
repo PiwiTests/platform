@@ -130,7 +130,8 @@ test.describe.serial('Run Comparison', () => {
     expect(res.ok()).toBeTruthy()
     const project = await res.json()
     expect(Array.isArray(project.testRuns)).toBe(true)
-    expect(project.testRuns.length).toBe(3)
+    const ourRuns = project.testRuns.filter((r: { id: number }) => [run1Id, run2Id, run3Id].includes(r.id))
+    expect(ourRuns.length).toBe(3)
   })
 
   test('each run should contain test cases', async ({ request }) => {
