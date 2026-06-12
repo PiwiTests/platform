@@ -278,7 +278,7 @@ class PiwiDashboardReporter {
   }
 
   private scheduleLiveFileUpload(tc: any): void {
-    const hasTrace = this.options.uploadTraces && this.fileHandler.findTraceFiles(tc).length > 0;
+    const hasTrace = !!this.options.uploadTraces && this.fileHandler.findTraceFiles(tc).some((p) => fs.existsSync(p));
     const hasAttachments = this.fileHandler.findAllAttachments(tc).length > 0;
     if (!hasTrace && !hasAttachments) return;
 

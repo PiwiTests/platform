@@ -73,8 +73,8 @@ export default eventHandler(async (event) => {
       }
     } else if (part.name === 'trace_hash') {
       const hash = part.data.toString('utf-8')
-      if (/^[0-9a-f]{64}$/i.test(hash)) traceHash = hash
-    } else if (part.name === 'attach_meta') {
+      if (/^[0-9a-f]{64}$/i.test(hash)) traceHash = hash.toLowerCase()
+    }
       try {
         const parsed = JSON.parse(part.data.toString('utf-8'))
         if (Array.isArray(parsed)) {

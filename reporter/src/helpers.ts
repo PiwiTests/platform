@@ -16,6 +16,7 @@ export function computeInstanceId(projectName: string): string {
  * async task as soon as a slot is free, queuing it otherwise.
  */
 export function createLimiter(maxConcurrent: number): <T>(fn: () => Promise<T>) => Promise<T> {
+  const limitValue = Math.max(1, Math.floor(maxConcurrent));
   let active = 0;
   const queue: Array<() => void> = [];
 
@@ -29,9 +30,12 @@ export function createLimiter(maxConcurrent: number): <T>(fn: () => Promise<T>) 
     return new Promise<T>((resolve, reject) => {
       const run = () => {
         active++;
-        fn().then(resolve, reject).finally(next);
+        Promise.resolve()
+          .then(fn)
+          .then(resolve, reject)
+          .finally(next);
       };
-      if (active < maxConcurrent) run();
+      if (active < limitValue) run();
       else queue.push(run);
     });
   };
