@@ -85,6 +85,13 @@
       "when": 1788580593013,
       "tag": "0011_bored_ego",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1781285080802,
+      "tag": "0012_furry_nico_minoru",
+      "breakpoints": true
     }
   ]
 }

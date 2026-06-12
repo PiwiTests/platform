@@ -117,17 +117,17 @@ async function getOrCreateFailureClusters(
  * inserted junction rows in input order so callers can link attachments (e.g.
  * trace files) by index.
  *
- * When `deduplicate` is true (used by the streaming events endpoint), existing
- * `(testRunId, testCaseId, retries)` rows are queried first and duplicates are
- * skipped. This prevents duplicate rows when the reporter retries a failed batch.
+ * Deduplication is enforced by a DB unique index on
+ * `(test_run_id, test_case_id, retries, browser)` — the `ON CONFLICT DO NOTHING`
+ * clause silently skips rows that would violate it. This naturally handles both
+ * batch retries and same-test-different-browser scenarios.
  */
 export async function persistRunCases(
   db: DB,
   projectId: number,
   testRunId: number,
-  cases: RunCaseInput[],
-  deduplicate?: boolean
-): Promise<Array<{ id: number }>> {
+  cases: RunCaseInput[]
+): Promise<Array<{ id: number; status: string }>> {
   if (cases.length === 0) return []
 
   // Prefetch existing shared test cases for this batch in one query (avoids N+1)
@@ -140,21 +140,6 @@ export async function persistRunCases(
   const existingCaseMap = new Map<string, typeof existingCaseRows[0]>()
   for (const tc of existingCaseRows) {
     existingCaseMap.set(`${tc.filePath}::${tc.title}`, tc)
-  }
-
-  // If deduplicating, prefetch existing (testRunId, testCaseId, retries, browser) rows
-  let existingRunCaseSet: Set<string> | null = null
-  if (deduplicate) {
-    const existingRunCases = await db
-      .select({ testCaseId: testRunsCases.testCaseId, retries: testRunsCases.retries, browser: testRunsCases.browser })
-      .from(testRunsCases)
-      .where(eq(testRunsCases.testRunId, testRunId))
-    existingRunCaseSet = new Set(
-      existingRunCases.map(r => {
-        const browserKey = r.browser ? JSON.stringify(r.browser) : 'null'
-        return `${r.testCaseId}::${r.retries}::${browserKey}`
-      })
-    )
   }
 
   const runCasesRows: Array<typeof testRunsCases.$inferInsert> = []
@@ -179,13 +164,6 @@ export async function persistRunCases(
     }
 
     if (!shared) continue
-
-    // Skip duplicate (testRunId, testCaseId, retries, browser) when deduplicating
-    if (deduplicate && existingRunCaseSet) {
-      const browserKey = c.browser ? JSON.stringify(c.browser) : 'null'
-      const rowKey = `${shared.id}::${c.retries ?? 0}::${browserKey}`
-      if (existingRunCaseSet.has(rowKey)) continue
-    }
 
     // Fingerprint failed cases so they can be linked to a failure cluster
     let fingerprint: ErrorFingerprint | null = null
@@ -230,5 +208,8 @@ export async function persistRunCases(
     if (fingerprint) row.failureClusterId = clusterIds.get(fingerprint.fingerprint) ?? null
   })
 
-  return await db.insert(testRunsCases).values(runCasesRows).returning({ id: testRunsCases.id })
+  return await db.insert(testRunsCases)
+    .values(runCasesRows)
+    .onConflictDoNothing()
+    .returning({ id: testRunsCases.id, status: testRunsCases.status })
 }

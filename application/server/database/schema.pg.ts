@@ -100,7 +100,8 @@ export const testRunsCases = pgTable('test_runs_cases', {
 }, table => ({
   testRunIdIdx: index('idx_test_runs_cases_test_run_id').on(table.testRunId),
   testCaseIdIdx: index('idx_test_runs_cases_test_case_id').on(table.testCaseId),
-  failureClusterIdIdx: index('idx_test_runs_cases_failure_cluster_id').on(table.failureClusterId)
+  failureClusterIdIdx: index('idx_test_runs_cases_failure_cluster_id').on(table.failureClusterId),
+  runCaseBrowserUnique: uniqueIndex('idx_test_runs_cases_run_browser').on(table.testRunId, table.testCaseId, table.retries, table.browser)
 }))
 
 // Trace resources table - shared pool of individual resource files extracted from trace ZIPs
