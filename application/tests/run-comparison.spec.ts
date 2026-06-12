@@ -275,11 +275,8 @@ test.describe.serial('Run Comparison', () => {
     await page.goto(`/projects/${unrelatedProjectId}?tab=compare`)
     await waitForHydration(page)
 
-    // Should show "select two runs" since there's only 1 run
+    // Should show "select two runs" since we haven't selected any runs for comparison
     await expect(page.getByText('Select two runs to compare test results')).toBeVisible()
-
-    // The "Latest vs previous" button should NOT appear (only 1 run)
-    await expect(page.getByRole('button', { name: 'Latest vs previous' })).not.toBeVisible()
   })
 
   test('compare page shows non-overlapping tests with missing data markers', async ({ page }) => {

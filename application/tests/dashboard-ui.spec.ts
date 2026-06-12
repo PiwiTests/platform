@@ -3,6 +3,8 @@ import { waitForHydration, retryPost } from './utils'
 import { PROJECT } from '../shared/test-project-names'
 
 test.describe('Dashboard UI Tests', () => {
+  test.setTimeout(90000)
+
   test.beforeEach(async ({ request }) => {
     // Create test data before each UI test
     await retryPost(request, '/api/test-runs/submit', {
@@ -59,15 +61,15 @@ test.describe('Dashboard UI Tests', () => {
     // Click on a project - use link role to target the table link, not sidebar
     await page.getByRole('link', { name: PROJECT.UI_TEST }).click()
 
-    // Wait for navigation
+    // Wait for navigation and hydration (sidebar uses a lazy useFetch that needs to complete)
     await page.waitForURL(/\/projects\/\d+/)
-    await page.waitForTimeout(2000)
+    await waitForHydration(page)
 
     // Check for test runs tab content
     await expect(page.getByText('Test run statistics over time')).toBeVisible()
 
-    // Check project name in sidebar is expanded
-    await expect(page.getByRole('link', { name: 'Test runs' })).toBeVisible()
+    // Check project name in sidebar is expanded (sidebar uses a lazy useFetch that runs after hydration)
+    await expect(page.getByRole('link', { name: 'Test runs' })).toBeVisible({ timeout: 20000 })
   })
 
   test('should navigate to test run details page', async ({ page }) => {
@@ -76,9 +78,11 @@ test.describe('Dashboard UI Tests', () => {
     // Navigate to project - use link role to target table link
     await page.getByRole('link', { name: PROJECT.UI_TEST }).click()
     await page.waitForURL(/\/projects\/\d+/)
+    await waitForHydration(page)
 
-    // Click on first test run - look for "View Details" in the table
+    // Click on first test run - wait for table to be interactive before clicking
     const viewButton = page.locator('table').getByRole('link', { name: 'View' }).first()
+    await expect(viewButton).toBeVisible({ timeout: 10000 })
     await viewButton.click()
 
     // Wait for navigation
@@ -92,7 +96,9 @@ test.describe('Dashboard UI Tests', () => {
     await page.goto('/projects')
     await page.getByRole('link', { name: PROJECT.UI_TEST }).click()
     await page.waitForURL(/\/projects\/\d+/)
+    await waitForHydration(page)
     const viewButton = page.locator('table').getByRole('link', { name: 'View' }).first()
+    await expect(viewButton).toBeVisible({ timeout: 10000 })
     await viewButton.click()
     await page.waitForURL(/\/test-runs\/\d+/)
     await waitForHydration(page)

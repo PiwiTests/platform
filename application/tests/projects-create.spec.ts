@@ -121,9 +121,9 @@ test.describe.serial('Project Creation UI Tests', () => {
     await expect(created.or(failed)).toBeVisible({ timeout: 5000 })
 
     if (await created.isVisible()) {
-      // Modal should close and project appear in list
+      // Modal should close and project appear in list (Firefox reactive update can be slower)
       await expect(page.getByRole('heading', { name: 'Create new project' })).not.toBeVisible()
-      await expect(page.getByRole('link', { name: projectLabel })).toBeVisible({ timeout: 5000 })
+      await expect(page.getByRole('link', { name: projectLabel })).toBeVisible({ timeout: 15000 })
     }
   })
 

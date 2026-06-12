@@ -211,13 +211,16 @@ test.describe.serial('Test Case History API', () => {
     const runData = await runRes.json()
     const tc = runData.testCases.find((t: { title: string }) => t.title === 'history test single')
 
-    // Fetch history — should have 1 entry
+    // Fetch history — should have at least 1 entry (concurrent browser runs may add more)
     const historyRes = await request.get(`/api/test-cases/${tc.id}/history`)
     expect(historyRes.ok()).toBeTruthy()
     const history = await historyRes.json()
     expect(Array.isArray(history)).toBe(true)
-    expect(history.length).toBe(1)
-    expect(history[0].status).toBe('passed')
-    expect(history[0].duration).toBe(500)
+    expect(history.length).toBeGreaterThanOrEqual(1)
+    // Verify the entry from our specific run
+    const myEntry = history.find((h: { runId: number }) => h.runId === data.testRunId)
+    expect(myEntry).toBeDefined()
+    expect(myEntry.status).toBe('passed')
+    expect(myEntry.duration).toBe(500)
   })
 })
