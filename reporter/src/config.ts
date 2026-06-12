@@ -4,6 +4,8 @@ export interface DashboardReporterOptions {
   projectDescription?: string;
   uploadTraces?: boolean;
   uploadReport?: boolean;
+  /** Upload each test's trace and attachments as soon as the test finishes (streaming mode only) */
+  liveFileUploads?: boolean;
   collectScmInfo?: boolean;
   collectCiInfo?: boolean;
   collectPerformanceMetrics?: boolean;
@@ -27,6 +29,7 @@ const DEFAULTS = {
   projectName: "default-project",
   uploadTraces: true,
   uploadReport: true,
+  liveFileUploads: true,
   collectScmInfo: true,
   collectCiInfo: true,
   collectPerformanceMetrics: true,

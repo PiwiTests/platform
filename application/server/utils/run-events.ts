@@ -13,7 +13,7 @@ import { EventEmitter } from 'node:events'
  */
 
 export interface RunEvent {
-  type: 'test-begin' | 'test-completed' | 'run-progress' | 'run-finalizing' | 'run-finished'
+  type: 'test-begin' | 'test-completed' | 'run-progress' | 'run-finalizing' | 'run-finished' | 'case-files'
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: Record<string, any>
   seq: number

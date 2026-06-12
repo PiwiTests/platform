@@ -46,6 +46,7 @@ export default defineConfig({
 | `streaming`                 | boolean  | `true`                    | Enable live streaming of results (falls back to batch if unsupported)         |
 | `streamingBatchSize`        | number   | `5`                       | Number of test results to batch before sending                                |
 | `streamingBatchDelay`       | number   | `2000`                    | Max delay (ms) before flushing pending events                                 |
+| `liveFileUploads`           | boolean  | `true`                    | Upload each test's trace and attachments as soon as the test finishes (streaming mode only) |
 | `projectDescription`        | string   | —                         | Description of the project                                                    |
 | `environment`               | string   | —                         | Deployment environment for this run, e.g. `"production"`, `"staging"`, `"integration"` |
 | `relatedIssue`              | string   | —                         | Related issue reference, e.g. `"JIRA-123"`                                    |
@@ -68,8 +69,9 @@ By default, the reporter streams test results to the dashboard in real-time as t
 
 1. When tests start, the reporter creates a run on the server with `running` status
 2. As each test completes, results are sent in batches to the server
-3. The dashboard UI shows a live progress bar and test results as they arrive
-4. When tests finish, the reporter finalizes the run with the overall status
+3. With `liveFileUploads` (the default), each test's trace and attachments are uploaded right after the test finishes, so they are viewable on the test case page while the run is still in progress
+4. The dashboard UI shows a live progress bar and test results as they arrive
+5. When tests finish, the reporter finalizes the run with the overall status
 
 ### Disabling streaming
 

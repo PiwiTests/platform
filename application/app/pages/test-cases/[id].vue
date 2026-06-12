@@ -10,7 +10,7 @@ const testCaseId = route.params.id
 
 const { data: testCase, refresh } = await useFetch(`/api/test-cases/${testCaseId}`)
 const { data: historyData } = await useFetch<TestCaseHistoryPoint[]>(`/api/test-cases/${testCaseId}/history`)
-const { data: traceData } = await useFetch<TraceInfo[]>(`/api/test-cases/${testCaseId}/traces`)
+const { data: traceData, refresh: refreshTraces } = await useFetch<TraceInfo[]>(`/api/test-cases/${testCaseId}/traces`)
 
 useHead(computed(() => ({
   title: `${testCase.value?.title || `Test case #${testCaseId}`} — Piwi Dashboard`
@@ -268,6 +268,57 @@ const stepColumns: TableColumn<PerformanceStep>[] = [
 
 // Calculated metadata for template
 const environment = computed(() => testCase.value?.testRun?.environment)
+
+// Live updates: while the parent run is still active, the reporter uploads
+// traces/attachments as each test finishes ('case-files' SSE events) —
+// refresh so they appear without a manual reload.
+const isDemoMode = Boolean(useRuntimeConfig().public.demoMode)
+let eventSource: EventSource | null = null
+
+const runIsActive = computed(() => {
+  const status = testCase.value?.testRun?.status
+  return status === 'running' || status === 'finalizing'
+})
+
+function connectToRunStream() {
+  if (!import.meta.client || isDemoMode || eventSource) return
+  const runId = testCase.value?.testRun?.id
+  if (!runId) return
+
+  eventSource = new EventSource(`/api/test-runs/${runId}/stream`)
+  eventSource.onmessage = (event) => {
+    try {
+      const parsed = JSON.parse(event.data)
+      if (parsed.type === 'case-files' && parsed.data?.testRunsCaseId === Number(testCaseId)) {
+        refresh()
+        refreshTraces()
+      } else if (parsed.type === 'run-finished') {
+        refresh()
+        refreshTraces()
+        disconnectRunStream()
+      }
+    } catch {
+      // Ignore non-JSON messages (e.g. heartbeat comments)
+    }
+  }
+  eventSource.onerror = () => {
+    // EventSource will auto-reconnect
+  }
+}
+
+function disconnectRunStream() {
+  if (eventSource) {
+    eventSource.close()
+    eventSource = null
+  }
+}
+
+watch(runIsActive, (active) => {
+  if (active) connectToRunStream()
+  else disconnectRunStream()
+}, { immediate: true })
+
+onUnmounted(disconnectRunStream)
 </script>
 
 <template>
@@ -503,13 +554,21 @@ const environment = computed(() => testCase.value?.testRun?.environment)
               </UCard>
 
               <div
-                v-if="!(traceData as any[])?.length && !(testCase as any)?.consoleLogs?.length && !groupedNetworkRequests.length"
+                v-if="!(traceData as any[])?.length && !(testCase as any)?.attachments?.length && !(testCase as any)?.consoleLogs?.length && !groupedNetworkRequests.length"
                 class="flex flex-col items-center justify-center py-12 text-gray-400"
               >
-                <UIcon name="i-lucide-inbox" class="size-8 mb-2" />
-                <p class="text-sm">
-                  No traces, console logs, or network requests captured for this test case.
-                </p>
+                <template v-if="runIsActive">
+                  <UIcon name="i-lucide-loader-circle" class="size-8 mb-2 animate-spin" />
+                  <p class="text-sm">
+                    Run in progress — traces and attachments appear here as soon as they are uploaded.
+                  </p>
+                </template>
+                <template v-else>
+                  <UIcon name="i-lucide-inbox" class="size-8 mb-2" />
+                  <p class="text-sm">
+                    No traces, console logs, or network requests captured for this test case.
+                  </p>
+                </template>
               </div>
             </div>
           </template>
