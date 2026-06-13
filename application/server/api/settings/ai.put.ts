@@ -21,11 +21,12 @@ export default eventHandler(async (event) => {
     apiKey?: string
     autoDiagnose?: boolean
     customInstructions?: string | null
+    scmToken?: string | null
   }
 
   const db = await getDatabase()
 
-  // Custom instructions are stored independently — always handle them first
+  // Custom instructions and SCM token are stored independently
   if (body.customInstructions !== undefined) {
     const trimmed = body.customInstructions?.trim() || null
     if (trimmed) {
@@ -35,13 +36,26 @@ export default eventHandler(async (event) => {
     }
   }
 
-  const instructions = await getAppSetting<{ value?: string }>(db, 'ai_instructions')
+  if (body.scmToken !== undefined) {
+    const trimmed = body.scmToken?.trim() || null
+    if (trimmed) {
+      await setAppSetting(db, 'scm_token', { value: trimmed })
+    } else {
+      await deleteAppSetting(db, 'scm_token')
+    }
+  }
+
+  const [instructions, scmTokenSetting] = await Promise.all([
+    getAppSetting<{ value?: string }>(db, 'ai_instructions'),
+    getAppSetting<{ value?: string }>(db, 'scm_token')
+  ])
   const customInstructions = instructions?.value || null
+  const hasScmToken = Boolean(scmTokenSetting?.value)
 
   // Clearing the provider configuration
   if (!body.provider) {
     await deleteAppSetting(db, 'ai')
-    return { provider: null, model: null, baseUrl: null, autoDiagnose: false, hasApiKey: false, envManaged: false, customInstructions }
+    return { provider: null, model: null, baseUrl: null, autoDiagnose: false, hasApiKey: false, hasScmToken, envManaged: false, customInstructions }
   }
 
   if (!VALID_PROVIDERS.includes(body.provider as AiProvider)) {
@@ -80,6 +94,7 @@ export default eventHandler(async (event) => {
     baseUrl: value.baseUrl || null,
     autoDiagnose: value.autoDiagnose,
     hasApiKey: Boolean(apiKey),
+    hasScmToken,
     envManaged: false,
     customInstructions
   }

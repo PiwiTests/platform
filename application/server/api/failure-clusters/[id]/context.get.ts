@@ -11,6 +11,7 @@ export default eventHandler(async (event) => {
   const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, id))
   if (!cluster) throw createError({ statusCode: 404, message: 'Failure cluster not found' })
 
-  const context = await buildClusterDiagnosisContext(db, cluster)
-  return { context }
+  const baseCommit = getQuery(event).baseCommit as string | undefined
+  const { text, coverage } = await buildClusterDiagnosisContext(db, cluster, { baseCommit })
+  return { context: text, coverage }
 })

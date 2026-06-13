@@ -11,8 +11,10 @@ const baseUrl = ref<string>('')
 const apiKey = ref<string>('')
 const autoDiagnose = ref(false)
 const customInstructions = ref<string>('')
+const scmToken = ref<string>('')
 const saving = ref(false)
 const savingInstructions = ref(false)
+const savingScmToken = ref(false)
 const testing = ref(false)
 
 watch(settings, (val) => {
@@ -77,6 +79,23 @@ async function save() {
     toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' })
   } finally {
     saving.value = false
+  }
+}
+
+async function saveScmToken() {
+  savingScmToken.value = true
+  try {
+    await $fetch('/api/settings/ai', {
+      method: 'PUT',
+      body: { scmToken: scmToken.value || null }
+    })
+    await refresh()
+    scmToken.value = ''
+    toast.add({ title: 'SCM token saved', color: 'success' })
+  } catch (err) {
+    toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' })
+  } finally {
+    savingScmToken.value = false
   }
 }
 
@@ -270,6 +289,44 @@ async function copyEnvVars() {
         <template #header>
           <div>
             <h3 class="font-semibold">
+              Repository access
+            </h3>
+            <p class="text-sm text-gray-500 mt-0.5">
+              Optional GitHub or GitLab token used to fetch changed files between the last passing and current failing run. Without a token, only public repositories are accessible (60 req/hr rate limit). Required for private repositories.
+            </p>
+          </div>
+        </template>
+
+        <UFormField
+          label="GitHub / GitLab token"
+          :description="settings?.hasScmToken ? 'Leave empty to keep the stored token, enter a new value to replace it, or save empty to remove it' : 'Personal access token with read access to repository contents'"
+        >
+          <UInput
+            v-model="scmToken"
+            type="password"
+            :placeholder="settings?.hasScmToken ? '•••••••• (unchanged)' : 'ghp_... or glpat-...'"
+            class="w-full font-mono"
+          />
+        </UFormField>
+
+        <template #footer>
+          <div class="flex justify-end">
+            <UButton
+              color="primary"
+              :loading="savingScmToken"
+              icon="i-lucide-save"
+              @click="saveScmToken"
+            >
+              Save token
+            </UButton>
+          </div>
+        </template>
+      </UCard>
+
+      <UCard>
+        <template #header>
+          <div>
+            <h3 class="font-semibold">
               Global analysis instructions
             </h3>
             <p class="text-sm text-gray-500 mt-0.5">
@@ -340,7 +397,7 @@ async function copyEnvVars() {
             <li>Browser info, test steps, console error/warning entries (excerpts)</li>
             <li>Failed network request URLs and status codes</li>
             <li>ARIA page snapshot (if collected)</li>
-            <li>Commit SHA range since last passing run (no code content)</li>
+            <li>Commit SHA range since last passing run, plus changed file names and diff patches fetched from GitHub/GitLab (if a repository token is configured or the repo is public)</li>
           </ul>
           <p class="mt-2">
             The API key is stored plaintext in the application database (admin-only access).
