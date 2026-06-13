@@ -414,6 +414,30 @@ export interface FailureGroup {
 }
 
 /**
+ * Full failure cluster — returned by GET /api/failure-clusters/[id]
+ */
+export interface FailureClusterDetail {
+  id: number
+  projectId: number
+  fingerprint: string
+  signature: string
+  errorType: string | null
+  selector: string | null
+  sampleError: string | null
+  status: string
+  triageNote: string | null
+  firstSeenRunId: number
+  lastSeenRunId: number
+  occurrences: number
+  affectedTests: number
+  lastSeenRunStatus: string | null
+  lastSeenAt: string | Date | null
+  diagnosis: DiagnosisCompact | null
+  project: { id: number, name: string, label: string | null } | null
+  affectedTestCases: Array<{ testCaseId: number, title: string, filePath: string, runCount: number }>
+}
+
+/**
  * Failure cluster summary for a project page — returned by GET /api/projects/[id]/failure-clusters
  */
 export interface ProjectFailureCluster {

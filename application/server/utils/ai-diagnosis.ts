@@ -168,7 +168,7 @@ export async function runClusterDiagnosis(
   db: DbClient,
   cluster: FailureCluster,
   config: AiConfig,
-  _opts?: { force?: boolean }
+  _opts?: { force?: boolean, additionalContext?: string }
 ): Promise<FailureDiagnosis> {
   if (running.has(cluster.id)) {
     throw Object.assign(new Error('Diagnosis already running for this cluster'), { statusCode: 409 })
@@ -216,9 +216,13 @@ export async function runClusterDiagnosis(
 
   try {
     const userContent = await buildClusterDiagnosisContext(db, cluster)
+    const extra = _opts?.additionalContext?.trim()
+    const fullUserContent = extra
+      ? `${userContent}\n\n## Additional Context Provided by User\n${extra}`
+      : userContent
     const result = await callAiProvider(config, {
       system: DIAGNOSIS_SYSTEM_PROMPT,
-      user: userContent,
+      user: fullUserContent,
       jsonSchema: DIAGNOSIS_JSON_SCHEMA
     })
     const diagnosis = parseDiagnosisJson(result.text)

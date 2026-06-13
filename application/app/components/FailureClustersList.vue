@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import type { ProjectFailureCluster } from '~~/types/api'
 
-const { aiStatus } = useAiStatus()
-
 const props = defineProps<{
   projectId: string | number
 }>()
@@ -17,15 +15,6 @@ const { data: clusters, pending: loading, refresh } = await useFetch<ProjectFail
   },
   { lazy: true, server: false, watch: [statusFilter] }
 )
-
-const expandedDiagnosis = ref<Set<number>>(new Set())
-
-function toggleDiagnosis(id: number) {
-  const next = new Set(expandedDiagnosis.value)
-  if (next.has(id)) next.delete(id)
-  else next.add(id)
-  expandedDiagnosis.value = next
-}
 
 const statusColors: Record<string, 'success' | 'warning' | 'neutral' | 'error'> = {
   open: 'warning',
@@ -117,88 +106,75 @@ async function saveTriage() {
       <div
         v-for="cluster in clusters"
         :key="cluster.id"
-        class="py-3 flex flex-col gap-2"
+        class="py-3 flex flex-col sm:flex-row sm:items-center gap-2"
       >
-        <div class="flex flex-col sm:flex-row sm:items-center gap-2">
-          <div class="min-w-0 flex-1 space-y-1">
-            <div class="font-mono text-sm truncate flex items-center gap-2" :title="cluster.signature">
-              {{ cluster.signature }}
-              <UBadge
-                :color="statusColors[cluster.status] || 'neutral'"
-                variant="subtle"
-                size="sm"
-              >
-                {{ cluster.status }}
-              </UBadge>
-            </div>
-            <div class="flex flex-wrap items-center gap-1.5">
-              <UBadge
-                v-if="cluster.errorType"
-                :color="errorTypeColors[cluster.errorType] || 'neutral'"
-                variant="subtle"
-                size="sm"
-              >
-                {{ cluster.errorType }}
-              </UBadge>
-              <UBadge color="neutral" variant="subtle" size="sm">
-                {{ cluster.affectedTests }} {{ cluster.affectedTests === 1 ? 'test' : 'tests' }} affected
-              </UBadge>
-              <UBadge color="neutral" variant="outline" size="sm">
-                {{ cluster.occurrences }} occurrence{{ cluster.occurrences === 1 ? '' : 's' }}
-              </UBadge>
-              <span class="text-xs text-gray-500">
-                Last seen in
-                <NuxtLink
-                  :to="`/test-runs/${cluster.lastSeenRunId}`"
-                  class="text-primary hover:underline"
-                >run #{{ cluster.lastSeenRunId }}</NuxtLink>
-                <template v-if="cluster.lastSeenAt"> ({{ formatRelativeTime(cluster.lastSeenAt) }})</template>
-              </span>
-            </div>
-            <div v-if="cluster.triageNote" class="text-xs text-gray-500 italic mt-1">
-              {{ cluster.triageNote }}
-            </div>
-          </div>
-          <div class="shrink-0 flex items-center gap-1">
+        <div class="min-w-0 flex-1 space-y-1">
+          <div class="font-mono text-sm truncate flex items-center gap-2" :title="cluster.signature">
+            {{ cluster.signature }}
             <UBadge
-              v-if="cluster.diagnosis?.status === 'completed' && cluster.diagnosis?.category"
-              color="neutral"
+              :color="statusColors[cluster.status] || 'neutral'"
               variant="subtle"
               size="sm"
-              class="gap-1"
             >
-              <UIcon name="i-lucide-sparkles" class="size-3" />
-              {{ cluster.diagnosis.category }}
+              {{ cluster.status }}
             </UBadge>
-            <UButton
-              icon="i-lucide-sparkles"
-              size="xs"
-              color="neutral"
-              variant="ghost"
-              title="AI diagnosis"
-              :disabled="!aiStatus?.configured && !cluster.diagnosis"
-              @click="toggleDiagnosis(cluster.id)"
-            />
-            <UButton
-              size="xs"
-              color="neutral"
-              variant="outline"
-              @click="openTriage(cluster)"
+          </div>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <UBadge
+              v-if="cluster.errorType"
+              :color="errorTypeColors[cluster.errorType] || 'neutral'"
+              variant="subtle"
+              size="sm"
             >
-              Triage
-            </UButton>
-            <NuxtLink :to="`/test-runs/${cluster.lastSeenRunId}`">
-              <UButton size="xs" color="neutral" variant="outline">
-                View run
-              </UButton>
-            </NuxtLink>
+              {{ cluster.errorType }}
+            </UBadge>
+            <UBadge color="neutral" variant="subtle" size="sm">
+              {{ cluster.affectedTests }} {{ cluster.affectedTests === 1 ? 'test' : 'tests' }} affected
+            </UBadge>
+            <UBadge color="neutral" variant="outline" size="sm">
+              {{ cluster.occurrences }} occurrence{{ cluster.occurrences === 1 ? '' : 's' }}
+            </UBadge>
+            <span class="text-xs text-gray-500">
+              Last seen in
+              <NuxtLink
+                :to="`/test-runs/${cluster.lastSeenRunId}`"
+                class="text-primary hover:underline"
+              >run #{{ cluster.lastSeenRunId }}</NuxtLink>
+              <template v-if="cluster.lastSeenAt"> ({{ formatRelativeTime(cluster.lastSeenAt) }})</template>
+            </span>
+          </div>
+          <div v-if="cluster.triageNote" class="text-xs text-gray-500 italic mt-1">
+            {{ cluster.triageNote }}
           </div>
         </div>
-
-        <ClusterDiagnosis
-          v-if="expandedDiagnosis.has(cluster.id)"
-          :cluster-id="cluster.id"
-        />
+        <div class="shrink-0 flex items-center gap-1">
+          <UBadge
+            v-if="cluster.diagnosis?.status === 'completed' && cluster.diagnosis?.category"
+            color="neutral"
+            variant="subtle"
+            size="sm"
+            class="gap-1"
+          >
+            <UIcon name="i-lucide-sparkles" class="size-3" />
+            {{ cluster.diagnosis.category }}
+          </UBadge>
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="outline"
+            @click="openTriage(cluster)"
+          >
+            Triage
+          </UButton>
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="outline"
+            :to="`/failure-clusters/${cluster.id}`"
+          >
+            View
+          </UButton>
+        </div>
       </div>
     </div>
     <p v-else class="text-sm text-gray-500">

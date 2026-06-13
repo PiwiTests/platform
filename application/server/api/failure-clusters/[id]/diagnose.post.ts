@@ -12,6 +12,7 @@ export default eventHandler(async (event) => {
   await requireAuth(event)
 
   const force = getQuery(event).force === 'true'
+  const body = await readBody(event).catch(() => null) as { additionalContext?: string } | null
 
   const db = await getDatabase()
 
@@ -40,5 +41,5 @@ export default eventHandler(async (event) => {
     }
   }
 
-  return runClusterDiagnosis(db, cluster, config, { force })
+  return runClusterDiagnosis(db, cluster, config, { force, additionalContext: body?.additionalContext })
 })

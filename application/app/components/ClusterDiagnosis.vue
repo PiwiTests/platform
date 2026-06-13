@@ -2,7 +2,10 @@
 import type { FailureDiagnosis } from '~~/server/database/schema'
 import { formatRelativeTime } from '~/utils'
 
-const props = defineProps<{ clusterId: number }>()
+const props = defineProps<{
+  clusterId: number
+  showContextPreview?: boolean
+}>()
 
 const { aiStatus } = useAiStatus()
 
@@ -11,6 +14,11 @@ const posting = ref(false)
 const pollTimer = ref<ReturnType<typeof setInterval> | null>(null)
 const toast = useToast()
 
+const additionalContext = ref('')
+const contextOpen = ref(false)
+const contextText = ref<string | null>(null)
+const loadingContext = ref(false)
+
 async function fetchDiagnosis() {
   try {
     diagnosis.value = await $fetch<FailureDiagnosis | null>(`/api/failure-clusters/${props.clusterId}/diagnosis`)
@@ -18,6 +26,23 @@ async function fetchDiagnosis() {
     // ignore
   }
 }
+
+async function fetchContext() {
+  if (contextText.value !== null) return
+  loadingContext.value = true
+  try {
+    const res = await $fetch<{ context: string }>(`/api/failure-clusters/${props.clusterId}/context`)
+    contextText.value = res.context
+  } catch {
+    contextText.value = '(failed to load context)'
+  } finally {
+    loadingContext.value = false
+  }
+}
+
+watch(contextOpen, (open) => {
+  if (open) fetchContext()
+})
 
 function startPoll() {
   if (pollTimer.value) return
@@ -44,7 +69,12 @@ async function diagnose(force = false) {
     const url = force
       ? `/api/failure-clusters/${props.clusterId}/diagnose?force=true`
       : `/api/failure-clusters/${props.clusterId}/diagnose`
-    diagnosis.value = await $fetch<FailureDiagnosis>(url, { method: 'POST' })
+    diagnosis.value = await $fetch<FailureDiagnosis>(url, {
+      method: 'POST',
+      body: additionalContext.value.trim()
+        ? { additionalContext: additionalContext.value.trim() }
+        : undefined
+    })
     if (diagnosis.value?.status === 'running') startPoll()
   } catch (err: unknown) {
     const status = (err as { statusCode?: number })?.statusCode
@@ -100,7 +130,44 @@ function copyToClipboard(text: string | null) {
 </script>
 
 <template>
-  <div class="mt-3">
+  <div class="space-y-4">
+    <!-- Context preview + additional context (detail page only) -->
+    <template v-if="showContextPreview && aiStatus?.configured">
+      <!-- Context preview collapsible -->
+      <div class="rounded-lg border border-default overflow-hidden">
+        <button
+          class="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium bg-elevated hover:bg-accented transition-colors"
+          @click="contextOpen = !contextOpen"
+        >
+          <span class="flex items-center gap-2">
+            <UIcon name="i-lucide-file-text" class="size-4 text-gray-500" />
+            Preview what will be sent to AI
+          </span>
+          <UIcon :name="contextOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'" class="size-4 text-gray-400" />
+        </button>
+        <div v-if="contextOpen" class="p-4 border-t border-default">
+          <div v-if="loadingContext" class="flex items-center gap-2 text-sm text-gray-500">
+            <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
+            <span>Loading context…</span>
+          </div>
+          <pre v-else class="text-xs font-mono bg-muted rounded p-3 overflow-x-auto max-h-96 whitespace-pre-wrap">{{ contextText }}</pre>
+        </div>
+      </div>
+
+      <!-- Additional context textarea (always visible) -->
+      <UFormField
+        label="Additional context"
+        description="Appended to the AI prompt — paste relevant code changes, recent deployments, or any observations that might help"
+      >
+        <UTextarea
+          v-model="additionalContext"
+          placeholder="e.g. We recently updated the auth middleware, this may be related to the login redirect…"
+          :rows="3"
+          class="w-full text-sm"
+        />
+      </UFormField>
+    </template>
+
     <!-- Not configured + no diagnosis: render nothing -->
     <template v-if="!aiStatus?.configured && !diagnosis" />
 
@@ -119,13 +186,19 @@ function copyToClipboard(text: string | null) {
     </div>
 
     <!-- Running -->
-    <div v-else-if="diagnosis && (diagnosis.status === 'running') && !isStale(diagnosis)" class="flex items-center gap-2 text-sm text-gray-500">
+    <div
+      v-else-if="diagnosis && diagnosis.status === 'running' && !isStale(diagnosis)"
+      class="flex items-center gap-2 text-sm text-gray-500"
+    >
       <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
       <span>Analyzing failure cluster… this can take a minute</span>
     </div>
 
     <!-- Completed -->
-    <div v-else-if="diagnosis && diagnosis.status === 'completed'" class="space-y-3 rounded-lg border border-default p-4 bg-elevated/30">
+    <div
+      v-else-if="diagnosis && diagnosis.status === 'completed'"
+      class="space-y-3 rounded-lg border border-default p-4 bg-elevated/30"
+    >
       <div class="flex flex-wrap items-center gap-1.5">
         <UIcon name="i-lucide-sparkles" class="size-4 text-primary shrink-0" />
         <span class="text-sm font-medium text-gray-700 dark:text-gray-300">AI Diagnosis</span>
@@ -156,7 +229,11 @@ function copyToClipboard(text: string | null) {
       </p>
 
       <ul v-if="details?.evidence?.length" class="list-disc list-inside space-y-1">
-        <li v-for="(e, i) in details.evidence" :key="i" class="text-sm text-gray-600 dark:text-gray-400">
+        <li
+          v-for="(e, i) in details.evidence"
+          :key="i"
+          class="text-sm text-gray-600 dark:text-gray-400"
+        >
           {{ e }}
         </li>
       </ul>
@@ -187,7 +264,11 @@ function copyToClipboard(text: string | null) {
         <li class="text-xs font-medium text-gray-500 uppercase tracking-wide">
           Prevention tips
         </li>
-        <li v-for="(t, i) in details.preventionTips" :key="i" class="text-sm text-gray-600 dark:text-gray-400 flex gap-1.5">
+        <li
+          v-for="(t, i) in details.preventionTips"
+          :key="i"
+          class="text-sm text-gray-600 dark:text-gray-400 flex gap-1.5"
+        >
           <UIcon name="i-lucide-lightbulb" class="size-3.5 shrink-0 mt-0.5 text-yellow-500" />
           {{ t }}
         </li>
@@ -208,9 +289,9 @@ function copyToClipboard(text: string | null) {
       </div>
     </div>
 
-    <!-- Failed -->
+    <!-- Failed / stale -->
     <div v-else-if="diagnosis && (diagnosis.status === 'failed' || isStale(diagnosis))" class="space-y-2">
-      <UAlert color="error" :title="'Diagnosis failed'" :description="diagnosis.error || 'Unknown error'" />
+      <UAlert color="error" title="Diagnosis failed" :description="diagnosis.error || 'Unknown error'" />
       <UButton
         icon="i-lucide-refresh-cw"
         size="sm"
