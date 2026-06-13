@@ -6,6 +6,7 @@ export const projects = pgTable('projects', {
   name: text('name').notNull().unique(),
   label: text('label'), // Display label (defaults to name if not set)
   description: text('description'),
+  diagnosisInstructions: text('diagnosis_instructions'),
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
 }, table => ({
@@ -74,6 +75,35 @@ export const failureClusters = pgTable('failure_clusters', {
   projectLastSeenIdx: index('idx_failure_clusters_project_last_seen').on(table.projectId, table.lastSeenRunId)
 }))
 
+// AI failure diagnoses - one per failure cluster, produced by the configured LLM provider
+export const failureDiagnoses = pgTable('failure_diagnoses', {
+  id: serial('id').primaryKey(),
+  clusterId: integer('cluster_id').notNull().references(() => failureClusters.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('running'), // 'running', 'completed', 'failed'
+  provider: text('provider'), // 'anthropic', 'openai'
+  model: text('model'), // model id that produced the diagnosis
+  category: text('category'), // 'app-bug', 'test-bug', 'flaky-test', 'infrastructure', 'environment', 'unknown'
+  confidence: text('confidence'), // 'high', 'medium', 'low'
+  summary: text('summary'), // one-line diagnosis shown in lists
+  rootCause: text('root_cause'), // short root-cause explanation
+  details: jsonb('details'), // full structured result: evidence, suggestedFix, preventionTips
+  error: text('error'), // failure reason when status = 'failed'
+  inputTokens: integer('input_tokens'),
+  outputTokens: integer('output_tokens'),
+  durationMs: integer('duration_ms'),
+  createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date()),
+  updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
+}, table => ({
+  clusterIdIdx: uniqueIndex('idx_failure_diagnoses_cluster_id').on(table.clusterId)
+}))
+
+// Application settings - key/value store for runtime-configurable settings (e.g. AI provider)
+export const appSettings = pgTable('app_settings', {
+  key: text('key').primaryKey(),
+  value: jsonb('value'),
+  updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
+})
+
 // Test runs cases table - junction table with run-specific data
 export const testRunsCases = pgTable('test_runs_cases', {
   id: serial('id').primaryKey(),
@@ -93,6 +123,7 @@ export const testRunsCases = pgTable('test_runs_cases', {
   webVitals: jsonb('web_vitals'), // { navigation: {...}, paint: {...} }
   consoleLogs: jsonb('console_logs'), // Array of { type, text, timestamp, location } console entries
   ariaSnapshot: text('aria_snapshot'), // ARIA snapshot of the page (YAML-like string from locator.ariaSnapshot())
+  testSource: text('test_source'), // Source snippet around the failing assertion (sent by reporter)
   browser: jsonb('browser'), // Playwright project/browser config: { projectName, browserName, channel, viewport }
   workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
   startedAt: integer('started_at'), // Unix timestamp in ms when the test started
@@ -208,6 +239,10 @@ export type TestRunsCase = typeof testRunsCases.$inferSelect
 export type NewTestRunsCase = typeof testRunsCases.$inferInsert
 export type FailureCluster = typeof failureClusters.$inferSelect
 export type NewFailureCluster = typeof failureClusters.$inferInsert
+export type FailureDiagnosis = typeof failureDiagnoses.$inferSelect
+export type NewFailureDiagnosis = typeof failureDiagnoses.$inferInsert
+export type AppSetting = typeof appSettings.$inferSelect
+export type NewAppSetting = typeof appSettings.$inferInsert
 export type File = typeof files.$inferSelect
 export type NewFile = typeof files.$inferInsert
 export type TraceBlob = typeof traceBlobs.$inferSelect

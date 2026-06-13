@@ -1,5 +1,5 @@
 import { getDatabase } from '../../../database'
-import { testRuns, testCases, testRunsCases, failureClusters } from '../../../database/schema'
+import { testRuns, testCases, testRunsCases, failureClusters, failureDiagnoses } from '../../../database/schema'
 import { eq, and, isNotNull, inArray } from 'drizzle-orm'
 
 interface GroupCase {
@@ -10,6 +10,13 @@ interface GroupCase {
   retries: number
   workerIndex: number | null
   passedOnRetry: boolean
+}
+
+interface DiagnosisCompact {
+  status: string
+  category: string | null
+  confidence: string | null
+  summary: string | null
 }
 
 interface FailureGroup {
@@ -27,6 +34,7 @@ interface FailureGroup {
   flaky: boolean
   workerCorrelated: boolean
   cases: GroupCase[]
+  diagnosis: DiagnosisCompact | null
 }
 
 export default eventHandler(async (event) => {
@@ -110,6 +118,7 @@ export default eventHandler(async (event) => {
         flaky: false,
         workerCorrelated: false,
         cases: [],
+        diagnosis: null,
         caseById: new Map()
       }
       groups.set(row.clusterId, group)
@@ -155,5 +164,22 @@ export default eventHandler(async (event) => {
   }
 
   result.sort((a, b) => b.caseCount - a.caseCount)
-  return result
+
+  // Attach compact diagnosis subset
+  const allClusterIds = result.map(g => g.clusterId)
+  const diagnosisRows = allClusterIds.length > 0
+    ? await db.select({
+        clusterId: failureDiagnoses.clusterId,
+        status: failureDiagnoses.status,
+        category: failureDiagnoses.category,
+        confidence: failureDiagnoses.confidence,
+        summary: failureDiagnoses.summary
+      }).from(failureDiagnoses).where(inArray(failureDiagnoses.clusterId, allClusterIds))
+    : []
+  const diagnosisById = new Map(diagnosisRows.map(d => [d.clusterId, d]))
+
+  return result.map(g => ({
+    ...g,
+    diagnosis: diagnosisById.get(g.clusterId) ?? null
+  }))
 })

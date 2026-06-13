@@ -323,10 +323,11 @@ const failureGroupCount = computed(() => {
 })
 
 const uniqueWorkerCount = computed(() => {
-  if (!testRun.value?.testCases) return 0
+  const cases = isLive.value ? displayTestCases.value : testRun.value?.testCases
+  if (!cases || cases.length === 0) return 0
   const workers = new Set<number>()
-  for (const tc of testRun.value.testCases) {
-    if (tc.workerIndex != null) workers.add(tc.workerIndex)
+  for (const tc of cases) {
+    if (tc.workerIndex != null && tc.workerIndex >= 0) workers.add(tc.workerIndex)
   }
   return workers.size
 })
@@ -335,7 +336,7 @@ const tabItems = computed(() => [
   { label: `Test cases (${displayTestCases.value.length})`, icon: 'i-lucide-beaker', value: 'test-cases', slot: 'test-cases' },
   ...(hasFailures.value ? [{ label: `Failure groups (${failureGroupCount.value})`, icon: 'i-lucide-layers', value: 'failure-groups', slot: 'failure-groups' }] : []),
   ...(hasFailures.value ? [{ label: 'Regression', icon: 'i-lucide-git-pull-request-arrow', value: 'regression', slot: 'regression' }] : []),
-  { label: `Workers${uniqueWorkerCount.value > 0 ? ` (${uniqueWorkerCount.value})` : ''}`, icon: 'i-lucide-rows-3', value: 'workers', slot: 'workers' },
+  { label: `Timeline${uniqueWorkerCount.value > 0 ? ` (${uniqueWorkerCount.value})` : ''}`, icon: 'i-lucide-timeline', value: 'workers', slot: 'workers' },
   { label: 'Compare', icon: 'i-lucide-git-compare-arrows', value: 'compare', slot: 'compare' },
   { label: `Slow endpoints${endpointsCount.value > 0 ? ` (${endpointsCount.value})` : ''}`, icon: 'i-lucide-network', value: 'endpoints', slot: 'endpoints' }
 ])
@@ -441,7 +442,6 @@ function handleSelectCluster(clusterId: number) {
           <template #failure-groups>
             <div class="overflow-y-auto h-full">
               <FailureGroups
-                @select-test-case="handleSelectTestCase"
                 @select-cluster="handleSelectCluster"
               />
             </div>

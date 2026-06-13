@@ -30,10 +30,7 @@ export function createLimiter(maxConcurrent: number): <T>(fn: () => Promise<T>) 
     return new Promise<T>((resolve, reject) => {
       const run = () => {
         active++;
-        Promise.resolve()
-          .then(fn)
-          .then(resolve, reject)
-          .finally(next);
+        Promise.resolve().then(fn).then(resolve, reject).finally(next);
       };
       if (active < limitValue) run();
       else queue.push(run);

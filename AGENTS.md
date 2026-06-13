@@ -46,7 +46,7 @@ SQLite database auto-initializes on first API call.
 - **ORM**: Drizzle ORM (SQLite via libSQL, or PostgreSQL via postgres.js)
 - **Schema**: `application/server/database/schema.ts`
 - **Migrations**: `application/server/database/migrations/` (SQLite) or `migrations-pg/` (PostgreSQL, auto-run on startup based on `DATABASE_URL`)
-- **Tables**: `projects`, `test_runs`, `test_cases`, `test_runs_cases`, `failure_clusters`, `files`, `trace_resources`, `trace_blobs`, `tags`, `project_tags`, `users`, `api_keys`
+- **Tables**: `projects`, `test_runs`, `test_cases`, `test_runs_cases`, `failure_clusters`, `failure_diagnoses`, `app_settings`, `files`, `trace_resources`, `trace_blobs`, `tags`, `project_tags`, `users`, `api_keys`
 
 ### Backend (server/api/)
 Nuxt file-based routing:
@@ -61,6 +61,13 @@ Nuxt file-based routing:
 - `GET /api/test-cases/[id]/traces` — Trace files for a test case
 - `GET /api/test-cases/[id]/history` — Execution history across runs
 - `GET /api/files/[...path]` — Download reports/traces
+- `GET /api/projects/[id]/flaky-tests` — Cross-run flakiness analysis (retry-pass + alternation detection)
+- `GET /api/failure-clusters/[id]/diagnosis` — Stored AI diagnosis for a cluster (`null` if none)
+- `POST /api/failure-clusters/[id]/diagnose` — Run AI diagnosis synchronously; 503 if unconfigured
+- `GET /api/ai/status` — Public AI configuration status (never returns the key)
+- `GET /api/settings/ai` — Admin: full AI settings including `hasApiKey`, `envManaged`
+- `PUT /api/settings/ai` — Admin: save provider/model/key/baseUrl/autoDiagnose
+- `POST /api/settings/ai/test` — Admin: smoke-test the configured AI provider
 
 ### Frontend (app/)
 - **Pages** (`app/pages/`):
@@ -81,6 +88,12 @@ Nuxt file-based routing:
   - `TestCaseTracesCard.vue` — Trace file list with "Open trace" buttons
   - `TestCaseErrorCard.vue` — Error details with copy button and collapsible long errors
   - `TestCaseFixPromptCard.vue` — AI debug prompt with copy button for failed tests
+  - `ClusterDiagnosis.vue` — AI diagnosis card per failure cluster (polls while running, shows result, retry button)
+  - `FlakyTestsList.vue` — Flaky tests board card with score badges and retry-pass / alternation breakdown
+- **Composables** (`app/composables/`):
+  - `useAiStatus.ts` — Fetches `GET /api/ai/status` once; shared across components to show/hide AI actions
+- **Pages** (`app/pages/`):
+  - `/settings/ai` — AI diagnosis configuration (provider, model, API key, base URL, auto-diagnose toggle)
 - **Utilities** (`app/utils/`):
   - `performance-hints.ts` — Generates performance warnings for slow/flaky tests
   - `fix-prompt.ts` — Generates structured AI debug prompts from test failure context
@@ -118,6 +131,12 @@ Nuxt file-based routing:
 ## Environment
 - `.env.example` in `application/` — `NUXT_PUBLIC_SITE_URL` (optional)
 - Works with no env vars set; `.data/` created automatically
+- AI diagnosis env vars (all optional — can also be set via Settings UI):
+  - `NUXT_AI_PROVIDER` — `anthropic` or `openai`
+  - `NUXT_AI_API_KEY` — API key (env takes precedence over DB; `envManaged: true` in status)
+  - `NUXT_AI_MODEL` — model name (default: `claude-opus-4-8` for Anthropic)
+  - `NUXT_AI_BASE_URL` — base URL for OpenAI-compatible providers (e.g. `http://localhost:11434/v1`)
+  - `NUXT_AI_AUTO_DIAGNOSE` — `true` to auto-diagnose new clusters on run finish
 
 ## Dev Commands (from `application/`)
 
@@ -133,6 +152,13 @@ Nuxt file-based routing:
 | `npm run db:migrate` | Apply migrations |
 | `npm run db:push` | Push schema (dev only) |
 | `npm run db:studio` | Drizzle Studio |
+| `node scripts/db-query.mjs "<sql>"` | Query the local SQLite DB directly |
+
+**DB query examples** (run from `application/`):
+```bash
+node scripts/db-query.mjs "SELECT key, value FROM app_settings"
+node scripts/db-query.mjs "SELECT id, name FROM projects" --json
+```
 
 ### Reporter commands (from `reporter/`)
 
@@ -187,6 +213,25 @@ Nuxt file-based routing:
 - **Row highlighting**: Use `:meta="{ class: { tr: 'highlight-class' } }"` on UTable, NOT `:row-attrs` (which is unsupported in Nuxt UI v4).
 - **Tab panels**: Use `<UTabs>` + `v-if` on each panel component to keep component lifecycle clean.
 - **Data fetching in children**: For self-contained components rendered conditionally (e.g., tab content), use `watch` + `$fetch` with reactive triggers rather than `useFetch` with `lazy: true`, since `useFetch` may not fire until the component is mounted.
+
+### UTable conventions (MUST follow)
+
+- **Always use template slots for cell rendering** — NEVER use `cell:` callbacks with `h()` or `resolveComponent()` in column definitions. The only exception is `createSortHeader<T>()` in `header:`.
+- **Slot naming**: `#${accessorKey}-cell="{ row }"` for data cells (e.g. `#errorType-cell`, `#lastSeenAt-cell`). For `id`-only columns use `#${id}-cell`. Header slots: `#${accessorKey}-header` or `#${id}-header`.
+- **Sort headers**: Use `createSortHeader<T>('Label')` (from `app/utils/index.ts`) for every sortable column. Non-sortable columns (actions, badges without natural ordering) use a plain string.
+- **Actions column pattern**:
+  ```ts
+  { id: 'actions', header: 'Actions' }
+  ```
+  ```html
+  <template #actions-header><div class="text-right">Actions</div></template>
+  <template #actions-cell="{ row }">
+    <div class="flex justify-end gap-2">
+      <UButton :to="`/.../${row.original.id}`" size="sm" variant="outline" trailing-icon="i-lucide-arrow-right">View</UButton>
+    </div>
+  </template>
+  ```
+- **No `import { h, resolveComponent }` in table components** — if a component needs it for something other than a table cell, that's fine, but table cells must use slots.
 
 ## UI Best Practices
 - Sentence case headings/labels

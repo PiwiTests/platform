@@ -184,3 +184,97 @@ export function getFileApiPath(filePath: string): string {
   const storagePath = '.data/storage/'
   return filePath.replace(storagePath, '')
 }
+
+const ESC = '\u001B'
+
+const ANSI_FG: Record<number, string> = {
+  30: '#000000', 31: '#dc2626', 32: '#16a34a', 33: '#d97706',
+  34: '#2563eb', 35: '#9333ea', 36: '#0891b2', 37: '#9ca3af'
+}
+
+const ANSI_BG: Record<number, string> = {
+  40: '#000000', 41: '#dc2626', 42: '#16a34a', 43: '#d97706',
+  44: '#2563eb', 45: '#9333ea', 46: '#0891b2', 47: '#9ca3af'
+}
+
+const ANSI_SGR_RE = new RegExp(`${ESC}\\[([0-9;]*)m`, 'g')
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/**
+ * Convert ANSI SGR escape sequences to HTML `<span>` tags with inline styles.
+ * Handles bold/dim/italic/underline and standard 30–47 color codes.
+ * Unrecognized codes are stripped.
+ */
+export function renderAnsi(text: string): string {
+  const parts: string[] = []
+  let last = 0
+  let fg: string | undefined
+  let bg: string | undefined
+  let bold = false
+  let dim = false
+  let italic = false
+  let uline = false
+
+  const push = (raw: string) => {
+    if (!raw) return
+    const props: string[] = []
+    if (bold) props.push('font-weight:600')
+    if (dim) props.push('opacity:.7')
+    if (italic) props.push('font-style:italic')
+    if (uline) props.push('text-decoration:underline')
+    if (fg) props.push(`color:${fg}`)
+    if (bg) props.push(`background:${bg}`)
+    const e = escapeHtml(raw)
+    parts.push(props.length ? `<span style="${props.join(';')}">${e}</span>` : e)
+  }
+
+  const apply = (codes: number[]) => {
+    for (const c of codes) {
+      if (c === 0) {
+        fg = undefined
+        bg = undefined
+        bold = false
+        dim = false
+        italic = false
+        uline = false
+      } else if (c === 1) {
+        bold = true
+      } else if (c === 2) {
+        dim = true
+      } else if (c === 3) {
+        italic = true
+      } else if (c === 4) {
+        uline = true
+      } else if (c === 22) {
+        bold = false
+        dim = false
+      } else if (c === 23) {
+        italic = false
+      } else if (c === 24) {
+        uline = false
+      } else if (c >= 30 && c <= 37) {
+        fg = ANSI_FG[c]
+      } else if (c === 39) {
+        fg = undefined
+      } else if (c >= 40 && c <= 47) {
+        bg = ANSI_BG[c]
+      } else if (c === 49) {
+        bg = undefined
+      }
+    }
+  }
+
+  let m: RegExpExecArray | null
+  while ((m = ANSI_SGR_RE.exec(text)) !== null) {
+    push(text.slice(last, m.index))
+    last = ANSI_SGR_RE.lastIndex
+    const codes = m[1] ? m[1].split(';').map(Number) : [0]
+    apply(codes)
+  }
+
+  push(text.slice(last))
+  return parts.join('')
+}

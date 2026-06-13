@@ -1,5 +1,5 @@
 import { getDatabase } from '../../database'
-import { testCases, testRuns, testRunsCases, projects, files, failureClusters } from '../../database/schema'
+import { testCases, testRuns, testRunsCases, projects, files, failureClusters, failureDiagnoses } from '../../database/schema'
 import { eq, and, sql } from 'drizzle-orm'
 
 export default eventHandler(async (event) => {
@@ -65,6 +65,13 @@ export default eventHandler(async (event) => {
       const [firstSeenRun] = await db.select({ startTime: testRuns.startTime })
         .from(testRuns).where(eq(testRuns.id, cluster.firstSeenRunId))
 
+      const diagnosisRows = await db.select({
+        status: failureDiagnoses.status,
+        category: failureDiagnoses.category,
+        confidence: failureDiagnoses.confidence,
+        summary: failureDiagnoses.summary
+      }).from(failureDiagnoses).where(eq(failureDiagnoses.clusterId, cluster.id))
+
       failureCluster = {
         id: cluster.id,
         signature: cluster.signature,
@@ -76,7 +83,8 @@ export default eventHandler(async (event) => {
         firstSeenRunId: cluster.firstSeenRunId,
         firstSeenAt: firstSeenRun?.startTime ?? null,
         isNew: cluster.firstSeenRunId === testRunsCase.testRunId,
-        sameRunCaseCount: Number(sameRun?.count ?? 0)
+        sameRunCaseCount: Number(sameRun?.count ?? 0),
+        diagnosis: diagnosisRows[0] ?? null
       }
     }
   }

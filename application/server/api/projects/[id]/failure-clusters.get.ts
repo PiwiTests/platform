@@ -1,6 +1,13 @@
 import { getDatabase } from '../../../database'
-import { projects, testRuns, testRunsCases, failureClusters } from '../../../database/schema'
+import { projects, testRuns, testRunsCases, failureClusters, failureDiagnoses } from '../../../database/schema'
 import { eq, and, desc, inArray, sql } from 'drizzle-orm'
+
+interface DiagnosisCompact {
+  status: string
+  category: string | null
+  confidence: string | null
+  summary: string | null
+}
 
 interface ProjectCluster {
   id: number
@@ -17,6 +24,7 @@ interface ProjectCluster {
   affectedTests: number
   lastSeenRunStatus: string | null
   lastSeenAt: string | Date | null
+  diagnosis: DiagnosisCompact | null
 }
 
 export default eventHandler(async (event) => {
@@ -84,13 +92,26 @@ export default eventHandler(async (event) => {
 
   const runDataById = new Map(lastSeenRuns.map(r => [r.id, { status: r.status, startTime: r.startTime }]))
 
+  // Attach compact diagnosis subset
+  const diagnosisRows = clusterIds.length > 0
+    ? await db.select({
+        clusterId: failureDiagnoses.clusterId,
+        status: failureDiagnoses.status,
+        category: failureDiagnoses.category,
+        confidence: failureDiagnoses.confidence,
+        summary: failureDiagnoses.summary
+      }).from(failureDiagnoses).where(inArray(failureDiagnoses.clusterId, clusterIds))
+    : []
+  const diagnosisById = new Map(diagnosisRows.map(d => [d.clusterId, d]))
+
   const result: ProjectCluster[] = clusters.map((c) => {
     const runData = runDataById.get(c.lastSeenRunId)
     return {
       ...c,
       affectedTests: affectedById.get(c.id) ?? 0,
       lastSeenRunStatus: runData?.status ?? null,
-      lastSeenAt: runData?.startTime ?? null
+      lastSeenAt: runData?.startTime ?? null,
+      diagnosis: diagnosisById.get(c.id) ?? null
     }
   })
 

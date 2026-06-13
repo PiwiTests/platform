@@ -172,6 +172,7 @@ export interface ProjectDetails {
   name: string
   label?: string | null
   description?: string | null
+  diagnosisInstructions?: string | null
   color?: string | null
   tags?: TagInfo[]
 }
@@ -410,6 +411,31 @@ export interface FailureGroup {
   flaky: boolean
   workerCorrelated: boolean
   cases: FailureGroupCase[]
+  diagnosis: DiagnosisCompact | null
+}
+
+/**
+ * Full failure cluster — returned by GET /api/failure-clusters/[id]
+ */
+export interface FailureClusterDetail {
+  id: number
+  projectId: number
+  fingerprint: string
+  signature: string
+  errorType: string | null
+  selector: string | null
+  sampleError: string | null
+  status: string
+  triageNote: string | null
+  firstSeenRunId: number
+  lastSeenRunId: number
+  occurrences: number
+  affectedTests: number
+  lastSeenRunStatus: string | null
+  lastSeenAt: string | Date | null
+  diagnosis: DiagnosisCompact | null
+  project: { id: number, name: string, label: string | null } | null
+  affectedTestCases: Array<{ testCaseId: number, title: string, filePath: string, runCount: number }>
 }
 
 /**
@@ -430,6 +456,7 @@ export interface ProjectFailureCluster {
   affectedTests: number
   lastSeenRunStatus: string | null
   lastSeenAt: string | Date | null
+  diagnosis: DiagnosisCompact | null
 }
 
 /**
@@ -692,4 +719,80 @@ export interface SlowTest {
   runCount: number
   trend: 'faster' | 'slower' | 'stable'
   latestDuration: number
+}
+
+// ============================================================================
+// AI Diagnosis types (Pillar 4)
+// ============================================================================
+
+/**
+ * Compact diagnosis summary — inlined in failure-groups and failure-clusters responses
+ */
+export interface DiagnosisCompact {
+  status: string
+  category: string | null
+  confidence: string | null
+  summary: string | null
+}
+
+/** Supported AI provider identifiers */
+export type AiProvider = 'anthropic' | 'openai'
+
+/**
+ * Runtime AI configuration — built from env vars or DB settings.
+ * Contains the raw API key; never sent to the client.
+ * AiSettings is the client-facing equivalent (hasApiKey + envManaged instead).
+ */
+export interface AiConfig {
+  provider: AiProvider
+  apiKey: string
+  model: string
+  baseUrl: string | null
+  autoDiagnose: boolean
+  source: 'env' | 'settings'
+}
+
+/**
+ * AI status — returned by GET /api/ai/status
+ */
+export interface AiStatus {
+  configured: boolean
+  provider?: AiProvider | null
+  model?: string | null
+  autoDiagnose?: boolean
+  source?: string | null
+}
+
+/**
+ * AI settings — returned by GET /api/settings/ai
+ */
+export interface AiSettings {
+  provider: AiProvider | null
+  model: string | null
+  baseUrl: string | null
+  autoDiagnose: boolean
+  hasApiKey: boolean
+  envManaged: boolean
+  customInstructions: string | null
+}
+
+// ============================================================================
+// Flaky tests types (Pillar 3)
+// ============================================================================
+
+/**
+ * Flaky test entry — returned by GET /api/projects/[id]/flaky-tests
+ */
+export interface FlakyTest {
+  testCaseId: number
+  latestRunsCaseId: number
+  title: string
+  filePath: string
+  totalRuns: number
+  failedRuns: number
+  retryPassRuns: number
+  alternations: number
+  failureRate: number
+  score: number
+  lastFlakeAt: string | Date | null
 }

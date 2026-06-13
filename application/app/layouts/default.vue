@@ -269,7 +269,7 @@ onMounted(async () => {
         <UDashboardSearchButton :collapsed="collapsed" class="bg-transparent ring-default" />
 
         <UNavigationMenu
-          :key="currentProjectId"
+          :key="currentProjectId ?? undefined"
           :collapsed="collapsed"
           :items="links[0]"
           orientation="vertical"

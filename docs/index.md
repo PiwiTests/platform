@@ -6,6 +6,7 @@ hero:
   name: "Piwi Dashboard"
   text: "A self-hosted hub for your Playwright test results"
   tagline: Persist every test run, stream results live from CI, track performance regressions, and share reports — without relying on external services.
+  image: /logo-wide.svg
 
   actions:
     - theme: brand
@@ -72,6 +73,18 @@ features:
   <div class="screenshot-item">
     <img src="/screenshots/test-run.png" alt="Test run detail" />
     <p class="screenshot-caption">Test run detail — every test case with status, duration, location, and error messages</p>
+  </div>
+  <div class="screenshot-item">
+    <img src="/screenshots/failure-clusters-tab.png" alt="Failure clusters" />
+    <p class="screenshot-caption">Failure clusters — tests sharing the same root cause are grouped by error fingerprint</p>
+  </div>
+  <div class="screenshot-item">
+    <img src="/screenshots/flaky-tests.png" alt="Flaky tests" />
+    <p class="screenshot-caption">Flaky tests — composite flakiness score with retry-pass and alternation detection</p>
+  </div>
+  <div class="screenshot-item">
+    <img src="/screenshots/failure-cluster-triage.png" alt="Cluster triage" />
+    <p class="screenshot-caption">Cluster triage — set status, write triage notes, and track resolution</p>
   </div>
 </div>
 

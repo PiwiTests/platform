@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 64">
+  <rect width="220" height="64" rx="14" fill="#18181b"/>
+  <rect x="16" y="38" width="10" height="14" rx="3" fill="#ef4444"/>
+  <rect x="31" y="32" width="10" height="20" rx="3" fill="#f59e0b"/>
+  <rect x="46" y="26" width="10" height="26" rx="3" fill="#22c55e"/>
+  <text x="68" y="34" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="24" fill="#e4e4e7">
+    <tspan fill="#22c55e">P</tspan><tspan>i</tspan><tspan fill="#ef4444">w</tspan><tspan>i</tspan>
+  </text>
+  <text x="68" y="53" font-family="system-ui, -apple-system, sans-serif" font-weight="500" font-size="15" fill="#a1a1aa">Dashboard</text>
+</svg>

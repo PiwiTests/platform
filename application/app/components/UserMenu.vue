@@ -33,21 +33,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
   const configurationMenuItems: DropdownMenuItem[] = []
 
   if (!config.public.authEnabled || (authState.value.authenticated && authState.value.user?.role === 'administrator')) {
-    configurationMenuItems.push({
-      label: 'Users',
-      icon: 'i-lucide-users',
-      to: '/settings/users'
-    })
-    configurationMenuItems.push({
-      label: 'Tags',
-      icon: 'i-lucide-tags',
-      to: '/settings/tags'
-    })
-    configurationMenuItems.push({
-      label: 'Storage',
-      icon: 'i-lucide-hard-drive',
-      to: '/settings/storage'
-    })
+    configurationMenuItems.push(...useSettingsNav())
   }
 
   const baseItems: DropdownMenuItem[][] = [configurationMenuItems, [{

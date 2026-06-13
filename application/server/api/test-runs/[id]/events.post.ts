@@ -101,6 +101,7 @@ export default eventHandler(async (event) => {
     webVitals: tc.webVitals,
     consoleLogs: tc.consoleLogs,
     ariaSnapshot: tc.ariaSnapshot as string | null | undefined,
+    testSource: (tc as { testSource?: string | null }).testSource ?? null,
     workerIndex: tc.workerIndex ?? null,
     startedAt: tc.startedAt ?? null,
     browser: tc.browser ?? null

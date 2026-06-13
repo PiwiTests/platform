@@ -7,6 +7,7 @@ import { requireAuth } from '../../utils/auth'
 const updateProjectSchema = z.object({
   label: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
+  diagnosisInstructions: z.string().optional().nullable(),
   tagIds: z.array(z.number()).optional()
 })
 
@@ -46,13 +47,14 @@ export default eventHandler(async (event) => {
     })
   }
 
-  const { label, description, tagIds } = validation.data
+  const { label, description, diagnosisInstructions, tagIds } = validation.data
 
   // Update project
   await db.update(projects)
     .set({
       label,
       description,
+      diagnosisInstructions: diagnosisInstructions ?? undefined,
       updatedAt: new Date()
     })
     .where(eq(projects.id, id))

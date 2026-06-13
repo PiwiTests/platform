@@ -46,7 +46,7 @@ const timelineData = computed<TimelineItem[]>(() => {
   }
 
   const result: TimelineItem[] = []
-  if (hasStartedAt && !props.live) {
+  if (hasStartedAt) {
     // Aligned timeline: position bars by offset from global min startedAt
     for (let ri = 0; ri < sortedWorkers.length; ri++) {
       const [, cases] = sortedWorkers[ri]!

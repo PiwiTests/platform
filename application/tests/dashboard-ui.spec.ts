@@ -105,7 +105,7 @@ test.describe('Dashboard UI Tests', () => {
 
     await expect(page.getByRole('columnheader', { name: 'Test case' }).first()).toBeVisible()
 
-    await page.getByRole('tab', { name: 'Workers' }).click()
+    await page.getByRole('tab', { name: /^Timeline/ }).click()
     await page.getByRole('tab', { name: 'Compare' }).click()
     await expect(page.getByText('Run A (baseline)')).toBeVisible({ timeout: 15000 })
     await page.getByRole('tab', { name: 'Slow endpoints' }).click()

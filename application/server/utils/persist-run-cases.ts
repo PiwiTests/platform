@@ -27,6 +27,7 @@ export interface RunCaseInput {
   webVitals?: unknown
   consoleLogs?: unknown
   ariaSnapshot?: string | null
+  testSource?: string | null
   workerIndex?: number | null
   startedAt?: number | null
   browser?: unknown
@@ -194,6 +195,7 @@ export async function persistRunCases(
       webVitals: sanitizeWebVitals(c.webVitals as Record<string, unknown> | null | undefined) ?? null,
       consoleLogs: sanitizeConsoleLogs(c.consoleLogs as Array<Record<string, unknown>> | null | undefined) ?? null,
       ariaSnapshot: c.ariaSnapshot ?? null,
+      testSource: c.testSource ?? null,
       browser: c.browser ?? null,
       workerIndex: c.workerIndex ?? null,
       startedAt: c.startedAt ?? null

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { TableColumn } from '@nuxt/ui'
 import type { ProjectFailureCluster } from '~~/types/api'
 
 const props = defineProps<{
@@ -6,7 +7,7 @@ const props = defineProps<{
 }>()
 
 const statusFilter = ref<string | undefined>(undefined)
-const { data: clusters, pending: loading, refresh } = await useFetch<ProjectFailureCluster[]>(
+const { data: clusters, pending: loading } = await useFetch<ProjectFailureCluster[]>(
   () => {
     const params = new URLSearchParams()
     if (statusFilter.value) params.set('status', statusFilter.value)
@@ -16,7 +17,7 @@ const { data: clusters, pending: loading, refresh } = await useFetch<ProjectFail
   { lazy: true, server: false, watch: [statusFilter] }
 )
 
-const statusColors: Record<string, 'success' | 'warning' | 'neutral' | 'error'> = {
+const statusColors: Record<string, 'success' | 'warning' | 'neutral'> = {
   open: 'warning',
   resolved: 'success',
   ignored: 'neutral'
@@ -31,192 +32,128 @@ const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' |
   'unknown': 'neutral'
 }
 
-// Triage modal state
-const triageCluster = ref<ProjectFailureCluster | null>(null)
-const triageNewStatus = ref('open')
-const triageNewNote = ref('')
-const savingTriage = ref(false)
-
-function openTriage(cluster: ProjectFailureCluster) {
-  triageCluster.value = cluster
-  triageNewStatus.value = cluster.status
-  triageNewNote.value = ''
-}
-
-function closeTriage() {
-  triageCluster.value = null
-  triageNewNote.value = ''
-}
-
-async function saveTriage() {
-  const cluster = triageCluster.value
-  if (!cluster || !triageNewStatus.value || triageNewStatus.value === cluster.status) return
-
-  savingTriage.value = true
-  try {
-    const res = await $fetch(`/api/failure-clusters/${cluster.id}/status`, {
-      method: 'PATCH',
-      body: { status: triageNewStatus.value, triageNote: triageNewNote.value?.trim() || null }
-    })
-    if (res) {
-      await refresh()
-      closeTriage()
-    }
-  } catch {
-    // silent
-  } finally {
-    savingTriage.value = false
-  }
-}
+const columns: TableColumn<ProjectFailureCluster>[] = [
+  { accessorKey: 'signature', header: createSortHeader<ProjectFailureCluster>('Signature') },
+  { accessorKey: 'errorType', header: createSortHeader<ProjectFailureCluster>('Type') },
+  { accessorKey: 'status', header: createSortHeader<ProjectFailureCluster>('Status') },
+  { accessorKey: 'affectedTests', header: createSortHeader<ProjectFailureCluster>('Tests') },
+  { accessorKey: 'occurrences', header: createSortHeader<ProjectFailureCluster>('Occurrences') },
+  { accessorKey: 'diagnosis', header: 'AI' },
+  { accessorKey: 'lastSeenAt', header: createSortHeader<ProjectFailureCluster>('Last seen') },
+  { id: 'actions', header: 'Actions' }
+]
 </script>
 
 <template>
-  <UCard v-if="loading">
-    <template #header>
-      <div class="flex items-center gap-2">
-        <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
-        <h2>Loading failure clusters...</h2>
-      </div>
-    </template>
-  </UCard>
-
   <UCard>
     <template #header>
       <div class="flex items-center justify-between">
-        <p class="text-sm text-gray-500 mt-1">
+        <p class="text-sm text-gray-500">
           Ongoing failure signatures grouped by normalized error. Each cluster represents a distinct root cause.
         </p>
-        <div class="flex items-center gap-2">
-          <USelect
-            v-model="statusFilter"
-            :items="[
-              { label: 'All', value: undefined },
-              { label: 'Open', value: 'open' },
-              { label: 'Resolved', value: 'resolved' },
-              { label: 'Ignored', value: 'ignored' }
-            ]"
-            size="xs"
-            class="w-32"
-          />
-        </div>
+        <USelect
+          v-model="statusFilter"
+          :items="[
+            { label: 'All', value: undefined },
+            { label: 'Open', value: 'open' },
+            { label: 'Resolved', value: 'resolved' },
+            { label: 'Ignored', value: 'ignored' }
+          ]"
+          size="xs"
+          class="w-32"
+        />
       </div>
     </template>
 
-    <div v-if="clusters && clusters.length" class="divide-y divide-default">
-      <div
-        v-for="cluster in clusters"
-        :key="cluster.id"
-        class="py-3 flex flex-col sm:flex-row sm:items-center gap-2"
-      >
-        <div class="min-w-0 flex-1 space-y-1">
-          <div class="font-mono text-sm truncate flex items-center gap-2" :title="cluster.signature">
-            {{ cluster.signature }}
-            <UBadge
-              :color="statusColors[cluster.status] || 'neutral'"
-              variant="subtle"
-              size="sm"
-            >
-              {{ cluster.status }}
-            </UBadge>
-          </div>
-          <div class="flex flex-wrap items-center gap-1.5">
-            <UBadge
-              v-if="cluster.errorType"
-              :color="errorTypeColors[cluster.errorType] || 'neutral'"
-              variant="subtle"
-              size="sm"
-            >
-              {{ cluster.errorType }}
-            </UBadge>
-            <UBadge color="neutral" variant="subtle" size="sm">
-              {{ cluster.affectedTests }} {{ cluster.affectedTests === 1 ? 'test' : 'tests' }} affected
-            </UBadge>
-            <UBadge color="neutral" variant="outline" size="sm">
-              {{ cluster.occurrences }} occurrence{{ cluster.occurrences === 1 ? '' : 's' }}
-            </UBadge>
-            <span class="text-xs text-gray-500">
-              Last seen in
-              <NuxtLink
-                :to="`/test-runs/${cluster.lastSeenRunId}`"
-                class="text-primary hover:underline"
-              >run #{{ cluster.lastSeenRunId }}</NuxtLink>
-              <template v-if="cluster.lastSeenAt"> ({{ formatRelativeTime(cluster.lastSeenAt) }})</template>
-            </span>
-          </div>
-          <div v-if="cluster.triageNote" class="text-xs text-gray-500 italic mt-1">
-            {{ cluster.triageNote }}
-          </div>
+    <UTable :data="clusters ?? []" :columns="columns" :loading="loading">
+      <template #actions-header>
+        <div class="text-right">
+          Actions
         </div>
-        <div class="shrink-0 flex items-center gap-1">
-          <UButton
-            size="xs"
-            color="neutral"
-            variant="outline"
-            @click="openTriage(cluster)"
+      </template>
+
+      <template #signature-cell="{ row }">
+        <div class="min-w-0 space-y-0.5">
+          <NuxtLink
+            :to="`/failure-clusters/${row.original.id}`"
+            class="font-mono text-sm text-primary hover:underline truncate block"
+            :title="row.original.signature"
           >
-            Triage
-          </UButton>
-          <NuxtLink :to="`/test-runs/${cluster.lastSeenRunId}`">
-            <UButton size="xs" color="neutral" variant="outline">
-              View run
-            </UButton>
+            {{ row.original.signature }}
           </NuxtLink>
+          <p v-if="row.original.triageNote" class="text-xs text-gray-500 italic truncate">
+            {{ row.original.triageNote }}
+          </p>
         </div>
-      </div>
-    </div>
-    <p v-else class="text-sm text-gray-500">
+      </template>
+
+      <template #errorType-cell="{ row }">
+        <UBadge
+          v-if="row.original.errorType"
+          :color="errorTypeColors[row.original.errorType] || 'neutral'"
+          variant="subtle"
+          size="sm"
+        >
+          {{ row.original.errorType }}
+        </UBadge>
+        <span v-else class="text-gray-400 text-xs">—</span>
+      </template>
+
+      <template #status-cell="{ row }">
+        <UBadge :color="statusColors[row.original.status] || 'neutral'" variant="subtle" size="sm">
+          {{ row.original.status }}
+        </UBadge>
+      </template>
+
+      <template #affectedTests-cell="{ row }">
+        <span class="text-sm tabular-nums">{{ row.original.affectedTests }}</span>
+      </template>
+
+      <template #occurrences-cell="{ row }">
+        <span class="text-sm tabular-nums">{{ row.original.occurrences }}</span>
+      </template>
+
+      <template #diagnosis-cell="{ row }">
+        <UBadge
+          v-if="row.original.diagnosis?.status === 'completed' && row.original.diagnosis.category"
+          color="neutral"
+          variant="subtle"
+          size="sm"
+          class="gap-1"
+        >
+          <UIcon name="i-lucide-sparkles" class="size-3" />
+          {{ row.original.diagnosis.category }}
+        </UBadge>
+        <span v-else class="text-gray-400 text-xs">—</span>
+      </template>
+
+      <template #lastSeenAt-cell="{ row }">
+        <div class="text-sm text-gray-500 whitespace-nowrap">
+          <NuxtLink :to="`/test-runs/${row.original.lastSeenRunId}`" class="text-primary hover:underline">
+            run #{{ row.original.lastSeenRunId }}
+          </NuxtLink>
+          <span v-if="row.original.lastSeenAt" class="ml-1 text-xs text-gray-400">
+            ({{ formatRelativeTime(row.original.lastSeenAt) }})
+          </span>
+        </div>
+      </template>
+
+      <template #actions-cell="{ row }">
+        <div class="flex justify-end">
+          <UButton
+            :to="`/failure-clusters/${row.original.id}`"
+            size="sm"
+            variant="outline"
+            trailing-icon="i-lucide-arrow-right"
+          >
+            View
+          </UButton>
+        </div>
+      </template>
+    </UTable>
+
+    <p v-if="!loading && clusters && clusters.length === 0" class="text-sm text-gray-500 py-4 text-center">
       No failure clusters recorded for this project.
     </p>
   </UCard>
-
-  <UModal :open="!!triageCluster" title="Triage cluster" @update:open="closeTriage">
-    <template #body>
-      <div class="flex flex-col gap-4">
-        <p class="font-mono text-xs truncate text-gray-500">
-          {{ triageCluster?.signature }}
-        </p>
-        <div class="flex flex-col gap-1.5">
-          <label class="text-sm font-medium">Status</label>
-          <URadioGroup
-            v-model="triageNewStatus"
-            :items="[
-              { label: 'Open', value: 'open' },
-              { label: 'Resolved', value: 'resolved' },
-              { label: 'Ignored', value: 'ignored' }
-            ]"
-          />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <label class="text-sm font-medium">Note</label>
-          <UTextarea
-            v-model="triageNewNote"
-            placeholder="Optional triage note..."
-            :maxrows="3"
-            size="sm"
-          />
-        </div>
-      </div>
-    </template>
-    <template #footer>
-      <div class="flex justify-end gap-2">
-        <UButton
-          size="sm"
-          color="neutral"
-          variant="ghost"
-          @click="closeTriage"
-        >
-          Cancel
-        </UButton>
-        <UButton
-          size="sm"
-          color="primary"
-          :loading="savingTriage"
-          :disabled="!triageNewStatus || triageNewStatus === triageCluster?.status"
-          @click="saveTriage"
-        >
-          Save
-        </UButton>
-      </div>
-    </template>
-  </UModal>
 </template>

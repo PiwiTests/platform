@@ -55,7 +55,11 @@ class PiwiDashboardReporter {
     this.fileHandler = new FileHandler();
     this.uploader = new Uploader(this.httpClient, this.fileHandler, this.options.verbose);
     this.streamBuffer = new StreamBuffer(this.options.projectName!);
-    this.recovery = new CrashRecovery(this.options.serverUrl ?? "http://localhost:3000", this.options.projectName!, this.options.verbose);
+    this.recovery = new CrashRecovery(
+      this.options.serverUrl ?? "http://localhost:3000",
+      this.options.projectName!,
+      this.options.verbose,
+    );
     this.metadataCollector = new MetadataCollector();
 
     this.streamBuffer.clearStale();
@@ -84,7 +88,6 @@ class PiwiDashboardReporter {
       browser: browser || undefined,
     };
 
-
     if (this.streamingEnabled && this.streamingRunId) {
       this.queueStreamEvent(beginEvent);
     } else {
@@ -111,6 +114,11 @@ class PiwiDashboardReporter {
 
     const browser = this.getBrowserConfig(test);
     if (browser) testCase.browser = browser;
+
+    if (result.status === "failed" || result.status === "timedOut") {
+      const snippet = readSourceSnippet(test.location.file, test.location.line, 30);
+      if (snippet) testCase.testSource = snippet;
+    }
 
     if (this.options.collectPerformanceMetrics && result.steps?.length > 0) {
       testCase.performanceMetrics = collectStepMetrics(result.steps);
@@ -598,6 +606,7 @@ class PiwiDashboardReporter {
       webVitals: rest.webVitals || null,
       consoleLogs: rest.consoleLogs || null,
       ariaSnapshot: rest.ariaSnapshot || null,
+      testSource: rest.testSource || null,
       browser: rest.browser || null,
     };
   }
@@ -668,7 +677,12 @@ class PiwiDashboardReporter {
           if (use.hasTouch != null) config.hasTouch = use.hasTouch;
           if (use.locale) config.locale = use.locale;
           if (use.timezoneId) config.timezoneId = use.timezoneId;
-          if (use.geolocation) config.geolocation = { longitude: use.geolocation.longitude, latitude: use.geolocation.latitude, ...(use.geolocation.accuracy != null && { accuracy: use.geolocation.accuracy }) };
+          if (use.geolocation)
+            config.geolocation = {
+              longitude: use.geolocation.longitude,
+              latitude: use.geolocation.latitude,
+              ...(use.geolocation.accuracy != null && { accuracy: use.geolocation.accuracy }),
+            };
           if (use.colorScheme) config.colorScheme = use.colorScheme;
           if (use.reducedMotion) config.reducedMotion = use.reducedMotion;
           if (use.forcedColors) config.forcedColors = use.forcedColors;
@@ -713,8 +727,7 @@ class PiwiDashboardReporter {
           }
         });
       if (!hasPiwi) {
-        if (opts.verbose)
-          console.log("[Piwi Dashboard] Not reporting — Piwi is not in the Playwright reporters list.");
+        if (opts.verbose) console.log("[Piwi Dashboard] Not reporting — Piwi is not in the Playwright reporters list.");
         if (userSetup) return userSetup(config);
         return;
       }
@@ -760,3 +773,22 @@ class PiwiDashboardReporter {
 }
 
 export = PiwiDashboardReporter;
+
+function readSourceSnippet(file: string, line: number, context: number): string | null {
+  try {
+    const content = fs.readFileSync(file, "utf-8");
+    const lines = content.split("\n");
+    const start = Math.max(0, line - context - 1);
+    const end = Math.min(lines.length, line + context);
+    return lines
+      .slice(start, end)
+      .map((l, i) => {
+        const lineNum = start + i + 1;
+        const marker = lineNum === line ? "> " : "  ";
+        return `${marker}${String(lineNum).padStart(4)} | ${l}`;
+      })
+      .join("\n");
+  } catch {
+    return null;
+  }
+}

@@ -6,6 +6,7 @@ import { parseLocation } from '../../utils/parse-location'
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases'
 import { sanitizeMetadata } from '../../utils/sanitize'
 import { runEventBus } from '../../utils/run-events'
+import { autoDiagnoseRun } from '../../utils/ai-diagnosis'
 
 export default eventHandler(async (event) => {
   // Require reporter or administrator role for submitting test results
@@ -90,6 +91,7 @@ export default eventHandler(async (event) => {
       webVitals?: unknown
       consoleLogs?: unknown
       ariaSnapshot?: unknown
+      testSource?: string | null
       startedAt?: number | null
       workerIndex?: number | null
       browser?: unknown
@@ -114,6 +116,7 @@ export default eventHandler(async (event) => {
         webVitals: testCase.webVitals,
         consoleLogs: testCase.consoleLogs,
         ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
+        testSource: testCase.testSource ?? null,
         workerIndex: testCase.workerIndex,
         startedAt: testCase.startedAt ?? null,
         browser: testCase.browser ?? null
@@ -141,6 +144,8 @@ export default eventHandler(async (event) => {
   }
 
   runEventBus.publishGlobal({ type: 'run-submitted', runId: testRun.id, projectId: project.id, status: body.status })
+
+  autoDiagnoseRun(db, project.id, testRun.id).catch(e => console.error('[ai-diagnosis] autoDiagnoseRun failed', e))
 
   return {
     success: true,

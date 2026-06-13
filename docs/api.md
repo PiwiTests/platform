@@ -397,6 +397,63 @@ Failure clusters recorded for a project (up to 100, most recently seen first). E
 
 `occurrences` counts every linked `test_runs_cases` row (retries included, not decremented on run deletion); `affectedTests` is the number of distinct test cases that ever hit the cluster. `status` can be `open`, `resolved`, or `ignored` — managed via the PATCH endpoint below. Returns 404 for unknown projects.
 
+Each cluster also carries a compact `diagnosis` field (or `null`) when an AI diagnosis has been run:
+
+```json
+"diagnosis": {
+  "status": "completed",
+  "category": "app-bug",
+  "confidence": "high",
+  "summary": "Login button click timed out due to race condition in auth flow"
+}
+```
+
+---
+
+### GET `/api/projects/[id]/flaky-tests`
+
+Detect tests that fail intermittently across recent runs. Analyzes up to `runs` of the most recent terminal runs.
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `runs` | `number` | `50` | Maximum number of recent runs to analyze (clamped to 1–200) |
+
+**Response** — array of flaky test entries sorted by score descending:
+
+```json
+[
+  {
+    "testCaseId": 45,
+    "latestRunsCaseId": 891,
+    "title": "Login flow completes successfully",
+    "filePath": "tests/auth.spec.ts",
+    "totalRuns": 12,
+    "failedRuns": 3,
+    "retryPassRuns": 3,
+    "alternations": 2,
+    "failureRate": 0.25,
+    "score": 63,
+    "lastFlakeAt": "2024-01-01T12:00:00.000Z"
+  }
+]
+```
+
+**Fields**
+
+| Field | Description |
+|-------|-------------|
+| `testCaseId` | ID of the `test_cases` row |
+| `latestRunsCaseId` | ID of the most recent `test_runs_cases` row — use to link to the case detail page |
+| `retryPassRuns` | Runs where the test failed on first attempt but passed on a retry |
+| `alternations` | Count of pass↔fail status flips across consecutive runs |
+| `failureRate` | Fraction of runs where the test's final status was failed/timed out |
+| `score` | Composite score 1–100: `round(100 × (0.6 × retryRate + 0.4 × altRate))` |
+| `lastFlakeAt` | Start time of the run where flakiness was last detected |
+
+Only tests with at least 3 runs AND (`retryPassRuns ≥ 1` OR `alternations ≥ 2`) are included. Returns 404 for unknown projects.
+
 ---
 
 ### GET `/api/test-runs/[id]`
@@ -461,6 +518,8 @@ Returns failures grouped by root cause using error fingerprinting. Each group re
 | `cases` | Array of affected test case results with retry and worker info |
 
 **Sort order**: groups are sorted by `caseCount` descending.
+
+Each group also carries a compact `diagnosis` field (or `null`) with the same shape as described under `GET /api/projects/[id]/failure-clusters`.
 
 ---
 
@@ -718,3 +777,178 @@ On error, the browser is redirected to `/login?error=<reason>` with one of:
 - `oauth-failed` — token exchange or user info fetch failed
 - `auth-disabled` — authentication is not enabled
 - `invalid-provider` — unknown or unconfigured provider
+
+---
+
+## AI Diagnosis
+
+AI diagnosis uses an LLM to analyze failure clusters and explain their root cause. Configure a provider in **Settings → AI Diagnosis** or via environment variables before using these endpoints.
+
+### GET `/api/ai/status`
+
+Returns whether AI diagnosis is configured. Never returns the API key.
+
+**Response**
+
+```json
+{
+  "configured": true,
+  "provider": "anthropic",
+  "model": "claude-opus-4-8",
+  "autoDiagnose": true,
+  "source": "settings"
+}
+```
+
+`source` is `"settings"` (database) or `"env"` (environment variables). When `configured` is `false`, only that field is returned.
+
+---
+
+### GET `/api/settings/ai`
+
+Get the current AI provider configuration.
+
+::: info
+Requires the **administrator** role when authentication is enabled.
+:::
+
+**Response**
+
+```json
+{
+  "provider": "openai",
+  "model": "gpt-4o",
+  "baseUrl": "http://localhost:11434/v1",
+  "autoDiagnose": false,
+  "hasApiKey": true,
+  "envManaged": false
+}
+```
+
+`hasApiKey` is `true` when a key is stored; the key itself is never returned. `envManaged` is `true` when `NUXT_AI_*` environment variables are active — the UI will show the config read-only.
+
+---
+
+### PUT `/api/settings/ai`
+
+Save the AI provider configuration.
+
+::: info
+Requires the **administrator** role when authentication is enabled.
+:::
+
+**Request body**
+
+```json
+{
+  "provider": "anthropic",
+  "model": "claude-opus-4-8",
+  "apiKey": "sk-ant-...",
+  "baseUrl": null,
+  "autoDiagnose": true
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `provider` | `"anthropic"`, `"openai"`, `null`, or `""` (null/empty disables AI) |
+| `model` | Model name (required for OpenAI-compatible, optional for Anthropic — defaults to `claude-opus-4-8`) |
+| `apiKey` | `undefined` → keep stored key; `""` → clear key; any string → replace key |
+| `baseUrl` | Required for `openai` provider (e.g. `http://localhost:11434/v1`) |
+| `autoDiagnose` | When `true`, newly-detected clusters are auto-diagnosed when a run finishes (max 3 per run) |
+
+Returns 400 for invalid provider or missing required fields, 409 if environment-managed.
+
+**Response** — same shape as `GET /api/settings/ai`.
+
+---
+
+### POST `/api/settings/ai/test`
+
+Test the current AI configuration by making a minimal request to the provider.
+
+::: info
+Requires the **administrator** role when authentication is enabled.
+:::
+
+**Response (success)**
+
+```json
+{ "success": true, "model": "claude-opus-4-8" }
+```
+
+**Response (failure)**
+
+```json
+{ "success": false, "error": "Connection refused — check base URL" }
+```
+
+Always returns HTTP 200; errors are reported in the `error` field. Returns 503 if no provider is configured.
+
+---
+
+### GET `/api/failure-clusters/[id]/diagnosis`
+
+Get the stored AI diagnosis for a cluster. Returns `null` if no diagnosis has been run.
+
+**Response**
+
+```json
+{
+  "id": 1,
+  "clusterId": 7,
+  "status": "completed",
+  "provider": "anthropic",
+  "model": "claude-opus-4-8",
+  "category": "app-bug",
+  "confidence": "high",
+  "summary": "Login button click timed out due to a race condition in the auth flow",
+  "rootCause": "The auth token refresh is triggered asynchronously but the click handler does not await it…",
+  "details": {
+    "evidence": ["3/12 runs failed in the login step", "All failures show the same locator timeout"],
+    "suggestedFix": {
+      "description": "Await the token refresh before asserting login state",
+      "file": "tests/auth.spec.ts",
+      "code": null
+    },
+    "preventionTips": ["Add an explicit wait for auth state before navigation assertions"]
+  },
+  "inputTokens": 1840,
+  "outputTokens": 320,
+  "durationMs": 4200,
+  "createdAt": "2024-01-01T12:00:00.000Z",
+  "updatedAt": "2024-01-01T12:00:05.000Z"
+}
+```
+
+**`status` values**
+
+| Value | Meaning |
+|-------|---------|
+| `running` | Diagnosis in progress — poll every few seconds |
+| `completed` | Diagnosis finished successfully |
+| `failed` | LLM call or parsing failed — `error` field contains a message |
+
+A `running` row older than 5 minutes is treated as stale (the server may have restarted mid-call) and can be re-submitted with `force=true`.
+
+---
+
+### POST `/api/failure-clusters/[id]/diagnose`
+
+Run (or re-run) AI diagnosis for a failure cluster. The call is **synchronous** — the response contains the final `completed` or `failed` row.
+
+**Query parameters**
+
+| Parameter | Description |
+|-----------|-------------|
+| `force=true` | Force re-diagnosis even if a completed result already exists |
+
+**Responses**
+
+| Status | Meaning |
+|--------|---------|
+| 200 | Diagnosis ran (or existing completed diagnosis returned) — body is the diagnosis row |
+| 400 | Invalid cluster ID |
+| 404 | Cluster not found |
+| 409 | A fresh diagnosis is already running for this cluster — poll `GET …/diagnosis` instead |
+| 503 | AI is not configured — set up a provider first |

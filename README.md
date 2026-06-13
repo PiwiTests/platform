@@ -1,4 +1,6 @@
-# Piwi Dashboard
+<p align="center">
+  <img src="./docs/public/logo-wide.svg" alt="Piwi Dashboard" height="64">
+</p>
 
 > **Disclaimer:** Piwi Dashboard is **not affiliated with, endorsed by, or connected to Microsoft Corporation** in any way.  
 
@@ -30,6 +32,18 @@
 
 ![Test run detail](docs/public/screenshots/test-run.png)
 
+**Failure clusters** — error fingerprinting groups tests sharing the same root cause:
+
+![Failure clusters](docs/public/screenshots/failure-clusters-tab.png)
+
+**Flaky tests** — composite flakiness score with retry-pass and alternation breakdown:
+
+![Flaky tests](docs/public/screenshots/flaky-tests.png)
+
+**Cluster triage** — set status, write triage notes, and track resolution:
+
+![Cluster triage](docs/public/screenshots/failure-cluster-triage.png)
+
 </details>
 
 ## Why Piwi Dashboard?
@@ -51,7 +65,9 @@ Running Playwright tests in CI produces HTML reports that are ephemeral — once
 - 🔬 **Browser Web Vitals** — TTFB, DOMContentLoaded, FCP and more via the Performance API
 - 🌐 **Multi-browser support** — every test case records its browser config (project name, browser, channel, viewport); filter and sort by browser in the test run detail page
 - 📊 **Run comparison** — side-by-side delta view with improved/regressed/unchanged summary
-- 🔗 **Failure clustering** — failed tests sharing the same root cause are grouped automatically via error fingerprinting; run page shows failure groups with flaky and worker-correlation heuristics
+- 🔗 **Failure clustering** — failed tests sharing the same root cause are grouped automatically via error fingerprinting; run page shows failure groups with flaky and worker-correlation heuristics; each cluster has its own detail page with triage tools
+- 🤖 **AI diagnosis** — one-click LLM analysis of any failure cluster (Anthropic, OpenAI-compatible, Ollama, etc.); diagnosis includes category, confidence, root cause, evidence, suggested fix, and prevention tips; auto-diagnose new clusters on run completion; supports global and per-project custom instructions to tailor analysis to your stack
+- 🔀 **Flaky test detection** — composite flakiness score based on retry passes, status alternations, and failure rate; dedicated project tab with configurable lookback window
 - 🔌 **Playwright reporter** — drop-in custom reporter for automatic result submission, with HTML report and trace uploads
 - ⚡ **Real-time streaming** — live dashboard via Server-Sent Events; pages refresh instantly when a run starts or finishes, with no polling
 - 🔐 **Authentication** — optional role-based access control (administrator, reporter, user) with API key support for CI and OAuth (Google, GitHub)
@@ -109,10 +125,12 @@ Results appear automatically in the dashboard. The project is created on first s
 |------|---------------|
 | **Home** | Aggregate stats (total projects, runs, passing rate, flaky count), test results trend chart, recent projects |
 | **Projects** | Searchable/filterable table of all projects with last-run status, duration, test ratio, and report links |
-| **Project detail** | Full run history for a single project with status badges, test breakdowns, and environment filter |
+| **Project detail** | Run history, failure clusters, flaky tests, trends, test cases, and run comparison — all in one tabbed view |
 | **Performance** | Avg/P90 duration trend chart, top 20 slowest tests, side-by-side run comparison |
-| **Test cases** | Per-project view of all unique test cases with pass/fail history |
-| **Test run detail** | Every test case in a run with browser icon, status, duration, location, error messages, traces, and reports; filter by browser |
+| **Test cases** | Per-project view of all unique test cases with pass rate, result breakdown, and link to each test's history |
+| **Test run detail** | Every test case in a run with browser icon, status, duration, location, error messages, traces, and reports; filter by browser; failure groups with AI diagnosis |
+| **Failure cluster** | Cluster detail with affected tests, triage tools (status + note), and LLM diagnosis (category, confidence, root cause, fix suggestion) |
+| **Settings › AI** | Configure AI provider, auto-diagnose, and global analysis instructions |
 | **Settings › Users** | User management and API key generation (when authentication is enabled) |
 | **Settings › Storage** | Storage statistics and cleanup tools for old runs |
 | **Settings › Tags** | Tag management for organizing projects |

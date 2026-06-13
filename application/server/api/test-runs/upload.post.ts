@@ -14,6 +14,7 @@ import { parseLocation } from '../../utils/parse-location'
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases'
 import { sanitizeMetadata } from '../../utils/sanitize'
 import { runEventBus } from '../../utils/run-events'
+import { autoDiagnoseRun } from '../../utils/ai-diagnosis'
 
 // Default labels for known report types
 const REPORT_TYPE_LABELS: Record<string, string> = {
@@ -373,6 +374,8 @@ export default eventHandler(async (event) => {
         status: finalStatus
       })
 
+      autoDiagnoseRun(db, testRun.projectId, existingTestRunId!).catch(e => console.error('[ai-diagnosis] autoDiagnoseRun failed', e))
+
       // Cleanup event bus for this run
       runEventBus.cleanup(existingTestRunId!)
     } else if (existingRunStatus === 'finalizing') {
@@ -417,6 +420,7 @@ export default eventHandler(async (event) => {
         webVitals: testCase.webVitals,
         consoleLogs: testCase.consoleLogs,
         ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
+        testSource: testCase.testSource as string | null | undefined,
         browser: testCase.browser as unknown | null | undefined,
         workerIndex: testCase.workerIndex as number | null | undefined,
         startedAt: testCase.startedAt as number | null | undefined
@@ -543,6 +547,11 @@ export default eventHandler(async (event) => {
         .set({ flakyTests: flakyTestCount })
         .where(eq(testRuns.id, testRun.id))
     }
+  }
+
+  // For new (non-streaming) runs, fire auto-diagnose after cases are persisted
+  if (!attachingToExistingRun) {
+    autoDiagnoseRun(db, project.id, testRun.id).catch(e => console.error('[ai-diagnosis] autoDiagnoseRun failed', e))
   }
 
   return {
