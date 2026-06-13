@@ -293,6 +293,13 @@ const { summaryColSpanClass, blockColSpanClass } = useDetailGrid(() => {
   return count
 })
 
+// Status filter — set by RunSummary clicks, consumed by TestCasesList
+const statusFilter = ref('all')
+
+function handleFilterStatus(status: string) {
+  statusFilter.value = status
+}
+
 // Reports from the files table
 const allReports = computed<ReportInfo[]>(() => testRun.value?.reports || [])
 
@@ -405,7 +412,9 @@ function handleSelectCluster(clusterId: number) {
           :summary-col-span-class="summaryColSpanClass"
           :block-col-span-class="blockColSpanClass"
           :finalizing="isFinalizing"
+          :active-filter="statusFilter"
           @update:show-custom-data="showCustomData = $event"
+          @filter-status="handleFilterStatus"
         />
 
         <!-- ===== TABBED CONTENT PANEL ===== -->
@@ -435,6 +444,7 @@ function handleSelectCluster(clusterId: number) {
                 :test-cases="displayTestCases"
                 :is-live="isLive"
                 :failure-cluster-filter="selectedClusterFilter"
+                :status-filter="statusFilter"
               />
             </div>
           </template>
