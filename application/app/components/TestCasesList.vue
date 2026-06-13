@@ -7,18 +7,37 @@ const props = defineProps<{
   testCases: TestCaseResult[]
   isLive: boolean
   failureClusterFilter?: number | null
+  statusFilter?: string
 }>()
 
 // Search and filter
 const testCaseSearch = ref('')
-const testCaseStatusFilter = ref<string>('all')
-const testCaseStatusOptions = [
-  { label: 'All statuses', value: 'all' },
-  { label: 'Passed', value: 'passed' },
-  { label: 'Failed', value: 'failed' },
-  { label: 'Skipped', value: 'skipped' },
-  { label: 'Flaky', value: 'flaky' },
-]
+const activeStatuses = ref<string[]>([])
+
+// Sync from RunSummary clicks: replace active statuses with clicked one
+watch(() => props.statusFilter, (val) => {
+  if (!val || val === 'all') {
+    activeStatuses.value = []
+  } else {
+    activeStatuses.value = [val]
+  }
+})
+
+const STATUS_OPTIONS = [
+  { label: 'Passed', value: 'passed', color: 'green' },
+  { label: 'Failed', value: 'failed', color: 'red' },
+  { label: 'Skipped', value: 'skipped', color: 'gray' },
+  { label: 'Flaky', value: 'flaky', color: 'orange' },
+] as const
+
+function toggleStatus(value: string) {
+  const idx = activeStatuses.value.indexOf(value)
+  if (idx >= 0) {
+    activeStatuses.value = activeStatuses.value.filter(s => s !== value)
+  } else {
+    activeStatuses.value = [...activeStatuses.value, value]
+  }
+}
 
 const testCaseBrowserFilter = ref<string>('all')
 
@@ -35,13 +54,19 @@ const testCaseBrowserOptions = computed(() => {
   return items
 })
 
+function matchesStatus(tc: TestCaseResult, filter: string): boolean {
+  if (filter === 'failed') return tc.status === 'failed' || tc.status === 'timedOut' || tc.status === 'timedout'
+  if (filter === 'flaky') return (tc.retries ?? 0) > 0
+  return tc.status === filter
+}
+
 const filteredTestCases = computed<TestCaseResult[]>(() => {
   let cases = props.testCases
   if (props.failureClusterFilter != null) {
     cases = cases.filter(tc => tc.failureClusterId === props.failureClusterFilter)
   }
-  if (testCaseStatusFilter.value !== 'all') {
-    cases = cases.filter(tc => tc.status === testCaseStatusFilter.value)
+  if (activeStatuses.value.length > 0) {
+    cases = cases.filter(tc => activeStatuses.value.some(s => matchesStatus(tc, s)))
   }
   if (testCaseBrowserFilter.value !== 'all') {
     cases = cases.filter(tc => tc.browser?.projectName === testCaseBrowserFilter.value)
@@ -130,10 +155,6 @@ const testCasesColumns: TableColumn<TestCaseResult>[] = [
     header: createSortHeader<TestCaseResult>('Worker'),
   },
   {
-    accessorKey: 'slowestStep',
-    header: createSortHeader<TestCaseResult>('Slowest step'),
-  },
-  {
     accessorKey: 'retries',
     header: createSortHeader<TestCaseResult>('Retries'),
   },
@@ -189,12 +210,26 @@ defineExpose({ scrollToCase })
           size="sm"
           class="min-w-48"
         />
-        <USelect
-          v-model="testCaseStatusFilter"
-          :items="testCaseStatusOptions"
-          size="sm"
-          class="w-32"
-        />
+        <div class="flex flex-wrap items-center gap-1">
+          <button
+            v-for="opt in STATUS_OPTIONS"
+            :key="opt.value"
+            class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
+            :class="activeStatuses.includes(opt.value)
+              ? opt.color === 'green' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                : opt.color === 'red' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                  : opt.color === 'orange' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                    : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+              : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'"
+            @click="toggleStatus(opt.value)"
+          >
+            <span
+              class="size-2 rounded-full shrink-0"
+              :class="opt.color === 'green' ? 'bg-green-500' : opt.color === 'red' ? 'bg-red-500' : opt.color === 'orange' ? 'bg-orange-500' : 'bg-gray-400'"
+            />
+            {{ opt.label }}
+          </button>
+        </div>
         <USelect
           v-model="testCaseBrowserFilter"
           :items="testCaseBrowserOptions"
@@ -229,8 +264,11 @@ defineExpose({ scrollToCase })
       </template>
 
       <template #status-cell="{ row }">
-        <UBadge :color="getStatusColor(row.original.status)" class="capitalize">
-          {{ row.original.status }}
+        <UBadge
+          :color="getStatusColor(row.original.status === 'timedOut' || row.original.status === 'timedout' ? 'failed' : row.original.status)"
+          class="capitalize"
+        >
+          {{ row.original.status === 'timedOut' || row.original.status === 'timedout' ? 'failed' : row.original.status }}
         </UBadge>
       </template>
 
@@ -256,13 +294,6 @@ defineExpose({ scrollToCase })
 
       <template #browser-cell="{ row }">
         <BrowserBadge :browser="row.original.browser" />
-      </template>
-
-      <template #slowestStep-cell="{ row }">
-        <div v-if="row.original.slowestStep" class="text-xs">
-          <span class="text-gray-600 dark:text-gray-400">{{ row.original.slowestStep }}</span>
-          <span v-if="row.original.slowestStepDuration" class="ml-1 text-orange-600 font-medium">({{ formatDuration(row.original.slowestStepDuration) }})</span>
-        </div>
       </template>
 
       <template #retries-cell="{ row }">

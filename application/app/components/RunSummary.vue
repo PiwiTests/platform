@@ -9,10 +9,12 @@ const props = defineProps<{
   summaryColSpanClass: string
   blockColSpanClass: string
   finalizing?: boolean
+  activeFilter?: string
 }>()
 
 const emit = defineEmits<{
   'update:showCustomData': [value: boolean]
+  'filter-status': [value: string]
 }>()
 
 const storageStats = computed(() => props.testRun?.storageStats)
@@ -58,38 +60,54 @@ const storageStats = computed(() => props.testRun?.storageStats)
           </div>
 
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
+            <button
+              class="rounded-lg p-3 text-left w-full transition-colors cursor-pointer"
+              :class="activeFilter === 'all' ? 'bg-primary-50 dark:bg-primary-900/20 ring-2 ring-primary-300 dark:ring-primary-700' : 'bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800'"
+              @click="emit('filter-status', 'all')"
+            >
               <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Total
               </p>
               <p class="text-xl font-bold mt-0.5">
                 {{ displayProgress?.totalTests ?? testRun?.totalTests ?? 0 }}
               </p>
-            </div>
-            <div class="rounded-lg bg-green-50 dark:bg-green-900/20 p-3">
+            </button>
+            <button
+              class="rounded-lg p-3 text-left w-full transition-colors cursor-pointer"
+              :class="activeFilter === 'passed' ? 'bg-green-100 dark:bg-green-900/30 ring-2 ring-green-400 dark:ring-green-600' : 'bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30'"
+              @click="emit('filter-status', 'passed')"
+            >
               <p class="text-xs font-medium text-green-700 dark:text-green-400 uppercase tracking-wider">
                 <span class="inline-block size-1.5 rounded-full bg-green-500 mr-1 align-middle" /> Passed
               </p>
               <p class="text-xl font-bold mt-0.5 text-green-600 dark:text-green-400">
                 {{ displayProgress?.passedTests ?? testRun?.passedTests ?? 0 }}
               </p>
-            </div>
-            <div class="rounded-lg bg-red-50 dark:bg-red-900/20 p-3">
+            </button>
+            <button
+              class="rounded-lg p-3 text-left w-full transition-colors cursor-pointer"
+              :class="activeFilter === 'failed' ? 'bg-red-100 dark:bg-red-900/30 ring-2 ring-red-400 dark:ring-red-600' : 'bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30'"
+              @click="emit('filter-status', 'failed')"
+            >
               <p class="text-xs font-medium text-red-700 dark:text-red-400 uppercase tracking-wider">
                 <span class="inline-block size-1.5 rounded-full bg-red-500 mr-1 align-middle" /> Failed
               </p>
               <p class="text-xl font-bold mt-0.5 text-red-600 dark:text-red-400">
                 {{ displayProgress?.failedTests ?? testRun?.failedTests ?? 0 }}
               </p>
-            </div>
-            <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
+            </button>
+            <button
+              class="rounded-lg p-3 text-left w-full transition-colors cursor-pointer"
+              :class="activeFilter === 'skipped' ? 'bg-gray-200 dark:bg-gray-700 ring-2 ring-gray-400 dark:ring-gray-500' : 'bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800'"
+              @click="emit('filter-status', 'skipped')"
+            >
               <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <span class="inline-block size-1.5 rounded-full bg-gray-400 mr-1 align-middle" /> Skipped
               </p>
               <p class="text-xl font-bold mt-0.5 text-gray-600 dark:text-gray-400">
                 {{ displayProgress?.skippedTests ?? testRun?.skippedTests ?? 0 }}
               </p>
-            </div>
+            </button>
           </div>
 
           <div>
