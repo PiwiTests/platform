@@ -2,7 +2,7 @@ import { eq, and, desc } from 'drizzle-orm'
 import { failureDiagnoses, failureClusters, testRunsCases, testCases, testRuns } from '../database/schema'
 import type { FailureDiagnosis, FailureCluster } from '../database/schema'
 import { DIAGNOSIS_JSON_SCHEMA, parseDiagnosisJson } from '#shared/ai-diagnosis'
-import type { AiConfig } from './ai-provider'
+import type { AiConfig } from '~~/types/api'
 import { callAiProvider } from './ai-provider'
 import { computeRegressionContext } from './regression-context'
 

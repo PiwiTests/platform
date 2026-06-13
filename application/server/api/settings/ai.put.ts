@@ -1,8 +1,9 @@
 import { getDatabase } from '../../database'
 import { requireAuth } from '../../utils/auth'
 import { getAppSetting, setAppSetting, deleteAppSetting } from '../../utils/app-settings'
+import type { AiProvider } from '~~/types/api'
 
-const VALID_PROVIDERS = ['anthropic', 'openai']
+const VALID_PROVIDERS: AiProvider[] = ['anthropic', 'openai']
 
 export default eventHandler(async (event) => {
   await requireAuth(event, ['administrator'])
@@ -28,7 +29,7 @@ export default eventHandler(async (event) => {
     return { provider: null, model: null, baseUrl: null, autoDiagnose: false, hasApiKey: false, envManaged: false }
   }
 
-  if (!VALID_PROVIDERS.includes(body.provider)) {
+  if (!VALID_PROVIDERS.includes(body.provider as AiProvider)) {
     throw createError({ statusCode: 400, message: `Invalid provider. Must be one of: ${VALID_PROVIDERS.join(', ')}` })
   }
 

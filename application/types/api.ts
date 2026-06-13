@@ -710,15 +710,44 @@ export interface DiagnosisCompact {
   summary: string | null
 }
 
+/** Supported AI provider identifiers */
+export type AiProvider = 'anthropic' | 'openai'
+
+/**
+ * Runtime AI configuration — built from env vars or DB settings.
+ * Contains the raw API key; never sent to the client.
+ * AiSettings is the client-facing equivalent (hasApiKey + envManaged instead).
+ */
+export interface AiConfig {
+  provider: AiProvider
+  apiKey: string
+  model: string
+  baseUrl: string | null
+  autoDiagnose: boolean
+  source: 'env' | 'settings'
+}
+
 /**
  * AI status — returned by GET /api/ai/status
  */
 export interface AiStatus {
   configured: boolean
-  provider?: string | null
+  provider?: AiProvider | null
   model?: string | null
   autoDiagnose?: boolean
   source?: string | null
+}
+
+/**
+ * AI settings — returned by GET /api/settings/ai
+ */
+export interface AiSettings {
+  provider: AiProvider | null
+  model: string | null
+  baseUrl: string | null
+  autoDiagnose: boolean
+  hasApiKey: boolean
+  envManaged: boolean
 }
 
 // ============================================================================

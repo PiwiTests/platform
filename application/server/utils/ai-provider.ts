@@ -1,23 +1,17 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { getAppSetting } from './app-settings'
+import type { AiProvider, AiConfig } from '~~/types/api'
+
+export type { AiConfig }
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>
-
-export interface AiConfig {
-  provider: 'anthropic' | 'openai'
-  apiKey: string
-  model: string
-  baseUrl: string | null
-  autoDiagnose: boolean
-  source: 'env' | 'settings'
-}
 
 export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
   const runtimeConfig = useRuntimeConfig()
   const envAi = runtimeConfig.ai as { provider?: string, apiKey?: string, model?: string, baseUrl?: string, autoDiagnose?: boolean | string } | undefined
 
   if (envAi?.provider) {
-    const provider = envAi.provider as 'anthropic' | 'openai'
+    const provider = envAi.provider as AiProvider
     const config: AiConfig = {
       provider,
       apiKey: envAi.apiKey || '',
@@ -41,7 +35,7 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
   if (!stored?.provider) return null
 
   const config: AiConfig = {
-    provider: stored.provider as 'anthropic' | 'openai',
+    provider: stored.provider as AiProvider,
     apiKey: stored.apiKey || '',
     model: stored.model || '',
     baseUrl: stored.baseUrl || null,

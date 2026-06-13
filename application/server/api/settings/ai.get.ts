@@ -1,6 +1,7 @@
 import { getDatabase } from '../../database'
 import { requireAuth } from '../../utils/auth'
 import { getAppSetting } from '../../utils/app-settings'
+import type { AiProvider } from '~~/types/api'
 
 export default eventHandler(async (event) => {
   await requireAuth(event, ['administrator'])
@@ -11,7 +12,7 @@ export default eventHandler(async (event) => {
 
   if (envManaged) {
     return {
-      provider: envAi!.provider || null,
+      provider: (envAi!.provider || null) as AiProvider | null,
       model: envAi!.model || null,
       baseUrl: envAi!.baseUrl || null,
       autoDiagnose: String(envAi!.autoDiagnose) === 'true',
@@ -30,7 +31,7 @@ export default eventHandler(async (event) => {
   }>(db, 'ai')
 
   return {
-    provider: stored?.provider || null,
+    provider: (stored?.provider || null) as AiProvider | null,
     model: stored?.model || null,
     baseUrl: stored?.baseUrl || null,
     autoDiagnose: Boolean(stored?.autoDiagnose),

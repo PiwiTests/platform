@@ -1,12 +1,5 @@
 <script setup lang="ts">
-interface AiSettings {
-  provider: string | null
-  model: string | null
-  baseUrl: string | null
-  autoDiagnose: boolean
-  hasApiKey: boolean
-  envManaged: boolean
-}
+import type { AiSettings } from '~~/types/api'
 
 const toast = useToast()
 
@@ -87,7 +80,15 @@ async function save() {
 async function testConnection() {
   testing.value = true
   try {
-    const res = await $fetch<{ success: boolean, model?: string, error?: string }>('/api/settings/ai/test', { method: 'POST' })
+    const res = await $fetch<{ success: boolean, model?: string, error?: string }>('/api/settings/ai/test', {
+      method: 'POST',
+      body: {
+        provider: provider.value,
+        apiKey: apiKey.value || undefined,
+        model: model.value || undefined,
+        baseUrl: baseUrl.value || undefined
+      }
+    })
     if (res.success) {
       toast.add({ title: 'Connection successful', description: `Model: ${res.model}`, color: 'success' })
     } else {
@@ -98,6 +99,32 @@ async function testConnection() {
   } finally {
     testing.value = false
   }
+}
+
+const envVars = computed(() => {
+  if (!provider.value) return null
+  const lines: string[] = []
+  lines.push(`NUXT_AI_PROVIDER=${provider.value}`)
+  if (model.value) lines.push(`NUXT_AI_MODEL=${model.value}`)
+  if (baseUrl.value) lines.push(`NUXT_AI_BASE_URL=${baseUrl.value}`)
+  const keyDisplay = apiKey.value
+    ? apiKey.value
+    : settings.value?.hasApiKey
+      ? '(use existing stored key)'
+      : 'your-api-key-here'
+  lines.push(`NUXT_AI_API_KEY=${keyDisplay}`)
+  lines.push(`NUXT_AI_AUTO_DIAGNOSE=${autoDiagnose.value ? 'true' : 'false'}`)
+  return lines.join('\n')
+})
+
+const copied = ref(false)
+async function copyEnvVars() {
+  if (!envVars.value) return
+  await navigator.clipboard.writeText(envVars.value)
+  copied.value = true
+  setTimeout(() => {
+    copied.value = false
+  }, 2000)
 }
 </script>
 
@@ -201,7 +228,7 @@ async function testConnection() {
               color="neutral"
               variant="soft"
               :loading="testing"
-              :disabled="!provider || settings?.envManaged"
+              :disabled="!provider"
               icon="i-lucide-plug"
               @click="testConnection"
             >
@@ -218,6 +245,29 @@ async function testConnection() {
             </UButton>
           </div>
         </template>
+      </UCard>
+
+      <UCard v-if="!settings?.envManaged && provider && envVars">
+        <template #header>
+          <div class="flex items-center justify-between">
+            <h3 class="font-semibold">
+              Environment variables
+            </h3>
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
+              @click="copyEnvVars"
+            >
+              {{ copied ? 'Copied!' : 'Copy' }}
+            </UButton>
+          </div>
+        </template>
+        <p class="text-sm text-gray-500 mb-3">
+          Use these environment variables instead of storing credentials in the database:
+        </p>
+        <pre class="text-xs font-mono bg-gray-50 dark:bg-gray-900 rounded p-3 overflow-x-auto whitespace-pre">{{ envVars }}</pre>
       </UCard>
 
       <UCard>
