@@ -4,19 +4,19 @@ const props = defineProps<{
   loading?: boolean
 }>()
 
-type PreviewLine =
-  | { kind: 'h2', text: string }
-  | { kind: 'h3', text: string }
-  | { kind: 'note', text: string }
-  | { kind: 'bullet', text: string }
-  | { kind: 'text', text: string }
-  | { kind: 'blank' }
-  | { kind: 'code-start', lang: string }
-  | { kind: 'code-diff-added', text: string }
-  | { kind: 'code-diff-removed', text: string }
-  | { kind: 'code-diff-meta', text: string }
-  | { kind: 'code-line', text: string }
-  | { kind: 'code-end' }
+type PreviewLine
+  = | { kind: 'h2', text: string }
+    | { kind: 'h3', text: string }
+    | { kind: 'note', text: string }
+    | { kind: 'bullet', text: string }
+    | { kind: 'text', text: string }
+    | { kind: 'blank' }
+    | { kind: 'code-start', lang: string }
+    | { kind: 'code-diff-added', text: string }
+    | { kind: 'code-diff-removed', text: string }
+    | { kind: 'code-diff-meta', text: string }
+    | { kind: 'code-line', text: string }
+    | { kind: 'code-end' }
 
 function parse(text: string): PreviewLine[] {
   const result: PreviewLine[] = []
@@ -94,10 +94,18 @@ const lines = computed<PreviewLine[]>(() => props.text ? parse(props.text) : [])
           {{ line.lang || 'code' }}
         </div>
         <div v-else-if="line.kind === 'code-end'" class="h-1 bg-gray-100 dark:bg-gray-800/50 rounded-b mb-2" />
-        <div v-else-if="line.kind === 'code-diff-added'" class="bg-green-50 dark:bg-green-950/40 text-green-800 dark:text-green-300 px-2 whitespace-pre">{{ line.text }}</div>
-        <div v-else-if="line.kind === 'code-diff-removed'" class="bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300 px-2 whitespace-pre">{{ line.text }}</div>
-        <div v-else-if="line.kind === 'code-diff-meta'" class="bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 px-2 whitespace-pre">{{ line.text }}</div>
-        <div v-else-if="line.kind === 'code-line'" class="bg-gray-50 dark:bg-gray-900/40 text-gray-700 dark:text-gray-300 px-2 whitespace-pre">{{ line.text }}</div>
+        <div v-else-if="line.kind === 'code-diff-added'" class="bg-green-50 dark:bg-green-950/40 text-green-800 dark:text-green-300 px-2 whitespace-pre">
+          {{ line.text }}
+        </div>
+        <div v-else-if="line.kind === 'code-diff-removed'" class="bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300 px-2 whitespace-pre">
+          {{ line.text }}
+        </div>
+        <div v-else-if="line.kind === 'code-diff-meta'" class="bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 px-2 whitespace-pre">
+          {{ line.text }}
+        </div>
+        <div v-else-if="line.kind === 'code-line'" class="bg-gray-50 dark:bg-gray-900/40 text-gray-700 dark:text-gray-300 px-2 whitespace-pre">
+          {{ line.text }}
+        </div>
       </template>
     </div>
     <div v-else class="p-3 text-xs text-gray-400 italic">

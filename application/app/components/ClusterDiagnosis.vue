@@ -86,8 +86,12 @@ function onDrop(e: DragEvent) {
   if (e.dataTransfer?.files?.length) processFiles(e.dataTransfer.files)
 }
 
-function removeFile(i: number) { attachedFiles.value.splice(i, 1) }
-function removeImage(i: number) { attachedImages.value.splice(i, 1) }
+function removeFile(i: number) {
+  attachedFiles.value.splice(i, 1)
+}
+function removeImage(i: number) {
+  attachedImages.value.splice(i, 1)
+}
 
 function buildPromptContext() {
   const parts: string[] = []
@@ -180,7 +184,9 @@ async function fetchContext() {
 let baseCommitTimer: ReturnType<typeof setTimeout> | null = null
 watch(baseCommit, () => {
   if (baseCommitTimer) clearTimeout(baseCommitTimer)
-  baseCommitTimer = setTimeout(() => { fetchContext() }, 900)
+  baseCommitTimer = setTimeout(() => {
+    fetchContext()
+  }, 900)
 })
 
 function startPoll() {
@@ -227,7 +233,10 @@ async function diagnose(force = false) {
   }
 }
 
-onMounted(() => { fetchDiagnosis(); fetchContext() })
+onMounted(() => {
+  fetchDiagnosis()
+  fetchContext()
+})
 onUnmounted(() => {
   stopPoll()
   if (baseCommitTimer) clearTimeout(baseCommitTimer)
@@ -272,10 +281,8 @@ function copyToClipboard(text: string | null) {
 <template>
   <div class="space-y-4">
     <div v-if="aiStatus?.configured" class="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
-
       <!-- LEFT: context preview + input form -->
       <div class="space-y-3">
-
         <!-- Preview header + SCM coverage -->
         <div class="flex items-center justify-between">
           <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -388,7 +395,9 @@ function copyToClipboard(text: string | null) {
                 <UIcon name="i-lucide-x" class="size-4" />
               </button>
             </div>
-            <p class="text-xs text-gray-500 text-center mt-0.5 w-16 truncate">{{ img.name }}</p>
+            <p class="text-xs text-gray-500 text-center mt-0.5 w-16 truncate">
+              {{ img.name }}
+            </p>
           </div>
         </div>
 
@@ -475,8 +484,12 @@ function copyToClipboard(text: string | null) {
           </ul>
 
           <div v-if="details?.suggestedFix">
-            <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Suggested fix</p>
-            <p class="text-sm text-gray-600 dark:text-gray-400">{{ details.suggestedFix.description }}</p>
+            <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Suggested fix
+            </p>
+            <p class="text-sm text-gray-600 dark:text-gray-400">
+              {{ details.suggestedFix.description }}
+            </p>
             <code v-if="details.suggestedFix.file" class="block text-xs font-mono mt-1 text-primary">{{ details.suggestedFix.file }}</code>
             <div v-if="details.suggestedFix.code" class="relative mt-2">
               <pre class="text-xs font-mono bg-muted rounded p-3 overflow-x-auto">{{ details.suggestedFix.code }}</pre>
@@ -493,7 +506,9 @@ function copyToClipboard(text: string | null) {
           </div>
 
           <ul v-if="details?.preventionTips?.length" class="space-y-1">
-            <li class="text-xs font-medium text-gray-500 uppercase tracking-wide">Prevention tips</li>
+            <li class="text-xs font-medium text-gray-500 uppercase tracking-wide">
+              Prevention tips
+            </li>
             <li
               v-for="(t, i) in details.preventionTips"
               :key="i"
@@ -525,7 +540,9 @@ function copyToClipboard(text: string | null) {
           class="flex flex-col items-center justify-center p-8 text-center text-gray-400 border border-dashed border-default rounded-lg"
         >
           <UIcon name="i-lucide-sparkles" class="size-8 mb-2 opacity-30" />
-          <p class="text-sm">Diagnosis will appear here</p>
+          <p class="text-sm">
+            Diagnosis will appear here
+          </p>
         </div>
       </div>
     </div>

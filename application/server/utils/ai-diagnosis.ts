@@ -293,7 +293,10 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
                   let skippedByBudget = 0
                   for (const f of changes.files) {
                     if (!f.patch) continue
-                    if (patchBudget <= 0) { skippedByBudget++; continue }
+                    if (patchBudget <= 0) {
+                      skippedByBudget++
+                      continue
+                    }
                     const patch = f.patch.length > patchBudget
                       ? f.patch.slice(0, patchBudget) + '\n[... patch truncated ...]'
                       : f.patch
@@ -368,7 +371,10 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
                   let skippedByBudget = 0
                   for (const f of changes.files) {
                     if (!f.patch) continue
-                    if (patchBudget <= 0) { skippedByBudget++; continue }
+                    if (patchBudget <= 0) {
+                      skippedByBudget++
+                      continue
+                    }
                     const patch = f.patch.length > patchBudget
                       ? f.patch.slice(0, patchBudget) + '\n[... patch truncated ...]'
                       : f.patch
