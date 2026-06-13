@@ -152,6 +152,13 @@ Nuxt file-based routing:
 | `npm run db:migrate` | Apply migrations |
 | `npm run db:push` | Push schema (dev only) |
 | `npm run db:studio` | Drizzle Studio |
+| `node scripts/db-query.mjs "<sql>"` | Query the local SQLite DB directly |
+
+**DB query examples** (run from `application/`):
+```bash
+node scripts/db-query.mjs "SELECT key, value FROM app_settings"
+node scripts/db-query.mjs "SELECT id, name FROM projects" --json
+```
 
 ### Reporter commands (from `reporter/`)
 

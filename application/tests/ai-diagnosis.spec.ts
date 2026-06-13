@@ -98,10 +98,22 @@ test.describe.serial('AI diagnosis endpoints', () => {
   let mockServer: http.Server
   let mockPort: number
   let clusterId: number | null = null
+  let isEnvManaged = false
 
-  test.beforeAll(async () => {
+  test.beforeAll(async ({ request }) => {
+    // Check if AI is managed by env vars — if so, we can't clear/replace the config
+    const statusRes = await request.get('/api/ai/status')
+    if (statusRes.ok()) {
+      const s = await statusRes.json() as { source?: string }
+      isEnvManaged = s.source === 'env'
+    }
     mockPort = await getFreePort()
     mockServer = startMockAiServer(mockPort)
+  })
+
+  test.beforeEach(async () => {
+    // All tests in this block require controlling the AI config; skip when env-managed
+    if (isEnvManaged) test.skip()
   })
 
   test.afterAll(async ({ request }) => {
@@ -230,12 +242,26 @@ test.describe.serial('AI diagnosis endpoints', () => {
 })
 
 test.describe.serial('AI diagnosis — unconfigured error cases', () => {
+  let isEnvManaged = false
+
   test.beforeAll(async ({ request }) => {
-    // Ensure AI is not configured
-    await request.put('/api/settings/ai', { data: { provider: null } })
+    // Check if AI is managed by env vars
+    const statusRes = await request.get('/api/ai/status')
+    if (statusRes.ok()) {
+      const s = await statusRes.json() as { source?: string }
+      isEnvManaged = s.source === 'env'
+    }
+    if (!isEnvManaged) {
+      // Ensure AI is not configured
+      await request.put('/api/settings/ai', { data: { provider: null } })
+    }
   })
 
   test('POST /diagnose returns 503 when AI is not configured', async ({ request }) => {
+    if (isEnvManaged) {
+      test.skip()
+      return
+    }
     // Submit a run to get a cluster ID
     const res = await request.post('/api/test-runs/submit', {
       data: {
