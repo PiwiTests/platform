@@ -12,7 +12,7 @@ const toast = useToast()
 
 const { data: settings, refresh } = await useFetch<AiSettings>('/api/settings/ai')
 
-const provider = ref<string>('')
+const provider = ref<string | null>(null)
 const model = ref<string>('')
 const baseUrl = ref<string>('')
 const apiKey = ref<string>('')
@@ -22,7 +22,7 @@ const testing = ref(false)
 
 watch(settings, (val) => {
   if (!val) return
-  provider.value = val.provider || ''
+  provider.value = val.provider || null
   model.value = val.model || ''
   baseUrl.value = val.baseUrl || ''
   apiKey.value = ''
@@ -30,10 +30,36 @@ watch(settings, (val) => {
 }, { immediate: true })
 
 const providerOptions = [
-  { label: 'None (disabled)', value: '' },
+  { label: 'None (disabled)', value: null },
   { label: 'Anthropic API', value: 'anthropic' },
-  { label: 'OpenAI-compatible (ollama, vLLM, OpenRouter…)', value: 'openai' }
+  { label: 'OpenAI-compatible', value: 'openai' }
 ]
+
+interface OpenAiPreset {
+  label: string
+  baseUrl: string
+  model: string
+  apiKeyRequired: boolean
+}
+
+const OPENAI_PRESETS: OpenAiPreset[] = [
+  { label: 'ollama (local)', baseUrl: 'http://localhost:11434/v1', model: 'llama3.1', apiKeyRequired: false },
+  { label: 'LM Studio (local)', baseUrl: 'http://localhost:1234/v1', model: '', apiKeyRequired: false },
+  { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.1-8b-instruct', apiKeyRequired: true },
+  { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant', apiKeyRequired: true },
+  { label: 'Together AI', baseUrl: 'https://api.together.xyz/v1', model: 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo', apiKeyRequired: true },
+  { label: 'Mistral AI', baseUrl: 'https://api.mistral.ai/v1', model: 'mistral-small-latest', apiKeyRequired: true },
+  { label: 'Custom', baseUrl: '', model: '', apiKeyRequired: false }
+]
+
+const presetOptions = OPENAI_PRESETS.map(p => ({ label: p.label, value: p.label }))
+
+function applyPreset(label: string) {
+  const preset = OPENAI_PRESETS.find(p => p.label === label)
+  if (!preset || preset.label === 'Custom') return
+  baseUrl.value = preset.baseUrl
+  model.value = preset.model
+}
 
 async function save() {
   saving.value = true
@@ -106,6 +132,20 @@ async function testConnection() {
           </UFormField>
 
           <template v-if="provider">
+            <UFormField
+              v-if="provider === 'openai'"
+              label="Preset"
+              description="Pick a known provider to auto-fill the URL and model, then adjust as needed"
+            >
+              <USelect
+                :items="presetOptions"
+                placeholder="Choose a preset…"
+                :disabled="settings?.envManaged"
+                class="w-full"
+                @update:model-value="applyPreset"
+              />
+            </UFormField>
+
             <UFormField
               label="API key"
               :description="settings?.hasApiKey ? 'Leave empty to keep the stored key, clear and save to remove it' : 'Required for Anthropic; optional for local OpenAI-compatible servers'"
