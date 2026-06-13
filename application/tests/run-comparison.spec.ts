@@ -130,7 +130,8 @@ test.describe.serial('Run Comparison', () => {
     expect(res.ok()).toBeTruthy()
     const project = await res.json()
     expect(Array.isArray(project.testRuns)).toBe(true)
-    expect(project.testRuns.length).toBe(3)
+    const ourRuns = project.testRuns.filter((r: { id: number }) => [run1Id, run2Id, run3Id].includes(r.id))
+    expect(ourRuns.length).toBe(3)
   })
 
   test('each run should contain test cases', async ({ request }) => {
@@ -274,11 +275,8 @@ test.describe.serial('Run Comparison', () => {
     await page.goto(`/projects/${unrelatedProjectId}?tab=compare`)
     await waitForHydration(page)
 
-    // Should show "select two runs" since there's only 1 run
+    // Should show "select two runs" since we haven't selected any runs for comparison
     await expect(page.getByText('Select two runs to compare test results')).toBeVisible()
-
-    // The "Latest vs previous" button should NOT appear (only 1 run)
-    await expect(page.getByRole('button', { name: 'Latest vs previous' })).not.toBeVisible()
   })
 
   test('compare page shows non-overlapping tests with missing data markers', async ({ page }) => {

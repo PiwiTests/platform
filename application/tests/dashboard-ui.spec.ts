@@ -3,6 +3,8 @@ import { waitForHydration, retryPost } from './utils'
 import { PROJECT } from '../shared/test-project-names'
 
 test.describe('Dashboard UI Tests', () => {
+  test.setTimeout(90000)
+
   test.beforeEach(async ({ request }) => {
     // Create test data before each UI test
     await retryPost(request, '/api/test-runs/submit', {
@@ -24,7 +26,8 @@ test.describe('Dashboard UI Tests', () => {
             retries: 0
           }
         ]
-      }
+      },
+      timeout: 20000
     })
   })
 
@@ -59,15 +62,14 @@ test.describe('Dashboard UI Tests', () => {
     // Click on a project - use link role to target the table link, not sidebar
     await page.getByRole('link', { name: PROJECT.UI_TEST }).click()
 
-    // Wait for navigation
     await page.waitForURL(/\/projects\/\d+/)
-    await page.waitForTimeout(2000)
 
-    // Check for test runs tab content
-    await expect(page.getByText('Test run statistics over time')).toBeVisible()
+    // Wait for main content to confirm page loaded
+    await expect(page.getByText('Test run statistics over time')).toBeVisible({ timeout: 30000 })
 
-    // Check project name in sidebar is expanded
-    await expect(page.getByRole('link', { name: 'Test runs' })).toBeVisible()
+    // Sidebar accordion remounts on navigation (keyed by currentProjectId), so
+    // defaultOpen:true takes effect and 'Test runs' should be visible promptly.
+    await expect(page.getByRole('link', { name: 'Test runs' })).toBeVisible({ timeout: 15000 })
   })
 
   test('should navigate to test run details page', async ({ page }) => {
@@ -76,9 +78,11 @@ test.describe('Dashboard UI Tests', () => {
     // Navigate to project - use link role to target table link
     await page.getByRole('link', { name: PROJECT.UI_TEST }).click()
     await page.waitForURL(/\/projects\/\d+/)
+    await waitForHydration(page)
 
-    // Click on first test run - look for "View Details" in the table
+    // Click on first test run - wait for table to be interactive before clicking
     const viewButton = page.locator('table').getByRole('link', { name: 'View' }).first()
+    await expect(viewButton).toBeVisible({ timeout: 10000 })
     await viewButton.click()
 
     // Wait for navigation
@@ -92,7 +96,9 @@ test.describe('Dashboard UI Tests', () => {
     await page.goto('/projects')
     await page.getByRole('link', { name: PROJECT.UI_TEST }).click()
     await page.waitForURL(/\/projects\/\d+/)
+    await waitForHydration(page)
     const viewButton = page.locator('table').getByRole('link', { name: 'View' }).first()
+    await expect(viewButton).toBeVisible({ timeout: 10000 })
     await viewButton.click()
     await page.waitForURL(/\/test-runs\/\d+/)
     await waitForHydration(page)

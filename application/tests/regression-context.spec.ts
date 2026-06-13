@@ -39,6 +39,7 @@ async function submitRun(
     remoteUrl?: string
     environment?: string
     browsers?: string[]
+    startTime?: string
   }
 ) {
   const scm: Record<string, string> = {}
@@ -53,7 +54,7 @@ async function submitRun(
     data: {
       projectName: PROJECT.REGRESSION_CONTEXT,
       status: opts.status,
-      startTime: nextTimestamp(),
+      startTime: opts.startTime ?? nextTimestamp(),
       duration: 30000,
       totalTests: opts.cases.length,
       passedTests: passed,
@@ -77,8 +78,11 @@ test.describe.serial('Regression context endpoint', () => {
   let failingRunId: number
 
   test('returns hasGreen: false when no prior passing run exists', async ({ request }) => {
+    // Use a timestamp far in the past so concurrent browser runs (which use current timestamps)
+    // are not considered "prior" to this run, ensuring hasGreen stays false.
     const { testRunId } = await submitRun(request, {
       status: 'failed',
+      startTime: '2000-01-01T00:00:00.000Z',
       cases: [{ title: 'test A', status: 'failed', location: 'tests/a.spec.ts:1:1', error: 'boom' }]
     })
 

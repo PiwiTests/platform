@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import { PROJECT } from '../shared/test-project-names'
 
 test.describe('Traces API', () => {
+  test.describe.configure({ mode: 'serial' })
   let testRunsCaseId: number
   let noTraceCaseId: number
 
