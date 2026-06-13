@@ -81,6 +81,8 @@ async function reconstructTraceZip(
 
 export default eventHandler(async (event) => {
   const path = getRouterParam(event, 'path')
+  const query = getQuery(event)
+  const overrideContentType = typeof query.contentType === 'string' ? query.contentType : null
 
   if (!path) {
     throw createError({
@@ -109,6 +111,23 @@ export default eventHandler(async (event) => {
     setResponseHeader(event, 'Access-Control-Allow-Origin', '*')
   }
 
+  // Content types that should be displayed inline rather than downloaded
+  const inlineDispositionTypes = new Set([
+    'text/html',
+    'text/css',
+    'text/markdown',
+    'text/plain',
+    'application/json',
+    'application/javascript',
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/svg+xml',
+    'image/webp',
+    'font/woff2',
+    'font/ttf'
+  ])
+
   // Helper to serve a file with the right content type
   function setContentType(ext: string): string {
     if (ext === '.html' || ext === '.htm') return 'text/html'
@@ -117,12 +136,32 @@ export default eventHandler(async (event) => {
     if (ext === '.json') return 'application/json'
     if (ext === '.js') return 'application/javascript'
     if (ext === '.css') return 'text/css'
+    if (ext === '.md' || ext === '.mdx') return 'text/markdown'
+    if (ext === '.txt') return 'text/plain'
     if (ext === '.png') return 'image/png'
     if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg'
+    if (ext === '.gif') return 'image/gif'
+    if (ext === '.webp') return 'image/webp'
     if (ext === '.svg') return 'image/svg+xml'
     if (ext === '.woff' || ext === '.woff2') return 'font/woff2'
     if (ext === '.ttf') return 'font/ttf'
+    if (ext === '.wasm') return 'application/wasm'
     return 'application/octet-stream'
+  }
+
+  function applyInlineDisposition(contentType: string): void {
+    if (inlineDispositionTypes.has(contentType)) {
+      setResponseHeader(event, 'Content-Disposition', 'inline')
+    }
+  }
+
+  function resolveContentType(ext: string): string {
+    // If caller provided a content type override, use it for unrecognized extensions
+    const guessed = setContentType(ext)
+    if (guessed === 'application/octet-stream' && overrideContentType) {
+      return overrideContentType
+    }
+    return guessed
   }
 
   /**
@@ -166,6 +205,7 @@ export default eventHandler(async (event) => {
         if (htmlContent) {
           setResponseHeader(event, 'Content-Type', 'text/html')
           applyHtmlCsp()
+          applyInlineDisposition('text/html')
           setResponseHeader(event, 'Content-Length', htmlContent.length)
           return htmlContent
         }
@@ -174,9 +214,10 @@ export default eventHandler(async (event) => {
       }
     }
 
-    const contentType = setContentType(ext)
+    const contentType = resolveContentType(ext)
     setResponseHeader(event, 'Content-Type', contentType)
     setResponseHeader(event, 'Content-Length', fileContent.length)
+    applyInlineDisposition(contentType)
     if (contentType === 'text/html') {
       applyHtmlCsp()
     }
@@ -189,6 +230,7 @@ export default eventHandler(async (event) => {
     const fileContent = await storage.readFile(indexPath)
     setResponseHeader(event, 'Content-Type', 'text/html')
     applyHtmlCsp()
+    applyInlineDisposition('text/html')
     setResponseHeader(event, 'Content-Length', fileContent.length)
     return fileContent
   }
@@ -202,6 +244,7 @@ export default eventHandler(async (event) => {
       if (htmlContent) {
         setResponseHeader(event, 'Content-Type', 'text/html')
         applyHtmlCsp()
+        applyInlineDisposition('text/html')
         setResponseHeader(event, 'Content-Length', htmlContent.length)
         return htmlContent
       }

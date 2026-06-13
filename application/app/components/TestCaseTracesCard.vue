@@ -5,7 +5,12 @@ defineProps<{
   traces: TraceInfo[]
 }>()
 
-const origin = useRequestURL().origin
+const origin = computed(() => {
+  if (import.meta.client) {
+    return window.location.origin
+  }
+  return useRequestURL().origin
+})
 
 function downloadUrl(path: string): string {
   return `/api/files/${getFileApiPath(path)}`
@@ -16,7 +21,7 @@ function downloadUrl(path: string): string {
 // CORS headers for trace archives), so this works for localhost and
 // HTTPS-hosted dashboards alike.
 function viewerUrl(path: string): string {
-  return `https://trace.playwright.dev/?trace=${encodeURIComponent(`${origin}/api/files/${getFileApiPath(path)}`)}`
+  return `https://trace.playwright.dev/?trace=${encodeURIComponent(`${origin.value}/api/files/${getFileApiPath(path)}`)}`
 }
 </script>
 
@@ -42,19 +47,19 @@ function viewerUrl(path: string): string {
           <span class="text-sm truncate">{{ trace.filePath.split('/').pop() || trace.filePath }}</span>
           <span class="text-xs text-gray-400">{{ formatRelativeTime(trace.createdAt) }}</span>
         </div>
-        <div class="flex items-center gap-2 shrink-0">
+        <div class="flex items-center gap-1.5 shrink-0">
           <UButton
             :to="viewerUrl(trace.filePath)"
             target="_blank"
             icon="i-lucide-bug-play"
-            size="sm"
+            size="xs"
             label="View trace"
           />
           <UButton
             :to="downloadUrl(trace.filePath)"
             target="_blank"
             icon="i-lucide-download"
-            size="sm"
+            size="xs"
             color="neutral"
             variant="soft"
             label="Download"

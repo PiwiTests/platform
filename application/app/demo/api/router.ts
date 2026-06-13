@@ -24,6 +24,7 @@ import { apiGetTestRun, apiGetNetworkRequests, apiGetRecentTestRuns, apiGetTestR
 import { apiSetupTestRun, apiBeginTestRun, apiPostRunEvents, apiFinishTestRun, apiCancelStaleSimulatorRuns } from './reporter'
 import { apiGetUsers, apiCreateUser, apiDeleteUser, apiGetUserApiKeys, apiCreateUserApiKey, apiDeleteUserApiKey } from './users'
 import { apiGetTestCase, apiGetTestCaseHistory, apiGetTestCaseTraces } from './test-cases'
+import { apiGetDemoFile } from './files'
 import { apiPatchClusterStatus } from './failure-clusters'
 import { apiGetAdminStats } from './admin'
 import { apiGetAiStatus, apiGetClusterDiagnosis, apiDiagnoseCluster, apiGetAiSettings, apiPutAiSettings, apiTestAiSettings, apiGetProjectFlakyTests } from './ai'
@@ -121,11 +122,10 @@ routes.push(
   { method: 'GET', pattern: /^\/api\/stream$/, handler: () => Promise.resolve({ ok: true }) }
 )
 
-// Files – demo mode has no actual report/trace files on disk; return a
-// 200 response so the SW doesn't log 404 errors for image/video/link
-// fetches on the test-case detail page.
+// Files – serves demo screenshot images by fetching public/ assets,
+// plus a fallback for report/trace links that don't exist in demo mode.
 routes.push(
-  { method: 'GET', pattern: /^\/api\/files\//, handler: () => Promise.resolve({ available: false, message: 'Files not available in demo mode' }) }
+  { method: 'GET', pattern: /^\/api\/files\//, handler: m => apiGetDemoFile(m[0]) }
 )
 
 // OAuth – demo mode does not support OAuth; redirect to login

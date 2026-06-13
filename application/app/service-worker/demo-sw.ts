@@ -87,6 +87,16 @@ self.addEventListener('fetch', (event) => {
         )
       }
 
+      // Support binary responses from file handlers
+      if (result && typeof result === 'object' && '_binary' in result) {
+        const binary = result as unknown as { data: string, contentType: string }
+        const decoded = Uint8Array.from(atob(binary.data), c => c.charCodeAt(0))
+        return new Response(decoded, {
+          status: 200,
+          headers: { 'Content-Type': binary.contentType }
+        })
+      }
+
       return new Response(JSON.stringify(result), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }

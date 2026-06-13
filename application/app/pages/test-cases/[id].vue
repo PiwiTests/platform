@@ -124,16 +124,6 @@ interface FixPromptStep { title: string, duration: number, category: string }
 interface FixPromptNetwork { method: string, url: string, status: number, duration: number }
 interface FixPromptVitals { navigation?: { ttfb?: number, domInteractive?: number, domContentLoaded?: number, loadComplete?: number } | null }
 
-const reportPath = computed(() => {
-  const run = testCase.value?.testRun as Record<string, unknown> | undefined
-  const reports = run?.reports as Array<{ type: string, path: string }> | undefined
-  if (reports && reports.length > 0) {
-    const htmlReport = reports.find((r: { type: string }) => r.type === 'html')
-    if (htmlReport) return `/api/files/${getFileApiPath(htmlReport.path)}`
-  }
-  return null
-})
-
 const UBadge = resolveComponent('UBadge')
 
 const activeTab = ref('steps')
@@ -143,7 +133,7 @@ const { summaryColSpanClass, blockColSpanClass } = useDetailGrid(() => {
   if (scmInfo.value) count++
   if (ciInfo.value || testCase.value?.testRun?.environment) count++
   if (testCase.value?.browser) count++
-  if (reportPath.value) count++
+  if ((traceData.value?.length ?? 0) > 0 || ((testCase.value as { attachments?: { length: number } } | null)?.attachments?.length ?? 0) > 0) count++
   return count
 })
 
@@ -345,11 +335,12 @@ onUnmounted(disconnectRunStream)
           :ci-info="ciInfo"
           :browser="testCase?.browser ?? null"
           :environment="environment"
-          :report-path="reportPath"
           :steps-count="steps.length"
           :historical-timing="historicalTiming"
           :summary-col-span-class="summaryColSpanClass"
           :block-col-span-class="blockColSpanClass"
+          :traces="traceData ?? []"
+          :attachments="(testCase as any)?.attachments ?? []"
           @refresh="refresh()"
         />
 
