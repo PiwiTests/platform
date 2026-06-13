@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TestCaseResult } from '~~/types/api'
+import type { TestCaseResult, TraceInfo, AttachmentInfo } from '~~/types/api'
 import type { BrowserConfig } from '~~/shared/types'
 
 interface ScmInfo {
@@ -29,16 +29,61 @@ defineProps<{
   ciInfo: CiInfo | null
   browser: BrowserConfig | null
   environment: string | null | undefined
-  reportPath: string | null
   stepsCount: number
   historicalTiming: HistoricalTiming | null
   summaryColSpanClass: string
   blockColSpanClass: string
+  traces?: TraceInfo[]
+  attachments?: AttachmentInfo[]
 }>()
 
 defineEmits<{
   refresh: []
 }>()
+
+const origin = computed(() => {
+  if (import.meta.client) {
+    return window.location.origin
+  }
+  return useRequestURL().origin
+})
+
+function viewerUrl(path: string): string {
+  return `https://trace.playwright.dev/?trace=${encodeURIComponent(`${origin.value}/api/files/${getFileApiPath(path)}`)}`
+}
+
+function downloadUrl(path: string): string {
+  return `/api/files/${getFileApiPath(path)}`
+}
+
+function attFileUrl(path: string, contentType?: string | null): string {
+  let url = `/api/files/${getFileApiPath(path)}`
+  const ext = (path.toLowerCase().split('.').pop() || '')
+  if (contentType && ext === '') {
+    url += `?contentType=${encodeURIComponent(contentType)}`
+  }
+  return url
+}
+
+const imageExts = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'])
+const imageMimes = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/svg+xml', 'image/webp'])
+
+function isImage(path: string, contentType?: string | null): boolean {
+  if (imageExts.has(path.toLowerCase().split('.').pop()!)) return true
+  if (contentType && imageMimes.has(contentType.toLowerCase())) return true
+  return false
+}
+
+function totalStorageSize(traces?: TraceInfo[], attachments?: AttachmentInfo[]): number {
+  let total = 0
+  if (traces) for (const t of traces) if ((t as unknown as Record<string, unknown>).size as number) total += (t as unknown as Record<string, unknown>).size as number
+  if (attachments) for (const a of attachments) if (a.size) total += a.size
+  return total
+}
+
+function fileName(path: string): string {
+  return path.split('/').pop() || path
+}
 </script>
 
 <template>
@@ -206,25 +251,80 @@ defineEmits<{
       </div>
     </UCard>
 
-    <!-- Attachments -->
-    <UCard v-if="reportPath" :class="blockColSpanClass">
+    <!-- Storage: traces + attachments -->
+    <UCard v-if="(traces?.length ?? 0) > 0 || (attachments?.length ?? 0) > 0" :class="blockColSpanClass">
       <template #header>
         <div class="flex items-center gap-2">
-          <UIcon name="i-lucide-paperclip" class="w-4 h-4 text-primary" />
-          <span class="text-sm font-medium">Attachments</span>
+          <UIcon name="i-lucide-database" class="w-4 h-4 text-primary" />
+          <span class="text-sm font-medium">Storage</span>
+          <span class="text-xs text-gray-400">
+            · {{ (traces?.length ?? 0) + (attachments?.length ?? 0) }} files · {{ formatBytes(totalStorageSize(traces, attachments)) }}
+          </span>
         </div>
       </template>
-      <div class="space-y-2 text-sm">
-        <UButton
-          :to="reportPath"
-          target="_blank"
-          icon="i-lucide-external-link"
-          label="Open in HTML report"
-          color="primary"
-          variant="outline"
-          size="sm"
-          class="w-full"
-        />
+      <div class="space-y-2">
+        <!-- Traces -->
+        <div v-for="trace in traces" :key="trace.id" class="flex items-center justify-between gap-2 py-1.5">
+          <div class="flex items-center gap-2 min-w-0">
+            <UIcon name="i-lucide-file-archive" class="size-4 text-gray-400 shrink-0" />
+            <span class="text-xs truncate">{{ trace.filePath.split('/').pop() }}</span>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <UButton
+              :to="viewerUrl(trace.filePath)"
+              target="_blank"
+              icon="i-lucide-bug-play"
+              size="xs"
+              label="View trace"
+            />
+            <UButton
+              :to="downloadUrl(trace.filePath)"
+              target="_blank"
+              icon="i-lucide-download"
+              size="xs"
+              color="neutral"
+              variant="soft"
+              label="Download"
+            />
+          </div>
+        </div>
+
+        <!-- Attachments summary -->
+        <div v-if="(attachments?.length ?? 0) > 0" class="space-y-1">
+          <div
+            v-for="att in attachments"
+            :key="att.id"
+            class="flex items-center justify-between gap-2 py-1"
+          >
+            <div class="flex items-center gap-2 min-w-0">
+              <img
+                v-if="isImage(att.path, att.contentType)"
+                :src="attFileUrl(att.path, att.contentType)"
+                class="size-6 rounded object-cover shrink-0"
+                alt=""
+              >
+              <UIcon
+                v-else
+                name="i-lucide-file"
+                class="size-4 text-gray-400 shrink-0"
+              />
+              <span class="text-xs truncate">{{ fileName(att.path) }}</span>
+              <span v-if="att.name && att.name !== fileName(att.path)" class="text-[10px] text-gray-400 shrink-0">{{ att.name }}</span>
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <span class="text-xs text-gray-400">{{ formatBytes(att.size ?? 0) }}</span>
+              <UButton
+                :to="attFileUrl(att.path, att.contentType)"
+                target="_blank"
+                icon="i-lucide-external-link"
+                size="xs"
+                color="neutral"
+                variant="soft"
+                label="Open"
+              />
+            </div>
+          </div>
+        </div>
       </div>
     </UCard>
   </div>

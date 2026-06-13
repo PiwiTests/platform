@@ -102,6 +102,17 @@ export const test = base.extend<{ page: Page }>({
   page: async ({ page }, use, testInfo) => {
     const flush = await collectNetworkAndVitals(page, testInfo)
     await use(page)
+    try {
+      if (testInfo.status !== testInfo.expectedStatus) {
+        const screenshot = await page.screenshot({ fullPage: true, timeout: 5000 })
+        await testInfo.attach('failure-screenshot', {
+          contentType: 'image/png',
+          body: screenshot
+        })
+      }
+    } catch {
+      // page may already be closed or screenshot failed — skip
+    }
     await flush()
   },
 })

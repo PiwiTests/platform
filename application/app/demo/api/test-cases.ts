@@ -26,6 +26,13 @@ export async function apiGetTestCase(id: number) {
     project = projectResults[0]
   }
 
+  // Attachments (screenshots, etc.)
+  const attachmentList = await db.select().from(files)
+    .where(sql`${files.testRunsCaseId} = ${testRunsCase.id} AND ${files.type} = 'attachment'`)
+    .then(r =>
+      r.map(att => ({ id: att.id, name: att.subtype, contentType: att.label, path: att.path, size: att.size }))
+    )
+
   // Failure cluster context (only for clustered failures)
   let failureCluster = null
   if (testRunsCase.failureClusterId) {
@@ -71,9 +78,13 @@ export async function apiGetTestCase(id: number) {
     slowestStepDuration: testRunsCase.slowestStepDuration,
     networkRequests: testRunsCase.networkRequests,
     webVitals: testRunsCase.webVitals,
+    consoleLogs: testRunsCase.consoleLogs,
+    ariaSnapshot: testRunsCase.ariaSnapshot,
     workerIndex: testRunsCase.workerIndex,
+    browser: testRunsCase.browser,
     failureCluster,
-    testRun: testRun ? { ...testRun, project } : testRun
+    testRun: testRun ? { ...testRun, project, reports: [] } : testRun,
+    attachments: attachmentList
   }
 }
 
