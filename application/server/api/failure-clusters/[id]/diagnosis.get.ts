@@ -12,5 +12,9 @@ export default eventHandler(async (event) => {
   if (!cluster) throw createError({ statusCode: 404, message: 'Failure cluster not found' })
 
   const rows = await db.select().from(failureDiagnoses).where(eq(failureDiagnoses.clusterId, id))
-  return rows[0] ?? null
+  // H3 treats `return null` as a 204 No Content; send 'null' explicitly for proper JSON parsing
+  if (!rows[0]) {
+    return send(event, 'null', 'application/json')
+  }
+  return rows[0]
 })

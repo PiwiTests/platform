@@ -11,6 +11,10 @@ import * as net from 'net'
 import { PROJECT } from '../shared/test-project-names'
 import type { AiDiagnosisResult } from '../shared/ai-diagnosis'
 
+// Force all tests in this file into a single serial worker so the two describe
+// blocks don't interfere with each other's AI config state.
+test.describe.configure({ mode: 'serial' })
+
 // ── Mock HTTP server ──────────────────────────────────────────────────────────
 
 function getFreePort(): Promise<number> {
