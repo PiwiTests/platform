@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { h, resolveComponent } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
 import type { FailureGroup } from '~~/types/api'
 
@@ -32,141 +31,15 @@ const statusColors: Record<string, 'success' | 'warning' | 'neutral'> = {
   ignored: 'neutral'
 }
 
-const UBadge = resolveComponent('UBadge')
-const UButton = resolveComponent('UButton')
-const UIcon = resolveComponent('UIcon')
-
 const columns: TableColumn<FailureGroup>[] = [
-  {
-    accessorKey: 'signature',
-    header: 'Signature',
-    cell: ({ row }) => {
-      const group = row.original
-      const children = [
-        h('span', {
-          class: 'font-mono text-sm block truncate',
-          title: group.signature
-        }, group.signature)
-      ]
-      if (group.selector) {
-        children.push(h('span', { class: 'text-xs text-gray-500 truncate block' }, [
-          'Locator: ',
-          h('code', { class: 'font-mono' }, group.selector)
-        ]))
-      }
-      return h('div', { class: 'min-w-0 space-y-0.5' }, children)
-    }
-  },
-  {
-    accessorKey: 'errorType',
-    header: 'Type',
-    cell: ({ row }) => {
-      const t = row.original.errorType
-      if (!t) return h('span', { class: 'text-gray-400 text-xs' }, '—')
-      return h(UBadge, { color: errorTypeColors[t] || 'neutral', variant: 'subtle', size: 'sm' }, () => t)
-    }
-  },
-  {
-    accessorKey: 'status',
-    header: 'Status',
-    cell: ({ row }) => {
-      const s = row.original.status
-      if (!s) return h('span', { class: 'text-gray-400 text-xs' }, '—')
-      return h(UBadge, { color: statusColors[s] || 'neutral', variant: 'subtle', size: 'sm' }, () => s)
-    }
-  },
-  {
-    accessorKey: 'caseCount',
-    header: 'Tests',
-    cell: ({ row }) => h('span', { class: 'text-sm tabular-nums' }, String(row.original.caseCount))
-  },
-  {
-    accessorKey: 'signals',
-    header: 'Signals',
-    cell: ({ row }) => {
-      const group = row.original
-      const badges: ReturnType<typeof h>[] = []
-      if (group.isNew) badges.push(h(UBadge, { color: 'warning', variant: 'subtle', size: 'sm' }, () => 'New'))
-      if (group.flaky) badges.push(h(UBadge, { color: 'warning', variant: 'outline', size: 'sm' }, () => 'Flaky'))
-      if (group.workerCorrelated) badges.push(h(UBadge, {
-        color: 'info',
-        variant: 'outline',
-        size: 'sm',
-        title: 'All failures ran on the same worker'
-      }, () => 'Same worker'))
-      if (!badges.length) return h('span', { class: 'text-gray-400 text-xs' }, '—')
-      return h('div', { class: 'flex flex-wrap gap-1' }, badges)
-    }
-  },
-  {
-    accessorKey: 'diagnosis',
-    header: 'AI',
-    cell: ({ row }) => {
-      const d = row.original.diagnosis
-      if (!d) return h('span', { class: 'text-gray-400 text-xs' }, '—')
-      if (d.status === 'running') {
-        return h('div', { class: 'flex items-center gap-1 text-xs text-gray-500' }, [
-          h(UIcon, { name: 'i-lucide-loader-2', class: 'size-3 animate-spin' }),
-          'Running'
-        ])
-      }
-      if (d.status === 'completed' && d.category) {
-        return h(UBadge, { color: 'neutral', variant: 'subtle', size: 'sm', class: 'gap-1' }, () => [
-          h(UIcon, { name: 'i-lucide-sparkles', class: 'size-3' }),
-          d.category
-        ])
-      }
-      return h('span', { class: 'text-gray-400 text-xs' }, '—')
-    }
-  },
-  {
-    accessorKey: 'firstSeenRunId',
-    header: 'Known since',
-    cell: ({ row }) => {
-      const group = row.original
-      if (group.isNew) return h('span', { class: 'text-xs text-warning-500 font-medium' }, 'New in this run')
-      const rel = group.firstSeenAt ? formatRelativeTime(group.firstSeenAt) : null
-      return h('div', { class: 'text-sm text-gray-500 whitespace-nowrap' }, [
-        h('a', {
-          href: `/test-runs/${group.firstSeenRunId}`,
-          class: 'text-primary hover:underline',
-          onClick: (e: MouseEvent) => {
-            e.preventDefault()
-            navigateTo(`/test-runs/${group.firstSeenRunId}`)
-          }
-        }, `run #${group.firstSeenRunId}`),
-        rel ? h('span', { class: 'ml-1 text-xs text-gray-400' }, `(${rel})`) : null
-      ])
-    }
-  },
-  {
-    accessorKey: 'actions',
-    header: () => h('div', { class: 'text-right' }, 'Actions'),
-    cell: ({ row }) => {
-      const group = row.original
-      return h('div', { class: 'flex justify-end gap-2' }, [
-        h(UButton, {
-          size: 'sm',
-          color: 'primary',
-          variant: 'soft',
-          onClick: () => emit('selectCluster', group.clusterId)
-        }, () => 'Filter'),
-        h(UButton, {
-          size: 'sm',
-          color: 'neutral',
-          variant: 'outline',
-          icon: 'i-lucide-sparkles',
-          onClick: () => { diagnosisClusterId.value = group.clusterId }
-        }, () => 'Diagnose'),
-        h(UButton, {
-          size: 'sm',
-          variant: 'outline',
-          trailingIcon: 'i-lucide-arrow-right',
-          to: `/failure-clusters/${group.clusterId}`
-        }, () => 'View')
-      ])
-    }
-  }
+  { accessorKey: 'signature', header: createSortHeader<FailureGroup>('Signature') },
+  { accessorKey: 'errorType', header: createSortHeader<FailureGroup>('Type') },
+  { accessorKey: 'status', header: createSortHeader<FailureGroup>('Status') },
+  { accessorKey: 'caseCount', header: createSortHeader<FailureGroup>('Tests') },
+  { accessorKey: 'signals', header: 'Signals' },
+  { accessorKey: 'diagnosis', header: 'AI' },
+  { accessorKey: 'firstSeenRunId', header: createSortHeader<FailureGroup>('Known since') },
+  { id: 'actions', header: 'Actions' }
 ]
 
 const totalCases = computed(() => groups.value?.reduce((sum, g) => sum + g.caseCount, 0) ?? 0)
@@ -186,7 +59,119 @@ const totalCases = computed(() => groups.value?.reduce((sum, g) => sum + g.caseC
       </p>
 
       <UCard :ui="{ body: 'p-0 sm:p-0' }">
-        <UTable :data="groups" :columns="columns" />
+        <UTable :data="groups" :columns="columns">
+          <template #actions-header>
+            <div class="text-right">
+              Actions
+            </div>
+          </template>
+
+          <template #signature-cell="{ row }">
+            <div class="min-w-0 space-y-0.5">
+              <span class="font-mono text-sm block truncate" :title="row.original.signature">{{ row.original.signature }}</span>
+              <span v-if="row.original.selector" class="text-xs text-gray-500 truncate block">
+                Locator: <code class="font-mono">{{ row.original.selector }}</code>
+              </span>
+            </div>
+          </template>
+
+          <template #errorType-cell="{ row }">
+            <UBadge
+              v-if="row.original.errorType"
+              :color="errorTypeColors[row.original.errorType] || 'neutral'"
+              variant="subtle"
+              size="sm"
+            >
+              {{ row.original.errorType }}
+            </UBadge>
+            <span v-else class="text-gray-400 text-xs">—</span>
+          </template>
+
+          <template #status-cell="{ row }">
+            <UBadge
+              v-if="row.original.status"
+              :color="statusColors[row.original.status] || 'neutral'"
+              variant="subtle"
+              size="sm"
+            >
+              {{ row.original.status }}
+            </UBadge>
+            <span v-else class="text-gray-400 text-xs">—</span>
+          </template>
+
+          <template #caseCount-cell="{ row }">
+            <span class="text-sm tabular-nums">{{ row.original.caseCount }}</span>
+          </template>
+
+          <template #signals-cell="{ row }">
+            <div v-if="row.original.isNew || row.original.flaky || row.original.workerCorrelated" class="flex flex-wrap gap-1">
+              <UBadge v-if="row.original.isNew" color="warning" variant="subtle" size="sm">New</UBadge>
+              <UBadge v-if="row.original.flaky" color="warning" variant="outline" size="sm">Flaky</UBadge>
+              <UBadge v-if="row.original.workerCorrelated" color="info" variant="outline" size="sm" title="All failures ran on the same worker">Same worker</UBadge>
+            </div>
+            <span v-else class="text-gray-400 text-xs">—</span>
+          </template>
+
+          <template #diagnosis-cell="{ row }">
+            <div v-if="row.original.diagnosis?.status === 'running'" class="flex items-center gap-1 text-xs text-gray-500">
+              <UIcon name="i-lucide-loader-2" class="size-3 animate-spin" />
+              Running
+            </div>
+            <UBadge
+              v-else-if="row.original.diagnosis?.status === 'completed' && row.original.diagnosis.category"
+              color="neutral"
+              variant="subtle"
+              size="sm"
+              class="gap-1"
+            >
+              <UIcon name="i-lucide-sparkles" class="size-3" />
+              {{ row.original.diagnosis.category }}
+            </UBadge>
+            <span v-else class="text-gray-400 text-xs">—</span>
+          </template>
+
+          <template #firstSeenRunId-cell="{ row }">
+            <span v-if="row.original.isNew" class="text-xs font-medium text-warning-500">New in this run</span>
+            <div v-else class="text-sm text-gray-500 whitespace-nowrap">
+              <NuxtLink :to="`/test-runs/${row.original.firstSeenRunId}`" class="text-primary hover:underline">
+                run #{{ row.original.firstSeenRunId }}
+              </NuxtLink>
+              <span v-if="row.original.firstSeenAt" class="ml-1 text-xs text-gray-400">
+                ({{ formatRelativeTime(row.original.firstSeenAt) }})
+              </span>
+            </div>
+          </template>
+
+          <template #actions-cell="{ row }">
+            <div class="flex justify-end gap-2">
+              <UButton
+                size="sm"
+                color="primary"
+                variant="soft"
+                @click="emit('selectCluster', row.original.clusterId)"
+              >
+                Filter
+              </UButton>
+              <UButton
+                size="sm"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-sparkles"
+                @click="diagnosisClusterId = row.original.clusterId"
+              >
+                Diagnose
+              </UButton>
+              <UButton
+                :to="`/failure-clusters/${row.original.clusterId}`"
+                size="sm"
+                variant="outline"
+                trailing-icon="i-lucide-arrow-right"
+              >
+                View
+              </UButton>
+            </div>
+          </template>
+        </UTable>
       </UCard>
     </template>
 

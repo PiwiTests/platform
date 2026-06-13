@@ -207,6 +207,25 @@ Nuxt file-based routing:
 - **Tab panels**: Use `<UTabs>` + `v-if` on each panel component to keep component lifecycle clean.
 - **Data fetching in children**: For self-contained components rendered conditionally (e.g., tab content), use `watch` + `$fetch` with reactive triggers rather than `useFetch` with `lazy: true`, since `useFetch` may not fire until the component is mounted.
 
+### UTable conventions (MUST follow)
+
+- **Always use template slots for cell rendering** — NEVER use `cell:` callbacks with `h()` or `resolveComponent()` in column definitions. The only exception is `createSortHeader<T>()` in `header:`.
+- **Slot naming**: `#${accessorKey}-cell="{ row }"` for data cells (e.g. `#errorType-cell`, `#lastSeenAt-cell`). For `id`-only columns use `#${id}-cell`. Header slots: `#${accessorKey}-header` or `#${id}-header`.
+- **Sort headers**: Use `createSortHeader<T>('Label')` (from `app/utils/index.ts`) for every sortable column. Non-sortable columns (actions, badges without natural ordering) use a plain string.
+- **Actions column pattern**:
+  ```ts
+  { id: 'actions', header: 'Actions' }
+  ```
+  ```html
+  <template #actions-header><div class="text-right">Actions</div></template>
+  <template #actions-cell="{ row }">
+    <div class="flex justify-end gap-2">
+      <UButton :to="`/.../${row.original.id}`" size="sm" variant="outline" trailing-icon="i-lucide-arrow-right">View</UButton>
+    </div>
+  </template>
+  ```
+- **No `import { h, resolveComponent }` in table components** — if a component needs it for something other than a table cell, that's fine, but table cells must use slots.
+
 ## UI Best Practices
 - Sentence case headings/labels
 - Relative dates via date-fns (full timestamp on hover)

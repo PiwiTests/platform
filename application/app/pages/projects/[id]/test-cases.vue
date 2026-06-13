@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { h, resolveComponent } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
 import type { TestCaseWithStats, ProjectDetails } from '~~/types/api'
 
@@ -11,81 +10,30 @@ const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projec
 
 useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Test cases — Piwi Dashboard` })))
 
-const UBadge = resolveComponent('UBadge')
-
 function getPassRate(testCase: TestCaseWithStats) {
   if (testCase.totalRuns === 0) return 0
   return Math.round((testCase.passedRuns / testCase.totalRuns) * 100)
 }
 
-function getTestCaseStatus(testCase: TestCaseWithStats) {
-  // Show flaky only if there were flaky runs in the last 10 runs
+type BadgeColor = 'error' | 'neutral' | 'primary' | 'success' | 'warning' | 'secondary' | 'info'
+
+function getTestCaseStatus(testCase: TestCaseWithStats): { status: string, color: BadgeColor } {
   const recentFlaky = testCase.recentFlakyRuns ?? testCase.flakyRuns
   if (recentFlaky > 0) {
     return { status: 'flaky', color: 'warning' }
   }
-  // Otherwise use last status
-  return { status: testCase.lastStatus || 'unknown', color: getStatusColor(testCase.lastStatus || 'unknown') }
+  return { status: testCase.lastStatus || 'unknown', color: getStatusColor(testCase.lastStatus || 'unknown') as BadgeColor }
 }
 
 const testCasesColumns: TableColumn<TestCaseWithStats>[] = [
-  {
-    accessorKey: 'title',
-    header: createSortHeader<TestCaseWithStats>('Test case'),
-    cell: ({ row }) => {
-      return h('div', {}, [
-        h('div', { class: 'font-medium' }, row.getValue('title')),
-        h('code', { class: 'text-xs bg-gray-100 dark:bg-gray-800 p-1 rounded mt-1 block' }, row.original.filePath)
-      ])
-    }
-  },
-  {
-    accessorKey: 'status',
-    header: createSortHeader<TestCaseWithStats>('Status'),
-    cell: ({ row }) => {
-      const status = getTestCaseStatus(row.original)
-      return h(UBadge, { color: status.color, class: 'capitalize' }, () => status.status)
-    }
-  },
-  {
-    accessorKey: 'totalRuns',
-    header: createSortHeader<TestCaseWithStats>('Runs'),
-    cell: ({ row }) => row.getValue('totalRuns')
-  },
-  {
-    accessorKey: 'passRate',
-    header: createSortHeader<TestCaseWithStats>('Pass rate'),
-    cell: ({ row }) => {
-      const passRate = getPassRate(row.original)
-      const colorClass = passRate >= 80 ? 'text-green-600' : passRate >= 50 ? 'text-yellow-600' : 'text-red-600'
-      return h('span', { class: `font-medium ${colorClass}` }, `${passRate}%`)
-    }
-  },
-  {
-    accessorKey: 'results',
-    header: 'Results',
-    cell: ({ row }) => {
-      return h('div', { class: 'flex gap-2 text-sm' }, [
-        h('span', { class: 'text-green-600' }, `✓ ${row.original.passedRuns}`),
-        h('span', { class: 'text-red-600' }, `✗ ${row.original.failedRuns}`),
-        row.original.flakyRuns > 0 ? h('span', { class: 'text-purple-600' }, `↻ ${row.original.flakyRuns}`) : null,
-        row.original.skippedRuns > 0 ? h('span', { class: 'text-gray-500' }, `⊘ ${row.original.skippedRuns}`) : null
-      ].filter(Boolean))
-    }
-  },
-  {
-    accessorKey: 'avgDuration',
-    header: createSortHeader<TestCaseWithStats>('Avg duration'),
-    cell: ({ row }) => formatDuration(row.getValue('avgDuration'))
-  },
-  {
-    accessorKey: 'lastRun',
-    header: createSortHeader<TestCaseWithStats>('Last run'),
-    cell: ({ row }) => {
-      const timestamp = row.getValue('lastRun') as number
-      return h('span', { class: 'text-xs' }, prettyDateFormat(timestamp))
-    }
-  }
+  { accessorKey: 'title', header: createSortHeader<TestCaseWithStats>('Test case') },
+  { accessorKey: 'status', header: createSortHeader<TestCaseWithStats>('Status') },
+  { accessorKey: 'totalRuns', header: createSortHeader<TestCaseWithStats>('Runs') },
+  { accessorKey: 'passRate', header: createSortHeader<TestCaseWithStats>('Pass rate') },
+  { accessorKey: 'results', header: 'Results' },
+  { accessorKey: 'avgDuration', header: createSortHeader<TestCaseWithStats>('Avg duration') },
+  { accessorKey: 'lastRun', header: createSortHeader<TestCaseWithStats>('Last run') },
+  { id: 'actions', header: 'Actions' }
 ]
 </script>
 
@@ -119,9 +67,7 @@ const testCasesColumns: TableColumn<TestCaseWithStats>[] = [
       <div class="p-4 space-y-4">
         <UCard>
           <template #header>
-            <h2>
-              Test cases
-            </h2>
+            <h2>Test cases</h2>
             <p class="text-sm text-gray-600 mt-1">
               All test cases in {{ project?.name }} with statistics across all runs
             </p>
@@ -138,7 +84,97 @@ const testCasesColumns: TableColumn<TestCaseWithStats>[] = [
               th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
               td: 'border-b border-default'
             }"
-          />
+          >
+            <template #actions-header>
+              <div class="text-right">Actions</div>
+            </template>
+
+            <template #title-cell="{ row }">
+              <div class="min-w-0 space-y-0.5">
+                <NuxtLink
+                  :to="`/test-cases/${row.original.id}`"
+                  class="font-medium text-primary hover:underline truncate block"
+                  :title="row.original.title"
+                >
+                  {{ row.original.title }}
+                </NuxtLink>
+                <div class="flex items-center gap-1 text-xs text-gray-400">
+                  <UIcon name="i-lucide-file-code" class="size-3 shrink-0" />
+                  <span class="font-mono truncate">{{ row.original.filePath }}</span>
+                </div>
+              </div>
+            </template>
+
+            <template #status-cell="{ row }">
+              <UBadge
+                :color="getTestCaseStatus(row.original).color"
+                variant="subtle"
+                class="capitalize"
+                size="sm"
+              >
+                {{ getTestCaseStatus(row.original).status }}
+              </UBadge>
+            </template>
+
+            <template #totalRuns-cell="{ row }">
+              <span class="tabular-nums text-sm">{{ row.original.totalRuns }}</span>
+            </template>
+
+            <template #passRate-cell="{ row }">
+              <span
+                class="font-medium text-sm tabular-nums"
+                :class="{
+                  'text-green-600': getPassRate(row.original) >= 80,
+                  'text-yellow-600': getPassRate(row.original) >= 50 && getPassRate(row.original) < 80,
+                  'text-red-600': getPassRate(row.original) < 50
+                }"
+              >
+                {{ getPassRate(row.original) }}%
+              </span>
+            </template>
+
+            <template #results-cell="{ row }">
+              <div class="flex items-center gap-2.5 text-sm">
+                <span class="flex items-center gap-0.5 text-green-600">
+                  <UIcon name="i-lucide-check" class="size-3.5" />
+                  <span class="tabular-nums">{{ row.original.passedRuns }}</span>
+                </span>
+                <span class="flex items-center gap-0.5 text-red-600">
+                  <UIcon name="i-lucide-x" class="size-3.5" />
+                  <span class="tabular-nums">{{ row.original.failedRuns }}</span>
+                </span>
+                <span v-if="row.original.flakyRuns > 0" class="flex items-center gap-0.5 text-purple-600">
+                  <UIcon name="i-lucide-refresh-cw" class="size-3" />
+                  <span class="tabular-nums">{{ row.original.flakyRuns }}</span>
+                </span>
+                <span v-if="row.original.skippedRuns > 0" class="flex items-center gap-0.5 text-gray-400">
+                  <UIcon name="i-lucide-minus" class="size-3.5" />
+                  <span class="tabular-nums">{{ row.original.skippedRuns }}</span>
+                </span>
+              </div>
+            </template>
+
+            <template #avgDuration-cell="{ row }">
+              <span class="text-sm text-gray-600">{{ formatDuration(row.original.avgDuration) }}</span>
+            </template>
+
+            <template #lastRun-cell="{ row }">
+              <span class="text-xs text-gray-500">{{ prettyDateFormat(row.original.lastRun) }}</span>
+            </template>
+
+            <template #actions-cell="{ row }">
+              <div class="flex justify-end">
+                <UButton
+                  :to="`/test-cases/${row.original.id}`"
+                  size="sm"
+                  variant="outline"
+                  trailing-icon="i-lucide-arrow-right"
+                >
+                  View
+                </UButton>
+              </div>
+            </template>
+          </UTable>
 
           <div v-else class="text-center py-8 text-gray-500">
             No test cases yet for this project.

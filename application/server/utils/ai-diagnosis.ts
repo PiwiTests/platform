@@ -3,6 +3,7 @@ import { failureDiagnoses, failureClusters, testRunsCases, testCases, testRuns }
 import type { FailureDiagnosis, FailureCluster } from '../database/schema'
 import { DIAGNOSIS_JSON_SCHEMA, parseDiagnosisJson } from '#shared/ai-diagnosis'
 import type { AiConfig } from '~~/types/api'
+import { stripAnsi } from '#shared/error-fingerprint'
 import { callAiProvider } from './ai-provider'
 import type { AiAttachedImage } from './ai-provider'
 import { computeRegressionContext } from './regression-context'
@@ -48,8 +49,9 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
 
   // Sample raw error
   if (cluster.sampleError) {
-    const truncated = cluster.sampleError.slice(0, MAX_SAMPLE_ERROR_CHARS)
-    sections.push(`## Sample Raw Error\n\`\`\`\n${truncated}${cluster.sampleError.length > MAX_SAMPLE_ERROR_CHARS ? '\n[truncated]' : ''}\n\`\`\``)
+    const clean = stripAnsi(cluster.sampleError)
+    const truncated = clean.slice(0, MAX_SAMPLE_ERROR_CHARS)
+    sections.push(`## Sample Raw Error\n\`\`\`\n${truncated}${clean.length > MAX_SAMPLE_ERROR_CHARS ? '\n[truncated]' : ''}\n\`\`\``)
   }
 
   // Affected tests
@@ -130,8 +132,9 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
 
     // Direct error from this execution (may be more detailed than cluster sampleError)
     if (rep.error && rep.error !== cluster.sampleError) {
-      const truncated = rep.error.slice(0, MAX_SAMPLE_ERROR_CHARS)
-      sections.push(`### Execution Error\n\`\`\`\n${truncated}${rep.error.length > MAX_SAMPLE_ERROR_CHARS ? '\n[truncated]' : ''}\n\`\`\``)
+      const clean = stripAnsi(rep.error)
+      const truncated = clean.slice(0, MAX_SAMPLE_ERROR_CHARS)
+      sections.push(`### Execution Error\n\`\`\`\n${truncated}${clean.length > MAX_SAMPLE_ERROR_CHARS ? '\n[truncated]' : ''}\n\`\`\``)
     }
 
     // Test source code snippet

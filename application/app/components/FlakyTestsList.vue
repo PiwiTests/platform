@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import type { TableColumn } from '@nuxt/ui'
 import type { FlakyTest } from '~~/types/api'
-import { formatRelativeTime } from '~/utils'
 
 const props = defineProps<{
   projectId: string | number
@@ -18,20 +18,25 @@ function scoreColor(score: number): 'error' | 'warning' | 'neutral' {
   if (score >= 30) return 'warning'
   return 'neutral'
 }
+
+const columns: TableColumn<FlakyTest>[] = [
+  { accessorKey: 'title', header: createSortHeader<FlakyTest>('Test') },
+  { accessorKey: 'score', header: createSortHeader<FlakyTest>('Score') },
+  { accessorKey: 'failureRate', header: createSortHeader<FlakyTest>('Failure rate') },
+  { accessorKey: 'retryPassRuns', header: createSortHeader<FlakyTest>('Retry passes') },
+  { accessorKey: 'alternations', header: createSortHeader<FlakyTest>('Flips') },
+  { accessorKey: 'lastFlakeAt', header: createSortHeader<FlakyTest>('Last flake') },
+  { id: 'actions', header: 'Actions' }
+]
 </script>
 
 <template>
   <UCard>
     <template #header>
       <div class="flex items-center justify-between">
-        <div>
-          <h3 class="font-semibold">
-            Flaky Tests
-          </h3>
-          <p class="text-sm text-gray-500 mt-1">
-            Tests that fail intermittently — detected by retry passes and status alternations
-          </p>
-        </div>
+        <p class="text-sm text-gray-500">
+          Tests that fail intermittently — detected by retry passes and status alternations
+        </p>
         <USelect
           v-model="runsWindow"
           :items="[
@@ -45,62 +50,72 @@ function scoreColor(score: number): 'error' | 'warning' | 'neutral' {
       </div>
     </template>
 
-    <div v-if="loading" class="flex items-center justify-center py-8 text-gray-500 gap-2">
-      <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
-      <span>Analyzing flaky tests...</span>
-    </div>
-
-    <div v-else-if="tests && tests.length > 0" class="divide-y divide-default">
-      <div
-        v-for="test in tests"
-        :key="test.testCaseId"
-        class="py-3 flex flex-col sm:flex-row sm:items-center gap-2"
-      >
-        <div class="min-w-0 flex-1 space-y-1">
-          <div class="flex items-center gap-2">
-            <NuxtLink
-              :to="`/test-cases/${test.latestRunsCaseId}`"
-              class="text-sm font-medium hover:text-primary hover:underline truncate"
-              :title="test.title"
-            >
-              {{ test.title }}
-            </NuxtLink>
-          </div>
-          <div class="text-xs text-gray-400 truncate">
-            {{ test.filePath }}
-          </div>
-          <div class="flex flex-wrap items-center gap-1.5">
-            <UBadge :color="scoreColor(test.score)" variant="subtle" size="sm">
-              Score {{ test.score }}
-            </UBadge>
-            <UBadge
-              v-if="test.retryPassRuns > 0"
-              color="warning"
-              variant="outline"
-              size="sm"
-            >
-              Passed on retry in {{ test.retryPassRuns }} run{{ test.retryPassRuns === 1 ? '' : 's' }}
-            </UBadge>
-            <UBadge
-              v-if="test.alternations >= 2"
-              color="neutral"
-              variant="outline"
-              size="sm"
-            >
-              {{ test.alternations }} status flip{{ test.alternations === 1 ? '' : 's' }}
-            </UBadge>
-            <UBadge color="neutral" variant="subtle" size="sm">
-              {{ Math.round(test.failureRate * 100) }}% failure rate
-            </UBadge>
-            <span v-if="test.lastFlakeAt" class="text-xs text-gray-500">
-              Last flake {{ formatRelativeTime(test.lastFlakeAt) }}
-            </span>
-          </div>
+    <UTable :data="tests ?? []" :columns="columns" :loading="loading">
+      <template #actions-header>
+        <div class="text-right">
+          Actions
         </div>
-      </div>
-    </div>
+      </template>
 
-    <p v-else class="text-sm text-gray-500 py-4">
+      <template #title-cell="{ row }">
+        <div class="min-w-0 space-y-0.5">
+          <NuxtLink
+            :to="`/test-cases/${row.original.latestRunsCaseId}`"
+            class="text-sm font-medium text-primary hover:underline truncate block"
+            :title="row.original.title"
+          >
+            {{ row.original.title }}
+          </NuxtLink>
+          <span class="text-xs text-gray-400 font-mono truncate block">{{ row.original.filePath }}</span>
+        </div>
+      </template>
+
+      <template #score-cell="{ row }">
+        <UBadge :color="scoreColor(row.original.score)" variant="subtle" size="sm">
+          {{ row.original.score }}
+        </UBadge>
+      </template>
+
+      <template #failureRate-cell="{ row }">
+        <span class="text-sm tabular-nums">{{ Math.round(row.original.failureRate * 100) }}%</span>
+      </template>
+
+      <template #retryPassRuns-cell="{ row }">
+        <UBadge v-if="row.original.retryPassRuns" color="warning" variant="outline" size="sm">
+          {{ row.original.retryPassRuns }} run{{ row.original.retryPassRuns === 1 ? '' : 's' }}
+        </UBadge>
+        <span v-else class="text-gray-400 text-xs">—</span>
+      </template>
+
+      <template #alternations-cell="{ row }">
+        <UBadge v-if="row.original.alternations >= 2" color="neutral" variant="outline" size="sm">
+          {{ row.original.alternations }}
+        </UBadge>
+        <span v-else class="text-gray-400 text-xs">—</span>
+      </template>
+
+      <template #lastFlakeAt-cell="{ row }">
+        <span v-if="row.original.lastFlakeAt" class="text-sm text-gray-500">
+          {{ formatRelativeTime(row.original.lastFlakeAt) }}
+        </span>
+        <span v-else class="text-gray-400 text-xs">—</span>
+      </template>
+
+      <template #actions-cell="{ row }">
+        <div class="flex justify-end">
+          <UButton
+            :to="`/test-cases/${row.original.latestRunsCaseId}`"
+            size="sm"
+            variant="outline"
+            trailing-icon="i-lucide-arrow-right"
+          >
+            View
+          </UButton>
+        </div>
+      </template>
+    </UTable>
+
+    <p v-if="!loading && tests && tests.length === 0" class="text-sm text-gray-500 py-4 text-center">
       No flaky tests detected in the last {{ runsWindow }} runs.
     </p>
   </UCard>
