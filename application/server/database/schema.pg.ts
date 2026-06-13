@@ -122,6 +122,7 @@ export const testRunsCases = pgTable('test_runs_cases', {
   webVitals: jsonb('web_vitals'), // { navigation: {...}, paint: {...} }
   consoleLogs: jsonb('console_logs'), // Array of { type, text, timestamp, location } console entries
   ariaSnapshot: text('aria_snapshot'), // ARIA snapshot of the page (YAML-like string from locator.ariaSnapshot())
+  testSource: text('test_source'), // Source snippet around the failing assertion (sent by reporter)
   browser: jsonb('browser'), // Playwright project/browser config: { projectName, browserName, channel, viewport }
   workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
   startedAt: integer('started_at'), // Unix timestamp in ms when the test started

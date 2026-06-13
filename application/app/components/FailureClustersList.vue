@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { h, resolveComponent } from 'vue'
+import type { TableColumn } from '@nuxt/ui'
 import type { ProjectFailureCluster } from '~~/types/api'
 
 const props = defineProps<{
@@ -6,7 +8,7 @@ const props = defineProps<{
 }>()
 
 const statusFilter = ref<string | undefined>(undefined)
-const { data: clusters, pending: loading, refresh } = await useFetch<ProjectFailureCluster[]>(
+const { data: clusters, pending: loading } = await useFetch<ProjectFailureCluster[]>(
   () => {
     const params = new URLSearchParams()
     if (statusFilter.value) params.set('status', statusFilter.value)
@@ -16,7 +18,7 @@ const { data: clusters, pending: loading, refresh } = await useFetch<ProjectFail
   { lazy: true, server: false, watch: [statusFilter] }
 )
 
-const statusColors: Record<string, 'success' | 'warning' | 'neutral' | 'error'> = {
+const statusColors: Record<string, 'success' | 'warning' | 'neutral'> = {
   open: 'warning',
   resolved: 'success',
   ignored: 'neutral'
@@ -31,205 +33,147 @@ const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' |
   'unknown': 'neutral'
 }
 
-// Triage modal state
-const triageCluster = ref<ProjectFailureCluster | null>(null)
-const triageNewStatus = ref('open')
-const triageNewNote = ref('')
-const savingTriage = ref(false)
+const UBadge = resolveComponent('UBadge')
+const UButton = resolveComponent('UButton')
+const UIcon = resolveComponent('UIcon')
 
-function openTriage(cluster: ProjectFailureCluster) {
-  triageCluster.value = cluster
-  triageNewStatus.value = cluster.status
-  triageNewNote.value = ''
-}
-
-function closeTriage() {
-  triageCluster.value = null
-  triageNewNote.value = ''
-}
-
-async function saveTriage() {
-  const cluster = triageCluster.value
-  if (!cluster || !triageNewStatus.value || triageNewStatus.value === cluster.status) return
-
-  savingTriage.value = true
-  try {
-    const res = await $fetch(`/api/failure-clusters/${cluster.id}/status`, {
-      method: 'PATCH',
-      body: { status: triageNewStatus.value, triageNote: triageNewNote.value?.trim() || null }
-    })
-    if (res) {
-      await refresh()
-      closeTriage()
+const columns: TableColumn<ProjectFailureCluster>[] = [
+  {
+    accessorKey: 'signature',
+    header: 'Signature',
+    cell: ({ row }) => {
+      const cluster = row.original
+      return h('div', { class: 'space-y-1 min-w-0' }, [
+        h('a', {
+          href: `/failure-clusters/${cluster.id}`,
+          class: 'font-mono text-sm text-primary hover:underline truncate block',
+          title: cluster.signature,
+          onClick: (e: MouseEvent) => {
+            e.preventDefault()
+            navigateTo(`/failure-clusters/${cluster.id}`)
+          }
+        }, cluster.signature),
+        cluster.triageNote
+          ? h('p', { class: 'text-xs text-gray-500 italic truncate' }, cluster.triageNote)
+          : null
+      ])
     }
-  } catch {
-    // silent
-  } finally {
-    savingTriage.value = false
+  },
+  {
+    accessorKey: 'errorType',
+    header: 'Type',
+    cell: ({ row }) => {
+      const t = row.original.errorType
+      if (!t) return h('span', { class: 'text-gray-400 text-xs' }, '—')
+      return h(UBadge, {
+        color: errorTypeColors[t] || 'neutral',
+        variant: 'subtle',
+        size: 'sm'
+      }, () => t)
+    }
+  },
+  {
+    accessorKey: 'status',
+    header: 'Status',
+    cell: ({ row }) => {
+      const s = row.original.status
+      return h(UBadge, {
+        color: statusColors[s] || 'neutral',
+        variant: 'subtle',
+        size: 'sm'
+      }, () => s)
+    }
+  },
+  {
+    accessorKey: 'affectedTests',
+    header: 'Tests',
+    cell: ({ row }) => h('span', { class: 'text-sm tabular-nums' }, String(row.original.affectedTests))
+  },
+  {
+    accessorKey: 'occurrences',
+    header: 'Occurrences',
+    cell: ({ row }) => h('span', { class: 'text-sm tabular-nums' }, String(row.original.occurrences))
+  },
+  {
+    accessorKey: 'diagnosis',
+    header: 'AI',
+    cell: ({ row }) => {
+      const d = row.original.diagnosis
+      if (!d || d.status !== 'completed' || !d.category) return h('span', { class: 'text-gray-400 text-xs' }, '—')
+      return h(UBadge, {
+        color: 'neutral',
+        variant: 'subtle',
+        size: 'sm',
+        class: 'gap-1'
+      }, () => [
+        h(UIcon, { name: 'i-lucide-sparkles', class: 'size-3' }),
+        d.category
+      ])
+    }
+  },
+  {
+    accessorKey: 'lastSeenAt',
+    header: 'Last seen',
+    cell: ({ row }) => {
+      const cluster = row.original
+      const rel = cluster.lastSeenAt ? formatRelativeTime(cluster.lastSeenAt) : null
+      return h('div', { class: 'text-sm text-gray-500 whitespace-nowrap' }, [
+        h('a', {
+          href: `/test-runs/${cluster.lastSeenRunId}`,
+          class: 'text-primary hover:underline',
+          onClick: (e: MouseEvent) => {
+            e.preventDefault()
+            navigateTo(`/test-runs/${cluster.lastSeenRunId}`)
+          }
+        }, `run #${cluster.lastSeenRunId}`),
+        rel ? h('span', { class: 'ml-1 text-xs text-gray-400' }, `(${rel})`) : null
+      ])
+    }
+  },
+  {
+    accessorKey: 'actions',
+    header: () => h('div', { class: 'text-right' }, 'Actions'),
+    cell: ({ row }) => h('div', { class: 'flex justify-end' }, [
+      h(UButton, {
+        to: `/failure-clusters/${row.original.id}`,
+        size: 'sm',
+        variant: 'outline',
+        trailingIcon: 'i-lucide-arrow-right'
+      }, () => 'View')
+    ])
   }
-}
+]
 </script>
 
 <template>
-  <UCard v-if="loading">
-    <template #header>
-      <div class="flex items-center gap-2">
-        <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
-        <h2>Loading failure clusters...</h2>
-      </div>
-    </template>
-  </UCard>
-
   <UCard>
     <template #header>
       <div class="flex items-center justify-between">
-        <p class="text-sm text-gray-500 mt-1">
+        <p class="text-sm text-gray-500">
           Ongoing failure signatures grouped by normalized error. Each cluster represents a distinct root cause.
         </p>
-        <div class="flex items-center gap-2">
-          <USelect
-            v-model="statusFilter"
-            :items="[
-              { label: 'All', value: undefined },
-              { label: 'Open', value: 'open' },
-              { label: 'Resolved', value: 'resolved' },
-              { label: 'Ignored', value: 'ignored' }
-            ]"
-            size="xs"
-            class="w-32"
-          />
-        </div>
+        <USelect
+          v-model="statusFilter"
+          :items="[
+            { label: 'All', value: undefined },
+            { label: 'Open', value: 'open' },
+            { label: 'Resolved', value: 'resolved' },
+            { label: 'Ignored', value: 'ignored' }
+          ]"
+          size="xs"
+          class="w-32"
+        />
       </div>
     </template>
 
-    <div v-if="clusters && clusters.length" class="divide-y divide-default">
-      <div
-        v-for="cluster in clusters"
-        :key="cluster.id"
-        class="py-3 flex flex-col sm:flex-row sm:items-center gap-2"
-      >
-        <div class="min-w-0 flex-1 space-y-1">
-          <div class="font-mono text-sm truncate flex items-center gap-2" :title="cluster.signature">
-            {{ cluster.signature }}
-            <UBadge
-              :color="statusColors[cluster.status] || 'neutral'"
-              variant="subtle"
-              size="sm"
-            >
-              {{ cluster.status }}
-            </UBadge>
-          </div>
-          <div class="flex flex-wrap items-center gap-1.5">
-            <UBadge
-              v-if="cluster.errorType"
-              :color="errorTypeColors[cluster.errorType] || 'neutral'"
-              variant="subtle"
-              size="sm"
-            >
-              {{ cluster.errorType }}
-            </UBadge>
-            <UBadge color="neutral" variant="subtle" size="sm">
-              {{ cluster.affectedTests }} {{ cluster.affectedTests === 1 ? 'test' : 'tests' }} affected
-            </UBadge>
-            <UBadge color="neutral" variant="outline" size="sm">
-              {{ cluster.occurrences }} occurrence{{ cluster.occurrences === 1 ? '' : 's' }}
-            </UBadge>
-            <span class="text-xs text-gray-500">
-              Last seen in
-              <NuxtLink
-                :to="`/test-runs/${cluster.lastSeenRunId}`"
-                class="text-primary hover:underline"
-              >run #{{ cluster.lastSeenRunId }}</NuxtLink>
-              <template v-if="cluster.lastSeenAt"> ({{ formatRelativeTime(cluster.lastSeenAt) }})</template>
-            </span>
-          </div>
-          <div v-if="cluster.triageNote" class="text-xs text-gray-500 italic mt-1">
-            {{ cluster.triageNote }}
-          </div>
-        </div>
-        <div class="shrink-0 flex items-center gap-1">
-          <UBadge
-            v-if="cluster.diagnosis?.status === 'completed' && cluster.diagnosis?.category"
-            color="neutral"
-            variant="subtle"
-            size="sm"
-            class="gap-1"
-          >
-            <UIcon name="i-lucide-sparkles" class="size-3" />
-            {{ cluster.diagnosis.category }}
-          </UBadge>
-          <UButton
-            size="xs"
-            color="neutral"
-            variant="outline"
-            @click="openTriage(cluster)"
-          >
-            Triage
-          </UButton>
-          <UButton
-            size="xs"
-            color="neutral"
-            variant="outline"
-            :to="`/failure-clusters/${cluster.id}`"
-          >
-            View
-          </UButton>
-        </div>
-      </div>
-    </div>
-    <p v-else class="text-sm text-gray-500">
+    <UTable
+      :data="clusters ?? []"
+      :columns="columns"
+      :loading="loading"
+    />
+
+    <p v-if="!loading && clusters && clusters.length === 0" class="text-sm text-gray-500 py-4 text-center">
       No failure clusters recorded for this project.
     </p>
   </UCard>
-
-  <UModal :open="!!triageCluster" title="Triage cluster" @update:open="closeTriage">
-    <template #body>
-      <div class="flex flex-col gap-4">
-        <p class="font-mono text-xs truncate text-gray-500">
-          {{ triageCluster?.signature }}
-        </p>
-        <div class="flex flex-col gap-1.5">
-          <label class="text-sm font-medium">Status</label>
-          <URadioGroup
-            v-model="triageNewStatus"
-            :items="[
-              { label: 'Open', value: 'open' },
-              { label: 'Resolved', value: 'resolved' },
-              { label: 'Ignored', value: 'ignored' }
-            ]"
-          />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <label class="text-sm font-medium">Note</label>
-          <UTextarea
-            v-model="triageNewNote"
-            placeholder="Optional triage note..."
-            :maxrows="3"
-            size="sm"
-          />
-        </div>
-      </div>
-    </template>
-    <template #footer>
-      <div class="flex justify-end gap-2">
-        <UButton
-          size="sm"
-          color="neutral"
-          variant="ghost"
-          @click="closeTriage"
-        >
-          Cancel
-        </UButton>
-        <UButton
-          size="sm"
-          color="primary"
-          :loading="savingTriage"
-          :disabled="!triageNewStatus || triageNewStatus === triageCluster?.status"
-          @click="saveTriage"
-        >
-          Save
-        </UButton>
-      </div>
-    </template>
-  </UModal>
 </template>

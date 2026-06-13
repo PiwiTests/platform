@@ -420,6 +420,7 @@ export default eventHandler(async (event) => {
         webVitals: testCase.webVitals,
         consoleLogs: testCase.consoleLogs,
         ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
+        testSource: testCase.testSource as string | null | undefined,
         browser: testCase.browser as unknown | null | undefined,
         workerIndex: testCase.workerIndex as number | null | undefined,
         startedAt: testCase.startedAt as number | null | undefined

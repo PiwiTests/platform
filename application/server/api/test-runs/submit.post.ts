@@ -91,6 +91,7 @@ export default eventHandler(async (event) => {
       webVitals?: unknown
       consoleLogs?: unknown
       ariaSnapshot?: unknown
+      testSource?: string | null
       startedAt?: number | null
       workerIndex?: number | null
       browser?: unknown
@@ -115,6 +116,7 @@ export default eventHandler(async (event) => {
         webVitals: testCase.webVitals,
         consoleLogs: testCase.consoleLogs,
         ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
+        testSource: testCase.testSource ?? null,
         workerIndex: testCase.workerIndex,
         startedAt: testCase.startedAt ?? null,
         browser: testCase.browser ?? null

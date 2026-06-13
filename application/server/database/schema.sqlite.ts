@@ -122,6 +122,7 @@ export const testRunsCases = sqliteTable('test_runs_cases', {
   webVitals: text('web_vitals', { mode: 'json' }), // { navigation: {...}, paint: {...} }
   consoleLogs: text('console_logs', { mode: 'json' }), // Array of { type, text, timestamp, location } console entries
   ariaSnapshot: text('aria_snapshot'), // ARIA snapshot of the page (YAML-like string from locator.ariaSnapshot())
+  testSource: text('test_source'), // Source snippet around the failing assertion (sent by reporter)
   browser: text('browser', { mode: 'json' }), // Playwright project/browser config: { projectName, browserName, channel, viewport }
   workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
   startedAt: integer('started_at'), // Unix timestamp in ms when the test started

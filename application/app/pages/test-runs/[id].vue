@@ -441,7 +441,6 @@ function handleSelectCluster(clusterId: number) {
           <template #failure-groups>
             <div class="overflow-y-auto h-full">
               <FailureGroups
-                @select-test-case="handleSelectTestCase"
                 @select-cluster="handleSelectCluster"
               />
             </div>

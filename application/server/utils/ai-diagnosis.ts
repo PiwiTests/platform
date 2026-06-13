@@ -1,4 +1,4 @@
-import { eq, and, desc } from 'drizzle-orm'
+import { eq, and, desc, sql } from 'drizzle-orm'
 import { failureDiagnoses, failureClusters, testRunsCases, testCases, testRuns } from '../database/schema'
 import type { FailureDiagnosis, FailureCluster } from '../database/schema'
 import { DIAGNOSIS_JSON_SCHEMA, parseDiagnosisJson } from '#shared/ai-diagnosis'
@@ -9,14 +9,15 @@ import { computeRegressionContext } from './regression-context'
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>
 
-// Context assembly caps (keep total ~8K tokens)
+// Context assembly caps (keep total ~12K tokens)
 const MAX_SAMPLE_ERROR_CHARS = 3000
 const MAX_AFFECTED_TESTS = 15
-const MAX_STEPS = 25
-const MAX_CONSOLE_ENTRIES = 12
-const MAX_CONSOLE_ENTRY_CHARS = 300
-const MAX_NETWORK_REQUESTS = 10
-const MAX_ARIA_SNAPSHOT_CHARS = 1500
+const MAX_STEPS = 30
+const MAX_CONSOLE_ENTRIES = 15
+const MAX_CONSOLE_ENTRY_CHARS = 400
+const MAX_NETWORK_REQUESTS = 15
+const MAX_ARIA_SNAPSHOT_CHARS = 4000
+const MAX_TEST_SOURCE_CHARS = 3000
 
 const DIAGNOSIS_SYSTEM_PROMPT = `You are a senior test engineer diagnosing Playwright test failures.
 You receive one failure cluster: several test failures sharing one normalized error signature, plus execution context. Identify the most likely single root cause. Ground every claim in the provided evidence — quote selectors, URLs, status codes or step names rather than speculating.
@@ -42,8 +43,8 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
 - Selector: ${cluster.selector ?? 'none'}
 - Triage status: ${cluster.status}
 - Total occurrences: ${cluster.occurrences}
-- First seen run: ${cluster.firstSeenRunId}
-- Last seen run: ${cluster.lastSeenRunId}`)
+- First seen run: #${cluster.firstSeenRunId}
+- Last seen run: #${cluster.lastSeenRunId}`)
 
   // Sample raw error
   if (cluster.sampleError) {
@@ -54,7 +55,8 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
   // Affected tests
   const affectedRows = await db.select({
     title: testCases.title,
-    filePath: testCases.filePath
+    filePath: testCases.filePath,
+    line: sql<number | null>`MAX(${testRunsCases.line})`
   })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
@@ -65,11 +67,49 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
   if (affectedRows.length > 0) {
     const shown = affectedRows.slice(0, MAX_AFFECTED_TESTS)
     const extra = affectedRows.length > MAX_AFFECTED_TESTS ? `\n…and ${affectedRows.length - MAX_AFFECTED_TESTS} more` : ''
-    sections.push(`## Affected Tests\n${shown.map(t => `- ${t.title} (${t.filePath})`).join('\n')}${extra}`)
+    sections.push(`## Affected Tests\n${shown.map(t => `- ${t.title} (${t.filePath}${t.line ? `:${t.line}` : ''})`).join('\n')}${extra}`)
   }
 
-  // Representative execution: latest run case for this cluster
-  const repRows = await db.select().from(testRunsCases)
+  // Browser distribution across all failures
+  const browserRows = await db.select({
+    browser: testRunsCases.browser,
+    count: sql<number>`COUNT(*)`
+  })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.failureClusterId, cluster.id))
+    .groupBy(testRunsCases.browser)
+
+  if (browserRows.length > 0) {
+    const browserSummary = browserRows.map((r) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const b = r.browser as any
+      const name = [b?.projectName, b?.browserName].filter(Boolean).join(' / ') || 'unknown'
+      return `- ${name}: ${r.count} failure${r.count === 1 ? '' : 's'}`
+    }).join('\n')
+    sections.push(`## Browser Distribution\n${browserSummary}`)
+  }
+
+  // Representative execution: latest run case for this cluster with test info
+  const repRows = await db.select({
+    id: testRunsCases.id,
+    testRunId: testRunsCases.testRunId,
+    error: testRunsCases.error,
+    browser: testRunsCases.browser,
+    retries: testRunsCases.retries,
+    duration: testRunsCases.duration,
+    line: testRunsCases.line,
+    column: testRunsCases.column,
+    steps: testRunsCases.steps,
+    consoleLogs: testRunsCases.consoleLogs,
+    networkRequests: testRunsCases.networkRequests,
+    ariaSnapshot: testRunsCases.ariaSnapshot,
+    testSource: testRunsCases.testSource,
+    webVitals: testRunsCases.webVitals,
+    testTitle: testCases.title,
+    testFilePath: testCases.filePath
+  })
+    .from(testRunsCases)
+    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.failureClusterId, cluster.id))
     .orderBy(desc(testRunsCases.id))
     .limit(1)
@@ -79,11 +119,26 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const browser = rep.browser as any
     const browserStr = [browser?.projectName, browser?.browserName].filter(Boolean).join(' / ')
+    const location = rep.line ? `${rep.testFilePath}:${rep.line}${rep.column ? `:${rep.column}` : ''}` : rep.testFilePath
 
-    sections.push(`## Representative Execution
+    sections.push(`## Representative Execution (run #${rep.testRunId})
+- Test: ${rep.testTitle}
+- Location: ${location}
 - Browser: ${browserStr || 'unknown'}
 - Retries: ${rep.retries ?? 0}
 - Duration: ${rep.duration != null ? `${rep.duration}ms` : 'unknown'}`)
+
+    // Direct error from this execution (may be more detailed than cluster sampleError)
+    if (rep.error && rep.error !== cluster.sampleError) {
+      const truncated = rep.error.slice(0, MAX_SAMPLE_ERROR_CHARS)
+      sections.push(`### Execution Error\n\`\`\`\n${truncated}${rep.error.length > MAX_SAMPLE_ERROR_CHARS ? '\n[truncated]' : ''}\n\`\`\``)
+    }
+
+    // Test source code snippet
+    if (rep.testSource) {
+      const truncated = rep.testSource.slice(0, MAX_TEST_SOURCE_CHARS)
+      sections.push(`### Test Source\n\`\`\`typescript\n${truncated}${rep.testSource.length > MAX_TEST_SOURCE_CHARS ? '\n[truncated]' : ''}\n\`\`\``)
+    }
 
     // Steps
     const steps = (rep.steps as Array<{ title: string, duration?: number, category?: string }> | null) ?? []
@@ -106,9 +161,25 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
       sections.push(`### Failed Network Requests\n${failedReqs.map(r => `${r.method} ${r.url} → ${r.status}${r.duration != null ? ` (${r.duration}ms)` : ''}`).join('\n')}`)
     }
 
+    // Web vitals
+    const webVitals = rep.webVitals as Record<string, unknown> | null
+    if (webVitals && (webVitals.navigation || webVitals.paint)) {
+      const lines: string[] = []
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const nav = webVitals.navigation as any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const paint = webVitals.paint as any
+      if (nav?.domContentLoaded != null) lines.push(`- DOMContentLoaded: ${nav.domContentLoaded}ms`)
+      if (nav?.loadComplete != null) lines.push(`- Load complete: ${nav.loadComplete}ms`)
+      if (paint?.FCP != null) lines.push(`- FCP: ${paint.FCP}ms`)
+      if (paint?.LCP != null) lines.push(`- LCP: ${paint.LCP}ms`)
+      if (lines.length > 0) sections.push(`### Web Vitals\n${lines.join('\n')}`)
+    }
+
     // ARIA snapshot
     if (rep.ariaSnapshot) {
-      sections.push(`### ARIA Snapshot\n${rep.ariaSnapshot.slice(0, MAX_ARIA_SNAPSHOT_CHARS)}`)
+      const truncated = rep.ariaSnapshot.slice(0, MAX_ARIA_SNAPSHOT_CHARS)
+      sections.push(`### ARIA Snapshot (page state at failure)\n\`\`\`yaml\n${truncated}${rep.ariaSnapshot.length > MAX_ARIA_SNAPSHOT_CHARS ? '\n[truncated]' : ''}\n\`\`\``)
     }
 
     // Retry behavior
