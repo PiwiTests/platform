@@ -490,10 +490,10 @@ const NETWORK_TEMPLATES = [
 
 // Project configurations: [numRuns, baseTestCount, baseDuration, baseAvgMs, baseP90Ms, failRate, flakyRate]
 const PROJECT_CONFIGS = {
-  1: { numRuns: 20, totalTests: 12, baseDuration: 145000, baseAvg: 4200, baseP90: 8900, failRate: 0.15, flakyRate: 0.08 },
-  2: { numRuns: 18, totalTests: 14, baseDuration: 82000, baseAvg: 2100, baseP90: 4800, failRate: 0.1, flakyRate: 0.05 },
-  3: { numRuns: 15, totalTests: 10, baseDuration: 310000, baseAvg: 8500, baseP90: 18000, failRate: 0.2, flakyRate: 0.1 },
-  4: { numRuns: 8, totalTests: 7, baseDuration: 190000, baseAvg: 5800, baseP90: 12000, failRate: 0.25, flakyRate: 0.05 }
+  1: { numRuns: 20, totalTests: 12, baseDuration: 145000, baseAvg: 4200, baseP90: 8900, failRate: 0.15, flakyRate: 0.12 },
+  2: { numRuns: 18, totalTests: 14, baseDuration: 82000, baseAvg: 2100, baseP90: 4800, failRate: 0.1, flakyRate: 0.08 },
+  3: { numRuns: 15, totalTests: 10, baseDuration: 310000, baseAvg: 8500, baseP90: 18000, failRate: 0.2, flakyRate: 0.15 },
+  4: { numRuns: 8, totalTests: 7, baseDuration: 190000, baseAvg: 5800, baseP90: 12000, failRate: 0.25, flakyRate: 0.1 }
 }
 
 // Browser configs per project
@@ -542,7 +542,7 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
       status = 'failed'
       failedTests = Math.ceil(Math.random() * Math.min(3, cfg.totalTests))
       passedTests = cfg.totalTests - failedTests
-      flakyTests = Math.random() < 0.3 ? 1 : 0
+      flakyTests = Math.random() < 0.35 ? 1 : 0
     } else if (roll < cfg.failRate + 0.05) {
       status = 'interrupted'
       failedTests = 1
@@ -705,9 +705,16 @@ for (const run of TEST_RUNS) {
 }
 
 const clusterNow = ts('2025-04-25T09:00:00')
+const CLUSTER_TRIAGE = {
+  1: { status: 'resolved', triage_note: 'Root cause identified: CI runner was throttled during peak hours. Added resource_class: large to the workflow. Monitor for recurrence over the next week.' },
+  3: { status: 'open', triage_note: 'Investigating — auth service logs show 500 errors correlated with database connection pool exhaustion. Checking recent migration that added a new users table index.' },
+  6: { status: 'ignored', triage_note: 'Known issue — three buttons match the role on the component page. This is intentional as the page demos multiple button variants. Skip this failure; not a bug.' }
+}
+
 for (const cl of CLUSTERS) {
   const stats = clusterStats[cl.id]
   const selector = cl.errorType === 'strict-mode' ? 'getByRole(\'button\')' : null
+  const triage = CLUSTER_TRIAGE[cl.id] || {}
   FAILURE_CLUSTERS.push({
     id: cl.id,
     project_id: cl.projectId,
@@ -716,8 +723,8 @@ for (const cl of CLUSTERS) {
     error_type: cl.errorType,
     selector,
     sample_error: cl.errorText,
-    status: 'open',
-    triage_note: null,
+    status: triage.status || 'open',
+    triage_note: triage.triage_note || null,
     first_seen_run_id: stats.firstRunId ?? firstRunByProject[cl.projectId],
     last_seen_run_id: stats.lastRunId ?? lastRunByProject[cl.projectId],
     occurrences: stats.occurrences || 1,
@@ -795,6 +802,74 @@ const FAILURE_DIAGNOSES = [
     input_tokens: 980,
     output_tokens: 310,
     duration_ms: 2100,
+    created_at: diagnosisNow,
+    updated_at: diagnosisNow
+  },
+  {
+    id: 3,
+    cluster_id: 5,
+    status: 'completed',
+    provider: 'demo',
+    model: 'demo',
+    category: 'test-flakiness',
+    confidence: 'medium',
+    summary: 'Strict mode violation on button role — multiple elements match because the component page renders three button variants for visual regression testing.',
+    root_cause: 'getByRole(\'button\') resolves to 3 elements on the UI components test page. This occurs because the page intentionally renders primary, disabled, and loading button variants simultaneously. The test should scope its locator to a specific container or use a more specific selector.',
+    details: JSON.stringify({
+      evidence: [
+        'Error consistently occurs on the button spec page',
+        'Three button elements are rendered by design (primary, disabled, loading variants)',
+        'Failure is deterministic, not intermittent'
+      ],
+      suggestedFix: {
+        description: 'Scope the locator to the specific button variant container, or use getByRole with a name filter.',
+        file: 'tests/ui/button.spec.ts',
+        code: 'await page.getByRole(\'button\', { name: \'Primary\' }).click();'
+      },
+      preventionTips: [
+        'Use unique aria-labels on components in visual regression pages',
+        'Scope locators to a parent element when multiple matches are expected',
+        'Add data-testid attributes to disambiguate similar elements'
+      ]
+    }),
+    error: null,
+    input_tokens: 870,
+    output_tokens: 290,
+    duration_ms: 1950,
+    created_at: diagnosisNow,
+    updated_at: diagnosisNow
+  },
+  {
+    id: 4,
+    cluster_id: 7,
+    status: 'completed',
+    provider: 'demo',
+    model: 'demo',
+    category: 'infrastructure',
+    confidence: 'high',
+    summary: 'Mobile page navigation fails with timeout — the Safari page load takes more than 30 seconds on CI, suggesting slow network or resource-heavy page.',
+    root_cause: 'page.goto timeout (30000ms) exceeded during mobile Safari tests. The navigation endpoint loads heavy assets (images, JS bundles) that are not optimized for mobile connections. Combined with CI network variability, this consistently exceeds the default timeout.',
+    details: JSON.stringify({
+      evidence: [
+        'Timeout occurs on main navigation page load, not on subsequent interactions',
+        'Only affects the mobile Safari browser config',
+        'Page load time correlates with asset bundle size deployments'
+      ],
+      suggestedFix: {
+        description: 'Increase the navigation timeout for mobile tests and consider lazy-loading non-critical assets on the target page.',
+        file: 'tests/mobile/navigation.spec.ts',
+        code: 'await page.goto(\'https://app.example.com\', { timeout: 60000 });'
+      },
+      preventionTips: [
+        'Set browser-specific timeouts via Playwright config projects',
+        'Optimize page load performance for mobile (code splitting, image optimization)',
+        'Add a smoke test that verifies page load under 10s in CI'
+      ]
+    }),
+    error: null,
+    input_tokens: 1100,
+    output_tokens: 340,
+    duration_ms: 2650,
     created_at: diagnosisNow,
     updated_at: diagnosisNow
   }

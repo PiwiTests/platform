@@ -39,3 +39,7 @@ blob-report/
 
 # Plan documents
 docs/plans/
+
+# Playwright artifacts
+.playwright-cli/
+.playwright-mcp/

@@ -32,6 +32,18 @@
 
 ![Test run detail](docs/public/screenshots/test-run.png)
 
+**Failure clusters** — error fingerprinting groups tests sharing the same root cause:
+
+![Failure clusters](docs/public/screenshots/failure-clusters-tab.png)
+
+**Flaky tests** — composite flakiness score with retry-pass and alternation breakdown:
+
+![Flaky tests](docs/public/screenshots/flaky-tests.png)
+
+**Cluster triage** — set status, write triage notes, and track resolution:
+
+![Cluster triage](docs/public/screenshots/failure-cluster-triage.png)
+
 </details>
 
 ## Why Piwi Dashboard?
