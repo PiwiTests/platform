@@ -16,6 +16,7 @@ export default eventHandler(async (event) => {
   const body = await readBody(event).catch(() => null) as {
     additionalContext?: string
     images?: AiAttachedImage[]
+    baseCommit?: string
   } | null
 
   const db = await getDatabase()
@@ -48,6 +49,7 @@ export default eventHandler(async (event) => {
   return runClusterDiagnosis(db, cluster, config, {
     force,
     additionalContext: body?.additionalContext,
-    images: body?.images
+    images: body?.images,
+    baseCommit: body?.baseCommit
   })
 })

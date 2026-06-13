@@ -2,17 +2,19 @@ import { eq, and, desc, sql } from 'drizzle-orm'
 import { failureDiagnoses, failureClusters, testRunsCases, testCases, testRuns, projects } from '../database/schema'
 import type { FailureDiagnosis, FailureCluster } from '../database/schema'
 import { DIAGNOSIS_JSON_SCHEMA, parseDiagnosisJson } from '#shared/ai-diagnosis'
-import type { AiConfig } from '~~/types/api'
+import type { AiConfig, DiagnosisContextCoverage } from '~~/types/api'
 import { stripAnsi } from '#shared/error-fingerprint'
 import { callAiProvider } from './ai-provider'
 import type { AiAttachedImage } from './ai-provider'
-import { computeRegressionContext } from './regression-context'
+import { computeRegressionContext, normalizeGitUrl } from './regression-context'
+import { fetchChangedFiles, detectScmProvider } from './scm-provider'
 import { getAppSetting } from './app-settings'
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>
 
 // Context assembly caps (keep total ~12K tokens)
 const MAX_SAMPLE_ERROR_CHARS = 3000
+const MAX_SCM_PATCH_BUDGET = 4000
 const MAX_AFFECTED_TESTS = 15
 const MAX_STEPS = 30
 const MAX_CONSOLE_ENTRIES = 15
@@ -35,8 +37,21 @@ export function isDiagnosisRunning(clusterId: number): boolean {
   return running.has(clusterId)
 }
 
-export async function buildClusterDiagnosisContext(db: DbClient, cluster: FailureCluster): Promise<string> {
+export async function buildClusterDiagnosisContext(db: DbClient, cluster: FailureCluster, opts?: { baseCommit?: string }): Promise<{ text: string, coverage: DiagnosisContextCoverage }> {
   const sections: string[] = []
+
+  const scmCov: NonNullable<DiagnosisContextCoverage['scm']> = {
+    hasLastGreen: false,
+    hasCommitRange: false,
+    baseCommitUsed: null,
+    provider: null,
+    commitsCount: 0,
+    filesCount: 0,
+    patchedFilesCount: 0,
+    patchesOmitted: false,
+    patchesTruncated: false
+  }
+  let scmReached = false
 
   // Cluster summary
   sections.push(`## Failure Cluster
@@ -213,15 +228,23 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
     if (lastSeenRunRows[0]) {
       try {
         const regression = await computeRegressionContext(db, lastSeenRunRows[0])
+        scmReached = true
+        const baseCommitOverride = opts?.baseCommit?.trim() || undefined
+
         if (regression.hasGreen) {
+          scmCov.hasLastGreen = true
+          scmCov.hasCommitRange = Boolean(regression.commitRange)
+
           const lines: string[] = [
             `## What Changed Since Last Green Run`,
             `- Last green run: #${regression.lastGreenRunId} (${regression.lastGreenRunAt.toISOString()})`,
             `- New failures in this run: ${regression.newFailures}`
           ]
           if (regression.commitRange) {
-            lines.push(`- Commit range: ${regression.commitRange.fromShort}..${regression.commitRange.toShort}`)
-            lines.push(`- Git command: \`${regression.commitRange.gitCommand}\``)
+            const fromShort = baseCommitOverride ? baseCommitOverride.slice(0, 7) : regression.commitRange.fromShort
+            lines.push(`- Commit range: ${fromShort}..${regression.commitRange.toShort}`)
+            if (baseCommitOverride) lines.push(`- Note: baseline overridden by user to ${baseCommitOverride}`)
+            lines.push(`- Git command: \`git log ${fromShort}..${regression.commitRange.toShort}\``)
           }
           if (regression.metadataDiff.length > 0) {
             lines.push(`- Changed metadata:`)
@@ -230,6 +253,154 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
             }
           }
           sections.push(lines.join('\n'))
+
+          // Fetch actual changed files from SCM API
+          if (regression.commitRange?.repositoryUrl) {
+            scmCov.provider = detectScmProvider(regression.commitRange.repositoryUrl)
+            try {
+              const scmTokenSetting = await getAppSetting<{ value?: string }>(db, 'scm_token')
+              const scmToken = scmTokenSetting?.value ?? null
+              const fromSha = baseCommitOverride ?? regression.commitRange.fromSha
+              if (baseCommitOverride) scmCov.baseCommitUsed = baseCommitOverride
+              const changes = await fetchChangedFiles(
+                regression.commitRange.repositoryUrl,
+                fromSha,
+                regression.commitRange.toSha,
+                scmToken
+              )
+              if (changes && (changes.commits.length > 0 || changes.files.length > 0)) {
+                scmCov.filesCount = changes.files.length
+                scmCov.commitsCount = changes.commits.length
+                scmCov.patchesOmitted = Boolean(changes.patchesOmitted)
+
+                const changeLines: string[] = ['## Changed Files Since Last Green Run']
+                if (changes.commits.length > 0) {
+                  changeLines.push('Commits:')
+                  for (const c of changes.commits) {
+                    changeLines.push(`- ${c.sha} ${c.message}`)
+                  }
+                }
+                changeLines.push(`\nChanged files (${changes.files.length}):`)
+                for (const f of changes.files) {
+                  const stats = (f.additions || f.deletions) ? `, +${f.additions} -${f.deletions}` : ''
+                  changeLines.push(`- ${f.filename} (${f.status}${stats})`)
+                }
+                if (changes.patchesOmitted) {
+                  changeLines.push(`\n> Note: diff omitted — raw diff exceeded size limit (${Math.round(200_000 / 1024)} KB). File names and line counts above are complete; no patch content available.`)
+                } else {
+                  let patchBudget = MAX_SCM_PATCH_BUDGET
+                  const patches: string[] = []
+                  let skippedByBudget = 0
+                  for (const f of changes.files) {
+                    if (!f.patch) continue
+                    if (patchBudget <= 0) {
+                      skippedByBudget++
+                      continue
+                    }
+                    const patch = f.patch.length > patchBudget
+                      ? f.patch.slice(0, patchBudget) + '\n[... patch truncated ...]'
+                      : f.patch
+                    patchBudget -= Math.min(f.patch.length, patchBudget)
+                    patches.push(`--- ${f.filename}\n${patch}`)
+                  }
+                  if (patches.length > 0) {
+                    changeLines.push(`\nPatches:\n\`\`\`diff\n${patches.join('\n\n')}\n\`\`\``)
+                    scmCov.patchedFilesCount = patches.length
+                    scmCov.patchesTruncated = skippedByBudget > 0
+                  }
+                  if (skippedByBudget > 0) {
+                    changeLines.push(`\n> Note: ${skippedByBudget} file patch${skippedByBudget > 1 ? 'es' : ''} omitted (context budget exhausted).`)
+                  }
+                }
+                sections.push(changeLines.join('\n'))
+              }
+            } catch {
+              // silently skip if SCM fetch fails
+            }
+          }
+        } else if (baseCommitOverride) {
+          // No last green run — user provided a manual baseline commit; try to fetch diff anyway
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const currMeta = lastSeenRunRows[0].metadata as any
+          const currentCommit: string | null = currMeta?.scm?.commit ?? null
+          const remoteUrl: string | null = currMeta?.scm?.remoteUrl ?? null
+          const repositoryUrl = normalizeGitUrl(remoteUrl)
+
+          scmCov.hasCommitRange = Boolean(currentCommit && repositoryUrl)
+
+          if (currentCommit && repositoryUrl) {
+            scmCov.provider = detectScmProvider(repositoryUrl)
+            scmCov.baseCommitUsed = baseCommitOverride
+
+            const fromShort = baseCommitOverride.slice(0, 7)
+            const toShort = currentCommit.slice(0, 7)
+            sections.push([
+              `## What Changed (Manual Baseline)`,
+              `- Baseline commit (user-provided): ${baseCommitOverride}`,
+              `- Current commit: ${toShort}`,
+              `- No previous passing run found; using manual baseline`,
+              `- Git command: \`git log ${fromShort}..${toShort}\``
+            ].join('\n'))
+
+            try {
+              const scmTokenSetting = await getAppSetting<{ value?: string }>(db, 'scm_token')
+              const scmToken = scmTokenSetting?.value ?? null
+              const changes = await fetchChangedFiles(repositoryUrl, baseCommitOverride, currentCommit, scmToken)
+              if (changes && (changes.commits.length > 0 || changes.files.length > 0)) {
+                scmCov.filesCount = changes.files.length
+                scmCov.commitsCount = changes.commits.length
+                scmCov.patchesOmitted = Boolean(changes.patchesOmitted)
+
+                const changeLines: string[] = ['## Changed Files (Manual Baseline)']
+                if (changes.commits.length > 0) {
+                  changeLines.push('Commits:')
+                  for (const c of changes.commits) {
+                    changeLines.push(`- ${c.sha} ${c.message}`)
+                  }
+                }
+                changeLines.push(`\nChanged files (${changes.files.length}):`)
+                for (const f of changes.files) {
+                  const stats = (f.additions || f.deletions) ? `, +${f.additions} -${f.deletions}` : ''
+                  changeLines.push(`- ${f.filename} (${f.status}${stats})`)
+                }
+                if (changes.patchesOmitted) {
+                  changeLines.push(`\n> Note: diff omitted — raw diff exceeded size limit (${Math.round(200_000 / 1024)} KB). File names and line counts above are complete; no patch content available.`)
+                } else {
+                  let patchBudget = MAX_SCM_PATCH_BUDGET
+                  const patches: string[] = []
+                  let skippedByBudget = 0
+                  for (const f of changes.files) {
+                    if (!f.patch) continue
+                    if (patchBudget <= 0) {
+                      skippedByBudget++
+                      continue
+                    }
+                    const patch = f.patch.length > patchBudget
+                      ? f.patch.slice(0, patchBudget) + '\n[... patch truncated ...]'
+                      : f.patch
+                    patchBudget -= Math.min(f.patch.length, patchBudget)
+                    patches.push(`--- ${f.filename}\n${patch}`)
+                  }
+                  if (patches.length > 0) {
+                    changeLines.push(`\nPatches:\n\`\`\`diff\n${patches.join('\n\n')}\n\`\`\``)
+                    scmCov.patchedFilesCount = patches.length
+                    scmCov.patchesTruncated = skippedByBudget > 0
+                  }
+                  if (skippedByBudget > 0) {
+                    changeLines.push(`\n> Note: ${skippedByBudget} file patch${skippedByBudget > 1 ? 'es' : ''} omitted (context budget exhausted).`)
+                  }
+                }
+                sections.push(changeLines.join('\n'))
+              }
+            } catch {
+              // silently skip
+            }
+          } else {
+            sections.push([
+              `## What Changed (Manual Baseline)`,
+              `> Note: baseline commit provided (${baseCommitOverride}) but could not determine current commit or repository URL from run metadata.`
+            ].join('\n'))
+          }
         }
       } catch {
         // omit section if regression context fails
@@ -237,14 +408,17 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
     }
   }
 
-  return sections.join('\n\n')
+  return {
+    text: sections.join('\n\n'),
+    coverage: { scm: scmReached ? scmCov : null }
+  }
 }
 
 export async function runClusterDiagnosis(
   db: DbClient,
   cluster: FailureCluster,
   config: AiConfig,
-  _opts?: { force?: boolean, additionalContext?: string, images?: AiAttachedImage[] }
+  _opts?: { force?: boolean, additionalContext?: string, images?: AiAttachedImage[], baseCommit?: string }
 ): Promise<FailureDiagnosis> {
   if (running.has(cluster.id)) {
     throw Object.assign(new Error('Diagnosis already running for this cluster'), { statusCode: 409 })
@@ -307,7 +481,7 @@ export async function runClusterDiagnosis(
   const t0 = Date.now()
 
   try {
-    const userContent = await buildClusterDiagnosisContext(db, cluster)
+    const { text: userContent } = await buildClusterDiagnosisContext(db, cluster, { baseCommit: _opts?.baseCommit })
     const extra = _opts?.additionalContext?.trim()
     const fullUserContent = extra
       ? `${userContent}\n\n## Additional Context Provided by User\n${extra}`

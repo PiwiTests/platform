@@ -11,8 +11,12 @@ export default eventHandler(async (event) => {
   const envManaged = Boolean(envAi?.provider)
 
   const db = await getDatabase()
-  const instructions = await getAppSetting<{ value?: string }>(db, 'ai_instructions')
+  const [instructions, scmTokenSetting] = await Promise.all([
+    getAppSetting<{ value?: string }>(db, 'ai_instructions'),
+    getAppSetting<{ value?: string }>(db, 'scm_token')
+  ])
   const customInstructions = instructions?.value || null
+  const hasScmToken = Boolean(scmTokenSetting?.value)
 
   if (envManaged) {
     return {
@@ -21,6 +25,7 @@ export default eventHandler(async (event) => {
       baseUrl: envAi!.baseUrl || null,
       autoDiagnose: String(envAi!.autoDiagnose) === 'true',
       hasApiKey: Boolean(envAi!.apiKey),
+      hasScmToken,
       envManaged: true,
       customInstructions
     }
@@ -40,6 +45,7 @@ export default eventHandler(async (event) => {
     baseUrl: stored?.baseUrl || null,
     autoDiagnose: Boolean(stored?.autoDiagnose),
     hasApiKey: Boolean(stored?.apiKey),
+    hasScmToken,
     envManaged: false,
     customInstructions
   }

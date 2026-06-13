@@ -735,6 +735,25 @@ export interface DiagnosisCompact {
   summary: string | null
 }
 
+/**
+ * SCM coverage metadata returned alongside the diagnosis context preview.
+ * null means the regression context block was never reached (DB error or no lastSeenRun).
+ */
+export interface DiagnosisContextCoverage {
+  scm: {
+    hasLastGreen: boolean
+    hasCommitRange: boolean
+    /** Set when the user manually overrode the baseline commit SHA */
+    baseCommitUsed: string | null
+    provider: 'github' | 'gitlab' | 'bitbucket' | null
+    commitsCount: number
+    filesCount: number
+    patchedFilesCount: number
+    patchesOmitted: boolean
+    patchesTruncated: boolean
+  } | null
+}
+
 /** Supported AI provider identifiers */
 export type AiProvider = 'anthropic' | 'openai'
 
@@ -772,6 +791,7 @@ export interface AiSettings {
   baseUrl: string | null
   autoDiagnose: boolean
   hasApiKey: boolean
+  hasScmToken: boolean
   envManaged: boolean
   customInstructions: string | null
 }

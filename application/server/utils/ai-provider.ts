@@ -85,7 +85,7 @@ export async function callAiProvider(config: AiConfig, opts: AiCallOptions): Pro
     return await callOpenAiCompat(config, opts)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    throw new Error(`[${config.provider}] ${msg.slice(0, 500)}`)
+    throw new Error(`[${config.provider}] ${msg.slice(0, 500)}`, { cause: err })
   }
 }
 
