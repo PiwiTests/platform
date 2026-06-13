@@ -26,6 +26,7 @@ import { apiGetUsers, apiCreateUser, apiDeleteUser, apiGetUserApiKeys, apiCreate
 import { apiGetTestCase, apiGetTestCaseHistory, apiGetTestCaseTraces } from './test-cases'
 import { apiPatchClusterStatus } from './failure-clusters'
 import { apiGetAdminStats } from './admin'
+import { apiGetAiStatus, apiGetClusterDiagnosis, apiDiagnoseCluster, apiGetAiSettings, apiPutAiSettings, apiTestAiSettings, apiGetProjectFlakyTests } from './ai'
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
 
@@ -45,6 +46,7 @@ const routes: RouteEntry[] = [
   { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/test-cases$/, handler: m => apiGetProjectTestCases(+m[1]!) },
   { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/slow-tests$/, handler: (m, _, q) => apiGetProjectSlowTests(+m[1]!, q ? Number(q.get('runs')) || 10 : 10) },
   { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/failure-clusters$/, handler: m => apiGetProjectFailureClusters(+m[1]!) },
+  { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/flaky-tests$/, handler: (m, _, q) => apiGetProjectFlakyTests(+m[1]!, q ? Number(q.get('runs')) || 50 : 50) },
 
   // Reporter streaming protocol (used by the demo run simulator)
   { method: 'POST', pattern: /^\/api\/test-runs\/setup$/, handler: (_, body) => apiSetupTestRun(body as Parameters<typeof apiSetupTestRun>[0]) },
@@ -66,8 +68,16 @@ const routes: RouteEntry[] = [
   // Regression context (Pillar 2)
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/regression-context$/, handler: m => apiGetRegressionContext(+m[1]!) },
 
-  // Failure cluster status
+  // Failure cluster status + AI diagnosis
   { method: 'PATCH', pattern: /^\/api\/failure-clusters\/(\d+)\/status$/, handler: (m, body) => apiPatchClusterStatus(+m[1]!, body as Parameters<typeof apiPatchClusterStatus>[1]) },
+  { method: 'GET', pattern: /^\/api\/failure-clusters\/(\d+)\/diagnosis$/, handler: m => apiGetClusterDiagnosis(+m[1]!) },
+  { method: 'POST', pattern: /^\/api\/failure-clusters\/(\d+)\/diagnose$/, handler: m => apiDiagnoseCluster(+m[1]!) },
+
+  // AI status and settings
+  { method: 'GET', pattern: /^\/api\/ai\/status$/, handler: () => apiGetAiStatus() },
+  { method: 'GET', pattern: /^\/api\/settings\/ai$/, handler: () => apiGetAiSettings() },
+  { method: 'PUT', pattern: /^\/api\/settings\/ai$/, handler: (_, body) => apiPutAiSettings(body) },
+  { method: 'POST', pattern: /^\/api\/settings\/ai\/test$/, handler: () => apiTestAiSettings() },
 
   // Test-run streaming (no-op in demo mode; only terminal-status runs exist)
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/stream$/, handler: () => Promise.resolve({ ok: true }) },

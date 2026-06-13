@@ -3,28 +3,7 @@ import type { NavigationMenuItem } from '@nuxt/ui'
 
 useHead({ title: 'Settings — Piwi Dashboard' })
 
-/*
-{
-  label: 'General',
-  icon: 'i-lucide-user',
-  to: '/settings',
-  exact: true
-},
- */
-
-const links = [[{
-  label: 'Users',
-  icon: 'i-lucide-users',
-  to: '/settings/users'
-}, {
-  label: 'Tags',
-  icon: 'i-lucide-tags',
-  to: '/settings/tags'
-}, {
-  label: 'Storage',
-  icon: 'i-lucide-hard-drive',
-  to: '/settings/storage'
-}], [{
+const links = [[...useSettingsNav()], [{
   label: 'Documentation',
   icon: 'i-lucide-book-open',
   to: 'https://github.com/PhenX/piwi-dashboard',

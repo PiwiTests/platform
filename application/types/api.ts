@@ -410,6 +410,7 @@ export interface FailureGroup {
   flaky: boolean
   workerCorrelated: boolean
   cases: FailureGroupCase[]
+  diagnosis: DiagnosisCompact | null
 }
 
 /**
@@ -430,6 +431,7 @@ export interface ProjectFailureCluster {
   affectedTests: number
   lastSeenRunStatus: string | null
   lastSeenAt: string | Date | null
+  diagnosis: DiagnosisCompact | null
 }
 
 /**
@@ -692,4 +694,50 @@ export interface SlowTest {
   runCount: number
   trend: 'faster' | 'slower' | 'stable'
   latestDuration: number
+}
+
+// ============================================================================
+// AI Diagnosis types (Pillar 4)
+// ============================================================================
+
+/**
+ * Compact diagnosis summary — inlined in failure-groups and failure-clusters responses
+ */
+export interface DiagnosisCompact {
+  status: string
+  category: string | null
+  confidence: string | null
+  summary: string | null
+}
+
+/**
+ * AI status — returned by GET /api/ai/status
+ */
+export interface AiStatus {
+  configured: boolean
+  provider?: string | null
+  model?: string | null
+  autoDiagnose?: boolean
+  source?: string | null
+}
+
+// ============================================================================
+// Flaky tests types (Pillar 3)
+// ============================================================================
+
+/**
+ * Flaky test entry — returned by GET /api/projects/[id]/flaky-tests
+ */
+export interface FlakyTest {
+  testCaseId: number
+  latestRunsCaseId: number
+  title: string
+  filePath: string
+  totalRuns: number
+  failedRuns: number
+  retryPassRuns: number
+  alternations: number
+  failureRate: number
+  score: number
+  lastFlakeAt: string | Date | null
 }

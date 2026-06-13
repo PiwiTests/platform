@@ -255,6 +255,33 @@ CREATE TABLE IF NOT EXISTS api_keys (
 CREATE UNIQUE INDEX IF NOT EXISTS api_keys_key_hash_unique ON api_keys (key_hash);
 CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys (user_id);
 CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys (key_hash);
+
+CREATE TABLE IF NOT EXISTS failure_diagnoses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  cluster_id INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'running',
+  provider TEXT,
+  model TEXT,
+  category TEXT,
+  confidence TEXT,
+  summary TEXT,
+  root_cause TEXT,
+  details TEXT,
+  error TEXT,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  duration_ms INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (cluster_id) REFERENCES failure_clusters(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_failure_diagnoses_cluster_id ON failure_diagnoses (cluster_id);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY NOT NULL,
+  value TEXT,
+  updated_at INTEGER NOT NULL
+);
 `.trim()
 
 // ── Demo data ─────────────────────────────────────────────────────────────
@@ -699,6 +726,80 @@ for (const cl of CLUSTERS) {
   })
 }
 
+// ── Demo AI diagnoses ─────────────────────────────────────────────────────
+const diagnosisNow = ts('2025-04-25T09:30:00')
+
+const FAILURE_DIAGNOSES = [
+  {
+    id: 1,
+    cluster_id: 1,
+    status: 'completed',
+    provider: 'demo',
+    model: 'demo',
+    category: 'infrastructure',
+    confidence: 'high',
+    summary: 'Checkout button click times out consistently — suspected slow CI agent or network latency spike causing locator resolution delay.',
+    root_cause: 'The locator.click timeout (30 000 ms) is exceeded when the checkout page renders slowly on the CI runner. The root cause is a missing explicit wait for the payment form to become interactive before clicking, combined with CI infrastructure variability.',
+    details: JSON.stringify({
+      evidence: [
+        'TimeoutError occurs at tests/checkout/checkout.spec.ts:42 in both affected tests',
+        'Error fires during locator.click — the element is present in DOM but not yet interactive',
+        'Failure rate correlates with high-load CI runs (build numbers 1180-1200)'
+      ],
+      suggestedFix: {
+        description: 'Add an explicit waitForLoadState("networkidle") or waitFor condition before the click, and increase the locator timeout for the payment button to 60 000 ms.',
+        file: 'tests/checkout/checkout.spec.ts',
+        code: 'await page.waitForLoadState("networkidle");\nawait page.getByRole("button", { name: "Pay" }).click({ timeout: 60000 });'
+      },
+      preventionTips: [
+        'Use page.waitForLoadState() before interacting with dynamically loaded payment forms',
+        'Add a CI-aware timeout multiplier for payment-related actions',
+        'Consider adding a Playwright expect.poll for the button to have aria-disabled=false'
+      ]
+    }),
+    error: null,
+    input_tokens: 1240,
+    output_tokens: 380,
+    duration_ms: 2850,
+    created_at: diagnosisNow,
+    updated_at: diagnosisNow
+  },
+  {
+    id: 2,
+    cluster_id: 3,
+    status: 'completed',
+    provider: 'demo',
+    model: 'demo',
+    category: 'app-bug',
+    confidence: 'high',
+    summary: 'POST /auth/login and related auth tests fail with HTTP 500 — server-side exception in the authentication handler.',
+    root_cause: 'The authentication endpoint returns HTTP 500 instead of the expected 200, causing the assertion expect(received).toBe(200).toBe(500) to fail. This indicates a regression in the auth service — likely an unhandled exception in the login handler introduced in recent commits.',
+    details: JSON.stringify({
+      evidence: [
+        'Expected: 200 / Received: 500 in two separate auth test cases',
+        'Both failures share the same cluster fingerprint, confirming a single root cause',
+        'The error started appearing in builds after the auth refactor commits'
+      ],
+      suggestedFix: {
+        description: 'Inspect the /auth/login endpoint for unhandled exceptions. Add error handling around the credential verification logic and ensure the response status code is correctly set for each code path.',
+        file: 'tests/api/auth.spec.ts',
+        code: null
+      },
+      preventionTips: [
+        'Add integration tests that exercise the auth endpoint with a real DB connection',
+        'Set up error monitoring (Sentry, Datadog) on the /auth/login endpoint to catch 5xx regressions early',
+        'Add a smoke test in CI that hits /auth/login before the full test suite'
+      ]
+    }),
+    error: null,
+    input_tokens: 980,
+    output_tokens: 310,
+    duration_ms: 2100,
+    created_at: diagnosisNow,
+    updated_at: diagnosisNow
+  }
+]
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
@@ -732,6 +833,9 @@ const lines = [
   '-- Failure clusters',
   insert('failure_clusters', FAILURE_CLUSTERS),
   '',
+  '-- Demo AI diagnoses',
+  insert('failure_diagnoses', FAILURE_DIAGNOSES),
+  '',
   '-- Test run cases',
   insert('test_runs_cases', TEST_RUNS_CASES),
   '',
@@ -763,3 +867,4 @@ console.log(`   TestRuns   : ${TEST_RUNS.length}`)
 console.log(`   TRC rows   : ${TEST_RUNS_CASES.length}`)
 console.log(`   Reports    : ${REPORTS.length}`)
 console.log(`   Clusters   : ${FAILURE_CLUSTERS.length}`)
+console.log(`   Diagnoses  : ${FAILURE_DIAGNOSES.length}`)

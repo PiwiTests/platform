@@ -4,7 +4,7 @@ import type { TableColumn } from '@nuxt/ui'
 import type {
   ProjectWithTestRuns, TestRunSummary,
   TestCaseWithStats,
-  PerformanceTrendPoint, SlowTest, TestRunForCompare
+  PerformanceTrendPoint, SlowTest, TestRunForCompare, FlakyTest
 } from '~~/types/api'
 import { useRunComparison } from '~/composables/useRunComparison'
 import type { ComparisonRow } from '~/composables/useRunComparison'
@@ -44,7 +44,7 @@ async function handleDeleteRun(runId: number) {
 const activeTab = ref('test-runs')
 
 // Support ?tab= query param for sidebar/redirect links
-const validTabs = ['test-runs', 'failure-clusters', 'trends', 'test-cases', 'compare'] as const
+const validTabs = ['test-runs', 'failure-clusters', 'flaky-tests', 'trends', 'test-cases', 'compare'] as const
 const queryTab = route.query.tab
 if (typeof queryTab === 'string' && validTabs.includes(queryTab as typeof validTabs[number])) {
   activeTab.value = queryTab as string
@@ -54,13 +54,17 @@ const hasFailures = computed(() =>
   project.value?.testRuns?.some(r => r.failedTests > 0) ?? false
 )
 
-// Fetch cluster count for tab label
+// Fetch cluster + flaky counts for tab labels
 const { data: clustersData } = await useFetch<unknown[]>(`/api/projects/${projectId}/failure-clusters`, { lazy: true })
 const clustersCount = computed(() => clustersData.value?.length ?? 0)
+
+const { data: flakyTestsData } = await useFetch<FlakyTest[]>(`/api/projects/${projectId}/flaky-tests?runs=50`, { lazy: true })
+const flakyCount = computed(() => flakyTestsData.value?.length ?? 0)
 
 const tabItems = computed(() => [
   { label: `Test runs (${filteredRuns.value.length})`, icon: 'i-lucide-play-circle', value: 'test-runs', slot: 'test-runs' },
   ...(hasFailures.value ? [{ label: `Failure clusters (${clustersCount.value})`, icon: 'i-lucide-layers', value: 'failure-clusters', slot: 'failure-clusters' }] : []),
+  { label: `Flaky tests (${flakyCount.value})`, icon: 'i-lucide-shuffle', value: 'flaky-tests', slot: 'flaky-tests' },
   { label: 'Trends', icon: 'i-lucide-trending-up', value: 'trends', slot: 'trends' },
   { label: `Test cases (${testCases.value?.length ?? 0})`, icon: 'i-lucide-list-checks', value: 'test-cases', slot: 'test-cases' },
   { label: 'Compare', icon: 'i-lucide-git-compare-arrows', value: 'compare', slot: 'compare' }
@@ -713,6 +717,13 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
           <template #failure-clusters>
             <div class="space-y-4 pt-4 px-4">
               <FailureClustersList :project-id="String(projectId)" />
+            </div>
+          </template>
+
+          <!-- FLAKY TESTS TAB -->
+          <template #flaky-tests>
+            <div class="pt-4 px-4">
+              <FlakyTestsList :project-id="String(projectId)" />
             </div>
           </template>
 

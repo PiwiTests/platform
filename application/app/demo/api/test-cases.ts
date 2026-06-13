@@ -50,7 +50,8 @@ export async function apiGetTestCase(id: number) {
         occurrences: cluster.occurrences,
         firstSeenRunId: cluster.firstSeenRunId,
         isNew: cluster.firstSeenRunId === testRunsCase.testRunId,
-        sameRunCaseCount: Number(sameRun?.count ?? 0)
+        sameRunCaseCount: Number(sameRun?.count ?? 0),
+        diagnosis: null
       }
     }
   }

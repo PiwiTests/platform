@@ -138,6 +138,8 @@ function highlightPath(text: string): string {
       </span>
     </div>
 
+    <ClusterDiagnosis v-if="cluster" :cluster-id="cluster.id" />
+
     <div class="bg-red-50 dark:bg-red-900/20 rounded overflow-hidden">
       <div
         class="overflow-x-auto p-0"

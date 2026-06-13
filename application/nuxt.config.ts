@@ -59,6 +59,13 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     authEnabled: process.env.NUXT_AUTH_ENABLED === 'true',
+    ai: {
+      provider: process.env.NUXT_AI_PROVIDER || '',
+      apiKey: process.env.NUXT_AI_API_KEY || '',
+      model: process.env.NUXT_AI_MODEL || '',
+      baseUrl: process.env.NUXT_AI_BASE_URL || '',
+      autoDiagnose: process.env.NUXT_AI_AUTO_DIAGNOSE === 'true'
+    },
     authSecret: (() => {
       if (process.env.NUXT_AUTH_ENABLED === 'true' && !process.env.NUXT_AUTH_SECRET) {
         throw new Error(

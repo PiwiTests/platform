@@ -376,7 +376,8 @@ export async function apiGetProjectFailureClusters(id: number) {
       ...c,
       affectedTests: affectedById.get(c.id) ?? 0,
       lastSeenRunStatus: runData?.status ?? null,
-      lastSeenAt: runData?.startTime ?? null
+      lastSeenAt: runData?.startTime ?? null,
+      diagnosis: null
     }
   })
 }

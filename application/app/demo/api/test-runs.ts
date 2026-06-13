@@ -121,6 +121,7 @@ interface FailureGroupResult {
   occurrences: number
   flaky: boolean
   workerCorrelated: boolean
+  diagnosis: null
   cases: GroupCase[]
 }
 
@@ -192,6 +193,7 @@ export async function apiGetFailureGroups(id: number) {
         occurrences: row.occurrences,
         flaky: false,
         workerCorrelated: false,
+        diagnosis: null,
         cases: [],
         caseById: new Map()
       }

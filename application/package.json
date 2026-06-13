@@ -29,6 +29,7 @@
     "db:studio:pg": "drizzle-kit studio --config=drizzle.config.pg.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.1",
     "@aws-sdk/client-s3": "^3.721.0",
     "@iconify-json/lucide": "^1.2.75",
     "@libsql/client": "^0.17.2",

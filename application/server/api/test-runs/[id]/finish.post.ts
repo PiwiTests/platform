@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm'
 import { runEventBus } from '../../../utils/run-events'
 import { sanitizeMetadata } from '../../../utils/sanitize'
 import { validateAndReviveRun } from '../../../utils/revive-run'
+import { autoDiagnoseRun } from '../../../utils/ai-diagnosis'
 
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
@@ -140,6 +141,8 @@ export default eventHandler(async (event) => {
 
     // Broadcast global run-finished event for dashboard pages
     runEventBus.publishGlobal({ type: 'run-finished', runId: id, projectId: testRun.projectId, status })
+
+    autoDiagnoseRun(db, testRun.projectId, id).catch(e => console.error('[ai-diagnosis] autoDiagnoseRun failed', e))
 
     // Cleanup event bus for this run
     runEventBus.cleanup(id)

@@ -136,6 +136,16 @@ const statusColors: Record<string, 'success' | 'warning' | 'neutral'> = {
               >
                 Same worker
               </UBadge>
+              <UBadge
+                v-if="group.diagnosis?.status === 'completed' && group.diagnosis?.category"
+                color="neutral"
+                variant="subtle"
+                size="sm"
+                class="gap-1"
+              >
+                <UIcon name="i-lucide-sparkles" class="size-3" />
+                {{ group.diagnosis.category }}
+              </UBadge>
               <UButton
                 variant="soft"
                 color="primary"
@@ -153,6 +163,10 @@ const statusColors: Record<string, 'success' | 'warning' | 'neutral'> = {
           <div v-if="group.selector" class="px-4 pt-3 text-xs text-gray-500 dark:text-gray-400">
             Locator: <code class="font-mono">{{ group.selector }}</code>
           </div>
+          <div class="px-4 pb-3">
+            <ClusterDiagnosis :cluster-id="group.clusterId" />
+          </div>
+
           <ul class="divide-y divide-default">
             <li
               v-for="testCase in group.cases"
