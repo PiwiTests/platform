@@ -10,6 +10,10 @@ export default eventHandler(async (event) => {
   const envAi = runtimeConfig.ai as { provider?: string, apiKey?: string, model?: string, baseUrl?: string, autoDiagnose?: boolean | string } | undefined
   const envManaged = Boolean(envAi?.provider)
 
+  const db = await getDatabase()
+  const instructions = await getAppSetting<{ value?: string }>(db, 'ai_instructions')
+  const customInstructions = instructions?.value || null
+
   if (envManaged) {
     return {
       provider: (envAi!.provider || null) as AiProvider | null,
@@ -17,11 +21,11 @@ export default eventHandler(async (event) => {
       baseUrl: envAi!.baseUrl || null,
       autoDiagnose: String(envAi!.autoDiagnose) === 'true',
       hasApiKey: Boolean(envAi!.apiKey),
-      envManaged: true
+      envManaged: true,
+      customInstructions
     }
   }
 
-  const db = await getDatabase()
   const stored = await getAppSetting<{
     provider?: string
     apiKey?: string
@@ -36,6 +40,7 @@ export default eventHandler(async (event) => {
     baseUrl: stored?.baseUrl || null,
     autoDiagnose: Boolean(stored?.autoDiagnose),
     hasApiKey: Boolean(stored?.apiKey),
-    envManaged: false
+    envManaged: false,
+    customInstructions
   }
 })

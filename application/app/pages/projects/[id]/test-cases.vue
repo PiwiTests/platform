@@ -86,7 +86,9 @@ const testCasesColumns: TableColumn<TestCaseWithStats>[] = [
             }"
           >
             <template #actions-header>
-              <div class="text-right">Actions</div>
+              <div class="text-right">
+                Actions
+              </div>
             </template>
 
             <template #title-cell="{ row }">

@@ -105,9 +105,31 @@ const totalCases = computed(() => groups.value?.reduce((sum, g) => sum + g.caseC
 
           <template #signals-cell="{ row }">
             <div v-if="row.original.isNew || row.original.flaky || row.original.workerCorrelated" class="flex flex-wrap gap-1">
-              <UBadge v-if="row.original.isNew" color="warning" variant="subtle" size="sm">New</UBadge>
-              <UBadge v-if="row.original.flaky" color="warning" variant="outline" size="sm">Flaky</UBadge>
-              <UBadge v-if="row.original.workerCorrelated" color="info" variant="outline" size="sm" title="All failures ran on the same worker">Same worker</UBadge>
+              <UBadge
+                v-if="row.original.isNew"
+                color="warning"
+                variant="subtle"
+                size="sm"
+              >
+                New
+              </UBadge>
+              <UBadge
+                v-if="row.original.flaky"
+                color="warning"
+                variant="outline"
+                size="sm"
+              >
+                Flaky
+              </UBadge>
+              <UBadge
+                v-if="row.original.workerCorrelated"
+                color="info"
+                variant="outline"
+                size="sm"
+                title="All failures ran on the same worker"
+              >
+                Same worker
+              </UBadge>
             </div>
             <span v-else class="text-gray-400 text-xs">—</span>
           </template>

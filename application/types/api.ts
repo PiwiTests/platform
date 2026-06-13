@@ -172,6 +172,7 @@ export interface ProjectDetails {
   name: string
   label?: string | null
   description?: string | null
+  diagnosisInstructions?: string | null
   color?: string | null
   tags?: TagInfo[]
 }
@@ -772,6 +773,7 @@ export interface AiSettings {
   autoDiagnose: boolean
   hasApiKey: boolean
   envManaged: boolean
+  customInstructions: string | null
 }
 
 // ============================================================================

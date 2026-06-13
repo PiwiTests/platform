@@ -6,6 +6,7 @@ export const projects = sqliteTable('projects', {
   name: text('name').notNull().unique(),
   label: text('label'), // Display label (defaults to name if not set)
   description: text('description'),
+  diagnosisInstructions: text('diagnosis_instructions'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
 }, table => ({

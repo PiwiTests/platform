@@ -21,10 +21,11 @@ Project-level pages are accessed by clicking into a specific project:
 
 | Page | Path | Description |
 |------|------|-------------|
-| Project detail | `/projects/:id` | Run history table with status, duration, and breakdowns |
-| Project edit | `/projects/:id/edit` | Edit project name, label, description, and tags |
+| Project detail | `/projects/:id` | Run history, failure clusters, flaky tests, trends, test cases, run comparison |
+| Project edit | `/projects/:id/edit` | Edit project label, description, tags, and AI diagnosis instructions |
 | Performance | `/projects/:id/performance` | Duration trends, slowest tests, run comparison |
 | Test cases | `/projects/:id/test-cases` | All unique test cases with per-case history |
+| Failure cluster | `/failure-clusters/:id` | Cluster details, affected tests, AI diagnosis, and triage |
 
 Individual run and test case pages:
 
@@ -54,11 +55,14 @@ The projects page is the primary navigation hub:
 
 ## Project detail
 
-Shows the complete run history for a single project:
+Shows the complete run history for a single project, with six tabs:
 
-- **Run table** — each row shows run status, start time, duration, test counts, and links to reports/traces
-- **Delete** — administrators can delete individual runs
-- **Navigation** — tabs or links to Performance and Test Cases sub-pages
+- **Test runs** — each row shows run status, start time, duration, test counts, browser badges, and links to reports/traces; select two runs to compare them
+- **Failure clusters** — all unique failure signatures across all runs, with status, error type, occurrence count, AI diagnosis badge, and a link to the cluster detail page
+- **Flaky tests** — tests that fail intermittently, scored by a composite flakiness metric; shows failure rate, retry passes, and status alternation count
+- **Trends** — duration trend chart with date filter, and a slowest-tests table
+- **Test cases** — all unique test cases with status, pass rate, result breakdown (with icons), average duration, and last run date
+- **Compare** — side-by-side delta view between two selected runs (new failures, recovered, duration changes)
 
 ## Performance page
 
@@ -80,7 +84,7 @@ Deep dive into a single test execution:
   - **Workers** — horizontal timeline showing worker assignment per test case; click a bar to jump to that test case in the table
   - **Compare** — select a baseline run for side-by-side delta view showing new failures, recovered tests, and duration changes (improved/regressed/unchanged)
   - **Slow endpoints** — aggregated network request table showing slow API calls grouped by method + normalized route, with avg/p90/max duration and error rate
-  - **Failure groups** — failures grouped by root cause via error fingerprinting; each group shows signature, error type, count, flaky/worker-correlation indicators, and the list of affected test cases with retry info
+  - **Failure groups** — failures grouped by root cause via error fingerprinting; each group shows signature, error type, count, flaky/worker-correlation signals, known-since run, and actions: filter the test list, trigger AI diagnosis (opens a modal), or navigate to the cluster detail page
 - **Delete** — administrators can delete the entire run and associated files
 
 ## Test case detail
@@ -127,6 +131,28 @@ Manage tags used to organize projects:
 - **Tag table** — tag text, color, and creation date
 - **Add tag** — create new tags with custom names and colors
 - **Edit/Delete** — modify or remove existing tags (administrator only)
+
+### AI diagnosis (`/settings/ai`)
+
+Configure LLM-based failure analysis:
+
+- **Provider** — choose Anthropic API or an OpenAI-compatible endpoint (Ollama, LM Studio, OpenRouter, Groq, Together AI, Mistral AI, or any custom URL)
+- **API key / model / base URL** — provider credentials and model selection; keys are stored in the database (admin-only) or via `NUXT_AI_*` environment variables
+- **Auto-diagnose** — automatically run AI diagnosis on new failure clusters when a run finishes (max 3 per run)
+- **Global analysis instructions** — persistent text appended to the system prompt for every diagnosis across all projects; use this for general preferences, output format requirements, or team conventions (e.g. "always recommend checking retry counts before concluding flakiness")
+- **Environment variables** — copy-to-clipboard snippet for `NUXT_AI_*` env vars when credentials should not be stored in the database
+
+## Failure cluster detail
+
+Each failure cluster has a dedicated page (`/failure-clusters/:id`) with three tabs:
+
+- **Overview** — signature, error type, selector, occurrence count, first/last seen runs, sample raw error, and list of affected test cases with their latest run status
+- **Triage** — set cluster status (open / resolved / ignored) and write an internal triage note
+- **AI diagnosis** — run an LLM diagnosis of the cluster; shows result category, confidence, summary, root cause, evidence list, suggested fix, and prevention tips; re-run at any time to refresh after new occurrences
+
+### Per-project AI instructions
+
+In the project edit page (`/projects/:id/edit`), an **AI diagnosis instructions** field lets you provide project-specific context that is combined with the global instructions for every diagnosis of that project's clusters. Use this to describe the system under test, known failure patterns, or domain-specific remediation guidance.
 
 ## Real-time updates
 

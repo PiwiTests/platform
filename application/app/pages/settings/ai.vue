@@ -10,7 +10,9 @@ const model = ref<string>('')
 const baseUrl = ref<string>('')
 const apiKey = ref<string>('')
 const autoDiagnose = ref(false)
+const customInstructions = ref<string>('')
 const saving = ref(false)
+const savingInstructions = ref(false)
 const testing = ref(false)
 
 watch(settings, (val) => {
@@ -20,6 +22,7 @@ watch(settings, (val) => {
   baseUrl.value = val.baseUrl || ''
   apiKey.value = ''
   autoDiagnose.value = val.autoDiagnose
+  customInstructions.value = val.customInstructions || ''
 }, { immediate: true })
 
 const providerOptions = [
@@ -74,6 +77,22 @@ async function save() {
     toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' })
   } finally {
     saving.value = false
+  }
+}
+
+async function saveInstructions() {
+  savingInstructions.value = true
+  try {
+    await $fetch('/api/settings/ai', {
+      method: 'PUT',
+      body: { customInstructions: customInstructions.value || null }
+    })
+    await refresh()
+    toast.add({ title: 'Instructions saved', color: 'success' })
+  } catch (err) {
+    toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' })
+  } finally {
+    savingInstructions.value = false
   }
 }
 
@@ -242,6 +261,43 @@ async function copyEnvVars() {
               @click="save"
             >
               Save
+            </UButton>
+          </div>
+        </template>
+      </UCard>
+
+      <UCard>
+        <template #header>
+          <div>
+            <h3 class="font-semibold">
+              Global analysis instructions
+            </h3>
+            <p class="text-sm text-gray-500 mt-0.5">
+              Applied to every diagnosis, across all projects. Use this to set general preferences: preferred remediation steps, tone, focus areas, or output format.
+            </p>
+          </div>
+        </template>
+
+        <UTextarea
+          v-model="customInstructions"
+          :rows="6"
+          placeholder="e.g. Always suggest running failing tests with --repeat-each 5 to confirm flakiness. Prefer network-level evidence over ARIA snapshots. Recommend git bisect when a commit range is available."
+          class="w-full font-mono text-sm"
+        />
+
+        <p class="text-xs text-gray-400 mt-2">
+          These instructions are appended to the base system prompt. They shape how the AI analyzes failures but cannot override the response schema or confidence requirement.
+        </p>
+
+        <template #footer>
+          <div class="flex justify-end">
+            <UButton
+              color="primary"
+              :loading="savingInstructions"
+              icon="i-lucide-save"
+              @click="saveInstructions"
+            >
+              Save instructions
             </UButton>
           </div>
         </template>

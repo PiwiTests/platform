@@ -16,14 +16,16 @@ const allTags = computed(() => tagsData.value?.tags || [])
 
 const state = ref({
   label: project.value?.label || '',
-  description: project.value?.description || ''
+  description: project.value?.description || '',
+  diagnosisInstructions: project.value?.diagnosisInstructions || ''
 })
 
 const selectedTags = ref<TagInfo[]>(project.value?.tags || [])
 
 const schema = z.object({
   label: z.string().optional(),
-  description: z.string().optional()
+  description: z.string().optional(),
+  diagnosisInstructions: z.string().optional()
 })
 
 const saving = ref(false)
@@ -37,6 +39,7 @@ async function onSubmit() {
       body: {
         label: state.value.label || null,
         description: state.value.description || null,
+        diagnosisInstructions: state.value.diagnosisInstructions || null,
         tagIds: selectedTags.value.map(t => t.id)
       }
     })
@@ -110,6 +113,19 @@ function onCancel() {
 
             <UFormField label="Description" name="description" description="A description of this project">
               <UTextarea v-model="state.description" placeholder="Enter project description" :rows="3" />
+            </UFormField>
+
+            <UFormField
+              label="AI diagnosis instructions"
+              name="diagnosisInstructions"
+              description="Project-specific context sent to the AI when diagnosing failures from this project. Combined with global instructions from Settings → AI."
+            >
+              <UTextarea
+                v-model="state.diagnosisInstructions"
+                placeholder="e.g. This project tests the payment checkout flow. The backend uses Stripe for payments and the payment API is at /api/v2/payments. Database errors are usually caused by connection pool exhaustion under load."
+                :rows="5"
+                class="w-full font-mono text-sm"
+              />
             </UFormField>
 
             <UFormField label="Tags" name="tags" description="Select existing tags or type a new name and press Enter to create one.">

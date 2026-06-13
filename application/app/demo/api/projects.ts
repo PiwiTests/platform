@@ -250,11 +250,11 @@ export async function apiGetProjectSlowTests(id: number, runsCount = 10) {
 }
 
 /** PUT /api/projects/:id — update project */
-export async function apiUpdateProject(id: number, body: { label?: string | null, description?: string | null, tagIds?: number[] }) {
+export async function apiUpdateProject(id: number, body: { label?: string | null, description?: string | null, diagnosisInstructions?: string | null, tagIds?: number[] }) {
   const db = await getDemoDb()
   const now = new Date()
   await db.update(projects)
-    .set({ label: body.label, description: body.description, updatedAt: now })
+    .set({ label: body.label, description: body.description, diagnosisInstructions: body.diagnosisInstructions ?? undefined, updatedAt: now })
     .where(eq(projects.id, id))
 
   // Update project tags if provided

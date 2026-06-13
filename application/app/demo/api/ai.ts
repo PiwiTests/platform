@@ -43,7 +43,8 @@ export async function apiGetAiSettings() {
     baseUrl: null,
     autoDiagnose: false,
     hasApiKey: false,
-    envManaged: false
+    envManaged: false,
+    customInstructions: null
   }
 }
 

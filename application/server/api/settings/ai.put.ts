@@ -20,13 +20,28 @@ export default eventHandler(async (event) => {
     baseUrl?: string
     apiKey?: string
     autoDiagnose?: boolean
+    customInstructions?: string | null
   }
 
-  // Clearing the configuration
+  const db = await getDatabase()
+
+  // Custom instructions are stored independently — always handle them first
+  if (body.customInstructions !== undefined) {
+    const trimmed = body.customInstructions?.trim() || null
+    if (trimmed) {
+      await setAppSetting(db, 'ai_instructions', { value: trimmed })
+    } else {
+      await deleteAppSetting(db, 'ai_instructions')
+    }
+  }
+
+  const instructions = await getAppSetting<{ value?: string }>(db, 'ai_instructions')
+  const customInstructions = instructions?.value || null
+
+  // Clearing the provider configuration
   if (!body.provider) {
-    const db = await getDatabase()
     await deleteAppSetting(db, 'ai')
-    return { provider: null, model: null, baseUrl: null, autoDiagnose: false, hasApiKey: false, envManaged: false }
+    return { provider: null, model: null, baseUrl: null, autoDiagnose: false, hasApiKey: false, envManaged: false, customInstructions }
   }
 
   if (!VALID_PROVIDERS.includes(body.provider as AiProvider)) {
@@ -36,8 +51,6 @@ export default eventHandler(async (event) => {
   if (body.provider === 'openai' && (!body.baseUrl || !body.model)) {
     throw createError({ statusCode: 400, message: 'OpenAI-compatible provider requires baseUrl and model' })
   }
-
-  const db = await getDatabase()
 
   // Retrieve existing stored value to preserve apiKey if not provided
   const existing = await getAppSetting<{ apiKey?: string }>(db, 'ai') ?? {}
@@ -67,6 +80,7 @@ export default eventHandler(async (event) => {
     baseUrl: value.baseUrl || null,
     autoDiagnose: value.autoDiagnose,
     hasApiKey: Boolean(apiKey),
-    envManaged: false
+    envManaged: false,
+    customInstructions
   }
 })

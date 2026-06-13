@@ -6,6 +6,7 @@ hero:
   name: "Piwi Dashboard"
   text: "A self-hosted hub for your Playwright test results"
   tagline: Persist every test run, stream results live from CI, track performance regressions, and share reports — without relying on external services.
+  image: /logo-wide.svg
 
   actions:
     - theme: brand

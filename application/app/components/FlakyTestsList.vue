@@ -81,14 +81,24 @@ const columns: TableColumn<FlakyTest>[] = [
       </template>
 
       <template #retryPassRuns-cell="{ row }">
-        <UBadge v-if="row.original.retryPassRuns" color="warning" variant="outline" size="sm">
+        <UBadge
+          v-if="row.original.retryPassRuns"
+          color="warning"
+          variant="outline"
+          size="sm"
+        >
           {{ row.original.retryPassRuns }} run{{ row.original.retryPassRuns === 1 ? '' : 's' }}
         </UBadge>
         <span v-else class="text-gray-400 text-xs">—</span>
       </template>
 
       <template #alternations-cell="{ row }">
-        <UBadge v-if="row.original.alternations >= 2" color="neutral" variant="outline" size="sm">
+        <UBadge
+          v-if="row.original.alternations >= 2"
+          color="neutral"
+          variant="outline"
+          size="sm"
+        >
           {{ row.original.alternations }}
         </UBadge>
         <span v-else class="text-gray-400 text-xs">—</span>

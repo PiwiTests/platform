@@ -1,5 +1,5 @@
 import { eq, and, desc, sql } from 'drizzle-orm'
-import { failureDiagnoses, failureClusters, testRunsCases, testCases, testRuns } from '../database/schema'
+import { failureDiagnoses, failureClusters, testRunsCases, testCases, testRuns, projects } from '../database/schema'
 import type { FailureDiagnosis, FailureCluster } from '../database/schema'
 import { DIAGNOSIS_JSON_SCHEMA, parseDiagnosisJson } from '#shared/ai-diagnosis'
 import type { AiConfig } from '~~/types/api'
@@ -7,6 +7,7 @@ import { stripAnsi } from '#shared/error-fingerprint'
 import { callAiProvider } from './ai-provider'
 import type { AiAttachedImage } from './ai-provider'
 import { computeRegressionContext } from './regression-context'
+import { getAppSetting } from './app-settings'
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>
 
@@ -251,6 +252,22 @@ export async function runClusterDiagnosis(
 
   running.add(cluster.id)
 
+  // Load custom instructions (global + project) to build combined system prompt
+  const [globalInstructionsRow, projectRows] = await Promise.all([
+    getAppSetting<{ value?: string }>(db, 'ai_instructions'),
+    db.select({ diagnosisInstructions: projects.diagnosisInstructions })
+      .from(projects)
+      .where(eq(projects.id, cluster.projectId))
+      .limit(1)
+  ])
+  const globalInstructions = globalInstructionsRow?.value?.trim() || null
+  const projectInstructions = projectRows[0]?.diagnosisInstructions?.trim() || null
+
+  const systemParts: string[] = [DIAGNOSIS_SYSTEM_PROMPT]
+  if (globalInstructions) systemParts.push(`## Global Analysis Instructions\n${globalInstructions}`)
+  if (projectInstructions) systemParts.push(`## Project-Specific Context\n${projectInstructions}`)
+  const systemPrompt = systemParts.join('\n\n')
+
   // Upsert to 'running' state
   await db.insert(failureDiagnoses).values({
     clusterId: cluster.id,
@@ -296,7 +313,7 @@ export async function runClusterDiagnosis(
       ? `${userContent}\n\n## Additional Context Provided by User\n${extra}`
       : userContent
     const result = await callAiProvider(config, {
-      system: DIAGNOSIS_SYSTEM_PROMPT,
+      system: systemPrompt,
       user: fullUserContent,
       jsonSchema: DIAGNOSIS_JSON_SCHEMA,
       images: _opts?.images

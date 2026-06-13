@@ -6,6 +6,7 @@ export const projects = pgTable('projects', {
   name: text('name').notNull().unique(),
   label: text('label'), // Display label (defaults to name if not set)
   description: text('description'),
+  diagnosisInstructions: text('diagnosis_instructions'),
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
 }, table => ({

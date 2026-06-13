@@ -169,6 +169,13 @@
       "when": 1789000000000,
       "tag": "0023_test_source",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1789100000000,
+      "tag": "0024_diagnosis_instructions",
+      "breakpoints": true
     }
   ]
 }
