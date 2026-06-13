@@ -56,11 +56,18 @@ function isValidConfig(config: AiConfig): boolean {
   return false
 }
 
+export interface AiAttachedImage {
+  name: string
+  mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
+  data: string // base64
+}
+
 export interface AiCallOptions {
   system: string
   user: string
   jsonSchema?: object
   maxTokens?: number
+  images?: AiAttachedImage[]
 }
 
 export interface AiCallResult {
@@ -90,11 +97,24 @@ async function callAnthropic(config: AiConfig, opts: AiCallOptions): Promise<AiC
     maxRetries: 1
   })
 
+  type ImageBlock = { type: 'image', source: { type: 'base64', media_type: AiAttachedImage['mediaType'], data: string } }
+  type TextBlock = { type: 'text', text: string }
+
+  const userContent: string | Array<ImageBlock | TextBlock> = opts.images?.length
+    ? [
+        ...opts.images.map((img): ImageBlock => ({
+          type: 'image',
+          source: { type: 'base64', media_type: img.mediaType, data: img.data }
+        })),
+        { type: 'text', text: opts.user }
+      ]
+    : opts.user
+
   const res = await client.messages.create({
     model: config.model || 'claude-opus-4-8',
     max_tokens: opts.maxTokens ?? 8192,
     system: opts.system,
-    messages: [{ role: 'user', content: opts.user }],
+    messages: [{ role: 'user', content: userContent as Anthropic.MessageParam['content'] }],
     ...(opts.jsonSchema ? { output_config: { format: { type: 'json_schema' as const, schema: opts.jsonSchema as { [key: string]: unknown } } } } : {})
   })
 
@@ -122,6 +142,18 @@ async function callOpenAiCompat(config: AiConfig, opts: AiCallOptions): Promise<
     ? `${opts.system}\n\nRespond ONLY with a JSON object matching this schema:\n${JSON.stringify(opts.jsonSchema)}`
     : opts.system
 
+  type OAIPart = { type: 'text', text: string } | { type: 'image_url', image_url: { url: string } }
+
+  const userMessageContent: string | OAIPart[] = opts.images?.length
+    ? [
+        ...opts.images.map((img): OAIPart => ({
+          type: 'image_url',
+          image_url: { url: `data:${img.mediaType};base64,${img.data}` }
+        })),
+        { type: 'text', text: opts.user }
+      ]
+    : opts.user
+
   const body = JSON.stringify({
     model: config.model,
     max_tokens: opts.maxTokens ?? 8192,
@@ -129,7 +161,7 @@ async function callOpenAiCompat(config: AiConfig, opts: AiCallOptions): Promise<
     response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: systemContent },
-      { role: 'user', content: opts.user }
+      { role: 'user', content: userMessageContent }
     ]
   })
 

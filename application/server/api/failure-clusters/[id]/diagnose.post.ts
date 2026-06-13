@@ -3,6 +3,7 @@ import { failureClusters, failureDiagnoses } from '../../../database/schema'
 import { eq } from 'drizzle-orm'
 import { requireAuth } from '../../../utils/auth'
 import { resolveAiConfig } from '../../../utils/ai-provider'
+import type { AiAttachedImage } from '../../../utils/ai-provider'
 import { runClusterDiagnosis, isDiagnosisRunning, isDiagnosisStale } from '../../../utils/ai-diagnosis'
 
 export default eventHandler(async (event) => {
@@ -12,7 +13,10 @@ export default eventHandler(async (event) => {
   await requireAuth(event)
 
   const force = getQuery(event).force === 'true'
-  const body = await readBody(event).catch(() => null) as { additionalContext?: string } | null
+  const body = await readBody(event).catch(() => null) as {
+    additionalContext?: string
+    images?: AiAttachedImage[]
+  } | null
 
   const db = await getDatabase()
 
@@ -41,5 +45,9 @@ export default eventHandler(async (event) => {
     }
   }
 
-  return runClusterDiagnosis(db, cluster, config, { force, additionalContext: body?.additionalContext })
+  return runClusterDiagnosis(db, cluster, config, {
+    force,
+    additionalContext: body?.additionalContext,
+    images: body?.images
+  })
 })

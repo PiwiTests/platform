@@ -4,6 +4,7 @@ import type { FailureDiagnosis, FailureCluster } from '../database/schema'
 import { DIAGNOSIS_JSON_SCHEMA, parseDiagnosisJson } from '#shared/ai-diagnosis'
 import type { AiConfig } from '~~/types/api'
 import { callAiProvider } from './ai-provider'
+import type { AiAttachedImage } from './ai-provider'
 import { computeRegressionContext } from './regression-context'
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>
@@ -168,7 +169,7 @@ export async function runClusterDiagnosis(
   db: DbClient,
   cluster: FailureCluster,
   config: AiConfig,
-  _opts?: { force?: boolean, additionalContext?: string }
+  _opts?: { force?: boolean, additionalContext?: string, images?: AiAttachedImage[] }
 ): Promise<FailureDiagnosis> {
   if (running.has(cluster.id)) {
     throw Object.assign(new Error('Diagnosis already running for this cluster'), { statusCode: 409 })
@@ -223,7 +224,8 @@ export async function runClusterDiagnosis(
     const result = await callAiProvider(config, {
       system: DIAGNOSIS_SYSTEM_PROMPT,
       user: fullUserContent,
-      jsonSchema: DIAGNOSIS_JSON_SCHEMA
+      jsonSchema: DIAGNOSIS_JSON_SCHEMA,
+      images: _opts?.images
     })
     const diagnosis = parseDiagnosisJson(result.text)
 
