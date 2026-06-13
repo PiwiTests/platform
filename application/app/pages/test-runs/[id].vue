@@ -323,10 +323,11 @@ const failureGroupCount = computed(() => {
 })
 
 const uniqueWorkerCount = computed(() => {
-  if (!testRun.value?.testCases) return 0
+  const cases = isLive.value ? displayTestCases.value : testRun.value?.testCases
+  if (!cases || cases.length === 0) return 0
   const workers = new Set<number>()
-  for (const tc of testRun.value.testCases) {
-    if (tc.workerIndex != null) workers.add(tc.workerIndex)
+  for (const tc of cases) {
+    if (tc.workerIndex != null && tc.workerIndex >= 0) workers.add(tc.workerIndex)
   }
   return workers.size
 })
