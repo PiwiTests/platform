@@ -67,6 +67,7 @@ export const failureClusters = sqliteTable('failure_clusters', {
   lastSeenRunId: integer('last_seen_run_id').notNull(),
   status: text('status').notNull().default('open'), // 'open', 'resolved', 'ignored' — triage workflow
   triageNote: text('triage_note'), // Optional comment attached when triaging (status change)
+  manualBaseCommit: text('manual_base_commit'), // user-pinned baseline commit SHA for AI diagnosis diff context
   occurrences: integer('occurrences').notNull().default(0), // denormalized count of linked test_runs_cases rows (not decremented on run deletion)
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())

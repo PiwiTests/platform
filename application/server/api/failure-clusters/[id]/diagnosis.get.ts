@@ -8,13 +8,15 @@ export default eventHandler(async (event) => {
 
   const db = await getDatabase()
 
-  const [cluster] = await db.select({ id: failureClusters.id }).from(failureClusters).where(eq(failureClusters.id, id))
+  const [cluster] = await db
+    .select({ id: failureClusters.id, manualBaseCommit: failureClusters.manualBaseCommit })
+    .from(failureClusters)
+    .where(eq(failureClusters.id, id))
   if (!cluster) throw createError({ statusCode: 404, message: 'Failure cluster not found' })
 
-  const rows = await db.select().from(failureDiagnoses).where(eq(failureDiagnoses.clusterId, id))
-  // H3 treats `return null` as a 204 No Content; send 'null' explicitly for proper JSON parsing
-  if (!rows[0]) {
-    return send(event, 'null', 'application/json')
+  const [diag] = await db.select().from(failureDiagnoses).where(eq(failureDiagnoses.clusterId, id))
+  return {
+    diagnosis: diag ?? null,
+    manualBaseCommit: cluster.manualBaseCommit ?? null
   }
-  return rows[0]
 })
