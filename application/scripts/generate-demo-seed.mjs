@@ -838,7 +838,7 @@ const SCREENSHOT_DEFS = [
 const SCREENSHOTS_DIR = join(__dirname, '../public/demo/screenshots')
 mkdirSync(SCREENSHOTS_DIR, { recursive: true })
 const ATTACHMENTS = []
-let attachmentId = 1
+let attachmentId = reportId
 
 for (let idx = 0; idx < SCREENSHOT_DEFS.length; idx++) {
   const def = SCREENSHOT_DEFS[idx]
