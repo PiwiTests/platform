@@ -16,6 +16,9 @@ COPY reporter/package.json ./reporter/
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --ignore-scripts
 
+# Copy root tsconfig (extended by application/tsconfig.json)
+COPY tsconfig.json ./
+
 # Copy application source
 COPY application/ ./application/
 
