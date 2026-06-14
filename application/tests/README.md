@@ -19,13 +19,13 @@ npx playwright test api-server.spec.ts
 ### With UI Mode
 
 ```bash
-npm run test:ui
+npm run app:test:ui
 ```
 
 ### View Test Report
 
 ```bash
-npm run test:report
+npm run app:test:report
 ```
 
 ### Watch Mode

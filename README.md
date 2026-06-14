@@ -149,24 +149,24 @@ Results appear automatically in the dashboard. The project is created on first s
 ```bash
 cd application
 npm install
-npm run dev
+npm run app:dev
 ```
 
 ### Available scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start development server with hot reload |
-| `npm run build` | Build for production |
-| `npm run preview` | Preview production build locally |
-| `npm run typecheck` | TypeScript type checking |
-| `npm run lint` | Run ESLint |
-| `npm test` | Run Playwright functional tests |
-| `npm run db:generate` | Generate SQLite migration from schema changes |
+| Command                  | Description |
+|--------------------------|-------------|
+| `npm run app:dev`        | Start development server with hot reload |
+| `npm run app:build`      | Build for production |
+| `npm run app:preview`    | Preview production build locally |
+| `npm run app:typecheck`  | TypeScript type checking |
+| `npm run app:lint`       | Run ESLint |
+| `npm run app:test`       | Run Playwright functional tests |
+| `npm run db:generate`    | Generate SQLite migration from schema changes |
 | `npm run db:generate:pg` | Generate PostgreSQL migration from schema changes |
-| `npm run db:studio` | Open Drizzle Studio (SQLite) |
-| `npm run db:studio:pg` | Open Drizzle Studio (PostgreSQL) |
-| `npm run seed:demo` | Regenerate demo seed data |
+| `npm run db:studio`      | Open Drizzle Studio (SQLite) |
+| `npm run db:studio:pg`   | Open Drizzle Studio (PostgreSQL) |
+| `npm run seed:demo`      | Regenerate demo seed data |
 
 ### Project structure
 

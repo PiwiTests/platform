@@ -79,7 +79,7 @@ export default defineConfig({
   /* Run your local dev server before starting the tests */
   webServer: [
     {
-      command: 'npm run dev',
+      command: 'npm run app:dev',
       url: 'http://localhost:3000',
       reuseExistingServer: !process.env.CI,
       timeout: 60 * 1000,
@@ -89,7 +89,7 @@ export default defineConfig({
     ...(process.env.CI
       ? [
           {
-            command: 'npm run dev',
+            command: 'npm run app:dev',
             url: 'http://localhost:3099/api/auth/me',
             env: {
               NUXT_AUTH_ENABLED: 'true',
@@ -109,7 +109,7 @@ export default defineConfig({
     ...(process.env.POSTGRES_TEST_URL
       ? [
           {
-            command: 'npm run dev',
+            command: 'npm run app:dev',
             url: 'http://localhost:3101',
             env: {
               DATABASE_URL: process.env.POSTGRES_TEST_URL,

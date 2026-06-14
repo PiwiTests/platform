@@ -17,7 +17,7 @@ COPY .  .
 
 # Build the application
 ENV NITRO_PRESET=node-server
-RUN npm run build
+RUN npm run app:build
 
 # Stage 2: Production stage with Alpine
 FROM node:${NODE_VERSION}-alpine AS production

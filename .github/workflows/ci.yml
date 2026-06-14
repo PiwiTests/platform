@@ -53,14 +53,17 @@ jobs:
         run: npm ci
 
       - name: Lint
-        run: npm run lint
+        run: npm run app:lint
 
       - name: Typecheck
-        run: npm run typecheck
+        run: npm run app:typecheck
 
       - name: Install reporter dependencies
         working-directory: ./reporter
-        run: npm install
+        run: npm ci
+
+      - name: Lint reporter
+        run: npm run reporter:lint
 
       - name: Build reporter
         working-directory: ./reporter
