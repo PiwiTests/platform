@@ -62,8 +62,12 @@ Nuxt file-based routing:
 - `GET /api/test-cases/[id]/history` — Execution history across runs
 - `GET /api/files/[...path]` — Download reports/traces
 - `GET /api/projects/[id]/flaky-tests` — Cross-run flakiness analysis (retry-pass + alternation detection)
-- `GET /api/failure-clusters/[id]/diagnosis` — Stored AI diagnosis for a cluster (`null` if none)
-- `POST /api/failure-clusters/[id]/diagnose` — Run AI diagnosis synchronously; 503 if unconfigured
+- `GET /api/failure-clusters/[id]/diagnosis` — Stored AI diagnosis + saved `manualBaseCommit` for a cluster
+- `POST /api/failure-clusters/[id]/diagnose` — Run AI diagnosis synchronously; 503 if unconfigured; accepts `baseCommit`, `selectedCommitShas`, `additionalContext`, `images` in body
+- `PATCH /api/failure-clusters/[id]/base-commit` — Persist a manual baseline commit SHA for a cluster
+- `GET /api/failure-clusters/[id]/commits` — Recent commits for the cluster's repo with `limit` and `hasMore`; includes aggregate diff when `baseline` query param is provided
+- `GET /api/failure-clusters/[id]/commit-diff` — Diff (files + patches) for a single commit SHA (`?sha=`)
+- `GET /api/failure-clusters/[id]/context` — Preview the full AI context that would be sent; accepts `baseCommit` and `selectedCommitShas` query params
 - `GET /api/ai/status` — Public AI configuration status (never returns the key)
 - `GET /api/settings/ai` — Admin: full AI settings including `hasApiKey`, `envManaged`
 - `PUT /api/settings/ai` — Admin: save provider/model/key/baseUrl/autoDiagnose
@@ -86,9 +90,10 @@ Nuxt file-based routing:
   - `TestCaseStatusCard.vue` — Header card: title, location, duration, retries, worker, slowest step, timing vs historical avg
   - `TestCaseRunContext.vue` — Run metadata: environment, CI provider, branch, commit, browser info
   - `TestCaseTracesCard.vue` — Trace file list with "Open trace" buttons
-  - `TestCaseErrorCard.vue` — Error details with copy button and collapsible long errors
-  - `TestCaseFixPromptCard.vue` — AI debug prompt with copy button for failed tests
-  - `ClusterDiagnosis.vue` — AI diagnosis card per failure cluster (polls while running, shows result, retry button)
+  - `TestCaseErrorCard.vue` — Error details (copy button, collapsible long errors) plus failure-cluster info row (sibling-match count, new-vs-known status)
+  - `CommitPicker.vue` — SCM baseline commit selector: lists recent commits for the cluster's repo with aggregate diff stats banner; caches result per baseline to avoid redundant API calls
+  - `CommitBrowserModal.vue` — Full-screen split modal: left panel is a searchable, paginated commit list with checkboxes; right panel shows the per-commit diff (file cards with sticky headers, syntax-colored patch lines); footer shows aggregate stats for selected commits; used to pick commits for AI diagnosis context
+  - `ClusterDiagnosis.vue` — AI diagnosis panel: baseline commit picker (pin saves to DB), "Browse commits" button to open `CommitBrowserModal` for targeted context, context preview, run/re-run diagnosis, result display (category, confidence, root cause, evidence, fix, prevention), custom additional context and image attachments
   - `FlakyTestsList.vue` — Flaky tests board card with score badges and retry-pass / alternation breakdown
 - **Composables** (`app/composables/`):
   - `useAiStatus.ts` — Fetches `GET /api/ai/status` once; shared across components to show/hide AI actions

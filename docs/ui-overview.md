@@ -95,8 +95,7 @@ Shows everything about a single test execution:
 - **Run context** — environment, CI provider, build number, branch, commit, author, browser, viewport — all from the parent test run's metadata
 - **HTML report** — direct link to the specific test in the full HTML report (with screenshots, video, and interactive trace viewer)
 - **Traces** — attached trace files with "View trace" buttons that open them in the Playwright trace viewer (trace.playwright.dev), plus download buttons; while the parent run is still in progress, traces and attachments appear live as soon as each test uploads them
-- **Error details** — full error message with copy button and expandable view for long errors
-- **Debug prompt for AI** — for failed tests, a pre-generated prompt with all relevant context (error, steps, network failures) ready to paste into an AI assistant for help fixing the issue
+- **Error details** — full error message with copy button and expandable view for long errors; if the test belongs to a failure cluster, a context row shows how many other tests in the same run share the same root cause
 - **Performance hints** — actionable suggestions for slow navigations, flaky tests, slow assertions, and long step sequences
 - **Steps** — execution steps with category badges and individual timing
 - **Web Vitals** — TTFB, FCP, DOMContentLoaded, etc. with color-coded thresholds (green/amber/red)
@@ -148,7 +147,10 @@ Each failure cluster has a dedicated page (`/failure-clusters/:id`) with three t
 
 - **Overview** — signature, error type, selector, occurrence count, first/last seen runs, sample raw error, and list of affected test cases with their latest run status
 - **Triage** — set cluster status (open / resolved / ignored) and write an internal triage note
-- **AI diagnosis** — run an LLM diagnosis of the cluster; shows result category, confidence, summary, root cause, evidence list, suggested fix, and prevention tips; re-run at any time to refresh after new occurrences
+- **AI diagnosis** — run an LLM diagnosis of the cluster with full control over the context sent to the LLM:
+  - **Baseline commit picker** — select the commit to compare against so the diagnosis includes the relevant SCM diff; pin a commit to persist it for all future diagnoses of this cluster
+  - **Commit browser** — "Browse commits" opens a split modal where you can check specific commits to include their full diffs in the LLM context, regardless of the baseline; useful when the relevant change isn't the most recent one; the modal shows file-level diffs with syntax-colored patch lines and aggregates stats (files changed, lines added/removed) for your selection
+  - **Diagnosis result** — category, confidence, summary, root cause, evidence list, suggested fix, and prevention tips; re-run at any time to refresh after new occurrences
 
 ### Per-project AI instructions
 

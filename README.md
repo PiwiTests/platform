@@ -66,7 +66,7 @@ Running Playwright tests in CI produces HTML reports that are ephemeral — once
 - 🌐 **Multi-browser support** — every test case records its browser config (project name, browser, channel, viewport); filter and sort by browser in the test run detail page
 - 📊 **Run comparison** — side-by-side delta view with improved/regressed/unchanged summary
 - 🔗 **Failure clustering** — failed tests sharing the same root cause are grouped automatically via error fingerprinting; run page shows failure groups with flaky and worker-correlation heuristics; each cluster has its own detail page with triage tools
-- 🤖 **AI diagnosis** — one-click LLM analysis of any failure cluster (Anthropic, OpenAI-compatible, Ollama, etc.); diagnosis includes category, confidence, root cause, evidence, suggested fix, and prevention tips; auto-diagnose new clusters on run completion; supports global and per-project custom instructions to tailor analysis to your stack
+- 🤖 **AI diagnosis** — LLM analysis of any failure cluster (Anthropic, OpenAI-compatible, Ollama, etc.); pin a baseline commit so the diagnosis includes the relevant SCM diff; browse and cherry-pick specific commits to add their full diffs to the context; diagnosis includes category, confidence, root cause, evidence, suggested fix, and prevention tips; auto-diagnose new clusters on run completion; supports global and per-project custom instructions to tailor analysis to your stack
 - 🔀 **Flaky test detection** — composite flakiness score based on retry passes, status alternations, and failure rate; dedicated project tab with configurable lookback window
 - 🔌 **Playwright reporter** — drop-in custom reporter for automatic result submission, with HTML report and trace uploads
 - ⚡ **Real-time streaming** — live dashboard via Server-Sent Events; pages refresh instantly when a run starts or finishes, with no polling
@@ -129,7 +129,7 @@ Results appear automatically in the dashboard. The project is created on first s
 | **Performance** | Avg/P90 duration trend chart, top 20 slowest tests, side-by-side run comparison |
 | **Test cases** | Per-project view of all unique test cases with pass rate, result breakdown, and link to each test's history |
 | **Test run detail** | Every test case in a run with browser icon, status, duration, location, error messages, traces, and reports; filter by browser; failure groups with AI diagnosis |
-| **Failure cluster** | Cluster detail with affected tests, triage tools (status + note), and LLM diagnosis (category, confidence, root cause, fix suggestion) |
+| **Failure cluster** | Cluster detail with affected tests, triage tools (status + note), and LLM diagnosis with SCM diff context (baseline commit picker, commit browser for targeted context selection) |
 | **Settings › AI** | Configure AI provider, auto-diagnose, and global analysis instructions |
 | **Settings › Users** | User management and API key generation (when authentication is enabled) |
 | **Settings › Storage** | Storage statistics and cleanup tools for old runs |
