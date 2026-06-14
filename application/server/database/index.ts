@@ -86,27 +86,33 @@ async function resolveMigrationsFolder(folderName: string): Promise<string> {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
 
-  // Try relative to the current module (works when bundled in .output/server/chunks/nitro/)
-  let migrationsFolder = resolve(__dirname, `../../database/${folderName}`);
+  // Nitro sets import.meta.url to the server entry (.output/server/index.mjs),
+  // so __dirname is the server output dir — migrations are a direct sibling folder.
+  const candidates = [
+    resolve(__dirname, `database/${folderName}`),
+    // Fallback: when __dirname is the chunks/nitro/ subdirectory
+    resolve(__dirname, `../../database/${folderName}`),
+    // Development: source tree path (CWD = application/)
+    resolve(process.cwd(), `server/database/${folderName}`),
+    // Running from app root with .output present
+    resolve(process.cwd(), `.output/server/database/${folderName}`),
+    // Docker: CWD is /app but the app lives under /app/application/
+    resolve(process.cwd(), `application/.output/server/database/${folderName}`),
+  ];
 
-  // If not found, try common development paths
-  if (!existsSync(migrationsFolder)) {
-    migrationsFolder = resolve(process.cwd(), `server/database/${folderName}`);
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
   }
 
-  // If not found, try output directory paths (when running from .output)
-  if (!existsSync(migrationsFolder)) {
-    migrationsFolder = resolve(process.cwd(), `.output/server/database/${folderName}`);
+  console.error(`[Database] Migrations folder not found. Tried:`);
+  for (const candidate of candidates) {
+    console.error(`  - ${candidate}`);
   }
-
-  if (!existsSync(migrationsFolder)) {
-    console.error(`[Database] Migrations folder not found: ${migrationsFolder}`);
-    console.error(`[Database] __dirname: ${__dirname}`);
-    console.error(`[Database] process.cwd(): ${process.cwd()}`);
-    throw new Error(`Migrations folder not found: ${migrationsFolder}`);
-  }
-
-  return migrationsFolder;
+  console.error(`[Database] __dirname: ${__dirname}`);
+  console.error(`[Database] process.cwd(): ${process.cwd()}`);
+  throw new Error(`Migrations folder not found: ${candidates[candidates.length - 1]}`);
 }
 
 export async function getDatabase() {
