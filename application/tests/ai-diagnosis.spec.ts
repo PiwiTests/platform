@@ -104,6 +104,7 @@ test.describe.serial('AI diagnosis endpoints', () => {
   let mockPort: number
   let clusterId: number | null = null
   let isEnvManaged = false
+  let freshClusterError = ''
 
   test.beforeAll(async ({ request }) => {
     // Check if AI is managed by env vars — if so, we can't clear/replace the config
@@ -160,10 +161,12 @@ test.describe.serial('AI diagnosis endpoints', () => {
   })
 
   test('GET /api/failure-clusters/:id/diagnosis returns null before any diagnosis', async ({ request }) => {
+    // Use a unique error per invocation so retries don't collide with previously-diagnosed clusters
+    freshClusterError = `TimeoutError: locator.click: Timeout 30000ms exceeded.\n    at tests/auth.spec.ts:5:3 (${Date.now()})`
     // Create a test run with a failure cluster
     const { testRunId } = await submitRun(request, [
       { title: 'login test', status: 'failed', duration: 1000, location: 'tests/auth.spec.ts:5:3',
-        error: 'TimeoutError: locator.click: Timeout 30000ms exceeded.\n    at tests/auth.spec.ts:5:3' }
+        error: freshClusterError }
     ])
 
     const run = await (await request.get(`/api/test-runs/${testRunId}`)).json() as { testCases: Array<{ status: string, failureClusterId?: number }> }
@@ -197,10 +200,10 @@ test.describe.serial('AI diagnosis endpoints', () => {
     const res = await request.get(`/api/failure-clusters/${clusterId}/diagnosis`)
     expect(res.ok()).toBeTruthy()
 
-    const diagnosis = await res.json()
-    expect(diagnosis).not.toBeNull()
-    expect(diagnosis.status).toBe('completed')
-    expect(diagnosis.category).toBe('app-bug')
+    const body = await res.json() as { diagnosis: { status: string, category: string } | null }
+    expect(body.diagnosis).not.toBeNull()
+    expect(body.diagnosis!.status).toBe('completed')
+    expect(body.diagnosis!.category).toBe('app-bug')
   })
 
   test('POST /api/failure-clusters/:id/diagnose returns 409 for existing completed (no force)', async ({ request }) => {
@@ -230,7 +233,7 @@ test.describe.serial('AI diagnosis endpoints', () => {
     // Submit another run with the same error to trigger the known cluster
     const { testRunId } = await submitRun(request, [
       { title: 'login test', status: 'failed', duration: 1000, location: 'tests/auth.spec.ts:5:3',
-        error: 'TimeoutError: locator.click: Timeout 30000ms exceeded.\n    at tests/auth.spec.ts:5:3' }
+        error: freshClusterError }
     ])
 
     const res = await request.get(`/api/test-runs/${testRunId}/failure-groups`)
