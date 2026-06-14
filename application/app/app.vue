@@ -1,7 +1,11 @@
 <script setup lang="ts">
+const config = useRuntimeConfig()
 const colorMode = useColorMode()
 
 const color = computed(() => colorMode.value === 'dark' ? '#1b1718' : 'white')
+// Prepend the app base URL so the favicon resolves correctly in demo mode
+// (where baseURL is /piwi-dashboard/demo/) and in normal mode (where it is /).
+const iconHref = (config.app?.baseURL ?? '/').replace(/\/$/, '') + '/logo.svg'
 
 useHead({
   meta: [
@@ -10,7 +14,7 @@ useHead({
     { key: 'theme-color', name: 'theme-color', content: color }
   ],
   link: [
-    { rel: 'icon', type: 'image/svg+xml', href: '/logo.svg' }
+    { rel: 'icon', type: 'image/svg+xml', href: iconHref }
   ],
   htmlAttrs: {
     lang: 'en'

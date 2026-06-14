@@ -4,6 +4,17 @@ const demoReady = useState('demoReady', () => false)
 
 const isDemo = config.public.demoMode
 const showLoading = computed(() => isDemo && !demoReady.value)
+
+// After 2 s still on the loading screen, show a first-time-setup hint.
+// This covers the Firefox case where the SW takes a few seconds to install
+// and claim the page before the app can reload with the SW active.
+const showSetupHint = ref(false)
+onMounted(() => {
+  if (!isDemo) return
+  setTimeout(() => {
+    if (!demoReady.value) showSetupHint.value = true
+  }, 2000)
+})
 </script>
 
 <template>
@@ -33,7 +44,10 @@ const showLoading = computed(() => isDemo && !demoReady.value)
         />
       </svg>
       <p class="text-sm text-gray-500">
-        Initializing demo database…
+        Preparing demo…
+      </p>
+      <p v-if="showSetupHint" class="text-xs text-gray-400 mt-1">
+        Setting up service worker for first use — the page will reload automatically.
       </p>
     </div>
   </Teleport>
