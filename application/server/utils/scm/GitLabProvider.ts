@@ -1,10 +1,9 @@
 import { ScmProvider, truncatePatch, MAX_SCM_FILES, FETCH_TIMEOUT_MS } from './ScmProvider'
-import type { ScmCommitDetail, ScmChanges, PerCommitStats } from './ScmProvider'
+import type { ScmCommitDetail, ScmChanges } from './ScmProvider'
 import { TtlCache } from './cache'
 
 const listCommitsCache = new TtlCache<ScmCommitDetail[]>(3 * 60 * 1000)
 const fetchChangesCache = new TtlCache<ScmChanges>(10 * 60 * 1000)
-const fetchCommitStatsCache = new TtlCache<PerCommitStats>(10 * 60 * 1000)
 
 export class GitLabProvider extends ScmProvider {
   readonly provider = 'gitlab' as const
@@ -64,29 +63,6 @@ export class GitLabProvider extends ScmProvider {
       }))
     }
     fetchChangesCache.set(key, result)
-    return result
-  }
-
-  async fetchCommitStats(sha: string): Promise<PerCommitStats | null> {
-    const key = `${this.hostname}:${this.repoPath}:${sha}`
-    const hit = fetchCommitStatsCache.get(key)
-    if (hit !== undefined) return hit
-
-    const projectPath = encodeURIComponent(this.repoPath)
-    const res = await fetch(
-      `https://${this.hostname}/api/v4/projects/${projectPath}/repository/commits/${sha}`,
-      { headers: this.makeHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
-    )
-    if (!res.ok) return null
-    const data = await res.json() as {
-      stats?: { additions?: number, deletions?: number, total?: number }
-    }
-    const result: PerCommitStats = {
-      filesChanged: data.stats?.total ?? 0,
-      linesAdded: data.stats?.additions ?? 0,
-      linesRemoved: data.stats?.deletions ?? 0
-    }
-    fetchCommitStatsCache.set(key, result)
     return result
   }
 

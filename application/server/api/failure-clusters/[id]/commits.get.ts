@@ -28,7 +28,7 @@ export default eventHandler(async (event) => {
   const query = getQuery(event)
   const baselineSha = query.baseline as string | undefined
 
-  const commits = await provider.listCommitsWithStats()
+  const commits = await provider.listCommits()
 
   let error: string | null = null
   if (commits.length === 0) {

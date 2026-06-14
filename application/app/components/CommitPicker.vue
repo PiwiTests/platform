@@ -5,9 +5,6 @@ interface CommitItem {
   message: string
   author: string
   date: string
-  filesChanged?: number
-  linesAdded?: number
-  linesRemoved?: number
 }
 
 const props = defineProps<{
@@ -27,6 +24,7 @@ const aggregateStats = ref<{ filesChanged: number; linesAdded: number; linesRemo
 const loading = ref(false)
 const fetchError = ref(false)
 const searchInputRef = ref<{ $el?: HTMLElement } | null>(null)
+const loadedForBaseline = ref<string | null>(null)
 
 const selected = computed((): CommitItem | null => {
   if (!props.modelValue) return null
@@ -36,11 +34,13 @@ const selected = computed((): CommitItem | null => {
 })
 
 async function loadCommits() {
+  const baseline = props.modelValue || ''
+  if (commits.value.length && loadedForBaseline.value === baseline) return
   loading.value = true
   fetchError.value = false
   try {
     const params: { baseline?: string } = {}
-    if (props.modelValue) params.baseline = props.modelValue
+    if (baseline) params.baseline = baseline
     const res = await $fetch<{
       commits: CommitItem[]
       aggregate: { filesChanged: number; linesAdded: number; linesRemoved: number } | null
@@ -49,6 +49,7 @@ async function loadCommits() {
     commits.value = res.commits
     aggregateStats.value = res.aggregate
     apiError.value = res.error ?? null
+    loadedForBaseline.value = baseline
   } catch {
     fetchError.value = true
   } finally {
@@ -141,6 +142,18 @@ function clear(e: Event) {
           />
         </div>
 
+        <!-- Aggregate stats for the selected baseline -->
+        <div
+          v-if="aggregateStats && modelValue && !loading"
+          class="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md bg-primary/5 text-gray-600 dark:text-gray-300"
+        >
+          <UIcon name="i-lucide-git-compare-arrows" class="size-3.5 shrink-0 text-primary" />
+          <span>Since baseline:</span>
+          <span class="font-medium text-green-600 dark:text-green-400">+{{ aggregateStats.linesAdded }}</span>
+          <span class="font-medium text-red-600 dark:text-red-400">-{{ aggregateStats.linesRemoved }}</span>
+          <span class="text-gray-400">across {{ aggregateStats.filesChanged }} file{{ aggregateStats.filesChanged === 1 ? '' : 's' }}</span>
+        </div>
+
         <!-- Loading -->
         <div v-if="loading" class="flex items-center justify-center gap-2 py-6 text-gray-400">
           <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
@@ -189,14 +202,7 @@ function clear(e: Event) {
           >
             <code class="text-xs text-primary shrink-0 w-14 pt-px">{{ c.shortSha }}</code>
             <div class="flex-1 min-w-0">
-              <p class="text-xs font-medium leading-snug truncate flex items-center gap-2">
-                <span class="truncate">{{ c.message }}</span>
-                <span v-if="typeof c.filesChanged === 'number'" class="shrink-0 flex items-center gap-1 text-[10px] leading-none">
-                  <span class="text-green-600 dark:text-green-400">+{{ c.linesAdded }}</span>
-                  <span class="text-red-600 dark:text-red-400">-{{ c.linesRemoved }}</span>
-                  <span class="text-gray-400">{{ c.filesChanged }}f</span>
-                </span>
-              </p>
+              <p class="text-xs font-medium leading-snug truncate">{{ c.message }}</p>
               <p class="text-xs text-gray-400 leading-snug truncate">
                 {{ c.author }}<template v-if="c.date"> · {{ formatRelativeTime(c.date) }}</template>
               </p>

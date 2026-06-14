@@ -43,6 +43,7 @@
     "date-fns": "^4.1.0",
     "drizzle-kit": "^0.31.8",
     "drizzle-orm": "^0.45.0",
+    "highlight.js": "^11.11.1",
     "nuxt": "^4.2.1",
     "postgres": "^3.4.9",
     "sql.js": "^1.14.1",

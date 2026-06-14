@@ -1,10 +1,9 @@
 import { ScmProvider, truncatePatch, MAX_SCM_FILES, FETCH_TIMEOUT_MS } from './ScmProvider'
-import type { ScmCommitDetail, ScmChanges, PerCommitStats } from './ScmProvider'
+import type { ScmCommitDetail, ScmChanges } from './ScmProvider'
 import { TtlCache } from './cache'
 
 const listCommitsCache = new TtlCache<ScmCommitDetail[]>(3 * 60 * 1000)
 const fetchChangesCache = new TtlCache<ScmChanges>(10 * 60 * 1000)
-const fetchCommitStatsCache = new TtlCache<PerCommitStats>(10 * 60 * 1000)
 
 export class GitHubProvider extends ScmProvider {
   readonly provider = 'github' as const
@@ -71,29 +70,6 @@ export class GitHubProvider extends ScmProvider {
       }))
     }
     fetchChangesCache.set(key, result)
-    return result
-  }
-
-  async fetchCommitStats(sha: string): Promise<PerCommitStats | null> {
-    const key = `${this.repoPath}:${sha}`
-    const hit = fetchCommitStatsCache.get(key)
-    if (hit !== undefined) return hit
-
-    const res = await fetch(
-      `https://api.github.com/repos/${this.repoPath}/commits/${sha}`,
-      { headers: this.makeHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
-    )
-    if (!res.ok) return null
-    const data = await res.json() as {
-      files?: Array<unknown>
-      stats?: { additions?: number, deletions?: number }
-    }
-    const result: PerCommitStats = {
-      filesChanged: data.files?.length ?? 0,
-      linesAdded: data.stats?.additions ?? 0,
-      linesRemoved: data.stats?.deletions ?? 0
-    }
-    fetchCommitStatsCache.set(key, result)
     return result
   }
 

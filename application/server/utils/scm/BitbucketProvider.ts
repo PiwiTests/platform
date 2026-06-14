@@ -1,5 +1,5 @@
 import { ScmProvider, truncatePatch, MAX_SCM_FILES, MAX_RAW_DIFF_BYTES, FETCH_TIMEOUT_MS } from './ScmProvider'
-import type { ScmCommitDetail, ScmChanges, PerCommitStats } from './ScmProvider'
+import type { ScmCommitDetail, ScmChanges } from './ScmProvider'
 import { TtlCache } from './cache'
 
 const listCommitsCache = new TtlCache<ScmCommitDetail[]>(3 * 60 * 1000)
@@ -111,10 +111,6 @@ export class BitbucketProvider extends ScmProvider {
     }
     fetchChangesCache.set(key, result)
     return result
-  }
-
-  async fetchCommitStats(_sha: string): Promise<PerCommitStats | null> {
-    return null
   }
 
   async probeError(): Promise<string | null> {
