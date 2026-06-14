@@ -309,6 +309,7 @@ function copyToClipboard(text: string | null) {
         <!-- Column header -->
 
         <div class="pb-2 border-b border-default">
+          <!-- Title row -->
           <div class="flex items-center justify-between gap-2">
             <div class="flex items-center gap-1.5">
               <UIcon name="i-lucide-sparkles" class="size-4 text-primary shrink-0" />
@@ -319,11 +320,6 @@ function copyToClipboard(text: string | null) {
                 What will be sent to AI
               </span>
             </div>
-
-            <CommitPicker v-model="baseCommit" :cluster-id="clusterId" />
-            <UTooltip v-if="baseCommitIsPinned" text="Baseline commit pinned for this cluster">
-              <UIcon name="i-lucide-pin" class="size-3.5 text-primary shrink-0" />
-            </UTooltip>
 
             <UButton
               icon="i-lucide-refresh-cw"
@@ -336,6 +332,15 @@ function copyToClipboard(text: string | null) {
             >
               Refresh
             </UButton>
+          </div>
+
+          <!-- Baseline commit row -->
+          <div class="flex items-center gap-2 mt-2">
+            <span class="text-xs text-gray-500 font-medium shrink-0">Baseline</span>
+            <CommitPicker v-model="baseCommit" :cluster-id="clusterId" />
+            <UTooltip v-if="baseCommitIsPinned" text="Baseline commit pinned for this cluster">
+              <UIcon name="i-lucide-pin" class="size-3.5 text-primary shrink-0" />
+            </UTooltip>
           </div>
         </div>
 

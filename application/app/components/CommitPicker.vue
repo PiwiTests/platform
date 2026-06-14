@@ -5,6 +5,9 @@ interface CommitItem {
   message: string
   author: string
   date: string
+  filesChanged?: number
+  linesAdded?: number
+  linesRemoved?: number
 }
 
 const props = defineProps<{
@@ -19,6 +22,8 @@ const emit = defineEmits<{
 const open = ref(false)
 const search = ref('')
 const commits = ref<CommitItem[]>([])
+const apiError = ref<string | null>(null)
+const aggregateStats = ref<{ filesChanged: number; linesAdded: number; linesRemoved: number } | null>(null)
 const loading = ref(false)
 const fetchError = ref(false)
 const searchInputRef = ref<{ $el?: HTMLElement } | null>(null)
@@ -31,12 +36,19 @@ const selected = computed((): CommitItem | null => {
 })
 
 async function loadCommits() {
-  if (commits.value.length) return
   loading.value = true
   fetchError.value = false
   try {
-    const res = await $fetch<{ commits: CommitItem[] }>(`/api/failure-clusters/${props.clusterId}/commits`)
+    const params: { baseline?: string } = {}
+    if (props.modelValue) params.baseline = props.modelValue
+    const res = await $fetch<{
+      commits: CommitItem[]
+      aggregate: { filesChanged: number; linesAdded: number; linesRemoved: number } | null
+      error?: string | null
+    }>(`/api/failure-clusters/${props.clusterId}/commits`, { query: params })
     commits.value = res.commits
+    aggregateStats.value = res.aggregate
+    apiError.value = res.error ?? null
   } catch {
     fetchError.value = true
   } finally {
@@ -81,6 +93,8 @@ function select(sha: string) {
 
 function clear(e: Event) {
   e.stopPropagation()
+  apiError.value = null
+  aggregateStats.value = null
   emit('update:modelValue', '')
   open.value = false
 }
@@ -133,9 +147,18 @@ function clear(e: Event) {
           <span class="text-sm">Loading commits…</span>
         </div>
 
-        <!-- Error -->
+        <!-- Error (network or API) -->
         <div v-else-if="fetchError" class="py-4 text-center text-sm text-red-500">
-          Failed to load commits — check SCM token in AI settings
+          Failed to load commits — check your SCM token in Settings → AI
+        </div>
+
+        <!-- API diagnostic warning (empty list due to rate limit, auth, etc.) -->
+        <div
+          v-else-if="apiError && !loading && commits.length === 0"
+          class="flex items-start gap-2 px-2 py-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-md"
+        >
+          <UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0 mt-0.5" />
+          <span>{{ apiError }}</span>
         </div>
 
         <!-- List -->
@@ -166,7 +189,14 @@ function clear(e: Event) {
           >
             <code class="text-xs text-primary shrink-0 w-14 pt-px">{{ c.shortSha }}</code>
             <div class="flex-1 min-w-0">
-              <p class="text-xs font-medium leading-snug truncate">{{ c.message }}</p>
+              <p class="text-xs font-medium leading-snug truncate flex items-center gap-2">
+                <span class="truncate">{{ c.message }}</span>
+                <span v-if="typeof c.filesChanged === 'number'" class="shrink-0 flex items-center gap-1 text-[10px] leading-none">
+                  <span class="text-green-600 dark:text-green-400">+{{ c.linesAdded }}</span>
+                  <span class="text-red-600 dark:text-red-400">-{{ c.linesRemoved }}</span>
+                  <span class="text-gray-400">{{ c.filesChanged }}f</span>
+                </span>
+              </p>
               <p class="text-xs text-gray-400 leading-snug truncate">
                 {{ c.author }}<template v-if="c.date"> · {{ formatRelativeTime(c.date) }}</template>
               </p>

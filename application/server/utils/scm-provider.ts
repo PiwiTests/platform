@@ -17,7 +17,19 @@ export interface ScmCommitDetail {
   message: string
   author: string
   date: string
+  /** Cumulative diff stats from this commit to HEAD (undefined when unavailable) */
+  filesChanged?: number
+  linesAdded?: number
+  linesRemoved?: number
 }
+
+export interface PerCommitStats {
+  filesChanged: number
+  linesAdded: number
+  linesRemoved: number
+}
+
+const MAX_STATS_COMMITS = 15
 
 export interface ScmChanges {
   commits: ScmCommit[]
@@ -173,6 +185,99 @@ async function fetchBitbucket(repoPath: string, fromSha: string, toSha: string, 
       }
     })
   }
+}
+
+export async function fetchCommitStatsGitHub(repoPath: string, sha: string, token?: string | null): Promise<PerCommitStats | null> {
+  const headers = makeHeaders(token)
+  headers['Accept'] = 'application/vnd.github+json'
+  headers['X-GitHub-Api-Version'] = '2022-11-28'
+
+  const res = await fetch(
+    `https://api.github.com/repos/${repoPath}/commits/${sha}`,
+    { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
+  )
+  if (!res.ok) return null
+
+  const data = await res.json() as {
+    files?: Array<unknown>
+    stats?: { additions?: number; deletions?: number }
+  }
+  return {
+    filesChanged: data.files?.length ?? 0,
+    linesAdded: data.stats?.additions ?? 0,
+    linesRemoved: data.stats?.deletions ?? 0,
+  }
+}
+
+export async function fetchCommitStatsGitLab(hostname: string, projectPath: string, sha: string, token?: string | null): Promise<PerCommitStats | null> {
+  const headers = makeHeaders(token)
+  const encodedPath = encodeURIComponent(projectPath)
+
+  const res = await fetch(
+    `https://${hostname}/api/v4/projects/${encodedPath}/repository/commits/${sha}`,
+    { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
+  )
+  if (!res.ok) return null
+
+  const data = await res.json() as {
+    stats?: { additions?: number; deletions?: number; total?: number }
+  }
+  return {
+    filesChanged: data.stats?.total ?? 0,
+    linesAdded: data.stats?.additions ?? 0,
+    linesRemoved: data.stats?.deletions ?? 0,
+  }
+}
+
+export async function fetchCommitsWithCumulativeStats(
+  repositoryUrl: string,
+  token?: string | null,
+  limit = 50,
+): Promise<ScmCommitDetail[]> {
+  const commits = await fetchRecentCommits(repositoryUrl, token, limit)
+  if (commits.length === 0) return commits
+
+  const statsLimit = Math.min(commits.length, MAX_STATS_COMMITS)
+  let perCommitStats: (PerCommitStats | null)[] = []
+
+  try {
+    const { hostname, pathname } = new URL(repositoryUrl)
+    const repoPath = pathname.replace(/^\//, '').replace(/\/$/, '')
+
+    if (hostname === 'github.com' || hostname.endsWith('.github.com')) {
+      perCommitStats = await Promise.allSettled(
+        commits.slice(0, statsLimit).map(c => fetchCommitStatsGitHub(repoPath, c.sha, token))
+      ).then(results => results.map(r => r.status === 'fulfilled' ? r.value : null))
+    } else if (hostname === 'gitlab.com' || hostname.includes('gitlab')) {
+      perCommitStats = await Promise.allSettled(
+        commits.slice(0, statsLimit).map(c => fetchCommitStatsGitLab(hostname, repoPath, c.sha, token))
+      ).then(results => results.map(r => r.status === 'fulfilled' ? r.value : null))
+    }
+  } catch {
+    // silently ignore stat errors
+  }
+
+  // Compute cumulative stats: for commit at index i, stat is sum of per-commit stats for indices 0..i-1
+  // (i.e. changes from this commit to HEAD)
+  let runningFiles = 0
+  let runningAdditions = 0
+  let runningDeletions = 0
+
+  for (let i = 0; i < commits.length; i++) {
+    if (i > 0 && perCommitStats[i - 1]) {
+      const s = perCommitStats[i - 1]!
+      runningFiles += s.filesChanged
+      runningAdditions += s.linesAdded
+      runningDeletions += s.linesRemoved
+    }
+    if (i < statsLimit) {
+      commits[i]!.filesChanged = runningFiles
+      commits[i]!.linesAdded = runningAdditions
+      commits[i]!.linesRemoved = runningDeletions
+    }
+  }
+
+  return commits
 }
 
 export function detectScmProvider(repositoryUrl: string | null | undefined): 'github' | 'gitlab' | 'bitbucket' | null {
