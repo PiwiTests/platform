@@ -673,7 +673,7 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                   </p>
                 </template>
 
-                <TestRunsChart :test-runs="project.testRuns" :height="300" />
+                <TestRunsChart :test-runs="project.testRuns" :height="200" />
               </UCard>
 
               <UCard>

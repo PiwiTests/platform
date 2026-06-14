@@ -50,8 +50,9 @@ export abstract class ScmProvider {
     return h;
   }
 
-  abstract listCommits(limit?: number): Promise<ScmCommitDetail[]>;
+  abstract listBranches(limit?: number): Promise<string[]>;
+  abstract listCommits(limit?: number, branch?: string): Promise<ScmCommitDetail[]>;
   abstract fetchChanges(fromSha: string, toSha: string): Promise<ScmChanges | null>;
   abstract fetchCommitDiff(sha: string): Promise<ScmChanges | null>;
-  abstract probeError(): Promise<string | null>;
+  abstract probeError(branch?: string): Promise<string | null>;
 }

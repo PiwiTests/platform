@@ -2,6 +2,7 @@ import { ScmProvider, truncatePatch, MAX_SCM_FILES, MAX_RAW_DIFF_BYTES, FETCH_TI
 import type { ScmCommitDetail, ScmChanges } from './ScmProvider';
 import { TtlCache } from './cache';
 
+const listBranchesCache = new TtlCache<string[]>(3 * 60 * 1000);
 const listCommitsCache = new TtlCache<ScmCommitDetail[]>(3 * 60 * 1000);
 const fetchChangesCache = new TtlCache<ScmChanges>(10 * 60 * 1000);
 
@@ -42,12 +43,31 @@ export class BitbucketProvider extends ScmProvider {
     this.base = `https://api.bitbucket.org/2.0/repositories/${workspace}/${repoSlug}`;
   }
 
-  async listCommits(limit = 50): Promise<ScmCommitDetail[]> {
-    const key = `${this.workspace}/${this.repoSlug}:${limit}`;
+  async listBranches(limit = 100): Promise<string[]> {
+    const key = `branches:${this.workspace}/${this.repoSlug}:${limit}`;
+    const hit = listBranchesCache.get(key);
+    if (hit !== undefined) return hit;
+
+    const res = await fetch(`${this.base}/refs/branches?sort=-target.date&pagelen=${limit}`, {
+      headers: this.makeHeaders(),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { values?: Array<{ name: string }> };
+    const result = (data.values ?? []).map((b) => b.name);
+    listBranchesCache.set(key, result);
+    return result;
+  }
+
+  async listCommits(limit = 50, branch?: string): Promise<ScmCommitDetail[]> {
+    const key = `${this.workspace}/${this.repoSlug}:${limit}:${branch ?? ''}`;
     const hit = listCommitsCache.get(key);
     if (hit !== undefined) return hit;
 
-    const res = await fetch(`${this.base}/commits?pagelen=${limit}`, {
+    const url = branch
+      ? `${this.base}/commits/${encodeURIComponent(branch)}?pagelen=${limit}`
+      : `${this.base}/commits?pagelen=${limit}`;
+    const res = await fetch(url, {
       headers: this.makeHeaders(),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
@@ -127,7 +147,7 @@ export class BitbucketProvider extends ScmProvider {
     return this.fetchChanges(`${sha}~1`, sha);
   }
 
-  async probeError(): Promise<string | null> {
+  async probeError(_branch?: string): Promise<string | null> {
     return null;
   }
 }

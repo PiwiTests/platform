@@ -2,6 +2,7 @@ import { ScmProvider, truncatePatch, MAX_SCM_FILES, FETCH_TIMEOUT_MS } from './S
 import type { ScmCommitDetail, ScmChanges } from './ScmProvider';
 import { TtlCache } from './cache';
 
+const listBranchesCache = new TtlCache<string[]>(3 * 60 * 1000);
 const listCommitsCache = new TtlCache<ScmCommitDetail[]>(3 * 60 * 1000);
 const fetchChangesCache = new TtlCache<ScmChanges>(10 * 60 * 1000);
 const fetchCommitDiffCache = new TtlCache<ScmChanges>(10 * 60 * 1000);
@@ -17,16 +18,37 @@ export class GitLabProvider extends ScmProvider {
     super(token);
   }
 
-  async listCommits(limit = 50): Promise<ScmCommitDetail[]> {
-    const key = `${this.hostname}:${this.repoPath}:${limit}`;
-    const hit = listCommitsCache.get(key);
+  async listBranches(limit = 100): Promise<string[]> {
+    const key = `branches:${this.hostname}:${this.repoPath}:${limit}`;
+    const hit = listBranchesCache.get(key);
     if (hit !== undefined) return hit;
 
     const projectPath = encodeURIComponent(this.repoPath);
     const res = await fetch(
-      `https://${this.hostname}/api/v4/projects/${projectPath}/repository/commits?per_page=${limit}`,
+      `https://${this.hostname}/api/v4/projects/${projectPath}/repository/branches?per_page=${limit}&order_by=updated_at&sort=desc`,
       { headers: this.makeHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
     );
+    if (!res.ok) return [];
+    const data = (await res.json()) as Array<{ name: string }>;
+    const result = data.map((b) => b.name);
+    listBranchesCache.set(key, result);
+    return result;
+  }
+
+  async listCommits(limit = 50, branch?: string): Promise<ScmCommitDetail[]> {
+    const key = `${this.hostname}:${this.repoPath}:${limit}:${branch ?? ''}`;
+    const hit = listCommitsCache.get(key);
+    if (hit !== undefined) return hit;
+
+    const projectPath = encodeURIComponent(this.repoPath);
+    const url = new URL(`https://${this.hostname}/api/v4/projects/${projectPath}/repository/commits`);
+    url.searchParams.set('per_page', String(limit));
+    if (branch) url.searchParams.set('ref_name', branch);
+
+    const res = await fetch(url.toString(), {
+      headers: this.makeHeaders(),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
     if (!res.ok) return [];
     const data = (await res.json()) as Array<{
       id: string;
@@ -117,7 +139,7 @@ export class GitLabProvider extends ScmProvider {
     return result;
   }
 
-  async probeError(): Promise<string | null> {
+  async probeError(branch?: string): Promise<string | null> {
     try {
       const projectPath = encodeURIComponent(this.repoPath);
       const res = await fetch(`https://${this.hostname}/api/v4/projects/${projectPath}`, {
@@ -128,7 +150,7 @@ export class GitLabProvider extends ScmProvider {
         const msg = body?.message ?? `GitLab API returned ${res.status}`;
         return `GitLab API error: ${msg}`;
       }
-      return 'No commits found on the default branch.';
+      return `No commits found on ${branch ? `branch '${branch}'` : 'the default branch'}.`;
     } catch {
       return 'Could not reach the GitLab API. Check your network connection.';
     }
