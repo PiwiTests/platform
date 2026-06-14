@@ -29,6 +29,9 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Install dependencies
+        run: npm ci
+
       - name: Set package version from tag
         run: |
           VERSION="${GITHUB_REF_NAME#v}"

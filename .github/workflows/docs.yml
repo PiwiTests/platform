@@ -59,10 +59,10 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: ./application/package-lock.json
+          cache-dependency-path: ./package-lock.json
 
       - name: Install application dependencies
-        working-directory: ./application
+        working-directory: .
         run: npm ci
 
       - name: Generate static demo site
