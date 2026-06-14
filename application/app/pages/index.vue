@@ -44,6 +44,13 @@ const allProjects = computed(() => {
   return projects.value || [];
 });
 
+const recentActiveProjects = computed(() => {
+  return [...allProjects.value]
+    .filter((p) => p.latestRun)
+    .sort((a, b) => new Date(b.latestRun!.startTime).getTime() - new Date(a.latestRun!.startTime).getTime())
+    .slice(0, 10);
+});
+
 function passRate(run: { passedTests: number; totalTests: number }): number {
   return run.totalTests > 0 ? Math.round((run.passedTests / run.totalTests) * 100) : 0;
 }
@@ -62,9 +69,17 @@ function passRateBarClass(run: { passedTests: number; totalTests: number }): str
   return 'bg-red-500';
 }
 
+const RUNNING_STATUSES = new Set(['running', 'initialising', 'finalizing']);
+
 // Use the dedicated recent test runs endpoint for actual time-series data
+// Running runs are shown first, then the rest in their original order
 const allTestRuns = computed(() => {
-  return recentTestRuns.value || [];
+  const runs = recentTestRuns.value || [];
+  return [...runs].sort((a, b) => {
+    const aRunning = RUNNING_STATUSES.has(a.status) ? 0 : 1;
+    const bRunning = RUNNING_STATUSES.has(b.status) ? 0 : 1;
+    return aRunning - bRunning;
+  });
 });
 </script>
 
@@ -144,7 +159,7 @@ const allTestRuns = computed(() => {
 
             <div class="divide-y divide-gray-100 dark:divide-gray-800">
               <div
-                v-for="project in allProjects"
+                v-for="project in recentActiveProjects"
                 :key="project.id"
                 class="flex items-center gap-4 py-3 first:pt-0 last:pb-0"
               >
@@ -157,31 +172,29 @@ const allTestRuns = computed(() => {
                   </div>
                 </div>
 
-                <div v-if="project.latestRun" class="flex items-center gap-4 shrink-0">
+                <div class="flex items-center gap-4 shrink-0">
                   <div class="text-right">
-                    <div class="font-semibold tabular-nums" :class="passRateClass(project.latestRun)">
-                      {{ passRate(project.latestRun) }}%
+                    <div class="font-semibold tabular-nums" :class="passRateClass(project.latestRun!)">
+                      {{ passRate(project.latestRun!) }}%
                     </div>
                     <div class="w-16 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full mt-0.5 overflow-hidden">
                       <div
                         class="h-full rounded-full transition-all"
-                        :class="passRateBarClass(project.latestRun)"
-                        :style="{ width: `${passRate(project.latestRun)}%` }"
+                        :class="passRateBarClass(project.latestRun!)"
+                        :style="{ width: `${passRate(project.latestRun!)}%` }"
                       />
                     </div>
                   </div>
 
                   <div class="text-right text-sm min-w-[60px]">
                     <div class="tabular-nums">
-                      {{ formatDuration(project.latestRun.duration) }}
+                      {{ formatDuration(project.latestRun!.duration) }}
                     </div>
-                    <div class="text-xs text-gray-400">{{ project.latestRun.totalTests }} tests</div>
+                    <div class="text-xs text-gray-400">{{ project.latestRun!.totalTests }} tests</div>
                   </div>
 
-                  <RunStatusBadge :status="project.latestRun.status" />
+                  <RunStatusBadge :status="project.latestRun!.status" />
                 </div>
-
-                <div v-else class="text-sm text-gray-400 shrink-0">No runs yet</div>
               </div>
 
               <div v-if="allProjects.length === 0" class="text-center py-8 text-gray-500">

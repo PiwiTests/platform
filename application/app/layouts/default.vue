@@ -294,7 +294,7 @@ onMounted(async () => {
       resizable
       width="20"
       class="bg-elevated/25"
-      :ui="{ footer: 'lg:border-t lg:border-default' }"
+      :ui="{ root: 'min-h-full', footer: 'lg:border-t lg:border-default' }"
     >
       <template #header="{ collapsed }">
         <ProjectsMenu :collapsed="collapsed" />
