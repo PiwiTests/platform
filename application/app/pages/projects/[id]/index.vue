@@ -14,6 +14,7 @@ import { useRunComparison } from '~/composables/useRunComparison';
 import type { ComparisonRow } from '~/composables/useRunComparison';
 
 const route = useRoute();
+const router = useRouter();
 const projectId = route.params.id;
 
 // === MAIN PROJECT DATA ===
@@ -24,6 +25,32 @@ useHead(computed(() => ({ title: `${project.value?.label || project.value?.name 
 const toast = useToast();
 const deletingRunId = ref<number | null>(null);
 const confirmDeleteRunId = ref<number | null>(null);
+
+// === PROJECT DELETION ===
+const { isAdmin } = useAuth();
+const runtimeConfig = useRuntimeConfig();
+const canDelete = computed(() => !runtimeConfig.public.authEnabled || isAdmin.value);
+const showDeleteProjectModal = ref(false);
+const deleteProjectConfirmInput = ref('');
+const deletingProject = ref(false);
+
+const deleteProjectConfirmValid = computed(() => deleteProjectConfirmInput.value === project.value?.name);
+
+async function handleDeleteProject() {
+  if (!deleteProjectConfirmValid.value) return;
+  deletingProject.value = true;
+  try {
+    await $fetch(`/api/projects/${projectId}`, { method: 'DELETE' });
+    toast.add({ title: 'Project deleted', color: 'success' });
+    await refreshNuxtData();
+    await router.push('/');
+  } catch (error: unknown) {
+    const errorMessage =
+      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
+    toast.add({ title: 'Delete failed', description: errorMessage || 'An error occurred', color: 'error' });
+    deletingProject.value = false;
+  }
+}
 
 useRunStream(refresh);
 
@@ -589,10 +616,22 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
           />
         </template>
         <template #right>
+          <UButton
+            v-if="canDelete"
+            icon="i-lucide-trash-2"
+            size="sm"
+            color="error"
+            variant="ghost"
+            label="Delete"
+            @click="
+              deleteProjectConfirmInput = '';
+              showDeleteProjectModal = true;
+            "
+          />
           <UButton :to="`/projects/${projectId}/edit`" icon="i-lucide-pencil" size="sm" variant="outline">
             Edit
           </UButton>
-          <UButton icon="i-lucide-refresh-cw" size="md" label="Refresh" @click="() => refresh()" />
+          <UButton icon="i-lucide-refresh-cw" size="sm" variant="outline" label="Refresh" @click="() => refresh()" />
         </template>
       </UDashboardNavbar>
     </template>
@@ -1003,6 +1042,51 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
       </div>
     </template>
   </UDashboardPanel>
+
+  <!-- Delete Project Modal -->
+  <ClientOnly>
+    <UModal
+      :open="showDeleteProjectModal"
+      title="Delete project"
+      @update:open="
+        (val) => {
+          if (!val) showDeleteProjectModal = false;
+        }
+      "
+    >
+      <template #body>
+        <div class="space-y-4">
+          <p class="text-sm text-gray-600 dark:text-gray-400">
+            This will permanently delete <strong>{{ project?.label || project?.name }}</strong> and all its test runs,
+            reports, traces, and failure clusters. This action cannot be undone.
+          </p>
+          <div>
+            <label class="block text-sm font-medium mb-1">
+              Type the project key <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">{{ project?.name }}</code> to
+              confirm:
+            </label>
+            <UInput
+              v-model="deleteProjectConfirmInput"
+              :placeholder="project?.name"
+              autofocus
+              @keydown.enter="handleDeleteProject"
+            />
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <UButton color="neutral" variant="ghost" label="Cancel" @click="showDeleteProjectModal = false" />
+        <UButton
+          color="error"
+          label="Delete project"
+          icon="i-lucide-trash-2"
+          :disabled="!deleteProjectConfirmValid"
+          :loading="deletingProject"
+          @click="handleDeleteProject"
+        />
+      </template>
+    </UModal>
+  </ClientOnly>
 
   <!-- Delete Run Confirm Dialog -->
   <ClientOnly>
