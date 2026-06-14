@@ -144,7 +144,7 @@ async function focusCommit(sha: string) {
 
   // Serve from cache immediately
   if (sha in diffCache) {
-    diff.value = diffCache[sha]
+    diff.value = diffCache[sha]!
     loadingDiff.value = false
     return
   }
