@@ -3,6 +3,14 @@ import { requireAuth } from '../../utils/auth'
 import { getAppSetting } from '../../utils/app-settings'
 import type { AiProvider } from '~~/types/api'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Settings'],
+    summary: 'Get AI settings',
+    description: 'Returns full AI configuration settings including provider, model, API key presence, base URL, auto-diagnose toggle, custom instructions, and SCM token presence. Requires administrator role.'
+  }
+})
+
 export default eventHandler(async (event) => {
   await requireAuth(event, ['administrator'])
 

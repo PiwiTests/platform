@@ -6,6 +6,33 @@ import { sanitizeMetadata } from '../../../utils/sanitize'
 import { validateAndReviveRun } from '../../../utils/revive-run'
 import { autoDiagnoseRun } from '../../../utils/ai-diagnosis'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Test Runs'],
+    summary: 'Finish a streaming test run',
+    description: 'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    requestBody: {
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              streamToken: { type: 'string' },
+              status: { type: 'string' },
+              duration: { type: 'number' },
+              durations: { type: 'array', items: { type: 'number' } },
+              hasPendingUploads: { type: 'boolean' },
+              flakyTests: { type: 'integer' }
+            },
+            required: ['streamToken']
+          }
+        }
+      }
+    }
+  }
+})
+
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
 

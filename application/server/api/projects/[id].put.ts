@@ -4,6 +4,15 @@ import { eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 import { requireAuth } from '../../utils/auth'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Projects'],
+    summary: 'Update a project',
+    description: 'Updates project metadata including label, description, diagnosis instructions, SCM token, and tags. Requires administrator role.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 const updateProjectSchema = z.object({
   label: z.string().optional().nullable(),
   description: z.string().optional().nullable(),

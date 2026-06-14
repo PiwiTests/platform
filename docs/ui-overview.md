@@ -16,6 +16,7 @@ The dashboard sidebar provides access to the main sections:
 | Home | `/` | Landing page with aggregate statistics and activity overview |
 | Projects | `/projects` | Full project listing with search, filters, and actions |
 | Settings | `/settings` | Application configuration (general, users, storage, tags) |
+| API Docs | `/docs` | Interactive API reference auto-generated from the OpenAPI 3.1 spec — browse all endpoints, request/response schemas, and run live requests |
 
 Project-level pages are accessed by clicking into a specific project:
 

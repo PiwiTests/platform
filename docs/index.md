@@ -32,6 +32,9 @@ features:
   - icon: 🌐
     title: Network request analysis
     details: Find slow API endpoints grouped by HTTP method and normalized route (e.g. `/api/users/:id`).
+  - icon: 📖
+    title: Interactive API docs
+    details: Auto-generated OpenAPI 3.1 specification with a Scalar-powered reference UI at /docs — browse endpoints, schemas, and execute requests directly from the browser.
   - icon: 🔬
     title: Browser Web Vitals
     details: Capture TTFB, DOMContentLoaded, FCP and more via the Performance API, displayed with color-coded thresholds.

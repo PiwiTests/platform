@@ -3,6 +3,14 @@ import { requireAuth } from '../../utils/auth'
 import { getAppSetting, setAppSetting, deleteAppSetting } from '../../utils/app-settings'
 import type { AiProvider } from '~~/types/api'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Settings'],
+    summary: 'Save AI settings',
+    description: 'Updates AI provider configuration, model, API key, base URL, auto-diagnose toggle, custom instructions, and SCM token. Requires administrator role. Not available when AI is managed via environment variables.'
+  }
+})
+
 const VALID_PROVIDERS: AiProvider[] = ['anthropic', 'openai']
 
 export default eventHandler(async (event) => {

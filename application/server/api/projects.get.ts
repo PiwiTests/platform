@@ -2,6 +2,14 @@ import { getDatabase } from '../database'
 import { projects, testRuns, testCases, files, tags, projectTags } from '../database/schema'
 import { eq, desc, sql, inArray, and } from 'drizzle-orm'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Projects'],
+    summary: 'List all projects with stats',
+    description: 'Returns all projects with their latest run, total runs count, total test cases, and tags'
+  }
+})
+
 export default eventHandler(async () => {
   const db = await getDatabase()
 

@@ -1,6 +1,14 @@
 import { verifyUser, setUserSession, isAuthEnabled } from '../../utils/auth'
 import { z } from 'zod'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Auth'],
+    summary: 'Login',
+    description: 'Authenticates a user with username and password credentials and creates a session.'
+  }
+})
+
 const loginSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1)

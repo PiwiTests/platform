@@ -3,6 +3,18 @@ import { apiKeys } from '../../../../database/schema'
 import { eq, and } from 'drizzle-orm'
 import { requireAuth } from '../../../../utils/auth'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Users'],
+    summary: 'Delete an API key',
+    description: 'Revokes an API key by ID. Non-administrators can only revoke their own keys.',
+    parameters: [
+      { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
+      { name: 'keyId', in: 'path', required: true, schema: { type: 'integer' } }
+    ]
+  }
+})
+
 export default eventHandler(async (event) => {
   const currentUser = await requireAuth(event, ['administrator', 'reporter', 'user'])
 

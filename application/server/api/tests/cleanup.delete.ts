@@ -5,6 +5,14 @@ import { requireAuth } from '../../utils/auth'
 import { deleteFileRow } from '../../utils/delete-run-files'
 import { TEST_PROJECT_NAMES } from '../../../shared/test-project-names'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Admin'],
+    summary: 'Clean up test data',
+    description: 'Deletes all test projects and test tags by known names. Only available in non-production environments with administrator role.'
+  }
+})
+
 export default eventHandler(async (event) => {
   // This endpoint is only intended for test suites — guard against accidental
   // use in production by requiring administrator role AND a non-production env

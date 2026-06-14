@@ -1,6 +1,14 @@
 import { runEventBus } from '../utils/run-events'
 import { createSSEEndpoint } from '../utils/sse'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Stream'],
+    summary: 'Server-sent events stream',
+    description: 'Subscribes to global run events (status changes, case updates) over SSE'
+  }
+})
+
 export default eventHandler(async (event) => {
   return createSSEEndpoint(event, (controller, encoder) => {
     return runEventBus.subscribeGlobal((globalEvent) => {

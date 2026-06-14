@@ -6,6 +6,30 @@ import { cancelInstanceRuns } from '../../../utils/cancel-instance-runs'
 import { sanitizeMetadata } from '../../../utils/sanitize'
 import { runEventBus } from '../../../utils/run-events'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Test Runs'],
+    summary: 'Transition test run from initialising to running',
+    description: 'Begins a streaming test run by transitioning it from "initialising" to "running" status. Requires the setup token returned by the setup endpoint.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    requestBody: {
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              setupToken: { type: 'string' },
+              totalTests: { type: 'integer' },
+              metadata: { type: 'object' }
+            },
+            required: ['setupToken']
+          }
+        }
+      }
+    }
+  }
+})
+
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
 

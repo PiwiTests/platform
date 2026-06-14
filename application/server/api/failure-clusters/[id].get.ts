@@ -2,6 +2,15 @@ import { getDatabase } from '../../database'
 import { projects, testRuns, testRunsCases, testCases, failureClusters, failureDiagnoses } from '../../database/schema'
 import { eq, desc, sql } from 'drizzle-orm'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Failure Clusters'],
+    summary: 'Get failure cluster detail',
+    description: 'Returns detailed information about a failure cluster including affected tests, last seen run status, project info, and diagnosis.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
   if (!id) throw createError({ statusCode: 400, message: 'Invalid cluster ID' })

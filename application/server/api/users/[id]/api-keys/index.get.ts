@@ -3,6 +3,15 @@ import { apiKeys, users } from '../../../../database/schema'
 import { eq } from 'drizzle-orm'
 import { requireAuth } from '../../../../utils/auth'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Users'],
+    summary: 'List API keys for a user',
+    description: 'Returns API keys belonging to a specific user. Non-administrators can only list their own keys.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 export default eventHandler(async (event) => {
   const currentUser = await requireAuth(event, ['administrator', 'reporter', 'user'])
 

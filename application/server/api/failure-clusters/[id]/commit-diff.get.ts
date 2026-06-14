@@ -4,6 +4,15 @@ import { eq } from 'drizzle-orm'
 import { normalizeGitUrl } from '../../../utils/regression-context'
 import { createScmProvider } from '../../../utils/scm'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Failure Clusters'],
+    summary: 'Get commit diff for a cluster',
+    description: 'Returns the file changes and patches for a specific commit SHA in the cluster repository.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
   if (!id) throw createError({ statusCode: 400, message: 'Invalid cluster ID' })

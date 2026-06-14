@@ -4,6 +4,14 @@ import { eq } from 'drizzle-orm'
 import { requireAuth } from '../../utils/auth'
 import { checkExistingBlobs } from '../../utils/trace-blobs'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Traces'],
+    summary: 'Check trace blob existence',
+    description: 'Checks which trace blob SHA-256 hashes already exist in storage for a given project. Accepts projectName and hashes array in the request body.'
+  }
+})
+
 export default eventHandler(async (event) => {
   await requireAuth(event, ['reporter', 'administrator'])
 

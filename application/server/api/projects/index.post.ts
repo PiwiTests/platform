@@ -4,6 +4,14 @@ import { eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 import { requireAuth } from '../../utils/auth'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Projects'],
+    summary: 'Create a new project',
+    description: 'Creates a project with optional label, description, and tag associations. Requires administrator role.'
+  }
+})
+
 const createProjectSchema = z.object({
   name: z.string().min(1, 'Project name is required').max(100, 'Project name must be at most 100 characters'),
   label: z.string().optional().nullable(),

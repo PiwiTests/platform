@@ -50,6 +50,8 @@ SQLite database auto-initializes on first API call.
 
 ### Backend (server/api/)
 Nuxt file-based routing:
+- `GET /_openapi.json` — Auto-generated OpenAPI 3.1 spec (enabled via `nitro.experimental.openAPI`)
+- `GET /docs` — Interactive API reference UI (Scalar) generated from the OpenAPI spec
 - `POST /api/test-runs/submit` — Submit JSON test results
 - `POST /api/test-runs/upload` — Upload with HTML reports + traces
 - `POST /api/test-runs/start` / `[id]/events` / `[id]/finish` — Streaming protocol (live runs)
@@ -126,6 +128,7 @@ Nuxt file-based routing:
 - Stores: status, duration, errors, HTML reports (full directory with assets), trace files
 - File storage: `.data/storage/` — paths stored relative to storage dir
 - REST + multipart upload APIs
+- Auto-generated OpenAPI 3.1 spec at `/_openapi.json` with interactive Scalar UI at `/docs`
 
 ## Code Style
 - Keep it simple (AI-friendly codebase)
@@ -200,6 +203,7 @@ node scripts/db-query.mjs "SELECT id, name FROM projects" --json
 - **DB fields**: Update `schema.ts` → `npm run db:generate` (or `db:generate:pg` for PostgreSQL) → review migration → restart
   ⚠ Never create migration files or edit `_journal.json` manually — always use `npm run db:generate`.
 - **API endpoints**: Create file in `server/api/` → use `eventHandler()` + `getDatabase()`
+- **OpenAPI annotations**: Add `defineRouteMeta({ openAPI: { tags, summary, parameters, ... } })` to each new handler to appear in the auto-generated spec at `/_openapi.json` and `/docs`
 - **Pages**: Create Vue file in `app/pages/` → use `<UDashboardPanel>` + `useFetch()`
 - **Components**: Create Vue file in `app/components/` → follow existing patterns:
   - Self-contained data fetching is preferred for tab content (use `watch` + `$fetch` or `useFetch` with `lazy: true`)

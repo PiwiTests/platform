@@ -3,6 +3,14 @@ import { getDatabase } from '../../database'
 import { users } from '../../database/schema'
 import { z } from 'zod'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Auth'],
+    summary: 'Initial setup',
+    description: 'Creates the first administrator user. Only available when no users exist yet. Accepts username, password, and optional name in the request body.'
+  }
+})
+
 const createAdminSchema = z.object({
   username: z.string().min(3),
   password: z.string().min(6),

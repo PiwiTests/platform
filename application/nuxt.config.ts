@@ -129,7 +129,27 @@ export default defineNuxtConfig({
     // run since the prerender cache is discarded after each generate anyway).
     prerender: isDemo ? { failOnError: false } : undefined,
     storage: isDemo ? { 'internal:nuxt:prerender': { driver: 'memory' } } : undefined,
+    openAPI: {
+      meta: {
+        title: 'Piwi Dashboard API',
+        description: 'REST API for storing and querying Playwright test results, traces, failure diagnoses, and project statistics.',
+        version: '1.0.0'
+      },
+      ui: {
+        scalar: {
+          route: '/docs',
+          darkMode: true,
+          showSidebar: true,
+          metaData: {
+            title: 'Piwi Dashboard API',
+            description: 'REST API for storing and querying Playwright test results, traces, failure diagnoses, and project statistics.'
+          }
+        },
+        swagger: false
+      }
+    },
     experimental: {
+      openAPI: true,
       // Windows-only workaround to avoid Nitro build issues caused by ESM/CJS externals
       // resolution on Windows. Enabling legacyExternals here keeps dependency resolution
       // compatible with older behavior and prevents intermittent build timeouts / failures

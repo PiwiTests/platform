@@ -4,6 +4,15 @@ import { gunzip } from 'zlib'
 import { promisify } from 'util'
 import { parseZip, buildZip } from '../../utils/trace-zip'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Files'],
+    summary: 'Download a stored file',
+    description: 'Serves stored files including test reports, trace archives, and attachments. Supports trace ZIP reconstruction from slim blobs and gzip decompression for report archives.',
+    parameters: [{ name: 'path', in: 'path', required: true, schema: { type: 'string' } }]
+  }
+})
+
 const gunzipAsync = promisify(gunzip)
 
 /**

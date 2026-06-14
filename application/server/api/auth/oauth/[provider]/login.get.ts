@@ -1,6 +1,15 @@
 import { isAuthEnabled } from '../../../../utils/auth'
 import { initiateOAuth } from '../../../../utils/oauth'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Auth'],
+    summary: 'Initiate OAuth login',
+    description: 'Redirects the user to the configured OAuth provider for authentication.',
+    parameters: [{ name: 'provider', in: 'path', required: true, schema: { type: 'string' } }]
+  }
+})
+
 export default eventHandler(async (event) => {
   if (!isAuthEnabled(event)) {
     throw createError({

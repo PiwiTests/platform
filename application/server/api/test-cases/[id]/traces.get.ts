@@ -2,6 +2,15 @@ import { getDatabase } from '../../../database'
 import { testRunsCases, files } from '../../../database/schema'
 import { eq, sql } from 'drizzle-orm'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Test Cases'],
+    summary: 'Get trace files for a test case',
+    description: 'Returns a list of trace files associated with a specific test case.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
 

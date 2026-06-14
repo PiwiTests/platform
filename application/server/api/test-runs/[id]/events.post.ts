@@ -7,6 +7,30 @@ import { persistRunCases, type RunCaseInput } from '../../../utils/persist-run-c
 import { validateAndReviveRun } from '../../../utils/revive-run'
 import type { StreamEventPayload } from '../../../../shared/types'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Test Runs'],
+    summary: 'Submit test case events for a streaming run',
+    description: 'Submit test case begin and complete events for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    requestBody: {
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              streamToken: { type: 'string' },
+              testCases: { type: 'array', items: { type: 'object' } },
+              testCase: { type: 'object' }
+            },
+            required: ['streamToken']
+          }
+        }
+      }
+    }
+  }
+})
+
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
 

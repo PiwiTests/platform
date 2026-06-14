@@ -2,6 +2,15 @@ import { getDatabase } from '../../../database'
 import { testRuns, testRunsCases } from '../../../database/schema'
 import { eq, desc } from 'drizzle-orm'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Test Cases'],
+    summary: 'Get execution history for a test case',
+    description: 'Returns the execution history across multiple test runs for a shared test case, ordered by most recent first.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
 

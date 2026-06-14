@@ -4,6 +4,15 @@ import { eq } from 'drizzle-orm'
 import { runEventBus } from '../../../utils/run-events'
 import { createSSEEndpoint } from '../../../utils/sse'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Test Runs'],
+    summary: 'Stream test run events via SSE',
+    description: 'Subscribe to Server-Sent Events for a live test run. Sends an initial catch-up snapshot of current state and existing test cases, then streams real-time events (test-begin, test-completed, run-progress, run-finished) until the run completes.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
 

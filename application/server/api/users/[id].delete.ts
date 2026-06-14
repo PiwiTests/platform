@@ -3,6 +3,15 @@ import { users } from '../../database/schema'
 import { eq } from 'drizzle-orm'
 import { requireAuth, isAuthEnabled } from '../../utils/auth'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Users'],
+    summary: 'Delete a user',
+    description: 'Deletes a user by ID. Prevents self-deletion and removal of the last administrator account. Requires administrator role.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 export default eventHandler(async (event) => {
   // If auth is enabled, require administrator role
   const currentUser = await requireAuth(event, ['administrator'])

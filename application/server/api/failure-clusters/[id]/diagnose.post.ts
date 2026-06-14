@@ -6,6 +6,15 @@ import { resolveAiConfig } from '../../../utils/ai-provider'
 import type { AiAttachedImage } from '../../../utils/ai-provider'
 import { runClusterDiagnosis, isDiagnosisRunning, isDiagnosisStale } from '../../../utils/ai-diagnosis'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Failure Clusters'],
+    summary: 'Run AI diagnosis for a cluster',
+    description: 'Triggers an AI-powered diagnosis for the specified failure cluster. Accepts optional force flag, additional context, images, base commit, and selected commit SHAs in the request body.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
   if (!id) throw createError({ statusCode: 400, message: 'Invalid cluster ID' })

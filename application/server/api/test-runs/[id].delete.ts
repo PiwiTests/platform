@@ -4,6 +4,15 @@ import { eq, inArray } from 'drizzle-orm'
 import { requireAuth } from '../../utils/auth'
 import { deleteFileRow } from '../../utils/delete-run-files'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Test Runs'],
+    summary: 'Delete a test run',
+    description: 'Permanently delete a test run and all associated data including reports, traces, files, and failure clusters. Administrator access required.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 export default eventHandler(async (event) => {
   await requireAuth(event, ['administrator'])
 

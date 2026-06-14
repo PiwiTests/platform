@@ -7,6 +7,15 @@ import { validateAndReviveRun } from '../../../utils/revive-run'
 import { upsertTraceBlob, findTraceBlob } from '../../../utils/trace-blobs'
 import { getStorage } from '../../../storage'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Test Runs'],
+    summary: 'Upload trace and attachment files for a test case',
+    description: 'Upload trace files and attachments for a specific test case during an active streaming run. Authenticated by the run stream token. Supports trace deduplication via SHA-256 hashing and is idempotent on retry.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 /**
  * Live per-case file upload for streaming runs.
  *

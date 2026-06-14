@@ -8,6 +8,29 @@ import { sanitizeMetadata } from '../../utils/sanitize'
 import { runEventBus } from '../../utils/run-events'
 import { autoDiagnoseRun } from '../../utils/ai-diagnosis'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Test Runs'],
+    summary: 'Submit test results as JSON',
+    description: 'Submit Playwright test run results as a JSON payload. Creates or updates a project, test run, and test cases.',
+    requestBody: {
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              projectName: { type: 'string' },
+              status: { type: 'string' },
+              startTime: { type: 'string', format: 'date-time' }
+            },
+            required: ['projectName', 'status', 'startTime']
+          }
+        }
+      }
+    }
+  }
+})
+
 export default eventHandler(async (event) => {
   // Require reporter or administrator role for submitting test results
   await requireAuth(event, ['reporter', 'administrator'])
