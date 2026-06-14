@@ -1,9 +1,15 @@
 {
+  "private": true,
   "type": "module",
-  "scripts": {
-    "prepare": "husky"
+  "workspaces": ["application", "reporter"],
+  "engines": {
+    "node": ">=24.0.0"
   },
   "devDependencies": {
-    "husky": "^9.0.0"
+    "@types/node": "^25.9.2",
+    "husky": "^9.0.0",
+    "oxfmt": "^0.54.0",
+    "oxlint": "^1.69.0",
+    "typescript": "^6.0.3"
   }
 }

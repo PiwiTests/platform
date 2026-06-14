@@ -14,6 +14,7 @@
     "app:format": "oxfmt --config oxfmt.config.ts --write \".\"",
     "app:format:check": "oxfmt --config oxfmt.config.ts --check \".\"",
     "app:typecheck": "nuxt typecheck",
+    "test": "npm run app:test",
     "app:test": "playwright test",
     "app:test:ui": "playwright test --ui",
     "app:test:report": "playwright show-report",
@@ -52,15 +53,11 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.58.0",
-    "@types/node": "^25.6.0",
     "@types/sql.js": "^1.4.11",
     "cross-env": "^10.1.0",
     "drizzle-kit": "^0.31.8",
     "form-data": "^4.0.0",
     "monocart-reporter": "^2.10.1",
-    "oxfmt": "^0.54.0",
-    "oxlint": "^1.69.0",
-    "typescript": "^6.0.2",
     "vue-tsc": "^3.1.5"
   },
   "optionalDependencies": {
