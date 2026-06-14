@@ -1,4 +1,4 @@
-import pkg  from '../../reporter/dist/helpers.js';
+import pkg from '../../reporter/dist/helpers.js';
 const { createGlobalSetup } = pkg;
 
 async function cleanup() {
