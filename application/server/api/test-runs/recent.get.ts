@@ -1,45 +1,68 @@
 import { getDatabase } from '../../database';
 import { testRuns, projects } from '../../database/schema';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, or, notInArray } from 'drizzle-orm';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Get recent test runs',
     description:
-      'Returns the 30 most recent test runs across all projects, sorted by start time. Used by the home page dashboard.',
+      'Returns the 30 most recent completed test runs across all projects plus any currently active runs, sorted by start time. Used by the home page dashboard.',
   },
 });
 
+const ACTIVE_STATUSES = ['running', 'initialising', 'finalizing'] as const;
+
+const FIELDS = {
+  id: testRuns.id,
+  projectId: testRuns.projectId,
+  projectName: projects.name,
+  projectLabel: projects.label,
+  status: testRuns.status,
+  startTime: testRuns.startTime,
+  totalTests: testRuns.totalTests,
+  passedTests: testRuns.passedTests,
+  failedTests: testRuns.failedTests,
+  skippedTests: testRuns.skippedTests,
+  flakyTests: testRuns.flakyTests,
+  duration: testRuns.duration,
+  avgTestDuration: testRuns.avgTestDuration,
+  p90TestDuration: testRuns.p90TestDuration,
+};
+
 /**
  * GET /api/test-runs/recent
- * Returns the most recent test runs across all projects for the home page.
- * Limited to the last 30 runs sorted by start time.
+ * Returns active runs (always) + the 30 most recent completed runs for the home page.
+ * Active runs are fetched separately so they're never displaced by newer completed runs.
  */
 export default eventHandler(async () => {
   const db = await getDatabase();
 
-  const runs = await db
-    .select({
-      id: testRuns.id,
-      projectId: testRuns.projectId,
-      projectName: projects.name,
-      projectLabel: projects.label,
-      status: testRuns.status,
-      startTime: testRuns.startTime,
-      totalTests: testRuns.totalTests,
-      passedTests: testRuns.passedTests,
-      failedTests: testRuns.failedTests,
-      skippedTests: testRuns.skippedTests,
-      flakyTests: testRuns.flakyTests,
-      duration: testRuns.duration,
-      avgTestDuration: testRuns.avgTestDuration,
-      p90TestDuration: testRuns.p90TestDuration,
-    })
-    .from(testRuns)
-    .innerJoin(projects, eq(testRuns.projectId, projects.id))
-    .orderBy(desc(testRuns.startTime))
-    .limit(30);
+  const [activeRuns, recentRuns] = await Promise.all([
+    db
+      .select(FIELDS)
+      .from(testRuns)
+      .innerJoin(projects, eq(testRuns.projectId, projects.id))
+      .where(or(...ACTIVE_STATUSES.map((s) => eq(testRuns.status, s))))
+      .orderBy(desc(testRuns.startTime)),
+    db
+      .select(FIELDS)
+      .from(testRuns)
+      .innerJoin(projects, eq(testRuns.projectId, projects.id))
+      .where(notInArray(testRuns.status, [...ACTIVE_STATUSES]))
+      .orderBy(desc(testRuns.startTime))
+      .limit(30),
+  ]);
 
-  return runs;
+  // Merge: active runs first, then recent completed; dedup by id in case a run
+  // transitioned between the two queries
+  const seen = new Set<number>();
+  const result = [];
+  for (const run of [...activeRuns, ...recentRuns]) {
+    if (!seen.has(run.id)) {
+      seen.add(run.id);
+      result.push(run);
+    }
+  }
+  return result;
 });
