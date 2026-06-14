@@ -154,7 +154,10 @@ Nuxt file-based routing:
 | `npm run dev` | Dev server |
 | `npm run build` | Production build |
 | `npm run typecheck` | TypeScript check |
-| `npm run lint` | ESLint |
+| `npm run lint` | oxlint |
+| `npm run lint:fix` | oxlint (auto-fix) |
+| `npm run format` | oxfmt (format files) |
+| `npm run format:check` | oxfmt (check formatting) |
 | `npm test` | Run functional tests |
 | `npm run db:generate` | Generate migration |
 | `npm run db:migrate` | Apply migrations |
@@ -175,6 +178,8 @@ node scripts/db-query.mjs "SELECT id, name FROM projects" --json
 | `npm run reporter:build` | Compile TypeScript (from `src/`) to `.js` + `.d.ts` (in `dist/`) |
 | `npm run reporter:dev`   | Watch mode — auto-recompile on changes |
 | `npm run reporter:format`| Format source code with oxfmt |
+| `npm run lint`           | Lint with oxlint               |
+| `npm run lint:fix`       | Lint with auto-fix             |
 
 ## Making Changes
 

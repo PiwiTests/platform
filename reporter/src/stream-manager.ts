@@ -1,11 +1,11 @@
-import * as fs from "fs";
-import type { DashboardReporterOptions } from "./config.js";
-import { HttpClient } from "./http-client.js";
-import { StreamBuffer } from "./stream-buffer.js";
-import { CrashRecovery } from "./crash-recovery.js";
-import { Uploader } from "./uploader.js";
-import { FileHandler } from "./file-handler.js";
-import { createLimiter, readSetupInfo } from "./helpers.js";
+import * as fs from 'fs';
+import type { DashboardReporterOptions } from './config.js';
+import { HttpClient } from './http-client.js';
+import { StreamBuffer } from './stream-buffer.js';
+import { CrashRecovery } from './crash-recovery.js';
+import { Uploader } from './uploader.js';
+import { FileHandler } from './file-handler.js';
+import { createLimiter, readSetupInfo } from './helpers.js';
 
 export class StreamManager {
   private pendingEvents: any[] = [];
@@ -69,7 +69,7 @@ export class StreamManager {
         );
       } else {
         response = await this.httpClient.postJSON(
-          "/api/test-runs/start",
+          '/api/test-runs/start',
           {
             projectName: this.options.projectName,
             projectDescription: this.options.projectDescription,
@@ -237,7 +237,7 @@ export class StreamManager {
           tc._filesUploaded = true;
           return;
         } catch (error: any) {
-          const retryable = error.message?.includes("404");
+          const retryable = error.message?.includes('404');
           if (!retryable || attempt === delays.length - 1) {
             if (this.options.verbose) {
               console.log(`[Piwi Dashboard] Live file upload failed for "${tc.title}": ${error.message}`);

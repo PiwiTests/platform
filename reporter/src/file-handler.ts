@@ -1,17 +1,17 @@
-import fs from "fs";
-import path from "path";
-import crypto from "crypto";
-import { compressDirectory } from "./compression.js";
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import { compressDirectory } from './compression.js';
 
 export class FileHandler {
   findHTMLReportDirectory(customDir?: string): string | null {
     const possibleDirs = customDir
       ? [customDir, path.join(process.cwd(), customDir)]
-      : ["playwright-report", "./playwright-report", path.join(process.cwd(), "playwright-report")];
+      : ['playwright-report', './playwright-report', path.join(process.cwd(), 'playwright-report')];
 
     for (const reportDir of possibleDirs) {
       if (fs.existsSync(reportDir) && fs.statSync(reportDir).isDirectory()) {
-        if (fs.existsSync(path.join(reportDir, "index.html"))) return reportDir;
+        if (fs.existsSync(path.join(reportDir, 'index.html'))) return reportDir;
       }
     }
     return null;
@@ -38,7 +38,7 @@ export class FileHandler {
     const set = new Set<string>();
     if (testCase.attachments) {
       for (const a of testCase.attachments) {
-        if (a.name === "trace" && a.path) set.add(path.resolve(a.path));
+        if (a.name === 'trace' && a.path) set.add(path.resolve(a.path));
       }
     }
     return Array.from(set);
@@ -48,13 +48,13 @@ export class FileHandler {
     const result: Array<{ name: string; path: string; contentType: string; originalName: string }> = [];
     if (testCase.attachments) {
       for (const a of testCase.attachments) {
-        if (a.name === "trace") continue;
-        if (a.name?.startsWith("piwi-dashboard-")) continue;
+        if (a.name === 'trace') continue;
+        if (a.name?.startsWith('piwi-dashboard-')) continue;
         if (a.path && fs.existsSync(a.path)) {
           result.push({
-            name: a.name || "attachment",
+            name: a.name || 'attachment',
             path: path.resolve(a.path),
-            contentType: a.contentType || "application/octet-stream",
+            contentType: a.contentType || 'application/octet-stream',
             originalName: path.basename(a.path),
           });
         }
@@ -65,17 +65,17 @@ export class FileHandler {
 
   getDefaultReportDirs(): Record<string, string> {
     return {
-      html: "playwright-report",
-      monocart: "monocart-report",
-      allure: "allure-report",
-      blob: "blob-report",
+      html: 'playwright-report',
+      monocart: 'monocart-report',
+      allure: 'allure-report',
+      blob: 'blob-report',
     };
   }
 
   parsePerformanceAttachments(testCase: any, attachments: any[]): void {
     const find = (name: string) => attachments.find((a: any) => a.name === name);
 
-    const net = find("piwi-dashboard-network");
+    const net = find('piwi-dashboard-network');
     if (net?.body) {
       try {
         testCase.networkRequests = JSON.parse(net.body.toString());
@@ -84,7 +84,7 @@ export class FileHandler {
       }
     }
 
-    const vitals = find("piwi-dashboard-web-vitals");
+    const vitals = find('piwi-dashboard-web-vitals');
     if (vitals?.body) {
       try {
         testCase.webVitals = JSON.parse(vitals.body.toString());
@@ -93,7 +93,7 @@ export class FileHandler {
       }
     }
 
-    const consoleLog = find("piwi-dashboard-console");
+    const consoleLog = find('piwi-dashboard-console');
     if (consoleLog?.body) {
       try {
         testCase.consoleLogs = JSON.parse(consoleLog.body.toString());
@@ -102,7 +102,7 @@ export class FileHandler {
       }
     }
 
-    const aria = find("piwi-dashboard-aria-snapshot");
+    const aria = find('piwi-dashboard-aria-snapshot');
     if (aria?.body) testCase.ariaSnapshot = aria.body.toString();
   }
 
@@ -116,16 +116,16 @@ export class FileHandler {
       }
       if (!lastPath) continue;
 
-      const hash = crypto.createHash("sha256");
+      const hash = crypto.createHash('sha256');
       await new Promise<void>((resolve, reject) => {
         fs.createReadStream(lastPath!)
-          .on("data", (chunk: Buffer) => hash.update(chunk))
-          .on("end", resolve)
-          .on("error", reject);
+          .on('data', (chunk: Buffer) => hash.update(chunk))
+          .on('end', resolve)
+          .on('error', reject);
       });
       result.set(i, {
         tracePath: lastPath,
-        hash: hash.digest("hex"),
+        hash: hash.digest('hex'),
         size: fs.statSync(lastPath).size,
       });
     }
@@ -147,7 +147,7 @@ export class FileHandler {
     const hashes = [...traceHashMap.values()].map((h) => h.hash);
 
     try {
-      const response = await httpClient.postJSON("/api/traces/check", { projectName, hashes }, auth);
+      const response = await httpClient.postJSON('/api/traces/check', { projectName, hashes }, auth);
       const missing = Array.isArray(response.missing) ? response.missing : hashes;
       return new Set(missing);
     } catch {

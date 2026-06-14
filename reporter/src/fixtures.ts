@@ -1,13 +1,13 @@
-import { test as base } from "@playwright/test";
+import { test as base } from '@playwright/test';
 
 export const dashboardFixtures = {
   page: async ({ page }: any, use: any, testInfo: any) => {
     const networkRequests: Array<Record<string, unknown>> = [];
     const consoleEntries: Array<Record<string, unknown>> = [];
 
-    page.on("console", (msg: any) => {
+    page.on('console', (msg: any) => {
       const type = msg.type();
-      if (["warning", "error", "assert"].includes(type)) {
+      if (['warning', 'error', 'assert'].includes(type)) {
         consoleEntries.push({
           type,
           text: msg.text(),
@@ -19,10 +19,10 @@ export const dashboardFixtures = {
       }
     });
 
-    page.on("requestfinished", async (request: any) => {
+    page.on('requestfinished', async (request: any) => {
       try {
         const url = request.url();
-        if (url.startsWith("data:") || url.startsWith("blob:")) return;
+        if (url.startsWith('data:') || url.startsWith('blob:')) return;
         const timing = request.timing();
         const response = await request.response();
         networkRequests.push({
@@ -40,12 +40,12 @@ export const dashboardFixtures = {
 
     await use(page);
 
-    if (testInfo.status !== "passed" && testInfo.status !== "skipped") {
+    if (testInfo.status !== 'passed' && testInfo.status !== 'skipped') {
       try {
-        const snapshot = await page.locator(":root").ariaSnapshot();
+        const snapshot = await page.locator(':root').ariaSnapshot();
         if (snapshot) {
-          await testInfo.attach("piwi-dashboard-aria-snapshot", {
-            contentType: "text/plain",
+          await testInfo.attach('piwi-dashboard-aria-snapshot', {
+            contentType: 'text/plain',
             body: snapshot,
           });
         }
@@ -55,23 +55,23 @@ export const dashboardFixtures = {
     }
 
     if (consoleEntries.length > 0) {
-      await testInfo.attach("piwi-dashboard-console", {
-        contentType: "application/json",
+      await testInfo.attach('piwi-dashboard-console', {
+        contentType: 'application/json',
         body: Buffer.from(JSON.stringify(consoleEntries)),
       });
     }
 
     if (networkRequests.length > 0) {
-      await testInfo.attach("piwi-dashboard-network", {
-        contentType: "application/json",
+      await testInfo.attach('piwi-dashboard-network', {
+        contentType: 'application/json',
         body: Buffer.from(JSON.stringify(networkRequests)),
       });
     }
 
     try {
       const webVitals = await page.evaluate(() => {
-        const navEntries = performance.getEntriesByType("navigation" as any);
-        const paintEntries = performance.getEntriesByType("paint" as any);
+        const navEntries = performance.getEntriesByType('navigation' as any);
+        const paintEntries = performance.getEntriesByType('paint' as any);
         const nav = navEntries[0] as any;
         const navigation = nav
           ? {
@@ -97,8 +97,8 @@ export const dashboardFixtures = {
       });
 
       if (webVitals) {
-        await testInfo.attach("piwi-dashboard-web-vitals", {
-          contentType: "application/json",
+        await testInfo.attach('piwi-dashboard-web-vitals', {
+          contentType: 'application/json',
           body: Buffer.from(JSON.stringify(webVitals)),
         });
       }

@@ -1,7 +1,7 @@
-import https from "https";
-import http from "http";
-import { URL } from "url";
-import FormData from "form-data";
+import https from 'https';
+import http from 'http';
+import { URL } from 'url';
+import FormData from 'form-data';
 
 export { FormData };
 
@@ -29,35 +29,35 @@ export class HttpClient {
 
   async login(username: string, password: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const url = new URL("/api/auth/login", this.serverUrl);
-      const transport = url.protocol === "https:" ? https : http;
+      const url = new URL('/api/auth/login', this.serverUrl);
+      const transport = url.protocol === 'https:' ? https : http;
       const postData = JSON.stringify({ username, password });
 
       const req = transport.request(
         {
           hostname: url.hostname,
-          port: url.port || (url.protocol === "https:" ? 443 : 80),
+          port: url.port || (url.protocol === 'https:' ? 443 : 80),
           path: url.pathname,
-          method: "POST",
+          method: 'POST',
           headers: {
-            "Content-Type": "application/json",
-            "Content-Length": Buffer.byteLength(postData),
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(postData),
           },
         },
         (res) => {
-          let data = "";
-          res.on("data", (chunk: string) => {
+          let data = '';
+          res.on('data', (chunk: string) => {
             data += chunk;
           });
-          res.on("end", () => {
+          res.on('end', () => {
             if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-              const setCookie = res.headers["set-cookie"];
+              const setCookie = res.headers['set-cookie'];
               if (!setCookie || setCookie.length === 0) {
-                reject(new Error("Login succeeded but no session cookie was returned"));
+                reject(new Error('Login succeeded but no session cookie was returned'));
                 return;
               }
-              const cookie = setCookie.map((c: string) => c.split(";")[0]).join("; ");
-              if (this.verbose) console.log("[Piwi Dashboard] Logged in successfully");
+              const cookie = setCookie.map((c: string) => c.split(';')[0]).join('; ');
+              if (this.verbose) console.log('[Piwi Dashboard] Logged in successfully');
               resolve(cookie);
             } else {
               if (this.verbose) console.error(`[Piwi Dashboard] Login response: ${data}`);
@@ -67,7 +67,7 @@ export class HttpClient {
         },
       );
 
-      req.on("error", reject);
+      req.on('error', reject);
       req.write(postData);
       req.end();
     });
@@ -76,12 +76,12 @@ export class HttpClient {
   async postJSON(pathname: string, payload: unknown, auth?: string | null): Promise<any> {
     return new Promise((resolve, reject) => {
       const url = new URL(pathname, this.serverUrl);
-      const transport = url.protocol === "https:" ? https : http;
+      const transport = url.protocol === 'https:' ? https : http;
       const postData = JSON.stringify(payload);
 
       const headers: Record<string, string | number> = {
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(postData),
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
       };
 
       this.applyAuth(headers, auth);
@@ -89,17 +89,17 @@ export class HttpClient {
       const req = transport.request(
         {
           hostname: url.hostname,
-          port: url.port || (url.protocol === "https:" ? 443 : 80),
+          port: url.port || (url.protocol === 'https:' ? 443 : 80),
           path: url.pathname,
-          method: "POST",
+          method: 'POST',
           headers,
         },
         (res) => {
-          let data = "";
-          res.on("data", (chunk: string) => {
+          let data = '';
+          res.on('data', (chunk: string) => {
             data += chunk;
           });
-          res.on("end", () => {
+          res.on('end', () => {
             if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
               try {
                 resolve(JSON.parse(data));
@@ -114,7 +114,7 @@ export class HttpClient {
         },
       );
 
-      req.on("error", reject);
+      req.on('error', reject);
       req.write(postData);
       req.end();
     });
@@ -123,7 +123,7 @@ export class HttpClient {
   async postFormData(pathname: string, form: FormData, auth?: string | null): Promise<any> {
     return new Promise((resolve, reject) => {
       const url = new URL(pathname, this.serverUrl);
-      const transport = url.protocol === "https:" ? https : http;
+      const transport = url.protocol === 'https:' ? https : http;
 
       const headers = form.getHeaders() as Record<string, string>;
       this.applyAuth(headers, auth);
@@ -131,17 +131,17 @@ export class HttpClient {
       const req = transport.request(
         {
           hostname: url.hostname,
-          port: url.port || (url.protocol === "https:" ? 443 : 80),
+          port: url.port || (url.protocol === 'https:' ? 443 : 80),
           path: url.pathname,
-          method: "POST",
+          method: 'POST',
           headers,
         },
         (res) => {
-          let data = "";
-          res.on("data", (chunk: string) => {
+          let data = '';
+          res.on('data', (chunk: string) => {
             data += chunk;
           });
-          res.on("end", () => {
+          res.on('end', () => {
             if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
               try {
                 resolve(JSON.parse(data));
@@ -155,17 +155,17 @@ export class HttpClient {
         },
       );
 
-      req.on("error", reject);
+      req.on('error', reject);
       form.pipe(req);
     });
   }
 
   private applyAuth(headers: Record<string, any>, auth?: string | null): void {
     if (!auth) return;
-    if (auth.startsWith("pd_")) {
-      headers["Authorization"] = `Bearer ${auth}`;
+    if (auth.startsWith('pd_')) {
+      headers['Authorization'] = `Bearer ${auth}`;
     } else {
-      headers["Cookie"] = auth;
+      headers['Cookie'] = auth;
     }
   }
 }

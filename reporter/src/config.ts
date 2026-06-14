@@ -26,7 +26,7 @@ export interface DashboardReporterOptions {
 }
 
 const DEFAULTS = {
-  projectName: "default-project",
+  projectName: 'default-project',
   uploadTraces: true,
   uploadReport: true,
   liveFileUploads: true,

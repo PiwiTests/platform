@@ -1,7 +1,7 @@
-import * as path from "path";
-import * as os from "os";
-import * as fs from "fs";
-import { hashForProject } from "./helpers.js";
+import * as path from 'path';
+import * as os from 'os';
+import * as fs from 'fs';
+import { hashForProject } from './helpers.js';
 
 export class StreamBuffer {
   private filePath: string;
@@ -13,8 +13,8 @@ export class StreamBuffer {
   append(events: any[]): void {
     if (events.length === 0) return;
     try {
-      const lines = events.map((e) => JSON.stringify(e) + "\n").join("");
-      fs.appendFileSync(this.filePath, lines, "utf8");
+      const lines = events.map((e) => JSON.stringify(e) + '\n').join('');
+      fs.appendFileSync(this.filePath, lines, 'utf8');
     } catch {
       // Non-fatal
     }
@@ -23,9 +23,9 @@ export class StreamBuffer {
   load(): any[] {
     try {
       if (fs.existsSync(this.filePath)) {
-        const content = fs.readFileSync(this.filePath, "utf8");
+        const content = fs.readFileSync(this.filePath, 'utf8');
         return content
-          .split("\n")
+          .split('\n')
           .filter(Boolean)
           .map((line) => JSON.parse(line));
       }

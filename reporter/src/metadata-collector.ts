@@ -1,5 +1,5 @@
-import { execSync } from "child_process";
-import type { FullConfig, Suite, TestCase } from "@playwright/test/reporter";
+import { execSync } from 'child_process';
+import type { FullConfig, Suite, TestCase } from '@playwright/test/reporter';
 
 export class MetadataCollector {
   collect(config: FullConfig, suite: Suite, options: any): Record<string, unknown> {
@@ -85,18 +85,18 @@ export class MetadataCollector {
   private collectScmInfo(options: any): Record<string, string> | undefined {
     const scm: Record<string, string> = {};
     try {
-      const execOpts = { encoding: "utf8" as const, timeout: 5000, maxBuffer: 1024 * 1024 };
-      scm.commit = execSync("git rev-parse HEAD", execOpts).trim();
-      scm.branch = execSync("git rev-parse --abbrev-ref HEAD", execOpts).trim();
+      const execOpts = { encoding: 'utf8' as const, timeout: 5000, maxBuffer: 1024 * 1024 };
+      scm.commit = execSync('git rev-parse HEAD', execOpts).trim();
+      scm.branch = execSync('git rev-parse --abbrev-ref HEAD', execOpts).trim();
       scm.author = execSync('git log -1 --pretty=format:"%an"', execOpts).trim();
       scm.commitMessage = execSync('git log -1 --pretty=format:"%s"', execOpts).trim();
       try {
-        scm.remoteUrl = execSync("git config --get remote.origin.url", execOpts).trim();
+        scm.remoteUrl = execSync('git config --get remote.origin.url', execOpts).trim();
       } catch {
         /* optional */
       }
     } catch (error: any) {
-      if (options.verbose) console.log("[Piwi Dashboard] Git info not available:", error.message);
+      if (options.verbose) console.log('[Piwi Dashboard] Git info not available:', error.message);
     }
     return Object.keys(scm).length > 0 ? scm : undefined;
   }
@@ -106,12 +106,12 @@ export class MetadataCollector {
     const env = process.env;
 
     if (env.JENKINS_URL) {
-      ci.provider = "Jenkins";
+      ci.provider = 'Jenkins';
       ci.buildNumber = env.BUILD_NUMBER;
       ci.buildUrl = env.BUILD_URL;
       ci.jobName = env.JOB_NAME;
     } else if (env.GITHUB_ACTIONS) {
-      ci.provider = "GitHub Actions";
+      ci.provider = 'GitHub Actions';
       ci.runId = env.GITHUB_RUN_ID;
       ci.runNumber = env.GITHUB_RUN_NUMBER;
       ci.workflow = env.GITHUB_WORKFLOW;
@@ -124,25 +124,25 @@ export class MetadataCollector {
         ci.buildUrl = `${ci.serverUrl}/${ci.repository}/actions/runs/${ci.runId}`;
       }
     } else if (env.GITLAB_CI) {
-      ci.provider = "GitLab CI";
+      ci.provider = 'GitLab CI';
       ci.pipelineId = env.CI_PIPELINE_ID;
       ci.pipelineUrl = env.CI_PIPELINE_URL;
       ci.jobId = env.CI_JOB_ID;
       ci.jobUrl = env.CI_JOB_URL;
       ci.jobName = env.CI_JOB_NAME;
     } else if (env.CIRCLECI) {
-      ci.provider = "CircleCI";
+      ci.provider = 'CircleCI';
       ci.buildNumber = env.CIRCLE_BUILD_NUM;
       ci.buildUrl = env.CIRCLE_BUILD_URL;
       ci.jobName = env.CIRCLE_JOB;
       ci.workflow = env.CIRCLE_WORKFLOW_ID;
     } else if (env.TRAVIS) {
-      ci.provider = "Travis CI";
+      ci.provider = 'Travis CI';
       ci.buildNumber = env.TRAVIS_BUILD_NUMBER;
       ci.buildUrl = env.TRAVIS_BUILD_WEB_URL;
       ci.jobNumber = env.TRAVIS_JOB_NUMBER;
     } else if (env.TF_BUILD) {
-      ci.provider = "Azure Pipelines";
+      ci.provider = 'Azure Pipelines';
       ci.buildNumber = env.BUILD_BUILDNUMBER;
       ci.buildId = env.BUILD_BUILDID;
       if (env.SYSTEM_TEAMFOUNDATIONSERVERURI && env.SYSTEM_TEAMPROJECT && env.BUILD_BUILDID) {
@@ -150,7 +150,7 @@ export class MetadataCollector {
       }
       ci.jobName = env.AGENT_JOBNAME;
     } else if (env.CI) {
-      ci.provider = "Unknown CI";
+      ci.provider = 'Unknown CI';
       ci.detected = true;
     }
 

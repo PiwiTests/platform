@@ -1,41 +1,41 @@
 export function categorizeStep(title: string): string {
-  if (!title) return "other";
+  if (!title) return 'other';
   const lower = title.toLowerCase();
   if (
-    lower.startsWith("page.goto") ||
-    lower.startsWith("page.reload") ||
-    lower.startsWith("page.goback") ||
-    lower.startsWith("page.goforward")
+    lower.startsWith('page.goto') ||
+    lower.startsWith('page.reload') ||
+    lower.startsWith('page.goback') ||
+    lower.startsWith('page.goforward')
   )
-    return "navigation";
+    return 'navigation';
   if (
-    lower.startsWith("locator.click") ||
-    lower.startsWith("locator.dblclick") ||
-    lower.startsWith("locator.check") ||
-    lower.startsWith("locator.uncheck") ||
-    lower.startsWith("locator.selectoption") ||
-    lower.startsWith("locator.tap")
+    lower.startsWith('locator.click') ||
+    lower.startsWith('locator.dblclick') ||
+    lower.startsWith('locator.check') ||
+    lower.startsWith('locator.uncheck') ||
+    lower.startsWith('locator.selectoption') ||
+    lower.startsWith('locator.tap')
   )
-    return "action";
+    return 'action';
   if (
-    lower.startsWith("locator.fill") ||
-    lower.startsWith("locator.type") ||
-    lower.startsWith("locator.press") ||
-    lower.startsWith("locator.clear") ||
-    lower.startsWith("locator.setinputfiles")
+    lower.startsWith('locator.fill') ||
+    lower.startsWith('locator.type') ||
+    lower.startsWith('locator.press') ||
+    lower.startsWith('locator.clear') ||
+    lower.startsWith('locator.setinputfiles')
   )
-    return "input";
-  if (lower.startsWith("expect") || lower.startsWith("locator.expect") || lower.startsWith("page.expect"))
-    return "assertion";
+    return 'input';
+  if (lower.startsWith('expect') || lower.startsWith('locator.expect') || lower.startsWith('page.expect'))
+    return 'assertion';
   if (
-    lower.startsWith("locator.waitfor") ||
-    lower.startsWith("page.waitfor") ||
-    lower.startsWith("page.waitforloadstate") ||
-    lower.startsWith("page.waitforurl")
+    lower.startsWith('locator.waitfor') ||
+    lower.startsWith('page.waitfor') ||
+    lower.startsWith('page.waitforloadstate') ||
+    lower.startsWith('page.waitforurl')
   )
-    return "wait";
-  if (lower.startsWith("apirequestcontext") || lower.startsWith("apiresponse")) return "api";
-  return "other";
+    return 'wait';
+  if (lower.startsWith('apirequestcontext') || lower.startsWith('apiresponse')) return 'api';
+  return 'other';
 }
 
 export interface FlatStep {
@@ -74,7 +74,7 @@ export function collectStepMetrics(steps: any[]): StepMetrics {
     if (!slowestStep || s.duration > slowestStep.duration) slowestStep = { title: s.title, duration: s.duration };
   }
 
-  const navSteps = flatSteps.filter((s) => s.category === "navigation");
+  const navSteps = flatSteps.filter((s) => s.category === 'navigation');
 
   return {
     steps: flatSteps,

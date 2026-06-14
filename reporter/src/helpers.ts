@@ -1,13 +1,13 @@
-import * as crypto from "crypto";
-import * as path from "path";
-import * as os from "os";
-import * as fs from "fs";
-import type { DashboardReporterOptions } from "./config.js";
-import { resolveOptions } from "./config.js";
-import { HttpClient } from "./http-client.js";
+import * as crypto from 'crypto';
+import * as path from 'path';
+import * as os from 'os';
+import * as fs from 'fs';
+import type { DashboardReporterOptions } from './config.js';
+import { resolveOptions } from './config.js';
+import { HttpClient } from './http-client.js';
 
 export function hashForProject(projectName: string): string {
-  return crypto.createHash("sha1").update(projectName).digest("hex").slice(0, 16);
+  return crypto.createHash('sha1').update(projectName).digest('hex').slice(0, 16);
 }
 
 export function getSetupFilePath(projectName: string): string {
@@ -15,7 +15,7 @@ export function getSetupFilePath(projectName: string): string {
 }
 
 export function computeInstanceId(projectName: string): string {
-  return crypto.createHash("sha256").update([os.hostname(), projectName].join("|")).digest("hex").slice(0, 16);
+  return crypto.createHash('sha256').update([os.hostname(), projectName].join('|')).digest('hex').slice(0, 16);
 }
 
 export interface SetupInfo {
@@ -28,7 +28,7 @@ export function readSetupInfo(projectName: string): SetupInfo | null {
   const setupFile = getSetupFilePath(projectName);
   try {
     if (fs.existsSync(setupFile)) {
-      const info = JSON.parse(fs.readFileSync(setupFile, "utf8"));
+      const info = JSON.parse(fs.readFileSync(setupFile, 'utf8'));
       fs.unlinkSync(setupFile);
       if (info.projectName === projectName) return info;
     }
@@ -40,18 +40,18 @@ export function readSetupInfo(projectName: string): SetupInfo | null {
 
 export function readSourceSnippet(file: string, line: number, context: number): string | null {
   try {
-    const content = fs.readFileSync(file, "utf-8");
-    const lines = content.split("\n");
+    const content = fs.readFileSync(file, 'utf-8');
+    const lines = content.split('\n');
     const start = Math.max(0, line - context - 1);
     const end = Math.min(lines.length, line + context);
     return lines
       .slice(start, end)
       .map((l, i) => {
         const lineNum = start + i + 1;
-        const marker = lineNum === line ? "> " : "  ";
+        const marker = lineNum === line ? '> ' : '  ';
         return `${marker}${String(lineNum).padStart(4)} | ${l}`;
       })
-      .join("\n");
+      .join('\n');
   } catch {
     return null;
   }
@@ -88,17 +88,17 @@ export function createGlobalSetup(
     const opts = resolveOptions((options ?? {}) as Record<string, any>);
 
     if (!opts.serverUrl) {
-      console.log("[Piwi Dashboard] Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.");
+      console.log('[Piwi Dashboard] Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');
       if (userSetup) return userSetup(config);
       return;
     }
 
-    const piwiReporterPath = path.resolve(__dirname, "index.js");
+    const piwiReporterPath = path.resolve(__dirname, 'index.js');
     const hasPiwi =
       Array.isArray(config?.reporter) &&
       config.reporter.some((r: any) => {
-        if (!Array.isArray(r) || typeof r[0] !== "string") return false;
-        if (r[0].toLowerCase().includes("piwi")) return true;
+        if (!Array.isArray(r) || typeof r[0] !== 'string') return false;
+        if (r[0].toLowerCase().includes('piwi')) return true;
         try {
           return path.resolve(require.resolve(r[0])) === piwiReporterPath;
         } catch {
@@ -107,7 +107,7 @@ export function createGlobalSetup(
       });
 
     if (!hasPiwi) {
-      if (opts.verbose) console.log("[Piwi Dashboard] Not reporting — Piwi is not in the Playwright reporters list.");
+      if (opts.verbose) console.log('[Piwi Dashboard] Not reporting — Piwi is not in the Playwright reporters list.');
       if (userSetup) return userSetup(config);
       return;
     }
@@ -117,7 +117,7 @@ export function createGlobalSetup(
     try {
       const auth = await httpClient.resolveAuth(opts);
       const response = await httpClient.postJSON(
-        "/api/test-runs/setup",
+        '/api/test-runs/setup',
         {
           projectName: opts.projectName,
           projectDescription: opts.projectDescription,

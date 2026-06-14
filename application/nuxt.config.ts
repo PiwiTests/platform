@@ -43,7 +43,6 @@ const demoPwaConfig = isDemo
 
 export default defineNuxtConfig({
   modules: [
-    '@nuxt/eslint',
     '@nuxt/ui',
     '@vueuse/nuxt',
     '@vite-pwa/nuxt'
@@ -208,15 +207,6 @@ export default defineNuxtConfig({
         if (!existsSync(seedSrc)) {
           console.warn('[Build] WARNING: public/demo/seed.sql not found. Run `npm run seed:demo` before building.')
         }
-      }
-    }
-  },
-
-  eslint: {
-    config: {
-      stylistic: {
-        commaDangle: 'never',
-        braceStyle: '1tbs'
       }
     }
   },
