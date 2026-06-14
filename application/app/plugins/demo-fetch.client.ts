@@ -12,16 +12,18 @@ import { configureDemoDb } from '~/demo/db.client';
  * by `demo-sw.ts`.
  *
  * First-load timing: when there is no SW controller yet (first ever visit)
- * we listen for `controllerchange` and then **reload the page**.  The second
- * load finds the SW already in control, so all requests are intercepted from
- * the start and the demo DB initialises cleanly.  A 30-second safety-net
- * resolves the wait if the SW never takes control (blocked by browser policy,
- * install failure, etc.) so the loading screen does not get stuck forever.
+ * we block every `$fetch` call behind `swReady` and wait for `controllerchange`.
+ * Once the SW installs, activates, and calls `clients.claim()`, that event fires
+ * and we unblock all pending requests — the SW is now the controller and its
+ * fetch listener is active, so every rewritten API call is intercepted correctly.
  *
- * This approach fixes a race condition that was especially visible in Firefox,
- * where the SW can take longer than the previous 4-second timeout to install
- * and claim the page — causing the rewritten API calls to hit the real host
- * (GitHub Pages) and receive 404s before the DB was ready.
+ * We intentionally do NOT reload the page on `controllerchange`.  A reload was
+ * tried previously but caused a Firefox-specific failure: after the programmatic
+ * reload, `navigator.serviceWorker.controller` was still null when the plugin
+ * ran again, so the page got stuck waiting for a second `controllerchange` that
+ * never arrived and only escaped after the 30-second safety-net timeout.
+ * Because every `$fetch` call already awaits `swReady`, no request can escape
+ * to the real server before the SW is active — no reload is required.
  */
 export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig();
@@ -46,18 +48,11 @@ export default defineNuxtPlugin(() => {
     !import.meta.client || !('serviceWorker' in navigator) || navigator.serviceWorker.controller
       ? Promise.resolve()
       : new Promise<void>((resolve) => {
-          navigator.serviceWorker.addEventListener(
-            'controllerchange',
-            () => {
-              // SW just claimed this page via clients.claim().  Reload so that
-              // the second load starts with the SW already in control — this
-              // avoids a race where DB initialisation is racing concurrent
-              // in-flight requests.  The promise never resolves here because the
-              // reload replaces the page.
-              window.location.reload();
-            },
-            { once: true },
-          );
+          // Once the SW installs, activates, and calls clients.claim(), the
+          // controllerchange event fires.  At that point the SW's fetch listener
+          // is live and every rewritten /api/ call will be intercepted, so we
+          // can safely unblock all pending $fetch calls.
+          navigator.serviceWorker.addEventListener('controllerchange', () => resolve(), { once: true });
           // Safety net: give up waiting after 30 s if the SW never takes control
           // (blocked by browser settings, install failure, etc.) so the loading
           // screen does not stay up forever.
