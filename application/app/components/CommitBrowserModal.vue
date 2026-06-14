@@ -58,10 +58,10 @@ const filteredCommits = computed(() => {
   const q = search.value.trim().toLowerCase()
   if (!q) return commits.value
   return commits.value.filter(c =>
-    c.message.toLowerCase().includes(q) ||
-    c.author.toLowerCase().includes(q) ||
-    c.sha.includes(q) ||
-    c.shortSha.includes(q)
+    c.message.toLowerCase().includes(q)
+    || c.author.toLowerCase().includes(q)
+    || c.sha.includes(q)
+    || c.shortSha.includes(q)
   )
 })
 
@@ -69,7 +69,10 @@ const filteredCommits = computed(() => {
 const selectedStats = computed(() => {
   let files = 0, linesAdded = 0, linesRemoved = 0, unreviewed = 0
   for (const sha of selectedShas.value) {
-    if (!(sha in diffCache)) { unreviewed++; continue }
+    if (!(sha in diffCache)) {
+      unreviewed++
+      continue
+    }
     const d = diffCache[sha]
     if (d) {
       files += d.files.length
@@ -90,8 +93,13 @@ function errorMessage(err: unknown): string {
 
 // Load (or reload at new limit)
 async function loadCommits(initial: boolean) {
-  if (initial) { loadingCommits.value = true; commitsError.value = null }
-  else { loadingMore.value = true; loadMoreError.value = null }
+  if (initial) {
+    loadingCommits.value = true
+    commitsError.value = null
+  } else {
+    loadingMore.value = true
+    loadMoreError.value = null
+  }
   try {
     const res = await $fetch<{ commits: CommitItem[], hasMore?: boolean, error?: string | null }>(
       `/api/failure-clusters/${props.clusterId}/commits`,
@@ -179,7 +187,7 @@ function confirm() {
 }
 
 function parsePatchLines(patch: string): PatchLine[] {
-  return patch.split('\n').map(line => {
+  return patch.split('\n').map((line) => {
     if (line.startsWith('+') && !line.startsWith('+++')) return { type: 'add', text: line }
     if (line.startsWith('-') && !line.startsWith('---')) return { type: 'remove', text: line }
     if (line.startsWith('@@')) return { type: 'hunk', text: line }
@@ -204,7 +212,6 @@ const lineClass: Record<PatchLine['type'], string> = {
   >
     <template #body>
       <div class="flex h-[72vh] overflow-hidden">
-
         <!-- ── Left: commit list ─────────────────────────────────────── -->
         <div class="w-72 shrink-0 border-r border-default flex flex-col">
           <!-- Search + bulk actions -->
@@ -216,9 +223,13 @@ const lineClass: Record<PatchLine['type'], string> = {
               icon="i-lucide-search"
             />
             <div class="flex items-center gap-2 text-xs text-gray-500">
-              <button class="hover:text-primary transition-colors" @click="selectAll">All</button>
+              <button class="hover:text-primary transition-colors" @click="selectAll">
+                All
+              </button>
               <span>·</span>
-              <button class="hover:text-primary transition-colors" @click="clearAll">None</button>
+              <button class="hover:text-primary transition-colors" @click="clearAll">
+                None
+              </button>
               <span class="ml-auto">
                 {{ selectedShas.size > 0 ? `${selectedShas.size} selected` : 'none selected' }}
               </span>
@@ -234,8 +245,17 @@ const lineClass: Record<PatchLine['type'], string> = {
           <!-- Error -->
           <div v-else-if="commitsError" class="flex-1 flex flex-col items-center justify-center gap-2 p-4 text-center">
             <UIcon name="i-lucide-circle-alert" class="size-5 text-red-400" />
-            <p class="text-sm text-red-500">{{ commitsError }}</p>
-            <UButton size="xs" color="neutral" variant="outline" @click="loadCommits(true)">Retry</UButton>
+            <p class="text-sm text-red-500">
+              {{ commitsError }}
+            </p>
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="outline"
+              @click="loadCommits(true)"
+            >
+              Retry
+            </UButton>
           </div>
 
           <!-- Commit list -->
@@ -259,7 +279,9 @@ const lineClass: Record<PatchLine['type'], string> = {
                 @change="toggleSha(c.sha)"
               >
               <div class="flex-1 min-w-0">
-                <p class="text-xs font-medium leading-snug truncate">{{ c.message || '(no message)' }}</p>
+                <p class="text-xs font-medium leading-snug truncate">
+                  {{ c.message || '(no message)' }}
+                </p>
                 <p class="text-[10px] text-gray-400 leading-snug mt-0.5 flex items-center gap-1 min-w-0">
                   <code class="text-primary shrink-0">{{ c.shortSha }}</code>
                   <span class="truncate">{{ c.author }}</span>
@@ -313,7 +335,9 @@ const lineClass: Record<PatchLine['type'], string> = {
                   {{ focusedCommit.author }}<template v-if="focusedCommit.date"> · {{ formatRelativeTime(focusedCommit.date) }}</template>
                 </span>
               </div>
-              <p class="text-sm font-semibold">{{ focusedCommit.message }}</p>
+              <p class="text-sm font-semibold">
+                {{ focusedCommit.message }}
+              </p>
             </div>
 
             <!-- Empty diff -->
@@ -348,7 +372,9 @@ const lineClass: Record<PatchLine['type'], string> = {
                   :key="i"
                   class="px-3 py-px whitespace-pre leading-5 min-w-0"
                   :class="lineClass[line.type]"
-                >{{ line.text || ' ' }}</div>
+                >
+                  {{ line.text || ' ' }}
+                </div>
               </div>
               <div v-else class="px-3 py-2 text-gray-400 text-[11px]">
                 No patch available
@@ -359,8 +385,12 @@ const lineClass: Record<PatchLine['type'], string> = {
           <!-- Diff fetch error -->
           <div v-else-if="diffError" class="flex-1 flex flex-col items-center justify-center gap-2 p-6 text-center">
             <UIcon name="i-lucide-circle-alert" class="size-5 text-red-400" />
-            <p class="text-sm text-red-500">{{ diffError }}</p>
-            <p class="text-xs text-gray-400">Click the commit again to retry</p>
+            <p class="text-sm text-red-500">
+              {{ diffError }}
+            </p>
+            <p class="text-xs text-gray-400">
+              Click the commit again to retry
+            </p>
           </div>
 
           <!-- Diff unavailable (intentional null from API) -->
@@ -392,7 +422,9 @@ const lineClass: Record<PatchLine['type'], string> = {
           <span v-else>No commits selected</span>
         </div>
 
-        <UButton color="neutral" variant="ghost" @click="emit('update:open', false)">Cancel</UButton>
+        <UButton color="neutral" variant="ghost" @click="emit('update:open', false)">
+          Cancel
+        </UButton>
         <UButton color="primary" :disabled="selectedShas.size === 0" @click="confirm">
           Add to context
         </UButton>

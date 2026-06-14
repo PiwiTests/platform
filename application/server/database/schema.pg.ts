@@ -7,6 +7,7 @@ export const projects = pgTable('projects', {
   label: text('label'), // Display label (defaults to name if not set)
   description: text('description'),
   diagnosisInstructions: text('diagnosis_instructions'),
+  scmToken: text('scm_token'), // Per-project SCM token for GitHub/GitLab/Bitbucket API access
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
 }, table => ({

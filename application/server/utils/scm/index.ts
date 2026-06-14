@@ -1,4 +1,6 @@
 import { getAppSetting } from '../app-settings'
+import { projects } from '../../database/schema'
+import { eq } from 'drizzle-orm'
 import { GitHubProvider } from './GitHubProvider'
 import { GitLabProvider } from './GitLabProvider'
 import { BitbucketProvider } from './BitbucketProvider'
@@ -36,9 +38,29 @@ export function scmProviderForUrl(repositoryUrl: string, token: string | null): 
   return null
 }
 
-/** Instantiate the correct provider, loading the SCM token from app settings automatically. */
-export async function createScmProvider(repositoryUrl: string, db: DbClient): Promise<GitHubProvider | GitLabProvider | BitbucketProvider | null> {
-  const tokenSetting = await getAppSetting<{ value?: string }>(db, 'scm_token')
-  const token = tokenSetting?.value ?? null
+/**
+ * Instantiate the correct provider, loading the SCM token from:
+ * 1. Per-project scmToken (if projectId is provided)
+ * 2. Global scm_token app setting (fallback)
+ */
+export async function createScmProvider(repositoryUrl: string, db: DbClient, projectId?: number): Promise<GitHubProvider | GitLabProvider | BitbucketProvider | null> {
+  let token: string | null = null
+
+  // Try per-project token first
+  if (projectId) {
+    const [project] = await db.select({ scmToken: projects.scmToken })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+    if (project?.scmToken) {
+      token = project.scmToken
+    }
+  }
+
+  // Fall back to global token
+  if (!token) {
+    const tokenSetting = await getAppSetting<{ value?: string }>(db, 'scm_token')
+    token = tokenSetting?.value ?? null
+  }
+
   return scmProviderForUrl(repositoryUrl, token)
 }

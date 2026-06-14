@@ -67,8 +67,11 @@ export default eventHandler(async (event) => {
     .innerJoin(tags, eq(projectTags.tagId, tags.id))
     .where(eq(projectTags.projectId, id))
 
+  const { scmToken: _scm, ...projectWithoutSecret } = project
+
   return {
-    ...project,
+    ...projectWithoutSecret,
+    hasScmToken: !!project.scmToken,
     tags: projectTagRows.map(r => r.tag),
     testRuns: runs.map(r => ({
       ...r,

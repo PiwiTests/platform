@@ -292,19 +292,19 @@ async function copyEnvVars() {
               Repository access
             </h3>
             <p class="text-sm text-gray-500 mt-0.5">
-              Optional GitHub or GitLab token used to fetch changed files between the last passing and current failing run. Without a token, only public repositories are accessible (60 req/hr rate limit). Required for private repositories.
+              Optional SCM token used to fetch changed files between the last passing and current failing run. Works with GitHub, GitLab, and Bitbucket. Without a token, only public repositories are accessible (60 req/hr rate limit). Required for private repositories. Per-project tokens can be set in the project edit page.
             </p>
           </div>
         </template>
 
         <UFormField
-          label="GitHub / GitLab token"
-          :description="settings?.hasScmToken ? 'Leave empty to keep the stored token, enter a new value to replace it, or save empty to remove it' : 'Personal access token with read access to repository contents'"
+          label="SCM token"
+          :description="settings?.hasScmToken ? 'Leave empty to keep the stored token, enter a new value to replace it, or save empty to remove it' : 'Personal access token with read access to repository contents. Supports GitHub (ghp_), GitLab (glpat-), and Bitbucket tokens.'"
         >
           <UInput
             v-model="scmToken"
             type="password"
-            :placeholder="settings?.hasScmToken ? '•••••••• (unchanged)' : 'ghp_... or glpat-...'"
+            :placeholder="settings?.hasScmToken ? '•••••••• (unchanged)' : 'ghp_..., glpat-..., or Bitbucket token'"
             class="w-full font-mono"
           />
         </UFormField>
@@ -397,7 +397,7 @@ async function copyEnvVars() {
             <li>Browser info, test steps, console error/warning entries (excerpts)</li>
             <li>Failed network request URLs and status codes</li>
             <li>ARIA page snapshot (if collected)</li>
-            <li>Commit SHA range since last passing run, plus changed file names and diff patches fetched from GitHub/GitLab (if a repository token is configured or the repo is public)</li>
+            <li>Commit SHA range since last passing run, plus changed file names and diff patches fetched from GitHub/GitLab/Bitbucket (if a repository token is configured or the repo is public)</li>
           </ul>
           <p class="mt-2">
             The API key is stored plaintext in the application database (admin-only access).

@@ -12,7 +12,7 @@ export default eventHandler(async (event) => {
   if (!sha) throw createError({ statusCode: 400, message: 'Missing sha query parameter' })
 
   const db = await getDatabase()
-  const [cluster] = await db.select({ lastSeenRunId: failureClusters.lastSeenRunId })
+  const [cluster] = await db.select({ id: failureClusters.id, projectId: failureClusters.projectId, lastSeenRunId: failureClusters.lastSeenRunId })
     .from(failureClusters).where(eq(failureClusters.id, id))
   if (!cluster) throw createError({ statusCode: 404, message: 'Failure cluster not found' })
 
@@ -24,7 +24,7 @@ export default eventHandler(async (event) => {
   const repositoryUrl = normalizeGitUrl(meta?.scm?.remoteUrl ?? null)
   if (!repositoryUrl) return null
 
-  const provider = await createScmProvider(repositoryUrl, db)
+  const provider = await createScmProvider(repositoryUrl, db, cluster.projectId)
   if (!provider) return null
 
   return provider.fetchCommitDiff(sha)

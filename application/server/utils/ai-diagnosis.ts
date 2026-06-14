@@ -265,7 +265,7 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
           if (regression.commitRange?.repositoryUrl) {
             scmCov.provider = detectScmProvider(regression.commitRange.repositoryUrl)
             try {
-              const provider = await createScmProvider(regression.commitRange.repositoryUrl, db)
+              const provider = await createScmProvider(regression.commitRange.repositoryUrl, db, cluster.projectId)
               const fromSha = baseCommitOverride ?? regression.commitRange.fromSha
               if (baseCommitOverride) scmCov.baseCommitUsed = baseCommitOverride
               const changes = provider
@@ -346,7 +346,7 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
             ].join('\n'))
 
             try {
-              const provider = await createScmProvider(repositoryUrl, db)
+              const provider = await createScmProvider(repositoryUrl, db, cluster.projectId)
               const changes = provider
                 ? await provider.fetchChanges(baseCommitOverride, currentCommit)
                 : null
@@ -421,7 +421,7 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
       const meta = runForUrl?.metadata as any
       const repoUrl = normalizeGitUrl(meta?.scm?.remoteUrl ?? null)
       if (repoUrl) {
-        const provider = await createScmProvider(repoUrl, db)
+        const provider = await createScmProvider(repoUrl, db, cluster.projectId)
         if (provider) {
           const commitLines: string[] = ['## Commits Manually Selected for Context']
           let patchBudget = MAX_SCM_PATCH_BUDGET

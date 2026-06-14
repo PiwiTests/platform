@@ -120,6 +120,13 @@
       "when": 1789200000000,
       "tag": "0016_manual_base_commit",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1781427701723,
+      "tag": "0017_brave_living_tribunal",
+      "breakpoints": true
     }
   ]
 }

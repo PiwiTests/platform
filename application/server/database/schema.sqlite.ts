@@ -7,6 +7,7 @@ export const projects = sqliteTable('projects', {
   label: text('label'), // Display label (defaults to name if not set)
   description: text('description'),
   diagnosisInstructions: text('diagnosis_instructions'),
+  scmToken: text('scm_token'), // Per-project SCM token for GitHub/GitLab/Bitbucket API access
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date())
 }, table => ({

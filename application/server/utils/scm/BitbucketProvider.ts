@@ -98,7 +98,7 @@ export class BitbucketProvider extends ScmProvider {
     const result: ScmChanges = {
       commits: [],
       patchesOmitted,
-      files: (diffstat.values ?? []).slice(0, MAX_SCM_FILES).map(f => {
+      files: (diffstat.values ?? []).slice(0, MAX_SCM_FILES).map((f) => {
         const filename = (f.new?.path || f.old?.path) ?? ''
         return {
           filename,

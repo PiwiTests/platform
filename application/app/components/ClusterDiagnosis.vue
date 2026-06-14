@@ -210,12 +210,16 @@ async function fetchContext() {
 let baseCommitTimer: ReturnType<typeof setTimeout> | null = null
 watch(baseCommit, (val) => {
   if (baseCommitTimer) clearTimeout(baseCommitTimer)
-  baseCommitTimer = setTimeout(() => { fetchContext() }, 900)
+  baseCommitTimer = setTimeout(() => {
+    fetchContext()
+  }, 900)
   // Auto-save immediately when the value differs from what's in the DB
   if (val !== savedBaseCommit.value) persistBaseCommit(val)
 })
 
-watch(selectedCommitShas, () => { fetchContext() }, { deep: true })
+watch(selectedCommitShas, () => {
+  fetchContext()
+}, { deep: true })
 
 const baseCommitIsPinned = computed(() => !!savedBaseCommit.value)
 

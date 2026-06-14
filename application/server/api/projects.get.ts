@@ -72,8 +72,9 @@ export default eventHandler(async () => {
 
   return allProjects.map((project) => {
     const latestRun = latestRunByProjectId.get(project.id) ?? null
+    const { scmToken: _scm, ...projectWithoutSecret } = project
     return {
-      ...project,
+      ...projectWithoutSecret,
       latestRun: latestRun
         ? { ...latestRun, reports: reportsByRunId.get(latestRun.id) ?? [] }
         : null,

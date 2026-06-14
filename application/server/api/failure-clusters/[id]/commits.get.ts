@@ -22,7 +22,7 @@ export default eventHandler(async (event) => {
 
   if (!repositoryUrl) return { commits: [], repositoryUrl: null, aggregate: null, error: null }
 
-  const provider = await createScmProvider(repositoryUrl, db)
+  const provider = await createScmProvider(repositoryUrl, db, cluster.projectId)
   if (!provider) return { commits: [], repositoryUrl, aggregate: null, error: null }
 
   const query = getQuery(event)

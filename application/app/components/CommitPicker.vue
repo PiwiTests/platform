@@ -20,7 +20,7 @@ const open = ref(false)
 const search = ref('')
 const commits = ref<CommitItem[]>([])
 const apiError = ref<string | null>(null)
-const aggregateStats = ref<{ filesChanged: number; linesAdded: number; linesRemoved: number } | null>(null)
+const aggregateStats = ref<{ filesChanged: number, linesAdded: number, linesRemoved: number } | null>(null)
 const loading = ref(false)
 const fetchError = ref(false)
 const searchInputRef = ref<{ $el?: HTMLElement } | null>(null)
@@ -43,7 +43,7 @@ async function loadCommits() {
     if (baseline) params.baseline = baseline
     const res = await $fetch<{
       commits: CommitItem[]
-      aggregate: { filesChanged: number; linesAdded: number; linesRemoved: number } | null
+      aggregate: { filesChanged: number, linesAdded: number, linesRemoved: number } | null
       error?: string | null
     }>(`/api/failure-clusters/${props.clusterId}/commits`, { query: params })
     commits.value = res.commits
@@ -72,10 +72,10 @@ const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
   if (!q) return commits.value
   return commits.value.filter(c =>
-    c.message.toLowerCase().includes(q) ||
-    c.author.toLowerCase().includes(q) ||
-    c.sha.includes(q) ||
-    c.shortSha.includes(q)
+    c.message.toLowerCase().includes(q)
+    || c.author.toLowerCase().includes(q)
+    || c.sha.includes(q)
+    || c.shortSha.includes(q)
   )
 })
 
@@ -202,9 +202,13 @@ function clear(e: Event) {
           >
             <code class="text-xs text-primary shrink-0 w-14 pt-px">{{ c.shortSha }}</code>
             <div class="flex-1 min-w-0">
-              <p class="text-xs font-medium leading-snug truncate">{{ c.message }}</p>
+              <p class="text-xs font-medium leading-snug truncate">
+                {{ c.message }}
+              </p>
               <p class="text-xs text-gray-400 leading-snug truncate">
-                {{ c.author }}<template v-if="c.date"> · {{ formatRelativeTime(c.date) }}</template>
+                {{ c.author }}<template v-if="c.date">
+                  · {{ formatRelativeTime(c.date) }}
+                </template>
               </p>
             </div>
             <UIcon v-if="modelValue === c.sha" name="i-lucide-check" class="size-3.5 text-primary shrink-0 mt-0.5" />
