@@ -1,19 +1,16 @@
 import * as path from "path";
 import * as os from "os";
 import * as fs from "fs";
-import * as crypto from "crypto";
+import { hashForProject } from "./helpers.js";
 import { HttpClient } from "./http-client.js";
 
 export class CrashRecovery {
   private filePath: string;
-  private serverUrl: string;
   private verbose: boolean;
 
-  constructor(serverUrl: string, projectName: string, verbose?: boolean) {
-    this.serverUrl = serverUrl;
+  constructor(projectName: string, verbose?: boolean) {
     this.verbose = verbose ?? false;
-    const hash = crypto.createHash("sha1").update(projectName).digest("hex").slice(0, 16);
-    this.filePath = path.join(os.tmpdir(), `piwi-dashboard-recovery-${hash}.json`);
+    this.filePath = path.join(os.tmpdir(), `piwi-dashboard-recovery-${hashForProject(projectName)}.json`);
   }
 
   save(data: Record<string, any>): void {

@@ -14,6 +14,15 @@ export class HttpClient {
     this.verbose = verbose ?? false;
   }
 
+  async resolveAuth(options: { apiKey?: string | null; username?: string | null; password?: string | null }): Promise<string | null> {
+    if (options.apiKey) return options.apiKey;
+    if (options.username && options.password) {
+      console.log(`[Piwi Dashboard] Authenticating as ${options.username}...`);
+      return this.login(options.username, options.password);
+    }
+    return null;
+  }
+
   async login(username: string, password: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const url = new URL("/api/auth/login", this.serverUrl);

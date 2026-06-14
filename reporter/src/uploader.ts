@@ -2,8 +2,30 @@ import fs from "fs";
 import path from "path";
 import FormData from "form-data";
 import { HttpClient } from "./http-client.js";
-
 import { FileHandler } from "./file-handler.js";
+
+export interface RunPayload {
+  projectName: string;
+  projectDescription?: string;
+  status: string;
+  startTime: string | null;
+  duration: number;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  skippedTests: number;
+  environment?: string;
+  metadata: Record<string, any>;
+  instanceId: string;
+  testCases: any[];
+}
+
+export interface ReportOptions {
+  uploadTraces?: boolean;
+  uploadReport?: boolean;
+  reports?: Array<{ type: string; dir?: string; label?: string }>;
+}
+
 export class Uploader {
   constructor(
     private httpClient: HttpClient,
@@ -11,40 +33,23 @@ export class Uploader {
     private verbose?: boolean,
   ) {}
 
-  async uploadJSON(
-    projectName: string,
-    overallStatus: string,
-    duration: number,
-    startTime: string | null,
-    counters: {
-      totalTests: number;
-      passedTests: number;
-      failedTests: number;
-      skippedTests: number;
-    },
-    environment: string | undefined,
-    metadata: Record<string, any>,
-    instanceId: string,
-    testCases: any[],
-    projectDescription: string | undefined,
-    auth: string | null,
-  ): Promise<any> {
+  async uploadJSON(payload: RunPayload, auth: string | null): Promise<any> {
     const response = await this.httpClient.postJSON(
       "/api/test-runs/submit",
       {
-        projectName,
-        projectDescription,
-        status: overallStatus,
-        startTime,
-        duration,
-        totalTests: counters.totalTests,
-        passedTests: counters.passedTests,
-        failedTests: counters.failedTests,
-        skippedTests: counters.skippedTests,
-        environment: environment || null,
-        metadata,
-        instanceId,
-        testCases,
+        projectName: payload.projectName,
+        projectDescription: payload.projectDescription,
+        status: payload.status,
+        startTime: payload.startTime,
+        duration: payload.duration,
+        totalTests: payload.totalTests,
+        passedTests: payload.passedTests,
+        failedTests: payload.failedTests,
+        skippedTests: payload.skippedTests,
+        environment: payload.environment || null,
+        metadata: payload.metadata,
+        instanceId: payload.instanceId,
+        testCases: payload.testCases,
       },
       auth,
     );
@@ -55,51 +60,29 @@ export class Uploader {
     return response;
   }
 
-  async uploadWithFiles(
-    projectName: string,
-    overallStatus: string,
-    duration: number,
-    startTime: string | null,
-    counters: {
-      totalTests: number;
-      passedTests: number;
-      failedTests: number;
-      skippedTests: number;
-    },
-    environment: string | undefined,
-    metadata: Record<string, any>,
-    instanceId: string,
-    projectDescription: string | undefined,
-    testCases: any[],
-    options: {
-      uploadTraces?: boolean;
-      uploadReport?: boolean;
-      reports?: Array<{ type: string; dir?: string; label?: string }>;
-    },
-    auth: string | null,
-  ): Promise<any> {
+  async uploadWithFiles(payload: RunPayload, reportOptions: ReportOptions, auth: string | null): Promise<any> {
     const form = new FormData();
-    form.append("projectName", projectName);
+    form.append("projectName", payload.projectName);
     form.append(
       "testRun",
       JSON.stringify({
-        status: overallStatus,
-        startTime,
-        duration,
-        totalTests: counters.totalTests,
-        passedTests: counters.passedTests,
-        failedTests: counters.failedTests,
-        skippedTests: counters.skippedTests,
-        environment: environment || null,
-        metadata,
-        projectDescription,
-        instanceId,
+        status: payload.status,
+        startTime: payload.startTime,
+        duration: payload.duration,
+        totalTests: payload.totalTests,
+        passedTests: payload.passedTests,
+        failedTests: payload.failedTests,
+        skippedTests: payload.skippedTests,
+        environment: payload.environment || null,
+        metadata: payload.metadata,
+        projectDescription: payload.projectDescription,
+        instanceId: payload.instanceId,
       }),
     );
-    form.append("testCases", JSON.stringify(testCases));
+    form.append("testCases", JSON.stringify(payload.testCases));
 
-    await this.appendReportsToForm(form, options.reports, options.uploadReport);
-    await this.appendTracesToForm(form, testCases, options.uploadTraces);
+    await this.appendReportsToForm(form, reportOptions.reports, reportOptions.uploadReport);
+    await this.appendFilesToForm(form, payload.testCases, reportOptions.uploadTraces);
 
     const response = await this.httpClient.postFormData("/api/test-runs/upload", form, auth);
     console.log(`[Piwi Dashboard] Successfully uploaded test results with files`);
@@ -114,10 +97,7 @@ export class Uploader {
   async uploadReportsForStreamingRun(
     projectName: string,
     runId: number,
-    options: {
-      uploadReport?: boolean;
-      reports?: Array<{ type: string; dir?: string; label?: string }>;
-    },
+    reportOptions: ReportOptions,
     startTime: string | null,
     auth: string | null,
   ): Promise<void> {
@@ -139,7 +119,7 @@ export class Uploader {
     );
     form.append("testCases", JSON.stringify([]));
 
-    await this.appendReportsToForm(form, options.reports, options.uploadReport);
+    await this.appendReportsToForm(form, reportOptions.reports, reportOptions.uploadReport);
 
     const response = await this.httpClient.postFormData("/api/test-runs/upload", form, auth);
     console.log(`[Piwi Dashboard] Successfully uploaded reports for streaming run #${runId}`);
@@ -166,8 +146,7 @@ export class Uploader {
 
     let traceInfo: { tracePath: string; hash: string; size: number } | null = null;
     if (uploadTraces) {
-      const hashes = await this.fileHandler.computeTraceHashes([testCase]);
-      traceInfo = hashes.get(0) ?? null;
+      traceInfo = await this.fileHandler.computeSingleTraceHash(testCase);
     }
 
     if (!traceInfo && attachments.length === 0) return false;
@@ -265,7 +244,7 @@ export class Uploader {
     }
   }
 
-  private async appendTracesToForm(form: FormData, testCases: any[], uploadTraces?: boolean): Promise<void> {
+  private async appendFilesToForm(form: FormData, testCases: any[], uploadTraces?: boolean): Promise<void> {
     let attachmentCount = 0;
     for (const [i, tc] of testCases.entries()) {
       const attachments = this.fileHandler.findAllAttachments(tc);
