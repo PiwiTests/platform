@@ -7,6 +7,10 @@ lang: en-US
 
 All endpoints are relative to the dashboard base URL (e.g. `http://localhost:3000`).
 
+> **Interactive API docs:** When the dashboard is running, visit `/docs` for a live, searchable API reference with request/response schemas and a try-it console — powered by Scalar and auto-generated from the Nitro OpenAPI spec.
+>
+> The OpenAPI 3.1 JSON spec is also served at `GET /_openapi.json`.
+
 ## Submission
 
 ### POST `/api/test-runs/submit`
