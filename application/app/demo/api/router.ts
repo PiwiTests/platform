@@ -25,7 +25,14 @@ import { apiSetupTestRun, apiBeginTestRun, apiPostRunEvents, apiFinishTestRun, a
 import { apiGetUsers, apiCreateUser, apiDeleteUser, apiGetUserApiKeys, apiCreateUserApiKey, apiDeleteUserApiKey } from './users'
 import { apiGetTestCase, apiGetTestCaseHistory, apiGetTestCaseTraces } from './test-cases'
 import { apiGetDemoFile } from './files'
-import { apiPatchClusterStatus } from './failure-clusters'
+import {
+  apiGetFailureCluster,
+  apiPatchClusterStatus,
+  apiPatchClusterBaseCommit,
+  apiGetClusterCommits,
+  apiGetClusterCommitDiff,
+  apiGetClusterContext
+} from './failure-clusters'
 import { apiGetAdminStats } from './admin'
 import { apiGetAiStatus, apiGetClusterDiagnosis, apiDiagnoseCluster, apiGetAiSettings, apiPutAiSettings, apiTestAiSettings, apiGetProjectFlakyTests } from './ai'
 
@@ -69,8 +76,13 @@ const routes: RouteEntry[] = [
   // Regression context (Pillar 2)
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/regression-context$/, handler: m => apiGetRegressionContext(+m[1]!) },
 
-  // Failure cluster status + AI diagnosis
+  // Failure clusters
+  { method: 'GET', pattern: /^\/api\/failure-clusters\/(\d+)$/, handler: m => apiGetFailureCluster(+m[1]!) },
   { method: 'PATCH', pattern: /^\/api\/failure-clusters\/(\d+)\/status$/, handler: (m, body) => apiPatchClusterStatus(+m[1]!, body as Parameters<typeof apiPatchClusterStatus>[1]) },
+  { method: 'PATCH', pattern: /^\/api\/failure-clusters\/(\d+)\/base-commit$/, handler: (m, body) => apiPatchClusterBaseCommit(+m[1]!, body as Parameters<typeof apiPatchClusterBaseCommit>[1]) },
+  { method: 'GET', pattern: /^\/api\/failure-clusters\/(\d+)\/commits$/, handler: m => apiGetClusterCommits(+m[1]!) },
+  { method: 'GET', pattern: /^\/api\/failure-clusters\/(\d+)\/commit-diff$/, handler: m => apiGetClusterCommitDiff(+m[1]!) },
+  { method: 'GET', pattern: /^\/api\/failure-clusters\/(\d+)\/context$/, handler: m => apiGetClusterContext(+m[1]!) },
   { method: 'GET', pattern: /^\/api\/failure-clusters\/(\d+)\/diagnosis$/, handler: m => apiGetClusterDiagnosis(+m[1]!) },
   { method: 'POST', pattern: /^\/api\/failure-clusters\/(\d+)\/diagnose$/, handler: m => apiDiagnoseCluster(+m[1]!) },
 

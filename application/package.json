@@ -26,7 +26,8 @@
     "db:generate:pg": "drizzle-kit generate --config=drizzle.config.pg.ts",
     "db:migrate:pg": "drizzle-kit migrate --config=drizzle.config.pg.ts",
     "db:push:pg": "drizzle-kit push --config=drizzle.config.pg.ts",
-    "db:studio:pg": "drizzle-kit studio --config=drizzle.config.pg.ts"
+    "db:studio:pg": "drizzle-kit studio --config=drizzle.config.pg.ts",
+    "check:demo": "node scripts/check-demo-routes.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
