@@ -1,0 +1,41 @@
+# Dependencies
+**/node_modules
+
+# Build outputs
+**/.nuxt
+application/.output
+
+# Local data
+**/.data
+
+# Environment & secrets
+**/.env
+**/.env.*
+
+# Git, IDE
+.git
+.gitignore
+.idea
+.vscode
+**/.DS_Store
+
+# Logs
+**/*.log
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# CI/CD
+.github
+
+# Docs
+docs/
+*.md
+
+# Tests (not needed for Docker build)
+application/tests/
+
+# Reporter source (not built or used at application runtime)
+reporter/src/
