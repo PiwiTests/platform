@@ -26,7 +26,15 @@ const MAX_TEST_SOURCE_CHARS = 3000
 const DIAGNOSIS_SYSTEM_PROMPT = `You are a senior test engineer diagnosing Playwright test failures.
 You receive one failure cluster: several test failures sharing one normalized error signature, plus execution context. Identify the most likely single root cause. Ground every claim in the provided evidence — quote selectors, URLs, status codes or step names rather than speculating.
 If the evidence is insufficient, say so and lower your confidence.
-Categories: app-bug (the application under test broke), test-bug (the test code/locators are wrong), flaky-test (timing/race, passes on retry), infrastructure (CI workers, browser crashes, resources), environment (config/URL/credentials differences), unknown.`
+Categories: app-bug (the application under test broke), test-bug (the test code/locators are wrong), flaky-test (timing/race, passes on retry), infrastructure (CI workers, browser crashes, resources), environment (config/URL/credentials differences), unknown.
+
+For suggestedFix.patch: when you have enough context to determine the exact lines to change, output a standard unified diff that can be applied with \`git apply\`. Rules:
+- Use the real file paths from the evidence (e.g. \`--- a/tests/foo.spec.ts\`, \`+++ b/tests/foo.spec.ts\`).
+- Include correct \`@@ -L,N +L,N @@\` hunk headers.
+- For test-bug: the patch should fix the test file using the test source provided.
+- For app-bug with a git diff showing the regression: the patch should fix the application file (revert or correct the breaking change).
+- Set patch to null if you are not confident in the exact lines, if the fix spans unknown files, or if no source was provided.
+- Do not output a patch and a code snippet for the same fix; prefer patch when possible and set code to null.`
 
 const STALE_RUNNING_MS = 5 * 60 * 1000
 

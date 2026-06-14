@@ -11,6 +11,14 @@ export interface ScmCommit {
   message: string
 }
 
+export interface ScmCommitDetail {
+  sha: string
+  shortSha: string
+  message: string
+  author: string
+  date: string
+}
+
 export interface ScmChanges {
   commits: ScmCommit[]
   files: ChangedFile[]
@@ -176,6 +184,90 @@ export function detectScmProvider(repositoryUrl: string | null | undefined): 'gi
     if (hostname === 'bitbucket.org') return 'bitbucket'
   } catch { /* ignore */ }
   return null
+}
+
+async function listCommitsGitHub(repoPath: string, token?: string | null, limit = 50): Promise<ScmCommitDetail[]> {
+  const headers = makeHeaders(token)
+  headers['Accept'] = 'application/vnd.github+json'
+  headers['X-GitHub-Api-Version'] = '2022-11-28'
+  const res = await fetch(
+    `https://api.github.com/repos/${repoPath}/commits?per_page=${limit}`,
+    { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
+  )
+  if (!res.ok) return []
+  const data = await res.json() as Array<{
+    sha: string
+    commit: { message: string, author: { name: string, date: string } | null }
+  }>
+  return data.map(c => ({
+    sha: c.sha,
+    shortSha: c.sha.slice(0, 7),
+    message: (c.commit.message.split('\n')[0] ?? '').trim(),
+    author: c.commit.author?.name ?? '',
+    date: c.commit.author?.date ?? ''
+  }))
+}
+
+async function listCommitsGitLab(hostname: string, repoPath: string, token?: string | null, limit = 50): Promise<ScmCommitDetail[]> {
+  const headers = makeHeaders(token)
+  const projectPath = encodeURIComponent(repoPath)
+  const res = await fetch(
+    `https://${hostname}/api/v4/projects/${projectPath}/repository/commits?per_page=${limit}`,
+    { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
+  )
+  if (!res.ok) return []
+  const data = await res.json() as Array<{
+    id: string
+    message: string
+    author_name: string
+    created_at: string
+  }>
+  return data.map(c => ({
+    sha: c.id,
+    shortSha: c.id.slice(0, 7),
+    message: (c.message.split('\n')[0] ?? '').trim(),
+    author: c.author_name,
+    date: c.created_at
+  }))
+}
+
+async function listCommitsBitbucket(repoPath: string, token?: string | null, limit = 50): Promise<ScmCommitDetail[]> {
+  const parts = repoPath.split('/')
+  if (parts.length < 2) return []
+  const [workspace, repoSlug] = parts
+  const headers = makeHeaders(token)
+  const res = await fetch(
+    `https://api.bitbucket.org/2.0/repositories/${workspace}/${repoSlug}/commits?pagelen=${limit}`,
+    { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
+  )
+  if (!res.ok) return []
+  const data = await res.json() as {
+    values?: Array<{ hash: string, message: string, author: { raw?: string }, date: string }>
+  }
+  return (data.values ?? []).map(c => ({
+    sha: c.hash,
+    shortSha: c.hash.slice(0, 7),
+    message: (c.message.split('\n')[0] ?? '').trim(),
+    author: (c.author?.raw ?? '').replace(/<[^>]+>\s*$/, '').trim(),
+    date: c.date
+  }))
+}
+
+export async function fetchRecentCommits(repositoryUrl: string, token?: string | null, limit = 50): Promise<ScmCommitDetail[]> {
+  try {
+    const { hostname, pathname } = new URL(repositoryUrl)
+    const repoPath = pathname.replace(/^\//, '').replace(/\/$/, '')
+    if (hostname === 'github.com' || hostname.endsWith('.github.com')) {
+      return await listCommitsGitHub(repoPath, token, limit)
+    }
+    if (hostname === 'gitlab.com' || hostname.includes('gitlab')) {
+      return await listCommitsGitLab(hostname, repoPath, token, limit)
+    }
+    if (hostname === 'bitbucket.org') {
+      return await listCommitsBitbucket(repoPath, token, limit)
+    }
+  } catch { /* silently ignore */ }
+  return []
 }
 
 export async function fetchChangedFiles(

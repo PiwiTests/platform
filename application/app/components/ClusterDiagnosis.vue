@@ -283,17 +283,19 @@ function copyToClipboard(text: string | null) {
     <div v-if="aiStatus?.configured" class="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
       <!-- LEFT: context preview + input form -->
       <div class="space-y-3">
-        <!-- Preview header + SCM coverage -->
-        <div class="flex items-center justify-between">
-          <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+        <!-- Preview header: title + baseline commit + refresh -->
+        <div class="flex items-center gap-2">
+          <p class="text-sm font-medium text-gray-700 dark:text-gray-300 shrink-0">
             What will be sent to AI
           </p>
+          <CommitPicker v-model="baseCommit" :cluster-id="clusterId" />
           <UButton
             icon="i-lucide-refresh-cw"
             size="xs"
             color="neutral"
             variant="ghost"
             :loading="loadingContext"
+            class="ml-auto shrink-0"
             @click="fetchContext"
           >
             Refresh
@@ -314,19 +316,6 @@ function copyToClipboard(text: string | null) {
 
         <!-- Live markdown preview -->
         <MarkdownPreview :text="fullPreviewText" :loading="loadingContext" />
-
-        <!-- Baseline commit override -->
-        <div>
-          <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-            Baseline commit <span class="font-normal text-gray-400">(optional — overrides last passing run)</span>
-          </label>
-          <UInput
-            v-model="baseCommit"
-            placeholder="e.g. abc1234 or full SHA"
-            size="sm"
-            :leading-icon="baseCommit ? 'i-lucide-git-branch-plus' : undefined"
-          />
-        </div>
 
         <!-- Additional context drop zone -->
         <div>
@@ -484,14 +473,28 @@ function copyToClipboard(text: string | null) {
           </ul>
 
           <div v-if="details?.suggestedFix">
-            <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Suggested fix
-            </p>
-            <p class="text-sm text-gray-600 dark:text-gray-400">
-              {{ details.suggestedFix.description }}
-            </p>
-            <code v-if="details.suggestedFix.file" class="block text-xs font-mono mt-1 text-primary">{{ details.suggestedFix.file }}</code>
-            <div v-if="details.suggestedFix.code" class="relative mt-2">
+            <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Suggested fix</p>
+            <p class="text-sm text-gray-600 dark:text-gray-400">{{ details.suggestedFix.description }}</p>
+            <code v-if="details.suggestedFix.file && !details.suggestedFix.patch" class="block text-xs font-mono mt-1 text-primary">{{ details.suggestedFix.file }}</code>
+
+            <!-- Patch (preferred): diff-highlighted via MarkdownPreview -->
+            <div v-if="details.suggestedFix.patch" class="mt-2">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-xs text-gray-500 font-mono">patch — apply with <code class="bg-muted px-1 rounded">git apply</code></span>
+                <UButton
+                  icon="i-lucide-copy"
+                  size="xs"
+                  color="neutral"
+                  variant="ghost"
+                  title="Copy patch"
+                  @click="copyToClipboard(details.suggestedFix.patch)"
+                />
+              </div>
+              <MarkdownPreview :text="'```diff\n' + details.suggestedFix.patch + '\n```'" />
+            </div>
+
+            <!-- Fallback: plain code snippet when no patch -->
+            <div v-else-if="details.suggestedFix.code" class="relative mt-2">
               <pre class="text-xs font-mono bg-muted rounded p-3 overflow-x-auto">{{ details.suggestedFix.code }}</pre>
               <UButton
                 icon="i-lucide-copy"
