@@ -292,7 +292,7 @@ test.describe.serial('Live upload trace resource deduplication', () => {
     expect(traces.length).toBe(1)
     const response = await request.get(`/api/files/${traces[0].filePath}`)
     expect(response.ok()).toBeTruthy()
-    return parseZip(Buffer.from(await response.body()))
+    return await parseZip(Buffer.from(await response.body()))
   }
 
   test('start a streaming run and push the cases', async ({ request }) => {

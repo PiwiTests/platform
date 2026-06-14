@@ -223,7 +223,7 @@ test.describe('Trace deduplication — resource extraction and reconstruction', 
     expect(fileRes.headers()['content-type']).toContain('application/zip')
 
     const servedZip = Buffer.from(await fileRes.body())
-    const entries = parseZip(servedZip)
+    const entries = await parseZip(servedZip)
     const resourceEntry = entries.find(e => e.name === `resources/${resourceName}`)
     expect(resourceEntry).toBeDefined()
     expect(resourceEntry!.data.equals(resourceData)).toBe(true)
@@ -264,7 +264,7 @@ test.describe('Trace deduplication — resource extraction and reconstruction', 
       const { traces } = await getFirstCaseTraces(request, testRunId)
       const fileRes = await request.get(`/api/files/${traces[0].filePath}`)
       expect(fileRes.ok()).toBe(true)
-      return parseZip(Buffer.from(await fileRes.body()))
+      return await parseZip(Buffer.from(await fileRes.body()))
     }
 
     const entries1 = await getResourceEntries((await r1.json()).testRunId)
@@ -294,7 +294,7 @@ test.describe('Trace deduplication — resource extraction and reconstruction', 
     const { traces } = await getFirstCaseTraces(request, testRunId)
 
     const fileRes = await request.get(`/api/files/${traces[0].filePath}`)
-    const entries = parseZip(Buffer.from(await fileRes.body()))
+    const entries = await parseZip(Buffer.from(await fileRes.body()))
 
     expect(entries.find(e => e.name === 'trace.trace')).toBeDefined()
     expect(entries.find(e => e.name === 'trace.network')).toBeDefined()

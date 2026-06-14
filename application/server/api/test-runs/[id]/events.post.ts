@@ -31,6 +31,8 @@ defineRouteMeta({
   }
 })
 
+const MAX_EVENT_BATCH_BYTES = 10 * 1024 * 1024 // 10 MB
+
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
 
@@ -39,6 +41,11 @@ export default eventHandler(async (event) => {
       statusCode: 400,
       message: 'Invalid test run ID'
     })
+  }
+
+  const contentLength = parseInt(getRequestHeader(event, 'content-length') ?? '0', 10)
+  if (contentLength > MAX_EVENT_BATCH_BYTES) {
+    throw createError({ statusCode: 413, message: 'Event batch too large (max 10 MB)' })
   }
 
   const body = await readBody(event)

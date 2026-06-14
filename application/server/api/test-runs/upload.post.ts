@@ -52,9 +52,16 @@ function getReportLabel(type: string, override?: string): string {
   return REPORT_TYPE_LABELS[type] ?? `${type.charAt(0).toUpperCase() + type.slice(1)} Report`
 }
 
+const MAX_UPLOAD_BYTES = 500 * 1024 * 1024 // 500 MB
+
 export default eventHandler(async (event) => {
   // Require reporter or administrator role for uploading test results
   await requireAuth(event, ['reporter', 'administrator'])
+
+  const contentLength = parseInt(getRequestHeader(event, 'content-length') ?? '0', 10)
+  if (contentLength > MAX_UPLOAD_BYTES) {
+    throw createError({ statusCode: 413, message: 'Upload too large (max 500 MB)' })
+  }
 
   const formData = await readMultipartFormData(event)
 

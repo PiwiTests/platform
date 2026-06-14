@@ -1,8 +1,21 @@
-import { inflateRawSync } from 'zlib'
+import { inflateRaw, inflateRawSync } from 'zlib'
+import { promisify } from 'util'
+
+const inflateRawAsync = promisify(inflateRaw)
 
 export interface ZipEntry {
   name: string
   data: Buffer
+}
+
+/** Metadata from the ZIP central directory — no decompression performed. */
+export interface ZipEntryMeta {
+  name: string
+  /** Compression method: 0 = stored, 8 = deflated. */
+  method: number
+  compressedSize: number
+  /** Byte offset in the source buffer where compressed data begins. */
+  dataStart: number
 }
 
 // CRC-32 lookup table (standard polynomial 0xEDB88320)
@@ -48,13 +61,11 @@ function crc32(buf: Buffer): number {
 }
 
 /**
- * Parse a ZIP archive (stored or deflated entries only) and return all file entries
- * with their decompressed data. Reads via the central directory so data descriptors
- * and flag variations don't affect correctness.
+ * Read the ZIP central directory and return entry metadata without decompressing
+ * any data.  Use this when you only need file names and byte offsets, e.g. to
+ * decide which resources are new before committing to decompression.
  */
-export function parseZip(data: Buffer): ZipEntry[] {
-  // Locate End of Central Directory by scanning backwards for its signature.
-  // The comment field can be up to 65535 bytes, so we scan that far back.
+export function parseZipDirectory(data: Buffer): ZipEntryMeta[] {
   const scanFrom = Math.max(0, data.length - 22 - 65535)
   let eocdOffset = -1
   for (let i = data.length - 22; i >= scanFrom; i--) {
@@ -68,7 +79,7 @@ export function parseZip(data: Buffer): ZipEntry[] {
   const entryCount = data.readUInt16LE(eocdOffset + 10)
   const cdOffset = data.readUInt32LE(eocdOffset + 16)
 
-  const entries: ZipEntry[] = []
+  const metas: ZipEntryMeta[] = []
   let pos = cdOffset
 
   for (let i = 0; i < entryCount; i++) {
@@ -85,10 +96,8 @@ export function parseZip(data: Buffer): ZipEntry[] {
 
     pos += 46 + nameLen + extraLen + commentLen
 
-    // Skip directory entries and unsupported ZIP64 entries
     if (name.endsWith('/') || compressedSize === 0xffffffff) continue
 
-    // Read data from local file header position
     if (localOffset + 30 > data.length) throw new Error(`Bad local offset for "${name}"`)
     if (data.readUInt32LE(localOffset) !== 0x04034b50) throw new Error(`Bad local header for "${name}"`)
 
@@ -96,29 +105,50 @@ export function parseZip(data: Buffer): ZipEntry[] {
     const localExtraLen = data.readUInt16LE(localOffset + 28)
     const dataStart = localOffset + 30 + localNameLen + localExtraLen
 
-    if (dataStart + compressedSize > data.length) throw new Error(`Truncated data for "${name}"`)
-    const compressed = data.subarray(dataStart, dataStart + compressedSize)
-
-    let entryData: Buffer
-    if (method === 0) {
-      entryData = Buffer.from(compressed)
-    } else if (method === 8) {
-      entryData = inflateRawSync(compressed)
-    } else {
-      // Unknown compression — skip rather than crash
-      continue
-    }
-
-    entries.push({ name, data: entryData })
+    metas.push({ name, method, compressedSize, dataStart })
   }
 
+  return metas
+}
+
+/**
+ * Decompress a single ZIP entry identified by its central-directory metadata.
+ * Uses async decompression so it does not block the event loop.
+ */
+export async function decompressEntry(data: Buffer, meta: ZipEntryMeta): Promise<Buffer> {
+  if (meta.dataStart + meta.compressedSize > data.length) {
+    throw new Error(`Truncated data for "${meta.name}"`)
+  }
+  const compressed = data.subarray(meta.dataStart, meta.dataStart + meta.compressedSize)
+  if (meta.method === 0) return Buffer.from(compressed)
+  if (meta.method === 8) return inflateRawAsync(compressed)
+  throw new Error(`Unsupported ZIP compression method ${meta.method} for "${meta.name}"`)
+}
+
+/**
+ * Parse a ZIP archive and return all file entries with their decompressed data.
+ * Reads via the central directory so data descriptors and flag variations don't
+ * affect correctness.
+ *
+ * Prefer `parseZipDirectory` + `decompressEntry` when you only need a subset of
+ * entries, to avoid decompressing data you'll discard.
+ */
+export async function parseZip(data: Buffer): Promise<ZipEntry[]> {
+  const metas = parseZipDirectory(data)
+  const entries: ZipEntry[] = []
+  for (const meta of metas) {
+    try {
+      entries.push({ name: meta.name, data: await decompressEntry(data, meta) })
+    } catch {
+      // Unknown compression or corrupt entry — skip rather than crash
+    }
+  }
   return entries
 }
 
 /**
  * Build a ZIP archive from a list of entries using stored compression (method 0).
- * This is appropriate for trace resources which are typically already compressed
- * (gzip HTTP responses, PNG images, etc.).
+ * This is appropriate for trace event entries which are small text-based files.
  */
 export function buildZip(entries: ZipEntry[]): Buffer {
   const localParts: Buffer[] = []
@@ -184,4 +214,31 @@ export function buildZip(entries: ZipEntry[]): Buffer {
   eocd.writeUInt16LE(0, 20) // comment length
 
   return Buffer.concat([...localParts, cdBuf, eocd])
+}
+
+/**
+ * Synchronous version of parseZip kept for contexts where async is not available
+ * (e.g. tests). Prefer the async `parseZip` in server request handlers.
+ */
+export function parseZipSync(data: Buffer): ZipEntry[] {
+  const metas = parseZipDirectory(data)
+  const entries: ZipEntry[] = []
+  for (const meta of metas) {
+    try {
+      if (meta.dataStart + meta.compressedSize > data.length) continue
+      const compressed = data.subarray(meta.dataStart, meta.dataStart + meta.compressedSize)
+      let entryData: Buffer
+      if (meta.method === 0) {
+        entryData = Buffer.from(compressed)
+      } else if (meta.method === 8) {
+        entryData = inflateRawSync(compressed)
+      } else {
+        continue
+      }
+      entries.push({ name: meta.name, data: entryData })
+    } catch {
+      // Skip corrupt or unsupported entries
+    }
+  }
+  return entries
 }
