@@ -139,6 +139,7 @@ After submitting results, the dashboard provides:
 | **Performance** (`/projects/:id/performance`) | Duration trends, slowest tests ranking, side-by-side run comparison |
 | **Test run** (`/test-runs/:id`) | Individual test cases with status, errors, traces, failure groups, and reports |
 | **Test case** (`/test-cases/:id`) | Detailed view of a single test including steps, web vitals, and network data |
+| **API Docs** (`/docs`) | Interactive API reference with endpoint documentation, schemas, and try-it console (auto-generated) |
 | **Settings** (`/settings`) | User management, storage stats, tag management, and cleanup tools |
 
 ## Development commands
