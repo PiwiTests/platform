@@ -1,1 +1,0 @@
-ALTER TABLE `test_runs_cases` ADD `worker_index` integer;
