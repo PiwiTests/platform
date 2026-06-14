@@ -283,7 +283,10 @@ onMounted(async () => {
 </script>
 
 <template>
-  <UDashboardGroup unit="rem" style="top: var(--demo-banner-height, 0px)">
+  <UDashboardGroup
+    unit="rem"
+    style="top: var(--demo-banner-height, 0px); height: calc(100dvh - var(--demo-banner-height, 0px))"
+  >
     <UDashboardSidebar
       id="default"
       v-model:open="open"
