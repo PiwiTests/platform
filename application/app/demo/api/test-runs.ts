@@ -5,6 +5,7 @@
 import { eq, sql, desc, and, isNotNull, inArray } from 'drizzle-orm';
 import { getDemoDb } from '../db.client';
 import { testRuns, testCases, testRunsCases, projects, files, failureClusters } from '~~/server/database/schema.sqlite';
+import { normalizeRoute } from '~~/shared/utils/route';
 
 /** GET /api/test-runs/:id */
 export async function apiGetTestRun(id: number) {

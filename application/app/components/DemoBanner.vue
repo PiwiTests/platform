@@ -8,7 +8,10 @@ if (config.public.demoMode) {
   useResizeObserver(bannerEl, (entries) => {
     const entry = entries[0];
     if (!entry) return;
-    document.documentElement.style.setProperty('--demo-banner-height', `${entry.contentRect.height + 6}px`);
+    // getBoundingClientRect gives the exact rendered height (content + padding + border)
+    // which is what the layout needs for its top offset.
+    const height = (entry.target as HTMLElement).getBoundingClientRect().height;
+    document.documentElement.style.setProperty('--demo-banner-height', `${height}px`);
   });
 
   onUnmounted(() => {
@@ -18,20 +21,29 @@ if (config.public.demoMode) {
 </script>
 
 <template>
-  <div v-if="config.public.demoMode" ref="banner" class="demo-banner">
-    <div class="demo-banner-inner">
-      <span>
-        ⚠️ <strong>Demo mode</strong> — sample data running entirely in your browser.
-        <a href="https://github.com/PhenX/piwi-dashboard" target="_blank" class="underline">Deploy your own instance</a>
-        for live data.
-      </span>
-      <DemoSimulator />
+  <Teleport v-if="config.public.demoMode" to="body">
+    <div ref="banner" class="demo-banner">
+      <div class="demo-banner-inner">
+        <span>
+          ⚠️ <strong>Demo mode</strong> — sample data running entirely in your browser.
+          <a href="https://github.com/PhenX/piwi-dashboard" target="_blank" class="underline"
+            >Deploy your own instance</a
+          >
+          for live data.
+        </span>
+        <DemoSimulator />
+      </div>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <style scoped>
 .demo-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
   background-color: #fef3c7;
   color: #92400e;
   text-align: center;
@@ -39,8 +51,6 @@ if (config.public.demoMode) {
   font-size: 0.875rem;
   font-weight: 500;
   border-bottom: 1px solid #fcd34d;
-  position: relative;
-  z-index: 60;
 }
 
 .demo-banner-inner {

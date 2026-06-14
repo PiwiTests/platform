@@ -354,11 +354,18 @@ const { summaryColSpanClass, blockColSpanClass } = useDetailGrid(() => {
   return count;
 });
 
-// Status filter — set by RunSummary clicks, consumed by TestCasesList
-const statusFilter = ref('all');
+// Test-cases filter state — lifted here so it survives tab switches
+const testCaseSearch = ref('');
+const testCaseActiveStatuses = ref<string[]>([]);
+const testCaseBrowserFilter = ref('all');
+
+// Derive a single string for RunSummary's activeFilter highlight
+const statusFilterForSummary = computed(() =>
+  testCaseActiveStatuses.value.length === 1 ? testCaseActiveStatuses.value[0]! : 'all',
+);
 
 function handleFilterStatus(status: string) {
-  statusFilter.value = status;
+  testCaseActiveStatuses.value = !status || status === 'all' ? [] : [status];
 }
 
 // Reports from the files table
@@ -499,7 +506,7 @@ function handleSelectCluster(clusterId: number) {
           :summary-col-span-class="summaryColSpanClass"
           :block-col-span-class="blockColSpanClass"
           :finalizing="isFinalizing"
-          :active-filter="statusFilter"
+          :active-filter="statusFilterForSummary"
           @update:show-custom-data="showCustomData = $event"
           @filter-status="handleFilterStatus"
         />
@@ -521,10 +528,12 @@ function handleSelectCluster(clusterId: number) {
               </div>
               <TestCasesList
                 ref="testCasesListRef"
+                v-model:search="testCaseSearch"
+                v-model:active-statuses="testCaseActiveStatuses"
+                v-model:browser-filter="testCaseBrowserFilter"
                 :test-cases="displayTestCases"
                 :is-live="isLive"
                 :failure-cluster-filter="selectedClusterFilter"
-                :status-filter="statusFilter"
               />
             </div>
           </template>

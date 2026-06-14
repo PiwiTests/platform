@@ -7,24 +7,12 @@ const props = defineProps<{
   testCases: TestCaseResult[];
   isLive: boolean;
   failureClusterFilter?: number | null;
-  statusFilter?: string;
 }>();
 
-// Search and filter
-const testCaseSearch = ref('');
-const activeStatuses = ref<string[]>([]);
-
-// Sync from RunSummary clicks: replace active statuses with clicked one
-watch(
-  () => props.statusFilter,
-  (val) => {
-    if (!val || val === 'all') {
-      activeStatuses.value = [];
-    } else {
-      activeStatuses.value = [val];
-    }
-  },
-);
+// Filter state is owned by the parent page so it survives tab switches.
+const testCaseSearch = defineModel<string>('search', { default: '' });
+const activeStatuses = defineModel<string[]>('activeStatuses', { default: () => [] });
+const testCaseBrowserFilter = defineModel<string>('browserFilter', { default: 'all' });
 
 const STATUS_OPTIONS = [
   { label: 'Passed', value: 'passed', color: 'green' },
@@ -41,8 +29,6 @@ function toggleStatus(value: string) {
     activeStatuses.value = [...activeStatuses.value, value];
   }
 }
-
-const testCaseBrowserFilter = ref<string>('all');
 
 const testCaseBrowserOptions = computed(() => {
   const browsers = new Set<string>();
