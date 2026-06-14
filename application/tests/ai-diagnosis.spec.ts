@@ -173,7 +173,7 @@ test.describe.serial('AI diagnosis endpoints', () => {
 
     const res = await request.get(`/api/failure-clusters/${clusterId}/diagnosis`)
     expect(res.ok()).toBeTruthy()
-    expect(await res.json()).toBeNull()
+    expect(await res.json()).toEqual({ diagnosis: null, manualBaseCommit: null })
   })
 
   test('POST /api/failure-clusters/:id/diagnose returns completed diagnosis', async ({ request }) => {
