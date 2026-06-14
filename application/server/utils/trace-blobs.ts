@@ -73,7 +73,7 @@ export async function upsertTraceBlob(
         .where(and(eq(traceResources.projectId, projectId), inArray(traceResources.name, names)))
       const existingNames = new Set(existingRows.map(r => r.name))
 
-      const newMetas = resourceMetas.filter(e => {
+      const newMetas = resourceMetas.filter((e) => {
         const name = e.name.slice('resources/'.length)
         return name && !existingNames.has(name)
       })
