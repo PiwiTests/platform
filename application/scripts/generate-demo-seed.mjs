@@ -17,7 +17,7 @@
  * does not need a running server.
  */
 
-import { writeFileSync, mkdirSync } from 'fs';
+import { writeFileSync, mkdirSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
@@ -75,220 +75,22 @@ function computeDemoFingerprint(rawError) {
   return { fingerprint: hash, errorType, signature };
 }
 
-// ── Schema ─────────────────────────────────────────────────────────────────
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS projects (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  name TEXT NOT NULL,
-  label TEXT,
-  description TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS projects_name_unique ON projects (name);
-CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects (updated_at);
+// ── Schema (derived from Drizzle migrations) ────────────────────────────────
+// Read migrations in journal order so the demo schema always matches the server
+// schema automatically — no manual sync needed when columns are added.
+// The --> statement-breakpoint markers are Drizzle meta-comments; strip them so
+// sql.js only sees plain SQL statements.
+const MIGRATIONS_DIR = join(__dirname, '../server/database/migrations');
+const journal = JSON.parse(readFileSync(join(MIGRATIONS_DIR, 'meta/_journal.json'), 'utf-8'));
 
-CREATE TABLE IF NOT EXISTS test_cases (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  project_id INTEGER NOT NULL,
-  file_path TEXT NOT NULL,
-  title TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  FOREIGN KEY (project_id) REFERENCES projects(id)
-);
-CREATE INDEX IF NOT EXISTS idx_test_cases_project_id ON test_cases (project_id);
-CREATE INDEX IF NOT EXISTS idx_test_cases_file_path_title ON test_cases (project_id, file_path, title);
-
-CREATE TABLE IF NOT EXISTS test_runs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  project_id INTEGER NOT NULL,
-  status TEXT NOT NULL,
-  start_time INTEGER NOT NULL,
-  duration INTEGER,
-  total_tests INTEGER DEFAULT 0 NOT NULL,
-  passed_tests INTEGER DEFAULT 0 NOT NULL,
-  failed_tests INTEGER DEFAULT 0 NOT NULL,
-  skipped_tests INTEGER DEFAULT 0 NOT NULL,
-  flaky_tests INTEGER DEFAULT 0 NOT NULL,
-  avg_test_duration INTEGER,
-  p90_test_duration INTEGER,
-  environment TEXT,
-  metadata TEXT,
-  stream_token TEXT,
-  instance_id TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER,
-  FOREIGN KEY (project_id) REFERENCES projects(id)
-);
-CREATE INDEX IF NOT EXISTS idx_test_runs_project_id ON test_runs (project_id);
-CREATE INDEX IF NOT EXISTS idx_test_runs_start_time ON test_runs (start_time);
-
-CREATE TABLE IF NOT EXISTS test_runs_cases (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  test_run_id INTEGER NOT NULL,
-  test_case_id INTEGER NOT NULL,
-  status TEXT NOT NULL,
-  duration INTEGER,
-  error TEXT,
-  failure_cluster_id INTEGER,
-  retries INTEGER DEFAULT 0,
-  line INTEGER,
-  column INTEGER,
-  steps TEXT,
-  slowest_step TEXT,
-  slowest_step_duration INTEGER,
-  network_requests TEXT,
-  web_vitals TEXT,
-  console_logs TEXT,
-  aria_snapshot TEXT,
-  browser TEXT,
-  worker_index INTEGER,
-  started_at INTEGER,
-  created_at INTEGER NOT NULL,
-  FOREIGN KEY (test_run_id) REFERENCES test_runs(id),
-  FOREIGN KEY (test_case_id) REFERENCES test_cases(id)
-);
-CREATE INDEX IF NOT EXISTS idx_test_runs_cases_test_run_id ON test_runs_cases (test_run_id);
-CREATE INDEX IF NOT EXISTS idx_test_runs_cases_test_case_id ON test_runs_cases (test_case_id);
-CREATE INDEX IF NOT EXISTS idx_test_runs_cases_failure_cluster_id ON test_runs_cases (failure_cluster_id);
-
-CREATE TABLE IF NOT EXISTS files (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  test_run_id INTEGER,
-  test_runs_case_id INTEGER,
-  type TEXT NOT NULL,
-  subtype TEXT,
-  label TEXT,
-  path TEXT NOT NULL,
-  size INTEGER,
-  blob_id INTEGER,
-  created_at INTEGER NOT NULL,
-  FOREIGN KEY (test_run_id) REFERENCES test_runs(id),
-  FOREIGN KEY (test_runs_case_id) REFERENCES test_runs_cases(id)
-);
-CREATE INDEX IF NOT EXISTS idx_files_test_run_id ON files (test_run_id);
-CREATE INDEX IF NOT EXISTS idx_files_test_runs_case_id ON files (test_runs_case_id);
-
-CREATE TABLE IF NOT EXISTS trace_resources (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  project_id INTEGER NOT NULL,
-  name TEXT NOT NULL,
-  path TEXT NOT NULL,
-  size INTEGER NOT NULL,
-  created_at INTEGER NOT NULL,
-  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_trace_resources_project_name ON trace_resources (project_id, name);
-
-CREATE TABLE IF NOT EXISTS trace_blobs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  project_id INTEGER NOT NULL,
-  hash TEXT NOT NULL,
-  path TEXT NOT NULL,
-  size INTEGER NOT NULL,
-  created_at INTEGER NOT NULL,
-  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_trace_blobs_project_hash ON trace_blobs (project_id, hash);
-
-CREATE TABLE IF NOT EXISTS failure_clusters (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  project_id INTEGER NOT NULL,
-  fingerprint TEXT NOT NULL,
-  signature TEXT NOT NULL,
-  error_type TEXT,
-  selector TEXT,
-  sample_error TEXT,
-  status TEXT NOT NULL DEFAULT 'open',
-  triage_note TEXT,
-  first_seen_run_id INTEGER NOT NULL,
-  last_seen_run_id INTEGER NOT NULL,
-  occurrences INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_failure_clusters_project_fingerprint ON failure_clusters (project_id, fingerprint);
-CREATE INDEX IF NOT EXISTS idx_failure_clusters_project_last_seen ON failure_clusters (project_id, last_seen_run_id);
-CREATE INDEX IF NOT EXISTS idx_failure_clusters_status ON failure_clusters (status);
-
-CREATE TABLE IF NOT EXISTS tags (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  text TEXT NOT NULL,
-  color TEXT NOT NULL DEFAULT 'neutral',
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS tags_text_unique ON tags (text);
-
-CREATE TABLE IF NOT EXISTS project_tags (
-  project_id INTEGER NOT NULL,
-  tag_id INTEGER NOT NULL,
-  PRIMARY KEY (project_id, tag_id),
-  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-  FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_project_tags_project_id ON project_tags (project_id);
-CREATE INDEX IF NOT EXISTS idx_project_tags_tag_id ON project_tags (tag_id);
-
-CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  username TEXT NOT NULL,
-  password TEXT NOT NULL,
-  role TEXT NOT NULL,
-  name TEXT,
-  avatar_url TEXT,
-  oauth_provider TEXT,
-  oauth_provider_id TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS users_username_unique ON users (username);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_users_oauth ON users (oauth_provider, oauth_provider_id);
-
-CREATE TABLE IF NOT EXISTS api_keys (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  user_id INTEGER NOT NULL,
-  name TEXT NOT NULL,
-  key_hash TEXT NOT NULL,
-  key_prefix TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  last_used_at INTEGER,
-  expires_at INTEGER,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-CREATE UNIQUE INDEX IF NOT EXISTS api_keys_key_hash_unique ON api_keys (key_hash);
-CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys (user_id);
-CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys (key_hash);
-
-CREATE TABLE IF NOT EXISTS failure_diagnoses (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  cluster_id INTEGER NOT NULL,
-  status TEXT NOT NULL DEFAULT 'running',
-  provider TEXT,
-  model TEXT,
-  category TEXT,
-  confidence TEXT,
-  summary TEXT,
-  root_cause TEXT,
-  details TEXT,
-  error TEXT,
-  input_tokens INTEGER,
-  output_tokens INTEGER,
-  duration_ms INTEGER,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  FOREIGN KEY (cluster_id) REFERENCES failure_clusters(id) ON DELETE CASCADE
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_failure_diagnoses_cluster_id ON failure_diagnoses (cluster_id);
-
-CREATE TABLE IF NOT EXISTS app_settings (
-  key TEXT PRIMARY KEY NOT NULL,
-  value TEXT,
-  updated_at INTEGER NOT NULL
-);
-`.trim();
+const SCHEMA = journal.entries
+  .sort((a, b) => a.idx - b.idx)
+  .map((entry) =>
+    readFileSync(join(MIGRATIONS_DIR, `${entry.tag}.sql`), 'utf-8')
+      .replace(/--> statement-breakpoint/g, '')
+      .trim(),
+  )
+  .join('\n\n');
 
 // ── Demo data ─────────────────────────────────────────────────────────────
 
