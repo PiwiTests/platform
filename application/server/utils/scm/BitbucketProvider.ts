@@ -113,6 +113,10 @@ export class BitbucketProvider extends ScmProvider {
     return result
   }
 
+  async fetchCommitDiff(sha: string): Promise<ScmChanges | null> {
+    return this.fetchChanges(`${sha}~1`, sha)
+  }
+
   async probeError(): Promise<string | null> {
     return null
   }

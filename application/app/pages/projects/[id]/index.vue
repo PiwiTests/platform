@@ -549,9 +549,9 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
     </template>
 
     <template #body>
-      <div class="flex flex-col h-full overflow-y-auto gap-4 p-1">
+      <div class="flex flex-col h-full overflow-y-auto gap-4">
         <div v-if="project?.description || project?.tags && project.tags.length > 0" class="p-4 pb-0 space-y-4">
-          <p v-if="project?.description" class="text-gray-600 mt-2">
+          <p v-if="project?.description" class="text-gray-600">
             {{ project.description }}
           </p>
 

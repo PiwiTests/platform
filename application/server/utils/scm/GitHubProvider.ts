@@ -4,6 +4,7 @@ import { TtlCache } from './cache'
 
 const listCommitsCache = new TtlCache<ScmCommitDetail[]>(3 * 60 * 1000)
 const fetchChangesCache = new TtlCache<ScmChanges>(10 * 60 * 1000)
+const fetchCommitDiffCache = new TtlCache<ScmChanges>(10 * 60 * 1000)
 
 export class GitHubProvider extends ScmProvider {
   readonly provider = 'github' as const
@@ -70,6 +71,36 @@ export class GitHubProvider extends ScmProvider {
       }))
     }
     fetchChangesCache.set(key, result)
+    return result
+  }
+
+  async fetchCommitDiff(sha: string): Promise<ScmChanges | null> {
+    const key = `${this.repoPath}:${sha}`
+    const hit = fetchCommitDiffCache.get(key)
+    if (hit !== undefined) return hit
+
+    const res = await fetch(
+      `https://api.github.com/repos/${this.repoPath}/commits/${sha}`,
+      { headers: this.makeHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
+    )
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({})) as { message?: string }
+      throw new Error(body.message ?? `GitHub API error ${res.status}`)
+    }
+    const data = await res.json() as {
+      files?: Array<{ filename: string, status: string, additions: number, deletions: number, patch?: string }>
+    }
+    const result: ScmChanges = {
+      commits: [],
+      files: (data.files ?? []).slice(0, MAX_SCM_FILES).map(f => ({
+        filename: f.filename,
+        status: f.status,
+        additions: f.additions,
+        deletions: f.deletions,
+        patch: f.patch ? truncatePatch(f.patch) : undefined
+      }))
+    }
+    fetchCommitDiffCache.set(key, result)
     return result
   }
 

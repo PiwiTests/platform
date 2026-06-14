@@ -17,7 +17,10 @@ export class TtlCache<V> {
     if (this.store.size >= this.maxSize) {
       const now = Date.now()
       for (const [k, v] of this.store) {
-        if (now > v.expiry) { this.store.delete(k); break }
+        if (now > v.expiry) {
+          this.store.delete(k)
+          break
+        }
       }
       if (this.store.size >= this.maxSize) {
         const first = this.store.keys().next().value

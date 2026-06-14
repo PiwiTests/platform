@@ -52,5 +52,6 @@ export abstract class ScmProvider {
 
   abstract listCommits(limit?: number): Promise<ScmCommitDetail[]>
   abstract fetchChanges(fromSha: string, toSha: string): Promise<ScmChanges | null>
+  abstract fetchCommitDiff(sha: string): Promise<ScmChanges | null>
   abstract probeError(): Promise<string | null>
 }

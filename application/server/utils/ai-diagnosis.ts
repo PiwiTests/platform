@@ -44,7 +44,7 @@ export function isDiagnosisRunning(clusterId: number): boolean {
   return running.has(clusterId)
 }
 
-export async function buildClusterDiagnosisContext(db: DbClient, cluster: FailureCluster, opts?: { baseCommit?: string }): Promise<{ text: string, coverage: DiagnosisContextCoverage }> {
+export async function buildClusterDiagnosisContext(db: DbClient, cluster: FailureCluster, opts?: { baseCommit?: string, selectedCommitShas?: string[] }): Promise<{ text: string, coverage: DiagnosisContextCoverage }> {
   const sections: string[] = []
 
   const scmCov: NonNullable<DiagnosisContextCoverage['scm']> = {
@@ -412,6 +412,48 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
     }
   }
 
+  // Manually selected commits
+  if (opts?.selectedCommitShas?.length) {
+    try {
+      const [runForUrl] = await db.select({ metadata: testRuns.metadata })
+        .from(testRuns).where(eq(testRuns.id, cluster.lastSeenRunId))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const meta = runForUrl?.metadata as any
+      const repoUrl = normalizeGitUrl(meta?.scm?.remoteUrl ?? null)
+      if (repoUrl) {
+        const provider = await createScmProvider(repoUrl, db)
+        if (provider) {
+          const commitLines: string[] = ['## Commits Manually Selected for Context']
+          let patchBudget = MAX_SCM_PATCH_BUDGET
+          for (const sha of opts.selectedCommitShas.slice(0, 10)) {
+            try {
+              const commitDiff = await provider.fetchCommitDiff(sha)
+              if (commitDiff?.files.length) {
+                commitLines.push(`\n### ${sha.slice(0, 7)}`)
+                commitLines.push(`Changed files (${commitDiff.files.length}):`)
+                for (const f of commitDiff.files) {
+                  const stats = (f.additions || f.deletions) ? ` +${f.additions} -${f.deletions}` : ''
+                  commitLines.push(`- ${f.filename} (${f.status}${stats})`)
+                }
+                const patches: string[] = []
+                for (const f of commitDiff.files) {
+                  if (!f.patch || patchBudget <= 0) continue
+                  const patch = f.patch.length > patchBudget ? f.patch.slice(0, patchBudget) + '\n[... patch truncated ...]' : f.patch
+                  patchBudget -= Math.min(f.patch.length, patchBudget)
+                  patches.push(`--- ${f.filename}\n${patch}`)
+                }
+                if (patches.length) {
+                  commitLines.push(`\nPatches:\n\`\`\`diff\n${patches.join('\n\n')}\n\`\`\``)
+                }
+              }
+            } catch { /* skip individual commit on error */ }
+          }
+          if (commitLines.length > 1) sections.push(commitLines.join('\n'))
+        }
+      }
+    } catch { /* skip entire block on error */ }
+  }
+
   return {
     text: sections.join('\n\n'),
     coverage: { scm: scmReached ? scmCov : null }
@@ -422,7 +464,7 @@ export async function runClusterDiagnosis(
   db: DbClient,
   cluster: FailureCluster,
   config: AiConfig,
-  _opts?: { force?: boolean, additionalContext?: string, images?: AiAttachedImage[], baseCommit?: string }
+  _opts?: { force?: boolean, additionalContext?: string, images?: AiAttachedImage[], baseCommit?: string, selectedCommitShas?: string[] }
 ): Promise<FailureDiagnosis> {
   if (running.has(cluster.id)) {
     throw Object.assign(new Error('Diagnosis already running for this cluster'), { statusCode: 409 })
@@ -485,7 +527,7 @@ export async function runClusterDiagnosis(
   const t0 = Date.now()
 
   try {
-    const { text: userContent } = await buildClusterDiagnosisContext(db, cluster, { baseCommit: _opts?.baseCommit })
+    const { text: userContent } = await buildClusterDiagnosisContext(db, cluster, { baseCommit: _opts?.baseCommit, selectedCommitShas: _opts?.selectedCommitShas })
     const extra = _opts?.additionalContext?.trim()
     const fullUserContent = extra
       ? `${userContent}\n\n## Additional Context Provided by User\n${extra}`

@@ -28,6 +28,10 @@ const attachedImages = ref<Array<{ name: string, mediaType: string, data: string
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const dragOver = ref(false)
 
+// Commit browser
+const commitBrowserOpen = ref(false)
+const selectedCommitShas = ref<string[]>([])
+
 const MAX_TEXT_BYTES = 200 * 1024
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
@@ -186,8 +190,9 @@ async function fetchContext() {
   contextText.value = null
   coverage.value = null
   try {
-    const query: Record<string, string> = {}
+    const query: Record<string, string | string[]> = {}
     if (baseCommit.value.trim()) query.baseCommit = baseCommit.value.trim()
+    if (selectedCommitShas.value.length) query.selectedCommitShas = selectedCommitShas.value
     const res = await $fetch<{ context: string, coverage: DiagnosisContextCoverage }>(
       `/api/failure-clusters/${props.clusterId}/context`,
       { query }
@@ -209,6 +214,8 @@ watch(baseCommit, (val) => {
   // Auto-save immediately when the value differs from what's in the DB
   if (val !== savedBaseCommit.value) persistBaseCommit(val)
 })
+
+watch(selectedCommitShas, () => { fetchContext() }, { deep: true })
 
 const baseCommitIsPinned = computed(() => !!savedBaseCommit.value)
 
@@ -239,6 +246,7 @@ async function diagnose(force = false) {
     const body: Record<string, unknown> = {}
     if (ctx) body.additionalContext = ctx
     if (baseCommit.value.trim()) body.baseCommit = baseCommit.value.trim()
+    if (selectedCommitShas.value.length) body.selectedCommitShas = selectedCommitShas.value
     if (attachedImages.value.length) {
       body.images = attachedImages.value.map(img => ({ name: img.name, mediaType: img.mediaType, data: img.data }))
     }
@@ -335,12 +343,34 @@ function copyToClipboard(text: string | null) {
           </div>
 
           <!-- Baseline commit row -->
-          <div class="flex items-center gap-2 mt-2">
+          <div class="flex items-center gap-2 mt-2 flex-wrap">
             <span class="text-xs text-gray-500 font-medium shrink-0">Baseline</span>
             <CommitPicker v-model="baseCommit" :cluster-id="clusterId" />
             <UTooltip v-if="baseCommitIsPinned" text="Baseline commit pinned for this cluster">
               <UIcon name="i-lucide-pin" class="size-3.5 text-primary shrink-0" />
             </UTooltip>
+            <div class="flex items-center gap-1.5 ml-auto">
+              <!-- Selected commits chip -->
+              <div
+                v-if="selectedCommitShas.length"
+                class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium"
+              >
+                <UIcon name="i-lucide-git-commit-horizontal" class="size-3" />
+                <span>{{ selectedCommitShas.length }} commit{{ selectedCommitShas.length === 1 ? '' : 's' }}</span>
+                <button class="ml-0.5 hover:opacity-70 transition-opacity" @click="selectedCommitShas = []">
+                  <UIcon name="i-lucide-x" class="size-3" />
+                </button>
+              </div>
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-list"
+                @click="commitBrowserOpen = true"
+              >
+                Browse
+              </UButton>
+            </div>
           </div>
         </div>
 
@@ -612,4 +642,11 @@ function copyToClipboard(text: string | null) {
       </div>
     </div>
   </div>
+
+  <CommitBrowserModal
+    v-model:open="commitBrowserOpen"
+    :cluster-id="clusterId"
+    :initial-selected="selectedCommitShas"
+    @confirm="selectedCommitShas = $event"
+  />
 </template>

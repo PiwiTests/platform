@@ -4,6 +4,7 @@ import { TtlCache } from './cache'
 
 const listCommitsCache = new TtlCache<ScmCommitDetail[]>(3 * 60 * 1000)
 const fetchChangesCache = new TtlCache<ScmChanges>(10 * 60 * 1000)
+const fetchCommitDiffCache = new TtlCache<ScmChanges>(10 * 60 * 1000)
 
 export class GitLabProvider extends ScmProvider {
   readonly provider = 'gitlab' as const
@@ -24,7 +25,10 @@ export class GitLabProvider extends ScmProvider {
     )
     if (!res.ok) return []
     const data = await res.json() as Array<{
-      id: string, message: string, author_name: string, created_at: string
+      id: string
+      message: string
+      author_name: string
+      created_at: string
     }>
     const result = data.map(c => ({
       sha: c.id,
@@ -63,6 +67,42 @@ export class GitLabProvider extends ScmProvider {
       }))
     }
     fetchChangesCache.set(key, result)
+    return result
+  }
+
+  async fetchCommitDiff(sha: string): Promise<ScmChanges | null> {
+    const key = `${this.hostname}:${this.repoPath}:${sha}`
+    const hit = fetchCommitDiffCache.get(key)
+    if (hit !== undefined) return hit
+
+    const projectPath = encodeURIComponent(this.repoPath)
+    const res = await fetch(
+      `https://${this.hostname}/api/v4/projects/${projectPath}/repository/commits/${sha}/diff`,
+      { headers: this.makeHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
+    )
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({})) as { message?: string }
+      throw new Error(body.message ?? `GitLab API error ${res.status}`)
+    }
+    const data = await res.json() as Array<{
+      old_path: string
+      new_path: string
+      diff: string
+      new_file: boolean
+      deleted_file: boolean
+      renamed_file: boolean
+    }>
+    const result: ScmChanges = {
+      commits: [],
+      files: data.slice(0, MAX_SCM_FILES).map(f => ({
+        filename: f.new_path || f.old_path,
+        status: f.new_file ? 'added' : f.deleted_file ? 'removed' : f.renamed_file ? 'renamed' : 'modified',
+        additions: 0,
+        deletions: 0,
+        patch: f.diff ? truncatePatch(f.diff) : undefined
+      }))
+    }
+    fetchCommitDiffCache.set(key, result)
     return result
   }
 

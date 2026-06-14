@@ -27,8 +27,9 @@ export default eventHandler(async (event) => {
 
   const query = getQuery(event)
   const baselineSha = query.baseline as string | undefined
+  const limit = Math.min(Math.max(parseInt(String(query.limit || '50')), 1), 200)
 
-  const commits = await provider.listCommits()
+  const commits = await provider.listCommits(limit)
 
   let error: string | null = null
   if (commits.length === 0) {
@@ -50,5 +51,5 @@ export default eventHandler(async (event) => {
     } catch { /* stats unavailable */ }
   }
 
-  return { commits, repositoryUrl, aggregate, error }
+  return { commits, repositoryUrl, aggregate, error, hasMore: commits.length >= limit }
 })
