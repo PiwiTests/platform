@@ -171,7 +171,7 @@ export class MetadataCollector {
       }));
     }
     meta.workers = config.workers;
-    meta.timeout = config.timeout;
+    meta.timeout = config.globalTimeout;
     meta.fullyParallel = config.fullyParallel;
     return meta;
   }

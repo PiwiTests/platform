@@ -246,11 +246,7 @@ class PiwiDashboardReporter {
     };
   }
 
-  private async tryFinishStreaming(
-    overallStatus: string,
-    duration: number,
-    auth: string | null,
-  ): Promise<boolean> {
+  private async tryFinishStreaming(overallStatus: string, duration: number, auth: string | null): Promise<boolean> {
     const sm = this.streamManager!;
     try {
       const flakyTests = this.testCases.filter((tc) => tc.status === "passed" && (tc.retries || 0) > 0).length;
@@ -300,11 +296,7 @@ class PiwiDashboardReporter {
     }
   }
 
-  private async tryUploadWithFiles(
-    overallStatus: string,
-    duration: number,
-    auth: string | null,
-  ): Promise<boolean> {
+  private async tryUploadWithFiles(overallStatus: string, duration: number, auth: string | null): Promise<boolean> {
     try {
       await this.uploader.uploadWithFiles(this.buildRunPayload(overallStatus, duration), this.reportOptions, auth);
       this.recovery.clear();

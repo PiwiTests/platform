@@ -133,11 +133,7 @@ export class StreamManager {
     // Never rejects: failed events are re-queued so the retry timer or the
     // end-of-run drain can resend them (the server deduplicates).
     const promise = this.httpClient
-      .postJSON(
-        `/api/test-runs/${this._runId}/events`,
-        { streamToken: this._token, testCases: events },
-        this._auth,
-      )
+      .postJSON(`/api/test-runs/${this._runId}/events`, { streamToken: this._token, testCases: events }, this._auth)
       .then(
         () => {
           this.retryCount = 0;
