@@ -5,7 +5,8 @@
  * server can be configured to call it without needing real API credentials.
  */
 
-import { test, expect, type APIRequestContext } from '@playwright/test'
+import { test, expect } from './fixtures'
+import type { APIRequestContext } from '@playwright/test'
 import * as http from 'http'
 import * as net from 'net'
 import { PROJECT } from '../shared/test-project-names'

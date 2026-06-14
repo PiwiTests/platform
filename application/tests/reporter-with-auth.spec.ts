@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures'
 import { spawn } from 'child_process'
 import { join, resolve } from 'path'
 import { existsSync, rmSync } from 'fs'

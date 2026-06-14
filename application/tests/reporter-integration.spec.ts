@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures'
 import { readFileSync, mkdirSync, existsSync } from 'fs'
 import { join } from 'path'
 

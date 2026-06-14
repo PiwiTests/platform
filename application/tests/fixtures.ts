@@ -113,6 +113,21 @@ export const test = base.extend<{ page: Page }>({
     } catch {
       // page may already be closed or screenshot failed — skip
     }
+
+    try {
+      if (testInfo.status !== 'passed' && testInfo.status !== 'skipped') {
+        const snapshot = await page.locator(':root').ariaSnapshot()
+        if (snapshot) {
+          await testInfo.attach('piwi-dashboard-aria-snapshot', {
+            contentType: 'text/plain',
+            body: snapshot,
+          })
+        }
+      }
+    } catch {
+      // aria snapshot may fail if page is already closed
+    }
+
     await flush()
   },
 })

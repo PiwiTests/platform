@@ -209,8 +209,9 @@ import { test, expect } from '@phenx/piwi-dashboard-reporter/fixtures'
 
 - **Network requests** — method, URL, status code, duration, resource type. Aggregated on the dashboard into a *Slow API endpoints* table grouped by `METHOD + normalized route` (e.g. `/api/users/:id`).
 - **Browser Web Vitals** — TTFB, DOM Interactive, DOMContentLoaded, Load Complete, First Paint, First Contentful Paint — displayed with color-coded thresholds.
+- **ARIA snapshot** — Captured automatically on failed/timed-out tests via `page.locator(':root').ariaSnapshot()`. Included in both the debug prompt (`/test-cases/:id`) and the cluster AI diagnosis context.
 
-Both are only collected when `collectPerformanceMetrics` is `true` (the default).
+All three are only collected when `collectPerformanceMetrics` is `true` (the default). If the ARIA snapshot does not appear in the dashboard, the most likely cause is that your test files do not import `test` from the package's fixtures subpath (see options A/B above).
 
 ## Automatic metadata collection
 

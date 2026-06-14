@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures'
 import { waitForHydration } from './utils'
 
 test.describe.serial('User Management Page Tests', () => {

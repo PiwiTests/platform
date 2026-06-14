@@ -353,6 +353,16 @@ onUnmounted(disconnectRunStream)
           <template #error>
             <div class="space-y-4 pt-4">
               <TestCaseErrorCard v-if="testCase?.error" :error="testCase.error" :cluster="failureCluster" />
+
+              <UAlert
+                v-if="testCase?.error && !testCase?.ariaSnapshot"
+                color="warning"
+                variant="subtle"
+                icon="i-lucide-alert-triangle"
+                title="ARIA snapshot not captured"
+                description="The page ARIA snapshot is missing. This test likely does not import test from the piwi-dashboard fixtures — see the reporter docs for setup instructions."
+              />
+
               <TestCaseFixPromptCard v-if="fixPrompt" :prompt="fixPrompt" />
             </div>
           </template>

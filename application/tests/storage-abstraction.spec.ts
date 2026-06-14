@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures'
 import { LocalStorageAdapter } from '../server/storage/local'
 import { getStorage, resetStorage } from '../server/storage'
 import { existsSync, mkdirSync, rmSync } from 'fs'

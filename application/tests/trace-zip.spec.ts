@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures'
 import { deflateRawSync } from 'zlib'
 import { parseZip, buildZip } from '../server/utils/trace-zip'
 

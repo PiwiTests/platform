@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures'
 import { PROJECT } from '../shared/test-project-names'
 
 test.describe.serial('Delete test run API', () => {
