@@ -74,7 +74,7 @@ export default eventHandler(async (event) => {
       return
     }
 
-    // Also send existing test cases for catch-up
+    // Also send existing test cases for catch-up (error omitted — large field, not shown in stream view)
     ;(async () => {
       try {
         const existingCases = await db.select({
@@ -84,7 +84,6 @@ export default eventHandler(async (event) => {
           filePath: testCases.filePath,
           line: testRunsCases.line,
           column: testRunsCases.column,
-          error: testRunsCases.error,
           workerIndex: testRunsCases.workerIndex,
           browser: testRunsCases.browser
         })
@@ -101,7 +100,6 @@ export default eventHandler(async (event) => {
               status: tc.status,
               duration: tc.duration,
               location,
-              error: tc.error || null,
               workerIndex: tc.workerIndex ?? null,
               browser: tc.browser ?? null
             },

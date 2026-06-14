@@ -63,7 +63,7 @@ async function reconstructTraceZip(
     const resourceNames = manifest.resources ?? []
 
     // Parse slim ZIP to recover event entries
-    const slimEntries = parseZip(slimZipData)
+    const slimEntries = await parseZip(slimZipData)
 
     // Fetch all shared resources in parallel; skip any that are missing
     const resourceEntries = (

@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import { deflateRawSync } from 'zlib'
-import { parseZip, buildZip } from '../server/utils/trace-zip'
+import { parseZipSync as parseZip, buildZip } from '../server/utils/trace-zip'
 
 // Local CRC-32 needed only for the deflated-entry test that builds a raw ZIP
 function crc32(buf: Buffer): number {

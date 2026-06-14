@@ -147,6 +147,8 @@ export async function persistRunCases(
   // Fingerprint of each pushed row (parallel to runCasesRows), null for non-failures
   const rowFingerprints: Array<ErrorFingerprint | null> = []
   const pendingClusters = new Map<string, PendingCluster>()
+  // Collect IDs of existing shared cases so we can bump updatedAt in one query
+  const existingCaseIdsToUpdate: number[] = []
 
   for (const c of cases) {
     const cacheKey = `${c.filePath}::${c.title}`
@@ -161,7 +163,7 @@ export async function persistRunCases(
       shared = result[0]
       if (shared) existingCaseMap.set(cacheKey, shared)
     } else {
-      await db.update(testCases).set({ updatedAt: new Date() }).where(eq(testCases.id, shared.id))
+      existingCaseIdsToUpdate.push(shared.id)
     }
 
     if (!shared) continue
@@ -203,6 +205,13 @@ export async function persistRunCases(
   }
 
   if (runCasesRows.length === 0) return []
+
+  // Bump updatedAt for all pre-existing shared test cases in a single query
+  if (existingCaseIdsToUpdate.length > 0) {
+    await db.update(testCases)
+      .set({ updatedAt: new Date() })
+      .where(inArray(testCases.id, existingCaseIdsToUpdate))
+  }
 
   const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters)
   runCasesRows.forEach((row, i) => {

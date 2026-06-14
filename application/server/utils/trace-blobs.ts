@@ -2,7 +2,8 @@ import { getDatabase } from '../database'
 import { traceBlobs, traceResources } from '../database/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { getStorage } from '../storage'
-import { parseZip, buildZip } from './trace-zip'
+import { parseZipDirectory, decompressEntry, buildZip } from './trace-zip'
+import type { ZipEntry } from './trace-zip'
 
 /**
  * Return the set of hashes that already have a stored blob for the given project.
@@ -21,14 +22,13 @@ export async function checkExistingBlobs(projectId: number, hashes: string[]): P
  * Store a trace blob with resource-level deduplication.
  *
  * Process:
- *  1. Parse the ZIP and separate resource entries (resources/*.net, *.dat, …) from
- *     event entries (trace.trace, trace.network, …).
- *  2. For each resource, check the project-scoped shared pool; store only new ones.
- *  3. Write a "slim" ZIP containing only the event entries.
- *  4. Write a manifest JSON listing all resource filenames so the serve layer can
- *     reconstruct the full ZIP on demand.
+ *  1. Read the ZIP central directory (names + offsets only — no decompression yet).
+ *  2. For resource entries, check the project-scoped shared pool.
+ *  3. Decompress and store only new resources, one at a time, to bound peak memory.
+ *  4. Decompress event entries (small text files) and write a "slim" ZIP.
+ *  5. Write a manifest JSON listing all resource filenames for on-demand reconstruction.
  *
- * Falls back to storing the original ZIP if parsing fails (e.g. unsupported format).
+ * Falls back to storing the original ZIP if parsing fails.
  * Returns the canonical record — if the hash already existed nothing is written.
  */
 export async function upsertTraceBlob(
@@ -53,52 +53,61 @@ export async function upsertTraceBlob(
 
   await storage.mkdir(`project-${projectId}/blobs`)
 
-  // --- Resource-level deduplication ---
   let dataToStore = data
 
   try {
-    const entries = parseZip(data)
-    const resourceEntries = entries.filter(e => e.name.startsWith('resources/') && e.name !== 'resources/')
-    const eventEntries = entries.filter(e => !e.name.startsWith('resources/'))
+    // 1. Read central directory only — zero decompression at this stage
+    const directory = parseZipDirectory(data)
+    const resourceMetas = directory.filter(e => e.name.startsWith('resources/') && e.name !== 'resources/')
+    const eventMetas = directory.filter(e => !e.name.startsWith('resources/'))
 
-    if (resourceEntries.length > 0) {
-      const resourceNames: string[] = []
+    if (resourceMetas.length > 0) {
       const resourcesDir = `project-${projectId}/trace-resources`
       await storage.mkdir(resourcesDir)
 
-      // Batch-check which resource names are already in the shared pool
-      const names = resourceEntries.map(e => e.name.slice('resources/'.length)).filter(Boolean)
+      // 2. Determine which resource names are genuinely new (no decompression needed)
+      const names = resourceMetas.map(e => e.name.slice('resources/'.length)).filter(Boolean)
       const existingRows = await db
         .select({ name: traceResources.name })
         .from(traceResources)
         .where(and(eq(traceResources.projectId, projectId), inArray(traceResources.name, names)))
       const existingNames = new Set(existingRows.map(r => r.name))
 
-      // Store only new resources (parallel writes)
-      const newEntries = resourceEntries.filter((e) => {
+      const newMetas = resourceMetas.filter((e) => {
         const name = e.name.slice('resources/'.length)
         return name && !existingNames.has(name)
       })
 
-      await Promise.all(newEntries.map(async (entry) => {
-        const name = entry.name.slice('resources/'.length)
+      // 3. Decompress and store new resources one at a time to limit peak memory
+      for (const meta of newMetas) {
+        const name = meta.name.slice('resources/'.length)
+        const resourceData = await decompressEntry(data, meta)
         const resourcePath = `${resourcesDir}/${name}`
-        await storage.writeFile(resourcePath, entry.data)
+        await storage.writeFile(resourcePath, resourceData)
         await db.insert(traceResources).values({
           projectId,
           name,
           path: resourcePath,
-          size: entry.data.length
+          size: resourceData.length
         }).onConflictDoNothing()
-      }))
-
-      // Collect all resource names (new + pre-existing) for the manifest
-      for (const entry of resourceEntries) {
-        const name = entry.name.slice('resources/'.length)
-        if (name) resourceNames.push(name)
+        // resourceData goes out of scope here and is eligible for GC
       }
 
-      // Slim ZIP: event entries only
+      // 4. Decompress event entries for the slim ZIP (these are small text-based files)
+      const eventEntries: ZipEntry[] = []
+      for (const meta of eventMetas) {
+        try {
+          eventEntries.push({ name: meta.name, data: await decompressEntry(data, meta) })
+        } catch {
+          // Skip corrupt entries
+        }
+      }
+
+      // 5. Collect all resource names (new + pre-existing) for the manifest
+      const resourceNames = resourceMetas
+        .map(e => e.name.slice('resources/'.length))
+        .filter(Boolean)
+
       const slimZip = buildZip(eventEntries)
       const manifestJson = Buffer.from(JSON.stringify({ resources: resourceNames }), 'utf8')
 
@@ -108,7 +117,7 @@ export async function upsertTraceBlob(
       const savedBytes = data.length - slimZip.length
       console.log(
         `[TraceBlob] ${resourceNames.length} resources extracted for project ${projectId}`
-        + ` (${newEntries.length} new), slim ZIP saves ${Math.round(savedBytes / 1024)} KB`
+        + ` (${newMetas.length} new), slim ZIP saves ${Math.round(savedBytes / 1024)} KB`
       )
     }
   } catch (err) {
