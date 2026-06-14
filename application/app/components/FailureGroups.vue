@@ -1,35 +1,35 @@
 <script setup lang="ts">
-import type { TableColumn } from '@nuxt/ui'
-import type { FailureGroup } from '~~/types/api'
+import type { TableColumn } from '@nuxt/ui';
+import type { FailureGroup } from '~~/types/api';
 
 const emit = defineEmits<{
-  selectCluster: [clusterId: number]
-}>()
+  selectCluster: [clusterId: number];
+}>();
 
-const route = useRoute()
-const runId = route.params.id
+const route = useRoute();
+const runId = route.params.id;
 
-const { data: groups, pending: loading } = await useFetch<FailureGroup[]>(
-  `/api/test-runs/${runId}/failure-groups`,
-  { lazy: true, server: false }
-)
+const { data: groups, pending: loading } = await useFetch<FailureGroup[]>(`/api/test-runs/${runId}/failure-groups`, {
+  lazy: true,
+  server: false,
+});
 
-const diagnosisClusterId = ref<number | null>(null)
+const diagnosisClusterId = ref<number | null>(null);
 
 const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' | 'secondary'> = {
-  'timeout': 'warning',
-  'assertion': 'error',
+  timeout: 'warning',
+  assertion: 'error',
   'strict-mode': 'info',
-  'navigation': 'secondary',
-  'crash': 'error',
-  'unknown': 'neutral'
-}
+  navigation: 'secondary',
+  crash: 'error',
+  unknown: 'neutral',
+};
 
 const statusColors: Record<string, 'success' | 'warning' | 'neutral'> = {
   open: 'warning',
   resolved: 'success',
-  ignored: 'neutral'
-}
+  ignored: 'neutral',
+};
 
 const columns: TableColumn<FailureGroup>[] = [
   { accessorKey: 'signature', header: createSortHeader<FailureGroup>('Signature') },
@@ -39,10 +39,10 @@ const columns: TableColumn<FailureGroup>[] = [
   { accessorKey: 'signals', header: 'Signals' },
   { accessorKey: 'diagnosis', header: 'AI' },
   { accessorKey: 'firstSeenRunId', header: createSortHeader<FailureGroup>('Known since') },
-  { id: 'actions', header: 'Actions' }
-]
+  { id: 'actions', header: 'Actions' },
+];
 
-const totalCases = computed(() => groups.value?.reduce((sum, g) => sum + g.caseCount, 0) ?? 0)
+const totalCases = computed(() => groups.value?.reduce((sum, g) => sum + g.caseCount, 0) ?? 0);
 </script>
 
 <template>
@@ -54,21 +54,21 @@ const totalCases = computed(() => groups.value?.reduce((sum, g) => sum + g.caseC
 
     <template v-else-if="groups && groups.length">
       <p class="text-sm text-gray-500 dark:text-gray-400">
-        {{ totalCases }} failing {{ totalCases === 1 ? 'test' : 'tests' }} across
-        {{ groups.length }} {{ groups.length === 1 ? 'group' : 'groups' }} — each group likely shares one root cause
+        {{ totalCases }} failing {{ totalCases === 1 ? 'test' : 'tests' }} across {{ groups.length }}
+        {{ groups.length === 1 ? 'group' : 'groups' }} — each group likely shares one root cause
       </p>
 
       <UCard :ui="{ body: 'p-0 sm:p-0' }">
         <UTable :data="groups" :columns="columns">
           <template #actions-header>
-            <div class="text-right">
-              Actions
-            </div>
+            <div class="text-right">Actions</div>
           </template>
 
           <template #signature-cell="{ row }">
             <div class="min-w-0 space-y-0.5">
-              <span class="font-mono text-sm block truncate" :title="row.original.signature">{{ row.original.signature }}</span>
+              <span class="font-mono text-sm block truncate" :title="row.original.signature">{{
+                row.original.signature
+              }}</span>
               <span v-if="row.original.selector" class="text-xs text-gray-500 truncate block">
                 Locator: <code class="font-mono">{{ row.original.selector }}</code>
               </span>
@@ -104,23 +104,12 @@ const totalCases = computed(() => groups.value?.reduce((sum, g) => sum + g.caseC
           </template>
 
           <template #signals-cell="{ row }">
-            <div v-if="row.original.isNew || row.original.flaky || row.original.workerCorrelated" class="flex flex-wrap gap-1">
-              <UBadge
-                v-if="row.original.isNew"
-                color="warning"
-                variant="subtle"
-                size="sm"
-              >
-                New
-              </UBadge>
-              <UBadge
-                v-if="row.original.flaky"
-                color="warning"
-                variant="outline"
-                size="sm"
-              >
-                Flaky
-              </UBadge>
+            <div
+              v-if="row.original.isNew || row.original.flaky || row.original.workerCorrelated"
+              class="flex flex-wrap gap-1"
+            >
+              <UBadge v-if="row.original.isNew" color="warning" variant="subtle" size="sm"> New </UBadge>
+              <UBadge v-if="row.original.flaky" color="warning" variant="outline" size="sm"> Flaky </UBadge>
               <UBadge
                 v-if="row.original.workerCorrelated"
                 color="info"
@@ -135,7 +124,10 @@ const totalCases = computed(() => groups.value?.reduce((sum, g) => sum + g.caseC
           </template>
 
           <template #diagnosis-cell="{ row }">
-            <div v-if="row.original.diagnosis?.status === 'running'" class="flex items-center gap-1 text-xs text-gray-500">
+            <div
+              v-if="row.original.diagnosis?.status === 'running'"
+              class="flex items-center gap-1 text-xs text-gray-500"
+            >
               <UIcon name="i-lucide-loader-2" class="size-3 animate-spin" />
               Running
             </div>
@@ -166,12 +158,7 @@ const totalCases = computed(() => groups.value?.reduce((sum, g) => sum + g.caseC
 
           <template #actions-cell="{ row }">
             <div class="flex justify-end gap-2">
-              <UButton
-                size="sm"
-                color="primary"
-                variant="soft"
-                @click="emit('selectCluster', row.original.clusterId)"
-              >
+              <UButton size="sm" color="primary" variant="soft" @click="emit('selectCluster', row.original.clusterId)">
                 Filter
               </UButton>
               <UButton
@@ -207,7 +194,11 @@ const totalCases = computed(() => groups.value?.reduce((sum, g) => sum + g.caseC
     :open="diagnosisClusterId !== null"
     title="AI Diagnosis"
     :ui="{ content: 'max-w-2xl' }"
-    @update:open="(v) => { if (!v) diagnosisClusterId = null }"
+    @update:open="
+      (v) => {
+        if (!v) diagnosisClusterId = null;
+      }
+    "
   >
     <template #body>
       <ClusterDiagnosis v-if="diagnosisClusterId !== null" :cluster-id="diagnosisClusterId" />

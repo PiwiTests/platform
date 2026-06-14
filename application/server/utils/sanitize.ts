@@ -12,11 +12,11 @@
  */
 export function sanitizeUrl(url: string): string {
   try {
-    const parsed = new URL(url)
-    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
   } catch {
     // Not a valid absolute URL — return as-is (relative paths, data URIs, etc.)
-    return url
+    return url;
   }
 }
 
@@ -24,29 +24,29 @@ export function sanitizeUrl(url: string): string {
  * Sanitize an array of network request objects by stripping query params from each URL.
  */
 export function sanitizeNetworkRequests(
-  requests: Array<Record<string, unknown>> | null | undefined
+  requests: Array<Record<string, unknown>> | null | undefined,
 ): Array<Record<string, unknown>> | null {
-  if (!requests || !Array.isArray(requests)) return null
-  return requests.map(req => ({
+  if (!requests || !Array.isArray(requests)) return null;
+  return requests.map((req) => ({
     ...req,
-    url: typeof req.url === 'string' ? sanitizeUrl(req.url) : req.url
-  }))
+    url: typeof req.url === 'string' ? sanitizeUrl(req.url) : req.url,
+  }));
 }
 
 /**
  * Sanitize webVitals by stripping the query string from the navigation URL.
  */
 export function sanitizeWebVitals(vitals: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
-  if (!vitals || typeof vitals !== 'object') return null
-  const nav = vitals.navigation as Record<string, unknown> | null | undefined
-  if (!nav) return vitals
+  if (!vitals || typeof vitals !== 'object') return null;
+  const nav = vitals.navigation as Record<string, unknown> | null | undefined;
+  if (!nav) return vitals;
   return {
     ...vitals,
     navigation: {
       ...nav,
-      url: typeof nav.url === 'string' ? sanitizeUrl(nav.url) : nav.url
-    }
-  }
+      url: typeof nav.url === 'string' ? sanitizeUrl(nav.url) : nav.url,
+    },
+  };
 }
 
 /**
@@ -60,14 +60,14 @@ export function sanitizeWebVitals(vitals: Record<string, unknown> | null | undef
  */
 export function sanitizeGitRemoteUrl(url: string): string {
   try {
-    const parsed = new URL(url)
+    const parsed = new URL(url);
     if (parsed.username) {
-      parsed.username = ''
-      parsed.password = ''
+      parsed.username = '';
+      parsed.password = '';
     }
-    return parsed.toString()
+    return parsed.toString();
   } catch {
-    return url
+    return url;
   }
 }
 
@@ -76,28 +76,28 @@ export function sanitizeGitRemoteUrl(url: string): string {
  * This prevents token-leakage through public GET endpoints (§1.7).
  */
 export function sanitizeMetadata(metadata: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
-  if (!metadata || typeof metadata !== 'object') return null
+  if (!metadata || typeof metadata !== 'object') return null;
 
-  const meta = { ...metadata }
+  const meta = { ...metadata };
 
   // Sanitize scm.remoteUrl
-  const scm = meta.scm as Record<string, unknown> | null | undefined
+  const scm = meta.scm as Record<string, unknown> | null | undefined;
   if (scm && typeof scm.remoteUrl === 'string') {
-    meta.scm = { ...scm, remoteUrl: sanitizeGitRemoteUrl(scm.remoteUrl) }
+    meta.scm = { ...scm, remoteUrl: sanitizeGitRemoteUrl(scm.remoteUrl) };
   }
 
-  return meta
+  return meta;
 }
 
 export function sanitizeConsoleLogs(
-  logs: Array<Record<string, unknown>> | null | undefined
+  logs: Array<Record<string, unknown>> | null | undefined,
 ): Array<Record<string, unknown>> | null {
-  if (!logs || !Array.isArray(logs)) return null
+  if (!logs || !Array.isArray(logs)) return null;
   return logs.map((log) => {
-    if (typeof log.location !== 'string') return log
+    if (typeof log.location !== 'string') return log;
     // location is `url:line:column`; the URL itself contains colons (https://…)
-    const match = log.location.match(/^(.*):(\d+):(\d+)$/)
-    if (!match) return log
-    return { ...log, location: `${sanitizeUrl(match[1]!)}:${match[2]}:${match[3]}` }
-  })
+    const match = log.location.match(/^(.*):(\d+):(\d+)$/);
+    if (!match) return log;
+    return { ...log, location: `${sanitizeUrl(match[1]!)}:${match[2]}:${match[3]}` };
+  });
 }

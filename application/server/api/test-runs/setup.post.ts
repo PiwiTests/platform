@@ -1,16 +1,17 @@
-import { randomBytes } from 'node:crypto'
-import { getDatabase } from '../../database'
-import { projects, testRuns } from '../../database/schema'
-import { eq } from 'drizzle-orm'
-import { requireAuth } from '../../utils/auth'
-import { cancelInstanceRuns } from '../../utils/cancel-instance-runs'
-import { runEventBus } from '../../utils/run-events'
+import { randomBytes } from 'node:crypto';
+import { getDatabase } from '../../database';
+import { projects, testRuns } from '../../database/schema';
+import { eq } from 'drizzle-orm';
+import { requireAuth } from '../../utils/auth';
+import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
+import { runEventBus } from '../../utils/run-events';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Initialize a streaming test run in setup phase',
-    description: 'Initialize a new streaming test run in "initialising" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels any previous runs from the same instance.',
+    description:
+      'Initialize a new streaming test run in "initialising" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels any previous runs from the same instance.',
     requestBody: {
       content: {
         'application/json': {
@@ -20,89 +21,95 @@ defineRouteMeta({
               projectName: { type: 'string' },
               startTime: { type: 'string', format: 'date-time' },
               environment: { type: 'string' },
-              instanceId: { type: 'string' }
+              instanceId: { type: 'string' },
             },
-            required: ['projectName']
-          }
-        }
-      }
-    }
-  }
-})
+            required: ['projectName'],
+          },
+        },
+      },
+    },
+  },
+});
 
 export default eventHandler(async (event) => {
   // Require reporter or administrator role
-  await requireAuth(event, ['reporter', 'administrator'])
+  await requireAuth(event, ['reporter', 'administrator']);
 
-  const body = await readBody(event)
+  const body = await readBody(event);
 
   // Validate required fields
   if (!body.projectName) {
     throw createError({
       statusCode: 400,
-      message: 'Missing required field: projectName'
-    })
+      message: 'Missing required field: projectName',
+    });
   }
 
-  const db = await getDatabase()
+  const db = await getDatabase();
 
   // Get or create project
-  const existingProjects = await db.select().from(projects).where(eq(projects.name, body.projectName))
-  let project = existingProjects[0]
+  const existingProjects = await db.select().from(projects).where(eq(projects.name, body.projectName));
+  let project = existingProjects[0];
 
   if (!project) {
-    const result = await db.insert(projects).values({
-      name: body.projectName,
-      description: body.projectDescription || null
-    }).returning()
-    project = result[0]
+    const result = await db
+      .insert(projects)
+      .values({
+        name: body.projectName,
+        description: body.projectDescription || null,
+      })
+      .returning();
+    project = result[0];
   }
 
   if (!project) {
     throw createError({
       statusCode: 500,
-      message: 'Failed to create or retrieve project'
-    })
+      message: 'Failed to create or retrieve project',
+    });
   }
 
-  const instanceId = body.instanceId || null
-  await cancelInstanceRuns(db, project.id, instanceId)
+  const instanceId = body.instanceId || null;
+  await cancelInstanceRuns(db, project.id, instanceId);
 
   // Generate a setup token stored in streamToken column; it authenticates the
   // subsequent /begin call that transitions this run to 'running'.
-  const setupToken = randomBytes(32).toString('hex')
+  const setupToken = randomBytes(32).toString('hex');
 
   // Create test run with 'initialising' status
-  const testRunResult = await db.insert(testRuns).values({
-    projectId: project.id,
-    status: 'initialising',
-    startTime: new Date(body.startTime || new Date().toISOString()),
-    duration: null,
-    totalTests: 0,
-    passedTests: 0,
-    failedTests: 0,
-    skippedTests: 0,
-    environment: body.environment || null,
-    metadata: null,
-    instanceId,
-    streamToken: setupToken
-  }).returning()
+  const testRunResult = await db
+    .insert(testRuns)
+    .values({
+      projectId: project.id,
+      status: 'initialising',
+      startTime: new Date(body.startTime || new Date().toISOString()),
+      duration: null,
+      totalTests: 0,
+      passedTests: 0,
+      failedTests: 0,
+      skippedTests: 0,
+      environment: body.environment || null,
+      metadata: null,
+      instanceId,
+      streamToken: setupToken,
+    })
+    .returning();
 
-  const testRun = testRunResult[0]
+  const testRun = testRunResult[0];
 
   if (!testRun) {
     throw createError({
       statusCode: 500,
-      message: 'Failed to create test run'
-    })
+      message: 'Failed to create test run',
+    });
   }
 
-  runEventBus.publishGlobal({ type: 'run-initialising', runId: testRun.id, projectId: project.id })
+  runEventBus.publishGlobal({ type: 'run-initialising', runId: testRun.id, projectId: project.id });
 
   return {
     success: true,
     runId: testRun.id,
     projectId: project.id,
-    setupToken
-  }
-})
+    setupToken,
+  };
+});

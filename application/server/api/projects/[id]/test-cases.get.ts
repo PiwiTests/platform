@@ -1,41 +1,43 @@
-import { getDatabase } from '../../../database'
-import { testCases, testRunsCases } from '../../../database/schema'
-import { eq, sql, desc } from 'drizzle-orm'
+import { getDatabase } from '../../../database';
+import { testCases, testRunsCases } from '../../../database/schema';
+import { eq, sql, desc } from 'drizzle-orm';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Cases'],
     summary: 'List test cases for a project with aggregated stats',
-    description: 'Returns all test cases with total runs, pass/fail/skip/flaky counts, average duration, and last run status',
-    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
-  }
-})
+    description:
+      'Returns all test cases with total runs, pass/fail/skip/flaky counts, average duration, and last run status',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+  },
+});
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0')
+  const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {
     throw createError({
       statusCode: 400,
-      message: 'Invalid project ID'
-    })
+      message: 'Invalid project ID',
+    });
   }
 
-  const db = await getDatabase()
+  const db = await getDatabase();
 
   // Get all test cases for this project with aggregated stats
-  const testCasesWithStats = await db.select({
-    id: testCases.id,
-    filePath: testCases.filePath,
-    title: testCases.title,
-    totalRuns: sql<number>`COUNT(${testRunsCases.id})`,
-    passedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`,
-    failedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'failed' THEN 1 ELSE 0 END)`,
-    skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`,
-    timedOutRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'timedOut' THEN 1 ELSE 0 END)`,
-    flakyRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`,
-    // Count flaky runs among the last 10 runs for this test case (recent flakiness)
-    recentFlakyRuns: sql<number>`(
+  const testCasesWithStats = await db
+    .select({
+      id: testCases.id,
+      filePath: testCases.filePath,
+      title: testCases.title,
+      totalRuns: sql<number>`COUNT(${testRunsCases.id})`,
+      passedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`,
+      failedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'failed' THEN 1 ELSE 0 END)`,
+      skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`,
+      timedOutRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'timedOut' THEN 1 ELSE 0 END)`,
+      flakyRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`,
+      // Count flaky runs among the last 10 runs for this test case (recent flakiness)
+      recentFlakyRuns: sql<number>`(
       SELECT COUNT(*) FROM (
         SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
         FROM ${testRunsCases}
@@ -44,21 +46,21 @@ export default eventHandler(async (event) => {
         LIMIT 10
       ) WHERE s = 'passed' AND r > 0
     )`,
-    avgDuration: sql<number>`AVG(${testRunsCases.duration})`,
-    lastRun: sql<number>`MAX(${testRunsCases.createdAt})`,
-    lastStatus: sql<string>`(
+      avgDuration: sql<number>`AVG(${testRunsCases.duration})`,
+      lastRun: sql<number>`MAX(${testRunsCases.createdAt})`,
+      lastStatus: sql<string>`(
       SELECT ${testRunsCases.status}
       FROM ${testRunsCases}
       WHERE ${testRunsCases.testCaseId} = ${testCases.id}
       ORDER BY ${testRunsCases.createdAt} DESC
       LIMIT 1
-    )`
-  })
+    )`,
+    })
     .from(testCases)
     .leftJoin(testRunsCases, eq(testCases.id, testRunsCases.testCaseId))
     .where(eq(testCases.projectId, id))
     .groupBy(testCases.id, testCases.filePath, testCases.title)
-    .orderBy(desc(sql`MAX(${testRunsCases.createdAt})`))
+    .orderBy(desc(sql`MAX(${testRunsCases.createdAt})`));
 
-  return testCasesWithStats
-})
+  return testCasesWithStats;
+});

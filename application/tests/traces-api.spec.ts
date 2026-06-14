@@ -1,14 +1,14 @@
-import { test, expect } from './fixtures'
-import { PROJECT } from '../shared/test-project-names'
+import { test, expect } from './fixtures';
+import { PROJECT } from '../shared/test-project-names';
 
 test.describe('Traces API', () => {
-  test.describe.configure({ mode: 'serial' })
-  let testRunsCaseId: number
-  let noTraceCaseId: number
+  test.describe.configure({ mode: 'serial' });
+  let testRunsCaseId: number;
+  let noTraceCaseId: number;
 
   test('should store traces via multipart upload and retrieve them', async ({ request }) => {
     // Upload a run with a trace file attached to the first test case
-    const traceContent = Buffer.from('Mock Playwright trace data')
+    const traceContent = Buffer.from('Mock Playwright trace data');
     const uploadResponse = await request.post('/api/test-runs/upload', {
       multipart: {
         projectName: PROJECT.TRACES_API,
@@ -19,78 +19,78 @@ test.describe('Traces API', () => {
           totalTests: 2,
           passedTests: 2,
           failedTests: 0,
-          skippedTests: 0
+          skippedTests: 0,
         }),
         testCases: JSON.stringify([
           {
             title: 'test with trace',
             status: 'passed',
             duration: 1200,
-            location: 'tests/trace-test.spec.ts:5:3'
+            location: 'tests/trace-test.spec.ts:5:3',
           },
           {
             title: 'test without trace',
             status: 'passed',
             duration: 800,
-            location: 'tests/trace-test.spec.ts:15:3'
-          }
+            location: 'tests/trace-test.spec.ts:15:3',
+          },
         ]),
         trace_0: {
           name: 'trace.zip',
           mimeType: 'application/zip',
-          buffer: traceContent
-        }
-      }
-    })
+          buffer: traceContent,
+        },
+      },
+    });
 
-    expect(uploadResponse.ok()).toBeTruthy()
-    const uploadData = await uploadResponse.json()
-    expect(uploadData.testRunId).toBeDefined()
+    expect(uploadResponse.ok()).toBeTruthy();
+    const uploadData = await uploadResponse.json();
+    expect(uploadData.testRunId).toBeDefined();
 
     // Get the test run to find the testRunsCase IDs
-    const runResponse = await request.get(`/api/test-runs/${uploadData.testRunId}`)
-    expect(runResponse.ok()).toBeTruthy()
-    const runData = await runResponse.json()
+    const runResponse = await request.get(`/api/test-runs/${uploadData.testRunId}`);
+    expect(runResponse.ok()).toBeTruthy();
+    const runData = await runResponse.json();
 
-    const testCaseWithTrace = runData.testCases.find((tc: { title: string }) => tc.title === 'test with trace')
-    expect(testCaseWithTrace).toBeDefined()
-    testRunsCaseId = testCaseWithTrace.id
+    const testCaseWithTrace = runData.testCases.find((tc: { title: string }) => tc.title === 'test with trace');
+    expect(testCaseWithTrace).toBeDefined();
+    testRunsCaseId = testCaseWithTrace.id;
 
-    const testCaseWithoutTrace = runData.testCases.find((tc: { title: string }) => tc.title === 'test without trace')
-    expect(testCaseWithoutTrace).toBeDefined()
-    noTraceCaseId = testCaseWithoutTrace.id
+    const testCaseWithoutTrace = runData.testCases.find((tc: { title: string }) => tc.title === 'test without trace');
+    expect(testCaseWithoutTrace).toBeDefined();
+    noTraceCaseId = testCaseWithoutTrace.id;
 
     // Fetch traces for the test case that had a trace file
-    const tracesResponse = await request.get(`/api/test-cases/${testRunsCaseId}/traces`)
-    expect(tracesResponse.ok()).toBeTruthy()
-    const traces = await tracesResponse.json()
+    const tracesResponse = await request.get(`/api/test-cases/${testRunsCaseId}/traces`);
+    expect(tracesResponse.ok()).toBeTruthy();
+    const traces = await tracesResponse.json();
 
-    expect(Array.isArray(traces)).toBe(true)
-    expect(traces.length).toBe(1)
-    expect(traces[0].id).toBeDefined()
-    expect(traces[0].filePath).toBeDefined()
-    expect(traces[0].filePath).toContain('trace.zip')
-    expect(traces[0].createdAt).toBeDefined()
-  })
+    expect(Array.isArray(traces)).toBe(true);
+    expect(traces.length).toBe(1);
+    expect(traces[0].id).toBeDefined();
+    expect(traces[0].filePath).toBeDefined();
+    expect(traces[0].filePath).toContain('trace.zip');
+    expect(traces[0].createdAt).toBeDefined();
+  });
 
   test('should return empty traces for a test case without trace files', async ({ request }) => {
-    expect(noTraceCaseId).toBeDefined()
+    expect(noTraceCaseId).toBeDefined();
 
-    const tracesResponse = await request.get(`/api/test-cases/${noTraceCaseId}/traces`)
-    expect(tracesResponse.ok()).toBeTruthy()
-    const traces = await tracesResponse.json()
+    const tracesResponse = await request.get(`/api/test-cases/${noTraceCaseId}/traces`);
+    expect(tracesResponse.ok()).toBeTruthy();
+    const traces = await tracesResponse.json();
 
-    expect(Array.isArray(traces)).toBe(true)
-    expect(traces.length).toBe(0)
-  })
+    expect(Array.isArray(traces)).toBe(true);
+    expect(traces.length).toBe(0);
+  });
 
   test('should return 400 for invalid test case ID', async ({ request }) => {
-    const response = await request.get('/api/test-cases/abc/traces')
-    expect(response.status()).toBe(400)
-  })
+    const response = await request.get('/api/test-cases/abc/traces');
+    expect(response.status()).toBe(400);
+  });
 
   test('should return 404 for non-existent test case', async ({ request }) => {
-    const response = await request.get('/api/test-cases/99999/traces')
-    expect(response.status()).toBe(404)
-  })
-})
+    const response = await request.get('/api/test-cases/99999/traces');
+    expect(response.status()).toBe(404);
+  });
+});

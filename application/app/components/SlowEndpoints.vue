@@ -1,77 +1,86 @@
 <script setup lang="ts">
-import { h, resolveComponent } from 'vue'
-import type { TableColumn } from '@nuxt/ui'
-import type { EndpointSummary } from '~~/types/api'
+import { h, resolveComponent } from 'vue';
+import type { TableColumn } from '@nuxt/ui';
+import type { EndpointSummary } from '~~/types/api';
 
-const route = useRoute()
-const runId = route.params.id
+const route = useRoute();
+const runId = route.params.id;
 
-const emitSlow = defineEmits<{ endpointsCount: [count: number] }>()
+const emitSlow = defineEmits<{ endpointsCount: [count: number] }>();
 
 const { data: endpoints, pending: loading } = await useFetch<EndpointSummary[]>(
   `/api/test-runs/${runId}/network-requests`,
-  { lazy: true, server: false }
-)
+  { lazy: true, server: false },
+);
 
 watch(endpoints, (val) => {
-  emitSlow('endpointsCount', val?.length ?? 0)
-})
+  emitSlow('endpointsCount', val?.length ?? 0);
+});
 
-const UBadge = resolveComponent('UBadge')
+const UBadge = resolveComponent('UBadge');
 
 const endpointColumns: TableColumn<EndpointSummary>[] = [
   {
     accessorKey: 'method',
     header: createSortHeader<EndpointSummary>('Method'),
     cell: ({ row }) => {
-      const method = row.getValue('method') as string
-      const color = method === 'GET' ? 'sky' : method === 'POST' ? 'green' : method === 'PUT' || method === 'PATCH' ? 'amber' : method === 'DELETE' ? 'red' : 'gray'
-      return h(UBadge, { color, variant: 'soft', class: 'font-mono text-xs' }, () => method)
-    }
+      const method = row.getValue('method') as string;
+      const color =
+        method === 'GET'
+          ? 'sky'
+          : method === 'POST'
+            ? 'green'
+            : method === 'PUT' || method === 'PATCH'
+              ? 'amber'
+              : method === 'DELETE'
+                ? 'red'
+                : 'gray';
+      return h(UBadge, { color, variant: 'soft', class: 'font-mono text-xs' }, () => method);
+    },
   },
   {
     accessorKey: 'route',
     header: createSortHeader<EndpointSummary>('Route'),
-    cell: ({ row }) => h('code', { class: 'text-xs font-mono break-all' }, row.getValue('route'))
+    cell: ({ row }) => h('code', { class: 'text-xs font-mono break-all' }, row.getValue('route')),
   },
   {
     accessorKey: 'count',
     header: createSortHeader<EndpointSummary>('Calls'),
-    cell: ({ row }) => row.getValue('count')
+    cell: ({ row }) => row.getValue('count'),
   },
   {
     accessorKey: 'avgDuration',
     header: createSortHeader<EndpointSummary>('Avg'),
     cell: ({ row }) => {
-      const val = row.getValue('avgDuration') as number
-      const color = val > 1000 ? 'text-red-600 font-medium' : val > 500 ? 'text-orange-500 font-medium' : ''
-      return h('span', { class: color }, formatDuration(val))
-    }
+      const val = row.getValue('avgDuration') as number;
+      const color = val > 1000 ? 'text-red-600 font-medium' : val > 500 ? 'text-orange-500 font-medium' : '';
+      return h('span', { class: color }, formatDuration(val));
+    },
   },
   {
     accessorKey: 'p90Duration',
     header: createSortHeader<EndpointSummary>('P90'),
     cell: ({ row }) => {
-      const val = row.getValue('p90Duration') as number
-      const color = val > 2000 ? 'text-red-600 font-medium' : val > 1000 ? 'text-orange-500' : ''
-      return h('span', { class: color }, formatDuration(val))
-    }
+      const val = row.getValue('p90Duration') as number;
+      const color = val > 2000 ? 'text-red-600 font-medium' : val > 1000 ? 'text-orange-500' : '';
+      return h('span', { class: color }, formatDuration(val));
+    },
   },
   {
     accessorKey: 'maxDuration',
     header: createSortHeader<EndpointSummary>('Max'),
-    cell: ({ row }) => formatDuration(row.getValue('maxDuration'))
+    cell: ({ row }) => formatDuration(row.getValue('maxDuration')),
   },
   {
     accessorKey: 'errorRate',
     header: createSortHeader<EndpointSummary>('Errors'),
     cell: ({ row }) => {
-      const rate = row.getValue('errorRate') as number
-      if (rate === 0) return h('span', { class: 'text-gray-400' }, '0%')
-      return h('span', { class: 'text-red-600 font-medium' }, `${rate}%`)
-    }
-  }
-]
+      const rate = row.getValue('errorRate') as number;
+      if (rate === 0) return h('span', { class: 'text-gray-400' }, '0%');
+      return h('span', { class: 'text-red-600 font-medium' }, `${rate}%`);
+    },
+  },
+];
 </script>
 
 <template>
@@ -92,7 +101,7 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
         thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
         tbody: '[&>tr]:last:[&>td]:border-b-0 [&>tr]:hover:bg-gray-50 dark:[&>tr]:hover:bg-gray-900/50',
         th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
-        td: 'border-b border-default'
+        td: 'border-b border-default',
       }"
     />
 
@@ -100,7 +109,9 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
       <UIcon name="i-lucide-wifi-off" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
       <p>
         No network request data. Add the
-        <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded font-mono">@phenx/piwi-dashboard-reporter/fixtures</code>
+        <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded font-mono"
+          >@phenx/piwi-dashboard-reporter/fixtures</code
+        >
         to your Playwright config.
       </p>
     </div>

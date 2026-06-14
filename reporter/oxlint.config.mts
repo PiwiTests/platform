@@ -1,5 +1,5 @@
 import { defineConfig } from 'oxlint'
-import base from '../oxlint.baseConfig'
+import base from '../shared/oxlint.baseConfig.mts'
 
 export default defineConfig({
   ...base,

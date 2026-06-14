@@ -8,16 +8,13 @@
  */
 export function normalizeRoute(url: string): string {
   try {
-    const parsed = new URL(url)
-    let pathname = parsed.pathname
+    const parsed = new URL(url);
+    let pathname = parsed.pathname;
     // Replace UUIDs first (more specific than numeric ids)
-    pathname = pathname.replace(
-      /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\/|$)/gi,
-      '/:uuid'
-    )
-    pathname = pathname.replace(/\/\d+(?=\/|$)/g, '/:id')
-    return pathname
+    pathname = pathname.replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\/|$)/gi, '/:uuid');
+    pathname = pathname.replace(/\/\d+(?=\/|$)/g, '/:id');
+    return pathname;
   } catch {
-    return url
+    return url;
   }
 }

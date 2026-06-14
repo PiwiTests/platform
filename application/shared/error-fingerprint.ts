@@ -17,46 +17,51 @@
  * hashed input, so old and new fingerprints can never collide silently —
  * existing clusters simply stop matching and re-form under the new algorithm.
  */
-export const FINGERPRINT_VERSION = 1
+export const FINGERPRINT_VERSION = 1;
 
-export type ErrorType = 'timeout' | 'assertion' | 'strict-mode' | 'navigation' | 'crash' | 'unknown'
+export type ErrorType = 'timeout' | 'assertion' | 'strict-mode' | 'navigation' | 'crash' | 'unknown';
 
 export interface ErrorSignature {
   /** Heuristic category derived from the error text */
-  errorType: ErrorType
+  errorType: ErrorType;
   /** Normalized first error line — the human-readable cluster name */
-  signature: string
+  signature: string;
   /** Normalized message head (up to 5 lines, volatile tokens masked) — the main fingerprint input */
-  normalizedMessage: string
+  normalizedMessage: string;
   /** Playwright locator extracted from the error, if any (unmasked, for display) */
-  selector: string | null
+  selector: string | null;
   /** First stack frame outside node_modules (file path only, no line number — lines shift every commit) */
-  topFrameFile: string | null
+  topFrameFile: string | null;
 }
 
 export interface ErrorFingerprint extends ErrorSignature {
   /** SHA-256 hex over version + error type + normalized message + masked selector + top frame */
-  fingerprint: string
+  fingerprint: string;
 }
 
 // eslint-disable-next-line no-control-regex -- intentionally matches the ESC byte to strip ANSI color codes
-const ANSI_RE = new RegExp('\\u001B\\[[0-9;]*m', 'g')
-const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi
-const HEX_RE = /\b[0-9a-f]{8,}\b/gi
-const SELECTOR_FN_RE = /\b(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)\(/
+const ANSI_RE = new RegExp('\\u001B\\[[0-9;]*m', 'g');
+const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+const HEX_RE = /\b[0-9a-f]{8,}\b/gi;
+const SELECTOR_FN_RE =
+  /\b(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)\(/;
 
 export function stripAnsi(text: string): string {
-  return text.replace(ANSI_RE, '')
+  return text.replace(ANSI_RE, '');
 }
 
 function classifyError(text: string): ErrorType {
   // Order matters: an expect() that timed out is still an assertion failure
-  if (/strict mode violation/i.test(text)) return 'strict-mode'
-  if (/\bexpect\(|\bexpect\.|Expected (?:string|substring|pattern|value)|\.toHave|\.toBe|\.toContain|\.toEqual/.test(text)) return 'assertion'
-  if (/Target page, context or browser has been closed|Target closed|browser has been closed|Page crashed/i.test(text)) return 'crash'
-  if (/net::ERR_|NS_ERROR_|Navigation failed/i.test(text)) return 'navigation'
-  if (/Timeout \d+m?s exceeded|TimeoutError|Timed out \d+m?s/i.test(text)) return 'timeout'
-  return 'unknown'
+  if (/strict mode violation/i.test(text)) return 'strict-mode';
+  if (
+    /\bexpect\(|\bexpect\.|Expected (?:string|substring|pattern|value)|\.toHave|\.toBe|\.toContain|\.toEqual/.test(text)
+  )
+    return 'assertion';
+  if (/Target page, context or browser has been closed|Target closed|browser has been closed|Page crashed/i.test(text))
+    return 'crash';
+  if (/net::ERR_|NS_ERROR_|Navigation failed/i.test(text)) return 'navigation';
+  if (/Timeout \d+m?s exceeded|TimeoutError|Timed out \d+m?s/i.test(text)) return 'timeout';
+  return 'unknown';
 }
 
 /**
@@ -65,13 +70,16 @@ function classifyError(text: string): ErrorType {
  * element dumps (strict-mode violations) don't destabilize the fingerprint.
  */
 function extractMessageHead(text: string): string {
-  let head = text
-  const callLogIdx = head.indexOf('\nCall log:')
-  if (callLogIdx !== -1) head = head.slice(0, callLogIdx)
-  const stackIdx = head.search(/\n\s+at /)
-  if (stackIdx !== -1) head = head.slice(0, stackIdx)
-  const lines = head.split('\n').map(l => l.trim()).filter(l => l.length > 0)
-  return lines.slice(0, 5).join('\n')
+  let head = text;
+  const callLogIdx = head.indexOf('\nCall log:');
+  if (callLogIdx !== -1) head = head.slice(0, callLogIdx);
+  const stackIdx = head.search(/\n\s+at /);
+  if (stackIdx !== -1) head = head.slice(0, stackIdx);
+  const lines = head
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  return lines.slice(0, 5).join('\n');
 }
 
 /**
@@ -84,7 +92,7 @@ function maskVolatile(text: string): string {
     .replace(/^(\s*Received[^:\n]*:).*$/gm, '$1 <VALUE>')
     .replace(UUID_RE, '<UUID>')
     .replace(HEX_RE, '<HASH>')
-    .replace(/\d+/g, '<N>')
+    .replace(/\d+/g, '<N>');
 }
 
 /**
@@ -93,60 +101,60 @@ function maskVolatile(text: string): string {
  * are captured whole.
  */
 function extractSelector(text: string): string | null {
-  const match = SELECTOR_FN_RE.exec(text)
-  if (!match) return null
-  const start = match.index
-  let depth = 0
+  const match = SELECTOR_FN_RE.exec(text);
+  if (!match) return null;
+  const start = match.index;
+  let depth = 0;
   for (let i = start; i < Math.min(text.length, start + 200); i++) {
-    const ch = text[i]
+    const ch = text[i];
     if (ch === '(') {
-      depth++
+      depth++;
     } else if (ch === ')') {
-      depth--
-      if (depth === 0) return text.slice(start, i + 1)
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
     } else if (ch === '\n') {
-      break
+      break;
     }
   }
   // Unbalanced within the window — keep a stable prefix
-  return text.slice(start, start + 80)
+  return text.slice(start, start + 80);
 }
 
 /** First stack frame outside node_modules and Node internals, file path only. */
 function extractTopFrameFile(text: string): string | null {
-  const frameRe = /^\s+at (?:.*? \()?([^()\s][^()]*?):\d+:\d+\)?\s*$/gm
-  let m: RegExpExecArray | null
+  const frameRe = /^\s+at (?:.*? \()?([^()\s][^()]*?):\d+:\d+\)?\s*$/gm;
+  let m: RegExpExecArray | null;
   while ((m = frameRe.exec(text)) !== null) {
-    const file = m[1]!.replace(/\\/g, '/')
-    if (file.includes('node_modules') || file.startsWith('node:')) continue
-    return file
+    const file = m[1]!.replace(/\\/g, '/');
+    if (file.includes('node_modules') || file.startsWith('node:')) continue;
+    return file;
   }
-  return null
+  return null;
 }
 
 async function sha256Hex(input: string): Promise<string> {
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))
-  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('')
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export function extractErrorSignature(rawError: string): ErrorSignature {
-  const text = stripAnsi(rawError)
-  const errorType = classifyError(text)
-  const normalizedMessage = maskVolatile(extractMessageHead(text))
-  const selector = extractSelector(text)
-  const topFrameFile = extractTopFrameFile(text)
-  const signature = (normalizedMessage.split('\n')[0] || '').slice(0, 200) || 'Unknown error'
-  return { errorType, signature, normalizedMessage, selector, topFrameFile }
+  const text = stripAnsi(rawError);
+  const errorType = classifyError(text);
+  const normalizedMessage = maskVolatile(extractMessageHead(text));
+  const selector = extractSelector(text);
+  const topFrameFile = extractTopFrameFile(text);
+  const signature = (normalizedMessage.split('\n')[0] || '').slice(0, 200) || 'Unknown error';
+  return { errorType, signature, normalizedMessage, selector, topFrameFile };
 }
 
 export async function computeErrorFingerprint(rawError: string): Promise<ErrorFingerprint> {
-  const sig = extractErrorSignature(rawError)
+  const sig = extractErrorSignature(rawError);
   const input = [
     `v${FINGERPRINT_VERSION}`,
     sig.errorType,
     sig.normalizedMessage,
     sig.selector ? maskVolatile(sig.selector) : '',
-    sig.topFrameFile ?? ''
-  ].join('\u0000')
-  return { ...sig, fingerprint: await sha256Hex(input) }
+    sig.topFrameFile ?? '',
+  ].join('\u0000');
+  return { ...sig, fingerprint: await sha256Hex(input) };
 }

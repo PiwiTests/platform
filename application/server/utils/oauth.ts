@@ -1,32 +1,40 @@
-import type { H3Event } from 'h3'
-import { randomBytes } from 'node:crypto'
-import { getDatabase } from '../database'
-import { users } from '../database/schema'
-import { eq, and } from 'drizzle-orm'
-import { setUserSession, isAuthEnabled } from './auth'
-import type { SessionData } from './auth'
-import type { User } from '../database/schema'
+import type { H3Event } from 'h3';
+import { randomBytes } from 'node:crypto';
+import { getDatabase } from '../database';
+import { users } from '../database/schema';
+import { eq, and } from 'drizzle-orm';
+import { setUserSession, isAuthEnabled } from './auth';
+import type { SessionData } from './auth';
+import type { User } from '../database/schema';
 
 // ---------------------------------------------------------------------------
 // Provider configurations
 // ---------------------------------------------------------------------------
 
 interface OAuthProviderConfig {
-  clientId: string
-  clientSecret: string
-  authorizationUrl: string
-  tokenUrl: string
-  userInfoUrl: string
-  scopes: string[]
-  extraParams?: Record<string, string>
-  mapUser: (raw: Record<string, unknown>) => { id: string, email: string, emailVerified: boolean, name: string, avatar: string }
+  clientId: string;
+  clientSecret: string;
+  authorizationUrl: string;
+  tokenUrl: string;
+  userInfoUrl: string;
+  scopes: string[];
+  extraParams?: Record<string, string>;
+  mapUser: (raw: Record<string, unknown>) => {
+    id: string;
+    email: string;
+    emailVerified: boolean;
+    name: string;
+    avatar: string;
+  };
 }
 
 function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfig | null {
-  const config = useRuntimeConfig(event).oauth as Record<string, { clientId: string, clientSecret: string }> | undefined
-  const providerConfig = config?.[provider]
+  const config = useRuntimeConfig(event).oauth as
+    | Record<string, { clientId: string; clientSecret: string }>
+    | undefined;
+  const providerConfig = config?.[provider];
   if (!providerConfig?.clientId || !providerConfig?.clientSecret) {
-    return null
+    return null;
   }
 
   switch (provider) {
@@ -39,14 +47,14 @@ function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfi
         userInfoUrl: 'https://www.googleapis.com/oauth2/v2/userinfo',
         scopes: ['openid', 'email', 'profile'],
         extraParams: { access_type: 'offline', prompt: 'consent' },
-        mapUser: raw => ({
+        mapUser: (raw) => ({
           id: String(raw.id),
           email: String(raw.email ?? ''),
           emailVerified: raw.email_verified === true,
           name: String(raw.name ?? raw.email ?? ''),
-          avatar: String(raw.picture ?? '')
-        })
-      }
+          avatar: String(raw.picture ?? ''),
+        }),
+      };
     }
     case 'github': {
       return {
@@ -56,17 +64,17 @@ function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfi
         tokenUrl: 'https://github.com/login/oauth/access_token',
         userInfoUrl: 'https://api.github.com/user',
         scopes: ['read:user', 'user:email'],
-        mapUser: raw => ({
+        mapUser: (raw) => ({
           id: String(raw.id),
           email: String(raw.email ?? raw.login ?? ''),
           emailVerified: false, // Overridden by /user/emails call in fetchProviderUser
           name: String(raw.name ?? raw.login ?? ''),
-          avatar: String(raw.avatar_url ?? '')
-        })
-      }
+          avatar: String(raw.avatar_url ?? ''),
+        }),
+      };
     }
     default:
-      return null
+      return null;
   }
 }
 
@@ -74,26 +82,26 @@ function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfi
 // State cookie helpers
 // ---------------------------------------------------------------------------
 
-const STATE_COOKIE = 'oauth_state'
-const STATE_EXPIRY_SEC = 600 // 10 minutes
+const STATE_COOKIE = 'oauth_state';
+const STATE_EXPIRY_SEC = 600; // 10 minutes
 
 function setOAuthState(event: H3Event, state: string): void {
-  const url = getRequestURL(event)
+  const url = getRequestURL(event);
   setCookie(event, STATE_COOKIE, state ?? '', {
     httpOnly: true,
     secure: url.protocol === 'https:',
     sameSite: 'lax',
     path: '/',
-    maxAge: STATE_EXPIRY_SEC
-  })
+    maxAge: STATE_EXPIRY_SEC,
+  });
 }
 
 function getOAuthState(event: H3Event): string | null {
-  return getCookie(event, STATE_COOKIE) ?? null
+  return getCookie(event, STATE_COOKIE) ?? null;
 }
 
 function clearOAuthState(event: H3Event): void {
-  deleteCookie(event, STATE_COOKIE)
+  deleteCookie(event, STATE_COOKIE);
 }
 
 // ---------------------------------------------------------------------------
@@ -101,7 +109,7 @@ function clearOAuthState(event: H3Event): void {
 // ---------------------------------------------------------------------------
 
 function generateState(): string {
-  return randomBytes(32).toString('hex')
+  return randomBytes(32).toString('hex');
 }
 
 // ---------------------------------------------------------------------------
@@ -109,8 +117,8 @@ function generateState(): string {
 // ---------------------------------------------------------------------------
 
 function getRedirectUri(event: H3Event, provider: string): string {
-  const url = getRequestURL(event)
-  return `${url.protocol}//${url.host}/api/auth/oauth/${provider}/callback`
+  const url = getRequestURL(event);
+  return `${url.protocol}//${url.host}/api/auth/oauth/${provider}/callback`;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,32 +127,32 @@ function getRedirectUri(event: H3Event, provider: string): string {
 
 export function initiateOAuth(event: H3Event, provider: string): string | null {
   if (!isAuthEnabled(event)) {
-    return null
+    return null;
   }
 
-  const providerCfg = getProviderConfig(event, provider)
+  const providerCfg = getProviderConfig(event, provider);
   if (!providerCfg) {
-    return null
+    return null;
   }
 
-  const state = generateState()
-  setOAuthState(event, state)
+  const state = generateState();
+  setOAuthState(event, state);
 
   const params = new URLSearchParams({
     client_id: providerCfg.clientId,
     redirect_uri: getRedirectUri(event, provider),
     response_type: 'code',
     scope: providerCfg.scopes.join(' '),
-    state
-  })
+    state,
+  });
 
   if (providerCfg.extraParams) {
     for (const [key, value] of Object.entries(providerCfg.extraParams)) {
-      params.set(key, value)
+      params.set(key, value);
     }
   }
 
-  return `${providerCfg.authorizationUrl}?${params.toString()}`
+  return `${providerCfg.authorizationUrl}?${params.toString()}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,15 +160,15 @@ export function initiateOAuth(event: H3Event, provider: string): string | null {
 // ---------------------------------------------------------------------------
 
 interface TokenResponse {
-  access_token: string
-  token_type: string
-  scope: string
+  access_token: string;
+  token_type: string;
+  scope: string;
 }
 
 async function exchangeCode(event: H3Event, provider: string, code: string): Promise<TokenResponse> {
-  const providerCfg = getProviderConfig(event, provider)
+  const providerCfg = getProviderConfig(event, provider);
   if (!providerCfg) {
-    throw createError({ statusCode: 400, message: `Unknown OAuth provider: ${provider}` })
+    throw createError({ statusCode: 400, message: `Unknown OAuth provider: ${provider}` });
   }
 
   const body = new URLSearchParams({
@@ -168,60 +176,64 @@ async function exchangeCode(event: H3Event, provider: string, code: string): Pro
     client_secret: providerCfg.clientSecret,
     code,
     redirect_uri: getRedirectUri(event, provider),
-    grant_type: 'authorization_code'
-  })
+    grant_type: 'authorization_code',
+  });
 
   const res = await fetch(providerCfg.tokenUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
-    body: body.toString()
-  })
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+    body: body.toString(),
+  });
 
   if (!res.ok) {
-    const text = await res.text()
-    throw createError({ statusCode: 502, message: `Token exchange failed: ${res.status} ${text}` })
+    const text = await res.text();
+    throw createError({ statusCode: 502, message: `Token exchange failed: ${res.status} ${text}` });
   }
 
-  return res.json() as Promise<TokenResponse>
+  return res.json() as Promise<TokenResponse>;
 }
 
 // ---------------------------------------------------------------------------
 // Fetch user info from the provider
 // ---------------------------------------------------------------------------
 
-async function fetchProviderUser(event: H3Event, provider: string, accessToken: string): Promise<{ id: string, email: string, emailVerified: boolean, name: string, avatar: string }> {
-  const providerCfg = getProviderConfig(event, provider)
+async function fetchProviderUser(
+  event: H3Event,
+  provider: string,
+  accessToken: string,
+): Promise<{ id: string; email: string; emailVerified: boolean; name: string; avatar: string }> {
+  const providerCfg = getProviderConfig(event, provider);
   if (!providerCfg) {
-    throw createError({ statusCode: 400, message: `Unknown OAuth provider: ${provider}` })
+    throw createError({ statusCode: 400, message: `Unknown OAuth provider: ${provider}` });
   }
 
   const res = await fetch(providerCfg.userInfoUrl, {
-    headers: { Authorization: `Bearer ${accessToken}` }
-  })
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
 
   if (!res.ok) {
-    const text = await res.text()
-    throw createError({ statusCode: 502, message: `Failed to fetch user info: ${res.status} ${text}` })
+    const text = await res.text();
+    throw createError({ statusCode: 502, message: `Failed to fetch user info: ${res.status} ${text}` });
   }
 
-  const raw = await res.json() as Record<string, unknown>
-  const user = providerCfg.mapUser(raw)
+  const raw = (await res.json()) as Record<string, unknown>;
+  const user = providerCfg.mapUser(raw);
 
   // For GitHub, the primary user info endpoint may return an unverified public email.
   // Fetch the verified emails list from /user/emails and use the primary verified one.
   if (provider === 'github') {
     try {
       const emailsRes = await fetch('https://api.github.com/user/emails', {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      })
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
       if (emailsRes.ok) {
-        const emails = await emailsRes.json() as Array<{ email: string, primary: boolean, verified: boolean }>
-        const primaryVerified = emails.find(e => e.primary && e.verified)
+        const emails = (await emailsRes.json()) as Array<{ email: string; primary: boolean; verified: boolean }>;
+        const primaryVerified = emails.find((e) => e.primary && e.verified);
         if (primaryVerified) {
-          user.email = primaryVerified.email
-          user.emailVerified = true
+          user.email = primaryVerified.email;
+          user.emailVerified = true;
         } else {
-          user.emailVerified = false
+          user.emailVerified = false;
         }
       }
     } catch {
@@ -229,7 +241,7 @@ async function fetchProviderUser(event: H3Event, provider: string, accessToken: 
     }
   }
 
-  return user
+  return user;
 }
 
 // ---------------------------------------------------------------------------
@@ -242,15 +254,15 @@ async function findOrCreateOAuthUser(
   email: string,
   emailVerified: boolean,
   name: string,
-  avatar: string
+  avatar: string,
 ): Promise<User> {
-  const db = await getDatabase()
+  const db = await getDatabase();
 
   // Try to find existing user by OAuth provider + id
   const existing = await db
     .select()
     .from(users)
-    .where(and(eq(users.oauthProvider, provider), eq(users.oauthProviderId, providerId)))
+    .where(and(eq(users.oauthProvider, provider), eq(users.oauthProviderId, providerId)));
 
   if (existing[0]) {
     // Update avatar and name in case they changed at the provider
@@ -258,18 +270,15 @@ async function findOrCreateOAuthUser(
       .update(users)
       .set({ avatarUrl: avatar || null, name: name || null, updatedAt: new Date() })
       .where(eq(users.id, existing[0].id))
-      .returning()
-    return updated[0]!
+      .returning();
+    return updated[0]!;
   }
 
   // Check if a user with this email/username already exists (for linking).
   // Only auto-link when the provider asserts the email is verified, preventing
   // account takeover via an attacker-controlled public email (§1.3).
   if (emailVerified) {
-    const byUsername = await db
-      .select()
-      .from(users)
-      .where(eq(users.username, email))
+    const byUsername = await db.select().from(users).where(eq(users.username, email));
 
     if (byUsername[0]) {
       // Link existing user to OAuth provider
@@ -280,11 +289,11 @@ async function findOrCreateOAuthUser(
           oauthProviderId: providerId,
           avatarUrl: avatar || null,
           name: name || null,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(users.id, byUsername[0].id))
-        .returning()
-      return updated[0]!
+        .returning();
+      return updated[0]!;
     }
   }
 
@@ -298,16 +307,16 @@ async function findOrCreateOAuthUser(
       name: name || null,
       avatarUrl: avatar || null,
       oauthProvider: provider,
-      oauthProviderId: providerId
+      oauthProviderId: providerId,
     })
-    .returning()
+    .returning();
 
-  const user = result[0]
+  const user = result[0];
   if (!user) {
-    throw createError({ statusCode: 500, message: 'Failed to create user' })
+    throw createError({ statusCode: 500, message: 'Failed to create user' });
   }
 
-  return user
+  return user;
 }
 
 // ---------------------------------------------------------------------------
@@ -317,39 +326,39 @@ async function findOrCreateOAuthUser(
 
 export async function handleOAuthCallback(event: H3Event, provider: string): Promise<string> {
   if (!isAuthEnabled(event)) {
-    return '/login?error=auth-disabled'
+    return '/login?error=auth-disabled';
   }
 
   // Check provider is configured before proceeding
   if (!getProviderConfig(event, provider)) {
-    return '/login?error=invalid-provider'
+    return '/login?error=invalid-provider';
   }
 
-  const query = getQuery(event) as { code?: string, state?: string, error?: string }
+  const query = getQuery(event) as { code?: string; state?: string; error?: string };
 
   // User denied the authorization request
   if (query.error) {
-    return '/login?error=access-denied'
+    return '/login?error=access-denied';
   }
 
   // Validate state to prevent CSRF
-  const savedState = getOAuthState(event)
-  clearOAuthState(event)
+  const savedState = getOAuthState(event);
+  clearOAuthState(event);
 
   if (!query.state || !savedState || query.state !== savedState) {
-    return '/login?error=invalid-state'
+    return '/login?error=invalid-state';
   }
 
   if (!query.code) {
-    return '/login?error=missing-code'
+    return '/login?error=missing-code';
   }
 
   try {
     // Exchange code for access token
-    const token = await exchangeCode(event, provider, query.code)
+    const token = await exchangeCode(event, provider, query.code);
 
     // Fetch user info from provider
-    const providerUser = await fetchProviderUser(event, provider, token.access_token)
+    const providerUser = await fetchProviderUser(event, provider, token.access_token);
 
     // Find or create local user
     const user = await findOrCreateOAuthUser(
@@ -358,20 +367,20 @@ export async function handleOAuthCallback(event: H3Event, provider: string): Pro
       providerUser.email,
       providerUser.emailVerified,
       providerUser.name,
-      providerUser.avatar
-    )
+      providerUser.avatar,
+    );
 
     // Set session
     const sessionData: SessionData = {
       userId: user.id,
       username: user.username,
-      role: user.role
-    }
-    await setUserSession(event, sessionData)
+      role: user.role,
+    };
+    await setUserSession(event, sessionData);
 
-    return '/'
+    return '/';
   } catch (err) {
-    console.error(`[OAuth] ${provider} callback failed:`, err)
-    return '/login?error=oauth-failed'
+    console.error(`[OAuth] ${provider} callback failed:`, err);
+    return '/login?error=oauth-failed';
   }
 }

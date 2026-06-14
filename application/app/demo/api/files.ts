@@ -10,34 +10,34 @@
  * the actual PNG file from the build output and returns it as binary data.
  */
 export async function apiGetDemoFile(apiPath: string): Promise<unknown> {
-  const filePath = apiPath.replace(/^\/api\/files\//, '')
+  const filePath = apiPath.replace(/^\/api\/files\//, '');
 
   if (!filePath.startsWith('demo/screenshots/')) {
-    return { available: false, message: 'File not available in demo mode' }
+    return { available: false, message: 'File not available in demo mode' };
   }
 
   try {
-    const response = await fetch(`/${filePath}`)
+    const response = await fetch(`/${filePath}`);
     if (!response.ok) {
-      return { available: false, message: 'Screenshot not found' }
+      return { available: false, message: 'Screenshot not found' };
     }
 
-    const blob = await response.blob()
-    const buffer = await blob.arrayBuffer()
-    const bytes = new Uint8Array(buffer)
+    const blob = await response.blob();
+    const buffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
 
     // Convert to base64
-    let binary = ''
+    let binary = '';
     for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]!)
+      binary += String.fromCharCode(bytes[i]!);
     }
 
     return {
       _binary: true,
       data: btoa(binary),
-      contentType: blob.type || 'image/png'
-    }
+      contentType: blob.type || 'image/png',
+    };
   } catch {
-    return { available: false, message: 'Failed to load screenshot' }
+    return { available: false, message: 'Failed to load screenshot' };
   }
 }

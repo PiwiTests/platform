@@ -1,30 +1,33 @@
-import { getDatabase } from '../../database'
-import { requireAuth } from '../../utils/auth'
-import { getAppSetting } from '../../utils/app-settings'
-import type { AiProvider } from '~~/types/api'
+import { getDatabase } from '../../database';
+import { requireAuth } from '../../utils/auth';
+import { getAppSetting } from '../../utils/app-settings';
+import type { AiProvider } from '~~/types/api';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Settings'],
     summary: 'Get AI settings',
-    description: 'Returns full AI configuration settings including provider, model, API key presence, base URL, auto-diagnose toggle, custom instructions, and SCM token presence. Requires administrator role.'
-  }
-})
+    description:
+      'Returns full AI configuration settings including provider, model, API key presence, base URL, auto-diagnose toggle, custom instructions, and SCM token presence. Requires administrator role.',
+  },
+});
 
 export default eventHandler(async (event) => {
-  await requireAuth(event, ['administrator'])
+  await requireAuth(event, ['administrator']);
 
-  const runtimeConfig = useRuntimeConfig()
-  const envAi = runtimeConfig.ai as { provider?: string, apiKey?: string, model?: string, baseUrl?: string, autoDiagnose?: boolean | string } | undefined
-  const envManaged = Boolean(envAi?.provider)
+  const runtimeConfig = useRuntimeConfig();
+  const envAi = runtimeConfig.ai as
+    | { provider?: string; apiKey?: string; model?: string; baseUrl?: string; autoDiagnose?: boolean | string }
+    | undefined;
+  const envManaged = Boolean(envAi?.provider);
 
-  const db = await getDatabase()
+  const db = await getDatabase();
   const [instructions, scmTokenSetting] = await Promise.all([
     getAppSetting<{ value?: string }>(db, 'ai_instructions'),
-    getAppSetting<{ value?: string }>(db, 'scm_token')
-  ])
-  const customInstructions = instructions?.value || null
-  const hasScmToken = Boolean(scmTokenSetting?.value)
+    getAppSetting<{ value?: string }>(db, 'scm_token'),
+  ]);
+  const customInstructions = instructions?.value || null;
+  const hasScmToken = Boolean(scmTokenSetting?.value);
 
   if (envManaged) {
     return {
@@ -35,17 +38,17 @@ export default eventHandler(async (event) => {
       hasApiKey: Boolean(envAi!.apiKey),
       hasScmToken,
       envManaged: true,
-      customInstructions
-    }
+      customInstructions,
+    };
   }
 
   const stored = await getAppSetting<{
-    provider?: string
-    apiKey?: string
-    model?: string
-    baseUrl?: string
-    autoDiagnose?: boolean
-  }>(db, 'ai')
+    provider?: string;
+    apiKey?: string;
+    model?: string;
+    baseUrl?: string;
+    autoDiagnose?: boolean;
+  }>(db, 'ai');
 
   return {
     provider: (stored?.provider || null) as AiProvider | null,
@@ -55,6 +58,6 @@ export default eventHandler(async (event) => {
     hasApiKey: Boolean(stored?.apiKey),
     hasScmToken,
     envManaged: false,
-    customInstructions
-  }
-})
+    customInstructions,
+  };
+});

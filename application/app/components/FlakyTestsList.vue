@@ -1,22 +1,22 @@
 <script setup lang="ts">
-import type { TableColumn } from '@nuxt/ui'
-import type { FlakyTest } from '~~/types/api'
+import type { TableColumn } from '@nuxt/ui';
+import type { FlakyTest } from '~~/types/api';
 
 const props = defineProps<{
-  projectId: string | number
-}>()
+  projectId: string | number;
+}>();
 
-const runsWindow = ref(50)
+const runsWindow = ref(50);
 
 const { data: tests, pending: loading } = await useFetch<FlakyTest[]>(
   () => `/api/projects/${props.projectId}/flaky-tests?runs=${runsWindow.value}`,
-  { lazy: true, server: false, watch: [runsWindow] }
-)
+  { lazy: true, server: false, watch: [runsWindow] },
+);
 
 function scoreColor(score: number): 'error' | 'warning' | 'neutral' {
-  if (score >= 60) return 'error'
-  if (score >= 30) return 'warning'
-  return 'neutral'
+  if (score >= 60) return 'error';
+  if (score >= 30) return 'warning';
+  return 'neutral';
 }
 
 const columns: TableColumn<FlakyTest>[] = [
@@ -26,8 +26,8 @@ const columns: TableColumn<FlakyTest>[] = [
   { accessorKey: 'retryPassRuns', header: createSortHeader<FlakyTest>('Retry passes') },
   { accessorKey: 'alternations', header: createSortHeader<FlakyTest>('Flips') },
   { accessorKey: 'lastFlakeAt', header: createSortHeader<FlakyTest>('Last flake') },
-  { id: 'actions', header: 'Actions' }
-]
+  { id: 'actions', header: 'Actions' },
+];
 </script>
 
 <template>
@@ -42,7 +42,7 @@ const columns: TableColumn<FlakyTest>[] = [
           :items="[
             { label: 'Last 20 runs', value: 20 },
             { label: 'Last 50 runs', value: 50 },
-            { label: 'Last 100 runs', value: 100 }
+            { label: 'Last 100 runs', value: 100 },
           ]"
           size="xs"
           class="w-36"
@@ -52,9 +52,7 @@ const columns: TableColumn<FlakyTest>[] = [
 
     <UTable :data="tests ?? []" :columns="columns" :loading="loading">
       <template #actions-header>
-        <div class="text-right">
-          Actions
-        </div>
+        <div class="text-right">Actions</div>
       </template>
 
       <template #title-cell="{ row }">
@@ -81,24 +79,14 @@ const columns: TableColumn<FlakyTest>[] = [
       </template>
 
       <template #retryPassRuns-cell="{ row }">
-        <UBadge
-          v-if="row.original.retryPassRuns"
-          color="warning"
-          variant="outline"
-          size="sm"
-        >
+        <UBadge v-if="row.original.retryPassRuns" color="warning" variant="outline" size="sm">
           {{ row.original.retryPassRuns }} run{{ row.original.retryPassRuns === 1 ? '' : 's' }}
         </UBadge>
         <span v-else class="text-gray-400 text-xs">—</span>
       </template>
 
       <template #alternations-cell="{ row }">
-        <UBadge
-          v-if="row.original.alternations >= 2"
-          color="neutral"
-          variant="outline"
-          size="sm"
-        >
+        <UBadge v-if="row.original.alternations >= 2" color="neutral" variant="outline" size="sm">
           {{ row.original.alternations }}
         </UBadge>
         <span v-else class="text-gray-400 text-xs">—</span>

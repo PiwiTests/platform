@@ -1,8 +1,8 @@
-import { testRuns } from '../database/schema'
-import { eq } from 'drizzle-orm'
-import type { getDatabase } from '../database'
+import { testRuns } from '../database/schema';
+import { eq } from 'drizzle-orm';
+import type { getDatabase } from '../database';
 
-type DB = Awaited<ReturnType<typeof getDatabase>>
+type DB = Awaited<ReturnType<typeof getDatabase>>;
 
 /**
  * Validates the stream token for a test run. If the run was interrupted by the
@@ -15,38 +15,39 @@ type DB = Awaited<ReturnType<typeof getDatabase>>
 export async function validateAndReviveRun(
   db: DB,
   runId: number,
-  testRun: { status: string, streamToken: string | null },
-  bodyStreamToken: string | null | undefined
+  testRun: { status: string; streamToken: string | null },
+  bodyStreamToken: string | null | undefined,
 ): Promise<void> {
-  const isInterrupted = testRun.status === 'interrupted' && !testRun.streamToken
+  const isInterrupted = testRun.status === 'interrupted' && !testRun.streamToken;
 
   if (testRun.status !== 'running' && !isInterrupted) {
     throw createError({
       statusCode: 409,
-      message: 'Test run is not in running state'
-    })
+      message: 'Test run is not in running state',
+    });
   }
 
   if (isInterrupted) {
     if (!bodyStreamToken) {
       throw createError({
         statusCode: 403,
-        message: 'Missing stream token'
-      })
+        message: 'Missing stream token',
+      });
     }
-    await db.update(testRuns)
+    await db
+      .update(testRuns)
       .set({
         status: 'running',
         streamToken: bodyStreamToken,
-        updatedAt: new Date()
+        updatedAt: new Date(),
       })
-      .where(eq(testRuns.id, runId))
-    testRun.status = 'running'
-    testRun.streamToken = bodyStreamToken
+      .where(eq(testRuns.id, runId));
+    testRun.status = 'running';
+    testRun.streamToken = bodyStreamToken;
   } else if (testRun.streamToken !== bodyStreamToken) {
     throw createError({
       statusCode: 403,
-      message: 'Invalid stream token'
-    })
+      message: 'Invalid stream token',
+    });
   }
 }

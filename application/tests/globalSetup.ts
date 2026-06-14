@@ -1,29 +1,31 @@
-import reporter from '../../reporter/dist/index.js'
-
-const { createGlobalSetup } = reporter
+import pkg  from '../../reporter/dist/helpers.js';
+const { createGlobalSetup } = pkg;
 
 async function cleanup() {
   try {
     const response = await fetch('http://localhost:3000/api/tests/cleanup', {
-      method: 'DELETE'
-    })
+      method: 'DELETE',
+    });
     if (!response.ok) {
-      console.warn(`[Piwi Dashboard] Failed: ${response.status} ${await response.text()}`)
+      console.warn(`[Piwi Dashboard] Failed: ${response.status} ${await response.text()}`);
     } else {
-      const result = await response.json()
-      console.log(`[Piwi Dashboard] Removed ${result.projectsDeleted} test projects`)
+      const result = await response.json();
+      console.log(`[Piwi Dashboard] Removed ${result.projectsDeleted} test projects`);
     }
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error)
-    console.warn(`[Piwi Dashboard] Error: ${message}`)
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[Piwi Dashboard] Error: ${message}`);
   }
 }
 
-export default createGlobalSetup({
-  serverUrl: 'http://localhost:3000',
-  projectName: 'Piwi Dashboard',
-  projectDescription: 'The Piwi Dashboard project',
-  streaming: false
-}, async () => {
-  await cleanup()
-})
+export default createGlobalSetup(
+  {
+    serverUrl: 'http://localhost:3000',
+    projectName: 'Piwi Dashboard',
+    projectDescription: 'The Piwi Dashboard project',
+    streaming: false,
+  },
+  async () => {
+    await cleanup();
+  },
+);

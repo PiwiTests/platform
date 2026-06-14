@@ -1,40 +1,41 @@
-import { getDatabase } from '../../database'
-import { users } from '../../database/schema'
-import { eq } from 'drizzle-orm'
-import { requireAuth, isAuthEnabled } from '../../utils/auth'
+import { getDatabase } from '../../database';
+import { users } from '../../database/schema';
+import { eq } from 'drizzle-orm';
+import { requireAuth, isAuthEnabled } from '../../utils/auth';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Users'],
     summary: 'Delete a user',
-    description: 'Deletes a user by ID. Prevents self-deletion and removal of the last administrator account. Requires administrator role.',
-    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
-  }
-})
+    description:
+      'Deletes a user by ID. Prevents self-deletion and removal of the last administrator account. Requires administrator role.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+  },
+});
 
 export default eventHandler(async (event) => {
   // If auth is enabled, require administrator role
-  const currentUser = await requireAuth(event, ['administrator'])
+  const currentUser = await requireAuth(event, ['administrator']);
 
-  const id = parseInt(getRouterParam(event, 'id') || '0')
+  const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {
     throw createError({
       statusCode: 400,
-      message: 'Invalid user ID'
-    })
+      message: 'Invalid user ID',
+    });
   }
 
-  const db = await getDatabase()
+  const db = await getDatabase();
 
   // Check if user exists
-  const userResults = await db.select().from(users).where(eq(users.id, id))
-  const targetUser = userResults[0]
+  const userResults = await db.select().from(users).where(eq(users.id, id));
+  const targetUser = userResults[0];
   if (!targetUser) {
     throw createError({
       statusCode: 404,
-      message: 'User not found'
-    })
+      message: 'User not found',
+    });
   }
 
   // Guard against lockout (only meaningful when authentication is enabled)
@@ -42,24 +43,24 @@ export default eventHandler(async (event) => {
     if (currentUser.id === id) {
       throw createError({
         statusCode: 400,
-        message: 'You cannot delete your own account'
-      })
+        message: 'You cannot delete your own account',
+      });
     }
     if (targetUser.role === 'administrator') {
-      const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, 'administrator'))
+      const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, 'administrator'));
       if (admins.length <= 1) {
         throw createError({
           statusCode: 400,
-          message: 'Cannot delete the last administrator'
-        })
+          message: 'Cannot delete the last administrator',
+        });
       }
     }
   }
 
   // Delete user
-  await db.delete(users).where(eq(users.id, id))
+  await db.delete(users).where(eq(users.id, id));
 
   return {
-    success: true
-  }
-})
+    success: true,
+  };
+});

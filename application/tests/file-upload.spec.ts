@@ -1,16 +1,16 @@
-import { test, expect } from './fixtures'
-import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs'
-import { join } from 'path'
-import FormData from 'form-data'
-import { PROJECT } from '../shared/test-project-names'
+import { test, expect } from './fixtures';
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
+import { join } from 'path';
+import FormData from 'form-data';
+import { PROJECT } from '../shared/test-project-names';
 
 test.describe('File Upload API Tests', () => {
-  const tempDir = join(process.cwd(), '.test-temp')
+  const tempDir = join(process.cwd(), '.test-temp');
 
   test.beforeAll(() => {
     // Create temp directory for test files
     if (!existsSync(tempDir)) {
-      mkdirSync(tempDir, { recursive: true })
+      mkdirSync(tempDir, { recursive: true });
     }
 
     // Create mock HTML report
@@ -20,8 +20,8 @@ test.describe('File Upload API Tests', () => {
         <head><title>Test Report</title></head>
         <body><h1>Playwright Test Report</h1></body>
       </html>
-    `
-    writeFileSync(join(tempDir, 'test-report.html'), htmlContent)
+    `;
+    writeFileSync(join(tempDir, 'test-report.html'), htmlContent);
 
     // Create a second mock report (monocart-style HTML)
     const monocartContent = `
@@ -30,41 +30,47 @@ test.describe('File Upload API Tests', () => {
         <head><title>Monocart Report</title></head>
         <body><h1>Monocart Test Report</h1></body>
       </html>
-    `
-    writeFileSync(join(tempDir, 'monocart-report.html'), monocartContent)
+    `;
+    writeFileSync(join(tempDir, 'monocart-report.html'), monocartContent);
 
     // Create mock trace file (just a text file for testing)
-    writeFileSync(join(tempDir, 'trace.zip'), 'Mock trace data')
-  })
+    writeFileSync(join(tempDir, 'trace.zip'), 'Mock trace data');
+  });
 
   test('should upload test results with HTML report (legacy htmlReport field)', async ({ request }) => {
-    const form = new FormData()
+    const form = new FormData();
 
-    form.append('projectName', 'upload-test-project')
-    form.append('testRun', JSON.stringify({
-      status: 'passed',
-      startTime: new Date().toISOString(),
-      duration: 120000,
-      totalTests: 3,
-      passedTests: 3,
-      failedTests: 0,
-      skippedTests: 0
-    }))
-    form.append('testCases', JSON.stringify([
-      {
-        title: 'test with report',
+    form.append('projectName', 'upload-test-project');
+    form.append(
+      'testRun',
+      JSON.stringify({
         status: 'passed',
-        duration: 1000,
-        location: 'tests/test.spec.ts:10:5'
-      }
-    ]))
+        startTime: new Date().toISOString(),
+        duration: 120000,
+        totalTests: 3,
+        passedTests: 3,
+        failedTests: 0,
+        skippedTests: 0,
+      }),
+    );
+    form.append(
+      'testCases',
+      JSON.stringify([
+        {
+          title: 'test with report',
+          status: 'passed',
+          duration: 1000,
+          location: 'tests/test.spec.ts:10:5',
+        },
+      ]),
+    );
 
     // Read the file
-    const htmlReport = readFileSync(join(tempDir, 'test-report.html'))
+    const htmlReport = readFileSync(join(tempDir, 'test-report.html'));
     form.append('htmlReport', htmlReport, {
       filename: 'index.html',
-      contentType: 'text/html'
-    })
+      contentType: 'text/html',
+    });
 
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
@@ -76,33 +82,33 @@ test.describe('File Upload API Tests', () => {
           totalTests: 3,
           passedTests: 3,
           failedTests: 0,
-          skippedTests: 0
+          skippedTests: 0,
         }),
         testCases: JSON.stringify([
           {
             title: 'test with report',
             status: 'passed',
             duration: 1000,
-            location: 'tests/test.spec.ts:10:5'
-          }
+            location: 'tests/test.spec.ts:10:5',
+          },
         ]),
         htmlReport: {
           name: 'index.html',
           mimeType: 'text/html',
-          buffer: htmlReport
-        }
-      }
-    })
+          buffer: htmlReport,
+        },
+      },
+    });
 
-    expect(response.ok()).toBeTruthy()
-    const data = await response.json()
-    expect(data.success).toBe(true)
-    expect(data.testRunId).toBeDefined()
-    expect(data.projectId).toBeDefined()
-  })
+    expect(response.ok()).toBeTruthy();
+    const data = await response.json();
+    expect(data.success).toBe(true);
+    expect(data.testRunId).toBeDefined();
+    expect(data.projectId).toBeDefined();
+  });
 
   test('should upload test results with report_html field (new API)', async ({ request }) => {
-    const htmlReport = readFileSync(join(tempDir, 'test-report.html'))
+    const htmlReport = readFileSync(join(tempDir, 'test-report.html'));
 
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
@@ -114,36 +120,38 @@ test.describe('File Upload API Tests', () => {
           totalTests: 1,
           passedTests: 1,
           failedTests: 0,
-          skippedTests: 0
+          skippedTests: 0,
         }),
-        testCases: JSON.stringify([{
-          title: 'report_html test',
-          status: 'passed',
-          duration: 500
-        }]),
+        testCases: JSON.stringify([
+          {
+            title: 'report_html test',
+            status: 'passed',
+            duration: 500,
+          },
+        ]),
         report_html: {
           name: 'index.html',
           mimeType: 'text/html',
-          buffer: htmlReport
-        }
-      }
-    })
+          buffer: htmlReport,
+        },
+      },
+    });
 
-    expect(response.ok()).toBeTruthy()
-    const data = await response.json()
-    expect(data.success).toBe(true)
-    expect(data.testRunId).toBeDefined()
+    expect(response.ok()).toBeTruthy();
+    const data = await response.json();
+    expect(data.success).toBe(true);
+    expect(data.testRunId).toBeDefined();
     // New API returns a reports array
-    expect(Array.isArray(data.reports)).toBe(true)
-    expect(data.reports.length).toBe(1)
-    expect(data.reports[0].type).toBe('html')
-    expect(data.reports[0].label).toBe('HTML Report')
-    expect(data.reports[0].path).toBeDefined()
-  })
+    expect(Array.isArray(data.reports)).toBe(true);
+    expect(data.reports.length).toBe(1);
+    expect(data.reports[0].type).toBe('html');
+    expect(data.reports[0].label).toBe('HTML Report');
+    expect(data.reports[0].path).toBeDefined();
+  });
 
   test('should upload test results with multiple report types', async ({ request }) => {
-    const htmlReport = readFileSync(join(tempDir, 'test-report.html'))
-    const monocartReport = readFileSync(join(tempDir, 'monocart-report.html'))
+    const htmlReport = readFileSync(join(tempDir, 'test-report.html'));
+    const monocartReport = readFileSync(join(tempDir, 'monocart-report.html'));
 
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
@@ -155,43 +163,43 @@ test.describe('File Upload API Tests', () => {
           totalTests: 2,
           passedTests: 2,
           failedTests: 0,
-          skippedTests: 0
+          skippedTests: 0,
         }),
         testCases: JSON.stringify([
           { title: 'test one', status: 'passed', duration: 400 },
-          { title: 'test two', status: 'passed', duration: 600 }
+          { title: 'test two', status: 'passed', duration: 600 },
         ]),
         report_html: {
           name: 'index.html',
           mimeType: 'text/html',
-          buffer: htmlReport
+          buffer: htmlReport,
         },
         report_monocart: {
           name: 'index.html',
           mimeType: 'text/html',
-          buffer: monocartReport
-        }
-      }
-    })
+          buffer: monocartReport,
+        },
+      },
+    });
 
-    expect(response.ok()).toBeTruthy()
-    const data = await response.json()
-    expect(data.success).toBe(true)
-    expect(data.testRunId).toBeDefined()
-    expect(Array.isArray(data.reports)).toBe(true)
-    expect(data.reports.length).toBe(2)
+    expect(response.ok()).toBeTruthy();
+    const data = await response.json();
+    expect(data.success).toBe(true);
+    expect(data.testRunId).toBeDefined();
+    expect(Array.isArray(data.reports)).toBe(true);
+    expect(data.reports.length).toBe(2);
 
-    const types = data.reports.map((r: { type: string }) => r.type)
-    expect(types).toContain('html')
-    expect(types).toContain('monocart')
+    const types = data.reports.map((r: { type: string }) => r.type);
+    expect(types).toContain('html');
+    expect(types).toContain('monocart');
 
-    const monocartEntry = data.reports.find((r: { type: string }) => r.type === 'monocart')
-    expect(monocartEntry.label).toBe('Monocart Report')
-  })
+    const monocartEntry = data.reports.find((r: { type: string }) => r.type === 'monocart');
+    expect(monocartEntry.label).toBe('Monocart Report');
+  });
 
   test('test run details should include reports array', async ({ request }) => {
     // Upload a run with a report
-    const htmlReport = readFileSync(join(tempDir, 'test-report.html'))
+    const htmlReport = readFileSync(join(tempDir, 'test-report.html'));
     const uploadResponse = await request.post('/api/test-runs/upload', {
       multipart: {
         projectName: PROJECT.REPORTS_DETAILS,
@@ -202,35 +210,35 @@ test.describe('File Upload API Tests', () => {
           totalTests: 1,
           passedTests: 1,
           failedTests: 0,
-          skippedTests: 0
+          skippedTests: 0,
         }),
         testCases: JSON.stringify([{ title: 'check reports', status: 'passed', duration: 200 }]),
         report_html: {
           name: 'index.html',
           mimeType: 'text/html',
-          buffer: htmlReport
-        }
-      }
-    })
+          buffer: htmlReport,
+        },
+      },
+    });
 
-    const uploadData = await uploadResponse.json()
-    expect(uploadData.testRunId).toBeDefined()
+    const uploadData = await uploadResponse.json();
+    expect(uploadData.testRunId).toBeDefined();
 
     // Fetch the test run and verify reports are returned
-    const runResponse = await request.get(`/api/test-runs/${uploadData.testRunId}`)
-    expect(runResponse.ok()).toBeTruthy()
-    const runData = await runResponse.json()
+    const runResponse = await request.get(`/api/test-runs/${uploadData.testRunId}`);
+    expect(runResponse.ok()).toBeTruthy();
+    const runData = await runResponse.json();
 
-    expect(Array.isArray(runData.reports)).toBe(true)
-    expect(runData.reports.length).toBeGreaterThan(0)
-    const htmlEntry = runData.reports.find((r: { type: string }) => r.type === 'html')
-    expect(htmlEntry).toBeDefined()
-    expect(htmlEntry.label).toBe('HTML Report')
-    expect(htmlEntry.path).toBeDefined()
-  })
+    expect(Array.isArray(runData.reports)).toBe(true);
+    expect(runData.reports.length).toBeGreaterThan(0);
+    const htmlEntry = runData.reports.find((r: { type: string }) => r.type === 'html');
+    expect(htmlEntry).toBeDefined();
+    expect(htmlEntry.label).toBe('HTML Report');
+    expect(htmlEntry.path).toBeDefined();
+  });
 
   test('should upload with report_label override', async ({ request }) => {
-    const htmlReport = readFileSync(join(tempDir, 'test-report.html'))
+    const htmlReport = readFileSync(join(tempDir, 'test-report.html'));
 
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
@@ -242,22 +250,22 @@ test.describe('File Upload API Tests', () => {
           totalTests: 1,
           passedTests: 1,
           failedTests: 0,
-          skippedTests: 0
+          skippedTests: 0,
         }),
         testCases: JSON.stringify([{ title: 'label test', status: 'passed', duration: 100 }]),
         report_html: {
           name: 'index.html',
           mimeType: 'text/html',
-          buffer: htmlReport
+          buffer: htmlReport,
         },
-        report_label_html: 'My Custom HTML Report'
-      }
-    })
+        report_label_html: 'My Custom HTML Report',
+      },
+    });
 
-    expect(response.ok()).toBeTruthy()
-    const data = await response.json()
-    expect(data.reports[0].label).toBe('My Custom HTML Report')
-  })
+    expect(response.ok()).toBeTruthy();
+    const data = await response.json();
+    expect(data.reports[0].label).toBe('My Custom HTML Report');
+  });
 
   test('should handle upload without files', async ({ request }) => {
     const response = await request.post('/api/test-runs/upload', {
@@ -270,48 +278,48 @@ test.describe('File Upload API Tests', () => {
           totalTests: 1,
           passedTests: 1,
           failedTests: 0,
-          skippedTests: 0
+          skippedTests: 0,
         }),
         testCases: JSON.stringify([
           {
             title: 'test without files',
             status: 'passed',
-            duration: 500
-          }
-        ])
-      }
-    })
+            duration: 500,
+          },
+        ]),
+      },
+    });
 
-    expect(response.ok()).toBeTruthy()
-    const data = await response.json()
-    expect(data.success).toBe(true)
+    expect(response.ok()).toBeTruthy();
+    const data = await response.json();
+    expect(data.success).toBe(true);
     // No reports uploaded → empty array
-    expect(Array.isArray(data.reports)).toBe(true)
-    expect(data.reports.length).toBe(0)
-  })
+    expect(Array.isArray(data.reports)).toBe(true);
+    expect(data.reports.length).toBe(0);
+  });
 
   test('should reject upload with missing required fields', async ({ request }) => {
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
-        projectName: PROJECT.INCOMPLETE
+        projectName: PROJECT.INCOMPLETE,
         // Missing testRun and testCases
-      }
-    })
+      },
+    });
 
-    expect(response.status()).toBe(400)
-  })
+    expect(response.status()).toBe(400);
+  });
 
   test('should reject upload with malformed JSON', async ({ request }) => {
     const response = await request.post('/api/test-runs/upload', {
       multipart: {
         projectName: PROJECT.MALFORMED,
         testRun: '{invalid json}',
-        testCases: '[]'
-      }
-    })
+        testCases: '[]',
+      },
+    });
 
-    expect(response.status()).toBe(400)
-  })
+    expect(response.status()).toBe(400);
+  });
 
   test('should download uploaded HTML report', async ({ request }) => {
     // First upload a report
@@ -325,42 +333,44 @@ test.describe('File Upload API Tests', () => {
           totalTests: 1,
           passedTests: 1,
           failedTests: 0,
-          skippedTests: 0
+          skippedTests: 0,
         }),
-        testCases: JSON.stringify([{
-          title: 'download test',
-          status: 'passed',
-          duration: 500
-        }]),
+        testCases: JSON.stringify([
+          {
+            title: 'download test',
+            status: 'passed',
+            duration: 500,
+          },
+        ]),
         htmlReport: {
           name: 'index.html',
           mimeType: 'text/html',
-          buffer: readFileSync(join(tempDir, 'test-report.html'))
-        }
-      }
-    })
+          buffer: readFileSync(join(tempDir, 'test-report.html')),
+        },
+      },
+    });
 
-    const uploadData = await uploadResponse.json()
-    expect(Array.isArray(uploadData.reports)).toBe(true)
-    expect(uploadData.reports.length).toBeGreaterThan(0)
+    const uploadData = await uploadResponse.json();
+    expect(Array.isArray(uploadData.reports)).toBe(true);
+    expect(uploadData.reports.length).toBeGreaterThan(0);
 
     // Try to download the report
-    const firstReport = uploadData.reports[0]
+    const firstReport = uploadData.reports[0];
     if (firstReport?.path) {
-      const downloadResponse = await request.get(`/api/files/${firstReport.path}`)
+      const downloadResponse = await request.get(`/api/files/${firstReport.path}`);
 
-      expect(downloadResponse.ok()).toBeTruthy()
-      expect(downloadResponse.headers()['content-type']).toContain('text/html')
+      expect(downloadResponse.ok()).toBeTruthy();
+      expect(downloadResponse.headers()['content-type']).toContain('text/html');
     }
-  })
+  });
 
   test('should prevent path traversal in file download', async ({ request }) => {
-    const response = await request.get('/api/files/../../../etc/passwd')
-    expect(response.status()).toBeGreaterThan(400)
-  })
+    const response = await request.get('/api/files/../../../etc/passwd');
+    expect(response.status()).toBeGreaterThan(400);
+  });
 
   test('should return 404 for non-existent files', async ({ request }) => {
-    const response = await request.get('/api/files/project-999/nonexistent.html')
-    expect(response.status()).toBe(404)
-  })
-})
+    const response = await request.get('/api/files/project-999/nonexistent.html');
+    expect(response.status()).toBe(404);
+  });
+});

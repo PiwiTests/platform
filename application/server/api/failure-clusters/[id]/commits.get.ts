@@ -1,64 +1,68 @@
-import { getDatabase } from '../../../database'
-import { failureClusters, testRuns } from '../../../database/schema'
-import { eq } from 'drizzle-orm'
-import { normalizeGitUrl } from '../../../utils/regression-context'
-import { createScmProvider } from '../../../utils/scm'
+import { getDatabase } from '../../../database';
+import { failureClusters, testRuns } from '../../../database/schema';
+import { eq } from 'drizzle-orm';
+import { normalizeGitUrl } from '../../../utils/regression-context';
+import { createScmProvider } from '../../../utils/scm';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Failure Clusters'],
     summary: 'List recent commits for a cluster',
-    description: 'Returns recent commits for the failure cluster repository. Supports optional baseline query parameter for aggregate diff stats.',
-    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
-  }
-})
+    description:
+      'Returns recent commits for the failure cluster repository. Supports optional baseline query parameter for aggregate diff stats.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+  },
+});
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0')
-  if (!id) throw createError({ statusCode: 400, message: 'Invalid cluster ID' })
+  const id = parseInt(getRouterParam(event, 'id') || '0');
+  if (!id) throw createError({ statusCode: 400, message: 'Invalid cluster ID' });
 
-  const db = await getDatabase()
-  const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, id))
-  if (!cluster) throw createError({ statusCode: 404, message: 'Failure cluster not found' })
+  const db = await getDatabase();
+  const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, id));
+  if (!cluster) throw createError({ statusCode: 404, message: 'Failure cluster not found' });
 
-  const [run] = await db.select({ metadata: testRuns.metadata })
+  const [run] = await db
+    .select({ metadata: testRuns.metadata })
     .from(testRuns)
-    .where(eq(testRuns.id, cluster.lastSeenRunId))
+    .where(eq(testRuns.id, cluster.lastSeenRunId));
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const meta = run?.metadata as any
-  const repositoryUrl = normalizeGitUrl(meta?.scm?.remoteUrl ?? null)
+  const meta = run?.metadata as any;
+  const repositoryUrl = normalizeGitUrl(meta?.scm?.remoteUrl ?? null);
 
-  if (!repositoryUrl) return { commits: [], repositoryUrl: null, aggregate: null, error: null }
+  if (!repositoryUrl) return { commits: [], repositoryUrl: null, aggregate: null, error: null };
 
-  const provider = await createScmProvider(repositoryUrl, db, cluster.projectId)
-  if (!provider) return { commits: [], repositoryUrl, aggregate: null, error: null }
+  const provider = await createScmProvider(repositoryUrl, db, cluster.projectId);
+  if (!provider) return { commits: [], repositoryUrl, aggregate: null, error: null };
 
-  const query = getQuery(event)
-  const baselineSha = query.baseline as string | undefined
-  const limit = Math.min(Math.max(parseInt(String(query.limit || '50')), 1), 200)
+  const query = getQuery(event);
+  const baselineSha = query.baseline as string | undefined;
+  const limit = Math.min(Math.max(parseInt(String(query.limit || '50')), 1), 200);
 
-  const commits = await provider.listCommits(limit)
+  const commits = await provider.listCommits(limit);
 
-  let error: string | null = null
+  let error: string | null = null;
   if (commits.length === 0) {
-    error = await provider.probeError()
+    error = await provider.probeError();
   }
 
-  let aggregate: { filesChanged: number, linesAdded: number, linesRemoved: number } | null = null
+  let aggregate: { filesChanged: number; linesAdded: number; linesRemoved: number } | null = null;
   if (baselineSha && commits.length > 0) {
-    const latestSha = commits[0]!.sha
+    const latestSha = commits[0]!.sha;
     try {
-      const diff = await provider.fetchChanges(baselineSha, latestSha)
+      const diff = await provider.fetchChanges(baselineSha, latestSha);
       if (diff) {
         aggregate = {
           filesChanged: diff.files.length,
           linesAdded: diff.files.reduce((s, f) => s + f.additions, 0),
-          linesRemoved: diff.files.reduce((s, f) => s + f.deletions, 0)
-        }
+          linesRemoved: diff.files.reduce((s, f) => s + f.deletions, 0),
+        };
       }
-    } catch { /* stats unavailable */ }
+    } catch {
+      /* stats unavailable */
+    }
   }
 
-  return { commits, repositoryUrl, aggregate, error, hasMore: commits.length >= limit }
-})
+  return { commits, repositoryUrl, aggregate, error, hasMore: commits.length >= limit };
+});

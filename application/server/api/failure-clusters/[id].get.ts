@@ -1,50 +1,58 @@
-import { getDatabase } from '../../database'
-import { projects, testRuns, testRunsCases, testCases, failureClusters, failureDiagnoses } from '../../database/schema'
-import { eq, desc, sql } from 'drizzle-orm'
+import { getDatabase } from '../../database';
+import { projects, testRuns, testRunsCases, testCases, failureClusters, failureDiagnoses } from '../../database/schema';
+import { eq, desc, sql } from 'drizzle-orm';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Failure Clusters'],
     summary: 'Get failure cluster detail',
-    description: 'Returns detailed information about a failure cluster including affected tests, last seen run status, project info, and diagnosis.',
-    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
-  }
-})
+    description:
+      'Returns detailed information about a failure cluster including affected tests, last seen run status, project info, and diagnosis.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+  },
+});
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0')
-  if (!id) throw createError({ statusCode: 400, message: 'Invalid cluster ID' })
+  const id = parseInt(getRouterParam(event, 'id') || '0');
+  if (!id) throw createError({ statusCode: 400, message: 'Invalid cluster ID' });
 
-  const db = await getDatabase()
+  const db = await getDatabase();
 
-  const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, id))
-  if (!cluster) throw createError({ statusCode: 404, message: 'Failure cluster not found' })
+  const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, id));
+  if (!cluster) throw createError({ statusCode: 404, message: 'Failure cluster not found' });
 
   const [[countRow], [lastRun], [diag], [project], affectedTestCases] = await Promise.all([
-    db.select({ affectedTests: sql<number>`count(distinct ${testRunsCases.testCaseId})` })
-      .from(testRunsCases).where(eq(testRunsCases.failureClusterId, id)),
+    db
+      .select({ affectedTests: sql<number>`count(distinct ${testRunsCases.testCaseId})` })
+      .from(testRunsCases)
+      .where(eq(testRunsCases.failureClusterId, id)),
 
-    db.select({ status: testRuns.status, startTime: testRuns.startTime })
-      .from(testRuns).where(eq(testRuns.id, cluster.lastSeenRunId)),
+    db
+      .select({ status: testRuns.status, startTime: testRuns.startTime })
+      .from(testRuns)
+      .where(eq(testRuns.id, cluster.lastSeenRunId)),
 
     db.select().from(failureDiagnoses).where(eq(failureDiagnoses.clusterId, id)),
 
-    db.select({ id: projects.id, name: projects.name, label: projects.label })
-      .from(projects).where(eq(projects.id, cluster.projectId)),
+    db
+      .select({ id: projects.id, name: projects.name, label: projects.label })
+      .from(projects)
+      .where(eq(projects.id, cluster.projectId)),
 
-    db.select({
-      testCaseId: testCases.id,
-      title: testCases.title,
-      filePath: testCases.filePath,
-      runCount: sql<number>`count(${testRunsCases.id})`
-    })
+    db
+      .select({
+        testCaseId: testCases.id,
+        title: testCases.title,
+        filePath: testCases.filePath,
+        runCount: sql<number>`count(${testRunsCases.id})`,
+      })
       .from(testRunsCases)
       .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
       .where(eq(testRunsCases.failureClusterId, id))
       .groupBy(testCases.id, testCases.title, testCases.filePath)
       .orderBy(desc(sql`count(${testRunsCases.id})`))
-      .limit(50)
-  ])
+      .limit(50),
+  ]);
 
   return {
     ...cluster,
@@ -56,10 +64,10 @@ export default eventHandler(async (event) => {
           status: diag.status,
           category: diag.category,
           confidence: diag.confidence,
-          summary: diag.summary
+          summary: diag.summary,
         }
       : null,
     project: project ?? null,
-    affectedTestCases: affectedTestCases.map(t => ({ ...t, runCount: Number(t.runCount) }))
-  }
-})
+    affectedTestCases: affectedTestCases.map((t) => ({ ...t, runCount: Number(t.runCount) })),
+  };
+});

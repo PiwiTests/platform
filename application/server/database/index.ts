@@ -1,124 +1,124 @@
 // Import SQLite drizzle for static type inference.
 // At runtime the correct driver is selected based on DATABASE_URL;
 // TypeScript uses the SQLite types as the canonical reference throughout.
-import { drizzle as sqliteDrizzle } from 'drizzle-orm/libsql/sqlite3'
-import * as sqliteSchema from './schema.sqlite'
-import { existsSync, mkdirSync } from 'fs'
-import { resolve, dirname } from 'path'
-import { fileURLToPath } from 'url'
+import { drizzle as sqliteDrizzle } from 'drizzle-orm/libsql/sqlite3';
+import * as sqliteSchema from './schema.sqlite';
+import { existsSync, mkdirSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-type DB = ReturnType<typeof sqliteDrizzle<typeof sqliteSchema>>
+type DB = ReturnType<typeof sqliteDrizzle<typeof sqliteSchema>>;
 
-let db: DB
-let migrationPromise: Promise<void> | null = null
+let db: DB;
+let migrationPromise: Promise<void> | null = null;
 
 // Detect which database backend to use
-const databaseUrl = process.env.DATABASE_URL
+const databaseUrl = process.env.DATABASE_URL;
 
 export async function initDatabase() {
   if (!db) {
     if (databaseUrl) {
       // PostgreSQL path
-      const { drizzle } = await import('drizzle-orm/postgres-js')
-      const { migrate } = await import('drizzle-orm/postgres-js/migrator')
-      const { default: postgres } = await import('postgres')
+      const { drizzle } = await import('drizzle-orm/postgres-js');
+      const { migrate } = await import('drizzle-orm/postgres-js/migrator');
+      const { default: postgres } = await import('postgres');
 
-      const client = postgres(databaseUrl)
-      const pgDb = drizzle(client)
+      const client = postgres(databaseUrl);
+      const pgDb = drizzle(client);
       // Cast to the canonical SQLite DB type so callers retain typed query results
-      db = pgDb as unknown as DB
+      db = pgDb as unknown as DB;
 
       migrationPromise = (async () => {
         try {
-          const migrationsFolder = await resolveMigrationsFolder('migrations-pg')
-          console.log(`[Database] Running PostgreSQL migrations from ${migrationsFolder}`)
-          await migrate(pgDb, { migrationsFolder })
-          console.log('[Database] PostgreSQL migrations completed successfully')
+          const migrationsFolder = await resolveMigrationsFolder('migrations-pg');
+          console.log(`[Database] Running PostgreSQL migrations from ${migrationsFolder}`);
+          await migrate(pgDb, { migrationsFolder });
+          console.log('[Database] PostgreSQL migrations completed successfully');
         } catch (error) {
-          console.error('[Database] Migration error:', error)
-          throw error
+          console.error('[Database] Migration error:', error);
+          throw error;
         }
-      })()
+      })();
     } else {
       // SQLite path (default)
-      const { migrate } = await import('drizzle-orm/libsql/migrator')
-      const { pathToFileURL } = await import('url')
+      const { migrate } = await import('drizzle-orm/libsql/migrator');
+      const { pathToFileURL } = await import('url');
 
       if (!process.env.DATABASE_PATH && !existsSync('.data')) {
-        mkdirSync('.data')
+        mkdirSync('.data');
       }
 
-      const dbPath = process.env.DATABASE_PATH || '.data/piwi.db'
-      const absolutePath = resolve(dbPath)
-      const dbUrl = pathToFileURL(absolutePath).href
+      const dbPath = process.env.DATABASE_PATH || '.data/piwi.db';
+      const absolutePath = resolve(dbPath);
+      const dbUrl = pathToFileURL(absolutePath).href;
 
       // Create client with WAL mode for better concurrent read/write performance
-      const { createClient } = await import('@libsql/client')
-      const client = createClient({ url: dbUrl })
-      await client.execute('PRAGMA journal_mode=WAL')
-      await client.execute('PRAGMA synchronous=NORMAL')
-      db = sqliteDrizzle(client, { schema: sqliteSchema })
+      const { createClient } = await import('@libsql/client');
+      const client = createClient({ url: dbUrl });
+      await client.execute('PRAGMA journal_mode=WAL');
+      await client.execute('PRAGMA synchronous=NORMAL');
+      db = sqliteDrizzle(client, { schema: sqliteSchema });
 
       migrationPromise = (async () => {
         try {
-          const migrationsFolder = await resolveMigrationsFolder('migrations')
-          console.log(`[Database] Running SQLite migrations from ${migrationsFolder}`)
-          await migrate(db, { migrationsFolder })
-          console.log('[Database] SQLite migrations completed successfully')
+          const migrationsFolder = await resolveMigrationsFolder('migrations');
+          console.log(`[Database] Running SQLite migrations from ${migrationsFolder}`);
+          await migrate(db, { migrationsFolder });
+          console.log('[Database] SQLite migrations completed successfully');
         } catch (error) {
-          console.error('[Database] Migration error:', error)
-          throw error
+          console.error('[Database] Migration error:', error);
+          throw error;
         }
-      })()
+      })();
     }
   }
 
   // Wait for migrations to complete before returning
   if (migrationPromise) {
-    await migrationPromise
-    migrationPromise = null
+    await migrationPromise;
+    migrationPromise = null;
   }
 
-  return db
+  return db;
 }
 
 async function resolveMigrationsFolder(folderName: string): Promise<string> {
-  const __filename = fileURLToPath(import.meta.url)
-  const __dirname = dirname(__filename)
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
 
   // Try relative to the current module (works when bundled in .output/server/chunks/nitro/)
-  let migrationsFolder = resolve(__dirname, `../../database/${folderName}`)
+  let migrationsFolder = resolve(__dirname, `../../database/${folderName}`);
 
   // If not found, try common development paths
   if (!existsSync(migrationsFolder)) {
-    migrationsFolder = resolve(process.cwd(), `server/database/${folderName}`)
+    migrationsFolder = resolve(process.cwd(), `server/database/${folderName}`);
   }
 
   // If not found, try output directory paths (when running from .output)
   if (!existsSync(migrationsFolder)) {
-    migrationsFolder = resolve(process.cwd(), `.output/server/database/${folderName}`)
+    migrationsFolder = resolve(process.cwd(), `.output/server/database/${folderName}`);
   }
 
   if (!existsSync(migrationsFolder)) {
-    console.error(`[Database] Migrations folder not found: ${migrationsFolder}`)
-    console.error(`[Database] __dirname: ${__dirname}`)
-    console.error(`[Database] process.cwd(): ${process.cwd()}`)
-    throw new Error(`Migrations folder not found: ${migrationsFolder}`)
+    console.error(`[Database] Migrations folder not found: ${migrationsFolder}`);
+    console.error(`[Database] __dirname: ${__dirname}`);
+    console.error(`[Database] process.cwd(): ${process.cwd()}`);
+    throw new Error(`Migrations folder not found: ${migrationsFolder}`);
   }
 
-  return migrationsFolder
+  return migrationsFolder;
 }
 
 export async function getDatabase() {
   if (!db) {
-    return await initDatabase()
+    return await initDatabase();
   }
 
   // Wait for migrations to complete if they're still running
   if (migrationPromise) {
-    await migrationPromise
-    migrationPromise = null
+    await migrationPromise;
+    migrationPromise = null;
   }
 
-  return db
+  return db;
 }

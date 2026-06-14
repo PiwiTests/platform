@@ -2,25 +2,21 @@
   "name": "@phenx/piwi-dashboard",
   "private": true,
   "type": "module",
-  "engines": {
-    "node": ">=24.0.0"
-  },
   "scripts": {
-    "build": "nuxt build",
-    "generate": "nuxt generate",
-    "generate:demo": "cross-env NUXT_PUBLIC_DEMO_MODE=true nuxt generate",
-    "seed:demo": "node scripts/generate-demo-seed.mjs",
-    "dev": "nuxt dev",
-    "preview": "nuxt preview",
-    "postinstall": "nuxt prepare",
-    "lint": "oxlint --config oxlint.config.ts .",
-    "lint:fix": "oxlint --config oxlint.config.ts . --fix",
-    "format": "oxfmt --config oxfmt.config.ts --write \".\"",
-    "format:check": "oxfmt --config oxfmt.config.ts --check \".\"",
-    "typecheck": "nuxt typecheck",
-    "test": "playwright test",
-    "test:ui": "playwright test --ui",
-    "test:report": "playwright show-report",
+    "app:generate": "nuxt generate",
+    "app:generate:demo": "cross-env NUXT_PUBLIC_DEMO_MODE=true nuxt generate",
+    "app:seed:demo": "node scripts/generate-demo-seed.mjs",
+    "app:build": "nuxt build",
+    "app:dev": "nuxt dev",
+    "app:preview": "nuxt preview",
+    "app:lint": "oxlint --config oxlint.config.ts .",
+    "app:lint:fix": "oxlint --config oxlint.config.ts . --fix",
+    "app:format": "oxfmt --config oxfmt.config.ts --write \".\"",
+    "app:format:check": "oxfmt --config oxfmt.config.ts --check \".\"",
+    "app:typecheck": "nuxt typecheck",
+    "app:test": "playwright test",
+    "app:test:ui": "playwright test --ui",
+    "app:test:report": "playwright show-report",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -29,7 +25,8 @@
     "db:migrate:pg": "drizzle-kit migrate --config=drizzle.config.pg.ts",
     "db:push:pg": "drizzle-kit push --config=drizzle.config.pg.ts",
     "db:studio:pg": "drizzle-kit studio --config=drizzle.config.pg.ts",
-    "check:demo": "node scripts/check-demo-routes.mjs"
+    "app:check:demo": "node scripts/check-demo-routes.mjs",
+    "postinstall": "nuxt prepare"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
@@ -68,5 +65,8 @@
     "@emnapi/core": "1.11.1",
     "@emnapi/runtime": "1.11.1",
     "@libsql/linux-x64-musl": "^0.5.29"
+  },
+  "engines": {
+    "node": ">=24.0.0"
   }
 }

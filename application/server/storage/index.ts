@@ -1,8 +1,8 @@
-import { LocalStorageAdapter } from './local'
-import { S3StorageAdapter } from './s3'
-import type { StorageAdapter, S3Config } from './types'
+import { LocalStorageAdapter } from './local';
+import { S3StorageAdapter } from './s3';
+import type { StorageAdapter, S3Config } from './types';
 
-let storageInstance: StorageAdapter | null = null
+let storageInstance: StorageAdapter | null = null;
 
 /**
  * Get the storage adapter instance
@@ -19,22 +19,22 @@ let storageInstance: StorageAdapter | null = null
  */
 export function getStorage(): StorageAdapter {
   if (storageInstance) {
-    return storageInstance
+    return storageInstance;
   }
 
-  const storageType = process.env.STORAGE_TYPE || 'local'
+  const storageType = process.env.STORAGE_TYPE || 'local';
 
   if (storageType === 's3') {
     // Validate S3 configuration
-    const bucket = process.env.S3_BUCKET
-    const region = process.env.S3_REGION
-    const accessKeyId = process.env.S3_ACCESS_KEY_ID
-    const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY
+    const bucket = process.env.S3_BUCKET;
+    const region = process.env.S3_REGION;
+    const accessKeyId = process.env.S3_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
 
     if (!bucket || !region || !accessKeyId || !secretAccessKey) {
       throw new Error(
-        'S3 storage requires S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY environment variables'
-      )
+        'S3 storage requires S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY environment variables',
+      );
     }
 
     const s3Config: S3Config = {
@@ -44,24 +44,26 @@ export function getStorage(): StorageAdapter {
       secretAccessKey,
       endpoint: process.env.S3_ENDPOINT,
       // When S3_FORCE_PATH_STYLE is explicitly set, use its value; otherwise default to true when a custom endpoint is configured
-      ...(process.env.S3_FORCE_PATH_STYLE !== undefined && { forcePathStyle: process.env.S3_FORCE_PATH_STYLE !== 'false' })
-    }
+      ...(process.env.S3_FORCE_PATH_STYLE !== undefined && {
+        forcePathStyle: process.env.S3_FORCE_PATH_STYLE !== 'false',
+      }),
+    };
 
-    console.log(`[Storage] Initializing S3 storage with bucket: ${bucket}, region: ${region}`)
-    storageInstance = new S3StorageAdapter(s3Config)
+    console.log(`[Storage] Initializing S3 storage with bucket: ${bucket}, region: ${region}`);
+    storageInstance = new S3StorageAdapter(s3Config);
   } else {
     // Default to local storage
-    const storagePath = process.env.STORAGE_PATH || '.data/storage'
-    console.log(`[Storage] Initializing local storage at: ${storagePath}`)
-    storageInstance = new LocalStorageAdapter(storagePath)
+    const storagePath = process.env.STORAGE_PATH || '.data/storage';
+    console.log(`[Storage] Initializing local storage at: ${storagePath}`);
+    storageInstance = new LocalStorageAdapter(storagePath);
   }
 
-  return storageInstance
+  return storageInstance;
 }
 
 /**
  * Reset the storage instance (useful for testing)
  */
 export function resetStorage(): void {
-  storageInstance = null
+  storageInstance = null;
 }

@@ -1,5 +1,5 @@
 import { defineConfig } from 'oxfmt'
-import base from '../oxfmt.baseConfig'
+import base from '../shared/oxfmt.baseConfig.mts'
 
 export default defineConfig({
   ...base,

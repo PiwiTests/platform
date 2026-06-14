@@ -1,23 +1,23 @@
 <script setup lang="ts">
-import { VisXYContainer, VisLine, VisAxis } from '@unovis/vue'
-import { CurveType } from '@unovis/ts'
-import type { PerformanceTrendPoint } from '~~/types/api'
+import { VisXYContainer, VisLine, VisAxis } from '@unovis/vue';
+import { CurveType } from '@unovis/ts';
+import type { PerformanceTrendPoint } from '~~/types/api';
 
 interface Props {
-  data: PerformanceTrendPoint[]
-  height?: number
+  data: PerformanceTrendPoint[];
+  height?: number;
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  height: 300
-})
+  height: 300,
+});
 
 const chartData = computed(() => {
   if (!props.data || props.data.length === 0) {
-    return []
+    return [];
   }
 
-  return props.data.map(point => ({
+  return props.data.map((point) => ({
     id: point.id,
     date: new Date(point.startTime),
     duration: point.duration ? Math.round(point.duration / 1000) : null,
@@ -26,106 +26,106 @@ const chartData = computed(() => {
     commit: point.commit ? point.commit.substring(0, 7) : null,
     status: point.status,
     totalTests: point.totalTests,
-  }))
-})
+  }));
+});
 
 type DataPoint = {
-  id: number
-  date: Date
-  duration: number | null
-  avgTestDuration: number | null
-  p90TestDuration: number | null
-  commit: string | null
-  status: string
-  totalTests: number
-}
+  id: number;
+  date: Date;
+  duration: number | null;
+  avgTestDuration: number | null;
+  p90TestDuration: number | null;
+  commit: string | null;
+  status: string;
+  totalTests: number;
+};
 
-const x = (d: DataPoint) => d.date
+const x = (d: DataPoint) => d.date;
 
-const yDuration = (d: DataPoint) => d.duration ?? undefined
-const yAvgDuration = (d: DataPoint) => d.avgTestDuration ?? undefined
-const yP90Duration = (d: DataPoint) => d.p90TestDuration ?? undefined
+const yDuration = (d: DataPoint) => d.duration ?? undefined;
+const yAvgDuration = (d: DataPoint) => d.avgTestDuration ?? undefined;
+const yP90Duration = (d: DataPoint) => d.p90TestDuration ?? undefined;
 
-const lineColors = ['rgb(59, 130, 246)', 'rgb(34, 197, 94)', 'rgb(249, 115, 22)'] as const
+const lineColors = ['rgb(59, 130, 246)', 'rgb(34, 197, 94)', 'rgb(249, 115, 22)'] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const xyContainerRef = ref<any>(null)
-const tooltipData = ref<DataPoint | null>(null)
-const tooltipPos = ref({ x: 0, y: 0 })
+const xyContainerRef = ref<any>(null);
+const tooltipData = ref<DataPoint | null>(null);
+const tooltipPos = ref({ x: 0, y: 0 });
 
 const yAccessors: {
-  fn: (d: DataPoint) => number | null | undefined
-  color: string
+  fn: (d: DataPoint) => number | null | undefined;
+  color: string;
 }[] = [
   { fn: (d: DataPoint) => d.duration, color: lineColors[0] },
   { fn: (d: DataPoint) => d.avgTestDuration, color: lineColors[1] },
   { fn: (d: DataPoint) => d.p90TestDuration, color: lineColors[2] },
-]
+];
 
-const NS = 'http://www.w3.org/2000/svg'
+const NS = 'http://www.w3.org/2000/svg';
 
 function addMarkers(
   svgNode: SVGSVGElement,
   margin: {
-    top: number
-    bottom: number
-    left: number
-    right: number
-  }
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+  },
 ) {
-  svgNode.querySelectorAll('.chart-marker').forEach(el => el.remove())
+  svgNode.querySelectorAll('.chart-marker').forEach((el) => el.remove());
 
-  const container = xyContainerRef.value?.component
+  const container = xyContainerRef.value?.component;
   if (!container || !chartData.value.length) {
-    return
+    return;
   }
 
-  const comp = container.components?.[0]
-  const xScale = comp?.xScale
-  const yScale = comp?.yScale
+  const comp = container.components?.[0];
+  const xScale = comp?.xScale;
+  const yScale = comp?.yScale;
   if (!xScale || !yScale) {
-    return
+    return;
   }
 
-  const group = document.createElementNS(NS, 'g')
-  group.setAttribute('class', 'chart-marker')
-  group.setAttribute('transform', `translate(${margin.left},${margin.top})`)
-  svgNode.appendChild(group)
+  const group = document.createElementNS(NS, 'g');
+  group.setAttribute('class', 'chart-marker');
+  group.setAttribute('transform', `translate(${margin.left},${margin.top})`);
+  svgNode.appendChild(group);
 
   for (const point of chartData.value) {
     for (const { fn, color } of yAccessors) {
-      const yVal = fn(point)
+      const yVal = fn(point);
       if (yVal == null) {
-        continue
+        continue;
       }
-      const cx = xScale(point.date)
-      const cy = yScale(yVal)
-      const circle = document.createElementNS(NS, 'circle')
-      circle.setAttribute('cx', String(cx))
-      circle.setAttribute('cy', String(cy))
-      circle.setAttribute('r', '4.5')
-      circle.setAttribute('fill', color)
-      circle.setAttribute('stroke', '#fff')
-      circle.setAttribute('stroke-width', '1.5')
-      circle.setAttribute('cursor', 'pointer')
-      circle.addEventListener('click', () => navigateTo(`/test-runs/${point.id}`))
+      const cx = xScale(point.date);
+      const cy = yScale(yVal);
+      const circle = document.createElementNS(NS, 'circle');
+      circle.setAttribute('cx', String(cx));
+      circle.setAttribute('cy', String(cy));
+      circle.setAttribute('r', '4.5');
+      circle.setAttribute('fill', color);
+      circle.setAttribute('stroke', '#fff');
+      circle.setAttribute('stroke-width', '1.5');
+      circle.setAttribute('cursor', 'pointer');
+      circle.addEventListener('click', () => navigateTo(`/test-runs/${point.id}`));
       circle.addEventListener('mouseenter', () => {
-        circle.setAttribute('r', '7')
-        circle.setAttribute('stroke-width', '2.5')
-        tooltipData.value = point
-      })
+        circle.setAttribute('r', '7');
+        circle.setAttribute('stroke-width', '2.5');
+        tooltipData.value = point;
+      });
       circle.addEventListener('mousemove', (e: MouseEvent) => {
-        const tw = 260
-        const ox = 12
-        const x = e.clientX + ox + tw > window.innerWidth - 8 ? e.clientX - tw - ox : e.clientX + ox
-        tooltipPos.value = { x, y: e.clientY - 12 }
-      })
+        const tw = 260;
+        const ox = 12;
+        const x = e.clientX + ox + tw > window.innerWidth - 8 ? e.clientX - tw - ox : e.clientX + ox;
+        tooltipPos.value = { x, y: e.clientY - 12 };
+      });
       circle.addEventListener('mouseleave', () => {
-        circle.setAttribute('r', '4.5')
-        circle.setAttribute('stroke-width', '1.5')
-        tooltipData.value = null
-      })
-      group.appendChild(circle)
+        circle.setAttribute('r', '4.5');
+        circle.setAttribute('stroke-width', '1.5');
+        tooltipData.value = null;
+      });
+      group.appendChild(circle);
     }
   }
 }
@@ -133,13 +133,13 @@ function addMarkers(
 function onChartRender(
   svgNode: SVGSVGElement,
   margin: {
-    top: number
-    bottom: number
-    left: number
-    right: number
-  }
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+  },
 ) {
-  addMarkers(svgNode, margin)
+  addMarkers(svgNode, margin);
 }
 </script>
 
@@ -163,14 +163,10 @@ function onChartRender(
 
         <VisAxis
           type="x"
-          :tick-format="(d: Date) => (new Date(d)).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })"
+          :tick-format="(d: Date) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })"
           label="Date"
         />
-        <VisAxis
-          type="y"
-          label="Duration (s)"
-          :tick-format="(d: number) => `${d}s`"
-        />
+        <VisAxis type="y" label="Duration (s)" :tick-format="(d: number) => `${d}s`" />
       </VisXYContainer>
 
       <div
@@ -180,25 +176,34 @@ function onChartRender(
       >
         <div class="p-2 text-sm text-gray-900 dark:text-gray-100">
           <div class="font-semibold mb-1">
-            {{ new Date(tooltipData.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }}
+            {{
+              new Date(tooltipData.date).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            }}
           </div>
-          <div class="capitalize mb-1">
-            Status: {{ tooltipData.status }}
-          </div>
+          <div class="capitalize mb-1">Status: {{ tooltipData.status }}</div>
           <div class="space-y-0.5">
-            <div><span class="text-blue-500 dark:text-blue-400">&#9679;</span> Total: {{ tooltipData.duration ?? '-' }}s</div>
-            <div><span class="text-green-500 dark:text-green-400">&#9679;</span> Avg: {{ tooltipData.avgTestDuration ?? '-' }}s</div>
-            <div><span class="text-orange-500 dark:text-orange-400">&#9679;</span> P90: {{ tooltipData.p90TestDuration ?? '-' }}s</div>
-            <div class="mt-1">
-              Tests: {{ tooltipData.totalTests }}
+            <div>
+              <span class="text-blue-500 dark:text-blue-400">&#9679;</span> Total: {{ tooltipData.duration ?? '-' }}s
             </div>
+            <div>
+              <span class="text-green-500 dark:text-green-400">&#9679;</span> Avg:
+              {{ tooltipData.avgTestDuration ?? '-' }}s
+            </div>
+            <div>
+              <span class="text-orange-500 dark:text-orange-400">&#9679;</span> P90:
+              {{ tooltipData.p90TestDuration ?? '-' }}s
+            </div>
+            <div class="mt-1">Tests: {{ tooltipData.totalTests }}</div>
             <div v-if="tooltipData.commit" class="text-gray-400 dark:text-gray-500 text-xs">
               Commit: {{ tooltipData.commit }}
             </div>
           </div>
-          <div class="text-gray-400 dark:text-gray-500 text-xs mt-1">
-            Click to view run details
-          </div>
+          <div class="text-gray-400 dark:text-gray-500 text-xs mt-1">Click to view run details</div>
         </div>
       </div>
     </div>

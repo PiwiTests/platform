@@ -1,16 +1,17 @@
-import { getDatabase } from '../../../database'
-import { testRuns } from '../../../database/schema'
-import { eq } from 'drizzle-orm'
-import { runEventBus } from '../../../utils/run-events'
-import { sanitizeMetadata } from '../../../utils/sanitize'
-import { validateAndReviveRun } from '../../../utils/revive-run'
-import { autoDiagnoseRun } from '../../../utils/ai-diagnosis'
+import { getDatabase } from '../../../database';
+import { testRuns } from '../../../database/schema';
+import { eq } from 'drizzle-orm';
+import { runEventBus } from '../../../utils/run-events';
+import { sanitizeMetadata } from '../../../utils/sanitize';
+import { validateAndReviveRun } from '../../../utils/revive-run';
+import { autoDiagnoseRun } from '../../../utils/ai-diagnosis';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Finish a streaming test run',
-    description: 'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing.',
+    description:
+      'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       content: {
@@ -23,78 +24,78 @@ defineRouteMeta({
               duration: { type: 'number' },
               durations: { type: 'array', items: { type: 'number' } },
               hasPendingUploads: { type: 'boolean' },
-              flakyTests: { type: 'integer' }
+              flakyTests: { type: 'integer' },
             },
-            required: ['streamToken']
-          }
-        }
-      }
-    }
-  }
-})
+            required: ['streamToken'],
+          },
+        },
+      },
+    },
+  },
+});
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0')
+  const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {
     throw createError({
       statusCode: 400,
-      message: 'Invalid test run ID'
-    })
+      message: 'Invalid test run ID',
+    });
   }
 
-  const body = await readBody(event)
+  const body = await readBody(event);
 
   // Validate stream token
   if (!body.streamToken) {
     throw createError({
       statusCode: 401,
-      message: 'Missing stream token'
-    })
+      message: 'Missing stream token',
+    });
   }
 
-  const db = await getDatabase()
+  const db = await getDatabase();
 
   // Verify the run exists and the stream token matches
-  const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id))
-  const testRun = testRunResults[0]
+  const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id));
+  const testRun = testRunResults[0];
 
   if (!testRun) {
     throw createError({
       statusCode: 404,
-      message: 'Test run not found'
-    })
+      message: 'Test run not found',
+    });
   }
 
-  await validateAndReviveRun(db, id, testRun, body.streamToken)
+  await validateAndReviveRun(db, id, testRun, body.streamToken);
 
   // Determine final status
-  const status = body.status ?? 'failed'
-  const duration = body.duration ?? (Date.now() - new Date(testRun.startTime).getTime())
+  const status = body.status ?? 'failed';
+  const duration = body.duration ?? Date.now() - new Date(testRun.startTime).getTime();
 
   // Compute performance metrics
-  let avgTestDuration: number | null = null
-  let p90TestDuration: number | null = null
+  let avgTestDuration: number | null = null;
+  let p90TestDuration: number | null = null;
 
   if (body.durations && Array.isArray(body.durations)) {
-    const stats = durationStats(body.durations)
+    const stats = durationStats(body.durations);
     if (stats) {
-      avgTestDuration = stats.avg
-      p90TestDuration = stats.p90
+      avgTestDuration = stats.avg;
+      p90TestDuration = stats.p90;
     }
   }
 
   // Calculate flaky tests count (default to 0 if not provided)
-  const flakyTests = body.flakyTests ?? 0
+  const flakyTests = body.flakyTests ?? 0;
 
-  const hasPendingUploads = body.hasPendingUploads === true
+  const hasPendingUploads = body.hasPendingUploads === true;
 
   if (hasPendingUploads) {
     // Reporter will upload reports/traces after this call.
     // Set status to finalizing instead of the final status; the upload endpoint
     // will transition to the actual final status once files are stored.
     // Store the final status in memory so the upload endpoint can retrieve it.
-    runEventBus.setFinalStatus(id, status)
+    runEventBus.setFinalStatus(id, status);
 
     const updateData: Record<string, unknown> = {
       status: 'finalizing',
@@ -107,12 +108,10 @@ export default eventHandler(async (event) => {
       ...(body.flakyTests !== undefined && { flakyTests }),
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
-      ...(body.metadata && { metadata: sanitizeMetadata(body.metadata) })
-    }
+      ...(body.metadata && { metadata: sanitizeMetadata(body.metadata) }),
+    };
 
-    await db.update(testRuns)
-      .set(updateData)
-      .where(eq(testRuns.id, id))
+    await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));
 
     // Notify per-run SSE subscribers that finalization has begun
     runEventBus.publish(id, {
@@ -124,12 +123,12 @@ export default eventHandler(async (event) => {
         passedTests: body.passedTests ?? testRun.passedTests,
         failedTests: body.failedTests ?? testRun.failedTests,
         skippedTests: body.skippedTests ?? testRun.skippedTests,
-        flakyTests
-      }
-    })
+        flakyTests,
+      },
+    });
 
     // Broadcast global run-finalizing event
-    runEventBus.publishGlobal({ type: 'run-finalizing', runId: id, projectId: testRun.projectId, status })
+    runEventBus.publishGlobal({ type: 'run-finalizing', runId: id, projectId: testRun.projectId, status });
 
     // Keep event bus alive — the upload endpoint will emit run-finished and clean up
   } else {
@@ -145,12 +144,10 @@ export default eventHandler(async (event) => {
       ...(body.flakyTests !== undefined && { flakyTests }),
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
-      ...(body.metadata && { metadata: sanitizeMetadata(body.metadata) })
-    }
+      ...(body.metadata && { metadata: sanitizeMetadata(body.metadata) }),
+    };
 
-    await db.update(testRuns)
-      .set(updateData)
-      .where(eq(testRuns.id, id))
+    await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));
 
     // Publish run-finished event to SSE subscribers
     runEventBus.publish(id, {
@@ -162,22 +159,22 @@ export default eventHandler(async (event) => {
         passedTests: body.passedTests ?? testRun.passedTests,
         failedTests: body.failedTests ?? testRun.failedTests,
         skippedTests: body.skippedTests ?? testRun.skippedTests,
-        flakyTests
-      }
-    })
+        flakyTests,
+      },
+    });
 
     // Broadcast global run-finished event for dashboard pages
-    runEventBus.publishGlobal({ type: 'run-finished', runId: id, projectId: testRun.projectId, status })
+    runEventBus.publishGlobal({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
 
-    autoDiagnoseRun(db, testRun.projectId, id).catch(e => console.error('[ai-diagnosis] autoDiagnoseRun failed', e))
+    autoDiagnoseRun(db, testRun.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
 
     // Cleanup event bus for this run
-    runEventBus.cleanup(id)
+    runEventBus.cleanup(id);
   }
 
   return {
     success: true,
     testRunId: id,
-    status: hasPendingUploads ? 'finalizing' : status
-  }
-})
+    status: hasPendingUploads ? 'finalizing' : status,
+  };
+});

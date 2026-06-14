@@ -1,20 +1,20 @@
 <script setup lang="ts">
-const config = useRuntimeConfig()
-const demoReady = useState('demoReady', () => false)
+const config = useRuntimeConfig();
+const demoReady = useState('demoReady', () => false);
 
-const isDemo = config.public.demoMode
-const showLoading = computed(() => isDemo && !demoReady.value)
+const isDemo = config.public.demoMode;
+const showLoading = computed(() => isDemo && !demoReady.value);
 
 // After 2 s still on the loading screen, show a first-time-setup hint.
 // This covers the Firefox case where the SW takes a few seconds to install
 // and claim the page before the app can reload with the SW active.
-const showSetupHint = ref(false)
+const showSetupHint = ref(false);
 onMounted(() => {
-  if (!isDemo) return
+  if (!isDemo) return;
   setTimeout(() => {
-    if (!demoReady.value) showSetupHint.value = true
-  }, 2000)
-})
+    if (!demoReady.value) showSetupHint.value = true;
+  }, 2000);
+});
 </script>
 
 <template>
@@ -29,23 +29,14 @@ onMounted(() => {
         fill="none"
         viewBox="0 0 24 24"
       >
-        <circle
-          class="opacity-25"
-          cx="12"
-          cy="12"
-          r="10"
-          stroke="currentColor"
-          stroke-width="4"
-        />
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
         <path
           class="opacity-75"
           fill="currentColor"
           d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
         />
       </svg>
-      <p class="text-sm text-gray-500">
-        Preparing demo…
-      </p>
+      <p class="text-sm text-gray-500">Preparing demo…</p>
       <p v-if="showSetupHint" class="text-xs text-gray-400 mt-1">
         Setting up service worker for first use — the page will reload automatically.
       </p>

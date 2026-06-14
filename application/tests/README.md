@@ -5,26 +5,31 @@ This directory contains functional tests for the Piwi Dashboard using Playwright
 ## Running Tests
 
 ### All Tests
+
 ```bash
 npm test
 ```
 
 ### Specific Test File
+
 ```bash
 npx playwright test api-server.spec.ts
 ```
 
 ### With UI Mode
+
 ```bash
 npm run test:ui
 ```
 
 ### View Test Report
+
 ```bash
 npm run test:report
 ```
 
 ### Watch Mode
+
 ```bash
 npx playwright test --watch
 ```
@@ -41,11 +46,13 @@ Tests are configured in `playwright.config.ts` at the project root. Key settings
 ## Prerequisites
 
 1. Install dependencies:
+
    ```bash
    npm install
    ```
 
 2. Install Playwright browsers (if not already installed):
+
    ```bash
    npx playwright install
    ```
@@ -57,6 +64,7 @@ Tests are configured in `playwright.config.ts` at the project root. Key settings
 Follow these patterns when adding tests:
 
 ### API Tests
+
 ```typescript
 test('should do something', async ({ request }) => {
   const response = await request.get('/api/endpoint');
@@ -67,6 +75,7 @@ test('should do something', async ({ request }) => {
 ```
 
 ### UI Tests (with dashboard fixture)
+
 ```typescript
 // Import from fixtures.ts so network requests and web vitals are captured
 import { test, expect } from './fixtures';
@@ -79,6 +88,7 @@ test('should display element', async ({ page }) => {
 ```
 
 ### Setup/Teardown
+
 ```typescript
 test.beforeEach(async ({ request }) => {
   // Setup test data
@@ -89,16 +99,19 @@ test.beforeEach(async ({ request }) => {
 ## Debugging Tests
 
 ### Debug Mode
+
 ```bash
 npx playwright test --debug
 ```
 
 ### Generate Code
+
 ```bash
 npx playwright codegen http://localhost:3000
 ```
 
 ### View Trace
+
 ```bash
 npx playwright show-trace trace.zip
 ```
@@ -126,14 +139,18 @@ Tests are designed to run in CI environments:
 ## Troubleshooting
 
 ### Port Already in Use
+
 If port 3000 is in use, the tests will fail to start. Stop any running dev servers:
+
 ```bash
 # Find and kill process on port 3000
 lsof -ti:3000 | xargs kill
 ```
 
 ### Tests Timing Out
+
 Increase timeout in playwright.config.ts or specific tests:
+
 ```typescript
 test('slow test', async ({ page }) => {
   test.setTimeout(60000); // 60 seconds
@@ -142,7 +159,9 @@ test('slow test', async ({ page }) => {
 ```
 
 ### Database Issues
+
 Tests use the same database as dev. If tests fail due to data conflicts, delete the database (and all data) before running tests:
+
 ```bash
 rm -rf .data
 ```

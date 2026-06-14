@@ -11,7 +11,6 @@
   "bugs": {
     "url": "https://github.com/PhenX/piwi-dashboard/issues"
   },
-  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -37,10 +36,10 @@
   "scripts": {
     "reporter:build": "tsc",
     "reporter:dev": "tsc --watch",
-    "reporter:format": "oxfmt --config oxfmt.config.ts --write \"src/\"",
-    "reporter:format:check": "oxfmt --config oxfmt.config.ts --check \"src/\"",
-    "reporter:lint": "oxlint --config oxlint.config.ts .",
-    "reporter:lint:fix": "oxlint --config oxlint.config.ts . --fix",
+    "reporter:format": "oxfmt --config oxfmt.config.mts --write \"src/\"",
+    "reporter:format:check": "oxfmt --config oxfmt.config.mts --check \"src/\"",
+    "reporter:lint": "oxlint --config oxlint.config.mts .",
+    "reporter:lint:fix": "oxlint --config oxlint.config.mts . --fix",
     "prepublishOnly": "npm run reporter:build"
   },
   "files": [

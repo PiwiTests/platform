@@ -1,24 +1,24 @@
 <script setup lang="ts">
-import { z } from 'zod'
-import type { TableColumn } from '@nuxt/ui'
-import type { UserDetails, UsersResponse, ApiKeySummary, ApiKeysResponse, CreateApiKeyResponse } from '~~/types/api'
+import { z } from 'zod';
+import type { TableColumn } from '@nuxt/ui';
+import type { UserDetails, UsersResponse, ApiKeySummary, ApiKeysResponse, CreateApiKeyResponse } from '~~/types/api';
 
-const { data: usersData, refresh } = await useFetch<UsersResponse>('/api/users')
-const toast = useToast()
-const { authState } = useAuth()
-const config = useRuntimeConfig()
+const { data: usersData, refresh } = await useFetch<UsersResponse>('/api/users');
+const toast = useToast();
+const { authState } = useAuth();
+const config = useRuntimeConfig();
 
-const users = computed(() => usersData.value?.users || [])
-const authEnabled = computed(() => usersData.value?.authEnabled || false)
+const users = computed(() => usersData.value?.users || []);
+const authEnabled = computed(() => usersData.value?.authEnabled || false);
 
 // Check if current user is admin (only matters when auth is enabled)
 const isAdmin = computed(() => {
-  if (!config.public.authEnabled) return true
-  return authState.value.user?.role === 'administrator'
-})
+  if (!config.public.authEnabled) return true;
+  return authState.value.user?.role === 'administrator';
+});
 
 // Current user id (for showing own API keys)
-const currentUserId = computed(() => authState.value.user?.id ?? null)
+const currentUserId = computed(() => authState.value.user?.id ?? null);
 
 // Define columns with proper typing
 const columns: TableColumn<UserDetails>[] = [
@@ -26,114 +26,112 @@ const columns: TableColumn<UserDetails>[] = [
   { accessorKey: 'name', header: createSortHeader<UserDetails>('Name') },
   { accessorKey: 'role', header: createSortHeader<UserDetails>('Role') },
   { accessorKey: 'createdAt', header: createSortHeader<UserDetails>('Created') },
-  { accessorKey: 'actions', header: '' }
-]
+  { accessorKey: 'actions', header: '' },
+];
 
 // Add user modal
-const isAddUserModalOpen = ref(false)
+const isAddUserModalOpen = ref(false);
 const addUserSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
   role: z.enum(['administrator', 'reporter', 'user']),
-  name: z.string().optional()
-})
+  name: z.string().optional(),
+});
 
-type AddUserSchema = z.output<typeof addUserSchema>
+type AddUserSchema = z.output<typeof addUserSchema>;
 
 const newUser = reactive<Partial<AddUserSchema>>({
   username: '',
   password: '',
   role: 'user',
-  name: ''
-})
+  name: '',
+});
 
 const roleOptions = [
   { label: 'Administrator', value: 'administrator' },
   { label: 'Reporter', value: 'reporter' },
-  { label: 'User', value: 'user' }
-]
+  { label: 'User', value: 'user' },
+];
 
 async function handleAddUser() {
   try {
     await $fetch('/api/users', {
       method: 'POST',
-      body: newUser
-    })
+      body: newUser,
+    });
 
     toast.add({
       title: 'User created',
       description: `User ${newUser.username} has been created successfully`,
-      color: 'success'
-    })
+      color: 'success',
+    });
 
-    isAddUserModalOpen.value = false
-    newUser.username = ''
-    newUser.password = ''
-    newUser.role = 'user'
-    newUser.name = ''
+    isAddUserModalOpen.value = false;
+    newUser.username = '';
+    newUser.password = '';
+    newUser.role = 'user';
+    newUser.name = '';
 
-    await refresh()
+    await refresh();
   } catch (error: unknown) {
-    const errorMessage = error && typeof error === 'object' && 'data' in error
-      ? (error.data as { message?: string })?.message
-      : undefined
+    const errorMessage =
+      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
     toast.add({
       title: 'Failed to create user',
       description: errorMessage || 'An error occurred',
-      color: 'error'
-    })
+      color: 'error',
+    });
   }
 }
 
 async function handleDeleteUser(user: UserDetails) {
-  userToDelete.value = user
-  isDeleteUserConfirmOpen.value = true
+  userToDelete.value = user;
+  isDeleteUserConfirmOpen.value = true;
 }
 
 async function confirmDeleteUser() {
-  const user = userToDelete.value
-  if (!user) return
-  isDeleteUserConfirmOpen.value = false
-  userToDelete.value = null
+  const user = userToDelete.value;
+  if (!user) return;
+  isDeleteUserConfirmOpen.value = false;
+  userToDelete.value = null;
 
   try {
     await $fetch(`/api/users/${user.id}`, {
-      method: 'DELETE'
-    })
+      method: 'DELETE',
+    });
 
     toast.add({
       title: 'User deleted',
       description: `User ${user.username} has been deleted`,
-      color: 'success'
-    })
+      color: 'success',
+    });
 
-    await refresh()
+    await refresh();
   } catch (error: unknown) {
-    const errorMessage = error && typeof error === 'object' && 'data' in error
-      ? (error.data as { message?: string })?.message
-      : undefined
+    const errorMessage =
+      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
     toast.add({
       title: 'Failed to delete user',
       description: errorMessage || 'An error occurred',
-      color: 'error'
-    })
+      color: 'error',
+    });
   }
 }
 
 // Delete user confirmation
-const isDeleteUserConfirmOpen = ref(false)
-const userToDelete = ref<UserDetails | null>(null)
+const isDeleteUserConfirmOpen = ref(false);
+const userToDelete = ref<UserDetails | null>(null);
 
 function getRoleBadgeColor(role: string) {
   switch (role) {
     case 'administrator':
-      return 'primary'
+      return 'primary';
     case 'reporter':
-      return 'info'
+      return 'info';
     case 'user':
-      return 'neutral'
+      return 'neutral';
     default:
-      return 'neutral'
+      return 'neutral';
   }
 }
 
@@ -142,132 +140,130 @@ function getRoleBadgeColor(role: string) {
 // ---------------------------------------------------------------------------
 
 // Which user's API keys are being viewed/managed
-const selectedUserForKeys = ref<UserDetails | null>(null)
-const isApiKeysModalOpen = ref(false)
+const selectedUserForKeys = ref<UserDetails | null>(null);
+const isApiKeysModalOpen = ref(false);
 
-const apiKeysList = ref<ApiKeySummary[]>([])
+const apiKeysList = ref<ApiKeySummary[]>([]);
 
 async function openApiKeysModal(user: UserDetails) {
-  selectedUserForKeys.value = user
-  isApiKeysModalOpen.value = true
-  await loadApiKeys(user.id)
+  selectedUserForKeys.value = user;
+  isApiKeysModalOpen.value = true;
+  await loadApiKeys(user.id);
 }
 
 async function loadApiKeys(userId: number) {
   try {
-    const data = await $fetch<ApiKeysResponse>(`/api/users/${userId}/api-keys`)
-    apiKeysList.value = data.apiKeys
+    const data = await $fetch<ApiKeysResponse>(`/api/users/${userId}/api-keys`);
+    apiKeysList.value = data.apiKeys;
   } catch {
-    apiKeysList.value = []
+    apiKeysList.value = [];
   }
 }
 
 async function refreshApiKeys() {
   if (selectedUserForKeys.value) {
-    await loadApiKeys(selectedUserForKeys.value.id)
+    await loadApiKeys(selectedUserForKeys.value.id);
   }
 }
 
 // Create API key (inline in the API keys modal)
-const isCreatingKey = ref(false)
-const newKeyName = ref('')
-const newKeyExpiry = ref('')
-const createdKeyValue = ref<string | null>(null)
+const isCreatingKey = ref(false);
+const newKeyName = ref('');
+const newKeyExpiry = ref('');
+const createdKeyValue = ref<string | null>(null);
 
 function startCreateKey() {
-  newKeyName.value = ''
-  newKeyExpiry.value = ''
-  createdKeyValue.value = null
-  isCreatingKey.value = true
+  newKeyName.value = '';
+  newKeyExpiry.value = '';
+  createdKeyValue.value = null;
+  isCreatingKey.value = true;
 }
 
 function cancelCreateKey() {
-  isCreatingKey.value = false
-  createdKeyValue.value = null
+  isCreatingKey.value = false;
+  createdKeyValue.value = null;
 }
 
 async function handleCreateApiKey() {
-  if (!selectedUserForKeys.value) return
+  if (!selectedUserForKeys.value) return;
 
   try {
-    const body: { name: string, expiresAt?: string } = { name: newKeyName.value }
+    const body: { name: string; expiresAt?: string } = { name: newKeyName.value };
     if (newKeyExpiry.value) {
-      body.expiresAt = new Date(newKeyExpiry.value).toISOString()
+      body.expiresAt = new Date(newKeyExpiry.value).toISOString();
     }
 
     const result = await $fetch<CreateApiKeyResponse>(`/api/users/${selectedUserForKeys.value.id}/api-keys`, {
       method: 'POST',
-      body
-    })
+      body,
+    });
 
-    createdKeyValue.value = result.key
-    await refreshApiKeys()
+    createdKeyValue.value = result.key;
+    await refreshApiKeys();
   } catch (error: unknown) {
-    const errorMessage = error && typeof error === 'object' && 'data' in error
-      ? (error.data as { message?: string })?.message
-      : undefined
+    const errorMessage =
+      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
     toast.add({
       title: 'Failed to create API key',
       description: errorMessage || 'An error occurred',
-      color: 'error'
-    })
+      color: 'error',
+    });
   }
 }
 
 async function copyKey() {
   if (createdKeyValue.value) {
-    await navigator.clipboard.writeText(createdKeyValue.value)
-    toast.add({ title: 'API key copied to clipboard', color: 'success' })
+    await navigator.clipboard.writeText(createdKeyValue.value);
+    toast.add({ title: 'API key copied to clipboard', color: 'success' });
   }
 }
 
 function dismissCreatedKey() {
-  createdKeyValue.value = null
-  isCreatingKey.value = false
+  createdKeyValue.value = null;
+  isCreatingKey.value = false;
 }
 
 // Revoke API key confirmation
-const isRevokeKeyConfirmOpen = ref(false)
-const keyToRevoke = ref<ApiKeySummary | null>(null)
+const isRevokeKeyConfirmOpen = ref(false);
+const keyToRevoke = ref<ApiKeySummary | null>(null);
 
 function confirmRevokeApiKey(key: ApiKeySummary) {
-  keyToRevoke.value = key
-  isRevokeKeyConfirmOpen.value = true
+  keyToRevoke.value = key;
+  isRevokeKeyConfirmOpen.value = true;
 }
 
 async function handleRevokeApiKey() {
-  if (!selectedUserForKeys.value || !keyToRevoke.value) return
-  const key = keyToRevoke.value
-  isRevokeKeyConfirmOpen.value = false
-  keyToRevoke.value = null
+  if (!selectedUserForKeys.value || !keyToRevoke.value) return;
+  const key = keyToRevoke.value;
+  isRevokeKeyConfirmOpen.value = false;
+  keyToRevoke.value = null;
 
   try {
     await $fetch(`/api/users/${selectedUserForKeys.value.id}/api-keys/${key.id}`, {
-      method: 'DELETE'
-    })
+      method: 'DELETE',
+    });
 
     toast.add({
       title: 'API key revoked',
       description: `Key "${key.name}" has been revoked`,
-      color: 'success'
-    })
+      color: 'success',
+    });
 
-    await refreshApiKeys()
+    await refreshApiKeys();
   } catch (error: unknown) {
-    const errorMessage = error && typeof error === 'object' && 'data' in error
-      ? (error.data as { message?: string })?.message
-      : undefined
+    const errorMessage =
+      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
     toast.add({
       title: 'Failed to revoke API key',
       description: errorMessage || 'An error occurred',
-      color: 'error'
-    })
+      color: 'error',
+    });
   }
 }
 
 function canManageApiKeys(user: UserDetails): boolean {
-  if (!config.public.authEnabled) return true
-  return isAdmin.value || currentUserId.value === user.id
+  if (!config.public.authEnabled) return true;
+  return isAdmin.value || currentUserId.value === user.id;
 }
 </script>
 
@@ -276,12 +272,7 @@ function canManageApiKeys(user: UserDetails): boolean {
     <template #header>
       <UDashboardNavbar title="User management">
         <template #right>
-          <UButton
-            v-if="isAdmin"
-            label="Add user"
-            icon="i-lucide-user-plus"
-            @click="isAddUserModalOpen = true"
-          />
+          <UButton v-if="isAdmin" label="Add user" icon="i-lucide-user-plus" @click="isAddUserModalOpen = true" />
         </template>
       </UDashboardNavbar>
     </template>
@@ -300,14 +291,9 @@ function canManageApiKeys(user: UserDetails): boolean {
 
       <!-- Users table -->
       <UCard v-if="users.length > 0">
-        <template #header>
-          Users ({{ users.length }})
-        </template>
+        <template #header> Users ({{ users.length }}) </template>
 
-        <UTable
-          :data="users"
-          :columns="columns"
-        >
+        <UTable :data="users" :columns="columns">
           <template #username-cell="{ row }">
             {{ row.original.username }}
           </template>
@@ -358,18 +344,9 @@ function canManageApiKeys(user: UserDetails): boolean {
           <div class="flex justify-center mb-4">
             <UIcon name="i-lucide-users" class="text-4xl text-muted" />
           </div>
-          <h3 class="text-lg font-semibold mb-2">
-            No users yet
-          </h3>
-          <p class="text-muted mb-4">
-            Create your first user to get started with authentication
-          </p>
-          <UButton
-            v-if="isAdmin"
-            label="Add user"
-            icon="i-lucide-user-plus"
-            @click="isAddUserModalOpen = true"
-          />
+          <h3 class="text-lg font-semibold mb-2">No users yet</h3>
+          <p class="text-muted mb-4">Create your first user to get started with authentication</p>
+          <UButton v-if="isAdmin" label="Add user" icon="i-lucide-user-plus" @click="isAddUserModalOpen = true" />
         </div>
       </UCard>
     </template>
@@ -380,21 +357,11 @@ function canManageApiKeys(user: UserDetails): boolean {
     <UModal :open="isAddUserModalOpen" title="Add new user" @update:open="isAddUserModalOpen = $event">
       <template #body>
         <UForm :schema="addUserSchema" :state="newUser">
-          <UFormField
-            label="Username"
-            name="username"
-            required
-            class="mb-4"
-          >
+          <UFormField label="Username" name="username" required class="mb-4">
             <UInput v-model="newUser.username" placeholder="Enter username" />
           </UFormField>
 
-          <UFormField
-            label="Password"
-            name="password"
-            required
-            class="mb-4"
-          >
+          <UFormField label="Password" name="password" required class="mb-4">
             <UInput v-model="newUser.password" type="password" placeholder="Enter password" />
           </UFormField>
 
@@ -402,30 +369,15 @@ function canManageApiKeys(user: UserDetails): boolean {
             <UInput v-model="newUser.name" placeholder="Enter display name (optional)" />
           </UFormField>
 
-          <UFormField
-            label="Role"
-            name="role"
-            required
-          >
+          <UFormField label="Role" name="role" required>
             <USelect v-model="newUser.role" :items="roleOptions" />
           </UFormField>
         </UForm>
       </template>
 
       <template #footer>
-        <UButton
-          type="button"
-          color="neutral"
-          variant="ghost"
-          label="Cancel"
-          @click="isAddUserModalOpen = false"
-        />
-        <UButton
-          type="submit"
-          label="Create user"
-          icon="i-lucide-user-plus"
-          @click="handleAddUser"
-        />
+        <UButton type="button" color="neutral" variant="ghost" label="Cancel" @click="isAddUserModalOpen = false" />
+        <UButton type="submit" label="Create user" icon="i-lucide-user-plus" @click="handleAddUser" />
       </template>
     </UModal>
   </ClientOnly>
@@ -436,13 +388,19 @@ function canManageApiKeys(user: UserDetails): boolean {
       :open="isApiKeysModalOpen"
       :title="`API keys – ${selectedUserForKeys?.username}`"
       size="xl"
-      @update:open="v => { isApiKeysModalOpen = v; if (!v) cancelCreateKey() }"
+      @update:open="
+        (v) => {
+          isApiKeysModalOpen = v;
+          if (!v) cancelCreateKey();
+        }
+      "
     >
       <template #body>
         <div class="space-y-4">
           <p class="text-sm text-muted">
-            API keys allow the Playwright reporter (and other CI tools) to submit test results without a username/password login.
-            Each key is shown <strong>only once</strong> at creation time — store it in a CI secret immediately.
+            API keys allow the Playwright reporter (and other CI tools) to submit test results without a
+            username/password login. Each key is shown <strong>only once</strong> at creation time — store it in a CI
+            secret immediately.
           </p>
 
           <!-- Inline Create Key Form -->
@@ -460,42 +418,20 @@ function canManageApiKeys(user: UserDetails): boolean {
                 {{ createdKeyValue }}
               </div>
               <div class="flex gap-2">
-                <UButton
-                  label="Copy to clipboard"
-                  icon="i-lucide-copy"
-                  color="primary"
-                  size="sm"
-                  @click="copyKey"
-                />
-                <UButton
-                  label="Done"
-                  variant="ghost"
-                  size="sm"
-                  @click="dismissCreatedKey"
-                />
+                <UButton label="Copy to clipboard" icon="i-lucide-copy" color="primary" size="sm" @click="copyKey" />
+                <UButton label="Done" variant="ghost" size="sm" @click="dismissCreatedKey" />
               </div>
             </div>
 
             <!-- Key creation form -->
             <div v-else class="space-y-3">
-              <h4 class="font-medium text-sm">
-                Create new API key
-              </h4>
+              <h4 class="font-medium text-sm">Create new API key</h4>
               <UFormField label="Key name" name="name" required>
-                <UInput
-                  v-model="newKeyName"
-                  placeholder="e.g. GitHub Actions CI"
-                  size="sm"
-                />
+                <UInput v-model="newKeyName" placeholder="e.g. GitHub Actions CI" size="sm" />
               </UFormField>
 
               <UFormField label="Expires at (optional)" name="expiresAt">
-                <UInput
-                  v-model="newKeyExpiry"
-                  type="date"
-                  size="sm"
-                  :min="new Date().toISOString().split('T')[0]"
-                />
+                <UInput v-model="newKeyExpiry" type="date" size="sm" :min="new Date().toISOString().split('T')[0]" />
               </UFormField>
 
               <div class="flex gap-2">
@@ -506,13 +442,7 @@ function canManageApiKeys(user: UserDetails): boolean {
                   :disabled="!newKeyName.trim()"
                   @click="handleCreateApiKey"
                 />
-                <UButton
-                  color="neutral"
-                  variant="ghost"
-                  label="Cancel"
-                  size="sm"
-                  @click="cancelCreateKey"
-                />
+                <UButton color="neutral" variant="ghost" label="Cancel" size="sm" @click="cancelCreateKey" />
               </div>
             </div>
           </div>
@@ -530,9 +460,13 @@ function canManageApiKeys(user: UserDetails): boolean {
                   <span class="font-medium truncate">{{ key.name }}</span>
                 </div>
                 <div class="text-xs text-muted mt-1 flex flex-wrap gap-x-4">
-                  <span>Prefix: <code class="font-mono">pd_{{ key.keyPrefix }}…</code></span>
+                  <span
+                    >Prefix: <code class="font-mono">pd_{{ key.keyPrefix }}…</code></span
+                  >
                   <span>Created: {{ prettyDateFormat(key.createdAt, { dateOnly: true }) }}</span>
-                  <span v-if="key.lastUsedAt">Last used: {{ prettyDateFormat(key.lastUsedAt, { dateOnly: true }) }}</span>
+                  <span v-if="key.lastUsedAt"
+                    >Last used: {{ prettyDateFormat(key.lastUsedAt, { dateOnly: true }) }}</span
+                  >
                   <span v-else class="italic">Never used</span>
                   <span v-if="key.expiresAt" :class="new Date(key.expiresAt) < new Date() ? 'text-error' : ''">
                     Expires: {{ prettyDateFormat(key.expiresAt, { dateOnly: true }) }}
@@ -557,18 +491,8 @@ function canManageApiKeys(user: UserDetails): boolean {
       </template>
 
       <template #footer>
-        <UButton
-          color="neutral"
-          variant="ghost"
-          label="Close"
-          @click="isApiKeysModalOpen = false"
-        />
-        <UButton
-          v-if="!isCreatingKey"
-          label="Create API key"
-          icon="i-lucide-plus"
-          @click="startCreateKey"
-        />
+        <UButton color="neutral" variant="ghost" label="Close" @click="isApiKeysModalOpen = false" />
+        <UButton v-if="!isCreatingKey" label="Create API key" icon="i-lucide-plus" @click="startCreateKey" />
       </template>
     </UModal>
   </ClientOnly>
@@ -577,22 +501,15 @@ function canManageApiKeys(user: UserDetails): boolean {
   <ClientOnly>
     <UModal :open="isDeleteUserConfirmOpen" title="Delete user" @update:open="isDeleteUserConfirmOpen = $event">
       <template #body>
-        <p>Are you sure you want to delete user <strong>{{ userToDelete?.username }}</strong>? This action cannot be undone.</p>
+        <p>
+          Are you sure you want to delete user <strong>{{ userToDelete?.username }}</strong
+          >? This action cannot be undone.
+        </p>
       </template>
 
       <template #footer>
-        <UButton
-          color="neutral"
-          variant="ghost"
-          label="Cancel"
-          @click="isDeleteUserConfirmOpen = false"
-        />
-        <UButton
-          color="error"
-          label="Delete user"
-          icon="i-lucide-trash-2"
-          @click="confirmDeleteUser"
-        />
+        <UButton color="neutral" variant="ghost" label="Cancel" @click="isDeleteUserConfirmOpen = false" />
+        <UButton color="error" label="Delete user" icon="i-lucide-trash-2" @click="confirmDeleteUser" />
       </template>
     </UModal>
   </ClientOnly>
@@ -601,22 +518,15 @@ function canManageApiKeys(user: UserDetails): boolean {
   <ClientOnly>
     <UModal :open="isRevokeKeyConfirmOpen" title="Revoke API key" @update:open="isRevokeKeyConfirmOpen = $event">
       <template #body>
-        <p>Revoke API key <strong>"{{ keyToRevoke?.name }}"</strong>? Any CI pipeline using it will stop working immediately.</p>
+        <p>
+          Revoke API key <strong>"{{ keyToRevoke?.name }}"</strong>? Any CI pipeline using it will stop working
+          immediately.
+        </p>
       </template>
 
       <template #footer>
-        <UButton
-          color="neutral"
-          variant="ghost"
-          label="Cancel"
-          @click="isRevokeKeyConfirmOpen = false"
-        />
-        <UButton
-          color="error"
-          label="Revoke"
-          icon="i-lucide-trash-2"
-          @click="handleRevokeApiKey"
-        />
+        <UButton color="neutral" variant="ghost" label="Cancel" @click="isRevokeKeyConfirmOpen = false" />
+        <UButton color="error" label="Revoke" icon="i-lucide-trash-2" @click="handleRevokeApiKey" />
       </template>
     </UModal>
   </ClientOnly>
