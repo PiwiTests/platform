@@ -1,7 +1,8 @@
 import { execSync } from "child_process";
+import type { FullConfig, Suite, TestCase } from "@playwright/test/reporter";
 
 export class MetadataCollector {
-  collect(config: any, suite: any, options: any): Record<string, unknown> {
+  collect(config: FullConfig, suite: Suite, options: any): Record<string, unknown> {
     const metadata: Record<string, unknown> = {};
 
     if (options.projectDescription) metadata.projectDescription = options.projectDescription;
@@ -20,7 +21,7 @@ export class MetadataCollector {
       if (ci) metadata.ci = ci;
     }
 
-    const htmlMeta = this.extractHtmlReportMetadata(config);
+    const htmlMeta = this.extractPlaywrightConfigMetadata(config);
     if (htmlMeta && Object.keys(htmlMeta).length > 0) metadata.htmlReport = htmlMeta;
     if (config.metadata) metadata.playwrightConfig = config.metadata;
 
@@ -29,13 +30,56 @@ export class MetadataCollector {
       if (all.length > 0) {
         const first = all[0];
         if (first?.parent?.project) {
-          const proj = first.parent.project();
+          const proj = (first.parent as any).project();
           if (proj?.metadata) metadata.playwrightProject = proj.metadata;
         }
       }
     }
 
     return metadata;
+  }
+
+  getBrowserConfig(test: TestCase): Record<string, any> | null {
+    try {
+      let suite: Suite | undefined = test.parent;
+      let depth = 0;
+      while (suite && depth < 20) {
+        depth++;
+        const project = (suite as any).project?.();
+        if (project) {
+          const use = project.use ?? {};
+          const config: Record<string, any> = { projectName: project.name };
+          if (use.browserName) config.browserName = use.browserName;
+          if (use.channel) config.channel = use.channel;
+          if (use.viewport) config.viewport = { width: use.viewport.width, height: use.viewport.height };
+          if (use.deviceScaleFactor != null) config.deviceScaleFactor = use.deviceScaleFactor;
+          if (use.isMobile != null) config.isMobile = use.isMobile;
+          if (use.hasTouch != null) config.hasTouch = use.hasTouch;
+          if (use.locale) config.locale = use.locale;
+          if (use.timezoneId) config.timezoneId = use.timezoneId;
+          if (use.geolocation) {
+            config.geolocation = {
+              longitude: use.geolocation.longitude,
+              latitude: use.geolocation.latitude,
+              ...(use.geolocation.accuracy != null && { accuracy: use.geolocation.accuracy }),
+            };
+          }
+          if (use.colorScheme) config.colorScheme = use.colorScheme;
+          if (use.reducedMotion) config.reducedMotion = use.reducedMotion;
+          if (use.forcedColors) config.forcedColors = use.forcedColors;
+          if (use.offline) config.offline = use.offline;
+          if (use.bypassCSP) config.bypassCSP = use.bypassCSP;
+          if (use.javaScriptEnabled === false) config.javaScriptEnabled = false;
+          if (use.serviceWorkers) config.serviceWorkers = use.serviceWorkers;
+          if (use.userAgent) config.userAgent = use.userAgent;
+          return config;
+        }
+        suite = suite.parent;
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   private collectScmInfo(options: any): Record<string, string> | undefined {
@@ -113,7 +157,7 @@ export class MetadataCollector {
     return Object.keys(ci).length > 0 ? ci : undefined;
   }
 
-  private extractHtmlReportMetadata(config: any): Record<string, unknown> {
+  private extractPlaywrightConfigMetadata(config: FullConfig): Record<string, unknown> {
     const meta: Record<string, unknown> = {};
     if (config.projects?.length > 0) {
       meta.projects = config.projects.map((p: any) => ({
@@ -127,7 +171,7 @@ export class MetadataCollector {
       }));
     }
     meta.workers = config.workers;
-    meta.timeout = config.timeout;
+    meta.timeout = config.globalTimeout;
     meta.fullyParallel = config.fullyParallel;
     return meta;
   }

@@ -1,14 +1,13 @@
 import * as path from "path";
 import * as os from "os";
 import * as fs from "fs";
-import * as crypto from "crypto";
+import { hashForProject } from "./helpers.js";
 
 export class StreamBuffer {
   private filePath: string;
 
   constructor(projectName: string) {
-    const hash = crypto.createHash("sha1").update(projectName).digest("hex").slice(0, 16);
-    this.filePath = path.join(os.tmpdir(), `piwi-dashboard-stream-${hash}.jsonl`);
+    this.filePath = path.join(os.tmpdir(), `piwi-dashboard-stream-${hashForProject(projectName)}.jsonl`);
   }
 
   append(events: any[]): void {

@@ -72,6 +72,40 @@ export class FileHandler {
     };
   }
 
+  parsePerformanceAttachments(testCase: any, attachments: any[]): void {
+    const find = (name: string) => attachments.find((a: any) => a.name === name);
+
+    const net = find("piwi-dashboard-network");
+    if (net?.body) {
+      try {
+        testCase.networkRequests = JSON.parse(net.body.toString());
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const vitals = find("piwi-dashboard-web-vitals");
+    if (vitals?.body) {
+      try {
+        testCase.webVitals = JSON.parse(vitals.body.toString());
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const consoleLog = find("piwi-dashboard-console");
+    if (consoleLog?.body) {
+      try {
+        testCase.consoleLogs = JSON.parse(consoleLog.body.toString());
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const aria = find("piwi-dashboard-aria-snapshot");
+    if (aria?.body) testCase.ariaSnapshot = aria.body.toString();
+  }
+
   async computeTraceHashes(testCases: any[]): Promise<Map<number, { tracePath: string; hash: string; size: number }>> {
     const result = new Map<number, { tracePath: string; hash: string; size: number }>();
     for (let i = 0; i < testCases.length; i++) {
@@ -98,6 +132,11 @@ export class FileHandler {
     return result;
   }
 
+  async computeSingleTraceHash(testCase: any): Promise<{ tracePath: string; hash: string; size: number } | null> {
+    const hashes = await this.computeTraceHashes([testCase]);
+    return hashes.get(0) ?? null;
+  }
+
   async checkMissingTraces(
     httpClient: { postJSON(path: string, payload: any, auth?: string | null): Promise<any> },
     projectName: string,
@@ -111,7 +150,7 @@ export class FileHandler {
       const response = await httpClient.postJSON("/api/traces/check", { projectName, hashes }, auth);
       const missing = Array.isArray(response.missing) ? response.missing : hashes;
       return new Set(missing);
-    } catch (error: any) {
+    } catch {
       return new Set(hashes);
     }
   }
