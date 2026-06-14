@@ -7,8 +7,7 @@ import { stripAnsi } from '#shared/error-fingerprint'
 import { callAiProvider } from './ai-provider'
 import type { AiAttachedImage } from './ai-provider'
 import { computeRegressionContext, normalizeGitUrl } from './regression-context'
-import { fetchChangedFiles, detectScmProvider } from './scm-provider'
-import { getAppSetting } from './app-settings'
+import { createScmProvider, detectScmProvider } from './scm'
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>
 
@@ -266,16 +265,12 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
           if (regression.commitRange?.repositoryUrl) {
             scmCov.provider = detectScmProvider(regression.commitRange.repositoryUrl)
             try {
-              const scmTokenSetting = await getAppSetting<{ value?: string }>(db, 'scm_token')
-              const scmToken = scmTokenSetting?.value ?? null
+              const provider = await createScmProvider(regression.commitRange.repositoryUrl, db)
               const fromSha = baseCommitOverride ?? regression.commitRange.fromSha
               if (baseCommitOverride) scmCov.baseCommitUsed = baseCommitOverride
-              const changes = await fetchChangedFiles(
-                regression.commitRange.repositoryUrl,
-                fromSha,
-                regression.commitRange.toSha,
-                scmToken
-              )
+              const changes = provider
+                ? await provider.fetchChanges(fromSha, regression.commitRange.toSha)
+                : null
               if (changes && (changes.commits.length > 0 || changes.files.length > 0)) {
                 scmCov.filesCount = changes.files.length
                 scmCov.commitsCount = changes.commits.length
@@ -351,9 +346,10 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
             ].join('\n'))
 
             try {
-              const scmTokenSetting = await getAppSetting<{ value?: string }>(db, 'scm_token')
-              const scmToken = scmTokenSetting?.value ?? null
-              const changes = await fetchChangedFiles(repositoryUrl, baseCommitOverride, currentCommit, scmToken)
+              const provider = await createScmProvider(repositoryUrl, db)
+              const changes = provider
+                ? await provider.fetchChanges(baseCommitOverride, currentCommit)
+                : null
               if (changes && (changes.commits.length > 0 || changes.files.length > 0)) {
                 scmCov.filesCount = changes.files.length
                 scmCov.commitsCount = changes.commits.length
