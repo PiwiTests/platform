@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures'
 import { waitForHydration } from './utils'
 import { PROJECT } from '../shared/test-project-names'
 

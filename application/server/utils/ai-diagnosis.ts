@@ -7,8 +7,7 @@ import { stripAnsi } from '#shared/error-fingerprint'
 import { callAiProvider } from './ai-provider'
 import type { AiAttachedImage } from './ai-provider'
 import { computeRegressionContext, normalizeGitUrl } from './regression-context'
-import { fetchChangedFiles, detectScmProvider } from './scm-provider'
-import { getAppSetting } from './app-settings'
+import { createScmProvider, detectScmProvider } from './scm'
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>
 
@@ -24,9 +23,17 @@ const MAX_ARIA_SNAPSHOT_CHARS = 4000
 const MAX_TEST_SOURCE_CHARS = 3000
 
 const DIAGNOSIS_SYSTEM_PROMPT = `You are a senior test engineer diagnosing Playwright test failures.
-You receive one failure cluster: several test failures sharing one normalized error signature, plus execution context. Identify the most likely single root cause. Ground every claim in the provided evidence — quote selectors, URLs, status codes or step names rather than speculating.
+You receive one failure cluster: several test failures sharing one normalized error signature, plus execution context. Identify the most likely root cause. If the evidence is insufficient to determine a single root cause with high confidence, list multiple plausible hypotheses ranked by likelihood with supporting evidence for each. Ground every claim in the provided evidence — quote selectors, URLs, status codes or step names rather than speculating.
 If the evidence is insufficient, say so and lower your confidence.
-Categories: app-bug (the application under test broke), test-bug (the test code/locators are wrong), flaky-test (timing/race, passes on retry), infrastructure (CI workers, browser crashes, resources), environment (config/URL/credentials differences), unknown.`
+Categories: app-bug (the application under test broke), test-bug (the test code/locators are wrong), flaky-test (timing/race, passes on retry), infrastructure (CI workers, browser crashes, resources), environment (config/URL/credentials differences), unknown.
+
+For suggestedFix.patch: when you have enough context to determine the exact lines to change, output a standard unified diff that can be applied with \`git apply\`. Rules:
+- Use the real file paths from the evidence (e.g. \`--- a/tests/foo.spec.ts\`, \`+++ b/tests/foo.spec.ts\`).
+- Include correct \`@@ -L,N +L,N @@\` hunk headers.
+- For test-bug: the patch should fix the test file using the test source provided.
+- For app-bug with a git diff showing the regression: the patch should fix the application file (revert or correct the breaking change).
+- Set patch to null if you are not confident in the exact lines, if the fix spans unknown files, or if no source was provided.
+- Do not output a patch and a code snippet for the same fix; prefer patch when possible and set code to null.`
 
 const STALE_RUNNING_MS = 5 * 60 * 1000
 
@@ -37,7 +44,7 @@ export function isDiagnosisRunning(clusterId: number): boolean {
   return running.has(clusterId)
 }
 
-export async function buildClusterDiagnosisContext(db: DbClient, cluster: FailureCluster, opts?: { baseCommit?: string }): Promise<{ text: string, coverage: DiagnosisContextCoverage }> {
+export async function buildClusterDiagnosisContext(db: DbClient, cluster: FailureCluster, opts?: { baseCommit?: string, selectedCommitShas?: string[] }): Promise<{ text: string, coverage: DiagnosisContextCoverage }> {
   const sections: string[] = []
 
   const scmCov: NonNullable<DiagnosisContextCoverage['scm']> = {
@@ -258,16 +265,12 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
           if (regression.commitRange?.repositoryUrl) {
             scmCov.provider = detectScmProvider(regression.commitRange.repositoryUrl)
             try {
-              const scmTokenSetting = await getAppSetting<{ value?: string }>(db, 'scm_token')
-              const scmToken = scmTokenSetting?.value ?? null
+              const provider = await createScmProvider(regression.commitRange.repositoryUrl, db, cluster.projectId)
               const fromSha = baseCommitOverride ?? regression.commitRange.fromSha
               if (baseCommitOverride) scmCov.baseCommitUsed = baseCommitOverride
-              const changes = await fetchChangedFiles(
-                regression.commitRange.repositoryUrl,
-                fromSha,
-                regression.commitRange.toSha,
-                scmToken
-              )
+              const changes = provider
+                ? await provider.fetchChanges(fromSha, regression.commitRange.toSha)
+                : null
               if (changes && (changes.commits.length > 0 || changes.files.length > 0)) {
                 scmCov.filesCount = changes.files.length
                 scmCov.commitsCount = changes.commits.length
@@ -343,9 +346,10 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
             ].join('\n'))
 
             try {
-              const scmTokenSetting = await getAppSetting<{ value?: string }>(db, 'scm_token')
-              const scmToken = scmTokenSetting?.value ?? null
-              const changes = await fetchChangedFiles(repositoryUrl, baseCommitOverride, currentCommit, scmToken)
+              const provider = await createScmProvider(repositoryUrl, db, cluster.projectId)
+              const changes = provider
+                ? await provider.fetchChanges(baseCommitOverride, currentCommit)
+                : null
               if (changes && (changes.commits.length > 0 || changes.files.length > 0)) {
                 scmCov.filesCount = changes.files.length
                 scmCov.commitsCount = changes.commits.length
@@ -408,6 +412,48 @@ export async function buildClusterDiagnosisContext(db: DbClient, cluster: Failur
     }
   }
 
+  // Manually selected commits
+  if (opts?.selectedCommitShas?.length) {
+    try {
+      const [runForUrl] = await db.select({ metadata: testRuns.metadata })
+        .from(testRuns).where(eq(testRuns.id, cluster.lastSeenRunId))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const meta = runForUrl?.metadata as any
+      const repoUrl = normalizeGitUrl(meta?.scm?.remoteUrl ?? null)
+      if (repoUrl) {
+        const provider = await createScmProvider(repoUrl, db, cluster.projectId)
+        if (provider) {
+          const commitLines: string[] = ['## Commits Manually Selected for Context']
+          let patchBudget = MAX_SCM_PATCH_BUDGET
+          for (const sha of opts.selectedCommitShas.slice(0, 10)) {
+            try {
+              const commitDiff = await provider.fetchCommitDiff(sha)
+              if (commitDiff?.files.length) {
+                commitLines.push(`\n### ${sha.slice(0, 7)}`)
+                commitLines.push(`Changed files (${commitDiff.files.length}):`)
+                for (const f of commitDiff.files) {
+                  const stats = (f.additions || f.deletions) ? ` +${f.additions} -${f.deletions}` : ''
+                  commitLines.push(`- ${f.filename} (${f.status}${stats})`)
+                }
+                const patches: string[] = []
+                for (const f of commitDiff.files) {
+                  if (!f.patch || patchBudget <= 0) continue
+                  const patch = f.patch.length > patchBudget ? f.patch.slice(0, patchBudget) + '\n[... patch truncated ...]' : f.patch
+                  patchBudget -= Math.min(f.patch.length, patchBudget)
+                  patches.push(`--- ${f.filename}\n${patch}`)
+                }
+                if (patches.length) {
+                  commitLines.push(`\nPatches:\n\`\`\`diff\n${patches.join('\n\n')}\n\`\`\``)
+                }
+              }
+            } catch { /* skip individual commit on error */ }
+          }
+          if (commitLines.length > 1) sections.push(commitLines.join('\n'))
+        }
+      }
+    } catch { /* skip entire block on error */ }
+  }
+
   return {
     text: sections.join('\n\n'),
     coverage: { scm: scmReached ? scmCov : null }
@@ -418,7 +464,7 @@ export async function runClusterDiagnosis(
   db: DbClient,
   cluster: FailureCluster,
   config: AiConfig,
-  _opts?: { force?: boolean, additionalContext?: string, images?: AiAttachedImage[], baseCommit?: string }
+  _opts?: { force?: boolean, additionalContext?: string, images?: AiAttachedImage[], baseCommit?: string, selectedCommitShas?: string[] }
 ): Promise<FailureDiagnosis> {
   if (running.has(cluster.id)) {
     throw Object.assign(new Error('Diagnosis already running for this cluster'), { statusCode: 409 })
@@ -481,7 +527,7 @@ export async function runClusterDiagnosis(
   const t0 = Date.now()
 
   try {
-    const { text: userContent } = await buildClusterDiagnosisContext(db, cluster, { baseCommit: _opts?.baseCommit })
+    const { text: userContent } = await buildClusterDiagnosisContext(db, cluster, { baseCommit: _opts?.baseCommit, selectedCommitShas: _opts?.selectedCommitShas })
     const extra = _opts?.additionalContext?.trim()
     const fullUserContent = extra
       ? `${userContent}\n\n## Additional Context Provided by User\n${extra}`

@@ -11,6 +11,7 @@ const { aiStatus } = useAiStatus()
 const toast = useToast()
 
 const diagnosis = ref<FailureDiagnosis | null>(null)
+const savedBaseCommit = ref<string>('') // last value persisted to DB
 const posting = ref(false)
 const pollTimer = ref<ReturnType<typeof setInterval> | null>(null)
 
@@ -26,6 +27,10 @@ const attachedFiles = ref<Array<{ name: string, content: string, size: number }>
 const attachedImages = ref<Array<{ name: string, mediaType: string, data: string, preview: string, size: number }>>([])
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const dragOver = ref(false)
+
+// Commit browser
+const commitBrowserOpen = ref(false)
+const selectedCommitShas = ref<string[]>([])
 
 const MAX_TEXT_BYTES = 200 * 1024
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
@@ -156,8 +161,28 @@ const scmStatus = computed(() => {
 // ── Diagnosis flow ────────────────────────────────────────────────────────────
 async function fetchDiagnosis() {
   try {
-    diagnosis.value = await $fetch<FailureDiagnosis | null>(`/api/failure-clusters/${props.clusterId}/diagnosis`)
+    const res = await $fetch<{ diagnosis: FailureDiagnosis | null, manualBaseCommit: string | null }>(
+      `/api/failure-clusters/${props.clusterId}/diagnosis`
+    )
+    diagnosis.value = res.diagnosis
+    // Pre-populate baseCommit from saved value on first load (don't overwrite if user already changed it)
+    if (savedBaseCommit.value === baseCommit.value && res.manualBaseCommit) {
+      savedBaseCommit.value = res.manualBaseCommit
+      baseCommit.value = res.manualBaseCommit
+    } else if (!savedBaseCommit.value) {
+      savedBaseCommit.value = res.manualBaseCommit ?? ''
+    }
   } catch { /* ignore */ }
+}
+
+async function persistBaseCommit(sha: string) {
+  try {
+    await $fetch(`/api/failure-clusters/${props.clusterId}/base-commit`, {
+      method: 'PATCH',
+      body: { commit: sha || null }
+    })
+    savedBaseCommit.value = sha
+  } catch { /* ignore — non-critical */ }
 }
 
 async function fetchContext() {
@@ -165,8 +190,9 @@ async function fetchContext() {
   contextText.value = null
   coverage.value = null
   try {
-    const query: Record<string, string> = {}
+    const query: Record<string, string | string[]> = {}
     if (baseCommit.value.trim()) query.baseCommit = baseCommit.value.trim()
+    if (selectedCommitShas.value.length) query.selectedCommitShas = selectedCommitShas.value
     const res = await $fetch<{ context: string, coverage: DiagnosisContextCoverage }>(
       `/api/failure-clusters/${props.clusterId}/context`,
       { query }
@@ -182,12 +208,20 @@ async function fetchContext() {
 
 // Debounce context refresh when baseCommit changes (avoids SCM API spam while typing)
 let baseCommitTimer: ReturnType<typeof setTimeout> | null = null
-watch(baseCommit, () => {
+watch(baseCommit, (val) => {
   if (baseCommitTimer) clearTimeout(baseCommitTimer)
   baseCommitTimer = setTimeout(() => {
     fetchContext()
   }, 900)
+  // Auto-save immediately when the value differs from what's in the DB
+  if (val !== savedBaseCommit.value) persistBaseCommit(val)
 })
+
+watch(selectedCommitShas, () => {
+  fetchContext()
+}, { deep: true })
+
+const baseCommitIsPinned = computed(() => !!savedBaseCommit.value)
 
 function startPoll() {
   if (pollTimer.value) return
@@ -216,6 +250,7 @@ async function diagnose(force = false) {
     const body: Record<string, unknown> = {}
     if (ctx) body.additionalContext = ctx
     if (baseCommit.value.trim()) body.baseCommit = baseCommit.value.trim()
+    if (selectedCommitShas.value.length) body.selectedCommitShas = selectedCommitShas.value
     if (attachedImages.value.length) {
       body.images = attachedImages.value.map(img => ({ name: img.name, mediaType: img.mediaType, data: img.data }))
     }
@@ -283,21 +318,64 @@ function copyToClipboard(text: string | null) {
     <div v-if="aiStatus?.configured" class="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
       <!-- LEFT: context preview + input form -->
       <div class="space-y-3">
-        <!-- Preview header + SCM coverage -->
-        <div class="flex items-center justify-between">
-          <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
-            What will be sent to AI
-          </p>
-          <UButton
-            icon="i-lucide-refresh-cw"
-            size="xs"
-            color="neutral"
-            variant="ghost"
-            :loading="loadingContext"
-            @click="fetchContext"
-          >
-            Refresh
-          </UButton>
+        <!-- Column header -->
+
+        <div class="pb-2 border-b border-default">
+          <!-- Title row -->
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-1.5">
+              <UIcon name="i-lucide-sparkles" class="size-4 text-primary shrink-0" />
+              <span class="text-sm font-semibold">Error context</span>
+
+              <span class="text-xs text-gray-400 items-center gap-1">
+                &mdash;
+                What will be sent to AI
+              </span>
+            </div>
+
+            <UButton
+              icon="i-lucide-refresh-cw"
+              size="xs"
+              color="neutral"
+              variant="outline"
+              :loading="loadingContext"
+              class="ml-auto shrink-0"
+              @click="fetchContext"
+            >
+              Refresh
+            </UButton>
+          </div>
+
+          <!-- Baseline commit row -->
+          <div class="flex items-center gap-2 mt-2 flex-wrap">
+            <span class="text-xs text-gray-500 font-medium shrink-0">Baseline</span>
+            <CommitPicker v-model="baseCommit" :cluster-id="clusterId" />
+            <UTooltip v-if="baseCommitIsPinned" text="Baseline commit pinned for this cluster">
+              <UIcon name="i-lucide-pin" class="size-3.5 text-primary shrink-0" />
+            </UTooltip>
+            <div class="flex items-center gap-1.5 ml-auto">
+              <!-- Selected commits chip -->
+              <div
+                v-if="selectedCommitShas.length"
+                class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium"
+              >
+                <UIcon name="i-lucide-git-commit-horizontal" class="size-3" />
+                <span>{{ selectedCommitShas.length }} commit{{ selectedCommitShas.length === 1 ? '' : 's' }}</span>
+                <button class="ml-0.5 hover:opacity-70 transition-opacity" @click="selectedCommitShas = []">
+                  <UIcon name="i-lucide-x" class="size-3" />
+                </button>
+              </div>
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-list"
+                @click="commitBrowserOpen = true"
+              >
+                Browse
+              </UButton>
+            </div>
+          </div>
         </div>
 
         <!-- SCM coverage badge -->
@@ -314,19 +392,6 @@ function copyToClipboard(text: string | null) {
 
         <!-- Live markdown preview -->
         <MarkdownPreview :text="fullPreviewText" :loading="loadingContext" />
-
-        <!-- Baseline commit override -->
-        <div>
-          <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-            Baseline commit <span class="font-normal text-gray-400">(optional — overrides last passing run)</span>
-          </label>
-          <UInput
-            v-model="baseCommit"
-            placeholder="e.g. abc1234 or full SHA"
-            size="sm"
-            :leading-icon="baseCommit ? 'i-lucide-git-branch-plus' : undefined"
-          />
-        </div>
 
         <!-- Additional context drop zone -->
         <div>
@@ -408,7 +473,7 @@ function copyToClipboard(text: string | null) {
             icon="i-lucide-sparkles"
             size="sm"
             color="primary"
-            variant="soft"
+            variant="solid"
             :loading="posting"
             @click="diagnose()"
           >
@@ -424,108 +489,26 @@ function copyToClipboard(text: string | null) {
         </div>
       </div>
 
-      <!-- RIGHT: diagnosis result -->
-      <div>
-        <!-- Running indicator (before result arrives) -->
-        <div
-          v-if="diagnosis?.status === 'running' && !isStale(diagnosis)"
-          class="flex items-center gap-2 p-4 text-sm text-gray-500 border border-default rounded-lg"
-        >
-          <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
-          <span>Analyzing failure cluster…</span>
-        </div>
-
-        <!-- Failed / stale -->
-        <UAlert
-          v-if="diagnosis && (diagnosis.status === 'failed' || isStale(diagnosis))"
-          color="error"
-          title="Diagnosis failed"
-          :description="diagnosis.error || 'Unknown error'"
-        />
-
-        <!-- Completed -->
-        <div
-          v-if="diagnosis && diagnosis.status === 'completed'"
-          class="space-y-3 rounded-lg border border-default p-4 bg-elevated/30"
-        >
-          <div class="flex flex-wrap items-center gap-1.5">
-            <UIcon name="i-lucide-sparkles" class="size-4 text-primary shrink-0" />
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">AI Diagnosis</span>
-            <UBadge
-              v-if="diagnosis.category"
-              :color="categoryColors[diagnosis.category] || 'neutral'"
-              variant="subtle"
-              size="sm"
-            >
-              {{ diagnosis.category }}
-            </UBadge>
-            <UBadge
-              v-if="diagnosis.confidence"
-              :color="confidenceColors[diagnosis.confidence] || 'neutral'"
-              variant="outline"
-              size="sm"
-            >
-              {{ diagnosis.confidence }} confidence
-            </UBadge>
-          </div>
-
-          <p v-if="diagnosis.summary" class="text-sm font-medium">
-            {{ diagnosis.summary }}
-          </p>
-
-          <p v-if="diagnosis.rootCause" class="text-sm text-gray-600 dark:text-gray-400">
-            {{ diagnosis.rootCause }}
-          </p>
-
-          <ul v-if="details?.evidence?.length" class="list-disc list-inside space-y-1">
-            <li v-for="(e, i) in details.evidence" :key="i" class="text-sm text-gray-600 dark:text-gray-400">
-              {{ e }}
-            </li>
-          </ul>
-
-          <div v-if="details?.suggestedFix">
-            <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Suggested fix
-            </p>
-            <p class="text-sm text-gray-600 dark:text-gray-400">
-              {{ details.suggestedFix.description }}
-            </p>
-            <code v-if="details.suggestedFix.file" class="block text-xs font-mono mt-1 text-primary">{{ details.suggestedFix.file }}</code>
-            <div v-if="details.suggestedFix.code" class="relative mt-2">
-              <pre class="text-xs font-mono bg-muted rounded p-3 overflow-x-auto">{{ details.suggestedFix.code }}</pre>
-              <UButton
-                icon="i-lucide-copy"
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                class="absolute top-1 right-1"
-                title="Copy code"
-                @click="copyToClipboard(details.suggestedFix.code)"
-              />
+      <!-- RIGHT: diagnosis result — capped at 60dvh so it always fits on screen -->
+      <div class="xl:max-h-[60dvh] xl:overflow-y-auto xl:pr-1">
+        <!-- Column header -->
+        <div class="pb-2 border-b border-default">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-1.5">
+              <UIcon name="i-lucide-sparkles" class="size-4 text-primary shrink-0" />
+              <span class="text-sm font-semibold">AI diagnosis</span>
+              <span class="text-xs text-gray-400 items-center gap-1">
+                &mdash;
+                <UIcon name="i-lucide-triangle-alert" class="size-3 shrink-0" />
+                AI-generated, verify suggestions before applying
+              </span>
             </div>
-          </div>
-
-          <ul v-if="details?.preventionTips?.length" class="space-y-1">
-            <li class="text-xs font-medium text-gray-500 uppercase tracking-wide">
-              Prevention tips
-            </li>
-            <li
-              v-for="(t, i) in details.preventionTips"
-              :key="i"
-              class="text-sm text-gray-600 dark:text-gray-400 flex gap-1.5"
-            >
-              <UIcon name="i-lucide-lightbulb" class="size-3.5 shrink-0 mt-0.5 text-yellow-500" />
-              {{ t }}
-            </li>
-          </ul>
-
-          <div class="flex items-center justify-between text-xs text-gray-400 pt-1 border-t border-default">
-            <span>{{ diagnosis.model }} · {{ formatTokens(diagnosis.inputTokens, diagnosis.outputTokens) }} · {{ formatRelativeTime(diagnosis.updatedAt) }}</span>
             <UButton
+              v-if="diagnosis && diagnosis.status === 'completed'"
               icon="i-lucide-refresh-cw"
               size="xs"
-              color="neutral"
-              variant="ghost"
+              color="primary"
+              variant="soft"
               :loading="posting"
               @click="diagnose(true)"
             >
@@ -534,17 +517,140 @@ function copyToClipboard(text: string | null) {
           </div>
         </div>
 
-        <!-- Placeholder when no diagnosis yet -->
-        <div
-          v-if="!diagnosis"
-          class="flex flex-col items-center justify-center p-8 text-center text-gray-400 border border-dashed border-default rounded-lg"
-        >
-          <UIcon name="i-lucide-sparkles" class="size-8 mb-2 opacity-30" />
-          <p class="text-sm">
-            Diagnosis will appear here
-          </p>
+        <div class="space-y-3 mt-3">
+          <!-- Running indicator (before result arrives) -->
+          <div
+            v-if="diagnosis?.status === 'running' && !isStale(diagnosis)"
+            class="flex items-center gap-2 p-4 text-sm text-gray-500 border border-default rounded-lg"
+          >
+            <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
+            <span>Analyzing failure cluster…</span>
+          </div>
+
+          <!-- Failed / stale -->
+          <UAlert
+            v-if="diagnosis && (diagnosis.status === 'failed' || isStale(diagnosis))"
+            color="error"
+            title="Diagnosis failed"
+            :description="diagnosis.error || 'Unknown error'"
+          />
+
+          <!-- Completed -->
+          <div
+            v-if="diagnosis && diagnosis.status === 'completed'"
+            class="space-y-3 rounded-lg border border-default p-4 bg-elevated/30"
+          >
+            <div v-if="diagnosis.category || diagnosis.confidence" class="flex flex-wrap items-center gap-1.5">
+              <UBadge
+                v-if="diagnosis.category"
+                :color="categoryColors[diagnosis.category] || 'neutral'"
+                variant="subtle"
+                size="sm"
+              >
+                {{ diagnosis.category }}
+              </UBadge>
+              <UBadge
+                v-if="diagnosis.confidence"
+                :color="confidenceColors[diagnosis.confidence] || 'neutral'"
+                variant="outline"
+                size="sm"
+              >
+                {{ diagnosis.confidence }} confidence
+              </UBadge>
+            </div>
+
+            <p v-if="diagnosis.summary" class="text-sm font-medium">
+              {{ diagnosis.summary }}
+            </p>
+
+            <p v-if="diagnosis.rootCause" class="text-sm text-gray-600 dark:text-gray-400">
+              {{ diagnosis.rootCause }}
+            </p>
+
+            <ul v-if="details?.evidence?.length" class="list-disc list-inside space-y-1">
+              <li v-for="(e, i) in details.evidence" :key="i" class="text-sm text-gray-600 dark:text-gray-400">
+                {{ e }}
+              </li>
+            </ul>
+
+            <div v-if="details?.suggestedFix">
+              <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Suggested fix
+              </p>
+              <p class="text-sm text-gray-600 dark:text-gray-400">
+                {{ details.suggestedFix.description }}
+              </p>
+              <code v-if="details.suggestedFix.file && !details.suggestedFix.patch" class="block text-xs font-mono mt-1 text-primary">{{ details.suggestedFix.file }}</code>
+
+              <!-- Patch (preferred): diff-highlighted via MarkdownPreview -->
+              <div v-if="details.suggestedFix.patch" class="mt-2">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs text-gray-500 font-mono">patch — apply with <code class="bg-muted px-1 rounded">git apply</code></span>
+                  <UButton
+                    icon="i-lucide-copy"
+                    size="xs"
+                    color="neutral"
+                    variant="ghost"
+                    title="Copy patch"
+                    @click="copyToClipboard(details.suggestedFix.patch)"
+                  />
+                </div>
+                <MarkdownPreview :text="'```diff\n' + details.suggestedFix.patch + '\n```'" />
+              </div>
+
+              <!-- Fallback: plain code snippet when no patch -->
+              <div v-else-if="details.suggestedFix.code" class="relative mt-2">
+                <pre class="text-xs font-mono bg-muted rounded p-3 overflow-x-auto">{{ details.suggestedFix.code }}</pre>
+                <UButton
+                  icon="i-lucide-copy"
+                  size="xs"
+                  color="neutral"
+                  variant="ghost"
+                  class="absolute top-1 right-1"
+                  title="Copy code"
+                  @click="copyToClipboard(details.suggestedFix.code)"
+                />
+              </div>
+            </div>
+
+            <ul v-if="details?.preventionTips?.length" class="space-y-1">
+              <li class="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                Prevention tips
+              </li>
+              <li
+                v-for="(t, i) in details.preventionTips"
+                :key="i"
+                class="text-sm text-gray-600 dark:text-gray-400 flex gap-1.5"
+              >
+                <UIcon name="i-lucide-lightbulb" class="size-3.5 shrink-0 mt-0.5 text-yellow-500" />
+                {{ t }}
+              </li>
+            </ul>
+
+            <div class="text-xs text-gray-400 pt-1 border-t border-default">
+              {{ diagnosis.model }} · {{ formatTokens(diagnosis.inputTokens, diagnosis.outputTokens) }} · {{ formatRelativeTime(diagnosis.updatedAt) }}
+            </div>
+          </div>
+
+          <!-- Placeholder when no diagnosis yet -->
+          <div
+            v-if="!diagnosis"
+            class="flex flex-col items-center justify-center p-8 text-center text-gray-400 border border-dashed border-default rounded-lg"
+          >
+            <UIcon name="i-lucide-sparkles" class="size-8 mb-2 opacity-30" />
+            <p class="text-sm">
+              Diagnosis will appear here
+            </p>
+          </div>
         </div>
       </div>
     </div>
   </div>
+
+  <CommitBrowserModal
+    v-model:open="commitBrowserOpen"
+    :cluster-id="clusterId"
+    :initial-selected="selectedCommitShas"
+    @confirm="selectedCommitShas = $event"
+  />
 </template>

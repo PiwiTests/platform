@@ -89,7 +89,7 @@ export function generateFixPrompt(tc: FixPromptInput): string {
   }
 
   lines.push('')
-  lines.push('What went wrong and how do I fix it?')
+  lines.push('What went wrong and how do I fix it? If the root cause is not obvious from the evidence, list multiple possible hypotheses ranked by likelihood, with reasoning for each.')
   lines.push('')
   lines.push('Consider: Playwright best practices, locator strategies, wait conditions,')
   lines.push('network stability, test isolation, and environment differences.')

@@ -173,6 +173,7 @@ export interface ProjectDetails {
   label?: string | null
   description?: string | null
   diagnosisInstructions?: string | null
+  hasScmToken: boolean
   color?: string | null
   tags?: TagInfo[]
 }

@@ -3,7 +3,6 @@ import type { PerformanceStep, WebVitals, NetworkRequest, TestCaseHistoryPoint, 
 import type { TableColumn } from '@nuxt/ui'
 import { h, resolveComponent } from 'vue'
 import { getPerformanceHints } from '~/utils/performance-hints'
-import { generateFixPrompt } from '~/utils/fix-prompt'
 
 const route = useRoute()
 const testCaseId = route.params.id
@@ -91,25 +90,6 @@ const ciInfo = computed(() => {
   return m.ci as { provider?: string, buildNumber?: string, buildUrl?: string, workflow?: string }
 })
 
-const fixPrompt = computed(() => {
-  if (!testCase.value || testCase.value.status === 'passed') return null
-  return generateFixPrompt({
-    title: testCase.value.title,
-    location: testCase.value.location,
-    status: testCase.value.status,
-    error: testCase.value.error,
-    retries: testCase.value.retries,
-    steps: testCase.value.steps as unknown as FixPromptStep[] | null,
-    networkRequests: testCase.value.networkRequests as unknown as FixPromptNetwork[] | null,
-    webVitals: testCase.value.webVitals as unknown as FixPromptVitals | null,
-    ariaSnapshot: testCase.value.ariaSnapshot as string | null | undefined,
-    duration: testCase.value.duration,
-    slowestStep: testCase.value.slowestStep,
-    slowestStepDuration: testCase.value.slowestStepDuration,
-    cluster: failureCluster.value
-  })
-})
-
 const failureCluster = computed(() => {
   return (testCase.value?.failureCluster ?? null) as {
     id: number
@@ -119,10 +99,6 @@ const failureCluster = computed(() => {
     firstSeenAt: string | null
   } | null
 })
-
-interface FixPromptStep { title: string, duration: number, category: string }
-interface FixPromptNetwork { method: string, url: string, status: number, duration: number }
-interface FixPromptVitals { navigation?: { ttfb?: number, domInteractive?: number, domContentLoaded?: number, loadComplete?: number } | null }
 
 const UBadge = resolveComponent('UBadge')
 
@@ -328,7 +304,7 @@ onUnmounted(disconnectRunStream)
     </template>
 
     <template #body>
-      <div class="flex flex-col h-full overflow-hidden gap-4 p-1">
+      <div class="flex flex-col h-full overflow-y-auto gap-4 p-1">
         <TestCaseSummary
           :test-case="(testCase ?? null) as any"
           :scm-info="scmInfo"
@@ -352,8 +328,16 @@ onUnmounted(disconnectRunStream)
         >
           <template #error>
             <div class="space-y-4 pt-4">
-              <TestCaseErrorCard v-if="testCase?.error" :error="testCase.error" :cluster="failureCluster" />
-              <TestCaseFixPromptCard v-if="fixPrompt" :prompt="fixPrompt" />
+              <TestCaseErrorCard v-if="testCase?.error" :cluster="failureCluster" />
+
+              <UAlert
+                v-if="testCase?.error && !testCase?.ariaSnapshot"
+                color="warning"
+                variant="subtle"
+                icon="i-lucide-alert-triangle"
+                title="ARIA snapshot not captured"
+                description="The page ARIA snapshot is missing. This test likely does not import test from the piwi-dashboard fixtures — see the reporter docs for setup instructions."
+              />
             </div>
           </template>
 

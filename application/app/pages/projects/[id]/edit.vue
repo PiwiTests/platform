@@ -14,10 +14,13 @@ useHead(computed(() => ({ title: `Edit ${project.value?.label || project.value?.
 
 const allTags = computed(() => tagsData.value?.tags || [])
 
+const hasToken = computed(() => Boolean(project.value?.hasScmToken))
+
 const state = ref({
   label: project.value?.label || '',
   description: project.value?.description || '',
-  diagnosisInstructions: project.value?.diagnosisInstructions || ''
+  diagnosisInstructions: project.value?.diagnosisInstructions || '',
+  scmToken: ''
 })
 
 const selectedTags = ref<TagInfo[]>(project.value?.tags || [])
@@ -25,7 +28,8 @@ const selectedTags = ref<TagInfo[]>(project.value?.tags || [])
 const schema = z.object({
   label: z.string().optional(),
   description: z.string().optional(),
-  diagnosisInstructions: z.string().optional()
+  diagnosisInstructions: z.string().optional(),
+  scmToken: z.string().optional()
 })
 
 const saving = ref(false)
@@ -40,6 +44,7 @@ async function onSubmit() {
         label: state.value.label || null,
         description: state.value.description || null,
         diagnosisInstructions: state.value.diagnosisInstructions || null,
+        scmToken: state.value.scmToken || null,
         tagIds: selectedTags.value.map(t => t.id)
       }
     })
@@ -125,6 +130,19 @@ function onCancel() {
                 placeholder="e.g. This project tests the payment checkout flow. The backend uses Stripe for payments and the payment API is at /api/v2/payments. Database errors are usually caused by connection pool exhaustion under load."
                 :rows="5"
                 class="w-full font-mono text-sm"
+              />
+            </UFormField>
+
+            <UFormField
+              label="SCM token"
+              name="scmToken"
+              :description="hasToken ? 'Leave empty to keep the stored token, enter a new value to replace it, or save empty to remove it' : 'Optional per-project SCM token for GitHub, GitLab, or Bitbucket API access. Used by AI diagnosis to fetch changed files. Falls back to the global SCM token if not set.'"
+            >
+              <UInput
+                v-model="state.scmToken"
+                type="password"
+                :placeholder="hasToken ? '•••••••• (unchanged)' : 'ghp_..., glpat-..., or bitbucket token'"
+                class="w-full font-mono"
               />
             </UFormField>
 

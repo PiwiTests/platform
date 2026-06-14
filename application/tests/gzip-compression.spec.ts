@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures'
 import { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
 import { gzip } from 'zlib'

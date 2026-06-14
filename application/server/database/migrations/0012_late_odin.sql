@@ -1,1 +1,0 @@
-ALTER TABLE `test_runs_cases` ADD `console_logs` text;

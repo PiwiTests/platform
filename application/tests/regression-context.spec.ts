@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext } from '@playwright/test'
+import { test, expect, type APIRequestContext } from './fixtures'
 import { PROJECT } from '../shared/test-project-names'
 
 type RegressionCtx = {

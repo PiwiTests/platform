@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext } from '@playwright/test'
+import { test, expect, type APIRequestContext } from './fixtures'
 import { createHash } from 'crypto'
 import { PROJECT } from '../shared/test-project-names'
 import { buildZip, parseZip } from '../server/utils/trace-zip'

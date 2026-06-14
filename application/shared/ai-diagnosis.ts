@@ -14,6 +14,8 @@ export interface AiDiagnosisResult {
     description: string
     file: string | null
     code: string | null
+    /** Unified diff patch applicable with `git apply`, null when not enough context */
+    patch: string | null
   }
   preventionTips: string[]
 }
@@ -31,11 +33,12 @@ export const DIAGNOSIS_JSON_SCHEMA = {
     suggestedFix: {
       type: 'object',
       additionalProperties: false,
-      required: ['description', 'file', 'code'],
+      required: ['description', 'file', 'code', 'patch'],
       properties: {
         description: { type: 'string' },
         file: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-        code: { anyOf: [{ type: 'string' }, { type: 'null' }] }
+        code: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+        patch: { anyOf: [{ type: 'string' }, { type: 'null' }] }
       }
     },
     preventionTips: { type: 'array', items: { type: 'string' } }
@@ -88,7 +91,8 @@ export function parseDiagnosisJson(text: string): AiDiagnosisResult {
   const suggestedFix = {
     description: typeof rawFix.description === 'string' ? rawFix.description : '',
     file: typeof rawFix.file === 'string' ? rawFix.file : null,
-    code: typeof rawFix.code === 'string' ? rawFix.code : null
+    code: typeof rawFix.code === 'string' ? rawFix.code : null,
+    patch: typeof rawFix.patch === 'string' ? rawFix.patch : null
   }
 
   return { category, confidence, summary, rootCause, evidence, suggestedFix, preventionTips }

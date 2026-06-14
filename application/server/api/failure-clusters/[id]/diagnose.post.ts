@@ -17,6 +17,7 @@ export default eventHandler(async (event) => {
     additionalContext?: string
     images?: AiAttachedImage[]
     baseCommit?: string
+    selectedCommitShas?: string[]
   } | null
 
   const db = await getDatabase()
@@ -50,6 +51,7 @@ export default eventHandler(async (event) => {
     force,
     additionalContext: body?.additionalContext,
     images: body?.images,
-    baseCommit: body?.baseCommit
+    baseCommit: body?.baseCommit,
+    selectedCommitShas: body?.selectedCommitShas
   })
 })

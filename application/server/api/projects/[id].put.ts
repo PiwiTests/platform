@@ -8,6 +8,7 @@ const updateProjectSchema = z.object({
   label: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
   diagnosisInstructions: z.string().optional().nullable(),
+  scmToken: z.string().optional().nullable(),
   tagIds: z.array(z.number()).optional()
 })
 
@@ -47,7 +48,7 @@ export default eventHandler(async (event) => {
     })
   }
 
-  const { label, description, diagnosisInstructions, tagIds } = validation.data
+  const { label, description, diagnosisInstructions, scmToken, tagIds } = validation.data
 
   // Update project
   await db.update(projects)
@@ -55,6 +56,7 @@ export default eventHandler(async (event) => {
       label,
       description,
       diagnosisInstructions: diagnosisInstructions ?? undefined,
+      scmToken: scmToken !== undefined ? scmToken : undefined,
       updatedAt: new Date()
     })
     .where(eq(projects.id, id))

@@ -7,6 +7,7 @@ export const projects = pgTable('projects', {
   label: text('label'), // Display label (defaults to name if not set)
   description: text('description'),
   diagnosisInstructions: text('diagnosis_instructions'),
+  scmToken: text('scm_token'), // Per-project SCM token for GitHub/GitLab/Bitbucket API access
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
 }, table => ({
@@ -67,6 +68,7 @@ export const failureClusters = pgTable('failure_clusters', {
   lastSeenRunId: integer('last_seen_run_id').notNull(),
   status: text('status').notNull().default('open'), // 'open', 'resolved', 'ignored' — triage workflow
   triageNote: text('triage_note'), // Optional comment attached when triaging (status change)
+  manualBaseCommit: text('manual_base_commit'), // user-pinned baseline commit SHA for AI diagnosis diff context
   occurrences: integer('occurrences').notNull().default(0), // denormalized count of linked test_runs_cases rows (not decremented on run deletion)
   createdAt: timestamp('created_at', { mode: 'date' }).notNull().$defaultFn(() => new Date()),
   updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().$defaultFn(() => new Date())
