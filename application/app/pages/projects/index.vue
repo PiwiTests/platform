@@ -7,11 +7,10 @@ import { formatDuration } from '~/utils';
 
 useHead({ title: 'Projects — Piwi Dashboard' });
 
-const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/projects');
+// Share the projects data already fetched by the layout (same key → single HTTP request, single SSE subscription)
+const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/projects', { key: 'projects' });
 const { data: tagsData, refresh: refreshTags } = await useFetch<TagsResponse>('/api/tags');
 const toast = useToast();
-
-useRunStream(refresh);
 
 const allTags = computed(() => tagsData.value?.tags || []);
 

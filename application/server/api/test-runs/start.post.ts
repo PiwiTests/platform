@@ -106,6 +106,7 @@ export default eventHandler(async (event) => {
   }
 
   runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: project.id });
+  runEventBus.cacheRunState(testRun.id, { streamToken, projectId: project.id });
 
   return {
     success: true,

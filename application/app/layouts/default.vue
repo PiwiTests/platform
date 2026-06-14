@@ -12,8 +12,9 @@ const open = ref(false);
 
 // Fetch projects for sidebar navigation
 const { data: projects, refresh: refreshProjects } = await useFetch<ProjectWithStats[]>('/api/projects', {
+  key: 'projects',
   lazy: true,
-  default: () => [],
+  default: () => [] as ProjectWithStats[],
 });
 
 useRunStream(refreshProjects);

@@ -2,6 +2,7 @@ import { getDatabase } from '../database';
 import { projects, testRuns, testRunsCases, files, testCases } from '../database/schema';
 import { eq, inArray } from 'drizzle-orm';
 import { getStorage } from '../storage';
+import { testCaseCache } from './test-case-cache';
 
 /**
  * Permanently delete a project and all its associated data.
@@ -39,6 +40,7 @@ export async function deleteProject(projectId: number): Promise<void> {
   }
 
   await db.delete(testCases).where(eq(testCases.projectId, projectId));
+  testCaseCache.invalidate(projectId);
 
   // Deleting the project row cascades to: projectTags, failureClusters,
   // failureDiagnoses, traceBlobs, traceResources

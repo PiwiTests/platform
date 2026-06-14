@@ -56,7 +56,8 @@ Nuxt file-based routing:
 - `POST /api/test-runs/upload` — Upload with HTML reports + traces
 - `POST /api/test-runs/start` / `[id]/events` / `[id]/finish` — Streaming protocol (live runs)
 - `POST /api/test-runs/[id]/case-files` — Upload one case's trace + attachments during a streaming run (streamToken auth, idempotent, publishes `case-files` SSE event)
-- `GET /api/projects` — List projects with stats
+- `GET /api/projects` — List projects with stats (heavy: runs, test case counts, reports, tags)
+- `GET /api/projects/menu` — Slim project list for sidebar navigation (`id`, `name`, `label` only; one SELECT, no joins)
 - `GET /api/projects/[id]` — Project details + runs
 - `GET /api/test-runs/[id]` — Run details + cases
 - `GET /api/test-cases/[id]` — Case details + steps, web vitals, network requests

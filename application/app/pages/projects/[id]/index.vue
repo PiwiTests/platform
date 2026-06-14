@@ -82,15 +82,6 @@ if (typeof queryTab === 'string' && validTabs.includes(queryTab as (typeof valid
 
 const hasFailures = computed(() => project.value?.testRuns?.some((r) => r.failedTests > 0) ?? false);
 
-// Fetch cluster + flaky counts for tab labels
-const { data: clustersData } = await useFetch<unknown[]>(`/api/projects/${projectId}/failure-clusters`, { lazy: true });
-const clustersCount = computed(() => clustersData.value?.length ?? 0);
-
-const { data: flakyTestsData } = await useFetch<FlakyTest[]>(`/api/projects/${projectId}/flaky-tests?runs=50`, {
-  lazy: true,
-});
-const flakyCount = computed(() => flakyTestsData.value?.length ?? 0);
-
 const tabItems = computed(() => [
   {
     label: `Test runs (${filteredRuns.value.length})`,
@@ -101,17 +92,17 @@ const tabItems = computed(() => [
   ...(hasFailures.value
     ? [
         {
-          label: `Failure clusters (${clustersCount.value})`,
+          label: 'Failure clusters',
           icon: 'i-lucide-layers',
           value: 'failure-clusters',
           slot: 'failure-clusters',
         },
       ]
     : []),
-  { label: `Flaky tests (${flakyCount.value})`, icon: 'i-lucide-shuffle', value: 'flaky-tests', slot: 'flaky-tests' },
+  { label: 'Flaky tests', icon: 'i-lucide-shuffle', value: 'flaky-tests', slot: 'flaky-tests' },
   { label: 'Trends', icon: 'i-lucide-trending-up', value: 'trends', slot: 'trends' },
   {
-    label: `Test cases (${testCases.value?.length ?? 0})`,
+    label: `Test cases${testCases.value.length > 0 ? ` (${testCases.value.length})` : ''}`,
     icon: 'i-lucide-list-checks',
     value: 'test-cases',
     slot: 'test-cases',
@@ -344,7 +335,17 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
 ];
 
 // === TEST CASES TAB ===
-const { data: testCases } = await useFetch<TestCaseWithStats[]>(`/api/projects/${projectId}/test-cases`);
+// Only fetch when the tab is first visited
+const testCases = ref<TestCaseWithStats[]>([]);
+watch(
+  activeTab,
+  async (tab) => {
+    if (tab === 'test-cases' && testCases.value.length === 0) {
+      testCases.value = await $fetch<TestCaseWithStats[]>(`/api/projects/${projectId}/test-cases`).catch(() => []);
+    }
+  },
+  { immediate: true },
+);
 
 const UBadge = resolveComponent('UBadge');
 
@@ -388,11 +389,24 @@ const performanceQueryParams = computed(() => {
   return params;
 });
 
-const { data: performanceData } = await useFetch<PerformanceTrendPoint[]>(
-  () => `/api/projects/${projectId}/performance`,
-  { query: performanceQueryParams },
+// Only fetch when the trends tab is active; re-fetch when date filters change
+const performanceData = ref<PerformanceTrendPoint[] | null>(null);
+const slowTests = ref<SlowTest[] | null>(null);
+
+watch(
+  [activeTab, performanceQueryParams],
+  async ([tab, params]) => {
+    if (tab !== 'trends') return;
+    const qs = new URLSearchParams(params as Record<string, string>).toString();
+    performanceData.value = await $fetch<PerformanceTrendPoint[]>(
+      `/api/projects/${projectId}/performance${qs ? `?${qs}` : ''}`,
+    ).catch(() => null);
+    if (!slowTests.value) {
+      slowTests.value = await $fetch<SlowTest[]>(`/api/projects/${projectId}/slow-tests`).catch(() => null);
+    }
+  },
+  { immediate: true },
 );
-const { data: slowTests } = await useFetch<SlowTest[]>(`/api/projects/${projectId}/slow-tests`);
 
 const slowTestsColumns: TableColumn<SlowTest>[] = [
   {
@@ -746,14 +760,14 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
           <!-- FAILURE CLUSTERS TAB -->
           <template #failure-clusters>
             <div class="space-y-4 pt-4 px-4">
-              <FailureClustersList :project-id="String(projectId)" />
+              <FailureClustersList v-if="activeTab === 'failure-clusters'" :project-id="String(projectId)" />
             </div>
           </template>
 
           <!-- FLAKY TESTS TAB -->
           <template #flaky-tests>
             <div class="pt-4 px-4">
-              <FlakyTestsList :project-id="String(projectId)" />
+              <FlakyTestsList v-if="activeTab === 'flaky-tests'" :project-id="String(projectId)" />
             </div>
           </template>
 

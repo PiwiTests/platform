@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui';
-import type { ProjectWithStats } from '~~/types/api';
+import type { ProjectMenuItem } from '~~/types/api';
 
 defineProps<{
   collapsed?: boolean;
@@ -9,8 +9,8 @@ defineProps<{
 const route = useRoute();
 const router = useRouter();
 
-// Fetch available projects
-const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/projects');
+// Fetch available projects for the menu
+const { data: projects, refresh } = await useFetch<ProjectMenuItem[]>('/api/projects/menu');
 
 useRunStream(refresh);
 
@@ -23,22 +23,12 @@ const currentProjectId = computed(() => {
 // Find the selected project
 const selectedProject = computed(() => {
   if (!currentProjectId.value || !projects.value) {
-    return {
-      label: 'All projects',
-      icon: 'i-lucide-folder-open',
-    };
+    return { label: 'All projects', icon: 'i-lucide-folder-open' };
   }
-
   const project = projects.value.find((p) => p.id === currentProjectId.value);
   return project
-    ? {
-        label: project.label || project.name,
-        icon: 'i-lucide-folder',
-      }
-    : {
-        label: 'All projects',
-        icon: 'i-lucide-folder-open',
-      };
+    ? { label: project.label || project.name, icon: 'i-lucide-folder' }
+    : { label: 'All projects', icon: 'i-lucide-folder-open' };
 });
 
 // Create dropdown items
@@ -55,28 +45,18 @@ const items = computed<DropdownMenuItem[][]>(() => {
 
   if (projects.value && projects.value.length > 0) {
     projectItems.push(
-      ...projects.value.map((project) => {
-        return {
-          label: project.label || project.name,
-          icon: 'i-lucide-folder',
-          onSelect() {
-            router.push(`/projects/${project.id}`);
-          },
-        };
-      }),
+      ...projects.value.map((project) => ({
+        label: project.label || project.name,
+        icon: 'i-lucide-folder',
+        onSelect() {
+          router.push(`/projects/${project.id}`);
+        },
+      })),
     );
   }
 
   return [projectItems];
 });
-
-// Refresh projects when route changes
-watch(
-  () => route.path,
-  () => {
-    refresh();
-  },
-);
 </script>
 
 <template>
