@@ -2,6 +2,15 @@ import { getDatabase } from '../../../database'
 import { projects, testRuns, testRunsCases, testCases } from '../../../database/schema'
 import { eq, inArray, desc } from 'drizzle-orm'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Test Cases'],
+    summary: 'Flaky test analysis',
+    description: 'Analyzes test flakiness across recent runs using retry-pass detection and pass/fail alternation scoring',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 const TERMINAL_STATUSES = ['passed', 'failed', 'timedout', 'interrupted']
 
 export default eventHandler(async (event) => {

@@ -7,6 +7,31 @@ import { cancelInstanceRuns } from '../../utils/cancel-instance-runs'
 import { sanitizeMetadata } from '../../utils/sanitize'
 import { runEventBus } from '../../utils/run-events'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Test Runs'],
+    summary: 'Start a streaming test run',
+    description: 'Start a new streaming test run directly in "running" status. Returns a stream token for authenticating subsequent streaming event submissions. Cancels any previous runs from the same instance.',
+    requestBody: {
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              projectName: { type: 'string' },
+              startTime: { type: 'string', format: 'date-time' },
+              environment: { type: 'string' },
+              metadata: { type: 'object' },
+              instanceId: { type: 'string' }
+            },
+            required: ['projectName']
+          }
+        }
+      }
+    }
+  }
+})
+
 export default eventHandler(async (event) => {
   // Require reporter or administrator role
   await requireAuth(event, ['reporter', 'administrator'])

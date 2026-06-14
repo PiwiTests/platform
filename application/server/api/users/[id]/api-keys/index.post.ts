@@ -4,6 +4,15 @@ import { apiKeys, users } from '../../../../database/schema'
 import { eq } from 'drizzle-orm'
 import { requireAuth, generateApiKey } from '../../../../utils/auth'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Users'],
+    summary: 'Create an API key for a user',
+    description: 'Creates a new API key for a user. The plaintext key is returned once and cannot be retrieved again. Accepts name and optional expiresAt in the request body. Non-administrators can only create keys for themselves.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 const createKeySchema = z.object({
   name: z.string().min(1).max(100),
   expiresAt: z.string().datetime().optional()

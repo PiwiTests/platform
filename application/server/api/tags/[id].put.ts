@@ -4,6 +4,15 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { requireAuth } from '../../utils/auth'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Tags'],
+    summary: 'Update a tag',
+    description: 'Updates the text and/or color of an existing tag. Requires administrator role.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 const updateTagSchema = z.object({
   text: z.string().min(1).max(50).optional(),
   color: z.string().min(1).optional()

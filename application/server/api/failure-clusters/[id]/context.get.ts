@@ -3,6 +3,15 @@ import { failureClusters } from '../../../database/schema'
 import { eq } from 'drizzle-orm'
 import { buildClusterDiagnosisContext } from '../../../utils/ai-diagnosis'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Failure Clusters'],
+    summary: 'Get AI diagnosis context preview',
+    description: 'Returns a preview of the full AI context that would be sent for diagnosis, including optional base commit and selected commit SHAs.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
   if (!id) throw createError({ statusCode: 400, message: 'Invalid cluster ID' })

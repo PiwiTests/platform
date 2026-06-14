@@ -4,6 +4,14 @@ import { resolveAiConfig, callAiProvider } from '../../../utils/ai-provider'
 import { getAppSetting } from '../../../utils/app-settings'
 import type { AiConfig, AiProvider } from '~~/types/api'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Settings'],
+    summary: 'Test AI provider connection',
+    description: 'Sends a connectivity test to the configured AI provider. Accepts optional provider, apiKey, model, and baseUrl in the request body. Requires administrator role.'
+  }
+})
+
 export default eventHandler(async (event) => {
   await requireAuth(event, ['administrator'])
 

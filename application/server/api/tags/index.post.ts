@@ -4,6 +4,14 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { requireAuth } from '../../utils/auth'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Tags'],
+    summary: 'Create a tag',
+    description: 'Creates a new tag with text (max 50 characters) and color. Requires administrator role.'
+  }
+})
+
 const createTagSchema = z.object({
   text: z.string().min(1, 'Tag text is required').max(50, 'Tag text must be at most 50 characters'),
   color: z.string().min(1, 'Color is required')

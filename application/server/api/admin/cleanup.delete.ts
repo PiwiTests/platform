@@ -4,6 +4,17 @@ import { lt, inArray } from 'drizzle-orm'
 import { requireAuth } from '../../utils/auth'
 import { deleteFileRow } from '../../utils/delete-run-files'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Admin'],
+    summary: 'Cleanup old test data',
+    description: 'Deletes test runs older than a specified number of days, including associated files, traces, and reports. Requires administrator role.',
+    requestBody: {
+      content: { 'application/json': { schema: { type: 'object', properties: { olderThanDays: { type: 'integer', description: 'Delete runs older than this many days' } }, required: ['olderThanDays'] } } }
+    }
+  }
+})
+
 export default eventHandler(async (event) => {
   await requireAuth(event, ['administrator'])
 

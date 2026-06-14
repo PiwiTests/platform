@@ -6,6 +6,14 @@ import { getStorage } from '../../storage'
 import { getDirectorySize } from '../../utils/filesize'
 import { resolve } from 'path'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Admin'],
+    summary: 'Get admin statistics',
+    description: 'Returns aggregate statistics about projects, test runs, test cases, files, and storage disk usage. Requires administrator role.'
+  }
+})
+
 export default eventHandler(async (event) => {
   await requireAuth(event, ['administrator'])
 

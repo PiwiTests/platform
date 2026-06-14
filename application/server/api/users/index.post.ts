@@ -4,6 +4,14 @@ import { eq } from 'drizzle-orm'
 import { createUser, requireAuth } from '../../utils/auth'
 import { z } from 'zod'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Users'],
+    summary: 'Create a user',
+    description: 'Creates a new user with username, password, role (administrator, reporter, or user), and optional name. Requires administrator role.'
+  }
+})
+
 const createUserSchema = z.object({
   username: z.string().min(3),
   password: z.string().min(6),

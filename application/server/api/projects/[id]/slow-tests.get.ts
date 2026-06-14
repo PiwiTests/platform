@@ -2,6 +2,15 @@ import { getDatabase } from '../../../database'
 import { projects, testRuns, testCases, testRunsCases } from '../../../database/schema'
 import { eq, desc, and, inArray } from 'drizzle-orm'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Test Cases'],
+    summary: 'Slow test analysis',
+    description: 'Returns the slowest test cases for a project with average, max, min duration, run count, and trend direction',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
 

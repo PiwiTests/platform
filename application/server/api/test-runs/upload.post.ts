@@ -16,6 +16,29 @@ import { sanitizeMetadata } from '../../utils/sanitize'
 import { runEventBus } from '../../utils/run-events'
 import { autoDiagnoseRun } from '../../utils/ai-diagnosis'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Test Runs'],
+    summary: 'Upload test results with reports, traces, and attachments',
+    description: 'Upload Playwright test run results as multipart form data, including HTML reports, trace files, and other attachments. Supports both new runs and attaching files to existing streaming runs.',
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          schema: {
+            type: 'object',
+            properties: {
+              projectName: { type: 'string' },
+              testRun: { type: 'string', description: 'JSON-encoded test run data' },
+              testCases: { type: 'string', description: 'JSON-encoded test cases array' }
+            },
+            required: ['projectName', 'testRun']
+          }
+        }
+      }
+    }
+  }
+})
+
 // Default labels for known report types
 const REPORT_TYPE_LABELS: Record<string, string> = {
   html: 'HTML Report',

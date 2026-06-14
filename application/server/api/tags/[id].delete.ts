@@ -3,6 +3,15 @@ import { tags } from '../../database/schema'
 import { eq } from 'drizzle-orm'
 import { requireAuth } from '../../utils/auth'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Tags'],
+    summary: 'Delete a tag',
+    description: 'Deletes a tag by ID. Requires administrator role.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 export default eventHandler(async (event) => {
   await requireAuth(event, ['administrator'])
 

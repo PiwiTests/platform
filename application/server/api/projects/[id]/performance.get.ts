@@ -2,6 +2,15 @@ import { getDatabase } from '../../../database'
 import { projects, testRuns } from '../../../database/schema'
 import { eq, desc, and, gte, lte } from 'drizzle-orm'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Test Runs'],
+    summary: 'Performance trend data',
+    description: 'Returns test run duration, average test duration, and p90 test duration for trend charts with optional date range filtering',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
 

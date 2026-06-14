@@ -2,6 +2,14 @@ import { getDatabase } from '../../database'
 import { testRuns, projects } from '../../database/schema'
 import { desc, eq } from 'drizzle-orm'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Test Runs'],
+    summary: 'Get recent test runs',
+    description: 'Returns the 30 most recent test runs across all projects, sorted by start time. Used by the home page dashboard.'
+  }
+})
+
 /**
  * GET /api/test-runs/recent
  * Returns the most recent test runs across all projects for the home page.

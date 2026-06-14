@@ -133,26 +133,39 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
   return items
 })
 
-const links = computed(() => [[{
-  label: 'Home',
-  icon: 'i-lucide-house',
-  to: '/',
-  onSelect: () => {
-    open.value = false
+const links = computed(() => {
+  const bottomLinks: NavigationMenuItem[] = [{
+    label: 'GitHub',
+    icon: 'i-lucide-github',
+    to: 'https://github.com/PhenX/piwi-dashboard',
+    target: '_blank'
+  }]
+  if (!isDemo) {
+    bottomLinks.unshift({
+      label: 'API Docs',
+      icon: 'i-lucide-book-open',
+      to: '/docs',
+      onSelect: () => {
+        open.value = false
+      }
+    })
   }
-}, {
-  label: 'Projects',
-  icon: 'i-lucide-folder',
-  to: '/projects',
-  onSelect: () => {
-    open.value = false
-  }
-}, ...projectItems.value], [{
-  label: 'Documentation',
-  icon: 'i-lucide-book',
-  to: 'https://github.com/PhenX/piwi-dashboard',
-  target: '_blank'
-}]] satisfies NavigationMenuItem[][])
+  return [[{
+    label: 'Home',
+    icon: 'i-lucide-house',
+    to: '/',
+    onSelect: () => {
+      open.value = false
+    }
+  }, {
+    label: 'Projects',
+    icon: 'i-lucide-folder',
+    to: '/projects',
+    onSelect: () => {
+      open.value = false
+    }
+  }, ...projectItems.value], bottomLinks] satisfies NavigationMenuItem[][]
+})
 
 const toCommandPaletteItem = (item: NavigationMenuItem): CommandPaletteItem => ({
   label: typeof item.label === 'string' ? item.label : undefined,

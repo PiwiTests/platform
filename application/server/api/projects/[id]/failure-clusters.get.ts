@@ -2,6 +2,15 @@ import { getDatabase } from '../../../database'
 import { projects, testRuns, testRunsCases, failureClusters, failureDiagnoses } from '../../../database/schema'
 import { eq, and, desc, inArray, sql } from 'drizzle-orm'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Failure Clusters'],
+    summary: 'List failure clusters for a project',
+    description: 'Returns failure clusters grouped by error fingerprint with occurrence counts, affected tests count, and compact diagnosis info. Supports optional status filter.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 interface DiagnosisCompact {
   status: string
   category: string | null

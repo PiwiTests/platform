@@ -3,6 +3,14 @@ import { projects, testRuns, testRunsCases, files, tags, projectTags } from '../
 import { eq, desc, inArray, and, isNotNull } from 'drizzle-orm'
 import type { BrowserConfig } from '../../../shared/types'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Projects'],
+    summary: 'Get project details',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
+  }
+})
+
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0')
 

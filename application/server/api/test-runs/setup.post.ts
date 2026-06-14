@@ -6,6 +6,30 @@ import { requireAuth } from '../../utils/auth'
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs'
 import { runEventBus } from '../../utils/run-events'
 
+defineRouteMeta({
+  openAPI: {
+    tags: ['Test Runs'],
+    summary: 'Initialize a streaming test run in setup phase',
+    description: 'Initialize a new streaming test run in "initialising" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels any previous runs from the same instance.',
+    requestBody: {
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              projectName: { type: 'string' },
+              startTime: { type: 'string', format: 'date-time' },
+              environment: { type: 'string' },
+              instanceId: { type: 'string' }
+            },
+            required: ['projectName']
+          }
+        }
+      }
+    }
+  }
+})
+
 export default eventHandler(async (event) => {
   // Require reporter or administrator role
   await requireAuth(event, ['reporter', 'administrator'])

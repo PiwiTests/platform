@@ -69,6 +69,7 @@ Running Playwright tests in CI produces HTML reports that are ephemeral — once
 - 🤖 **AI diagnosis** — LLM analysis of any failure cluster (Anthropic, OpenAI-compatible, Ollama, etc.); pin a baseline commit so the diagnosis includes the relevant SCM diff; browse and cherry-pick specific commits to add their full diffs to the context; diagnosis includes category, confidence, root cause, evidence, suggested fix, and prevention tips; auto-diagnose new clusters on run completion; supports global and per-project custom instructions to tailor analysis to your stack
 - 🔀 **Flaky test detection** — composite flakiness score based on retry passes, status alternations, and failure rate; dedicated project tab with configurable lookback window
 - 🔌 **Playwright reporter** — drop-in custom reporter for automatic result submission, with HTML report and trace uploads
+- 📖 **Interactive API docs** — auto-generated OpenAPI 3.1 specification with Scalar UI at `/docs`; all endpoints annotated with `defineRouteMeta()`
 - ⚡ **Real-time streaming** — live dashboard via Server-Sent Events; pages refresh instantly when a run starts or finishes, with no polling
 - 🔐 **Authentication** — optional role-based access control (administrator, reporter, user) with API key support for CI and OAuth (Google, GitHub)
 - ☁️ **Flexible storage** — SQLite or PostgreSQL database; local file system or S3-compatible object storage for artifacts
@@ -130,6 +131,7 @@ Results appear automatically in the dashboard. The project is created on first s
 | **Test cases** | Per-project view of all unique test cases with pass rate, result breakdown, and link to each test's history |
 | **Test run detail** | Every test case in a run with browser icon, status, duration, location, error messages, traces, and reports; filter by browser; failure groups with AI diagnosis |
 | **Failure cluster** | Cluster detail with affected tests, triage tools (status + note), and LLM diagnosis with SCM diff context (baseline commit picker, commit browser for targeted context selection) |
+| **API Docs** (`/docs`) | Auto-generated interactive API reference powered by Scalar with all endpoints, request/response schemas, and try-it console |
 | **Settings › AI** | Configure AI provider, auto-diagnose, and global analysis instructions |
 | **Settings › Users** | User management and API key generation (when authentication is enabled) |
 | **Settings › Storage** | Storage statistics and cleanup tools for old runs |
@@ -222,6 +224,7 @@ Source layout (13 modules):
 | Getting started | [phenx.github.io/piwi-dashboard/getting-started](https://phenx.github.io/piwi-dashboard/getting-started) |
 | Playwright reporter | [phenx.github.io/piwi-dashboard/reporter](https://phenx.github.io/piwi-dashboard/reporter) |
 | API reference | [phenx.github.io/piwi-dashboard/api](https://phenx.github.io/piwi-dashboard/api) |
+| Interactive API docs | Served at `/docs` when running the dashboard (Scalar UI, auto-generated from OpenAPI spec) |
 | Authentication | [phenx.github.io/piwi-dashboard/authentication](https://phenx.github.io/piwi-dashboard/authentication) |
 | Storage configuration | [phenx.github.io/piwi-dashboard/storage](https://phenx.github.io/piwi-dashboard/storage) |
 | Deployment | [phenx.github.io/piwi-dashboard/deployment](https://phenx.github.io/piwi-dashboard/deployment) |
