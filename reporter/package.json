@@ -11,6 +11,7 @@
   "bugs": {
     "url": "https://github.com/PhenX/piwi-dashboard/issues"
   },
+  "type": "commonjs",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {

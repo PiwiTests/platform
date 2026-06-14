@@ -359,14 +359,37 @@ onUnmounted(disconnectRunStream);
             <div class="space-y-4 pt-4">
               <TestCaseErrorCard v-if="testCase?.error" :cluster="failureCluster" />
 
-              <UAlert
-                v-if="testCase?.error && !testCase?.ariaSnapshot"
-                color="warning"
-                variant="subtle"
-                icon="i-lucide-alert-triangle"
-                title="ARIA snapshot not captured"
-                description="The page ARIA snapshot is missing. This test likely does not import test from the piwi-dashboard fixtures — see the reporter docs for setup instructions."
-              />
+              <UCard v-if="testCase?.error">
+                <template #header>
+                  <div class="flex items-center gap-2">
+                    <UIcon name="i-lucide-bug" class="size-4 text-red-500" />
+                    <h3 class="font-medium">Error</h3>
+                  </div>
+                </template>
+                <pre
+                  class="text-xs font-mono whitespace-pre-wrap break-words text-red-600 dark:text-red-400 max-h-96 overflow-y-auto"
+                  >{{ testCase.error }}</pre
+                >
+              </UCard>
+
+              <UCard v-if="testCase?.ariaSnapshot">
+                <template #header>
+                  <div class="flex items-center gap-2">
+                    <UIcon name="i-lucide-scan-text" class="size-4 text-primary" />
+                    <h3 class="font-medium">ARIA snapshot</h3>
+                  </div>
+                </template>
+                <pre class="text-xs font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto">{{
+                  testCase.ariaSnapshot
+                }}</pre>
+              </UCard>
+
+              <p v-else-if="testCase?.error" class="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
+                <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />
+                ARIA snapshot not captured — make sure your test imports
+                <code class="rounded bg-gray-100 px-1 dark:bg-gray-800">test</code>
+                from the piwi-dashboard fixtures.
+              </p>
             </div>
           </template>
 
