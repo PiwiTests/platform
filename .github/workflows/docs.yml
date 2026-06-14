@@ -67,7 +67,7 @@ jobs:
 
       - name: Generate static demo site
         working-directory: ./application
-        run: npm run generate:demo
+        run: npm run app:generate:demo
         env:
           NUXT_PUBLIC_DEMO_MODE: 'true'
         # Output: application/.output/public/

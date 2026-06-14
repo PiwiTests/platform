@@ -105,4 +105,4 @@ jobs:
         run: npm install
 
       - name: Run demo-generate
-        run: npm run generate:demo
+        run: npm run app:generate:demo
