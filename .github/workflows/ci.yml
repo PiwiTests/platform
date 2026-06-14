@@ -63,6 +63,7 @@ jobs:
         run: npm ci
 
       - name: Lint reporter
+        working-directory: ./reporter
         run: npm run reporter:lint
 
       - name: Build reporter
