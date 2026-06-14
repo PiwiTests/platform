@@ -23,13 +23,13 @@ const root = join(__dirname, '..')
 // These are server-only write endpoints that don't make sense in a static
 // client-side demo (no persistent server, no file system, no SCM access).
 const INTENTIONALLY_EXCLUDED = new Set([
-  'POST /api/auth/setup',           // initial admin setup (server only)
-  'POST /api/test-runs/submit',     // bulk result submission (no server in demo)
-  'POST /api/test-runs/upload',     // multipart upload (no server in demo)
-  'POST /api/test-runs/start',      // alternate streaming start (server only)
+  'POST /api/auth/setup', // initial admin setup (server only)
+  'POST /api/test-runs/submit', // bulk result submission (no server in demo)
+  'POST /api/test-runs/upload', // multipart upload (no server in demo)
+  'POST /api/test-runs/start', // alternate streaming start (server only)
   'POST /api/test-runs/:id/case-files', // file upload during live run (server only)
-  'DELETE /api/tests/cleanup',      // test-suite cleanup hook (server only)
-  'POST /api/traces/check',         // trace dedup check (server only)
+  'DELETE /api/tests/cleanup', // test-suite cleanup hook (server only)
+  'POST /api/traces/check', // trace dedup check (server only)
 ])
 
 // ── Derive all server routes from the file system ────────────────────────
