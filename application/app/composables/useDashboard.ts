@@ -1,15 +1,14 @@
-import { createSharedComposable } from '@vueuse/core'
+import { createSharedComposable } from '@vueuse/core';
 
 const _useDashboard = () => {
-  const router = useRouter()
+  const router = useRouter();
 
   defineShortcuts({
     'g-h': () => router.push('/'),
-    'g-s': () => router.push('/settings')
-  })
+    'g-s': () => router.push('/settings'),
+  });
 
-  return {
-  }
-}
+  return {};
+};
 
-export const useDashboard = createSharedComposable(_useDashboard)
+export const useDashboard = createSharedComposable(_useDashboard);

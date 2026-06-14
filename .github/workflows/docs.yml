@@ -59,15 +59,15 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: ./application/package-lock.json
+          cache-dependency-path: ./package-lock.json
 
       - name: Install application dependencies
-        working-directory: ./application
+        working-directory: .
         run: npm ci
 
       - name: Generate static demo site
         working-directory: ./application
-        run: npm run generate:demo
+        run: npm run app:generate:demo
         env:
           NUXT_PUBLIC_DEMO_MODE: 'true'
         # Output: application/.output/public/

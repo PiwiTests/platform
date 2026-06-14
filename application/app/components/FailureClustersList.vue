@@ -1,36 +1,36 @@
 <script setup lang="ts">
-import type { TableColumn } from '@nuxt/ui'
-import type { ProjectFailureCluster } from '~~/types/api'
+import type { TableColumn } from '@nuxt/ui';
+import type { ProjectFailureCluster } from '~~/types/api';
 
 const props = defineProps<{
-  projectId: string | number
-}>()
+  projectId: string | number;
+}>();
 
-const statusFilter = ref<string | undefined>(undefined)
+const statusFilter = ref<string | undefined>(undefined);
 const { data: clusters, pending: loading } = await useFetch<ProjectFailureCluster[]>(
   () => {
-    const params = new URLSearchParams()
-    if (statusFilter.value) params.set('status', statusFilter.value)
-    const qs = params.toString()
-    return `/api/projects/${props.projectId}/failure-clusters${qs ? `?${qs}` : ''}`
+    const params = new URLSearchParams();
+    if (statusFilter.value) params.set('status', statusFilter.value);
+    const qs = params.toString();
+    return `/api/projects/${props.projectId}/failure-clusters${qs ? `?${qs}` : ''}`;
   },
-  { lazy: true, server: false, watch: [statusFilter] }
-)
+  { lazy: true, server: false, watch: [statusFilter] },
+);
 
 const statusColors: Record<string, 'success' | 'warning' | 'neutral'> = {
   open: 'warning',
   resolved: 'success',
-  ignored: 'neutral'
-}
+  ignored: 'neutral',
+};
 
 const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' | 'secondary'> = {
-  'timeout': 'warning',
-  'assertion': 'error',
+  timeout: 'warning',
+  assertion: 'error',
   'strict-mode': 'info',
-  'navigation': 'secondary',
-  'crash': 'error',
-  'unknown': 'neutral'
-}
+  navigation: 'secondary',
+  crash: 'error',
+  unknown: 'neutral',
+};
 
 const columns: TableColumn<ProjectFailureCluster>[] = [
   { accessorKey: 'signature', header: createSortHeader<ProjectFailureCluster>('Signature') },
@@ -40,8 +40,8 @@ const columns: TableColumn<ProjectFailureCluster>[] = [
   { accessorKey: 'occurrences', header: createSortHeader<ProjectFailureCluster>('Occurrences') },
   { accessorKey: 'diagnosis', header: 'AI' },
   { accessorKey: 'lastSeenAt', header: createSortHeader<ProjectFailureCluster>('Last seen') },
-  { id: 'actions', header: 'Actions' }
-]
+  { id: 'actions', header: 'Actions' },
+];
 </script>
 
 <template>
@@ -57,7 +57,7 @@ const columns: TableColumn<ProjectFailureCluster>[] = [
             { label: 'All', value: undefined },
             { label: 'Open', value: 'open' },
             { label: 'Resolved', value: 'resolved' },
-            { label: 'Ignored', value: 'ignored' }
+            { label: 'Ignored', value: 'ignored' },
           ]"
           size="xs"
           class="w-32"
@@ -67,9 +67,7 @@ const columns: TableColumn<ProjectFailureCluster>[] = [
 
     <UTable :data="clusters ?? []" :columns="columns" :loading="loading">
       <template #actions-header>
-        <div class="text-right">
-          Actions
-        </div>
+        <div class="text-right">Actions</div>
       </template>
 
       <template #signature-cell="{ row }">

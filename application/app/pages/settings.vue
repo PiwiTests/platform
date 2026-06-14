@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import type { NavigationMenuItem } from '@nuxt/ui'
+import type { NavigationMenuItem } from '@nuxt/ui';
 
-useHead({ title: 'Settings — Piwi Dashboard' })
+useHead({ title: 'Settings — Piwi Dashboard' });
 
-const links = [[...useSettingsNav()], [{
-  label: 'Documentation',
-  icon: 'i-lucide-book-open',
-  to: 'https://github.com/PhenX/piwi-dashboard',
-  target: '_blank'
-}]] satisfies NavigationMenuItem[][]
+const links = [
+  [...useSettingsNav()],
+  [
+    {
+      label: 'Documentation',
+      icon: 'i-lucide-book-open',
+      to: 'https://github.com/PhenX/piwi-dashboard',
+      target: '_blank',
+    },
+  ],
+] satisfies NavigationMenuItem[][];
 </script>
 
 <template>

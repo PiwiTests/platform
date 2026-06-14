@@ -47,20 +47,21 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-          cache-dependency-path: ./application/package-lock.json
+          cache-dependency-path: ./package-lock.json
 
       - name: Install dependencies
+        working-directory: .
         run: npm ci
 
       - name: Lint
-        run: npm run lint
+        run: npm run app:lint
 
       - name: Typecheck
-        run: npm run typecheck
+        run: npm run app:typecheck
 
-      - name: Install reporter dependencies
+      - name: Lint reporter
         working-directory: ./reporter
-        run: npm install
+        run: npm run reporter:lint
 
       - name: Build reporter
         working-directory: ./reporter
@@ -95,10 +96,11 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: ./application/package-lock.json
+          cache-dependency-path: ./package-lock.json
 
       - name: Install dependencies
-        run: npm install
+        working-directory: .
+        run: npm ci
 
       - name: Run demo-generate
-        run: npm run generate:demo
+        run: npm run app:generate:demo

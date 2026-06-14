@@ -1,88 +1,91 @@
 <script setup lang="ts">
-import type { TestCaseResult, TraceInfo, AttachmentInfo } from '~~/types/api'
-import type { BrowserConfig } from '~~/shared/types'
+import type { TestCaseResult, TraceInfo, AttachmentInfo } from '~~/types/api';
+import type { BrowserConfig } from '~~/shared/types';
 
 interface ScmInfo {
-  commit?: string
-  branch?: string
-  author?: string
-  commitMessage?: string
+  commit?: string;
+  branch?: string;
+  author?: string;
+  commitMessage?: string;
 }
 
 interface CiInfo {
-  provider?: string
-  buildNumber?: string
-  buildUrl?: string
-  workflow?: string
+  provider?: string;
+  buildNumber?: string;
+  buildUrl?: string;
+  workflow?: string;
 }
 
 interface HistoricalTiming {
-  avg: number
-  current: number
-  diff: number
-  pct: number
+  avg: number;
+  current: number;
+  diff: number;
+  pct: number;
 }
 
 defineProps<{
-  testCase: TestCaseResult | null
-  scmInfo: ScmInfo | null
-  ciInfo: CiInfo | null
-  browser: BrowserConfig | null
-  environment: string | null | undefined
-  stepsCount: number
-  historicalTiming: HistoricalTiming | null
-  summaryColSpanClass: string
-  blockColSpanClass: string
-  traces?: TraceInfo[]
-  attachments?: AttachmentInfo[]
-}>()
+  testCase: TestCaseResult | null;
+  scmInfo: ScmInfo | null;
+  ciInfo: CiInfo | null;
+  browser: BrowserConfig | null;
+  environment: string | null | undefined;
+  stepsCount: number;
+  historicalTiming: HistoricalTiming | null;
+  summaryColSpanClass: string;
+  blockColSpanClass: string;
+  traces?: TraceInfo[];
+  attachments?: AttachmentInfo[];
+}>();
 
 defineEmits<{
-  refresh: []
-}>()
+  refresh: [];
+}>();
 
 const origin = computed(() => {
   if (import.meta.client) {
-    return window.location.origin
+    return window.location.origin;
   }
-  return useRequestURL().origin
-})
+  return useRequestURL().origin;
+});
 
 function viewerUrl(path: string): string {
-  return `https://trace.playwright.dev/?trace=${encodeURIComponent(`${origin.value}/api/files/${getFileApiPath(path)}`)}`
+  return `https://trace.playwright.dev/?trace=${encodeURIComponent(`${origin.value}/api/files/${getFileApiPath(path)}`)}`;
 }
 
 function downloadUrl(path: string): string {
-  return `/api/files/${getFileApiPath(path)}`
+  return `/api/files/${getFileApiPath(path)}`;
 }
 
 function attFileUrl(path: string, contentType?: string | null): string {
-  let url = `/api/files/${getFileApiPath(path)}`
-  const ext = (path.toLowerCase().split('.').pop() || '')
+  let url = `/api/files/${getFileApiPath(path)}`;
+  const ext = path.toLowerCase().split('.').pop() || '';
   if (contentType && ext === '') {
-    url += `?contentType=${encodeURIComponent(contentType)}`
+    url += `?contentType=${encodeURIComponent(contentType)}`;
   }
-  return url
+  return url;
 }
 
-const imageExts = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'])
-const imageMimes = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/svg+xml', 'image/webp'])
+const imageExts = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp']);
+const imageMimes = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/svg+xml', 'image/webp']);
 
 function isImage(path: string, contentType?: string | null): boolean {
-  if (imageExts.has(path.toLowerCase().split('.').pop()!)) return true
-  if (contentType && imageMimes.has(contentType.toLowerCase())) return true
-  return false
+  if (imageExts.has(path.toLowerCase().split('.').pop()!)) return true;
+  if (contentType && imageMimes.has(contentType.toLowerCase())) return true;
+  return false;
 }
 
 function totalStorageSize(traces?: TraceInfo[], attachments?: AttachmentInfo[]): number {
-  let total = 0
-  if (traces) for (const t of traces) if ((t as unknown as Record<string, unknown>).size as number) total += (t as unknown as Record<string, unknown>).size as number
-  if (attachments) for (const a of attachments) if (a.size) total += a.size
-  return total
+  let total = 0;
+  if (traces)
+    for (const t of traces)
+      if ((t as unknown as Record<string, unknown>).size as number)
+        total += (t as unknown as Record<string, unknown>).size as number;
+  if (attachments) for (const a of attachments) if (a.size) total += a.size;
+  return total;
 }
 
 function fileName(path: string): string {
-  return path.split('/').pop() || path
+  return path.split('/').pop() || path;
 }
 </script>
 
@@ -97,16 +100,24 @@ function fileName(path: string): string {
               class="shrink-0 size-8 rounded-lg flex items-center justify-center"
               :class="{
                 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400': testCase?.status === 'passed',
-                'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400': testCase?.status === 'failed' || testCase?.status === 'timedOut',
-                'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400': testCase?.status === 'cancelled' || testCase?.status === 'skipped',
-                'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400': testCase?.status === 'running' || testCase?.status === 'initialising'
+                'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400':
+                  testCase?.status === 'failed' || testCase?.status === 'timedOut',
+                'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400':
+                  testCase?.status === 'cancelled' || testCase?.status === 'skipped',
+                'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400':
+                  testCase?.status === 'running' || testCase?.status === 'initialising',
               }"
             >
               <UIcon
-                :name="testCase?.status === 'passed' ? 'i-lucide-check-circle-2'
-                  : testCase?.status === 'failed' || testCase?.status === 'timedOut' ? 'i-lucide-x-circle'
-                    : testCase?.status === 'running' || testCase?.status === 'initialising' ? 'i-lucide-loader-circle'
-                      : 'i-lucide-minus-circle'"
+                :name="
+                  testCase?.status === 'passed'
+                    ? 'i-lucide-check-circle-2'
+                    : testCase?.status === 'failed' || testCase?.status === 'timedOut'
+                      ? 'i-lucide-x-circle'
+                      : testCase?.status === 'running' || testCase?.status === 'initialising'
+                        ? 'i-lucide-loader-circle'
+                        : 'i-lucide-minus-circle'
+                "
                 class="size-4.5"
                 :class="{ 'animate-spin': testCase?.status === 'running' || testCase?.status === 'initialising' }"
               />
@@ -134,33 +145,25 @@ function fileName(path: string): string {
 
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
-              <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Duration
-              </p>
+              <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</p>
               <p class="text-xl font-bold mt-0.5">
                 {{ formatDuration(testCase?.duration) }}
               </p>
             </div>
             <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
-              <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Retries
-              </p>
+              <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Retries</p>
               <p class="text-xl font-bold mt-0.5">
                 {{ testCase?.retries ?? 0 }}
               </p>
             </div>
             <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
-              <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Steps
-              </p>
+              <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Steps</p>
               <p class="text-xl font-bold mt-0.5">
                 {{ stepsCount }}
               </p>
             </div>
             <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
-              <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Worker
-              </p>
+              <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Worker</p>
               <p class="text-xl font-bold mt-0.5">
                 {{ testCase?.workerIndex ?? '—' }}
               </p>
@@ -171,7 +174,9 @@ function fileName(path: string): string {
             <UIcon name="i-lucide-zap" class="size-4 text-amber-500 shrink-0" />
             <span class="font-medium text-amber-700 dark:text-amber-300">Slowest step:</span>
             <span class="text-gray-700 dark:text-gray-300 truncate">{{ testCase.slowestStep }}</span>
-            <span v-if="testCase.slowestStepDuration" class="text-gray-500 shrink-0">({{ formatDuration(testCase.slowestStepDuration) }})</span>
+            <span v-if="testCase.slowestStepDuration" class="text-gray-500 shrink-0"
+              >({{ formatDuration(testCase.slowestStepDuration) }})</span
+            >
           </div>
         </div>
       </UCard>
@@ -181,12 +186,7 @@ function fileName(path: string): string {
     <SourceInfoCard v-if="scmInfo" :scm="scmInfo" :class="blockColSpanClass" />
 
     <!-- CI / Env -->
-    <CiEnvCard
-      v-if="ciInfo || environment"
-      :ci="ciInfo"
-      :environment="environment"
-      :class="blockColSpanClass"
-    />
+    <CiEnvCard v-if="ciInfo || environment" :ci="ciInfo" :environment="environment" :class="blockColSpanClass" />
 
     <!-- Browser -->
     <UCard v-if="browser" :class="blockColSpanClass">
@@ -205,7 +205,9 @@ function fileName(path: string): string {
           <div v-if="browser?.viewport" class="flex items-center gap-1">
             <UIcon name="i-lucide-maximize-2" class="size-3 shrink-0 text-gray-400" />
             {{ browser.viewport.width }}×{{ browser.viewport.height }}
-            <span v-if="browser.deviceScaleFactor && browser.deviceScaleFactor !== 1" class="text-gray-400">@{{ browser.deviceScaleFactor }}x</span>
+            <span v-if="browser.deviceScaleFactor && browser.deviceScaleFactor !== 1" class="text-gray-400"
+              >@{{ browser.deviceScaleFactor }}x</span
+            >
           </div>
           <div v-if="browser?.isMobile" class="flex items-center gap-1">
             <UIcon name="i-lucide-smartphone" class="size-3 shrink-0 text-gray-400" />
@@ -228,7 +230,10 @@ function fileName(path: string): string {
             <UIcon name="i-lucide-moon" class="size-3 shrink-0 text-gray-400" />
             {{ browser.colorScheme }}
           </div>
-          <div v-if="browser?.reducedMotion && browser.reducedMotion !== 'no-preference'" class="flex items-center gap-1">
+          <div
+            v-if="browser?.reducedMotion && browser.reducedMotion !== 'no-preference'"
+            class="flex items-center gap-1"
+          >
             <UIcon name="i-lucide-pause-circle" class="size-3 shrink-0 text-gray-400" />
             Reduced motion
           </div>
@@ -245,7 +250,10 @@ function fileName(path: string): string {
             {{ browser.geolocation.latitude.toFixed(2) }}, {{ browser.geolocation.longitude.toFixed(2) }}
           </div>
         </div>
-        <div v-if="browser?.userAgent" class="text-xs text-gray-400 break-all leading-snug pt-1 border-t border-default">
+        <div
+          v-if="browser?.userAgent"
+          class="text-xs text-gray-400 break-all leading-snug pt-1 border-t border-default"
+        >
           {{ browser.userAgent }}
         </div>
       </div>
@@ -258,7 +266,8 @@ function fileName(path: string): string {
           <UIcon name="i-lucide-database" class="w-4 h-4 text-primary" />
           <span class="text-sm font-medium">Storage</span>
           <span class="text-xs text-gray-400">
-            · {{ (traces?.length ?? 0) + (attachments?.length ?? 0) }} files · {{ formatBytes(totalStorageSize(traces, attachments)) }}
+            · {{ (traces?.length ?? 0) + (attachments?.length ?? 0) }} files ·
+            {{ formatBytes(totalStorageSize(traces, attachments)) }}
           </span>
         </div>
       </template>
@@ -291,25 +300,19 @@ function fileName(path: string): string {
 
         <!-- Attachments summary -->
         <div v-if="(attachments?.length ?? 0) > 0" class="space-y-1">
-          <div
-            v-for="att in attachments"
-            :key="att.id"
-            class="flex items-center justify-between gap-2 py-1"
-          >
+          <div v-for="att in attachments" :key="att.id" class="flex items-center justify-between gap-2 py-1">
             <div class="flex items-center gap-2 min-w-0">
               <img
                 v-if="isImage(att.path, att.contentType)"
                 :src="attFileUrl(att.path, att.contentType)"
                 class="size-6 rounded object-cover shrink-0"
                 alt=""
-              >
-              <UIcon
-                v-else
-                name="i-lucide-file"
-                class="size-4 text-gray-400 shrink-0"
               />
+              <UIcon v-else name="i-lucide-file" class="size-4 text-gray-400 shrink-0" />
               <span class="text-xs truncate">{{ fileName(att.path) }}</span>
-              <span v-if="att.name && att.name !== fileName(att.path)" class="text-[10px] text-gray-400 shrink-0">{{ att.name }}</span>
+              <span v-if="att.name && att.name !== fileName(att.path)" class="text-[10px] text-gray-400 shrink-0">{{
+                att.name
+              }}</span>
             </div>
             <div class="flex items-center gap-1.5 shrink-0">
               <span class="text-xs text-gray-400">{{ formatBytes(att.size ?? 0) }}</span>

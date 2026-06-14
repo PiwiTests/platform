@@ -1,0 +1,2 @@
+(cd application && npm run app:format) && git add -u application/
+(cd reporter && npm run reporter:format) && git add -u reporter/src/

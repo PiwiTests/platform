@@ -1,28 +1,35 @@
 <script setup lang="ts">
-import type { TableColumn } from '@nuxt/ui'
-import type { TestCaseWithStats, ProjectDetails } from '~~/types/api'
+import type { TableColumn } from '@nuxt/ui';
+import type { TestCaseWithStats, ProjectDetails } from '~~/types/api';
 
-const route = useRoute()
-const projectId = route.params.id
+const route = useRoute();
+const projectId = route.params.id;
 
-const { data: testCases, refresh } = await useFetch<TestCaseWithStats[]>(`/api/projects/${projectId}/test-cases`)
-const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`)
+const { data: testCases, refresh } = await useFetch<TestCaseWithStats[]>(`/api/projects/${projectId}/test-cases`);
+const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`);
 
-useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Test cases — Piwi Dashboard` })))
+useHead(
+  computed(() => ({
+    title: `${project.value?.label || project.value?.name || 'Project'} — Test cases — Piwi Dashboard`,
+  })),
+);
 
 function getPassRate(testCase: TestCaseWithStats) {
-  if (testCase.totalRuns === 0) return 0
-  return Math.round((testCase.passedRuns / testCase.totalRuns) * 100)
+  if (testCase.totalRuns === 0) return 0;
+  return Math.round((testCase.passedRuns / testCase.totalRuns) * 100);
 }
 
-type BadgeColor = 'error' | 'neutral' | 'primary' | 'success' | 'warning' | 'secondary' | 'info'
+type BadgeColor = 'error' | 'neutral' | 'primary' | 'success' | 'warning' | 'secondary' | 'info';
 
-function getTestCaseStatus(testCase: TestCaseWithStats): { status: string, color: BadgeColor } {
-  const recentFlaky = testCase.recentFlakyRuns ?? testCase.flakyRuns
+function getTestCaseStatus(testCase: TestCaseWithStats): { status: string; color: BadgeColor } {
+  const recentFlaky = testCase.recentFlakyRuns ?? testCase.flakyRuns;
   if (recentFlaky > 0) {
-    return { status: 'flaky', color: 'warning' }
+    return { status: 'flaky', color: 'warning' };
   }
-  return { status: testCase.lastStatus || 'unknown', color: getStatusColor(testCase.lastStatus || 'unknown') as BadgeColor }
+  return {
+    status: testCase.lastStatus || 'unknown',
+    color: getStatusColor(testCase.lastStatus || 'unknown') as BadgeColor,
+  };
 }
 
 const testCasesColumns: TableColumn<TestCaseWithStats>[] = [
@@ -33,8 +40,8 @@ const testCasesColumns: TableColumn<TestCaseWithStats>[] = [
   { accessorKey: 'results', header: 'Results' },
   { accessorKey: 'avgDuration', header: createSortHeader<TestCaseWithStats>('Avg duration') },
   { accessorKey: 'lastRun', header: createSortHeader<TestCaseWithStats>('Last run') },
-  { id: 'actions', header: 'Actions' }
-]
+  { id: 'actions', header: 'Actions' },
+];
 </script>
 
 <template>
@@ -48,17 +55,12 @@ const testCasesColumns: TableColumn<TestCaseWithStats>[] = [
               { label: 'Home', icon: 'i-lucide-house', to: '/' },
               { label: 'Projects', to: '/projects' },
               { label: project?.label || project?.name || 'Project', to: `/projects/${projectId}` },
-              { label: 'Test cases' }
+              { label: 'Test cases' },
             ]"
           />
         </template>
         <template #right>
-          <UButton
-            icon="i-lucide-refresh-cw"
-            size="md"
-            label="Refresh"
-            @click="() => refresh()"
-          />
+          <UButton icon="i-lucide-refresh-cw" size="md" label="Refresh" @click="() => refresh()" />
         </template>
       </UDashboardNavbar>
     </template>
@@ -82,13 +84,11 @@ const testCasesColumns: TableColumn<TestCaseWithStats>[] = [
               thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
               tbody: '[&>tr]:last:[&>td]:border-b-0',
               th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
-              td: 'border-b border-default'
+              td: 'border-b border-default',
             }"
           >
             <template #actions-header>
-              <div class="text-right">
-                Actions
-              </div>
+              <div class="text-right">Actions</div>
             </template>
 
             <template #title-cell="{ row }">
@@ -108,12 +108,7 @@ const testCasesColumns: TableColumn<TestCaseWithStats>[] = [
             </template>
 
             <template #status-cell="{ row }">
-              <UBadge
-                :color="getTestCaseStatus(row.original).color"
-                variant="subtle"
-                class="capitalize"
-                size="sm"
-              >
+              <UBadge :color="getTestCaseStatus(row.original).color" variant="subtle" class="capitalize" size="sm">
                 {{ getTestCaseStatus(row.original).status }}
               </UBadge>
             </template>
@@ -128,7 +123,7 @@ const testCasesColumns: TableColumn<TestCaseWithStats>[] = [
                 :class="{
                   'text-green-600': getPassRate(row.original) >= 80,
                   'text-yellow-600': getPassRate(row.original) >= 50 && getPassRate(row.original) < 80,
-                  'text-red-600': getPassRate(row.original) < 50
+                  'text-red-600': getPassRate(row.original) < 50,
                 }"
               >
                 {{ getPassRate(row.original) }}%
@@ -178,9 +173,7 @@ const testCasesColumns: TableColumn<TestCaseWithStats>[] = [
             </template>
           </UTable>
 
-          <div v-else class="text-center py-8 text-gray-500">
-            No test cases yet for this project.
-          </div>
+          <div v-else class="text-center py-8 text-gray-500">No test cases yet for this project.</div>
         </UCard>
       </div>
     </template>

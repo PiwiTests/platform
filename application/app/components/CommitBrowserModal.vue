@@ -1,206 +1,212 @@
 <script setup lang="ts">
-import { formatRelativeTime } from '~/utils'
+import { formatRelativeTime } from '~/utils';
 
 interface CommitItem {
-  sha: string
-  shortSha: string
-  message: string
-  author: string
-  date: string
+  sha: string;
+  shortSha: string;
+  message: string;
+  author: string;
+  date: string;
 }
 
 interface DiffFile {
-  filename: string
-  status: string
-  additions: number
-  deletions: number
-  patch?: string
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch?: string;
 }
 
 interface PatchLine {
-  type: 'add' | 'remove' | 'hunk' | 'context'
-  text: string
+  type: 'add' | 'remove' | 'hunk' | 'context';
+  text: string;
 }
 
 const props = defineProps<{
-  open: boolean
-  clusterId: number
-  initialSelected?: string[]
-}>()
+  open: boolean;
+  clusterId: number;
+  initialSelected?: string[];
+}>();
 
 const emit = defineEmits<{
-  'update:open': [boolean]
-  'confirm': [string[]]
-}>()
+  'update:open': [boolean];
+  confirm: [string[]];
+}>();
 
-const COMMIT_PAGE_SIZE = 50
+const COMMIT_PAGE_SIZE = 50;
 
-const search = ref('')
-const commits = ref<CommitItem[]>([])
-const commitLimit = ref(COMMIT_PAGE_SIZE)
-const hasMore = ref(false)
-const loadingCommits = ref(false)
-const loadingMore = ref(false)
-const commitsError = ref<string | null>(null)
-const loadMoreError = ref<string | null>(null)
-const selectedShas = ref<Set<string>>(new Set())
-const focusedSha = ref<string | null>(null)
+const search = ref('');
+const commits = ref<CommitItem[]>([]);
+const commitLimit = ref(COMMIT_PAGE_SIZE);
+const hasMore = ref(false);
+const loadingCommits = ref(false);
+const loadingMore = ref(false);
+const commitsError = ref<string | null>(null);
+const loadMoreError = ref<string | null>(null);
+const selectedShas = ref<Set<string>>(new Set());
+const focusedSha = ref<string | null>(null);
 
 // Accumulate diffs as they are loaded — used for aggregate stats
-const diffCache = reactive<Record<string, { files: DiffFile[] } | null>>({})
-const diff = ref<{ files: DiffFile[] } | null>(null)
-const loadingDiff = ref(false)
-const diffError = ref<string | null>(null)
+const diffCache = reactive<Record<string, { files: DiffFile[] } | null>>({});
+const diff = ref<{ files: DiffFile[] } | null>(null);
+const loadingDiff = ref(false);
+const diffError = ref<string | null>(null);
 
-const focusedCommit = computed(() => commits.value.find(c => c.sha === focusedSha.value) ?? null)
+const focusedCommit = computed(() => commits.value.find((c) => c.sha === focusedSha.value) ?? null);
 
 const filteredCommits = computed(() => {
-  const q = search.value.trim().toLowerCase()
-  if (!q) return commits.value
-  return commits.value.filter(c =>
-    c.message.toLowerCase().includes(q)
-    || c.author.toLowerCase().includes(q)
-    || c.sha.includes(q)
-    || c.shortSha.includes(q)
-  )
-})
+  const q = search.value.trim().toLowerCase();
+  if (!q) return commits.value;
+  return commits.value.filter(
+    (c) =>
+      c.message.toLowerCase().includes(q) ||
+      c.author.toLowerCase().includes(q) ||
+      c.sha.includes(q) ||
+      c.shortSha.includes(q),
+  );
+});
 
 // Aggregate stats for selected commits — uses cached diffs where available
 const selectedStats = computed(() => {
-  let files = 0, linesAdded = 0, linesRemoved = 0, unreviewed = 0
+  let files = 0,
+    linesAdded = 0,
+    linesRemoved = 0,
+    unreviewed = 0;
   for (const sha of selectedShas.value) {
     if (!(sha in diffCache)) {
-      unreviewed++
-      continue
+      unreviewed++;
+      continue;
     }
-    const d = diffCache[sha]
+    const d = diffCache[sha];
     if (d) {
-      files += d.files.length
-      linesAdded += d.files.reduce((s, f) => s + f.additions, 0)
-      linesRemoved += d.files.reduce((s, f) => s + f.deletions, 0)
+      files += d.files.length;
+      linesAdded += d.files.reduce((s, f) => s + f.additions, 0);
+      linesRemoved += d.files.reduce((s, f) => s + f.deletions, 0);
     }
   }
-  return { files, linesAdded, linesRemoved, unreviewed }
-})
+  return { files, linesAdded, linesRemoved, unreviewed };
+});
 
 function errorMessage(err: unknown): string {
   if (err && typeof err === 'object') {
-    const e = err as { data?: { message?: string }, message?: string }
-    return e.data?.message ?? e.message ?? 'Unknown error'
+    const e = err as { data?: { message?: string }; message?: string };
+    return e.data?.message ?? e.message ?? 'Unknown error';
   }
-  return 'Unknown error'
+  return 'Unknown error';
 }
 
 // Load (or reload at new limit)
 async function loadCommits(initial: boolean) {
   if (initial) {
-    loadingCommits.value = true
-    commitsError.value = null
+    loadingCommits.value = true;
+    commitsError.value = null;
   } else {
-    loadingMore.value = true
-    loadMoreError.value = null
+    loadingMore.value = true;
+    loadMoreError.value = null;
   }
   try {
-    const res = await $fetch<{ commits: CommitItem[], hasMore?: boolean, error?: string | null }>(
+    const res = await $fetch<{ commits: CommitItem[]; hasMore?: boolean; error?: string | null }>(
       `/api/failure-clusters/${props.clusterId}/commits`,
-      { query: { limit: commitLimit.value } }
-    )
-    commits.value = res.commits
-    hasMore.value = res.hasMore ?? false
+      { query: { limit: commitLimit.value } },
+    );
+    commits.value = res.commits;
+    hasMore.value = res.hasMore ?? false;
     if (res.error && !res.commits.length) {
-      if (initial) commitsError.value = res.error
-      else loadMoreError.value = res.error
+      if (initial) commitsError.value = res.error;
+      else loadMoreError.value = res.error;
     }
-    if (initial && res.commits[0]) focusCommit(res.commits[0].sha)
+    if (initial && res.commits[0]) focusCommit(res.commits[0].sha);
   } catch (err) {
-    if (initial) commitsError.value = errorMessage(err)
-    else loadMoreError.value = errorMessage(err)
+    if (initial) commitsError.value = errorMessage(err);
+    else loadMoreError.value = errorMessage(err);
   } finally {
-    loadingCommits.value = false
-    loadingMore.value = false
+    loadingCommits.value = false;
+    loadingMore.value = false;
   }
 }
 
 async function loadMore() {
-  commitLimit.value += COMMIT_PAGE_SIZE
-  await loadCommits(false)
+  commitLimit.value += COMMIT_PAGE_SIZE;
+  await loadCommits(false);
 }
 
-watch(() => props.open, async (val) => {
-  if (!val) return
-  selectedShas.value = new Set(props.initialSelected ?? [])
-  if (commits.value.length) {
-    if (!focusedSha.value && commits.value[0]) focusCommit(commits.value[0].sha)
-    return
-  }
-  commitLimit.value = COMMIT_PAGE_SIZE
-  await loadCommits(true)
-})
+watch(
+  () => props.open,
+  async (val) => {
+    if (!val) return;
+    selectedShas.value = new Set(props.initialSelected ?? []);
+    if (commits.value.length) {
+      if (!focusedSha.value && commits.value[0]) focusCommit(commits.value[0].sha);
+      return;
+    }
+    commitLimit.value = COMMIT_PAGE_SIZE;
+    await loadCommits(true);
+  },
+);
 
 async function focusCommit(sha: string) {
-  if (focusedSha.value === sha) return
-  focusedSha.value = sha
-  diffError.value = null
+  if (focusedSha.value === sha) return;
+  focusedSha.value = sha;
+  diffError.value = null;
 
   // Serve from cache immediately
   if (sha in diffCache) {
-    diff.value = diffCache[sha]!
-    loadingDiff.value = false
-    return
+    diff.value = diffCache[sha]!;
+    loadingDiff.value = false;
+    return;
   }
 
-  diff.value = null
-  loadingDiff.value = true
+  diff.value = null;
+  loadingDiff.value = true;
   try {
-    const result = await $fetch<{ files: DiffFile[] } | null>(
-      `/api/failure-clusters/${props.clusterId}/commit-diff`,
-      { query: { sha } }
-    )
-    diffCache[sha] = result
-    if (focusedSha.value === sha) diff.value = result
+    const result = await $fetch<{ files: DiffFile[] } | null>(`/api/failure-clusters/${props.clusterId}/commit-diff`, {
+      query: { sha },
+    });
+    diffCache[sha] = result;
+    if (focusedSha.value === sha) diff.value = result;
   } catch (err) {
-    if (focusedSha.value === sha) diffError.value = errorMessage(err)
+    if (focusedSha.value === sha) diffError.value = errorMessage(err);
     // Don't cache errors so the user can retry by clicking the commit again
   } finally {
-    if (focusedSha.value === sha) loadingDiff.value = false
+    if (focusedSha.value === sha) loadingDiff.value = false;
   }
 }
 
 function toggleSha(sha: string) {
-  const s = new Set(selectedShas.value)
-  if (s.has(sha)) s.delete(sha)
-  else s.add(sha)
-  selectedShas.value = s
+  const s = new Set(selectedShas.value);
+  if (s.has(sha)) s.delete(sha);
+  else s.add(sha);
+  selectedShas.value = s;
 }
 
 function selectAll() {
-  selectedShas.value = new Set(filteredCommits.value.map(c => c.sha))
+  selectedShas.value = new Set(filteredCommits.value.map((c) => c.sha));
 }
 
 function clearAll() {
-  selectedShas.value = new Set()
+  selectedShas.value = new Set();
 }
 
 function confirm() {
-  emit('confirm', [...selectedShas.value])
-  emit('update:open', false)
+  emit('confirm', [...selectedShas.value]);
+  emit('update:open', false);
 }
 
 function parsePatchLines(patch: string): PatchLine[] {
   return patch.split('\n').map((line) => {
-    if (line.startsWith('+') && !line.startsWith('+++')) return { type: 'add', text: line }
-    if (line.startsWith('-') && !line.startsWith('---')) return { type: 'remove', text: line }
-    if (line.startsWith('@@')) return { type: 'hunk', text: line }
-    return { type: 'context', text: line }
-  })
+    if (line.startsWith('+') && !line.startsWith('+++')) return { type: 'add', text: line };
+    if (line.startsWith('-') && !line.startsWith('---')) return { type: 'remove', text: line };
+    if (line.startsWith('@@')) return { type: 'hunk', text: line };
+    return { type: 'context', text: line };
+  });
 }
 
 const lineClass: Record<PatchLine['type'], string> = {
   add: 'bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-300',
   remove: 'bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-300',
   hunk: 'bg-blue-50 dark:bg-blue-950/20 text-blue-500 dark:text-blue-400',
-  context: 'text-gray-600 dark:text-gray-400'
-}
+  context: 'text-gray-600 dark:text-gray-400',
+};
 </script>
 
 <template>
@@ -216,20 +222,11 @@ const lineClass: Record<PatchLine['type'], string> = {
         <div class="w-72 shrink-0 border-r border-default flex flex-col">
           <!-- Search + bulk actions -->
           <div class="p-2 border-b border-default space-y-2 shrink-0">
-            <UInput
-              v-model="search"
-              placeholder="Search commits…"
-              size="xs"
-              icon="i-lucide-search"
-            />
+            <UInput v-model="search" placeholder="Search commits…" size="xs" icon="i-lucide-search" />
             <div class="flex items-center gap-2 text-xs text-gray-500">
-              <button class="hover:text-primary transition-colors" @click="selectAll">
-                All
-              </button>
+              <button class="hover:text-primary transition-colors" @click="selectAll">All</button>
               <span>·</span>
-              <button class="hover:text-primary transition-colors" @click="clearAll">
-                None
-              </button>
+              <button class="hover:text-primary transition-colors" @click="clearAll">None</button>
               <span class="ml-auto">
                 {{ selectedShas.size > 0 ? `${selectedShas.size} selected` : 'none selected' }}
               </span>
@@ -248,14 +245,7 @@ const lineClass: Record<PatchLine['type'], string> = {
             <p class="text-sm text-red-500">
               {{ commitsError }}
             </p>
-            <UButton
-              size="xs"
-              color="neutral"
-              variant="outline"
-              @click="loadCommits(true)"
-            >
-              Retry
-            </UButton>
+            <UButton size="xs" color="neutral" variant="outline" @click="loadCommits(true)"> Retry </UButton>
           </div>
 
           <!-- Commit list -->
@@ -277,7 +267,7 @@ const lineClass: Record<PatchLine['type'], string> = {
                 class="mt-0.5 shrink-0 cursor-pointer accent-primary"
                 @click.stop
                 @change="toggleSha(c.sha)"
-              >
+              />
               <div class="flex-1 min-w-0">
                 <p class="text-xs font-medium leading-snug truncate">
                   {{ c.message || '(no message)' }}
@@ -298,14 +288,7 @@ const lineClass: Record<PatchLine['type'], string> = {
                 <UIcon name="i-lucide-circle-alert" class="size-3.5 shrink-0" />
                 {{ loadMoreError }}
               </p>
-              <UButton
-                size="xs"
-                color="neutral"
-                variant="outline"
-                block
-                :loading="loadingMore"
-                @click="loadMore"
-              >
+              <UButton size="xs" color="neutral" variant="outline" block :loading="loadingMore" @click="loadMore">
                 Load more
               </UButton>
             </div>
@@ -332,7 +315,8 @@ const lineClass: Record<PatchLine['type'], string> = {
               <div class="flex items-center gap-2">
                 <code class="text-xs font-mono text-primary">{{ focusedCommit.shortSha }}</code>
                 <span class="text-xs text-gray-400">
-                  {{ focusedCommit.author }}<template v-if="focusedCommit.date"> · {{ formatRelativeTime(focusedCommit.date) }}</template>
+                  {{ focusedCommit.author
+                  }}<template v-if="focusedCommit.date"> · {{ formatRelativeTime(focusedCommit.date) }}</template>
                 </span>
               </div>
               <p class="text-sm font-semibold">
@@ -341,9 +325,7 @@ const lineClass: Record<PatchLine['type'], string> = {
             </div>
 
             <!-- Empty diff -->
-            <div v-if="diff.files.length === 0" class="text-sm text-gray-400 pt-2">
-              No file changes in this commit
-            </div>
+            <div v-if="diff.files.length === 0" class="text-sm text-gray-400 pt-2">No file changes in this commit</div>
 
             <!-- Files -->
             <div
@@ -352,7 +334,9 @@ const lineClass: Record<PatchLine['type'], string> = {
               class="border border-default rounded-lg overflow-clip text-xs font-mono"
             >
               <!-- Sticky file header -->
-              <div class="sticky top-0 z-10 flex items-center justify-between px-3 py-1.5 bg-elevated border-b border-default text-gray-600 dark:text-gray-300">
+              <div
+                class="sticky top-0 z-10 flex items-center justify-between px-3 py-1.5 bg-elevated border-b border-default text-gray-600 dark:text-gray-300"
+              >
                 <span class="font-medium truncate">{{ file.filename }}</span>
                 <span class="shrink-0 flex items-center gap-1.5 ml-2 text-[11px]">
                   <span v-if="file.additions" class="text-green-600 dark:text-green-400">+{{ file.additions }}</span>
@@ -376,9 +360,7 @@ const lineClass: Record<PatchLine['type'], string> = {
                   {{ line.text || ' ' }}
                 </div>
               </div>
-              <div v-else class="px-3 py-2 text-gray-400 text-[11px]">
-                No patch available
-              </div>
+              <div v-else class="px-3 py-2 text-gray-400 text-[11px]">No patch available</div>
             </div>
           </div>
 
@@ -388,9 +370,7 @@ const lineClass: Record<PatchLine['type'], string> = {
             <p class="text-sm text-red-500">
               {{ diffError }}
             </p>
-            <p class="text-xs text-gray-400">
-              Click the commit again to retry
-            </p>
+            <p class="text-xs text-gray-400">Click the commit again to retry</p>
           </div>
 
           <!-- Diff unavailable (intentional null from API) -->
@@ -412,7 +392,9 @@ const lineClass: Record<PatchLine['type'], string> = {
             <template v-if="selectedStats.files > 0 || selectedStats.linesAdded > 0 || selectedStats.linesRemoved > 0">
               <span class="text-gray-300 dark:text-gray-600">·</span>
               <span class="shrink-0">{{ selectedStats.files }} file{{ selectedStats.files === 1 ? '' : 's' }}</span>
-              <span class="text-green-600 dark:text-green-400 shrink-0 font-medium">+{{ selectedStats.linesAdded }}</span>
+              <span class="text-green-600 dark:text-green-400 shrink-0 font-medium"
+                >+{{ selectedStats.linesAdded }}</span
+              >
               <span class="text-red-600 dark:text-red-400 shrink-0 font-medium">-{{ selectedStats.linesRemoved }}</span>
             </template>
             <span v-if="selectedStats.unreviewed > 0" class="text-gray-400 text-xs shrink-0">
@@ -422,12 +404,8 @@ const lineClass: Record<PatchLine['type'], string> = {
           <span v-else>No commits selected</span>
         </div>
 
-        <UButton color="neutral" variant="ghost" @click="emit('update:open', false)">
-          Cancel
-        </UButton>
-        <UButton color="primary" :disabled="selectedShas.size === 0" @click="confirm">
-          Add to context
-        </UButton>
+        <UButton color="neutral" variant="ghost" @click="emit('update:open', false)"> Cancel </UButton>
+        <UButton color="primary" :disabled="selectedShas.size === 0" @click="confirm"> Add to context </UButton>
       </div>
     </template>
   </UModal>

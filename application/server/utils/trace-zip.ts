@@ -1,21 +1,21 @@
-import { inflateRaw, inflateRawSync } from 'zlib'
-import { promisify } from 'util'
+import { inflateRaw, inflateRawSync } from 'zlib';
+import { promisify } from 'util';
 
-const inflateRawAsync = promisify(inflateRaw)
+const inflateRawAsync = promisify(inflateRaw);
 
 export interface ZipEntry {
-  name: string
-  data: Buffer
+  name: string;
+  data: Buffer;
 }
 
 /** Metadata from the ZIP central directory — no decompression performed. */
 export interface ZipEntryMeta {
-  name: string
+  name: string;
   /** Compression method: 0 = stored, 8 = deflated. */
-  method: number
-  compressedSize: number
+  method: number;
+  compressedSize: number;
   /** Byte offset in the source buffer where compressed data begins. */
-  dataStart: number
+  dataStart: number;
 }
 
 // CRC-32 lookup table (standard polynomial 0xEDB88320)
@@ -55,9 +55,9 @@ function crc32(buf: Buffer): number {
     0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6, 0xbad03605, 0xcdd70693, 0x54de5729, 0x23d967bf,
     0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94, 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d,
   ] as const
-  let c = 0xffffffff
-  for (let i = 0; i < buf.length; i++) c = CRC32_TABLE.at((c ^ buf.readUInt8(i)) & 0xff)! ^ (c >>> 8)
-  return (c ^ 0xffffffff) >>> 0
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) c = CRC32_TABLE.at((c ^ buf.readUInt8(i)) & 0xff)! ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
 }
 
 /**
@@ -66,49 +66,49 @@ function crc32(buf: Buffer): number {
  * decide which resources are new before committing to decompression.
  */
 export function parseZipDirectory(data: Buffer): ZipEntryMeta[] {
-  const scanFrom = Math.max(0, data.length - 22 - 65535)
-  let eocdOffset = -1
+  const scanFrom = Math.max(0, data.length - 22 - 65535);
+  let eocdOffset = -1;
   for (let i = data.length - 22; i >= scanFrom; i--) {
     if (data.readUInt32LE(i) === 0x06054b50) {
-      eocdOffset = i
-      break
+      eocdOffset = i;
+      break;
     }
   }
-  if (eocdOffset < 0) throw new Error('Not a valid ZIP (EOCD not found)')
+  if (eocdOffset < 0) throw new Error('Not a valid ZIP (EOCD not found)');
 
-  const entryCount = data.readUInt16LE(eocdOffset + 10)
-  const cdOffset = data.readUInt32LE(eocdOffset + 16)
+  const entryCount = data.readUInt16LE(eocdOffset + 10);
+  const cdOffset = data.readUInt32LE(eocdOffset + 16);
 
-  const metas: ZipEntryMeta[] = []
-  let pos = cdOffset
+  const metas: ZipEntryMeta[] = [];
+  let pos = cdOffset;
 
   for (let i = 0; i < entryCount; i++) {
-    if (pos + 46 > data.length) throw new Error('Truncated central directory')
-    if (data.readUInt32LE(pos) !== 0x02014b50) throw new Error('Invalid CD entry signature')
+    if (pos + 46 > data.length) throw new Error('Truncated central directory');
+    if (data.readUInt32LE(pos) !== 0x02014b50) throw new Error('Invalid CD entry signature');
 
-    const method = data.readUInt16LE(pos + 10)
-    const compressedSize = data.readUInt32LE(pos + 20)
-    const nameLen = data.readUInt16LE(pos + 28)
-    const extraLen = data.readUInt16LE(pos + 30)
-    const commentLen = data.readUInt16LE(pos + 32)
-    const localOffset = data.readUInt32LE(pos + 42)
-    const name = data.toString('utf8', pos + 46, pos + 46 + nameLen)
+    const method = data.readUInt16LE(pos + 10);
+    const compressedSize = data.readUInt32LE(pos + 20);
+    const nameLen = data.readUInt16LE(pos + 28);
+    const extraLen = data.readUInt16LE(pos + 30);
+    const commentLen = data.readUInt16LE(pos + 32);
+    const localOffset = data.readUInt32LE(pos + 42);
+    const name = data.toString('utf8', pos + 46, pos + 46 + nameLen);
 
-    pos += 46 + nameLen + extraLen + commentLen
+    pos += 46 + nameLen + extraLen + commentLen;
 
-    if (name.endsWith('/') || compressedSize === 0xffffffff) continue
+    if (name.endsWith('/') || compressedSize === 0xffffffff) continue;
 
-    if (localOffset + 30 > data.length) throw new Error(`Bad local offset for "${name}"`)
-    if (data.readUInt32LE(localOffset) !== 0x04034b50) throw new Error(`Bad local header for "${name}"`)
+    if (localOffset + 30 > data.length) throw new Error(`Bad local offset for "${name}"`);
+    if (data.readUInt32LE(localOffset) !== 0x04034b50) throw new Error(`Bad local header for "${name}"`);
 
-    const localNameLen = data.readUInt16LE(localOffset + 26)
-    const localExtraLen = data.readUInt16LE(localOffset + 28)
-    const dataStart = localOffset + 30 + localNameLen + localExtraLen
+    const localNameLen = data.readUInt16LE(localOffset + 26);
+    const localExtraLen = data.readUInt16LE(localOffset + 28);
+    const dataStart = localOffset + 30 + localNameLen + localExtraLen;
 
-    metas.push({ name, method, compressedSize, dataStart })
+    metas.push({ name, method, compressedSize, dataStart });
   }
 
-  return metas
+  return metas;
 }
 
 /**
@@ -117,12 +117,12 @@ export function parseZipDirectory(data: Buffer): ZipEntryMeta[] {
  */
 export async function decompressEntry(data: Buffer, meta: ZipEntryMeta): Promise<Buffer> {
   if (meta.dataStart + meta.compressedSize > data.length) {
-    throw new Error(`Truncated data for "${meta.name}"`)
+    throw new Error(`Truncated data for "${meta.name}"`);
   }
-  const compressed = data.subarray(meta.dataStart, meta.dataStart + meta.compressedSize)
-  if (meta.method === 0) return Buffer.from(compressed)
-  if (meta.method === 8) return inflateRawAsync(compressed)
-  throw new Error(`Unsupported ZIP compression method ${meta.method} for "${meta.name}"`)
+  const compressed = data.subarray(meta.dataStart, meta.dataStart + meta.compressedSize);
+  if (meta.method === 0) return Buffer.from(compressed);
+  if (meta.method === 8) return inflateRawAsync(compressed);
+  throw new Error(`Unsupported ZIP compression method ${meta.method} for "${meta.name}"`);
 }
 
 /**
@@ -134,16 +134,16 @@ export async function decompressEntry(data: Buffer, meta: ZipEntryMeta): Promise
  * entries, to avoid decompressing data you'll discard.
  */
 export async function parseZip(data: Buffer): Promise<ZipEntry[]> {
-  const metas = parseZipDirectory(data)
-  const entries: ZipEntry[] = []
+  const metas = parseZipDirectory(data);
+  const entries: ZipEntry[] = [];
   for (const meta of metas) {
     try {
-      entries.push({ name: meta.name, data: await decompressEntry(data, meta) })
+      entries.push({ name: meta.name, data: await decompressEntry(data, meta) });
     } catch {
       // Unknown compression or corrupt entry — skip rather than crash
     }
   }
-  return entries
+  return entries;
 }
 
 /**
@@ -151,69 +151,69 @@ export async function parseZip(data: Buffer): Promise<ZipEntry[]> {
  * This is appropriate for trace event entries which are small text-based files.
  */
 export function buildZip(entries: ZipEntry[]): Buffer {
-  const localParts: Buffer[] = []
-  const cdParts: Buffer[] = []
-  let offset = 0
+  const localParts: Buffer[] = [];
+  const cdParts: Buffer[] = [];
+  let offset = 0;
 
   for (const entry of entries) {
-    const nameBytes = Buffer.from(entry.name, 'utf8')
-    const size = entry.data.length
-    const crc = crc32(entry.data)
+    const nameBytes = Buffer.from(entry.name, 'utf8');
+    const size = entry.data.length;
+    const crc = crc32(entry.data);
 
     // Local file header (30 bytes + filename)
-    const local = Buffer.alloc(30 + nameBytes.length)
-    local.writeUInt32LE(0x04034b50, 0) // signature
-    local.writeUInt16LE(20, 4) // version needed (2.0)
-    local.writeUInt16LE(0, 6) // flags
-    local.writeUInt16LE(0, 8) // method: stored
-    local.writeUInt16LE(0, 10) // mod time
-    local.writeUInt16LE(0, 12) // mod date
-    local.writeUInt32LE(crc, 14) // crc-32
-    local.writeUInt32LE(size, 18) // compressed size
-    local.writeUInt32LE(size, 22) // uncompressed size
-    local.writeUInt16LE(nameBytes.length, 26) // filename length
-    local.writeUInt16LE(0, 28) // extra field length
-    nameBytes.copy(local, 30)
+    const local = Buffer.alloc(30 + nameBytes.length);
+    local.writeUInt32LE(0x04034b50, 0); // signature
+    local.writeUInt16LE(20, 4); // version needed (2.0)
+    local.writeUInt16LE(0, 6); // flags
+    local.writeUInt16LE(0, 8); // method: stored
+    local.writeUInt16LE(0, 10); // mod time
+    local.writeUInt16LE(0, 12); // mod date
+    local.writeUInt32LE(crc, 14); // crc-32
+    local.writeUInt32LE(size, 18); // compressed size
+    local.writeUInt32LE(size, 22); // uncompressed size
+    local.writeUInt16LE(nameBytes.length, 26); // filename length
+    local.writeUInt16LE(0, 28); // extra field length
+    nameBytes.copy(local, 30);
 
     // Central directory file header (46 bytes + filename)
-    const cd = Buffer.alloc(46 + nameBytes.length)
-    cd.writeUInt32LE(0x02014b50, 0) // signature
-    cd.writeUInt16LE(20, 4) // version made by
-    cd.writeUInt16LE(20, 6) // version needed
-    cd.writeUInt16LE(0, 8) // flags
-    cd.writeUInt16LE(0, 10) // method: stored
-    cd.writeUInt16LE(0, 12) // mod time
-    cd.writeUInt16LE(0, 14) // mod date
-    cd.writeUInt32LE(crc, 16) // crc-32
-    cd.writeUInt32LE(size, 20) // compressed size
-    cd.writeUInt32LE(size, 24) // uncompressed size
-    cd.writeUInt16LE(nameBytes.length, 28) // filename length
-    cd.writeUInt16LE(0, 30) // extra field length
-    cd.writeUInt16LE(0, 32) // file comment length
-    cd.writeUInt16LE(0, 34) // disk number start
-    cd.writeUInt16LE(0, 36) // internal file attributes
-    cd.writeUInt32LE(0, 38) // external file attributes
-    cd.writeUInt32LE(offset, 42) // relative offset of local header
-    nameBytes.copy(cd, 46)
+    const cd = Buffer.alloc(46 + nameBytes.length);
+    cd.writeUInt32LE(0x02014b50, 0); // signature
+    cd.writeUInt16LE(20, 4); // version made by
+    cd.writeUInt16LE(20, 6); // version needed
+    cd.writeUInt16LE(0, 8); // flags
+    cd.writeUInt16LE(0, 10); // method: stored
+    cd.writeUInt16LE(0, 12); // mod time
+    cd.writeUInt16LE(0, 14); // mod date
+    cd.writeUInt32LE(crc, 16); // crc-32
+    cd.writeUInt32LE(size, 20); // compressed size
+    cd.writeUInt32LE(size, 24); // uncompressed size
+    cd.writeUInt16LE(nameBytes.length, 28); // filename length
+    cd.writeUInt16LE(0, 30); // extra field length
+    cd.writeUInt16LE(0, 32); // file comment length
+    cd.writeUInt16LE(0, 34); // disk number start
+    cd.writeUInt16LE(0, 36); // internal file attributes
+    cd.writeUInt32LE(0, 38); // external file attributes
+    cd.writeUInt32LE(offset, 42); // relative offset of local header
+    nameBytes.copy(cd, 46);
 
-    localParts.push(local, entry.data)
-    cdParts.push(cd)
-    offset += 30 + nameBytes.length + size
+    localParts.push(local, entry.data);
+    cdParts.push(cd);
+    offset += 30 + nameBytes.length + size;
   }
 
-  const cdBuf = Buffer.concat(cdParts)
-  const entryCount16 = Math.min(entries.length, 0xffff)
-  const eocd = Buffer.alloc(22)
-  eocd.writeUInt32LE(0x06054b50, 0) // signature
-  eocd.writeUInt16LE(0, 4) // disk number
-  eocd.writeUInt16LE(0, 6) // disk with central directory
-  eocd.writeUInt16LE(entryCount16, 8) // entries on this disk
-  eocd.writeUInt16LE(entryCount16, 10) // total entries
-  eocd.writeUInt32LE(cdBuf.length, 12) // central directory size
-  eocd.writeUInt32LE(offset, 16) // central directory offset
-  eocd.writeUInt16LE(0, 20) // comment length
+  const cdBuf = Buffer.concat(cdParts);
+  const entryCount16 = Math.min(entries.length, 0xffff);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0); // signature
+  eocd.writeUInt16LE(0, 4); // disk number
+  eocd.writeUInt16LE(0, 6); // disk with central directory
+  eocd.writeUInt16LE(entryCount16, 8); // entries on this disk
+  eocd.writeUInt16LE(entryCount16, 10); // total entries
+  eocd.writeUInt32LE(cdBuf.length, 12); // central directory size
+  eocd.writeUInt32LE(offset, 16); // central directory offset
+  eocd.writeUInt16LE(0, 20); // comment length
 
-  return Buffer.concat([...localParts, cdBuf, eocd])
+  return Buffer.concat([...localParts, cdBuf, eocd]);
 }
 
 /**
@@ -221,24 +221,24 @@ export function buildZip(entries: ZipEntry[]): Buffer {
  * (e.g. tests). Prefer the async `parseZip` in server request handlers.
  */
 export function parseZipSync(data: Buffer): ZipEntry[] {
-  const metas = parseZipDirectory(data)
-  const entries: ZipEntry[] = []
+  const metas = parseZipDirectory(data);
+  const entries: ZipEntry[] = [];
   for (const meta of metas) {
     try {
-      if (meta.dataStart + meta.compressedSize > data.length) continue
-      const compressed = data.subarray(meta.dataStart, meta.dataStart + meta.compressedSize)
-      let entryData: Buffer
+      if (meta.dataStart + meta.compressedSize > data.length) continue;
+      const compressed = data.subarray(meta.dataStart, meta.dataStart + meta.compressedSize);
+      let entryData: Buffer;
       if (meta.method === 0) {
-        entryData = Buffer.from(compressed)
+        entryData = Buffer.from(compressed);
       } else if (meta.method === 8) {
-        entryData = inflateRawSync(compressed)
+        entryData = inflateRawSync(compressed);
       } else {
-        continue
+        continue;
       }
-      entries.push({ name: meta.name, data: entryData })
+      entries.push({ name: meta.name, data: entryData });
     } catch {
       // Skip corrupt or unsupported entries
     }
   }
-  return entries
+  return entries;
 }

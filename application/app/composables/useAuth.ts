@@ -1,76 +1,76 @@
-import type { AuthUser, AuthState } from '~~/types/api'
+import type { AuthUser, AuthState } from '~~/types/api';
 
-export { type AuthUser, type AuthState }
+export { type AuthUser, type AuthState };
 
 export const useAuth = () => {
-  const config = useRuntimeConfig()
+  const config = useRuntimeConfig();
 
   const demoUser: AuthState = {
     authenticated: true,
-    user: { id: 0, username: 'demo', role: 'administrator', name: 'Demo User' }
-  }
+    user: { id: 0, username: 'demo', role: 'administrator', name: 'Demo User' },
+  };
 
   const authState = useState<AuthState>('auth', () => {
     if (config.public.demoMode) {
-      return demoUser
+      return demoUser;
     }
-    return { authenticated: false, user: null }
-  })
+    return { authenticated: false, user: null };
+  });
 
   const fetchUser = async (): Promise<AuthState> => {
     if (config.public.demoMode) {
-      authState.value = demoUser
-      return demoUser
+      authState.value = demoUser;
+      return demoUser;
     }
     try {
-      const data = await $fetch<AuthState>('/api/auth/me')
-      authState.value = data
-      return data
+      const data = await $fetch<AuthState>('/api/auth/me');
+      authState.value = data;
+      return data;
     } catch {
-      authState.value = { authenticated: false, user: null }
-      return { authenticated: false, user: null }
+      authState.value = { authenticated: false, user: null };
+      return { authenticated: false, user: null };
     }
-  }
+  };
 
   const login = async (username: string, password: string) => {
-    const data = await $fetch<{ success: boolean, user: AuthUser }>('/api/auth/login', {
+    const data = await $fetch<{ success: boolean; user: AuthUser }>('/api/auth/login', {
       method: 'POST',
-      body: { username, password }
-    })
+      body: { username, password },
+    });
 
     if (data.success && data.user) {
       authState.value = {
         authenticated: true,
-        user: data.user
-      }
+        user: data.user,
+      };
     }
 
-    return data
-  }
+    return data;
+  };
 
   const logout = async () => {
     await $fetch('/api/auth/logout', {
-      method: 'POST'
-    })
+      method: 'POST',
+    });
 
     authState.value = {
       authenticated: false,
-      user: null
-    }
+      user: null,
+    };
 
-    await navigateTo('/login')
-  }
+    await navigateTo('/login');
+  };
 
   const hasRole = (roles: string[]) => {
     if (!authState.value.user) {
-      return false
+      return false;
     }
-    return roles.includes(authState.value.user.role)
-  }
+    return roles.includes(authState.value.user.role);
+  };
 
-  const isAdmin = computed(() => hasRole(['administrator']))
-  const isReporter = computed(() => hasRole(['reporter']))
-  const canEdit = computed(() => hasRole(['administrator']))
+  const isAdmin = computed(() => hasRole(['administrator']));
+  const isReporter = computed(() => hasRole(['reporter']));
+  const canEdit = computed(() => hasRole(['administrator']));
 
   return {
     authState,
@@ -80,6 +80,6 @@ export const useAuth = () => {
     hasRole,
     isAdmin,
     isReporter,
-    canEdit
-  }
-}
+    canEdit,
+  };
+};

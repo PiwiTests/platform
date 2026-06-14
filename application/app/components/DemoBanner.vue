@@ -1,19 +1,19 @@
 <script setup lang="ts">
-import { useResizeObserver } from '@vueuse/core'
+import { useResizeObserver } from '@vueuse/core';
 
-const config = useRuntimeConfig()
-const bannerEl = useTemplateRef<HTMLElement>('banner')
+const config = useRuntimeConfig();
+const bannerEl = useTemplateRef<HTMLElement>('banner');
 
 if (config.public.demoMode) {
   useResizeObserver(bannerEl, (entries) => {
-    const entry = entries[0]
-    if (!entry) return
-    document.documentElement.style.setProperty('--demo-banner-height', `${entry.contentRect.height + 6}px`)
-  })
+    const entry = entries[0];
+    if (!entry) return;
+    document.documentElement.style.setProperty('--demo-banner-height', `${entry.contentRect.height + 6}px`);
+  });
 
   onUnmounted(() => {
-    document.documentElement.style.removeProperty('--demo-banner-height')
-  })
+    document.documentElement.style.removeProperty('--demo-banner-height');
+  });
 }
 </script>
 
@@ -21,7 +21,9 @@ if (config.public.demoMode) {
   <div v-if="config.public.demoMode" ref="banner" class="demo-banner">
     <div class="demo-banner-inner">
       <span>
-        ⚠️ <strong>Demo mode</strong> — sample data running entirely in your browser. <a href="https://github.com/PhenX/piwi-dashboard" target="_blank" class="underline">Deploy your own instance</a> for live data.
+        ⚠️ <strong>Demo mode</strong> — sample data running entirely in your browser.
+        <a href="https://github.com/PhenX/piwi-dashboard" target="_blank" class="underline">Deploy your own instance</a>
+        for live data.
       </span>
       <DemoSimulator />
     </div>

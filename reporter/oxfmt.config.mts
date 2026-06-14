@@ -1,10 +1,7 @@
-const config = {
-  options: {
-    indentWidth: 2,
-    lineWidth: 120,
-    quotes: 'single',
-  },
-  ignorePatterns: ['dist/', 'node_modules'],
-}
+import { defineConfig } from 'oxfmt'
+import base from '../shared/oxfmt.baseConfig.mts'
 
-export default config
+export default defineConfig({
+  ...base,
+  ignorePatterns: ['dist/', 'node_modules'],
+})

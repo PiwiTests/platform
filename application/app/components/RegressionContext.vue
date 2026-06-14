@@ -1,24 +1,24 @@
 <script setup lang="ts">
-import type { RegressionContext } from '~~/types/api'
+import type { RegressionContext } from '~~/types/api';
 
-const route = useRoute()
-const runId = route.params.id
+const route = useRoute();
+const runId = route.params.id;
 
 const { data: context, pending: loading } = await useFetch<RegressionContext>(
   `/api/test-runs/${runId}/regression-context`,
-  { lazy: true, server: false }
-)
+  { lazy: true, server: false },
+);
 
-const copied = ref(false)
+const copied = ref(false);
 
 async function copyCommand() {
-  const range = context.value?.commitRange
-  if (!range) return
-  await navigator.clipboard.writeText(range.gitCommand)
-  copied.value = true
+  const range = context.value?.commitRange;
+  if (!range) return;
+  await navigator.clipboard.writeText(range.gitCommand);
+  copied.value = true;
   setTimeout(() => {
-    copied.value = false
-  }, 2000)
+    copied.value = false;
+  }, 2000);
 }
 </script>
 
@@ -40,10 +40,7 @@ async function copyCommand() {
         <div class="flex flex-wrap items-center gap-2 text-sm">
           <UIcon name="i-lucide-circle-check" class="size-4 text-green-500 shrink-0" />
           <span class="text-gray-500">Last passing run:</span>
-          <NuxtLink
-            :to="`/test-runs/${context.lastGreenRunId}`"
-            class="font-medium text-primary hover:underline"
-          >
+          <NuxtLink :to="`/test-runs/${context.lastGreenRunId}`" class="font-medium text-primary hover:underline">
             Run #{{ context.lastGreenRunId }}
           </NuxtLink>
           <span v-if="context.lastGreenRunAt" class="text-gray-400">
@@ -58,15 +55,15 @@ async function copyCommand() {
           </UBadge>
           <span class="text-sm text-gray-500">
             {{ context.newFailures === 1 ? 'test' : 'tests' }} that
-            {{ context.newFailures === 1 ? 'passed' : 'passed' }} in run
-            #{{ context.lastGreenRunId }} but {{ context.newFailures === 1 ? 'fails' : 'fail' }} here
+            {{ context.newFailures === 1 ? 'passed' : 'passed' }} in run #{{ context.lastGreenRunId }} but
+            {{ context.newFailures === 1 ? 'fails' : 'fail' }} here
           </span>
         </div>
         <div v-else class="flex items-center gap-2">
-          <UBadge color="warning" variant="soft" size="lg">
-            No new regressions
-          </UBadge>
-          <span class="text-sm text-gray-500">All failing tests were also failing before run #{{ context.lastGreenRunId }}</span>
+          <UBadge color="warning" variant="soft" size="lg"> No new regressions </UBadge>
+          <span class="text-sm text-gray-500"
+            >All failing tests were also failing before run #{{ context.lastGreenRunId }}</span
+          >
         </div>
 
         <!-- Commit range -->
@@ -85,10 +82,7 @@ async function copyCommand() {
               <UBadge color="error" variant="soft" size="sm">
                 {{ context.commitRange.toShort }}
               </UBadge>
-              <span
-                v-if="context.currentBranch || context.lastGreenBranch"
-                class="text-xs text-gray-400 font-sans"
-              >
+              <span v-if="context.currentBranch || context.lastGreenBranch" class="text-xs text-gray-400 font-sans">
                 on {{ context.currentBranch || context.lastGreenBranch }}
               </span>
             </div>
@@ -108,7 +102,9 @@ async function copyCommand() {
               </UButton>
 
               <div class="flex items-center gap-1.5 flex-1 min-w-0">
-                <code class="flex-1 text-xs bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded font-mono truncate select-all">
+                <code
+                  class="flex-1 text-xs bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded font-mono truncate select-all"
+                >
                   {{ context.commitRange.gitCommand }}
                 </code>
                 <UButton
@@ -129,14 +125,12 @@ async function copyCommand() {
           class="text-sm text-gray-500 flex items-center gap-2"
         >
           <UIcon name="i-lucide-git-branch" class="size-4 shrink-0" />
-          No commit info available — enable <code class="font-mono text-xs">collectScmInfo: true</code> in the reporter to see commit ranges
+          No commit info available — enable <code class="font-mono text-xs">collectScmInfo: true</code> in the reporter
+          to see commit ranges
         </div>
 
         <!-- Metadata changes -->
-        <UCard
-          v-if="context.metadataDiff && context.metadataDiff.length > 0"
-          :ui="{ body: 'p-0 sm:p-0' }"
-        >
+        <UCard v-if="context.metadataDiff && context.metadataDiff.length > 0" :ui="{ body: 'p-0 sm:p-0' }">
           <div class="px-4 py-3 text-sm font-medium flex items-center gap-2 border-b border-default">
             <UIcon name="i-lucide-sliders-horizontal" class="size-4" />
             What changed between runs
@@ -144,15 +138,9 @@ async function copyCommand() {
           <table class="w-full text-sm">
             <thead>
               <tr class="text-xs text-gray-500 uppercase tracking-wider border-b border-default">
-                <th class="text-left px-4 py-2 font-medium w-32">
-                  Field
-                </th>
-                <th class="text-left px-4 py-2 font-medium">
-                  Last passing
-                </th>
-                <th class="text-left px-4 py-2 font-medium">
-                  This run
-                </th>
+                <th class="text-left px-4 py-2 font-medium w-32">Field</th>
+                <th class="text-left px-4 py-2 font-medium">Last passing</th>
+                <th class="text-left px-4 py-2 font-medium">This run</th>
               </tr>
             </thead>
             <tbody>

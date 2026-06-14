@@ -1,41 +1,41 @@
 <script setup lang="ts">
-import type { FailureClusterDetail } from '~~/types/api'
-import { formatRelativeTime } from '~/utils'
+import type { FailureClusterDetail } from '~~/types/api';
+import { formatRelativeTime } from '~/utils';
 
-const route = useRoute()
-const clusterId = parseInt(String(route.params.id))
+const route = useRoute();
+const clusterId = parseInt(String(route.params.id));
 
-const { data: cluster, refresh } = await useFetch<FailureClusterDetail>(`/api/failure-clusters/${clusterId}`)
+const { data: cluster, refresh } = await useFetch<FailureClusterDetail>(`/api/failure-clusters/${clusterId}`);
 
-useHead(computed(() => ({ title: `${cluster.value?.signature ?? 'Failure cluster'} — Piwi Dashboard` })))
+useHead(computed(() => ({ title: `${cluster.value?.signature ?? 'Failure cluster'} — Piwi Dashboard` })));
 
-const activeTab = ref('details')
+const activeTab = ref('details');
 
 const tabItems = computed(() => [
   {
     label: `Details (${cluster.value?.affectedTests ?? 0} tests)`,
     icon: 'i-lucide-alert-circle',
     value: 'details',
-    slot: 'details'
+    slot: 'details',
   },
   { label: 'Triage', icon: 'i-lucide-tag', value: 'triage', slot: 'triage' },
-  { label: 'AI Diagnosis', icon: 'i-lucide-sparkles', value: 'diagnosis', slot: 'diagnosis' }
-])
+  { label: 'AI Diagnosis', icon: 'i-lucide-sparkles', value: 'diagnosis', slot: 'diagnosis' },
+]);
 
 const statusColors: Record<string, 'success' | 'warning' | 'neutral' | 'error'> = {
   open: 'warning',
   resolved: 'success',
-  ignored: 'neutral'
-}
+  ignored: 'neutral',
+};
 
 const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' | 'secondary'> = {
-  'timeout': 'warning',
-  'assertion': 'error',
+  timeout: 'warning',
+  assertion: 'error',
   'strict-mode': 'info',
-  'navigation': 'secondary',
-  'crash': 'error',
-  'unknown': 'neutral'
-}
+  navigation: 'secondary',
+  crash: 'error',
+  unknown: 'neutral',
+};
 </script>
 
 <template>
@@ -64,11 +64,7 @@ const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' |
           <UBadge :color="statusColors[cluster.status] || 'neutral'" variant="subtle">
             {{ cluster.status }}
           </UBadge>
-          <UBadge
-            v-if="cluster.errorType"
-            :color="errorTypeColors[cluster.errorType] || 'neutral'"
-            variant="subtle"
-          >
+          <UBadge v-if="cluster.errorType" :color="errorTypeColors[cluster.errorType] || 'neutral'" variant="subtle">
             {{ cluster.errorType }}
           </UBadge>
           <UBadge color="neutral" variant="subtle">
@@ -96,24 +92,14 @@ const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' |
           <NuxtLink :to="`/test-runs/${cluster.lastSeenRunId}`" class="text-primary hover:underline">
             run #{{ cluster.lastSeenRunId }}
           </NuxtLink>
-          <template v-if="cluster.lastSeenAt">
-            ({{ formatRelativeTime(cluster.lastSeenAt) }})
-          </template>
+          <template v-if="cluster.lastSeenAt"> ({{ formatRelativeTime(cluster.lastSeenAt) }}) </template>
         </p>
       </div>
 
       <!-- Tabs -->
-      <UTabs
-        v-model="activeTab"
-        :items="tabItems"
-        size="sm"
-        class="shrink-0 px-6"
-      >
+      <UTabs v-model="activeTab" :items="tabItems" size="sm" class="shrink-0 px-6">
         <template #details>
-          <ClusterDetailsTab
-            :sample-error="cluster.sampleError"
-            :affected-test-cases="cluster.affectedTestCases"
-          />
+          <ClusterDetailsTab :sample-error="cluster.sampleError" :affected-test-cases="cluster.affectedTestCases" />
         </template>
 
         <template #triage>
@@ -133,8 +119,6 @@ const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' |
       </UTabs>
     </div>
 
-    <div v-else class="flex items-center justify-center h-64 text-gray-500">
-      Cluster not found.
-    </div>
+    <div v-else class="flex items-center justify-center h-64 text-gray-500">Cluster not found.</div>
   </UDashboardPanel>
 </template>

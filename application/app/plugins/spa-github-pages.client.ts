@@ -6,21 +6,21 @@
 // reads that saved path and replaces the current route so the user lands on the
 // correct page without seeing the root view first.
 export default defineNuxtPlugin((nuxtApp) => {
-  const config = useRuntimeConfig()
+  const config = useRuntimeConfig();
 
   if (!config.public.demoMode) {
-    return
+    return;
   }
 
-  const redirect = sessionStorage.getItem('spa:redirect')
+  const redirect = sessionStorage.getItem('spa:redirect');
   if (!redirect) {
-    return
+    return;
   }
 
-  sessionStorage.removeItem('spa:redirect')
+  sessionStorage.removeItem('spa:redirect');
 
   nuxtApp.hook('app:mounted', () => {
-    const router = useRouter()
-    router.replace(redirect)
-  })
-})
+    const router = useRouter();
+    router.replace(redirect);
+  });
+});

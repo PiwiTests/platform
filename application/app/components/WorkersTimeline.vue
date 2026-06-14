@@ -1,57 +1,57 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, nextTick, watchEffect } from 'vue'
-import type { TestCaseResult } from '~~/types/api'
+import { onMounted, onUnmounted, nextTick, watchEffect } from 'vue';
+import type { TestCaseResult } from '~~/types/api';
 
 interface TimelineItem {
-  id: number
-  title: string
-  status: string
-  workerIndex: number
-  start: number
-  duration: number
-  rowIndex: number
+  id: number;
+  title: string;
+  status: string;
+  workerIndex: number;
+  start: number;
+  duration: number;
+  rowIndex: number;
 }
 
 const props = defineProps<{
-  testCases: TestCaseResult[]
-  live?: boolean
-}>()
+  testCases: TestCaseResult[];
+  live?: boolean;
+}>();
 
 const emit = defineEmits<{
-  selectTestCase: [id: number]
-}>()
+  selectTestCase: [id: number];
+}>();
 
 const timelineData = computed<TimelineItem[]>(() => {
-  const byWorker = new Map<number, TestCaseResult[]>()
+  const byWorker = new Map<number, TestCaseResult[]>();
 
   for (const tc of props.testCases) {
-    const w = tc.workerIndex
-    if (w == null || w < 0) continue
-    if (!byWorker.has(w)) byWorker.set(w, [])
-    byWorker.get(w)!.push(tc)
+    const w = tc.workerIndex;
+    if (w == null || w < 0) continue;
+    if (!byWorker.has(w)) byWorker.set(w, []);
+    byWorker.get(w)!.push(tc);
   }
 
-  const sortedWorkers = [...byWorker.entries()].sort(([a], [b]) => a - b)
+  const sortedWorkers = [...byWorker.entries()].sort(([a], [b]) => a - b);
 
   // Find global minimum startedAt if any test case has actual timestamps
-  let minStartedAt = Infinity
-  let hasStartedAt = false
+  let minStartedAt = Infinity;
+  let hasStartedAt = false;
   for (const [, cases] of sortedWorkers) {
     for (const tc of cases) {
       if (tc.startedAt != null && tc.startedAt > 0) {
-        minStartedAt = Math.min(minStartedAt, tc.startedAt)
-        hasStartedAt = true
+        minStartedAt = Math.min(minStartedAt, tc.startedAt);
+        hasStartedAt = true;
       }
     }
   }
 
-  const result: TimelineItem[] = []
+  const result: TimelineItem[] = [];
   if (hasStartedAt) {
     // Aligned timeline: position bars by offset from global min startedAt
     for (let ri = 0; ri < sortedWorkers.length; ri++) {
-      const [, cases] = sortedWorkers[ri]!
+      const [, cases] = sortedWorkers[ri]!;
       for (const tc of cases) {
-        const dur = tc.duration ?? 1000
+        const dur = tc.duration ?? 1000;
         result.push({
           id: tc.id,
           title: tc.title,
@@ -60,18 +60,18 @@ const timelineData = computed<TimelineItem[]>(() => {
           start: Math.max(0, (tc.startedAt ?? minStartedAt) - minStartedAt),
           duration: dur,
           rowIndex: ri,
-        })
+        });
       }
     }
   } else {
     // Fallback: sequential stacking per worker when timestamps unavailable
     for (let ri = 0; ri < sortedWorkers.length; ri++) {
-      const [, rawCases] = sortedWorkers[ri]!
+      const [, rawCases] = sortedWorkers[ri]!;
       // Sort by startedAt so running tests (newer startedAt) appear at the end
-      const sortedCases = [...rawCases].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0))
-      let cursor = 0
+      const sortedCases = [...rawCases].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
+      let cursor = 0;
       for (const tc of sortedCases) {
-        const dur = tc.duration ?? 1000
+        const dur = tc.duration ?? 1000;
         result.push({
           id: tc.id,
           title: tc.title,
@@ -80,26 +80,26 @@ const timelineData = computed<TimelineItem[]>(() => {
           start: cursor,
           duration: dur,
           rowIndex: ri,
-        })
-        cursor += dur
+        });
+        cursor += dur;
       }
     }
   }
 
-  return result
-})
+  return result;
+});
 
 const workers = computed(() => {
-  return [...new Set(timelineData.value.map(d => d.workerIndex))].sort((a, b) => a - b)
-})
+  return [...new Set(timelineData.value.map((d) => d.workerIndex))].sort((a, b) => a - b);
+});
 
 const maxTime = computed(() => {
-  let max = 0
+  let max = 0;
   for (const item of timelineData.value) {
-    max = Math.max(max, item.start + item.duration)
+    max = Math.max(max, item.start + item.duration);
   }
-  return max || 60000
-})
+  return max || 60000;
+});
 
 function getStatusHex(status: string): string {
   const colors: Record<string, string> = {
@@ -112,189 +112,184 @@ function getStatusHex(status: string): string {
     cancelled: '#a1a1aa',
     interrupted: '#ea580c',
     flaky: '#ca8a04',
-  }
-  return colors[status] || '#a1a1aa'
+  };
+  return colors[status] || '#a1a1aa';
 }
 
 // Zoom & pan (lateral only)
-const zoom = ref(1)
-const panX = ref(0)
-const isPanning = ref(false)
-const panStartX = ref(0)
-const panStartOffsetX = ref(0)
-const containerRef = ref<HTMLElement | null>(null)
+const zoom = ref(1);
+const panX = ref(0);
+const isPanning = ref(false);
+const panStartX = ref(0);
+const panStartOffsetX = ref(0);
+const containerRef = ref<HTMLElement | null>(null);
 
 function computeFitZoom(): number {
-  const cw = containerRef.value?.clientWidth
-  if (!cw || maxTime.value <= 0) return 1
-  const minPxPerMs = (cw - labelWidth) / maxTime.value
-  return Math.min(1, minPxPerMs / 0.5)
+  const cw = containerRef.value?.clientWidth;
+  if (!cw || maxTime.value <= 0) return 1;
+  const minPxPerMs = (cw - labelWidth) / maxTime.value;
+  return Math.min(1, minPxPerMs / 0.5);
 }
 
 function applyFitZoom() {
-  const z = computeFitZoom()
+  const z = computeFitZoom();
   if (z > 0) {
-    zoom.value = z
-    panX.value = 0
+    zoom.value = z;
+    panX.value = 0;
   }
 }
 
 onMounted(() => {
-  nextTick(applyFitZoom)
-})
+  nextTick(applyFitZoom);
+});
 
 // Re-apply fit zoom on container resize
-let resizeObserver: ResizeObserver | null = null
+let resizeObserver: ResizeObserver | null = null;
 onMounted(() => {
   if (containerRef.value) {
     resizeObserver = new ResizeObserver(() => {
-      applyFitZoom()
-    })
-    resizeObserver.observe(containerRef.value)
+      applyFitZoom();
+    });
+    resizeObserver.observe(containerRef.value);
   }
-})
+});
 
 onUnmounted(() => {
-  resizeObserver?.disconnect()
-})
+  resizeObserver?.disconnect();
+});
 
 // Auto-fit zoom when live — always show the full timeline
 watchEffect(() => {
   if (props.live && timelineData.value.length > 0) {
-    nextTick(applyFitZoom)
+    nextTick(applyFitZoom);
   }
-})
+});
 
-const barHeight = 24
-const rowGap = 8
-const labelWidth = 80
-const sidePadding = 16
-const axisHeight = 28
-const rowHeight = barHeight + rowGap
+const barHeight = 24;
+const rowGap = 8;
+const labelWidth = 80;
+const sidePadding = 16;
+const axisHeight = 28;
+const rowHeight = barHeight + rowGap;
 
-const pxPerMs = computed(() => 0.5 * zoom.value)
+const pxPerMs = computed(() => 0.5 * zoom.value);
 
-const contentWidth = computed(() => maxTime.value * pxPerMs.value + labelWidth + sidePadding)
+const contentWidth = computed(() => maxTime.value * pxPerMs.value + labelWidth + sidePadding);
 
-const contentHeight = computed(() => workers.value.length * rowHeight + axisHeight)
+const contentHeight = computed(() => workers.value.length * rowHeight + axisHeight);
 
 function getBarX(item: TimelineItem) {
-  return item.start * pxPerMs.value + labelWidth
+  return item.start * pxPerMs.value + labelWidth;
 }
 
 function getBarWidth(item: TimelineItem) {
-  return Math.max(item.duration * pxPerMs.value, 3)
+  return Math.max(item.duration * pxPerMs.value, 3);
 }
 
 function getBarTop(item: TimelineItem) {
-  return item.rowIndex * rowHeight + axisHeight
+  return item.rowIndex * rowHeight + axisHeight;
 }
 
 function clampPanX(raw: number): number {
-  if (!containerRef.value) return raw
-  const cw = containerRef.value.clientWidth
-  if (contentWidth.value <= cw) return 0
-  return Math.max(cw - contentWidth.value, Math.min(0, raw))
+  if (!containerRef.value) return raw;
+  const cw = containerRef.value.clientWidth;
+  if (contentWidth.value <= cw) return 0;
+  return Math.max(cw - contentWidth.value, Math.min(0, raw));
 }
 
 // Tick marks for time axis
-const tickMarks = computed<{ ms: number, x: number, label: string }[]>(() => {
-  const ticks: { ms: number, x: number, label: string }[] = []
-  const step = zoom.value < 0.5 ? 10000 : zoom.value < 1 ? 5000 : zoom.value < 2 ? 2000 : 1000
+const tickMarks = computed<{ ms: number; x: number; label: string }[]>(() => {
+  const ticks: { ms: number; x: number; label: string }[] = [];
+  const step = zoom.value < 0.5 ? 10000 : zoom.value < 1 ? 5000 : zoom.value < 2 ? 2000 : 1000;
   for (let ms = 0; ms <= maxTime.value; ms += step) {
     ticks.push({
       ms,
       x: ms * pxPerMs.value + labelWidth,
       label: formatTime(ms),
-    })
+    });
   }
-  return ticks
-})
+  return ticks;
+});
 
 function formatTime(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
-  return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
 }
 
 // Tooltip
-const hoveredItem = ref<TimelineItem | null>(null)
-const tooltipPos = ref({ x: 0, y: 0 })
+const hoveredItem = ref<TimelineItem | null>(null);
+const tooltipPos = ref({ x: 0, y: 0 });
 
 function onBarEnter(item: TimelineItem, event: MouseEvent) {
-  hoveredItem.value = item
-  tooltipPos.value = { x: event.clientX, y: event.clientY }
+  hoveredItem.value = item;
+  tooltipPos.value = { x: event.clientX, y: event.clientY };
 }
 
 function onBarMove(event: MouseEvent) {
-  tooltipPos.value = { x: event.clientX, y: event.clientY }
+  tooltipPos.value = { x: event.clientX, y: event.clientY };
 }
 
 function onBarLeave() {
-  hoveredItem.value = null
+  hoveredItem.value = null;
 }
 
 // Auto-fit zoom when live — always show the full timeline
 watchEffect(() => {
   if (props.live && timelineData.value.length > 0) {
-    nextTick(applyFitZoom)
+    nextTick(applyFitZoom);
   }
-})
+});
 
 // Wheel zoom (lateral only)
 function onWheel(event: WheelEvent) {
-  if (props.live) return
-  event.preventDefault()
-  const delta = event.deltaY > 0 ? -0.02 : 0.02
-  const fitZoom = computeFitZoom()
-  const newZoom = Math.max(fitZoom, Math.min(10, zoom.value + delta))
+  if (props.live) return;
+  event.preventDefault();
+  const delta = event.deltaY > 0 ? -0.02 : 0.02;
+  const fitZoom = computeFitZoom();
+  const newZoom = Math.max(fitZoom, Math.min(10, zoom.value + delta));
 
   if (containerRef.value) {
-    const rect = containerRef.value.getBoundingClientRect()
-    const mouseX = event.clientX - rect.left
-    const scale = newZoom / zoom.value
-    panX.value = clampPanX(mouseX - (mouseX - panX.value) * scale)
+    const rect = containerRef.value.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const scale = newZoom / zoom.value;
+    panX.value = clampPanX(mouseX - (mouseX - panX.value) * scale);
   }
 
-  zoom.value = newZoom
+  zoom.value = newZoom;
 }
 
 // Drag pan (lateral only)
 function onMouseDown(event: MouseEvent) {
-  if (props.live) return
-  if (event.button !== 0) return
-  isPanning.value = true
-  panStartX.value = event.clientX
-  panStartOffsetX.value = panX.value
-  event.preventDefault()
+  if (props.live) return;
+  if (event.button !== 0) return;
+  isPanning.value = true;
+  panStartX.value = event.clientX;
+  panStartOffsetX.value = panX.value;
+  event.preventDefault();
 }
 
 function onMouseMove(event: MouseEvent) {
-  if (!isPanning.value) return
-  panX.value = clampPanX(panStartOffsetX.value + (event.clientX - panStartX.value))
+  if (!isPanning.value) return;
+  panX.value = clampPanX(panStartOffsetX.value + (event.clientX - panStartX.value));
 }
 
 function onMouseUp() {
-  isPanning.value = false
+  isPanning.value = false;
 }
 
 function resetView() {
-  applyFitZoom()
+  applyFitZoom();
 }
 </script>
 
 <template>
   <div v-if="timelineData.length > 0" class="relative select-none">
     <div class="flex items-center justify-between mb-2">
-      <span class="text-xs text-gray-500">{{ workers.length }} worker{{ workers.length > 1 ? 's' : '' }} &middot; {{ timelineData.length }} tests</span>
-      <UButton
-        v-if="!live"
-        size="xs"
-        color="neutral"
-        variant="ghost"
-        icon="i-lucide-rotate-ccw"
-        @click="resetView"
+      <span class="text-xs text-gray-500"
+        >{{ workers.length }} worker{{ workers.length > 1 ? 's' : '' }} &middot; {{ timelineData.length }} tests</span
       >
+      <UButton v-if="!live" size="xs" color="neutral" variant="ghost" icon="i-lucide-rotate-ccw" @click="resetView">
         Reset view
       </UButton>
     </div>
@@ -356,12 +351,7 @@ function resetView() {
             stroke="currentColor"
             class="stroke-gray-300 dark:stroke-gray-600"
           />
-          <text
-            :x="tick.x"
-            :y="axisHeight - 8"
-            text-anchor="middle"
-            class="fill-gray-400 text-[10px]"
-          >
+          <text :x="tick.x" :y="axisHeight - 8" text-anchor="middle" class="fill-gray-400 text-[10px]">
             {{ tick.label }}
           </text>
         </g>

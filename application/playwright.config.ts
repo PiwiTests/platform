@@ -1,27 +1,26 @@
-import { defineConfig, devices, type ReporterDescription } from '@playwright/test'
-import { join } from 'path'
+import { defineConfig, devices, type ReporterDescription } from '@playwright/test';
+import { join } from 'path';
 
-const reporters: ReporterDescription[] = []
+const reporters: ReporterDescription[] = [];
 
-reporters.push(['list'])
+reporters.push(['list']);
 
 if (!process.env.CI) {
-  reporters.push(['html', { outputFolder: 'playwright-report' }])
-  reporters.push(['monocart-reporter', { name: 'Piwi Dashboard Tests', outputFile: 'monocart-report/index.html' }])
-  reporters.push(['blob', { outputDir: 'blob-report' }])
-  reporters.push(['../reporter', {
-    serverUrl: 'http://localhost:3000',
-    projectName: 'Piwi Dashboard',
-    streaming: true,
-    uploadReport: false, // individual reports are listed in `reports` below
-    uploadTraces: true,
-    verbose: true,
-    reports: [
-      { type: 'html' },
-      { type: 'monocart' },
-      { type: 'blob', label: 'Blob Archive' }
-    ]
-  }])
+  reporters.push(['html', { outputFolder: 'playwright-report' }]);
+  reporters.push(['monocart-reporter', { name: 'Piwi Dashboard Tests', outputFile: 'monocart-report/index.html' }]);
+  reporters.push(['blob', { outputDir: 'blob-report' }]);
+  reporters.push([
+    '../reporter',
+    {
+      serverUrl: 'http://localhost:3000',
+      projectName: 'Piwi Dashboard',
+      streaming: true,
+      uploadReport: false, // individual reports are listed in `reports` below
+      uploadTraces: true,
+      verbose: true,
+      reports: [{ type: 'html' }, { type: 'monocart' }, { type: 'blob', label: 'Blob Archive' }],
+    },
+  ]);
 }
 
 /**
@@ -59,15 +58,15 @@ export default defineConfig({
     trace: 'retain-on-failure',
 
     /* Capture screenshot on first retry for failure diagnostics */
-    screenshot: 'only-on-failure'
+    screenshot: 'only-on-failure',
   },
 
   /* Configure projects for major browsers */
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] }
-    }
+      use: { ...devices['Desktop Chrome'] },
+    },
     /*
     ,
     {
@@ -80,43 +79,47 @@ export default defineConfig({
   /* Run your local dev server before starting the tests */
   webServer: [
     {
-      command: 'npm run dev',
+      command: 'npm run app:dev',
       url: 'http://localhost:3000',
       reuseExistingServer: !process.env.CI,
-      timeout: 60 * 1000
+      timeout: 60 * 1000,
     },
     // Auth-enabled server used by reporter-with-auth.spec.ts.
     // Only started in CI; the corresponding tests are skipped when CI is not set.
     ...(process.env.CI
-      ? [{
-          command: 'npm run dev',
-          url: 'http://localhost:3099/api/auth/me',
-          env: {
-            NUXT_AUTH_ENABLED: 'true',
-            NUXT_AUTH_SECRET: 'test-auth-secret-key-for-reporter-tests',
-            DATABASE_PATH: join(process.cwd(), '.test-temp', 'auth-test.db'),
-            STORAGE_PATH: join(process.cwd(), '.test-temp', 'auth-test-storage'),
-            NITRO_PORT: '3099',
-            NUXT_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-auth')
+      ? [
+          {
+            command: 'npm run app:dev',
+            url: 'http://localhost:3099/api/auth/me',
+            env: {
+              NUXT_AUTH_ENABLED: 'true',
+              NUXT_AUTH_SECRET: 'test-auth-secret-key-for-reporter-tests',
+              DATABASE_PATH: join(process.cwd(), '.test-temp', 'auth-test.db'),
+              STORAGE_PATH: join(process.cwd(), '.test-temp', 'auth-test-storage'),
+              NITRO_PORT: '3099',
+              NUXT_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-auth'),
+            },
+            reuseExistingServer: false,
+            timeout: 90 * 1000,
           },
-          reuseExistingServer: false,
-          timeout: 90 * 1000
-        }]
+        ]
       : []),
     // PostgreSQL-backed server used by postgresql.spec.ts.
     // Only started when POSTGRES_TEST_URL is set; the corresponding tests are skipped otherwise.
     ...(process.env.POSTGRES_TEST_URL
-      ? [{
-          command: 'npm run dev',
-          url: 'http://localhost:3101',
-          env: {
-            DATABASE_URL: process.env.POSTGRES_TEST_URL,
-            STORAGE_PATH: join(process.cwd(), '.test-temp', 'pg-test-storage'),
-            NITRO_PORT: '3101'
+      ? [
+          {
+            command: 'npm run app:dev',
+            url: 'http://localhost:3101',
+            env: {
+              DATABASE_URL: process.env.POSTGRES_TEST_URL,
+              STORAGE_PATH: join(process.cwd(), '.test-temp', 'pg-test-storage'),
+              NITRO_PORT: '3101',
+            },
+            reuseExistingServer: false,
+            timeout: 90 * 1000,
           },
-          reuseExistingServer: false,
-          timeout: 90 * 1000
-        }]
-      : [])
-  ]
-})
+        ]
+      : []),
+  ],
+});

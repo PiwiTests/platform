@@ -10,8 +10,8 @@ export type {
   TestCase as DbTestCase,
   TestRunsCase as DbTestRunsCase,
   User as DbUser,
-  Tag as DbTag
-} from '../server/database/schema'
+  Tag as DbTag,
+} from '../server/database/schema';
 
 // ============================================================================
 // Metadata types
@@ -21,34 +21,34 @@ export type {
  * SCM (source control) metadata attached to a test run
  */
 export interface TestRunScmMetadata {
-  commit?: string | null
-  branch?: string | null
-  author?: string | null
-  commitMessage?: string | null
+  commit?: string | null;
+  branch?: string | null;
+  author?: string | null;
+  commitMessage?: string | null;
 }
 
 /**
  * CI metadata attached to a test run
  */
 export interface TestRunCiMetadata {
-  provider?: string | null
-  buildNumber?: string | null
-  buildUrl?: string | null
-  jobName?: string | null
-  workflow?: string | null
+  provider?: string | null;
+  buildNumber?: string | null;
+  buildUrl?: string | null;
+  jobName?: string | null;
+  workflow?: string | null;
 }
 
 /**
  * Metadata attached to a test run
  */
 export interface TestRunMetadata {
-  scm?: TestRunScmMetadata
-  ci?: TestRunCiMetadata
-  projectDescription?: string | null
-  relatedIssue?: string | null
-  tags?: string[]
-  customData?: Record<string, unknown>
-  [key: string]: unknown
+  scm?: TestRunScmMetadata;
+  ci?: TestRunCiMetadata;
+  projectDescription?: string | null;
+  relatedIssue?: string | null;
+  tags?: string[];
+  customData?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 // ============================================================================
@@ -59,26 +59,26 @@ export interface TestRunMetadata {
  * Report attached to a test run
  */
 export interface ReportInfo {
-  id: number
-  type: string
-  label: string
-  path: string
-  size?: number | null
+  id: number;
+  type: string;
+  label: string;
+  path: string;
+  size?: number | null;
 }
 
 /**
  * File stored in the unified files table
  */
 export interface FileInfo {
-  id: number
-  testRunId?: number | null
-  testRunsCaseId?: number | null
-  type: string
-  subtype?: string | null
-  label?: string | null
-  path: string
-  size?: number | null
-  createdAt: Date
+  id: number;
+  testRunId?: number | null;
+  testRunsCaseId?: number | null;
+  type: string;
+  subtype?: string | null;
+  label?: string | null;
+  path: string;
+  size?: number | null;
+  createdAt: Date;
 }
 
 // ============================================================================
@@ -89,29 +89,29 @@ export interface FileInfo {
  * Tag used to label projects
  */
 export interface TagInfo {
-  id: number
-  text: string
-  color: string
-  createdAt: Date
-  updatedAt: Date
+  id: number;
+  text: string;
+  color: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 /**
  * Tags response from API
  */
 export interface TagsResponse {
-  tags: TagInfo[]
+  tags: TagInfo[];
 }
 
 // ============================================================================
 // Period and Range types (used for filtering and date range selection)
 // ============================================================================
 
-export type Period = '1d' | '7d' | '30d' | '90d' | '1y' | 'daily' | 'weekly' | 'monthly'
+export type Period = '1d' | '7d' | '30d' | '90d' | '1y' | 'daily' | 'weekly' | 'monthly';
 
 export interface Range {
-  start: Date
-  end: Date
+  start: Date;
+  end: Date;
 }
 
 // ============================================================================
@@ -122,60 +122,60 @@ export interface Range {
  * Project with statistics - returned by GET /api/projects
  */
 export interface ProjectWithStats {
-  id: number
-  name: string
-  label?: string | null
-  description?: string | null
-  tags?: TagInfo[]
-  createdAt: Date
-  updatedAt: Date
+  id: number;
+  name: string;
+  label?: string | null;
+  description?: string | null;
+  tags?: TagInfo[];
+  createdAt: Date;
+  updatedAt: Date;
   // Statistics added by API
   latestRun?: {
-    id: number
-    status: string
-    startTime: string | Date
-    duration?: number | null
-    passedTests: number
-    failedTests: number
-    skippedTests: number
-    flakyTests: number
-    totalTests: number
-    reports?: ReportInfo[]
-    avgTestDuration?: number | null
-    p90TestDuration?: number | null
-    metadata: TestRunMetadata
-  } | null
-  totalRuns: number
-  totalTestCases: number
+    id: number;
+    status: string;
+    startTime: string | Date;
+    duration?: number | null;
+    passedTests: number;
+    failedTests: number;
+    skippedTests: number;
+    flakyTests: number;
+    totalTests: number;
+    reports?: ReportInfo[];
+    avgTestDuration?: number | null;
+    p90TestDuration?: number | null;
+    metadata: TestRunMetadata;
+  } | null;
+  totalRuns: number;
+  totalTestCases: number;
 }
 
 /**
  * Project with test runs - returned by GET /api/projects/[id]
  */
 export interface ProjectWithTestRuns {
-  id: number
-  name: string
-  label?: string | null
-  description?: string | null
-  color?: string | null
-  tags?: TagInfo[]
-  createdAt: Date
-  updatedAt: Date
-  testRuns: TestRunSummary[]
+  id: number;
+  name: string;
+  label?: string | null;
+  description?: string | null;
+  color?: string | null;
+  tags?: TagInfo[];
+  createdAt: Date;
+  updatedAt: Date;
+  testRuns: TestRunSummary[];
 }
 
 /**
  * Project details for editing - used in edit forms
  */
 export interface ProjectDetails {
-  id: number
-  name: string
-  label?: string | null
-  description?: string | null
-  diagnosisInstructions?: string | null
-  hasScmToken: boolean
-  color?: string | null
-  tags?: TagInfo[]
+  id: number;
+  name: string;
+  label?: string | null;
+  description?: string | null;
+  diagnosisInstructions?: string | null;
+  hasScmToken: boolean;
+  color?: string | null;
+  tags?: TagInfo[];
 }
 
 // ============================================================================
@@ -186,60 +186,60 @@ export interface ProjectDetails {
  * Test run summary (without test cases)
  */
 export interface TestRunSummary {
-  id: number
-  projectId: number
-  status: string
-  startTime: string | Date
-  duration?: number | null
-  totalTests: number
-  passedTests: number
-  failedTests: number
-  skippedTests: number
-  flakyTests: number
-  avgTestDuration?: number | null
-  p90TestDuration?: number | null
-  reports?: ReportInfo[]
-  browsers?: string[]
-  environment?: string | null
+  id: number;
+  projectId: number;
+  status: string;
+  startTime: string | Date;
+  duration?: number | null;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  skippedTests: number;
+  flakyTests: number;
+  avgTestDuration?: number | null;
+  p90TestDuration?: number | null;
+  reports?: ReportInfo[];
+  browsers?: string[];
+  environment?: string | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  metadata?: any | null
-  createdAt: Date
+  metadata?: any | null;
+  createdAt: Date;
 }
 
 /**
  * Test run with full details - returned by GET /api/test-runs/[id]
  */
 export interface TestRunDetails {
-  id: number
-  projectId: number
-  status: string
-  startTime: string | Date
-  duration?: number | null
-  totalTests: number
-  passedTests: number
-  failedTests: number
-  skippedTests: number
-  flakyTests: number
-  avgTestDuration?: number | null
-  p90TestDuration?: number | null
+  id: number;
+  projectId: number;
+  status: string;
+  startTime: string | Date;
+  duration?: number | null;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  skippedTests: number;
+  flakyTests: number;
+  avgTestDuration?: number | null;
+  p90TestDuration?: number | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  metadata?: any | null
-  environment?: string | null
-  createdAt: Date
+  metadata?: any | null;
+  environment?: string | null;
+  createdAt: Date;
   project?: {
-    id: number
-    name: string
-    label?: string | null
-  }
-  reports?: ReportInfo[]
-  testCases?: TestCaseResult[]
+    id: number;
+    name: string;
+    label?: string | null;
+  };
+  reports?: ReportInfo[];
+  testCases?: TestCaseResult[];
   storageStats?: {
-    totalFiles: number
-    totalSize: number
-    reportSizes: Array<{ label: string, size: number }>
-    testCaseFilesSize: number
-    testCaseFilesCount: number
-  }
+    totalFiles: number;
+    totalSize: number;
+    reportSizes: Array<{ label: string; size: number }>;
+    testCaseFilesSize: number;
+    testCaseFilesCount: number;
+  };
 }
 
 /**
@@ -247,35 +247,35 @@ export interface TestRunDetails {
  * returned by GET /api/test-runs/[id]/summary
  */
 export interface TestRunForCompare {
-  id: number
-  status: string
-  totalTests: number
+  id: number;
+  status: string;
+  totalTests: number;
   testCases: Array<{
-    title: string
-    status: string
-    duration?: number | null
-    location?: string
-  }>
+    title: string;
+    status: string;
+    duration?: number | null;
+    location?: string;
+  }>;
 }
 
 /**
  * Test run for charts and visualization
  */
 export interface TestRunForChart {
-  id: number
-  projectId?: number
-  projectName?: string
-  projectLabel?: string | null
-  status: string
-  startTime: string | Date
-  passedTests: number
-  failedTests: number
-  skippedTests: number
-  flakyTests: number
-  totalTests: number
-  duration?: number | null
-  avgTestDuration?: number | null
-  p90TestDuration?: number | null
+  id: number;
+  projectId?: number;
+  projectName?: string;
+  projectLabel?: string | null;
+  status: string;
+  startTime: string | Date;
+  passedTests: number;
+  failedTests: number;
+  skippedTests: number;
+  flakyTests: number;
+  totalTests: number;
+  duration?: number | null;
+  avgTestDuration?: number | null;
+  p90TestDuration?: number | null;
 }
 
 // ============================================================================
@@ -286,21 +286,21 @@ export interface TestRunForChart {
  * A single step recorded during test execution
  */
 export interface PerformanceStep {
-  title: string
-  duration: number
-  category: string
+  title: string;
+  duration: number;
+  category: string;
 }
 
 /**
  * A single network request recorded during test execution (via dashboard fixture)
  */
 export interface NetworkRequest {
-  method: string
-  url: string
-  status: number
-  duration: number
-  resourceType: string
-  startTime?: number
+  method: string;
+  url: string;
+  status: number;
+  duration: number;
+  resourceType: string;
+  startTime?: number;
 }
 
 /**
@@ -308,44 +308,44 @@ export interface NetworkRequest {
  */
 export interface WebVitals {
   navigation?: {
-    url: string
-    ttfb: number
-    domInteractive: number
-    domContentLoaded: number
-    loadComplete: number
-    transferSize?: number
-    encodedBodySize?: number
-    decodedBodySize?: number
-  } | null
+    url: string;
+    ttfb: number;
+    domInteractive: number;
+    domContentLoaded: number;
+    loadComplete: number;
+    transferSize?: number;
+    encodedBodySize?: number;
+    decodedBodySize?: number;
+  } | null;
   paint?: {
-    firstPaint?: number
-    firstContentfulPaint?: number
-  } | null
+    firstPaint?: number;
+    firstContentfulPaint?: number;
+  } | null;
 }
 
 /**
  * A single console message captured during test execution (via dashboard fixture)
  */
 export interface ConsoleEntry {
-  type: string
-  text: string
-  timestamp: number
-  location?: string | null
+  type: string;
+  text: string;
+  timestamp: number;
+  location?: string | null;
 }
 
 /**
  * Grouped endpoint summary returned by GET /api/test-runs/[id]/network-requests
  */
 export interface EndpointSummary {
-  method: string
-  route: string
-  count: number
-  avgDuration: number
-  maxDuration: number
-  minDuration: number
-  p90Duration: number
-  errorRate: number
-  testCases: string[]
+  method: string;
+  route: string;
+  count: number;
+  avgDuration: number;
+  maxDuration: number;
+  minDuration: number;
+  p90Duration: number;
+  errorRate: number;
+  testCases: string[];
 }
 
 // ============================================================================
@@ -356,127 +356,127 @@ export interface EndpointSummary {
  * Test case result (for a specific test run)
  */
 export interface TestCaseResult {
-  id: number
-  title: string
-  status: string
-  duration?: number | null
-  location?: string
-  error?: string | null
-  failureClusterId?: number | null
-  retries?: number | null
-  steps?: PerformanceStep[] | null
-  slowestStep?: string | null
-  slowestStepDuration?: number | null
-  networkRequests?: NetworkRequest[] | null
-  webVitals?: WebVitals | null
-  consoleLogs?: ConsoleEntry[] | null
-  ariaSnapshot?: string | null
-  workerIndex?: number | null
-  startedAt?: number
+  id: number;
+  title: string;
+  status: string;
+  duration?: number | null;
+  location?: string;
+  error?: string | null;
+  failureClusterId?: number | null;
+  retries?: number | null;
+  steps?: PerformanceStep[] | null;
+  slowestStep?: string | null;
+  slowestStepDuration?: number | null;
+  networkRequests?: NetworkRequest[] | null;
+  webVitals?: WebVitals | null;
+  consoleLogs?: ConsoleEntry[] | null;
+  ariaSnapshot?: string | null;
+  workerIndex?: number | null;
+  startedAt?: number;
   browser?: {
-    projectName?: string
-    browserName?: string | null
-    channel?: string | null
-    viewport?: { width: number, height: number } | null
-  } | null
+    projectName?: string;
+    browserName?: string | null;
+    channel?: string | null;
+    viewport?: { width: number; height: number } | null;
+  } | null;
 }
 
 /**
  * One affected test case inside a failure group — part of GET /api/test-runs/[id]/failure-groups
  */
 export interface FailureGroupCase {
-  testRunsCaseId: number
-  testCaseId: number
-  title: string
-  filePath: string
-  retries: number
-  workerIndex: number | null
-  passedOnRetry: boolean
+  testRunsCaseId: number;
+  testCaseId: number;
+  title: string;
+  filePath: string;
+  retries: number;
+  workerIndex: number | null;
+  passedOnRetry: boolean;
 }
 
 /**
  * Failure group summary for a test run — returned by GET /api/test-runs/[id]/failure-groups
  */
 export interface FailureGroup {
-  clusterId: number
-  signature: string
-  errorType: string | null
-  selector: string | null
-  status: string
-  triageNote: string | null
-  caseCount: number
-  isNew: boolean
-  firstSeenRunId: number
-  firstSeenAt: string | null
-  occurrences: number
-  flaky: boolean
-  workerCorrelated: boolean
-  cases: FailureGroupCase[]
-  diagnosis: DiagnosisCompact | null
+  clusterId: number;
+  signature: string;
+  errorType: string | null;
+  selector: string | null;
+  status: string;
+  triageNote: string | null;
+  caseCount: number;
+  isNew: boolean;
+  firstSeenRunId: number;
+  firstSeenAt: string | null;
+  occurrences: number;
+  flaky: boolean;
+  workerCorrelated: boolean;
+  cases: FailureGroupCase[];
+  diagnosis: DiagnosisCompact | null;
 }
 
 /**
  * Full failure cluster — returned by GET /api/failure-clusters/[id]
  */
 export interface FailureClusterDetail {
-  id: number
-  projectId: number
-  fingerprint: string
-  signature: string
-  errorType: string | null
-  selector: string | null
-  sampleError: string | null
-  status: string
-  triageNote: string | null
-  firstSeenRunId: number
-  lastSeenRunId: number
-  occurrences: number
-  affectedTests: number
-  lastSeenRunStatus: string | null
-  lastSeenAt: string | Date | null
-  diagnosis: DiagnosisCompact | null
-  project: { id: number, name: string, label: string | null } | null
-  affectedTestCases: Array<{ testCaseId: number, title: string, filePath: string, runCount: number }>
+  id: number;
+  projectId: number;
+  fingerprint: string;
+  signature: string;
+  errorType: string | null;
+  selector: string | null;
+  sampleError: string | null;
+  status: string;
+  triageNote: string | null;
+  firstSeenRunId: number;
+  lastSeenRunId: number;
+  occurrences: number;
+  affectedTests: number;
+  lastSeenRunStatus: string | null;
+  lastSeenAt: string | Date | null;
+  diagnosis: DiagnosisCompact | null;
+  project: { id: number; name: string; label: string | null } | null;
+  affectedTestCases: Array<{ testCaseId: number; title: string; filePath: string; runCount: number }>;
 }
 
 /**
  * Failure cluster summary for a project page — returned by GET /api/projects/[id]/failure-clusters
  */
 export interface ProjectFailureCluster {
-  id: number
-  fingerprint: string
-  signature: string
-  errorType: string | null
-  selector: string | null
-  sampleError: string | null
-  status: string
-  triageNote: string | null
-  firstSeenRunId: number
-  lastSeenRunId: number
-  occurrences: number
-  affectedTests: number
-  lastSeenRunStatus: string | null
-  lastSeenAt: string | Date | null
-  diagnosis: DiagnosisCompact | null
+  id: number;
+  fingerprint: string;
+  signature: string;
+  errorType: string | null;
+  selector: string | null;
+  sampleError: string | null;
+  status: string;
+  triageNote: string | null;
+  firstSeenRunId: number;
+  lastSeenRunId: number;
+  occurrences: number;
+  affectedTests: number;
+  lastSeenRunStatus: string | null;
+  lastSeenAt: string | Date | null;
+  diagnosis: DiagnosisCompact | null;
 }
 
 /**
  * Test case with statistics - returned by GET /api/projects/[id]/test-cases
  */
 export interface TestCaseWithStats {
-  id: number
-  filePath: string
-  title: string
-  totalRuns: number
-  passedRuns: number
-  failedRuns: number
-  skippedRuns: number
-  timedOutRuns: number
-  flakyRuns: number
-  recentFlakyRuns?: number
-  avgDuration: number
-  lastRun: number
-  lastStatus: string
+  id: number;
+  filePath: string;
+  title: string;
+  totalRuns: number;
+  passedRuns: number;
+  failedRuns: number;
+  skippedRuns: number;
+  timedOutRuns: number;
+  flakyRuns: number;
+  recentFlakyRuns?: number;
+  avgDuration: number;
+  lastRun: number;
+  lastStatus: string;
 }
 
 // ============================================================================
@@ -487,39 +487,39 @@ export interface TestCaseWithStats {
  * Authenticated user
  */
 export interface AuthUser {
-  id: number
-  username: string
-  role: string
-  name?: string | null
-  avatarUrl?: string | null
+  id: number;
+  username: string;
+  role: string;
+  name?: string | null;
+  avatarUrl?: string | null;
 }
 
 /**
  * Authentication state
  */
 export interface AuthState {
-  authenticated: boolean
-  user: AuthUser | null
+  authenticated: boolean;
+  user: AuthUser | null;
 }
 
 /**
  * User details (for user management)
  */
 export interface UserDetails {
-  id: number
-  username: string
-  role: string
-  name?: string | null
-  createdAt: Date
-  updatedAt: Date
+  id: number;
+  username: string;
+  role: string;
+  name?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 /**
  * Users response from API
  */
 export interface UsersResponse {
-  users: UserDetails[]
-  authEnabled: boolean
+  users: UserDetails[];
+  authEnabled: boolean;
 }
 
 // ============================================================================
@@ -530,28 +530,28 @@ export interface UsersResponse {
  * API key summary (key hash/plaintext is never returned after creation)
  */
 export interface ApiKeySummary {
-  id: number
-  name: string
-  keyPrefix: string
-  createdAt: Date
-  lastUsedAt?: Date | null
-  expiresAt?: Date | null
+  id: number;
+  name: string;
+  keyPrefix: string;
+  createdAt: Date;
+  lastUsedAt?: Date | null;
+  expiresAt?: Date | null;
 }
 
 /**
  * Response from GET /api/users/[id]/api-keys
  */
 export interface ApiKeysResponse {
-  apiKeys: ApiKeySummary[]
+  apiKeys: ApiKeySummary[];
 }
 
 /**
  * Response from POST /api/users/[id]/api-keys – key is shown ONCE
  */
 export interface CreateApiKeyResponse {
-  key: string
-  prefix: string
-  name: string
+  key: string;
+  prefix: string;
+  name: string;
 }
 
 // ============================================================================
@@ -562,13 +562,13 @@ export interface CreateApiKeyResponse {
  * Storage statistics returned by GET /api/admin/stats
  */
 export interface AdminStats {
-  totalProjects: number
-  totalRuns: number
-  totalTestCases: number
-  totalRunsCases: number
-  totalFiles: number
-  totalFileSize: number
-  storageSizeOnDisk: number | null
+  totalProjects: number;
+  totalRuns: number;
+  totalTestCases: number;
+  totalRunsCases: number;
+  totalFiles: number;
+  totalFileSize: number;
+  storageSizeOnDisk: number | null;
 }
 
 // ============================================================================
@@ -579,35 +579,35 @@ export interface AdminStats {
  * Test run submission body for POST /api/test-runs/submit
  */
 export interface TestRunSubmitBody {
-  projectName: string
-  projectDescription?: string
-  status: string
-  startTime: string
-  duration?: number
-  totalTests: number
-  passedTests: number
-  failedTests: number
-  skippedTests: number
-  flakyTests?: number
-  environment?: string
+  projectName: string;
+  projectDescription?: string;
+  status: string;
+  startTime: string;
+  duration?: number;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  skippedTests: number;
+  flakyTests?: number;
+  environment?: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  metadata?: any
+  metadata?: any;
   testCases?: Array<{
-    title: string
-    filePath: string
-    status: string
-    duration?: number
-    error?: string
-    retries?: number
-    line?: number
-    column?: number
-    steps?: PerformanceStep[]
-    slowestStep?: string
-    slowestStepDuration?: number
-    networkRequests?: NetworkRequest[]
-    webVitals?: WebVitals
-    workerIndex?: number
-  }>
+    title: string;
+    filePath: string;
+    status: string;
+    duration?: number;
+    error?: string;
+    retries?: number;
+    line?: number;
+    column?: number;
+    steps?: PerformanceStep[];
+    slowestStep?: string;
+    slowestStepDuration?: number;
+    networkRequests?: NetworkRequest[];
+    webVitals?: WebVitals;
+    workerIndex?: number;
+  }>;
 }
 
 // ============================================================================
@@ -618,49 +618,49 @@ export interface TestRunSubmitBody {
  * Performance trend data point - returned by GET /api/projects/[id]/performance
  */
 export interface PerformanceTrendPoint {
-  id: number
-  startTime: string | Date
-  duration?: number | null
-  avgTestDuration?: number | null
-  p90TestDuration?: number | null
-  status: string
-  totalTests: number
-  commit?: string | null
-  branch?: string | null
+  id: number;
+  startTime: string | Date;
+  duration?: number | null;
+  avgTestDuration?: number | null;
+  p90TestDuration?: number | null;
+  status: string;
+  totalTests: number;
+  commit?: string | null;
+  branch?: string | null;
 }
 
 /**
  * Test case history point - returned by GET /api/test-cases/[id]/history
  */
 export interface TestCaseHistoryPoint {
-  id: number
-  runId: number
-  status: string
-  duration: number | null
-  error: string | null
-  retries: number | null
-  startTime: string | Date
-  runStatus: string
+  id: number;
+  runId: number;
+  status: string;
+  duration: number | null;
+  error: string | null;
+  retries: number | null;
+  startTime: string | Date;
+  runStatus: string;
 }
 
 /**
  * Trace file attached to a test case result
  */
 export interface TraceInfo {
-  id: number
-  filePath: string
-  createdAt: Date
+  id: number;
+  filePath: string;
+  createdAt: Date;
 }
 
 /**
  * Attachment file (screenshot, video, custom) attached to a test case result
  */
 export interface AttachmentInfo {
-  id: number
-  name: string | null
-  contentType: string | null
-  path: string
-  size: number | null
+  id: number;
+  name: string | null;
+  contentType: string | null;
+  path: string;
+  size: number | null;
 }
 
 // ============================================================================
@@ -671,23 +671,23 @@ export interface AttachmentInfo {
  * Commit range between last passing run and this run
  */
 export interface RegressionContextCommitRange {
-  fromSha: string
-  toSha: string
-  fromShort: string
-  toShort: string
-  repositoryUrl: string | null
-  compareUrl: string | null
-  gitCommand: string
+  fromSha: string;
+  toSha: string;
+  fromShort: string;
+  toShort: string;
+  repositoryUrl: string | null;
+  compareUrl: string | null;
+  gitCommand: string;
 }
 
 /**
  * A single field that changed between the last passing run and this run
  */
 export interface RegressionContextMetaDiff {
-  key: string
-  label: string
-  before: string | null
-  after: string | null
+  key: string;
+  label: string;
+  before: string | null;
+  after: string | null;
 }
 
 /**
@@ -695,31 +695,31 @@ export interface RegressionContextMetaDiff {
  * hasGreen: false means no prior passing run exists for this project.
  */
 export interface RegressionContext {
-  hasGreen: boolean
-  lastGreenRunId?: number
-  lastGreenRunAt?: string | Date | null
-  lastGreenCommit?: string | null
-  lastGreenBranch?: string | null
-  currentCommit?: string | null
-  currentBranch?: string | null
-  commitRange?: RegressionContextCommitRange | null
-  metadataDiff?: RegressionContextMetaDiff[]
-  newFailures?: number
+  hasGreen: boolean;
+  lastGreenRunId?: number;
+  lastGreenRunAt?: string | Date | null;
+  lastGreenCommit?: string | null;
+  lastGreenBranch?: string | null;
+  currentCommit?: string | null;
+  currentBranch?: string | null;
+  commitRange?: RegressionContextCommitRange | null;
+  metadataDiff?: RegressionContextMetaDiff[];
+  newFailures?: number;
 }
 
 /**
  * Slow test entry - returned by GET /api/projects/[id]/slow-tests
  */
 export interface SlowTest {
-  id: number
-  title: string
-  filePath: string
-  avgDuration: number
-  maxDuration: number
-  minDuration: number
-  runCount: number
-  trend: 'faster' | 'slower' | 'stable'
-  latestDuration: number
+  id: number;
+  title: string;
+  filePath: string;
+  avgDuration: number;
+  maxDuration: number;
+  minDuration: number;
+  runCount: number;
+  trend: 'faster' | 'slower' | 'stable';
+  latestDuration: number;
 }
 
 // ============================================================================
@@ -730,10 +730,10 @@ export interface SlowTest {
  * Compact diagnosis summary — inlined in failure-groups and failure-clusters responses
  */
 export interface DiagnosisCompact {
-  status: string
-  category: string | null
-  confidence: string | null
-  summary: string | null
+  status: string;
+  category: string | null;
+  confidence: string | null;
+  summary: string | null;
 }
 
 /**
@@ -742,21 +742,21 @@ export interface DiagnosisCompact {
  */
 export interface DiagnosisContextCoverage {
   scm: {
-    hasLastGreen: boolean
-    hasCommitRange: boolean
+    hasLastGreen: boolean;
+    hasCommitRange: boolean;
     /** Set when the user manually overrode the baseline commit SHA */
-    baseCommitUsed: string | null
-    provider: 'github' | 'gitlab' | 'bitbucket' | null
-    commitsCount: number
-    filesCount: number
-    patchedFilesCount: number
-    patchesOmitted: boolean
-    patchesTruncated: boolean
-  } | null
+    baseCommitUsed: string | null;
+    provider: 'github' | 'gitlab' | 'bitbucket' | null;
+    commitsCount: number;
+    filesCount: number;
+    patchedFilesCount: number;
+    patchesOmitted: boolean;
+    patchesTruncated: boolean;
+  } | null;
 }
 
 /** Supported AI provider identifiers */
-export type AiProvider = 'anthropic' | 'openai'
+export type AiProvider = 'anthropic' | 'openai';
 
 /**
  * Runtime AI configuration — built from env vars or DB settings.
@@ -764,37 +764,37 @@ export type AiProvider = 'anthropic' | 'openai'
  * AiSettings is the client-facing equivalent (hasApiKey + envManaged instead).
  */
 export interface AiConfig {
-  provider: AiProvider
-  apiKey: string
-  model: string
-  baseUrl: string | null
-  autoDiagnose: boolean
-  source: 'env' | 'settings'
+  provider: AiProvider;
+  apiKey: string;
+  model: string;
+  baseUrl: string | null;
+  autoDiagnose: boolean;
+  source: 'env' | 'settings';
 }
 
 /**
  * AI status — returned by GET /api/ai/status
  */
 export interface AiStatus {
-  configured: boolean
-  provider?: AiProvider | null
-  model?: string | null
-  autoDiagnose?: boolean
-  source?: string | null
+  configured: boolean;
+  provider?: AiProvider | null;
+  model?: string | null;
+  autoDiagnose?: boolean;
+  source?: string | null;
 }
 
 /**
  * AI settings — returned by GET /api/settings/ai
  */
 export interface AiSettings {
-  provider: AiProvider | null
-  model: string | null
-  baseUrl: string | null
-  autoDiagnose: boolean
-  hasApiKey: boolean
-  hasScmToken: boolean
-  envManaged: boolean
-  customInstructions: string | null
+  provider: AiProvider | null;
+  model: string | null;
+  baseUrl: string | null;
+  autoDiagnose: boolean;
+  hasApiKey: boolean;
+  hasScmToken: boolean;
+  envManaged: boolean;
+  customInstructions: string | null;
 }
 
 // ============================================================================
@@ -805,15 +805,15 @@ export interface AiSettings {
  * Flaky test entry — returned by GET /api/projects/[id]/flaky-tests
  */
 export interface FlakyTest {
-  testCaseId: number
-  latestRunsCaseId: number
-  title: string
-  filePath: string
-  totalRuns: number
-  failedRuns: number
-  retryPassRuns: number
-  alternations: number
-  failureRate: number
-  score: number
-  lastFlakeAt: string | Date | null
+  testCaseId: number;
+  latestRunsCaseId: number;
+  title: string;
+  filePath: string;
+  totalRuns: number;
+  failedRuns: number;
+  retryPassRuns: number;
+  alternations: number;
+  failureRate: number;
+  score: number;
+  lastFlakeAt: string | Date | null;
 }

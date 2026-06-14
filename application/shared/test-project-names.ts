@@ -87,8 +87,8 @@ export const PROJECT = {
   UI_TEST: 'ui-test-project',
   UNRELATED: 'unrelated',
   UPLOAD_TEST: 'upload-test-project',
-} as const
+} as const;
 
-type ProjectValue = (typeof PROJECT)[keyof typeof PROJECT]
+type ProjectValue = (typeof PROJECT)[keyof typeof PROJECT];
 
-export const TEST_PROJECT_NAMES: ProjectValue[] = Object.values(PROJECT)
+export const TEST_PROJECT_NAMES: ProjectValue[] = Object.values(PROJECT);

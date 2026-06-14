@@ -1,23 +1,25 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
-import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs'
-import { resolve, dirname } from 'path'
-import { fileURLToPath } from 'url'
+import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-const isDemo = process.env.NUXT_PUBLIC_DEMO_MODE === 'true'
+const isDemo = process.env.NUXT_PUBLIC_DEMO_MODE === 'true';
 
 // Read the demo seed version hash at build time so it can be injected into
 // runtimeConfig for staleness detection in the browser.
-let demoDataVersion = ''
+let demoDataVersion = '';
 if (isDemo) {
   try {
-    const versionFile = resolve(__dirname, 'public/demo/seed.version.json')
-    const versionInfo = JSON.parse(readFileSync(versionFile, 'utf-8'))
-    demoDataVersion = versionInfo.hash
+    const versionFile = resolve(__dirname, 'public/demo/seed.version.json');
+    const versionInfo = JSON.parse(readFileSync(versionFile, 'utf-8'));
+    demoDataVersion = versionInfo.hash;
   } catch {
-    console.warn('[Config] public/demo/seed.version.json not found or invalid. Run `npm run seed:demo` before building.')
+    console.warn(
+      '[Config] public/demo/seed.version.json not found or invalid. Run `npm run seed:demo` before building.',
+    );
   }
 }
 
@@ -31,27 +33,22 @@ const demoPwaConfig = isDemo
         // Setting injectionPoint to undefined prevents vite-pwa/workbox from
         // injecting a precache manifest into the SW source.  The SW only
         // intercepts demo API calls and does not use Workbox precaching at all.
-        injectionPoint: undefined
+        injectionPoint: undefined,
       },
       // No PWA manifest or icons needed for the demo.
       manifest: false as const,
       devOptions: {
-        enabled: false
-      }
+        enabled: false,
+      },
     }
-  : { disabled: true }
+  : { disabled: true };
 
 export default defineNuxtConfig({
-  modules: [
-    '@nuxt/eslint',
-    '@nuxt/ui',
-    '@vueuse/nuxt',
-    '@vite-pwa/nuxt'
-  ],
+  modules: ['@nuxt/ui', '@vueuse/nuxt', '@vite-pwa/nuxt'],
   ssr: isDemo ? false : undefined,
 
   devtools: {
-    enabled: false
+    enabled: false,
   },
   app: isDemo ? { baseURL: '/piwi-dashboard/demo/' } : {},
 
@@ -64,36 +61,40 @@ export default defineNuxtConfig({
       apiKey: process.env.NUXT_AI_API_KEY || '',
       model: process.env.NUXT_AI_MODEL || '',
       baseUrl: process.env.NUXT_AI_BASE_URL || '',
-      autoDiagnose: process.env.NUXT_AI_AUTO_DIAGNOSE === 'true'
+      autoDiagnose: process.env.NUXT_AI_AUTO_DIAGNOSE === 'true',
     },
     authSecret: (() => {
       if (process.env.NUXT_AUTH_ENABLED === 'true' && !process.env.NUXT_AUTH_SECRET) {
         throw new Error(
-          'NUXT_AUTH_ENABLED is true but NUXT_AUTH_SECRET is not set. '
-          + 'Generate a secure secret with: openssl rand -hex 32'
-        )
+          'NUXT_AUTH_ENABLED is true but NUXT_AUTH_SECRET is not set. ' +
+            'Generate a secure secret with: openssl rand -hex 32',
+        );
       }
-      return process.env.NUXT_AUTH_SECRET || 'default-secret-change-in-production-use-random-string'
+      return process.env.NUXT_AUTH_SECRET || 'default-secret-change-in-production-use-random-string';
     })(),
     oauth: {
       google: {
         clientId: process.env.NUXT_OAUTH_GOOGLE_CLIENT_ID || '',
-        clientSecret: process.env.NUXT_OAUTH_GOOGLE_CLIENT_SECRET || ''
+        clientSecret: process.env.NUXT_OAUTH_GOOGLE_CLIENT_SECRET || '',
       },
       github: {
         clientId: process.env.NUXT_OAUTH_GITHUB_CLIENT_ID || '',
-        clientSecret: process.env.NUXT_OAUTH_GITHUB_CLIENT_SECRET || ''
-      }
+        clientSecret: process.env.NUXT_OAUTH_GITHUB_CLIENT_SECRET || '',
+      },
     },
     public: {
       authEnabled: process.env.NUXT_AUTH_ENABLED === 'true',
       demoMode: process.env.NUXT_PUBLIC_DEMO_MODE === 'true',
       demoDataVersion,
       oauthProviders: [
-        ...(process.env.NUXT_OAUTH_GOOGLE_CLIENT_ID && process.env.NUXT_OAUTH_GOOGLE_CLIENT_SECRET ? ['google'] as const : []),
-        ...(process.env.NUXT_OAUTH_GITHUB_CLIENT_ID && process.env.NUXT_OAUTH_GITHUB_CLIENT_SECRET ? ['github'] as const : [])
-      ]
-    }
+        ...(process.env.NUXT_OAUTH_GOOGLE_CLIENT_ID && process.env.NUXT_OAUTH_GOOGLE_CLIENT_SECRET
+          ? (['google'] as const)
+          : []),
+        ...(process.env.NUXT_OAUTH_GITHUB_CLIENT_ID && process.env.NUXT_OAUTH_GITHUB_CLIENT_SECRET
+          ? (['github'] as const)
+          : []),
+      ],
+    },
   },
 
   // Allow overriding build directory to avoid conflicts when running multiple
@@ -102,8 +103,8 @@ export default defineNuxtConfig({
 
   routeRules: {
     '/api/**': {
-      cors: true
-    }
+      cors: true,
+    },
   },
 
   experimental: {
@@ -132,8 +133,9 @@ export default defineNuxtConfig({
     openAPI: {
       meta: {
         title: 'Piwi Dashboard API',
-        description: 'REST API for storing and querying Playwright test results, traces, failure diagnoses, and project statistics.',
-        version: '1.0.0'
+        description:
+          'REST API for storing and querying Playwright test results, traces, failure diagnoses, and project statistics.',
+        version: '1.0.0',
       },
       ui: {
         scalar: {
@@ -142,11 +144,12 @@ export default defineNuxtConfig({
           showSidebar: true,
           metaData: {
             title: 'Piwi Dashboard API',
-            description: 'REST API for storing and querying Playwright test results, traces, failure diagnoses, and project statistics.'
-          }
+            description:
+              'REST API for storing and querying Playwright test results, traces, failure diagnoses, and project statistics.',
+          },
         },
-        swagger: false
-      }
+        swagger: false,
+      },
     },
     experimental: {
       openAPI: true,
@@ -155,73 +158,61 @@ export default defineNuxtConfig({
       // compatible with older behavior and prevents intermittent build timeouts / failures
       // during Nitro server bundling on Windows.
       // See: https://github.com/nuxt/nuxt/issues/31836
-      legacyExternals: process.platform === 'win32' && process.env.NODE_ENV === 'production'
-    }
+      legacyExternals: process.platform === 'win32' && process.env.NODE_ENV === 'production',
+    },
   },
 
   vite: {
     optimizeDeps: {
-      include: [
-        'drizzle-orm/sqlite-core',
-        'drizzle-orm/sqlite-proxy',
-      ],
+      include: ['drizzle-orm/sqlite-core', 'drizzle-orm/sqlite-proxy'],
 
       // sql.js bundles a WASM binary and must not be pre-bundled by Vite;
       // excluding it ensures the WASM file is loaded at runtime via locateFile.
-      exclude: ['sql.js']
-    }
+      exclude: ['sql.js'],
+    },
   },
 
   hooks: {
     'nitro:build:public-assets': (nitro) => {
       // Copy migrations folders to output during build
-      const sourceMigrations = resolve(__dirname, 'server/database/migrations')
-      const targetMigrations = resolve(nitro.options.output.serverDir, 'database/migrations')
+      const sourceMigrations = resolve(__dirname, 'server/database/migrations');
+      const targetMigrations = resolve(nitro.options.output.serverDir, 'database/migrations');
 
       if (existsSync(sourceMigrations)) {
-        console.log('[Build] Copying SQLite migrations to output...')
-        mkdirSync(dirname(targetMigrations), { recursive: true })
-        cpSync(sourceMigrations, targetMigrations, { recursive: true })
-        console.log('[Build] SQLite migrations copied successfully')
+        console.log('[Build] Copying SQLite migrations to output...');
+        mkdirSync(dirname(targetMigrations), { recursive: true });
+        cpSync(sourceMigrations, targetMigrations, { recursive: true });
+        console.log('[Build] SQLite migrations copied successfully');
       }
 
-      const sourceMigrationsPg = resolve(__dirname, 'server/database/migrations-pg')
-      const targetMigrationsPg = resolve(nitro.options.output.serverDir, 'database/migrations-pg')
+      const sourceMigrationsPg = resolve(__dirname, 'server/database/migrations-pg');
+      const targetMigrationsPg = resolve(nitro.options.output.serverDir, 'database/migrations-pg');
 
       if (existsSync(sourceMigrationsPg)) {
-        console.log('[Build] Copying PostgreSQL migrations to output...')
-        mkdirSync(dirname(targetMigrationsPg), { recursive: true })
-        cpSync(sourceMigrationsPg, targetMigrationsPg, { recursive: true })
-        console.log('[Build] PostgreSQL migrations copied successfully')
+        console.log('[Build] Copying PostgreSQL migrations to output...');
+        mkdirSync(dirname(targetMigrationsPg), { recursive: true });
+        cpSync(sourceMigrationsPg, targetMigrationsPg, { recursive: true });
+        console.log('[Build] PostgreSQL migrations copied successfully');
       }
 
       // Ensure the sql.js WASM file is present in public/demo for the browser demo build
       if (isDemo) {
-        const wasmSrc = resolve(__dirname, 'node_modules/sql.js/dist/sql-wasm-browser.wasm')
-        const wasmDst = resolve(__dirname, 'public/demo/sql-wasm-browser.wasm')
+        const wasmSrc = resolve(__dirname, 'node_modules/sql.js/dist/sql-wasm-browser.wasm');
+        const wasmDst = resolve(__dirname, 'public/demo/sql-wasm-browser.wasm');
         if (existsSync(wasmSrc) && !existsSync(wasmDst)) {
-          console.log('[Build] Copying sql-wasm-browser.wasm to public/demo...')
-          cpSync(wasmSrc, wasmDst)
-          console.log('[Build] sql-wasm-browser.wasm copied successfully')
+          console.log('[Build] Copying sql-wasm-browser.wasm to public/demo...');
+          cpSync(wasmSrc, wasmDst);
+          console.log('[Build] sql-wasm-browser.wasm copied successfully');
         }
-        const seedSrc = resolve(__dirname, 'public/demo/seed.sql')
+        const seedSrc = resolve(__dirname, 'public/demo/seed.sql');
         if (!existsSync(seedSrc)) {
-          console.warn('[Build] WARNING: public/demo/seed.sql not found. Run `npm run seed:demo` before building.')
+          console.warn('[Build] WARNING: public/demo/seed.sql not found. Run `npm run seed:demo` before building.');
         }
       }
-    }
-  },
-
-  eslint: {
-    config: {
-      stylistic: {
-        commaDangle: 'never',
-        braceStyle: '1tbs'
-      }
-    }
+    },
   },
 
   // Service worker for demo mode: intercepts /api/ calls and serves them
   // from the in-browser SQLite database so no real server is needed.
   pwa: demoPwaConfig,
-})
+});

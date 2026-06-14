@@ -1,28 +1,28 @@
-import { getCurrentUser, isAuthEnabled } from '../../utils/auth'
+import { getCurrentUser, isAuthEnabled } from '../../utils/auth';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Auth'],
     summary: 'Get current user',
-    description: 'Returns the currently authenticated user details or unauthenticated status.'
-  }
-})
+    description: 'Returns the currently authenticated user details or unauthenticated status.',
+  },
+});
 
 export default eventHandler(async (event) => {
   if (!isAuthEnabled(event)) {
     return {
       authenticated: false,
-      user: null
-    }
+      user: null,
+    };
   }
 
-  const user = await getCurrentUser(event)
+  const user = await getCurrentUser(event);
 
   if (!user) {
     return {
       authenticated: false,
-      user: null
-    }
+      user: null,
+    };
   }
 
   return {
@@ -32,7 +32,7 @@ export default eventHandler(async (event) => {
       username: user.username,
       role: user.role,
       name: user.name,
-      avatarUrl: user.avatarUrl
-    }
-  }
-})
+      avatarUrl: user.avatarUrl,
+    },
+  };
+});

@@ -1,57 +1,53 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue';
 
 const props = defineProps<{
-  images: Array<{ src: string, name: string }>
-  modelValue: number | null
-}>()
+  images: Array<{ src: string; name: string }>;
+  modelValue: number | null;
+}>();
 
 const emit = defineEmits<{
-  'update:modelValue': [value: number | null]
-}>()
+  'update:modelValue': [value: number | null];
+}>();
 
-const isOpen = computed(() => props.modelValue !== null)
+const isOpen = computed(() => props.modelValue !== null);
 
 function close() {
-  emit('update:modelValue', null)
+  emit('update:modelValue', null);
 }
 
 function prev() {
   if (props.modelValue !== null && props.modelValue > 0) {
-    emit('update:modelValue', props.modelValue - 1)
+    emit('update:modelValue', props.modelValue - 1);
   }
 }
 
 function next() {
   if (props.modelValue !== null && props.modelValue < props.images.length - 1) {
-    emit('update:modelValue', props.modelValue + 1)
+    emit('update:modelValue', props.modelValue + 1);
   }
 }
 
 const currentImage = computed(() => {
-  if (props.modelValue === null) return null
-  return props.images[props.modelValue] ?? null
-})
+  if (props.modelValue === null) return null;
+  return props.images[props.modelValue] ?? null;
+});
 
 function onKeydown(e: KeyboardEvent) {
-  if (!isOpen.value) return
-  if (e.key === 'Escape') close()
-  if (e.key === 'ArrowLeft') prev()
-  if (e.key === 'ArrowRight') next()
+  if (!isOpen.value) return;
+  if (e.key === 'Escape') close();
+  if (e.key === 'ArrowLeft') prev();
+  if (e.key === 'ArrowRight') next();
 }
 
-onMounted(() => window.addEventListener('keydown', onKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+onMounted(() => window.addEventListener('keydown', onKeydown));
+onUnmounted(() => window.removeEventListener('keydown', onKeydown));
 </script>
 
 <template>
   <Teleport to="body">
     <Transition name="lightbox">
-      <div
-        v-if="isOpen"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
-        @click.self="close"
-      >
+      <div v-if="isOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/90" @click.self="close">
         <button
           class="absolute top-4 right-4 size-10 flex items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
           @click="close"
@@ -77,7 +73,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           :alt="currentImage.name"
           class="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
           @click.stop
-        >
+        />
 
         <button
           v-if="images.length > 1 && (modelValue ?? 0) < images.length - 1"

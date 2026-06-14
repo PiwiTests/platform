@@ -1,49 +1,49 @@
-import { getDatabase } from '../../database'
-import { tags } from '../../database/schema'
-import { eq } from 'drizzle-orm'
-import { z } from 'zod'
-import { requireAuth } from '../../utils/auth'
+import { getDatabase } from '../../database';
+import { tags } from '../../database/schema';
+import { eq } from 'drizzle-orm';
+import { z } from 'zod';
+import { requireAuth } from '../../utils/auth';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Tags'],
     summary: 'Create a tag',
-    description: 'Creates a new tag with text (max 50 characters) and color. Requires administrator role.'
-  }
-})
+    description: 'Creates a new tag with text (max 50 characters) and color. Requires administrator role.',
+  },
+});
 
 const createTagSchema = z.object({
   text: z.string().min(1, 'Tag text is required').max(50, 'Tag text must be at most 50 characters'),
-  color: z.string().min(1, 'Color is required')
-})
+  color: z.string().min(1, 'Color is required'),
+});
 
 export default eventHandler(async (event) => {
-  await requireAuth(event, ['administrator'])
+  await requireAuth(event, ['administrator']);
 
-  const body = await readBody(event)
-  const validation = createTagSchema.safeParse(body)
+  const body = await readBody(event);
+  const validation = createTagSchema.safeParse(body);
 
   if (!validation.success) {
     throw createError({
       statusCode: 400,
       message: 'Invalid request body',
-      data: validation.error.issues
-    })
+      data: validation.error.issues,
+    });
   }
 
-  const { text, color } = validation.data
-  const db = await getDatabase()
+  const { text, color } = validation.data;
+  const db = await getDatabase();
 
   // Check if tag text already exists
-  const existing = await db.select().from(tags).where(eq(tags.text, text))
+  const existing = await db.select().from(tags).where(eq(tags.text, text));
   if (existing.length > 0) {
     throw createError({
       statusCode: 400,
-      message: 'A tag with this text already exists'
-    })
+      message: 'A tag with this text already exists',
+    });
   }
 
-  const result = await db.insert(tags).values({ text, color }).returning()
+  const result = await db.insert(tags).values({ text, color }).returning();
 
-  return { tag: result[0] }
-})
+  return { tag: result[0] };
+});

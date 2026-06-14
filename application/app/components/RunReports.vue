@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import type { ReportInfo } from '~~/types/api'
-import { formatBytes, getFileApiPath } from '~/utils'
+import type { ReportInfo } from '~~/types/api';
+import { formatBytes, getFileApiPath } from '~/utils';
 
 defineProps<{
-  reports?: ReportInfo[] | null
-}>()
+  reports?: ReportInfo[] | null;
+}>();
 </script>
 
 <template>

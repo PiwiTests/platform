@@ -1,8 +1,8 @@
-import fs from "fs";
-import path from "path";
-import FormData from "form-data";
-import { HttpClient } from "./http-client.js";
-import { FileHandler } from "./file-handler.js";
+import fs from 'fs';
+import path from 'path';
+import FormData from 'form-data';
+import { HttpClient } from './http-client.js';
+import { FileHandler } from './file-handler.js';
 
 export interface RunPayload {
   projectName: string;
@@ -35,7 +35,7 @@ export class Uploader {
 
   async uploadJSON(payload: RunPayload, auth: string | null): Promise<any> {
     const response = await this.httpClient.postJSON(
-      "/api/test-runs/submit",
+      '/api/test-runs/submit',
       {
         projectName: payload.projectName,
         projectDescription: payload.projectDescription,
@@ -62,9 +62,9 @@ export class Uploader {
 
   async uploadWithFiles(payload: RunPayload, reportOptions: ReportOptions, auth: string | null): Promise<any> {
     const form = new FormData();
-    form.append("projectName", payload.projectName);
+    form.append('projectName', payload.projectName);
     form.append(
-      "testRun",
+      'testRun',
       JSON.stringify({
         status: payload.status,
         startTime: payload.startTime,
@@ -79,12 +79,12 @@ export class Uploader {
         instanceId: payload.instanceId,
       }),
     );
-    form.append("testCases", JSON.stringify(payload.testCases));
+    form.append('testCases', JSON.stringify(payload.testCases));
 
     await this.appendReportsToForm(form, reportOptions.reports, reportOptions.uploadReport);
     await this.appendFilesToForm(form, payload.testCases, reportOptions.uploadTraces);
 
-    const response = await this.httpClient.postFormData("/api/test-runs/upload", form, auth);
+    const response = await this.httpClient.postFormData('/api/test-runs/upload', form, auth);
     console.log(`[Piwi Dashboard] Successfully uploaded test results with files`);
     if (response.testRunId)
       console.log(`[Piwi Dashboard] Test Run ID: ${response.testRunId}, Project ID: ${response.projectId}`);
@@ -102,12 +102,12 @@ export class Uploader {
     auth: string | null,
   ): Promise<void> {
     const form = new FormData();
-    form.append("testRunId", String(runId));
-    form.append("projectName", projectName);
+    form.append('testRunId', String(runId));
+    form.append('projectName', projectName);
     form.append(
-      "testRun",
+      'testRun',
       JSON.stringify({
-        status: "already-submitted",
+        status: 'already-submitted',
         startTime,
         duration: 0,
         totalTests: 0,
@@ -117,11 +117,11 @@ export class Uploader {
         metadata: {},
       }),
     );
-    form.append("testCases", JSON.stringify([]));
+    form.append('testCases', JSON.stringify([]));
 
     await this.appendReportsToForm(form, reportOptions.reports, reportOptions.uploadReport);
 
-    const response = await this.httpClient.postFormData("/api/test-runs/upload", form, auth);
+    const response = await this.httpClient.postFormData('/api/test-runs/upload', form, auth);
     console.log(`[Piwi Dashboard] Successfully uploaded reports for streaming run #${runId}`);
     if (response.reports) {
       for (const r of response.reports) console.log(`[Piwi Dashboard] ${r.label}: ${r.path}`);
@@ -164,9 +164,9 @@ export class Uploader {
 
     const buildForm = (includeTraceFile: boolean): FormData => {
       const form = new FormData();
-      form.append("streamToken", streamToken);
+      form.append('streamToken', streamToken);
       form.append(
-        "testCase",
+        'testCase',
         JSON.stringify({
           title: testCase.title,
           location: testCase.location,
@@ -174,22 +174,22 @@ export class Uploader {
         }),
       );
       if (traceInfo) {
-        form.append("trace_hash", traceInfo.hash);
+        form.append('trace_hash', traceInfo.hash);
         if (includeTraceFile) {
-          form.append("trace", fs.createReadStream(traceInfo.tracePath), {
+          form.append('trace', fs.createReadStream(traceInfo.tracePath), {
             filename: path.basename(traceInfo.tracePath),
           });
         }
       }
       if (attachments.length > 0) {
         form.append(
-          "attach_meta",
+          'attach_meta',
           JSON.stringify(
             attachments.map((a) => ({ name: a.name, contentType: a.contentType, originalName: a.originalName })),
           ),
         );
         for (const a of attachments) {
-          form.append("attach_file", fs.createReadStream(a.path), { filename: a.originalName });
+          form.append('attach_file', fs.createReadStream(a.path), { filename: a.originalName });
         }
       }
       return form;
@@ -200,7 +200,7 @@ export class Uploader {
       await this.httpClient.postFormData(`/api/test-runs/${runId}/case-files`, buildForm(includeTraceFile), auth);
     } catch (error: any) {
       // 422: the server doesn't have the blob after all — resend with the file
-      if (traceInfo && !includeTraceFile && error.message?.includes("422")) {
+      if (traceInfo && !includeTraceFile && error.message?.includes('422')) {
         await this.httpClient.postFormData(`/api/test-runs/${runId}/case-files`, buildForm(true), auth);
       } else {
         throw error;
@@ -209,7 +209,7 @@ export class Uploader {
 
     if (this.verbose) {
       console.log(
-        `[Piwi Dashboard] Uploaded files for "${testCase.title}" (trace: ${traceInfo ? "yes" : "no"}, attachments: ${attachments.length})`,
+        `[Piwi Dashboard] Uploaded files for "${testCase.title}" (trace: ${traceInfo ? 'yes' : 'no'}, attachments: ${attachments.length})`,
       );
     }
     return true;
@@ -221,13 +221,13 @@ export class Uploader {
     uploadReport?: boolean,
   ): Promise<void> {
     const list: Array<{ type: string; dir?: string; label?: string }> = reports ? [...reports] : [];
-    if (uploadReport && !list.some((r) => r.type === "html")) list.push({ type: "html" });
+    if (uploadReport && !list.some((r) => r.type === 'html')) list.push({ type: 'html' });
 
     for (const cfg of list) {
-      const defaultDir = this.fileHandler.getDefaultReportDirs()[cfg.type] || cfg.type + "-report";
+      const defaultDir = this.fileHandler.getDefaultReportDirs()[cfg.type] || cfg.type + '-report';
       const reportDir = cfg.dir
         ? this.fileHandler.findReportDirectory(cfg.dir)
-        : cfg.type === "html"
+        : cfg.type === 'html'
           ? this.fileHandler.findHTMLReportDirectory()
           : this.fileHandler.findReportDirectory(defaultDir);
 

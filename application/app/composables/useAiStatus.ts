@@ -1,21 +1,21 @@
-import type { AiStatus } from '~~/types/api'
+import type { AiStatus } from '~~/types/api';
 
-let fetchPromise: Promise<AiStatus> | null = null
+let fetchPromise: Promise<AiStatus> | null = null;
 
 export function useAiStatus() {
-  const status = useState<AiStatus | null>('ai-status', () => null)
+  const status = useState<AiStatus | null>('ai-status', () => null);
 
   async function load() {
-    if (status.value !== null) return
+    if (status.value !== null) return;
     if (!fetchPromise) {
-      fetchPromise = $fetch<AiStatus>('/api/ai/status').catch(() => ({ configured: false }))
+      fetchPromise = $fetch<AiStatus>('/api/ai/status').catch(() => ({ configured: false }));
     }
-    status.value = await fetchPromise
+    status.value = await fetchPromise;
   }
 
   if (import.meta.client) {
-    load()
+    load();
   }
 
-  return { aiStatus: status }
+  return { aiStatus: status };
 }

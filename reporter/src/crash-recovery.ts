@@ -1,8 +1,8 @@
-import * as path from "path";
-import * as os from "os";
-import * as fs from "fs";
-import { hashForProject } from "./helpers.js";
-import { HttpClient } from "./http-client.js";
+import * as path from 'path';
+import * as os from 'os';
+import * as fs from 'fs';
+import { hashForProject } from './helpers.js';
+import { HttpClient } from './http-client.js';
 
 export class CrashRecovery {
   private filePath: string;
@@ -15,8 +15,8 @@ export class CrashRecovery {
 
   save(data: Record<string, any>): void {
     try {
-      fs.writeFileSync(this.filePath, JSON.stringify(data), "utf8");
-      console.log("[Piwi Dashboard] Saved recovery data for later upload");
+      fs.writeFileSync(this.filePath, JSON.stringify(data), 'utf8');
+      console.log('[Piwi Dashboard] Saved recovery data for later upload');
     } catch (error: any) {
       console.error(`[Piwi Dashboard] Failed to save recovery data: ${error.message}`);
     }
@@ -24,7 +24,7 @@ export class CrashRecovery {
 
   load(): Record<string, any> | null {
     try {
-      if (fs.existsSync(this.filePath)) return JSON.parse(fs.readFileSync(this.filePath, "utf8"));
+      if (fs.existsSync(this.filePath)) return JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
     } catch {
       // Non-fatal
     }
@@ -43,11 +43,11 @@ export class CrashRecovery {
     const data = this.load();
     if (!data) return;
 
-    console.log("[Piwi Dashboard] Found saved test data from a previous run, uploading...");
+    console.log('[Piwi Dashboard] Found saved test data from a previous run, uploading...');
 
     try {
-      await httpClient.postJSON("/api/test-runs/submit", data, auth);
-      console.log("[Piwi Dashboard] Successfully uploaded saved test data");
+      await httpClient.postJSON('/api/test-runs/submit', data, auth);
+      console.log('[Piwi Dashboard] Successfully uploaded saved test data');
       this.clear();
     } catch (error: any) {
       console.warn(`[Piwi Dashboard] Could not upload saved test data: ${error.message}`);

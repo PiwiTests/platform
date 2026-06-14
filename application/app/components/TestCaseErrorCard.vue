@@ -1,21 +1,19 @@
 <script setup lang="ts">
 export interface ErrorCardCluster {
-  id: number
-  sameRunCaseCount: number
-  isNew: boolean
-  firstSeenRunId: number
-  firstSeenAt: string | Date | null
-  status?: string | null
-  triageNote?: string | null
+  id: number;
+  sameRunCaseCount: number;
+  isNew: boolean;
+  firstSeenRunId: number;
+  firstSeenAt: string | Date | null;
+  status?: string | null;
+  triageNote?: string | null;
 }
 
 const props = defineProps<{
-  cluster?: ErrorCardCluster | null
-}>()
+  cluster?: ErrorCardCluster | null;
+}>();
 
-const showCluster = computed(() =>
-  !!props.cluster && (props.cluster.sameRunCaseCount > 1 || !props.cluster.isNew)
-)
+const showCluster = computed(() => !!props.cluster && (props.cluster.sameRunCaseCount > 1 || !props.cluster.isNew));
 </script>
 
 <template>
@@ -26,24 +24,16 @@ const showCluster = computed(() =>
     >
       <UIcon name="i-lucide-layers" class="size-3.5 shrink-0" />
       <span v-if="cluster.sameRunCaseCount > 1">
-        Matches {{ cluster.sameRunCaseCount - 1 }} other failing {{ cluster.sameRunCaseCount - 1 === 1 ? 'test' : 'tests' }} in this run
+        Matches {{ cluster.sameRunCaseCount - 1 }} other failing
+        {{ cluster.sameRunCaseCount - 1 === 1 ? 'test' : 'tests' }} in this run
       </span>
-      <UBadge
-        v-if="cluster.isNew"
-        color="warning"
-        variant="subtle"
-        size="sm"
-      >
-        New failure
-      </UBadge>
+      <UBadge v-if="cluster.isNew" color="warning" variant="subtle" size="sm"> New failure </UBadge>
       <span v-else>
         <template v-if="cluster.sameRunCaseCount > 1">· </template>Known failure — first seen in
         <NuxtLink :to="`/test-runs/${cluster.firstSeenRunId}`" class="text-primary hover:underline">
           run #{{ cluster.firstSeenRunId }}
         </NuxtLink>
-        <template v-if="cluster.firstSeenAt">
-          ({{ formatRelativeTime(cluster.firstSeenAt) }})
-        </template>
+        <template v-if="cluster.firstSeenAt"> ({{ formatRelativeTime(cluster.firstSeenAt) }}) </template>
       </span>
       <UBadge
         v-if="cluster.status && cluster.status !== 'open'"
@@ -53,9 +43,7 @@ const showCluster = computed(() =>
       >
         {{ cluster.status }}
       </UBadge>
-      <span v-if="cluster.triageNote" class="italic" :title="cluster.triageNote">
-        — {{ cluster.triageNote }}
-      </span>
+      <span v-if="cluster.triageNote" class="italic" :title="cluster.triageNote"> — {{ cluster.triageNote }} </span>
     </div>
 
     <ClusterDiagnosis v-if="cluster" :cluster-id="cluster.id" />

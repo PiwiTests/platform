@@ -1,14 +1,14 @@
-import fs from "fs";
-import path from "path";
-import zlib from "zlib";
-import { promisify } from "util";
+import fs from 'fs';
+import path from 'path';
+import zlib from 'zlib';
+import { promisify } from 'util';
 
 const gzipAsync = promisify(zlib.gzip);
 
 export async function compressDirectory(sourceDir: string): Promise<Buffer> {
   const files: Array<{ path: string; content: Buffer }> = [];
 
-  function collect(dir: string, baseDir = "") {
+  function collect(dir: string, baseDir = '') {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       const rel = path.join(baseDir, entry.name);
@@ -21,7 +21,7 @@ export async function compressDirectory(sourceDir: string): Promise<Buffer> {
 
   const parts: Buffer[] = [];
   for (const f of files) {
-    const pb = Buffer.from(f.path, "utf8");
+    const pb = Buffer.from(f.path, 'utf8');
     const plb = Buffer.allocUnsafe(4);
     plb.writeUInt32LE(pb.length, 0);
     const clb = Buffer.allocUnsafe(4);

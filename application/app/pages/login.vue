@@ -1,26 +1,26 @@
 <script setup lang="ts">
-const { login } = useAuth()
-const router = useRouter()
-const route = useRoute()
-const toast = useToast()
-const config = useRuntimeConfig()
+const { login } = useAuth();
+const router = useRouter();
+const route = useRoute();
+const toast = useToast();
+const config = useRuntimeConfig();
 
 const state = reactive({
   username: '',
-  password: ''
-})
+  password: '',
+});
 
-const loading = ref(false)
-const error = ref('')
+const loading = ref(false);
+const error = ref('');
 
 const oauthProviders = computed(() => {
-  if (config.public.demoMode) return []
-  return (config.public.oauthProviders as string[]) || []
-})
+  if (config.public.demoMode) return [];
+  return (config.public.oauthProviders as string[]) || [];
+});
 
 // Check for OAuth error from callback redirect
 onMounted(() => {
-  const oauthError = route.query.error as string | undefined
+  const oauthError = route.query.error as string | undefined;
   if (oauthError) {
     const messages: Record<string, string> = {
       'access-denied': 'Access was denied',
@@ -28,50 +28,49 @@ onMounted(() => {
       'missing-code': 'Authentication failed (missing code)',
       'oauth-failed': 'OAuth authentication failed',
       'auth-disabled': 'Authentication is not enabled',
-      'invalid-provider': 'Invalid OAuth provider'
-    }
-    error.value = messages[oauthError] || 'Authentication failed'
+      'invalid-provider': 'Invalid OAuth provider',
+    };
+    error.value = messages[oauthError] || 'Authentication failed';
   }
-})
+});
 
 async function handleLogin() {
   if (!state.username || !state.password) {
-    error.value = 'Please enter username and password'
-    return
+    error.value = 'Please enter username and password';
+    return;
   }
 
-  loading.value = true
-  error.value = ''
+  loading.value = true;
+  error.value = '';
 
   try {
-    await login(state.username, state.password)
+    await login(state.username, state.password);
     toast.add({
       title: 'Login successful',
-      color: 'success'
-    })
-    router.push('/')
+      color: 'success',
+    });
+    router.push('/');
   } catch (err: unknown) {
-    const errorMessage = err && typeof err === 'object' && 'data' in err
-      ? (err.data as { message?: string })?.message
-      : undefined
-    error.value = errorMessage || 'Invalid username or password'
+    const errorMessage =
+      err && typeof err === 'object' && 'data' in err ? (err.data as { message?: string })?.message : undefined;
+    error.value = errorMessage || 'Invalid username or password';
     toast.add({
       title: 'Login failed',
       description: error.value,
-      color: 'error'
-    })
+      color: 'error',
+    });
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
 function startOAuth(provider: string) {
-  window.location.href = `/api/auth/oauth/${provider}/login`
+  window.location.href = `/api/auth/oauth/${provider}/login`;
 }
 
 definePageMeta({
-  layout: false
-})
+  layout: false,
+});
 </script>
 
 <template>
@@ -80,19 +79,11 @@ definePageMeta({
       <template #header>
         <div class="flex items-center gap-2">
           <UIcon name="i-lucide-lock" class="size-6" />
-          <h1 class="text-2xl font-bold">
-            Login
-          </h1>
+          <h1 class="text-2xl font-bold">Login</h1>
         </div>
       </template>
 
-      <UAlert
-        v-if="error"
-        color="error"
-        :title="error"
-        variant="subtle"
-        class="mb-4"
-      />
+      <UAlert v-if="error" color="error" :title="error" variant="subtle" class="mb-4" />
 
       <!-- OAuth buttons -->
       <div v-if="oauthProviders.length > 0" class="space-y-2 mb-4">
@@ -122,9 +113,7 @@ definePageMeta({
           Sign in with GitHub
         </UButton>
 
-        <UDivider v-if="oauthProviders.length > 0" class="my-4">
-          or continue with password
-        </UDivider>
+        <UDivider v-if="oauthProviders.length > 0" class="my-4"> or continue with password </UDivider>
       </div>
 
       <!-- Password login form -->
@@ -151,14 +140,7 @@ definePageMeta({
           />
         </UFormField>
 
-        <UButton
-          type="submit"
-          block
-          :loading="loading"
-          :disabled="loading"
-        >
-          Login
-        </UButton>
+        <UButton type="submit" block :loading="loading" :disabled="loading"> Login </UButton>
       </form>
     </UCard>
   </div>

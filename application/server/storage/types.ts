@@ -9,56 +9,56 @@ export interface StorageAdapter {
    * @param data - File content as Buffer
    * @returns Promise that resolves when the file is written
    */
-  writeFile(path: string, data: Buffer): Promise<void>
+  writeFile(path: string, data: Buffer): Promise<void>;
 
   /**
    * Read a file from storage
    * @param path - Relative path of the file to read
    * @returns Promise that resolves with the file content as Buffer
    */
-  readFile(path: string): Promise<Buffer>
+  readFile(path: string): Promise<Buffer>;
 
   /**
    * Check if a file exists
    * @param path - Relative path of the file to check
    * @returns Promise that resolves to true if the file exists
    */
-  exists(path: string): Promise<boolean>
+  exists(path: string): Promise<boolean>;
 
   /**
    * Create a directory (and parent directories if needed)
    * @param path - Relative path of the directory to create
    * @returns Promise that resolves when the directory is created
    */
-  mkdir(path: string): Promise<void>
+  mkdir(path: string): Promise<void>;
 
   /**
    * Delete a single file from storage
    * @param path - Relative path of the file to delete
    * @returns Promise that resolves when the file is deleted
    */
-  deleteFile(path: string): Promise<void>
+  deleteFile(path: string): Promise<void>;
 
   /**
    * Delete a directory and all its contents recursively
    * @param path - Relative path of the directory to delete
    * @returns Promise that resolves when the directory is deleted
    */
-  deleteDirectory(path: string): Promise<void>
+  deleteDirectory(path: string): Promise<void>;
 
   /**
    * Get the full path for a relative path (for local storage only, returns relative path for S3)
    * @param path - Relative path
    * @returns Full path for local storage or relative path for S3
    */
-  getFullPath(path: string): string
+  getFullPath(path: string): string;
 }
 
 export interface S3Config {
-  bucket: string
-  region: string
-  accessKeyId: string
-  secretAccessKey: string
-  endpoint?: string // Optional custom endpoint for S3-compatible services
-  forcePathStyle?: boolean // Force path-style URLs (required for MinIO and most S3-compatible services)
+  bucket: string;
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  endpoint?: string; // Optional custom endpoint for S3-compatible services
+  forcePathStyle?: boolean; // Force path-style URLs (required for MinIO and most S3-compatible services)
 }

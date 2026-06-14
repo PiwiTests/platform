@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DemoScenario } from '~/demo/simulator'
+import type { DemoScenario } from '~/demo/simulator';
 
 /**
  * Scenario launcher for the demo run simulator, rendered inside the demo
@@ -7,22 +7,22 @@ import type { DemoScenario } from '~/demo/simulator'
  * Piwi reporter were streaming them in (see app/demo/simulator.ts).
  */
 
-const { state, scenarios, start, stop, cancelStaleRuns } = useDemoSimulator()
+const { state, scenarios, start, stop, cancelStaleRuns } = useDemoSimulator();
 
 // Demo DB readiness — flipped by the first successful API call (demo-fetch plugin)
-const demoReady = useState('demoReady', () => false)
+const demoReady = useState('demoReady', () => false);
 
-const popoverOpen = ref(false)
+const popoverOpen = ref(false);
 
 onMounted(() => {
   // Clean up runs orphaned by a reload mid-simulation. $fetch waits for the
   // service worker to claim the page, so this is safe to call right away.
-  cancelStaleRuns()
-})
+  cancelStaleRuns();
+});
 
 function launch(scenario: DemoScenario) {
-  popoverOpen.value = false
-  start(scenario)
+  popoverOpen.value = false;
+  start(scenario);
 }
 </script>
 
@@ -70,14 +70,7 @@ function launch(scenario: DemoScenario) {
         <template v-if="state.total > 0">{{ state.completed }}/{{ state.total }} tests</template>
         <template v-else>starting…</template>
       </span>
-      <UBadge
-        v-if="state.failed > 0"
-        color="error"
-        variant="subtle"
-        size="sm"
-      >
-        {{ state.failed }} failed
-      </UBadge>
+      <UBadge v-if="state.failed > 0" color="error" variant="subtle" size="sm"> {{ state.failed }} failed </UBadge>
       <UButton
         v-if="state.runId"
         size="xs"

@@ -1,6 +1,6 @@
-import { readdir, readFile } from 'fs/promises'
-import { join } from 'path'
-import type { StorageAdapter } from '../storage/types'
+import { readdir, readFile } from 'fs/promises';
+import { join } from 'path';
+import type { StorageAdapter } from '../storage/types';
 
 /**
  * Upload a directory tree to storage.
@@ -12,27 +12,27 @@ import type { StorageAdapter } from '../storage/types'
 export async function uploadDirectory(
   localDir: string,
   storagePrefix: string,
-  storage: StorageAdapter
+  storage: StorageAdapter,
 ): Promise<number> {
-  const entries = await readdir(localDir, { withFileTypes: true })
+  const entries = await readdir(localDir, { withFileTypes: true });
 
   const uploadTasks = entries.map(async (entry) => {
-    const localPath = join(localDir, entry.name)
-    const storagePath = join(storagePrefix, entry.name)
+    const localPath = join(localDir, entry.name);
+    const storagePath = join(storagePrefix, entry.name);
 
     if (entry.isDirectory()) {
-      return uploadDirectory(localPath, storagePath, storage)
+      return uploadDirectory(localPath, storagePath, storage);
     }
 
     if (entry.isFile()) {
-      const fileContent = await readFile(localPath)
-      await storage.writeFile(storagePath, fileContent)
-      return fileContent.length
+      const fileContent = await readFile(localPath);
+      await storage.writeFile(storagePath, fileContent);
+      return fileContent.length;
     }
 
-    return 0
-  })
+    return 0;
+  });
 
-  const sizes = await Promise.all(uploadTasks)
-  return sizes.reduce((a, b) => a + b, 0)
+  const sizes = await Promise.all(uploadTasks);
+  return sizes.reduce((a, b) => a + b, 0);
 }

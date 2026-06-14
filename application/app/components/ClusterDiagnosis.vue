@@ -1,315 +1,361 @@
 <script setup lang="ts">
-import type { FailureDiagnosis } from '~~/server/database/schema'
-import type { DiagnosisContextCoverage } from '~~/types/api'
-import { formatRelativeTime } from '~/utils'
+import type { FailureDiagnosis } from '~~/server/database/schema';
+import type { DiagnosisContextCoverage } from '~~/types/api';
+import { formatRelativeTime } from '~/utils';
 
 const props = defineProps<{
-  clusterId: number
-}>()
+  clusterId: number;
+}>();
 
-const { aiStatus } = useAiStatus()
-const toast = useToast()
+const { aiStatus } = useAiStatus();
+const toast = useToast();
 
-const diagnosis = ref<FailureDiagnosis | null>(null)
-const savedBaseCommit = ref<string>('') // last value persisted to DB
-const posting = ref(false)
-const pollTimer = ref<ReturnType<typeof setInterval> | null>(null)
+const diagnosis = ref<FailureDiagnosis | null>(null);
+const savedBaseCommit = ref<string>(''); // last value persisted to DB
+const posting = ref(false);
+const pollTimer = ref<ReturnType<typeof setInterval> | null>(null);
 
 // Context preview
-const contextText = ref<string | null>(null)
-const coverage = ref<DiagnosisContextCoverage | null>(null)
-const loadingContext = ref(false)
+const contextText = ref<string | null>(null);
+const coverage = ref<DiagnosisContextCoverage | null>(null);
+const loadingContext = ref(false);
 
 // Attachments + user inputs
-const additionalContext = ref('')
-const baseCommit = ref('')
-const attachedFiles = ref<Array<{ name: string, content: string, size: number }>>([])
-const attachedImages = ref<Array<{ name: string, mediaType: string, data: string, preview: string, size: number }>>([])
-const fileInputRef = ref<HTMLInputElement | null>(null)
-const dragOver = ref(false)
+const additionalContext = ref('');
+const baseCommit = ref('');
+const attachedFiles = ref<Array<{ name: string; content: string; size: number }>>([]);
+const attachedImages = ref<Array<{ name: string; mediaType: string; data: string; preview: string; size: number }>>([]);
+const fileInputRef = ref<HTMLInputElement | null>(null);
+const dragOver = ref(false);
 
 // Commit browser
-const commitBrowserOpen = ref(false)
-const selectedCommitShas = ref<string[]>([])
+const commitBrowserOpen = ref(false);
+const selectedCommitShas = ref<string[]>([]);
 
-const MAX_TEXT_BYTES = 200 * 1024
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024
-const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+const MAX_TEXT_BYTES = 200 * 1024;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
 function formatBytes(n: number) {
-  return n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`
+  return n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader()
+    const reader = new FileReader();
     reader.onload = () => {
-      const part = (reader.result as string).split(',')[1]
-      if (part !== undefined) resolve(part)
-      else reject(new Error('Failed to read file'))
-    }
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
+      const part = (reader.result as string).split(',')[1];
+      if (part !== undefined) resolve(part);
+      else reject(new Error('Failed to read file'));
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 async function processFiles(files: FileList | File[]) {
   for (const file of Array.from(files)) {
     if (SUPPORTED_IMAGE_TYPES.includes(file.type)) {
       if (file.size > MAX_IMAGE_BYTES) {
-        toast.add({ title: 'Image too large', description: `${file.name} exceeds 5 MB`, color: 'error' })
-        continue
+        toast.add({ title: 'Image too large', description: `${file.name} exceeds 5 MB`, color: 'error' });
+        continue;
       }
-      const data = await fileToBase64(file)
-      const preview = `data:${file.type};base64,${data}`
-      attachedImages.value.push({ name: file.name, mediaType: file.type, data, preview, size: file.size })
+      const data = await fileToBase64(file);
+      const preview = `data:${file.type};base64,${data}`;
+      attachedImages.value.push({ name: file.name, mediaType: file.type, data, preview, size: file.size });
     } else {
       if (file.size > MAX_TEXT_BYTES) {
-        toast.add({ title: 'File too large', description: `${file.name} exceeds 200 KB`, color: 'error' })
-        continue
+        toast.add({ title: 'File too large', description: `${file.name} exceeds 200 KB`, color: 'error' });
+        continue;
       }
-      const content = await file.text()
-      attachedFiles.value.push({ name: file.name, content, size: file.size })
+      const content = await file.text();
+      attachedFiles.value.push({ name: file.name, content, size: file.size });
     }
   }
 }
 
 function onDragOver(e: DragEvent) {
-  e.preventDefault()
-  dragOver.value = true
+  e.preventDefault();
+  dragOver.value = true;
 }
 
 function onDragLeave(e: DragEvent) {
   if (!(e.currentTarget as HTMLElement)?.contains(e.relatedTarget as Node)) {
-    dragOver.value = false
+    dragOver.value = false;
   }
 }
 
 function onDrop(e: DragEvent) {
-  e.preventDefault()
-  dragOver.value = false
-  if (e.dataTransfer?.files?.length) processFiles(e.dataTransfer.files)
+  e.preventDefault();
+  dragOver.value = false;
+  if (e.dataTransfer?.files?.length) processFiles(e.dataTransfer.files);
 }
 
 function removeFile(i: number) {
-  attachedFiles.value.splice(i, 1)
+  attachedFiles.value.splice(i, 1);
 }
 function removeImage(i: number) {
-  attachedImages.value.splice(i, 1)
+  attachedImages.value.splice(i, 1);
 }
 
 function buildPromptContext() {
-  const parts: string[] = []
-  if (additionalContext.value.trim()) parts.push(additionalContext.value.trim())
+  const parts: string[] = [];
+  if (additionalContext.value.trim()) parts.push(additionalContext.value.trim());
   if (attachedFiles.value.length) {
-    const blocks = attachedFiles.value.map(f => `### ${f.name}\n\`\`\`\n${f.content}\n\`\`\``)
-    parts.push(`## Attached Files\n\n${blocks.join('\n\n')}`)
+    const blocks = attachedFiles.value.map((f) => `### ${f.name}\n\`\`\`\n${f.content}\n\`\`\``);
+    parts.push(`## Attached Files\n\n${blocks.join('\n\n')}`);
   }
-  return parts.join('\n\n')
+  return parts.join('\n\n');
 }
 
 // Live preview = base context from server + user additions (reactive to text/files)
 const fullPreviewText = computed(() => {
-  if (!contextText.value) return null
-  const ctx = buildPromptContext()
-  const parts = [contextText.value]
-  if (ctx) parts.push(`## Additional Context Provided by User\n${ctx}`)
+  if (!contextText.value) return null;
+  const ctx = buildPromptContext();
+  const parts = [contextText.value];
+  if (ctx) parts.push(`## Additional Context Provided by User\n${ctx}`);
   if (attachedImages.value.length) {
-    const label = attachedImages.value.length === 1 ? '1 image' : `${attachedImages.value.length} images`
-    parts.push(`[${label} attached — sent as vision input, not shown in this preview]`)
+    const label = attachedImages.value.length === 1 ? '1 image' : `${attachedImages.value.length} images`;
+    parts.push(`[${label} attached — sent as vision input, not shown in this preview]`);
   }
-  return parts.join('\n\n')
-})
+  return parts.join('\n\n');
+});
 
 // ── SCM coverage display ──────────────────────────────────────────────────────
 const scmStatus = computed(() => {
-  const scm = coverage.value?.scm
-  if (!scm) return { color: 'text-gray-400', icon: 'i-lucide-git-branch', text: 'Git context unavailable', detail: '' }
+  const scm = coverage.value?.scm;
+  if (!scm) return { color: 'text-gray-400', icon: 'i-lucide-git-branch', text: 'Git context unavailable', detail: '' };
 
   // Manual baseline was used (covers both "has last green" and "no last green" cases)
   if (scm.baseCommitUsed) {
     if (scm.filesCount === 0) {
-      return { color: 'text-yellow-500', icon: 'i-lucide-git-branch-plus', text: `Manual baseline ${scm.baseCommitUsed.slice(0, 7)} · fetch failed`, detail: 'network error or missing SCM token (check AI settings)' }
+      return {
+        color: 'text-yellow-500',
+        icon: 'i-lucide-git-branch-plus',
+        text: `Manual baseline ${scm.baseCommitUsed.slice(0, 7)} · fetch failed`,
+        detail: 'network error or missing SCM token (check AI settings)',
+      };
     }
-    const patchNote = scm.patchesOmitted ? ', no patches (diff too large)' : scm.patchesTruncated ? `, ${scm.patchedFilesCount} with patches (some cut)` : `, ${scm.patchedFilesCount} with patches`
+    const patchNote = scm.patchesOmitted
+      ? ', no patches (diff too large)'
+      : scm.patchesTruncated
+        ? `, ${scm.patchedFilesCount} with patches (some cut)`
+        : `, ${scm.patchedFilesCount} with patches`;
     return {
       color: 'text-blue-500',
       icon: 'i-lucide-git-branch-plus',
       text: `Manual baseline ${scm.baseCommitUsed.slice(0, 7)} · ${scm.filesCount} files${patchNote}`,
-      detail: scm.hasLastGreen ? 'overrides last passing run baseline' : 'no last passing run'
-    }
+      detail: scm.hasLastGreen ? 'overrides last passing run baseline' : 'no last passing run',
+    };
   }
 
-  if (!scm.hasLastGreen) return { color: 'text-gray-400', icon: 'i-lucide-git-branch', text: 'No last passing run', detail: 'enter a baseline commit below to enable diff' }
-  if (!scm.hasCommitRange) return { color: 'text-gray-400', icon: 'i-lucide-git-branch', text: 'No commit range', detail: 'reporter did not send SCM metadata' }
-  if (!scm.provider) return { color: 'text-yellow-500', icon: 'i-lucide-git-branch', text: 'Unsupported SCM host', detail: 'only GitHub, GitLab and Bitbucket are supported' }
-  if (scm.filesCount === 0) return { color: 'text-yellow-500', icon: 'i-lucide-git-branch', text: `${scm.provider} · fetch failed`, detail: 'network error or missing SCM token (check AI settings)' }
+  if (!scm.hasLastGreen)
+    return {
+      color: 'text-gray-400',
+      icon: 'i-lucide-git-branch',
+      text: 'No last passing run',
+      detail: 'enter a baseline commit below to enable diff',
+    };
+  if (!scm.hasCommitRange)
+    return {
+      color: 'text-gray-400',
+      icon: 'i-lucide-git-branch',
+      text: 'No commit range',
+      detail: 'reporter did not send SCM metadata',
+    };
+  if (!scm.provider)
+    return {
+      color: 'text-yellow-500',
+      icon: 'i-lucide-git-branch',
+      text: 'Unsupported SCM host',
+      detail: 'only GitHub, GitLab and Bitbucket are supported',
+    };
+  if (scm.filesCount === 0)
+    return {
+      color: 'text-yellow-500',
+      icon: 'i-lucide-git-branch',
+      text: `${scm.provider} · fetch failed`,
+      detail: 'network error or missing SCM token (check AI settings)',
+    };
 
   if (scm.patchesOmitted) {
-    return { color: 'text-yellow-500', icon: 'i-lucide-git-branch', text: `${scm.provider} · ${scm.filesCount} files`, detail: 'diff too large — file list only, no patches' }
+    return {
+      color: 'text-yellow-500',
+      icon: 'i-lucide-git-branch',
+      text: `${scm.provider} · ${scm.filesCount} files`,
+      detail: 'diff too large — file list only, no patches',
+    };
   }
-  const patchNote = scm.patchesTruncated ? ', some patches cut (budget)' : ''
-  const commitNote = scm.commitsCount > 0 ? ` · ${scm.commitsCount} commit${scm.commitsCount > 1 ? 's' : ''}` : ''
+  const patchNote = scm.patchesTruncated ? ', some patches cut (budget)' : '';
+  const commitNote = scm.commitsCount > 0 ? ` · ${scm.commitsCount} commit${scm.commitsCount > 1 ? 's' : ''}` : '';
   return {
     color: 'text-green-500',
     icon: 'i-lucide-git-branch',
     text: `${scm.provider} · ${scm.filesCount} files · ${scm.patchedFilesCount} with patches${patchNote}${commitNote}`,
-    detail: ''
-  }
-})
+    detail: '',
+  };
+});
 
 // ── Diagnosis flow ────────────────────────────────────────────────────────────
 async function fetchDiagnosis() {
   try {
-    const res = await $fetch<{ diagnosis: FailureDiagnosis | null, manualBaseCommit: string | null }>(
-      `/api/failure-clusters/${props.clusterId}/diagnosis`
-    )
-    diagnosis.value = res.diagnosis
+    const res = await $fetch<{ diagnosis: FailureDiagnosis | null; manualBaseCommit: string | null }>(
+      `/api/failure-clusters/${props.clusterId}/diagnosis`,
+    );
+    diagnosis.value = res.diagnosis;
     // Pre-populate baseCommit from saved value on first load (don't overwrite if user already changed it)
     if (savedBaseCommit.value === baseCommit.value && res.manualBaseCommit) {
-      savedBaseCommit.value = res.manualBaseCommit
-      baseCommit.value = res.manualBaseCommit
+      savedBaseCommit.value = res.manualBaseCommit;
+      baseCommit.value = res.manualBaseCommit;
     } else if (!savedBaseCommit.value) {
-      savedBaseCommit.value = res.manualBaseCommit ?? ''
+      savedBaseCommit.value = res.manualBaseCommit ?? '';
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 async function persistBaseCommit(sha: string) {
   try {
     await $fetch(`/api/failure-clusters/${props.clusterId}/base-commit`, {
       method: 'PATCH',
-      body: { commit: sha || null }
-    })
-    savedBaseCommit.value = sha
-  } catch { /* ignore — non-critical */ }
+      body: { commit: sha || null },
+    });
+    savedBaseCommit.value = sha;
+  } catch {
+    /* ignore — non-critical */
+  }
 }
 
 async function fetchContext() {
-  loadingContext.value = true
-  contextText.value = null
-  coverage.value = null
+  loadingContext.value = true;
+  contextText.value = null;
+  coverage.value = null;
   try {
-    const query: Record<string, string | string[]> = {}
-    if (baseCommit.value.trim()) query.baseCommit = baseCommit.value.trim()
-    if (selectedCommitShas.value.length) query.selectedCommitShas = selectedCommitShas.value
-    const res = await $fetch<{ context: string, coverage: DiagnosisContextCoverage }>(
+    const query: Record<string, string | string[]> = {};
+    if (baseCommit.value.trim()) query.baseCommit = baseCommit.value.trim();
+    if (selectedCommitShas.value.length) query.selectedCommitShas = selectedCommitShas.value;
+    const res = await $fetch<{ context: string; coverage: DiagnosisContextCoverage }>(
       `/api/failure-clusters/${props.clusterId}/context`,
-      { query }
-    )
-    contextText.value = res.context
-    coverage.value = res.coverage
+      { query },
+    );
+    contextText.value = res.context;
+    coverage.value = res.coverage;
   } catch {
-    contextText.value = '(failed to load context)'
+    contextText.value = '(failed to load context)';
   } finally {
-    loadingContext.value = false
+    loadingContext.value = false;
   }
 }
 
 // Debounce context refresh when baseCommit changes (avoids SCM API spam while typing)
-let baseCommitTimer: ReturnType<typeof setTimeout> | null = null
+let baseCommitTimer: ReturnType<typeof setTimeout> | null = null;
 watch(baseCommit, (val) => {
-  if (baseCommitTimer) clearTimeout(baseCommitTimer)
+  if (baseCommitTimer) clearTimeout(baseCommitTimer);
   baseCommitTimer = setTimeout(() => {
-    fetchContext()
-  }, 900)
+    fetchContext();
+  }, 900);
   // Auto-save immediately when the value differs from what's in the DB
-  if (val !== savedBaseCommit.value) persistBaseCommit(val)
-})
+  if (val !== savedBaseCommit.value) persistBaseCommit(val);
+});
 
-watch(selectedCommitShas, () => {
-  fetchContext()
-}, { deep: true })
+watch(
+  selectedCommitShas,
+  () => {
+    fetchContext();
+  },
+  { deep: true },
+);
 
-const baseCommitIsPinned = computed(() => !!savedBaseCommit.value)
+const baseCommitIsPinned = computed(() => !!savedBaseCommit.value);
 
 function startPoll() {
-  if (pollTimer.value) return
-  let elapsed = 0
+  if (pollTimer.value) return;
+  let elapsed = 0;
   pollTimer.value = setInterval(async () => {
-    elapsed += 3000
-    await fetchDiagnosis()
-    if (!diagnosis.value || diagnosis.value.status !== 'running' || elapsed >= 120_000) stopPoll()
-  }, 3000)
+    elapsed += 3000;
+    await fetchDiagnosis();
+    if (!diagnosis.value || diagnosis.value.status !== 'running' || elapsed >= 120_000) stopPoll();
+  }, 3000);
 }
 
 function stopPoll() {
   if (pollTimer.value) {
-    clearInterval(pollTimer.value)
-    pollTimer.value = null
+    clearInterval(pollTimer.value);
+    pollTimer.value = null;
   }
 }
 
 async function diagnose(force = false) {
-  posting.value = true
+  posting.value = true;
   try {
     const url = force
       ? `/api/failure-clusters/${props.clusterId}/diagnose?force=true`
-      : `/api/failure-clusters/${props.clusterId}/diagnose`
-    const ctx = buildPromptContext()
-    const body: Record<string, unknown> = {}
-    if (ctx) body.additionalContext = ctx
-    if (baseCommit.value.trim()) body.baseCommit = baseCommit.value.trim()
-    if (selectedCommitShas.value.length) body.selectedCommitShas = selectedCommitShas.value
+      : `/api/failure-clusters/${props.clusterId}/diagnose`;
+    const ctx = buildPromptContext();
+    const body: Record<string, unknown> = {};
+    if (ctx) body.additionalContext = ctx;
+    if (baseCommit.value.trim()) body.baseCommit = baseCommit.value.trim();
+    if (selectedCommitShas.value.length) body.selectedCommitShas = selectedCommitShas.value;
     if (attachedImages.value.length) {
-      body.images = attachedImages.value.map(img => ({ name: img.name, mediaType: img.mediaType, data: img.data }))
+      body.images = attachedImages.value.map((img) => ({ name: img.name, mediaType: img.mediaType, data: img.data }));
     }
     diagnosis.value = await $fetch<FailureDiagnosis>(url, {
       method: 'POST',
-      body: Object.keys(body).length ? body : undefined
-    })
-    if (diagnosis.value?.status === 'running') startPoll()
+      body: Object.keys(body).length ? body : undefined,
+    });
+    if (diagnosis.value?.status === 'running') startPoll();
   } catch (err: unknown) {
-    const status = (err as { statusCode?: number })?.statusCode
-    if (status === 409) startPoll()
-    else toast.add({ title: 'Diagnosis failed', description: String((err as Error)?.message ?? err), color: 'error' })
+    const status = (err as { statusCode?: number })?.statusCode;
+    if (status === 409) startPoll();
+    else toast.add({ title: 'Diagnosis failed', description: String((err as Error)?.message ?? err), color: 'error' });
   } finally {
-    posting.value = false
+    posting.value = false;
   }
 }
 
 onMounted(() => {
-  fetchDiagnosis()
-  fetchContext()
-})
+  fetchDiagnosis();
+  fetchContext();
+});
 onUnmounted(() => {
-  stopPoll()
-  if (baseCommitTimer) clearTimeout(baseCommitTimer)
-})
+  stopPoll();
+  if (baseCommitTimer) clearTimeout(baseCommitTimer);
+});
 watch(diagnosis, (val) => {
-  if (val?.status === 'running') startPoll()
-  else stopPoll()
-})
+  if (val?.status === 'running') startPoll();
+  else stopPoll();
+});
 
 const categoryColors: Record<string, 'error' | 'warning' | 'info' | 'secondary' | 'neutral'> = {
   'app-bug': 'error',
   'test-bug': 'warning',
   'flaky-test': 'warning',
-  'infrastructure': 'info',
-  'environment': 'secondary',
-  'unknown': 'neutral'
-}
+  infrastructure: 'info',
+  environment: 'secondary',
+  unknown: 'neutral',
+};
 
 const confidenceColors: Record<string, 'success' | 'warning' | 'neutral'> = {
   high: 'success',
   medium: 'warning',
-  low: 'neutral'
-}
+  low: 'neutral',
+};
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const details = computed(() => diagnosis.value?.details as any)
+const details = computed(() => diagnosis.value?.details as any);
 
 function formatTokens(i: number | null, o: number | null) {
-  if (i == null && o == null) return ''
-  return `${i ?? 0} in / ${o ?? 0} out tokens`
+  if (i == null && o == null) return '';
+  return `${i ?? 0} in / ${o ?? 0} out tokens`;
 }
 
 function isStale(d: FailureDiagnosis) {
-  return d.status === 'running' && Date.now() - new Date(d.updatedAt).getTime() > 5 * 60 * 1000
+  return d.status === 'running' && Date.now() - new Date(d.updatedAt).getTime() > 5 * 60 * 1000;
 }
 
 function copyToClipboard(text: string | null) {
-  if (text) window.navigator.clipboard?.writeText(text)
+  if (text) window.navigator.clipboard?.writeText(text);
 }
 </script>
 
@@ -327,10 +373,7 @@ function copyToClipboard(text: string | null) {
               <UIcon name="i-lucide-sparkles" class="size-4 text-primary shrink-0" />
               <span class="text-sm font-semibold">Error context</span>
 
-              <span class="text-xs text-gray-400 items-center gap-1">
-                &mdash;
-                What will be sent to AI
-              </span>
+              <span class="text-xs text-gray-400 items-center gap-1"> &mdash; What will be sent to AI </span>
             </div>
 
             <UButton
@@ -365,13 +408,7 @@ function copyToClipboard(text: string | null) {
                   <UIcon name="i-lucide-x" class="size-3" />
                 </button>
               </div>
-              <UButton
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-list"
-                @click="commitBrowserOpen = true"
-              >
+              <UButton size="xs" color="neutral" variant="ghost" icon="i-lucide-list" @click="commitBrowserOpen = true">
                 Browse
               </UButton>
             </div>
@@ -395,9 +432,7 @@ function copyToClipboard(text: string | null) {
 
         <!-- Additional context drop zone -->
         <div>
-          <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-            Additional context
-          </label>
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"> Additional context </label>
           <div
             class="rounded-lg border-2 transition-colors"
             :class="dragOver ? 'border-primary bg-primary/5 border-solid' : 'border-dashed border-default'"
@@ -419,7 +454,7 @@ function copyToClipboard(text: string | null) {
                 class="hidden"
                 accept=".txt,.log,.md,.json,.ts,.js,.py,.sql,.xml,.yaml,.yml,.html,.css,.env,image/*"
                 @change="processFiles(($event.target as HTMLInputElement).files!)"
-              >
+              />
               <UButton
                 icon="i-lucide-paperclip"
                 size="xs"
@@ -454,8 +489,10 @@ function copyToClipboard(text: string | null) {
         <!-- Attached images -->
         <div v-if="attachedImages.length" class="flex flex-wrap gap-2">
           <div v-for="(img, i) in attachedImages" :key="i" class="relative group">
-            <img :src="img.preview" :alt="img.name" class="h-16 w-16 object-cover rounded-lg border border-default">
-            <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
+            <img :src="img.preview" :alt="img.name" class="h-16 w-16 object-cover rounded-lg border border-default" />
+            <div
+              class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center"
+            >
               <button class="text-white" @click="removeImage(i)">
                 <UIcon name="i-lucide-x" class="size-4" />
               </button>
@@ -574,18 +611,22 @@ function copyToClipboard(text: string | null) {
             </ul>
 
             <div v-if="details?.suggestedFix">
-              <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Suggested fix
-              </p>
+              <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Suggested fix</p>
               <p class="text-sm text-gray-600 dark:text-gray-400">
                 {{ details.suggestedFix.description }}
               </p>
-              <code v-if="details.suggestedFix.file && !details.suggestedFix.patch" class="block text-xs font-mono mt-1 text-primary">{{ details.suggestedFix.file }}</code>
+              <code
+                v-if="details.suggestedFix.file && !details.suggestedFix.patch"
+                class="block text-xs font-mono mt-1 text-primary"
+                >{{ details.suggestedFix.file }}</code
+              >
 
               <!-- Patch (preferred): diff-highlighted via MarkdownPreview -->
               <div v-if="details.suggestedFix.patch" class="mt-2">
                 <div class="flex items-center justify-between mb-1">
-                  <span class="text-xs text-gray-500 font-mono">patch — apply with <code class="bg-muted px-1 rounded">git apply</code></span>
+                  <span class="text-xs text-gray-500 font-mono"
+                    >patch — apply with <code class="bg-muted px-1 rounded">git apply</code></span
+                  >
                   <UButton
                     icon="i-lucide-copy"
                     size="xs"
@@ -600,7 +641,9 @@ function copyToClipboard(text: string | null) {
 
               <!-- Fallback: plain code snippet when no patch -->
               <div v-else-if="details.suggestedFix.code" class="relative mt-2">
-                <pre class="text-xs font-mono bg-muted rounded p-3 overflow-x-auto">{{ details.suggestedFix.code }}</pre>
+                <pre class="text-xs font-mono bg-muted rounded p-3 overflow-x-auto">{{
+                  details.suggestedFix.code
+                }}</pre>
                 <UButton
                   icon="i-lucide-copy"
                   size="xs"
@@ -614,9 +657,7 @@ function copyToClipboard(text: string | null) {
             </div>
 
             <ul v-if="details?.preventionTips?.length" class="space-y-1">
-              <li class="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                Prevention tips
-              </li>
+              <li class="text-xs font-medium text-gray-500 uppercase tracking-wide">Prevention tips</li>
               <li
                 v-for="(t, i) in details.preventionTips"
                 :key="i"
@@ -628,7 +669,8 @@ function copyToClipboard(text: string | null) {
             </ul>
 
             <div class="text-xs text-gray-400 pt-1 border-t border-default">
-              {{ diagnosis.model }} · {{ formatTokens(diagnosis.inputTokens, diagnosis.outputTokens) }} · {{ formatRelativeTime(diagnosis.updatedAt) }}
+              {{ diagnosis.model }} · {{ formatTokens(diagnosis.inputTokens, diagnosis.outputTokens) }} ·
+              {{ formatRelativeTime(diagnosis.updatedAt) }}
             </div>
           </div>
 
@@ -638,9 +680,7 @@ function copyToClipboard(text: string | null) {
             class="flex flex-col items-center justify-center p-8 text-center text-gray-400 border border-dashed border-default rounded-lg"
           >
             <UIcon name="i-lucide-sparkles" class="size-8 mb-2 opacity-30" />
-            <p class="text-sm">
-              Diagnosis will appear here
-            </p>
+            <p class="text-sm">Diagnosis will appear here</p>
           </div>
         </div>
       </div>

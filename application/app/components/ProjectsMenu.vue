@@ -1,75 +1,82 @@
 <script setup lang="ts">
-import type { DropdownMenuItem } from '@nuxt/ui'
-import type { ProjectWithStats } from '~~/types/api'
+import type { DropdownMenuItem } from '@nuxt/ui';
+import type { ProjectWithStats } from '~~/types/api';
 
 defineProps<{
-  collapsed?: boolean
-}>()
+  collapsed?: boolean;
+}>();
 
-const route = useRoute()
-const router = useRouter()
+const route = useRoute();
+const router = useRouter();
 
 // Fetch available projects
-const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/projects')
+const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/projects');
 
-useRunStream(refresh)
+useRunStream(refresh);
 
 // Get current project from route
 const currentProjectId = computed(() => {
-  const id = route.params.id
-  return id ? parseInt(id as string) : null
-})
+  const id = route.params.id;
+  return id ? parseInt(id as string) : null;
+});
 
 // Find the selected project
 const selectedProject = computed(() => {
   if (!currentProjectId.value || !projects.value) {
     return {
       label: 'All projects',
-      icon: 'i-lucide-folder-open'
-    }
+      icon: 'i-lucide-folder-open',
+    };
   }
 
-  const project = projects.value.find(p => p.id === currentProjectId.value)
+  const project = projects.value.find((p) => p.id === currentProjectId.value);
   return project
     ? {
         label: project.label || project.name,
-        icon: 'i-lucide-folder'
+        icon: 'i-lucide-folder',
       }
     : {
         label: 'All projects',
-        icon: 'i-lucide-folder-open'
-      }
-})
+        icon: 'i-lucide-folder-open',
+      };
+});
 
 // Create dropdown items
 const items = computed<DropdownMenuItem[][]>(() => {
-  const projectItems: DropdownMenuItem[] = [{
-    label: 'All projects',
-    icon: 'i-lucide-folder-open',
-    onSelect() {
-      router.push('/projects')
-    }
-  }]
+  const projectItems: DropdownMenuItem[] = [
+    {
+      label: 'All projects',
+      icon: 'i-lucide-folder-open',
+      onSelect() {
+        router.push('/projects');
+      },
+    },
+  ];
 
   if (projects.value && projects.value.length > 0) {
-    projectItems.push(...projects.value.map((project) => {
-      return {
-        label: project.label || project.name,
-        icon: 'i-lucide-folder',
-        onSelect() {
-          router.push(`/projects/${project.id}`)
-        }
-      }
-    }))
+    projectItems.push(
+      ...projects.value.map((project) => {
+        return {
+          label: project.label || project.name,
+          icon: 'i-lucide-folder',
+          onSelect() {
+            router.push(`/projects/${project.id}`);
+          },
+        };
+      }),
+    );
   }
 
-  return [projectItems]
-})
+  return [projectItems];
+});
 
 // Refresh projects when route changes
-watch(() => route.path, () => {
-  refresh()
-})
+watch(
+  () => route.path,
+  () => {
+    refresh();
+  },
+);
 </script>
 
 <template>
@@ -82,7 +89,7 @@ watch(() => route.path, () => {
       v-bind="{
         ...selectedProject,
         label: collapsed ? undefined : selectedProject?.label,
-        trailingIcon: collapsed ? undefined : 'i-lucide-chevrons-up-down'
+        trailingIcon: collapsed ? undefined : 'i-lucide-chevrons-up-down',
       }"
       color="neutral"
       variant="ghost"
@@ -91,7 +98,7 @@ watch(() => route.path, () => {
       class="data-[state=open]:bg-elevated"
       :class="[!collapsed && 'py-2']"
       :ui="{
-        trailingIcon: 'text-dimmed'
+        trailingIcon: 'text-dimmed',
       }"
     />
   </UDropdownMenu>

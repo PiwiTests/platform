@@ -1,45 +1,46 @@
-import { getDatabase } from '../../../database'
-import { testRunsCases, files } from '../../../database/schema'
-import { eq, sql } from 'drizzle-orm'
+import { getDatabase } from '../../../database';
+import { testRunsCases, files } from '../../../database/schema';
+import { eq, sql } from 'drizzle-orm';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Cases'],
     summary: 'Get trace files for a test case',
     description: 'Returns a list of trace files associated with a specific test case.',
-    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }]
-  }
-})
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+  },
+});
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0')
+  const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {
     throw createError({
       statusCode: 400,
-      message: 'Invalid test run case ID'
-    })
+      message: 'Invalid test run case ID',
+    });
   }
 
-  const db = await getDatabase()
+  const db = await getDatabase();
 
-  const testRunsCaseResults = await db.select().from(testRunsCases).where(eq(testRunsCases.id, id))
-  const testRunsCase = testRunsCaseResults[0]
+  const testRunsCaseResults = await db.select().from(testRunsCases).where(eq(testRunsCases.id, id));
+  const testRunsCase = testRunsCaseResults[0];
 
   if (!testRunsCase) {
     throw createError({
       statusCode: 404,
-      message: 'Test case not found'
-    })
+      message: 'Test case not found',
+    });
   }
 
-  const traceRows = await db.select()
+  const traceRows = await db
+    .select()
     .from(files)
-    .where(sql`${files.testRunsCaseId} = ${id} AND ${files.type} = 'trace'`)
+    .where(sql`${files.testRunsCaseId} = ${id} AND ${files.type} = 'trace'`);
 
-  return traceRows.map(t => ({
+  return traceRows.map((t) => ({
     id: t.id,
     filePath: t.path,
-    createdAt: t.createdAt
-  }))
-})
+    createdAt: t.createdAt,
+  }));
+});

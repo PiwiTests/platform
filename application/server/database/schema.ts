@@ -3,12 +3,12 @@
 // based on whether DATABASE_URL is set.
 // TypeScript type-checking uses the SQLite schema as the canonical reference.
 
-import * as sqliteSchema from './schema.sqlite'
-import * as pgSchema from './schema.pg'
+import * as sqliteSchema from './schema.sqlite';
+import * as pgSchema from './schema.pg';
 
 // Pick the appropriate schema tables at module initialization time
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const schema: typeof sqliteSchema = (process.env.DATABASE_URL ? pgSchema : sqliteSchema) as any
+const schema: typeof sqliteSchema = (process.env.DATABASE_URL ? pgSchema : sqliteSchema) as any;
 
 export const {
   projects,
@@ -24,8 +24,8 @@ export const {
   tags,
   projectTags,
   users,
-  apiKeys
-} = schema
+  apiKeys,
+} = schema;
 
 // TypeScript type exports – always based on SQLite schema (the canonical reference)
 export type {
@@ -56,5 +56,5 @@ export type {
   Tag,
   NewTag,
   ProjectTag,
-  NewProjectTag
-} from './schema.sqlite'
+  NewProjectTag,
+} from './schema.sqlite';

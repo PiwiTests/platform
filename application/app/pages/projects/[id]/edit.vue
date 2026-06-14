@@ -1,42 +1,44 @@
 <script setup lang="ts">
-import { z } from 'zod'
-import type { ProjectDetails, TagsResponse, TagInfo } from '~~/types/api'
+import { z } from 'zod';
+import type { ProjectDetails, TagsResponse, TagInfo } from '~~/types/api';
 
-const route = useRoute()
-const router = useRouter()
-const toast = useToast()
-const projectId = route.params.id
+const route = useRoute();
+const router = useRouter();
+const toast = useToast();
+const projectId = route.params.id;
 
-const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`)
-const { data: tagsData, refresh: refreshTags } = await useFetch<TagsResponse>('/api/tags')
+const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`);
+const { data: tagsData, refresh: refreshTags } = await useFetch<TagsResponse>('/api/tags');
 
-useHead(computed(() => ({ title: `Edit ${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard` })))
+useHead(
+  computed(() => ({ title: `Edit ${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard` })),
+);
 
-const allTags = computed(() => tagsData.value?.tags || [])
+const allTags = computed(() => tagsData.value?.tags || []);
 
-const hasToken = computed(() => Boolean(project.value?.hasScmToken))
+const hasToken = computed(() => Boolean(project.value?.hasScmToken));
 
 const state = ref({
   label: project.value?.label || '',
   description: project.value?.description || '',
   diagnosisInstructions: project.value?.diagnosisInstructions || '',
-  scmToken: ''
-})
+  scmToken: '',
+});
 
-const selectedTags = ref<TagInfo[]>(project.value?.tags || [])
+const selectedTags = ref<TagInfo[]>(project.value?.tags || []);
 
 const schema = z.object({
   label: z.string().optional(),
   description: z.string().optional(),
   diagnosisInstructions: z.string().optional(),
-  scmToken: z.string().optional()
-})
+  scmToken: z.string().optional(),
+});
 
-const saving = ref(false)
+const saving = ref(false);
 
 async function onSubmit() {
   try {
-    saving.value = true
+    saving.value = true;
 
     await $fetch(`/api/projects/${projectId}`, {
       method: 'PUT',
@@ -45,31 +47,31 @@ async function onSubmit() {
         description: state.value.description || null,
         diagnosisInstructions: state.value.diagnosisInstructions || null,
         scmToken: state.value.scmToken || null,
-        tagIds: selectedTags.value.map(t => t.id)
-      }
-    })
+        tagIds: selectedTags.value.map((t) => t.id),
+      },
+    });
 
     toast.add({
       title: 'Project updated',
       description: 'Project settings have been saved successfully',
-      color: 'success'
-    })
+      color: 'success',
+    });
 
-    await router.push(`/projects/${projectId}`)
+    await router.push(`/projects/${projectId}`);
   } catch (error) {
-    console.error('Error updating project:', error)
+    console.error('Error updating project:', error);
     toast.add({
       title: 'Error',
       description: 'Failed to update project',
-      color: 'error'
-    })
+      color: 'error',
+    });
   } finally {
-    saving.value = false
+    saving.value = false;
   }
 }
 
 function onCancel() {
-  router.push(`/projects/${projectId}`)
+  router.push(`/projects/${projectId}`);
 }
 </script>
 
@@ -84,7 +86,7 @@ function onCancel() {
               { label: 'Home', icon: 'i-lucide-house', to: '/' },
               { label: 'Projects', to: '/projects' },
               { label: project?.label || project?.name || 'Project', to: `/projects/${projectId}` },
-              { label: 'Edit' }
+              { label: 'Edit' },
             ]"
           />
         </template>
@@ -95,9 +97,7 @@ function onCancel() {
       <div class="p-4 space-y-4">
         <UCard>
           <template #header>
-            <h2>
-              Edit project settings
-            </h2>
+            <h2>Edit project settings</h2>
             <p class="text-sm text-gray-600 mt-1">
               Project Name: <span class="font-medium">{{ project?.name }}</span>
             </p>
@@ -106,13 +106,12 @@ function onCancel() {
             </p>
           </template>
 
-          <UForm
-            :schema="schema"
-            :state="state"
-            class="space-y-4"
-            @submit="onSubmit"
-          >
-            <UFormField label="Display label" name="label" description="A friendly name to display in the UI (defaults to project name if not set)">
+          <UForm :schema="schema" :state="state" class="space-y-4" @submit="onSubmit">
+            <UFormField
+              label="Display label"
+              name="label"
+              description="A friendly name to display in the UI (defaults to project name if not set)"
+            >
               <UInput v-model="state.label" placeholder="Enter display label" />
             </UFormField>
 
@@ -136,7 +135,11 @@ function onCancel() {
             <UFormField
               label="SCM token"
               name="scmToken"
-              :description="hasToken ? 'Leave empty to keep the stored token, enter a new value to replace it, or save empty to remove it' : 'Optional per-project SCM token for GitHub, GitLab, or Bitbucket API access. Used by AI diagnosis to fetch changed files. Falls back to the global SCM token if not set.'"
+              :description="
+                hasToken
+                  ? 'Leave empty to keep the stored token, enter a new value to replace it, or save empty to remove it'
+                  : 'Optional per-project SCM token for GitHub, GitLab, or Bitbucket API access. Used by AI diagnosis to fetch changed files. Falls back to the global SCM token if not set.'
+              "
             >
               <UInput
                 v-model="state.scmToken"
@@ -146,21 +149,17 @@ function onCancel() {
               />
             </UFormField>
 
-            <UFormField label="Tags" name="tags" description="Select existing tags or type a new name and press Enter to create one.">
-              <TagsSelect
-                v-model="selectedTags"
-                :all-tags="allTags"
-                @tag-created="refreshTags()"
-              />
+            <UFormField
+              label="Tags"
+              name="tags"
+              description="Select existing tags or type a new name and press Enter to create one."
+            >
+              <TagsSelect v-model="selectedTags" :all-tags="allTags" @tag-created="refreshTags()" />
             </UFormField>
 
             <div class="flex gap-2 pt-4">
-              <UButton type="submit" :loading="saving">
-                Save changes
-              </UButton>
-              <UButton variant="outline" @click="onCancel">
-                Cancel
-              </UButton>
+              <UButton type="submit" :loading="saving"> Save changes </UButton>
+              <UButton variant="outline" @click="onCancel"> Cancel </UButton>
             </div>
           </UForm>
         </UCard>

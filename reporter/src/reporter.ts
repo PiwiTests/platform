@@ -1,17 +1,17 @@
-import * as path from "path";
-import type { FullConfig, Suite, TestCase, TestResult, FullResult } from "@playwright/test/reporter";
-import { resolveOptions, type DashboardReporterOptions } from "./config.js";
-import { HttpClient } from "./http-client.js";
-import { Uploader, type RunPayload, type ReportOptions } from "./uploader.js";
-import { StreamBuffer } from "./stream-buffer.js";
-import { CrashRecovery } from "./crash-recovery.js";
-import { FileHandler } from "./file-handler.js";
-import { MetadataCollector } from "./metadata-collector.js";
-import { StreamManager } from "./stream-manager.js";
-import { collectStepMetrics, computePerformanceSummary } from "./step-analyzer.js";
-import { computeInstanceId, readSourceSnippet, createGlobalSetup } from "./helpers.js";
+import * as path from 'path';
+import type { FullConfig, Suite, TestCase, TestResult, FullResult } from '@playwright/test/reporter';
+import { resolveOptions, type DashboardReporterOptions } from './config.js';
+import { HttpClient } from './http-client.js';
+import { Uploader, type RunPayload, type ReportOptions } from './uploader.js';
+import { StreamBuffer } from './stream-buffer.js';
+import { CrashRecovery } from './crash-recovery.js';
+import { FileHandler } from './file-handler.js';
+import { MetadataCollector } from './metadata-collector.js';
+import { StreamManager } from './stream-manager.js';
+import { collectStepMetrics, computePerformanceSummary } from './step-analyzer.js';
+import { computeInstanceId, readSourceSnippet, createGlobalSetup } from './helpers.js';
 
-class PiwiDashboardReporter {
+export class PiwiDashboardReporter {
   private options: DashboardReporterOptions;
   private testCases: any[] = [];
   private startTime: string | null = null;
@@ -38,7 +38,7 @@ class PiwiDashboardReporter {
     this.enabled = !!this.options.serverUrl;
     this.instanceId = computeInstanceId(this.options.projectName!);
 
-    this.httpClient = new HttpClient(this.options.serverUrl ?? "http://localhost:3000", this.options.verbose);
+    this.httpClient = new HttpClient(this.options.serverUrl ?? 'http://localhost:3000', this.options.verbose);
     this.fileHandler = new FileHandler();
     this.uploader = new Uploader(this.httpClient, this.fileHandler, this.options.verbose);
     this.recovery = new CrashRecovery(this.options.projectName!, this.options.verbose);
@@ -61,7 +61,7 @@ class PiwiDashboardReporter {
 
   onBegin(config: FullConfig, suite: Suite): void {
     if (!this.enabled) {
-      console.log("[Piwi Dashboard] Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.");
+      console.log('[Piwi Dashboard] Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');
       return;
     }
     this.startTime = new Date().toISOString();
@@ -73,7 +73,7 @@ class PiwiDashboardReporter {
   onTestBegin(test: TestCase, result: TestResult): void {
     const relativeFilePath = path.relative(process.cwd(), test.location.file);
     const beginEvent = {
-      type: "begin",
+      type: 'begin',
       title: test.title,
       location: `${relativeFilePath}:${test.location.line}:${test.location.column}`,
       workerIndex: result?.workerIndex ?? (result as any)?.parallelIndex ?? null,
@@ -90,7 +90,7 @@ class PiwiDashboardReporter {
     const relativeFilePath = path.relative(process.cwd(), test.location.file);
 
     const testCase: any = {
-      type: "complete",
+      type: 'complete',
       title: test.title,
       location: `${relativeFilePath}:${test.location.line}:${test.location.column}`,
       status: result.status,
@@ -103,7 +103,7 @@ class PiwiDashboardReporter {
       browser: this.metadataCollector.getBrowserConfig(test) || undefined,
     };
 
-    if (result.status === "failed" || result.status === "timedOut") {
+    if (result.status === 'failed' || result.status === 'timedOut') {
       const snippet = readSourceSnippet(test.location.file, test.location.line, 30);
       if (snippet) testCase.testSource = snippet;
     }
@@ -117,16 +117,16 @@ class PiwiDashboardReporter {
     }
 
     switch (result.status) {
-      case "passed":
+      case 'passed':
         this.passedTests++;
         break;
-      case "failed":
+      case 'failed':
         this.failedTests++;
         break;
-      case "skipped":
+      case 'skipped':
         this.skippedTests++;
         break;
-      case "timedOut":
+      case 'timedOut':
         this.timedOutTests++;
         break;
     }
@@ -146,7 +146,7 @@ class PiwiDashboardReporter {
     const overallStatus = this.resolveOverallStatus(result);
 
     console.log(
-      `[Piwi Dashboard] Test run completed. Status: ${overallStatus} (Playwright result.status: ${result?.status || "undefined"})`,
+      `[Piwi Dashboard] Test run completed. Status: ${overallStatus} (Playwright result.status: ${result?.status || 'undefined'})`,
     );
     console.log(
       `[Piwi Dashboard] Total: ${this.totalTests}, Passed: ${this.passedTests}, Failed: ${this.failedTests}, Skipped: ${this.skippedTests}, TimedOut: ${this.timedOutTests}`,
@@ -212,14 +212,14 @@ class PiwiDashboardReporter {
 
   private resolveOverallStatus(result: FullResult): string {
     const STATUS_MAP: Record<string, string> = {
-      passed: "passed",
-      failed: "failed",
-      timedout: "failed",
-      interrupted: "failed",
+      passed: 'passed',
+      failed: 'failed',
+      timedout: 'failed',
+      interrupted: 'failed',
     };
-    if (result?.status) return STATUS_MAP[result.status] ?? "failed";
-    if (this.failedTests === 0 && this.timedOutTests === 0 && this.totalTests > 0) return "passed";
-    return "failed";
+    if (result?.status) return STATUS_MAP[result.status] ?? 'failed';
+    if (this.failedTests === 0 && this.timedOutTests === 0 && this.totalTests > 0) return 'passed';
+    return 'failed';
   }
 
   private mapTestCase(tc: any): any {
@@ -249,7 +249,7 @@ class PiwiDashboardReporter {
   private async tryFinishStreaming(overallStatus: string, duration: number, auth: string | null): Promise<boolean> {
     const sm = this.streamManager!;
     try {
-      const flakyTests = this.testCases.filter((tc) => tc.status === "passed" && (tc.retries || 0) > 0).length;
+      const flakyTests = this.testCases.filter((tc) => tc.status === 'passed' && (tc.retries || 0) > 0).length;
       const durations = this.testCases.filter((tc) => tc.duration != null).map((tc) => tc.duration);
 
       await sm.uploadRemaining(this.testCases);
@@ -291,7 +291,7 @@ class PiwiDashboardReporter {
       return true;
     } catch (error: any) {
       console.warn(`[Piwi Dashboard] Failed to finalize streaming run: ${error.message}`);
-      console.log("[Piwi Dashboard] Falling back to batch upload...");
+      console.log('[Piwi Dashboard] Falling back to batch upload...');
       return false;
     }
   }
@@ -302,9 +302,9 @@ class PiwiDashboardReporter {
       this.recovery.clear();
       return true;
     } catch (error: any) {
-      if (error.message?.includes("401") && !auth) throw error;
+      if (error.message?.includes('401') && !auth) throw error;
       console.warn(`[Piwi Dashboard] Failed to upload with files: ${error.message}`);
-      console.log("[Piwi Dashboard] Falling back to JSON upload...");
+      console.log('[Piwi Dashboard] Falling back to JSON upload...');
       return false;
     }
   }
@@ -317,11 +317,9 @@ class PiwiDashboardReporter {
     } catch (error: any) {
       // If the server returned 401 and no auth was configured, this is a
       // configuration error — throw so the caller knows it's fatal.
-      if (error.message?.includes("401") && !auth) throw error;
+      if (error.message?.includes('401') && !auth) throw error;
       console.error(`[Piwi Dashboard] All upload methods failed: ${error.message}`);
       this.recovery.save(payload);
     }
   }
 }
-
-export = PiwiDashboardReporter;

@@ -1,17 +1,17 @@
 <script setup lang="ts">
 interface CiInfo {
-  provider?: string
-  buildNumber?: string
-  buildUrl?: string
-  workflow?: string
-  jobName?: string
+  provider?: string;
+  buildNumber?: string;
+  buildUrl?: string;
+  workflow?: string;
+  jobName?: string;
 }
 
 defineProps<{
-  ci?: CiInfo | null
-  environment?: string | null
-  class?: string
-}>()
+  ci?: CiInfo | null;
+  environment?: string | null;
+  class?: string;
+}>();
 </script>
 
 <template>
