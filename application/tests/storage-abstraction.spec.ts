@@ -99,16 +99,16 @@ test.describe('Storage Abstraction Tests', () => {
   test.describe('Storage Factory', () => {
     test('should return local storage by default', () => {
       // Set environment to use local storage
-      process.env.STORAGE_TYPE = 'local';
-      process.env.STORAGE_PATH = testStorageDir;
+      process.env.PIWI_STORAGE_TYPE = 'local';
+      process.env.PIWI_STORAGE_PATH = testStorageDir;
 
       const storage = getStorage();
       expect(storage).toBeInstanceOf(LocalStorageAdapter);
     });
 
-    test('should use STORAGE_PATH from environment', async () => {
-      process.env.STORAGE_TYPE = 'local';
-      process.env.STORAGE_PATH = testStorageDir;
+    test('should use PIWI_STORAGE_PATH from environment', async () => {
+      process.env.PIWI_STORAGE_TYPE = 'local';
+      process.env.PIWI_STORAGE_PATH = testStorageDir;
 
       const storage = getStorage();
       const testPath = 'env-test.txt';
@@ -121,11 +121,11 @@ test.describe('Storage Abstraction Tests', () => {
     });
 
     test('should throw error when S3 config is incomplete', () => {
-      process.env.STORAGE_TYPE = 's3';
-      delete process.env.S3_BUCKET;
-      delete process.env.S3_REGION;
-      delete process.env.S3_ACCESS_KEY_ID;
-      delete process.env.S3_SECRET_ACCESS_KEY;
+      process.env.PIWI_STORAGE_TYPE = 's3';
+      delete process.env.PIWI_S3_BUCKET;
+      delete process.env.PIWI_S3_REGION;
+      delete process.env.PIWI_S3_ACCESS_KEY_ID;
+      delete process.env.PIWI_S3_SECRET_ACCESS_KEY;
 
       expect(() => getStorage()).toThrow(/S3 storage requires/);
     });
@@ -134,8 +134,8 @@ test.describe('Storage Abstraction Tests', () => {
   test.describe('Integration with API', () => {
     test('should store and retrieve files via storage abstraction', async ({ request }) => {
       // Set environment to use local storage with test directory
-      process.env.STORAGE_TYPE = 'local';
-      process.env.STORAGE_PATH = testStorageDir;
+      process.env.PIWI_STORAGE_TYPE = 'local';
+      process.env.PIWI_STORAGE_PATH = testStorageDir;
       resetStorage();
 
       // Upload a test result with HTML report

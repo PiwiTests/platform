@@ -3,7 +3,7 @@ import { PROJECT } from '../shared/test-project-names';
 
 test.describe('Authentication Tests', () => {
   test('should work without authentication when disabled', async ({ request }) => {
-    // Test that API works without auth when NUXT_AUTH_ENABLED is false
+    // Test that API works without auth when PIWI_AUTH_ENABLED is false
     const response = await request.get('/api/auth/me');
     expect(response.ok()).toBeTruthy();
 

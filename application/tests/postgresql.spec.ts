@@ -5,7 +5,7 @@ import { PROJECT } from '../shared/test-project-names';
  * PostgreSQL integration tests.
  *
  * These tests require a running PostgreSQL server.
- * They are skipped automatically when `POSTGRES_TEST_URL` is not set, so running
+ * They are skipped automatically when `PIWI_POSTGRES_TEST_URL` is not set, so running
  * `npm test` locally without a local PostgreSQL server works as expected.
  *
  * To run them locally, start PostgreSQL and export the variables below:
@@ -16,20 +16,20 @@ import { PROJECT } from '../shared/test-project-names';
  *     -e POSTGRES_DB=playwright_test \
  *     postgres:16-alpine
  *
- *   POSTGRES_TEST_URL=postgresql://postgres:postgres@localhost:5432/playwright_test \
+ *   PIWI_POSTGRES_TEST_URL=postgresql://postgres:postgres@localhost:5432/playwright_test \
  *     npx playwright test postgresql.spec.ts
  *
- * In CI, set `POSTGRES_TEST_URL` in the environment to enable these tests.
+ * In CI, set `PIWI_POSTGRES_TEST_URL` in the environment to enable these tests.
  */
 
-const POSTGRES_TEST_URL = process.env.POSTGRES_TEST_URL;
+const POSTGRES_TEST_URL = process.env.PIWI_POSTGRES_TEST_URL;
 const PG_PORT = 3101;
 
 test.describe('PostgreSQL integration', () => {
   test.describe.configure({ mode: 'serial' });
   test.skip(
     !POSTGRES_TEST_URL,
-    'Set POSTGRES_TEST_URL to run PostgreSQL tests (see postgresql.spec.ts header for instructions)',
+    'Set PIWI_POSTGRES_TEST_URL to run PostgreSQL tests (see postgresql.spec.ts header for instructions)',
   );
 
   const baseURL = `http://localhost:${PG_PORT}`;

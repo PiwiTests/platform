@@ -5,7 +5,7 @@ import type { ProjectDetails, TagsResponse, TagInfo } from '~~/types/api';
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
-const projectId = route.params.id;
+const projectId = route.params.id as string;
 
 const { data: project } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`);
 const { data: tagsData, refresh: refreshTags } = await useFetch<TagsResponse>('/api/tags');
@@ -40,7 +40,7 @@ async function onSubmit() {
   try {
     saving.value = true;
 
-    await $fetch(`/api/projects/${projectId}`, {
+    await $fetch(`/api/projects/${projectId}` as '/api/projects/:id', {
       method: 'PUT',
       body: {
         label: state.value.label || null,

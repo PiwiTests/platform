@@ -20,19 +20,19 @@ import { getStorage, resetStorage } from '../server/storage';
  *   AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin \
  *     aws --endpoint-url http://localhost:9000 s3 mb s3://playwright-test --region us-east-1
  *
- *   S3_TEST_ENDPOINT=http://localhost:9000 \
- *   S3_TEST_BUCKET=playwright-test \
+ *   PIWI_S3_TEST_ENDPOINT=http://localhost:9000 \
+ *   PIWI_S3_TEST_BUCKET=playwright-test \
  *   npx playwright test s3-storage.spec.ts
  */
 
-const S3_ENDPOINT = process.env.S3_TEST_ENDPOINT;
-const S3_BUCKET = process.env.S3_TEST_BUCKET || 'playwright-test';
-const S3_REGION = process.env.S3_TEST_REGION || 'us-east-1';
-const S3_ACCESS_KEY_ID = process.env.S3_TEST_ACCESS_KEY_ID || 'minioadmin';
-const S3_SECRET_ACCESS_KEY = process.env.S3_TEST_SECRET_ACCESS_KEY || 'minioadmin';
+const S3_ENDPOINT = process.env.PIWI_S3_TEST_ENDPOINT;
+const S3_BUCKET = process.env.PIWI_S3_TEST_BUCKET || 'playwright-test';
+const S3_REGION = process.env.PIWI_S3_TEST_REGION || 'us-east-1';
+const S3_ACCESS_KEY_ID = process.env.PIWI_S3_TEST_ACCESS_KEY_ID || 'minioadmin';
+const S3_SECRET_ACCESS_KEY = process.env.PIWI_S3_TEST_SECRET_ACCESS_KEY || 'minioadmin';
 
 test.describe('S3 storage', () => {
-  test.skip(!S3_ENDPOINT, 'Set S3_TEST_ENDPOINT to run S3 tests (see s3-storage.spec.ts header for instructions)');
+  test.skip(!S3_ENDPOINT, 'Set PIWI_S3_TEST_ENDPOINT to run S3 tests (see s3-storage.spec.ts header for instructions)');
 
   let keyPrefix: string;
   let adapter: S3StorageAdapter;
@@ -139,33 +139,33 @@ test.describe('S3 storage', () => {
     test.afterEach(() => {
       resetStorage();
       // Restore any env var changes made by these tests
-      delete process.env.STORAGE_TYPE;
-      delete process.env.S3_BUCKET;
-      delete process.env.S3_REGION;
-      delete process.env.S3_ACCESS_KEY_ID;
-      delete process.env.S3_SECRET_ACCESS_KEY;
-      delete process.env.S3_ENDPOINT;
+      delete process.env.PIWI_STORAGE_TYPE;
+      delete process.env.PIWI_S3_BUCKET;
+      delete process.env.PIWI_S3_REGION;
+      delete process.env.PIWI_S3_ACCESS_KEY_ID;
+      delete process.env.PIWI_S3_SECRET_ACCESS_KEY;
+      delete process.env.PIWI_S3_ENDPOINT;
     });
 
-    test('getStorage returns S3StorageAdapter when STORAGE_TYPE=s3', () => {
-      process.env.STORAGE_TYPE = 's3';
-      process.env.S3_BUCKET = S3_BUCKET;
-      process.env.S3_REGION = S3_REGION;
-      process.env.S3_ACCESS_KEY_ID = S3_ACCESS_KEY_ID;
-      process.env.S3_SECRET_ACCESS_KEY = S3_SECRET_ACCESS_KEY;
-      process.env.S3_ENDPOINT = S3_ENDPOINT;
+    test('getStorage returns S3StorageAdapter when PIWI_STORAGE_TYPE=s3', () => {
+      process.env.PIWI_STORAGE_TYPE = 's3';
+      process.env.PIWI_S3_BUCKET = S3_BUCKET;
+      process.env.PIWI_S3_REGION = S3_REGION;
+      process.env.PIWI_S3_ACCESS_KEY_ID = S3_ACCESS_KEY_ID;
+      process.env.PIWI_S3_SECRET_ACCESS_KEY = S3_SECRET_ACCESS_KEY;
+      process.env.PIWI_S3_ENDPOINT = S3_ENDPOINT;
 
       const storage = getStorage();
       expect(storage).toBeInstanceOf(S3StorageAdapter);
     });
 
     test('getStorage returns the same singleton on repeated calls', () => {
-      process.env.STORAGE_TYPE = 's3';
-      process.env.S3_BUCKET = S3_BUCKET;
-      process.env.S3_REGION = S3_REGION;
-      process.env.S3_ACCESS_KEY_ID = S3_ACCESS_KEY_ID;
-      process.env.S3_SECRET_ACCESS_KEY = S3_SECRET_ACCESS_KEY;
-      process.env.S3_ENDPOINT = S3_ENDPOINT;
+      process.env.PIWI_STORAGE_TYPE = 's3';
+      process.env.PIWI_S3_BUCKET = S3_BUCKET;
+      process.env.PIWI_S3_REGION = S3_REGION;
+      process.env.PIWI_S3_ACCESS_KEY_ID = S3_ACCESS_KEY_ID;
+      process.env.PIWI_S3_SECRET_ACCESS_KEY = S3_SECRET_ACCESS_KEY;
+      process.env.PIWI_S3_ENDPOINT = S3_ENDPOINT;
 
       const first = getStorage();
       const second = getStorage();
@@ -173,18 +173,18 @@ test.describe('S3 storage', () => {
     });
 
     test('resetStorage allows switching from S3 back to local', () => {
-      process.env.STORAGE_TYPE = 's3';
-      process.env.S3_BUCKET = S3_BUCKET;
-      process.env.S3_REGION = S3_REGION;
-      process.env.S3_ACCESS_KEY_ID = S3_ACCESS_KEY_ID;
-      process.env.S3_SECRET_ACCESS_KEY = S3_SECRET_ACCESS_KEY;
-      process.env.S3_ENDPOINT = S3_ENDPOINT;
+      process.env.PIWI_STORAGE_TYPE = 's3';
+      process.env.PIWI_S3_BUCKET = S3_BUCKET;
+      process.env.PIWI_S3_REGION = S3_REGION;
+      process.env.PIWI_S3_ACCESS_KEY_ID = S3_ACCESS_KEY_ID;
+      process.env.PIWI_S3_SECRET_ACCESS_KEY = S3_SECRET_ACCESS_KEY;
+      process.env.PIWI_S3_ENDPOINT = S3_ENDPOINT;
 
       const s3Storage = getStorage();
       expect(s3Storage).toBeInstanceOf(S3StorageAdapter);
 
       resetStorage();
-      process.env.STORAGE_TYPE = 'local';
+      process.env.PIWI_STORAGE_TYPE = 'local';
 
       const localStorage = getStorage();
       expect(localStorage).toBeInstanceOf(LocalStorageAdapter);

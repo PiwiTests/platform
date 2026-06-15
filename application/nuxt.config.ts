@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const isDemo = process.env.NUXT_PUBLIC_DEMO_MODE === 'true';
+const isDemo = process.env.PIWI_DEMO_MODE === 'true';
 
 // Read the demo seed version hash at build time so it can be injected into
 // runtimeConfig for staleness detection in the browser.
@@ -55,42 +55,43 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
 
   runtimeConfig: {
-    authEnabled: process.env.NUXT_AUTH_ENABLED === 'true',
+    authEnabled: process.env.PIWI_AUTH_ENABLED === 'true',
     ai: {
-      provider: process.env.NUXT_AI_PROVIDER || '',
-      apiKey: process.env.NUXT_AI_API_KEY || '',
-      model: process.env.NUXT_AI_MODEL || '',
-      baseUrl: process.env.NUXT_AI_BASE_URL || '',
-      autoDiagnose: process.env.NUXT_AI_AUTO_DIAGNOSE === 'true',
+      provider: process.env.PIWI_AI_PROVIDER || '',
+      apiKey: process.env.PIWI_AI_API_KEY || '',
+      model: process.env.PIWI_AI_MODEL || '',
+      baseUrl: process.env.PIWI_AI_BASE_URL || '',
+      autoDiagnose: process.env.PIWI_AI_AUTO_DIAGNOSE === 'true',
     },
     authSecret: (() => {
-      if (process.env.NUXT_AUTH_ENABLED === 'true' && !process.env.NUXT_AUTH_SECRET) {
+      if (process.env.PIWI_AUTH_ENABLED === 'true' && !process.env.PIWI_AUTH_SECRET) {
         throw new Error(
-          'NUXT_AUTH_ENABLED is true but NUXT_AUTH_SECRET is not set. ' +
+          'PIWI_AUTH_ENABLED is true but PIWI_AUTH_SECRET is not set. ' +
             'Generate a secure secret with: openssl rand -hex 32',
         );
       }
-      return process.env.NUXT_AUTH_SECRET || 'default-secret-change-in-production-use-random-string';
+      return process.env.PIWI_AUTH_SECRET || 'default-secret-change-in-production-use-random-string';
     })(),
     oauth: {
       google: {
-        clientId: process.env.NUXT_OAUTH_GOOGLE_CLIENT_ID || '',
-        clientSecret: process.env.NUXT_OAUTH_GOOGLE_CLIENT_SECRET || '',
+        clientId: process.env.PIWI_OAUTH_GOOGLE_CLIENT_ID || '',
+        clientSecret: process.env.PIWI_OAUTH_GOOGLE_CLIENT_SECRET || '',
       },
       github: {
-        clientId: process.env.NUXT_OAUTH_GITHUB_CLIENT_ID || '',
-        clientSecret: process.env.NUXT_OAUTH_GITHUB_CLIENT_SECRET || '',
+        clientId: process.env.PIWI_OAUTH_GITHUB_CLIENT_ID || '',
+        clientSecret: process.env.PIWI_OAUTH_GITHUB_CLIENT_SECRET || '',
       },
     },
     public: {
-      authEnabled: process.env.NUXT_AUTH_ENABLED === 'true',
-      demoMode: process.env.NUXT_PUBLIC_DEMO_MODE === 'true',
+      siteUrl: process.env.PIWI_SITE_URL || '',
+      authEnabled: process.env.PIWI_AUTH_ENABLED === 'true',
+      demoMode: process.env.PIWI_DEMO_MODE === 'true',
       demoDataVersion,
       oauthProviders: [
-        ...(process.env.NUXT_OAUTH_GOOGLE_CLIENT_ID && process.env.NUXT_OAUTH_GOOGLE_CLIENT_SECRET
+        ...(process.env.PIWI_OAUTH_GOOGLE_CLIENT_ID && process.env.PIWI_OAUTH_GOOGLE_CLIENT_SECRET
           ? (['google'] as const)
           : []),
-        ...(process.env.NUXT_OAUTH_GITHUB_CLIENT_ID && process.env.NUXT_OAUTH_GITHUB_CLIENT_SECRET
+        ...(process.env.PIWI_OAUTH_GITHUB_CLIENT_ID && process.env.PIWI_OAUTH_GITHUB_CLIENT_SECRET
           ? (['github'] as const)
           : []),
       ],
@@ -99,7 +100,7 @@ export default defineNuxtConfig({
 
   // Allow overriding build directory to avoid conflicts when running multiple
   // dev servers (e.g., auth server in CI, demo build).
-  buildDir: process.env.NUXT_BUILD_DIR || undefined,
+  buildDir: process.env.PIWI_BUILD_DIR || undefined,
 
   routeRules: {
     '/api/**': {

@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "app:generate": "nuxt generate",
-    "app:generate:demo": "cross-env NUXT_PUBLIC_DEMO_MODE=true nuxt generate",
+    "app:generate:demo": "cross-env PIWI_DEMO_MODE=true nuxt generate",
     "app:seed:demo": "node scripts/generate-demo-seed.mjs",
     "app:build": "nuxt build",
     "app:dev": "nuxt dev",

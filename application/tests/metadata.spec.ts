@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import { PROJECT } from '../shared/test-project-names';
 
 test.describe('Metadata Tests', () => {
-  const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+  const baseUrl = process.env.PIWI_BASE_URL || 'http://localhost:3000';
 
   test('should accept test run with metadata via JSON submission', async ({ request }) => {
     const response = await request.post(`${baseUrl}/api/test-runs/submit`, {

@@ -27,8 +27,8 @@ The dashboard supports optional user authentication with role-based access contr
 2. Edit `.env` and set:
 
    ```bash
-   NUXT_AUTH_ENABLED=true
-   NUXT_AUTH_SECRET=your-secret-key-here
+   PIWI_AUTH_ENABLED=true
+   PIWI_AUTH_SECRET=your-secret-key-here
    ```
 
    Generate a strong secret key for production:
@@ -81,10 +81,10 @@ The dashboard supports signing in with Google or GitHub as an alternative to use
 2. **Add the credentials to your `.env` file:**
 
    ```bash
-   NUXT_OAUTH_GOOGLE_CLIENT_ID=your-google-client-id
-   NUXT_OAUTH_GOOGLE_CLIENT_SECRET=your-google-client-secret
-   NUXT_OAUTH_GITHUB_CLIENT_ID=your-github-client-id
-   NUXT_OAUTH_GITHUB_CLIENT_SECRET=your-github-client-secret
+   PIWI_OAUTH_GOOGLE_CLIENT_ID=your-google-client-id
+   PIWI_OAUTH_GOOGLE_CLIENT_SECRET=your-google-client-secret
+   PIWI_OAUTH_GITHUB_CLIENT_ID=your-github-client-id
+   PIWI_OAUTH_GITHUB_CLIENT_SECRET=your-github-client-secret
    ```
 
    Only configure the providers you actually want to use. OAuth buttons appear automatically on the login page when both a provider's `CLIENT_ID` and `CLIENT_SECRET` are set.
@@ -147,7 +147,7 @@ API keys are the recommended way to authenticate CI pipelines and the Playwright
 2. Click the key icon next to the user you want to generate a key for.
 3. Click **Create API key**, enter a descriptive name (e.g. "GitHub Actions"), and set an optional expiry.
 4. Copy the key **immediately** — it will never be shown again.
-5. Store it as a CI secret (e.g. `DASHBOARD_API_KEY`).
+5. Store it as a CI secret (e.g. `PIWI_API_KEY`).
 
 ### Revoking an API key
 
@@ -164,7 +164,7 @@ export default defineConfig({
     ['@phenx/piwi-dashboard-reporter', {
       serverUrl: 'https://your-dashboard.example.com',
       projectName: 'my-project',
-      apiKey: process.env.DASHBOARD_API_KEY,
+      apiKey: process.env.PIWI_API_KEY,
     }],
   ],
 })
@@ -201,14 +201,14 @@ As an alternative to API keys, create a dedicated user with the **reporter** rol
        ['@phenx/piwi-dashboard-reporter', {
          serverUrl: 'https://your-dashboard.example.com',
          projectName: 'my-project',
-         username: process.env.DASHBOARD_USERNAME,
-         password: process.env.DASHBOARD_PASSWORD,
+         username: process.env.PIWI_USERNAME,
+         password: process.env.PIWI_PASSWORD,
        }],
      ],
    })
    ```
 
-3. Add `DASHBOARD_USERNAME` and `DASHBOARD_PASSWORD` as secrets in your CI provider.
+3. Add `PIWI_USERNAME` and `PIWI_PASSWORD` as secrets in your CI provider.
 
 The reporter automatically calls `/api/auth/login` before each upload and uses the resulting session for all subsequent requests.
 
@@ -218,7 +218,7 @@ The reporter automatically calls `/api/auth/login` before each upload and uses t
 
 - Always use HTTPS in production.
 - Use strong, unique passwords.
-- Generate a strong random secret for `NUXT_AUTH_SECRET`.
+- Generate a strong random secret for `PIWI_AUTH_SECRET`.
 - Passwords are hashed using scrypt with per-password salts.
 - Never use the default secret in production.
 
@@ -226,7 +226,7 @@ The reporter automatically calls `/api/auth/login` before each upload and uses t
 
 To disable authentication:
 
-1. Set `NUXT_AUTH_ENABLED=false` in `.env`, or remove the variable entirely.
+1. Set `PIWI_AUTH_ENABLED=false` in `.env`, or remove the variable entirely.
 2. Restart the application.
 
 When disabled, all endpoints are accessible without authentication.

@@ -15,7 +15,7 @@ import type { ComparisonRow } from '~/composables/useRunComparison';
 
 const route = useRoute();
 const router = useRouter();
-const projectId = route.params.id;
+const projectId = route.params.id as string;
 
 // === MAIN PROJECT DATA ===
 const { data: project, refresh } = await useFetch<ProjectWithTestRuns>(`/api/projects/${projectId}`);
@@ -40,7 +40,7 @@ async function handleDeleteProject() {
   if (!deleteProjectConfirmValid.value) return;
   deletingProject.value = true;
   try {
-    await $fetch(`/api/projects/${projectId}`, { method: 'DELETE' });
+    await $fetch(`/api/projects/${projectId}` as '/api/projects/:id', { method: 'DELETE' });
     toast.add({ title: 'Project deleted', color: 'success' });
     await refreshNuxtData();
     await router.push('/');

@@ -755,7 +755,7 @@ Invalidate the current session.
 
 ### OAuth endpoints
 
-OAuth flows require authentication to be enabled (`NUXT_AUTH_ENABLED=true`) and the corresponding provider credentials configured.
+OAuth flows require authentication to be enabled (`PIWI_AUTH_ENABLED=true`) and the corresponding provider credentials configured.
 
 #### GET `/api/auth/oauth/:provider/login`
 
@@ -772,7 +772,7 @@ GET http://localhost:3000/api/auth/oauth/google/login
 
 OAuth callback endpoint — the provider redirects here after the user authorizes. The server validates the state parameter, exchanges the authorization code for a token, creates or links a local user, sets a session cookie, and redirects to the dashboard homepage.
 
-Provider must be configured via `NUXT_OAUTH_GOOGLE_CLIENT_ID` / `NUXT_OAUTH_GITHUB_CLIENT_ID` and their corresponding secrets.
+Provider must be configured via `PIWI_OAUTH_GOOGLE_CLIENT_ID` / `PIWI_OAUTH_GITHUB_CLIENT_ID` and their corresponding secrets.
 
 On error, the browser is redirected to `/login?error=<reason>` with one of:
 - `access-denied` — user denied the authorization request
@@ -829,7 +829,7 @@ Requires the **administrator** role when authentication is enabled.
 }
 ```
 
-`hasApiKey` is `true` when a key is stored; the key itself is never returned. `envManaged` is `true` when `NUXT_AI_*` environment variables are active — the UI will show the config read-only.
+`hasApiKey` is `true` when a key is stored; the key itself is never returned. `envManaged` is `true` when `PIWI_AI_*` environment variables are active — the UI will show the config read-only.
 
 ---
 

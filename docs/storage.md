@@ -15,8 +15,8 @@ To customize the path:
 
 ```bash
 # In application/.env
-STORAGE_TYPE=local
-STORAGE_PATH=/custom/path/to/storage
+PIWI_STORAGE_TYPE=local
+PIWI_STORAGE_PATH=/custom/path/to/storage
 ```
 
 ## S3-compatible storage
@@ -25,15 +25,15 @@ Any S3-compatible service can be used: AWS S3, MinIO, DigitalOcean Spaces, Cloud
 
 ```bash
 # In application/.env
-STORAGE_TYPE=s3
+PIWI_STORAGE_TYPE=s3
 
-S3_BUCKET=your-bucket-name
-S3_REGION=us-east-1
-S3_ACCESS_KEY_ID=your-access-key
-S3_SECRET_ACCESS_KEY=your-secret-key
+PIWI_S3_BUCKET=your-bucket-name
+PIWI_S3_REGION=us-east-1
+PIWI_S3_ACCESS_KEY_ID=your-access-key
+PIWI_S3_SECRET_ACCESS_KEY=your-secret-key
 
 # Optional: custom endpoint for S3-compatible services
-S3_ENDPOINT=https://s3.example.com
+PIWI_S3_ENDPOINT=https://s3.example.com
 ```
 
 ### AWS S3
@@ -58,36 +58,36 @@ Minimum required IAM permissions:
 ### MinIO
 
 ```bash
-STORAGE_TYPE=s3
-S3_ENDPOINT=http://localhost:9000
-S3_BUCKET=piwi-dashboard
-S3_REGION=us-east-1
-S3_ACCESS_KEY_ID=minioadmin
-S3_SECRET_ACCESS_KEY=minioadmin
+PIWI_STORAGE_TYPE=s3
+PIWI_S3_ENDPOINT=http://localhost:9000
+PIWI_S3_BUCKET=piwi-dashboard
+PIWI_S3_REGION=us-east-1
+PIWI_S3_ACCESS_KEY_ID=minioadmin
+PIWI_S3_SECRET_ACCESS_KEY=minioadmin
 ```
 
-Path-style URLs are enabled automatically when `S3_ENDPOINT` is set (as required by MinIO and most self-hosted S3-compatible services). Set `S3_FORCE_PATH_STYLE=false` to override this behavior.
+Path-style URLs are enabled automatically when `PIWI_S3_ENDPOINT` is set (as required by MinIO and most self-hosted S3-compatible services). Set `PIWI_S3_FORCE_PATH_STYLE=false` to override this behavior.
 
 ### DigitalOcean Spaces
 
 ```bash
-STORAGE_TYPE=s3
-S3_ENDPOINT=https://nyc3.digitaloceanspaces.com
-S3_BUCKET=your-space-name
-S3_REGION=nyc3
-S3_ACCESS_KEY_ID=your-spaces-key
-S3_SECRET_ACCESS_KEY=your-spaces-secret
+PIWI_STORAGE_TYPE=s3
+PIWI_S3_ENDPOINT=https://nyc3.digitaloceanspaces.com
+PIWI_S3_BUCKET=your-space-name
+PIWI_S3_REGION=nyc3
+PIWI_S3_ACCESS_KEY_ID=your-spaces-key
+PIWI_S3_SECRET_ACCESS_KEY=your-spaces-secret
 ```
 
 ### Cloudflare R2
 
 ```bash
-STORAGE_TYPE=s3
-S3_ENDPOINT=https://[account-id].r2.cloudflarestorage.com
-S3_BUCKET=your-bucket-name
-S3_REGION=auto
-S3_ACCESS_KEY_ID=your-r2-access-key
-S3_SECRET_ACCESS_KEY=your-r2-secret-key
+PIWI_STORAGE_TYPE=s3
+PIWI_S3_ENDPOINT=https://[account-id].r2.cloudflarestorage.com
+PIWI_S3_BUCKET=your-bucket-name
+PIWI_S3_REGION=auto
+PIWI_S3_ACCESS_KEY_ID=your-r2-access-key
+PIWI_S3_SECRET_ACCESS_KEY=your-r2-secret-key
 ```
 
 ## Storage management
@@ -117,15 +117,15 @@ SQLite requires no configuration. The database file is created automatically at 
 To customize the path:
 
 ```bash
-DATABASE_PATH=/custom/path/database.db npm run dev
+PIWI_DATABASE_PATH=/custom/path/database.db npm run dev
 ```
 
 ### PostgreSQL
 
-Set the `DATABASE_URL` environment variable to switch to PostgreSQL:
+Set the `PIWI_DATABASE_URL` environment variable to switch to PostgreSQL:
 
 ```bash
-DATABASE_URL=postgresql://user:password@localhost:5432/piwi_dashboard npm run dev
+PIWI_DATABASE_URL=postgresql://user:password@localhost:5432/piwi_dashboard npm run dev
 ```
 
 The dashboard creates all required tables automatically on startup via migrations.
@@ -143,7 +143,7 @@ docker run -d -p 5432:5432 \
 Then start the dashboard:
 
 ```bash
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/piwi_dashboard npm run dev
+PIWI_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/piwi_dashboard npm run dev
 ```
 
 #### Schema changes (PostgreSQL)
@@ -151,7 +151,7 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/piwi_dashboard npm ru
 To generate a new PostgreSQL migration after editing `schema.pg.ts`:
 
 ```bash
-DATABASE_URL=postgresql://... npm run db:generate:pg
+PIWI_DATABASE_URL=postgresql://... npm run db:generate:pg
 npm run db:migrate:pg
 ```
 

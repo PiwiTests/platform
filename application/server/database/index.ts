@@ -1,5 +1,5 @@
 // Import SQLite drizzle for static type inference.
-// At runtime the correct driver is selected based on DATABASE_URL;
+// At runtime the correct driver is selected based on PIWI_DATABASE_URL;
 // TypeScript uses the SQLite types as the canonical reference throughout.
 import { drizzle as sqliteDrizzle } from 'drizzle-orm/libsql/sqlite3';
 import * as sqliteSchema from './schema.sqlite';
@@ -13,7 +13,7 @@ let db: DB;
 let migrationPromise: Promise<void> | null = null;
 
 // Detect which database backend to use
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.PIWI_DATABASE_URL;
 
 export async function initDatabase() {
   if (!db) {
@@ -44,11 +44,11 @@ export async function initDatabase() {
       const { migrate } = await import('drizzle-orm/libsql/migrator');
       const { pathToFileURL } = await import('url');
 
-      if (!process.env.DATABASE_PATH && !existsSync('.data')) {
+      if (!process.env.PIWI_DATABASE_PATH && !existsSync('.data')) {
         mkdirSync('.data');
       }
 
-      const dbPath = process.env.DATABASE_PATH || '.data/piwi.db';
+      const dbPath = process.env.PIWI_DATABASE_PATH || '.data/piwi.db';
       const absolutePath = resolve(dbPath);
       const dbUrl = pathToFileURL(absolutePath).href;
 

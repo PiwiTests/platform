@@ -1,6 +1,6 @@
 // Conditional re-export: routes to the correct dialect at runtime.
 // Both schemas are statically imported; the runtime selection is synchronous
-// based on whether DATABASE_URL is set.
+// based on whether PIWI_DATABASE_URL is set.
 // TypeScript type-checking uses the SQLite schema as the canonical reference.
 
 import * as sqliteSchema from './schema.sqlite';
@@ -8,7 +8,7 @@ import * as pgSchema from './schema.pg';
 
 // Pick the appropriate schema tables at module initialization time
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const schema: typeof sqliteSchema = (process.env.DATABASE_URL ? pgSchema : sqliteSchema) as any;
+const schema: typeof sqliteSchema = (process.env.PIWI_DATABASE_URL ? pgSchema : sqliteSchema) as any;
 
 export const {
   projects,

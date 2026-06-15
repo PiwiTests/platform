@@ -117,7 +117,7 @@ import { createGlobalSetup } from '@phenx/piwi-dashboard-reporter'
 const dashboard = {
   serverUrl: 'http://localhost:3000',
   projectName: 'my-project',
-  apiKey: process.env.DASHBOARD_API_KEY,
+  apiKey: process.env.PIWI_API_KEY,
 }
 
 export default defineConfig({
@@ -325,7 +325,7 @@ export default defineConfig({
     ['@phenx/piwi-dashboard-reporter', {
       serverUrl: 'http://your-dashboard.example.com',
       projectName: 'my-project',
-      apiKey: process.env.DASHBOARD_API_KEY,
+      apiKey: process.env.PIWI_API_KEY,
     }],
   ],
 })
@@ -341,8 +341,8 @@ export default defineConfig({
     ['@phenx/piwi-dashboard-reporter', {
       serverUrl: 'http://your-dashboard.example.com',
       projectName: 'my-project',
-      username: process.env.DASHBOARD_USERNAME,
-      password: process.env.DASHBOARD_PASSWORD,
+      username: process.env.PIWI_USERNAME,
+      password: process.env.PIWI_PASSWORD,
     }],
   ],
 })

@@ -5,7 +5,7 @@ export default {
   out: './server/database/migrations-pg',
   dialect: 'postgresql',
   dbCredentials: {
-    url: process.env.DATABASE_URL || 'postgresql://localhost:5432/piwi_dashboard',
+    url: process.env.PIWI_DATABASE_URL || 'postgresql://localhost:5432/piwi_dashboard',
   },
   verbose: true,
   strict: true,

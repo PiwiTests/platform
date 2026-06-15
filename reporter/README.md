@@ -136,7 +136,7 @@ When the dashboard has authentication enabled, use an API key (recommended for C
 ['@phenx/piwi-dashboard-reporter', {
   serverUrl: 'https://your-dashboard.example.com',
   projectName: 'my-project',
-  apiKey: process.env.DASHBOARD_API_KEY,
+  apiKey: process.env.PIWI_API_KEY,
 }]
 ```
 

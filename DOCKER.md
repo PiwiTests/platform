@@ -46,16 +46,16 @@ The Dockerfile uses a two-stage build:
 | `NODE_ENV`             | `production`    | Set automatically in the container                                           |
 | `HOST`                 | `0.0.0.0`       | Listens on all interfaces                                                    |
 | `PORT`                 | `3000`          | Application port                                                             |
-| `NUXT_AUTH_ENABLED`    | —               | Enable authentication (`true`/`false`)                                       |
-| `NUXT_AUTH_SECRET`     | —               | Secret for session encryption (required if auth enabled)                     |
-| `DATABASE_URL`         | —               | PostgreSQL connection string; when set, PostgreSQL is used instead of SQLite |
-| `DATABASE_PATH`        | `.data/piwi.db` | SQLite database path (ignored when `DATABASE_URL` is set)                    |
-| `STORAGE_TYPE`         | `local`         | Storage backend (`local` or `s3`)                                            |
-| `S3_BUCKET`            | —               | S3 bucket name (when `STORAGE_TYPE=s3`)                                      |
-| `S3_REGION`            | —               | S3 region                                                                    |
-| `S3_ACCESS_KEY_ID`     | —               | S3 access key                                                                |
-| `S3_SECRET_ACCESS_KEY` | —               | S3 secret key                                                                |
-| `S3_ENDPOINT`          | —               | Custom S3 endpoint (for MinIO, R2, Spaces, etc.)                             |
+| `PIWI_AUTH_ENABLED`    | —               | Enable authentication (`true`/`false`)                                       |
+| `PIWI_AUTH_SECRET`     | —               | Secret for session encryption (required if auth enabled)                     |
+| `PIWI_DATABASE_URL`         | —               | PostgreSQL connection string; when set, PostgreSQL is used instead of SQLite |
+| `PIWI_DATABASE_PATH`        | `.data/piwi.db` | SQLite database path (ignored when `PIWI_DATABASE_URL` is set)                    |
+| `PIWI_STORAGE_TYPE`         | `local`         | Storage backend (`local` or `s3`)                                            |
+| `PIWI_S3_BUCKET`            | —               | S3 bucket name (when `PIWI_STORAGE_TYPE=s3`)                                      |
+| `PIWI_S3_REGION`            | —               | S3 region                                                                    |
+| `PIWI_S3_ACCESS_KEY_ID`     | —               | S3 access key                                                                |
+| `PIWI_S3_SECRET_ACCESS_KEY` | —               | S3 secret key                                                                |
+| `PIWI_S3_ENDPOINT`          | —               | Custom S3 endpoint (for MinIO, R2, Spaces, etc.)                             |
 
 ### Volumes
 
@@ -110,7 +110,7 @@ services:
       - ./storage:/app/.data/storage
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://playwright:playwright@postgres:5432/piwi_dashboard
+      - PIWI_DATABASE_URL=postgresql://playwright:playwright@postgres:5432/piwi_dashboard
     depends_on:
       - postgres
     restart: unless-stopped
@@ -131,7 +131,7 @@ The container runs as a non-root user (`nodejs:nodejs` with UID/GID 1001) for en
 
 Best practices:
 - Always use HTTPS in production (use a reverse proxy like nginx or Traefik)
-- Set a strong `NUXT_AUTH_SECRET` with `openssl rand -hex 32`
+- Set a strong `PIWI_AUTH_SECRET` with `openssl rand -hex 32`
 - Enable authentication for multi-user or internet-facing deployments
 
 ## Available Tags
@@ -155,7 +155,7 @@ docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:
 
 ### Database Locked
 
-SQLite doesn't support concurrent writes well. For high-concurrency deployments, switch to PostgreSQL by setting `DATABASE_URL`.
+SQLite doesn't support concurrent writes well. For high-concurrency deployments, switch to PostgreSQL by setting `PIWI_DATABASE_URL`.
 
 ### Port Already in Use
 
