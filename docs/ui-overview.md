@@ -137,10 +137,10 @@ Manage tags used to organize projects:
 Configure LLM-based failure analysis:
 
 - **Provider** — choose Anthropic API or an OpenAI-compatible endpoint (Ollama, LM Studio, OpenRouter, Groq, Together AI, Mistral AI, or any custom URL)
-- **API key / model / base URL** — provider credentials and model selection; keys are stored in the database (admin-only) or via `NUXT_AI_*` environment variables
+- **API key / model / base URL** — provider credentials and model selection; keys are stored in the database (admin-only) or via `PIWI_AI_*` environment variables
 - **Auto-diagnose** — automatically run AI diagnosis on new failure clusters when a run finishes (max 3 per run)
 - **Global analysis instructions** — persistent text appended to the system prompt for every diagnosis across all projects; use this for general preferences, output format requirements, or team conventions (e.g. "always recommend checking retry counts before concluding flakiness")
-- **Environment variables** — copy-to-clipboard snippet for `NUXT_AI_*` env vars when credentials should not be stored in the database
+- **Environment variables** — copy-to-clipboard snippet for `PIWI_AI_*` env vars when credentials should not be stored in the database
 
 ## Failure cluster detail
 

@@ -57,11 +57,11 @@ The `.data` directory contains:
 | `NODE_ENV` | `production` | Set automatically |
 | `HOST` | `0.0.0.0` | Listen on all interfaces |
 | `PORT` | `3000` | Application port |
-| `NUXT_AUTH_ENABLED` | — | Enable authentication |
-| `NUXT_AUTH_SECRET` | — | Secret for authentication (required if auth enabled) |
-| `STORAGE_TYPE` | `local` | Storage backend (`local` or `s3`) |
-| `DATABASE_URL` | — | PostgreSQL connection string (e.g. `postgresql://user:pass@host:5432/db`). When set, PostgreSQL is used instead of SQLite. |
-| `DATABASE_PATH` | `.data/piwi.db` | SQLite database path (ignored when `DATABASE_URL` is set) |
+| `PIWI_AUTH_ENABLED` | — | Enable authentication |
+| `PIWI_AUTH_SECRET` | — | Secret for authentication (required if auth enabled) |
+| `PIWI_STORAGE_TYPE` | `local` | Storage backend (`local` or `s3`) |
+| `PIWI_DATABASE_URL` | — | PostgreSQL connection string (e.g. `postgresql://user:pass@host:5432/db`). When set, PostgreSQL is used instead of SQLite. |
+| `PIWI_DATABASE_PATH` | `.data/piwi.db` | SQLite database path (ignored when `PIWI_DATABASE_URL` is set) |
 
 ## Building locally
 
@@ -118,7 +118,7 @@ services:
       - ./storage:/app/.data/storage
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://playwright:playwright@postgres:5432/piwi_dashboard
+      - PIWI_DATABASE_URL=postgresql://playwright:playwright@postgres:5432/piwi_dashboard
     depends_on:
       - postgres
     restart: unless-stopped
@@ -195,7 +195,7 @@ Security best practices:
 
 - Always use HTTPS in production
 - Mount `.data/` on a persistent volume
-- Set a strong `NUXT_AUTH_SECRET` and enable authentication
+- Set a strong `PIWI_AUTH_SECRET` and enable authentication
 
 ## Troubleshooting
 
@@ -209,7 +209,7 @@ docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:
 
 ### Database locked
 
-SQLite doesn't support concurrent writes well. For high-concurrency deployments, run a single instance or switch to PostgreSQL by setting `DATABASE_URL`.
+SQLite doesn't support concurrent writes well. For high-concurrency deployments, run a single instance or switch to PostgreSQL by setting `PIWI_DATABASE_URL`.
 
 ### Port already in use
 

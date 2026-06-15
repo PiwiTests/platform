@@ -45,7 +45,7 @@ SQLite database auto-initializes on first API call.
 ### Database
 - **ORM**: Drizzle ORM (SQLite via libSQL, or PostgreSQL via postgres.js)
 - **Schema**: `application/server/database/schema.ts`
-- **Migrations**: `application/server/database/migrations/` (SQLite) or `migrations-pg/` (PostgreSQL, auto-run on startup based on `DATABASE_URL`)
+- **Migrations**: `application/server/database/migrations/` (SQLite) or `migrations-pg/` (PostgreSQL, auto-run on startup based on `PIWI_DATABASE_URL`)
 - **Tables**: `projects`, `test_runs`, `test_cases`, `test_runs_cases`, `failure_clusters`, `failure_diagnoses`, `app_settings`, `files`, `trace_resources`, `trace_blobs`, `tags`, `project_tags`, `users`, `api_keys`
 
 ### Backend (server/api/)
@@ -56,7 +56,8 @@ Nuxt file-based routing:
 - `POST /api/test-runs/upload` — Upload with HTML reports + traces
 - `POST /api/test-runs/start` / `[id]/events` / `[id]/finish` — Streaming protocol (live runs)
 - `POST /api/test-runs/[id]/case-files` — Upload one case's trace + attachments during a streaming run (streamToken auth, idempotent, publishes `case-files` SSE event)
-- `GET /api/projects` — List projects with stats
+- `GET /api/projects` — List projects with stats (heavy: runs, test case counts, reports, tags)
+- `GET /api/projects/menu` — Slim project list for sidebar navigation (`id`, `name`, `label` only; one SELECT, no joins)
 - `GET /api/projects/[id]` — Project details + runs
 - `GET /api/test-runs/[id]` — Run details + cases
 - `GET /api/test-cases/[id]` — Case details + steps, web vitals, network requests
@@ -137,14 +138,14 @@ Nuxt file-based routing:
 - Use American English spelling throughout (e.g., "initialize", "organize", "color")
 
 ## Environment
-- `.env.example` in `application/` — `NUXT_PUBLIC_SITE_URL` (optional)
+- `.env.example` in `application/` — `PIWI_SITE_URL` (optional)
 - Works with no env vars set; `.data/` created automatically
 - AI diagnosis env vars (all optional — can also be set via Settings UI):
-  - `NUXT_AI_PROVIDER` — `anthropic` or `openai`
-  - `NUXT_AI_API_KEY` — API key (env takes precedence over DB; `envManaged: true` in status)
-  - `NUXT_AI_MODEL` — model name (default: `claude-opus-4-8` for Anthropic)
-  - `NUXT_AI_BASE_URL` — base URL for OpenAI-compatible providers (e.g. `http://localhost:11434/v1`)
-  - `NUXT_AI_AUTO_DIAGNOSE` — `true` to auto-diagnose new clusters on run finish
+  - `PIWI_AI_PROVIDER` — `anthropic` or `openai`
+  - `PIWI_AI_API_KEY` — API key (env takes precedence over DB; `envManaged: true` in status)
+  - `PIWI_AI_MODEL` — model name (default: `claude-opus-4-8` for Anthropic)
+  - `PIWI_AI_BASE_URL` — base URL for OpenAI-compatible providers (e.g. `http://localhost:11434/v1`)
+  - `PIWI_AI_AUTO_DIAGNOSE` — `true` to auto-diagnose new clusters on run finish
 
 ## Dev Commands (from `application/`)
 
@@ -275,7 +276,7 @@ curl -X POST http://localhost:3000/api/test-runs/submit \
 
 ## Demo Mode
 
-The app can be built as a fully client-side SPA (no server needed) by setting `NUXT_PUBLIC_DEMO_MODE=true`. The demo build:
+The app can be built as a fully client-side SPA (no server needed) by setting `PIWI_DEMO_MODE=true`. The demo build:
 
 1. **`npm run seed:demo`** — Generates `public/demo/seed.sql` (SQLite dump with 4 projects, 43 test cases, 61 test runs, 698 test-run-case rows, 8 failure clusters) and `public/demo/seed.version.json` (SHA-256 hash of the SQL content + timestamp).
 2. **`npm run generate:demo`** — Builds the SPA with `ssr: false` and PWA service worker that intercepts `/api/` calls, serving them from in-browser sql.js (WASM SQLite) via Drizzle ORM.

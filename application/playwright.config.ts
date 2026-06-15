@@ -92,12 +92,12 @@ export default defineConfig({
             command: 'npm run app:dev',
             url: 'http://localhost:3099/api/auth/me',
             env: {
-              NUXT_AUTH_ENABLED: 'true',
-              NUXT_AUTH_SECRET: 'test-auth-secret-key-for-reporter-tests',
-              DATABASE_PATH: join(process.cwd(), '.test-temp', 'auth-test.db'),
-              STORAGE_PATH: join(process.cwd(), '.test-temp', 'auth-test-storage'),
+              PIWI_AUTH_ENABLED: 'true',
+              PIWI_AUTH_SECRET: 'test-auth-secret-key-for-reporter-tests',
+              PIWI_DATABASE_PATH: join(process.cwd(), '.test-temp', 'auth-test.db'),
+              PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'auth-test-storage'),
               NITRO_PORT: '3099',
-              NUXT_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-auth'),
+              PIWI_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-auth'),
             },
             reuseExistingServer: false,
             timeout: 90 * 1000,
@@ -105,15 +105,15 @@ export default defineConfig({
         ]
       : []),
     // PostgreSQL-backed server used by postgresql.spec.ts.
-    // Only started when POSTGRES_TEST_URL is set; the corresponding tests are skipped otherwise.
-    ...(process.env.POSTGRES_TEST_URL
+    // Only started when PIWI_POSTGRES_TEST_URL is set; the corresponding tests are skipped otherwise.
+    ...(process.env.PIWI_POSTGRES_TEST_URL
       ? [
           {
             command: 'npm run app:dev',
             url: 'http://localhost:3101',
             env: {
-              DATABASE_URL: process.env.POSTGRES_TEST_URL,
-              STORAGE_PATH: join(process.cwd(), '.test-temp', 'pg-test-storage'),
+              PIWI_DATABASE_URL: process.env.PIWI_POSTGRES_TEST_URL,
+              PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'pg-test-storage'),
               NITRO_PORT: '3101',
             },
             reuseExistingServer: false,

@@ -156,16 +156,16 @@ async function testConnection() {
 const envVars = computed(() => {
   if (!provider.value) return null;
   const lines: string[] = [];
-  lines.push(`NUXT_AI_PROVIDER=${provider.value}`);
-  if (model.value) lines.push(`NUXT_AI_MODEL=${model.value}`);
-  if (baseUrl.value) lines.push(`NUXT_AI_BASE_URL=${baseUrl.value}`);
+  lines.push(`PIWI_AI_PROVIDER=${provider.value}`);
+  if (model.value) lines.push(`PIWI_AI_MODEL=${model.value}`);
+  if (baseUrl.value) lines.push(`PIWI_AI_BASE_URL=${baseUrl.value}`);
   const keyDisplay = apiKey.value
     ? apiKey.value
     : settings.value?.hasApiKey
       ? '(use existing stored key)'
       : 'your-api-key-here';
-  lines.push(`NUXT_AI_API_KEY=${keyDisplay}`);
-  lines.push(`NUXT_AI_AUTO_DIAGNOSE=${autoDiagnose.value ? 'true' : 'false'}`);
+  lines.push(`PIWI_AI_API_KEY=${keyDisplay}`);
+  lines.push(`PIWI_AI_AUTO_DIAGNOSE=${autoDiagnose.value ? 'true' : 'false'}`);
   return lines.join('\n');
 });
 
@@ -190,7 +190,7 @@ async function copyEnvVars() {
         color="info"
         icon="i-lucide-info"
         title="Configuration managed by environment variables"
-        description="NUXT_AI_* environment variables are set. The form below reflects the current environment configuration and cannot be changed here."
+        description="PIWI_AI_* environment variables are set. The form below reflects the current environment configuration and cannot be changed here."
       />
 
       <UCard>
@@ -413,7 +413,7 @@ async function copyEnvVars() {
           </ul>
           <p class="mt-2">
             The API key is stored plaintext in the application database (admin-only access). For stricter setups, use
-            <code class="font-mono text-xs">NUXT_AI_API_KEY</code> instead of the UI.
+            <code class="font-mono text-xs">PIWI_AI_API_KEY</code> instead of the UI.
           </p>
         </div>
       </UCard>

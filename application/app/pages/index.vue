@@ -3,10 +3,14 @@ import type { ProjectWithStats, TestRunForChart } from '~~/types/api';
 
 useHead({ title: 'Piwi Dashboard' });
 
-const { data: projects, refresh: refreshProjects } = await useFetch<ProjectWithStats[]>('/api/projects');
+// Share the projects data already fetched by the layout (same key → single HTTP request, single SSE subscription)
+const { data: projects } = useFetch<ProjectWithStats[]>('/api/projects', {
+  key: 'projects',
+  default: () => [] as ProjectWithStats[],
+});
 const { data: recentTestRuns, refresh: refreshRecentRuns } = await useFetch<TestRunForChart[]>('/api/test-runs/recent');
 
-useRunStream(() => Promise.all([refreshProjects(), refreshRecentRuns()]));
+useRunStream(refreshRecentRuns);
 
 const ACTIVE_WINDOW_DAYS = 7;
 

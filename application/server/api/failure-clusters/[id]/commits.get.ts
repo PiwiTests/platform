@@ -38,13 +38,14 @@ export default eventHandler(async (event) => {
 
   const query = getQuery(event);
   const baselineSha = query.baseline as string | undefined;
+  const branch = (query.branch as string | undefined) || undefined;
   const limit = Math.min(Math.max(parseInt(String(query.limit || '50')), 1), 200);
 
-  const commits = await provider.listCommits(limit);
+  const commits = await provider.listCommits(limit, branch);
 
   let error: string | null = null;
   if (commits.length === 0) {
-    error = await provider.probeError();
+    error = await provider.probeError(branch);
   }
 
   let aggregate: { filesChanged: number; linesAdded: number; linesRemoved: number } | null = null;

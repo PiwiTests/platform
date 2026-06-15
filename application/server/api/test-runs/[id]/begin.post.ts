@@ -97,6 +97,7 @@ export default eventHandler(async (event) => {
     .where(eq(testRuns.id, id));
 
   runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: testRun.projectId });
+  runEventBus.cacheRunState(id, { streamToken, projectId: testRun.projectId });
 
   return {
     success: true,

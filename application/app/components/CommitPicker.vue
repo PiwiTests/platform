@@ -26,6 +26,10 @@ const fetchError = ref(false);
 const searchInputRef = ref<{ $el?: HTMLElement } | null>(null);
 const loadedForBaseline = ref<string | null>(null);
 
+const branches = ref<string[]>([]);
+const branchesLoading = ref(false);
+const selectedBranch = ref<string | undefined>(undefined);
+
 const selected = computed((): CommitItem | null => {
   if (!props.modelValue) return null;
   const sha = props.modelValue.trim();
@@ -33,14 +37,28 @@ const selected = computed((): CommitItem | null => {
   return found ?? { sha, shortSha: sha.slice(0, 7), message: '', author: '', date: '' };
 });
 
+async function loadBranches() {
+  if (branches.value.length) return;
+  branchesLoading.value = true;
+  try {
+    const res = await $fetch<{ branches: string[] }>(`/api/failure-clusters/${props.clusterId}/branches`);
+    branches.value = res.branches;
+  } catch {
+    // ignore branch load failures
+  } finally {
+    branchesLoading.value = false;
+  }
+}
+
 async function loadCommits() {
   const baseline = props.modelValue || '';
-  if (commits.value.length && loadedForBaseline.value === baseline) return;
   loading.value = true;
   fetchError.value = false;
+  loadedForBaseline.value = null;
   try {
-    const params: { baseline?: string } = {};
+    const params: { baseline?: string; branch?: string } = {};
     if (baseline) params.baseline = baseline;
+    if (selectedBranch.value) params.branch = selectedBranch.value;
     const res = await $fetch<{
       commits: CommitItem[];
       aggregate: { filesChanged: number; linesAdded: number; linesRemoved: number } | null;
@@ -57,9 +75,15 @@ async function loadCommits() {
   }
 }
 
+watch(selectedBranch, () => {
+  commits.value = [];
+  loadedForBaseline.value = null;
+  loadCommits();
+});
+
 watch(open, async (val) => {
   if (val) {
-    await loadCommits();
+    await Promise.all([loadBranches(), loadCommits()]);
     await nextTick();
     const input = searchInputRef.value?.$el?.querySelector('input') ?? searchInputRef.value?.$el;
     if (input instanceof HTMLElement) input.focus();
@@ -122,6 +146,20 @@ function clear(e: Event) {
 
     <template #content>
       <div class="w-96 p-2 space-y-2">
+        <!-- Branch selector -->
+        <div class="flex items-center gap-1">
+          <UIcon name="i-lucide-git-branch" class="size-3.5 text-gray-400 shrink-0" />
+          <USelectMenu
+            v-model="selectedBranch"
+            :items="branches"
+            placeholder="Default branch"
+            size="xs"
+            class="flex-1"
+            :loading="branchesLoading"
+            :disabled="branchesLoading"
+          />
+        </div>
+
         <!-- Search bar + clear -->
         <div class="flex items-center gap-1">
           <UInput

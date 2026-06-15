@@ -113,6 +113,9 @@ export default eventHandler(async (event) => {
 
     await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));
 
+    // Token is now null in DB — drop cached state so stale tokens are rejected
+    runEventBus.clearRunState(id);
+
     // Notify per-run SSE subscribers that finalization has begun
     runEventBus.publish(id, {
       type: 'run-finalizing',

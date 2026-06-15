@@ -2,6 +2,7 @@ import { ScmProvider, truncatePatch, MAX_SCM_FILES, FETCH_TIMEOUT_MS } from './S
 import type { ScmCommitDetail, ScmChanges } from './ScmProvider';
 import { TtlCache } from './cache';
 
+const listBranchesCache = new TtlCache<string[]>(3 * 60 * 1000);
 const listCommitsCache = new TtlCache<ScmCommitDetail[]>(3 * 60 * 1000);
 const fetchChangesCache = new TtlCache<ScmChanges>(10 * 60 * 1000);
 const fetchCommitDiffCache = new TtlCache<ScmChanges>(10 * 60 * 1000);
@@ -24,12 +25,32 @@ export class GitHubProvider extends ScmProvider {
     };
   }
 
-  async listCommits(limit = 50): Promise<ScmCommitDetail[]> {
-    const key = `${this.repoPath}:${limit}`;
+  async listBranches(limit = 100): Promise<string[]> {
+    const key = `branches:${this.repoPath}:${limit}`;
+    const hit = listBranchesCache.get(key);
+    if (hit !== undefined) return hit;
+
+    const res = await fetch(`https://api.github.com/repos/${this.repoPath}/branches?per_page=${limit}`, {
+      headers: this.makeHeaders(),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as Array<{ name: string }>;
+    const result = data.map((b) => b.name);
+    listBranchesCache.set(key, result);
+    return result;
+  }
+
+  async listCommits(limit = 50, branch?: string): Promise<ScmCommitDetail[]> {
+    const key = `${this.repoPath}:${limit}:${branch ?? ''}`;
     const hit = listCommitsCache.get(key);
     if (hit !== undefined) return hit;
 
-    const res = await fetch(`https://api.github.com/repos/${this.repoPath}/commits?per_page=${limit}`, {
+    const url = new URL(`https://api.github.com/repos/${this.repoPath}/commits`);
+    url.searchParams.set('per_page', String(limit));
+    if (branch) url.searchParams.set('sha', branch);
+
+    const res = await fetch(url.toString(), {
       headers: this.makeHeaders(),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
@@ -110,7 +131,7 @@ export class GitHubProvider extends ScmProvider {
     return result;
   }
 
-  async probeError(): Promise<string | null> {
+  async probeError(branch?: string): Promise<string | null> {
     try {
       const res = await fetch(`https://api.github.com/repos/${this.repoPath}`, { headers: this.makeHeaders() });
       if (!res.ok) {
@@ -124,7 +145,7 @@ export class GitHubProvider extends ScmProvider {
         if (res.status === 401) return 'GitHub API authentication failed. Check your SCM token in Settings → AI.';
         return `GitHub API error: ${msg}`;
       }
-      return 'No commits found on the default branch.';
+      return `No commits found on ${branch ? `branch '${branch}'` : 'the default branch'}.`;
     } catch {
       return 'Could not reach the GitHub API. Check your network connection.';
     }

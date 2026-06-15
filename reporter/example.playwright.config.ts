@@ -27,8 +27,8 @@ export default defineConfig({
 
     // Piwi Dashboard Reporter
     ['@phenx/piwi-dashboard-reporter', {
-      serverUrl: process.env.DASHBOARD_URL || 'http://localhost:3000',
-      projectName: process.env.PROJECT_NAME || 'my-test-project',
+      serverUrl: process.env.PIWI_DASHBOARD_URL || 'http://localhost:3000',
+      projectName: process.env.PIWI_PROJECT_NAME || 'my-test-project',
       uploadTraces: true,
       uploadReport: true
     }]

@@ -2,6 +2,7 @@ import { testCases, testRunsCases, failureClusters } from '../database/schema';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { sanitizeNetworkRequests, sanitizeWebVitals, sanitizeConsoleLogs } from './sanitize';
 import { computeErrorFingerprint, type ErrorFingerprint } from '../../shared/error-fingerprint';
+import { testCaseCache } from './test-case-cache';
 import type { getDatabase } from '../database';
 
 type DB = Awaited<ReturnType<typeof getDatabase>>;
@@ -46,6 +47,10 @@ interface PendingCluster {
  * and occurrences bumped; new ones start at this run. Insert races with
  * concurrent streaming batches are resolved via the unique
  * (projectId, fingerprint) index + onConflictDoNothing.
+ *
+ * Bumps and inserts are issued in parallel — the JS event loop interleaves the
+ * awaits but each operation touches a distinct fingerprint, so there are no
+ * Map write conflicts (JS is single-threaded).
  */
 async function getOrCreateFailureClusters(
   db: DB,
@@ -56,8 +61,8 @@ async function getOrCreateFailureClusters(
   const ids = new Map<string, number>();
   if (pending.size === 0) return ids;
 
-  const bumpExisting = async (clusterId: number, count: number) => {
-    await db
+  const bumpExisting = (clusterId: number, count: number) =>
+    db
       .update(failureClusters)
       .set({
         lastSeenRunId: testRunId,
@@ -65,53 +70,59 @@ async function getOrCreateFailureClusters(
         updatedAt: new Date(),
       })
       .where(eq(failureClusters.id, clusterId));
-  };
 
   const existing = await db
     .select({ id: failureClusters.id, fingerprint: failureClusters.fingerprint })
     .from(failureClusters)
     .where(and(eq(failureClusters.projectId, projectId), inArray(failureClusters.fingerprint, [...pending.keys()])));
 
-  for (const cluster of existing) {
-    const p = pending.get(cluster.fingerprint);
-    if (!p) continue;
-    ids.set(cluster.fingerprint, cluster.id);
-    await bumpExisting(cluster.id, p.count);
-  }
+  // Bump all existing clusters in parallel
+  await Promise.all(
+    existing.map(async (cluster) => {
+      const p = pending.get(cluster.fingerprint);
+      if (!p) return;
+      ids.set(cluster.fingerprint, cluster.id);
+      await bumpExisting(cluster.id, p.count);
+    }),
+  );
 
-  for (const [fingerprint, p] of pending) {
-    if (ids.has(fingerprint)) continue;
-    const inserted = await db
-      .insert(failureClusters)
-      .values({
-        projectId,
-        fingerprint,
-        signature: p.fp.signature,
-        errorType: p.fp.errorType,
-        selector: p.fp.selector,
-        sampleError: p.sampleError,
-        firstSeenRunId: testRunId,
-        lastSeenRunId: testRunId,
-        occurrences: p.count,
-      })
-      .onConflictDoNothing()
-      .returning({ id: failureClusters.id });
+  // Insert new clusters in parallel (each fingerprint is unique, no Map conflicts)
+  const newFingerprints = [...pending.keys()].filter((fp) => !ids.has(fp));
+  await Promise.all(
+    newFingerprints.map(async (fingerprint) => {
+      const p = pending.get(fingerprint)!;
+      const inserted = await db
+        .insert(failureClusters)
+        .values({
+          projectId,
+          fingerprint,
+          signature: p.fp.signature,
+          errorType: p.fp.errorType,
+          selector: p.fp.selector,
+          sampleError: p.sampleError,
+          firstSeenRunId: testRunId,
+          lastSeenRunId: testRunId,
+          occurrences: p.count,
+        })
+        .onConflictDoNothing()
+        .returning({ id: failureClusters.id });
 
-    if (inserted[0]) {
-      ids.set(fingerprint, inserted[0].id);
-      continue;
-    }
+      if (inserted[0]) {
+        ids.set(fingerprint, inserted[0].id);
+        return;
+      }
 
-    // Lost the insert race — another batch created the cluster; bump it instead
-    const winner = await db
-      .select({ id: failureClusters.id })
-      .from(failureClusters)
-      .where(and(eq(failureClusters.projectId, projectId), eq(failureClusters.fingerprint, fingerprint)));
-    if (winner[0]) {
-      ids.set(fingerprint, winner[0].id);
-      await bumpExisting(winner[0].id, p.count);
-    }
-  }
+      // Lost the insert race — another batch created the cluster; bump it instead
+      const winner = await db
+        .select({ id: failureClusters.id })
+        .from(failureClusters)
+        .where(and(eq(failureClusters.projectId, projectId), eq(failureClusters.fingerprint, fingerprint)));
+      if (winner[0]) {
+        ids.set(fingerprint, winner[0].id);
+        await bumpExisting(winner[0].id, p.count);
+      }
+    }),
+  );
 
   return ids;
 }
@@ -140,63 +151,59 @@ export async function persistRunCases(
 ): Promise<Array<{ id: number; status: string }>> {
   if (cases.length === 0) return [];
 
-  // Prefetch existing shared test cases for this batch in one query (avoids N+1)
-  const uniqueFilePaths = [...new Set(cases.map((c) => c.filePath))];
-  const existingCaseRows = await db
-    .select()
-    .from(testCases)
-    .where(and(eq(testCases.projectId, projectId), inArray(testCases.filePath, uniqueFilePaths)));
+  // Use the process-level test case cache to avoid a SELECT per batch.
+  // On first access for this project it loads all test cases from DB in one query;
+  // subsequent calls across all streaming batches hit memory only.
+  const projectCache = await testCaseCache.getProjectCache(db, projectId);
 
-  // Build lookup map: `${filePath}::${title}` → testCase
-  const existingCaseMap = new Map<string, (typeof existingCaseRows)[0]>();
-  for (const tc of existingCaseRows) {
-    existingCaseMap.set(`${tc.filePath}::${tc.title}`, tc);
-  }
+  // Compute error fingerprints for all failed cases in parallel
+  const fingerprintResults = await Promise.all(
+    cases.map((c) =>
+      c.error && c.status !== 'passed' && c.status !== 'skipped'
+        ? computeErrorFingerprint(c.error)
+        : Promise.resolve(null),
+    ),
+  );
 
   const runCasesRows: Array<typeof testRunsCases.$inferInsert> = [];
-  // Fingerprint of each pushed row (parallel to runCasesRows), null for non-failures
+  // Parallel to runCasesRows — null for non-failure cases
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
   const pendingClusters = new Map<string, PendingCluster>();
-  // Collect IDs of existing shared cases so we can bump updatedAt in one query
   const existingCaseIdsToUpdate: number[] = [];
 
-  for (const c of cases) {
+  for (let i = 0; i < cases.length; i++) {
+    const c = cases[i]!;
+    const fingerprint = fingerprintResults[i] ?? null;
     const cacheKey = `${c.filePath}::${c.title}`;
-    let shared = existingCaseMap.get(cacheKey);
 
-    if (!shared) {
-      const result = await db
-        .insert(testCases)
-        .values({
-          projectId,
-          filePath: c.filePath,
-          title: c.title,
-        })
-        .returning();
-      shared = result[0];
-      if (shared) existingCaseMap.set(cacheKey, shared);
+    let caseId = projectCache.get(cacheKey);
+
+    if (caseId === undefined) {
+      // New test case — insert and warm the cache for future batches
+      const result = await db.insert(testCases).values({ projectId, filePath: c.filePath, title: c.title }).returning();
+      caseId = result[0]?.id;
+      if (caseId !== undefined) {
+        testCaseCache.add(projectId, c.filePath, c.title, caseId);
+      }
     } else {
-      existingCaseIdsToUpdate.push(shared.id);
+      existingCaseIdsToUpdate.push(caseId);
     }
 
-    if (!shared) continue;
+    if (caseId === undefined) continue;
 
-    // Fingerprint failed cases so they can be linked to a failure cluster
-    let fingerprint: ErrorFingerprint | null = null;
-    if (c.error && c.status !== 'passed' && c.status !== 'skipped') {
-      fingerprint = await computeErrorFingerprint(c.error);
+    if (fingerprint) {
       const pending = pendingClusters.get(fingerprint.fingerprint);
       if (pending) {
         pending.count++;
       } else {
-        pendingClusters.set(fingerprint.fingerprint, { fp: fingerprint, sampleError: c.error, count: 1 });
+        pendingClusters.set(fingerprint.fingerprint, { fp: fingerprint, sampleError: c.error!, count: 1 });
       }
     }
     rowFingerprints.push(fingerprint);
 
     runCasesRows.push({
       testRunId,
-      testCaseId: shared.id,
+      testCaseId: caseId,
       status: c.status,
       duration: c.duration ?? null,
       error: c.error ?? null,
@@ -220,9 +227,14 @@ export async function persistRunCases(
 
   if (runCasesRows.length === 0) return [];
 
-  // Bump updatedAt for all pre-existing shared test cases in a single query
+  // Fire-and-forget: bump updatedAt for pre-existing test cases.
+  // This is a cosmetic write that does not affect query correctness,
+  // so it runs in the background rather than blocking the hot path.
   if (existingCaseIdsToUpdate.length > 0) {
-    await db.update(testCases).set({ updatedAt: new Date() }).where(inArray(testCases.id, existingCaseIdsToUpdate));
+    db.update(testCases)
+      .set({ updatedAt: new Date() })
+      .where(inArray(testCases.id, existingCaseIdsToUpdate))
+      .catch(() => {});
   }
 
   const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters);

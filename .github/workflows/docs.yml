@@ -69,7 +69,7 @@ jobs:
         working-directory: ./application
         run: npm run app:generate:demo
         env:
-          NUXT_PUBLIC_DEMO_MODE: 'true'
+          PIWI_DEMO_MODE: 'true'
         # Output: application/.output/public/
 
       # ── Combine into a single artifact ────────────────────────────────────

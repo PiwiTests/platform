@@ -540,13 +540,13 @@ function handleSelectCluster(clusterId: number) {
 
           <template #failure-groups>
             <div class="overflow-y-auto h-full">
-              <FailureGroups @select-cluster="handleSelectCluster" />
+              <FailureGroups v-if="activeTab === 'failure-groups'" @select-cluster="handleSelectCluster" />
             </div>
           </template>
 
           <template #regression>
             <div class="overflow-y-auto h-full">
-              <RegressionContext />
+              <RegressionContext v-if="activeTab === 'regression'" />
             </div>
           </template>
 
@@ -562,13 +562,13 @@ function handleSelectCluster(clusterId: number) {
 
           <template #compare>
             <div class="overflow-y-auto h-full">
-              <RunCompare />
+              <RunCompare v-if="activeTab === 'compare'" />
             </div>
           </template>
 
           <template #endpoints>
             <div class="overflow-y-auto h-full">
-              <SlowEndpoints @endpoints-count="endpointsCount = $event" />
+              <SlowEndpoints v-if="activeTab === 'endpoints'" @endpoints-count="endpointsCount = $event" />
             </div>
           </template>
         </UTabs>

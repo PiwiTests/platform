@@ -27,12 +27,23 @@ export interface GlobalRunEvent {
   status?: string;
 }
 
+export interface RunState {
+  streamToken: string;
+  projectId: number;
+}
+
 class RunEventBus {
   private emitter = new EventEmitter();
   private globalEmitter = new EventEmitter();
   private sequences = new Map<number, number>();
   /** Stores pending final status for runs in `finalizing` state, keyed by run ID */
   private finalStatuses = new Map<number, string>();
+  /**
+   * In-memory cache of active run state (token + projectId) so the events
+   * endpoint can skip a DB round-trip on every incoming batch.
+   * Populated by start/begin endpoints; cleared when the run finishes.
+   */
+  private runStates = new Map<number, RunState>();
 
   constructor() {
     // Allow many concurrent listeners (one per SSE connection)
@@ -87,12 +98,28 @@ class RunEventBus {
     return status;
   }
 
+  /** Cache the stream token and projectId for an active run. */
+  cacheRunState(runId: number, state: RunState): void {
+    this.runStates.set(runId, state);
+  }
+
+  /** Return cached run state, or undefined on a cache miss. */
+  getRunState(runId: number): RunState | undefined {
+    return this.runStates.get(runId);
+  }
+
+  /** Remove the cached run state when the stream token is invalidated. */
+  clearRunState(runId: number): void {
+    this.runStates.delete(runId);
+  }
+
   /**
-   * Clean up sequences for a finished run.
+   * Clean up all in-memory state for a finished run.
    */
   cleanup(runId: number): void {
     this.sequences.delete(runId);
     this.finalStatuses.delete(runId);
+    this.runStates.delete(runId);
   }
 
   /**

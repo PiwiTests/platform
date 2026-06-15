@@ -9,8 +9,6 @@
     "skipLibCheck": true,
     "declaration": true,
     "allowJs": false,
-    "moduleResolution": "node16",
-    "allowImportingTsExtensions": true,
-    "rewriteRelativeImportExtensions": true,
+    "moduleResolution": "node16"
   }
 }

@@ -119,6 +119,15 @@ export interface Range {
 // ============================================================================
 
 /**
+ * Slim project entry for sidebar navigation - returned by GET /api/projects/menu
+ */
+export interface ProjectMenuItem {
+  id: number;
+  name: string;
+  label: string | null;
+}
+
+/**
  * Project with statistics - returned by GET /api/projects
  */
 export interface ProjectWithStats {

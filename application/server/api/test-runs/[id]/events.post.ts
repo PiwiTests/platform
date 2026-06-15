@@ -61,18 +61,30 @@ export default eventHandler(async (event) => {
 
   const db = await getDatabase();
 
-  // Verify the run exists and the stream token matches
-  const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id));
-  const testRun = testRunResults[0];
+  // Fast path: skip the DB SELECT when the run is cached in memory.
+  // Falls back to a full DB lookup for cache misses (e.g. after server restart
+  // or for interrupted-run revival) and populates the cache on success.
+  let projectId: number;
+  const cachedState = runEventBus.getRunState(id);
 
-  if (!testRun) {
-    throw createError({
-      statusCode: 404,
-      message: 'Test run not found',
-    });
+  if (cachedState) {
+    if (cachedState.streamToken !== body.streamToken) {
+      throw createError({ statusCode: 403, message: 'Invalid stream token' });
+    }
+    projectId = cachedState.projectId;
+  } else {
+    const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id));
+    const testRun = testRunResults[0];
+
+    if (!testRun) {
+      throw createError({ statusCode: 404, message: 'Test run not found' });
+    }
+
+    await validateAndReviveRun(db, id, testRun, body.streamToken);
+    projectId = testRun.projectId;
+    // Warm the cache so subsequent batches skip this SELECT
+    runEventBus.cacheRunState(id, { streamToken: body.streamToken as string, projectId });
   }
-
-  await validateAndReviveRun(db, id, testRun, body.streamToken);
 
   // Process test cases (supports single or batch)
   const testCaseEvents = Array.isArray(body.testCases) ? body.testCases : [body.testCase];
@@ -141,7 +153,7 @@ export default eventHandler(async (event) => {
     browser: tc.browser ?? null,
   }));
 
-  const insertedRunCases = await persistRunCases(db, testRun.projectId, id, cases);
+  const insertedRunCases = await persistRunCases(db, projectId, id, cases);
 
   // Increment counters only for newly inserted rows (DB unique constraint skips duplicates)
   const insertedCount = insertedRunCases.length;
@@ -166,7 +178,7 @@ export default eventHandler(async (event) => {
     .where(eq(testRuns.id, id))
     .returning();
 
-  const updatedRun = updatedRuns[0] ?? testRun;
+  const updatedRun = updatedRuns[0];
 
   // Publish test-completed events to SSE subscribers
   for (const tc of parsedEvents) {
@@ -186,15 +198,17 @@ export default eventHandler(async (event) => {
   }
 
   // Publish progress update
-  runEventBus.publish(id, {
-    type: 'run-progress',
-    data: {
-      totalTests: updatedRun.totalTests,
-      passedTests: updatedRun.passedTests,
-      failedTests: updatedRun.failedTests,
-      skippedTests: updatedRun.skippedTests,
-    },
-  });
+  if (updatedRun) {
+    runEventBus.publish(id, {
+      type: 'run-progress',
+      data: {
+        totalTests: updatedRun.totalTests,
+        passedTests: updatedRun.passedTests,
+        failedTests: updatedRun.failedTests,
+        skippedTests: updatedRun.skippedTests,
+      },
+    });
+  }
 
   return {
     success: true,

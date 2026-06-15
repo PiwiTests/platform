@@ -285,7 +285,7 @@ function canManageApiKeys(user: UserDetails): boolean {
         color="primary"
         variant="subtle"
         title="Authentication is disabled"
-        description="Authentication is currently disabled. You can manage users here, but they will only be used when authentication is enabled via the NUXT_AUTH_ENABLED environment variable."
+        description="Authentication is currently disabled. You can manage users here, but they will only be used when authentication is enabled via the PIWI_AUTH_ENABLED environment variable."
         class="mb-4"
       />
 
