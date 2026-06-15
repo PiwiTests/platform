@@ -6,7 +6,7 @@ export default defineAppConfig({
     },
     card: {
       slots: {
-        header: 'p-4 sm:px-6 bg-muted/30',
+        header: 'px-3 py-3 sm:px-6 bg-muted/60',
       },
     },
     table: {
