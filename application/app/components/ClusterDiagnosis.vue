@@ -156,7 +156,7 @@ async function diagnose(force = false) {
   }
 }
 
-// AI context raw view
+// AI context modal
 const showAiContext = ref(false);
 const aiContextText = ref<string | null>(null);
 const loadingAiContext = ref(false);
@@ -265,24 +265,38 @@ function copyToClipboard(text: string | null) {
       </div>
     </div>
 
-    <!-- Raw AI context -->
-    <div v-if="showAiContext" class="rounded-lg border border-default overflow-hidden">
-      <div class="flex items-center justify-between px-3 py-2 bg-elevated border-b border-default">
-        <span class="text-xs font-medium text-gray-500">What will be sent to AI</span>
-        <UButton
-          v-if="aiContextText"
-          icon="i-lucide-refresh-cw"
-          size="xs"
-          color="neutral"
-          variant="ghost"
-          :loading="loadingAiContext"
-          @click="fetchAiContext"
-        />
-      </div>
-      <div class="max-h-96 overflow-y-auto">
+    <!-- AI context modal -->
+    <UModal
+      :open="showAiContext"
+      title="Context sent to AI"
+      :ui="{ content: 'max-w-3xl' }"
+      @update:open="
+        (v) => {
+          showAiContext = v;
+        }
+      "
+    >
+      <template #header>
+        <div class="flex items-center justify-between w-full">
+          <span class="font-semibold">Context sent to AI</span>
+          <UButton
+            v-if="aiContextText"
+            icon="i-lucide-refresh-cw"
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            :loading="loadingAiContext"
+            @click="fetchAiContext"
+          />
+        </div>
+      </template>
+      <template #body>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+          Full prompt that will be sent to the AI provider, including cluster details, SCM diff, and run metadata.
+        </p>
         <MarkdownPreview :text="aiContextRaw" :loading="loadingAiContext" />
-      </div>
-    </div>
+      </template>
+    </UModal>
 
     <!-- Additional context drop zone -->
     <div>
@@ -445,17 +459,8 @@ function copyToClipboard(text: string | null) {
             <MarkdownPreview :text="'```diff\n' + details.suggestedFix.patch + '\n```'" />
           </div>
 
-          <div v-else-if="details.suggestedFix.code" class="relative mt-2">
-            <pre class="text-xs font-mono bg-muted rounded p-3 overflow-x-auto">{{ details.suggestedFix.code }}</pre>
-            <UButton
-              icon="i-lucide-copy"
-              size="xs"
-              color="neutral"
-              variant="ghost"
-              class="absolute top-1 right-1"
-              title="Copy code"
-              @click="copyToClipboard(details.suggestedFix.code)"
-            />
+          <div v-else-if="details.suggestedFix.code" class="mt-2">
+            <CodeBlock :code="details.suggestedFix.code" />
           </div>
         </div>
 
