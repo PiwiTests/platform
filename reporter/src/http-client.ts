@@ -5,15 +5,27 @@ import FormData from 'form-data';
 
 export { FormData };
 
+/**
+ * Low-level HTTP client for communicating with the Piwi Dashboard server.
+ * Supports JSON requests, multipart form-data uploads, and session-based login.
+ */
 export class HttpClient {
   private serverUrl: string;
   private verbose: boolean;
 
+  /**
+   * @param serverUrl Base URL of the Piwi Dashboard server (e.g. `http://localhost:3000`).
+   * @param verbose   Enable verbose console logging for debugging.
+   */
   constructor(serverUrl: string, verbose?: boolean) {
     this.serverUrl = serverUrl;
     this.verbose = verbose ?? false;
   }
 
+  /**
+   * Resolve an auth credential: prefer `apiKey`, fall back to `username`/`password` login,
+   * or return `null` when neither is configured.
+   */
   async resolveAuth(options: {
     apiKey?: string | null;
     username?: string | null;
@@ -27,6 +39,7 @@ export class HttpClient {
     return null;
   }
 
+  /** Authenticate with username/password and return the session cookie string */
   async login(username: string, password: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const url = new URL('/api/auth/login', this.serverUrl);
@@ -73,6 +86,7 @@ export class HttpClient {
     });
   }
 
+  /** Send a JSON POST request. `auth` can be an API key (prefix `pd_`) or a session cookie string. */
   async postJSON(pathname: string, payload: unknown, auth?: string | null): Promise<any> {
     return new Promise((resolve, reject) => {
       const url = new URL(pathname, this.serverUrl);
@@ -120,6 +134,7 @@ export class HttpClient {
     });
   }
 
+  /** Send a multipart form-data POST request. Used for report and trace uploads. */
   async postFormData(pathname: string, form: FormData, auth?: string | null): Promise<any> {
     return new Promise((resolve, reject) => {
       const url = new URL(pathname, this.serverUrl);

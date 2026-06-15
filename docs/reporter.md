@@ -36,30 +36,30 @@ export default defineConfig({
 
 ## Configuration options
 
-| Option                      | Type     | Default                   | Description                                                                   |
-|-----------------------------|----------|---------------------------|-------------------------------------------------------------------------------|
-| `serverUrl`                 | string   | `'http://localhost:3000'` | URL of the Piwi Dashboard server                                        |
-| `projectName`               | string   | `'default-project'`       | Name of the project to report results under                                   |
-| `uploadTraces`              | boolean  | `true`                    | Upload trace files to the dashboard                                           |
-| `uploadReport`              | boolean  | `true`                    | Upload the Playwright HTML report                                             |
-| `reports`                   | array    | —                         | Additional report types to upload (see [Multiple reports](#multiple-reports)) |
-| `streaming`                 | boolean  | `true`                    | Enable live streaming of results (falls back to batch if unsupported)         |
-| `streamingBatchSize`        | number   | `5`                       | Number of test results to batch before sending                                |
-| `streamingBatchDelay`       | number   | `2000`                    | Max delay (ms) before flushing pending events                                 |
+| Option                      | Type     | Default                   | Description                                                                                 |
+|-----------------------------|----------|---------------------------|---------------------------------------------------------------------------------------------|
+| `serverUrl`                 | string   | `'http://localhost:3000'` | URL of the Piwi Dashboard server                                                            |
+| `projectName`               | string   | `'default-project'`       | Name of the project to report results under                                                 |
+| `uploadTraces`              | boolean  | `true`                    | Upload trace files to the dashboard                                                         |
+| `uploadReport`              | boolean  | `true`                    | Upload the Playwright HTML report                                                           |
+| `reports`                   | array    | —                         | Additional report types to upload (see [Multiple reports](#multiple-reports))               |
+| `streaming`                 | boolean  | `true`                    | Enable live streaming of results (falls back to batch if unsupported)                       |
+| `streamingBatchSize`        | number   | `5`                       | Number of test results to batch before sending                                              |
+| `streamingBatchDelay`       | number   | `2000`                    | Max delay (ms) before flushing pending events                                               |
 | `liveFileUploads`           | boolean  | `true`                    | Upload each test's trace and attachments as soon as the test finishes (streaming mode only) |
-| `projectDescription`        | string   | —                         | Description of the project                                                    |
-| `environment`               | string   | —                         | Deployment environment for this run, e.g. `"production"`, `"staging"`, `"integration"` |
-| `relatedIssue`              | string   | —                         | Related issue reference, e.g. `"JIRA-123"`                                    |
-| `ciInfo`                    | string   | —                         | CI job information                                                            |
-| `tags`                      | string[] | —                         | Tags to categorize the test run                                               |
-| `customData`                | object   | —                         | Additional custom metadata as key-value pairs                                 |
-| `collectScmInfo`            | boolean  | `true`                    | Auto-collect git commit, branch, author                                       |
-| `collectCiInfo`             | boolean  | `true`                    | Auto-collect CI environment info                                              |
-| `collectPerformanceMetrics` | boolean  | `true`                    | Collect step timings, network requests and web vitals                         |
-| `username`                  | string   | —                         | Username for dashboard login (use `apiKey` instead when possible)             |
-| `password`                  | string   | —                         | Password for dashboard login (used with `username`)                           |
-| `apiKey`                    | string   | —                         | API key for authentication (preferred over `username`/`password` for CI)      |
-| `verbose`                   | boolean  | `false`                   | Enable verbose logging for debugging                                          |
+| `projectDescription`        | string   | —                         | Description of the project                                                                  |
+| `environment`               | string   | —                         | Deployment environment for this run, e.g. `"production"`, `"staging"`, `"integration"`      |
+| `relatedIssue`              | string   | —                         | Related issue reference, e.g. `"JIRA-123"`                                                  |
+| `ciInfo`                    | string   | —                         | CI job information                                                                          |
+| `tags`                      | string[] | —                         | Tags to categorize the test run                                                             |
+| `customData`                | object   | —                         | Additional custom metadata as key-value pairs                                               |
+| `collectScmInfo`            | boolean  | `true`                    | Auto-collect git commit, branch, author                                                     |
+| `collectCiInfo`             | boolean  | `true`                    | Auto-collect CI environment info                                                            |
+| `collectPerformanceMetrics` | boolean  | `true`                    | Collect step timings, network requests and web vitals                                       |
+| `username`                  | string   | —                         | Username for dashboard login (use `apiKey` instead when possible)                           |
+| `password`                  | string   | —                         | Password for dashboard login (used with `username`)                                         |
+| `apiKey`                    | string   | —                         | API key for authentication (preferred over `username`/`password` for CI)                    |
+| `verbose`                   | boolean  | `false`                   | Enable verbose logging for debugging                                                        |
 
 ## Live streaming
 
@@ -371,21 +371,21 @@ The compiled output is what Playwright loads at runtime. The `package.json` `exp
 
 ### Source layout
 
-| File                      | Purpose                                              |
-|---------------------------|------------------------------------------------------|
-| `src/index.ts`            | Entry point — re-exports the class with `createGlobalSetup` attached |
-| `src/reporter.ts`         | Main `PiwiDashboardReporter` orchestrator class (Playwright hooks, streaming lifecycle, upload fallback) |
-| `src/config.ts`           | `DashboardReporterOptions` interface + `resolveOptions()` defaults merger |
-| `src/helpers.ts`          | Utility functions: `getSetupFilePath`, `computeInstanceId`, `createGlobalSetup` |
-| `src/http-client.ts`      | `HttpClient` class — HTTP/HTTPS transport (login, postJSON, postFormData) |
-| `src/uploader.ts`         | `Uploader` class — upload strategies (JSON, multipart, streaming files) |
-| `src/stream-buffer.ts`    | `StreamBuffer` class — persistent JSONL event buffer with staleness cleanup |
-| `src/crash-recovery.ts`   | `CrashRecovery` class — save/load/retry recovery data after total failure |
-| `src/file-handler.ts`     | `FileHandler` class — report directory detection, trace/attachment file ops |
-| `src/metadata-collector.ts` | `MetadataCollector` class — CI, SCM, and Playwright config metadata |
-| `src/step-analyzer.ts`    | Pure functions — step categorization, flattening, performance summary |
-| `src/compression.ts`      | Directory gzip archiver |
-| `src/fixtures.ts`         | Playwright fixtures for network/web-vitals/console capture |
+| File                        | Purpose                                                                                                  |
+|-----------------------------|----------------------------------------------------------------------------------------------------------|
+| `src/index.ts`              | Entry point — re-exports the class with `createGlobalSetup` attached                                     |
+| `src/reporter.ts`           | Main `PiwiDashboardReporter` orchestrator class (Playwright hooks, streaming lifecycle, upload fallback) |
+| `src/config.ts`             | `PiwiDashboardOptions` interface + `resolveOptions()` defaults merger                                    |
+| `src/helpers.ts`            | Utility functions: `getSetupFilePath`, `computeInstanceId`, `createGlobalSetup`                          |
+| `src/http-client.ts`        | `HttpClient` class — HTTP/HTTPS transport (login, postJSON, postFormData)                                |
+| `src/uploader.ts`           | `Uploader` class — upload strategies (JSON, multipart, streaming files)                                  |
+| `src/stream-buffer.ts`      | `StreamBuffer` class — persistent JSONL event buffer with staleness cleanup                              |
+| `src/crash-recovery.ts`     | `CrashRecovery` class — save/load/retry recovery data after total failure                                |
+| `src/file-handler.ts`       | `FileHandler` class — report directory detection, trace/attachment file ops                              |
+| `src/metadata-collector.ts` | `MetadataCollector` class — CI, SCM, and Playwright config metadata                                      |
+| `src/step-analyzer.ts`      | Pure functions — step categorization, flattening, performance summary                                    |
+| `src/compression.ts`        | Directory gzip archiver                                                                                  |
+| `src/fixtures.ts`           | Playwright fixtures for network/web-vitals/console capture                                               |
 
 ### Shared types
 

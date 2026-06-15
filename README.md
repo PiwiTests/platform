@@ -201,7 +201,7 @@ Source layout (13 modules):
 
 | Module               | Kind     | Purpose                                      |
 |----------------------|----------|----------------------------------------------|
-| `config.ts`          | Interface + function | `DashboardReporterOptions` + defaults merger |
+| `config.ts`          | Interface + function | `PiwiDashboardOptions` + defaults merger |
 | `reporter.ts`        | Class    | Main orchestrator (Playwright hooks, streaming, upload fallback) |
 | `http-client.ts`     | Class    | HTTP/HTTPS transport (login, JSON, FormData) |
 | `uploader.ts`        | Class    | Upload strategies (JSON, multipart, streaming files) |

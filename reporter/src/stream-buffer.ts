@@ -3,6 +3,10 @@ import * as os from 'os';
 import * as fs from 'fs';
 import { hashForProject } from './helpers.js';
 
+/**
+ * Persistent JSONL buffer on disk.  Events are appended to a temp file so they
+ * survive a crash and can be replayed when the reporter restarts.
+ */
 export class StreamBuffer {
   private filePath: string;
 
@@ -10,6 +14,7 @@ export class StreamBuffer {
     this.filePath = path.join(os.tmpdir(), `piwi-dashboard-stream-${hashForProject(projectName)}.jsonl`);
   }
 
+  /** Append one or more events to the on-disk buffer */
   append(events: any[]): void {
     if (events.length === 0) return;
     try {
@@ -20,6 +25,7 @@ export class StreamBuffer {
     }
   }
 
+  /** Load all buffered events from disk, clearing the file */
   load(): any[] {
     try {
       if (fs.existsSync(this.filePath)) {
@@ -35,6 +41,7 @@ export class StreamBuffer {
     return [];
   }
 
+  /** Delete the buffer file from disk */
   clear(): void {
     try {
       if (fs.existsSync(this.filePath)) fs.unlinkSync(this.filePath);
@@ -43,6 +50,7 @@ export class StreamBuffer {
     }
   }
 
+  /** Remove the buffer file if it is older than `maxAgeMs` (default 2 hours). Used on startup to discard orphaned data. */
   clearStale(maxAgeMs: number = 7200000): void {
     try {
       if (fs.existsSync(this.filePath)) {

@@ -1,32 +1,9 @@
-import { defineConfig, devices, type ReporterDescription } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
+import PiwiDashboardReporter from '@phenx/piwi-dashboard-reporter';
+const { wrapConfig } = PiwiDashboardReporter;
 import { join } from 'path';
 
-const reporters: ReporterDescription[] = [];
-
-reporters.push(['list']);
-
-if (!process.env.CI) {
-  reporters.push(['html', { outputFolder: 'playwright-report' }]);
-  reporters.push(['monocart-reporter', { name: 'Piwi Dashboard Tests', outputFile: 'monocart-report/index.html' }]);
-  reporters.push(['blob', { outputDir: 'blob-report' }]);
-  reporters.push([
-    '../reporter',
-    {
-      serverUrl: 'http://localhost:3000',
-      projectName: 'Piwi Dashboard',
-      streaming: true,
-      uploadReport: false, // individual reports are listed in `reports` below
-      uploadTraces: true,
-      verbose: true,
-      reports: [{ type: 'html' }, { type: 'monocart' }, { type: 'blob', label: 'Blob Archive' }],
-    },
-  ]);
-}
-
-/**
- * See https://playwright.dev/docs/test-configuration.
- */
-export default defineConfig({
+const baseConfig = defineConfig({
   testDir: './tests',
 
   /* Run tests in files in parallel */
@@ -47,7 +24,12 @@ export default defineConfig({
   globalSetup: './tests/globalSetup',
 
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: reporters,
+  reporter: [
+    ['list'],
+    ['html', { outputFolder: 'playwright-report' }],
+    ['monocart-reporter', { name: 'Piwi Dashboard Tests', outputFile: 'monocart-report/index.html' }],
+    ['blob', { outputDir: 'blob-report' }],
+  ],
 
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
@@ -123,3 +105,16 @@ export default defineConfig({
       : []),
   ],
 });
+
+export default process.env.CI
+  ? baseConfig
+  : wrapConfig(baseConfig, {
+      serverUrl: 'http://localhost:3000',
+      projectName: 'Piwi Dashboard',
+      projectDescription: 'The Piwi Dashboard project',
+      streaming: true,
+      uploadReport: false,
+      uploadTraces: true,
+      verbose: true,
+      reports: [{ type: 'html' }, { type: 'monocart' }, { type: 'blob', label: 'Blob Archive' }],
+    });

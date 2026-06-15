@@ -110,7 +110,7 @@ Nuxt file-based routing:
 ### Reporter
 - `reporter/src/index.ts` — Entry point (re-exports class + `createGlobalSetup`)
 - `reporter/src/reporter.ts` — Main `PiwiDashboardReporter` orchestrator class
-- `reporter/src/config.ts` — `DashboardReporterOptions` interface + defaults
+- `reporter/src/config.ts` — `PiwiDashboardOptions` interface + defaults
 - `reporter/src/helpers.ts` — `getSetupFilePath`, `computeInstanceId`, `createGlobalSetup`
 - `reporter/src/http-client.ts` — `HttpClient` class (HTTP transport)
 - `reporter/src/uploader.ts` — `Uploader` class (upload strategies)
@@ -179,6 +179,7 @@ node scripts/db-query.mjs "SELECT id, name FROM projects" --json
 | `npm run reporter:build` | Compile TypeScript (from `src/`) to `.js` + `.d.ts` (in `dist/`) |
 | `npm run reporter:dev`   | Watch mode — auto-recompile on changes |
 | `npm run reporter:format`| Format source code with oxfmt |
+| `npm run reporter:test`  | Run unit tests with `tsx --test` |
 | `npm run lint`           | Lint with oxlint               |
 | `npm run lint:fix`       | Lint with auto-fix             |
 
@@ -201,8 +202,9 @@ node scripts/db-query.mjs "SELECT id, name FROM projects" --json
 | `src/step-analyzer.ts`        | Step categorization + performance analysis  |
 | `src/helpers.ts`              | Pure utility functions                      |
 | `src/compression.ts`          | Directory gzip archiver                     |
+| `src/config-wrapper.ts`       | `wrapConfig` — injects Piwi `globalSetup` into a Playwright config |
 | `src/fixtures.ts`             | Playwright fixtures                         |
-| `src/index.ts`                | Package entry point                         |
+| `src/index.ts`                | Package entry point (class + `wrapConfig` + types) |
 
 ## Making Changes
 

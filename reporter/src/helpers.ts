@@ -2,28 +2,36 @@ import * as crypto from 'crypto';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
-import type { DashboardReporterOptions } from './config.js';
+import type { PiwiDashboardOptions } from './config.js';
 import { resolveOptions } from './config.js';
 import { HttpClient } from './http-client.js';
 
+/** Produce a deterministic short SHA-1 hex hash for a project name (used in temp file names) */
 export function hashForProject(projectName: string): string {
   return crypto.createHash('sha1').update(projectName).digest('hex').slice(0, 16);
 }
 
+/** Return the temp-file path used to exchange setup info between globalSetup and the reporter instance */
 export function getSetupFilePath(projectName: string): string {
   return path.join(os.tmpdir(), `piwi-dashboard-setup-${hashForProject(projectName)}.json`);
 }
 
+/** Derive a unique instance identifier by hashing hostname + projectName */
 export function computeInstanceId(projectName: string): string {
   return crypto.createHash('sha256').update([os.hostname(), projectName].join('|')).digest('hex').slice(0, 16);
 }
 
+/** Information saved by the global setup for the reporter instance to consume */
 export interface SetupInfo {
+  /** Server-assigned run ID */
   runId: number;
+  /** One-time token used to authenticate the /begin call */
   setupToken: string;
+  /** Project name this run belongs to */
   projectName: string;
 }
 
+/** Read and delete the setup info file for the given project. Returns `null` when no file exists. */
 export function readSetupInfo(projectName: string): SetupInfo | null {
   const setupFile = getSetupFilePath(projectName);
   try {
@@ -38,6 +46,7 @@ export function readSetupInfo(projectName: string): SetupInfo | null {
   return null;
 }
 
+/** Read a snippet of source code surrounding the given line, returning a formatted string with line numbers. Returns `null` on error. */
 export function readSourceSnippet(file: string, line: number, context: number): string | null {
   try {
     const content = fs.readFileSync(file, 'utf-8');
@@ -57,6 +66,7 @@ export function readSourceSnippet(file: string, line: number, context: number): 
   }
 }
 
+/** Create a concurrency limiter that ensures at most `maxConcurrent` async operations run simultaneously */
 export function createLimiter(maxConcurrent: number): <T>(fn: () => Promise<T>) => Promise<T> {
   const limitValue = Math.max(1, Math.floor(maxConcurrent));
   let active = 0;
@@ -80,8 +90,19 @@ export function createLimiter(maxConcurrent: number): <T>(fn: () => Promise<T>) 
   };
 }
 
+/**
+ * Create a Playwright `globalSetup` function that registers a test run on the
+ * Piwi Dashboard server at the start of the run.  An optional `userSetup` is
+ * called afterward so existing setup logic is preserved.
+ *
+ * The server-run ID and a one-time token are written to a temp file so the
+ * reporter instance can pick them up during the streaming handshake.
+ *
+ * @param options   Piwi Dashboard options (uses `serverUrl`, `projectName`, …).
+ * @param userSetup An existing global setup to chain after the Piwi registration.
+ */
 export function createGlobalSetup(
-  options?: DashboardReporterOptions,
+  options?: PiwiDashboardOptions,
   userSetup?: (config: any) => any,
 ): (config: any) => Promise<any> {
   return async function globalSetupFn(config: any) {

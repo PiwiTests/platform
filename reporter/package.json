@@ -41,6 +41,8 @@
     "reporter:format:check": "oxfmt --config oxfmt.config.mts --check \"src/\"",
     "reporter:lint": "oxlint --config oxlint.config.mts .",
     "reporter:lint:fix": "oxlint --config oxlint.config.mts . --fix",
+    "reporter:test": "tsx --test tests/**/*.spec.ts",
+    "test": "npm run reporter:test",
     "prepublishOnly": "npm run reporter:build"
   },
   "files": [

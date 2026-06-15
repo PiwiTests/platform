@@ -3,7 +3,13 @@ import path from 'path';
 import crypto from 'crypto';
 import { compressDirectory } from './compression.js';
 
+/**
+ * File-system helpers for discovering report directories, trace files, and
+ * test attachments, as well as compressing report directories and computing
+ * trace-file hashes for deduplication.
+ */
 export class FileHandler {
+  /** Locate a Playwright HTML report directory containing `index.html`. Optionally override the search path. */
   findHTMLReportDirectory(customDir?: string): string | null {
     const possibleDirs = customDir
       ? [customDir, path.join(process.cwd(), customDir)]
@@ -17,6 +23,7 @@ export class FileHandler {
     return null;
   }
 
+  /** Check if `dir` exists and is a directory; also checks `path.join(process.cwd(), dir)` */
   findReportDirectory(dir: string): string | null {
     const candidates = [dir, path.join(process.cwd(), dir)];
     for (const candidate of candidates) {
@@ -25,6 +32,7 @@ export class FileHandler {
     return null;
   }
 
+  /** Gzip-compress an entire report directory into a single buffer. Returns `null` on failure. */
   async compressReportDirectory(reportDir: string): Promise<Buffer | null> {
     try {
       return (await compressDirectory(reportDir)) || null;
@@ -34,6 +42,7 @@ export class FileHandler {
     }
   }
 
+  /** Return resolved paths for all trace attachments on a test case */
   findTraceFiles(testCase: any): string[] {
     const set = new Set<string>();
     if (testCase.attachments) {
@@ -44,6 +53,7 @@ export class FileHandler {
     return Array.from(set);
   }
 
+  /** Return all non-trace, non-internal attachments from a test case. Skips `trace` and `piwi-dashboard-*` attachments. */
   findAllAttachments(testCase: any): Array<{ name: string; path: string; contentType: string; originalName: string }> {
     const result: Array<{ name: string; path: string; contentType: string; originalName: string }> = [];
     if (testCase.attachments) {
@@ -63,6 +73,7 @@ export class FileHandler {
     return result;
   }
 
+  /** Mapping of well-known report type names to their default output directories */
   getDefaultReportDirs(): Record<string, string> {
     return {
       html: 'playwright-report',
@@ -72,6 +83,7 @@ export class FileHandler {
     };
   }
 
+  /** Parse Piwi-internal attachment bodies (`piwi-dashboard-network`, `-web-vitals`, `-console`, `-aria-snapshot`) into structured fields on the test case */
   parsePerformanceAttachments(testCase: any, attachments: any[]): void {
     const find = (name: string) => attachments.find((a: any) => a.name === name);
 
@@ -106,6 +118,7 @@ export class FileHandler {
     if (aria?.body) testCase.ariaSnapshot = aria.body.toString();
   }
 
+  /** Compute SHA-256 hashes and sizes for trace files across all test cases, keyed by case index */
   async computeTraceHashes(testCases: any[]): Promise<Map<number, { tracePath: string; hash: string; size: number }>> {
     const result = new Map<number, { tracePath: string; hash: string; size: number }>();
     for (let i = 0; i < testCases.length; i++) {
@@ -132,11 +145,13 @@ export class FileHandler {
     return result;
   }
 
+  /** Compute SHA-256 hash for a single test case's trace file */
   async computeSingleTraceHash(testCase: any): Promise<{ tracePath: string; hash: string; size: number } | null> {
     const hashes = await this.computeTraceHashes([testCase]);
     return hashes.get(0) ?? null;
   }
 
+  /** Ask the server which trace hashes it already has, returning the set of hashes that are missing */
   async checkMissingTraces(
     httpClient: { postJSON(path: string, payload: any, auth?: string | null): Promise<any> },
     projectName: string,

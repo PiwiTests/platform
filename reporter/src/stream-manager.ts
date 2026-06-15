@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import type { DashboardReporterOptions } from './config.js';
+import type { PiwiDashboardOptions } from './config.js';
 import { HttpClient } from './http-client.js';
 import { StreamBuffer } from './stream-buffer.js';
 import { CrashRecovery } from './crash-recovery.js';
@@ -7,6 +7,11 @@ import { Uploader } from './uploader.js';
 import { FileHandler } from './file-handler.js';
 import { createLimiter, readSetupInfo } from './helpers.js';
 
+/**
+ * Manages the streaming protocol: queues events (begin / complete), flushes
+ * them in batches, schedules retries on failure, and handles per-test-case
+ * live file uploads.
+ */
 export class StreamManager {
   private pendingEvents: any[] = [];
   private pendingBeginEvents: any[] = [];
@@ -24,31 +29,45 @@ export class StreamManager {
   private _auth: string | null = null;
   private _startPromise: Promise<void> | null = null;
 
+  /** Whether the streaming session is active */
   get enabled(): boolean {
     return this._enabled;
   }
+  /** Server-assigned run ID (`null` until the stream opens) */
   get runId(): number | null {
     return this._runId;
   }
+  /** Stream authentication token (`null` until the stream opens) */
   get token(): string | null {
     return this._token;
   }
+  /** Resolved auth string (API key or session cookie) used in stream requests */
   get auth(): string | null {
     return this._auth;
   }
+  /** Promise that resolves when the stream has been fully initialised */
   get startPromise(): Promise<void> | null {
     return this._startPromise;
   }
 
+  /**
+   * @param httpClient  HTTP client for server communication.
+   * @param streamBuffer On-disk buffer for crash-safe event persistence.
+   * @param recovery    Crash-recovery handler for uploading stale payloads on startup.
+   * @param uploader    Uploader for per-test-case file uploads.
+   * @param fileHandler File-discovery helper for finding traces and attachments.
+   * @param options     Piwi Dashboard reporter options.
+   */
   constructor(
     private readonly httpClient: HttpClient,
     private readonly streamBuffer: StreamBuffer,
     private readonly recovery: CrashRecovery,
     private readonly uploader: Uploader,
     private readonly fileHandler: FileHandler,
-    private readonly options: DashboardReporterOptions,
+    private readonly options: PiwiDashboardOptions,
   ) {}
 
+  /** Begin the streaming session after `onBegin` fires. Non-blocking — the actual handshake runs asynchronously. */
   start(startTime: string, metadata: Record<string, any>, instanceId: string): void {
     this._startPromise = this._doStart(startTime, metadata, instanceId);
   }
@@ -104,6 +123,7 @@ export class StreamManager {
 
   // Queues a begin event; held in a pre-start buffer until the stream is open,
   // then prepended to the main queue so it arrives before the matching complete event.
+  /** Queue a test-case `begin` event. Held in a pre-start buffer if the stream is not yet open, then prepended so it arrives before the matching `complete` event. */
   queueBeginEvent(event: any): void {
     if (this._enabled && this._runId) {
       this.queueEvent(event);
@@ -112,6 +132,7 @@ export class StreamManager {
     }
   }
 
+  /** Queue a test-case event. Triggers an immediate flush when the batch size is reached, otherwise schedules a timer-based flush. */
   queueEvent(event: any): void {
     this.pendingEvents.push(event);
 
@@ -122,6 +143,7 @@ export class StreamManager {
     }
   }
 
+  /** Flush all pending events to the server. Returns a promise that resolves to `true` on success or `false` on failure (events are re-queued for retry). */
   flush(): Promise<boolean> | null {
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
@@ -169,6 +191,7 @@ export class StreamManager {
     }, delay);
   }
 
+  /** Drain all pending and buffered events before the run finishes. Retries up to 10 times with exponential back-off. */
   async drain(): Promise<void> {
     if (!this._enabled) {
       this.pendingEvents = [];
@@ -206,6 +229,7 @@ export class StreamManager {
     }
   }
 
+  /** Schedule a live upload of trace and attachment files for a test case. Skips cases with no files. Concurrency is limited to 2 simultaneous uploads. */
   scheduleLiveUpload(tc: any): void {
     const hasTrace = !!this.options.uploadTraces && this.fileHandler.findTraceFiles(tc).some((p) => fs.existsSync(p));
     const hasAttachments = this.fileHandler.findAllAttachments(tc).length > 0;
@@ -251,6 +275,7 @@ export class StreamManager {
     this.liveUploadPromises.push(promise);
   }
 
+  /** Wait for all live uploads to settle, then upload files for any test cases that weren't uploaded live */
   async uploadRemaining(testCases: any[]): Promise<void> {
     if (this.liveUploadPromises.length > 0) {
       await Promise.allSettled(this.liveUploadPromises);

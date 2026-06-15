@@ -1,7 +1,12 @@
 import { execSync } from 'child_process';
 import type { FullConfig, Suite, TestCase } from '@playwright/test/reporter';
 
+/**
+ * Collects CI/CD environment metadata, SCM (git) information, and Playwright
+ * config metadata to attach to each test run submission.
+ */
 export class MetadataCollector {
+  /** Collect all available metadata from the environment, config, and suite */
   collect(config: FullConfig, suite: Suite, options: any): Record<string, unknown> {
     const metadata: Record<string, unknown> = {};
 
@@ -39,6 +44,7 @@ export class MetadataCollector {
     return metadata;
   }
 
+  /** Walk the test's parent hierarchy to extract the resolved browser/project configuration */
   getBrowserConfig(test: TestCase): Record<string, any> | null {
     try {
       let suite: Suite | undefined = test.parent;

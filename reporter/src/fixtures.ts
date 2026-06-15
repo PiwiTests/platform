@@ -1,5 +1,12 @@
 import { test as base } from '@playwright/test';
 
+/**
+ * Playwright fixtures that collect network requests, console entries,
+ * web vitals, and ARIA snapshots during a test.
+ *
+ * Attaches collected data as `piwi-dashboard-*` test-info attachments
+ * which the Piwi Dashboard reporter parses on `onTestEnd`.
+ */
 export const dashboardFixtures = {
   page: async ({ page }: any, use: any, testInfo: any) => {
     const networkRequests: Array<Record<string, unknown>> = [];
@@ -108,4 +115,5 @@ export const dashboardFixtures = {
   },
 };
 
+/** Playwright `test` extended with Piwi Dashboard fixtures (network, web vitals, console, ARIA snapshots) */
 export const test = base.extend(dashboardFixtures);
