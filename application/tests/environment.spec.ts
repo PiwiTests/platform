@@ -239,8 +239,8 @@ test.describe('Environment API Tests', () => {
     const typeDefs = readFileSync(typeDefsPath, 'utf-8');
 
     expect(typeDefs).toContain('environment');
-    // Verify it's defined on DashboardReporterOptions
-    expect(typeDefs).toContain('DashboardReporterOptions');
+    // Verify it's defined on PiwiDashboardOptions
+    expect(typeDefs).toContain('PiwiDashboardOptions');
   });
 });
 

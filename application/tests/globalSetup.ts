@@ -1,5 +1,5 @@
-import pkg from '../../reporter/dist/helpers.js';
-const { createGlobalSetup } = pkg;
+import PiwiDashboardReporter from '@phenx/piwi-dashboard-reporter';
+const { createGlobalSetup } = PiwiDashboardReporter;
 
 async function cleanup() {
   try {
@@ -23,9 +23,7 @@ export default createGlobalSetup(
     serverUrl: 'http://localhost:3000',
     projectName: 'Piwi Dashboard',
     projectDescription: 'The Piwi Dashboard project',
-    streaming: false,
+    verbose: true,
   },
-  async () => {
-    await cleanup();
-  },
+  cleanup,
 );

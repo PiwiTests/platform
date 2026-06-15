@@ -1,3 +1,4 @@
+/** Categorise a Playwright step title into `navigation`, `action`, `input`, `assertion`, `wait`, `api`, or `other` */
 export function categorizeStep(title: string): string {
   if (!title) return 'other';
   const lower = title.toLowerCase();
@@ -38,12 +39,14 @@ export function categorizeStep(title: string): string {
   return 'other';
 }
 
+/** A single step flattened from the Playwright step tree with its derived category */
 export interface FlatStep {
   title: string;
   duration: number;
   category: string;
 }
 
+/** Recursively flatten a nested step tree into a flat list */
 export function flattenSteps(steps: any[]): FlatStep[] {
   const result: FlatStep[] = [];
   for (const step of steps) {
@@ -57,14 +60,21 @@ export function flattenSteps(steps: any[]): FlatStep[] {
   return result;
 }
 
+/** Aggregated step performance data for a single test case */
 export interface StepMetrics {
+  /** Flattened step list with categories */
   steps: FlatStep[];
+  /** Sum of top-level step durations */
   totalStepDuration: number;
+  /** The single slowest step (by duration) */
   slowestStep: { title: string; duration: number } | null;
+  /** How many navigation steps were executed */
   navigationCount: number;
+  /** Total wall-clock time spent in navigation steps */
   navigationTotalDuration: number;
 }
 
+/** Collect step metrics (flat steps, slowest step, navigation stats) from a Playwright step array */
 export function collectStepMetrics(steps: any[]): StepMetrics {
   const flatSteps = flattenSteps(steps);
   const totalStepDuration = steps.reduce((sum: number, s: any) => sum + (s.duration || 0), 0);
@@ -85,22 +95,32 @@ export function collectStepMetrics(steps: any[]): StepMetrics {
   };
 }
 
+/** Calculate the p-th percentile from a sorted array of numbers */
 export function percentile(sortedArr: number[], p: number): number {
   if (sortedArr.length === 0) return 0;
   const index = Math.ceil((p / 100) * sortedArr.length) - 1;
   return sortedArr[Math.max(0, index)];
 }
 
+/** Summary performance statistics for a complete test run */
 export interface PerformanceSummary {
+  /** Average test-case duration in ms */
   avgTestDuration?: number;
+  /** Median (P50) test-case duration in ms */
   p50TestDuration?: number;
+  /** P90 test-case duration in ms */
   p90TestDuration?: number;
+  /** P95 test-case duration in ms */
   p95TestDuration?: number;
+  /** Up to 5 slowest test cases */
   slowestTests?: Array<{ title: string; duration: number }>;
+  /** Total time spent in navigation steps across all cases */
   totalNavigationDuration?: number;
+  /** Average time per navigation step */
   avgNavigationDuration?: number;
 }
 
+/** Compute run-level performance summary (averages, percentiles, slowest tests) from all test cases */
 export function computePerformanceSummary(testCases: any[]): PerformanceSummary {
   const durations = testCases.filter((tc: any) => tc.duration != null).map((tc: any) => tc.duration);
 

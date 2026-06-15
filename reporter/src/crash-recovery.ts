@@ -4,15 +4,24 @@ import * as fs from 'fs';
 import { hashForProject } from './helpers.js';
 import { HttpClient } from './http-client.js';
 
+/**
+ * Persists a test-run payload to disk when all upload strategies fail, so the
+ * data can be retried on the next run.
+ */
 export class CrashRecovery {
   private filePath: string;
   private verbose: boolean;
 
+  /**
+   * @param projectName Used to derive the temp-file name so recovery data is project-scoped.
+   * @param verbose     Enable verbose logging.
+   */
   constructor(projectName: string, verbose?: boolean) {
     this.verbose = verbose ?? false;
     this.filePath = path.join(os.tmpdir(), `piwi-dashboard-recovery-${hashForProject(projectName)}.json`);
   }
 
+  /** Serialise the payload to a temp file for later retry */
   save(data: Record<string, any>): void {
     try {
       fs.writeFileSync(this.filePath, JSON.stringify(data), 'utf8');
@@ -22,6 +31,7 @@ export class CrashRecovery {
     }
   }
 
+  /** Read the saved payload from disk, or return `null` if none exists */
   load(): Record<string, any> | null {
     try {
       if (fs.existsSync(this.filePath)) return JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
@@ -31,6 +41,7 @@ export class CrashRecovery {
     return null;
   }
 
+  /** Delete the recovery file from disk */
   clear(): void {
     try {
       if (fs.existsSync(this.filePath)) fs.unlinkSync(this.filePath);
@@ -39,6 +50,7 @@ export class CrashRecovery {
     }
   }
 
+  /** Attempt to submit a previously saved payload. Clears the recovery file on success. */
   async tryUpload(httpClient: HttpClient, auth?: string | null): Promise<void> {
     const data = this.load();
     if (!data) return;

@@ -223,36 +223,6 @@ const isDemo = config.public.demoMode;
 const demoDataVersion = config.public.demoDataVersion as string;
 
 onMounted(async () => {
-  // ── Cookie consent ──
-  const cookie = useCookie('cookie-consent');
-  if (cookie.value !== 'accepted' && cookie.value !== 'opted-out') {
-    const notification = toast.add({
-      title: 'We use first-party cookies to enhance your experience on our website.',
-      duration: 0,
-      close: false,
-      actions: [
-        {
-          label: 'Accept',
-          color: 'neutral',
-          variant: 'outline',
-          onClick: () => {
-            cookie.value = 'accepted';
-            toast.remove(notification.id);
-          },
-        },
-        {
-          label: 'Opt out',
-          color: 'neutral',
-          variant: 'ghost',
-          onClick: () => {
-            cookie.value = 'opted-out';
-            toast.remove(notification.id);
-          },
-        },
-      ],
-    });
-  }
-
   // ── Demo data staleness ──
   if (isDemo && demoDataVersion) {
     const stored = await getStoredDemoVersion();

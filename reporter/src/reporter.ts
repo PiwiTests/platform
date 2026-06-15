@@ -1,6 +1,6 @@
 import * as path from 'path';
 import type { FullConfig, Suite, TestCase, TestResult, FullResult } from '@playwright/test/reporter';
-import { resolveOptions, type DashboardReporterOptions } from './config.js';
+import { resolveOptions, type PiwiDashboardOptions } from './config.js';
 import { HttpClient } from './http-client.js';
 import { Uploader, type RunPayload, type ReportOptions } from './uploader.js';
 import { StreamBuffer } from './stream-buffer.js';
@@ -11,8 +11,15 @@ import { StreamManager } from './stream-manager.js';
 import { collectStepMetrics, computePerformanceSummary } from './step-analyzer.js';
 import { computeInstanceId, readSourceSnippet, createGlobalSetup } from './helpers.js';
 
+/**
+ * Piwi Dashboard Playwright reporter.
+ *
+ * Collects test results, metadata, performance metrics and trace files, then
+ * submits them to a Piwi Dashboard server via JSON, multipart upload, or the
+ * streaming protocol.
+ */
 export class PiwiDashboardReporter {
-  private options: DashboardReporterOptions;
+  private options: PiwiDashboardOptions;
   private testCases: any[] = [];
   private startTime: string | null = null;
   private totalTests = 0;
@@ -59,6 +66,7 @@ export class PiwiDashboardReporter {
     }
   }
 
+  /** Playwright reporter hook: called once at the start of the test run */
   onBegin(config: FullConfig, suite: Suite): void {
     if (!this.enabled) {
       console.log('[Piwi Dashboard] Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');
@@ -70,6 +78,7 @@ export class PiwiDashboardReporter {
     this.streamManager?.start(this.startTime, this.metadata, this.instanceId);
   }
 
+  /** Playwright reporter hook: called when an individual test begins */
   onTestBegin(test: TestCase, result: TestResult): void {
     const relativeFilePath = path.relative(process.cwd(), test.location.file);
     const beginEvent = {
@@ -85,6 +94,7 @@ export class PiwiDashboardReporter {
     }
   }
 
+  /** Playwright reporter hook: called when an individual test finishes */
   onTestEnd(test: TestCase, result: TestResult): void {
     this.totalTests++;
     const relativeFilePath = path.relative(process.cwd(), test.location.file);
@@ -139,6 +149,7 @@ export class PiwiDashboardReporter {
     }
   }
 
+  /** Playwright reporter hook: called when the full test run finishes */
   async onEnd(result: FullResult): Promise<void> {
     if (!this.enabled) return;
     const endTime = new Date().toISOString();

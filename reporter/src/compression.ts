@@ -5,6 +5,10 @@ import { promisify } from 'util';
 
 const gzipAsync = promisify(zlib.gzip);
 
+/**
+ * Recursively read a directory and pack all files into a gzip-compressed
+ * archive (a concatenation of length-prefixed path+content pairs).
+ */
 export async function compressDirectory(sourceDir: string): Promise<Buffer> {
   const files: Array<{ path: string; content: Buffer }> = [];
 

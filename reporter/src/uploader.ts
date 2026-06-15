@@ -4,35 +4,60 @@ import FormData from 'form-data';
 import { HttpClient } from './http-client.js';
 import { FileHandler } from './file-handler.js';
 
+/** Payload for a batch test-run submission */
 export interface RunPayload {
+  /** Name of the project the run belongs to */
   projectName: string;
+  /** Optional project description */
   projectDescription?: string;
+  /** Overall run status: `"passed"` or `"failed"` */
   status: string;
+  /** ISO-8601 timestamp when the run started */
   startTime: string | null;
+  /** Total wall-clock duration of the run in ms */
   duration: number;
   totalTests: number;
   passedTests: number;
   failedTests: number;
   skippedTests: number;
+  /** Deployment environment label (e.g. `"staging"`, `"production"`) */
   environment?: string;
+  /** Arbitrary metadata collected from the environment, CI, and Playwright config */
   metadata: Record<string, any>;
+  /** Unique instance identifier for deduplication */
   instanceId: string;
+  /** Test case results */
   testCases: any[];
 }
 
+/** Options controlling which report files and traces to upload */
 export interface ReportOptions {
+  /** Upload trace files. Defaults to `true`. */
   uploadTraces?: boolean;
+  /** Upload the Playwright HTML report. Defaults to `true`. */
   uploadReport?: boolean;
+  /** Additional report types to discover and upload */
   reports?: Array<{ type: string; dir?: string; label?: string }>;
 }
 
+/**
+ * Handles all upload strategies: plain JSON, multipart (with reports and
+ * traces), per-test-case file uploads for streaming runs, and report-only
+ * uploads for already-submitted streaming runs.
+ */
 export class Uploader {
+  /**
+   * @param httpClient  HTTP client for server communication.
+   * @param fileHandler File discovery and compression helper.
+   * @param verbose     Enable verbose logging.
+   */
   constructor(
     private httpClient: HttpClient,
     private fileHandler: FileHandler,
     private verbose?: boolean,
   ) {}
 
+  /** Submit test results as a plain JSON payload (no file attachments) */
   async uploadJSON(payload: RunPayload, auth: string | null): Promise<any> {
     const response = await this.httpClient.postJSON(
       '/api/test-runs/submit',
@@ -60,6 +85,7 @@ export class Uploader {
     return response;
   }
 
+  /** Submit test results as a multipart form with trace files and compressed report directories */
   async uploadWithFiles(payload: RunPayload, reportOptions: ReportOptions, auth: string | null): Promise<any> {
     const form = new FormData();
     form.append('projectName', payload.projectName);
@@ -94,6 +120,7 @@ export class Uploader {
     return response;
   }
 
+  /** Upload report files for an already-submitted streaming run */
   async uploadReportsForStreamingRun(
     projectName: string,
     runId: number,
@@ -133,6 +160,11 @@ export class Uploader {
    * as the test finishes. The server links them to the run case persisted by
    * the events endpoint, so the matching `complete` event must be flushed
    * before calling this. Returns false when the case has no files to upload.
+   */
+  /**
+   * Upload one test case's trace and attachments for a streaming run.
+   * The matching `complete` event must have been flushed to the server first.
+   * Returns `false` when the case has no files to upload.
    */
   async uploadCaseFiles(
     projectName: string,
