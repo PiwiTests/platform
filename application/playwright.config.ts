@@ -19,9 +19,10 @@ const baseConfig = defineConfig({
   maxFailures: process.env.CI ? 3 : 0,
 
   /* Run tests in parallel across projects */
-  workers: 4,
+  workers: 3,
 
   globalSetup: './tests/globalSetup',
+  globalTeardown: './tests/globalTeardown',
 
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: [

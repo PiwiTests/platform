@@ -20,6 +20,7 @@ export const PROJECT = {
   BLOCK_LAYOUT: 'block-layout-test',
   CASE_FILES_LIVE: 'case-files-live-test',
   DASHBOARD_PERF: 'dashboard-perf-tracking',
+  DEFAULT_PROJECT: 'default-project',
   DELETE_TEST: 'delete-test-project',
   DOWNLOAD_TEST: 'download-test-project',
   DUP_UI: 'dup-ui-project',
