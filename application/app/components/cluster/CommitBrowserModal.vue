@@ -1,26 +1,6 @@
 <script setup lang="ts">
-import { formatRelativeTime } from '~/utils';
-
-interface CommitItem {
-  sha: string;
-  shortSha: string;
-  message: string;
-  author: string;
-  date: string;
-}
-
-interface DiffFile {
-  filename: string;
-  status: string;
-  additions: number;
-  deletions: number;
-  patch?: string;
-}
-
-interface PatchLine {
-  type: 'add' | 'remove' | 'hunk' | 'context';
-  text: string;
-}
+import { errorMessage, filterCommits, formatRelativeTime } from '~/utils';
+import type { CommitListItem, ScmChangedFile } from '~~/types/api';
 
 const props = defineProps<{
   open: boolean;
@@ -36,7 +16,7 @@ const emit = defineEmits<{
 const COMMIT_PAGE_SIZE = 50;
 
 const search = ref('');
-const commits = ref<CommitItem[]>([]);
+const commits = ref<CommitListItem[]>([]);
 const commitLimit = ref(COMMIT_PAGE_SIZE);
 const hasMore = ref(false);
 const loadingCommits = ref(false);
@@ -47,24 +27,14 @@ const selectedShas = ref<Set<string>>(new Set());
 const focusedSha = ref<string | null>(null);
 
 // Accumulate diffs as they are loaded — used for aggregate stats
-const diffCache = reactive<Record<string, { files: DiffFile[] } | null>>({});
-const diff = ref<{ files: DiffFile[] } | null>(null);
+const diffCache = reactive<Record<string, { files: ScmChangedFile[] } | null>>({});
+const diff = ref<{ files: ScmChangedFile[] } | null>(null);
 const loadingDiff = ref(false);
 const diffError = ref<string | null>(null);
 
 const focusedCommit = computed(() => commits.value.find((c) => c.sha === focusedSha.value) ?? null);
 
-const filteredCommits = computed(() => {
-  const q = search.value.trim().toLowerCase();
-  if (!q) return commits.value;
-  return commits.value.filter(
-    (c) =>
-      c.message.toLowerCase().includes(q) ||
-      c.author.toLowerCase().includes(q) ||
-      c.sha.includes(q) ||
-      c.shortSha.includes(q),
-  );
-});
+const filteredCommits = computed(() => filterCommits(commits.value, search.value));
 
 // Aggregate stats for selected commits — uses cached diffs where available
 const selectedStats = computed(() => {
@@ -87,14 +57,6 @@ const selectedStats = computed(() => {
   return { files, linesAdded, linesRemoved, unreviewed };
 });
 
-function errorMessage(err: unknown): string {
-  if (err && typeof err === 'object') {
-    const e = err as { data?: { message?: string }; message?: string };
-    return e.data?.message ?? e.message ?? 'Unknown error';
-  }
-  return 'Unknown error';
-}
-
 // Load (or reload at new limit)
 async function loadCommits(initial: boolean) {
   if (initial) {
@@ -105,7 +67,7 @@ async function loadCommits(initial: boolean) {
     loadMoreError.value = null;
   }
   try {
-    const res = await $fetch<{ commits: CommitItem[]; hasMore?: boolean; error?: string | null }>(
+    const res = await $fetch<{ commits: CommitListItem[]; hasMore?: boolean; error?: string | null }>(
       `/api/failure-clusters/${props.clusterId}/commits`,
       { query: { limit: commitLimit.value } },
     );
@@ -159,9 +121,10 @@ async function focusCommit(sha: string) {
   diff.value = null;
   loadingDiff.value = true;
   try {
-    const result = await $fetch<{ files: DiffFile[] } | null>(`/api/failure-clusters/${props.clusterId}/commit-diff`, {
-      query: { sha },
-    });
+    const result = await $fetch<{ files: ScmChangedFile[] } | null>(
+      `/api/failure-clusters/${props.clusterId}/commit-diff`,
+      { query: { sha } },
+    );
     diffCache[sha] = result;
     if (focusedSha.value === sha) diff.value = result;
   } catch (err) {
@@ -191,22 +154,6 @@ function confirm() {
   emit('confirm', [...selectedShas.value]);
   emit('update:open', false);
 }
-
-function parsePatchLines(patch: string): PatchLine[] {
-  return patch.split('\n').map((line) => {
-    if (line.startsWith('+') && !line.startsWith('+++')) return { type: 'add', text: line };
-    if (line.startsWith('-') && !line.startsWith('---')) return { type: 'remove', text: line };
-    if (line.startsWith('@@')) return { type: 'hunk', text: line };
-    return { type: 'context', text: line };
-  });
-}
-
-const lineClass: Record<PatchLine['type'], string> = {
-  add: 'bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-300',
-  remove: 'bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-300',
-  hunk: 'bg-blue-50 dark:bg-blue-950/20 text-blue-500 dark:text-blue-400',
-  context: 'text-gray-600 dark:text-gray-400',
-};
 </script>
 
 <template>
@@ -234,19 +181,14 @@ const lineClass: Record<PatchLine['type'], string> = {
           </div>
 
           <!-- Loading initial -->
-          <div v-if="loadingCommits" class="flex-1 flex items-center justify-center gap-2 text-gray-400">
-            <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
-            <span class="text-sm">Loading…</span>
-          </div>
+          <LoadingState v-if="loadingCommits" text="Loading…" :padded="false" class="flex-1" />
 
           <!-- Error -->
-          <div v-else-if="commitsError" class="flex-1 flex flex-col items-center justify-center gap-2 p-4 text-center">
-            <UIcon name="i-lucide-circle-alert" class="size-5 text-red-400" />
-            <p class="text-sm text-red-500">
-              {{ commitsError }}
-            </p>
-            <UButton size="xs" color="neutral" variant="outline" @click="loadCommits(true)"> Retry </UButton>
-          </div>
+          <ErrorState v-else-if="commitsError" :text="commitsError" :padded="false" class="flex-1 p-4">
+            <template #action>
+              <UButton size="xs" color="neutral" variant="outline" @click="loadCommits(true)"> Retry </UButton>
+            </template>
+          </ErrorState>
 
           <!-- Commit list -->
           <div v-else class="flex-1 overflow-y-auto flex flex-col">
@@ -303,10 +245,7 @@ const lineClass: Record<PatchLine['type'], string> = {
           </div>
 
           <!-- Loading diff -->
-          <div v-else-if="loadingDiff" class="flex-1 flex items-center justify-center gap-2 text-gray-400">
-            <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
-            <span class="text-sm">Loading diff…</span>
-          </div>
+          <LoadingState v-else-if="loadingDiff" text="Loading diff…" :padded="false" class="flex-1" />
 
           <!-- Diff content -->
           <div v-else-if="diff" class="flex-1 p-4 space-y-3">
@@ -328,50 +267,15 @@ const lineClass: Record<PatchLine['type'], string> = {
             <div v-if="diff.files.length === 0" class="text-sm text-gray-400 pt-2">No file changes in this commit</div>
 
             <!-- Files -->
-            <div
-              v-for="file in diff.files"
-              :key="file.filename"
-              class="border border-default rounded-lg overflow-clip text-xs font-mono"
-            >
-              <!-- Sticky file header -->
-              <div
-                class="sticky top-0 z-10 flex items-center justify-between px-3 py-1.5 bg-elevated border-b border-default text-gray-600 dark:text-gray-300"
-              >
-                <span class="font-medium truncate">{{ file.filename }}</span>
-                <span class="shrink-0 flex items-center gap-1.5 ml-2 text-[11px]">
-                  <span v-if="file.additions" class="text-green-600 dark:text-green-400">+{{ file.additions }}</span>
-                  <span v-if="file.deletions" class="text-red-600 dark:text-red-400">-{{ file.deletions }}</span>
-                  <UBadge
-                    :label="file.status"
-                    size="xs"
-                    variant="subtle"
-                    :color="file.status === 'added' ? 'success' : file.status === 'removed' ? 'error' : 'neutral'"
-                  />
-                </span>
-              </div>
-              <!-- Patch lines -->
-              <div v-if="file.patch" class="overflow-x-auto">
-                <div
-                  v-for="(line, i) in parsePatchLines(file.patch)"
-                  :key="i"
-                  class="px-3 py-px whitespace-pre leading-5 min-w-0"
-                  :class="lineClass[line.type]"
-                >
-                  {{ line.text || ' ' }}
-                </div>
-              </div>
-              <div v-else class="px-3 py-2 text-gray-400 text-[11px]">No patch available</div>
-            </div>
+            <DiffFile v-for="file in diff.files" :key="file.filename" :file="file" />
           </div>
 
           <!-- Diff fetch error -->
-          <div v-else-if="diffError" class="flex-1 flex flex-col items-center justify-center gap-2 p-6 text-center">
-            <UIcon name="i-lucide-circle-alert" class="size-5 text-red-400" />
-            <p class="text-sm text-red-500">
-              {{ diffError }}
-            </p>
-            <p class="text-xs text-gray-400">Click the commit again to retry</p>
-          </div>
+          <ErrorState v-else-if="diffError" :text="diffError" :padded="false" class="flex-1 p-6">
+            <template #action>
+              <p class="text-xs text-gray-400">Click the commit again to retry</p>
+            </template>
+          </ErrorState>
 
           <!-- Diff unavailable (intentional null from API) -->
           <div v-else class="flex-1 flex items-center justify-center text-sm text-gray-400">

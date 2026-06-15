@@ -162,9 +162,7 @@ async function handleDeleteTag() {
 
     <template #body>
       <!-- Tags table -->
-      <UCard v-if="allTags.length > 0">
-        <template #header> Tags ({{ allTags.length }}) </template>
-
+      <SectionCard v-if="allTags.length > 0" title="Tags" :count="allTags.length">
         <UTable :data="allTags" :columns="columns">
           <template #text-cell="{ row }">
             <TagBadge :text="row.original.text" :color="row.original.color" />
@@ -207,7 +205,7 @@ async function handleDeleteTag() {
             </div>
           </template>
         </UTable>
-      </UCard>
+      </SectionCard>
 
       <!-- Empty state -->
       <UCard v-else>

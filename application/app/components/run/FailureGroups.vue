@@ -16,21 +16,6 @@ const { data: groups, pending: loading } = await useFetch<FailureGroup[]>(`/api/
 
 const diagnosisClusterId = ref<number | null>(null);
 
-const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' | 'secondary'> = {
-  timeout: 'warning',
-  assertion: 'error',
-  'strict-mode': 'info',
-  navigation: 'secondary',
-  crash: 'error',
-  unknown: 'neutral',
-};
-
-const statusColors: Record<string, 'success' | 'warning' | 'neutral'> = {
-  open: 'warning',
-  resolved: 'success',
-  ignored: 'neutral',
-};
-
 const columns: TableColumn<FailureGroup>[] = [
   { accessorKey: 'signature', header: createSortHeader<FailureGroup>('Signature') },
   { accessorKey: 'errorType', header: createSortHeader<FailureGroup>('Type') },
@@ -78,7 +63,7 @@ const totalCases = computed(() => groups.value?.reduce((sum, g) => sum + g.caseC
           <template #errorType-cell="{ row }">
             <UBadge
               v-if="row.original.errorType"
-              :color="errorTypeColors[row.original.errorType] || 'neutral'"
+              :color="clusterErrorTypeColor(row.original.errorType)"
               variant="subtle"
               size="sm"
             >
@@ -90,7 +75,7 @@ const totalCases = computed(() => groups.value?.reduce((sum, g) => sum + g.caseC
           <template #status-cell="{ row }">
             <UBadge
               v-if="row.original.status"
-              :color="statusColors[row.original.status] || 'neutral'"
+              :color="clusterStatusColor(row.original.status)"
               variant="subtle"
               size="sm"
             >

@@ -221,9 +221,7 @@ function isStale(d: FailureDiagnosis) {
   return d.status === 'running' && Date.now() - new Date(d.updatedAt).getTime() > 5 * 60 * 1000;
 }
 
-function copyToClipboard(text: string | null) {
-  if (text) window.navigator.clipboard?.writeText(text);
-}
+const { copy } = useCopy();
 </script>
 
 <template>
@@ -453,7 +451,7 @@ function copyToClipboard(text: string | null) {
                 color="neutral"
                 variant="ghost"
                 title="Copy patch"
-                @click="copyToClipboard(details.suggestedFix.patch)"
+                @click="copy(details.suggestedFix.patch)"
               />
             </div>
             <MarkdownPreview :text="'```diff\n' + details.suggestedFix.patch + '\n```'" />

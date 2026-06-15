@@ -5,6 +5,7 @@ import type { UserDetails, UsersResponse, ApiKeySummary, ApiKeysResponse, Create
 
 const { data: usersData, refresh } = await useFetch<UsersResponse>('/api/users');
 const toast = useToast();
+const { copy } = useCopy();
 const { authState } = useAuth();
 const config = useRuntimeConfig();
 
@@ -211,11 +212,8 @@ async function handleCreateApiKey() {
   }
 }
 
-async function copyKey() {
-  if (createdKeyValue.value) {
-    await navigator.clipboard.writeText(createdKeyValue.value);
-    toast.add({ title: 'API key copied to clipboard', color: 'success' });
-  }
+function copyKey() {
+  copy(createdKeyValue.value, { toast: 'API key copied to clipboard' });
 }
 
 function dismissCreatedKey() {
@@ -290,9 +288,7 @@ function canManageApiKeys(user: UserDetails): boolean {
       />
 
       <!-- Users table -->
-      <UCard v-if="users.length > 0">
-        <template #header> Users ({{ users.length }}) </template>
-
+      <SectionCard v-if="users.length > 0" title="Users" :count="users.length">
         <UTable :data="users" :columns="columns">
           <template #username-cell="{ row }">
             {{ row.original.username }}
@@ -336,7 +332,7 @@ function canManageApiKeys(user: UserDetails): boolean {
             </div>
           </template>
         </UTable>
-      </UCard>
+      </SectionCard>
 
       <!-- Empty state -->
       <UCard v-else>

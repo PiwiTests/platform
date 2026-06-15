@@ -13,20 +13,6 @@ function toggle(filename: string) {
   else next.add(filename);
   expandedFiles.value = next;
 }
-
-function statusColor(status: string) {
-  if (status === 'added') return 'text-green-500';
-  if (status === 'removed') return 'text-red-500';
-  if (status === 'renamed') return 'text-blue-500';
-  return 'text-gray-400';
-}
-
-function statusIcon(status: string) {
-  if (status === 'added') return 'i-lucide-file-plus';
-  if (status === 'removed') return 'i-lucide-file-minus';
-  if (status === 'renamed') return 'i-lucide-file-symlink';
-  return 'i-lucide-file-pen-line';
-}
 </script>
 
 <template>
@@ -61,7 +47,11 @@ function statusIcon(status: string) {
             :class="file.patch ? 'cursor-pointer' : 'cursor-default'"
             @click="file.patch && toggle(file.filename)"
           >
-            <UIcon :name="statusIcon(file.status)" class="size-3.5 shrink-0" :class="statusColor(file.status)" />
+            <UIcon
+              :name="scmFileStatusMeta(file.status).icon"
+              class="size-3.5 shrink-0"
+              :class="scmFileStatusMeta(file.status).color"
+            />
             <span class="text-xs font-mono flex-1 truncate text-gray-700 dark:text-gray-300">
               {{ file.filename }}
             </span>
@@ -82,7 +72,7 @@ function statusIcon(status: string) {
             v-if="file.patch && expandedFiles.has(file.filename)"
             class="border-t border-default overflow-x-auto max-h-96"
           >
-            <MarkdownPreview :text="'```diff\n' + file.patch + '\n```'" />
+            <DiffPatch :patch="file.patch" />
           </div>
         </div>
       </div>

@@ -359,30 +359,18 @@ onUnmounted(disconnectRunStream);
             <div class="space-y-4 pt-4">
               <TestCaseErrorCard v-if="testCase?.error" :cluster="failureCluster" />
 
-              <UCard v-if="testCase?.error">
-                <template #header>
-                  <div class="flex items-center gap-2">
-                    <UIcon name="i-lucide-bug" class="size-4 text-red-500" />
-                    <h3 class="font-medium">Error</h3>
-                  </div>
-                </template>
+              <SectionCard v-if="testCase?.error" icon="i-lucide-bug" icon-class="text-red-500" title="Error">
                 <pre
                   class="text-xs font-mono whitespace-pre-wrap break-words text-red-600 dark:text-red-400 max-h-96 overflow-y-auto"
                   >{{ testCase.error }}</pre
                 >
-              </UCard>
+              </SectionCard>
 
-              <UCard v-if="testCase?.ariaSnapshot">
-                <template #header>
-                  <div class="flex items-center gap-2">
-                    <UIcon name="i-lucide-scan-text" class="size-4 text-primary" />
-                    <h3 class="font-medium">ARIA snapshot</h3>
-                  </div>
-                </template>
+              <SectionCard v-if="testCase?.ariaSnapshot" icon="i-lucide-scan-text" title="ARIA snapshot">
                 <pre class="text-xs font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto">{{
                   testCase.ariaSnapshot
                 }}</pre>
-              </UCard>
+              </SectionCard>
 
               <p v-else-if="testCase?.error" class="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
                 <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />
@@ -455,14 +443,7 @@ onUnmounted(disconnectRunStream);
                 </div>
               </div>
 
-              <UCard v-if="webVitals">
-                <template #header>
-                  <div class="flex items-center gap-2">
-                    <UIcon name="i-lucide-gauge" class="w-5 h-5 text-primary" />
-                    <h3 class="text-lg font-medium">Browser performance (Web Vitals)</h3>
-                  </div>
-                </template>
-
+              <SectionCard v-if="webVitals" icon="i-lucide-gauge" title="Browser performance (Web Vitals)">
                 <div class="space-y-4">
                   <div v-if="webVitals.navigation" class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div>
@@ -562,7 +543,7 @@ onUnmounted(disconnectRunStream);
                     Page: <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">{{ webVitals.navigation.url }}</code>
                   </div>
                 </div>
-              </UCard>
+              </SectionCard>
             </div>
           </template>
 
@@ -574,14 +555,7 @@ onUnmounted(disconnectRunStream);
                 v-if="(testCase as any)?.consoleLogs?.length"
                 :entries="(testCase as any)?.consoleLogs ?? []"
               />
-              <UCard v-if="groupedNetworkRequests.length > 0">
-                <template #header>
-                  <div class="flex items-center gap-2">
-                    <UIcon name="i-lucide-network" class="w-5 h-5 text-primary" />
-                    <h3 class="text-lg font-medium">Network requests</h3>
-                  </div>
-                </template>
-
+              <SectionCard v-if="groupedNetworkRequests.length > 0" icon="i-lucide-network" title="Network requests">
                 <div class="space-y-1 max-h-96 overflow-y-auto">
                   <div
                     v-for="req in groupedNetworkRequests"
@@ -621,7 +595,7 @@ onUnmounted(disconnectRunStream);
                     >
                   </div>
                 </div>
-              </UCard>
+              </SectionCard>
 
               <div
                 v-if="

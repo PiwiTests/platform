@@ -9,30 +9,22 @@ const { data: context, pending: loading } = await useFetch<RegressionContext>(
   { lazy: true, server: false },
 );
 
-const copied = ref(false);
+const { copy, copied } = useCopy();
 
-async function copyCommand() {
-  const range = context.value?.commitRange;
-  if (!range) return;
-  await navigator.clipboard.writeText(range.gitCommand);
-  copied.value = true;
-  setTimeout(() => {
-    copied.value = false;
-  }, 2000);
+function copyCommand() {
+  copy(context.value?.commitRange?.gitCommand);
 }
 </script>
 
 <template>
   <div class="pt-4">
-    <div v-if="loading" class="flex items-center justify-center py-8 text-gray-500 gap-2">
-      <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
-      <span>Looking for last passing run...</span>
-    </div>
+    <LoadingState v-if="loading" text="Looking for last passing run…" />
 
-    <div v-else-if="!context?.hasGreen" class="flex flex-col items-center justify-center py-8 text-gray-500 gap-2">
-      <UIcon name="i-lucide-history" class="size-6" />
-      <span>No previous passing run found for this project</span>
-    </div>
+    <EmptyState
+      v-else-if="!context?.hasGreen"
+      icon="i-lucide-history"
+      text="No previous passing run found for this project"
+    />
 
     <template v-else>
       <div class="space-y-4">

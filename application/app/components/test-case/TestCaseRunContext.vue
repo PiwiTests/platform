@@ -25,14 +25,7 @@ defineProps<{
 </script>
 
 <template>
-  <UCard v-if="testRun">
-    <template #header>
-      <div class="flex items-center gap-2">
-        <UIcon name="i-lucide-info" class="w-5 h-5 text-primary" />
-        <h3 class="text-lg font-medium">Run context</h3>
-      </div>
-    </template>
-
+  <SectionCard v-if="testRun" icon="i-lucide-info" title="Run context">
     <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
       <div>
         <p class="text-xs text-gray-500 uppercase tracking-wide">Environment</p>
@@ -102,5 +95,5 @@ defineProps<{
         </p>
       </div>
     </div>
-  </UCard>
+  </SectionCard>
 </template>

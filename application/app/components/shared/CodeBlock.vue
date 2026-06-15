@@ -18,7 +18,7 @@ const props = defineProps<{
   lang?: string;
 }>();
 
-const toast = useToast();
+const { copy } = useCopy();
 
 const detectedLang = ref('');
 
@@ -31,11 +31,6 @@ const highlighted = computed(() => {
   detectedLang.value = result.language ?? '';
   return result.value;
 });
-
-async function copy() {
-  await navigator.clipboard.writeText(props.code);
-  toast.add({ title: 'Copied to clipboard', icon: 'i-lucide-check', color: 'success', duration: 2000 });
-}
 </script>
 
 <template>
@@ -57,7 +52,7 @@ async function copy() {
       icon="i-lucide-copy"
       title="Copy to clipboard"
       class="absolute top-1.5 right-1.5 opacity-40 hover:opacity-100 transition-opacity"
-      @click="copy"
+      @click="copy(code, { toast: true })"
     />
   </div>
 </template>

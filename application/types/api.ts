@@ -771,6 +771,18 @@ export interface DiagnosisContextCoverage {
 }
 
 /**
+ * A commit as returned by the failure-cluster commit-list endpoints and rendered
+ * by the commit picker / browser. Shared so those components don't each redeclare it.
+ */
+export interface CommitListItem {
+  sha: string;
+  shortSha: string;
+  message: string;
+  author: string;
+  date: string;
+}
+
+/**
  * Changed file returned in SCM diff — mirrors ScmProvider.ChangedFile
  */
 export interface ScmChangedFile {

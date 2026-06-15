@@ -17,21 +17,6 @@ const { data: clusters, pending: loading } = await useFetch<ProjectFailureCluste
   { lazy: true, server: false, watch: [statusFilter] },
 );
 
-const statusColors: Record<string, 'success' | 'warning' | 'neutral'> = {
-  open: 'warning',
-  resolved: 'success',
-  ignored: 'neutral',
-};
-
-const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' | 'secondary'> = {
-  timeout: 'warning',
-  assertion: 'error',
-  'strict-mode': 'info',
-  navigation: 'secondary',
-  crash: 'error',
-  unknown: 'neutral',
-};
-
 const columns: TableColumn<ProjectFailureCluster>[] = [
   { accessorKey: 'signature', header: createSortHeader<ProjectFailureCluster>('Signature') },
   { accessorKey: 'errorType', header: createSortHeader<ProjectFailureCluster>('Type') },
@@ -88,7 +73,7 @@ const columns: TableColumn<ProjectFailureCluster>[] = [
       <template #errorType-cell="{ row }">
         <UBadge
           v-if="row.original.errorType"
-          :color="errorTypeColors[row.original.errorType] || 'neutral'"
+          :color="clusterErrorTypeColor(row.original.errorType)"
           variant="subtle"
           size="sm"
         >
@@ -98,7 +83,7 @@ const columns: TableColumn<ProjectFailureCluster>[] = [
       </template>
 
       <template #status-cell="{ row }">
-        <UBadge :color="statusColors[row.original.status] || 'neutral'" variant="subtle" size="sm">
+        <UBadge :color="clusterStatusColor(row.original.status)" variant="subtle" size="sm">
           {{ row.original.status }}
         </UBadge>
       </template>
@@ -150,8 +135,11 @@ const columns: TableColumn<ProjectFailureCluster>[] = [
       </template>
     </UTable>
 
-    <p v-if="!loading && clusters && clusters.length === 0" class="text-sm text-gray-500 py-4 text-center">
-      No failure clusters recorded for this project.
-    </p>
+    <EmptyState
+      v-if="!loading && clusters && clusters.length === 0"
+      text="No failure clusters recorded for this project."
+      :padded="false"
+      class="py-4"
+    />
   </UCard>
 </template>

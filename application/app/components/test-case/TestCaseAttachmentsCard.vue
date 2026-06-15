@@ -103,14 +103,7 @@ function togglePreview(attId: number, att: AttachmentInfo) {
 </script>
 
 <template>
-  <UCard v-if="attachments.length > 0">
-    <template #header>
-      <div class="flex items-center gap-2">
-        <UIcon name="i-lucide-paperclip" class="w-5 h-5 text-primary" />
-        <h3 class="text-lg font-medium">Attachments ({{ attachments.length }})</h3>
-      </div>
-    </template>
-
+  <SectionCard v-if="attachments.length > 0" icon="i-lucide-paperclip" title="Attachments" :count="attachments.length">
     <div class="space-y-3">
       <div v-for="att in attachments" :key="att.id" class="rounded-lg border overflow-hidden">
         <div class="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-800/50 border-b">
@@ -191,5 +184,5 @@ function togglePreview(attId: number, att: AttachmentInfo) {
     </div>
 
     <ScreenshotLightbox v-model="currentImageIndex" :images="imageAttachments" />
-  </UCard>
+  </SectionCard>
 </template>

@@ -1,11 +1,6 @@
 <script setup lang="ts">
-interface CommitItem {
-  sha: string;
-  shortSha: string;
-  message: string;
-  author: string;
-  date: string;
-}
+import { filterCommits, formatRelativeTime } from '~/utils';
+import type { CommitListItem } from '~~/types/api';
 
 const props = defineProps<{
   modelValue: string;
@@ -18,7 +13,7 @@ const emit = defineEmits<{
 
 const open = ref(false);
 const search = ref('');
-const commits = ref<CommitItem[]>([]);
+const commits = ref<CommitListItem[]>([]);
 const apiError = ref<string | null>(null);
 const aggregateStats = ref<{ filesChanged: number; linesAdded: number; linesRemoved: number } | null>(null);
 const loading = ref(false);
@@ -30,7 +25,7 @@ const branches = ref<string[]>([]);
 const branchesLoading = ref(false);
 const selectedBranch = ref<string | undefined>(undefined);
 
-const selected = computed((): CommitItem | null => {
+const selected = computed((): CommitListItem | null => {
   if (!props.modelValue) return null;
   const sha = props.modelValue.trim();
   const found = commits.value.find((c) => c.sha === sha || c.sha.startsWith(sha));
@@ -60,7 +55,7 @@ async function loadCommits() {
     if (baseline) params.baseline = baseline;
     if (selectedBranch.value) params.branch = selectedBranch.value;
     const res = await $fetch<{
-      commits: CommitItem[];
+      commits: CommitListItem[];
       aggregate: { filesChanged: number; linesAdded: number; linesRemoved: number } | null;
       error?: string | null;
     }>(`/api/failure-clusters/${props.clusterId}/commits`, { query: params });
@@ -92,17 +87,7 @@ watch(open, async (val) => {
   }
 });
 
-const filtered = computed(() => {
-  const q = search.value.trim().toLowerCase();
-  if (!q) return commits.value;
-  return commits.value.filter(
-    (c) =>
-      c.message.toLowerCase().includes(q) ||
-      c.author.toLowerCase().includes(q) ||
-      c.sha.includes(q) ||
-      c.shortSha.includes(q),
-  );
-});
+const filtered = computed(() => filterCommits(commits.value, search.value));
 
 // When search looks like a SHA not already in list, offer a manual-use option
 const manualSha = computed(() => {
