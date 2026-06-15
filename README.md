@@ -4,10 +4,10 @@
 
 > **Disclaimer:** Piwi Dashboard is **not affiliated with, endorsed by, or connected to Microsoft Corporation** in any way.  
 
-[![Nuxt UI](https://img.shields.io/badge/Made%20with-Nuxt%20UI-00DC82?logo=nuxt&labelColor=020420)](https://ui.nuxt.com)
-[![Docker](https://img.shields.io/badge/Docker-Available-2496ED?logo=docker&labelColor=020420)](https://github.com/PhenX/piwi-dashboard/pkgs/container/piwi-dashboard)
+[![npm](https://img.shields.io/npm/v/@phenx/piwi-dashboard-reporter?logo=npm&labelColor=020420&color=CB3837)](https://www.npmjs.com/package/@phenx/piwi-dashboard-reporter)
+[![Docker](https://img.shields.io/docker/v/phenx/piwi-dashboard?logo=docker&labelColor=020420&color=2496ED)](https://hub.docker.com/r/phenx/piwi-dashboard)
 
-**Piwi Dashboard** is a self-hosted web application for collecting, storing, and visualizing [Playwright](https://playwright.dev) end-to-end test results over time. It gives your team a central place to monitor test health, investigate failures, track performance regressions, and share reports — without relying on external SaaS services.
+**Piwi Dashboard** is a self-hosted observability platform for [Playwright](https://playwright.dev) end-to-end tests. It turns ephemeral CI reports into a permanent, searchable history — with live streaming, failure clustering, AI diagnosis, and cross-run analytics. Your team gets a central hub for test health without relying on external SaaS services.
 
 📖 **[Full documentation](https://phenx.github.io/piwi-dashboard)** · 🎮 **[Live demo](https://phenx.github.io/piwi-dashboard/demo/)**
 
@@ -48,12 +48,24 @@
 
 ## Why Piwi Dashboard?
 
-Running Playwright tests in CI produces HTML reports that are ephemeral — once a new build runs, the old report is gone. Piwi Dashboard solves this by:
+Running Playwright tests in CI produces HTML reports that are ephemeral — once a new build runs, the old report is gone. Piwi makes test results permanent, connected, and actionable.
 
-1. **Persisting every test run** — results, traces, and reports are stored permanently and browsable at any time.
-2. **Showing trends** — spot flaky tests, performance regressions, and failure patterns across dozens or hundreds of runs.
-3. **Streaming results live** — watch test progress in real time as CI executes, without waiting for the full run to finish.
-4. **Zero vendor lock-in** — deploy on your own infrastructure with Docker; data stays in your SQLite/PostgreSQL database and local/S3 storage.
+```
+Playwright run  →  Reporter uploads results  →  Live streaming (real-time CI)
+                                                    ↓
+  AI diagnosis  ←  Failure clustering (auto-group)  ←  Historical analysis & trends
+       ↓
+  Triage workflow  →  Team notifications  →  Fix & deploy  →  Back to Playwright run
+```
+
+Piwi solves what standalone HTML reports cannot:
+
+1. **Persistent test intelligence** — every run, trace, and report is stored permanently and browsable across history. Compare runs side by side, track flakiness over time, and never lose a CI result again.
+2. **Live streaming** — watch test progress in real time as CI executes. Investigate failures while the suite is still running, without waiting for completion.
+3. **Failure clustering** — tests sharing the same root cause are grouped automatically via error fingerprinting. "10 failures, 2 root causes" replaces scrolling through unrelated errors.
+4. **AI diagnosis** — contextual LLM analysis of failure clusters using SCM diff, selected commits, and run metadata. Not a generic AI button — a diagnosis grounded in your actual code changes.
+5. **Performance regression tracking** — step-level timing, avg/P90 duration trends, slowest-tests analysis, and side-by-side run comparison.
+6. **Zero vendor lock-in** — self-hosted with Docker; your data stays in your SQLite/PostgreSQL database and local/S3 storage.
 
 ## Features
 
@@ -74,6 +86,30 @@ Running Playwright tests in CI produces HTML reports that are ephemeral — once
 - 🔐 **Authentication** — optional role-based access control (administrator, reporter, user) with API key support for CI and OAuth (Google, GitHub)
 - ☁️ **Flexible storage** — SQLite or PostgreSQL database; local file system or S3-compatible object storage for artifacts
 - 🐳 **Docker support** — pre-built multi-platform container images (~200 MB) on GitHub Container Registry
+
+### Beyond HTML reports
+
+Native Playwright HTML reports are great for local debugging — they include a built-in trace viewer, video playback, step annotations, screenshots, and full-text search. But they're ephemeral: once the next CI run completes, the old report is gone.
+
+Piwi keeps what works and adds what HTML reports cannot do alone:
+
+| Capability                                           | HTML report | Piwi Dashboard |
+|------------------------------------------------------|-------------|----------------|
+| Full trace viewer (steps, network, console)          | ✅           | ✅              |
+| Screenshot & video playback                          | ✅           | ✅              |
+| Retry comparison                                     | ✅           | ✅              |
+| Search & filter tests                                | ✅           | ✅              |
+| **Permanent history across CI runs**                 | ❌           | ✅              |
+| **Cross-run trends & flakiness tracking**            | ❌           | ✅              |
+| **Live streaming from CI**                           | ❌           | ✅              |
+| **Failure clustering (auto-grouped root causes)**    | ❌           | ✅              |
+| **AI diagnosis with SCM context**                    | ❌           | ✅              |
+| **Multi-project hub**                                | ❌           | ✅              |
+| **Team triage workflow (status, notes, assignment)** | ❌           | ✅              |
+| **Side-by-side run comparison**                      | ❌           | ✅              |
+| **REST API for automation & integration**            | ❌           | ✅              |
+| No server required — open HTML file directly         | ✅           | ❌              |
+| Self-hosted (your infra, your data)                  | ✅           | ✅              |
 
 ## Quick start
 

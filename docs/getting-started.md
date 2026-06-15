@@ -7,13 +7,15 @@ lang: en-US
 
 ## What is Piwi Dashboard?
 
-Piwi Dashboard is a self-hosted web application that collects, stores, and visualizes your [Playwright](https://playwright.dev) test results over time. It replaces the ephemeral HTML reports that CI produces with a permanent, searchable history of every test run — making it easy to spot flaky tests, track regressions, and share results with your team.
+Piwi Dashboard is a self-hosted observability platform for [Playwright](https://playwright.dev) end-to-end tests. It replaces ephemeral CI reports with a permanent, searchable history — then goes further with live streaming, failure clustering, AI diagnosis, and cross-run analytics.
 
 **Key benefits:**
-- See test health trends across hundreds of runs
-- Stream results live from CI — no waiting for the full run to finish
+- See test health trends across hundreds of runs with cross-run analytics
+- Stream results live from CI — investigate failures before the suite finishes
+- Failure clustering groups tests sharing the same root cause automatically
+- AI diagnosis analyzes clusters with full SCM diff context
 - Store HTML reports and trace files permanently for later debugging
-- Analyse performance regressions with avg/P90 duration charts
+- Track performance regressions with avg/P90 duration charts
 - Self-hosted and open-source — your data stays on your infrastructure
 
 ## Requirements

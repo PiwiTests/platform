@@ -4,8 +4,8 @@ layout: home
 
 hero:
   name: "Piwi Dashboard"
-  text: "A self-hosted hub for your Playwright test results"
-  tagline: Persist every test run, stream results live from CI, track performance regressions, and share reports — without relying on external services.
+  text: "Self-hosted Playwright observability"
+  tagline: "A permanent home for your test results — live streaming, failure clustering, AI diagnosis, cross-run analytics, and team triage. No external services required."
   image: /logo-wide.svg
 
   actions:
