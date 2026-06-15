@@ -45,6 +45,7 @@ export default eventHandler(async (event) => {
         title: testCases.title,
         filePath: testCases.filePath,
         runCount: sql<number>`count(${testRunsCases.id})`,
+        recentTestRunsCaseId: sql<number>`max(${testRunsCases.id})`,
       })
       .from(testRunsCases)
       .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))

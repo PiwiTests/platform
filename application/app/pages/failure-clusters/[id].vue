@@ -164,13 +164,17 @@ const selectedCommitShas = ref<string[]>([]);
         </div>
       </div>
 
-      <!-- Body: two columns -->
-      <div class="px-6 py-5 grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
-        <!-- Left: error + affected tests + investigation context -->
+      <!-- Body: two columns — left is wider (investigation heavy) -->
+      <div class="px-6 py-5 grid grid-cols-1 xl:grid-cols-[3fr_2fr] gap-6 items-start">
+        <!-- Left: error + test evidence + SCM investigation -->
         <div class="space-y-4">
+          <!-- Error message -->
           <UCard v-if="cluster.sampleError">
             <template #header>
-              <h3 class="font-semibold">Error message</h3>
+              <div class="flex items-center gap-1.5">
+                <UIcon name="i-lucide-circle-x" class="size-4 text-red-500 shrink-0" />
+                <h3 class="font-semibold">Error message</h3>
+              </div>
             </template>
             <!-- eslint-disable-next-line vue/no-v-html -->
             <div
@@ -179,30 +183,35 @@ const selectedCommitShas = ref<string[]>([]);
             />
           </UCard>
 
+          <!-- Test evidence: source, screenshots, traces, steps, aria, signals -->
           <UCard v-if="cluster.affectedTestCases?.length">
             <template #header>
-              <h3 class="font-semibold">Affected test cases</h3>
-            </template>
-            <div class="divide-y divide-default">
-              <div
-                v-for="tc in cluster.affectedTestCases"
-                :key="tc.testCaseId"
-                class="py-2.5 flex items-center justify-between gap-4"
-              >
-                <div class="min-w-0">
-                  <p class="text-sm font-medium truncate">{{ tc.title }}</p>
-                  <p class="text-xs text-gray-500 font-mono truncate">{{ tc.filePath }}</p>
-                </div>
-                <UBadge color="neutral" variant="outline" size="sm" class="shrink-0">{{ tc.runCount }}×</UBadge>
+              <div class="flex items-center gap-1.5">
+                <UIcon name="i-lucide-flask-conical" class="size-4 text-primary shrink-0" />
+                <h3 class="font-semibold">Test evidence</h3>
+                <UBadge color="neutral" variant="subtle" size="sm" class="ml-auto">
+                  {{ cluster.affectedTestCases.length }}
+                  {{ cluster.affectedTestCases.length === 1 ? 'test' : 'tests' }}
+                </UBadge>
               </div>
-            </div>
+            </template>
+            <ClusterTestEvidence :affected-test-cases="cluster.affectedTestCases" :sample-error="cluster.sampleError" />
           </UCard>
 
-          <ClusterInvestigation
-            :cluster-id="clusterId"
-            @base-commit-change="baseCommit = $event"
-            @selected-commits-change="selectedCommitShas = $event"
-          />
+          <!-- SCM investigation: baseline picker + commit diff -->
+          <UCard>
+            <template #header>
+              <div class="flex items-center gap-1.5">
+                <UIcon name="i-lucide-git-compare-arrows" class="size-4 text-primary shrink-0" />
+                <h3 class="font-semibold">What changed</h3>
+              </div>
+            </template>
+            <ClusterInvestigation
+              :cluster-id="clusterId"
+              @base-commit-change="baseCommit = $event"
+              @selected-commits-change="selectedCommitShas = $event"
+            />
+          </UCard>
         </div>
 
         <!-- Right: diagnosis -->

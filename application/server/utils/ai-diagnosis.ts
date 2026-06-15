@@ -8,6 +8,7 @@ import { callAiProvider } from './ai-provider';
 import type { AiAttachedImage } from './ai-provider';
 import { computeRegressionContext, normalizeGitUrl } from './regression-context';
 import { createScmProvider, detectScmProvider } from './scm';
+import type { ScmChanges } from './scm/ScmProvider';
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>;
 
@@ -48,7 +49,7 @@ export async function buildClusterDiagnosisContext(
   db: DbClient,
   cluster: FailureCluster,
   opts?: { baseCommit?: string; selectedCommitShas?: string[] },
-): Promise<{ text: string; coverage: DiagnosisContextCoverage }> {
+): Promise<{ text: string; coverage: DiagnosisContextCoverage; scmChanges: ScmChanges | null }> {
   const sections: string[] = [];
 
   const scmCov: NonNullable<DiagnosisContextCoverage['scm']> = {
@@ -63,6 +64,7 @@ export async function buildClusterDiagnosisContext(
     patchesTruncated: false,
   };
   let scmReached = false;
+  let scmChanges: ScmChanges | null = null;
 
   // Cluster summary
   sections.push(`## Failure Cluster
@@ -309,6 +311,7 @@ export async function buildClusterDiagnosisContext(
               if (baseCommitOverride) scmCov.baseCommitUsed = baseCommitOverride;
               const changes = provider ? await provider.fetchChanges(fromSha, regression.commitRange.toSha) : null;
               if (changes && (changes.commits.length > 0 || changes.files.length > 0)) {
+                scmChanges = changes;
                 scmCov.filesCount = changes.files.length;
                 scmCov.commitsCount = changes.commits.length;
                 scmCov.patchesOmitted = Boolean(changes.patchesOmitted);
@@ -393,6 +396,7 @@ export async function buildClusterDiagnosisContext(
               const provider = await createScmProvider(repositoryUrl, db, cluster.projectId);
               const changes = provider ? await provider.fetchChanges(baseCommitOverride, currentCommit) : null;
               if (changes && (changes.commits.length > 0 || changes.files.length > 0)) {
+                scmChanges = changes;
                 scmCov.filesCount = changes.files.length;
                 scmCov.commitsCount = changes.commits.length;
                 scmCov.patchesOmitted = Boolean(changes.patchesOmitted);
@@ -515,6 +519,7 @@ export async function buildClusterDiagnosisContext(
   return {
     text: sections.join('\n\n'),
     coverage: { scm: scmReached ? scmCov : null },
+    scmChanges,
   };
 }
 
