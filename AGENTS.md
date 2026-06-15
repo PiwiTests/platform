@@ -83,21 +83,14 @@ Nuxt file-based routing:
   - `/projects/[id]` — Project detail
   - `/test-runs/[id]` — Run detail
   - `/test-cases/[id]` — Case detail (detailed revamp: traces, run context, AI fix prompt, timing comparison, improved error display)
-- **Components** (`app/components/`):
-  - `RunSummary.vue` — Summary card + CI/Source/Other metadata blocks on test run detail page
-  - `TestCasesList.vue` — Paginated test case table with sticky headers, row highlighting via `meta.class.tr`
-  - `WorkersTimeline.vue` — Worker timeline with clickable bars (emits `selectTestCase`)
-  - `RunCompare.vue` — Self-contained comparison component (watches internal `compareRunA`, fetches baseline run)
-  - `SlowEndpoints.vue` — Self-contained network endpoints table (fetches `/api/test-runs/:id/network-requests` internally)
-  - `RunStatusBadge.vue`, `TestStatusBar.vue`, `RunReports.vue` — Shared UI primitives
-  - `TestCaseStatusCard.vue` — Header card: title, location, duration, retries, worker, slowest step, timing vs historical avg
-  - `TestCaseRunContext.vue` — Run metadata: environment, CI provider, branch, commit, browser info
-  - `TestCaseTracesCard.vue` — Trace file list with "Open trace" buttons
-  - `TestCaseErrorCard.vue` — Error details (copy button, collapsible long errors) plus failure-cluster info row (sibling-match count, new-vs-known status)
-  - `CommitPicker.vue` — SCM baseline commit selector: lists recent commits for the cluster's repo with aggregate diff stats banner; caches result per baseline to avoid redundant API calls
-  - `CommitBrowserModal.vue` — Full-screen split modal: left panel is a searchable, paginated commit list with checkboxes; right panel shows the per-commit diff (file cards with sticky headers, syntax-colored patch lines); footer shows aggregate stats for selected commits; used to pick commits for AI diagnosis context
-  - `ClusterDiagnosis.vue` — AI diagnosis panel: baseline commit picker (pin saves to DB), "Browse commits" button to open `CommitBrowserModal` for targeted context, context preview, run/re-run diagnosis, result display (category, confidence, root cause, evidence, fix, prevention), custom additional context and image attachments
-  - `FlakyTestsList.vue` — Flaky tests board card with score badges and retry-pass / alternation breakdown
+- **Components** (`app/components/`): organized into domain subfolders; all auto-imported without folder prefix (Nuxt `pathPrefix: false`).
+  - **`shared/`** — UI primitives used across multiple pages: `RunStatusBadge`, `TestStatusBar`, `RunReports`, `TagBadge`, `TagsSelect`, `BrowserBadge`, `CiEnvCard`, `SourceInfoCard`, `CodeBlock`, `MarkdownPreview`, `ScreenshotLightbox`
+  - **`run/`** — Test run detail page (`/test-runs/[id]`): `RunSummary` (summary card + CI/Source/Other metadata), `TestCasesList` (paginated table, sticky headers, row highlighting via `meta.class.tr`), `WorkersTimeline` (clickable bars, emits `selectTestCase`), `RunCompare` (self-contained, watches internal `compareRunA`), `SlowEndpoints` (fetches `/api/test-runs/:id/network-requests` internally), `FailureGroups`, `RunReports`
+  - **`test-case/`** — Test case detail page (`/test-cases/[id]`): `TestCaseStatusCard` (title, location, duration, retries, worker, slowest step, timing vs avg), `TestCaseSummary`, `TestCaseRunContext` (environment, CI, branch, commit, browser), `TestCaseTracesCard`, `TestCaseErrorCard` (copy button, collapsible errors, cluster info row), `TestCaseConsoleCard`, `TestCaseAttachmentsCard`, `TestCaseFixPromptCard`, `TestCaseHistoryChart`, `TestEvidenceSection`, `TestEvidenceScreenshots`, `TestEvidenceSignals`, `TestEvidenceTraces`
+  - **`cluster/`** — Failure cluster detail (`/failure-clusters/[id]`): `ClusterDiagnosis` (AI diagnosis panel: commit picker, context preview, run/re-run, result display), `CommitPicker` (baseline selector with aggregate diff stats, caches per baseline), `CommitBrowserModal` (full-screen split modal: paginated commit list + per-commit diff), `ClusterInvestigation`, `ClusterTestEvidence`, `RegressionContext`
+  - **`project/`** — Project detail page (`/projects/[id]`): `PassRateChart`, `PerformanceTrendChart`, `TestRunsChart`, `FlakyTestsList` (score badges, retry-pass / alternation breakdown), `FailureClustersList`, `ScmChangesView`
+  - **`layout/`** — App shell / navigation: `ProjectsMenu`, `UserMenu`, `GetStartedWizard`
+  - **`demo/`** — Demo mode only: `DemoBanner`, `DemoInitScreen`, `DemoSimulator`
 - **Composables** (`app/composables/`):
   - `useAiStatus.ts` — Fetches `GET /api/ai/status` once; shared across components to show/hide AI actions
 - **Pages** (`app/pages/`):
@@ -213,7 +206,7 @@ node scripts/db-query.mjs "SELECT id, name FROM projects" --json
 - **API endpoints**: Create file in `server/api/` → use `eventHandler()` + `getDatabase()`
 - **OpenAPI annotations**: Add `defineRouteMeta({ openAPI: { tags, summary, parameters, ... } })` to each new handler to appear in the auto-generated spec at `/_openapi.json` and `/docs`
 - **Pages**: Create Vue file in `app/pages/` → use `<UDashboardPanel>` + `useFetch()`
-- **Components**: Create Vue file in `app/components/` → follow existing patterns:
+- **Components**: Create Vue file in the matching subfolder of `app/components/` (`shared/`, `run/`, `test-case/`, `cluster/`, `project/`, `layout/`, `demo/`) → all auto-imported without path prefix (Nuxt `pathPrefix: false`) → follow existing patterns:
   - Self-contained data fetching is preferred for tab content (use `watch` + `$fetch` or `useFetch` with `lazy: true`)
   - Pass props from parent page only for data already fetched at the page level
   - Use `v-if` for tab-switched components to ensure clean mount/unmount

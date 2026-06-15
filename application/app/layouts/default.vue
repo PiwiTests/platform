@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui';
 import type { ProjectWithStats } from '~~/types/api';
-import ProjectsMenu from '~/components/ProjectsMenu.vue';
+import ProjectsMenu from '~/components/layout/ProjectsMenu.vue';
 import { getStoredDemoVersion, resetDemoDb } from '~/demo/db.client';
 
 const route = useRoute();

@@ -47,6 +47,10 @@ export default defineNuxtConfig({
   modules: ['@nuxt/ui', '@vueuse/nuxt', '@vite-pwa/nuxt'],
   ssr: isDemo ? false : undefined,
 
+  components: {
+    dirs: [{ path: '~/components', pathPrefix: false }],
+  },
+
   devtools: {
     enabled: false,
   },
