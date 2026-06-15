@@ -146,6 +146,9 @@ const links = computed(() => {
       label: 'API Docs',
       icon: 'i-lucide-book-open',
       to: '/docs',
+      // `/docs` is served by Nitro (Scalar UI), not a Nuxt page — force a full
+      // page navigation so the client router doesn't intercept it and 404.
+      external: true,
       onSelect: () => {
         open.value = false;
       },
