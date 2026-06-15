@@ -445,7 +445,13 @@ export interface FailureClusterDetail {
   lastSeenAt: string | Date | null;
   diagnosis: DiagnosisCompact | null;
   project: { id: number; name: string; label: string | null } | null;
-  affectedTestCases: Array<{ testCaseId: number; title: string; filePath: string; runCount: number }>;
+  affectedTestCases: Array<{
+    testCaseId: number;
+    title: string;
+    filePath: string;
+    runCount: number;
+    recentTestRunsCaseId: number;
+  }>;
 }
 
 /**
@@ -762,6 +768,26 @@ export interface DiagnosisContextCoverage {
     patchesOmitted: boolean;
     patchesTruncated: boolean;
   } | null;
+}
+
+/**
+ * Changed file returned in SCM diff — mirrors ScmProvider.ChangedFile
+ */
+export interface ScmChangedFile {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch?: string;
+}
+
+/**
+ * Structured SCM changes returned alongside the context preview
+ */
+export interface ScmChanges {
+  commits: { sha: string; message: string }[];
+  files: ScmChangedFile[];
+  patchesOmitted?: boolean;
 }
 
 /** Supported AI provider identifiers */

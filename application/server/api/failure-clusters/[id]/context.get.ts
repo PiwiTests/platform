@@ -29,6 +29,9 @@ export default eventHandler(async (event) => {
     : selectedCommitShasRaw
       ? [String(selectedCommitShasRaw)]
       : undefined;
-  const { text, coverage } = await buildClusterDiagnosisContext(db, cluster, { baseCommit, selectedCommitShas });
-  return { context: text, coverage };
+  const { text, coverage, scmChanges } = await buildClusterDiagnosisContext(db, cluster, {
+    baseCommit,
+    selectedCommitShas,
+  });
+  return { context: text, coverage, scmChanges };
 });
