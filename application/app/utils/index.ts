@@ -1,6 +1,7 @@
 import { h } from 'vue';
 import { UIcon } from '#components';
 import type { Column } from '@tanstack/vue-table';
+import type { CommitListItem } from '~~/types/api';
 import { formatDuration as formatDurationLib, formatDistanceToNow } from 'date-fns';
 
 /**
@@ -146,6 +147,31 @@ export function getStatusColor(status: string) {
   }
 }
 
+/** Badge color for a failure-cluster triage status (open/resolved/ignored). */
+export function clusterStatusColor(status: string | null | undefined): 'success' | 'warning' | 'neutral' {
+  const map: Record<string, 'success' | 'warning' | 'neutral'> = {
+    open: 'warning',
+    resolved: 'success',
+    ignored: 'neutral',
+  };
+  return (status && map[status]) || 'neutral';
+}
+
+/** Badge color for a normalized failure-cluster error type (timeout/assertion/…). */
+export function clusterErrorTypeColor(
+  type: string | null | undefined,
+): 'error' | 'warning' | 'info' | 'neutral' | 'secondary' {
+  const map: Record<string, 'error' | 'warning' | 'info' | 'neutral' | 'secondary'> = {
+    timeout: 'warning',
+    assertion: 'error',
+    'strict-mode': 'info',
+    navigation: 'secondary',
+    crash: 'error',
+    unknown: 'neutral',
+  };
+  return (type && map[type]) || 'neutral';
+}
+
 /**
  * Generate a random vibrant hex color.
  * Uses HSL with fixed saturation/lightness for visually appealing results.
@@ -205,6 +231,78 @@ export function getFileApiPath(filePath: string): string {
   // Remove storage path prefix for backward compatibility with absolute paths
   const storagePath = '.data/storage/';
   return filePath.replace(storagePath, '');
+}
+
+/**
+ * Extract a human-readable message from an unknown error, unwrapping the
+ * `{ data: { message } }` / `{ message }` shapes that `$fetch` throws.
+ */
+export function errorMessage(err: unknown, fallback = 'Unknown error'): string {
+  if (err && typeof err === 'object') {
+    const e = err as { data?: { message?: string }; message?: string };
+    return e.data?.message ?? e.message ?? fallback;
+  }
+  return fallback;
+}
+
+/**
+ * Filter a commit list by a free-text query against message, author and SHA.
+ */
+export function filterCommits<T extends CommitListItem>(commits: T[], query: string): T[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return commits;
+  return commits.filter(
+    (c) =>
+      c.message.toLowerCase().includes(q) ||
+      c.author.toLowerCase().includes(q) ||
+      c.sha.includes(q) ||
+      c.shortSha.includes(q),
+  );
+}
+
+/**
+ * Icon + text/badge colors for an SCM file-change status (added/removed/renamed/…).
+ */
+export function scmFileStatusMeta(status: string): {
+  icon: string;
+  color: string;
+  badgeColor: 'success' | 'error' | 'info' | 'neutral';
+} {
+  switch (status) {
+    case 'added':
+      return { icon: 'i-lucide-file-plus', color: 'text-green-500', badgeColor: 'success' };
+    case 'removed':
+      return { icon: 'i-lucide-file-minus', color: 'text-red-500', badgeColor: 'error' };
+    case 'renamed':
+      return { icon: 'i-lucide-file-symlink', color: 'text-blue-500', badgeColor: 'info' };
+    default:
+      return { icon: 'i-lucide-file-pen-line', color: 'text-gray-400', badgeColor: 'neutral' };
+  }
+}
+
+export type PatchLineType = 'add' | 'remove' | 'hunk' | 'context';
+
+export interface PatchLine {
+  type: PatchLineType;
+  text: string;
+}
+
+/** Tailwind classes for each parsed patch-line type. */
+export const patchLineClass: Record<PatchLineType, string> = {
+  add: 'bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-300',
+  remove: 'bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-300',
+  hunk: 'bg-blue-50 dark:bg-blue-950/20 text-blue-500 dark:text-blue-400',
+  context: 'text-gray-600 dark:text-gray-400',
+};
+
+/** Split a unified-diff patch into typed lines for colored rendering. */
+export function parsePatchLines(patch: string): PatchLine[] {
+  return patch.split('\n').map((line) => {
+    if (line.startsWith('+') && !line.startsWith('+++')) return { type: 'add', text: line };
+    if (line.startsWith('-') && !line.startsWith('---')) return { type: 'remove', text: line };
+    if (line.startsWith('@@')) return { type: 'hunk', text: line };
+    return { type: 'context', text: line };
+  });
 }
 
 const ESC = '\u001B';

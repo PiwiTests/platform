@@ -9,15 +9,6 @@ const { data: cluster, refresh } = await useFetch<FailureClusterDetail>(`/api/fa
 
 useHead(computed(() => ({ title: `${cluster.value?.signature ?? 'Failure cluster'} — Piwi Dashboard` })));
 
-const errorTypeColors: Record<string, 'error' | 'warning' | 'info' | 'neutral' | 'secondary'> = {
-  timeout: 'warning',
-  assertion: 'error',
-  'strict-mode': 'info',
-  navigation: 'secondary',
-  crash: 'error',
-  unknown: 'neutral',
-};
-
 // Triage
 const triageStatus = ref(cluster.value?.status ?? 'open');
 const triageNote = ref(cluster.value?.triageNote ?? '');
@@ -92,11 +83,7 @@ const selectedCommitShas = ref<string[]>([]);
               {{ cluster.signature }}
             </p>
             <div class="flex flex-wrap gap-2">
-              <UBadge
-                v-if="cluster.errorType"
-                :color="errorTypeColors[cluster.errorType] || 'neutral'"
-                variant="subtle"
-              >
+              <UBadge v-if="cluster.errorType" :color="clusterErrorTypeColor(cluster.errorType)" variant="subtle">
                 {{ cluster.errorType }}
               </UBadge>
               <UBadge color="neutral" variant="subtle">
@@ -169,49 +156,38 @@ const selectedCommitShas = ref<string[]>([]);
         <!-- Left: error + test evidence + SCM investigation -->
         <div class="space-y-4">
           <!-- Error message -->
-          <UCard v-if="cluster.sampleError">
-            <template #header>
-              <div class="flex items-center gap-1.5">
-                <UIcon name="i-lucide-circle-x" class="size-4 text-red-500 shrink-0" />
-                <h3 class="font-semibold">Error message</h3>
-              </div>
-            </template>
+          <SectionCard
+            v-if="cluster.sampleError"
+            icon="i-lucide-circle-x"
+            icon-class="text-red-500"
+            title="Error message"
+          >
             <!-- eslint-disable-next-line vue/no-v-html -->
             <div
               class="text-xs font-mono overflow-x-auto whitespace-pre-wrap"
               v-html="renderAnsi(cluster.sampleError)"
             />
-          </UCard>
+          </SectionCard>
 
           <!-- Test evidence: source, screenshots, traces, steps, aria, signals -->
-          <UCard v-if="cluster.affectedTestCases?.length">
-            <template #header>
-              <div class="flex items-center gap-1.5">
-                <UIcon name="i-lucide-flask-conical" class="size-4 text-primary shrink-0" />
-                <h3 class="font-semibold">Test evidence</h3>
-                <UBadge color="neutral" variant="subtle" size="sm" class="ml-auto">
-                  {{ cluster.affectedTestCases.length }}
-                  {{ cluster.affectedTestCases.length === 1 ? 'test' : 'tests' }}
-                </UBadge>
-              </div>
+          <SectionCard v-if="cluster.affectedTestCases?.length" icon="i-lucide-flask-conical" title="Test evidence">
+            <template #actions>
+              <UBadge color="neutral" variant="subtle" size="sm">
+                {{ cluster.affectedTestCases.length }}
+                {{ cluster.affectedTestCases.length === 1 ? 'test' : 'tests' }}
+              </UBadge>
             </template>
             <ClusterTestEvidence :affected-test-cases="cluster.affectedTestCases" :sample-error="cluster.sampleError" />
-          </UCard>
+          </SectionCard>
 
           <!-- SCM investigation: baseline picker + commit diff -->
-          <UCard>
-            <template #header>
-              <div class="flex items-center gap-1.5">
-                <UIcon name="i-lucide-git-compare-arrows" class="size-4 text-primary shrink-0" />
-                <h3 class="font-semibold">What changed</h3>
-              </div>
-            </template>
+          <SectionCard icon="i-lucide-git-compare-arrows" title="What changed">
             <ClusterInvestigation
               :cluster-id="clusterId"
               @base-commit-change="baseCommit = $event"
               @selected-commits-change="selectedCommitShas = $event"
             />
-          </UCard>
+          </SectionCard>
         </div>
 
         <!-- Right: diagnosis -->

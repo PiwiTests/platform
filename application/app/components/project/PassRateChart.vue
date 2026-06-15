@@ -43,63 +43,15 @@ const y = (d: DataPoint) => d.passRate;
 
 const color = 'rgb(34, 197, 94)';
 
-const xyContainerRef = useTemplateRef('xyContainerRef');
-const tooltipData = ref<DataPoint | null>(null);
-const tooltipPos = ref({ x: 0, y: 0 });
-
-const NS = 'http://www.w3.org/2000/svg';
-
-function addMarkers(svgNode: SVGSVGElement, margin: { top: number; bottom: number; left: number; right: number }) {
-  svgNode.querySelectorAll('.chart-marker').forEach((el) => el.remove());
-
-  const container = xyContainerRef.value?.component;
-  if (!container || !chartData.value.length) return;
-
-  const comp = container.components?.[0];
-  const xScale = comp?.xScale;
-  const yScale = comp?.yScale;
-  if (!xScale || !yScale) return;
-
-  const group = document.createElementNS(NS, 'g');
-  group.setAttribute('class', 'chart-marker');
-  group.setAttribute('transform', `translate(${margin.left},${margin.top})`);
-  svgNode.appendChild(group);
-
-  for (const point of chartData.value) {
-    const cx = xScale(point.date);
-    const cy = yScale(point.passRate);
-    const circle = document.createElementNS(NS, 'circle');
-    circle.setAttribute('cx', String(cx));
-    circle.setAttribute('cy', String(cy));
-    circle.setAttribute('r', '4');
-    circle.setAttribute('fill', point.passRate >= 90 ? color : 'rgb(239, 68, 68)');
-    circle.setAttribute('stroke', '#fff');
-    circle.setAttribute('stroke-width', '1.5');
-    circle.setAttribute('cursor', 'pointer');
-    circle.addEventListener('click', () => navigateTo(`/test-runs/${point.id}`));
-    circle.addEventListener('mouseenter', () => {
-      circle.setAttribute('r', '6.5');
-      circle.setAttribute('stroke-width', '2.5');
-      tooltipData.value = point;
-    });
-    circle.addEventListener('mousemove', (e: MouseEvent) => {
-      const tw = 220;
-      const ox = 12;
-      const x = e.clientX + ox + tw > window.innerWidth - 8 ? e.clientX - tw - ox : e.clientX + ox;
-      tooltipPos.value = { x, y: e.clientY - 12 };
-    });
-    circle.addEventListener('mouseleave', () => {
-      circle.setAttribute('r', '4');
-      circle.setAttribute('stroke-width', '1.5');
-      tooltipData.value = null;
-    });
-    group.appendChild(circle);
-  }
-}
-
-function onChartRender(svgNode: SVGSVGElement, margin: { top: number; bottom: number; left: number; right: number }) {
-  addMarkers(svgNode, margin);
-}
+const xyContainerRef = ref<UnovisContainerRef | null>(null);
+const { tooltipData, tooltipPos, onRenderComplete } = useChartMarkers(xyContainerRef, chartData, {
+  x: (d) => d.date,
+  series: [{ y: (d) => d.passRate, color: (d) => (d.passRate >= 90 ? color : 'rgb(239, 68, 68)') }],
+  radius: 4,
+  hoverRadius: 6.5,
+  tooltipWidth: 220,
+  onClick: (d) => navigateTo(`/test-runs/${d.id}`),
+});
 </script>
 
 <template>
@@ -110,7 +62,7 @@ function onChartRender(svgNode: SVGSVGElement, margin: { top: number; bottom: nu
         :data="chartData"
         :height="height"
         :padding="{ top: 10, right: 10, bottom: 0, left: 0 }"
-        :on-render-complete="onChartRender"
+        :on-render-complete="onRenderComplete"
       >
         <VisLine :x="x" :y="y" :color="color" :curve-type="CurveType.MonotoneX" :line-width="2" />
 
@@ -154,6 +106,6 @@ function onChartRender(svgNode: SVGSVGElement, margin: { top: number; bottom: nu
       </div>
     </div>
 
-    <div v-else class="text-center py-8 text-gray-500">No data available</div>
+    <EmptyState v-else text="No data available" />
   </div>
 </template>

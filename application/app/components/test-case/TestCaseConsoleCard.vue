@@ -39,14 +39,7 @@ function consoleTypeIcon(type: string): string {
 </script>
 
 <template>
-  <UCard v-if="entries.length > 0">
-    <template #header>
-      <div class="flex items-center gap-2">
-        <UIcon name="i-lucide-terminal" class="w-5 h-5 text-primary" />
-        <h3 class="text-lg font-medium">Console output ({{ entries.length }})</h3>
-      </div>
-    </template>
-
+  <SectionCard v-if="entries.length > 0" icon="i-lucide-terminal" title="Console output" :count="entries.length">
     <div class="space-y-1 max-h-80 overflow-y-auto">
       <div
         v-for="(entry, index) in entries"
@@ -77,5 +70,5 @@ function consoleTypeIcon(type: string): string {
         </div>
       </div>
     </div>
-  </UCard>
+  </SectionCard>
 </template>

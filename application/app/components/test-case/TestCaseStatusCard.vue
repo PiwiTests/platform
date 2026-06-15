@@ -19,20 +19,7 @@ const props = defineProps<{
   } | null;
 }>();
 
-const copySuccess = ref(false);
-
-async function copyLocation() {
-  if (!props.testCase.location) return;
-  try {
-    await navigator.clipboard.writeText(props.testCase.location);
-    copySuccess.value = true;
-    setTimeout(() => {
-      copySuccess.value = false;
-    }, 2000);
-  } catch {
-    // Clipboard not available
-  }
-}
+const { copy, copied } = useCopy();
 </script>
 
 <template>
@@ -65,8 +52,8 @@ async function copyLocation() {
             size="xs"
             color="neutral"
             variant="ghost"
-            :title="copySuccess ? 'Copied!' : 'Copy location'"
-            @click="copyLocation()"
+            :title="copied ? 'Copied!' : 'Copy location'"
+            @click="copy(testCase.location)"
           />
         </div>
       </div>

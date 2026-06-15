@@ -53,79 +53,24 @@ const yFlaky = (d: DataPoint) => d.flaky;
 
 const areaColors = ['rgb(34, 197, 94)', 'rgb(239, 68, 68)', 'rgb(245, 158, 11)', 'rgb(147, 51, 234)'] as const;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const xyContainerRef = ref<any>(null);
-const tooltipData = ref<DataPoint | null>(null);
-const tooltipPos = ref({ x: 0, y: 0 });
+const xyContainerRef = ref<UnovisContainerRef | null>(null);
+const { tooltipData, tooltipPos, onRenderComplete } = useChartMarkers(xyContainerRef, chartData, {
+  x: (d) => d.date,
+  series: [
+    { y: (d) => d.passed, color: areaColors[0] },
+    { y: (d) => d.failed, color: areaColors[1] },
+    { y: (d) => d.skipped, color: areaColors[2] },
+    { y: (d) => d.flaky, color: areaColors[3] },
+  ],
+  onClick: (d) => navigateTo(`/test-runs/${d.id}`),
+});
 
-const yAccessors: { fn: (d: DataPoint) => number; color: string }[] = [
-  { fn: (d: DataPoint) => d.passed, color: areaColors[0] },
-  { fn: (d: DataPoint) => d.failed, color: areaColors[1] },
-  { fn: (d: DataPoint) => d.skipped, color: areaColors[2] },
-  { fn: (d: DataPoint) => d.flaky, color: areaColors[3] },
+const legendItems = [
+  { color: areaColors[0], label: 'Passed' },
+  { color: areaColors[1], label: 'Failed' },
+  { color: areaColors[2], label: 'Skipped' },
+  { color: areaColors[3], label: 'Flaky' },
 ];
-
-const NS = 'http://www.w3.org/2000/svg';
-
-function addMarkers(svgNode: SVGSVGElement, margin: { top: number; bottom: number; left: number; right: number }) {
-  svgNode.querySelectorAll('.chart-marker').forEach((el) => el.remove());
-
-  const container = xyContainerRef.value?.component;
-  if (!container || !chartData.value.length) {
-    return;
-  }
-
-  // xScale / yScale live on child components (VisArea, VisLine), not the XYContainer
-  const comp = container.components?.[0];
-  const xScale = comp?.xScale;
-  const yScale = comp?.yScale;
-  if (!xScale || !yScale) {
-    return;
-  }
-
-  const group = document.createElementNS(NS, 'g');
-  group.setAttribute('class', 'chart-marker');
-  group.setAttribute('transform', `translate(${margin.left},${margin.top})`);
-  svgNode.appendChild(group);
-
-  for (const point of chartData.value) {
-    for (const { fn, color } of yAccessors) {
-      const yVal = fn(point);
-      const cx = xScale(point.date);
-      const cy = yScale(yVal);
-      const circle = document.createElementNS(NS, 'circle');
-      circle.setAttribute('cx', String(cx));
-      circle.setAttribute('cy', String(cy));
-      circle.setAttribute('r', '4.5');
-      circle.setAttribute('fill', color);
-      circle.setAttribute('stroke', '#fff');
-      circle.setAttribute('stroke-width', '1.5');
-      circle.setAttribute('cursor', 'pointer');
-      circle.addEventListener('click', () => navigateTo(`/test-runs/${point.id}`));
-      circle.addEventListener('mouseenter', () => {
-        circle.setAttribute('r', '7');
-        circle.setAttribute('stroke-width', '2.5');
-        tooltipData.value = point;
-      });
-      circle.addEventListener('mousemove', (e: MouseEvent) => {
-        const tw = 260;
-        const ox = 12;
-        const x = e.clientX + ox + tw > window.innerWidth - 8 ? e.clientX - tw - ox : e.clientX + ox;
-        tooltipPos.value = { x, y: e.clientY - 12 };
-      });
-      circle.addEventListener('mouseleave', () => {
-        circle.setAttribute('r', '4.5');
-        circle.setAttribute('stroke-width', '1.5');
-        tooltipData.value = null;
-      });
-      group.appendChild(circle);
-    }
-  }
-}
-
-function onChartRender(svgNode: SVGSVGElement, margin: { top: number; bottom: number; left: number; right: number }) {
-  addMarkers(svgNode, margin);
-}
 </script>
 
 <template>
@@ -136,7 +81,7 @@ function onChartRender(svgNode: SVGSVGElement, margin: { top: number; bottom: nu
         :data="chartData"
         :height="height"
         :padding="{ top: 10, right: 10, bottom: 0, left: 0 }"
-        :on-render-complete="onChartRender"
+        :on-render-complete="onRenderComplete"
       >
         <VisArea
           :x="x"
@@ -192,28 +137,9 @@ function onChartRender(svgNode: SVGSVGElement, margin: { top: number; bottom: nu
       </div>
     </div>
 
-    <div v-else class="text-center py-12 text-gray-500">
-      <p>No test run data available to display chart</p>
-    </div>
+    <EmptyState v-else text="No test run data available to display chart" />
 
-    <div class="flex items-center justify-center gap-6 mt-4 text-sm">
-      <div class="flex items-center gap-2">
-        <div class="w-3 h-3 rounded-full bg-green-500" />
-        <span>Passed</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <div class="w-3 h-3 rounded-full bg-red-500" />
-        <span>Failed</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <div class="w-3 h-3 rounded-full bg-orange-500" />
-        <span>Skipped</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <div class="w-3 h-3 rounded-full bg-purple-600" />
-        <span>Flaky</span>
-      </div>
-    </div>
+    <ChartLegend :items="legendItems" />
   </div>
 </template>
 

@@ -40,74 +40,28 @@ const y = (d: DataPoint) => d.duration;
 
 const lineColor = 'rgb(148, 163, 184)';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const xyContainerRef = ref<any>(null);
-const tooltipData = ref<DataPoint | null>(null);
-const tooltipPos = ref({ x: 0, y: 0 });
-
 const statusColor = (status: string): string => {
   if (status === 'passed') return 'rgb(34, 197, 94)';
   if (status === 'failed' || status === 'timedOut') return 'rgb(239, 68, 68)';
   return 'rgb(156, 163, 175)';
 };
 
-const NS = 'http://www.w3.org/2000/svg';
+const xyContainerRef = ref<UnovisContainerRef | null>(null);
+const { tooltipData, tooltipPos, onRenderComplete } = useChartMarkers(xyContainerRef, chartData, {
+  x: (d) => d.date,
+  series: [{ y: (d) => d.duration, color: (d) => statusColor(d.status) }],
+  radius: 5,
+  hoverRadius: 8,
+  strokeWidth: 2,
+  hoverStrokeWidth: 3,
+  onClick: (d) => navigateTo(`/test-runs/${d.runId}`),
+});
 
-function onChartRender(
-  svgNode: SVGSVGElement,
-  margin: { top: number; bottom: number; left: number; right: number },
-  _bleed: unknown,
-  _containerW: number,
-  _containerH: number,
-  _width: number,
-  _height: number,
-) {
-  const container = xyContainerRef.value?.component;
-  if (!container || !chartData.value.length) return;
-
-  svgNode.querySelectorAll('.chart-marker').forEach((el) => el.remove());
-
-  const comp = container.components?.[0];
-  const xScale = comp?.xScale;
-  const yScale = comp?.yScale;
-  if (!xScale || !yScale) return;
-
-  const group = document.createElementNS(NS, 'g');
-  group.setAttribute('class', 'chart-marker');
-  group.setAttribute('transform', `translate(${margin.left},${margin.top})`);
-  svgNode.appendChild(group);
-
-  for (const point of chartData.value) {
-    if (point.duration === undefined) continue;
-    const cx = xScale(point.date);
-    const cy = yScale(point.duration);
-    const color = statusColor(point.status);
-
-    const circle = document.createElementNS(NS, 'circle');
-    circle.setAttribute('cx', String(cx));
-    circle.setAttribute('cy', String(cy));
-    circle.setAttribute('r', '5');
-    circle.setAttribute('fill', color);
-    circle.setAttribute('stroke', '#fff');
-    circle.setAttribute('stroke-width', '2');
-    circle.setAttribute('cursor', 'pointer');
-    circle.addEventListener('click', () => navigateTo(`/test-runs/${point.runId}`));
-    circle.addEventListener('mouseenter', () => {
-      circle.setAttribute('r', '8');
-      circle.setAttribute('stroke-width', '3');
-      tooltipData.value = point;
-    });
-    circle.addEventListener('mousemove', (e: MouseEvent) => {
-      tooltipPos.value = { x: e.offsetX, y: e.offsetY };
-    });
-    circle.addEventListener('mouseleave', () => {
-      circle.setAttribute('r', '5');
-      circle.setAttribute('stroke-width', '2');
-      tooltipData.value = null;
-    });
-    group.appendChild(circle);
-  }
-}
+const legendItems = [
+  { color: 'rgb(34, 197, 94)', label: 'Passed' },
+  { color: 'rgb(239, 68, 68)', label: 'Failed' },
+  { color: 'rgb(156, 163, 175)', label: 'Skipped' },
+];
 </script>
 
 <template>
@@ -118,7 +72,7 @@ function onChartRender(
         :data="chartData"
         :height="height"
         :padding="{ top: 10, right: 10, bottom: 0, left: 0 }"
-        :on-render-complete="onChartRender"
+        :on-render-complete="onRenderComplete"
       >
         <VisLine :x="x" :y="y" :color="[lineColor]" :curve-type="CurveType.MonotoneX" :line-width="1.5" />
 
@@ -131,10 +85,10 @@ function onChartRender(
 
       <div
         v-if="tooltipData"
-        class="fixed z-50 pointer-events-none bg-white rounded-lg shadow-lg border border-gray-200"
-        :style="{ left: `${tooltipPos.x + 10}px`, top: `${tooltipPos.y - 10}px` }"
+        class="fixed z-50 pointer-events-none bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700"
+        :style="{ left: `${tooltipPos.x}px`, top: `${tooltipPos.y}px` }"
       >
-        <div class="p-2 text-sm">
+        <div class="p-2 text-sm text-gray-900 dark:text-gray-100">
           <div class="font-semibold mb-1">
             {{
               new Date(tooltipData.date).toLocaleDateString('en-US', {
@@ -170,23 +124,8 @@ function onChartRender(
       </div>
     </div>
 
-    <div v-else class="text-center py-8 text-gray-500">
-      <p>No history data available to display chart</p>
-    </div>
+    <EmptyState v-else text="No history data available to display chart" />
 
-    <div class="flex items-center justify-center gap-4 mt-2 text-xs text-gray-500">
-      <span class="flex items-center gap-1">
-        <span class="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" />
-        Passed
-      </span>
-      <span class="flex items-center gap-1">
-        <span class="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />
-        Failed
-      </span>
-      <span class="flex items-center gap-1">
-        <span class="w-2.5 h-2.5 rounded-full bg-gray-400 inline-block" />
-        Skipped
-      </span>
-    </div>
+    <ChartLegend :items="legendItems" dense />
   </div>
 </template>

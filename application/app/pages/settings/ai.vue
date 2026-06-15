@@ -183,11 +183,7 @@ const envVars = computed(() => {
         description="PIWI_AI_* environment variables are set. The form below reflects the current environment configuration and cannot be changed here."
       />
 
-      <UCard>
-        <template #header>
-          <h3 class="font-semibold">Provider configuration</h3>
-        </template>
-
+      <SectionCard title="Provider configuration">
         <div class="space-y-4">
           <UFormField label="Provider">
             <USelect v-model="provider" :items="providerOptions" :disabled="settings?.envManaged" class="w-full" />
@@ -290,18 +286,13 @@ const envVars = computed(() => {
             </UButton>
           </div>
         </template>
-      </UCard>
+      </SectionCard>
 
-      <UCard>
-        <template #header>
-          <div>
-            <h3 class="font-semibold">Repository access</h3>
-            <p class="text-sm text-gray-500 mt-0.5">
-              Optional SCM token used to fetch changed files between the last passing and current failing run. Works
-              with GitHub, GitLab, and Bitbucket. Without a token, only public repositories are accessible (60 req/hr
-              rate limit). Required for private repositories. Per-project tokens can be set in the project edit page.
-            </p>
-          </div>
+      <SectionCard title="Repository access">
+        <template #subtitle>
+          Optional SCM token used to fetch changed files between the last passing and current failing run. Works with
+          GitHub, GitLab, and Bitbucket. Without a token, only public repositories are accessible (60 req/hr rate
+          limit). Required for private repositories. Per-project tokens can be set in the project edit page.
         </template>
 
         <UFormField
@@ -327,17 +318,12 @@ const envVars = computed(() => {
             </UButton>
           </div>
         </template>
-      </UCard>
+      </SectionCard>
 
-      <UCard>
-        <template #header>
-          <div>
-            <h3 class="font-semibold">Global analysis instructions</h3>
-            <p class="text-sm text-gray-500 mt-0.5">
-              Applied to every diagnosis, across all projects. Use this to set general preferences: preferred
-              remediation steps, tone, focus areas, or output format.
-            </p>
-          </div>
+      <SectionCard title="Global analysis instructions">
+        <template #subtitle>
+          Applied to every diagnosis, across all projects. Use this to set general preferences: preferred remediation
+          steps, tone, focus areas, or output format.
         </template>
 
         <UTextarea
@@ -359,22 +345,16 @@ const envVars = computed(() => {
             </UButton>
           </div>
         </template>
-      </UCard>
+      </SectionCard>
 
-      <UCard v-if="!settings?.envManaged && provider && envVars">
-        <template #header>
-          <h3 class="font-semibold">Environment variables</h3>
-        </template>
+      <SectionCard v-if="!settings?.envManaged && provider && envVars" title="Environment variables">
         <p class="text-sm text-gray-500 mb-3">
           Use these environment variables instead of storing credentials in the database:
         </p>
         <CodeBlock :code="envVars!" lang="bash" />
-      </UCard>
+      </SectionCard>
 
-      <UCard>
-        <template #header>
-          <h3 class="font-semibold">Privacy notice</h3>
-        </template>
+      <SectionCard title="Privacy notice">
         <div class="space-y-2 text-sm text-gray-600 dark:text-gray-400">
           <p>When diagnosing a failure cluster, the following data is sent to the configured LLM provider:</p>
           <ul class="list-disc list-inside space-y-1 ml-2">
@@ -393,7 +373,7 @@ const envVars = computed(() => {
             <code class="font-mono text-xs">PIWI_AI_API_KEY</code> instead of the UI.
           </p>
         </div>
-      </UCard>
+      </SectionCard>
     </div>
   </UDashboardPanel>
 </template>

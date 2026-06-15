@@ -91,14 +91,21 @@ Nuxt file-based routing:
   - **`project/`** — Project detail page (`/projects/[id]`): `PassRateChart`, `PerformanceTrendChart`, `TestRunsChart`, `FlakyTestsList` (score badges, retry-pass / alternation breakdown), `FailureClustersList`, `ScmChangesView`
   - **`layout/`** — App shell / navigation: `ProjectsMenu`, `UserMenu`, `GetStartedWizard`
   - **`demo/`** — Demo mode only: `DemoBanner`, `DemoInitScreen`, `DemoSimulator`
+  - **Shared building blocks in `shared/`** (prefer these over re-implementing):
+    - `SectionCard` — `UCard` with a standard header: optional `icon` (+ `iconClass`), `title`, optional `(count)` and `subtitle` (prop or `subtitle` slot). `actions` slot for header-right controls, `footer` slot forwarded to `UCard`. Use for any card that needs an icon/title (and optional description) header.
+    - `EmptyState` / `LoadingState` / `ErrorState` — centered empty/loading/error blocks (`ErrorState` has an `action` slot for a retry button). Default `py-8` padding, disable with `:padded="false"`.
+    - `ChartLegend` — `{ color, label }[]` legend dots (use `dense` for inline charts).
+    - `DiffPatch` (colored unified-diff lines) and `DiffFile` (file card: sticky header + `DiffPatch`). Use for any SCM patch rendering.
 - **Composables** (`app/composables/`):
   - `useAiStatus.ts` — Fetches `GET /api/ai/status` once; shared across components to show/hide AI actions
+  - `useCopy.ts` — `{ copy, copied }` clipboard helper (wraps VueUse `useClipboard`); `copy(text, { toast })`. Use instead of hand-rolling `navigator.clipboard` + a `copied` flag.
+  - `useChartMarkers.ts` — Shared interactive SVG-marker + floating-tooltip logic for the `@unovis/vue` trend charts. Returns `{ tooltipData, tooltipPos, onRenderComplete }`; bind `:on-render-complete` on the `VisXYContainer`.
 - **Pages** (`app/pages/`):
   - `/settings/ai` — AI diagnosis configuration (provider, model, API key, base URL, auto-diagnose toggle)
 - **Utilities** (`app/utils/`):
   - `performance-hints.ts` — Generates performance warnings for slow/flaky tests
   - `fix-prompt.ts` — Generates structured AI debug prompts from test failure context
-  - `index.ts` — Shared helpers: `formatDuration`, `getStatusColor`, `getFileApiPath`, `formatRelativeTime`, `createSortHeader`, `formatBytes`
+  - `index.ts` — Shared helpers: `formatDuration`, `getStatusColor`, `getFileApiPath`, `formatRelativeTime`, `createSortHeader`, `formatBytes`, `errorMessage` (unwrap `$fetch` errors), `filterCommits`, `scmFileStatusMeta`, `parsePatchLines`/`patchLineClass`, `clusterStatusColor`, `clusterErrorTypeColor`
 
 ### Reporter
 - `reporter/src/index.ts` — Entry point (re-exports class + `createGlobalSetup`)
@@ -145,13 +152,13 @@ Nuxt file-based routing:
 | Command | Purpose |
 |---------|---------|
 | `npm install` | Install deps |
-| `npm run dev` | Dev server |
-| `npm run build` | Production build |
-| `npm run typecheck` | TypeScript check |
-| `npm run lint` | oxlint |
-| `npm run lint:fix` | oxlint (auto-fix) |
-| `npm run format` | oxfmt (format files) |
-| `npm run format:check` | oxfmt (check formatting) |
+| `npm run app:dev` | Dev server |
+| `npm run app:build` | Production build |
+| `npm run app:typecheck` | TypeScript check |
+| `npm run app:lint` | oxlint |
+| `npm run app:lint:fix` | oxlint (auto-fix) |
+| `npm run app:format` | oxfmt (format files) |
+| `npm run app:format:check` | oxfmt (check formatting) |
 | `npm test` | Run functional tests |
 | `npm run db:generate` | Generate migration |
 | `npm run db:migrate` | Apply migrations |

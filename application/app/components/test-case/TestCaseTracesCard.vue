@@ -26,14 +26,7 @@ function viewerUrl(path: string): string {
 </script>
 
 <template>
-  <UCard v-if="traces.length > 0">
-    <template #header>
-      <div class="flex items-center gap-2">
-        <UIcon name="i-lucide-bug-play" class="w-5 h-5 text-primary" />
-        <h3 class="text-lg font-medium">Traces ({{ traces.length }})</h3>
-      </div>
-    </template>
-
+  <SectionCard v-if="traces.length > 0" icon="i-lucide-bug-play" title="Traces" :count="traces.length">
     <div class="space-y-2">
       <div
         v-for="trace in traces"
@@ -65,5 +58,5 @@ function viewerUrl(path: string): string {
         </div>
       </div>
     </div>
-  </UCard>
+  </SectionCard>
 </template>

@@ -48,99 +48,22 @@ const yP90Duration = (d: DataPoint) => d.p90TestDuration ?? undefined;
 
 const lineColors = ['rgb(59, 130, 246)', 'rgb(34, 197, 94)', 'rgb(249, 115, 22)'] as const;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const xyContainerRef = ref<any>(null);
-const tooltipData = ref<DataPoint | null>(null);
-const tooltipPos = ref({ x: 0, y: 0 });
+const xyContainerRef = ref<UnovisContainerRef | null>(null);
+const { tooltipData, tooltipPos, onRenderComplete } = useChartMarkers(xyContainerRef, chartData, {
+  x: (d) => d.date,
+  series: [
+    { y: (d) => d.duration, color: lineColors[0] },
+    { y: (d) => d.avgTestDuration, color: lineColors[1] },
+    { y: (d) => d.p90TestDuration, color: lineColors[2] },
+  ],
+  onClick: (d) => navigateTo(`/test-runs/${d.id}`),
+});
 
-const yAccessors: {
-  fn: (d: DataPoint) => number | null | undefined;
-  color: string;
-}[] = [
-  { fn: (d: DataPoint) => d.duration, color: lineColors[0] },
-  { fn: (d: DataPoint) => d.avgTestDuration, color: lineColors[1] },
-  { fn: (d: DataPoint) => d.p90TestDuration, color: lineColors[2] },
+const legendItems = [
+  { color: lineColors[0], label: 'Total Duration' },
+  { color: lineColors[1], label: 'Avg Test Duration' },
+  { color: lineColors[2], label: 'P90 Test Duration' },
 ];
-
-const NS = 'http://www.w3.org/2000/svg';
-
-function addMarkers(
-  svgNode: SVGSVGElement,
-  margin: {
-    top: number;
-    bottom: number;
-    left: number;
-    right: number;
-  },
-) {
-  svgNode.querySelectorAll('.chart-marker').forEach((el) => el.remove());
-
-  const container = xyContainerRef.value?.component;
-  if (!container || !chartData.value.length) {
-    return;
-  }
-
-  const comp = container.components?.[0];
-  const xScale = comp?.xScale;
-  const yScale = comp?.yScale;
-  if (!xScale || !yScale) {
-    return;
-  }
-
-  const group = document.createElementNS(NS, 'g');
-  group.setAttribute('class', 'chart-marker');
-  group.setAttribute('transform', `translate(${margin.left},${margin.top})`);
-  svgNode.appendChild(group);
-
-  for (const point of chartData.value) {
-    for (const { fn, color } of yAccessors) {
-      const yVal = fn(point);
-      if (yVal == null) {
-        continue;
-      }
-      const cx = xScale(point.date);
-      const cy = yScale(yVal);
-      const circle = document.createElementNS(NS, 'circle');
-      circle.setAttribute('cx', String(cx));
-      circle.setAttribute('cy', String(cy));
-      circle.setAttribute('r', '4.5');
-      circle.setAttribute('fill', color);
-      circle.setAttribute('stroke', '#fff');
-      circle.setAttribute('stroke-width', '1.5');
-      circle.setAttribute('cursor', 'pointer');
-      circle.addEventListener('click', () => navigateTo(`/test-runs/${point.id}`));
-      circle.addEventListener('mouseenter', () => {
-        circle.setAttribute('r', '7');
-        circle.setAttribute('stroke-width', '2.5');
-        tooltipData.value = point;
-      });
-      circle.addEventListener('mousemove', (e: MouseEvent) => {
-        const tw = 260;
-        const ox = 12;
-        const x = e.clientX + ox + tw > window.innerWidth - 8 ? e.clientX - tw - ox : e.clientX + ox;
-        tooltipPos.value = { x, y: e.clientY - 12 };
-      });
-      circle.addEventListener('mouseleave', () => {
-        circle.setAttribute('r', '4.5');
-        circle.setAttribute('stroke-width', '1.5');
-        tooltipData.value = null;
-      });
-      group.appendChild(circle);
-    }
-  }
-}
-
-function onChartRender(
-  svgNode: SVGSVGElement,
-  margin: {
-    top: number;
-    bottom: number;
-    left: number;
-    right: number;
-  },
-) {
-  addMarkers(svgNode, margin);
-}
 </script>
 
 <template>
@@ -151,7 +74,7 @@ function onChartRender(
         :data="chartData"
         :height="height"
         :padding="{ top: 10, right: 10, bottom: 0, left: 0 }"
-        :on-render-complete="onChartRender"
+        :on-render-complete="onRenderComplete"
       >
         <VisLine
           :x="x"
@@ -208,23 +131,8 @@ function onChartRender(
       </div>
     </div>
 
-    <div v-else class="text-center py-12 text-gray-500">
-      <p>No performance data available to display chart</p>
-    </div>
+    <EmptyState v-else text="No performance data available to display chart" />
 
-    <div class="flex items-center justify-center gap-6 mt-4 text-sm">
-      <div class="flex items-center gap-2">
-        <div class="w-3 h-3 rounded-full bg-blue-500" />
-        <span>Total Duration</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <div class="w-3 h-3 rounded-full bg-green-500" />
-        <span>Avg Test Duration</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <div class="w-3 h-3 rounded-full bg-orange-500" />
-        <span>P90 Test Duration</span>
-      </div>
-    </div>
+    <ChartLegend :items="legendItems" />
   </div>
 </template>
