@@ -73,6 +73,37 @@ function passRateBarClass(run: { passedTests: number; totalTests: number }): str
   return 'bg-red-500';
 }
 
+const featureHighlights = [
+  {
+    icon: 'i-lucide-radio',
+    tagline: 'Watch your CI run live',
+    title: 'Live streaming',
+    description:
+      'Follow test execution in real time. Investigate failures while the suite is still running — no waiting for the CI job to finish.',
+  },
+  {
+    icon: 'i-lucide-layers',
+    tagline: '10 failures, 2 root causes',
+    title: 'Failure clustering',
+    description:
+      'Tests sharing the same error are grouped automatically. Triage one cluster instead of scrolling through unrelated failures.',
+  },
+  {
+    icon: 'i-lucide-brain-circuit',
+    tagline: 'Diagnosis grounded in your code',
+    title: 'AI diagnosis',
+    description:
+      'AI analyzes failure clusters using your actual SCM diff, trace files, and run history — not a generic prompt.',
+  },
+  {
+    icon: 'i-lucide-archive',
+    tagline: 'Every run, forever',
+    title: 'Permanent test intelligence',
+    description:
+      'Test results, traces, and HTML reports stored permanently. Compare runs, track flakiness trends, and never lose a CI result again.',
+  },
+] as const;
+
 const RUNNING_STATUSES = new Set(['running', 'initialising', 'finalizing']);
 
 // Use the dedicated recent test runs endpoint for actual time-series data
@@ -100,8 +131,8 @@ const allTestRuns = computed(() => {
 
     <template #body>
       <div class="p-4 space-y-6">
-        <!-- Stats Overview -->
-        <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <!-- Stats Overview (hidden when no projects yet) -->
+        <div v-if="projects && projects.length > 0" class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <UCard v-for="stat in stats" :key="stat.label">
             <div class="flex items-center gap-4">
               <div class="p-3 bg-primary/10 rounded-full">
@@ -151,8 +182,8 @@ const allTestRuns = computed(() => {
           <PassRateChart :test-runs="allTestRuns" />
         </UCard>
 
-        <!-- Projects + Recent activity -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <!-- Projects + Recent activity (hidden when no projects yet) -->
+        <div v-if="projects && projects.length > 0" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <UCard>
             <template #header>
               <div class="flex justify-between items-center">
@@ -235,24 +266,27 @@ const allTestRuns = computed(() => {
           </UCard>
         </div>
 
-        <!-- Getting Started (only shown when no projects exist) -->
-        <UCard v-if="!projects || projects.length === 0">
-          <template #header>
-            <h2 class="text-xl font-semibold">Getting started</h2>
-          </template>
-
-          <div class="flex items-center justify-between">
-            <p class="text-gray-600 dark:text-gray-400">Learn how to install the reporter and submit test results.</p>
-            <UButton
-              to="https://phenx.github.io/piwi-dashboard/getting-started"
-              target="_blank"
-              icon="i-lucide-external-link"
-              trailing
-            >
-              Read the docs
-            </UButton>
+        <!-- Empty state: feature highlights + setup wizard -->
+        <template v-if="!projects || projects.length === 0">
+          <!-- Feature benefit cards -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <UCard v-for="feature in featureHighlights" :key="feature.title" class="flex flex-col">
+              <div class="flex flex-col gap-3 h-full">
+                <div class="p-2 bg-primary/10 rounded-lg w-fit">
+                  <UIcon :name="feature.icon" class="size-5 text-primary" />
+                </div>
+                <div>
+                  <p class="text-xs font-semibold uppercase tracking-wide text-primary mb-1">{{ feature.tagline }}</p>
+                  <h3 class="font-semibold mb-1">{{ feature.title }}</h3>
+                  <p class="text-sm text-gray-600 dark:text-gray-400">{{ feature.description }}</p>
+                </div>
+              </div>
+            </UCard>
           </div>
-        </UCard>
+
+          <!-- Setup wizard -->
+          <GetStartedWizard />
+        </template>
       </div>
     </template>
   </UDashboardPanel>

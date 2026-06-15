@@ -168,16 +168,6 @@ const envVars = computed(() => {
   lines.push(`PIWI_AI_AUTO_DIAGNOSE=${autoDiagnose.value ? 'true' : 'false'}`);
   return lines.join('\n');
 });
-
-const copied = ref(false);
-async function copyEnvVars() {
-  if (!envVars.value) return;
-  await navigator.clipboard.writeText(envVars.value);
-  copied.value = true;
-  setTimeout(() => {
-    copied.value = false;
-  }, 2000);
-}
 </script>
 
 <template>
@@ -373,25 +363,12 @@ async function copyEnvVars() {
 
       <UCard v-if="!settings?.envManaged && provider && envVars">
         <template #header>
-          <div class="flex items-center justify-between">
-            <h3 class="font-semibold">Environment variables</h3>
-            <UButton
-              size="xs"
-              color="neutral"
-              variant="ghost"
-              :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
-              @click="copyEnvVars"
-            >
-              {{ copied ? 'Copied!' : 'Copy' }}
-            </UButton>
-          </div>
+          <h3 class="font-semibold">Environment variables</h3>
         </template>
         <p class="text-sm text-gray-500 mb-3">
           Use these environment variables instead of storing credentials in the database:
         </p>
-        <pre class="text-xs font-mono bg-gray-50 dark:bg-gray-900 rounded p-3 overflow-x-auto whitespace-pre">{{
-          envVars
-        }}</pre>
+        <CodeBlock :code="envVars!" lang="bash" />
       </UCard>
 
       <UCard>
