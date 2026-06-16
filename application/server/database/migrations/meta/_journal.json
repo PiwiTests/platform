@@ -8,6 +8,27 @@
       "when": 1781428376082,
       "tag": "0000_goofy_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1781627280313,
+      "tag": "0001_graceful_stature",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1781641392454,
+      "tag": "0002_strange_grim_reaper",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1781643925539,
+      "tag": "0003_test_suites",
+      "breakpoints": true
     }
   ]
 }

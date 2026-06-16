@@ -56,6 +56,30 @@ export const testRuns = pgTable(
   }),
 );
 
+// Test suites table - deduplicated describe block definitions, one row per unique path
+export const testSuites = pgTable(
+  'test_suites',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    filePath: text('file_path').notNull(),
+    suitePath: text('suite_path').notNull(), // \x1f-delimited full path, e.g. 'Auth\x1fLogin'
+    mode: text('mode').notNull().default('default'), // 'parallel' | 'serial' | 'default'
+    annotations: jsonb('annotations'), // Array<{ type, description? }>
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    uniqueIdx: uniqueIndex('idx_test_suites_unique').on(table.projectId, table.filePath, table.suitePath),
+  }),
+);
+
 // Test cases table - shared test definitions
 export const testCases = pgTable(
   'test_cases',
@@ -65,6 +89,8 @@ export const testCases = pgTable(
       .notNull()
       .references(() => projects.id),
     filePath: text('file_path').notNull(), // relative path from project root
+    suitePath: text('suite_path').notNull().default(''), // \x1f-delimited describe block path, e.g. 'Auth\x1fLogin'
+    suiteId: integer('suite_id').references(() => testSuites.id), // FK to immediate parent describe block (null for root-level tests)
     title: text('title').notNull(),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
@@ -75,7 +101,12 @@ export const testCases = pgTable(
   },
   (table) => ({
     projectIdIdx: index('idx_test_cases_project_id').on(table.projectId),
-    filePathTitleIdx: index('idx_test_cases_file_path_title').on(table.projectId, table.filePath, table.title),
+    filePathTitleIdx: index('idx_test_cases_file_path_title').on(
+      table.projectId,
+      table.filePath,
+      table.suitePath,
+      table.title,
+    ),
   }),
 );
 
@@ -184,6 +215,7 @@ export const testRunsCases = pgTable(
     ariaSnapshot: text('aria_snapshot'), // ARIA snapshot of the page (YAML-like string from locator.ariaSnapshot())
     testSource: text('test_source'), // Source snippet around the failing assertion (sent by reporter)
     browser: jsonb('browser'), // Playwright project/browser config: { projectName, browserName, channel, viewport }
+    testAnnotations: jsonb('test_annotations'), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
     workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
     startedAt: integer('started_at'), // Unix timestamp in ms when the test started
     createdAt: timestamp('created_at', { mode: 'date' })
@@ -351,6 +383,8 @@ export const apiKeys = pgTable(
 );
 
 // Type exports for TypeScript
+export type TestSuite = typeof testSuites.$inferSelect;
+export type NewTestSuite = typeof testSuites.$inferInsert;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type TestRun = typeof testRuns.$inferSelect;

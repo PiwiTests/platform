@@ -81,12 +81,15 @@ export class PiwiDashboardReporter {
   /** Playwright reporter hook: called when an individual test begins */
   onTestBegin(test: TestCase, result: TestResult): void {
     const relativeFilePath = path.relative(process.cwd(), test.location.file);
+    const { suitePath, suiteConfig } = this.getSuiteInfo(test);
     const beginEvent = {
       type: 'begin',
       title: test.title,
       location: `${relativeFilePath}:${test.location.line}:${test.location.column}`,
       workerIndex: result?.workerIndex ?? (result as any)?.parallelIndex ?? null,
       browser: this.metadataCollector.getBrowserConfig(test) || undefined,
+      suitePath,
+      suiteConfig,
     };
 
     if (this.streamManager) {
@@ -99,6 +102,7 @@ export class PiwiDashboardReporter {
     this.totalTests++;
     const relativeFilePath = path.relative(process.cwd(), test.location.file);
 
+    const { suitePath, suiteConfig } = this.getSuiteInfo(test);
     const testCase: any = {
       type: 'complete',
       title: test.title,
@@ -111,6 +115,9 @@ export class PiwiDashboardReporter {
       startedAt: result.startTime ? result.startTime.getTime() : null,
       attachments: result.attachments || [],
       browser: this.metadataCollector.getBrowserConfig(test) || undefined,
+      suitePath,
+      suiteConfig,
+      testAnnotations: test.annotations?.length ? test.annotations : null,
     };
 
     if (result.status === 'failed' || result.status === 'timedOut') {
@@ -254,7 +261,36 @@ export class PiwiDashboardReporter {
       ariaSnapshot: rest.ariaSnapshot || null,
       testSource: rest.testSource || null,
       browser: rest.browser || null,
+      suitePath: rest.suitePath ?? null,
+      suiteConfig: rest.suiteConfig ?? null,
+      testAnnotations: rest.testAnnotations ?? null,
     };
+  }
+
+  private getSuiteInfo(test: TestCase): {
+    suitePath: string[];
+    suiteConfig: Array<{ mode: string; annotations: Array<{ type: string; description?: string }> }>;
+  } {
+    const suitePath: string[] = [];
+    const suiteConfig: Array<{ mode: string; annotations: Array<{ type: string; description?: string }> }> = [];
+    const suites: Suite[] = [];
+
+    let suite: Suite | undefined = test.parent;
+    while (suite && suite.type === 'describe') {
+      suites.unshift(suite);
+      suite = suite.parent;
+    }
+
+    for (const s of suites) {
+      if (!s.title) continue;
+      suitePath.push(s.title);
+      const rawMode = (s as any)._parallelMode as string | undefined;
+      const mode = rawMode === 'parallel' ? 'parallel' : rawMode === 'serial' ? 'serial' : ('default' as const);
+      const annotations: Array<{ type: string; description?: string }> = (s as any)._annotations ?? [];
+      suiteConfig.push({ mode, annotations });
+    }
+
+    return { suitePath, suiteConfig };
   }
 
   private async tryFinishStreaming(overallStatus: string, duration: number, auth: string | null): Promise<boolean> {

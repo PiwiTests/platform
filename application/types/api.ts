@@ -242,6 +242,7 @@ export interface TestRunDetails {
   };
   reports?: ReportInfo[];
   testCases?: TestCaseResult[];
+  suites?: SuiteInfo[];
   storageStats?: {
     totalFiles: number;
     totalSize: number;
@@ -370,11 +371,25 @@ export interface EndpointSummary {
 // ============================================================================
 
 /**
+ * Suite (describe block) info — returned as a flat list alongside test cases,
+ * one entry per unique describe path across all files in the run.
+ */
+export interface SuiteInfo {
+  filePath: string;
+  suitePath: string[];
+  mode: string;
+  annotations: Array<{ type: string; description?: string }>;
+}
+
+/**
  * Test case result (for a specific test run)
  */
 export interface TestCaseResult {
   id: number;
   title: string;
+  filePath?: string;
+  suitePath?: string[];
+  testAnnotations?: Array<{ type: string; description?: string }> | null;
   status: string;
   duration?: number | null;
   location?: string;

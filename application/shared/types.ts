@@ -16,6 +16,19 @@ export type TestCaseStatus = 'passed' | 'failed' | 'skipped' | 'timedout';
 
 export type ClusterStatus = 'open' | 'resolved' | 'ignored';
 
+// ── Suite hierarchy config ────────────────────────────────────────────────────
+// One entry per level in suitePath (parallel to the array).
+
+export interface SuiteConfigEntry {
+  mode: 'parallel' | 'serial' | 'default';
+  annotations: Array<{ type: string; description?: string }>;
+}
+
+export interface TestAnnotation {
+  type: string;
+  description?: string;
+}
+
 // ── Browser/project config ────────────────────────────────────────────────────
 
 export interface BrowserConfig {
@@ -61,6 +74,9 @@ export interface TestCasePayload {
   workerIndex?: number | null;
   startedAt?: number | null;
   browser?: BrowserConfig | null;
+  suitePath?: string[] | null;
+  suiteConfig?: SuiteConfigEntry[] | null;
+  testAnnotations?: TestAnnotation[] | null;
 }
 
 // ── Test run counters ─────────────────────────────────────────────────────────
@@ -113,6 +129,9 @@ export interface StreamEventPayload {
   ariaSnapshot?: unknown;
   projectName?: string | null;
   browser?: BrowserConfig | null;
+  suitePath?: string[] | null;
+  suiteConfig?: SuiteConfigEntry[] | null;
+  testAnnotations?: TestAnnotation[] | null;
 }
 
 // ── Finish payload ────────────────────────────────────────────────────────────

@@ -532,6 +532,7 @@ function handleSelectCluster(clusterId: number) {
                 v-model:active-statuses="testCaseActiveStatuses"
                 v-model:browser-filter="testCaseBrowserFilter"
                 :test-cases="displayTestCases"
+                :suites="testRun?.suites ?? []"
                 :is-live="isLive"
                 :failure-cluster-filter="selectedClusterFilter"
               />

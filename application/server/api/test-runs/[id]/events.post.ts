@@ -133,6 +133,15 @@ export default eventHandler(async (event) => {
 
   const cases: RunCaseInput[] = parsedEvents.map((tc) => ({
     filePath: tc.filePath,
+    suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
+    suiteConfig:
+      (
+        tc as {
+          suiteConfig?: Array<{ mode: string; annotations: Array<{ type: string; description?: string }> }> | null;
+        }
+      ).suiteConfig ?? null,
+    testAnnotations:
+      (tc as { testAnnotations?: Array<{ type: string; description?: string }> | null }).testAnnotations ?? null,
     title: tc.title,
     status: tc.status as string,
     duration: tc.duration,
