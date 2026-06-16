@@ -51,6 +51,14 @@ async function saveTriage() {
   }
 }
 
+// Extract cases modal
+const extractModalOpen = ref(false);
+
+function onExtracted() {
+  extractModalOpen.value = false;
+  refresh();
+}
+
 const triageStatusOptions = [
   { label: 'Open', value: 'open', color: 'warning' as const },
   { label: 'Resolved', value: 'resolved', color: 'success' as const },
@@ -117,37 +125,51 @@ const triageStatusOptions = [
           </div>
 
           <!-- Right: triage -->
-          <div class="shrink-0 sm:w-[26rem] space-y-1.5">
-            <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Triage</p>
-            <div class="flex items-start gap-3">
-              <div class="flex flex-col gap-1 shrink-0">
-                <UButton
-                  v-for="opt in triageStatusOptions"
-                  :key="opt.value"
-                  size="xs"
-                  class="justify-start"
-                  :color="triageStatus === opt.value ? opt.color : 'neutral'"
-                  :variant="triageStatus === opt.value ? 'solid' : 'outline'"
-                  @click="triageStatus = opt.value"
-                >
-                  {{ opt.label }}
-                </UButton>
-              </div>
-              <div class="flex-1 min-w-0 space-y-1.5">
-                <UTextarea v-model="triageNote" placeholder="Optional note…" :rows="4" class="text-sm w-full" />
-                <div class="flex justify-end">
+          <div class="shrink-0 sm:w-[26rem] space-y-3">
+            <div class="space-y-1.5">
+              <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Triage</p>
+              <div class="flex items-start gap-3">
+                <div class="flex flex-col gap-1 shrink-0">
                   <UButton
-                    v-if="triageChanged"
+                    v-for="opt in triageStatusOptions"
+                    :key="opt.value"
                     size="xs"
-                    icon="i-lucide-check"
-                    :loading="triageSaving"
-                    @click="saveTriage"
+                    class="justify-start"
+                    :color="triageStatus === opt.value ? opt.color : 'neutral'"
+                    :variant="triageStatus === opt.value ? 'solid' : 'outline'"
+                    @click="triageStatus = opt.value"
                   >
-                    Save
+                    {{ opt.label }}
                   </UButton>
+                </div>
+                <div class="flex-1 min-w-0 space-y-1.5">
+                  <UTextarea v-model="triageNote" placeholder="Optional note…" :rows="3" class="text-sm w-full" />
+                  <div class="flex justify-end">
+                    <UButton
+                      v-if="triageChanged"
+                      size="xs"
+                      icon="i-lucide-check"
+                      :loading="triageSaving"
+                      @click="saveTriage"
+                    >
+                      Save
+                    </UButton>
+                  </div>
                 </div>
               </div>
             </div>
+            <UButton
+              v-if="cluster.affectedTestCases?.length"
+              block
+              size="xs"
+              color="warning"
+              variant="outline"
+              icon="i-lucide-arrow-up-from-line"
+              title="Unlink incorrectly clustered test cases from this group"
+              @click="extractModalOpen = true"
+            >
+              Extract
+            </UButton>
           </div>
         </div>
       </div>
@@ -195,5 +217,14 @@ const triageStatusOptions = [
     </div>
 
     <div v-else class="flex items-center justify-center h-64 text-gray-500">Cluster not found.</div>
+
+    <ClusterExtractCasesModal
+      v-if="cluster"
+      :open="extractModalOpen"
+      :cluster-id="clusterId"
+      :affected-test-cases="cluster.affectedTestCases ?? []"
+      @update:open="extractModalOpen = $event"
+      @extracted="onExtracted"
+    />
   </UDashboardPanel>
 </template>

@@ -255,6 +255,7 @@ node scripts/db-query.mjs "SELECT id, name FROM projects" --json
 - Sentence case headings/labels
 - Relative dates via date-fns (full timestamp on hover)
 - Human-readable durations (exact ms on hover)
+- Add `title` attribute on any button/control whose purpose isn't immediately obvious from its label alone. This provides a hover tooltip for clarity.
 
 ## Documentation (keep in sync with code)
 - `docs/` — VitePress site published to GitHub Pages

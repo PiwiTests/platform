@@ -2,7 +2,7 @@
  * Client-side implementations of the /api/failure-clusters* endpoints for demo mode.
  */
 
-import { eq, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import { getDemoDb } from '../db.client';
 import {
   failureClusters,
@@ -134,4 +134,40 @@ export async function apiGetClusterCommitDiff(_id: number) {
  */
 export async function apiGetClusterContext(_id: number) {
   return { context: '', coverage: {} };
+}
+
+/** POST /api/failure-clusters/:id/extract-cases */
+export async function apiExtractClusterCases(id: number, body: { testCaseIds: number[]; triageNote?: string }) {
+  const db = await getDemoDb();
+
+  const [cluster] = await db.select({ id: failureClusters.id }).from(failureClusters).where(eq(failureClusters.id, id));
+  if (!cluster) return null;
+
+  const { testCaseIds, triageNote } = body;
+  if (!testCaseIds || !Array.isArray(testCaseIds) || testCaseIds.length === 0) {
+    return null;
+  }
+
+  await db
+    .update(testRunsCases)
+    .set({ failureClusterId: null })
+    .where(and(eq(testRunsCases.failureClusterId, id), inArray(testRunsCases.testCaseId, testCaseIds)));
+
+  const [countRow] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.failureClusterId, id));
+
+  const remainingOccurrences = Number(countRow?.count ?? 0);
+
+  const updateFields: Record<string, unknown> = {
+    occurrences: remainingOccurrences,
+    updatedAt: new Date(),
+  };
+  if (triageNote !== undefined) {
+    updateFields.triageNote = triageNote;
+  }
+  await db.update(failureClusters).set(updateFields).where(eq(failureClusters.id, id));
+
+  return { success: true, extractedCount: testCaseIds.length, remainingOccurrences };
 }

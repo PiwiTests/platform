@@ -53,6 +53,7 @@ import {
   apiGetClusterCommits,
   apiGetClusterCommitDiff,
   apiGetClusterContext,
+  apiExtractClusterCases,
 } from './failure-clusters';
 import { apiGetAdminStats } from './admin';
 import {
@@ -182,6 +183,11 @@ const routes: RouteEntry[] = [
     handler: (m) => apiGetClusterDiagnosis(+m[1]!),
   },
   { method: 'POST', pattern: /^\/api\/failure-clusters\/(\d+)\/diagnose$/, handler: (m) => apiDiagnoseCluster(+m[1]!) },
+  {
+    method: 'POST',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/extract-cases$/,
+    handler: (m, body) => apiExtractClusterCases(+m[1]!, body as Parameters<typeof apiExtractClusterCases>[1]),
+  },
 
   // AI status and settings
   { method: 'GET', pattern: /^\/api\/ai\/status$/, handler: () => apiGetAiStatus() },
