@@ -50,10 +50,7 @@ async function submitRun(
   return res.json() as Promise<{ testRunId: number; projectId: number }>;
 }
 
-test.describe.serial(
-  'Flaky tests endpoint, @haha',
-  { tag: '@coucou', annotation: { type: 'jira', description: 'he-111' } },
-  () => {
+test.describe.serial( 'Flaky tests endpoint', () => {
     let projectId: number | null = null;
 
     // Build a base time counter so runs have chronological ordering
@@ -184,7 +181,6 @@ test.describe.serial(
     });
 
     test('results are sorted by score descending', async ({ request }) => {
-      test.slow();
       expect(projectId).toBeTruthy();
 
       const res = await request.get(`/api/projects/${projectId}/flaky-tests?runs=50`);
@@ -198,8 +194,7 @@ test.describe.serial(
       }
     });
 
-    test('flaky-tests endpoint returns 404 for unknown project', async ({ request }) => {
-      test.fixme();
+    test('flaky-tests endpoint returns 404 for unknown project', async ({ request }
       const res = await request.get('/api/projects/999999/flaky-tests');
       expect(res.status()).toBe(404);
     });
