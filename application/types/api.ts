@@ -306,6 +306,7 @@ export interface ServerLogEntry {
   level: string;
   category: string;
   message: string;
+  stack?: string;
 }
 
 /**

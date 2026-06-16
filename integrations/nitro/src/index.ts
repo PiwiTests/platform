@@ -5,12 +5,35 @@ import { defineNitroPlugin } from 'nitropack/runtime';
 
 const MAX_ENTRIES = 50;
 const MAX_MSG_LENGTH = 500;
+const MAX_STACK_FRAMES = 5;
 
 export interface PiwiTestLogEntry {
   timestamp: number;
   level: string;
   category: string;
   message: string;
+  stack?: string;
+}
+
+/** Parse and shrink a JS/TS stack trace: skip internal/node_modules frames, keep max 5. */
+function shrinkStack(stack: string): string | undefined {
+  if (!stack) return undefined;
+  const lines = stack.split('\n');
+  const frames: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('at ')) continue; // skip error message line
+    if (trimmed.includes('node:internal') || trimmed.includes('node_modules')) continue;
+    if (frames.length >= MAX_STACK_FRAMES) break;
+    frames.push(trimmed.slice(3).trim());
+  }
+  return frames.length > 0 ? frames.join('\n') : undefined;
+}
+
+/** Extract stack from an unknown error value, shrunk, or undefined. */
+function extractStack(err: unknown): string | undefined {
+  if (err instanceof Error && err.stack) return shrinkStack(err.stack);
+  return undefined;
 }
 
 // ALS is used only by the consola reporter (links log calls to the current request).
@@ -31,11 +54,13 @@ export default defineNitroPlugin((nitroApp) => {
         const store = als.getStore();
         if (!store) return;
         const msg = logObj.args.map(String).join(' ');
+        const stack = logObj.args.map(extractStack).find(Boolean);
         store.push({
           timestamp: Date.now(),
           level: logObj.level <= 0 ? 'Error' : 'Warning',
           category: logObj.tag ?? '',
           message: msg.length > MAX_MSG_LENGTH ? `${msg.slice(0, MAX_MSG_LENGTH)}…` : msg,
+          stack,
         });
       },
     });
@@ -67,6 +92,7 @@ export default defineNitroPlugin((nitroApp) => {
               level: 'Error',
               category: 'server',
               message: msg.length > MAX_MSG_LENGTH ? `${msg.slice(0, MAX_MSG_LENGTH)}…` : msg,
+              stack: extractStack(error),
             });
           }
         }

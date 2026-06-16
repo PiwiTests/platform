@@ -5,5 +5,6 @@ public sealed record PiwiTestLogEntry(
     string Level,
     string Category,
     string Message,
-    string? ExceptionMessage
+    string? ExceptionMessage,
+    string? StackTrace
 );

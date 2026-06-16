@@ -275,14 +275,17 @@ function representativeExecutionSections(
     allServerLogs.sort((a, b) => a.timestamp - b.timestamp);
     const shownServerLogs = allServerLogs.slice(0, limits.serverLogEntries);
     if (shownServerLogs.length > 0) {
-      out.push(
-        `### Backend Server Logs\n${shownServerLogs
-          .map((l) => {
-            const prefix = l.category ? `[${l.level}] [${l.category}] ` : `[${l.level}] `;
-            return prefix + l.message.slice(0, limits.serverLogEntryChars);
-          })
-          .join('\n')}`,
-      );
+      const lines: string[] = [];
+      for (const l of shownServerLogs) {
+        const prefix = l.category ? `[${l.level}] [${l.category}] ` : `[${l.level}] `;
+        lines.push(prefix + l.message.slice(0, limits.serverLogEntryChars));
+        if (l.stack) {
+          for (const frame of l.stack.split('\n')) {
+            lines.push(`  ${frame}`);
+          }
+        }
+      }
+      out.push(`### Backend Server Logs\n${lines.join('\n')}`);
     }
   }
 

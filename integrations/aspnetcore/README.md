@@ -45,13 +45,14 @@ app.Run();
 
 Each captured entry contains:
 
-| Field              | Description                                               |
-|--------------------|-----------------------------------------------------------|
-| `timestamp`        | Unix timestamp in milliseconds                            |
-| `level`            | `"Warning"`, `"Error"`, or `"Critical"`                   |
-| `category`         | Logger category name (e.g. `MyApp.Services.OrderService`) |
-| `message`          | Formatted log message                                     |
-| `exceptionMessage` | Exception message, if one was logged                      |
+| Field              | Description                                                                                          |
+|--------------------|------------------------------------------------------------------------------------------------------|
+| `timestamp`        | Unix timestamp in milliseconds                                                                       |
+| `level`            | `"Warning"`, `"Error"`, or `"Critical"`                                                              |
+| `category`         | Logger category name (e.g. `MyApp.Services.OrderService`)                                            |
+| `message`          | Formatted log message                                                                                |
+| `exceptionMessage` | Exception message, if one was logged                                                                 |
+| `StackTrace`       | Shrunk stack trace (5 frames max, framework frames removed, namespace parts shortened to first letter)|
 
 ## Requirements
 
