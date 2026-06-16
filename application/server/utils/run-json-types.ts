@@ -19,12 +19,20 @@ export interface ConsoleLogEntry {
   location?: string | null;
 }
 
+export interface ServerLogEntry {
+  timestamp: number;
+  level: string;
+  category: string;
+  message: string;
+}
+
 export interface NetworkRequestEntry {
   method: string;
   url: string;
   status: number;
   duration?: number;
   resourceType?: string;
+  serverLogs?: ServerLogEntry[];
 }
 
 export interface WebVitals {

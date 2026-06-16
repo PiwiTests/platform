@@ -231,3 +231,17 @@ export function useClusterDiagnosis(): ClusterDiagnosisStore {
   if (!store) throw new Error('useClusterDiagnosis() must be used under a page that called provideClusterDiagnosis()');
   return store;
 }
+
+/**
+ * Inject the store if provided by an ancestor (e.g. failure-clusters/[id].vue),
+ * otherwise bootstrap a self-contained store using clusterId.
+ * Use this in components that may appear both on the cluster page and standalone
+ * (cards, modals) where no ancestor calls provideClusterDiagnosis().
+ */
+export function useOrProvideClusterDiagnosis(clusterId?: number): ClusterDiagnosisStore {
+  const store = inject(CLUSTER_DIAGNOSIS_KEY, null);
+  if (store) return store;
+  if (clusterId == null)
+    throw new Error('useOrProvideClusterDiagnosis() requires a clusterId when used outside provideClusterDiagnosis()');
+  return provideClusterDiagnosis(clusterId);
+}

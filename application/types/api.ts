@@ -300,6 +300,13 @@ export interface PerformanceStep {
   category: string;
 }
 
+export interface ServerLogEntry {
+  timestamp: number;
+  level: string;
+  category: string;
+  message: string;
+}
+
 /**
  * A single network request recorded during test execution (via dashboard fixture)
  */
@@ -310,6 +317,7 @@ export interface NetworkRequest {
   duration: number;
   resourceType: string;
   startTime?: number;
+  serverLogs?: ServerLogEntry[];
 }
 
 /**

@@ -23,6 +23,10 @@ export interface ContextLimits {
   ariaSnapshotChars: number;
   /** Max characters of the test source snippet. */
   testSourceChars: number;
+  /** Max backend server log entries (from X-Piwi-Logs header) included. */
+  serverLogEntries: number;
+  /** Max characters per backend server log entry. */
+  serverLogEntryChars: number;
 }
 
 export const DEFAULT_CONTEXT_LIMITS: ContextLimits = {
@@ -35,6 +39,8 @@ export const DEFAULT_CONTEXT_LIMITS: ContextLimits = {
   networkRequests: 15,
   ariaSnapshotChars: 4000,
   testSourceChars: 3000,
+  serverLogEntries: 30,
+  serverLogEntryChars: 400,
 };
 
 export interface ContextLimitField {
@@ -120,6 +126,22 @@ export const CONTEXT_LIMIT_FIELDS: ContextLimitField[] = [
     description: 'Max characters of the test source snippet.',
     min: 0,
     max: 50000,
+  },
+  {
+    key: 'serverLogEntries',
+    label: 'Server log entries',
+    envVar: 'PIWI_AI_MAX_SERVER_LOG_ENTRIES',
+    description: 'Max backend server log entries (from X-Piwi-Logs header) included.',
+    min: 0,
+    max: 200,
+  },
+  {
+    key: 'serverLogEntryChars',
+    label: 'Server log entry characters',
+    envVar: 'PIWI_AI_MAX_SERVER_LOG_ENTRY_CHARS',
+    description: 'Max characters per backend server log entry.',
+    min: 50,
+    max: 5000,
   },
 ];
 

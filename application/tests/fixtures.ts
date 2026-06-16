@@ -11,6 +11,7 @@
  * import { test, expect } from './fixtures'
  * ```
  */
+import { gunzipSync } from 'node:zlib';
 import { test as base, expect, type Page, type TestInfo } from '@playwright/test';
 
 type NetworkRequest = {
@@ -20,34 +21,58 @@ type NetworkRequest = {
   duration: number;
   startTime: number;
   resourceType: string;
+  serverLogs?: unknown;
 };
 
 async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
   const networkRequests: NetworkRequest[] = [];
+  const pendingHandlers: Promise<void>[] = [];
 
-  page.on('requestfinished', async (request) => {
-    try {
-      const url = request.url();
-      if (url.startsWith('data:') || url.startsWith('blob:')) return;
+  page.on('requestfinished', (request) => {
+    const p = (async () => {
+      try {
+        const url = request.url();
+        if (url.startsWith('data:') || url.startsWith('blob:')) return;
 
-      const timing = request.timing();
-      const response = await request.response();
-      const duration = timing.responseEnd > 0 ? Math.round(timing.responseEnd - timing.requestStart) : 0;
+        const timing = request.timing();
+        const response = await request.response();
+        const duration = timing.responseEnd > 0 ? Math.round(timing.responseEnd - timing.requestStart) : 0;
 
-      networkRequests.push({
-        method: request.method(),
-        url,
-        status: response ? response.status() : 0,
-        duration,
-        startTime: timing.startTime,
-        resourceType: request.resourceType(),
-      });
-    } catch {
-      // ignore aborted requests
-    }
+        const entry: NetworkRequest = {
+          method: request.method(),
+          url,
+          status: response ? response.status() : 0,
+          duration,
+          startTime: timing.startTime,
+          resourceType: request.resourceType(),
+        };
+
+        if (response) {
+          const logHeader = response.headers()['x-piwi-logs'];
+          if (logHeader) {
+            try {
+              entry.serverLogs = JSON.parse(gunzipSync(Buffer.from(logHeader, 'base64')).toString('utf-8'));
+            } catch {
+              /* ignore malformed header */
+            }
+          }
+        }
+
+        networkRequests.push(entry);
+      } catch {
+        // ignore aborted requests
+      }
+    })();
+    pendingHandlers.push(p);
   });
 
   return async () => {
+    // Wait for all in-flight requestfinished handlers to complete before
+    // snapshotting networkRequests — without this, the last request (often
+    // the one that caused the test to fail) races with fixture teardown and
+    // its entry (including serverLogs) can be missing from the attachment.
+    await Promise.allSettled(pendingHandlers);
+
     if (networkRequests.length > 0) {
       await testInfo.attach('piwi-dashboard-network', {
         contentType: 'application/json',

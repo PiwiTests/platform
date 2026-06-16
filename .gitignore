@@ -43,3 +43,6 @@ docs/plans/
 # Playwright artifacts
 .playwright-cli/
 .playwright-mcp/
+
+# Build artifacts
+obj/
