@@ -23,6 +23,7 @@ export default defineConfig({
       { text: 'Getting started', link: '/getting-started' },
       { text: 'UI overview', link: '/ui-overview' },
       { text: 'Reporter', link: '/reporter' },
+      { text: 'Backend logs', link: '/backend-logs' },
       { text: 'API reference', link: '/api' },
       { text: 'Authentication', link: '/authentication' },
       { text: 'Storage configuration', link: '/storage' },

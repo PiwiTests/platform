@@ -1,0 +1,45 @@
+{
+  "name": "@phenx/piwi-dashboard-nitro",
+  "version": "0.1.0",
+  "description": "Nitro/Nuxt server plugin for sending backend logs to Piwi Dashboard via the X-Piwi-Logs response header",
+  "homepage": "https://phenx.github.io/piwi-dashboard",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PhenX/piwi-dashboard"
+  },
+  "bugs": {
+    "url": "https://github.com/PhenX/piwi-dashboard/issues"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "keywords": [
+    "nitro",
+    "nuxt",
+    "playwright",
+    "piwi-dashboard",
+    "server-logs",
+    "test-results"
+  ],
+  "author": "PhenX",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist/"
+  ],
+  "peerDependencies": {
+    "consola": ">=3.0.0",
+    "h3": ">=1.0.0",
+    "nitropack": ">=2.0.0"
+  }
+}

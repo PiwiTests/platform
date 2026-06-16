@@ -44,6 +44,16 @@ interface GroupedRequest {
   maxDuration: number;
 }
 
+const allServerLogs = computed(() => {
+  const logs: import('~~/types/api').ServerLogEntry[] = [];
+  for (const req of networkRequests.value) {
+    if (Array.isArray(req.serverLogs)) {
+      for (const entry of req.serverLogs) logs.push(entry);
+    }
+  }
+  return logs.sort((a, b) => a.timestamp - b.timestamp);
+});
+
 const groupedNetworkRequests = computed<GroupedRequest[]>(() => {
   const map = new Map<string, { method: string; route: string; durations: number[] }>();
   for (const req of networkRequests.value) {
@@ -121,8 +131,8 @@ const { summaryColSpanClass, blockColSpanClass } = useDetailGrid(() => {
 
 const tabItems = computed(() => [
   { label: `Steps (${steps.value.length})`, icon: 'i-lucide-list-checks', value: 'steps', slot: 'steps' },
-  { label: 'Error & Fix', icon: 'i-lucide-bug', value: 'error', slot: 'error', disabled: !testCase.value?.error },
   { label: 'Traces & Console', icon: 'i-lucide-terminal', value: 'traces', slot: 'traces' },
+  { label: 'Diagnosis', icon: 'i-lucide-bug', value: 'error', slot: 'error', disabled: !testCase.value?.error },
   {
     label: `Performance (${performanceHints.value.length})`,
     icon: 'i-lucide-gauge',
@@ -596,6 +606,34 @@ onUnmounted(disconnectRunStream);
                   </div>
                 </div>
               </SectionCard>
+
+              <SectionCard v-if="allServerLogs.length > 0" icon="i-lucide-server" title="Backend server logs">
+                <div class="space-y-1 max-h-64 overflow-y-auto font-mono text-xs">
+                  <div v-for="(log, i) in allServerLogs" :key="i" class="flex items-start gap-2 py-0.5">
+                    <UBadge
+                      :color="log.level === 'Error' ? 'error' : 'warning'"
+                      variant="soft"
+                      size="xs"
+                      class="shrink-0 capitalize"
+                      >{{ log.level }}</UBadge
+                    >
+                    <span v-if="log.category" class="text-gray-400 shrink-0">[{{ log.category }}]</span>
+                    <span class="break-all text-gray-700 dark:text-gray-300">{{ log.message }}</span>
+                  </div>
+                </div>
+              </SectionCard>
+
+              <p
+                v-else-if="groupedNetworkRequests.length > 0"
+                class="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500"
+              >
+                <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />
+                No backend server logs captured — install
+                <a href="https://phenx.github.io/piwi-dashboard/backend-logs" target="_blank" class="underline"
+                  >a Piwi backend integration</a
+                >
+                to see server-side warnings and errors here.
+              </p>
 
               <div
                 v-if="

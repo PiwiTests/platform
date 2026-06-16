@@ -12,6 +12,7 @@ import type {
   ConsoleLogEntry,
   NetworkRequestEntry,
   RunMetadata,
+  ServerLogEntry,
   TestStepInfo,
   WebVitals,
 } from './run-json-types';
@@ -261,6 +262,28 @@ function representativeExecutionSections(
     out.push(
       `### Failed Network Requests\n${failedReqs.map((r) => `${r.method} ${r.url} → ${r.status}${r.duration != null ? ` (${r.duration}ms)` : ''}`).join('\n')}`,
     );
+  }
+
+  // Backend server logs (aggregated from X-Piwi-Logs headers across all requests)
+  if (limits.serverLogEntries > 0) {
+    const allServerLogs: ServerLogEntry[] = [];
+    for (const req of networkRequests) {
+      if (Array.isArray(req.serverLogs)) {
+        for (const log of req.serverLogs) allServerLogs.push(log as ServerLogEntry);
+      }
+    }
+    allServerLogs.sort((a, b) => a.timestamp - b.timestamp);
+    const shownServerLogs = allServerLogs.slice(0, limits.serverLogEntries);
+    if (shownServerLogs.length > 0) {
+      out.push(
+        `### Backend Server Logs\n${shownServerLogs
+          .map((l) => {
+            const prefix = l.category ? `[${l.level}] [${l.category}] ` : `[${l.level}] `;
+            return prefix + l.message.slice(0, limits.serverLogEntryChars);
+          })
+          .join('\n')}`,
+      );
+    }
   }
 
   // Web vitals

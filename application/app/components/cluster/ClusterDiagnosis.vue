@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import type { FailureDiagnosis } from '~~/server/database/schema';
 import { formatRelativeTime } from '~/utils';
+const props = defineProps<{ clusterId?: number }>();
 
-const { diagnosis, posting, contextText, contextLoading, refreshContext, runDiagnosis } = useClusterDiagnosis();
+// When used inside failure-clusters/[id].vue the store is provided by the page.
+// When used standalone (card, modal) we bootstrap a self-contained store from the prop.
+const { diagnosis, posting, contextText, contextLoading, refreshContext, runDiagnosis } = useOrProvideClusterDiagnosis(
+  props.clusterId,
+);
 const { aiStatus } = useAiStatus();
 const toast = useToast();
 const { copy } = useCopy();

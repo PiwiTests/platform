@@ -1,3 +1,4 @@
+import { gunzipSync } from 'zlib';
 import { test as base } from '@playwright/test';
 
 /**
@@ -11,6 +12,7 @@ export const dashboardFixtures = {
   page: async ({ page }: any, use: any, testInfo: any) => {
     const networkRequests: Array<Record<string, unknown>> = [];
     const consoleEntries: Array<Record<string, unknown>> = [];
+    const pendingHandlers: Promise<void>[] = [];
 
     page.on('console', (msg: any) => {
       const type = msg.type();
@@ -26,26 +28,47 @@ export const dashboardFixtures = {
       }
     });
 
-    page.on('requestfinished', async (request: any) => {
-      try {
-        const url = request.url();
-        if (url.startsWith('data:') || url.startsWith('blob:')) return;
-        const timing = request.timing();
-        const response = await request.response();
-        networkRequests.push({
-          method: request.method(),
-          url,
-          status: response ? response.status() : 0,
-          duration: timing.responseEnd > 0 ? Math.round(timing.responseEnd - timing.requestStart) : 0,
-          startTime: timing.startTime,
-          resourceType: request.resourceType(),
-        });
-      } catch {
-        /* ignore */
-      }
+    page.on('requestfinished', (request: any) => {
+      const p = (async () => {
+        try {
+          const url = request.url();
+          if (url.startsWith('data:') || url.startsWith('blob:')) return;
+          const timing = request.timing();
+          const response = await request.response();
+          const entry: Record<string, unknown> = {
+            method: request.method(),
+            url,
+            status: response ? response.status() : 0,
+            duration: timing.responseEnd > 0 ? Math.round(timing.responseEnd - timing.requestStart) : 0,
+            startTime: timing.startTime,
+            resourceType: request.resourceType(),
+          };
+
+          if (response) {
+            const logHeader = response.headers()['x-piwi-logs'];
+            if (logHeader) {
+              try {
+                entry.serverLogs = JSON.parse(gunzipSync(Buffer.from(logHeader, 'base64')).toString('utf-8'));
+              } catch {
+                /* ignore malformed header */
+              }
+            }
+          }
+
+          networkRequests.push(entry);
+        } catch {
+          /* ignore */
+        }
+      })();
+      pendingHandlers.push(p);
     });
 
     await use(page);
+
+    // Wait for all in-flight requestfinished handlers before snapshotting
+    // networkRequests — the last request (often the one that failed the test)
+    // races with fixture teardown and its serverLogs would otherwise be lost.
+    await Promise.allSettled(pendingHandlers);
 
     if (testInfo.status !== 'passed' && testInfo.status !== 'skipped') {
       try {
