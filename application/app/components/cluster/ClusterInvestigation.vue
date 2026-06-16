@@ -1,25 +1,16 @@
 <script setup lang="ts">
-import type { DiagnosisContextCoverage, ScmChanges } from '~~/types/api';
+const {
+  clusterId,
+  baseCommit,
+  selectedCommitShas,
+  baseCommitIsPinned,
+  coverage,
+  scmChanges,
+  contextLoading,
+  refreshContext,
+} = useClusterDiagnosis();
 
-const props = defineProps<{
-  clusterId: number;
-}>();
-
-const emit = defineEmits<{
-  baseCommitChange: [sha: string];
-  selectedCommitsChange: [shas: string[]];
-}>();
-
-const baseCommit = ref('');
-const savedBaseCommit = ref('');
-const selectedCommitShas = ref<string[]>([]);
-const contextText = ref<string | null>(null);
-const coverage = ref<DiagnosisContextCoverage | null>(null);
-const scmChanges = ref<ScmChanges | null>(null);
-const loadingContext = ref(false);
 const commitBrowserOpen = ref(false);
-
-const baseCommitIsPinned = computed(() => !!savedBaseCommit.value);
 
 const scmStatus = computed(() => {
   const scm = coverage.value?.scm;
@@ -92,85 +83,6 @@ const scmStatus = computed(() => {
     detail: '',
   };
 });
-
-async function fetchContext() {
-  loadingContext.value = true;
-  contextText.value = null;
-  coverage.value = null;
-  scmChanges.value = null;
-  try {
-    const query: Record<string, string | string[]> = {};
-    if (baseCommit.value.trim()) query.baseCommit = baseCommit.value.trim();
-    if (selectedCommitShas.value.length) query.selectedCommitShas = selectedCommitShas.value;
-    const res = await $fetch<{ context: string; coverage: DiagnosisContextCoverage; scmChanges: ScmChanges | null }>(
-      `/api/failure-clusters/${props.clusterId}/context`,
-      { query },
-    );
-    contextText.value = res.context;
-    coverage.value = res.coverage;
-    scmChanges.value = res.scmChanges ?? null;
-  } catch {
-    contextText.value = '(failed to load context)';
-  } finally {
-    loadingContext.value = false;
-  }
-}
-
-async function persistBaseCommit(sha: string) {
-  try {
-    await $fetch(`/api/failure-clusters/${props.clusterId}/base-commit`, {
-      method: 'PATCH',
-      body: { commit: sha || null },
-    });
-    savedBaseCommit.value = sha;
-  } catch {
-    /* ignore — non-critical */
-  }
-}
-
-let baseCommitTimer: ReturnType<typeof setTimeout> | null = null;
-let initializing = true;
-
-watch(baseCommit, (val) => {
-  if (initializing) return;
-  if (baseCommitTimer) clearTimeout(baseCommitTimer);
-  baseCommitTimer = setTimeout(() => {
-    fetchContext();
-  }, 900);
-  if (val !== savedBaseCommit.value) persistBaseCommit(val);
-  emit('baseCommitChange', val);
-});
-
-watch(
-  selectedCommitShas,
-  (val) => {
-    if (initializing) return;
-    fetchContext();
-    emit('selectedCommitsChange', [...val]);
-  },
-  { deep: true },
-);
-
-onMounted(async () => {
-  try {
-    const res = await $fetch<{ diagnosis: unknown; manualBaseCommit: string | null }>(
-      `/api/failure-clusters/${props.clusterId}/diagnosis`,
-    );
-    if (res.manualBaseCommit) {
-      savedBaseCommit.value = res.manualBaseCommit;
-      baseCommit.value = res.manualBaseCommit;
-      emit('baseCommitChange', res.manualBaseCommit);
-    }
-  } catch {
-    /* ignore */
-  }
-  initializing = false;
-  fetchContext();
-});
-
-onUnmounted(() => {
-  if (baseCommitTimer) clearTimeout(baseCommitTimer);
-});
 </script>
 
 <template>
@@ -201,8 +113,8 @@ onUnmounted(() => {
             size="xs"
             color="neutral"
             variant="outline"
-            :loading="loadingContext"
-            @click="fetchContext"
+            :loading="contextLoading"
+            @click="refreshContext"
           />
         </div>
       </div>
@@ -219,13 +131,13 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="loadingContext && !scmChanges" class="flex items-center justify-center py-6">
+    <div v-if="contextLoading && !scmChanges" class="flex items-center justify-center py-6">
       <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin text-gray-400" />
     </div>
 
     <ScmChangesView v-else-if="scmChanges" :changes="scmChanges" />
 
-    <p v-else-if="coverage && !loadingContext && !scmChanges" class="text-xs text-gray-400 text-center py-4">
+    <p v-else-if="coverage && !contextLoading && !scmChanges" class="text-xs text-gray-400 text-center py-4">
       No changes found in this range.
     </p>
   </div>

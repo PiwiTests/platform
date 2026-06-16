@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { AiSettings } from '~~/types/api';
+import { CONTEXT_LIMIT_FIELDS } from '#shared/ai-context-limits';
+import type { ContextLimits, ContextLimitField } from '#shared/ai-context-limits';
 
 const toast = useToast();
 
@@ -36,6 +38,57 @@ const providerOptions = [
   { label: 'Anthropic API', value: 'anthropic' },
   { label: 'OpenAI-compatible', value: 'openai' },
 ];
+
+// ── Diagnosis context limits ────────────────────────────────────────────────
+interface ContextLimitsResponse {
+  limits: ContextLimits;
+  defaults: ContextLimits;
+  envManaged: (keyof ContextLimits)[];
+  fields: ContextLimitField[];
+}
+
+const { data: limitsData } = await useFetch<ContextLimitsResponse>('/api/settings/ai/limits');
+const limitFields = CONTEXT_LIMIT_FIELDS;
+const limitValues = reactive<Record<string, number | undefined>>({});
+const savingLimits = ref(false);
+
+const envManagedLimits = computed(() => new Set<string>(limitsData.value?.envManaged ?? []));
+
+watch(
+  limitsData,
+  (val) => {
+    if (!val) return;
+    for (const f of limitFields) limitValues[f.key] = val.limits[f.key];
+  },
+  { immediate: true },
+);
+
+async function saveLimits() {
+  savingLimits.value = true;
+  try {
+    limitsData.value = await $fetch<ContextLimitsResponse>('/api/settings/ai/limits', {
+      method: 'PUT',
+      body: { limits: limitValues },
+    });
+    toast.add({ title: 'Context limits saved', color: 'success' });
+  } catch (e) {
+    toast.add({
+      title: 'Failed to save context limits',
+      description: String((e as Error)?.message ?? e),
+      color: 'error',
+    });
+  } finally {
+    savingLimits.value = false;
+  }
+}
+
+function resetLimits() {
+  if (!limitsData.value) return;
+  for (const f of limitFields) {
+    if (envManagedLimits.value.has(f.key)) continue;
+    limitValues[f.key] = limitsData.value.defaults[f.key];
+  }
+}
 
 interface OpenAiPreset {
   label: string;
@@ -342,6 +395,48 @@ const envVars = computed(() => {
           <div class="flex justify-end">
             <UButton color="primary" :loading="savingInstructions" icon="i-lucide-save" @click="saveInstructions">
               Save instructions
+            </UButton>
+          </div>
+        </template>
+      </SectionCard>
+
+      <SectionCard title="Diagnosis context limits">
+        <template #subtitle>
+          Caps on how much evidence is packed into each AI diagnosis (and therefore token cost). Leave a field empty to
+          use its default. Fields set via environment variables are read-only.
+        </template>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
+          <UFormField
+            v-for="f in limitFields"
+            :key="f.key"
+            :label="f.label"
+            :description="f.description"
+            :hint="`default ${limitsData?.defaults[f.key] ?? ''}`"
+          >
+            <UInput
+              v-model.number="limitValues[f.key]"
+              type="number"
+              :min="f.min"
+              :max="f.max"
+              :disabled="envManagedLimits.has(f.key)"
+              :placeholder="`default ${limitsData?.defaults[f.key] ?? ''}`"
+              class="w-full"
+            >
+              <template v-if="envManagedLimits.has(f.key)" #trailing>
+                <UTooltip :text="`Set via ${f.envVar}`">
+                  <UIcon name="i-lucide-lock" class="size-3.5 text-gray-400" />
+                </UTooltip>
+              </template>
+            </UInput>
+          </UFormField>
+        </div>
+
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <UButton color="neutral" variant="ghost" size="sm" @click="resetLimits">Reset to defaults</UButton>
+            <UButton color="primary" :loading="savingLimits" icon="i-lucide-save" size="sm" @click="saveLimits">
+              Save limits
             </UButton>
           </div>
         </template>

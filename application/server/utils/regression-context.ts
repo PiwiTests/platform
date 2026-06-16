@@ -1,5 +1,6 @@
 import { eq, and, lt, desc } from 'drizzle-orm';
 import { testRuns, testRunsCases } from '../database/schema';
+import type { RunMetadata } from './run-json-types';
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>;
 
@@ -11,8 +12,7 @@ export interface RunForRegression {
   status: string;
   startTime: Date;
   environment: string | null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  metadata: any;
+  metadata: unknown;
 }
 
 export type RegressionContextResult =
@@ -73,18 +73,16 @@ export function buildCompareUrl(repositoryUrl: string, fromSha: string, toSha: s
   return null;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function getBrowserList(meta: any): string {
-  const projects = meta?.htmlReport?.projects as Array<{ use?: { browserName?: string } }> | undefined;
+export function getBrowserList(meta: RunMetadata | null | undefined): string {
+  const projects = meta?.htmlReport?.projects;
   if (!projects?.length) return '';
   const names = [...new Set(projects.map((p) => p.use?.browserName).filter(Boolean))] as string[];
   return names.join(', ');
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function computeMetadataDiff(
-  prevMeta: any,
-  currMeta: any,
+  prevMeta: RunMetadata | null,
+  currMeta: RunMetadata | null,
   prevEnv: string | null,
   currEnv: string | null,
 ): MetaDiffEntry[] {
@@ -132,10 +130,8 @@ export async function computeRegressionContext(db: DbClient, run: RunForRegressi
   const lastGreen = greenResults[0];
   if (!lastGreen) return { hasGreen: false };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const currMeta = run.metadata as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const greenMeta = lastGreen.metadata as any;
+  const currMeta = run.metadata as RunMetadata | null;
+  const greenMeta = lastGreen.metadata as RunMetadata | null;
   const currentCommit: string | null = currMeta?.scm?.commit ?? null;
   const lastGreenCommit: string | null = greenMeta?.scm?.commit ?? null;
   const remoteUrl: string | null = currMeta?.scm?.remoteUrl ?? greenMeta?.scm?.remoteUrl ?? null;
