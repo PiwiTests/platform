@@ -2,197 +2,48 @@
 import type { FailureDiagnosis } from '~~/server/database/schema';
 import { formatRelativeTime } from '~/utils';
 
-const props = withDefaults(
-  defineProps<{
-    clusterId: number;
-    baseCommit?: string;
-    selectedCommitShas?: string[];
-  }>(),
-  { baseCommit: '', selectedCommitShas: () => [] },
-);
-
+const { diagnosis, posting, contextText, contextLoading, refreshContext, runDiagnosis } = useClusterDiagnosis();
 const { aiStatus } = useAiStatus();
-const toast = useToast();
+const { copy } = useCopy();
 
-const diagnosis = ref<FailureDiagnosis | null>(null);
-const posting = ref(false);
-const pollTimer = ref<ReturnType<typeof setInterval> | null>(null);
+const attachments = useAttachments();
+const {
+  files: attachedFiles,
+  images: attachedImages,
+  dragOver,
+  processFiles,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  removeFile,
+  removeImage,
+} = attachments;
 
 const additionalContext = ref('');
-const attachedFiles = ref<Array<{ name: string; content: string; size: number }>>([]);
-const attachedImages = ref<Array<{ name: string; mediaType: string; data: string; preview: string; size: number }>>([]);
 const fileInputRef = ref<HTMLInputElement | null>(null);
-const dragOver = ref(false);
 
-const MAX_TEXT_BYTES = 200 * 1024;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-
-function formatBytes(n: number) {
-  return n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const part = (reader.result as string).split(',')[1];
-      if (part !== undefined) resolve(part);
-      else reject(new Error('Failed to read file'));
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-async function processFiles(files: FileList | File[]) {
-  for (const file of Array.from(files)) {
-    if (SUPPORTED_IMAGE_TYPES.includes(file.type)) {
-      if (file.size > MAX_IMAGE_BYTES) {
-        toast.add({ title: 'Image too large', description: `${file.name} exceeds 5 MB`, color: 'error' });
-        continue;
-      }
-      const data = await fileToBase64(file);
-      const preview = `data:${file.type};base64,${data}`;
-      attachedImages.value.push({ name: file.name, mediaType: file.type, data, preview, size: file.size });
-    } else {
-      if (file.size > MAX_TEXT_BYTES) {
-        toast.add({ title: 'File too large', description: `${file.name} exceeds 200 KB`, color: 'error' });
-        continue;
-      }
-      const content = await file.text();
-      attachedFiles.value.push({ name: file.name, content, size: file.size });
-    }
-  }
-}
-
-function onDragOver(e: DragEvent) {
-  e.preventDefault();
-  dragOver.value = true;
-}
-
-function onDragLeave(e: DragEvent) {
-  if (!(e.currentTarget as HTMLElement)?.contains(e.relatedTarget as Node)) {
-    dragOver.value = false;
-  }
-}
-
-function onDrop(e: DragEvent) {
-  e.preventDefault();
-  dragOver.value = false;
-  if (e.dataTransfer?.files?.length) processFiles(e.dataTransfer.files);
-}
-
-function removeFile(i: number) {
-  attachedFiles.value.splice(i, 1);
-}
-function removeImage(i: number) {
-  attachedImages.value.splice(i, 1);
+// AI context modal — reads the already-fetched shared context (no extra request).
+const showAiContext = ref(false);
+const aiContextRaw = computed(() => (contextText.value != null ? '```\n' + contextText.value + '\n```' : null));
+function toggleAiContext() {
+  showAiContext.value = !showAiContext.value;
 }
 
 function buildPromptContext() {
   const parts: string[] = [];
   if (additionalContext.value.trim()) parts.push(additionalContext.value.trim());
-  if (attachedFiles.value.length) {
-    const blocks = attachedFiles.value.map((f) => `### ${f.name}\n\`\`\`\n${f.content}\n\`\`\``);
-    parts.push(`## Attached Files\n\n${blocks.join('\n\n')}`);
-  }
+  const filesMd = attachments.filesMarkdown();
+  if (filesMd) parts.push(filesMd);
   return parts.join('\n\n');
 }
 
-function startPoll() {
-  if (pollTimer.value) return;
-  let elapsed = 0;
-  pollTimer.value = setInterval(async () => {
-    elapsed += 3000;
-    await fetchDiagnosis();
-    if (!diagnosis.value || diagnosis.value.status !== 'running' || elapsed >= 120_000) stopPoll();
-  }, 3000);
-}
-
-function stopPoll() {
-  if (pollTimer.value) {
-    clearInterval(pollTimer.value);
-    pollTimer.value = null;
-  }
-}
-
-async function fetchDiagnosis() {
-  try {
-    const res = await $fetch<{ diagnosis: FailureDiagnosis | null; manualBaseCommit: string | null }>(
-      `/api/failure-clusters/${props.clusterId}/diagnosis`,
-    );
-    diagnosis.value = res.diagnosis;
-  } catch {
-    /* ignore */
-  }
-}
-
 async function diagnose(force = false) {
-  posting.value = true;
-  try {
-    const url = force
-      ? `/api/failure-clusters/${props.clusterId}/diagnose?force=true`
-      : `/api/failure-clusters/${props.clusterId}/diagnose`;
-    const ctx = buildPromptContext();
-    const body: Record<string, unknown> = {};
-    if (ctx) body.additionalContext = ctx;
-    if (props.baseCommit.trim()) body.baseCommit = props.baseCommit.trim();
-    if (props.selectedCommitShas.length) body.selectedCommitShas = props.selectedCommitShas;
-    if (attachedImages.value.length) {
-      body.images = attachedImages.value.map((img) => ({ name: img.name, mediaType: img.mediaType, data: img.data }));
-    }
-    diagnosis.value = await $fetch<FailureDiagnosis>(url, {
-      method: 'POST',
-      body: Object.keys(body).length ? body : undefined,
-    });
-    if (diagnosis.value?.status === 'running') startPoll();
-  } catch (err: unknown) {
-    const status = (err as { statusCode?: number })?.statusCode;
-    if (status === 409) startPoll();
-    else toast.add({ title: 'Diagnosis failed', description: String((err as Error)?.message ?? err), color: 'error' });
-  } finally {
-    posting.value = false;
-  }
+  await runDiagnosis({
+    force,
+    additionalContext: buildPromptContext() || undefined,
+    images: attachedImages.value.length ? attachments.imagesPayload() : undefined,
+  });
 }
-
-// AI context modal
-const showAiContext = ref(false);
-const aiContextText = ref<string | null>(null);
-const loadingAiContext = ref(false);
-
-const aiContextRaw = computed(() => (aiContextText.value != null ? '```\n' + aiContextText.value + '\n```' : null));
-
-async function fetchAiContext() {
-  loadingAiContext.value = true;
-  try {
-    const query: Record<string, string | string[]> = {};
-    if (props.baseCommit.trim()) query.baseCommit = props.baseCommit.trim();
-    if (props.selectedCommitShas.length) query.selectedCommitShas = props.selectedCommitShas;
-    const res = await $fetch<{ context: string }>(`/api/failure-clusters/${props.clusterId}/context`, { query });
-    aiContextText.value = res.context;
-  } catch {
-    aiContextText.value = '(failed to load context)';
-  } finally {
-    loadingAiContext.value = false;
-  }
-}
-
-function toggleAiContext() {
-  showAiContext.value = !showAiContext.value;
-  if (showAiContext.value && aiContextText.value === null) fetchAiContext();
-}
-
-onMounted(() => {
-  fetchDiagnosis();
-});
-onUnmounted(() => {
-  stopPoll();
-});
-watch(diagnosis, (val) => {
-  if (val?.status === 'running') startPoll();
-  else stopPoll();
-});
 
 const categoryColors: Record<string, 'error' | 'warning' | 'info' | 'secondary' | 'neutral'> = {
   'app-bug': 'error',
@@ -220,8 +71,6 @@ function formatTokens(i: number | null, o: number | null) {
 function isStale(d: FailureDiagnosis) {
   return d.status === 'running' && Date.now() - new Date(d.updatedAt).getTime() > 5 * 60 * 1000;
 }
-
-const { copy } = useCopy();
 </script>
 
 <template>
@@ -243,7 +92,7 @@ const { copy } = useCopy();
             size="xs"
             color="neutral"
             variant="outline"
-            :loading="loadingAiContext"
+            :loading="contextLoading"
             @click="toggleAiContext"
           >
             {{ showAiContext ? 'Hide context' : 'Show context' }}
@@ -267,7 +116,7 @@ const { copy } = useCopy();
     <UModal
       :open="showAiContext"
       title="Context sent to AI"
-      :ui="{ content: 'max-w-3xl' }"
+      :ui="{ content: 'max-w-5xl' }"
       @update:open="
         (v) => {
           showAiContext = v;
@@ -277,22 +126,25 @@ const { copy } = useCopy();
       <template #header>
         <div class="flex items-center justify-between w-full">
           <span class="font-semibold">Context sent to AI</span>
-          <UButton
-            v-if="aiContextText"
-            icon="i-lucide-refresh-cw"
-            size="xs"
-            color="neutral"
-            variant="ghost"
-            :loading="loadingAiContext"
-            @click="fetchAiContext"
-          />
+          <div class="flex items-center gap-1">
+            <UButton
+              v-if="contextText"
+              icon="i-lucide-refresh-cw"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              :loading="contextLoading"
+              @click="refreshContext"
+            />
+            <UButton icon="i-lucide-x" size="xs" color="neutral" variant="ghost" @click="showAiContext = false" />
+          </div>
         </div>
       </template>
       <template #body>
         <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
           Full prompt that will be sent to the AI provider, including cluster details, SCM diff, and run metadata.
         </p>
-        <MarkdownPreview :text="aiContextRaw" :loading="loadingAiContext" />
+        <MarkdownPreview :text="aiContextRaw" :loading="contextLoading" max-height="70vh" />
       </template>
     </UModal>
 

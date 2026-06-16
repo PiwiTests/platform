@@ -5,6 +5,11 @@ import { formatRelativeTime, renderAnsi } from '~/utils';
 const route = useRoute();
 const clusterId = parseInt(String(route.params.id));
 
+// Provide shared diagnosis/investigation state (consumed by ClusterInvestigation
+// and ClusterDiagnosis). Must run before the top-level await below so provide()
+// and lifecycle hooks register against the active setup instance.
+provideClusterDiagnosis(clusterId);
+
 const { data: cluster, refresh } = await useFetch<FailureClusterDetail>(`/api/failure-clusters/${clusterId}`);
 
 useHead(computed(() => ({ title: `${cluster.value?.signature ?? 'Failure cluster'} — Piwi Dashboard` })));
@@ -51,10 +56,6 @@ const triageStatusOptions = [
   { label: 'Resolved', value: 'resolved', color: 'success' as const },
   { label: 'Ignored', value: 'ignored', color: 'neutral' as const },
 ];
-
-// Shared investigation state — set by ClusterInvestigation, read by ClusterDiagnosis
-const baseCommit = ref('');
-const selectedCommitShas = ref<string[]>([]);
 </script>
 
 <template>
@@ -182,21 +183,13 @@ const selectedCommitShas = ref<string[]>([]);
 
           <!-- SCM investigation: baseline picker + commit diff -->
           <SectionCard icon="i-lucide-git-compare-arrows" title="What changed">
-            <ClusterInvestigation
-              :cluster-id="clusterId"
-              @base-commit-change="baseCommit = $event"
-              @selected-commits-change="selectedCommitShas = $event"
-            />
+            <ClusterInvestigation />
           </SectionCard>
         </div>
 
         <!-- Right: diagnosis -->
         <div>
-          <ClusterDiagnosis
-            :cluster-id="clusterId"
-            :base-commit="baseCommit"
-            :selected-commit-shas="selectedCommitShas"
-          />
+          <ClusterDiagnosis />
         </div>
       </div>
     </div>

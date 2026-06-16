@@ -867,6 +867,47 @@ Returns 400 for invalid provider or missing required fields, 409 if environment-
 
 ---
 
+### GET `/api/settings/ai/limits`
+
+Get the effective AI diagnosis context limits — caps that bound how much evidence (and therefore how many tokens) go into each diagnosis. Resolved as defaults ← stored settings ← environment variables.
+
+::: info
+Requires the **administrator** role when authentication is enabled.
+:::
+
+**Response**
+
+```json
+{
+  "limits": { "sampleErrorChars": 3000, "scmPatchBudget": 4000, "affectedTests": 15, "steps": 30, "consoleEntries": 15, "consoleEntryChars": 400, "networkRequests": 15, "ariaSnapshotChars": 4000, "testSourceChars": 3000 },
+  "defaults": { "sampleErrorChars": 3000, "...": "..." },
+  "envManaged": ["scmPatchBudget"],
+  "fields": [{ "key": "sampleErrorChars", "label": "Error text characters", "envVar": "PIWI_AI_MAX_SAMPLE_ERROR_CHARS", "description": "...", "min": 200, "max": 50000 }]
+}
+```
+
+`envManaged` lists the limit keys pinned by a `PIWI_AI_MAX_*` environment variable (read-only in the UI). `fields` is the metadata used to render the editor.
+
+---
+
+### PUT `/api/settings/ai/limits`
+
+Save context-limit overrides. Each value is clamped to its field's range; an empty/`null` value resets that field to its default; env-managed fields are ignored.
+
+::: info
+Requires the **administrator** role when authentication is enabled.
+:::
+
+**Request body**
+
+```json
+{ "limits": { "scmPatchBudget": 8000, "steps": 50 } }
+```
+
+**Response** — same shape as `GET /api/settings/ai/limits`.
+
+---
+
 ### POST `/api/settings/ai/test`
 
 Test the current AI configuration by making a minimal request to the provider.

@@ -16,3 +16,163 @@
   --color-green-900: #0a5331;
   --color-green-950: #052e16;
 }
+
+/* highlight.js theme (GitHub-style) */
+.hljs {
+  background: transparent;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.hljs-keyword,
+.hljs-literal,
+.hljs-symbol,
+.hljs-name {
+  color: #8250df;
+}
+
+.hljs-string,
+.hljs-meta .hljs-string,
+.hljs-regexp {
+  color: #0a3069;
+}
+
+.hljs-number,
+.hljs-attr,
+.hljs-built_in,
+.hljs-selector-class,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: #0550ae;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: #6e7781;
+  font-style: italic;
+}
+
+.hljs-title,
+.hljs-section {
+  color: #8250df;
+  font-weight: 600;
+}
+
+.hljs-type,
+.hljs-class .hljs-title {
+  color: #0550ae;
+}
+
+.hljs-variable,
+.hljs-template-variable,
+.hljs-params {
+  color: #953800;
+}
+
+.hljs-bullet,
+.hljs-meta {
+  color: #8250df;
+}
+
+.hljs-link {
+  color: #0550ae;
+  text-decoration: underline;
+}
+
+.hljs-property {
+  color: #0550ae;
+}
+
+.hljs-punctuation {
+  color: #1f2328;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: bold;
+}
+
+.hljs-addition {
+  background: #e6ffec;
+  color: #116329;
+}
+
+.hljs-deletion {
+  background: #ffebe9;
+  color: #82071e;
+}
+
+@media (prefers-color-scheme: dark) {
+  .hljs-keyword,
+  .hljs-literal,
+  .hljs-symbol,
+  .hljs-name {
+    color: #d2a8ff;
+  }
+
+  .hljs-string,
+  .hljs-meta .hljs-string,
+  .hljs-regexp {
+    color: #a5d6ff;
+  }
+
+  .hljs-number,
+  .hljs-attr,
+  .hljs-built_in,
+  .hljs-selector-class,
+  .hljs-selector-attr,
+  .hljs-selector-pseudo {
+    color: #79c0ff;
+  }
+
+  .hljs-comment,
+  .hljs-quote {
+    color: #8b949e;
+  }
+
+  .hljs-title,
+  .hljs-section {
+    color: #d2a8ff;
+  }
+
+  .hljs-type,
+  .hljs-class .hljs-title {
+    color: #79c0ff;
+  }
+
+  .hljs-variable,
+  .hljs-template-variable,
+  .hljs-params {
+    color: #db6d28;
+  }
+
+  .hljs-bullet,
+  .hljs-meta {
+    color: #d2a8ff;
+  }
+
+  .hljs-link {
+    color: #79c0ff;
+  }
+
+  .hljs-property {
+    color: #79c0ff;
+  }
+
+  .hljs-punctuation {
+    color: #e6edf3;
+  }
+
+  .hljs-addition {
+    background: #122620;
+    color: #7ee787;
+  }
+
+  .hljs-deletion {
+    background: #25171c;
+    color: #ff7b72;
+  }
+}

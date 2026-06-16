@@ -140,6 +140,7 @@ Configure LLM-based failure analysis:
 - **API key / model / base URL** — provider credentials and model selection; keys are stored in the database (admin-only) or via `PIWI_AI_*` environment variables
 - **Auto-diagnose** — automatically run AI diagnosis on new failure clusters when a run finishes (max 3 per run)
 - **Global analysis instructions** — persistent text appended to the system prompt for every diagnosis across all projects; use this for general preferences, output format requirements, or team conventions (e.g. "always recommend checking retry counts before concluding flakiness")
+- **Diagnosis context limits** — caps on how much evidence is packed into each diagnosis (error text, SCM patch budget, affected tests, steps, console entries, network requests, ARIA snapshot, test source), letting you trade detail against token cost. Leave a field empty to use its default. Any limit can instead be pinned via a `PIWI_AI_MAX_*` environment variable, in which case it takes precedence and shows read-only.
 - **Environment variables** — copy-to-clipboard snippet for `PIWI_AI_*` env vars when credentials should not be stored in the database
 
 ## Failure cluster detail

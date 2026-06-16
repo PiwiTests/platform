@@ -1,7 +1,7 @@
 import { getDatabase } from '../../../database';
 import { failureClusters } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
-import { buildClusterDiagnosisContext } from '../../../utils/ai-diagnosis';
+import { buildClusterDiagnosisContext } from '../../../utils/ai-context';
 
 defineRouteMeta({
   openAPI: {

@@ -21,6 +21,7 @@ hljs.registerLanguage('diff', diff);
 const props = defineProps<{
   text: string | null;
   loading?: boolean;
+  maxHeight?: string;
 }>();
 
 type PreviewLine =
@@ -99,7 +100,11 @@ const lines = computed<PreviewLine[]>(() => (props.text ? parse(props.text) : []
       <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
       <span>Fetching context… (includes SCM diff lookup)</span>
     </div>
-    <div v-else-if="lines.length" class="overflow-auto max-h-[45vh] p-3 text-xs font-mono leading-relaxed">
+    <div
+      v-else-if="lines.length"
+      class="overflow-auto p-3 text-xs font-mono leading-relaxed"
+      :style="{ maxHeight: maxHeight ?? '45vh' }"
+    >
       <template v-for="(line, i) in lines" :key="i">
         <div v-if="line.kind === 'h2'" class="text-sm font-bold text-gray-900 dark:text-white mt-4 mb-0.5 first:mt-0">
           {{ line.text }}
@@ -137,185 +142,3 @@ const lines = computed<PreviewLine[]>(() => (props.text ? parse(props.text) : []
     <div v-else class="p-3 text-xs text-gray-400 italic">No context loaded</div>
   </div>
 </template>
-
-<style scoped>
-:deep(.hljs) {
-  background: transparent;
-  font-size: inherit;
-  line-height: inherit;
-}
-
-:deep(.hljs-keyword),
-:deep(.hljs-literal),
-:deep(.hljs-symbol),
-:deep(.hljs-name) {
-  color: #8250df;
-}
-
-:deep(.hljs-string),
-:deep(.hljs-meta .hljs-string),
-:deep(.hljs-regexp),
-:deep(.hljs-addition) {
-  color: #0a3069;
-}
-
-:deep(.hljs-number),
-:deep(.hljs-attr),
-:deep(.hljs-built_in),
-:deep(.hljs-selector-class),
-:deep(.hljs-selector-attr),
-:deep(.hljs-selector-pseudo) {
-  color: #0550ae;
-}
-
-:deep(.hljs-comment),
-:deep(.hljs-quote) {
-  color: #6e7781;
-  font-style: italic;
-}
-
-:deep(.hljs-title),
-:deep(.hljs-section) {
-  color: #8250df;
-  font-weight: 600;
-}
-
-:deep(.hljs-type),
-:deep(.hljs-class .hljs-title) {
-  color: #0550ae;
-}
-
-:deep(.hljs-variable),
-:deep(.hljs-template-variable) {
-  color: #953800;
-}
-
-:deep(.hljs-bullet),
-:deep(.hljs-meta) {
-  color: #8250df;
-}
-
-:deep(.hljs-link) {
-  color: #0550ae;
-  text-decoration: underline;
-}
-
-:deep(.hljs-emphasis) {
-  font-style: italic;
-}
-
-:deep(.hljs-strong) {
-  font-weight: bold;
-}
-
-:deep(.hljs-deletion) {
-  color: #cf222e;
-}
-
-:deep(.hljs-params) {
-  color: #953800;
-}
-
-:deep(.hljs-property) {
-  color: #0550ae;
-}
-
-:deep(.hljs-punctuation) {
-  color: #1f2328;
-}
-
-/* diff */
-:deep(.hljs-addition) {
-  background: #e6ffec;
-  color: #116329;
-  display: block;
-}
-
-:deep(.hljs-deletion) {
-  background: #ffebe9;
-  color: #82071e;
-  display: block;
-}
-
-@media (prefers-color-scheme: dark) {
-  :deep(.hljs-keyword),
-  :deep(.hljs-literal),
-  :deep(.hljs-symbol),
-  :deep(.hljs-name) {
-    color: #d2a8ff;
-  }
-
-  :deep(.hljs-string),
-  :deep(.hljs-meta .hljs-string),
-  :deep(.hljs-regexp),
-  :deep(.hljs-addition) {
-    color: #a5d6ff;
-  }
-
-  :deep(.hljs-number),
-  :deep(.hljs-attr),
-  :deep(.hljs-built_in),
-  :deep(.hljs-selector-class),
-  :deep(.hljs-selector-attr),
-  :deep(.hljs-selector-pseudo) {
-    color: #79c0ff;
-  }
-
-  :deep(.hljs-comment),
-  :deep(.hljs-quote) {
-    color: #8b949e;
-  }
-
-  :deep(.hljs-title),
-  :deep(.hljs-section) {
-    color: #d2a8ff;
-  }
-
-  :deep(.hljs-type),
-  :deep(.hljs-class .hljs-title) {
-    color: #79c0ff;
-  }
-
-  :deep(.hljs-variable),
-  :deep(.hljs-template-variable) {
-    color: #db6d28;
-  }
-
-  :deep(.hljs-bullet),
-  :deep(.hljs-meta) {
-    color: #d2a8ff;
-  }
-
-  :deep(.hljs-link) {
-    color: #79c0ff;
-  }
-
-  :deep(.hljs-deletion) {
-    color: #ff7b72;
-  }
-
-  :deep(.hljs-params) {
-    color: #db6d28;
-  }
-
-  :deep(.hljs-property) {
-    color: #79c0ff;
-  }
-
-  :deep(.hljs-punctuation) {
-    color: #e6edf3;
-  }
-
-  :deep(.hljs-addition) {
-    background: #122620;
-    color: #7ee787;
-    display: block;
-  }
-
-  :deep(.hljs-deletion) {
-    background: #25171c;
-    color: #ff7b72;
-    display: block;
-  }
-}
-</style>
