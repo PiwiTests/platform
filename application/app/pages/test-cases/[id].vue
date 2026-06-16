@@ -131,8 +131,8 @@ const { summaryColSpanClass, blockColSpanClass } = useDetailGrid(() => {
 
 const tabItems = computed(() => [
   { label: `Steps (${steps.value.length})`, icon: 'i-lucide-list-checks', value: 'steps', slot: 'steps' },
-  { label: 'Error & Fix', icon: 'i-lucide-bug', value: 'error', slot: 'error', disabled: !testCase.value?.error },
   { label: 'Traces & Console', icon: 'i-lucide-terminal', value: 'traces', slot: 'traces' },
+  { label: 'Diagnosis', icon: 'i-lucide-bug', value: 'error', slot: 'error', disabled: !testCase.value?.error },
   {
     label: `Performance (${performanceHints.value.length})`,
     icon: 'i-lucide-gauge',
