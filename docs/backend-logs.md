@@ -90,6 +90,7 @@ Each entry in the `X-Piwi-Logs` array has this shape:
 | `level` | `string` | `"Warning"`, `"Error"`, or `"Critical"` |
 | `category` | `string` | Logger category or tag (e.g. `MyApp.Services.OrderService`) |
 | `message` | `string` | Log message (truncated at 500 characters) |
+| `stack` | `string` | Optional. Shrunk stack trace — framework/internal frames removed, namespace parts shortened to first lowercase letter, max 5 frames |
 
 The ASP.NET Core integration additionally captures `exceptionMessage` when an exception was logged.
 
