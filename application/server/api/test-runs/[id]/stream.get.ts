@@ -84,6 +84,7 @@ export default eventHandler(async (event) => {
             status: testRunsCases.status,
             duration: testRunsCases.duration,
             filePath: testCases.filePath,
+            suitePath: testCases.suitePath,
             line: testRunsCases.line,
             column: testRunsCases.column,
             workerIndex: testRunsCases.workerIndex,
@@ -95,10 +96,13 @@ export default eventHandler(async (event) => {
 
         for (const tc of existingCases) {
           const location = tc.line && tc.column ? `${tc.filePath}:${tc.line}:${tc.column}` : tc.filePath;
+          const suitePath = tc.suitePath ? tc.suitePath.split('\x1f') : null;
           const caseEvent = {
             type: 'test-completed',
             data: {
               title: tc.title,
+              filePath: tc.filePath,
+              suitePath,
               status: tc.status,
               duration: tc.duration,
               location,

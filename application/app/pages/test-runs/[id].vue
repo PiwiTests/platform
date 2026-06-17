@@ -78,6 +78,8 @@ function flushPendingEvents() {
     } else if (parsed.type === 'test-begin') {
       const d = data as {
         title: string;
+        filePath?: string;
+        suitePath?: string[] | null;
         location: string;
         workerIndex?: number;
         startedAt?: number;
@@ -91,6 +93,8 @@ function flushPendingEvents() {
           {
             id: liveTestCases.value.length + 1,
             title: d.title,
+            filePath: d.filePath,
+            suitePath: d.suitePath ?? undefined,
             status: 'running',
             location: d.location,
             workerIndex: d.workerIndex ?? null,
@@ -103,6 +107,8 @@ function flushPendingEvents() {
     } else if (parsed.type === 'test-completed') {
       const d = data as {
         title: string;
+        filePath?: string;
+        suitePath?: string[] | null;
         location: string;
         status: string;
         duration?: number;
@@ -121,6 +127,8 @@ function flushPendingEvents() {
           const copy = [...liveTestCases.value];
           copy[idx] = {
             ...existing,
+            filePath: d.filePath ?? existing.filePath,
+            suitePath: d.suitePath ?? existing.suitePath,
             status: d.status,
             duration: d.duration,
             error: d.error,
@@ -138,6 +146,8 @@ function flushPendingEvents() {
           {
             id: liveTestCases.value.length + 1,
             title: d.title,
+            filePath: d.filePath,
+            suitePath: d.suitePath ?? undefined,
             status: d.status,
             duration: d.duration,
             location: d.location,

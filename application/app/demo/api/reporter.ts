@@ -377,10 +377,16 @@ export async function apiPostRunEvents(
   const completeEvents = validEvents.filter((tc) => tc.type !== 'begin');
 
   for (const tc of beginEvents) {
+    const loc = tc.location
+      ? parseLocation(tc.location)
+      : { filePath: 'unknown', line: null, column: null };
+    const filePath = loc.filePath;
     publishDemoRunEvent(id, {
       type: 'test-begin',
       data: {
         title: tc.title,
+        filePath,
+        suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
         location: tc.location,
         workerIndex: tc.workerIndex ?? null,
         startedAt: tc.startedAt ?? null,
@@ -451,6 +457,8 @@ export async function apiPostRunEvents(
       type: 'test-completed',
       data: {
         title: tc.title,
+        filePath: tc.filePath,
+        suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
         status: tc.status,
         duration: tc.duration,
         location: tc.location,
