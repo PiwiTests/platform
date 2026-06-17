@@ -377,9 +377,7 @@ export async function apiPostRunEvents(
   const completeEvents = validEvents.filter((tc) => tc.type !== 'begin');
 
   for (const tc of beginEvents) {
-    const loc = tc.location
-      ? parseLocation(tc.location)
-      : { filePath: 'unknown', line: null, column: null };
+    const loc = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null };
     const filePath = loc.filePath;
     publishDemoRunEvent(id, {
       type: 'test-begin',

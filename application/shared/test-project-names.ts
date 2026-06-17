@@ -72,6 +72,7 @@ export const PROJECT = {
   REVOKED_KEY: 'revoked-key-test',
   RUN_COMPARE: 'run-compare',
   STATS_TEST: 'stats-test-project',
+  SUMMARY_FOLD: 'summary-fold-test',
   STORAGE_TEST: 'storage-test-project',
   STREAMING_DURATION: 'streaming-duration-test',
   STREAMING_FLAKY: 'streaming-flaky-test',

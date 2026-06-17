@@ -30,7 +30,10 @@ const storageStats = computed(() => props.testRun?.storageStats);
         </div>
         <div class="flex items-center gap-3 shrink-0 max-sm:hidden">
           <span class="text-xs text-gray-500 tabular-nums whitespace-nowrap">
-            T: <strong class="text-gray-700 dark:text-gray-300">{{ displayProgress?.totalTests ?? testRun?.totalTests ?? 0 }}</strong>
+            T:
+            <strong class="text-gray-700 dark:text-gray-300">{{
+              displayProgress?.totalTests ?? testRun?.totalTests ?? 0
+            }}</strong>
           </span>
           <span class="text-xs text-green-600 dark:text-green-400 tabular-nums whitespace-nowrap">
             P: <strong>{{ displayProgress?.passedTests ?? testRun?.passedTests ?? 0 }}</strong>
@@ -48,7 +51,9 @@ const storageStats = computed(() => props.testRun?.storageStats);
             :flaky="testRun?.flakyTests ?? 0"
             :total="displayProgress?.totalTests ?? testRun?.totalTests ?? 0"
           />
-          <span class="text-xs text-gray-400 tabular-nums whitespace-nowrap">{{ formatDuration(testRun?.duration) }}</span>
+          <span class="text-xs text-gray-400 tabular-nums whitespace-nowrap">{{
+            formatDuration(testRun?.duration)
+          }}</span>
         </div>
       </div>
     </template>
@@ -214,7 +219,9 @@ const storageStats = computed(() => props.testRun?.storageStats);
             >
               {{ report.label }}
             </UButton>
-            <span class="font-medium tabular-nums text-gray-600 dark:text-gray-400">{{ formatBytes(report.size) }}</span>
+            <span class="font-medium tabular-nums text-gray-600 dark:text-gray-400">{{
+              formatBytes(report.size)
+            }}</span>
           </div>
           <div v-if="storageStats.testCaseFilesCount > 0" class="flex items-center justify-between">
             <span>Test files ({{ storageStats.testCaseFilesCount }})</span>

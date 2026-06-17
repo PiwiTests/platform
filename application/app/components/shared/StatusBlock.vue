@@ -25,20 +25,20 @@ function isSpinning(status: string): boolean {
         {
           'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400': status === 'passed',
           'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400': status === 'failed' || status === 'timedout',
-          'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400': status === 'cancelled' || status === 'skipped',
+          'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400':
+            status === 'cancelled' || status === 'skipped',
           'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400':
             status === 'running' || status === 'initialising' || status === 'finalizing',
         },
       ]"
     >
-      <UIcon :name="iconName(status)" :class="[size === 'sm' ? 'size-3.5' : 'size-4.5', { 'animate-spin': isSpinning(status) }]" />
+      <UIcon
+        :name="iconName(status)"
+        :class="[size === 'sm' ? 'size-3.5' : 'size-4.5', { 'animate-spin': isSpinning(status) }]"
+      />
     </div>
     <UBadge :color="getStatusColor(status)" class="capitalize gap-1 items-center">
-      <UIcon
-        v-if="isSpinning(status)"
-        name="i-lucide-loader-circle"
-        class="size-3 animate-spin shrink-0"
-      />
+      <UIcon v-if="isSpinning(status)" name="i-lucide-loader-circle" class="size-3 animate-spin shrink-0" />
       {{ status }}
     </UBadge>
   </div>

@@ -97,9 +97,7 @@ export default eventHandler(async (event) => {
 
   // --- Handle begin events (test started, no DB persistence needed) ---
   for (const tc of beginEvents) {
-    const loc = tc.location
-      ? parseLocation(tc.location)
-      : { filePath: 'unknown', line: null, column: null };
+    const loc = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null };
     const filePath = loc.filePath;
     runEventBus.publish(id, {
       type: 'test-begin',

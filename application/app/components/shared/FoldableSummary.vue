@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { useFoldableSummary } from '~/composables/useFoldableSummary'
+import { useFoldableSummary } from '~/composables/useFoldableSummary';
 
 const props = defineProps<{
-  storageKey: string
-}>()
+  storageKey: string;
+}>();
 
-const { folded, toggle } = useFoldableSummary(props.storageKey)
+const { folded, toggle } = useFoldableSummary(props.storageKey);
 </script>
 
 <template>

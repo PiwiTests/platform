@@ -1,30 +1,35 @@
-const STORAGE_PREFIX = 'piwi:summary-fold:'
-
 export function useFoldableSummary(key: string) {
-  const storageKey = `${STORAGE_PREFIX}${key}`
-  const folded = ref<boolean>(true)
+  const cookieKey = `piwi-summary-fold-${key}`;
+  const folded = ref(false);
 
-  if (import.meta.client) {
+  if (import.meta.server) {
     try {
-      const stored = localStorage.getItem(storageKey)
-      if (stored !== null) {
-        folded.value = stored === 'true'
+      const headers = useRequestHeaders(['cookie']);
+      const cookieStr = headers.cookie || '';
+      const match = cookieStr.match(new RegExp(`(?:^|;\\s*)${cookieKey}=([^;]*)`));
+      if (match) {
+        folded.value = match[1] === 'true';
       }
     } catch {
-      // localStorage not available
+      // headers not available
+    }
+  } else {
+    try {
+      const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${cookieKey}=([^;]*)`));
+      if (match) {
+        folded.value = match[1] === 'true';
+      }
+    } catch {
+      // document not available
     }
   }
 
   function toggle() {
-    folded.value = !folded.value
+    folded.value = !folded.value;
     if (import.meta.client) {
-      try {
-        localStorage.setItem(storageKey, String(folded.value))
-      } catch {
-        // ignore
-      }
+      document.cookie = `${cookieKey}=${folded.value}; path=/; max-age=31536000; sameSite=lax`;
     }
   }
 
-  return { folded, toggle }
+  return { folded, toggle };
 }
