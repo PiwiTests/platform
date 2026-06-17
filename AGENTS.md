@@ -136,6 +136,8 @@ Nuxt file-based routing:
 - Full TypeScript, Nuxt 4 conventions, Nuxt UI components
 - Sentence case in UI (e.g., "Test runs"), relative dates with date-fns, human-readable durations
 - Use American English spelling throughout (e.g., "initialize", "organize", "color")
+- **Extract shared Vue components** when the same block of template exceeds ~10 lines and appears more than once — avoid duplicating markup with identical logic across components
+- **Capture global change requests**: when I ask you to apply a change across multiple files (e.g., "update all X to Y"), add a new instruction rule to `AGENTS.md` documenting that pattern so future edits follow the same convention
 
 ## Environment
 - `.env.example` in `application/` — `PIWI_SITE_URL` (optional)
