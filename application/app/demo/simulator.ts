@@ -564,6 +564,7 @@ export async function runSimulation(
       startTime: startTime.toISOString(),
       environment: scenario.environment,
       instanceId: DEMO_SIMULATOR_INSTANCE_ID,
+      playwrightVersion: '1.51.0',
     },
   });
   const runId = setup.runId;
@@ -575,7 +576,7 @@ export async function runSimulation(
   const metadata = scenario.metadata();
   const begin = await $fetch<{ streamToken: string }>(`/api/test-runs/${runId}/begin`, {
     method: 'POST',
-    body: { setupToken: setup.setupToken, totalTests: tests.length, metadata },
+    body: { setupToken: setup.setupToken, totalTests: tests.length, metadata, playwrightVersion: '1.51.0' },
   });
   const streamToken = begin.streamToken;
 
@@ -689,6 +690,7 @@ export async function runSimulation(
       flakyTests: flakyCount,
       durations,
       metadata,
+      playwrightVersion: '1.51.0',
     },
   });
 

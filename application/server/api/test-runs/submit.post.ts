@@ -90,6 +90,7 @@ export default eventHandler(async (event) => {
       environment: body.environment || null,
       metadata: sanitizeMetadata(body.metadata || null),
       instanceId: body.instanceId || null,
+      playwrightVersion: body.playwrightVersion || null,
     })
     .returning();
 

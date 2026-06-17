@@ -45,6 +45,7 @@ export const testRuns = sqliteTable(
     metadata: text('metadata', { mode: 'json' }), // Additional metadata as JSON
     streamToken: text('stream_token'), // Token for authenticating streaming updates
     instanceId: text('instance_id'), // Unique identifier for the reporter instance that created this run
+    playwrightVersion: text('playwright_version'), // Playwright framework version used for this run
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),

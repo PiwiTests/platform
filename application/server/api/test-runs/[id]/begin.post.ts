@@ -97,6 +97,7 @@ export default eventHandler(async (event) => {
       streamToken,
       totalTests: body.totalTests || 0,
       metadata: sanitizeMetadata(body.metadata || testRun.metadata),
+      playwrightVersion: body.playwrightVersion || testRun.playwrightVersion,
     })
     .where(eq(testRuns.id, id));
 

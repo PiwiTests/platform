@@ -95,6 +95,7 @@ export default eventHandler(async (event) => {
       environment: body.environment || null,
       metadata: null,
       instanceId,
+      playwrightVersion: body.playwrightVersion || null,
       streamToken: setupToken,
     })
     .returning();

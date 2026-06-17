@@ -269,6 +269,7 @@ When the `User` type from DB has `role: string`, cast to `Role`: `user.role as R
   - Use `PROJECT.YOUR_KEY` from `../shared/test-project-names` in test code instead of raw string literals. This ensures every project name is tracked in one place.
 - **Reporter**: Edit `.ts` files in `reporter/src/` → `npm run reporter:build` (from `reporter/`) → test with `npm link`
 - **Shared types** (`application/shared/types.ts`): Wire contract between reporter and server. Server imports directly; reporter uses structural typing (do NOT add `import type` from shared in reporter method signatures — it leaks the monorepo path into published `.d.ts` files)
+- **Adding a field to test run data**: Add to `shared/types.ts` payload(s) → add column to both `schema.sqlite.ts` and `schema.pg.ts` → `npm run db:generate && npm run db:generate:pg` → update all API handlers (`submit`, `start`, `setup`, `begin`, `finish`, `upload`) → update reporter (`reporter.ts`, `uploader.ts`, `stream-manager.ts`) → update demo (`generate-demo-seed.mjs`, `demo/api/reporter.ts`, `demo/api/test-runs.ts`, `demo/simulator.ts`) → `npm run app:seed:demo`
 
 ## UI Patterns
 

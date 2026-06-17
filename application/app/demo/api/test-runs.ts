@@ -370,6 +370,7 @@ export async function apiGetRecentTestRuns() {
       duration: testRuns.duration,
       avgTestDuration: testRuns.avgTestDuration,
       p90TestDuration: testRuns.p90TestDuration,
+      playwrightVersion: testRuns.playwrightVersion,
     })
     .from(testRuns)
     .innerJoin(projects, eq(testRuns.projectId, projects.id))
