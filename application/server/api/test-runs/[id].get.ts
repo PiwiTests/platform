@@ -1,7 +1,7 @@
 import { getDatabase } from '../../database';
 import { testRuns, testCases, testRunsCases, testSuites, projects, files } from '../../database/schema';
 import { eq, sql, inArray, and } from 'drizzle-orm';
-import { splitSuitePath } from '../../utils/persist-run-cases';
+import { fetchAndFormatSuites } from '../../../shared/utils/suites';
 
 defineRouteMeta({
   openAPI: {
@@ -97,27 +97,15 @@ export default eventHandler(async (event) => {
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.testRunId, id));
 
-  // Fetch suite config for all files covered by this run
-  const filePaths = [...new Set(runsCases.map((tc) => tc.filePath))];
-  const suiteRows =
-    filePaths.length > 0
-      ? await db
-          .select({
-            filePath: testSuites.filePath,
-            suitePath: testSuites.suitePath,
-            mode: testSuites.mode,
-            annotations: testSuites.annotations,
-          })
-          .from(testSuites)
-          .where(and(eq(testSuites.projectId, testRun.projectId), inArray(testSuites.filePath, filePaths)))
-      : [];
-
-  const suites = suiteRows.map((s) => ({
-    filePath: s.filePath,
-    suitePath: splitSuitePath(s.suitePath),
-    mode: s.mode,
-    annotations: (s.annotations as any) ?? [],
-  }));
+  const suites = await fetchAndFormatSuites(
+    db,
+    testSuites,
+    testRun.projectId,
+    [...new Set(runsCases.map((tc) => tc.filePath))],
+    eq,
+    and,
+    inArray,
+  );
 
   // Format test cases to match the expected structure
   const formattedTestCases = runsCases.map((tc) => ({

@@ -207,6 +207,59 @@ const P4_CASES = [
   ['tests/mobile/media.spec.ts', 'Images load with correct dimensions'],
 ];
 
+// Suite definitions per project per file — mirrors describe blocks in test specs
+const SUITE_DEFS = {
+  1: {
+    'tests/checkout/checkout.spec.ts': { suitePath: ['Checkout'], mode: 'parallel', annotations: [] },
+    'tests/checkout/cart.spec.ts': { suitePath: ['Cart'], mode: 'default', annotations: [] },
+    'tests/checkout/address.spec.ts': { suitePath: ['Address'], mode: 'default', annotations: [] },
+  },
+  2: {
+    'tests/api/auth.spec.ts': { suitePath: ['Auth'], mode: 'default', annotations: [] },
+    'tests/api/products.spec.ts': { suitePath: ['Products'], mode: 'default', annotations: [] },
+    'tests/api/orders.spec.ts': { suitePath: ['Orders'], mode: 'default', annotations: [] },
+    'tests/api/search.spec.ts': { suitePath: ['Search'], mode: 'default', annotations: [] },
+    'tests/api/users.spec.ts': { suitePath: ['Users'], mode: 'default', annotations: [] },
+  },
+  3: {
+    'tests/ui/button.spec.ts': { suitePath: ['Button'], mode: 'parallel', annotations: [{ type: 'smoke' }] },
+    'tests/ui/modal.spec.ts': { suitePath: ['Modal'], mode: 'serial', annotations: [] },
+    'tests/ui/form.spec.ts': { suitePath: ['Form'], mode: 'default', annotations: [] },
+    'tests/ui/table.spec.ts': { suitePath: ['Table'], mode: 'default', annotations: [] },
+  },
+  4: {
+    'tests/mobile/navigation.spec.ts': { suitePath: ['Navigation'], mode: 'default', annotations: [] },
+    'tests/mobile/gestures.spec.ts': { suitePath: ['Gestures'], mode: 'default', annotations: [] },
+    'tests/mobile/forms.spec.ts': { suitePath: ['Forms'], mode: 'default', annotations: [] },
+    'tests/mobile/media.spec.ts': { suitePath: ['Media'], mode: 'default', annotations: [] },
+  },
+};
+
+// Generate test_suites rows: one row per (project, filePath, suitePath)
+const TEST_SUITES = [];
+let tsId = 1;
+const suiteLookup = {}; // projectId → filePath → suiteId
+const suiteNow = ts('2025-03-01');
+
+for (const [pid, fileDefs] of Object.entries(SUITE_DEFS)) {
+  suiteLookup[pid] = {};
+  for (const [fp, def] of Object.entries(fileDefs)) {
+    const suitePathStr = def.suitePath.join('\x1f');
+    suiteLookup[pid][fp] = tsId;
+    TEST_SUITES.push({
+      id: tsId,
+      project_id: +pid,
+      file_path: fp,
+      suite_path: suitePathStr,
+      mode: def.mode,
+      annotations: JSON.stringify(def.annotations),
+      created_at: suiteNow,
+      updated_at: suiteNow,
+    });
+    tsId++;
+  }
+}
+
 const ALL_CASE_DEFS = [
   [1, P1_CASES],
   [2, P2_CASES],
@@ -219,7 +272,18 @@ for (const [pid, cases] of ALL_CASE_DEFS) {
   caseIdsByProject[pid] = [];
   const now = ts('2025-03-01');
   for (const [fp, title] of cases) {
-    TEST_CASES.push({ id: tcId, project_id: pid, file_path: fp, title, created_at: now, updated_at: now });
+    const suiteId = suiteLookup[pid]?.[fp] ?? null;
+    const suitePathStr = SUITE_DEFS[pid]?.[fp]?.suitePath.join('\x1f') ?? '';
+    TEST_CASES.push({
+      id: tcId,
+      project_id: pid,
+      file_path: fp,
+      suite_path: suitePathStr,
+      suite_id: suiteId,
+      title,
+      created_at: now,
+      updated_at: now,
+    });
     caseIdsByProject[pid].push(tcId);
     tcId++;
   }
@@ -336,15 +400,46 @@ const STEPS_TEMPLATES = [
   ],
 ];
 
+const SERVER_LOGS_OK = [
+  { timestamp: 1714000000000, level: 'info', category: 'http', message: 'GET /products — 200 OK (85ms)' },
+  { timestamp: 1714000000050, level: 'debug', category: 'cache', message: 'cache HIT for key products:featured' },
+];
+
+const SERVER_LOGS_ERROR = [
+  {
+    timestamp: 1714000000000,
+    level: 'error',
+    category: 'http',
+    message: 'POST /orders — 500 Internal Server Error',
+    stack:
+      'Error: connection pool exhausted\n    at Query.execute (db/query.ts:42)\n    at POST /orders (routes/orders.ts:18)',
+  },
+  { timestamp: 1714000000010, level: 'warn', category: 'database', message: 'Connection pool at 95% capacity' },
+];
+
 const NETWORK_TEMPLATES = [
   [
-    { method: 'GET', url: 'https://api.example.com/products', status: 200, duration: 85, resourceType: 'fetch' },
+    {
+      method: 'GET',
+      url: 'https://api.example.com/products',
+      status: 200,
+      duration: 85,
+      resourceType: 'fetch',
+      serverLogs: SERVER_LOGS_OK,
+    },
     { method: 'POST', url: 'https://api.example.com/orders', status: 201, duration: 145, resourceType: 'fetch' },
     { method: 'GET', url: 'https://api.example.com/users/123', status: 200, duration: 62, resourceType: 'fetch' },
   ],
   [
     { method: 'GET', url: 'https://api.example.com/auth/me', status: 200, duration: 45, resourceType: 'fetch' },
-    { method: 'GET', url: 'https://api.example.com/products/42', status: 200, duration: 72, resourceType: 'fetch' },
+    {
+      method: 'GET',
+      url: 'https://api.example.com/products/42',
+      status: 200,
+      duration: 72,
+      resourceType: 'fetch',
+      serverLogs: SERVER_LOGS_OK,
+    },
     { method: 'POST', url: 'https://api.example.com/cart/items', status: 200, duration: 110, resourceType: 'fetch' },
   ],
 ];
@@ -533,6 +628,21 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
       const browserConfigs = BROWSER_CONFIGS[projectId] || BROWSER_CONFIGS[1];
       const browser = browserConfigs[projectId === 1 ? i % browserConfigs.length : 0];
 
+      // Add backend server logs to some network requests for realism
+      const netWithLogs = isFailedCase
+        ? netTemplate.map((req, ri) => (ri === 0 ? { ...req, serverLogs: SERVER_LOGS_ERROR } : req))
+        : netTemplate;
+
+      // Assign test annotations — some tests have @fixme, some @slow
+      let testAnnotations = null;
+      if (isFailedCase && clusterId) {
+        testAnnotations = [{ type: 'fixme', description: 'Known issue — see cluster ' + clusterId }];
+      } else if (j % 5 === 4) {
+        testAnnotations = [{ type: 'slow' }];
+      } else if (j === 2 && pid === '1') {
+        testAnnotations = [{ type: 'smoke' }];
+      }
+
       const trc = {
         id: trcId++,
         test_run_id: runId,
@@ -545,10 +655,11 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
         line: 10 + j * 8,
         column: 5,
         browser,
+        test_annotations: testAnnotations,
         steps,
         slowest_step: slowestStep.title,
         slowest_step_duration: slowestStep.duration,
-        network_requests: netTemplate,
+        network_requests: netWithLogs,
         web_vitals: {
           navigation: {
             url: 'https://app.example.com/',
@@ -979,6 +1090,9 @@ const lines = [
   '-- Project-tag associations',
   insert('project_tags', PROJECT_TAGS),
   '',
+  '-- Test suites',
+  insert('test_suites', TEST_SUITES),
+  '',
   '-- Test cases',
   insert('test_cases', TEST_CASES),
   '',
@@ -1023,6 +1137,7 @@ console.log(`✅  Version file written to ${VERSION_OUTPUT}`);
 console.log(`   Hash       : ${hash}`);
 console.log(`   Projects   : ${PROJECTS.length}`);
 console.log(`   Tags       : ${TAGS.length}`);
+console.log(`   Suites     : ${TEST_SUITES.length}`);
 console.log(`   TestCases  : ${TEST_CASES.length}`);
 console.log(`   TestRuns   : ${TEST_RUNS.length}`);
 console.log(`   TRC rows   : ${TEST_RUNS_CASES.length}`);

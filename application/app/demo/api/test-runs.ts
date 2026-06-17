@@ -4,8 +4,17 @@
 
 import { eq, sql, desc, and, isNotNull, inArray } from 'drizzle-orm';
 import { getDemoDb } from '../db.client';
-import { testRuns, testCases, testRunsCases, projects, files, failureClusters } from '~~/server/database/schema.sqlite';
+import {
+  testRuns,
+  testCases,
+  testRunsCases,
+  testSuites,
+  projects,
+  files,
+  failureClusters,
+} from '~~/server/database/schema.sqlite';
 import { normalizeRoute } from '~~/shared/utils/route';
+import { fetchAndFormatSuites } from '~~/shared/utils/suites';
 
 /** GET /api/test-runs/:id */
 export async function apiGetTestRun(id: number) {
@@ -41,8 +50,10 @@ export async function apiGetTestRun(id: number) {
       webVitals: testRunsCases.webVitals,
       workerIndex: testRunsCases.workerIndex,
       browser: testRunsCases.browser,
+      testAnnotations: testRunsCases.testAnnotations,
       title: testCases.title,
       filePath: testCases.filePath,
+      suitePath: testCases.suitePath,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
@@ -64,6 +75,8 @@ export async function apiGetTestRun(id: number) {
     webVitals: tc.webVitals,
     workerIndex: tc.workerIndex,
     browser: tc.browser,
+    suitePath: tc.suitePath ? tc.suitePath.split('\x1f').filter(Boolean) : [],
+    testAnnotations: (tc.testAnnotations as any) ?? null,
   }));
 
   // Omit streamToken — internal field
@@ -83,6 +96,16 @@ export async function apiGetTestRun(id: number) {
     totalSize: Number(storageStatsResult[0]?.totalSize ?? 0),
   };
 
+  const suites = await fetchAndFormatSuites(
+    db,
+    testSuites,
+    testRun.projectId,
+    [...new Set(runsCases.map((tc) => tc.filePath))],
+    eq,
+    and,
+    inArray,
+  );
+
   return {
     ...testRunPublic,
     project,
@@ -94,6 +117,7 @@ export async function apiGetTestRun(id: number) {
       size: r.size,
     })),
     testCases: formattedTestCases,
+    suites,
     storageStats,
   };
 }
