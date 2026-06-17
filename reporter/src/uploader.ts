@@ -28,6 +28,8 @@ export interface RunPayload {
   instanceId: string;
   /** Test case results */
   testCases: any[];
+  /** Playwright framework version used for this run */
+  playwrightVersion?: string;
 }
 
 /** Options controlling which report files and traces to upload */
@@ -74,6 +76,7 @@ export class Uploader {
         environment: payload.environment || null,
         metadata: payload.metadata,
         instanceId: payload.instanceId,
+        playwrightVersion: payload.playwrightVersion,
         testCases: payload.testCases,
       },
       auth,
@@ -103,6 +106,7 @@ export class Uploader {
         metadata: payload.metadata,
         projectDescription: payload.projectDescription,
         instanceId: payload.instanceId,
+        playwrightVersion: payload.playwrightVersion,
       }),
     );
     form.append('testCases', JSON.stringify(payload.testCases));

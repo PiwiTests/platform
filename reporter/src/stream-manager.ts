@@ -68,11 +68,16 @@ export class StreamManager {
   ) {}
 
   /** Begin the streaming session after `onBegin` fires. Non-blocking — the actual handshake runs asynchronously. */
-  start(startTime: string, metadata: Record<string, any>, instanceId: string): void {
-    this._startPromise = this._doStart(startTime, metadata, instanceId);
+  start(startTime: string, metadata: Record<string, any>, instanceId: string, playwrightVersion?: string | null): void {
+    this._startPromise = this._doStart(startTime, metadata, instanceId, playwrightVersion);
   }
 
-  private async _doStart(startTime: string, metadata: Record<string, any>, instanceId: string): Promise<void> {
+  private async _doStart(
+    startTime: string,
+    metadata: Record<string, any>,
+    instanceId: string,
+    playwrightVersion?: string | null,
+  ): Promise<void> {
     const setupInfo = readSetupInfo(this.options.projectName!);
 
     try {
@@ -83,7 +88,7 @@ export class StreamManager {
       if (setupInfo) {
         response = await this.httpClient.postJSON(
           `/api/test-runs/${setupInfo.runId}/begin`,
-          { setupToken: setupInfo.setupToken, totalTests: 0, metadata },
+          { setupToken: setupInfo.setupToken, totalTests: 0, metadata, playwrightVersion },
           this._auth,
         );
       } else {
@@ -96,6 +101,7 @@ export class StreamManager {
             environment: this.options.environment || null,
             metadata,
             instanceId,
+            playwrightVersion,
           },
           this._auth,
         );

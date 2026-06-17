@@ -22,6 +22,7 @@ export class PiwiDashboardReporter {
   private options: PiwiDashboardOptions;
   private testCases: any[] = [];
   private startTime: string | null = null;
+  private playwrightVersion: string | null = null;
   private totalTests = 0;
   private passedTests = 0;
   private failedTests = 0;
@@ -73,9 +74,12 @@ export class PiwiDashboardReporter {
       return;
     }
     this.startTime = new Date().toISOString();
-    console.log(`[Piwi Dashboard] Starting test run for project: ${this.options.projectName}`);
+    this.playwrightVersion = config.version;
+    console.log(
+      `[Piwi Dashboard] Starting test run for project: ${this.options.projectName} (Playwright v${this.playwrightVersion})`,
+    );
     this.metadata = this.metadataCollector.collect(config, suite, this.options);
-    this.streamManager?.start(this.startTime, this.metadata, this.instanceId);
+    this.streamManager?.start(this.startTime, this.metadata, this.instanceId, this.playwrightVersion);
   }
 
   /** Playwright reporter hook: called when an individual test begins */
@@ -224,6 +228,7 @@ export class PiwiDashboardReporter {
       environment: this.options.environment,
       metadata: this.metadata,
       instanceId: this.instanceId,
+      playwrightVersion: this.playwrightVersion ?? undefined,
       testCases: this.testCases.map((tc) => this.mapTestCase(tc)),
     };
   }
@@ -315,6 +320,7 @@ export class PiwiDashboardReporter {
           durations,
           metadata: this.metadata,
           hasPendingUploads: this.hasReports,
+          playwrightVersion: this.playwrightVersion ?? undefined,
         },
         auth,
       );

@@ -109,6 +109,7 @@ export default eventHandler(async (event) => {
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
       ...(body.metadata && { metadata: sanitizeMetadata(body.metadata) }),
+      ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
     };
 
     await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));
@@ -148,6 +149,7 @@ export default eventHandler(async (event) => {
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
       ...(body.metadata && { metadata: sanitizeMetadata(body.metadata) }),
+      ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
     };
 
     await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));

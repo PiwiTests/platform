@@ -107,6 +107,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
       environment: body.environment || null,
       metadata: null,
       instanceId,
+      playwrightVersion: body.playwrightVersion || null,
       streamToken: setupToken,
     })
     .returning();
@@ -124,7 +125,12 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
 /** POST /api/test-runs/:id/begin */
 export async function apiBeginTestRun(
   id: number,
-  body: { setupToken: string; totalTests?: number; metadata?: Record<string, unknown> | null },
+  body: {
+    setupToken: string;
+    totalTests?: number;
+    metadata?: Record<string, unknown> | null;
+    playwrightVersion?: string | null;
+  },
 ) {
   const db = await getDemoDb();
 
@@ -146,6 +152,7 @@ export async function apiBeginTestRun(
       streamToken,
       totalTests: body.totalTests || 0,
       metadata: sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
+      playwrightVersion: body.playwrightVersion || (testRun.playwrightVersion as string | null),
     })
     .where(eq(testRuns.id, id));
 
@@ -521,6 +528,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
       ...(body.metadata && { metadata: sanitizeMetadata(body.metadata) }),
+      ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
     })
     .where(eq(testRuns.id, id));
 
