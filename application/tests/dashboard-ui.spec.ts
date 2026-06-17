@@ -293,3 +293,130 @@ test.describe('Dashboard UI Tests', () => {
     expect(rows.size).toBe(1);
   });
 });
+
+test.describe('Foldable Summary', () => {
+  test.beforeEach(async ({ page, request }) => {
+    await retryPost(request, '/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.SUMMARY_FOLD,
+        status: 'passed',
+        startTime: new Date().toISOString(),
+        duration: 90000,
+        totalTests: 5,
+        passedTests: 5,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases: [
+          {
+            title: 'fold test case',
+            status: 'passed',
+            duration: 1000,
+            location: 'tests/fold.spec.ts:1:1',
+            retries: 0,
+            steps: [{ title: 'page.goto(url)', duration: 500, category: 'navigation' }],
+            slowestStep: 'page.goto(url)',
+            slowestStepDuration: 500,
+          },
+        ],
+      },
+      timeout: 20000,
+    });
+    await page.context().clearCookies();
+  });
+
+  async function findTestRunId(request: import('@playwright/test').APIRequestContext) {
+    const projectsRes = await request.get('/api/projects');
+    const projects = await projectsRes.json();
+    const project = projects.find((p: { name: string }) => p.name === PROJECT.SUMMARY_FOLD);
+    const projectDetailRes = await request.get(`/api/projects/${project.id}`);
+    const projectDetail = await projectDetailRes.json();
+    return projectDetail.testRuns[0].id as number;
+  }
+
+  test('should start expanded on test run detail page', async ({ page, request }) => {
+    const testRunId = await findTestRunId(request);
+    await page.goto(`/test-runs/${testRunId}`);
+    await page.waitForURL(/\/test-runs\/\d+/);
+
+    await expect(page.getByTitle('Collapse summary')).toBeVisible();
+    await expect(page.locator('h2').filter({ hasText: /Test run #/ })).toBeVisible();
+  });
+
+  test('should collapse and expand test run summary', async ({ page, request }) => {
+    const testRunId = await findTestRunId(request);
+    await page.goto(`/test-runs/${testRunId}`);
+    await page.waitForURL(/\/test-runs\/\d+/);
+    await waitForHydration(page);
+
+    await expect(page.getByTitle('Collapse summary')).toBeVisible();
+
+    await page.getByTitle('Collapse summary').click({ force: true });
+    await expect(page.locator('h2').filter({ hasText: /Test run #/ })).not.toBeVisible();
+    await expect(page.locator('span:has-text("T:")').first()).toBeVisible();
+
+    await page.locator('span:has-text("T:")').first().click({ force: true });
+    await expect(page.getByTitle('Collapse summary')).toBeVisible();
+  });
+
+  test('should show key info in folded state', async ({ page, request }) => {
+    const testRunId = await findTestRunId(request);
+    await page.goto(`/test-runs/${testRunId}`);
+    await page.waitForURL(/\/test-runs\/\d+/);
+    await waitForHydration(page);
+
+    await page.getByTitle('Collapse summary').click({ force: true });
+
+    await expect(page.locator('span:has-text("T:")').first()).toBeVisible();
+    await expect(page.locator('span:has-text("P:")').first()).toBeVisible();
+    await expect(page.locator('span:has-text("F:")').first()).toBeVisible();
+    await expect(page.locator('span:has-text("S:")').first()).toBeVisible();
+  });
+
+  test('should start expanded on test case detail page', async ({ page, request }) => {
+    const testRunId = await findTestRunId(request);
+    const runRes = await request.get(`/api/test-runs/${testRunId}`);
+    const runData = await runRes.json();
+    const testCaseId = runData.testCases[0].id;
+
+    await page.goto(`/test-cases/${testCaseId}`);
+    await page.waitForURL(/\/test-cases\/\d+/);
+
+    await expect(page.getByTitle('Collapse summary')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'fold test case' })).toBeVisible();
+  });
+
+  test('should collapse and expand test case summary', async ({ page, request }) => {
+    const testRunId = await findTestRunId(request);
+    const runRes = await request.get(`/api/test-runs/${testRunId}`);
+    const runData = await runRes.json();
+    const testCaseId = runData.testCases[0].id;
+
+    await page.goto(`/test-cases/${testCaseId}`);
+    await page.waitForURL(/\/test-cases\/\d+/);
+    await waitForHydration(page);
+
+    await expect(page.getByTitle('Collapse summary')).toBeVisible();
+
+    await page.getByTitle('Collapse summary').click({ force: true });
+    await expect(page.getByRole('heading', { name: 'fold test case' })).not.toBeVisible();
+    await expect(page.locator('span:has-text("Dur:")').first()).toBeVisible();
+
+    await page.locator('span:has-text("Dur:")').first().click({ force: true });
+    await expect(page.getByTitle('Collapse summary')).toBeVisible();
+  });
+
+  test('should persist fold state across navigation', async ({ page, request }) => {
+    const testRunId = await findTestRunId(request);
+    await page.goto(`/test-runs/${testRunId}`);
+    await page.waitForURL(/\/test-runs\/\d+/);
+    await waitForHydration(page);
+
+    await expect(page.getByTitle('Collapse summary')).toBeVisible({ timeout: 10000 });
+    await page.getByTitle('Collapse summary').click({ force: true });
+    await expect(page.locator('h2').filter({ hasText: /Test run #/ })).not.toBeVisible();
+
+    await page.reload();
+    await expect(page.locator('h2').filter({ hasText: /Test run #/ })).not.toBeVisible();
+    await expect(page.locator('span:has-text("T:")').first()).toBeVisible();
+  });
+});
