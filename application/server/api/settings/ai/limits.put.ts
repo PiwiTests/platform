@@ -1,5 +1,6 @@
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
+import { Role } from '../../../../shared/types';
 import { getAppSetting, setAppSetting } from '../../../utils/app-settings';
 import {
   resolveContextLimits,
@@ -9,17 +10,20 @@ import {
 import { CONTEXT_LIMIT_FIELDS, DEFAULT_CONTEXT_LIMITS, clampLimit } from '#shared/ai-context-limits';
 import type { ContextLimits } from '#shared/ai-context-limits';
 
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
+
 defineRouteMeta({
   openAPI: {
     tags: ['Settings'],
     summary: 'Save AI context limits',
     description:
       'Persists overrides for the AI diagnosis context limits. Values are clamped to each field range; an empty/null value resets a field to its default. Fields pinned by environment variables are ignored. Requires administrator role.',
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event, ['administrator']);
+  await requireAuth(event, REQUIRED_ROLES);
 
   const body = (await readBody(event).catch(() => null)) as {
     limits?: Partial<Record<keyof ContextLimits, unknown>>;

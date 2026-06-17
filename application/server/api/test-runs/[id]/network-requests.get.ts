@@ -1,6 +1,10 @@
+import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
 import { testRuns, testCases, testRunsCases } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
+import { Role } from '../../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
 defineRouteMeta({
   openAPI: {
@@ -9,6 +13,7 @@ defineRouteMeta({
     description:
       'Returns aggregated network request summaries from test cases in a test run, grouped by HTTP method and normalized route, sorted by average duration. Excludes static asset requests.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
@@ -34,6 +39,7 @@ interface EndpointSummary {
 }
 
 export default eventHandler(async (event) => {
+  await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {

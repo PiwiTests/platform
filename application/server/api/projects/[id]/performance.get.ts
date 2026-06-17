@@ -1,6 +1,10 @@
+import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
 import { projects, testRuns } from '../../../database/schema';
 import { eq, desc, and, gte, lte } from 'drizzle-orm';
+import { Role } from '../../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
 defineRouteMeta({
   openAPI: {
@@ -9,10 +13,12 @@ defineRouteMeta({
     description:
       'Returns test run duration, average test duration, and p90 test duration for trend charts with optional date range filtering',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
 export default eventHandler(async (event) => {
+  await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {

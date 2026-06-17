@@ -1,8 +1,12 @@
+import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
 import { failureClusters, testRuns } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
 import { normalizeGitUrl } from '../../../utils/regression-context';
 import { createScmProvider } from '../../../utils/scm';
+import { Role } from '../../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
 defineRouteMeta({
   openAPI: {
@@ -11,10 +15,12 @@ defineRouteMeta({
     description:
       'Returns recent commits for the failure cluster repository. Supports optional baseline query parameter for aggregate diff stats.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
 export default eventHandler(async (event) => {
+  await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
   if (!id) throw createError({ statusCode: 400, message: 'Invalid cluster ID' });
 

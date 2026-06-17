@@ -5,6 +5,9 @@ import { runEventBus } from '../../../utils/run-events';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { autoDiagnoseRun } from '../../../utils/ai-diagnosis';
+import { Role } from '../../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [];
 
 defineRouteMeta({
   openAPI: {
@@ -13,6 +16,7 @@ defineRouteMeta({
     description:
       'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
     requestBody: {
       content: {
         'application/json': {

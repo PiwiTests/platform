@@ -2,7 +2,10 @@ import { getDatabase } from '../../database';
 import { testRuns, testRunsCases, files } from '../../database/schema';
 import { lt, inArray } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
+import { Role } from '../../../shared/types';
 import { deleteFileRow } from '../../utils/delete-run-files';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 
 defineRouteMeta({
   openAPI: {
@@ -10,6 +13,7 @@ defineRouteMeta({
     summary: 'Cleanup old test data',
     description:
       'Deletes test runs older than a specified number of days, including associated files, traces, and reports. Requires administrator role.',
+    'x-required-roles': REQUIRED_ROLES,
     requestBody: {
       content: {
         'application/json': {
@@ -25,7 +29,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event, ['administrator']);
+  await requireAuth(event, REQUIRED_ROLES);
 
   const body = await readBody(event);
 

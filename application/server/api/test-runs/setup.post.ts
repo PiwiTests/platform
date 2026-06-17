@@ -3,8 +3,11 @@ import { getDatabase } from '../../database';
 import { projects, testRuns } from '../../database/schema';
 import { eq } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
+import { Role } from '../../../shared/types';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runEventBus } from '../../utils/run-events';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
 
 defineRouteMeta({
   openAPI: {
@@ -12,6 +15,7 @@ defineRouteMeta({
     summary: 'Initialize a streaming test run in setup phase',
     description:
       'Initialize a new streaming test run in "initialising" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels any previous runs from the same instance.',
+    'x-required-roles': REQUIRED_ROLES,
     requestBody: {
       content: {
         'application/json': {
@@ -33,7 +37,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   // Require reporter or administrator role
-  await requireAuth(event, ['reporter', 'administrator']);
+  await requireAuth(event, REQUIRED_ROLES);
 
   const body = await readBody(event);
 

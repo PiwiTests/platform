@@ -3,6 +3,9 @@ import { projects, tags, projectTags } from '../../database/schema';
 import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireAuth } from '../../utils/auth';
+import { Role } from '../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 
 defineRouteMeta({
   openAPI: {
@@ -10,6 +13,7 @@ defineRouteMeta({
     summary: 'Create a new project',
     description:
       'Creates a project with optional label, description, and tag associations. Requires administrator role.',
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
@@ -21,7 +25,7 @@ const createProjectSchema = z.object({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event, ['administrator']);
+  await requireAuth(event, REQUIRED_ROLES);
 
   const body = await readBody(event);
   const validation = createProjectSchema.safeParse(body);

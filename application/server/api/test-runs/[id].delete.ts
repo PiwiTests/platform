@@ -2,7 +2,10 @@ import { getDatabase } from '../../database';
 import { testRuns, testRunsCases, files } from '../../database/schema';
 import { eq, inArray } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
+import { Role } from '../../../shared/types';
 import { deleteFileRow } from '../../utils/delete-run-files';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 
 defineRouteMeta({
   openAPI: {
@@ -11,11 +14,12 @@ defineRouteMeta({
     description:
       'Permanently delete a test run and all associated data including reports, traces, files, and failure clusters. Administrator access required.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event, ['administrator']);
+  await requireAuth(event, REQUIRED_ROLES);
 
   const id = parseInt(getRouterParam(event, 'id') || '0');
 

@@ -1,16 +1,22 @@
+import { requireAuth } from '../utils/auth';
 import { getDatabase } from '../database';
 import { projects, testRuns, testCases, files, tags, projectTags } from '../database/schema';
 import { eq, desc, sql, inArray, and } from 'drizzle-orm';
+import { Role } from '../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
 defineRouteMeta({
   openAPI: {
     tags: ['Projects'],
     summary: 'List all projects with stats',
     description: 'Returns all projects with their latest run, total runs count, total test cases, and tags',
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
-export default eventHandler(async () => {
+export default eventHandler(async (event) => {
+  await requireAuth(event);
   const db = await getDatabase();
 
   const allProjects = await db.select().from(projects).orderBy(desc(projects.updatedAt));

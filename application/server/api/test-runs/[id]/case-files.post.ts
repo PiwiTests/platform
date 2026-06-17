@@ -6,6 +6,9 @@ import { parseLocation } from '../../../utils/parse-location';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { upsertTraceBlob, findTraceBlob } from '../../../utils/trace-blobs';
 import { getStorage } from '../../../storage';
+import { Role } from '../../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [];
 
 defineRouteMeta({
   openAPI: {
@@ -14,6 +17,7 @@ defineRouteMeta({
     description:
       'Upload trace files and attachments for a specific test case during an active streaming run. Authenticated by the run stream token. Supports trace deduplication via SHA-256 hashing and is idempotent on retry.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 

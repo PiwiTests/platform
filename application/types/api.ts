@@ -3,6 +3,8 @@
  * These types are used by both the server API and the app frontend
  */
 
+import type { Role } from '../shared/types';
+
 // Re-export database types that are used in API responses
 export type {
   Project as DbProject,
@@ -528,7 +530,7 @@ export interface TestCaseWithStats {
 export interface AuthUser {
   id: number;
   username: string;
-  role: string;
+  role: Role;
   name?: string | null;
   avatarUrl?: string | null;
 }
@@ -547,7 +549,7 @@ export interface AuthState {
 export interface UserDetails {
   id: number;
   username: string;
-  role: string;
+  role: Role;
   name?: string | null;
   createdAt: Date;
   updatedAt: Date;

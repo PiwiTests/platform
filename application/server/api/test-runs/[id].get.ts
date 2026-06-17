@@ -1,7 +1,11 @@
+import { requireAuth } from '../../utils/auth';
 import { getDatabase } from '../../database';
 import { testRuns, testCases, testRunsCases, testSuites, projects, files } from '../../database/schema';
 import { eq, sql, inArray, and } from 'drizzle-orm';
 import { fetchAndFormatSuites } from '../../../shared/utils/suites';
+import { Role } from '../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
 defineRouteMeta({
   openAPI: {
@@ -10,10 +14,12 @@ defineRouteMeta({
     description:
       'Returns full details for a specific test run, including project info, attached reports, test cases with results, and storage statistics.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
 export default eventHandler(async (event) => {
+  await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {

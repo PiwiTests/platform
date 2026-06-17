@@ -1,4 +1,5 @@
 import type { AuthUser, AuthState } from '~~/types/api';
+import { Role } from '~~/shared/types';
 
 export { type AuthUser, type AuthState };
 
@@ -7,7 +8,7 @@ export const useAuth = () => {
 
   const demoUser: AuthState = {
     authenticated: true,
-    user: { id: 0, username: 'demo', role: 'administrator', name: 'Demo User' },
+    user: { id: 0, username: 'demo', role: Role.ADMINISTRATOR, name: 'Demo User' },
   };
 
   const authState = useState<AuthState>('auth', () => {
@@ -61,16 +62,16 @@ export const useAuth = () => {
     await navigateTo('/login');
   };
 
-  const hasRole = (roles: string[]) => {
+  const hasRole = (roles: Role[]) => {
     if (!authState.value.user) {
       return false;
     }
     return roles.includes(authState.value.user.role);
   };
 
-  const isAdmin = computed(() => hasRole(['administrator']));
-  const isReporter = computed(() => hasRole(['reporter']));
-  const canEdit = computed(() => hasRole(['administrator']));
+  const isAdmin = computed(() => hasRole([Role.ADMINISTRATOR]));
+  const isReporter = computed(() => hasRole([Role.REPORTER]));
+  const canEdit = computed(() => hasRole([Role.ADMINISTRATOR]));
 
   return {
     authState,

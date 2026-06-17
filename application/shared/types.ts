@@ -16,6 +16,14 @@ export type TestCaseStatus = 'passed' | 'failed' | 'skipped' | 'timedout';
 
 export type ClusterStatus = 'open' | 'resolved' | 'ignored';
 
+// ── Roles ─────────────────────────────────────────────────────────────────────
+
+export enum Role {
+  ADMINISTRATOR = 'administrator',
+  REPORTER = 'reporter',
+  USER = 'user',
+}
+
 // ── Suite hierarchy config ────────────────────────────────────────────────────
 // One entry per level in suitePath (parallel to the array).
 

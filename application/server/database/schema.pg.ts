@@ -342,7 +342,7 @@ export const users = pgTable(
     id: serial('id').primaryKey(),
     username: text('username').notNull().unique(),
     password: text('password').notNull(), // hashed password (empty string for OAuth-only users)
-    role: text('role').notNull(), // 'administrator', 'reporter', 'user'
+    role: text('role').notNull(), // Role enum: 'administrator', 'reporter', 'user'
     name: text('name'), // Display name
     avatarUrl: text('avatar_url'), // Avatar from OAuth provider
     oauthProvider: text('oauth_provider'), // 'google', 'github', etc.

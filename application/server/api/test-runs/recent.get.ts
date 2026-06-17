@@ -1,6 +1,10 @@
+import { requireAuth } from '../../utils/auth';
 import { getDatabase } from '../../database';
 import { testRuns, projects } from '../../database/schema';
 import { desc, eq, or, notInArray } from 'drizzle-orm';
+import { Role } from '../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
 defineRouteMeta({
   openAPI: {
@@ -8,6 +12,7 @@ defineRouteMeta({
     summary: 'Get recent test runs',
     description:
       'Returns the 30 most recent completed test runs across all projects plus any currently active runs, sorted by start time. Used by the home page dashboard.',
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
@@ -35,7 +40,8 @@ const FIELDS = {
  * Returns active runs (always) + the 30 most recent completed runs for the home page.
  * Active runs are fetched separately so they're never displaced by newer completed runs.
  */
-export default eventHandler(async () => {
+export default eventHandler(async (event) => {
+  await requireAuth(event);
   const db = await getDatabase();
 
   const [activeRuns, recentRuns] = await Promise.all([

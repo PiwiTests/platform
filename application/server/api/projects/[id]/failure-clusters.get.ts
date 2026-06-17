@@ -1,6 +1,10 @@
+import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
 import { projects, testRuns, testRunsCases, failureClusters, failureDiagnoses } from '../../../database/schema';
 import { eq, and, desc, inArray, sql } from 'drizzle-orm';
+import { Role } from '../../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
 defineRouteMeta({
   openAPI: {
@@ -9,6 +13,7 @@ defineRouteMeta({
     description:
       'Returns failure clusters grouped by error fingerprint with occurrence counts, affected tests count, and compact diagnosis info. Supports optional status filter.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
@@ -38,6 +43,7 @@ interface ProjectCluster {
 }
 
 export default eventHandler(async (event) => {
+  await requireAuth(event);
   const projectId = parseInt(getRouterParam(event, 'id') || '0');
   const statusFilter = getQuery(event).status as string | undefined;
 

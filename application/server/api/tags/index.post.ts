@@ -3,12 +3,16 @@ import { tags } from '../../database/schema';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireAuth } from '../../utils/auth';
+import { Role } from '../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 
 defineRouteMeta({
   openAPI: {
     tags: ['Tags'],
     summary: 'Create a tag',
     description: 'Creates a new tag with text (max 50 characters) and color. Requires administrator role.',
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
@@ -18,7 +22,7 @@ const createTagSchema = z.object({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event, ['administrator']);
+  await requireAuth(event, REQUIRED_ROLES);
 
   const body = await readBody(event);
   const validation = createTagSchema.safeParse(body);

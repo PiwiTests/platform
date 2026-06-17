@@ -1,10 +1,15 @@
+import { Role } from '../../../shared/types';
 import { getCurrentUser, isAuthEnabled } from '../../utils/auth';
+
+const REQUIRED_ROLES: Role[] = [];
 
 defineRouteMeta({
   openAPI: {
     tags: ['Auth'],
     summary: 'Get current user',
     description: 'Returns the currently authenticated user details or unauthenticated status.',
+    'x-required-roles': REQUIRED_ROLES,
+    security: [],
   },
 });
 
@@ -30,7 +35,7 @@ export default eventHandler(async (event) => {
     user: {
       id: user.id,
       username: user.username,
-      role: user.role,
+      role: user.role as Role,
       name: user.name,
       avatarUrl: user.avatarUrl,
     },

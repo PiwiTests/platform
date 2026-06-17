@@ -2,6 +2,9 @@ import { getDatabase } from '../../../../database';
 import { apiKeys, users } from '../../../../database/schema';
 import { eq } from 'drizzle-orm';
 import { requireAuth } from '../../../../utils/auth';
+import { Role } from '../../../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
 defineRouteMeta({
   openAPI: {
@@ -9,11 +12,12 @@ defineRouteMeta({
     summary: 'List API keys for a user',
     description: 'Returns API keys belonging to a specific user. Non-administrators can only list their own keys.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
 export default eventHandler(async (event) => {
-  const currentUser = await requireAuth(event, ['administrator', 'reporter', 'user']);
+  const currentUser = await requireAuth(event, REQUIRED_ROLES);
 
   const targetId = parseInt(getRouterParam(event, 'id') || '0');
   if (!targetId) {
@@ -21,7 +25,7 @@ export default eventHandler(async (event) => {
   }
 
   // Non-administrators can only list their own keys
-  if (currentUser.role !== 'administrator' && currentUser.id !== targetId) {
+  if (currentUser.role !== Role.ADMINISTRATOR && currentUser.id !== targetId) {
     throw createError({ statusCode: 403, message: 'Insufficient permissions' });
   }
 

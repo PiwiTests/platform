@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { getDatabase } from '../database';
 import { users } from '../database/schema';
 import { eq, and } from 'drizzle-orm';
+import { Role } from '../../shared/types';
 import { setUserSession, isAuthEnabled } from './auth';
 import type { SessionData } from './auth';
 import type { User } from '../database/schema';
@@ -303,7 +304,7 @@ async function findOrCreateOAuthUser(
     .values({
       username: email,
       password: '',
-      role: 'user',
+      role: Role.USER,
       name: name || null,
       avatarUrl: avatar || null,
       oauthProvider: provider,
@@ -374,7 +375,7 @@ export async function handleOAuthCallback(event: H3Event, provider: string): Pro
     const sessionData: SessionData = {
       userId: user.id,
       username: user.username,
-      role: user.role,
+      role: user.role as Role,
     };
     await setUserSession(event, sessionData);
 

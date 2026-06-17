@@ -1,7 +1,10 @@
 import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
+import { Role } from '../../../shared/types';
 import { getAppSetting, setAppSetting, deleteAppSetting } from '../../utils/app-settings';
 import type { AiProvider } from '~~/types/api';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 
 defineRouteMeta({
   openAPI: {
@@ -9,13 +12,14 @@ defineRouteMeta({
     summary: 'Save AI settings',
     description:
       'Updates AI provider configuration, model, API key, base URL, auto-diagnose toggle, custom instructions, and SCM token. Requires administrator role. Not available when AI is managed via environment variables.',
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
 const VALID_PROVIDERS: AiProvider[] = ['anthropic', 'openai'];
 
 export default eventHandler(async (event) => {
-  await requireAuth(event, ['administrator']);
+  await requireAuth(event, REQUIRED_ROLES);
 
   const runtimeConfig = useRuntimeConfig();
   const envAi = runtimeConfig.ai as { provider?: string } | undefined;
