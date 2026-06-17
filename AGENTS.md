@@ -261,6 +261,18 @@ node scripts/db-query.mjs "SELECT id, name FROM projects" --json
 - `docs/` — VitePress site published to GitHub Pages
 - `README.md` — Landing page
 - Update the relevant doc in the same commit as code changes (see `docs/` files for what each covers)
+- **Backend logs** are documented in `docs/backend-logs.md`
+- **Suite hierarchy (describe blocks)** and **test annotations** are documented in `docs/reporter.md` and `docs/api.md`
+
+## Demo Data Requirements
+
+When adding features with database columns, API response fields, or UI-visible changes, the demo data must be updated in four places:
+1. **`scripts/generate-demo-seed.mjs`** — seed the new columns in the generated SQL
+2. **`app/demo/api/`** — mirror any new server API response fields in the demo API handlers
+3. **`app/demo/simulator.ts`** — emit any new streaming event fields in simulated runs
+4. **`docs/`** — update the relevant documentation file
+
+Always regenerate the seed SQL after changes: `cd application && npm run seed:demo`
 
 ## Troubleshooting
 - DB locked? Stop other processes accessing `.data/piwi.db`
@@ -293,4 +305,4 @@ The app can be built as a fully client-side SPA (no server needed) by setting `P
 - DB auto-initialized on first API call
 - Projects auto-created on first submission
 - Dates stored as Unix timestamps in SQLite
-- Run typecheck, lint, and tests before final commit
+- Run typecheck, lint, and tests only at the end before final commit (not after every task)

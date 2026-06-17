@@ -37,6 +37,9 @@ Submit test results as JSON. The project is created automatically if it doesn't 
       "duration": 1500,
       "location": "tests/login.spec.ts:10:5",
       "retries": 0,
+      "suitePath": ["Auth"],
+      "suiteConfig": [{ "mode": "default", "annotations": [] }],
+      "testAnnotations": null,
       "browser": {
         "projectName": "Chromium",
         "browserName": "chromium",
@@ -51,6 +54,9 @@ Submit test results as JSON. The project is created automatically if it doesn't 
       "location": "tests/errors.spec.ts:5:5",
       "error": "Expected true but got false",
       "retries": 1,
+      "suitePath": ["Auth"],
+      "suiteConfig": [{ "mode": "default", "annotations": [] }],
+      "testAnnotations": [{ "type": "fixme", "description": "Known flaky test" }],
       "browser": {
         "projectName": "Firefox",
         "browserName": "firefox",
@@ -161,10 +167,27 @@ Stream test case results as they complete. Supports single or batch submission.
   "streamToken": "abc123...",
   "testCases": [
     {
+      "type": "begin",
       "title": "should login",
+      "location": "tests/login.spec.ts:10:5",
+      "suitePath": ["Auth"],
+      "suiteConfig": [{ "mode": "default", "annotations": [] }],
+      "browser": {
+        "projectName": "Chromium",
+        "browserName": "chromium",
+        "channel": null,
+        "viewport": { "width": 1280, "height": 720 }
+      }
+    },
+    {
+      "type": "complete",
+      "title": "should login",
+      "location": "tests/login.spec.ts:10:5",
       "status": "passed",
       "duration": 1500,
-      "location": "tests/login.spec.ts:10:5",
+      "suitePath": ["Auth"],
+      "suiteConfig": [{ "mode": "default", "annotations": [] }],
+      "testAnnotations": null,
       "browser": {
         "projectName": "Chromium",
         "browserName": "chromium",
@@ -462,7 +485,44 @@ Only tests with at least 3 runs AND (`retryPassRuns ≥ 1` OR `alternations ≥ 
 
 ### GET `/api/test-runs/[id]`
 
-Get test run details with test cases. Includes `flakyTests` count. Failed test cases carry a `failureClusterId` that groups failures sharing the same normalized error fingerprint (see `shared/error-fingerprint.ts`).
+Get test run details with test cases and suite hierarchy. Includes `flakyTests` count. Failed test cases carry a `failureClusterId` that groups failures sharing the same normalized error fingerprint (see `shared/error-fingerprint.ts`).
+
+**Response — suites** — a flat list of every describe block across all files in the run:
+
+```json
+{
+  "suites": [
+    {
+      "filePath": "tests/login.spec.ts",
+      "suitePath": ["Auth"],
+      "mode": "default",
+      "annotations": []
+    }
+  ]
+}
+```
+
+**Response — test case fields** — each test case includes suite hierarchy and annotations:
+
+```json
+{
+  "testCases": [
+    {
+      "id": 1,
+      "title": "should login",
+      "filePath": "tests/login.spec.ts",
+      "suitePath": ["Auth"],
+      "testAnnotations": [{ "type": "fixme", "description": "Known flaky test" }],
+      "status": "passed",
+      "duration": 1500,
+      "location": "tests/login.spec.ts:10:5",
+      "browser": { "projectName": "Chromium", "browserName": "chromium", "viewport": { "width": 1280, "height": 720 } }
+    }
+  ]
+}
+```
+
+`suitePath` is an array of describe-block names from the Playwright test hierarchy (e.g. `["Auth", "Login flow"]`). `testAnnotations` captures Playwright test marks like `@fixme`, `@slow`, `@skip` set via `test.info().annotations`.
 
 ---
 

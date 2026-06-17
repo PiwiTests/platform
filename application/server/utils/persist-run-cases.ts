@@ -4,13 +4,8 @@ import { sanitizeNetworkRequests, sanitizeWebVitals, sanitizeConsoleLogs } from 
 import { computeErrorFingerprint, type ErrorFingerprint } from '../../shared/error-fingerprint';
 import { testCaseCache } from './test-case-cache';
 import { testSuiteCache } from './test-suite-cache';
+import { SUITE_PATH_SEP, joinSuitePath } from '../../shared/utils/suites';
 import type { getDatabase } from '../database';
-
-export const SUITE_PATH_SEP = '\x1f';
-export const joinSuitePath = (path: string[] | null | undefined): string =>
-  path?.length ? path.join(SUITE_PATH_SEP) : '';
-export const splitSuitePath = (path: string | null | undefined): string[] =>
-  path ? path.split(SUITE_PATH_SEP).filter(Boolean) : [];
 
 type DB = Awaited<ReturnType<typeof getDatabase>>;
 

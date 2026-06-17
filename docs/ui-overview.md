@@ -81,7 +81,8 @@ Deep dive into a single test execution:
 - **Live progress** — if the run is still in progress (`running` status), a live progress bar and streaming test results appear in real time
 - **Reports** — buttons to open attached HTML reports (Playwright, Monocart) in a new tab or download blob archives
 - **Tabbed right panel** with five tabs:
-  - **Test cases** — every test with browser icon (first column), status, duration, file location, error messages, traces; scrollable table with sticky header, searchable, filterable by status and browser, and paginated
+  - **Test cases** — every test with browser icon (first column), status, duration, file location, error messages, annotation badges, traces; scrollable table with sticky header, searchable, filterable by status and browser, and paginated
+- **Tree** — tests grouped by suite hierarchy (describe blocks), with expandable/collapsible nodes that show suite mode badges, annotation counts, and per-suite aggregate statistics
   - **Workers** — horizontal timeline showing worker assignment per test case; click a bar to jump to that test case in the table
   - **Compare** — select a baseline run for side-by-side delta view showing new failures, recovered tests, and duration changes (improved/regressed/unchanged)
   - **Slow endpoints** — aggregated network request table showing slow API calls grouped by method + normalized route, with avg/p90/max duration and error rate
@@ -100,7 +101,7 @@ Shows everything about a single test execution:
 - **Performance hints** — actionable suggestions for slow navigations, flaky tests, slow assertions, and long step sequences
 - **Steps** — execution steps with category badges and individual timing
 - **Web Vitals** — TTFB, FCP, DOMContentLoaded, etc. with color-coded thresholds (green/amber/red)
-- **Network requests** — all HTTP requests grouped by method + normalized route with count and avg duration
+- **Network requests** — all HTTP requests grouped by method + normalized route with count and avg duration; backend server logs (captured via the `X-Piwi-Logs` header by ASP.NET Core or Nitro integrations) are shown inline under each request
 - **History** — line chart and table showing this test case's status and duration across all previous runs
 
 ## Settings pages

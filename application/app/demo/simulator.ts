@@ -36,6 +36,7 @@ interface SimAttempt {
   error?: string;
   consoleLogs?: Array<Record<string, unknown>>;
   ariaSnapshot?: string;
+  testAnnotations?: Array<{ type: string; description?: string }> | null;
 }
 
 interface SimTest {
@@ -50,6 +51,8 @@ interface SimTest {
   networkRequests: Array<Record<string, unknown>>;
   webVitals: Record<string, unknown>;
   browser?: Record<string, unknown> | null;
+  suitePath?: string[];
+  suiteConfig?: Array<{ mode: string; annotations: Array<{ type: string; description?: string }> }>;
 }
 
 export interface DemoScenario {
@@ -95,6 +98,28 @@ const CHECKOUT_TESTS: Array<{ file: string; title: string; duration: number }> =
   { file: 'tests/checkout/address.spec.ts', title: 'should fill and save shipping address', duration: 4100 },
   { file: 'tests/checkout/address.spec.ts', title: 'should validate required address fields', duration: 2700 },
 ];
+
+/** Suite map — mirrors SUITE_DEFS in generate-demo-seed.mjs for the e2e-checkout project */
+const SUITE_MAP: Record<
+  string,
+  {
+    suitePath: string[];
+    suiteConfig: Array<{ mode: string; annotations: Array<{ type: string; description?: string }> }>;
+  }
+> = {
+  'tests/checkout/checkout.spec.ts': {
+    suitePath: ['Checkout'],
+    suiteConfig: [{ mode: 'parallel', annotations: [] }],
+  },
+  'tests/checkout/cart.spec.ts': {
+    suitePath: ['Cart'],
+    suiteConfig: [{ mode: 'default', annotations: [] }],
+  },
+  'tests/checkout/address.spec.ts': {
+    suitePath: ['Address'],
+    suiteConfig: [{ mode: 'default', annotations: [] }],
+  },
+};
 
 /** Browser configs for multi-browser scenarios */
 const BROWSER_CONFIGS: Record<string, Record<string, unknown>> = {
@@ -165,9 +190,38 @@ function buildSteps(duration: number, slowStepBias = false): SimStep[] {
   return steps;
 }
 
+const SERVER_LOGS_OK = [
+  { timestamp: Date.now() - 5000, level: 'info', category: 'http', message: 'GET /api/cart — 200 OK (70ms)' },
+  { timestamp: Date.now() - 4000, level: 'debug', category: 'cache', message: 'Cart cache HIT for session abc123' },
+];
+
+const SERVER_LOGS_ERROR = [
+  {
+    timestamp: Date.now() - 5000,
+    level: 'error',
+    category: 'http',
+    message: 'POST /api/payments/authorize — 500 Internal Server Error',
+    stack:
+      'Error: payment provider timeout\n    at PaymentGateway.charge (services/payment.ts:85)\n    at POST /payments/authorize (routes/payments.ts:42)',
+  },
+  {
+    timestamp: Date.now() - 4000,
+    level: 'warn',
+    category: 'payment',
+    message: 'Payment provider response time exceeded 5000ms threshold',
+  },
+];
+
 function buildNetworkRequests(opts: { slow?: boolean; paymentError?: boolean } = {}): Array<Record<string, unknown>> {
   return [
-    { method: 'GET', url: 'https://shop.example.com/api/cart', status: 200, duration: vary(70), resourceType: 'fetch' },
+    {
+      method: 'GET',
+      url: 'https://shop.example.com/api/cart',
+      status: 200,
+      duration: vary(70),
+      resourceType: 'fetch',
+      serverLogs: SERVER_LOGS_OK,
+    },
     {
       method: 'GET',
       url: 'https://shop.example.com/api/products/featured',
@@ -208,6 +262,7 @@ function buildNetworkRequests(opts: { slow?: boolean; paymentError?: boolean } =
             status: 500,
             duration: vary(450),
             resourceType: 'fetch',
+            serverLogs: SERVER_LOGS_ERROR,
           },
         ]
       : [
@@ -267,6 +322,7 @@ function baseTests(opts: BaseTestOptions = {}): SimTest[] {
     const duration = vary(Math.round(t.duration * (opts.durationFactor ?? 1)), 0.12);
     const steps = buildSteps(duration, opts.slowSteps);
     const slowest = steps.reduce((a, b) => (a.duration > b.duration ? a : b));
+    const suite = SUITE_MAP[t.file];
 
     return {
       title: t.title,
@@ -278,6 +334,8 @@ function baseTests(opts: BaseTestOptions = {}): SimTest[] {
       slowestStepDuration: slowest.duration,
       networkRequests: buildNetworkRequests({ slow: opts.slowNetwork }),
       webVitals: buildWebVitals(opts.slowNetwork),
+      suitePath: suite?.suitePath,
+      suiteConfig: suite?.suiteConfig,
     };
   });
 }
@@ -359,6 +417,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
             duration: failedDuration,
             error: KNOWN_TIMEOUT_ERROR,
             consoleLogs: errorConsoleLogs(KNOWN_TIMEOUT_ERROR, Date.now()),
+            testAnnotations: [{ type: 'fixme', description: 'Known timeout issue — checkout page slow under load' }],
           },
         ];
         tests[i]!.networkRequests = buildNetworkRequests({ paymentError: true });
@@ -371,6 +430,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
           error: NEW_STRICT_MODE_ERROR,
           consoleLogs: errorConsoleLogs(NEW_STRICT_MODE_ERROR, Date.now()),
           ariaSnapshot: STRICT_MODE_ARIA_SNAPSHOT,
+          testAnnotations: [{ type: 'fixme', description: 'Duplicate test IDs — needs unique data-testid' }],
         },
       ];
       return tests;
@@ -399,8 +459,9 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
             duration: vary(5600, 0.08),
             error: FLAKY_ASSERTION_ERROR,
             consoleLogs: errorConsoleLogs(FLAKY_ASSERTION_ERROR, Date.now()),
+            testAnnotations: [{ type: 'slow' }],
           },
-          { status: 'passed', duration: vary(2600) },
+          { status: 'passed', duration: vary(2600), testAnnotations: [{ type: 'slow' }] },
         ];
       }
       return tests;
@@ -560,6 +621,8 @@ export async function runSimulation(
             workerIndex,
             startedAt,
             browser: test.browser ?? null,
+            suitePath: test.suitePath ?? null,
+            suiteConfig: test.suiteConfig ?? null,
           },
         ]);
 
@@ -585,6 +648,9 @@ export async function runSimulation(
             browser: test.browser ?? null,
             workerIndex,
             startedAt,
+            suitePath: test.suitePath ?? null,
+            suiteConfig: test.suiteConfig ?? null,
+            testAnnotations: a.testAnnotations ?? null,
           },
         ]);
 
