@@ -352,6 +352,7 @@ export default eventHandler(async (event) => {
         environment: (testRunData.environment as string | null | undefined) || null,
         metadata: sanitizeMetadata((testRunData.metadata || null) as Record<string, unknown> | null),
         instanceId: (testRunData.instanceId as string | null | undefined) || null,
+        playwrightVersion: (testRunData.playwrightVersion as string | null | undefined) || null,
       })
       .returning();
 

@@ -45,6 +45,7 @@ export const testRuns = pgTable(
     metadata: jsonb('metadata'), // Additional metadata as JSON
     streamToken: text('stream_token'), // Token for authenticating streaming updates
     instanceId: text('instance_id'), // Unique identifier for the reporter instance that created this run
+    playwrightVersion: text('playwright_version'), // Playwright framework version used for this run
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),

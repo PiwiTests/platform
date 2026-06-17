@@ -567,6 +567,7 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
       metadata,
       stream_token: null,
       instance_id: null,
+      playwright_version: '1.51.0',
       created_at: startTime,
       updated_at: startTime + Math.floor(duration / 1000),
     };

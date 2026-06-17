@@ -105,6 +105,7 @@ export interface TestRunSubmitPayload {
   environment?: string | null;
   metadata?: Record<string, unknown> | null;
   instanceId?: string | null;
+  playwrightVersion?: string;
   testCases?: TestCasePayload[];
 }
 
@@ -147,6 +148,7 @@ export interface TestRunFinishPayload {
   flakyTests: number;
   durations: number[];
   metadata?: Record<string, unknown>;
+  playwrightVersion?: string;
 }
 
 // ── Setup / start payload ─────────────────────────────────────────────────────
@@ -158,4 +160,5 @@ export interface TestRunStartPayload {
   environment?: string | null;
   metadata?: Record<string, unknown>;
   instanceId?: string;
+  playwrightVersion?: string;
 }
