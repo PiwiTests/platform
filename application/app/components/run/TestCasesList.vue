@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, watch, ref, onUnmounted } from 'vue';
 import type { TableColumn } from '@nuxt/ui';
-import type { TestCaseResult } from '~~/types/api';
+import type { TestCaseResult, SuiteInfo } from '~~/types/api';
+
+const treeView = ref(false);
 
 const props = defineProps<{
   testCases: TestCaseResult[];
+  suites: SuiteInfo[];
   isLive: boolean;
   failureClusterFilter?: number | null;
 }>();
@@ -158,10 +161,20 @@ const testCasesColumns: TableColumn<TestCaseResult>[] = [
   },
 ];
 
+const hasFilter = computed(
+  () =>
+    testCaseSearch.value !== '' ||
+    activeStatuses.value.length > 0 ||
+    testCaseBrowserFilter.value !== 'all' ||
+    props.failureClusterFilter != null,
+);
+
 const listRef = ref<HTMLElement | null>(null);
 const highlightedCaseId = ref<number | null>(null);
 
 function scrollToCase(id: number) {
+  // Switch to flat view so the row is visible and scrollable.
+  treeView.value = false;
   highlightedCaseId.value = id;
   nextTick(() => {
     const row = listRef.value?.querySelector<HTMLElement>(`tr:has(a[href="/test-cases/${id}"])`);
@@ -194,6 +207,24 @@ defineExpose({ scrollToCase });
           {{ filteredTestCases.length
           }}{{ filteredTestCases.length !== testCases.length ? ` / ${testCases.length}` : '' }} cases
         </span>
+        <div class="flex items-center rounded-md border border-default overflow-hidden">
+          <button
+            class="px-2 py-1 text-xs transition-colors"
+            :class="!treeView ? 'bg-primary text-white dark:text-white' : 'text-muted hover:bg-elevated/60'"
+            title="Flat list"
+            @click="treeView = false"
+          >
+            <UIcon name="i-lucide-list" class="size-3.5" />
+          </button>
+          <button
+            class="px-2 py-1 text-xs transition-colors"
+            :class="treeView ? 'bg-primary text-white dark:text-white' : 'text-muted hover:bg-elevated/60'"
+            title="Tree view"
+            @click="treeView = true"
+          >
+            <UIcon name="i-lucide-folder-tree" class="size-3.5" />
+          </button>
+        </div>
       </div>
       <div class="flex items-center gap-2">
         <UInput
@@ -240,89 +271,103 @@ defineExpose({ scrollToCase });
       </div>
     </div>
 
-    <UTable
-      v-if="filteredTestCases.length > 0"
-      ref="tableScrollRef"
-      sticky
-      :data="filteredTestCases"
-      :columns="testCasesColumns"
-      class="max-h-[calc(100vh-28rem)]"
-      :ui="{
-        base: 'table-fixed border-separate border-spacing-0',
-        thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
-        tbody: '[&>tr]:last:[&>td]:border-b-0 [&>tr]:hover:bg-gray-50 dark:[&>tr]:hover:bg-gray-900/50',
-        th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
-        td: 'border-b border-default',
-      }"
-      :meta="{
-        class: {
-          tr: (row: any) =>
-            highlightedCaseId === row.original.id ? 'animate-pulse bg-yellow-100 dark:bg-yellow-900/30' : '',
-        },
-      }"
-    >
-      <template #title-cell="{ row }">
-        <a
-          :href="`/test-cases/${row.original.id}`"
-          class="text-primary hover:underline font-medium"
-          @click.prevent="navigateTo(`/test-cases/${row.original.id}`)"
-          >{{ row.original.title }}</a
-        >
-      </template>
+    <!-- Tree view -->
+    <TestCasesTree
+      v-if="treeView && testCases.length > 0"
+      :test-cases="filteredTestCases"
+      :suites="suites"
+      :has-filter="hasFilter"
+      :highlighted-case-id="highlightedCaseId"
+    />
 
-      <template #status-cell="{ row }">
-        <UBadge
-          :color="
-            getStatusColor(
-              row.original.status === 'timedOut' || row.original.status === 'timedout' ? 'failed' : row.original.status,
-            )
-          "
-          class="capitalize"
-        >
-          {{
-            row.original.status === 'timedOut' || row.original.status === 'timedout' ? 'failed' : row.original.status
-          }}
-        </UBadge>
-      </template>
+    <!-- Flat table view -->
+    <template v-else-if="!treeView">
+      <UTable
+        v-if="filteredTestCases.length > 0"
+        ref="tableScrollRef"
+        sticky
+        :data="filteredTestCases"
+        :columns="testCasesColumns"
+        class="max-h-[calc(100vh-28rem)]"
+        :ui="{
+          base: 'table-fixed border-separate border-spacing-0',
+          thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
+          tbody: '[&>tr]:last:[&>td]:border-b-0 [&>tr]:hover:bg-gray-50 dark:[&>tr]:hover:bg-gray-900/50',
+          th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
+          td: 'border-b border-default',
+        }"
+        :meta="{
+          class: {
+            tr: (row: any) =>
+              highlightedCaseId === row.original.id ? 'animate-pulse bg-yellow-100 dark:bg-yellow-900/30' : '',
+          },
+        }"
+      >
+        <template #title-cell="{ row }">
+          <a
+            :href="`/test-cases/${row.original.id}`"
+            class="text-primary hover:underline font-medium"
+            @click.prevent="navigateTo(`/test-cases/${row.original.id}`)"
+            >{{ row.original.title }}</a
+          >
+        </template>
 
-      <template #location-cell="{ row }">
-        <code v-if="row.original.location" class="text-xs">{{ row.original.location }}</code>
-      </template>
+        <template #status-cell="{ row }">
+          <UBadge
+            :color="
+              getStatusColor(
+                row.original.status === 'timedOut' || row.original.status === 'timedout'
+                  ? 'failed'
+                  : row.original.status,
+              )
+            "
+            class="capitalize"
+          >
+            {{
+              row.original.status === 'timedOut' || row.original.status === 'timedout' ? 'failed' : row.original.status
+            }}
+          </UBadge>
+        </template>
 
-      <template #duration-cell="{ row }">
-        <span v-if="row.original.status === 'running'" class="text-info text-xs">In progress...</span>
-        <span v-else>{{ formatDuration(row.original.duration) }}</span>
-      </template>
+        <template #location-cell="{ row }">
+          <code v-if="row.original.location" class="text-xs">{{ row.original.location }}</code>
+        </template>
 
-      <template #workerIndex-cell="{ row }">
-        <UBadge v-if="row.original.workerIndex != null" color="neutral" variant="soft" class="font-mono text-xs">
-          {{ row.original.workerIndex }}
-        </UBadge>
-      </template>
+        <template #duration-cell="{ row }">
+          <span v-if="row.original.status === 'running'" class="text-info text-xs">In progress...</span>
+          <span v-else>{{ formatDuration(row.original.duration) }}</span>
+        </template>
 
-      <template #browser-cell="{ row }">
-        <BrowserBadge :browser="row.original.browser" />
-      </template>
+        <template #workerIndex-cell="{ row }">
+          <UBadge v-if="row.original.workerIndex != null" color="neutral" variant="soft" class="font-mono text-xs">
+            {{ row.original.workerIndex }}
+          </UBadge>
+        </template>
 
-      <template #retries-cell="{ row }">
-        {{ row.original.retries && row.original.retries > 0 ? row.original.retries : '' }}
-      </template>
+        <template #browser-cell="{ row }">
+          <BrowserBadge :browser="row.original.browser" />
+        </template>
 
-      <template #actions-cell="{ row }">
-        <div class="flex justify-end">
-          <UButton :to="`/test-cases/${row.original.id}`" size="sm" variant="outline"> View details </UButton>
-        </div>
-      </template>
-    </UTable>
+        <template #retries-cell="{ row }">
+          {{ row.original.retries && row.original.retries > 0 ? row.original.retries : '' }}
+        </template>
 
-    <div v-if="testCases.length > 0 && filteredTestCases.length === 0" class="text-center py-10 text-gray-500">
-      <UIcon name="i-lucide-search-x" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
-      <p>No test cases match your filters.</p>
-    </div>
+        <template #actions-cell="{ row }">
+          <div class="flex justify-end">
+            <UButton :to="`/test-cases/${row.original.id}`" size="sm" variant="outline"> View details </UButton>
+          </div>
+        </template>
+      </UTable>
 
-    <div v-else class="text-center py-10 text-gray-500">
-      <UIcon name="i-lucide-beaker" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
-      <p>No test cases recorded for this run.</p>
-    </div>
+      <div v-if="testCases.length > 0 && filteredTestCases.length === 0" class="text-center py-10 text-gray-500">
+        <UIcon name="i-lucide-search-x" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+        <p>No test cases match your filters.</p>
+      </div>
+
+      <div v-else-if="testCases.length === 0" class="text-center py-10 text-gray-500">
+        <UIcon name="i-lucide-beaker" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+        <p>No test cases recorded for this run.</p>
+      </div>
+    </template>
   </div>
 </template>

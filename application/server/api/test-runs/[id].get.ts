@@ -1,6 +1,7 @@
 import { getDatabase } from '../../database';
-import { testRuns, testCases, testRunsCases, projects, files } from '../../database/schema';
-import { eq, sql } from 'drizzle-orm';
+import { testRuns, testCases, testRunsCases, testSuites, projects, files } from '../../database/schema';
+import { eq, sql, inArray, and } from 'drizzle-orm';
+import { splitSuitePath } from '../../utils/persist-run-cases';
 
 defineRouteMeta({
   openAPI: {
@@ -89,15 +90,42 @@ export default eventHandler(async (event) => {
       browser: testRunsCases.browser,
       title: testCases.title,
       filePath: testCases.filePath,
+      suitePath: testCases.suitePath,
+      testAnnotations: testRunsCases.testAnnotations,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.testRunId, id));
 
+  // Fetch suite config for all files covered by this run
+  const filePaths = [...new Set(runsCases.map((tc) => tc.filePath))];
+  const suiteRows =
+    filePaths.length > 0
+      ? await db
+          .select({
+            filePath: testSuites.filePath,
+            suitePath: testSuites.suitePath,
+            mode: testSuites.mode,
+            annotations: testSuites.annotations,
+          })
+          .from(testSuites)
+          .where(and(eq(testSuites.projectId, testRun.projectId), inArray(testSuites.filePath, filePaths)))
+      : [];
+
+  const suites = suiteRows.map((s) => ({
+    filePath: s.filePath,
+    suitePath: splitSuitePath(s.suitePath),
+    mode: s.mode,
+    annotations: (s.annotations as any) ?? [],
+  }));
+
   // Format test cases to match the expected structure
   const formattedTestCases = runsCases.map((tc) => ({
     id: tc.id,
     title: tc.title,
+    filePath: tc.filePath,
+    suitePath: splitSuitePath(tc.suitePath),
+    testAnnotations: (tc.testAnnotations as any) ?? null,
     status: tc.status,
     duration: tc.duration,
     location: tc.line && tc.column ? `${tc.filePath}:${tc.line}:${tc.column}` : tc.filePath,
@@ -125,6 +153,7 @@ export default eventHandler(async (event) => {
       size: r.size,
     })),
     testCases: formattedTestCases,
+    suites,
     storageStats,
   };
 });

@@ -1,19 +1,29 @@
-import { testCases, testRunsCases, failureClusters } from '../database/schema';
+import { testCases, testRunsCases, testSuites, failureClusters } from '../database/schema';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { sanitizeNetworkRequests, sanitizeWebVitals, sanitizeConsoleLogs } from './sanitize';
 import { computeErrorFingerprint, type ErrorFingerprint } from '../../shared/error-fingerprint';
 import { testCaseCache } from './test-case-cache';
+import { testSuiteCache } from './test-suite-cache';
 import type { getDatabase } from '../database';
+
+export const SUITE_PATH_SEP = '\x1f';
+export const joinSuitePath = (path: string[] | null | undefined): string =>
+  path?.length ? path.join(SUITE_PATH_SEP) : '';
+export const splitSuitePath = (path: string | null | undefined): string[] =>
+  path ? path.split(SUITE_PATH_SEP).filter(Boolean) : [];
 
 type DB = Awaited<ReturnType<typeof getDatabase>>;
 
 /**
- * Normalised test-case data ready to be persisted for a run. `filePath` + `title`
+ * Normalised test-case data ready to be persisted for a run. `filePath` + `suitePath` + `title`
  * identify the shared test case; the remaining fields are stored on the per-run
  * junction row (`test_runs_cases`).
  */
 export interface RunCaseInput {
   filePath: string;
+  suitePath?: string[] | null;
+  suiteConfig?: Array<{ mode: string; annotations: Array<{ type: string; description?: string }> }> | null;
+  testAnnotations?: Array<{ type: string; description?: string }> | null;
   title: string;
   status: string;
   duration?: number | null;
@@ -128,6 +138,92 @@ async function getOrCreateFailureClusters(
 }
 
 /**
+ * Resolve (upsert) all unique suite paths from the batch into `test_suites`.
+ * Returns a map of `${filePath}\x00${suitePathStr}` → suiteId covering every
+ * level of every suitePath in the batch.
+ *
+ * Cache hits still fire a background update so mode/annotations stay fresh
+ * when a describe block's config changes between runs.
+ */
+async function resolveSuites(db: DB, projectId: number, cases: RunCaseInput[]): Promise<Map<string, number>> {
+  // Collect unique (filePath, levelPath, mode, annotations) — one entry per
+  // describe level per unique suitePath across all cases in the batch.
+  type SuiteSpec = { filePath: string; levelPath: string; mode: string; annotations: unknown[] };
+  const pending = new Map<string, SuiteSpec>(); // key → spec, deduped
+
+  for (const c of cases) {
+    const sp = c.suitePath ?? [];
+    for (let i = 0; i < sp.length; i++) {
+      const levelPath = sp.slice(0, i + 1).join(SUITE_PATH_SEP);
+      const key = `${c.filePath}\x00${levelPath}`;
+      if (!pending.has(key)) {
+        pending.set(key, {
+          filePath: c.filePath,
+          levelPath,
+          mode: c.suiteConfig?.[i]?.mode ?? 'default',
+          annotations: c.suiteConfig?.[i]?.annotations ?? [],
+        });
+      }
+    }
+  }
+
+  if (pending.size === 0) return new Map();
+
+  const projectSuiteCache = await testSuiteCache.getProjectCache(db, projectId);
+  const suiteIdMap = new Map<string, number>();
+  const toUpsert: Array<{ key: string } & SuiteSpec> = [];
+  const toUpdate: Array<{ id: number; mode: string; annotations: unknown[] }> = [];
+
+  for (const [key, spec] of pending) {
+    const cached = projectSuiteCache.get(`${spec.filePath}\x00${spec.levelPath}`);
+    if (cached !== undefined) {
+      suiteIdMap.set(key, cached);
+      toUpdate.push({ id: cached, mode: spec.mode, annotations: spec.annotations });
+    } else {
+      toUpsert.push({ key, ...spec });
+    }
+  }
+
+  // Upsert missing suites sequentially to avoid unique-constraint races
+  for (const spec of toUpsert) {
+    const result = await db
+      .insert(testSuites)
+      .values({
+        projectId,
+        filePath: spec.filePath,
+        suitePath: spec.levelPath,
+        mode: spec.mode,
+        annotations: spec.annotations as any,
+      })
+      .onConflictDoUpdate({
+        target: [testSuites.projectId, testSuites.filePath, testSuites.suitePath],
+        set: { mode: spec.mode, annotations: spec.annotations as any, updatedAt: new Date() },
+      })
+      .returning({ id: testSuites.id });
+
+    const id = result[0]?.id;
+    if (id !== undefined) {
+      suiteIdMap.set(spec.key, id);
+      testSuiteCache.add(projectId, spec.filePath, spec.levelPath, id);
+    }
+  }
+
+  // Fire-and-forget: refresh mode/annotations for cache hits (they can change between runs)
+  if (toUpdate.length > 0) {
+    Promise.all(
+      toUpdate.map(({ id, mode, annotations }) =>
+        db
+          .update(testSuites)
+          .set({ mode, annotations: annotations as any, updatedAt: new Date() })
+          .where(eq(testSuites.id, id)),
+      ),
+    ).catch(() => {});
+  }
+
+  return suiteIdMap;
+}
+
+/**
  * Get-or-create the shared `test_cases` rows for a batch and insert the per-run
  * `test_runs_cases` rows in a single statement. Network requests, web vitals and
  * console logs are sanitised here (stripping query strings from URLs). Failed
@@ -151,12 +247,13 @@ export async function persistRunCases(
 ): Promise<Array<{ id: number; status: string }>> {
   if (cases.length === 0) return [];
 
-  // Use the process-level test case cache to avoid a SELECT per batch.
-  // On first access for this project it loads all test cases from DB in one query;
-  // subsequent calls across all streaming batches hit memory only.
+  // --- Step 1: Resolve all suites referenced in this batch ---
+  const suiteIdMap = await resolveSuites(db, projectId, cases);
+
+  // --- Step 2: Resolve test case IDs and build junction rows ---
+
   const projectCache = await testCaseCache.getProjectCache(db, projectId);
 
-  // Compute error fingerprints for all failed cases in parallel
   const fingerprintResults = await Promise.all(
     cases.map((c) =>
       c.error && c.status !== 'passed' && c.status !== 'skipped'
@@ -166,27 +263,34 @@ export async function persistRunCases(
   );
 
   const runCasesRows: Array<typeof testRunsCases.$inferInsert> = [];
-  // Parallel to runCasesRows — null for non-failure cases
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
   const pendingClusters = new Map<string, PendingCluster>();
-  const existingCaseIdsToUpdate: number[] = [];
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
     const fingerprint = fingerprintResults[i] ?? null;
-    const cacheKey = `${c.filePath}::${c.title}`;
+    const suitePath = joinSuitePath(c.suitePath);
+    const cacheKey = `${c.filePath}\x00${suitePath}\x00${c.title}`;
 
     let caseId = projectCache.get(cacheKey);
 
     if (caseId === undefined) {
-      // New test case — insert and warm the cache for future batches
-      const result = await db.insert(testCases).values({ projectId, filePath: c.filePath, title: c.title }).returning();
+      const suiteId = suitePath ? (suiteIdMap.get(`${c.filePath}\x00${suitePath}`) ?? null) : null;
+
+      const result = await db
+        .insert(testCases)
+        .values({
+          projectId,
+          filePath: c.filePath,
+          suitePath,
+          suiteId,
+          title: c.title,
+        })
+        .returning();
       caseId = result[0]?.id;
       if (caseId !== undefined) {
-        testCaseCache.add(projectId, c.filePath, c.title, caseId);
+        testCaseCache.add(projectId, c.filePath, suitePath, c.title, caseId);
       }
-    } else {
-      existingCaseIdsToUpdate.push(caseId);
     }
 
     if (caseId === undefined) continue;
@@ -219,6 +323,7 @@ export async function persistRunCases(
       consoleLogs: sanitizeConsoleLogs(c.consoleLogs as Array<Record<string, unknown>> | null | undefined) ?? null,
       ariaSnapshot: c.ariaSnapshot ?? null,
       testSource: c.testSource ?? null,
+      testAnnotations: (c.testAnnotations as any) ?? null,
       browser: c.browser ?? null,
       workerIndex: c.workerIndex ?? null,
       startedAt: c.startedAt ?? null,
@@ -226,16 +331,6 @@ export async function persistRunCases(
   }
 
   if (runCasesRows.length === 0) return [];
-
-  // Fire-and-forget: bump updatedAt for pre-existing test cases.
-  // This is a cosmetic write that does not affect query correctness,
-  // so it runs in the background rather than blocking the hot path.
-  if (existingCaseIdsToUpdate.length > 0) {
-    db.update(testCases)
-      .set({ updatedAt: new Date() })
-      .where(inArray(testCases.id, existingCaseIdsToUpdate))
-      .catch(() => {});
-  }
 
   const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters);
   runCasesRows.forEach((row, i) => {

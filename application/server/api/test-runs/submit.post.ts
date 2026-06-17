@@ -125,6 +125,9 @@ export default eventHandler(async (event) => {
         startedAt?: number | null;
         workerIndex?: number | null;
         browser?: unknown;
+        suitePath?: string[] | null;
+        suiteConfig?: unknown;
+        testAnnotations?: unknown;
       }) => {
         const { filePath, line, column } = testCase.location
           ? parseLocation(testCase.location)
@@ -132,6 +135,9 @@ export default eventHandler(async (event) => {
 
         return {
           filePath,
+          suitePath: testCase.suitePath ?? null,
+          suiteConfig: testCase.suiteConfig ?? null,
+          testAnnotations: testCase.testAnnotations ?? null,
           title: testCase.title,
           status: testCase.status,
           duration: testCase.duration,

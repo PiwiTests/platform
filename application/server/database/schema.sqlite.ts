@@ -56,6 +56,30 @@ export const testRuns = sqliteTable(
   }),
 );
 
+// Test suites table - deduplicated describe block definitions, one row per unique path
+export const testSuites = sqliteTable(
+  'test_suites',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    filePath: text('file_path').notNull(),
+    suitePath: text('suite_path').notNull(), // \x1f-delimited full path, e.g. 'Auth\x1fLogin'
+    mode: text('mode').notNull().default('default'), // 'parallel' | 'serial' | 'default'
+    annotations: text('annotations', { mode: 'json' }), // Array<{ type, description? }>
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    uniqueIdx: uniqueIndex('idx_test_suites_unique').on(table.projectId, table.filePath, table.suitePath),
+  }),
+);
+
 // Test cases table - shared test definitions
 export const testCases = sqliteTable(
   'test_cases',
@@ -65,6 +89,8 @@ export const testCases = sqliteTable(
       .notNull()
       .references(() => projects.id),
     filePath: text('file_path').notNull(), // relative path from project root
+    suitePath: text('suite_path').notNull().default(''), // \x1f-delimited describe block path, e.g. 'Auth\x1fLogin'
+    suiteId: integer('suite_id').references(() => testSuites.id), // FK to immediate parent describe block (null for root-level tests)
     title: text('title').notNull(),
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
@@ -75,7 +101,12 @@ export const testCases = sqliteTable(
   },
   (table) => ({
     projectIdIdx: index('idx_test_cases_project_id').on(table.projectId),
-    filePathTitleIdx: index('idx_test_cases_file_path_title').on(table.projectId, table.filePath, table.title),
+    filePathTitleIdx: index('idx_test_cases_file_path_title').on(
+      table.projectId,
+      table.filePath,
+      table.suitePath,
+      table.title,
+    ),
   }),
 );
 
@@ -184,6 +215,7 @@ export const testRunsCases = sqliteTable(
     ariaSnapshot: text('aria_snapshot'), // ARIA snapshot of the page (YAML-like string from locator.ariaSnapshot())
     testSource: text('test_source'), // Source snippet around the failing assertion (sent by reporter)
     browser: text('browser', { mode: 'json' }), // Playwright project/browser config: { projectName, browserName, channel, viewport }
+    testAnnotations: text('test_annotations', { mode: 'json' }), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
     workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
     startedAt: integer('started_at'), // Unix timestamp in ms when the test started
     createdAt: integer('created_at', { mode: 'timestamp' })
@@ -346,6 +378,8 @@ export const apiKeys = sqliteTable(
 );
 
 // Type exports for TypeScript
+export type TestSuite = typeof testSuites.$inferSelect;
+export type NewTestSuite = typeof testSuites.$inferInsert;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type TestRun = typeof testRuns.$inferSelect;

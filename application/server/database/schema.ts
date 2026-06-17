@@ -13,6 +13,7 @@ const schema: typeof sqliteSchema = (process.env.PIWI_DATABASE_URL ? pgSchema : 
 export const {
   projects,
   testRuns,
+  testSuites,
   testCases,
   testRunsCases,
   failureClusters,
@@ -33,6 +34,8 @@ export type {
   NewProject,
   TestRun,
   NewTestRun,
+  TestSuite,
+  NewTestSuite,
   TestCase,
   NewTestCase,
   TestRunsCase,
