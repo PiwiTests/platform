@@ -529,7 +529,7 @@ function handleSelectCluster(clusterId: number) {
         </template>
 
         <template #tab-test-cases>
-          <div v-if="selectedClusterFilter != null" class="flex items-center gap-2 mb-3 pt-4 shrink-0">
+          <div v-if="selectedClusterFilter != null" class="flex items-center gap-2 mb-3 shrink-0">
             <UBadge color="info" variant="subtle" size="sm"> Filtered by failure group </UBadge>
             <UButton
               size="xs"
@@ -562,11 +562,7 @@ function handleSelectCluster(clusterId: number) {
         </template>
 
         <template #tab-workers>
-          <WorkersTimeline
-            :test-cases="throttledTestCases"
-            :live="isLive"
-            @select-test-case="handleSelectTestCase"
-          />
+          <WorkersTimeline :test-cases="throttledTestCases" :live="isLive" @select-test-case="handleSelectTestCase" />
         </template>
 
         <template #tab-compare>

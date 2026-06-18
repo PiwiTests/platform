@@ -367,37 +367,300 @@ onUnmounted(disconnectRunStream);
         </template>
 
         <template #tab-error>
-            <div class="space-y-4 pt-4">
-              <TestCaseErrorCard v-if="testCase?.error" :cluster="failureCluster" />
+          <TestCaseErrorCard v-if="testCase?.error" :cluster="failureCluster" />
 
-              <SectionCard v-if="testCase?.error" icon="i-lucide-bug" icon-class="text-red-500" title="Error">
-                <pre
-                  class="text-xs font-mono whitespace-pre-wrap break-words text-red-600 dark:text-red-400 max-h-96 overflow-y-auto"
-                  >{{ testCase.error }}</pre
-                >
-              </SectionCard>
+          <SectionCard v-if="testCase?.error" icon="i-lucide-bug" icon-class="text-red-500" title="Error">
+            <pre
+              class="text-xs font-mono whitespace-pre-wrap break-words text-red-600 dark:text-red-400 max-h-96 overflow-y-auto"
+              >{{ testCase.error }}</pre
+            >
+          </SectionCard>
 
-              <SectionCard v-if="testCase?.ariaSnapshot" icon="i-lucide-scan-text" title="ARIA snapshot">
-                <pre class="text-xs font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto">{{
-                  testCase.ariaSnapshot
-                }}</pre>
-              </SectionCard>
+          <SectionCard v-if="testCase?.ariaSnapshot" icon="i-lucide-scan-text" title="ARIA snapshot">
+            <pre class="text-xs font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto">{{
+              testCase.ariaSnapshot
+            }}</pre>
+          </SectionCard>
 
-              <p v-else-if="testCase?.error" class="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
-                <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />
-                ARIA snapshot not captured — make sure your test imports
-                <code class="rounded bg-gray-100 px-1 dark:bg-gray-800">test</code>
-                from the piwi-dashboard fixtures.
-              </p>
+          <p v-else-if="testCase?.error" class="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
+            <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />
+            ARIA snapshot not captured — make sure your test imports
+            <code class="rounded bg-gray-100 px-1 dark:bg-gray-800">test</code>
+            from the piwi-dashboard fixtures.
+          </p>
+        </template>
+
+        <template #tab-steps>
+          <div v-if="steps.length > 0">
+            <UTable
+              :data="steps"
+              :columns="stepColumns"
+              :ui="{
+                base: 'table-fixed border-separate border-spacing-0',
+                thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
+                tbody: '[&>tr]:last:[&>td]:border-b-0',
+                th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
+                td: 'border-b border-default',
+              }"
+            />
+          </div>
+        </template>
+
+        <template #tab-performance>
+          <div v-if="performanceHints.length > 0" class="space-y-2">
+            <div
+              v-for="(hint, index) in performanceHints"
+              :key="index"
+              :class="[
+                'p-3 rounded-lg border',
+                hint.type === 'warning'
+                  ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+                  : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800',
+              ]"
+            >
+              <div class="flex items-start gap-2">
+                <UIcon
+                  :name="hint.type === 'warning' ? 'i-lucide-alert-triangle' : 'i-lucide-lightbulb'"
+                  :class="hint.type === 'warning' ? 'text-amber-600' : 'text-blue-600'"
+                  class="size-4 mt-0.5 shrink-0"
+                />
+                <div>
+                  <p
+                    :class="
+                      hint.type === 'warning'
+                        ? 'text-amber-800 dark:text-amber-200 font-medium'
+                        : 'text-blue-800 dark:text-blue-200 font-medium'
+                    "
+                  >
+                    {{ hint.message }}
+                  </p>
+                  <p
+                    :class="
+                      hint.type === 'warning'
+                        ? 'text-amber-700 dark:text-amber-300'
+                        : 'text-blue-700 dark:text-blue-300'
+                    "
+                    class="mt-1"
+                  >
+                    {{ hint.details }}
+                  </p>
+                </div>
+              </div>
             </div>
-          </template>
+          </div>
 
-          <template #tab-steps>
-            <div class="space-y-4 pt-4">
-              <div v-if="steps.length > 0">
+          <SectionCard v-if="webVitals" icon="i-lucide-gauge" title="Browser performance (Web Vitals)">
+            <div class="space-y-4">
+              <div v-if="webVitals.navigation" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <p class="text-xs text-gray-500 uppercase tracking-wide">TTFB</p>
+                  <p
+                    class="text-xl font-semibold"
+                    :class="
+                      webVitals.navigation.ttfb > 600
+                        ? 'text-red-600'
+                        : webVitals.navigation.ttfb > 200
+                          ? 'text-orange-500'
+                          : 'text-green-600'
+                    "
+                  >
+                    {{ formatDuration(webVitals.navigation.ttfb) }}
+                  </p>
+                  <p class="text-xs text-gray-400 mt-1">Time to first byte</p>
+                </div>
+                <div>
+                  <p class="text-xs text-gray-500 uppercase tracking-wide">DOM Interactive</p>
+                  <p
+                    class="text-xl font-semibold"
+                    :class="
+                      webVitals.navigation.domInteractive > 3000
+                        ? 'text-red-600'
+                        : webVitals.navigation.domInteractive > 1500
+                          ? 'text-orange-500'
+                          : 'text-green-600'
+                    "
+                  >
+                    {{ formatDuration(webVitals.navigation.domInteractive) }}
+                  </p>
+                  <p class="text-xs text-gray-400 mt-1">DOM interactive</p>
+                </div>
+                <div>
+                  <p class="text-xs text-gray-500 uppercase tracking-wide">DOMContentLoaded</p>
+                  <p
+                    class="text-xl font-semibold"
+                    :class="
+                      webVitals.navigation.domContentLoaded > 3000
+                        ? 'text-red-600'
+                        : webVitals.navigation.domContentLoaded > 1500
+                          ? 'text-orange-500'
+                          : 'text-green-600'
+                    "
+                  >
+                    {{ formatDuration(webVitals.navigation.domContentLoaded) }}
+                  </p>
+                  <p class="text-xs text-gray-400 mt-1">DOMContentLoaded</p>
+                </div>
+                <div>
+                  <p class="text-xs text-gray-500 uppercase tracking-wide">Load Complete</p>
+                  <p
+                    class="text-xl font-semibold"
+                    :class="
+                      webVitals.navigation.loadComplete > 5000
+                        ? 'text-red-600'
+                        : webVitals.navigation.loadComplete > 3000
+                          ? 'text-orange-500'
+                          : 'text-green-600'
+                    "
+                  >
+                    {{ formatDuration(webVitals.navigation.loadComplete) }}
+                  </p>
+                  <p class="text-xs text-gray-400 mt-1">Page fully loaded</p>
+                </div>
+              </div>
+
+              <div
+                v-if="webVitals.paint && (webVitals.paint.firstPaint || webVitals.paint.firstContentfulPaint)"
+                class="grid grid-cols-2 gap-4 pt-2 border-t"
+              >
+                <div v-if="webVitals.paint.firstPaint !== undefined">
+                  <p class="text-xs text-gray-500 uppercase tracking-wide">First Paint (FP)</p>
+                  <p class="text-xl font-semibold">
+                    {{ formatDuration(webVitals.paint.firstPaint) }}
+                  </p>
+                </div>
+                <div v-if="webVitals.paint.firstContentfulPaint !== undefined">
+                  <p class="text-xs text-gray-500 uppercase tracking-wide">First Contentful Paint (FCP)</p>
+                  <p
+                    class="text-xl font-semibold"
+                    :class="
+                      webVitals.paint.firstContentfulPaint > 3000
+                        ? 'text-red-600'
+                        : webVitals.paint.firstContentfulPaint > 1800
+                          ? 'text-orange-500'
+                          : 'text-green-600'
+                    "
+                  >
+                    {{ formatDuration(webVitals.paint.firstContentfulPaint) }}
+                  </p>
+                </div>
+              </div>
+
+              <div v-if="webVitals.navigation?.url" class="text-xs text-gray-400 pt-1">
+                Page: <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">{{ webVitals.navigation.url }}</code>
+              </div>
+            </div>
+          </SectionCard>
+        </template>
+
+        <template #tab-traces>
+          <div class="space-y-4 pt-4">
+            <TestCaseTracesCard :traces="(traceData as any[]) || []" />
+            <TestCaseAttachmentsCard :attachments="(testCase as any)?.attachments ?? []" />
+            <TestCaseConsoleCard
+              v-if="(testCase as any)?.consoleLogs?.length"
+              :entries="(testCase as any)?.consoleLogs ?? []"
+            />
+            <SectionCard v-if="groupedNetworkRequests.length > 0" icon="i-lucide-network" title="Network requests">
+              <div class="space-y-1 max-h-96 overflow-y-auto">
+                <div
+                  v-for="req in groupedNetworkRequests"
+                  :key="req.key"
+                  class="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800 text-sm"
+                >
+                  <div class="flex items-center gap-2 min-w-0">
+                    <UBadge
+                      :color="
+                        req.method === 'GET'
+                          ? 'info'
+                          : req.method === 'POST'
+                            ? 'success'
+                            : req.method === 'DELETE'
+                              ? 'error'
+                              : 'warning'
+                      "
+                      variant="soft"
+                      size="xs"
+                      class="font-mono shrink-0"
+                    >
+                      {{ req.method }}
+                    </UBadge>
+                    <code class="truncate text-xs">{{ req.route }}</code>
+                    <span v-if="req.count > 1" class="text-gray-400 text-xs shrink-0">&times;{{ req.count }}</span>
+                  </div>
+                  <span
+                    class="ml-2 shrink-0"
+                    :class="
+                      req.avgDuration > 1000
+                        ? 'text-red-600 font-medium'
+                        : req.avgDuration > 500
+                          ? 'text-orange-500'
+                          : 'text-gray-500'
+                    "
+                    >{{ formatDuration(req.avgDuration) }}</span
+                  >
+                </div>
+              </div>
+            </SectionCard>
+
+            <SectionCard v-if="allServerLogs.length > 0" icon="i-lucide-server" title="Backend server logs">
+              <div class="space-y-1 max-h-64 overflow-y-auto font-mono text-xs">
+                <div v-for="(log, i) in allServerLogs" :key="i" class="flex items-start gap-2 py-0.5">
+                  <UBadge
+                    :color="log.level === 'Error' ? 'error' : 'warning'"
+                    variant="soft"
+                    size="xs"
+                    class="shrink-0 capitalize"
+                    >{{ log.level }}</UBadge
+                  >
+                  <span v-if="log.category" class="text-gray-400 shrink-0">[{{ log.category }}]</span>
+                  <span class="break-all text-gray-700 dark:text-gray-300">{{ log.message }}</span>
+                </div>
+              </div>
+            </SectionCard>
+
+            <p
+              v-else-if="groupedNetworkRequests.length > 0"
+              class="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500"
+            >
+              <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />
+              No backend server logs captured — install
+              <a href="https://phenx.github.io/piwi-dashboard/backend-logs" target="_blank" class="underline"
+                >a Piwi backend integration</a
+              >
+              to see server-side warnings and errors here.
+            </p>
+
+            <div
+              v-if="
+                !(traceData as any[])?.length &&
+                !(testCase as any)?.attachments?.length &&
+                !(testCase as any)?.consoleLogs?.length &&
+                !groupedNetworkRequests.length
+              "
+              class="flex flex-col items-center justify-center py-12 text-gray-400"
+            >
+              <template v-if="runIsActive">
+                <UIcon name="i-lucide-loader-circle" class="size-8 mb-2 animate-spin" />
+                <p class="text-sm">
+                  Run in progress — traces and attachments appear here as soon as they are uploaded.
+                </p>
+              </template>
+              <template v-else>
+                <UIcon name="i-lucide-inbox" class="size-8 mb-2" />
+                <p class="text-sm">No traces, console logs, or network requests captured for this test case.</p>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <template #tab-history>
+          <div class="space-y-4 pt-4">
+            <div v-if="historyData && historyData.length > 0">
+              <div class="space-y-4">
+                <TestCaseHistoryChart :data="historyData" :height="200" />
                 <UTable
-                  :data="steps"
-                  :columns="stepColumns"
+                  :data="historyData"
+                  :columns="historyColumns"
                   :ui="{
                     base: 'table-fixed border-separate border-spacing-0',
                     thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
@@ -408,278 +671,9 @@ onUnmounted(disconnectRunStream);
                 />
               </div>
             </div>
-          </template>
-
-          <template #tab-performance>
-            <div class="space-y-4 pt-4">
-              <div v-if="performanceHints.length > 0" class="space-y-2">
-                <div
-                  v-for="(hint, index) in performanceHints"
-                  :key="index"
-                  :class="[
-                    'p-3 rounded-lg border',
-                    hint.type === 'warning'
-                      ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
-                      : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800',
-                  ]"
-                >
-                  <div class="flex items-start gap-2">
-                    <UIcon
-                      :name="hint.type === 'warning' ? 'i-lucide-alert-triangle' : 'i-lucide-lightbulb'"
-                      :class="hint.type === 'warning' ? 'text-amber-600' : 'text-blue-600'"
-                      class="size-4 mt-0.5 shrink-0"
-                    />
-                    <div>
-                      <p
-                        :class="
-                          hint.type === 'warning'
-                            ? 'text-amber-800 dark:text-amber-200 font-medium'
-                            : 'text-blue-800 dark:text-blue-200 font-medium'
-                        "
-                      >
-                        {{ hint.message }}
-                      </p>
-                      <p
-                        :class="
-                          hint.type === 'warning'
-                            ? 'text-amber-700 dark:text-amber-300'
-                            : 'text-blue-700 dark:text-blue-300'
-                        "
-                        class="mt-1"
-                      >
-                        {{ hint.details }}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <SectionCard v-if="webVitals" icon="i-lucide-gauge" title="Browser performance (Web Vitals)">
-                <div class="space-y-4">
-                  <div v-if="webVitals.navigation" class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div>
-                      <p class="text-xs text-gray-500 uppercase tracking-wide">TTFB</p>
-                      <p
-                        class="text-xl font-semibold"
-                        :class="
-                          webVitals.navigation.ttfb > 600
-                            ? 'text-red-600'
-                            : webVitals.navigation.ttfb > 200
-                              ? 'text-orange-500'
-                              : 'text-green-600'
-                        "
-                      >
-                        {{ formatDuration(webVitals.navigation.ttfb) }}
-                      </p>
-                      <p class="text-xs text-gray-400 mt-1">Time to first byte</p>
-                    </div>
-                    <div>
-                      <p class="text-xs text-gray-500 uppercase tracking-wide">DOM Interactive</p>
-                      <p
-                        class="text-xl font-semibold"
-                        :class="
-                          webVitals.navigation.domInteractive > 3000
-                            ? 'text-red-600'
-                            : webVitals.navigation.domInteractive > 1500
-                              ? 'text-orange-500'
-                              : 'text-green-600'
-                        "
-                      >
-                        {{ formatDuration(webVitals.navigation.domInteractive) }}
-                      </p>
-                      <p class="text-xs text-gray-400 mt-1">DOM interactive</p>
-                    </div>
-                    <div>
-                      <p class="text-xs text-gray-500 uppercase tracking-wide">DOMContentLoaded</p>
-                      <p
-                        class="text-xl font-semibold"
-                        :class="
-                          webVitals.navigation.domContentLoaded > 3000
-                            ? 'text-red-600'
-                            : webVitals.navigation.domContentLoaded > 1500
-                              ? 'text-orange-500'
-                              : 'text-green-600'
-                        "
-                      >
-                        {{ formatDuration(webVitals.navigation.domContentLoaded) }}
-                      </p>
-                      <p class="text-xs text-gray-400 mt-1">DOMContentLoaded</p>
-                    </div>
-                    <div>
-                      <p class="text-xs text-gray-500 uppercase tracking-wide">Load Complete</p>
-                      <p
-                        class="text-xl font-semibold"
-                        :class="
-                          webVitals.navigation.loadComplete > 5000
-                            ? 'text-red-600'
-                            : webVitals.navigation.loadComplete > 3000
-                              ? 'text-orange-500'
-                              : 'text-green-600'
-                        "
-                      >
-                        {{ formatDuration(webVitals.navigation.loadComplete) }}
-                      </p>
-                      <p class="text-xs text-gray-400 mt-1">Page fully loaded</p>
-                    </div>
-                  </div>
-
-                  <div
-                    v-if="webVitals.paint && (webVitals.paint.firstPaint || webVitals.paint.firstContentfulPaint)"
-                    class="grid grid-cols-2 gap-4 pt-2 border-t"
-                  >
-                    <div v-if="webVitals.paint.firstPaint !== undefined">
-                      <p class="text-xs text-gray-500 uppercase tracking-wide">First Paint (FP)</p>
-                      <p class="text-xl font-semibold">
-                        {{ formatDuration(webVitals.paint.firstPaint) }}
-                      </p>
-                    </div>
-                    <div v-if="webVitals.paint.firstContentfulPaint !== undefined">
-                      <p class="text-xs text-gray-500 uppercase tracking-wide">First Contentful Paint (FCP)</p>
-                      <p
-                        class="text-xl font-semibold"
-                        :class="
-                          webVitals.paint.firstContentfulPaint > 3000
-                            ? 'text-red-600'
-                            : webVitals.paint.firstContentfulPaint > 1800
-                              ? 'text-orange-500'
-                              : 'text-green-600'
-                        "
-                      >
-                        {{ formatDuration(webVitals.paint.firstContentfulPaint) }}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div v-if="webVitals.navigation?.url" class="text-xs text-gray-400 pt-1">
-                    Page: <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">{{ webVitals.navigation.url }}</code>
-                  </div>
-                </div>
-              </SectionCard>
-            </div>
-          </template>
-
-          <template #tab-traces>
-            <div class="space-y-4 pt-4">
-              <TestCaseTracesCard :traces="(traceData as any[]) || []" />
-              <TestCaseAttachmentsCard :attachments="(testCase as any)?.attachments ?? []" />
-              <TestCaseConsoleCard
-                v-if="(testCase as any)?.consoleLogs?.length"
-                :entries="(testCase as any)?.consoleLogs ?? []"
-              />
-              <SectionCard v-if="groupedNetworkRequests.length > 0" icon="i-lucide-network" title="Network requests">
-                <div class="space-y-1 max-h-96 overflow-y-auto">
-                  <div
-                    v-for="req in groupedNetworkRequests"
-                    :key="req.key"
-                    class="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800 text-sm"
-                  >
-                    <div class="flex items-center gap-2 min-w-0">
-                      <UBadge
-                        :color="
-                          req.method === 'GET'
-                            ? 'info'
-                            : req.method === 'POST'
-                              ? 'success'
-                              : req.method === 'DELETE'
-                                ? 'error'
-                                : 'warning'
-                        "
-                        variant="soft"
-                        size="xs"
-                        class="font-mono shrink-0"
-                      >
-                        {{ req.method }}
-                      </UBadge>
-                      <code class="truncate text-xs">{{ req.route }}</code>
-                      <span v-if="req.count > 1" class="text-gray-400 text-xs shrink-0">&times;{{ req.count }}</span>
-                    </div>
-                    <span
-                      class="ml-2 shrink-0"
-                      :class="
-                        req.avgDuration > 1000
-                          ? 'text-red-600 font-medium'
-                          : req.avgDuration > 500
-                            ? 'text-orange-500'
-                            : 'text-gray-500'
-                      "
-                      >{{ formatDuration(req.avgDuration) }}</span
-                    >
-                  </div>
-                </div>
-              </SectionCard>
-
-              <SectionCard v-if="allServerLogs.length > 0" icon="i-lucide-server" title="Backend server logs">
-                <div class="space-y-1 max-h-64 overflow-y-auto font-mono text-xs">
-                  <div v-for="(log, i) in allServerLogs" :key="i" class="flex items-start gap-2 py-0.5">
-                    <UBadge
-                      :color="log.level === 'Error' ? 'error' : 'warning'"
-                      variant="soft"
-                      size="xs"
-                      class="shrink-0 capitalize"
-                      >{{ log.level }}</UBadge
-                    >
-                    <span v-if="log.category" class="text-gray-400 shrink-0">[{{ log.category }}]</span>
-                    <span class="break-all text-gray-700 dark:text-gray-300">{{ log.message }}</span>
-                  </div>
-                </div>
-              </SectionCard>
-
-              <p
-                v-else-if="groupedNetworkRequests.length > 0"
-                class="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500"
-              >
-                <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />
-                No backend server logs captured — install
-                <a href="https://phenx.github.io/piwi-dashboard/backend-logs" target="_blank" class="underline"
-                  >a Piwi backend integration</a
-                >
-                to see server-side warnings and errors here.
-              </p>
-
-              <div
-                v-if="
-                  !(traceData as any[])?.length &&
-                  !(testCase as any)?.attachments?.length &&
-                  !(testCase as any)?.consoleLogs?.length &&
-                  !groupedNetworkRequests.length
-                "
-                class="flex flex-col items-center justify-center py-12 text-gray-400"
-              >
-                <template v-if="runIsActive">
-                  <UIcon name="i-lucide-loader-circle" class="size-8 mb-2 animate-spin" />
-                  <p class="text-sm">
-                    Run in progress — traces and attachments appear here as soon as they are uploaded.
-                  </p>
-                </template>
-                <template v-else>
-                  <UIcon name="i-lucide-inbox" class="size-8 mb-2" />
-                  <p class="text-sm">No traces, console logs, or network requests captured for this test case.</p>
-                </template>
-              </div>
-            </div>
-          </template>
-
-          <template #tab-history>
-            <div class="space-y-4 pt-4">
-              <div v-if="historyData && historyData.length > 0">
-                <div class="space-y-4">
-                  <TestCaseHistoryChart :data="historyData" :height="200" />
-                  <UTable
-                    :data="historyData"
-                    :columns="historyColumns"
-                    :ui="{
-                      base: 'table-fixed border-separate border-spacing-0',
-                      thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
-                      tbody: '[&>tr]:last:[&>td]:border-b-0',
-                      th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
-                      td: 'border-b border-default',
-                    }"
-                  />
-                </div>
-              </div>
-            </div>
-          </template>
-        </DetailPageLayout>
-      </template>
+          </div>
+        </template>
+      </DetailPageLayout>
+    </template>
   </UDashboardPanel>
 </template>
