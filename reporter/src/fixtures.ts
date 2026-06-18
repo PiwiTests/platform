@@ -1,5 +1,5 @@
 import { gunzipSync } from 'zlib';
-import { test as base } from '@playwright/test';
+import type { Fixtures } from '@playwright/test';
 
 /**
  * Playwright fixtures that collect network requests, console entries,
@@ -8,7 +8,7 @@ import { test as base } from '@playwright/test';
  * Attaches collected data as `piwi-dashboard-*` test-info attachments
  * which the Piwi Dashboard reporter parses on `onTestEnd`.
  */
-export const dashboardFixtures = {
+export const dashboardFixtures: Fixtures = {
   page: async ({ page }: any, use: any, testInfo: any) => {
     const networkRequests: Array<Record<string, unknown>> = [];
     const consoleEntries: Array<Record<string, unknown>> = [];
@@ -138,5 +138,21 @@ export const dashboardFixtures = {
   },
 };
 
-/** Playwright `test` extended with Piwi Dashboard fixtures (network, web vitals, console, ARIA snapshots) */
-export const test = base.extend(dashboardFixtures);
+/**
+ * Extend a Playwright `test` object with Piwi Dashboard fixtures.
+ *
+ * Use this instead of importing `@playwright/test` directly from this package
+ * to avoid the "Requiring @playwright/test second time" error caused by
+ * duplicate module resolution.
+ *
+ * @example
+ * ```ts
+ * import { test as base } from '@playwright/test';
+ * import { extendDashboardFixtures } from '@phenx/piwi-dashboard-reporter/fixtures';
+ *
+ * export const test = extendDashboardFixtures(base);
+ * ```
+ */
+export function extendDashboardFixtures<T>(test: T): T {
+  return (test as any).extend(dashboardFixtures);
+}

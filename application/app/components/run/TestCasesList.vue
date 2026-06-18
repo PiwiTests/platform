@@ -199,8 +199,8 @@ defineExpose({ scrollToCase });
 </script>
 
 <template>
-  <div ref="listRef">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+  <div ref="listRef" class="flex flex-col overflow-y-auto">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 shrink-0">
       <div class="flex items-center gap-2">
         <span v-if="isLive" class="text-sm text-gray-500 tabular-nums"> {{ testCases.length }} completed </span>
         <span v-else class="text-sm text-gray-500 tabular-nums">
@@ -278,6 +278,7 @@ defineExpose({ scrollToCase });
       :suites="suites"
       :has-filter="hasFilter"
       :highlighted-case-id="highlightedCaseId"
+      class="flex-1 min-h-0"
     />
 
     <!-- Flat table view -->
@@ -288,7 +289,7 @@ defineExpose({ scrollToCase });
         sticky
         :data="filteredTestCases"
         :columns="testCasesColumns"
-        class="max-h-[calc(100vh-28rem)]"
+        class="flex-1 min-h-0"
         :ui="{
           base: 'table-fixed border-separate border-spacing-0',
           thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',

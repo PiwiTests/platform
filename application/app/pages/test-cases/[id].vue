@@ -348,24 +348,25 @@ onUnmounted(disconnectRunStream);
     </template>
 
     <template #body>
-      <div class="flex flex-col h-full overflow-y-auto gap-4 p-1">
-        <TestCaseSummary
-          :test-case="(testCase ?? null) as any"
-          :scm-info="scmInfo"
-          :ci-info="ciInfo"
-          :browser="testCase?.browser ?? null"
-          :environment="environment"
-          :steps-count="steps.length"
-          :historical-timing="historicalTiming"
-          :summary-col-span-class="summaryColSpanClass"
-          :block-col-span-class="blockColSpanClass"
-          :traces="traceData ?? []"
-          :attachments="(testCase as any)?.attachments ?? []"
-          @refresh="refresh()"
-        />
+      <DetailPageLayout v-model="activeTab" :tab-items="tabItems">
+        <template #summary>
+          <TestCaseSummary
+            :test-case="(testCase ?? null) as any"
+            :scm-info="scmInfo"
+            :ci-info="ciInfo"
+            :browser="testCase?.browser ?? null"
+            :environment="environment"
+            :steps-count="steps.length"
+            :historical-timing="historicalTiming"
+            :summary-col-span-class="summaryColSpanClass"
+            :block-col-span-class="blockColSpanClass"
+            :traces="traceData ?? []"
+            :attachments="(testCase as any)?.attachments ?? []"
+            @refresh="refresh()"
+          />
+        </template>
 
-        <UTabs v-model="activeTab" :items="tabItems" size="sm" class="shrink-0">
-          <template #error>
+        <template #tab-error>
             <div class="space-y-4 pt-4">
               <TestCaseErrorCard v-if="testCase?.error" :cluster="failureCluster" />
 
@@ -391,7 +392,7 @@ onUnmounted(disconnectRunStream);
             </div>
           </template>
 
-          <template #steps>
+          <template #tab-steps>
             <div class="space-y-4 pt-4">
               <div v-if="steps.length > 0">
                 <UTable
@@ -409,7 +410,7 @@ onUnmounted(disconnectRunStream);
             </div>
           </template>
 
-          <template #performance>
+          <template #tab-performance>
             <div class="space-y-4 pt-4">
               <div v-if="performanceHints.length > 0" class="space-y-2">
                 <div
@@ -557,7 +558,7 @@ onUnmounted(disconnectRunStream);
             </div>
           </template>
 
-          <template #traces>
+          <template #tab-traces>
             <div class="space-y-4 pt-4">
               <TestCaseTracesCard :traces="(traceData as any[]) || []" />
               <TestCaseAttachmentsCard :attachments="(testCase as any)?.attachments ?? []" />
@@ -658,7 +659,7 @@ onUnmounted(disconnectRunStream);
             </div>
           </template>
 
-          <template #history>
+          <template #tab-history>
             <div class="space-y-4 pt-4">
               <div v-if="historyData && historyData.length > 0">
                 <div class="space-y-4">
@@ -678,8 +679,7 @@ onUnmounted(disconnectRunStream);
               </div>
             </div>
           </template>
-        </UTabs>
-      </div>
-    </template>
+        </DetailPageLayout>
+      </template>
   </UDashboardPanel>
 </template>
