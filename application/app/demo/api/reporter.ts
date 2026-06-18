@@ -173,6 +173,7 @@ interface RunCaseInput {
   line: number | null;
   column: number | null;
   steps?: unknown;
+  stepEvents?: unknown;
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
   networkRequests?: unknown;
@@ -340,6 +341,7 @@ async function persistRunCases(
       line: c.line,
       column: c.column,
       steps: c.steps ?? null,
+      stepEvents: c.stepEvents ?? null,
       slowestStep: c.slowestStep ?? null,
       slowestStepDuration: c.slowestStepDuration ?? null,
       networkRequests:

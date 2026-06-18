@@ -43,6 +43,7 @@ export const testRuns = sqliteTable(
 
     environment: text('environment'), // Deployment environment (e.g. 'production', 'staging', 'development')
     metadata: text('metadata', { mode: 'json' }), // Additional metadata as JSON
+    setupSteps: text('setup_steps', { mode: 'json' }), // Array of suite-level hook/fixture steps (beforeAll/afterAll) for the timeline
     streamToken: text('stream_token'), // Token for authenticating streaming updates
     instanceId: text('instance_id'), // Unique identifier for the reporter instance that created this run
     playwrightVersion: text('playwright_version'), // Playwright framework version used for this run
@@ -208,6 +209,7 @@ export const testRunsCases = sqliteTable(
     line: integer('line'), // line number in file
     column: integer('column'), // column number in file
     steps: text('steps', { mode: 'json' }), // Array of { title, duration, category } step objects
+    stepEvents: text('step_events', { mode: 'json' }), // Array of { title, category, startedAt, duration, status, location } — hook/fixture steps for timeline
     slowestStep: text('slowest_step'), // Title of the slowest step
     slowestStepDuration: integer('slowest_step_duration'), // Duration of the slowest step in ms
     networkRequests: text('network_requests', { mode: 'json' }), // Array of { method, url, status, duration, resourceType }

@@ -95,9 +95,11 @@ export default eventHandler(async (event) => {
 
   const validEvents = testCaseEvents.filter((tc: { title?: string }) => tc && tc.title);
 
-  // Split into begin events and complete events
+  // Split into begin, complete, step-begin, and step-end events
   const beginEvents = validEvents.filter((tc: { type?: string }) => tc.type === 'begin');
-  const completeEvents = validEvents.filter((tc: { type?: string }) => tc.type !== 'begin');
+  const stepBeginEvents = validEvents.filter((tc: { type?: string }) => tc.type === 'step-begin');
+  const stepEndEvents = validEvents.filter((tc: { type?: string }) => tc.type === 'step-end');
+  const completeEvents = validEvents.filter((tc: { type?: string }) => tc.type === 'complete');
 
   // --- Handle begin events (test started, no DB persistence needed) ---
   for (const tc of beginEvents) {
@@ -117,11 +119,45 @@ export default eventHandler(async (event) => {
     });
   }
 
+  // --- Handle step-begin events (hook/fixture started, no DB persistence) ---
+  for (const tc of stepBeginEvents) {
+    runEventBus.publish(id, {
+      type: 'test-begin',
+      data: {
+        title: tc.title,
+        filePath: 'hooks',
+        parentTitle: tc.parentTitle ?? null,
+        stepCategory: tc.stepCategory ?? null,
+        location: tc.location,
+        workerIndex: tc.workerIndex ?? null,
+        startedAt: tc.startedAt ?? null,
+      },
+    });
+  }
+
+  // --- Handle step-end events (hook/fixture finished, publish via SSE) ---
+  for (const tc of stepEndEvents) {
+    runEventBus.publish(id, {
+      type: 'test-completed',
+      data: {
+        title: tc.title,
+        filePath: 'hooks',
+        parentTitle: tc.parentTitle ?? null,
+        stepCategory: tc.stepCategory ?? null,
+        status: tc.status,
+        duration: tc.duration,
+        location: tc.location,
+        workerIndex: tc.workerIndex ?? null,
+        startedAt: tc.startedAt ?? null,
+      },
+    });
+  }
+
   // --- Handle complete events (test finished, persist to DB) ---
   if (completeEvents.length === 0) {
     return {
       success: true,
-      processed: beginEvents.length,
+      processed: beginEvents.length + stepBeginEvents.length + stepEndEvents.length,
     };
   }
 
@@ -158,6 +194,7 @@ export default eventHandler(async (event) => {
     line: tc.line,
     column: tc.column,
     steps: tc.steps,
+    stepEvents: (tc as { stepEvents?: unknown }).stepEvents ?? null,
     slowestStep: tc.slowestStep,
     slowestStepDuration: tc.slowestStepDuration,
     networkRequests: tc.networkRequests,

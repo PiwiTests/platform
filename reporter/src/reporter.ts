@@ -8,7 +8,7 @@ import { CrashRecovery } from './crash-recovery.js';
 import { FileHandler } from './file-handler.js';
 import { MetadataCollector } from './metadata-collector.js';
 import { StreamManager } from './stream-manager.js';
-import { collectStepMetrics, computePerformanceSummary } from './step-analyzer.js';
+import { collectStepMetrics, computePerformanceSummary, extractTestStepEvents } from './step-analyzer.js';
 import { computeInstanceId, readSourceSnippet, createGlobalSetup } from './helpers.js';
 
 /**
@@ -101,6 +101,71 @@ export class PiwiDashboardReporter {
     }
   }
 
+  /** Track suite-level setup steps (beforeAll/afterAll) not tied to any test */
+  private setupSteps: Array<{
+    title: string;
+    category: string;
+    startedAt: number;
+    duration: number;
+    status: string;
+    location?: string | null;
+    workerIndex?: number | null;
+  }> = [];
+
+  /** Playwright reporter hook: called when a step (including hook/fixture) begins */
+  onStepBegin(test: TestCase | undefined, _result: TestResult | undefined, step: any): void {
+    if (!this.enabled || !this.streamManager?.enabled) return;
+    const cat = step.category;
+    if (cat !== 'hook' && cat !== 'fixture') return;
+
+    const event = {
+      type: 'step-begin' as const,
+      title: step.title,
+      location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : 'unknown',
+      stepCategory: cat,
+      parentTitle: test?.title || null,
+      workerIndex: _result?.workerIndex ?? (_result as any)?.parallelIndex ?? null,
+      startedAt: step.startTime instanceof Date ? step.startTime.getTime() : null,
+    };
+    this.streamManager?.queueBeginEvent(event);
+  }
+
+  /** Playwright reporter hook: called when a step (including hook/fixture) ends */
+  onStepEnd(test: TestCase | undefined, _result: TestResult | undefined, step: any): void {
+    if (!this.enabled || !this.streamManager?.enabled) return;
+    const cat = step.category;
+    if (cat !== 'hook' && cat !== 'fixture') return;
+
+    const workerIndex = _result?.workerIndex ?? (_result as any)?.parallelIndex ?? null;
+    const startedAt = step.startTime instanceof Date ? step.startTime.getTime() : null;
+
+    const event = {
+      type: 'step-end' as const,
+      title: step.title,
+      location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : 'unknown',
+      status: step.error ? 'failed' : 'passed',
+      duration: step.duration || 0,
+      stepCategory: cat,
+      parentTitle: test?.title || null,
+      workerIndex,
+      startedAt,
+    };
+    this.streamManager?.queueEvent(event);
+
+    // Track suite-level hooks (beforeAll/afterAll) for the timeline
+    if (!test && startedAt) {
+      this.setupSteps.push({
+        title: step.title,
+        category: cat,
+        startedAt,
+        duration: step.duration || 0,
+        status: step.error ? 'failed' : 'passed',
+        location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : null,
+        workerIndex,
+      });
+    }
+  }
+
   /** Playwright reporter hook: called when an individual test finishes */
   onTestEnd(test: TestCase, result: TestResult): void {
     this.totalTests++;
@@ -131,6 +196,8 @@ export class PiwiDashboardReporter {
 
     if (this.options.collectPerformanceMetrics && result.steps?.length > 0) {
       testCase.performanceMetrics = collectStepMetrics(result.steps);
+      const stepEvents = extractTestStepEvents(result.steps, result.startTime);
+      if (stepEvents.length > 0) testCase.stepEvents = stepEvents;
     }
 
     if (this.options.collectPerformanceMetrics && result.attachments) {
@@ -258,6 +325,7 @@ export class PiwiDashboardReporter {
       workerIndex: rest.workerIndex ?? null,
       startedAt: rest.startedAt ?? null,
       steps: rest.performanceMetrics?.steps || null,
+      stepEvents: rest.stepEvents || null,
       slowestStep: rest.performanceMetrics?.slowestStep?.title || null,
       slowestStepDuration: rest.performanceMetrics?.slowestStep?.duration || null,
       networkRequests: rest.networkRequests || null,
@@ -321,6 +389,7 @@ export class PiwiDashboardReporter {
           metadata: this.metadata,
           hasPendingUploads: this.hasReports,
           playwrightVersion: this.playwrightVersion ?? undefined,
+          setupSteps: this.setupSteps.length > 0 ? this.setupSteps : undefined,
         },
         auth,
       );
