@@ -1,3 +1,5 @@
+import { Role } from '~~/shared/types';
+
 export default defineNuxtRouteMiddleware(async (to) => {
   // Skip auth check for login page
   if (to.path === '/login') {
@@ -27,7 +29,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
 
   // Check if user is trying to access edit pages
-  if (to.path.includes('/edit') && authState.value.user?.role !== 'administrator') {
+  if (to.path.includes('/edit') && authState.value.user?.role !== Role.ADMINISTRATOR) {
     return navigateTo('/');
   }
 });

@@ -2,11 +2,14 @@ import { getDatabase } from '../../database';
 import { projects, testRuns } from '../../database/schema';
 import { eq } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
+import { Role } from '../../../shared/types';
 import { parseLocation } from '../../utils/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { runEventBus } from '../../utils/run-events';
 import { autoDiagnoseRun } from '../../utils/ai-diagnosis';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
 
 defineRouteMeta({
   openAPI: {
@@ -14,6 +17,7 @@ defineRouteMeta({
     summary: 'Submit test results as JSON',
     description:
       'Submit Playwright test run results as a JSON payload. Creates or updates a project, test run, and test cases.',
+    'x-required-roles': REQUIRED_ROLES,
     requestBody: {
       content: {
         'application/json': {
@@ -34,7 +38,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   // Require reporter or administrator role for submitting test results
-  await requireAuth(event, ['reporter', 'administrator']);
+  await requireAuth(event, REQUIRED_ROLES);
 
   const body = await readBody(event);
 

@@ -3,6 +3,9 @@ import { getDatabase } from '../../../../database';
 import { apiKeys, users } from '../../../../database/schema';
 import { eq } from 'drizzle-orm';
 import { requireAuth, generateApiKey } from '../../../../utils/auth';
+import { Role } from '../../../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
 defineRouteMeta({
   openAPI: {
@@ -11,6 +14,7 @@ defineRouteMeta({
     description:
       'Creates a new API key for a user. The plaintext key is returned once and cannot be retrieved again. Accepts name and optional expiresAt in the request body. Non-administrators can only create keys for themselves.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
@@ -20,7 +24,7 @@ const createKeySchema = z.object({
 });
 
 export default eventHandler(async (event) => {
-  const currentUser = await requireAuth(event, ['administrator', 'reporter', 'user']);
+  const currentUser = await requireAuth(event, REQUIRED_ROLES);
 
   const targetId = parseInt(getRouterParam(event, 'id') || '0');
   if (!targetId) {
@@ -28,7 +32,7 @@ export default eventHandler(async (event) => {
   }
 
   // Non-administrators can only create keys for themselves
-  if (currentUser.role !== 'administrator' && currentUser.id !== targetId) {
+  if (currentUser.role !== Role.ADMINISTRATOR && currentUser.id !== targetId) {
     throw createError({ statusCode: 403, message: 'Insufficient permissions' });
   }
 

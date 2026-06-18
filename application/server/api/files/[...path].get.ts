@@ -1,8 +1,12 @@
 import { extname } from 'path';
+import { requireAuth } from '../../utils/auth';
 import { getStorage } from '../../storage';
 import { gunzip } from 'zlib';
 import { promisify } from 'util';
 import { parseZip, buildZip } from '../../utils/trace-zip';
+import { Role } from '../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
 defineRouteMeta({
   openAPI: {
@@ -11,6 +15,7 @@ defineRouteMeta({
     description:
       'Serves stored files including test reports, trace archives, and attachments. Supports trace ZIP reconstruction from slim blobs and gzip decompression for report archives.',
     parameters: [{ name: 'path', in: 'path', required: true, schema: { type: 'string' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
@@ -90,6 +95,7 @@ async function reconstructTraceZip(
 }
 
 export default eventHandler(async (event) => {
+  await requireAuth(event);
   const path = getRouterParam(event, 'path');
   const query = getQuery(event);
   const overrideContentType = typeof query.contentType === 'string' ? query.contentType : null;

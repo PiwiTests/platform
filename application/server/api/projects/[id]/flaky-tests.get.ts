@@ -1,6 +1,10 @@
+import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
 import { projects, testRuns, testRunsCases, testCases } from '../../../database/schema';
 import { eq, inArray, desc } from 'drizzle-orm';
+import { Role } from '../../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
 defineRouteMeta({
   openAPI: {
@@ -9,12 +13,14 @@ defineRouteMeta({
     description:
       'Analyzes test flakiness across recent runs using retry-pass detection and pass/fail alternation scoring',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
 const TERMINAL_STATUSES = ['passed', 'failed', 'timedout', 'interrupted'];
 
 export default eventHandler(async (event) => {
+  await requireAuth(event);
   const projectId = parseInt(getRouterParam(event, 'id') || '0');
   if (!projectId) throw createError({ statusCode: 400, message: 'Invalid project ID' });
 

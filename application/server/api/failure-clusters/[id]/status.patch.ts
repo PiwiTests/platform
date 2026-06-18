@@ -1,6 +1,10 @@
 import { getDatabase } from '../../../database';
 import { failureClusters } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
+import { Role } from '../../../../shared/types';
+import { requireAuth } from '../../../utils/auth';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
 
 defineRouteMeta({
   openAPI: {
@@ -8,12 +12,14 @@ defineRouteMeta({
     summary: 'Update failure cluster status',
     description: 'Updates the status (open, resolved, ignored) and optional triage note for a failure cluster.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
 const VALID_STATUSES = ['open', 'resolved', 'ignored'];
 
 export default eventHandler(async (event) => {
+  await requireAuth(event, REQUIRED_ROLES);
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {

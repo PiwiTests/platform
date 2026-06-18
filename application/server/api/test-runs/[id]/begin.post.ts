@@ -5,6 +5,9 @@ import { eq } from 'drizzle-orm';
 import { cancelInstanceRuns } from '../../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { runEventBus } from '../../../utils/run-events';
+import { Role } from '../../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [];
 
 defineRouteMeta({
   openAPI: {
@@ -13,6 +16,7 @@ defineRouteMeta({
     description:
       'Begins a streaming test run by transitioning it from "initialising" to "running" status. Requires the setup token returned by the setup endpoint.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
     requestBody: {
       content: {
         'application/json': {

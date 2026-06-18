@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import type { User } from '../database/schema';
 import { scrypt, randomBytes, timingSafeEqual, createHash } from 'node:crypto';
 import { promisify } from 'node:util';
+import { Role } from '../../shared/types';
 
 const scryptAsync = promisify(scrypt);
 
@@ -30,7 +31,7 @@ async function verifyPassword(password: string, hash: string): Promise<boolean> 
 export interface SessionData {
   userId: number;
   username: string;
-  role: string;
+  role: Role;
 }
 
 // Get session from cookie
@@ -115,7 +116,7 @@ export async function verifyUser(username: string, password: string): Promise<Us
 }
 
 // Create a new user
-export async function createUser(username: string, password: string, role: string, name?: string): Promise<User> {
+export async function createUser(username: string, password: string, role: Role, name?: string): Promise<User> {
   const db = await getDatabase();
   const hashedPassword = await hashPassword(password);
 
@@ -138,11 +139,11 @@ export async function createUser(username: string, password: string, role: strin
 }
 
 // Check if user has required role
-export function hasRole(user: User | null, requiredRoles: string[]): boolean {
+export function hasRole(user: User | null, requiredRoles: Role[]): boolean {
   if (!user) {
     return false;
   }
-  return requiredRoles.includes(user.role);
+  return requiredRoles.includes(user.role as Role);
 }
 
 // Check if authentication is enabled
@@ -239,14 +240,14 @@ function extractApiKey(event: H3Event): string | null {
 }
 
 // Require authentication - throw error if not authenticated
-export async function requireAuth(event: H3Event, allowedRoles?: string[]): Promise<User> {
+export async function requireAuth(event: H3Event, allowedRoles?: Role[]): Promise<User> {
   if (!isAuthEnabled(event)) {
     // If auth is disabled, create a virtual admin user
     return {
       id: 0,
       username: 'system',
       password: '',
-      role: 'administrator',
+      role: Role.ADMINISTRATOR,
       name: 'System',
       avatarUrl: null,
       oauthProvider: null,

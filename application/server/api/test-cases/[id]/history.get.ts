@@ -1,6 +1,10 @@
+import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
 import { testRuns, testRunsCases } from '../../../database/schema';
 import { eq, desc } from 'drizzle-orm';
+import { Role } from '../../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
 defineRouteMeta({
   openAPI: {
@@ -9,10 +13,12 @@ defineRouteMeta({
     description:
       'Returns the execution history across multiple test runs for a shared test case, ordered by most recent first.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
 export default eventHandler(async (event) => {
+  await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {

@@ -1,12 +1,18 @@
+import { Role } from '../../../../../shared/types';
 import { isAuthEnabled } from '../../../../utils/auth';
 import { handleOAuthCallback } from '../../../../utils/oauth';
+
+const REQUIRED_ROLES: Role[] = [];
 
 defineRouteMeta({
   openAPI: {
     tags: ['Auth'],
     summary: 'OAuth callback',
-    description: 'Handles the OAuth provider callback after user authentication and redirects to the application.',
+    description:
+      'Handles the OAuth provider callback, exchanges the authorization code, creates or links the user, and sets the session.',
     parameters: [{ name: 'provider', in: 'path', required: true, schema: { type: 'string' } }],
+    'x-required-roles': REQUIRED_ROLES,
+    security: [],
   },
 });
 

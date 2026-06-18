@@ -1,11 +1,16 @@
+import { Role } from '../../../shared/types';
 import { verifyUser, setUserSession, isAuthEnabled } from '../../utils/auth';
 import { z } from 'zod';
+
+const REQUIRED_ROLES: Role[] = [];
 
 defineRouteMeta({
   openAPI: {
     tags: ['Auth'],
     summary: 'Login',
     description: 'Authenticates a user with username and password credentials and creates a session.',
+    'x-required-roles': REQUIRED_ROLES,
+    security: [],
   },
 });
 
@@ -47,7 +52,7 @@ export default eventHandler(async (event) => {
   await setUserSession(event, {
     userId: user.id,
     username: user.username,
-    role: user.role,
+    role: user.role as Role,
   });
 
   return {
@@ -55,7 +60,7 @@ export default eventHandler(async (event) => {
     user: {
       id: user.id,
       username: user.username,
-      role: user.role,
+      role: user.role as Role,
       name: user.name,
       avatarUrl: user.avatarUrl,
     },

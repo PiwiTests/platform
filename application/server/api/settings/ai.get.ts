@@ -1,7 +1,10 @@
 import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
+import { Role } from '../../../shared/types';
 import { getAppSetting } from '../../utils/app-settings';
 import type { AiProvider } from '~~/types/api';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 
 defineRouteMeta({
   openAPI: {
@@ -9,11 +12,12 @@ defineRouteMeta({
     summary: 'Get AI settings',
     description:
       'Returns full AI configuration settings including provider, model, API key presence, base URL, auto-diagnose toggle, custom instructions, and SCM token presence. Requires administrator role.',
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event, ['administrator']);
+  await requireAuth(event, REQUIRED_ROLES);
 
   const runtimeConfig = useRuntimeConfig();
   const envAi = runtimeConfig.ai as

@@ -3,6 +3,9 @@ import { tags } from '../../database/schema';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireAuth } from '../../utils/auth';
+import { Role } from '../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 
 defineRouteMeta({
   openAPI: {
@@ -10,6 +13,7 @@ defineRouteMeta({
     summary: 'Update a tag',
     description: 'Updates the text and/or color of an existing tag. Requires administrator role.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
@@ -19,7 +23,7 @@ const updateTagSchema = z.object({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event, ['administrator']);
+  await requireAuth(event, REQUIRED_ROLES);
 
   const id = parseInt(getRouterParam(event, 'id') || '0');
   if (!id) {

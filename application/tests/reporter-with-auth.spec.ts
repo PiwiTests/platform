@@ -328,7 +328,13 @@ test.describe.serial('Reporter with authentication enabled', () => {
 
     expect(exitCode, `Reporter subprocess failed:\n${stderr}`).toBe(0);
 
-    // Verify the project was created (GET endpoints are public)
+    // Log in to authenticate for the verification call
+    const loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
+      data: { username: 'ci-reporter', password: 'reporterpassword123' },
+    });
+    expect(loginRes.ok()).toBeTruthy();
+
+    // Verify the project was created
     const projectsRes = await request.get(`${AUTH_SERVER_URL}/api/projects`);
     expect(projectsRes.ok()).toBeTruthy();
     const projects = (await projectsRes.json()) as Array<{ name: string }>;
@@ -562,7 +568,13 @@ test.describe.serial('Reporter with authentication enabled', () => {
 
     expect(exitCode, `Reporter subprocess failed:\n${stderr}`).toBe(0);
 
-    // Verify project was created (GET endpoints are public)
+    // Log in to authenticate for the verification call
+    const loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
+      data: { username: 'admin', password: 'adminpassword123' },
+    });
+    expect(loginRes.ok()).toBeTruthy();
+
+    // Verify project was created
     const projectsRes = await request.get(`${AUTH_SERVER_URL}/api/projects`);
     expect(projectsRes.ok()).toBeTruthy();
     const projects = (await projectsRes.json()) as Array<{ name: string }>;

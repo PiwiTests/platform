@@ -3,6 +3,9 @@ import { projects, tags, projectTags } from '../../database/schema';
 import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireAuth } from '../../utils/auth';
+import { Role } from '../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 
 defineRouteMeta({
   openAPI: {
@@ -11,6 +14,7 @@ defineRouteMeta({
     description:
       'Updates project metadata including label, description, diagnosis instructions, SCM token, and tags. Requires administrator role.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
@@ -24,7 +28,7 @@ const updateProjectSchema = z.object({
 
 export default eventHandler(async (event) => {
   // Require administrator role for updating projects
-  await requireAuth(event, ['administrator']);
+  await requireAuth(event, REQUIRED_ROLES);
 
   const id = parseInt(getRouterParam(event, 'id') || '0');
 

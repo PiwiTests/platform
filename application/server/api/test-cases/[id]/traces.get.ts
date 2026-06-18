@@ -1,6 +1,10 @@
+import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
 import { testRunsCases, files } from '../../../database/schema';
 import { eq, sql } from 'drizzle-orm';
+import { Role } from '../../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
 defineRouteMeta({
   openAPI: {
@@ -8,10 +12,12 @@ defineRouteMeta({
     summary: 'Get trace files for a test case',
     description: 'Returns a list of trace files associated with a specific test case.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
 export default eventHandler(async (event) => {
+  await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {

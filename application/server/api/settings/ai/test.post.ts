@@ -1,8 +1,11 @@
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
+import { Role } from '../../../../shared/types';
 import { resolveAiConfig, callAiProvider } from '../../../utils/ai-provider';
 import { getAppSetting } from '../../../utils/app-settings';
 import type { AiConfig, AiProvider } from '~~/types/api';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 
 defineRouteMeta({
   openAPI: {
@@ -10,11 +13,12 @@ defineRouteMeta({
     summary: 'Test AI provider connection',
     description:
       'Sends a connectivity test to the configured AI provider. Accepts optional provider, apiKey, model, and baseUrl in the request body. Requires administrator role.',
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event, ['administrator']);
+  await requireAuth(event, REQUIRED_ROLES);
 
   const body = (await readBody(event).catch(() => null)) as {
     provider?: string;

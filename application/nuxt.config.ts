@@ -141,7 +141,29 @@ export default defineNuxtConfig({
         description:
           'REST API for storing and querying Playwright test results, traces, failure diagnoses, and project statistics.',
         version: '1.0.0',
-      },
+        // Security scheme definitions for endpoint-level `security` annotations.
+        // See docs/development.md for conventions.
+        components: {
+          securitySchemes: {
+            bearerAuth: {
+              type: 'http',
+              scheme: 'bearer',
+              bearerFormat: 'pd_<64-hex>',
+              description:
+                'API key authentication (Bearer token with pd_ prefix). Obtain an API key via POST /api/users/:id/api-keys.',
+            },
+            sessionCookie: {
+              type: 'apiKey',
+              in: 'cookie',
+              name: 'nuxt_session',
+              description: 'Session cookie authentication. Set via POST /api/auth/login.',
+            },
+          },
+        },
+        // Default security requirement for all endpoints.
+        // Override with `security: []` on auth endpoints (login, oauth, ai/status).
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+      } as any,
       ui: {
         scalar: {
           route: '/docs',

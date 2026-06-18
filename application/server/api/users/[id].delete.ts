@@ -2,6 +2,9 @@ import { getDatabase } from '../../database';
 import { users } from '../../database/schema';
 import { eq } from 'drizzle-orm';
 import { requireAuth, isAuthEnabled } from '../../utils/auth';
+import { Role } from '../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 
 defineRouteMeta({
   openAPI: {
@@ -10,12 +13,13 @@ defineRouteMeta({
     description:
       'Deletes a user by ID. Prevents self-deletion and removal of the last administrator account. Requires administrator role.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
 export default eventHandler(async (event) => {
   // If auth is enabled, require administrator role
-  const currentUser = await requireAuth(event, ['administrator']);
+  const currentUser = await requireAuth(event, REQUIRED_ROLES);
 
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
@@ -46,8 +50,8 @@ export default eventHandler(async (event) => {
         message: 'You cannot delete your own account',
       });
     }
-    if (targetUser.role === 'administrator') {
-      const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, 'administrator'));
+    if (targetUser.role === Role.ADMINISTRATOR) {
+      const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, Role.ADMINISTRATOR));
       if (admins.length <= 1) {
         throw createError({
           statusCode: 400,

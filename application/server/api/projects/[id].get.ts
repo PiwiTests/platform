@@ -1,17 +1,23 @@
+import { requireAuth } from '../../utils/auth';
 import { getDatabase } from '../../database';
 import { projects, testRuns, testRunsCases, files, tags, projectTags } from '../../database/schema';
 import { eq, desc, inArray, and, isNotNull } from 'drizzle-orm';
 import type { BrowserConfig } from '../../../shared/types';
+import { Role } from '../../../shared/types';
+
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
 defineRouteMeta({
   openAPI: {
     tags: ['Projects'],
     summary: 'Get project details',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
 export default eventHandler(async (event) => {
+  await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {

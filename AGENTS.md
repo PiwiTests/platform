@@ -209,12 +209,55 @@ node scripts/db-query.mjs "SELECT id, name FROM projects" --json
 | `src/fixtures.ts`             | Playwright fixtures                         |
 | `src/index.ts`                | Package entry point (class + `wrapConfig` + types) |
 
+## Authentication & Authorization
+
+- **Roles are defined as a TypeScript string enum** (`Role` in `shared/types.ts`): `ADMINISTRATOR`, `REPORTER`, `USER`. Use `Role.ADMINISTRATOR` etc. everywhere — never raw string literals.
+- **Auth is optional**: enabled by `PIWI_AUTH_ENABLED=true` env var. When disabled, `requireAuth()` returns a virtual admin user, so all endpoints work without auth.
+- **Two auth methods** (when enabled): session cookie (browser) or API key (Bearer token or `X-API-Key` header, `pd_` prefix).
+
+### Endpoint Auth Requirements (MUST follow)
+
+All endpoints MUST call `requireAuth(event)` or `requireAuth(event, [roles])` at the top of the handler:
+
+| Role array | Who can access | Used for |
+|---|---|---|
+| no arg (any authenticated) | Any logged-in user | Read endpoints: project list, run details, test cases, clusters, etc. |
+| `[Role.ADMINISTRATOR, Role.REPORTER]` | Reporter + Admin | Submitting test results, uploading, streaming runs, trace checks, failure cluster triage |
+| `[Role.ADMINISTRATOR]` | Admin only | User management, settings, project CRUD, tags, admin endpoints |
+| `[Role.ADMINISTRATOR, Role.REPORTER, Role.USER]` | All roles | Self-service API key management |
+
+- **Streaming protocol** endpoints (`begin`, `events`, `finish`, `case-files`) use **stream token** auth (not `requireAuth`) — the token is validated against the stored run's `streamToken`.
+- **Public endpoints** (no auth required): `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`, `POST /api/auth/setup`, OAuth flow endpoints, `GET /api/ai/status`.
+
+### Implementing Auth on a New Endpoint
+
+```typescript
+import { Role } from '../../../shared/types';
+import { requireAuth } from '../../utils/auth';
+
+export default eventHandler(async (event) => {
+  await requireAuth(event, [Role.ADMINISTRATOR]); // or plain requireAuth(event)
+  // ...
+});
+```
+
+When the `User` type from DB has `role: string`, cast to `Role`: `user.role as Role`.
+
+### OpenAPI Security Annotations
+
+- Every endpoint has a `defineRouteMeta` block with `openAPI` metadata — this is non-negotiable.
+- Auth/public distinction is documented via the `security` field:
+  - **Public endpoints** (auth, ai/status): `security: []`
+  - **All other endpoints**: inherit root-level `security: [{ bearerAuth: [] }, { sessionCookie: [] }]` defined in `nuxt.config.ts`.
+- The root `nuxt.config.ts` defines `components.securitySchemes` with `bearerAuth` (API key) and `sessionCookie` (session) schemes. The `meta` is type-cast with `as any` to allow these extra OpenAPI fields — this is intentional.
+- When adding a new endpoint, include `security: []` ONLY if it's truly public. All other endpoints inherit the default security automatically.
+
 ## Making Changes
 
 - **DB fields**: Update `schema.ts` → `npm run db:generate` (or `db:generate:pg` for PostgreSQL) → review migration → restart
   ⚠ Never create migration files or edit `_journal.json` manually — always use `npm run db:generate`.
 - **API endpoints**: Create file in `server/api/` → use `eventHandler()` + `getDatabase()`
-- **OpenAPI annotations**: Add `defineRouteMeta({ openAPI: { tags, summary, parameters, ... } })` to each new handler to appear in the auto-generated spec at `/_openapi.json` and `/docs`
+- **OpenAPI annotations**: Add `defineRouteMeta({ openAPI: { tags, summary, parameters, security, ... } })` to each new handler to appear in the auto-generated spec at `/_openapi.json` and `/docs`. Include `security: [{ bearerAuth: [] }]` for auth-required endpoints, `security: []` for public ones.
 - **Pages**: Create Vue file in `app/pages/` → use `<UDashboardPanel>` + `useFetch()`
 - **Components**: Create Vue file in the matching subfolder of `app/components/` (`shared/`, `run/`, `test-case/`, `cluster/`, `project/`, `layout/`, `demo/`) → all auto-imported without path prefix (Nuxt `pathPrefix: false`) → follow existing patterns:
   - Self-contained data fetching is preferred for tab content (use `watch` + `$fetch` or `useFetch` with `lazy: true`)

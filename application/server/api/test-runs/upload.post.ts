@@ -6,6 +6,7 @@ import { upsertTraceBlob, findTraceBlob } from '../../utils/trace-blobs';
 import { join } from 'path';
 import { decompressDirectory } from '../../utils/compression';
 import { requireAuth } from '../../utils/auth';
+import { Role } from '../../../shared/types';
 import { getStorage } from '../../storage';
 import { uploadDirectory } from '../../utils/storage-helpers';
 import { tmpdir } from 'os';
@@ -16,12 +17,15 @@ import { sanitizeMetadata } from '../../utils/sanitize';
 import { runEventBus } from '../../utils/run-events';
 import { autoDiagnoseRun } from '../../utils/ai-diagnosis';
 
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
+
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Upload test results with reports, traces, and attachments',
     description:
       'Upload Playwright test run results as multipart form data, including HTML reports, trace files, and other attachments. Supports both new runs and attaching files to existing streaming runs.',
+    'x-required-roles': REQUIRED_ROLES,
     requestBody: {
       content: {
         'multipart/form-data': {
@@ -57,7 +61,7 @@ const MAX_UPLOAD_BYTES = 500 * 1024 * 1024; // 500 MB
 
 export default eventHandler(async (event) => {
   // Require reporter or administrator role for uploading test results
-  await requireAuth(event, ['reporter', 'administrator']);
+  await requireAuth(event, REQUIRED_ROLES);
 
   const contentLength = parseInt(getRequestHeader(event, 'content-length') ?? '0', 10);
   if (contentLength > MAX_UPLOAD_BYTES) {
