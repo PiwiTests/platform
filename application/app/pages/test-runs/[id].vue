@@ -450,6 +450,11 @@ const tabItems = computed(() => [
   },
 ]);
 
+const tabPanelClass: Record<string, string> = {
+  'test-cases': 'overflow-hidden flex flex-col',
+  endpoints: 'overflow-hidden flex flex-col',
+};
+
 // Ref for TestCasesList to call scrollToCase
 const testCasesListRef: {
   value: { scrollToCase: (id: number) => void } | null;
@@ -506,84 +511,72 @@ function handleSelectCluster(clusterId: number) {
     </template>
 
     <template #body>
-      <div class="flex flex-col h-full overflow-hidden gap-4 p-1">
-        <RunSummary
-          v-if="testRun"
-          :test-run="testRun"
-          :display-progress="displayProgress"
-          :all-reports="allReports"
-          :show-custom-data="showCustomData"
-          :summary-col-span-class="summaryColSpanClass"
-          :block-col-span-class="blockColSpanClass"
-          :finalizing="isFinalizing"
-          :active-filter="statusFilterForSummary"
-          @update:show-custom-data="showCustomData = $event"
-          @filter-status="handleFilterStatus"
-        />
+      <DetailPageLayout v-model="activeTab" :tab-items="tabItems" :tab-panel-class="tabPanelClass">
+        <template #summary>
+          <RunSummary
+            v-if="testRun"
+            :test-run="testRun"
+            :display-progress="displayProgress"
+            :all-reports="allReports"
+            :show-custom-data="showCustomData"
+            :summary-col-span-class="summaryColSpanClass"
+            :block-col-span-class="blockColSpanClass"
+            :finalizing="isFinalizing"
+            :active-filter="statusFilterForSummary"
+            @update:show-custom-data="showCustomData = $event"
+            @filter-status="handleFilterStatus"
+          />
+        </template>
 
-        <!-- ===== TABBED CONTENT PANEL ===== -->
-        <UTabs v-model="activeTab" :items="tabItems" size="sm" class="flex-1 min-h-0 flex flex-col">
-          <template #test-cases>
-            <div class="overflow-y-auto h-full">
-              <div v-if="selectedClusterFilter != null" class="flex items-center gap-2 mb-3 pt-4">
-                <UBadge color="info" variant="subtle" size="sm"> Filtered by failure group </UBadge>
-                <UButton
-                  size="xs"
-                  color="neutral"
-                  variant="ghost"
-                  icon="i-lucide-x"
-                  label="Clear filter"
-                  @click="clearClusterFilter"
-                />
-              </div>
-              <TestCasesList
-                ref="testCasesListRef"
-                v-model:search="testCaseSearch"
-                v-model:active-statuses="testCaseActiveStatuses"
-                v-model:browser-filter="testCaseBrowserFilter"
-                :test-cases="displayTestCases"
-                :suites="testRun?.suites ?? []"
-                :is-live="isLive"
-                :failure-cluster-filter="selectedClusterFilter"
-              />
-            </div>
-          </template>
+        <template #tab-test-cases>
+          <div v-if="selectedClusterFilter != null" class="flex items-center gap-2 mb-3 pt-4 shrink-0">
+            <UBadge color="info" variant="subtle" size="sm"> Filtered by failure group </UBadge>
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-x"
+              label="Clear filter"
+              @click="clearClusterFilter"
+            />
+          </div>
+          <TestCasesList
+            ref="testCasesListRef"
+            v-model:search="testCaseSearch"
+            v-model:active-statuses="testCaseActiveStatuses"
+            v-model:browser-filter="testCaseBrowserFilter"
+            :test-cases="displayTestCases"
+            :suites="testRun?.suites ?? []"
+            :is-live="isLive"
+            :failure-cluster-filter="selectedClusterFilter"
+            class="flex-1 min-h-0"
+          />
+        </template>
 
-          <template #failure-groups>
-            <div class="overflow-y-auto h-full">
-              <FailureGroups v-if="activeTab === 'failure-groups'" @select-cluster="handleSelectCluster" />
-            </div>
-          </template>
+        <template #tab-failure-groups>
+          <FailureGroups @select-cluster="handleSelectCluster" />
+        </template>
 
-          <template #regression>
-            <div class="overflow-y-auto h-full">
-              <RegressionContext v-if="activeTab === 'regression'" />
-            </div>
-          </template>
+        <template #tab-regression>
+          <RegressionContext />
+        </template>
 
-          <template #workers>
-            <div class="overflow-y-auto h-full">
-              <WorkersTimeline
-                :test-cases="throttledTestCases"
-                :live="isLive"
-                @select-test-case="handleSelectTestCase"
-              />
-            </div>
-          </template>
+        <template #tab-workers>
+          <WorkersTimeline
+            :test-cases="throttledTestCases"
+            :live="isLive"
+            @select-test-case="handleSelectTestCase"
+          />
+        </template>
 
-          <template #compare>
-            <div class="overflow-y-auto h-full">
-              <RunCompare v-if="activeTab === 'compare'" />
-            </div>
-          </template>
+        <template #tab-compare>
+          <RunCompare />
+        </template>
 
-          <template #endpoints>
-            <div class="overflow-y-auto h-full">
-              <SlowEndpoints v-if="activeTab === 'endpoints'" @endpoints-count="endpointsCount = $event" />
-            </div>
-          </template>
-        </UTabs>
-      </div>
+        <template #tab-endpoints>
+          <SlowEndpoints class="flex-1 min-h-0" @endpoints-count="endpointsCount = $event" />
+        </template>
+      </DetailPageLayout>
     </template>
   </UDashboardPanel>
 

@@ -275,7 +275,20 @@ When the `User` type from DB has `role: string`, cast to `Role`: `user.role as R
 
 - **UTable sticky headers**: Use the `sticky` boolean prop + `max-h-*` class on the table root element. Do NOT wrap tables in `overflow-y-auto` divs — UTable's own root handles overflow when `max-h` is set.
 - **Row highlighting**: Use `:meta="{ class: { tr: 'highlight-class' } }"` on UTable, NOT `:row-attrs` (which is unsupported in Nuxt UI v4).
-- **Tab panels**: Use `<UTabs>` + `v-if` on each panel component to keep component lifecycle clean.
+- **Tab panels with summary**: Use `DetailPageLayout` — renders the summary + tab bar + scrollable tab panels as direct flex children of the page body (no page scroll, only panel content scrolls). The component handles proper flex height propagation that `<UTabs>` content slots cannot provide.
+  ```vue
+  <DetailPageLayout v-model="activeTab" :tab-items="tabItems" :tab-panel-class="tabPanelClass">
+    <template #summary>
+      <!-- FoldableSummary or any summary content — rendered shrink-0 -->
+      <RunSummary ... />
+    </template>
+    <template #tab-test-cases>
+      <!-- Tab content — rendered inside flex-1 min-h-0 panel -->
+      <TestCasesList ... />
+    </template>
+  </DetailPageLayout>
+  ```
+  The `tabPanelClass` prop lets tabs with self-scrolling content (UTable with `sticky`, etc.) use `overflow-hidden flex flex-col` instead of the default `overflow-y-auto`.
 - **Data fetching in children**: For self-contained components rendered conditionally (e.g., tab content), use `watch` + `$fetch` with reactive triggers rather than `useFetch` with `lazy: true`, since `useFetch` may not fire until the component is mounted.
 
 ### UTable conventions (MUST follow)

@@ -203,7 +203,7 @@ const flatRows = computed<FlatRow[]>(() => {
 </script>
 
 <template>
-  <div class="rounded-lg border border-default text-sm flex flex-col max-h-[calc(100vh-28rem)]">
+  <div class="rounded-lg border border-default text-sm flex flex-col flex-1 min-h-0">
     <!-- Toolbar: collapse/expand all -->
     <div class="flex items-center justify-end px-3 py-1.5 border-b border-default bg-elevated shrink-0">
       <button

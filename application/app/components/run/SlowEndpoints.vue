@@ -84,8 +84,8 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
 </script>
 
 <template>
-  <div>
-    <div v-if="loading" class="flex items-center justify-center py-8 text-gray-500 gap-2">
+  <div class="flex flex-col overflow-hidden">
+    <div v-if="loading" class="flex-1 flex items-center justify-center text-gray-500 gap-2">
       <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
       <span>Loading network data...</span>
     </div>
@@ -95,7 +95,7 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
       sticky
       :data="endpoints"
       :columns="endpointColumns"
-      class="max-h-[calc(100vh-28rem)]"
+      class="flex-1 min-h-0"
       :ui="{
         base: 'table-fixed border-separate border-spacing-0',
         thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
@@ -105,7 +105,7 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
       }"
     />
 
-    <div v-else class="text-center py-8 text-gray-500">
+    <div v-else class="flex-1 flex items-center justify-center text-center text-gray-500">
       <UIcon name="i-lucide-wifi-off" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
       <p>
         No network request data. Add the
