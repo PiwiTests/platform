@@ -74,13 +74,27 @@ jobs:
       - name: Install Playwright Browsers
         run: npx playwright install chromium firefox --with-deps --only-shell
 
+      - name: Start PostgreSQL (for PostgreSQL tests)
+        working-directory: .
+        run: |
+          docker run -d \
+            --name postgres \
+            -p 5432:5432 \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=playwright_test \
+            postgres:16-alpine
+          # Wait up to 30 s for PostgreSQL to become healthy
+          timeout 30 bash -c 'until docker exec postgres pg_isready -U postgres; do sleep 1; done'
+
       - name: Run Playwright Tests
         env:
-          S3_TEST_ENDPOINT: http://localhost:9000
-          S3_TEST_BUCKET: playwright-test
-          S3_TEST_REGION: us-east-1
-          S3_TEST_ACCESS_KEY_ID: minioadmin
-          S3_TEST_SECRET_ACCESS_KEY: minioadmin
+          PIWI_S3_TEST_ENDPOINT: http://localhost:9000
+          PIWI_S3_TEST_BUCKET: playwright-test
+          PIWI_S3_TEST_REGION: us-east-1
+          PIWI_S3_TEST_ACCESS_KEY_ID: minioadmin
+          PIWI_S3_TEST_SECRET_ACCESS_KEY: minioadmin
+          PIWI_POSTGRES_TEST_URL: postgresql://postgres:postgres@localhost:5432/playwright_test
         run: npm test
 
   demo:
