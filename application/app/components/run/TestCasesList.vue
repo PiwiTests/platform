@@ -3,7 +3,7 @@ import { computed, nextTick, watch, ref, onUnmounted } from 'vue';
 import type { TableColumn } from '@nuxt/ui';
 import type { TestCaseResult, SuiteInfo } from '~~/types/api';
 
-const treeView = ref(false);
+const { treeView, setTreeView } = useTreeViewCookie('test-cases');
 
 const props = defineProps<{
   testCases: TestCaseResult[];
@@ -174,7 +174,7 @@ const highlightedCaseId = ref<number | null>(null);
 
 function scrollToCase(id: number) {
   // Switch to flat view so the row is visible and scrollable.
-  treeView.value = false;
+  setTreeView(false);
   highlightedCaseId.value = id;
   nextTick(() => {
     const row = listRef.value?.querySelector<HTMLElement>(`tr:has(a[href="/test-cases/${id}"])`);
@@ -202,17 +202,12 @@ defineExpose({ scrollToCase });
   <div ref="listRef" class="flex flex-col overflow-y-auto">
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 shrink-0">
       <div class="flex items-center gap-2">
-        <span v-if="isLive" class="text-sm text-gray-500 tabular-nums"> {{ testCases.length }} completed </span>
-        <span v-else class="text-sm text-gray-500 tabular-nums">
-          {{ filteredTestCases.length
-          }}{{ filteredTestCases.length !== testCases.length ? ` / ${testCases.length}` : '' }} cases
-        </span>
         <div class="flex items-center rounded-md border border-default overflow-hidden">
           <button
             class="px-2 py-1 text-xs transition-colors"
             :class="!treeView ? 'bg-primary text-white dark:text-white' : 'text-muted hover:bg-elevated/60'"
             title="Flat list"
-            @click="treeView = false"
+            @click="setTreeView(false)"
           >
             <UIcon name="i-lucide-list" class="size-3.5" />
           </button>
@@ -220,11 +215,16 @@ defineExpose({ scrollToCase });
             class="px-2 py-1 text-xs transition-colors"
             :class="treeView ? 'bg-primary text-white dark:text-white' : 'text-muted hover:bg-elevated/60'"
             title="Tree view"
-            @click="treeView = true"
+            @click="setTreeView(true)"
           >
             <UIcon name="i-lucide-folder-tree" class="size-3.5" />
           </button>
         </div>
+        <span v-if="isLive" class="text-sm text-gray-500 tabular-nums"> {{ testCases.length }} completed </span>
+        <span v-else class="text-sm text-gray-500 tabular-nums">
+          {{ filteredTestCases.length
+          }}{{ filteredTestCases.length !== testCases.length ? ` / ${testCases.length}` : '' }} cases
+        </span>
       </div>
       <div class="flex items-center gap-2">
         <UInput

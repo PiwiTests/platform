@@ -44,6 +44,9 @@ const storageStats = computed(() => props.testRun?.storageStats);
           <span class="text-xs text-gray-500 tabular-nums whitespace-nowrap">
             S: <strong>{{ displayProgress?.skippedTests ?? testRun?.skippedTests ?? 0 }}</strong>
           </span>
+          <span class="text-xs text-orange-600 dark:text-orange-400 tabular-nums whitespace-nowrap">
+            Fl: <strong>{{ testRun?.flakyTests ?? 0 }}</strong>
+          </span>
           <TestStatusBar
             :passed="displayProgress?.passedTests ?? testRun?.passedTests ?? 0"
             :failed="displayProgress?.failedTests ?? testRun?.failedTests ?? 0"
@@ -76,12 +79,12 @@ const storageStats = computed(() => props.testRun?.storageStats);
               </div>
             </div>
 
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
               <button
                 class="rounded-lg p-3 text-left w-full transition-colors cursor-pointer"
                 :class="
                   activeFilter === 'all'
-                    ? 'bg-primary-50 dark:bg-primary-900/20 ring-2 ring-primary-300 dark:ring-primary-700'
+                    ? 'bg-gray-200 dark:bg-gray-700 ring-2 ring-gray-400 dark:ring-gray-500'
                     : 'bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800'
                 "
                 @click="emit('filter-status', 'all')"
@@ -137,6 +140,22 @@ const storageStats = computed(() => props.testRun?.storageStats);
                 </p>
                 <p class="text-xl font-bold mt-0.5 text-gray-600 dark:text-gray-400">
                   {{ displayProgress?.skippedTests ?? testRun?.skippedTests ?? 0 }}
+                </p>
+              </button>
+              <button
+                class="rounded-lg p-3 text-left w-full transition-colors cursor-pointer"
+                :class="
+                  activeFilter === 'flaky'
+                    ? 'bg-orange-100 dark:bg-orange-900/30 ring-2 ring-orange-400 dark:ring-orange-600'
+                    : 'bg-orange-50 dark:bg-orange-900/20 hover:bg-orange-100 dark:hover:bg-orange-900/30'
+                "
+                @click="emit('filter-status', 'flaky')"
+              >
+                <p class="text-xs font-medium text-orange-700 dark:text-orange-400 uppercase tracking-wider">
+                  <span class="inline-block size-1.5 rounded-full bg-orange-500 mr-1 align-middle" /> Flaky
+                </p>
+                <p class="text-xl font-bold mt-0.5 text-orange-600 dark:text-orange-400">
+                  {{ testRun?.flakyTests ?? 0 }}
                 </p>
               </button>
             </div>
