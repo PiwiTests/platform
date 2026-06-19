@@ -20,6 +20,30 @@ const emit = defineEmits<{
 
 const toast = useToast();
 const storageStats = computed(() => props.testRun?.storageStats);
+
+const { copy, copied } = useCopy();
+
+function buildRunSummary() {
+  const run = props.testRun;
+  if (!run) return '';
+  const statusEmoji =
+    run.status === 'passed' ? '✅' : run.status === 'failed' ? '❌' : run.status === 'running' ? '🔄' : '⚠️';
+  const label = run.label ? ` — ${run.label}` : '';
+  const project = run.project?.label ?? run.project?.name ?? '';
+  const total = run.totalTests ?? 0;
+  const passed = run.passedTests ?? 0;
+  const failed = run.failedTests ?? 0;
+  const skipped = run.skippedTests ?? 0;
+  const flaky = run.flakyTests ?? 0;
+  const duration = formatDuration(run.duration);
+  const flakyPart = flaky > 0 ? ` · ${flaky} flaky` : '';
+  return [
+    `*Run #${run.id}*${label}`,
+    `Status: ${statusEmoji} ${run.status} | Project: ${project}`,
+    `Tests: ${total} total · ${passed} passed · ${failed} failed · ${skipped} skipped${flakyPart}`,
+    `Duration: ${duration}`,
+  ].join('\n');
+}
 const labelInput = ref('');
 const editingLabel = ref(false);
 const savingLabel = ref(false);
@@ -208,6 +232,16 @@ function onLabelKeydown(e: KeyboardEvent) {
                       {{ testRun?.project?.label ?? testRun?.project?.name }} · Started
                       {{ prettyDateFormat(testRun?.startTime) }}
                     </span>
+                    <UTooltip :text="copied ? 'Copied!' : 'Copy run summary'">
+                      <UButton
+                        size="xs"
+                        variant="ghost"
+                        color="neutral"
+                        :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
+                        class="shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                        @click="copy(buildRunSummary(), { toast: 'Run summary copied' })"
+                      />
+                    </UTooltip>
                   </div>
                 </div>
               </div>

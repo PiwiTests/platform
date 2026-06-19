@@ -9,6 +9,52 @@ const toast = useToast();
 const config = useRuntimeConfig();
 
 const open = ref(false);
+const searchTerm = ref('');
+
+type SearchResult = {
+  projects: { id: number; name: string; label: string | null }[];
+  runs: {
+    id: number;
+    label: string | null;
+    status: string;
+    projectId: number;
+    projectName: string;
+    projectLabel: string | null;
+    startTime: Date;
+  }[];
+  cases: {
+    id: number;
+    title: string;
+    filePath: string;
+    projectId: number;
+    projectName: string;
+    projectLabel: string | null;
+  }[];
+};
+const searchResults = ref<SearchResult | null>(null);
+
+const debouncedSearch = useDebounceFn(async (q: string) => {
+  if (q.trim().length < 2) {
+    searchResults.value = null;
+    return;
+  }
+  try {
+    searchResults.value = await $fetch<SearchResult>('/api/search', { query: { q: q.trim() } });
+  } catch {
+    searchResults.value = null;
+  }
+}, 250);
+
+watch(searchTerm, debouncedSearch);
+watch(
+  () => open.value,
+  (v) => {
+    if (!v) {
+      searchTerm.value = '';
+      searchResults.value = null;
+    }
+  },
+);
 
 // Fetch projects for sidebar navigation
 const { data: projects, refresh: refreshProjects } = await useFetch<ProjectWithStats[]>('/api/projects', {
@@ -201,26 +247,87 @@ const pageSourceUrl = computed(() => {
   return `${blobBase}${pattern === '/' ? '/index' : pattern}.vue`;
 });
 
-const groups = computed<CommandPaletteGroup[]>(() => [
-  {
-    id: 'links',
-    label: 'Go to',
-    items: links.value.flat().map((item) => toCommandPaletteItem(item)),
-  },
-  {
-    id: 'code',
-    label: 'Code',
-    items: [
-      {
-        id: 'source',
-        label: 'View page source',
-        icon: 'i-lucide-github',
-        to: pageSourceUrl.value,
-        target: '_blank',
-      },
-    ],
-  },
-]);
+function runStatusIcon(status: string) {
+  if (status === 'passed') return 'i-lucide-circle-check-big';
+  if (status === 'failed') return 'i-lucide-circle-x';
+  if (status === 'running' || status === 'initialising') return 'i-lucide-loader-circle';
+  return 'i-lucide-circle';
+}
+
+const groups = computed<CommandPaletteGroup[]>(() => {
+  const staticGroups: CommandPaletteGroup[] = [
+    {
+      id: 'links',
+      label: 'Go to',
+      items: links.value.flat().map((item) => toCommandPaletteItem(item)),
+    },
+    {
+      id: 'code',
+      label: 'Code',
+      items: [
+        {
+          id: 'source',
+          label: 'View page source',
+          icon: 'i-lucide-github',
+          to: pageSourceUrl.value,
+          target: '_blank',
+        },
+      ],
+    },
+  ];
+
+  if (!searchResults.value) return staticGroups;
+
+  const resultGroups: CommandPaletteGroup[] = [];
+
+  if (searchResults.value.projects.length > 0) {
+    resultGroups.push({
+      id: 'search-projects',
+      label: 'Projects',
+      ignoreFilter: true,
+      items: searchResults.value.projects.map((p) => ({
+        id: `project-${p.id}`,
+        label: p.label || p.name,
+        description: p.label && p.label !== p.name ? p.name : undefined,
+        icon: 'i-lucide-folder',
+        to: `/projects/${p.id}`,
+      })),
+    });
+  }
+
+  if (searchResults.value.runs.length > 0) {
+    resultGroups.push({
+      id: 'search-runs',
+      label: 'Test runs',
+      ignoreFilter: true,
+      items: searchResults.value.runs.map((r) => ({
+        id: `run-${r.id}`,
+        label: r.label ? `Run #${r.id} — ${r.label}` : `Run #${r.id}`,
+        description: r.projectLabel || r.projectName,
+        suffix: r.status,
+        icon: runStatusIcon(r.status),
+        to: `/test-runs/${r.id}`,
+      })),
+    });
+  }
+
+  if (searchResults.value.cases.length > 0) {
+    resultGroups.push({
+      id: 'search-cases',
+      label: 'Test cases',
+      ignoreFilter: true,
+      items: searchResults.value.cases.map((c) => ({
+        id: `case-${c.id}`,
+        label: c.title,
+        description: `${c.projectLabel || c.projectName} · ${c.filePath}`,
+        icon: 'i-lucide-flask-conical',
+        to: `/test-cases/${c.id}`,
+      })),
+    });
+  }
+
+  return [...resultGroups, ...staticGroups];
+});
 
 const isDemo = config.public.demoMode;
 const demoDataVersion = config.public.demoDataVersion as string;
@@ -294,7 +401,7 @@ onMounted(async () => {
       </template>
     </UDashboardSidebar>
 
-    <UDashboardSearch :groups="groups" />
+    <UDashboardSearch v-model:search-term="searchTerm" :groups="groups" :preserve-group-order="!!searchResults" />
 
     <slot />
   </UDashboardGroup>
