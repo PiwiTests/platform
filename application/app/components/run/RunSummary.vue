@@ -27,6 +27,17 @@ const storageStats = computed(() => props.testRun?.storageStats);
         <div class="flex items-center gap-3 min-w-0">
           <StatusBlock :status="testRun?.status ?? ''" size="sm" />
           <span class="text-sm font-semibold truncate">Test run #{{ testRun?.id }}</span>
+          <UBadge
+            v-if="testRun?.shardTotal && testRun.shardTotal > 1"
+            color="neutral"
+            variant="soft"
+            size="sm"
+            class="shrink-0"
+            :title="`Shard ${testRun.shardsFinished ?? 0}/${testRun.shardTotal}`"
+          >
+            <UIcon name="i-lucide-layout-grid" class="size-3 mr-1" />
+            {{ testRun.shardsFinished ?? 0 }}/{{ testRun.shardTotal }}
+          </UBadge>
         </div>
         <div class="flex items-center gap-3 shrink-0 max-sm:hidden">
           <span class="text-xs text-gray-500 tabular-nums whitespace-nowrap">

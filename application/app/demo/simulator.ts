@@ -67,6 +67,8 @@ export interface DemoScenario {
   environment: string;
   /** Interrupt the run after this many completed tests */
   stopAfter?: number;
+  /** Enable sharding — tests are split across `shardCount` parallel shards */
+  shardCount?: number;
   metadata: () => Record<string, unknown>;
   tests: () => SimTest[];
 }
@@ -347,6 +349,7 @@ function buildMetadata(opts: {
   commitMessage: string;
   relatedIssue?: string;
   customData?: Record<string, unknown>;
+  ciInfo?: string | Record<string, string>;
 }): Record<string, unknown> {
   const buildNumber = String(1340 + Math.floor(Math.random() * 60));
   return {
@@ -369,6 +372,7 @@ function buildMetadata(opts: {
     },
     ...(opts.relatedIssue ? { relatedIssue: opts.relatedIssue } : {}),
     ...(opts.customData ? { customData: opts.customData } : {}),
+    ...(opts.ciInfo ? { ciInfo: opts.ciInfo } : {}),
   };
 }
 
@@ -523,6 +527,24 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
       }));
     },
   },
+  {
+    id: 'sharded',
+    label: 'Sharded run (2 shards)',
+    description: 'Tests split across 2 parallel CI shards that merge into one run',
+    icon: 'i-lucide-layers',
+    speed: 2.5,
+    workers: 3,
+    shardCount: 2,
+    environment: 'ci',
+    metadata: () =>
+      buildMetadata({
+        branch: 'main',
+        author: 'Fiona Mehta',
+        commitMessage: 'feat: deploy pipeline v2',
+        ciInfo: { provider: 'GitHub Actions', runId: '12345678', workflow: 'ci.yml' },
+      }),
+    tests: () => baseTests({ durationFactor: 0.8 }),
+  },
 ];
 
 // ── Simulation engine ──────────────────────────────────────────────────────
@@ -550,13 +572,91 @@ function sleep(ms: number): Promise<void> {
  * Drives one scenario through the reporter protocol. Resolves when the run
  * has finished (or was interrupted via the controller).
  */
+/**
+ * Run a sharded simulation: split the scenario's tests across `scenario.shardCount`
+ * parallel shards that share the same runLabel, each with its own stream token.
+ * The server merges them into a single run.
+ */
+async function runShardedSimulation(
+  scenario: DemoScenario,
+  hooks: SimulationHooks = {},
+  ctl: SimulationController = { stopped: false },
+): Promise<{ runId: number; status: string }> {
+  const shardCount = scenario.shardCount ?? 2;
+  const allTests = scenario.tests();
+  const runLabel = `sim-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+  // Split tests round-robin across shards
+  const shardedTests = Array.from({ length: shardCount }, () => [] as SimTest[]);
+  for (let i = 0; i < allTests.length; i++) {
+    shardedTests[i % shardCount]!.push(allTests[i]!);
+  }
+
+  // Create shard-specific scenarios (override tests + workers per shard)
+  const shardScenarios = shardedTests.map((tests) => {
+    const { shardCount: _, ...rest } = scenario;
+    return {
+      ...rest,
+      workers: Math.max(1, Math.ceil(scenario.workers / shardCount)),
+      tests: () => tests,
+    };
+  });
+
+  // Signal that the shared run is being created
+  const sharedHooks: SimulationHooks = {
+    ...hooks,
+    onRunCreated: (runId, projectId) => {
+      // Only fire once (first shard to call setup creates the run)
+      if (!createdFired) {
+        createdFired = true;
+        hooks.onRunCreated?.(runId, projectId);
+      }
+    },
+    onFinished: undefined, // we aggregate below
+  };
+  let createdFired = false;
+
+  const results = await Promise.all(
+    shardScenarios.map((s, i) =>
+      runSingleSimulation(s as DemoScenario, sharedHooks, ctl, {
+        shardIndex: i + 1,
+        shardTotal: shardCount,
+        runLabel,
+        workerOffset: i * Math.max(1, Math.ceil(scenario.workers / shardCount)),
+      }),
+    ),
+  );
+
+  // Aggregate status: failed if any shard failed
+  const anyFailed = results.some((r) => r.status === 'failed');
+  const finalStatus = anyFailed ? 'failed' : 'passed';
+  const runId = results.find((r) => r.runId)?.runId ?? 0;
+  hooks.onFinished?.(runId, finalStatus);
+  return { runId, status: finalStatus };
+}
+
 export async function runSimulation(
   scenario: DemoScenario,
   hooks: SimulationHooks = {},
   ctl: SimulationController = { stopped: false },
 ): Promise<{ runId: number; status: string }> {
+  if (scenario.shardCount && scenario.shardCount > 1) {
+    return runShardedSimulation(scenario, hooks, ctl);
+  }
+
+  return runSingleSimulation(scenario, hooks, ctl);
+}
+
+async function runSingleSimulation(
+  scenario: DemoScenario,
+  hooks: SimulationHooks = {},
+  ctl: SimulationController = { stopped: false },
+  shardOverride?: { shardIndex: number; shardTotal: number; runLabel: string; workerOffset?: number },
+): Promise<{ runId: number; status: string }> {
   const tests = scenario.tests();
   const startTime = new Date();
+  const runLabel = shardOverride?.runLabel;
+  const instanceId = runLabel ? `${DEMO_SIMULATOR_INSTANCE_ID}|${runLabel}` : DEMO_SIMULATOR_INSTANCE_ID;
 
   const setup = await $fetch<{ runId: number; projectId: number; setupToken: string }>('/api/test-runs/setup', {
     method: 'POST',
@@ -564,8 +664,10 @@ export async function runSimulation(
       projectName: DEMO_PROJECT_NAME,
       startTime: startTime.toISOString(),
       environment: scenario.environment,
-      instanceId: DEMO_SIMULATOR_INSTANCE_ID,
+      instanceId,
       playwrightVersion: '1.51.0',
+      shardIndex: shardOverride?.shardIndex,
+      shardTotal: shardOverride?.shardTotal,
     },
   });
   const runId = setup.runId;
@@ -577,7 +679,14 @@ export async function runSimulation(
   const metadata = scenario.metadata();
   const begin = await $fetch<{ streamToken: string }>(`/api/test-runs/${runId}/begin`, {
     method: 'POST',
-    body: { setupToken: setup.setupToken, totalTests: tests.length, metadata, playwrightVersion: '1.51.0' },
+    body: {
+      setupToken: setup.setupToken,
+      totalTests: tests.length,
+      metadata,
+      playwrightVersion: '1.51.0',
+      shardIndex: shardOverride?.shardIndex,
+      shardTotal: shardOverride?.shardTotal,
+    },
   });
   const streamToken = begin.streamToken;
 
@@ -674,7 +783,9 @@ export async function runSimulation(
     }
   }
 
-  await Promise.all(Array.from({ length: scenario.workers }, (_, i) => workerLoop(i)));
+  await Promise.all(
+    Array.from({ length: scenario.workers }, (_, i) => workerLoop(i + (shardOverride?.workerOffset ?? 0))),
+  );
 
   const interrupted = ctl.stopped || completed < tests.length;
   const status = interrupted ? 'interrupted' : failedCount > 0 ? 'failed' : 'passed';
@@ -693,6 +804,7 @@ export async function runSimulation(
       durations,
       metadata,
       playwrightVersion: '1.51.0',
+      ...(shardOverride ? { shardIndex: shardOverride.shardIndex, shardTotal: shardOverride.shardTotal } : {}),
     },
   });
 

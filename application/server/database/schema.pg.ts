@@ -40,6 +40,8 @@ export const testRuns = pgTable(
     flakyTests: integer('flaky_tests').notNull().default(0),
     avgTestDuration: integer('avg_test_duration'), // average test case duration in ms
     p90TestDuration: integer('p90_test_duration'), // 90th percentile test duration in ms
+    shardTotal: integer('shard_total'), // Total number of shards for sharded runs; null = not sharded
+    shardsFinished: integer('shards_finished').notNull().default(0), // How many shards have finished
 
     environment: text('environment'), // Deployment environment (e.g. 'production', 'staging', 'development')
     metadata: jsonb('metadata'), // Additional metadata as JSON

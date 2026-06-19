@@ -233,6 +233,8 @@ export interface TestRunDetails {
   flakyTests: number;
   avgTestDuration?: number | null;
   p90TestDuration?: number | null;
+  shardTotal?: number | null;
+  shardsFinished?: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null;
   setupSteps?: TestStepEvent[] | null;

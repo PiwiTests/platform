@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import type { PiwiDashboardOptions } from './config.js';
+import type { PiwiDashboardOptions, ShardInfo } from './config.js';
 import { HttpClient } from './http-client.js';
 import { StreamBuffer } from './stream-buffer.js';
 import { CrashRecovery } from './crash-recovery.js';
@@ -68,8 +68,14 @@ export class StreamManager {
   ) {}
 
   /** Begin the streaming session after `onBegin` fires. Non-blocking — the actual handshake runs asynchronously. */
-  start(startTime: string, metadata: Record<string, any>, instanceId: string, playwrightVersion?: string | null): void {
-    this._startPromise = this._doStart(startTime, metadata, instanceId, playwrightVersion);
+  start(
+    startTime: string,
+    metadata: Record<string, any>,
+    instanceId: string,
+    playwrightVersion?: string | null,
+    shardInfo?: ShardInfo | null,
+  ): void {
+    this._startPromise = this._doStart(startTime, metadata, instanceId, playwrightVersion, shardInfo);
   }
 
   private async _doStart(
@@ -77,6 +83,7 @@ export class StreamManager {
     metadata: Record<string, any>,
     instanceId: string,
     playwrightVersion?: string | null,
+    shardInfo?: ShardInfo | null,
   ): Promise<void> {
     const setupInfo = readSetupInfo(this.options.projectName!);
 
@@ -85,10 +92,13 @@ export class StreamManager {
       await this.recovery.tryUpload(this.httpClient, this._auth);
 
       let response: any;
+      const shardIndex = shardInfo?.current;
+      const shardTotal = shardInfo?.total;
+
       if (setupInfo) {
         response = await this.httpClient.postJSON(
           `/api/test-runs/${setupInfo.runId}/begin`,
-          { setupToken: setupInfo.setupToken, totalTests: 0, metadata, playwrightVersion },
+          { setupToken: setupInfo.setupToken, totalTests: 0, metadata, playwrightVersion, shardIndex, shardTotal },
           this._auth,
         );
       } else {
@@ -102,6 +112,8 @@ export class StreamManager {
             metadata,
             instanceId,
             playwrightVersion,
+            shardIndex,
+            shardTotal,
           },
           this._auth,
         );

@@ -1,11 +1,17 @@
 import { testRuns } from '../database/schema';
-import { eq, ne, and, or } from 'drizzle-orm';
+import { eq, ne, and, or, isNull } from 'drizzle-orm';
 import { runEventBus } from './run-events';
 import type { getDatabase } from '../database';
 
 type DB = Awaited<ReturnType<typeof getDatabase>>;
 
-export async function cancelInstanceRuns(db: DB, projectId: number, instanceId: string | null, excludeRunId?: number) {
+export async function cancelInstanceRuns(
+  db: DB,
+  projectId: number,
+  instanceId: string | null,
+  excludeRunId?: number,
+  isShardedRun?: boolean,
+) {
   if (!instanceId) return;
 
   const conditions = [
@@ -16,6 +22,12 @@ export async function cancelInstanceRuns(db: DB, projectId: number, instanceId: 
 
   if (excludeRunId !== undefined) {
     conditions.push(ne(testRuns.id, excludeRunId));
+  }
+
+  // For sharded runs, only cancel non-sharded runs (shardTotal is null).
+  // Sibling shards share the same instanceId and must NOT be cancelled.
+  if (isShardedRun) {
+    conditions.push(isNull(testRuns.shardTotal));
   }
 
   const cancelledRuns = await db

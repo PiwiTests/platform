@@ -1,3 +1,10 @@
+// ── Shard info ─────────────────────────────────────────────────────────────────
+
+export interface ShardInfo {
+  current: number;
+  total: number;
+}
+
 // ── Test status types ──────────────────────────────────────────────────────────
 // These mirror the values stored in the test_runs.status column and the
 // Playwright result.status values.
@@ -116,6 +123,8 @@ export interface TestRunSubmitPayload {
   instanceId?: string | null;
   playwrightVersion?: string;
   testCases?: TestCasePayload[];
+  shardIndex?: number;
+  shardTotal?: number;
 }
 
 // ── Step / hook events within a test case ─────────────────────────────────────
@@ -174,6 +183,8 @@ export interface TestRunFinishPayload {
   durations: number[];
   metadata?: Record<string, unknown>;
   playwrightVersion?: string;
+  shardIndex?: number;
+  shardTotal?: number;
 }
 
 // ── Setup / start payload ─────────────────────────────────────────────────────
@@ -186,4 +197,6 @@ export interface TestRunStartPayload {
   metadata?: Record<string, unknown>;
   instanceId?: string;
   playwrightVersion?: string;
+  shardIndex?: number;
+  shardTotal?: number;
 }

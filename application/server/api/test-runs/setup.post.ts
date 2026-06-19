@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from '../../database';
 import { projects, testRuns } from '../../database/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
 import { Role } from '../../../shared/types';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runEventBus } from '../../utils/run-events';
+import { persistShardToken } from '../../utils/shard-tokens';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
 
@@ -14,7 +15,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Initialize a streaming test run in setup phase',
     description:
-      'Initialize a new streaming test run in "initialising" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels any previous runs from the same instance.',
+      'Initialize a new streaming test run in "initialising" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels any previous runs from the same instance. Supports sharded runs.',
     'x-required-roles': REQUIRED_ROLES,
     requestBody: {
       content: {
@@ -26,6 +27,8 @@ defineRouteMeta({
               startTime: { type: 'string', format: 'date-time' },
               environment: { type: 'string' },
               instanceId: { type: 'string' },
+              shardIndex: { type: 'integer' },
+              shardTotal: { type: 'integer' },
             },
             required: ['projectName'],
           },
@@ -74,13 +77,94 @@ export default eventHandler(async (event) => {
   }
 
   const instanceId = body.instanceId || null;
+  const shardTotal = body.shardTotal as number | undefined;
+  const isSharded = !!(shardTotal && shardTotal > 1);
+
+  if (isSharded && instanceId) {
+    // Sharded setup: look for existing initialising run with same instanceId
+    const existingRuns = await db
+      .select()
+      .from(testRuns)
+      .where(
+        and(
+          eq(testRuns.projectId, project.id),
+          eq(testRuns.instanceId, instanceId),
+          eq(testRuns.status, 'initialising'),
+        ),
+      );
+
+    const existingShardedRun = existingRuns.find((r) => r.shardTotal && r.shardTotal > 1);
+
+    if (existingShardedRun) {
+      // Reuse — return existing runId with a fresh setup token
+      const setupToken = randomBytes(32).toString('hex');
+      runEventBus.addShardToken(existingShardedRun.id, setupToken);
+      await persistShardToken(
+        db,
+        existingShardedRun.id,
+        setupToken,
+        existingShardedRun.metadata as Record<string, unknown> | null,
+      );
+
+      return {
+        success: true,
+        runId: existingShardedRun.id,
+        projectId: project.id,
+        setupToken,
+      };
+    }
+
+    // First shard: cancel non-sharded runs, create sharded run
+    await cancelInstanceRuns(db, project.id, instanceId, undefined, true);
+
+    const setupToken = randomBytes(32).toString('hex');
+
+    const testRunResult = await db
+      .insert(testRuns)
+      .values({
+        projectId: project.id,
+        status: 'initialising',
+        startTime: new Date(body.startTime || new Date().toISOString()),
+        duration: null,
+        totalTests: 0,
+        passedTests: 0,
+        failedTests: 0,
+        skippedTests: 0,
+        environment: body.environment || null,
+        metadata: { shardTokens: [setupToken] } as Record<string, unknown>,
+        instanceId,
+        playwrightVersion: body.playwrightVersion || null,
+        streamToken: setupToken,
+        shardTotal,
+        shardsFinished: 0,
+      })
+      .returning();
+
+    const testRun = testRunResult[0];
+
+    if (!testRun) {
+      throw createError({
+        statusCode: 500,
+        message: 'Failed to create test run',
+      });
+    }
+
+    runEventBus.publishGlobal({ type: 'run-initialising', runId: testRun.id, projectId: project.id });
+    runEventBus.cacheRunState(testRun.id, { streamToken: setupToken, projectId: project.id, shardTokens: new Set() });
+
+    return {
+      success: true,
+      runId: testRun.id,
+      projectId: project.id,
+      setupToken,
+    };
+  }
+
+  // Non-sharded: existing behaviour
   await cancelInstanceRuns(db, project.id, instanceId);
 
-  // Generate a setup token stored in streamToken column; it authenticates the
-  // subsequent /begin call that transitions this run to 'running'.
   const setupToken = randomBytes(32).toString('hex');
 
-  // Create test run with 'initialising' status
   const testRunResult = await db
     .insert(testRuns)
     .values({

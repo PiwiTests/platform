@@ -1009,6 +1009,19 @@
           "primaryKey": false,
           "notNull": false
         },
+        "shard_total": {
+          "name": "shard_total",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "shards_finished": {
+          "name": "shards_finished",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "environment": {
           "name": "environment",
           "type": "text",
