@@ -29,6 +29,13 @@
       "when": 1781730573917,
       "tag": "0003_cuddly_the_executioner",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781852050189,
+      "tag": "0004_public_bullseye",
+      "breakpoints": true
     }
   ]
 }

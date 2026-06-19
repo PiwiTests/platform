@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { cancelInstanceRuns } from '../../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { runEventBus } from '../../../utils/run-events';
+import { persistShardToken } from '../../../utils/shard-tokens';
 import { Role } from '../../../../shared/types';
 
 const REQUIRED_ROLES: Role[] = [];
@@ -14,7 +15,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Transition test run from initialising to running',
     description:
-      'Begins a streaming test run by transitioning it from "initialising" to "running" status. Requires the setup token returned by the setup endpoint.',
+      'Begins a streaming test run by transitioning it from "initialising" to "running" status. Requires the setup token returned by the setup endpoint. Supports sharded runs: already-running sharded runs accept additional setup tokens.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': REQUIRED_ROLES,
     requestBody: {
@@ -26,6 +27,8 @@ defineRouteMeta({
               setupToken: { type: 'string' },
               totalTests: { type: 'integer' },
               metadata: { type: 'object' },
+              shardIndex: { type: 'integer' },
+              shardTotal: { type: 'integer' },
             },
             required: ['setupToken'],
           },
@@ -68,41 +71,56 @@ export default eventHandler(async (event) => {
     });
   }
 
-  if (testRun.status !== 'initialising') {
+  const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
+
+  if (!isSharded && testRun.status !== 'initialising') {
     throw createError({
       statusCode: 409,
       message: 'Test run cannot be transitioned to running state',
     });
   }
 
-  if (testRun.streamToken !== body.setupToken) {
+  // For sharded runs, accept the setup token from the shardTokens set
+  const isValidShardSetupToken = isSharded && runEventBus.isValidShardToken(id, body.setupToken);
+
+  if (testRun.streamToken !== body.setupToken && !isValidShardSetupToken) {
     throw createError({
       statusCode: 403,
       message: 'Invalid setup token',
     });
   }
 
-  // Cancel other running/initialising runs from the same instance before this
-  // one becomes active — they belong to a previous invocation.
-  await cancelInstanceRuns(db, testRun.projectId, testRun.instanceId, id);
-
   // Generate a new stream token for the running phase
   const streamToken = randomBytes(32).toString('hex');
 
-  // Transition to 'running'
-  await db
-    .update(testRuns)
-    .set({
-      status: 'running',
-      streamToken,
-      totalTests: body.totalTests || 0,
-      metadata: sanitizeMetadata(body.metadata || testRun.metadata),
-      playwrightVersion: body.playwrightVersion || testRun.playwrightVersion,
-    })
-    .where(eq(testRuns.id, id));
+  if (testRun.status === 'initialising') {
+    // First shard to begin: cancel other runs, transition to running
+    await cancelInstanceRuns(db, testRun.projectId, testRun.instanceId, id, isSharded);
 
-  runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: testRun.projectId });
-  runEventBus.cacheRunState(id, { streamToken, projectId: testRun.projectId });
+    await db
+      .update(testRuns)
+      .set({
+        status: 'running',
+        streamToken,
+        totalTests: body.totalTests || 0,
+        metadata: sanitizeMetadata(body.metadata || testRun.metadata),
+        playwrightVersion: body.playwrightVersion || testRun.playwrightVersion,
+        ...(isSharded ? { shardTotal: testRun.shardTotal, shardsFinished: testRun.shardsFinished } : {}),
+      })
+      .where(eq(testRuns.id, id));
+
+    runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: testRun.projectId });
+    runEventBus.cacheRunState(id, {
+      streamToken,
+      projectId: testRun.projectId,
+      ...(isSharded ? { shardTokens: new Set<string>() } : {}),
+    });
+  } else {
+    // Run is already running (subsequent shard in a sharded run after first /begin):
+    // register the new per-shard stream token in-memory and persist to DB
+    runEventBus.addShardToken(id, streamToken);
+    await persistShardToken(db, id, streamToken, testRun.metadata as Record<string, unknown> | null);
+  }
 
   return {
     success: true,

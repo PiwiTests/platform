@@ -30,6 +30,10 @@ export interface RunPayload {
   testCases: any[];
   /** Playwright framework version used for this run */
   playwrightVersion?: string;
+  /** 1-based shard index (e.g. 1, 2, 3) */
+  shardIndex?: number;
+  /** Total number of shards (e.g. 3) */
+  shardTotal?: number;
 }
 
 /** Options controlling which report files and traces to upload */
@@ -78,6 +82,8 @@ export class Uploader {
         instanceId: payload.instanceId,
         playwrightVersion: payload.playwrightVersion,
         testCases: payload.testCases,
+        shardIndex: payload.shardIndex,
+        shardTotal: payload.shardTotal,
       },
       auth,
     );
@@ -107,6 +113,8 @@ export class Uploader {
         projectDescription: payload.projectDescription,
         instanceId: payload.instanceId,
         playwrightVersion: payload.playwrightVersion,
+        shardIndex: payload.shardIndex,
+        shardTotal: payload.shardTotal,
       }),
     );
     form.append('testCases', JSON.stringify(payload.testCases));

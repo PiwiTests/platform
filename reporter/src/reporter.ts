@@ -1,6 +1,6 @@
 import * as path from 'path';
 import type { FullConfig, Suite, TestCase, TestResult, FullResult } from '@playwright/test/reporter';
-import { resolveOptions, type PiwiDashboardOptions } from './config.js';
+import { resolveOptions, type PiwiDashboardOptions, type ShardInfo } from './config.js';
 import { HttpClient } from './http-client.js';
 import { Uploader, type RunPayload, type ReportOptions } from './uploader.js';
 import { StreamBuffer } from './stream-buffer.js';
@@ -9,7 +9,7 @@ import { FileHandler } from './file-handler.js';
 import { MetadataCollector } from './metadata-collector.js';
 import { StreamManager } from './stream-manager.js';
 import { collectStepMetrics, computePerformanceSummary } from './step-analyzer.js';
-import { computeInstanceId, readSourceSnippet, createGlobalSetup } from './helpers.js';
+import { computeInstanceId, readSourceSnippet, createGlobalSetup, detectCiRunLabel } from './helpers.js';
 
 /**
  * Piwi Dashboard Playwright reporter.
@@ -29,6 +29,8 @@ export class PiwiDashboardReporter {
   private skippedTests = 0;
   private timedOutTests = 0;
   private instanceId: string;
+  private runLabel: string | null = null;
+  private shardInfo: ShardInfo | null = null;
   private metadata: Record<string, any> = {};
   private enabled: boolean;
 
@@ -44,7 +46,8 @@ export class PiwiDashboardReporter {
   constructor(rawOptions: Record<string, any> = {}) {
     this.options = resolveOptions(rawOptions);
     this.enabled = !!this.options.serverUrl;
-    this.instanceId = computeInstanceId(this.options.projectName!);
+    this.runLabel = this.options.runLabel || detectCiRunLabel();
+    this.instanceId = computeInstanceId(this.options.projectName!, this.runLabel);
 
     this.httpClient = new HttpClient(this.options.serverUrl ?? 'http://localhost:3000', this.options.verbose);
     this.fileHandler = new FileHandler();
@@ -79,7 +82,18 @@ export class PiwiDashboardReporter {
       `[Piwi Dashboard] Starting test run for project: ${this.options.projectName} (Playwright v${this.playwrightVersion})`,
     );
     this.metadata = this.metadataCollector.collect(config, suite, this.options);
-    this.streamManager?.start(this.startTime, this.metadata, this.instanceId, this.playwrightVersion);
+
+    // Detect Playwright shard config (--shard=1/3)
+    const pwShard = (config as any).shard as ShardInfo | null | undefined;
+    if (pwShard?.total && pwShard.total > 1) {
+      this.shardInfo = { current: pwShard.current, total: pwShard.total };
+      console.log(`[Piwi Dashboard] Shard ${this.shardInfo.current}/${this.shardInfo.total} detected`);
+    }
+
+    this.streamManager?.start(
+      this.startTime, this.metadata, this.instanceId, this.playwrightVersion,
+      this.shardInfo,
+    );
   }
 
   /** Playwright reporter hook: called when an individual test begins */
@@ -230,6 +244,8 @@ export class PiwiDashboardReporter {
       instanceId: this.instanceId,
       playwrightVersion: this.playwrightVersion ?? undefined,
       testCases: this.testCases.map((tc) => this.mapTestCase(tc)),
+      shardIndex: this.shardInfo?.current,
+      shardTotal: this.shardInfo?.total,
     };
   }
 
@@ -306,22 +322,28 @@ export class PiwiDashboardReporter {
 
       await sm.uploadRemaining(this.testCases);
 
+      const finishBody: Record<string, unknown> = {
+        streamToken: sm.token,
+        status: overallStatus,
+        duration,
+        totalTests: this.totalTests,
+        passedTests: this.passedTests,
+        failedTests: this.failedTests,
+        skippedTests: this.skippedTests,
+        flakyTests,
+        durations,
+        metadata: this.metadata,
+        hasPendingUploads: this.hasReports,
+        playwrightVersion: this.playwrightVersion ?? undefined,
+      };
+      if (this.shardInfo) {
+        finishBody.shardIndex = this.shardInfo.current;
+        finishBody.shardTotal = this.shardInfo.total;
+      }
+
       await this.httpClient.postJSON(
         `/api/test-runs/${sm.runId}/finish`,
-        {
-          streamToken: sm.token,
-          status: overallStatus,
-          duration,
-          totalTests: this.totalTests,
-          passedTests: this.passedTests,
-          failedTests: this.failedTests,
-          skippedTests: this.skippedTests,
-          flakyTests,
-          durations,
-          metadata: this.metadata,
-          hasPendingUploads: this.hasReports,
-          playwrightVersion: this.playwrightVersion ?? undefined,
-        },
+        finishBody,
         auth,
       );
 

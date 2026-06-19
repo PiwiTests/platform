@@ -26,6 +26,9 @@ import type { StreamEventPayload, TestRunFinishPayload, TestRunStartPayload } fr
 
 type DemoDb = Awaited<ReturnType<typeof getDemoDb>>;
 
+/** Per-run set of shard tokens (mirrors server's RunEventBus.shardTokens) */
+const demoShardTokens = new Map<number, Set<string>>();
+
 function randomToken(): string {
   const bytes = new Uint8Array(32);
   globalThis.crypto.getRandomValues(bytes);
@@ -38,6 +41,7 @@ async function cancelInstanceRuns(
   projectId: number,
   instanceId: string | null,
   excludeRunId?: number,
+  isShardedRun?: boolean,
 ): Promise<void> {
   if (!instanceId) return;
 
@@ -49,6 +53,10 @@ async function cancelInstanceRuns(
 
   if (excludeRunId !== undefined) {
     conditions.push(ne(testRuns.id, excludeRunId));
+  }
+
+  if (isShardedRun) {
+    conditions.push(eq(testRuns.shardTotal as any, null));
   }
 
   const cancelledRuns = await db
@@ -89,6 +97,60 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
   }
 
   const instanceId = body.instanceId || null;
+  const shardTotal = body.shardTotal;
+  const isSharded = !!(shardTotal && shardTotal > 1);
+
+  if (isSharded && instanceId) {
+    const existingRuns = await db
+      .select()
+      .from(testRuns)
+      .where(
+        and(
+          eq(testRuns.projectId, project.id),
+          eq(testRuns.instanceId, instanceId),
+          eq(testRuns.status, 'initialising'),
+        ),
+      );
+
+    const existingShardedRun = existingRuns.find((r) => r.shardTotal && r.shardTotal > 1);
+    if (existingShardedRun) {
+      const setupToken = randomToken();
+      const tokens = demoShardTokens.get(existingShardedRun.id) ?? new Set();
+      tokens.add(setupToken);
+      demoShardTokens.set(existingShardedRun.id, tokens);
+      return { success: true, runId: existingShardedRun.id, projectId: project.id, setupToken };
+    }
+
+    await cancelInstanceRuns(db, project.id, instanceId, undefined, true);
+
+    const setupToken = randomToken();
+    const testRunResult = await db
+      .insert(testRuns)
+      .values({
+        projectId: project.id,
+        status: 'initialising',
+        startTime: new Date(body.startTime || new Date().toISOString()),
+        duration: null,
+        totalTests: 0,
+        passedTests: 0,
+        failedTests: 0,
+        skippedTests: 0,
+        environment: body.environment || null,
+        metadata: { shardTokens: [setupToken] } as Record<string, unknown>,
+        instanceId,
+        playwrightVersion: body.playwrightVersion || null,
+        streamToken: setupToken,
+        shardTotal,
+        shardsFinished: 0,
+      })
+      .returning();
+
+    const testRun = testRunResult[0];
+    if (!testRun) throw new Error('Failed to create test run');
+    publishDemoGlobalEvent({ type: 'run-initialising', runId: testRun.id, projectId: project.id });
+    return { success: true, runId: testRun.id, projectId: project.id, setupToken };
+  }
+
   await cancelInstanceRuns(db, project.id, instanceId);
 
   const setupToken = randomToken();
@@ -130,6 +192,8 @@ export async function apiBeginTestRun(
     totalTests?: number;
     metadata?: Record<string, unknown> | null;
     playwrightVersion?: string | null;
+    shardIndex?: number;
+    shardTotal?: number;
   },
 ) {
   const db = await getDemoDb();
@@ -138,25 +202,43 @@ export async function apiBeginTestRun(
   const testRun = testRunResults[0];
 
   if (!testRun) throw new Error('Test run not found');
-  if (testRun.status !== 'initialising') throw new Error('Test run cannot be transitioned to running state');
-  if (testRun.streamToken !== body.setupToken) throw new Error('Invalid setup token');
 
-  await cancelInstanceRuns(db, testRun.projectId, testRun.instanceId, id);
+  const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
+
+  if (!isSharded && testRun.status !== 'initialising') {
+    throw new Error('Test run cannot be transitioned to running state');
+  }
+
+  // Validate token: main streamToken or shard token
+  const shardTokenSet = demoShardTokens.get(id);
+  const isValidShardSetupToken = isSharded && shardTokenSet?.has(body.setupToken);
+  if (testRun.streamToken !== body.setupToken && !isValidShardSetupToken) {
+    throw new Error('Invalid setup token');
+  }
 
   const streamToken = randomToken();
 
-  await db
-    .update(testRuns)
-    .set({
-      status: 'running',
-      streamToken,
-      totalTests: body.totalTests || 0,
-      metadata: sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
-      playwrightVersion: body.playwrightVersion || (testRun.playwrightVersion as string | null),
-    })
-    .where(eq(testRuns.id, id));
+  if (testRun.status === 'initialising') {
+    await cancelInstanceRuns(db, testRun.projectId, testRun.instanceId, id, isSharded);
 
-  publishDemoGlobalEvent({ type: 'run-started', runId: testRun.id, projectId: testRun.projectId });
+    await db
+      .update(testRuns)
+      .set({
+        status: 'running',
+        streamToken,
+        totalTests: body.totalTests || 0,
+        metadata: sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
+        playwrightVersion: body.playwrightVersion || (testRun.playwrightVersion as string | null),
+      })
+      .where(eq(testRuns.id, id));
+
+    publishDemoGlobalEvent({ type: 'run-started', runId: testRun.id, projectId: testRun.projectId });
+  } else {
+    // Subsequent shard in a sharded run: register the per-shard stream token
+    const tokens = demoShardTokens.get(id) ?? new Set();
+    tokens.add(streamToken);
+    demoShardTokens.set(id, tokens);
+  }
 
   return { success: true, runId: testRun.id, projectId: testRun.projectId, streamToken };
 }
@@ -375,7 +457,11 @@ export async function apiPostRunEvents(
   const testRun = testRunResults[0];
 
   if (!testRun) throw new Error('Test run not found');
-  if (!body.streamToken || testRun.streamToken !== body.streamToken) throw new Error('Invalid stream token');
+  const shardTokenSet = demoShardTokens.get(id);
+  const isValidShardToken = shardTokenSet?.has(body.streamToken);
+  if (!body.streamToken || (testRun.streamToken !== body.streamToken && !isValidShardToken)) {
+    throw new Error('Invalid stream token');
+  }
 
   const testCaseEvents = Array.isArray(body.testCases) ? body.testCases : [body.testCase];
   const validEvents = testCaseEvents.filter((tc): tc is StreamEventPayload => Boolean(tc && tc.title));
@@ -496,8 +582,103 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   const testRun = testRunResults[0];
 
   if (!testRun) throw new Error('Test run not found');
-  if (!body.streamToken || testRun.streamToken !== body.streamToken) throw new Error('Invalid stream token');
+  const streamToken = body.streamToken;
+  const shardTokenSet = demoShardTokens.get(id);
+  const isValidShardToken = streamToken ? shardTokenSet?.has(streamToken) : false;
+  if (!streamToken || (testRun.streamToken !== streamToken && !isValidShardToken)) {
+    throw new Error('Invalid stream token');
+  }
 
+  const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
+
+  if (isSharded) {
+    const flakyTests = body.flakyTests ?? 0;
+    const duration = body.duration ?? Date.now() - new Date(testRun.startTime).getTime();
+
+    // Merge this shard's durations with any previously accumulated ones
+    const allDurations: number[] = [];
+    const currentMeta = (testRun.metadata as Record<string, unknown>) ?? {};
+    const prevDurations = currentMeta.shardDurations as number[] | undefined;
+    if (prevDurations) allDurations.push(...prevDurations);
+    if (body.durations && Array.isArray(body.durations)) allDurations.push(...body.durations);
+
+    await db
+      .update(testRuns)
+      .set({
+        updatedAt: new Date(),
+        status: 'running',
+        totalTests: sql`${testRuns.totalTests} + ${body.totalTests ?? 0}`,
+        passedTests: sql`${testRuns.passedTests} + ${body.passedTests ?? 0}`,
+        failedTests: sql`${testRuns.failedTests} + ${body.failedTests ?? 0}`,
+        skippedTests: sql`${testRuns.skippedTests} + ${body.skippedTests ?? 0}`,
+        flakyTests: sql`${testRuns.flakyTests} + ${flakyTests}`,
+        shardsFinished: sql`${testRuns.shardsFinished} + 1`,
+        duration: sql`MAX(coalesce(${testRuns.duration}, 0), ${duration})`,
+        metadata: { ...currentMeta, shardDurations: allDurations },
+      })
+      .where(eq(testRuns.id, id));
+
+    const updated = await db.select().from(testRuns).where(eq(testRuns.id, id));
+    const updatedRun = updated[0];
+
+    if (updatedRun && updatedRun.shardsFinished != null && updatedRun.shardTotal != null &&
+        updatedRun.shardsFinished >= updatedRun.shardTotal) {
+      const finalStatus = (updatedRun.failedTests ?? 0) > 0 ? 'failed' : 'passed';
+
+      let avgTestDuration: number | null = null;
+      let p90TestDuration: number | null = null;
+      if (allDurations.length > 0) {
+        const stats = durationStats(allDurations);
+        if (stats) { avgTestDuration = stats.avg; p90TestDuration = stats.p90; }
+      }
+
+      const existingMeta = (updatedRun.metadata as Record<string, unknown>) ?? {};
+      const finalMeta = { ...existingMeta, shardDurations: allDurations };
+
+      await db
+        .update(testRuns)
+        .set({
+          status: finalStatus,
+          streamToken: null,
+          avgTestDuration,
+          p90TestDuration,
+          metadata: finalMeta,
+          updatedAt: new Date(),
+        })
+        .where(eq(testRuns.id, id));
+
+      publishDemoRunEvent(id, {
+        type: 'run-finished',
+        data: {
+          status: finalStatus,
+          duration: updatedRun.duration,
+          totalTests: updatedRun.totalTests,
+          passedTests: updatedRun.passedTests,
+          failedTests: updatedRun.failedTests,
+          skippedTests: updatedRun.skippedTests,
+          flakyTests: updatedRun.flakyTests,
+        },
+      });
+
+      publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status: finalStatus });
+    } else {
+      publishDemoRunEvent(id, {
+        type: 'run-progress',
+        data: {
+          totalTests: updatedRun?.totalTests ?? testRun.totalTests,
+          passedTests: updatedRun?.passedTests ?? testRun.passedTests,
+          failedTests: updatedRun?.failedTests ?? testRun.failedTests,
+          skippedTests: updatedRun?.skippedTests ?? testRun.skippedTests,
+          shardsFinished: updatedRun?.shardsFinished ?? 0,
+          shardTotal: updatedRun?.shardTotal,
+        },
+      });
+    }
+
+    return { success: true, testRunId: id, status: 'running' };
+  }
+
+  // Non-sharded
   const status = body.status ?? 'failed';
   const duration = body.duration ?? Date.now() - new Date(testRun.startTime).getTime();
 

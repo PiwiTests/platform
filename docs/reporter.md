@@ -59,7 +59,54 @@ export default defineConfig({
 | `username`                  | string   | —                         | Username for dashboard login (use `apiKey` instead when possible)                           |
 | `password`                  | string   | —                         | Password for dashboard login (used with `username`)                                         |
 | `apiKey`                    | string   | —                         | API key for authentication (preferred over `username`/`password` for CI)                    |
+| `runLabel`                  | string   | auto-detected from CI     | Stable label tying shards together (e.g. CI run ID). Auto-detected from CI env; override if needed |
 | `verbose`                   | boolean  | `false`                   | Enable verbose logging for debugging                                                        |
+
+## Sharding
+
+When using Playwright's built-in test execution sharding (`--shard=1/3`), the reporter automatically groups
+all shards into a single logical test run on the dashboard.
+
+### How it works
+
+1. Each shard detects the **run label** — a stable CI pipeline/workflow identifier — from environment
+   variables (`GITHUB_RUN_ID`, `CI_PIPELINE_ID`, `CIRCLE_WORKFLOW_ID`, `TRAVIS_BUILD_ID`,
+   `BUILD_BUILDID`, `BUILD_ID`, `BUILDKITE_BUILD_ID`, `TEAMCITY_BUILD_ID`, `BITBUCKET_BUILD_NUMBER`,
+   `SEMAPHORE_WORKFLOW_ID`, `APPVEYOR_BUILD_ID`, `DRONE_BUILD_NUMBER`).
+
+2. All shards on the same CI run produce the same `instanceId` (derived from `runLabel + projectName`),
+   so the server groups them into one run.
+
+3. Each shard gets an independent stream token. The server keeps the run in `running` status
+   until **all** shards have called `/finish`.
+
+4. Counters (passed, failed, skipped, total) are **accumulated** across shards. The final status is
+   `failed` if any shard reported failures, otherwise `passed`.
+
+5. The dashboard shows a shard progress badge (e.g. `2/3`) on the run detail page while shards are
+   still running.
+
+### Zero-config CI
+
+For most CI platforms, no configuration is needed — the run label is auto-detected from environment
+variables. Ensure all shards use the same `projectName`.
+
+### Manual override
+
+If auto-detection doesn't work for your CI setup, set `runLabel` manually to a value common to all shards:
+
+```typescript
+['@phenx/piwi-dashboard-reporter', {
+  serverUrl: 'http://localhost:3000',
+  projectName: 'my-project',
+  runLabel: process.env.BUILD_TAG || 'my-custom-label',
+}]
+```
+
+### Playwright shard config
+
+The reporter reads `config.shard` (set by `--shard=1/3`) automatically — no extra config needed.
+All batch (`submit`/`upload`) and streaming paths support sharding.
 
 ## Live streaming
 

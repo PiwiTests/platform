@@ -72,7 +72,10 @@ export default eventHandler(async (event) => {
   const cachedState = runEventBus.getRunState(id);
 
   if (cachedState) {
-    if (cachedState.streamToken !== body.streamToken) {
+    const valid =
+      cachedState.streamToken === body.streamToken ||
+      cachedState.shardTokens?.has(body.streamToken);
+    if (!valid) {
       throw createError({ statusCode: 403, message: 'Invalid stream token' });
     }
     projectId = cachedState.projectId;
@@ -84,10 +87,13 @@ export default eventHandler(async (event) => {
       throw createError({ statusCode: 404, message: 'Test run not found' });
     }
 
-    await validateAndReviveRun(db, id, testRun, body.streamToken);
+    const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
+    const shardTokens = isSharded ? readShardTokensFromMeta(testRun.metadata) : undefined;
+    const isShardToken = shardTokens ? (token: string) => shardTokens.has(token) : undefined;
+    await validateAndReviveRun(db, id, testRun, body.streamToken, isShardToken);
     projectId = testRun.projectId;
     // Warm the cache so subsequent batches skip this SELECT
-    runEventBus.cacheRunState(id, { streamToken: body.streamToken as string, projectId });
+    runEventBus.cacheRunState(id, { streamToken: body.streamToken as string, projectId, shardTokens });
   }
 
   // Process test cases (supports single or batch)
