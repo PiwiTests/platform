@@ -117,6 +117,7 @@ export default eventHandler(async (event) => {
         suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
         location: tc.location,
         workerIndex: tc.workerIndex ?? null,
+        shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
         browser: tc.browser ?? null,
       },
@@ -207,6 +208,7 @@ export default eventHandler(async (event) => {
     ariaSnapshot: tc.ariaSnapshot as string | null | undefined,
     testSource: (tc as { testSource?: string | null }).testSource ?? null,
     workerIndex: tc.workerIndex ?? null,
+    shardIndex: tc.shardIndex ?? null,
     startedAt: tc.startedAt ?? null,
     browser: tc.browser ?? null,
   }));
@@ -251,6 +253,7 @@ export default eventHandler(async (event) => {
         location: tc.location,
         error: tc.error ?? null,
         workerIndex: tc.workerIndex ?? null,
+        shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
         browser: tc.browser ?? null,
       },

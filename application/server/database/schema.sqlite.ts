@@ -46,6 +46,7 @@ export const testRuns = sqliteTable(
     environment: text('environment'), // Deployment environment (e.g. 'production', 'staging', 'development')
     metadata: text('metadata', { mode: 'json' }), // Additional metadata as JSON
     setupSteps: text('setup_steps', { mode: 'json' }), // Array of suite-level hook/fixture steps (beforeAll/afterAll) for the timeline
+    label: text('label'), // Optional human-readable label (e.g. "v2.3.1 release")
     streamToken: text('stream_token'), // Token for authenticating streaming updates
     instanceId: text('instance_id'), // Unique identifier for the reporter instance that created this run
     playwrightVersion: text('playwright_version'), // Playwright framework version used for this run
@@ -222,6 +223,7 @@ export const testRunsCases = sqliteTable(
     browser: text('browser', { mode: 'json' }), // Playwright project/browser config: { projectName, browserName, channel, viewport }
     testAnnotations: text('test_annotations', { mode: 'json' }), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
     workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
+    shardIndex: integer('shard_index'), // Shard index (1-based) for sharded runs; null = not sharded
     startedAt: integer('started_at'), // Unix timestamp in ms when the test started
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()

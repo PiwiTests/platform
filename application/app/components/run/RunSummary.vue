@@ -15,9 +15,53 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:showCustomData': [value: boolean];
   'filter-status': [value: string];
+  'label-updated': [];
 }>();
 
+const toast = useToast();
 const storageStats = computed(() => props.testRun?.storageStats);
+const labelInput = ref('');
+const editingLabel = ref(false);
+const savingLabel = ref(false);
+const labelInputRef = ref<HTMLInputElement | null>(null);
+
+function startEditLabel() {
+  labelInput.value = props.testRun?.label ?? '';
+  editingLabel.value = true;
+  nextTick(() => labelInputRef.value?.focus());
+}
+
+async function saveLabel() {
+  if (savingLabel.value) return;
+  const run = props.testRun;
+  if (!run) return;
+  savingLabel.value = true;
+  try {
+    await $fetch(`/api/test-runs/${run.id}`, {
+      method: 'PATCH',
+      body: { label: labelInput.value || null },
+    });
+    editingLabel.value = false;
+    emit('label-updated');
+  } catch (error: unknown) {
+    const msg =
+      error && typeof error === 'object' && 'data' in error
+        ? (error.data as { message?: string })?.message
+        : 'Failed to save label';
+    toast.add({ title: 'Error', description: msg || 'Failed to save label', color: 'error' });
+  } finally {
+    savingLabel.value = false;
+  }
+}
+
+function cancelEditLabel() {
+  editingLabel.value = false;
+}
+
+function onLabelKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter') saveLabel();
+  else if (e.key === 'Escape') cancelEditLabel();
+}
 </script>
 
 <template>
@@ -26,7 +70,41 @@ const storageStats = computed(() => props.testRun?.storageStats);
       <div class="flex items-center gap-3 flex-1 min-w-0 justify-between">
         <div class="flex items-center gap-3 min-w-0">
           <StatusBlock :status="testRun?.status ?? ''" size="sm" />
-          <span class="text-sm font-semibold truncate">Test run #{{ testRun?.id }}</span>
+          <span class="text-sm font-semibold truncate flex items-center gap-1">
+            Run #{{ testRun?.id }}
+            <template v-if="editingLabel">
+              <input
+                ref="labelInputRef"
+                v-model="labelInput"
+                type="text"
+                placeholder="Add a label..."
+                class="inline-block w-40 text-sm font-normal border-b border-dashed border-gray-400 bg-transparent outline-none focus:border-primary px-0.5 py-0"
+                @keydown="onLabelKeydown"
+                @blur="saveLabel"
+              />
+              <UIcon
+                v-if="savingLabel"
+                name="i-lucide-loader-circle"
+                class="size-3.5 text-gray-400 animate-spin shrink-0"
+              />
+            </template>
+            <template v-else>
+              <span
+                v-if="testRun?.label"
+                class="font-normal text-gray-500 ml-1.5 cursor-pointer hover:text-gray-700 dark:hover:text-gray-300 border-b border-dashed border-transparent hover:border-gray-400"
+                @click="startEditLabel"
+                >— {{ testRun.label }}</span
+              >
+              <button
+                v-else
+                class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 border-b border-dashed border-transparent hover:border-gray-400 ml-1"
+                title="Add a label"
+                @click="startEditLabel"
+              >
+                + label
+              </button>
+            </template>
+          </span>
           <UBadge
             v-if="testRun?.shardTotal && testRun.shardTotal > 1"
             color="neutral"
@@ -80,7 +158,52 @@ const storageStats = computed(() => props.testRun?.storageStats);
                 <StatusBlock :status="testRun?.status ?? ''" size="md" />
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-2">
-                    <h2 class="text-base font-bold shrink-0">Test run #{{ testRun?.id }}</h2>
+                    <h2 class="text-base font-bold shrink-0 flex items-center gap-1">
+                      Run #{{ testRun?.id }}
+                      <template v-if="editingLabel">
+                        <input
+                          ref="labelInputRef"
+                          v-model="labelInput"
+                          type="text"
+                          placeholder="Add a label..."
+                          class="inline-block w-48 text-sm font-normal border-b border-dashed border-gray-400 bg-transparent outline-none focus:border-primary px-0.5 py-0"
+                          @keydown="onLabelKeydown"
+                          @blur="saveLabel"
+                        />
+                        <UIcon
+                          v-if="savingLabel"
+                          name="i-lucide-loader-circle"
+                          class="size-3.5 text-gray-400 animate-spin shrink-0"
+                        />
+                      </template>
+                      <template v-else>
+                        <span
+                          v-if="testRun?.label"
+                          class="font-normal text-gray-500 ml-1.5 cursor-pointer hover:text-gray-700 dark:hover:text-gray-300 border-b border-dashed border-transparent hover:border-gray-400"
+                          @click="startEditLabel"
+                          >— {{ testRun.label }}</span
+                        >
+                        <button
+                          v-else
+                          class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 border-b border-dashed border-transparent hover:border-gray-400 ml-1.5"
+                          title="Add a label"
+                          @click="startEditLabel"
+                        >
+                          + label
+                        </button>
+                      </template>
+                    </h2>
+                    <UBadge
+                      v-if="testRun?.shardTotal && testRun.shardTotal > 1"
+                      color="neutral"
+                      variant="soft"
+                      size="sm"
+                      class="shrink-0"
+                      :title="`Shard ${testRun.shardsFinished ?? 0}/${testRun.shardTotal}`"
+                    >
+                      <UIcon name="i-lucide-layout-grid" class="size-3 mr-1" />
+                      {{ testRun.shardsFinished ?? 0 }}/{{ testRun.shardTotal }}
+                    </UBadge>
                     <span class="text-xs text-gray-500 ml-auto whitespace-nowrap">
                       {{ testRun?.project?.label ?? testRun?.project?.name }} · Started
                       {{ prettyDateFormat(testRun?.startTime) }}

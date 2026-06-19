@@ -237,6 +237,7 @@ export default eventHandler(async (event) => {
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
       ...(body.metadata && { metadata: sanitizeMetadata(body.metadata) }),
+      ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.setupSteps && { setupSteps: body.setupSteps }),
     };
@@ -272,6 +273,7 @@ export default eventHandler(async (event) => {
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
       ...(body.metadata && { metadata: sanitizeMetadata(body.metadata) }),
+      ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.setupSteps && { setupSteps: body.setupSteps }),
     };

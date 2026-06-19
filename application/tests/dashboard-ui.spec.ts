@@ -89,7 +89,7 @@ test.describe('Dashboard UI Tests', () => {
     await page.waitForURL(/\/test-runs\/\d+/);
 
     // Check test run details are displayed
-    await expect(page.locator('h2').first()).toContainText('Test run #');
+    await expect(page.locator('h2').first()).toContainText('Run #');
   });
 
   test('should switch between tabs on test run detail page', async ({ page }) => {
@@ -339,7 +339,7 @@ test.describe('Foldable Summary', () => {
     await page.waitForURL(/\/test-runs\/\d+/);
 
     await expect(page.getByTitle('Collapse summary')).toBeVisible();
-    await expect(page.locator('h2').filter({ hasText: /Test run #/ })).toBeVisible();
+    await expect(page.locator('h2').filter({ hasText: /Run #/ })).toBeVisible();
   });
 
   test('should collapse and expand test run summary', async ({ page, request }) => {
@@ -351,7 +351,7 @@ test.describe('Foldable Summary', () => {
     await expect(page.getByTitle('Collapse summary')).toBeVisible();
 
     await page.getByTitle('Collapse summary').click({ force: true });
-    await expect(page.locator('h2').filter({ hasText: /Test run #/ })).not.toBeVisible();
+    await expect(page.locator('h2').filter({ hasText: /Run #/ })).not.toBeVisible();
     await expect(page.locator('span:has-text("T:")').first()).toBeVisible();
 
     await page.locator('span:has-text("T:")').first().click({ force: true });
@@ -413,10 +413,178 @@ test.describe('Foldable Summary', () => {
 
     await expect(page.getByTitle('Collapse summary')).toBeVisible({ timeout: 10000 });
     await page.getByTitle('Collapse summary').click({ force: true });
-    await expect(page.locator('h2').filter({ hasText: /Test run #/ })).not.toBeVisible();
+    await expect(page.locator('h2').filter({ hasText: /Run #/ })).not.toBeVisible();
 
     await page.reload();
-    await expect(page.locator('h2').filter({ hasText: /Test run #/ })).not.toBeVisible();
+    await expect(page.locator('h2').filter({ hasText: /Run #/ })).not.toBeVisible();
     await expect(page.locator('span:has-text("T:")').first()).toBeVisible();
+  });
+});
+
+test.describe('Run Label', () => {
+  test.beforeEach(async ({ page, request }) => {
+    await retryPost(request, '/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.RUN_LABEL,
+        status: 'passed',
+        startTime: new Date().toISOString(),
+        duration: 90000,
+        totalTests: 3,
+        passedTests: 3,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases: [
+          {
+            title: 'label test case',
+            status: 'passed',
+            duration: 500,
+            location: 'tests/label.spec.ts:1:1',
+            retries: 0,
+          },
+        ],
+      },
+      timeout: 20000,
+    });
+    await page.context().clearCookies();
+  });
+
+  async function findTestRunId(request: import('@playwright/test').APIRequestContext) {
+    const projectsRes = await request.get('/api/projects');
+    const projects = await projectsRes.json();
+    const project = projects.find((p: { name: string }) => p.name === PROJECT.RUN_LABEL);
+    const projectDetailRes = await request.get(`/api/projects/${project.id}`);
+    const projectDetail = await projectDetailRes.json();
+    return projectDetail.testRuns[0].id as number;
+  }
+
+  test('shows + label button when no label exists', async ({ page, request }) => {
+    const testRunId = await findTestRunId(request);
+    await page.goto(`/test-runs/${testRunId}`);
+    await page.waitForURL(/\/test-runs\/\d+/);
+    await waitForHydration(page);
+
+    // Expanded summary should have the + label button
+    const addLabelBtn = page.locator('h2').getByTitle('Add a label');
+    await expect(addLabelBtn).toBeVisible();
+    await expect(addLabelBtn).toHaveText('+ label');
+  });
+
+  test('clicking + label shows an inline input', async ({ page, request }) => {
+    const testRunId = await findTestRunId(request);
+    await page.goto(`/test-runs/${testRunId}`);
+    await page.waitForURL(/\/test-runs\/\d+/);
+    await waitForHydration(page);
+
+    await page.locator('h2').getByTitle('Add a label').click();
+    const input = page.locator('h2').getByPlaceholder('Add a label...');
+    await expect(input).toBeVisible();
+    await expect(input).toBeFocused();
+  });
+
+  test('pressing Enter saves the label and displays it', async ({ page, request }) => {
+    const testRunId = await findTestRunId(request);
+    await page.goto(`/test-runs/${testRunId}`);
+    await page.waitForURL(/\/test-runs\/\d+/);
+    await waitForHydration(page);
+
+    await page.locator('h2').getByTitle('Add a label').click();
+    const input = page.locator('h2').getByPlaceholder('Add a label...');
+    await input.fill('v1.0');
+    await input.press('Enter');
+
+    // Label should now be displayed
+    await expect(page.locator('h2')).toContainText('— v1.0');
+  });
+
+  test('label persists after page reload', async ({ page, request }) => {
+    const testRunId = await findTestRunId(request);
+    await page.goto(`/test-runs/${testRunId}`);
+    await page.waitForURL(/\/test-runs\/\d+/);
+    await waitForHydration(page);
+
+    await page.locator('h2').getByTitle('Add a label').click();
+    const input = page.locator('h2').getByPlaceholder('Add a label...');
+    await input.fill('persistent-label');
+    await input.press('Enter');
+    await expect(page.locator('h2')).toContainText('— persistent-label');
+
+    await page.reload();
+    await expect(page.locator('h2')).toContainText('— persistent-label');
+  });
+
+  test('clicking label text re-enters edit mode', async ({ page, request }) => {
+    // Submit a run with a label via API
+    const testRunId = await findTestRunId(request);
+    await request.patch(`/api/test-runs/${testRunId}`, {
+      data: { label: 'edit-me' },
+    });
+
+    await page.goto(`/test-runs/${testRunId}`);
+    await page.waitForURL(/\/test-runs\/\d+/);
+    await waitForHydration(page);
+
+    await expect(page.locator('h2')).toContainText('— edit-me');
+
+    // Click the label text to start editing
+    await page.locator('h2').locator('span', { hasText: '— edit-me' }).click();
+    const input = page.locator('h2').getByPlaceholder('Add a label...');
+    await expect(input).toBeVisible();
+    await expect(input).toHaveValue('edit-me');
+  });
+
+  test('pressing Escape cancels label edit', async ({ page, request }) => {
+    const testRunId = await findTestRunId(request);
+    await page.goto(`/test-runs/${testRunId}`);
+    await page.waitForURL(/\/test-runs\/\d+/);
+    await waitForHydration(page);
+
+    await page.locator('h2').getByTitle('Add a label').click();
+    const input = page.locator('h2').getByPlaceholder('Add a label...');
+    await input.fill('cancel-this');
+    await input.press('Escape');
+
+    // Label should not appear (no save was triggered)
+    await expect(page.locator('h2').getByTitle('Add a label')).toBeVisible();
+  });
+
+  test('saving an empty label clears it', async ({ page, request }) => {
+    // Set a label first via API
+    const testRunId = await findTestRunId(request);
+    await request.patch(`/api/test-runs/${testRunId}`, {
+      data: { label: 'will-be-cleared' },
+    });
+
+    await page.goto(`/test-runs/${testRunId}`);
+    await page.waitForURL(/\/test-runs\/\d+/);
+    await waitForHydration(page);
+
+    // Click the label
+    await page.locator('h2').locator('span', { hasText: '— will-be-cleared' }).click();
+    const input = page.locator('h2').getByPlaceholder('Add a label...');
+    await expect(input).toHaveValue('will-be-cleared');
+
+    // Clear and save
+    await input.fill('');
+    await input.press('Enter');
+    await waitForHydration(page);
+
+    // + label button should return
+    await expect(page.locator('h2').getByTitle('Add a label')).toBeVisible();
+  });
+
+  test('label appears in breadcrumb on test run page', async ({ page, request }) => {
+    const testRunId = await findTestRunId(request);
+    await request.patch(`/api/test-runs/${testRunId}`, {
+      data: { label: 'breadcrumb-label' },
+    });
+
+    await page.goto(`/test-runs/${testRunId}`);
+    await page.waitForURL(/\/test-runs\/\d+/);
+    await waitForHydration(page);
+
+    // Wait for the summary and breadcrumb to render
+    await expect(page.locator('h2')).toContainText('Run #');
+    await expect(page.locator('h2')).toContainText('— breadcrumb-label');
+    await expect(page.getByText('breadcrumb-label').first()).toBeVisible();
   });
 });

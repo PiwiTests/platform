@@ -93,6 +93,7 @@ export default eventHandler(async (event) => {
       slowestStepDuration: testRunsCases.slowestStepDuration,
       stepEvents: testRunsCases.stepEvents,
       workerIndex: testRunsCases.workerIndex,
+      shardIndex: testRunsCases.shardIndex,
       startedAt: testRunsCases.startedAt,
       browser: testRunsCases.browser,
       title: testCases.title,
@@ -131,6 +132,7 @@ export default eventHandler(async (event) => {
     slowestStepDuration: tc.slowestStepDuration,
     stepEvents: (tc as { stepEvents?: unknown }).stepEvents ?? null,
     workerIndex: tc.workerIndex,
+    shardIndex: tc.shardIndex,
     startedAt: tc.startedAt,
     browser: tc.browser,
   }));

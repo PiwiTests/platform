@@ -88,6 +88,7 @@ export interface TestCasePayload {
   consoleLogs?: unknown;
   ariaSnapshot?: unknown;
   workerIndex?: number | null;
+  shardIndex?: number | null;
   startedAt?: number | null;
   browser?: BrowserConfig | null;
   suitePath?: string[] | null;
@@ -119,6 +120,7 @@ export interface TestRunSubmitPayload {
   failedTests?: number;
   skippedTests?: number;
   environment?: string | null;
+  label?: string | null;
   metadata?: Record<string, unknown> | null;
   instanceId?: string | null;
   playwrightVersion?: string;
@@ -151,6 +153,7 @@ export interface StreamEventPayload {
   error?: string | null;
   retries?: number | null;
   workerIndex?: number | null;
+  shardIndex?: number | null;
   startedAt?: number | null;
   steps?: unknown;
   stepEvents?: TestStepEvent[] | null;
@@ -181,6 +184,7 @@ export interface TestRunFinishPayload {
   skippedTests: number;
   flakyTests: number;
   durations: number[];
+  label?: string | null;
   metadata?: Record<string, unknown>;
   playwrightVersion?: string;
   shardIndex?: number;
@@ -194,6 +198,7 @@ export interface TestRunStartPayload {
   projectDescription?: string;
   startTime?: string;
   environment?: string | null;
+  label?: string | null;
   metadata?: Record<string, unknown>;
   instanceId?: string;
   playwrightVersion?: string;

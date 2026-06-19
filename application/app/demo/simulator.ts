@@ -65,6 +65,8 @@ export interface DemoScenario {
   speed: number;
   workers: number;
   environment: string;
+  /** Optional display label for the simulated test run */
+  runLabel?: string;
   /** Interrupt the run after this many completed tests */
   stopAfter?: number;
   /** Enable sharding — tests are split across `shardCount` parallel shards */
@@ -387,6 +389,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     speed: 1.5,
     workers: 4,
     environment: 'staging',
+    runLabel: 'release-v2.3.1',
     metadata: () =>
       buildMetadata({
         branch: 'main',
@@ -664,6 +667,7 @@ async function runSingleSimulation(
       projectName: DEMO_PROJECT_NAME,
       startTime: startTime.toISOString(),
       environment: scenario.environment,
+      label: scenario.runLabel || null,
       instanceId,
       playwrightVersion: '1.51.0',
       shardIndex: shardOverride?.shardIndex,
@@ -730,6 +734,7 @@ async function runSingleSimulation(
             title: test.title,
             location: test.location,
             workerIndex,
+            shardIndex: shardOverride?.shardIndex ?? null,
             startedAt,
             browser: test.browser ?? null,
             suitePath: test.suitePath ?? null,
@@ -759,6 +764,7 @@ async function runSingleSimulation(
             ariaSnapshot: a.ariaSnapshot ?? null,
             browser: test.browser ?? null,
             workerIndex,
+            shardIndex: shardOverride?.shardIndex ?? null,
             startedAt,
             suitePath: test.suitePath ?? null,
             suiteConfig: test.suiteConfig ?? null,

@@ -73,7 +73,7 @@ export default eventHandler(async (event) => {
 
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
 
-  if (!isSharded && testRun.status !== 'initialising') {
+  if (!isSharded && testRun.status !== 'initialising' && testRun.status !== 'running') {
     throw createError({
       statusCode: 409,
       message: 'Test run cannot be transitioned to running state',
@@ -116,10 +116,23 @@ export default eventHandler(async (event) => {
       ...(isSharded ? { shardTokens: new Set<string>() } : {}),
     });
   } else {
-    // Run is already running (subsequent shard in a sharded run after first /begin):
-    // register the new per-shard stream token in-memory and persist to DB
-    runEventBus.addShardToken(id, streamToken);
-    await persistShardToken(db, id, streamToken, testRun.metadata as Record<string, unknown> | null);
+    // Run is already running — return the cached stream token so the caller
+    // can continue streaming. This can happen when multiple worker processes
+    // race to /begin on the same run (parallel self-monitoring).
+    const cachedState = runEventBus.getRunState(id);
+    const existingToken = cachedState?.streamToken || streamToken;
+
+    if (isSharded) {
+      runEventBus.addShardToken(id, existingToken);
+      await persistShardToken(db, id, existingToken, testRun.metadata as Record<string, unknown> | null);
+    }
+
+    return {
+      success: true,
+      runId: testRun.id,
+      projectId: testRun.projectId,
+      streamToken: existingToken,
+    };
   }
 
   return {

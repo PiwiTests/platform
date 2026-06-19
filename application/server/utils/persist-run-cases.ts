@@ -36,6 +36,7 @@ export interface RunCaseInput {
   ariaSnapshot?: string | null;
   testSource?: string | null;
   workerIndex?: number | null;
+  shardIndex?: number | null;
   startedAt?: number | null;
   browser?: unknown;
 }
@@ -323,6 +324,7 @@ export async function persistRunCases(
       testAnnotations: (c.testAnnotations as any) ?? null,
       browser: c.browser ?? null,
       workerIndex: c.workerIndex ?? null,
+      shardIndex: c.shardIndex ?? null,
       startedAt: c.startedAt ?? null,
     });
   }

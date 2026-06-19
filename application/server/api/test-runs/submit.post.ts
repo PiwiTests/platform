@@ -148,6 +148,7 @@ export default eventHandler(async (event) => {
             ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
             testSource: testCase.testSource ?? null,
             workerIndex: testCase.workerIndex,
+            shardIndex: testCase.shardIndex ?? null,
             startedAt: testCase.startedAt ?? null,
             browser: testCase.browser ?? null,
           };
@@ -213,6 +214,7 @@ export default eventHandler(async (event) => {
       failedTests: body.failedTests || 0,
       skippedTests: body.skippedTests || 0,
       environment: body.environment || null,
+      label: body.label || null,
       metadata: sanitizeMetadata(body.metadata || null),
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
@@ -256,6 +258,7 @@ export default eventHandler(async (event) => {
         testSource?: string | null;
         startedAt?: number | null;
         workerIndex?: number | null;
+        shardIndex?: number | null;
         browser?: unknown;
         suitePath?: string[] | null;
         suiteConfig?: unknown;
@@ -287,6 +290,7 @@ export default eventHandler(async (event) => {
           ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
           testSource: testCase.testSource ?? null,
           workerIndex: testCase.workerIndex,
+          shardIndex: testCase.shardIndex ?? null,
           startedAt: testCase.startedAt ?? null,
           browser: testCase.browser ?? null,
         };

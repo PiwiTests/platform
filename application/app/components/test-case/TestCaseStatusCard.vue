@@ -8,6 +8,7 @@ const props = defineProps<{
     duration?: number | null;
     retries?: number | null;
     workerIndex?: number | null;
+    shardIndex?: number | null;
     slowestStep?: string | null;
     slowestStepDuration?: number | null;
   };
@@ -73,7 +74,11 @@ const { copy, copied } = useCopy();
         </div>
         <div v-if="testCase.workerIndex !== null && testCase.workerIndex !== undefined">
           <p class="text-sm text-gray-500">Worker</p>
-          <UBadge color="neutral" variant="soft"> #{{ testCase.workerIndex }} </UBadge>
+          <UBadge color="neutral" variant="soft">
+            <template v-if="testCase.shardIndex != null">S{{ testCase.shardIndex }}/</template>#{{
+              testCase.workerIndex
+            }}
+          </UBadge>
         </div>
         <div v-if="testCase.slowestStep">
           <p class="text-sm text-gray-500">Slowest step</p>

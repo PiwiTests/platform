@@ -109,6 +109,7 @@ export class StreamManager {
             projectDescription: this.options.projectDescription,
             startTime,
             environment: this.options.environment || null,
+            label: this.options.label || null,
             metadata,
             instanceId,
             playwrightVersion,

@@ -7,6 +7,7 @@ interface TimelineItem {
   title: string;
   status: string;
   workerIndex: number;
+  shardIndex: number | null;
   start: number;
   duration: number;
   rowIndex: number;
@@ -15,9 +16,17 @@ interface TimelineItem {
   parentTitle?: string | null;
 }
 
+/** Shard group for rendering separators and labels */
+interface ShardGroup {
+  shardIndex: number | null;
+  /** Row indices (0-based) within this shard's worker rows */
+  rowRange: [number, number];
+}
+
 const props = defineProps<{
   testCases: TestCaseResult[];
   setupSteps?: TestStepEvent[] | null;
+  shardTotal?: number | null;
   live?: boolean;
 }>();
 
@@ -25,17 +34,38 @@ const emit = defineEmits<{
   selectTestCase: [id: number];
 }>();
 
+/**
+ * Group test cases by (shardIndex, workerIndex) — two shards may have
+ * overlapping worker indices (e.g. both Shard 1 and Shard 2 have Worker 0).
+ * Falls back to workerIndex-only grouping when no shard info is present.
+ */
+type WorkerKey = string; // "shardIndex|workerIndex" or "null|workerIndex"
+
+function workerKey(tc: TestCaseResult): WorkerKey | null {
+  const w = tc.workerIndex;
+  if (w == null || w < 0) return null;
+  return `${tc.shardIndex ?? 'null'}|${w}`;
+}
+
 const timelineData = computed<TimelineItem[]>(() => {
-  const byWorker = new Map<number, TestCaseResult[]>();
+  const byWorker = new Map<WorkerKey, TestCaseResult[]>();
 
   for (const tc of props.testCases) {
-    const w = tc.workerIndex;
-    if (w == null || w < 0) continue;
-    if (!byWorker.has(w)) byWorker.set(w, []);
-    byWorker.get(w)!.push(tc);
+    const key = workerKey(tc);
+    if (!key) continue;
+    if (!byWorker.has(key)) byWorker.set(key, []);
+    byWorker.get(key)!.push(tc);
   }
 
-  const sortedWorkers = [...byWorker.entries()].sort(([a], [b]) => a - b);
+  // Sort workers: first by shardIndex (null last), then by workerIndex
+  const sortedWorkers = [...byWorker.entries()].sort(([a], [b]) => {
+    const [aShard, aWorker] = a.split('|');
+    const [bShard, bWorker] = b.split('|');
+    const aS = aShard === 'null' ? Infinity : Number(aShard);
+    const bS = bShard === 'null' ? Infinity : Number(bShard);
+    if (aS !== bS) return aS - bS;
+    return Number(aWorker) - Number(bWorker);
+  });
 
   let minStartedAt = Infinity;
   let hasStartedAt = false;
@@ -51,7 +81,11 @@ const timelineData = computed<TimelineItem[]>(() => {
   const result: TimelineItem[] = [];
   if (hasStartedAt) {
     for (let ri = 0; ri < sortedWorkers.length; ri++) {
-      const [, cases] = sortedWorkers[ri]!;
+      const [key, cases] = sortedWorkers[ri]!;
+      const shardIdx = key.split('|')[0];
+      const shardIndex = shardIdx === 'null' ? null : Number(shardIdx);
+
+      // (shard group boundaries are derived from workerRows below)
 
       // Collect all discrete items (tests + their hook steps) for this worker
       const workerItems: TimelineItem[] = [];
@@ -63,6 +97,7 @@ const timelineData = computed<TimelineItem[]>(() => {
           title: tc.title,
           status: tc.status,
           workerIndex: tc.workerIndex ?? 0,
+          shardIndex,
           start: Math.max(0, (tc.startedAt ?? minStartedAt) - minStartedAt),
           duration: dur,
           rowIndex: ri,
@@ -79,6 +114,7 @@ const timelineData = computed<TimelineItem[]>(() => {
               title: step.title,
               status: step.status || 'passed',
               workerIndex: tc.workerIndex ?? 0,
+              shardIndex,
               start: stepStart,
               duration: step.duration || 0,
               rowIndex: ri,
@@ -99,8 +135,13 @@ const timelineData = computed<TimelineItem[]>(() => {
       for (const step of props.setupSteps) {
         const workerIdx = (step as any).workerIndex;
         if (workerIdx == null || workerIdx < 0) continue;
-        const workerRow = sortedWorkers.findIndex(([w]) => w === workerIdx);
-        if (workerRow < 0) continue;
+        const workerRow = sortedWorkers.findIndex(([,]) => {
+          // Try matching by workerIndex suffix alone (setup steps have no shardIndex)
+          return true;
+        });
+        const row = sortedWorkers.find(([key]) => key.endsWith(`|${workerIdx}`));
+        if (!row) continue;
+        const ri = sortedWorkers.indexOf(row);
 
         const stepStart = Math.max(0, step.startedAt - minStartedAt);
         result.push({
@@ -108,9 +149,10 @@ const timelineData = computed<TimelineItem[]>(() => {
           title: `[Setup] ${step.title}`,
           status: step.status || 'passed',
           workerIndex: workerIdx,
+          shardIndex: null,
           start: stepStart,
           duration: step.duration || 0,
-          rowIndex: workerRow,
+          rowIndex: ri,
           isHook: true,
           category: step.category,
           parentTitle: null,
@@ -119,7 +161,9 @@ const timelineData = computed<TimelineItem[]>(() => {
     }
   } else {
     for (let ri = 0; ri < sortedWorkers.length; ri++) {
-      const [, rawCases] = sortedWorkers[ri]!;
+      const [key, rawCases] = sortedWorkers[ri]!;
+      const shardIdx = key.split('|')[0];
+      const shardIndex = shardIdx === 'null' ? null : Number(shardIdx);
       const sortedCases = [...rawCases].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
       let cursor = 0;
       for (const tc of sortedCases) {
@@ -129,6 +173,7 @@ const timelineData = computed<TimelineItem[]>(() => {
           title: tc.title,
           status: tc.status,
           workerIndex: tc.workerIndex ?? 0,
+          shardIndex,
           start: cursor,
           duration: dur,
           rowIndex: ri,
@@ -142,8 +187,33 @@ const timelineData = computed<TimelineItem[]>(() => {
   return result;
 });
 
-const workers = computed(() => {
-  return [...new Set(timelineData.value.map((d) => d.workerIndex))].sort((a, b) => a - b);
+/** Ordered list of (shardIndex, workerIndex) pairs for row rendering */
+const workerRows = computed(() => {
+  const seen = new Set<string>();
+  const rows: Array<{ shardIndex: number | null; workerIndex: number }> = [];
+  for (const item of timelineData.value) {
+    const key = `${item.shardIndex ?? 'null'}|${item.workerIndex}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      rows.push({ shardIndex: item.shardIndex, workerIndex: item.workerIndex });
+    }
+  }
+  return rows;
+});
+
+/** Shard group boundaries derived from workerRows */
+const shardGroups = computed<ShardGroup[]>(() => {
+  const groups: ShardGroup[] = [];
+  for (let ri = 0; ri < workerRows.value.length; ri++) {
+    const row = workerRows.value[ri]!;
+    const prev = groups[groups.length - 1];
+    if (!prev || prev.shardIndex !== row.shardIndex) {
+      groups.push({ shardIndex: row.shardIndex, rowRange: [ri, ri] });
+    } else {
+      prev.rowRange[1] = ri;
+    }
+  }
+  return groups;
 });
 
 const maxTime = computed(() => {
@@ -237,7 +307,7 @@ const pxPerMs = computed(() => 0.5 * zoom.value);
 
 const contentWidth = computed(() => maxTime.value * pxPerMs.value + labelWidth + sidePadding);
 
-const contentHeight = computed(() => workers.value.length * rowHeight + axisHeight);
+const contentHeight = computed(() => workerRows.value.length * rowHeight + axisHeight);
 
 function getBarX(item: TimelineItem) {
   return item.start * pxPerMs.value + labelWidth;
@@ -343,8 +413,11 @@ function resetView() {
   <div v-if="timelineData.length > 0" class="relative select-none">
     <div class="flex items-center justify-between mb-2">
       <span class="text-xs text-gray-500"
-        >{{ workers.length }} worker{{ workers.length > 1 ? 's' : '' }} &middot;
-        {{ timelineData.filter((d) => !d.isHook).length }} tests
+        >{{ workerRows.length }} worker{{ workerRows.length > 1 ? 's' : '' }}
+        <template v-if="shardTotal && shardTotal > 1">
+          &middot; {{ shardTotal }} shard{{ shardTotal > 1 ? 's' : '' }}
+        </template>
+        &middot; {{ timelineData.filter((d) => !d.isHook).length }} tests
         <template v-if="timelineData.some((d) => d.isHook)">
           &middot; {{ timelineData.filter((d) => d.isHook).length }} hooks
         </template>
@@ -381,14 +454,27 @@ function resetView() {
           </filter>
         </defs>
         <rect
-          v-for="(w, i) in workers"
-          :key="'bg-' + w"
+          v-for="(row, i) in workerRows"
+          :key="'bg-' + i"
           :x="0"
           :y="i * rowHeight + axisHeight"
           :width="contentWidth"
           :height="rowHeight"
           :fill="i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.03)'"
           class="dark:fill-white/[0.03]"
+        />
+
+        <!-- Shard group separator lines -->
+        <line
+          v-for="sg in shardGroups.slice(1)"
+          :key="'shard-sep-' + sg.rowRange[0]"
+          :x1="0"
+          :y1="sg.rowRange[0] * rowHeight + axisHeight - rowGap / 2"
+          :x2="contentWidth"
+          :y2="sg.rowRange[0] * rowHeight + axisHeight - rowGap / 2"
+          stroke="currentColor"
+          stroke-dasharray="4,3"
+          class="stroke-gray-400 dark:stroke-gray-500"
         />
 
         <line
@@ -415,13 +501,17 @@ function resetView() {
         </g>
 
         <text
-          v-for="(w, i) in workers"
-          :key="'label-' + w"
+          v-for="(row, i) in workerRows"
+          :key="'label-' + i"
           :x="6"
           :y="i * rowHeight + axisHeight + barHeight / 2 + 4"
           class="fill-gray-500 text-[11px] font-medium"
         >
-          Worker {{ w }}
+          {{
+            row.shardIndex != null && shardTotal && shardTotal > 1
+              ? `S${row.shardIndex} W${row.workerIndex}`
+              : `Worker ${row.workerIndex}`
+          }}
         </text>
 
         <g
