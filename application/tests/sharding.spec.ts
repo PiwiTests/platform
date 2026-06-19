@@ -215,10 +215,24 @@ test.describe.serial('Sharding API Tests', () => {
     const res = await request.post(`/api/test-runs/${runId}/events`, {
       data: {
         streamToken: tokenShard0,
-      testCases: [
-        { title: 'shard 0 test A', status: 'passed', duration: 1500, location: 'tests/shard0.spec.ts:5:3', retries: 0, browser: 'chromium' },
-        { title: 'shard 0 test B', status: 'passed', duration: 800, location: 'tests/shard0.spec.ts:10:3', retries: 0, browser: 'chromium' },
-      ],
+        testCases: [
+          {
+            title: 'shard 0 test A',
+            status: 'passed',
+            duration: 1500,
+            location: 'tests/shard0.spec.ts:5:3',
+            retries: 0,
+            browser: 'chromium',
+          },
+          {
+            title: 'shard 0 test B',
+            status: 'passed',
+            duration: 800,
+            location: 'tests/shard0.spec.ts:10:3',
+            retries: 0,
+            browser: 'chromium',
+          },
+        ],
       },
     });
     expect(res.status()).toBe(409);

@@ -90,10 +90,7 @@ export class PiwiDashboardReporter {
       console.log(`[Piwi Dashboard] Shard ${this.shardInfo.current}/${this.shardInfo.total} detected`);
     }
 
-    this.streamManager?.start(
-      this.startTime, this.metadata, this.instanceId, this.playwrightVersion,
-      this.shardInfo,
-    );
+    this.streamManager?.start(this.startTime, this.metadata, this.instanceId, this.playwrightVersion, this.shardInfo);
   }
 
   /** Playwright reporter hook: called when an individual test begins */
@@ -341,11 +338,7 @@ export class PiwiDashboardReporter {
         finishBody.shardTotal = this.shardInfo.total;
       }
 
-      await this.httpClient.postJSON(
-        `/api/test-runs/${sm.runId}/finish`,
-        finishBody,
-        auth,
-      );
+      await this.httpClient.postJSON(`/api/test-runs/${sm.runId}/finish`, finishBody, auth);
 
       console.log(`[Piwi Dashboard] Successfully finalized streaming run #${sm.runId}`);
       this.recovery.clear();

@@ -99,11 +99,12 @@ export default eventHandler(async (event) => {
 
     if (existingRun) {
       // Accumulate into the existing run
-      const flakyTestCount = body.testCases && Array.isArray(body.testCases)
-        ? body.testCases.filter(
-            (tc: { status: string; retries?: number }) => tc.status === 'passed' && (tc.retries || 0) > 0,
-          ).length
-        : 0;
+      const flakyTestCount =
+        body.testCases && Array.isArray(body.testCases)
+          ? body.testCases.filter(
+              (tc: { status: string; retries?: number }) => tc.status === 'passed' && (tc.retries || 0) > 0,
+            ).length
+          : 0;
 
       await db
         .update(testRuns)
@@ -122,58 +123,64 @@ export default eventHandler(async (event) => {
 
       // Insert test cases if provided
       if (body.testCases && Array.isArray(body.testCases) && body.testCases.length > 0) {
-        const cases: RunCaseInput[] = body.testCases.map(
-          (testCase: any) => {
-            const { filePath, line, column } = testCase.location
-              ? parseLocation(testCase.location)
-              : { filePath: 'unknown', line: null, column: null };
-            return {
-              filePath,
-              suitePath: testCase.suitePath ?? null,
-              suiteConfig: testCase.suiteConfig ?? null,
-              testAnnotations: testCase.testAnnotations ?? null,
-              title: testCase.title,
-              status: testCase.status,
-              duration: testCase.duration,
-              error: testCase.error,
-              retries: testCase.retries,
-              line,
-              column,
-              steps: testCase.steps,
-              slowestStep: testCase.slowestStep,
-              slowestStepDuration: testCase.slowestStepDuration,
-              networkRequests: testCase.networkRequests,
-              webVitals: testCase.webVitals,
-              consoleLogs: testCase.consoleLogs,
-              ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
-              testSource: testCase.testSource ?? null,
-              workerIndex: testCase.workerIndex,
-              startedAt: testCase.startedAt ?? null,
-              browser: testCase.browser ?? null,
-            };
-          },
-        );
+        const cases: RunCaseInput[] = body.testCases.map((testCase: any) => {
+          const { filePath, line, column } = testCase.location
+            ? parseLocation(testCase.location)
+            : { filePath: 'unknown', line: null, column: null };
+          return {
+            filePath,
+            suitePath: testCase.suitePath ?? null,
+            suiteConfig: testCase.suiteConfig ?? null,
+            testAnnotations: testCase.testAnnotations ?? null,
+            title: testCase.title,
+            status: testCase.status,
+            duration: testCase.duration,
+            error: testCase.error,
+            retries: testCase.retries,
+            line,
+            column,
+            steps: testCase.steps,
+            slowestStep: testCase.slowestStep,
+            slowestStepDuration: testCase.slowestStepDuration,
+            networkRequests: testCase.networkRequests,
+            webVitals: testCase.webVitals,
+            consoleLogs: testCase.consoleLogs,
+            ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
+            testSource: testCase.testSource ?? null,
+            workerIndex: testCase.workerIndex,
+            startedAt: testCase.startedAt ?? null,
+            browser: testCase.browser ?? null,
+          };
+        });
         await persistRunCases(db, project.id, existingRun.id, cases);
       }
 
       // Check if all shards have finished
       const updated = await db.select().from(testRuns).where(eq(testRuns.id, existingRun.id));
       const updatedRun = updated[0];
-      if (updatedRun && updatedRun.shardsFinished != null && updatedRun.shardTotal != null &&
-          updatedRun.shardsFinished >= updatedRun.shardTotal) {
+      if (
+        updatedRun &&
+        updatedRun.shardsFinished != null &&
+        updatedRun.shardTotal != null &&
+        updatedRun.shardsFinished >= updatedRun.shardTotal
+      ) {
         const finalStatus = (updatedRun.failedTests ?? 0) > 0 ? 'failed' : 'passed';
 
-        const durations = body.testCases && Array.isArray(body.testCases)
-          ? body.testCases.map((tc: any) => tc.duration).filter((d: any) => d != null)
-          : [];
+        const durations =
+          body.testCases && Array.isArray(body.testCases)
+            ? body.testCases.map((tc: any) => tc.duration).filter((d: any) => d != null)
+            : [];
         const stats = durations.length > 0 ? durationStats(durations) : null;
 
-        await db.update(testRuns).set({
-          status: finalStatus,
-          avgTestDuration: stats?.avg ?? null,
-          p90TestDuration: stats?.p90 ?? null,
-          updatedAt: new Date(),
-        }).where(eq(testRuns.id, existingRun.id));
+        await db
+          .update(testRuns)
+          .set({
+            status: finalStatus,
+            avgTestDuration: stats?.avg ?? null,
+            p90TestDuration: stats?.p90 ?? null,
+            updatedAt: new Date(),
+          })
+          .where(eq(testRuns.id, existingRun.id));
 
         runEventBus.publishGlobal({
           type: 'run-submitted',

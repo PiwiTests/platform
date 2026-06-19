@@ -348,6 +348,7 @@ function buildMetadata(opts: {
   commitMessage: string;
   relatedIssue?: string;
   customData?: Record<string, unknown>;
+  ciInfo?: string | Record<string, string>;
 }): Record<string, unknown> {
   const buildNumber = String(1340 + Math.floor(Math.random() * 60));
   return {
@@ -370,6 +371,7 @@ function buildMetadata(opts: {
     },
     ...(opts.relatedIssue ? { relatedIssue: opts.relatedIssue } : {}),
     ...(opts.customData ? { customData: opts.customData } : {}),
+    ...(opts.ciInfo ? { ciInfo: opts.ciInfo } : {}),
   };
 }
 
@@ -615,12 +617,12 @@ async function runShardedSimulation(
 
   const results = await Promise.all(
     shardScenarios.map((s, i) =>
-      runSingleSimulation(
-        s as DemoScenario,
-        sharedHooks,
-        ctl,
-        { shardIndex: i + 1, shardTotal: shardCount, runLabel, workerOffset: i * Math.max(1, Math.ceil(scenario.workers / shardCount)) },
-      ),
+      runSingleSimulation(s as DemoScenario, sharedHooks, ctl, {
+        shardIndex: i + 1,
+        shardTotal: shardCount,
+        runLabel,
+        workerOffset: i * Math.max(1, Math.ceil(scenario.workers / shardCount)),
+      }),
     ),
   );
 
@@ -653,9 +655,7 @@ async function runSingleSimulation(
   const tests = scenario.tests();
   const startTime = new Date();
   const runLabel = shardOverride?.runLabel;
-  const instanceId = runLabel
-    ? `${DEMO_SIMULATOR_INSTANCE_ID}|${runLabel}`
-    : DEMO_SIMULATOR_INSTANCE_ID;
+  const instanceId = runLabel ? `${DEMO_SIMULATOR_INSTANCE_ID}|${runLabel}` : DEMO_SIMULATOR_INSTANCE_ID;
 
   const setup = await $fetch<{ runId: number; projectId: number; setupToken: string }>('/api/test-runs/setup', {
     method: 'POST',
@@ -781,7 +781,9 @@ async function runSingleSimulation(
     }
   }
 
-  await Promise.all(Array.from({ length: scenario.workers }, (_, i) => workerLoop(i + (shardOverride?.workerOffset ?? 0))));
+  await Promise.all(
+    Array.from({ length: scenario.workers }, (_, i) => workerLoop(i + (shardOverride?.workerOffset ?? 0))),
+  );
 
   const interrupted = ctl.stopped || completed < tests.length;
   const status = interrupted ? 'interrupted' : failedCount > 0 ? 'failed' : 'passed';

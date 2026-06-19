@@ -621,15 +621,22 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
     const updated = await db.select().from(testRuns).where(eq(testRuns.id, id));
     const updatedRun = updated[0];
 
-    if (updatedRun && updatedRun.shardsFinished != null && updatedRun.shardTotal != null &&
-        updatedRun.shardsFinished >= updatedRun.shardTotal) {
+    if (
+      updatedRun &&
+      updatedRun.shardsFinished != null &&
+      updatedRun.shardTotal != null &&
+      updatedRun.shardsFinished >= updatedRun.shardTotal
+    ) {
       const finalStatus = (updatedRun.failedTests ?? 0) > 0 ? 'failed' : 'passed';
 
       let avgTestDuration: number | null = null;
       let p90TestDuration: number | null = null;
       if (allDurations.length > 0) {
         const stats = durationStats(allDurations);
-        if (stats) { avgTestDuration = stats.avg; p90TestDuration = stats.p90; }
+        if (stats) {
+          avgTestDuration = stats.avg;
+          p90TestDuration = stats.p90;
+        }
       }
 
       const existingMeta = (updatedRun.metadata as Record<string, unknown>) ?? {};

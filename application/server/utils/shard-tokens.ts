@@ -21,15 +21,17 @@ export function readShardTokensFromMeta(metadata: unknown): Set<string> | undefi
  * Append a shard token to a test run's stored metadata in the database.
  * Reads current metadata, appends the token, writes back via Drizzle JSON serialization.
  */
-export async function persistShardToken(db: DB, runId: number, token: string, existingMetadata?: Record<string, unknown> | null): Promise<void> {
+export async function persistShardToken(
+  db: DB,
+  runId: number,
+  token: string,
+  existingMetadata?: Record<string, unknown> | null,
+): Promise<void> {
   let meta: Record<string, unknown>;
   if (existingMetadata) {
     meta = { ...existingMetadata };
   } else {
-    const row = await db
-      .select({ metadata: testRuns.metadata })
-      .from(testRuns)
-      .where(eq(testRuns.id, runId));
+    const row = await db.select({ metadata: testRuns.metadata }).from(testRuns).where(eq(testRuns.id, runId));
     meta = (row[0]?.metadata as Record<string, unknown>) ?? {};
   }
 
@@ -38,20 +40,14 @@ export async function persistShardToken(db: DB, runId: number, token: string, ex
   tokens.push(token);
   meta.shardTokens = tokens;
 
-  await db
-    .update(testRuns)
-    .set({ metadata: meta, updatedAt: new Date() })
-    .where(eq(testRuns.id, runId));
+  await db.update(testRuns).set({ metadata: meta, updatedAt: new Date() }).where(eq(testRuns.id, runId));
 }
 
 /**
  * Remove a shard token from a test run's stored metadata in the database.
  */
 export async function removeStoredShardToken(db: DB, runId: number, token: string): Promise<void> {
-  const row = await db
-    .select({ metadata: testRuns.metadata })
-    .from(testRuns)
-    .where(eq(testRuns.id, runId));
+  const row = await db.select({ metadata: testRuns.metadata }).from(testRuns).where(eq(testRuns.id, runId));
 
   const meta = (row[0]?.metadata as Record<string, unknown>) ?? {};
   const tokens: string[] = Array.isArray(meta.shardTokens) ? meta.shardTokens : [];
@@ -64,8 +60,5 @@ export async function removeStoredShardToken(db: DB, runId: number, token: strin
     delete meta.shardTokens;
   }
 
-  await db
-    .update(testRuns)
-    .set({ metadata: meta, updatedAt: new Date() })
-    .where(eq(testRuns.id, runId));
+  await db.update(testRuns).set({ metadata: meta, updatedAt: new Date() }).where(eq(testRuns.id, runId));
 }

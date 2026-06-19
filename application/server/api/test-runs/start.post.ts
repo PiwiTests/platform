@@ -101,7 +101,12 @@ export default eventHandler(async (event) => {
       // Reuse the existing run — generate a fresh per-shard stream token
       const streamToken = randomBytes(32).toString('hex');
       runEventBus.addShardToken(existingShardedRun.id, streamToken);
-      await persistShardToken(db, existingShardedRun.id, streamToken, existingShardedRun.metadata as Record<string, unknown> | null);
+      await persistShardToken(
+        db,
+        existingShardedRun.id,
+        streamToken,
+        existingShardedRun.metadata as Record<string, unknown> | null,
+      );
 
       return {
         success: true,
@@ -128,7 +133,10 @@ export default eventHandler(async (event) => {
         failedTests: 0,
         skippedTests: 0,
         environment: body.environment || null,
-        metadata: { ...(sanitizeMetadata(body.metadata ?? {}) ?? {}), shardTokens: [streamToken] } as Record<string, unknown>,
+        metadata: { ...(sanitizeMetadata(body.metadata ?? {}) ?? {}), shardTokens: [streamToken] } as Record<
+          string,
+          unknown
+        >,
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         streamToken,

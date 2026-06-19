@@ -69,8 +69,11 @@ export class StreamManager {
 
   /** Begin the streaming session after `onBegin` fires. Non-blocking — the actual handshake runs asynchronously. */
   start(
-    startTime: string, metadata: Record<string, any>, instanceId: string,
-    playwrightVersion?: string | null, shardInfo?: ShardInfo | null,
+    startTime: string,
+    metadata: Record<string, any>,
+    instanceId: string,
+    playwrightVersion?: string | null,
+    shardInfo?: ShardInfo | null,
   ): void {
     this._startPromise = this._doStart(startTime, metadata, instanceId, playwrightVersion, shardInfo);
   }

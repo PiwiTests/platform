@@ -99,7 +99,12 @@ export default eventHandler(async (event) => {
       // Reuse — return existing runId with a fresh setup token
       const setupToken = randomBytes(32).toString('hex');
       runEventBus.addShardToken(existingShardedRun.id, setupToken);
-      await persistShardToken(db, existingShardedRun.id, setupToken, existingShardedRun.metadata as Record<string, unknown> | null);
+      await persistShardToken(
+        db,
+        existingShardedRun.id,
+        setupToken,
+        existingShardedRun.metadata as Record<string, unknown> | null,
+      );
 
       return {
         success: true,

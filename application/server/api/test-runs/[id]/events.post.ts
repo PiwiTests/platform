@@ -72,9 +72,7 @@ export default eventHandler(async (event) => {
   const cachedState = runEventBus.getRunState(id);
 
   if (cachedState) {
-    const valid =
-      cachedState.streamToken === body.streamToken ||
-      cachedState.shardTokens?.has(body.streamToken);
+    const valid = cachedState.streamToken === body.streamToken || cachedState.shardTokens?.has(body.streamToken);
     if (!valid) {
       throw createError({ statusCode: 403, message: 'Invalid stream token' });
     }

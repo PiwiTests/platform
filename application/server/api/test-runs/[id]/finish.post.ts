@@ -137,8 +137,12 @@ export default eventHandler(async (event) => {
 
     let finalStatus: string | undefined;
 
-    if (updatedRun && updatedRun.shardsFinished != null && updatedRun.shardTotal != null &&
-        updatedRun.shardsFinished >= updatedRun.shardTotal) {
+    if (
+      updatedRun &&
+      updatedRun.shardsFinished != null &&
+      updatedRun.shardTotal != null &&
+      updatedRun.shardsFinished >= updatedRun.shardTotal
+    ) {
       // All shards done — determine final status
       finalStatus = (updatedRun.failedTests ?? 0) > 0 ? 'failed' : 'passed';
 
@@ -189,7 +193,9 @@ export default eventHandler(async (event) => {
         status: finalStatus,
       });
 
-      autoDiagnoseRun(db, testRun.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
+      autoDiagnoseRun(db, testRun.projectId, id).catch((e) =>
+        console.error('[ai-diagnosis] autoDiagnoseRun failed', e),
+      );
 
       runEventBus.cleanup(id);
     } else {
