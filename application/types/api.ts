@@ -237,6 +237,7 @@ export interface TestRunDetails {
   shardsFinished?: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null;
+  setupSteps?: TestStepEvent[] | null;
   environment?: string | null;
   createdAt: Date;
   project?: {
@@ -303,6 +304,19 @@ export interface PerformanceStep {
   title: string;
   duration: number;
   category: string;
+}
+
+/**
+ * A hook/fixture step event with absolute timing, used by WorkersTimeline
+ * to render segments alongside the test case bar.
+ */
+export interface TestStepEvent {
+  title: string;
+  category: 'hook' | 'fixture' | 'test.step' | 'expect';
+  startedAt: number;
+  duration: number;
+  status: string;
+  location?: string | null;
 }
 
 export interface ServerLogEntry {
@@ -402,6 +416,7 @@ export interface TestCaseResult {
   failureClusterId?: number | null;
   retries?: number | null;
   steps?: PerformanceStep[] | null;
+  stepEvents?: TestStepEvent[] | null;
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
   networkRequests?: NetworkRequest[] | null;

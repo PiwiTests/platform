@@ -562,7 +562,12 @@ function handleSelectCluster(clusterId: number) {
         </template>
 
         <template #tab-workers>
-          <WorkersTimeline :test-cases="throttledTestCases" :live="isLive" @select-test-case="handleSelectTestCase" />
+          <WorkersTimeline
+            :test-cases="throttledTestCases"
+            :setup-steps="testRun?.setupSteps ?? null"
+            :live="isLive"
+            @select-test-case="handleSelectTestCase"
+          />
         </template>
 
         <template #tab-compare>

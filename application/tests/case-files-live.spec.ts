@@ -48,8 +48,8 @@ test.describe.serial('Live case file uploads', () => {
       data: {
         streamToken,
         testCases: [
-          { ...caseWithFiles, status: 'passed', duration: 1200 },
-          { ...dedupCase, status: 'passed', duration: 700 },
+          { type: 'complete', ...caseWithFiles, status: 'passed', duration: 1200 },
+          { type: 'complete', ...dedupCase, status: 'passed', duration: 700 },
         ],
       },
     });
@@ -170,6 +170,7 @@ test.describe.serial('Live case file uploads', () => {
         streamToken,
         testCases: [
           {
+            type: 'complete',
             title: 'retried live test',
             location: 'tests/live.spec.ts:25:3',
             status: 'passed',
@@ -315,8 +316,8 @@ test.describe.serial('Live upload trace resource deduplication', () => {
       data: {
         streamToken,
         testCases: [
-          { ...caseA, status: 'passed', duration: 1000 },
-          { ...caseB, status: 'passed', duration: 1000 },
+          { type: 'complete', ...caseA, status: 'passed', duration: 1000 },
+          { type: 'complete', ...caseB, status: 'passed', duration: 1000 },
         ],
       },
     });

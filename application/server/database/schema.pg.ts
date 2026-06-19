@@ -45,6 +45,7 @@ export const testRuns = pgTable(
 
     environment: text('environment'), // Deployment environment (e.g. 'production', 'staging', 'development')
     metadata: jsonb('metadata'), // Additional metadata as JSON
+    setupSteps: jsonb('setup_steps'), // Array of suite-level hook/fixture steps (beforeAll/afterAll) for the timeline
     streamToken: text('stream_token'), // Token for authenticating streaming updates
     instanceId: text('instance_id'), // Unique identifier for the reporter instance that created this run
     playwrightVersion: text('playwright_version'), // Playwright framework version used for this run
@@ -210,6 +211,7 @@ export const testRunsCases = pgTable(
     line: integer('line'), // line number in file
     column: integer('column'), // column number in file
     steps: jsonb('steps'), // Array of { title, duration, category } step objects
+    stepEvents: jsonb('step_events'), // Array of { title, category, startedAt, duration, status, location } — hook/fixture steps for timeline
     slowestStep: text('slowest_step'), // Title of the slowest step
     slowestStepDuration: integer('slowest_step_duration'), // Duration of the slowest step in ms
     networkRequests: jsonb('network_requests'), // Array of { method, url, status, duration, resourceType }

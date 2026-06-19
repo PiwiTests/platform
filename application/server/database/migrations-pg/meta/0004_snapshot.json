@@ -1,5 +1,5 @@
 {
-  "id": "9c095924-f938-4545-ad0f-4d940194935d",
+  "id": "e008204b-f8ca-4181-8271-c084c88e997c",
   "prevId": "44a01bf5-9a77-4d29-9747-8dee4c0dd49e",
   "version": "7",
   "dialect": "postgresql",
@@ -1034,6 +1034,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "setup_steps": {
+          "name": "setup_steps",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "stream_token": {
           "name": "stream_token",
           "type": "text",
@@ -1181,6 +1187,12 @@
         },
         "steps": {
           "name": "steps",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "step_events": {
+          "name": "step_events",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false

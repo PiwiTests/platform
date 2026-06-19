@@ -52,6 +52,7 @@ test.describe.serial('Streaming API Tests', () => {
         streamToken,
         testCases: [
           {
+            type: 'complete',
             title: 'streaming test 1',
             status: 'passed',
             duration: 1200,
@@ -59,6 +60,7 @@ test.describe.serial('Streaming API Tests', () => {
             retries: 0,
           },
           {
+            type: 'complete',
             title: 'streaming test 2',
             status: 'failed',
             duration: 800,
@@ -113,6 +115,7 @@ test.describe.serial('Streaming API Tests', () => {
         streamToken,
         testCases: [
           {
+            type: 'complete',
             title: 'windows path test',
             status: 'passed',
             duration: 500,

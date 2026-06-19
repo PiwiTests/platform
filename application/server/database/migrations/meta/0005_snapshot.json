@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "382a5950-1f6a-4c84-bd42-874b414096b9",
+  "id": "2f56ad2f-4406-4866-8a44-4abc63a21f3e",
   "prevId": "1bf95ebb-bbd3-45c8-b3b5-b816d53fa917",
   "tables": {
     "api_keys": {
@@ -929,6 +929,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "setup_steps": {
+          "name": "setup_steps",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "stream_token": {
           "name": "stream_token",
           "type": "text",
@@ -1068,6 +1075,13 @@
         },
         "steps": {
           "name": "steps",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "step_events": {
+          "name": "step_events",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

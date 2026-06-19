@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, nextTick, watchEffect } from 'vue';
-import type { TestCaseResult } from '~~/types/api';
+import type { TestCaseResult, TestStepEvent } from '~~/types/api';
 
 interface TimelineItem {
   id: number;
@@ -10,10 +10,14 @@ interface TimelineItem {
   start: number;
   duration: number;
   rowIndex: number;
+  isHook: boolean;
+  category?: string;
+  parentTitle?: string | null;
 }
 
 const props = defineProps<{
   testCases: TestCaseResult[];
+  setupSteps?: TestStepEvent[] | null;
   live?: boolean;
 }>();
 
@@ -33,7 +37,6 @@ const timelineData = computed<TimelineItem[]>(() => {
 
   const sortedWorkers = [...byWorker.entries()].sort(([a], [b]) => a - b);
 
-  // Find global minimum startedAt if any test case has actual timestamps
   let minStartedAt = Infinity;
   let hasStartedAt = false;
   for (const [, cases] of sortedWorkers) {
@@ -47,12 +50,15 @@ const timelineData = computed<TimelineItem[]>(() => {
 
   const result: TimelineItem[] = [];
   if (hasStartedAt) {
-    // Aligned timeline: position bars by offset from global min startedAt
     for (let ri = 0; ri < sortedWorkers.length; ri++) {
       const [, cases] = sortedWorkers[ri]!;
+
+      // Collect all discrete items (tests + their hook steps) for this worker
+      const workerItems: TimelineItem[] = [];
+
       for (const tc of cases) {
         const dur = tc.duration ?? 1000;
-        result.push({
+        workerItems.push({
           id: tc.id,
           title: tc.title,
           status: tc.status,
@@ -60,14 +66,60 @@ const timelineData = computed<TimelineItem[]>(() => {
           start: Math.max(0, (tc.startedAt ?? minStartedAt) - minStartedAt),
           duration: dur,
           rowIndex: ri,
+          isHook: false,
+        });
+
+        // Add hook/fixture segments for this test
+        const steps = tc.stepEvents as TestStepEvent[] | null | undefined;
+        if (steps && steps.length > 0) {
+          for (const step of steps) {
+            const stepStart = Math.max(0, step.startedAt - minStartedAt);
+            workerItems.push({
+              id: -tc.id - steps.indexOf(step) - 1,
+              title: step.title,
+              status: step.status || 'passed',
+              workerIndex: tc.workerIndex ?? 0,
+              start: stepStart,
+              duration: step.duration || 0,
+              rowIndex: ri,
+              isHook: true,
+              category: step.category,
+              parentTitle: tc.title,
+            });
+          }
+        }
+      }
+
+      workerItems.sort((a, b) => a.start - b.start);
+      result.push(...workerItems);
+    }
+
+    // Add suite-level setup steps (beforeAll/afterAll)
+    if (props.setupSteps && props.setupSteps.length > 0) {
+      for (const step of props.setupSteps) {
+        const workerIdx = (step as any).workerIndex;
+        if (workerIdx == null || workerIdx < 0) continue;
+        const workerRow = sortedWorkers.findIndex(([w]) => w === workerIdx);
+        if (workerRow < 0) continue;
+
+        const stepStart = Math.max(0, step.startedAt - minStartedAt);
+        result.push({
+          id: -999 - result.length,
+          title: `[Setup] ${step.title}`,
+          status: step.status || 'passed',
+          workerIndex: workerIdx,
+          start: stepStart,
+          duration: step.duration || 0,
+          rowIndex: workerRow,
+          isHook: true,
+          category: step.category,
+          parentTitle: null,
         });
       }
     }
   } else {
-    // Fallback: sequential stacking per worker when timestamps unavailable
     for (let ri = 0; ri < sortedWorkers.length; ri++) {
       const [, rawCases] = sortedWorkers[ri]!;
-      // Sort by startedAt so running tests (newer startedAt) appear at the end
       const sortedCases = [...rawCases].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
       let cursor = 0;
       for (const tc of sortedCases) {
@@ -80,6 +132,7 @@ const timelineData = computed<TimelineItem[]>(() => {
           start: cursor,
           duration: dur,
           rowIndex: ri,
+          isHook: false,
         });
         cursor += dur;
       }
@@ -116,7 +169,17 @@ function getStatusHex(status: string): string {
   return colors[status] || '#a1a1aa';
 }
 
-// Zoom & pan (lateral only)
+function getHookFill(item: TimelineItem): string {
+  if (!item.isHook) return getStatusHex(item.status);
+  const base = getStatusHex(item.status);
+  return base + '66';
+}
+
+function getHookStroke(item: TimelineItem): string {
+  if (!item.isHook) return 'none';
+  return getStatusHex(item.status);
+}
+
 const zoom = ref(1);
 const panX = ref(0);
 const isPanning = ref(false);
@@ -143,7 +206,6 @@ onMounted(() => {
   nextTick(applyFitZoom);
 });
 
-// Re-apply fit zoom on container resize
 let resizeObserver: ResizeObserver | null = null;
 onMounted(() => {
   if (containerRef.value) {
@@ -158,7 +220,6 @@ onUnmounted(() => {
   resizeObserver?.disconnect();
 });
 
-// Auto-fit zoom when live — always show the full timeline
 watchEffect(() => {
   if (props.live && timelineData.value.length > 0) {
     nextTick(applyFitZoom);
@@ -197,7 +258,6 @@ function clampPanX(raw: number): number {
   return Math.max(cw - contentWidth.value, Math.min(0, raw));
 }
 
-// Tick marks for time axis
 const tickMarks = computed<{ ms: number; x: number; label: string }[]>(() => {
   const ticks: { ms: number; x: number; label: string }[] = [];
   const step = zoom.value < 0.5 ? 10000 : zoom.value < 1 ? 5000 : zoom.value < 2 ? 2000 : 1000;
@@ -217,7 +277,6 @@ function formatTime(ms: number): string {
   return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
 }
 
-// Tooltip
 const hoveredItem = ref<TimelineItem | null>(null);
 const tooltipPos = ref({ x: 0, y: 0 });
 
@@ -234,14 +293,12 @@ function onBarLeave() {
   hoveredItem.value = null;
 }
 
-// Auto-fit zoom when live — always show the full timeline
 watchEffect(() => {
   if (props.live && timelineData.value.length > 0) {
     nextTick(applyFitZoom);
   }
 });
 
-// Wheel zoom (lateral only)
 function onWheel(event: WheelEvent) {
   if (props.live) return;
   event.preventDefault();
@@ -259,7 +316,6 @@ function onWheel(event: WheelEvent) {
   zoom.value = newZoom;
 }
 
-// Drag pan (lateral only)
 function onMouseDown(event: MouseEvent) {
   if (props.live) return;
   if (event.button !== 0) return;
@@ -287,8 +343,12 @@ function resetView() {
   <div v-if="timelineData.length > 0" class="relative select-none">
     <div class="flex items-center justify-between mb-2">
       <span class="text-xs text-gray-500"
-        >{{ workers.length }} worker{{ workers.length > 1 ? 's' : '' }} &middot; {{ timelineData.length }} tests</span
-      >
+        >{{ workers.length }} worker{{ workers.length > 1 ? 's' : '' }} &middot;
+        {{ timelineData.filter((d) => !d.isHook).length }} tests
+        <template v-if="timelineData.some((d) => d.isHook)">
+          &middot; {{ timelineData.filter((d) => d.isHook).length }} hooks
+        </template>
+      </span>
       <UButton v-if="!live" size="xs" color="neutral" variant="ghost" icon="i-lucide-rotate-ccw" @click="resetView">
         Reset view
       </UButton>
@@ -320,7 +380,6 @@ function resetView() {
             </feMerge>
           </filter>
         </defs>
-        <!-- Alternating row backgrounds -->
         <rect
           v-for="(w, i) in workers"
           :key="'bg-' + w"
@@ -332,7 +391,6 @@ function resetView() {
           class="dark:fill-white/[0.03]"
         />
 
-        <!-- Time axis -->
         <line
           :x1="labelWidth"
           :y1="axisHeight"
@@ -356,7 +414,6 @@ function resetView() {
           </text>
         </g>
 
-        <!-- Worker labels -->
         <text
           v-for="(w, i) in workers"
           :key="'label-' + w"
@@ -367,7 +424,6 @@ function resetView() {
           Worker {{ w }}
         </text>
 
-        <!-- Bars -->
         <g
           v-for="item in timelineData"
           :key="item.id"
@@ -375,7 +431,31 @@ function resetView() {
           @mousemove="onBarMove"
           @mouseleave="onBarLeave"
         >
-          <template v-if="item.status === 'running'">
+          <template v-if="item.isHook">
+            <rect
+              :x="getBarX(item)"
+              :y="getBarTop(item)"
+              :width="getBarWidth(item)"
+              :height="barHeight"
+              :rx="3"
+              :ry="3"
+              :fill="getHookFill(item)"
+              :stroke="getHookStroke(item)"
+              stroke-width="1"
+              stroke-dasharray="3,2"
+              class="transition-opacity duration-100 cursor-default"
+              :class="hoveredItem && hoveredItem.id !== item.id ? 'opacity-40' : 'opacity-80'"
+            />
+            <text
+              v-if="getBarWidth(item) > 60"
+              :x="getBarX(item) + 4"
+              :y="getBarTop(item) + barHeight / 2 + 4"
+              class="fill-gray-600 dark:fill-gray-300 text-[9px] font-medium pointer-events-none"
+            >
+              {{ item.title }}
+            </text>
+          </template>
+          <template v-else-if="item.status === 'running'">
             <circle
               :cx="getBarX(item) + 300 * pxPerMs"
               :cy="getBarTop(item) + barHeight / 2"
@@ -426,7 +506,6 @@ function resetView() {
       </svg>
     </div>
 
-    <!-- Tooltip -->
     <Teleport to="body">
       <div
         v-if="hoveredItem"
@@ -435,15 +514,35 @@ function resetView() {
       >
         <div class="flex items-center gap-2 mb-1">
           <span
+            v-if="!hoveredItem.isHook"
             class="inline-block size-2.5 rounded-full shrink-0"
             :style="{ backgroundColor: getStatusHex(hoveredItem.status) }"
           />
-          <span class="font-medium text-gray-900 dark:text-white max-w-64 truncate">{{ hoveredItem.title }}</span>
+          <span
+            v-else
+            class="inline-block size-2.5 rounded-full shrink-0 border border-dashed"
+            :style="{
+              backgroundColor: getHookFill(hoveredItem),
+              borderColor: getHookStroke(hoveredItem),
+            }"
+          />
+          <span class="font-medium text-gray-900 dark:text-white max-w-64 truncate">
+            <template v-if="hoveredItem.isHook">
+              <span class="uppercase text-[10px] tracking-wider text-gray-500 mr-1">{{ hoveredItem.category }}</span>
+              {{ hoveredItem.title }}
+            </template>
+            <template v-else>
+              {{ hoveredItem.title }}
+            </template>
+          </span>
         </div>
         <div class="flex items-center gap-3 text-gray-500">
           <span class="capitalize">{{ hoveredItem.status }}</span>
           <span>{{ formatTime(hoveredItem.duration) }}</span>
           <span>Worker {{ hoveredItem.workerIndex }}</span>
+          <span v-if="hoveredItem.isHook && hoveredItem.parentTitle" class="italic truncate max-w-48">
+            for {{ hoveredItem.parentTitle }}
+          </span>
         </div>
       </div>
     </Teleport>

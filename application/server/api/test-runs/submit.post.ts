@@ -246,6 +246,7 @@ export default eventHandler(async (event) => {
         location?: string;
         retries?: number;
         steps?: unknown;
+        stepEvents?: unknown;
         slowestStep?: string;
         slowestStepDuration?: number;
         networkRequests?: unknown;
@@ -277,6 +278,7 @@ export default eventHandler(async (event) => {
           line,
           column,
           steps: testCase.steps,
+          stepEvents: testCase.stepEvents,
           slowestStep: testCase.slowestStep,
           slowestStepDuration: testCase.slowestStepDuration,
           networkRequests: testCase.networkRequests,

@@ -1,6 +1,7 @@
-/** Categorise a Playwright step title into `navigation`, `action`, `input`, `assertion`, `wait`, `api`, or `other` */
-export function categorizeStep(title: string): string {
+/** Categorise a Playwright step into `navigation`, `action`, `input`, `assertion`, `wait`, `api`, `hook`, or `other` */
+export function categorizeStep(title: string, pwCategory?: string): string {
   if (!title) return 'other';
+  if (pwCategory === 'hook' || pwCategory === 'fixture') return pwCategory;
   const lower = title.toLowerCase();
   if (
     lower.startsWith('page.goto') ||
@@ -36,6 +37,7 @@ export function categorizeStep(title: string): string {
   )
     return 'wait';
   if (lower.startsWith('apirequestcontext') || lower.startsWith('apiresponse')) return 'api';
+  if (lower === 'before hooks' || lower === 'after hooks' || lower.startsWith('fixture:')) return 'hook';
   return 'other';
 }
 
@@ -46,14 +48,14 @@ export interface FlatStep {
   category: string;
 }
 
-/** Recursively flatten a nested step tree into a flat list */
+/** Recursively flatten a nested step tree into a flat list. Uses Playwright's built-in category when available. */
 export function flattenSteps(steps: any[]): FlatStep[] {
   const result: FlatStep[] = [];
   for (const step of steps) {
     result.push({
       title: step.title,
       duration: step.duration,
-      category: categorizeStep(step.title),
+      category: categorizeStep(step.title, step.category),
     });
     if (step.steps?.length > 0) result.push(...flattenSteps(step.steps));
   }
@@ -154,4 +156,50 @@ export function computePerformanceSummary(testCases: any[]): PerformanceSummary 
   result.avgNavigationDuration = totalNavCount > 0 ? Math.round(totalNavDur / totalNavCount) : 0;
 
   return result;
+}
+
+/**
+ * Extract hook and fixture step events with absolute timings from a Playwright
+ * step tree. These are used by the WorkersTimeline to render hook segments.
+ *
+ * Returns only top-level hook/fixture steps (beforeEach, afterEach, fixture
+ * setup/teardown) — their sub-steps are included implicitly in their duration.
+ */
+export function extractTestStepEvents(
+  steps: any[],
+  testStartTime: Date,
+): Array<{
+  title: string;
+  category: string;
+  startedAt: number;
+  duration: number;
+  status: string;
+  location?: string | null;
+}> {
+  const events: Array<{
+    title: string;
+    category: string;
+    startedAt: number;
+    duration: number;
+    status: string;
+    location?: string | null;
+  }> = [];
+
+  for (const step of steps) {
+    const cat = categorizeStep(step.title, step.category);
+    if (cat !== 'hook' && cat !== 'fixture') continue;
+    if (!step.startTime) continue;
+
+    const startedAt = step.startTime instanceof Date ? step.startTime.getTime() : step.startTime;
+    events.push({
+      title: step.title,
+      category: cat,
+      startedAt,
+      duration: step.duration || 0,
+      status: step.error ? 'failed' : 'passed',
+      location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : null,
+    });
+  }
+
+  return events;
 }

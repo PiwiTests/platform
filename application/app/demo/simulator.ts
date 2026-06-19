@@ -46,6 +46,7 @@ interface SimTest {
   /** Executed in order; the last attempt is the final result */
   attempts: SimAttempt[];
   steps: SimStep[];
+  stepEvents?: Array<Record<string, unknown>> | null;
   slowestStep: string;
   slowestStepDuration: number;
   networkRequests: Array<Record<string, unknown>>;
@@ -749,6 +750,7 @@ async function runSingleSimulation(
             error: a.error ?? null,
             retries: attempt,
             steps: test.steps,
+            stepEvents: test.stepEvents ?? null,
             slowestStep: test.slowestStep,
             slowestStepDuration: test.slowestStepDuration,
             networkRequests: test.networkRequests,

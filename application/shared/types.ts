@@ -80,6 +80,7 @@ export interface TestCasePayload {
   error?: string | null;
   retries?: number | null;
   steps?: unknown;
+  stepEvents?: TestStepEvent[] | null;
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
   networkRequests?: unknown;
@@ -126,10 +127,23 @@ export interface TestRunSubmitPayload {
   shardTotal?: number;
 }
 
+// ── Step / hook events within a test case ─────────────────────────────────────
+// Represents a single step (hook, fixture, or user-defined action) with its
+// absolute start time and duration, used by WorkersTimeline to render segments.
+
+export interface TestStepEvent {
+  title: string;
+  category: 'hook' | 'fixture' | 'test.step' | 'expect';
+  startedAt: number;
+  duration: number;
+  status: string;
+  location?: string | null;
+}
+
 // ── Streaming event payload ───────────────────────────────────────────────────
 
 export interface StreamEventPayload {
-  type: 'begin' | 'complete';
+  type: 'begin' | 'complete' | 'step-begin' | 'step-end';
   title: string;
   location: string;
   status?: string;
@@ -139,6 +153,9 @@ export interface StreamEventPayload {
   workerIndex?: number | null;
   startedAt?: number | null;
   steps?: unknown;
+  stepEvents?: TestStepEvent[] | null;
+  stepCategory?: string | null;
+  parentTitle?: string | null;
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
   networkRequests?: unknown;
