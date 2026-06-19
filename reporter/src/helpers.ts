@@ -2,7 +2,7 @@ import * as crypto from 'crypto';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
-import type { PiwiDashboardOptions } from './config.js';
+import type { PiwiDashboardOptions, ShardInfo } from './config.js';
 import { resolveOptions } from './config.js';
 import { HttpClient } from './http-client.js';
 
@@ -16,9 +16,28 @@ export function getSetupFilePath(projectName: string): string {
   return path.join(os.tmpdir(), `piwi-dashboard-setup-${hashForProject(projectName)}.json`);
 }
 
-/** Derive a unique instance identifier by hashing hostname + projectName */
-export function computeInstanceId(projectName: string): string {
-  return crypto.createHash('sha256').update([os.hostname(), projectName].join('|')).digest('hex').slice(0, 16);
+/** Derive a unique instance identifier by hashing hostname + projectName (or runLabel + projectName when sharding) */
+export function computeInstanceId(projectName: string, runLabel?: string | null): string {
+  const seed = runLabel ? `${projectName}|${runLabel}` : `${os.hostname()}|${projectName}`;
+  return crypto.createHash('sha256').update(seed).digest('hex').slice(0, 16);
+}
+
+/** Detect a stable CI run label from well-known environment variables. Returns null outside CI. */
+export function detectCiRunLabel(): string | null {
+  const env = process.env;
+  if (env.GITHUB_ACTIONS && env.GITHUB_RUN_ID) return env.GITHUB_RUN_ID;
+  if (env.GITLAB_CI && env.CI_PIPELINE_ID) return env.CI_PIPELINE_ID;
+  if (env.CIRCLECI && env.CIRCLE_WORKFLOW_ID) return env.CIRCLE_WORKFLOW_ID;
+  if (env.TRAVIS && env.TRAVIS_BUILD_ID) return env.TRAVIS_BUILD_ID;
+  if (env.TF_BUILD && env.BUILD_BUILDID) return env.BUILD_BUILDID;
+  if (env.JENKINS_URL && env.BUILD_ID) return env.BUILD_ID;
+  if (env.BUILDKITE_BUILD_ID) return env.BUILDKITE_BUILD_ID;
+  if (env.TEAMCITY_BUILD_ID) return env.TEAMCITY_BUILD_ID;
+  if (env.BITBUCKET_BUILD_NUMBER) return env.BITBUCKET_BUILD_NUMBER;
+  if (env.SEMAPHORE_WORKFLOW_ID) return env.SEMAPHORE_WORKFLOW_ID;
+  if (env.APPVEYOR_BUILD_ID) return env.APPVEYOR_BUILD_ID;
+  if (env.DRONE_BUILD_NUMBER) return env.DRONE_BUILD_NUMBER;
+  return null;
 }
 
 /** Information saved by the global setup for the reporter instance to consume */
@@ -137,6 +156,13 @@ export function createGlobalSetup(
 
     try {
       const auth = await httpClient.resolveAuth(opts);
+      const runLabel = opts.runLabel || detectCiRunLabel();
+
+      // Detect shard info from Playwright config (--shard=1/3)
+      const pwShard = (config as any).shard as ShardInfo | null | undefined;
+      const shardIndex = pwShard?.current;
+      const shardTotal = pwShard?.total;
+
       const response = await httpClient.postJSON(
         '/api/test-runs/setup',
         {
@@ -144,7 +170,9 @@ export function createGlobalSetup(
           projectDescription: opts.projectDescription,
           environment: opts.environment || null,
           startTime: new Date().toISOString(),
-          instanceId: computeInstanceId(opts.projectName!),
+          instanceId: computeInstanceId(opts.projectName!, runLabel),
+          shardIndex,
+          shardTotal,
         },
         auth,
       );

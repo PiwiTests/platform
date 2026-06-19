@@ -1,5 +1,11 @@
 import type { PlaywrightTestConfig } from '@playwright/test';
 
+/** Playwright shard info — mirrors `config.shard` shape */
+export interface ShardInfo {
+  current: number;
+  total: number;
+}
+
 /** Options for configuring the Piwi Dashboard reporter */
 export interface PiwiDashboardOptions extends PlaywrightTestConfig {
   /** URL of the Piwi Dashboard server */
@@ -34,6 +40,8 @@ export interface PiwiDashboardOptions extends PlaywrightTestConfig {
   apiKey?: string | null;
   /** Additional report types to upload. Each entry can specify `type`, optional `dir`, and optional `label`. */
   reports?: Array<{ type: string; dir?: string; label?: string }>;
+  /** Stable label that ties shards together (e.g. CI run ID). Auto-detected from CI env; override if needed. */
+  runLabel?: string;
   /** Deployment environment for this run, e.g. `"production"`, `"staging"`, `"integration"` */
   environment?: string;
   /** Related issue reference, e.g. `"JIRA-123"` */

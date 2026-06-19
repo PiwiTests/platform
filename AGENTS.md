@@ -271,6 +271,18 @@ When the `User` type from DB has `role: string`, cast to `Role`: `user.role as R
 - **Shared types** (`application/shared/types.ts`): Wire contract between reporter and server. Server imports directly; reporter uses structural typing (do NOT add `import type` from shared in reporter method signatures — it leaks the monorepo path into published `.d.ts` files)
 - **Adding a field to test run data**: Add to `shared/types.ts` payload(s) → add column to both `schema.sqlite.ts` and `schema.pg.ts` → `npm run db:generate && npm run db:generate:pg` → update all API handlers (`submit`, `start`, `setup`, `begin`, `finish`, `upload`) → update reporter (`reporter.ts`, `uploader.ts`, `stream-manager.ts`) → update demo (`generate-demo-seed.mjs`, `demo/api/reporter.ts`, `demo/api/test-runs.ts`, `demo/simulator.ts`) → `npm run app:seed:demo`
 
+### Sharding Pattern
+
+When implementing or extending sharding support:
+
+- **runLabel**: Detected from CI env vars (`GITHUB_RUN_ID`, `CI_PIPELINE_ID`, etc.) by `MetadataCollector.detectCiRunLabel()` (reporter) and `detectCiRunLabel()` (helpers.ts). Users override via `PiwiDashboardOptions.runLabel`. Applied in `createGlobalSetup` too.
+- **instanceId**: When `runLabel` is set, `computeInstanceId(projectName, runLabel)` uses `projectName|runLabel` instead of `hostname|projectName`. All shards share the same instanceId.
+- **Per-shard tokens**: Each shard gets its own stream token. The server stores them in `RunEventBus.runStates[id].shardTokens` (`Set<string>`). Validated in `/events` and `/finish` endpoints as fallback when the main `streamToken` doesn't match.
+- **Shard detection**: Reporter reads `config.shard` (from `--shard` CLI) in `onBegin`. Server detects sharded runs by `shardTotal > 1` in request bodies.
+- **Server-side merge**: `/start`, `/setup`, and `/submit` reuse an existing run when `shardTotal > 1` and an active run with the same `instanceId` already exists. `/finish` accumulates counters via SQL `+` and sets final status only when `shardsFinished === shardTotal`. `cancelInstanceRuns()` skips sharded runs when `isShardedRun: true`.
+- **DB columns**: `test_runs.shardTotal` (nullable integer) and `test_runs.shardsFinished` (integer, default 0).
+- **New endpoint handler pattern**: Always validate shard tokens alongside the primary `streamToken`: check `cachedState.shardTokens?.has(body.streamToken)` as fallback. Use `validateAndReviveRun()` with the `isShardToken` callback.
+
 ## UI Patterns
 
 - **UTable sticky headers**: Use the `sticky` boolean prop + `max-h-*` class on the table root element. Do NOT wrap tables in `overflow-y-auto` divs — UTable's own root handles overflow when `max-h` is set.
@@ -340,6 +352,7 @@ Always regenerate the seed SQL after changes: `cd application && npm run seed:de
 - Reporter not found? `npm link` in `reporter/` then in target project
 - Migration not applying? If a migration file or `_journal.json` was created by hand (not via `npm run db:generate`), the Drizzle migrator may silently skip it — delete the hand-written migration, revert the journal entry, run `npm run db:generate` (or `db:generate:pg` for PostgreSQL), and manually run `ALTER TABLE ... ADD COLUMN` on the existing database if needed.
 - Command appears frozen / no output? It probably launched an interactive pager. Use `git --no-pager <cmd>` for `diff`/`log`/`show`, and avoid commands that open an editor or wait for input (non-interactive shells hang on them).
+- **Don't start the dev server interactively** — `npm run dev` / `nuxt dev` runs as a foreground process and blocks all subsequent commands. The tests handle server startup automatically via `webServer` in `playwright.config.ts`. If you need to start the server manually, do it as a background PowerShell job or use `Start-Process`. Starting it directly in a bash tool call will leave you stuck until the tool times out.
 
 ## Testing API
 

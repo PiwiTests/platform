@@ -11,12 +11,15 @@ type DB = Awaited<ReturnType<typeof getDatabase>>;
  *
  * Throws a proper HTTP error on invalid state or token mismatch.
  * Mutates `testRun` in place on revival so callers see the updated state.
+ *
+ * @param isShardToken Optional callback for shard-aware token validation.
  */
 export async function validateAndReviveRun(
   db: DB,
   runId: number,
   testRun: { status: string; streamToken: string | null },
   bodyStreamToken: string | null | undefined,
+  isShardToken?: (token: string) => boolean,
 ): Promise<void> {
   const isInterrupted = testRun.status === 'interrupted' && !testRun.streamToken;
 
@@ -45,6 +48,8 @@ export async function validateAndReviveRun(
     testRun.status = 'running';
     testRun.streamToken = bodyStreamToken;
   } else if (testRun.streamToken !== bodyStreamToken) {
+    // Fallback: accept shard token if provided
+    if (isShardToken && bodyStreamToken && isShardToken(bodyStreamToken)) return;
     throw createError({
       statusCode: 403,
       message: 'Invalid stream token',

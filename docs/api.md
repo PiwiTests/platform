@@ -139,7 +139,64 @@ Start a new streaming test run. Returns a `runId` and `streamToken` for subseque
   "projectDescription": "Optional description",
   "startTime": "2024-01-01T12:00:00Z",
   "environment": "staging",
-  "metadata": {}
+  "metadata": {},
+  "shardIndex": 1,
+  "shardTotal": 3
+}
+```
+
+| Field                | Type    | Required | Description                                                                  |
+|----------------------|---------|----------|------------------------------------------------------------------------------|
+| `shardIndex`         | number  | no       | 1-based shard index when using Playwright sharding (e.g. 1, 2, 3)           |
+| `shardTotal`         | number  | no       | Total number of shards (e.g. 3). When > 1, shards with the same `instanceId` are grouped into one run |
+
+**Response**
+
+```json
+{
+  "success": true,
+  "runId": 42,
+  "projectId": 7,
+  "streamToken": "abc123..."
+}
+```
+
+---
+
+### POST `/api/test-runs/setup`
+
+Initialize a test run in `initialising` status. Used with the global setup phase (wrapping `globalSetup` via `createGlobalSetup`). Supports the same fields and shard behaviour as `/start`, but returns a `setupToken` instead of a `streamToken`. Call `/api/test-runs/[id]/begin` with the `setupToken` to transition to `running`.
+
+**Request body**
+
+Same fields as `/start` above.
+
+**Response**
+
+```json
+{
+  "success": true,
+  "runId": 42,
+  "projectId": 7,
+  "setupToken": "xyz789..."
+}
+```
+
+---
+
+### POST `/api/test-runs/[id]/begin`
+
+Transition a run from `initialising` to `running`. Requires the `setupToken` from `/setup`.
+
+**Request body**
+
+```json
+{
+  "setupToken": "xyz789...",
+  "totalTests": 0,
+  "metadata": {},
+  "shardIndex": 1,
+  "shardTotal": 3
 }
 ```
 
@@ -257,17 +314,34 @@ Finalize a streaming run with the overall status and summary.
   "skippedTests": 0,
   "flakyTests": 0,
   "durations": [1500, 2300, ...],
-  "metadata": {}
+  "metadata": {},
+  "shardIndex": 1,
+  "shardTotal": 3
 }
 ```
 
-**Response**
+| Field                | Type    | Required | Description                                                                  |
+|----------------------|---------|----------|------------------------------------------------------------------------------|
+| `shardIndex`         | number  | no       | 1-based shard index when using Playwright sharding                          |
+| `shardTotal`         | number  | no       | Total number of shards. When set, counters are accumulated across shards, and the run stays `running` until all shards have finished |
+
+**Response** (single shard or non-sharded)
 
 ```json
 {
   "success": true,
   "testRunId": 42,
   "status": "passed"
+}
+```
+
+**Response** (sharded, not all shards finished)
+
+```json
+{
+  "success": true,
+  "testRunId": 42,
+  "status": "running"
 }
 ```
 

@@ -30,6 +30,7 @@ export interface GlobalRunEvent {
 export interface RunState {
   streamToken: string;
   projectId: number;
+  shardTokens?: Set<string>;
 }
 
 class RunEventBus {
@@ -111,6 +112,29 @@ class RunEventBus {
   /** Remove the cached run state when the stream token is invalidated. */
   clearRunState(runId: number): void {
     this.runStates.delete(runId);
+  }
+
+  /** Register a per-shard stream token for an active run. */
+  addShardToken(runId: number, token: string): void {
+    const state = this.runStates.get(runId);
+    if (state) {
+      if (!state.shardTokens) state.shardTokens = new Set();
+      state.shardTokens.add(token);
+    }
+  }
+
+  /** Check whether a token is a valid per-shard stream token. */
+  isValidShardToken(runId: number, token: string): boolean {
+    const state = this.runStates.get(runId);
+    return state?.shardTokens?.has(token) ?? false;
+  }
+
+  /** Remove a per-shard stream token when its shard has finished. */
+  removeShardToken(runId: number, token: string): void {
+    const state = this.runStates.get(runId);
+    state?.shardTokens?.delete(token);
+    // Clean up the set if it's now empty
+    if (state?.shardTokens?.size === 0) state.shardTokens = undefined;
   }
 
   /**
