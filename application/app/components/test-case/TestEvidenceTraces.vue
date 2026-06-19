@@ -11,10 +11,6 @@ const origin = computed(() => {
   return useRequestURL().origin;
 });
 
-function viewerUrl(path: string): string {
-  return `https://trace.playwright.dev/?trace=${encodeURIComponent(`${origin.value}/api/files/${getFileApiPath(path)}`)}`;
-}
-
 function downloadUrl(path: string): string {
   return `/api/files/${getFileApiPath(path)}`;
 }
@@ -44,7 +40,13 @@ function fileName(path: string): string {
             <span class="text-xs text-gray-400 shrink-0">{{ formatRelativeTime(trace.createdAt) }}</span>
           </div>
           <div class="flex items-center gap-1 shrink-0">
-            <UButton :to="viewerUrl(trace.filePath)" target="_blank" icon="i-lucide-play" size="xs" label="View" />
+            <UButton
+              :to="getTraceViewerUrl(trace.filePath, origin)"
+              target="_blank"
+              icon="i-lucide-play"
+              size="xs"
+              label="View"
+            />
             <UButton
               :to="downloadUrl(trace.filePath)"
               target="_blank"
