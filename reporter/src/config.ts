@@ -44,6 +44,8 @@ export interface PiwiDashboardOptions extends PlaywrightTestConfig {
   runLabel?: string;
   /** Deployment environment for this run, e.g. `"production"`, `"staging"`, `"integration"` */
   environment?: string;
+  /** Optional display label for the test run (e.g. "v2.3.1 release") */
+  label?: string;
   /** Related issue reference, e.g. `"JIRA-123"` */
   relatedIssue?: string;
   /** CI job information */

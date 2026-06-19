@@ -22,6 +22,8 @@ export interface RunPayload {
   skippedTests: number;
   /** Deployment environment label (e.g. `"staging"`, `"production"`) */
   environment?: string;
+  /** Optional display label for the test run (e.g. "v2.3.1 release") */
+  label?: string | null;
   /** Arbitrary metadata collected from the environment, CI, and Playwright config */
   metadata: Record<string, any>;
   /** Unique instance identifier for deduplication */
@@ -78,6 +80,7 @@ export class Uploader {
         failedTests: payload.failedTests,
         skippedTests: payload.skippedTests,
         environment: payload.environment || null,
+        label: (payload as any).label || null,
         metadata: payload.metadata,
         instanceId: payload.instanceId,
         playwrightVersion: payload.playwrightVersion,
@@ -109,6 +112,7 @@ export class Uploader {
         failedTests: payload.failedTests,
         skippedTests: payload.skippedTests,
         environment: payload.environment || null,
+        label: (payload as any).label || null,
         metadata: payload.metadata,
         projectDescription: payload.projectDescription,
         instanceId: payload.instanceId,

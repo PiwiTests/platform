@@ -94,6 +94,7 @@ export default eventHandler(async (event) => {
             line: testRunsCases.line,
             column: testRunsCases.column,
             workerIndex: testRunsCases.workerIndex,
+            shardIndex: testRunsCases.shardIndex,
             browser: testRunsCases.browser,
           })
           .from(testRunsCases)

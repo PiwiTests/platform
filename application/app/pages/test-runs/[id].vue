@@ -491,7 +491,7 @@ function handleSelectCluster(clusterId: number) {
                     },
                   ]
                 : [{ label: 'Project' }]),
-              { label: `Test run #${runId}` },
+              { label: `Run #${runId}` + (testRun?.label ? ` — ${testRun.label}` : '') },
             ]"
           />
         </template>
@@ -525,6 +525,7 @@ function handleSelectCluster(clusterId: number) {
             :active-filter="statusFilterForSummary"
             @update:show-custom-data="showCustomData = $event"
             @filter-status="handleFilterStatus"
+            @label-updated="refresh"
           />
         </template>
 
@@ -565,6 +566,7 @@ function handleSelectCluster(clusterId: number) {
           <WorkersTimeline
             :test-cases="throttledTestCases"
             :setup-steps="testRun?.setupSteps ?? null"
+            :shard-total="testRun?.shardTotal ?? null"
             :live="isLive"
             @select-test-case="handleSelectTestCase"
           />

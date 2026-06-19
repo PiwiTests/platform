@@ -335,7 +335,13 @@ onUnmounted(disconnectRunStream);
                   ]
                 : [{ label: 'Project' }]),
               ...(testCase?.testRun?.id
-                ? [{ label: `Test run #${testCase.testRun.id}`, to: `/test-runs/${testCase.testRun.id}` }]
+                ? [
+                    {
+                      label:
+                        `Run #${testCase.testRun.id}` + (testCase.testRun.label ? ` — ${testCase.testRun.label}` : ''),
+                      to: `/test-runs/${testCase.testRun.id}`,
+                    },
+                  ]
                 : [{ label: 'Test run' }]),
               { label: testCase?.title || `Test case #${testCaseId}` },
             ]"

@@ -354,6 +354,7 @@ export default eventHandler(async (event) => {
         failedTests: (testRunData.failedTests as number | undefined) || 0,
         skippedTests: (testRunData.skippedTests as number | undefined) || 0,
         environment: (testRunData.environment as string | null | undefined) || null,
+        label: (testRunData.label as string | null | undefined) || null,
         metadata: sanitizeMetadata((testRunData.metadata || null) as Record<string, unknown> | null),
         instanceId: (testRunData.instanceId as string | null | undefined) || null,
         playwrightVersion: (testRunData.playwrightVersion as string | null | undefined) || null,
@@ -480,6 +481,7 @@ export default eventHandler(async (event) => {
         testSource: testCase.testSource as string | null | undefined,
         browser: testCase.browser as unknown | null | undefined,
         workerIndex: testCase.workerIndex as number | null | undefined,
+        shardIndex: testCase.shardIndex as number | null | undefined,
         startedAt: testCase.startedAt as number | null | undefined,
       };
     });

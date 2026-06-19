@@ -107,6 +107,9 @@ function fileName(path: string): string {
         <span class="text-xs text-gray-500 tabular-nums whitespace-nowrap">
           Worker: <strong class="text-gray-700 dark:text-gray-300">{{ testCase?.workerIndex ?? '—' }}</strong>
         </span>
+        <span v-if="testCase?.shardIndex != null" class="text-xs text-gray-500 tabular-nums whitespace-nowrap">
+          Shard: <strong class="text-gray-700 dark:text-gray-300">{{ testCase.shardIndex }}</strong>
+        </span>
       </div>
       <BrowserBadge v-if="browser" :browser="browser" size="sm" class="shrink-0 max-sm:hidden" />
     </template>

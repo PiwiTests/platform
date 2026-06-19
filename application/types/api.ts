@@ -212,6 +212,7 @@ export interface TestRunSummary {
   reports?: ReportInfo[];
   browsers?: string[];
   environment?: string | null;
+  label?: string | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null;
   createdAt: Date;
@@ -239,6 +240,7 @@ export interface TestRunDetails {
   metadata?: any | null;
   setupSteps?: TestStepEvent[] | null;
   environment?: string | null;
+  label?: string | null;
   createdAt: Date;
   project?: {
     id: number;
@@ -424,6 +426,7 @@ export interface TestCaseResult {
   consoleLogs?: ConsoleEntry[] | null;
   ariaSnapshot?: string | null;
   workerIndex?: number | null;
+  shardIndex?: number | null;
   startedAt?: number;
   browser?: {
     projectName?: string;
@@ -648,6 +651,7 @@ export interface TestRunSubmitBody {
   skippedTests: number;
   flakyTests?: number;
   environment?: string;
+  label?: string | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any;
   testCases?: Array<{

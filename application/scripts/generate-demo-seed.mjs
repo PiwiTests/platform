@@ -564,6 +564,7 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
       p90_test_duration: p90TestDuration,
 
       environment: ENVIRONMENTS[i % ENVIRONMENTS.length],
+      label: i === 0 ? `v${i + 1}.0.0 release` : null,
       metadata,
       stream_token: null,
       instance_id: null,

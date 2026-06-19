@@ -86,6 +86,7 @@ export async function apiGetTestCase(id: number) {
     consoleLogs: testRunsCase.consoleLogs,
     ariaSnapshot: testRunsCase.ariaSnapshot,
     workerIndex: testRunsCase.workerIndex,
+    shardIndex: testRunsCase.shardIndex,
     browser: testRunsCase.browser,
     failureCluster,
     testRun: testRun ? { ...testRun, project, reports: [] } : testRun,

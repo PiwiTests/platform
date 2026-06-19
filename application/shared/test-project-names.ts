@@ -71,6 +71,7 @@ export const PROJECT = {
   REPORTS_DETAILS: 'reports-details-project',
   REVOKED_KEY: 'revoked-key-test',
   RUN_COMPARE: 'run-compare',
+  RUN_LABEL: 'run-label-test',
   SHARDING_TEST: 'sharding-test',
   STATS_TEST: 'stats-test-project',
   SUMMARY_FOLD: 'summary-fold-test',

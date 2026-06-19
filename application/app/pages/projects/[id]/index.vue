@@ -198,18 +198,23 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
     accessorKey: 'id',
     header: createSortHeader<TestRunSummary>('Run'),
     cell: ({ row }) => {
-      return h(
-        'a',
-        {
-          href: `/test-runs/${row.original.id}`,
-          class: 'text-primary hover:underline font-medium',
-          onClick: (e: MouseEvent) => {
-            e.preventDefault();
-            navigateTo(`/test-runs/${row.original.id}`);
+      const id = row.original.id;
+      const label = row.original.label;
+      return h('div', { class: 'flex items-center gap-2' }, [
+        h(
+          'a',
+          {
+            href: `/test-runs/${id}`,
+            class: 'text-primary hover:underline font-medium',
+            onClick: (e: MouseEvent) => {
+              e.preventDefault();
+              navigateTo(`/test-runs/${id}`);
+            },
           },
-        },
-        `Run #${row.getValue('id')}`,
-      );
+          `Run #${id}`,
+        ),
+        label ? h('span', { class: 'text-xs text-gray-500 dark:text-gray-400 truncate max-w-32' }, label) : null,
+      ]);
     },
   },
   {

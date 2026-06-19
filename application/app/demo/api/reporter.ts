@@ -136,6 +136,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
         failedTests: 0,
         skippedTests: 0,
         environment: body.environment || null,
+        label: body.label || null,
         metadata: { shardTokens: [setupToken] } as Record<string, unknown>,
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
@@ -167,6 +168,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
       failedTests: 0,
       skippedTests: 0,
       environment: body.environment || null,
+      label: body.label || null,
       metadata: null,
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
@@ -263,6 +265,7 @@ interface RunCaseInput {
   consoleLogs?: unknown;
   ariaSnapshot?: string | null;
   workerIndex?: number | null;
+  shardIndex?: number | null;
   startedAt?: number | null;
   browser?: unknown;
 }
@@ -433,6 +436,7 @@ async function persistRunCases(
       ariaSnapshot: c.ariaSnapshot ?? null,
       browser: c.browser ?? null,
       workerIndex: c.workerIndex ?? null,
+      shardIndex: c.shardIndex ?? null,
       startedAt: c.startedAt ?? null,
     });
   }
@@ -482,6 +486,7 @@ export async function apiPostRunEvents(
         suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
         location: tc.location,
         workerIndex: tc.workerIndex ?? null,
+        shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
         browser: tc.browser ?? null,
       },
@@ -516,6 +521,7 @@ export async function apiPostRunEvents(
     consoleLogs: tc.consoleLogs,
     ariaSnapshot: tc.ariaSnapshot as string | null | undefined,
     workerIndex: tc.workerIndex ?? null,
+    shardIndex: tc.shardIndex ?? null,
     startedAt: tc.startedAt ?? null,
     browser: tc.browser ?? null,
   }));
@@ -557,6 +563,7 @@ export async function apiPostRunEvents(
         location: tc.location,
         error: tc.error ?? null,
         workerIndex: tc.workerIndex ?? null,
+        shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
         browser: tc.browser ?? null,
       },
@@ -718,6 +725,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
       ...(body.metadata && { metadata: sanitizeMetadata(body.metadata) }),
+      ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
     })
     .where(eq(testRuns.id, id));
