@@ -18,7 +18,7 @@ const props = defineProps<{
   lang?: string;
 }>();
 
-const { copy } = useCopy();
+const { copy, copied } = useCopy();
 
 const detectedLang = ref('');
 
@@ -49,7 +49,7 @@ const highlighted = computed(() => {
       size="xs"
       color="neutral"
       variant="ghost"
-      icon="i-lucide-copy"
+      :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
       title="Copy to clipboard"
       class="absolute top-1.5 right-1.5 opacity-40 hover:opacity-100 transition-opacity"
       @click="copy(code, { toast: true })"

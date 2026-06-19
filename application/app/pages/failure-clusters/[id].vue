@@ -64,6 +64,51 @@ const triageStatusOptions = [
   { label: 'Resolved', value: 'resolved', color: 'success' as const },
   { label: 'Ignored', value: 'ignored', color: 'neutral' as const },
 ];
+
+const { copyRich, copied: clusterCopied } = useCopyRich();
+
+function copyCluster() {
+  const c = cluster.value;
+  if (!c) return;
+  const url = window.location.href;
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+
+  const meta = [
+    c.errorType,
+    `${c.occurrences} occurrence${c.occurrences === 1 ? '' : 's'}`,
+    `${c.affectedTests} test${c.affectedTests === 1 ? '' : 's'} affected`,
+    c.status !== 'open' ? c.status : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const aiSummary =
+    c.diagnosis?.status === 'completed' && c.diagnosis.summary
+      ? `AI diagnosis (${c.diagnosis.category ?? 'unknown'}, ${c.diagnosis.confidence ?? '?'} confidence): ${c.diagnosis.summary}`
+      : null;
+
+  const plain = [
+    `❌ Failure cluster: ${c.signature}`,
+    meta,
+    '',
+    ...(c.sampleError ? ['Sample error:', stripAnsi(c.sampleError), ''] : []),
+    ...(aiSummary ? [aiSummary, ''] : []),
+    `Cluster: ${url}`,
+  ].join('\n');
+
+  const html = [
+    `<p><strong>❌ Failure cluster</strong>: <code>${esc(c.signature)}</code></p>`,
+    `<p><em>${esc(meta)}</em></p>`,
+    c.sampleError ? `<p><strong>Sample error:</strong></p><pre>${renderAnsi(c.sampleError)}</pre>` : '',
+    aiSummary
+      ? `<p><strong>AI diagnosis</strong> (${esc(c.diagnosis?.category ?? 'unknown')}, ${esc(c.diagnosis?.confidence ?? '?')} confidence):<br>${esc(c.diagnosis!.summary!)}</p>`
+      : '',
+    `<p>🔗 <a href="${url}">View failure cluster</a></p>`,
+  ].join('');
+
+  copyRich(plain, html, { toast: 'Failure cluster copied' });
+}
 </script>
 
 <template>
@@ -79,6 +124,17 @@ const triageStatusOptions = [
         >
           {{ cluster.project.label || cluster.project.name }}
         </UButton>
+      </template>
+      <template #right>
+        <UTooltip v-if="cluster" :text="clusterCopied ? 'Copied!' : 'Copy failure cluster'">
+          <UButton
+            size="sm"
+            variant="ghost"
+            color="neutral"
+            :icon="clusterCopied ? 'i-lucide-check' : 'i-lucide-clipboard'"
+            @click="copyCluster"
+          />
+        </UTooltip>
       </template>
     </UDashboardNavbar>
 

@@ -49,7 +49,7 @@ const { copy, copied } = useCopy();
         <div class="flex items-center gap-2">
           <code class="text-sm bg-gray-100 dark:bg-gray-800 p-2 rounded block flex-1">{{ testCase.location }}</code>
           <UButton
-            icon="i-lucide-copy"
+            :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
             size="xs"
             color="neutral"
             variant="ghost"
