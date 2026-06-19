@@ -63,6 +63,7 @@ test.describe.serial('Sharding API Tests', () => {
         streamToken: tokenShard0,
         testCases: [
           {
+            type: 'complete',
             title: 'shard 0 test A',
             status: 'passed',
             duration: 1500,
@@ -71,6 +72,7 @@ test.describe.serial('Sharding API Tests', () => {
             browser: 'chromium',
           },
           {
+            type: 'complete',
             title: 'shard 0 test B',
             status: 'passed',
             duration: 800,
@@ -90,6 +92,7 @@ test.describe.serial('Sharding API Tests', () => {
         streamToken: tokenShard1,
         testCases: [
           {
+            type: 'complete',
             title: 'shard 1 test C',
             status: 'failed',
             duration: 1100,
@@ -111,6 +114,7 @@ test.describe.serial('Sharding API Tests', () => {
         testCases: [
           // Replaying a test from shard 0 — deduped by unique constraint
           {
+            type: 'complete',
             title: 'shard 0 test A',
             status: 'passed',
             duration: 1500,
