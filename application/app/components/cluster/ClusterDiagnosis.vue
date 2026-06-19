@@ -10,7 +10,7 @@ const { diagnosis, posting, contextText, contextLoading, refreshContext, runDiag
 );
 const { aiStatus } = useAiStatus();
 const toast = useToast();
-const { copy } = useCopy();
+const { copy, copied } = useCopy();
 
 const attachments = useAttachments();
 const {
@@ -226,7 +226,7 @@ function isStale(d: FailureDiagnosis) {
           <div class="flex items-center gap-1">
             <UButton
               v-if="contextText"
-              icon="i-lucide-copy"
+              :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
               size="xs"
               color="neutral"
               variant="ghost"
@@ -385,7 +385,7 @@ function isStale(d: FailureDiagnosis) {
               </UBadge>
             </div>
             <UButton
-              icon="i-lucide-copy"
+              :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
               size="xs"
               color="neutral"
               variant="ghost"
@@ -419,7 +419,7 @@ function isStale(d: FailureDiagnosis) {
                   >patch — apply with <code class="bg-muted px-1 rounded">git apply</code></span
                 >
                 <UButton
-                  icon="i-lucide-copy"
+                  :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
                   size="xs"
                   color="neutral"
                   variant="ghost"

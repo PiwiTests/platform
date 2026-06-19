@@ -592,6 +592,18 @@ export async function apiGetRegressionContext(id: number) {
 }
 
 /** DELETE /api/test-runs/:id */
+/** PATCH /api/test-runs/:id */
+export async function apiPatchTestRun(id: number, body: { label?: string | null }) {
+  const db = await getDemoDb();
+  const existing = await db.select().from(testRuns).where(eq(testRuns.id, id));
+  if (!existing[0]) throw new Error('Test run not found');
+  await db
+    .update(testRuns)
+    .set({ label: body.label ?? null })
+    .where(eq(testRuns.id, id));
+  return { success: true, testRunId: id, label: body.label ?? null };
+}
+
 export async function apiDeleteTestRun(id: number) {
   const db = await getDemoDb();
 

@@ -100,7 +100,7 @@ function copyCommand() {
                   {{ context.commitRange.gitCommand }}
                 </code>
                 <UButton
-                  :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
+                  :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
                   size="xs"
                   color="neutral"
                   variant="ghost"

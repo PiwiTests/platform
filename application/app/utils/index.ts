@@ -233,6 +233,10 @@ export function getFileApiPath(filePath: string): string {
   return filePath.replace(storagePath, '');
 }
 
+export function getTraceViewerUrl(filePath: string, origin: string): string {
+  return `/trace-viewer/?trace=${encodeURIComponent(`${origin}/api/files/${getFileApiPath(filePath)}`)}`;
+}
+
 /**
  * Extract a human-readable message from an unknown error, unwrapping the
  * `{ data: { message } }` / `{ message }` shapes that `$fetch` throws.

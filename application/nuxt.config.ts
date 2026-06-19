@@ -135,6 +135,16 @@ export default defineNuxtConfig({
     // run since the prerender cache is discarded after each generate anyway).
     prerender: isDemo ? { failOnError: false } : undefined,
     storage: isDemo ? { 'internal:nuxt:prerender': { driver: 'memory' } } : undefined,
+    publicAssets: [
+      {
+        // Serve the Playwright trace viewer static files at /trace-viewer/.
+        // These assets are bundled with playwright-core and served directly from
+        // node_modules. During `nuxt build`, Nitro copies them to .output/public/.
+        baseURL: '/trace-viewer',
+        dir: resolve(__dirname, '../node_modules/playwright-core/lib/vite/traceViewer'),
+        maxAge: 60 * 60 * 24,
+      },
+    ],
     openAPI: {
       meta: {
         title: 'Piwi Dashboard API',

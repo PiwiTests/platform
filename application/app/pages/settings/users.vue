@@ -414,7 +414,13 @@ function canManageApiKeys(user: UserDetails): boolean {
                 {{ createdKeyValue }}
               </div>
               <div class="flex gap-2">
-                <UButton label="Copy to clipboard" icon="i-lucide-copy" color="primary" size="sm" @click="copyKey" />
+                <UButton
+                  label="Copy to clipboard"
+                  icon="i-lucide-clipboard"
+                  color="primary"
+                  size="sm"
+                  @click="copyKey"
+                />
                 <UButton label="Done" variant="ghost" size="sm" @click="dismissCreatedKey" />
               </div>
             </div>

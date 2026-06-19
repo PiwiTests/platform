@@ -3,6 +3,7 @@ import type { PerformanceStep, WebVitals, NetworkRequest, TestCaseHistoryPoint, 
 import type { TableColumn } from '@nuxt/ui';
 import { h, resolveComponent } from 'vue';
 import { getPerformanceHints } from '~/utils/performance-hints';
+import { renderAnsi } from '~/utils';
 
 const route = useRoute();
 const testCaseId = route.params.id;
@@ -314,6 +315,41 @@ watch(
 );
 
 onUnmounted(disconnectRunStream);
+
+const { copyRich, copied: failureCopied } = useCopyRich();
+
+function copyFailure() {
+  const tc = testCase.value;
+  if (!tc?.error) return;
+  const origin = window.location.origin;
+  const title = tc.title ?? 'Unknown test';
+  const loc = tc.location ?? '';
+  const rawError = tc.error.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const clusterUrl = failureCluster.value ? `${origin}/failure-clusters/${failureCluster.value.id}` : null;
+  const testCaseUrl = `${origin}/test-cases/${testCaseId}`;
+
+  const plain = [
+    `❌ Test failed: ${title}`,
+    loc ? `Location: ${loc}` : null,
+    '',
+    'Error:',
+    rawError,
+    '',
+    clusterUrl ? `Failure cluster: ${clusterUrl}` : null,
+    `Test case: ${testCaseUrl}`,
+  ]
+    .filter((l) => l !== null)
+    .join('\n');
+
+  const html = [
+    `<p><strong>❌ Test failed: ${esc(title)}</strong>${loc ? `<br><code>${esc(loc)}</code>` : ''}</p>`,
+    `<p><strong>Error:</strong></p><pre>${renderAnsi(tc.error)}</pre>`,
+    `<p>🔗 ${clusterUrl ? `<a href="${clusterUrl}">View failure cluster</a> · ` : ''}<a href="${testCaseUrl}">Test case details</a></p>`,
+  ].join('');
+
+  copyRich(plain, html, { toast: 'Failure copied' });
+}
 </script>
 
 <template>
@@ -376,6 +412,17 @@ onUnmounted(disconnectRunStream);
           <TestCaseErrorCard v-if="testCase?.error" :cluster="failureCluster" />
 
           <SectionCard v-if="testCase?.error" icon="i-lucide-bug" icon-class="text-red-500" title="Error">
+            <template #actions>
+              <UTooltip :text="failureCopied ? 'Copied!' : 'Copy failure'">
+                <UButton
+                  size="xs"
+                  variant="ghost"
+                  color="neutral"
+                  :icon="failureCopied ? 'i-lucide-check' : 'i-lucide-clipboard'"
+                  @click="copyFailure"
+                />
+              </UTooltip>
+            </template>
             <pre
               class="text-xs font-mono whitespace-pre-wrap break-words text-red-600 dark:text-red-400 max-h-96 overflow-y-auto"
               >{{ testCase.error }}</pre

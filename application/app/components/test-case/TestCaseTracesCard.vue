@@ -15,14 +15,6 @@ const origin = computed(() => {
 function downloadUrl(path: string): string {
   return `/api/files/${getFileApiPath(path)}`;
 }
-
-// Opens the trace in the hosted Playwright trace viewer. The viewer fetches
-// the ZIP from this dashboard in the user's browser (the files endpoint sends
-// CORS headers for trace archives), so this works for localhost and
-// HTTPS-hosted dashboards alike.
-function viewerUrl(path: string): string {
-  return `https://trace.playwright.dev/?trace=${encodeURIComponent(`${origin.value}/api/files/${getFileApiPath(path)}`)}`;
-}
 </script>
 
 <template>
@@ -40,7 +32,7 @@ function viewerUrl(path: string): string {
         </div>
         <div class="flex items-center gap-1.5 shrink-0">
           <UButton
-            :to="viewerUrl(trace.filePath)"
+            :to="getTraceViewerUrl(trace.filePath, origin)"
             target="_blank"
             icon="i-lucide-bug-play"
             size="xs"

@@ -9,8 +9,14 @@ const { copy, copied } = useCopy();
 <template>
   <SectionCard icon="i-lucide-sparkles" icon-class="text-amber-500" title="Debug prompt for AI">
     <template #actions>
-      <UButton icon="i-lucide-copy" size="xs" color="neutral" variant="ghost" label="Copy" @click="copy(prompt)" />
-      <span v-if="copied" class="text-xs text-green-600 mr-1">Copied!</span>
+      <UButton
+        :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
+        size="xs"
+        color="neutral"
+        variant="ghost"
+        label="Copy"
+        @click="copy(prompt)"
+      />
     </template>
 
     <p class="text-sm text-gray-500 mb-3">

@@ -26,6 +26,7 @@ import {
   apiGetRecentTestRuns,
   apiGetTestRunSummary,
   apiDeleteTestRun,
+  apiPatchTestRun,
   apiGetFailureGroups,
   apiGetRegressionContext,
 } from './test-runs';
@@ -65,6 +66,7 @@ import {
   apiTestAiSettings,
   apiGetProjectFlakyTests,
 } from './ai';
+import { apiSearch } from './search';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
@@ -140,6 +142,11 @@ const routes: RouteEntry[] = [
   // Test runs
   { method: 'GET', pattern: /^\/api\/test-runs\/recent$/, handler: () => apiGetRecentTestRuns() },
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)$/, handler: (m) => apiGetTestRun(+m[1]!) },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/test-runs\/(\d+)$/,
+    handler: (m, body) => apiPatchTestRun(+m[1]!, body as Parameters<typeof apiPatchTestRun>[1]),
+  },
   { method: 'DELETE', pattern: /^\/api\/test-runs\/(\d+)$/, handler: (m) => apiDeleteTestRun(+m[1]!) },
   {
     method: 'GET',
@@ -236,6 +243,9 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/users\/(\d+)\/api-keys\/(\d+)$/,
     handler: (m) => apiDeleteUserApiKey(+m[1]!, +m[2]!),
   },
+
+  // Search
+  { method: 'GET', pattern: /^\/api\/search$/, handler: (_, __, q) => apiSearch(q?.get('q') || '') },
 
   // Admin
   { method: 'GET', pattern: /^\/api\/admin\/stats$/, handler: () => apiGetAdminStats() },
