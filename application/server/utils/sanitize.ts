@@ -1,3 +1,5 @@
+import { filterAndCapNetworkRequests } from '../../shared/utils/filter-network-requests';
+
 /**
  * URL and network data sanitization helpers.
  *
@@ -21,15 +23,16 @@ export function sanitizeUrl(url: string): string {
 }
 
 /**
- * Sanitize an array of network request objects by stripping query params from each URL.
+ * Sanitize an array of network request objects by stripping query params,
+ * filtering to API/document types, and capping to failures + top 50.
  */
-export function sanitizeNetworkRequests(
-  requests: Array<Record<string, unknown>> | null | undefined,
-): Array<Record<string, unknown>> | null {
+export function sanitizeNetworkRequests(requests: unknown[] | null | undefined): Record<string, unknown>[] | null {
   if (!requests || !Array.isArray(requests)) return null;
-  return requests.map((req) => ({
-    ...req,
-    url: typeof req.url === 'string' ? sanitizeUrl(req.url) : req.url,
+  const entries = filterAndCapNetworkRequests(requests as any);
+  if (entries.length === 0) return null;
+  return entries.map((r) => ({
+    ...r,
+    url: typeof r.url === 'string' ? sanitizeUrl(r.url) : r.url,
   }));
 }
 

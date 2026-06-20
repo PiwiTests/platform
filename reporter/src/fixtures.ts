@@ -35,13 +35,18 @@ export const dashboardFixtures: Fixtures = {
           if (url.startsWith('data:') || url.startsWith('blob:')) return;
           const timing = request.timing();
           const response = await request.response();
+          const resourceType = request.resourceType();
+
+          // Only keep API/document requests; skip static assets (scripts, styles, fonts, images, media)
+          if (!['fetch', 'xhr', 'document', 'other'].includes(resourceType)) return;
+
           const entry: Record<string, unknown> = {
             method: request.method(),
             url,
             status: response ? response.status() : 0,
             duration: timing.responseEnd > 0 ? Math.round(timing.responseEnd - timing.requestStart) : 0,
             startTime: timing.startTime,
-            resourceType: request.resourceType(),
+            resourceType,
           };
 
           if (response) {

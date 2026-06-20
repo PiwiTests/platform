@@ -323,9 +323,10 @@ export async function persistRunCases(
       testSource: c.testSource ?? null,
       testAnnotations: (c.testAnnotations as any) ?? null,
       browser: c.browser ?? null,
+      browserName: ((c.browser as Record<string, unknown> | null)?.projectName as string | null) ?? null,
       workerIndex: c.workerIndex ?? null,
       shardIndex: c.shardIndex ?? null,
-      startedAt: c.startedAt ?? null,
+      startedAt: c.startedAt ? new Date(c.startedAt) : null,
     });
   }
 

@@ -25,24 +25,34 @@ export default eventHandler(async (event) => {
 
   const projectIds = allProjects.map((p) => p.id);
 
-  // 1. Fetch ALL runs for all projects (sorted so first per project is latest)
-  const allRuns = await db
-    .select()
+  // 1. Run counts + latest run per project (single GROUP BY query instead of loading all rows)
+  const runStats = await db
+    .select({
+      projectId: testRuns.projectId,
+      count: sql<number>`COUNT(*)`,
+      latestRunId: sql<number>`MAX(id)`,
+      latestStartTime: sql<Date>`MAX(start_time)`,
+    })
     .from(testRuns)
     .where(inArray(testRuns.projectId, projectIds))
-    .orderBy(desc(testRuns.startTime));
+    .groupBy(testRuns.projectId);
 
-  // Derive latest run + total runs count per project from the single result
-  const latestRunByProjectId = new Map<number, typeof testRuns.$inferSelect>();
   const runCountByProjectId = new Map<number, number>();
-  for (const r of allRuns) {
-    runCountByProjectId.set(r.projectId, (runCountByProjectId.get(r.projectId) ?? 0) + 1);
-    if (!latestRunByProjectId.has(r.projectId)) {
-      latestRunByProjectId.set(r.projectId, r);
-    }
+  const latestRunIds: number[] = [];
+  for (const r of runStats) {
+    runCountByProjectId.set(r.projectId, r.count);
+    if (r.latestRunId) latestRunIds.push(r.latestRunId);
   }
 
-  // 2. Total test cases per project (batched GROUP BY)
+  // 2. Fetch full latest run rows
+  const latestRuns =
+    latestRunIds.length > 0 ? await db.select().from(testRuns).where(inArray(testRuns.id, latestRunIds)) : [];
+  const latestRunByProjectId = new Map<number, typeof testRuns.$inferSelect>();
+  for (const r of latestRuns) {
+    latestRunByProjectId.set(r.projectId, r);
+  }
+
+  // 3. Total test cases per project (batched GROUP BY)
   const caseCounts = await db
     .select({
       projectId: testCases.projectId,
@@ -57,8 +67,7 @@ export default eventHandler(async (event) => {
     caseCountByProjectId.set(r.projectId, r.count);
   }
 
-  // 3. Reports for all latest runs (batched)
-  const latestRunIds = [...latestRunByProjectId.values()].map((r) => r.id);
+  // 4. Reports for all latest runs (batched)
   const reportRows =
     latestRunIds.length > 0
       ? await db
@@ -76,7 +85,7 @@ export default eventHandler(async (event) => {
     reportsByRunId.set(r.testRunId!, list);
   }
 
-  // 4. Tags per project (batched)
+  // 5. Tags per project (batched)
   const tagRows = await db
     .select({
       projectId: projectTags.projectId,

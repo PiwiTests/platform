@@ -1,6 +1,6 @@
 import { getDatabase } from '../../database';
-import { testRuns, testRunsCases, files } from '../../database/schema';
-import { eq, inArray } from 'drizzle-orm';
+import { testRuns, testRunsCases, files, failureClusters } from '../../database/schema';
+import { eq, inArray, and, sql } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
 import { Role } from '../../../shared/types';
 import { deleteFileRow } from '../../utils/delete-run-files';
@@ -42,19 +42,20 @@ export default eventHandler(async (event) => {
     });
   }
 
+  // Collect cluster IDs before cascade deletes so we can recompute counters
+  const runsCases = await db
+    .select({ id: testRunsCases.id, failureClusterId: testRunsCases.failureClusterId })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.testRunId, id));
+  const caseIds = runsCases.map((c) => c.id);
+  const affectedClusterIds = [...new Set(runsCases.filter((c) => c.failureClusterId).map((c) => c.failureClusterId!))];
+
   // Delete run-level files (reports, etc.) from storage
   const fileRows = await db.select().from(files).where(eq(files.testRunId, id));
   for (const file of fileRows) {
     await deleteFileRow(file);
   }
   await db.delete(files).where(eq(files.testRunId, id));
-
-  // Get test run cases to delete
-  const runsCases = await db
-    .select({ id: testRunsCases.id })
-    .from(testRunsCases)
-    .where(eq(testRunsCases.testRunId, id));
-  const caseIds = runsCases.map((c) => c.id);
 
   // Delete trace files linked to cases from storage
   if (caseIds.length > 0) {
@@ -68,8 +69,20 @@ export default eventHandler(async (event) => {
   // Delete test run cases
   await db.delete(testRunsCases).where(eq(testRunsCases.testRunId, id));
 
-  // Delete the test run
+  // Delete the test run (cascade handles child rows, but we already cleaned up)
   await db.delete(testRuns).where(eq(testRuns.id, id));
+
+  // Recompute cluster occurrence counters
+  for (const clusterId of affectedClusterIds) {
+    const remaining = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(testRunsCases)
+      .where(and(eq(testRunsCases.failureClusterId, clusterId), eq(testRunsCases.status, 'failed')));
+    await db
+      .update(failureClusters)
+      .set({ occurrences: remaining[0]?.count ?? 0, updatedAt: new Date() })
+      .where(eq(failureClusters.id, clusterId));
+  }
 
   return { success: true };
 });
