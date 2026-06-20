@@ -111,7 +111,7 @@ test.describe.serial('Project Edit Tests', () => {
     await page.waitForSelector('table', { timeout: 5000 });
 
     // Check that custom label is displayed
-    const label = page.locator('a').filter({ hasText: 'Custom Display Label' });
+    const label = page.locator('a').filter({ hasText: 'Custom Display Label' }).first();
     await expect(label).toBeVisible();
   });
 

@@ -95,7 +95,7 @@ test.describe.serial('API Server Tests', () => {
     expect(testRunDetails.testCases.length).toBe(2);
   });
 
-  test('should get test case details', async ({ request }) => {
+  test('should get test case details (stable identity)', async ({ request }) => {
     // Get test run to find test cases
     const projectsResponse = await request.get('/api/projects');
     const projects = await projectsResponse.json();
@@ -111,14 +111,23 @@ test.describe.serial('API Server Tests', () => {
 
     expect(testCase).toBeDefined();
 
-    // Now get test case details
-    const response = await request.get(`/api/test-cases/${testCase.id}`);
-    expect(response.ok()).toBeTruthy();
+    // Get the test-run-case execution detail
+    const execResponse = await request.get(`/api/test-run-cases/${testCase.id}`);
+    expect(execResponse.ok()).toBeTruthy();
 
-    const testCaseDetails = await response.json();
-    expect(testCaseDetails.id).toBe(testCase.id);
-    expect(testCaseDetails.title).toBeDefined();
-    expect(testCaseDetails.status).toBeDefined();
+    const execDetails = await execResponse.json();
+    expect(execDetails.id).toBe(testCase.id);
+    expect(execDetails.title).toBeDefined();
+    expect(execDetails.status).toBeDefined();
+
+    // Then get the stable test case using testCaseId
+    expect(execDetails.testCaseId).toBeDefined();
+    const stableResponse = await request.get(`/api/test-cases/${execDetails.testCaseId}`);
+    expect(stableResponse.ok()).toBeTruthy();
+    const stableDetails = await stableResponse.json();
+    expect(stableDetails.id).toBe(execDetails.testCaseId);
+    expect(stableDetails.title).toBeDefined();
+    expect(stableDetails.totalRuns).toBeDefined();
   });
 
   test('should handle invalid project ID gracefully', async ({ request }) => {

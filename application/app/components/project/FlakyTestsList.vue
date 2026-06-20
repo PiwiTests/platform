@@ -58,7 +58,7 @@ const columns: TableColumn<FlakyTest>[] = [
       <template #title-cell="{ row }">
         <div class="min-w-0 space-y-0.5">
           <NuxtLink
-            :to="`/test-cases/${row.original.latestRunsCaseId}`"
+            :to="`/test-run-cases/${row.original.latestRunsCaseId}`"
             class="text-sm font-medium text-primary hover:underline truncate block"
             :title="row.original.title"
           >
@@ -102,7 +102,7 @@ const columns: TableColumn<FlakyTest>[] = [
       <template #actions-cell="{ row }">
         <div class="flex justify-end">
           <UButton
-            :to="`/test-cases/${row.original.latestRunsCaseId}`"
+            :to="`/test-run-cases/${row.original.latestRunsCaseId}`"
             size="sm"
             variant="outline"
             trailing-icon="i-lucide-arrow-right"

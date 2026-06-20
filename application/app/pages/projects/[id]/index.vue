@@ -74,7 +74,7 @@ async function handleDeleteRun(runId: number) {
 const activeTab = ref('test-runs');
 
 // Support ?tab= query param for sidebar/redirect links
-const validTabs = ['test-runs', 'failure-clusters', 'flaky-tests', 'trends', 'test-cases', 'compare'] as const;
+const validTabs = ['test-runs', 'failure-clusters', 'flaky-tests', 'performance', 'test-cases', 'compare'] as const;
 const queryTab = route.query.tab;
 if (typeof queryTab === 'string' && validTabs.includes(queryTab as (typeof validTabs)[number])) {
   activeTab.value = queryTab as string;
@@ -100,7 +100,7 @@ const tabItems = computed(() => [
       ]
     : []),
   { label: 'Flaky tests', icon: 'i-lucide-shuffle', value: 'flaky-tests', slot: 'flaky-tests' },
-  { label: 'Trends', icon: 'i-lucide-trending-up', value: 'trends', slot: 'trends' },
+  { label: 'Performance', icon: 'i-lucide-trending-up', value: 'performance', slot: 'performance' },
   {
     label: `Test cases${testCases.value.length > 0 ? ` (${testCases.value.length})` : ''}`,
     icon: 'i-lucide-list-checks',
@@ -383,7 +383,7 @@ const testCasesColumns: TableColumn<TestCaseWithStats>[] = [
   { id: 'actions', header: 'Actions' },
 ];
 
-// === TRENDS TAB ===
+// === PERFORMANCE TAB ===
 const dateFrom = ref('');
 const dateTo = ref('');
 
@@ -401,7 +401,7 @@ const slowTests = ref<SlowTest[] | null>(null);
 watch(
   [activeTab, performanceQueryParams],
   async ([tab, params]) => {
-    if (tab !== 'trends') return;
+    if (tab !== 'performance') return;
     const qs = new URLSearchParams(params as Record<string, string>).toString();
     performanceData.value = await $fetch<PerformanceTrendPoint[]>(
       `/api/projects/${projectId}/performance${qs ? `?${qs}` : ''}`,
@@ -767,8 +767,8 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
             <FlakyTestsList v-if="activeTab === 'flaky-tests'" :project-id="String(projectId)" />
           </template>
 
-          <!-- TRENDS TAB -->
-          <template #trends>
+          <!-- PERFORMANCE TAB -->
+          <template #performance>
             <div class="flex flex-wrap items-center gap-3">
               <span class="text-sm text-muted shrink-0">Date range:</span>
               <UInput v-model="dateFrom" type="date" size="sm" placeholder="From" class="w-40" />
@@ -790,7 +790,8 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
 
             <UCard>
               <template #header>
-                <p class="text-sm text-gray-600">Duration metrics over time</p>
+                <h2 class="text-xl font-semibold">Performance trend</h2>
+                <p class="text-sm text-gray-600 mt-1">Duration metrics over time</p>
               </template>
 
               <PerformanceTrendChart :data="performanceData || []" :height="350" />
@@ -798,7 +799,8 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
 
             <UCard>
               <template #header>
-                <p class="text-sm text-gray-600">Top 20 slowest test cases across recent runs</p>
+                <h2 class="text-xl font-semibold">Slowest tests</h2>
+                <p class="text-sm text-gray-600 mt-1">Top 20 slowest test cases across recent runs</p>
               </template>
 
               <UTable
@@ -815,6 +817,71 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
               />
 
               <div v-else class="text-center py-8 text-gray-500">No slow test data available yet.</div>
+            </UCard>
+
+            <UCard>
+              <template #header>
+                <div class="flex items-center justify-between">
+                  <div>
+                    <h2 class="text-xl font-semibold">Run comparison</h2>
+                    <p class="text-sm text-gray-600 mt-1">Compare duration changes between two runs</p>
+                  </div>
+                  <UButton
+                    v-if="runOptions.length >= 2"
+                    icon="i-lucide-git-compare-arrows"
+                    size="sm"
+                    variant="outline"
+                    label="Compare latest vs previous"
+                    @click="compareLatestWithPrevious"
+                  />
+                </div>
+              </template>
+              <div class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                      >Run A (baseline)</label
+                    >
+                    <USelectMenu v-model="compareRunA" :items="runOptions" placeholder="Select run A..." />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                      >Run B (comparison)</label
+                    >
+                    <USelectMenu v-model="compareRunB" :items="runOptions" placeholder="Select run B..." />
+                  </div>
+                </div>
+                <div v-if="compareLoading" class="text-center py-4 text-gray-500">
+                  <UIcon name="i-lucide-loader-2" class="animate-spin mr-2" />
+                  Loading run data…
+                </div>
+                <div v-else-if="compareRunA && compareRunB && comparisonData.length > 0" class="space-y-4">
+                  <div class="flex gap-4 text-sm">
+                    <UBadge color="success" variant="soft" size="lg">{{ comparisonSummary.improved }} improved</UBadge>
+                    <UBadge color="error" variant="soft" size="lg">{{ comparisonSummary.regressed }} regressed</UBadge>
+                    <UBadge color="neutral" variant="soft" size="lg"
+                      >{{ comparisonSummary.unchanged }} unchanged</UBadge
+                    >
+                  </div>
+                  <UTable
+                    :data="comparisonData"
+                    :columns="comparisonColumns"
+                    :ui="{
+                      base: 'table-fixed border-separate border-spacing-0',
+                      thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
+                      tbody: '[&>tr]:last:[&>td]:border-b-0',
+                      th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
+                      td: 'border-b border-default',
+                    }"
+                  />
+                </div>
+                <div v-else-if="!compareRunA || !compareRunB" class="text-center py-8 text-gray-500">
+                  Select two runs to compare their performance.
+                </div>
+                <div v-else class="text-center py-8 text-gray-500">
+                  No overlapping test cases found between the selected runs.
+                </div>
+              </div>
             </UCard>
           </template>
 

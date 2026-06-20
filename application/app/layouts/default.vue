@@ -112,48 +112,9 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
         color: statusColor as 'success' | 'error' | 'info' | 'neutral',
       },
       value: `project-${project.id}`,
-      type: 'trigger' as const,
-      defaultOpen: isActive,
+      type: 'link' as const,
+      to: `/projects/${project.id}`,
       active: isActive,
-      children: [
-        {
-          label: 'Test runs',
-          icon: 'i-lucide-play-circle',
-          to: `/projects/${project.id}`,
-          badge: String(project.totalRuns || 0),
-          onSelect: () => {
-            open.value = false;
-          },
-        },
-        {
-          label: 'Test cases',
-          icon: 'i-lucide-list-checks',
-          to: `/projects/${project.id}/test-cases`,
-          badge: String(project.totalTestCases || 0),
-          onSelect: () => {
-            open.value = false;
-          },
-        },
-        {
-          label: 'Performance',
-          icon: 'i-lucide-gauge',
-          to: `/projects/${project.id}/performance`,
-          onSelect: () => {
-            open.value = false;
-          },
-        },
-        {
-          label: 'Edit project',
-          icon: 'i-lucide-edit',
-          to: `/projects/${project.id}/edit`,
-          onSelect: () => {
-            open.value = false;
-          },
-        },
-      ],
-      onSelect: () => {
-        // Do nothing - allow children to be shown
-      },
     };
   }
 

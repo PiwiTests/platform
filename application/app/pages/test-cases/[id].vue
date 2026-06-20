@@ -1,16 +1,13 @@
 <script setup lang="ts">
-import type { PerformanceStep, WebVitals, NetworkRequest, TestCaseHistoryPoint, TraceInfo } from '~~/types/api';
+import type { TestCaseHistoryPoint } from '~~/types/api';
 import type { TableColumn } from '@nuxt/ui';
 import { h, resolveComponent } from 'vue';
-import { getPerformanceHints } from '~/utils/performance-hints';
-import { renderAnsi } from '~/utils';
 
 const route = useRoute();
 const testCaseId = route.params.id;
 
 const { data: testCase, refresh } = await useFetch(`/api/test-cases/${testCaseId}`);
 const { data: historyData } = await useFetch<TestCaseHistoryPoint[]>(`/api/test-cases/${testCaseId}/history`);
-const { data: traceData, refresh: refreshTraces } = await useFetch<TraceInfo[]>(`/api/test-cases/${testCaseId}/traces`);
 
 useHead(
   computed(() => ({
@@ -18,140 +15,33 @@ useHead(
   })),
 );
 
-const performanceHints = computed(() => {
-  if (!testCase.value) return [];
-  return getPerformanceHints(testCase.value);
+const passRate = computed(() => {
+  const t = testCase.value;
+  if (!t || !t.totalRuns) return null;
+  return Math.round(((t.passedRuns + t.skippedRuns) / t.totalRuns) * 100);
 });
 
-const steps = computed(() => {
-  if (!testCase.value?.steps) return [];
-  return testCase.value.steps as PerformanceStep[];
-});
-
-const webVitals = computed<WebVitals | null>(() => {
-  return (testCase.value?.webVitals as unknown as WebVitals | null) ?? null;
-});
-
-const networkRequests = computed<NetworkRequest[]>(() => {
-  return (testCase.value?.networkRequests as unknown as NetworkRequest[] | null) ?? [];
-});
-
-interface GroupedRequest {
-  key: string;
-  method: string;
-  route: string;
-  count: number;
-  avgDuration: number;
-  maxDuration: number;
-}
-
-const allServerLogs = computed(() => {
-  const logs: import('~~/types/api').ServerLogEntry[] = [];
-  for (const req of networkRequests.value) {
-    if (Array.isArray(req.serverLogs)) {
-      for (const entry of req.serverLogs) logs.push(entry);
-    }
-  }
-  return logs.sort((a, b) => a.timestamp - b.timestamp);
-});
-
-const groupedNetworkRequests = computed<GroupedRequest[]>(() => {
-  const map = new Map<string, { method: string; route: string; durations: number[] }>();
-  for (const req of networkRequests.value) {
-    if (req.resourceType && !['fetch', 'xhr', 'document', 'other'].includes(req.resourceType)) continue;
-    const route = normalizeRoute(req.url);
-    const key = `${req.method}|${route}`;
-    if (!map.has(key)) map.set(key, { method: req.method, route, durations: [] });
-    map.get(key)!.durations.push(req.duration);
-  }
-  return Array.from(map.entries())
-    .map(([key, g]) => ({
-      key,
-      method: g.method,
-      route: g.route,
-      count: g.durations.length,
-      avgDuration: Math.round(g.durations.reduce((a, b) => a + b, 0) / g.durations.length),
-      maxDuration: Math.max(...g.durations),
-    }))
-    .sort((a, b) => b.avgDuration - a.avgDuration);
-});
-
-const historicalTiming = computed(() => {
-  if (!historyData.value || historyData.value.length < 2 || !testCase.value?.duration) return null;
-  const previous = historyData.value.filter((h) => h.duration !== null && h.id !== testCase.value?.id);
-  if (previous.length === 0) return null;
-  const avg = previous.reduce((sum, h) => sum + (h.duration || 0), 0) / previous.length;
-  const current = testCase.value.duration;
-  const diff = current - avg;
-  const pct = avg > 0 ? Math.round((diff / avg) * 100) : 0;
-  return { avg: Math.round(avg), current, diff: Math.round(diff), pct };
-});
-
-const metadata = computed(() => {
-  return testCase.value?.testRun?.metadata as Record<string, unknown> | null | undefined;
-});
-
-const scmInfo = computed(() => {
-  const m = metadata.value;
-  if (!m?.scm) return null;
-  return m.scm as { commit?: string; branch?: string; author?: string; commitMessage?: string };
-});
-
-const ciInfo = computed(() => {
-  const m = metadata.value;
-  if (!m?.ci) return null;
-  return m.ci as { provider?: string; buildNumber?: string; buildUrl?: string; workflow?: string };
-});
-
-const failureCluster = computed(() => {
-  return (testCase.value?.failureCluster ?? null) as {
-    id: number;
-    sameRunCaseCount: number;
-    isNew: boolean;
-    firstSeenRunId: number;
-    firstSeenAt: string | null;
-  } | null;
-});
+const clusterColor = (status: string) => {
+  return status === 'open' ? 'error' : status === 'resolved' ? 'success' : 'neutral';
+};
 
 const UBadge = resolveComponent('UBadge');
 
-const activeTab = ref('steps');
+interface ExecutionRow {
+  id: number;
+  status: string;
+  duration: number | null;
+  error: string | null;
+  retries: number | null;
+  workerIndex: number | null;
+  browser: unknown;
+  runId: number;
+  runStatus: string;
+  runLabel: string | null;
+  startTime: string | Date;
+}
 
-const { summaryColSpanClass, blockColSpanClass } = useDetailGrid(() => {
-  let count = 0;
-  if (scmInfo.value) count++;
-  if (ciInfo.value || testCase.value?.testRun?.environment) count++;
-  if (testCase.value?.browser) count++;
-  if (
-    (traceData.value?.length ?? 0) > 0 ||
-    ((testCase.value as { attachments?: { length: number } } | null)?.attachments?.length ?? 0) > 0
-  )
-    count++;
-  count++; // Links card is always visible
-  return count;
-});
-
-const tabItems = computed(() => [
-  { label: `Steps (${steps.value.length})`, icon: 'i-lucide-list-checks', value: 'steps', slot: 'steps' },
-  { label: 'Traces & Console', icon: 'i-lucide-terminal', value: 'traces', slot: 'traces' },
-  { label: 'Diagnosis', icon: 'i-lucide-bug', value: 'error', slot: 'error', disabled: !testCase.value?.error },
-  {
-    label: `Performance (${performanceHints.value.length})`,
-    icon: 'i-lucide-gauge',
-    value: 'performance',
-    slot: 'performance',
-    disabled: performanceHints.value.length === 0,
-  },
-  {
-    label: `History (${historyData.value?.length ?? 0})`,
-    icon: 'i-lucide-trending-up',
-    value: 'history',
-    slot: 'history',
-    disabled: !historyData.value?.length,
-  },
-]);
-
-const historyColumns: TableColumn<TestCaseHistoryPoint>[] = [
+const executionColumns: TableColumn<ExecutionRow>[] = [
   {
     accessorKey: 'startTime',
     header: () => h('span', 'Date'),
@@ -198,6 +88,7 @@ const historyColumns: TableColumn<TestCaseHistoryPoint>[] = [
     header: () => h('span', 'Run'),
     cell: ({ row }) => {
       const runId = row.getValue('runId') as number;
+      const runLabel = (row.original as ExecutionRow).runLabel;
       return h(
         'a',
         {
@@ -208,7 +99,7 @@ const historyColumns: TableColumn<TestCaseHistoryPoint>[] = [
             navigateTo(`/test-runs/${runId}`);
           },
         },
-        `#${runId}`,
+        runLabel ? `${runLabel} (#${runId})` : `#${runId}`,
       );
     },
   },
@@ -222,139 +113,15 @@ const historyColumns: TableColumn<TestCaseHistoryPoint>[] = [
       return h('span', { class: 'text-red-600 text-xs truncate max-w-xs block', title: err }, truncated);
     },
   },
-];
-
-const stepCategoryColor: Record<string, 'info' | 'success' | 'warning' | 'neutral'> = {
-  navigation: 'info',
-  assertion: 'success',
-  action: 'warning',
-};
-
-const stepColumns: TableColumn<PerformanceStep>[] = [
   {
-    accessorKey: 'category',
-    header: () => h('span', 'Category'),
-    cell: ({ row }) => {
-      const cat = row.getValue('category') as string;
-      const color = stepCategoryColor[cat] || 'neutral';
-      return h(UBadge, { color, variant: 'soft', size: 'xs' }, () => cat);
-    },
-  },
-  {
-    accessorKey: 'title',
-    header: () => h('span', 'Step'),
-    cell: ({ row }) => {
-      const title = row.getValue('title') as string;
-      return h('span', { class: 'truncate block text-sm' }, title);
-    },
-  },
-  {
-    accessorKey: 'duration',
-    header: () => h('span', 'Duration'),
-    cell: ({ row }) => {
-      const dur = row.getValue('duration') as number;
-      const color = dur > 2000 ? 'text-red-600 font-medium' : dur > 500 ? 'text-orange-500' : 'text-gray-500';
-      return h('span', { class: `${color} text-sm tabular-nums` }, formatDuration(dur));
-    },
+    id: 'actions',
+    header: 'Actions',
   },
 ];
-
-// Calculated metadata for template
-const environment = computed(() => testCase.value?.testRun?.environment);
-
-// Live updates: while the parent run is still active, the reporter uploads
-// traces/attachments as each test finishes ('case-files' SSE events) —
-// refresh so they appear without a manual reload.
-const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
-let eventSource: EventSource | null = null;
-
-const runIsActive = computed(() => {
-  const status = testCase.value?.testRun?.status;
-  return status === 'running' || status === 'finalizing';
-});
-
-function connectToRunStream() {
-  if (!import.meta.client || isDemoMode || eventSource) return;
-  const runId = testCase.value?.testRun?.id;
-  if (!runId) return;
-
-  eventSource = new EventSource(`/api/test-runs/${runId}/stream`);
-  eventSource.onmessage = (event) => {
-    try {
-      const parsed = JSON.parse(event.data);
-      if (parsed.type === 'case-files' && parsed.data?.testRunsCaseId === Number(testCaseId)) {
-        refresh();
-        refreshTraces();
-      } else if (parsed.type === 'run-finished') {
-        refresh();
-        refreshTraces();
-        disconnectRunStream();
-      }
-    } catch {
-      // Ignore non-JSON messages (e.g. heartbeat comments)
-    }
-  };
-  eventSource.onerror = () => {
-    // EventSource will auto-reconnect
-  };
-}
-
-function disconnectRunStream() {
-  if (eventSource) {
-    eventSource.close();
-    eventSource = null;
-  }
-}
-
-watch(
-  runIsActive,
-  (active) => {
-    if (active) connectToRunStream();
-    else disconnectRunStream();
-  },
-  { immediate: true },
-);
-
-onUnmounted(disconnectRunStream);
-
-const { copyRich, copied: failureCopied } = useCopyRich();
-
-function copyFailure() {
-  const tc = testCase.value;
-  if (!tc?.error) return;
-  const origin = window.location.origin;
-  const title = tc.title ?? 'Unknown test';
-  const loc = tc.location ?? '';
-  const rawError = tc.error.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const clusterUrl = failureCluster.value ? `${origin}/failure-clusters/${failureCluster.value.id}` : null;
-  const testCaseUrl = `${origin}/test-cases/${testCaseId}`;
-
-  const plain = [
-    `❌ Test failed: ${title}`,
-    loc ? `Location: ${loc}` : null,
-    '',
-    'Error:',
-    rawError,
-    '',
-    clusterUrl ? `Failure cluster: ${clusterUrl}` : null,
-    `Test case: ${testCaseUrl}`,
-  ]
-    .filter((l) => l !== null)
-    .join('\n');
-
-  const html = [
-    `<p><strong>❌ Test failed: ${esc(title)}</strong>${loc ? `<br><code>${esc(loc)}</code>` : ''}</p>`,
-    `<p><strong>Error:</strong></p><pre>${renderAnsi(tc.error)}</pre>`,
-    `<p>🔗 ${clusterUrl ? `<a href="${clusterUrl}">View failure cluster</a> · ` : ''}<a href="${testCaseUrl}">Test case details</a></p>`,
-  ].join('');
-
-  copyRich(plain, html, { toast: 'Failure copied' });
-}
 </script>
 
 <template>
-  <UDashboardPanel id="test-case-detail">
+  <UDashboardPanel id="test-case-evolution">
     <template #header>
       <UDashboardNavbar>
         <template #leading>
@@ -363,23 +130,14 @@ function copyFailure() {
             :items="[
               { label: 'Home', icon: 'i-lucide-house', to: '/' },
               { label: 'Projects', to: '/projects' },
-              ...(testCase?.testRun?.project?.id
+              ...(testCase?.project?.id
                 ? [
                     {
-                      label: testCase.testRun.project.name || 'Project',
-                      to: `/projects/${testCase.testRun.project.id}`,
+                      label: testCase.project.name || 'Project',
+                      to: `/projects/${testCase.project.id}`,
                     },
                   ]
                 : [{ label: 'Project' }]),
-              ...(testCase?.testRun?.id
-                ? [
-                    {
-                      label:
-                        `Run #${testCase.testRun.id}` + (testCase.testRun.label ? ` — ${testCase.testRun.label}` : ''),
-                      to: `/test-runs/${testCase.testRun.id}`,
-                    },
-                  ]
-                : [{ label: 'Test run' }]),
               { label: testCase?.title || `Test case #${testCaseId}` },
             ]"
           />
@@ -391,344 +149,200 @@ function copyFailure() {
     </template>
 
     <template #body>
-      <DetailPageLayout v-model="activeTab" :tab-items="tabItems">
-        <template #summary>
-          <TestCaseSummary
-            :test-case="(testCase ?? null) as any"
-            :scm-info="scmInfo"
-            :ci-info="ciInfo"
-            :browser="testCase?.browser ?? null"
-            :environment="environment"
-            :steps-count="steps.length"
-            :historical-timing="historicalTiming"
-            :summary-col-span-class="summaryColSpanClass"
-            :block-col-span-class="blockColSpanClass"
-            :traces="traceData ?? []"
-            :attachments="(testCase as any)?.attachments ?? []"
-            :stable-links="(testCase as any)?.stableLinks ?? null"
-            @refresh="refresh()"
-          />
-        </template>
+      <div class="flex flex-col gap-4 p-4">
+        <!-- Header -->
+        <div class="flex items-start gap-4 flex-wrap">
+          <div class="flex-1 min-w-0">
+            <h1 class="text-xl font-bold truncate">{{ testCase?.title }}</h1>
+            <p v-if="testCase?.filePath" class="text-sm text-gray-500 font-mono mt-0.5">{{ testCase.filePath }}</p>
+            <div v-if="testCase?.project" class="flex items-center gap-2 mt-2">
+              <UBadge color="neutral" variant="soft" size="xs" class="font-mono">
+                {{ testCase.project.name }}
+              </UBadge>
+              <UBadge v-if="testCase?.flakyRuns > 0" color="warning" variant="soft" size="xs">
+                {{ testCase.flakyRuns }} flaky run{{ testCase.flakyRuns === 1 ? '' : 's' }}
+              </UBadge>
+            </div>
+          </div>
+          <NuxtLink
+            v-if="testCase?.lastExecutionId"
+            :to="`/test-run-cases/${testCase.lastExecutionId}`"
+            class="shrink-0"
+          >
+            <UButton size="sm" variant="outline" trailing-icon="i-lucide-arrow-right"> Latest execution </UButton>
+          </NuxtLink>
+        </div>
 
-        <template #tab-error>
-          <TestCaseErrorCard v-if="testCase?.error" :cluster="failureCluster" />
+        <!-- Stats cards -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
+            <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Total runs</p>
+            <p class="text-xl font-bold mt-0.5">{{ testCase?.totalRuns ?? 0 }}</p>
+          </div>
+          <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
+            <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Pass rate</p>
+            <p
+              class="text-xl font-bold mt-0.5"
+              :class="{
+                'text-green-600': (passRate ?? 0) >= 80,
+                'text-yellow-600': (passRate ?? 0) >= 50 && (passRate ?? 0) < 80,
+                'text-red-600': (passRate ?? 0) < 50,
+              }"
+            >
+              {{ passRate !== null ? `${passRate}%` : '—' }}
+            </p>
+          </div>
+          <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
+            <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Failed</p>
+            <p class="text-xl font-bold mt-0.5 text-red-600">{{ testCase?.failedRuns ?? 0 }}</p>
+          </div>
+          <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
+            <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Avg duration</p>
+            <p class="text-xl font-bold mt-0.5">
+              {{ testCase?.avgDuration != null ? formatDuration(testCase.avgDuration) : '—' }}
+            </p>
+          </div>
+          <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
+            <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Flaky</p>
+            <p class="text-xl font-bold mt-0.5" :class="(testCase?.flakyRuns ?? 0) > 0 ? 'text-purple-600' : ''">
+              {{ testCase?.flakyRuns ?? 0 }}
+            </p>
+          </div>
+          <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
+            <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Last run</p>
+            <p class="text-sm font-semibold mt-0.5">
+              {{ testCase?.lastRunAt ? formatRelativeTime(testCase.lastRunAt) : '—' }}
+            </p>
+          </div>
+        </div>
 
-          <SectionCard v-if="testCase?.error" icon="i-lucide-bug" icon-class="text-red-500" title="Error">
-            <template #actions>
-              <UTooltip :text="failureCopied ? 'Copied!' : 'Copy failure'">
-                <UButton
-                  size="xs"
-                  variant="ghost"
-                  color="neutral"
-                  :icon="failureCopied ? 'i-lucide-check' : 'i-lucide-clipboard'"
-                  @click="copyFailure"
+        <!-- Evolution charts -->
+        <div v-if="historyData && historyData.length > 1" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <UCard>
+            <template #header>
+              <div class="flex items-center gap-2">
+                <UIcon name="i-lucide-trending-up" class="size-4 text-primary" />
+                <span class="text-sm font-medium">Duration trend</span>
+              </div>
+            </template>
+            <TestCaseHistoryChart :data="historyData" :height="200" />
+          </UCard>
+
+          <UCard>
+            <template #header>
+              <div class="flex items-center gap-2">
+                <UIcon name="i-lucide-check-circle" class="size-4 text-primary" />
+                <span class="text-sm font-medium">Status history</span>
+              </div>
+            </template>
+            <div class="flex items-center gap-1 flex-wrap max-h-[200px] overflow-y-auto py-1">
+              <UTooltip
+                v-for="(point, i) in historyData"
+                :key="point.id"
+                :text="`Run #${point.runId}: ${point.status} — ${new Date(point.startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`"
+              >
+                <NuxtLink
+                  :to="`/test-run-cases/${point.id}`"
+                  :class="{
+                    'bg-red-500 hover:bg-red-600': point.status === 'failed' || point.status === 'timedOut',
+                    'bg-green-500 hover:bg-green-600': point.status === 'passed',
+                    'bg-yellow-500 hover:bg-yellow-600': point.status === 'skipped',
+                    'bg-gray-400 hover:bg-gray-500': !['passed', 'failed', 'skipped', 'timedOut'].includes(
+                      point.status,
+                    ),
+                  }"
+                  class="size-3.5 rounded-sm inline-block transition-colors"
+                  :title="`Run #${point.runId}: ${point.status}`"
                 />
               </UTooltip>
+              <span v-if="historyData.length === 0" class="text-sm text-gray-400">No history yet</span>
+            </div>
+          </UCard>
+        </div>
+
+        <div v-else-if="historyData && historyData.length <= 1" class="text-center py-6 text-gray-400">
+          <UIcon name="i-lucide-trending-up" class="size-6 mx-auto mb-1" />
+          <p class="text-sm">Need at least 2 runs to show trends.</p>
+        </div>
+
+        <!-- Recent executions -->
+        <SectionCard
+          icon="i-lucide-list-checks"
+          :title="`Recent executions (${testCase?.recentExecutions?.length ?? 0})`"
+        >
+          <UTable
+            v-if="testCase?.recentExecutions?.length"
+            :data="testCase.recentExecutions"
+            :columns="executionColumns"
+            :ui="{
+              base: 'table-fixed border-separate border-spacing-0',
+              thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
+              tbody: '[&>tr]:last:[&>td]:border-b-0',
+              th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
+              td: 'border-b border-default',
+            }"
+          >
+            <template #actions-header>
+              <div class="text-right">Actions</div>
             </template>
-            <pre
-              class="text-xs font-mono whitespace-pre-wrap break-words text-red-600 dark:text-red-400 max-h-96 overflow-y-auto"
-              >{{ testCase.error }}</pre
-            >
-          </SectionCard>
-
-          <SectionCard v-if="testCase?.ariaSnapshot" icon="i-lucide-scan-text" title="ARIA snapshot">
-            <pre class="text-xs font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto">{{
-              testCase.ariaSnapshot
-            }}</pre>
-          </SectionCard>
-
-          <p v-else-if="testCase?.error" class="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
-            <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />
-            ARIA snapshot not captured — make sure your test imports
-            <code class="rounded bg-gray-100 px-1 dark:bg-gray-800">test</code>
-            from the piwi-dashboard fixtures.
-          </p>
-        </template>
-
-        <template #tab-steps>
-          <div v-if="steps.length > 0">
-            <UTable
-              :data="steps"
-              :columns="stepColumns"
-              :ui="{
-                base: 'table-fixed border-separate border-spacing-0',
-                thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
-                tbody: '[&>tr]:last:[&>td]:border-b-0',
-                th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
-                td: 'border-b border-default',
-              }"
-            />
-          </div>
-        </template>
-
-        <template #tab-performance>
-          <div v-if="performanceHints.length > 0" class="space-y-2">
-            <div
-              v-for="(hint, index) in performanceHints"
-              :key="index"
-              :class="[
-                'p-3 rounded-lg border',
-                hint.type === 'warning'
-                  ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
-                  : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800',
-              ]"
-            >
-              <div class="flex items-start gap-2">
-                <UIcon
-                  :name="hint.type === 'warning' ? 'i-lucide-alert-triangle' : 'i-lucide-lightbulb'"
-                  :class="hint.type === 'warning' ? 'text-amber-600' : 'text-blue-600'"
-                  class="size-4 mt-0.5 shrink-0"
-                />
-                <div>
-                  <p
-                    :class="
-                      hint.type === 'warning'
-                        ? 'text-amber-800 dark:text-amber-200 font-medium'
-                        : 'text-blue-800 dark:text-blue-200 font-medium'
-                    "
-                  >
-                    {{ hint.message }}
-                  </p>
-                  <p
-                    :class="
-                      hint.type === 'warning'
-                        ? 'text-amber-700 dark:text-amber-300'
-                        : 'text-blue-700 dark:text-blue-300'
-                    "
-                    class="mt-1"
-                  >
-                    {{ hint.details }}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <SectionCard v-if="webVitals" icon="i-lucide-gauge" title="Browser performance (Web Vitals)">
-            <div class="space-y-4">
-              <div v-if="webVitals.navigation" class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <p class="text-xs text-gray-500 uppercase tracking-wide">TTFB</p>
-                  <p
-                    class="text-xl font-semibold"
-                    :class="
-                      webVitals.navigation.ttfb > 600
-                        ? 'text-red-600'
-                        : webVitals.navigation.ttfb > 200
-                          ? 'text-orange-500'
-                          : 'text-green-600'
-                    "
-                  >
-                    {{ formatDuration(webVitals.navigation.ttfb) }}
-                  </p>
-                  <p class="text-xs text-gray-400 mt-1">Time to first byte</p>
-                </div>
-                <div>
-                  <p class="text-xs text-gray-500 uppercase tracking-wide">DOM Interactive</p>
-                  <p
-                    class="text-xl font-semibold"
-                    :class="
-                      webVitals.navigation.domInteractive > 3000
-                        ? 'text-red-600'
-                        : webVitals.navigation.domInteractive > 1500
-                          ? 'text-orange-500'
-                          : 'text-green-600'
-                    "
-                  >
-                    {{ formatDuration(webVitals.navigation.domInteractive) }}
-                  </p>
-                  <p class="text-xs text-gray-400 mt-1">DOM interactive</p>
-                </div>
-                <div>
-                  <p class="text-xs text-gray-500 uppercase tracking-wide">DOMContentLoaded</p>
-                  <p
-                    class="text-xl font-semibold"
-                    :class="
-                      webVitals.navigation.domContentLoaded > 3000
-                        ? 'text-red-600'
-                        : webVitals.navigation.domContentLoaded > 1500
-                          ? 'text-orange-500'
-                          : 'text-green-600'
-                    "
-                  >
-                    {{ formatDuration(webVitals.navigation.domContentLoaded) }}
-                  </p>
-                  <p class="text-xs text-gray-400 mt-1">DOMContentLoaded</p>
-                </div>
-                <div>
-                  <p class="text-xs text-gray-500 uppercase tracking-wide">Load Complete</p>
-                  <p
-                    class="text-xl font-semibold"
-                    :class="
-                      webVitals.navigation.loadComplete > 5000
-                        ? 'text-red-600'
-                        : webVitals.navigation.loadComplete > 3000
-                          ? 'text-orange-500'
-                          : 'text-green-600'
-                    "
-                  >
-                    {{ formatDuration(webVitals.navigation.loadComplete) }}
-                  </p>
-                  <p class="text-xs text-gray-400 mt-1">Page fully loaded</p>
-                </div>
-              </div>
-
-              <div
-                v-if="webVitals.paint && (webVitals.paint.firstPaint || webVitals.paint.firstContentfulPaint)"
-                class="grid grid-cols-2 gap-4 pt-2 border-t"
-              >
-                <div v-if="webVitals.paint.firstPaint !== undefined">
-                  <p class="text-xs text-gray-500 uppercase tracking-wide">First Paint (FP)</p>
-                  <p class="text-xl font-semibold">
-                    {{ formatDuration(webVitals.paint.firstPaint) }}
-                  </p>
-                </div>
-                <div v-if="webVitals.paint.firstContentfulPaint !== undefined">
-                  <p class="text-xs text-gray-500 uppercase tracking-wide">First Contentful Paint (FCP)</p>
-                  <p
-                    class="text-xl font-semibold"
-                    :class="
-                      webVitals.paint.firstContentfulPaint > 3000
-                        ? 'text-red-600'
-                        : webVitals.paint.firstContentfulPaint > 1800
-                          ? 'text-orange-500'
-                          : 'text-green-600'
-                    "
-                  >
-                    {{ formatDuration(webVitals.paint.firstContentfulPaint) }}
-                  </p>
-                </div>
-              </div>
-
-              <div v-if="webVitals.navigation?.url" class="text-xs text-gray-400 pt-1">
-                Page: <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">{{ webVitals.navigation.url }}</code>
-              </div>
-            </div>
-          </SectionCard>
-        </template>
-
-        <template #tab-traces>
-          <div class="space-y-4 pt-4">
-            <TestCaseTracesCard :traces="(traceData as any[]) || []" />
-            <TestCaseAttachmentsCard :attachments="(testCase as any)?.attachments ?? []" />
-            <TestCaseConsoleCard
-              v-if="(testCase as any)?.consoleLogs?.length"
-              :entries="(testCase as any)?.consoleLogs ?? []"
-            />
-            <SectionCard v-if="groupedNetworkRequests.length > 0" icon="i-lucide-network" title="Network requests">
-              <div class="space-y-1 max-h-96 overflow-y-auto">
-                <div
-                  v-for="req in groupedNetworkRequests"
-                  :key="req.key"
-                  class="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800 text-sm"
+            <template #actions-cell="{ row }">
+              <div class="flex justify-end">
+                <UButton
+                  :to="`/test-run-cases/${row.original.id}`"
+                  size="sm"
+                  variant="outline"
+                  trailing-icon="i-lucide-arrow-right"
                 >
-                  <div class="flex items-center gap-2 min-w-0">
-                    <UBadge
-                      :color="
-                        req.method === 'GET'
-                          ? 'info'
-                          : req.method === 'POST'
-                            ? 'success'
-                            : req.method === 'DELETE'
-                              ? 'error'
-                              : 'warning'
-                      "
-                      variant="soft"
-                      size="xs"
-                      class="font-mono shrink-0"
-                    >
-                      {{ req.method }}
-                    </UBadge>
-                    <code class="truncate text-xs">{{ req.route }}</code>
-                    <span v-if="req.count > 1" class="text-gray-400 text-xs shrink-0">&times;{{ req.count }}</span>
-                  </div>
-                  <span
-                    class="ml-2 shrink-0"
-                    :class="
-                      req.avgDuration > 1000
-                        ? 'text-red-600 font-medium'
-                        : req.avgDuration > 500
-                          ? 'text-orange-500'
-                          : 'text-gray-500'
-                    "
-                    >{{ formatDuration(req.avgDuration) }}</span
-                  >
-                </div>
+                  View
+                </UButton>
               </div>
-            </SectionCard>
+            </template>
+          </UTable>
+          <EmptyState v-else icon="i-lucide-inbox" text="No executions yet" />
+        </SectionCard>
 
-            <SectionCard v-if="allServerLogs.length > 0" icon="i-lucide-server" title="Backend server logs">
-              <div class="space-y-1 max-h-64 overflow-y-auto font-mono text-xs">
-                <div v-for="(log, i) in allServerLogs" :key="i" class="flex items-start gap-2 py-0.5">
-                  <UBadge
-                    :color="log.level === 'Error' ? 'error' : 'warning'"
-                    variant="soft"
-                    size="xs"
-                    class="shrink-0 capitalize"
-                    >{{ log.level }}</UBadge
-                  >
-                  <span v-if="log.category" class="text-gray-400 shrink-0">[{{ log.category }}]</span>
-                  <span class="break-all text-gray-700 dark:text-gray-300">{{ log.message }}</span>
-                </div>
-              </div>
-            </SectionCard>
-
-            <p
-              v-else-if="groupedNetworkRequests.length > 0"
-              class="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500"
-            >
-              <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />
-              No backend server logs captured — install
-              <a href="https://phenx.github.io/piwi-dashboard/backend-logs" target="_blank" class="underline"
-                >a Piwi backend integration</a
-              >
-              to see server-side warnings and errors here.
-            </p>
-
+        <!-- Failure clusters -->
+        <SectionCard
+          v-if="testCase?.failureClusters?.length"
+          icon="i-lucide-bug"
+          :title="`Failure clusters (${testCase.failureClusters.length})`"
+        >
+          <div class="space-y-2">
             <div
-              v-if="
-                !(traceData as any[])?.length &&
-                !(testCase as any)?.attachments?.length &&
-                !(testCase as any)?.consoleLogs?.length &&
-                !groupedNetworkRequests.length
-              "
-              class="flex flex-col items-center justify-center py-12 text-gray-400"
+              v-for="cluster in testCase.failureClusters"
+              :key="cluster.id"
+              class="flex items-center justify-between py-2 px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800"
             >
-              <template v-if="runIsActive">
-                <UIcon name="i-lucide-loader-circle" class="size-8 mb-2 animate-spin" />
-                <p class="text-sm">
-                  Run in progress — traces and attachments appear here as soon as they are uploaded.
-                </p>
-              </template>
-              <template v-else>
-                <UIcon name="i-lucide-inbox" class="size-8 mb-2" />
-                <p class="text-sm">No traces, console logs, or network requests captured for this test case.</p>
-              </template>
-            </div>
-          </div>
-        </template>
-
-        <template #tab-history>
-          <div class="space-y-4 pt-4">
-            <div v-if="historyData && historyData.length > 0">
-              <div class="space-y-4">
-                <TestCaseHistoryChart :data="historyData" :height="200" />
-                <UTable
-                  :data="historyData"
-                  :columns="historyColumns"
-                  :ui="{
-                    base: 'table-fixed border-separate border-spacing-0',
-                    thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
-                    tbody: '[&>tr]:last:[&>td]:border-b-0',
-                    th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
-                    td: 'border-b border-default',
-                  }"
-                />
+              <div class="flex items-center gap-2 min-w-0">
+                <UBadge :color="clusterColor(cluster.status)" variant="soft" size="xs" class="capitalize">
+                  {{ cluster.status }}
+                </UBadge>
+                <span class="text-sm truncate">{{ cluster.signature }}</span>
+                <span v-if="cluster.occurrences > 1" class="text-xs text-gray-400 shrink-0">
+                  {{ cluster.occurrences }} occurrences
+                </span>
               </div>
+              <UButton
+                :to="`/failure-clusters/${cluster.id}`"
+                size="xs"
+                variant="outline"
+                trailing-icon="i-lucide-arrow-right"
+              >
+                View
+              </UButton>
             </div>
           </div>
-        </template>
-      </DetailPageLayout>
+        </SectionCard>
+
+        <!-- Entity links -->
+        <SectionCard v-if="testCase?.links?.length" icon="i-lucide-link" title="Links">
+          <EntityLinks
+            entity-type="test_case"
+            :entity-id="Number(testCaseId)"
+            :links="(testCase.links as any) ?? null"
+          />
+        </SectionCard>
+      </div>
     </template>
   </UDashboardPanel>
 </template>

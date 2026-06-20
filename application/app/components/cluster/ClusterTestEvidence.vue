@@ -40,8 +40,8 @@ async function loadCase(id: number) {
   traces.value = [];
 
   const [detail, traceList] = await Promise.allSettled([
-    $fetch<TestCaseDetail>(`/api/test-cases/${id}`),
-    $fetch<TraceInfo[]>(`/api/test-cases/${id}/traces`),
+    $fetch<TestCaseDetail>(`/api/test-run-cases/${id}`),
+    $fetch<TraceInfo[]>(`/api/test-run-cases/${id}/traces`),
   ]);
 
   if (detail.status === 'fulfilled') caseDetail.value = detail.value;

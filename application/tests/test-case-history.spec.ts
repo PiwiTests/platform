@@ -6,6 +6,7 @@ test.describe.serial('Test Case History API', () => {
   let secondRunId: number;
   let thirdRunId: number;
   let testRunsCaseId: number;
+  let stableTestCaseId: number;
 
   test('should submit multiple runs for history testing', async ({ request }) => {
     // Run 1
@@ -111,8 +112,15 @@ test.describe.serial('Test Case History API', () => {
     expect(testCase).toBeDefined();
     testRunsCaseId = testCase.id;
 
-    // Fetch history via the new endpoint
-    const historyRes = await request.get(`/api/test-cases/${testRunsCaseId}/history`);
+    // Resolve the stable test_case.id from the execution detail
+    const execRes = await request.get(`/api/test-run-cases/${testRunsCaseId}`);
+    expect(execRes.ok()).toBeTruthy();
+    const execData = await execRes.json();
+    expect(execData.testCaseId).toBeDefined();
+    stableTestCaseId = execData.testCaseId;
+
+    // Fetch history via the stable test case ID
+    const historyRes = await request.get(`/api/test-cases/${stableTestCaseId}/history`);
     expect(historyRes.ok()).toBeTruthy();
     const history = await historyRes.json();
 
@@ -134,7 +142,7 @@ test.describe.serial('Test Case History API', () => {
   });
 
   test('should include duration, error, and retries in history entries', async ({ request }) => {
-    const historyRes = await request.get(`/api/test-cases/${testRunsCaseId}/history`);
+    const historyRes = await request.get(`/api/test-cases/${stableTestCaseId}/history`);
     const history = await historyRes.json();
 
     // "history test alpha" was in all 3 runs
@@ -209,8 +217,13 @@ test.describe.serial('Test Case History API', () => {
     const runData = await runRes.json();
     const tc = runData.testCases.find((t: { title: string }) => t.title === 'history test single');
 
+    // Resolve stable test_case.id
+    const execRes = await request.get(`/api/test-run-cases/${tc.id}`);
+    const execData = await execRes.json();
+    const stableId = execData.testCaseId;
+
     // Fetch history — should have at least 1 entry (concurrent browser runs may add more)
-    const historyRes = await request.get(`/api/test-cases/${tc.id}/history`);
+    const historyRes = await request.get(`/api/test-cases/${stableId}/history`);
     expect(historyRes.ok()).toBeTruthy();
     const history = await historyRes.json();
     expect(Array.isArray(history)).toBe(true);

@@ -177,7 +177,7 @@ function scrollToCase(id: number) {
   setTreeView(false);
   highlightedCaseId.value = id;
   nextTick(() => {
-    const row = listRef.value?.querySelector<HTMLElement>(`tr:has(a[href="/test-cases/${id}"])`);
+    const row = listRef.value?.querySelector<HTMLElement>(`tr:has(a[href="/test-run-cases/${id}"])`);
     if (row) {
       const container = row.closest('table')?.parentElement;
       if (container) {
@@ -306,9 +306,9 @@ defineExpose({ scrollToCase });
       >
         <template #title-cell="{ row }">
           <a
-            :href="`/test-cases/${row.original.id}`"
+            :href="`/test-run-cases/${row.original.id}`"
             class="text-primary hover:underline font-medium"
-            @click.prevent="navigateTo(`/test-cases/${row.original.id}`)"
+            @click.prevent="navigateTo(`/test-run-cases/${row.original.id}`)"
             >{{ row.original.title }}</a
           >
         </template>
@@ -355,7 +355,7 @@ defineExpose({ scrollToCase });
 
         <template #actions-cell="{ row }">
           <div class="flex justify-end">
-            <UButton :to="`/test-cases/${row.original.id}`" size="sm" variant="outline"> View details </UButton>
+            <UButton :to="`/test-run-cases/${row.original.id}`" size="sm" variant="outline"> View details </UButton>
           </div>
         </template>
       </UTable>

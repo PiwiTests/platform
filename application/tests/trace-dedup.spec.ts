@@ -57,7 +57,7 @@ async function getFirstCaseTraces(request: APIRequestContext, testRunId: number)
   const tc = runData.testCases?.[0];
   expect(tc).toBeDefined();
   return {
-    traces: (await (await request.get(`/api/test-cases/${tc.id}/traces`)).json()) as Array<{
+    traces: (await (await request.get(`/api/test-run-cases/${tc.id}/traces`)).json()) as Array<{
       id: number;
       filePath: string;
     }>,

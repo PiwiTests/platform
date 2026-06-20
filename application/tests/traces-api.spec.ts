@@ -61,7 +61,7 @@ test.describe('Traces API', () => {
     noTraceCaseId = testCaseWithoutTrace.id;
 
     // Fetch traces for the test case that had a trace file
-    const tracesResponse = await request.get(`/api/test-cases/${testRunsCaseId}/traces`);
+    const tracesResponse = await request.get(`/api/test-run-cases/${testRunsCaseId}/traces`);
     expect(tracesResponse.ok()).toBeTruthy();
     const traces = await tracesResponse.json();
 
@@ -76,7 +76,7 @@ test.describe('Traces API', () => {
   test('should return empty traces for a test case without trace files', async ({ request }) => {
     expect(noTraceCaseId).toBeDefined();
 
-    const tracesResponse = await request.get(`/api/test-cases/${noTraceCaseId}/traces`);
+    const tracesResponse = await request.get(`/api/test-run-cases/${noTraceCaseId}/traces`);
     expect(tracesResponse.ok()).toBeTruthy();
     const traces = await tracesResponse.json();
 
@@ -85,12 +85,12 @@ test.describe('Traces API', () => {
   });
 
   test('should return 400 for invalid test case ID', async ({ request }) => {
-    const response = await request.get('/api/test-cases/abc/traces');
+    const response = await request.get('/api/test-run-cases/abc/traces');
     expect(response.status()).toBe(400);
   });
 
   test('should return 404 for non-existent test case', async ({ request }) => {
-    const response = await request.get('/api/test-cases/99999/traces');
+    const response = await request.get('/api/test-run-cases/99999/traces');
     expect(response.status()).toBe(404);
   });
 });
