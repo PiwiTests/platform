@@ -1,6 +1,6 @@
 import { getDatabase } from '../../database';
-import { testRuns, testRunsCases, files } from '../../database/schema';
-import { lt, inArray } from 'drizzle-orm';
+import { testRuns, testRunsCases, files, failureClusters } from '../../database/schema';
+import { lt, inArray, eq, sql, and } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
 import { Role } from '../../../shared/types';
 import { deleteFileRow } from '../../utils/delete-run-files';
@@ -33,7 +33,6 @@ export default eventHandler(async (event) => {
 
   const body = await readBody(event);
 
-  // olderThanDays: number — delete runs whose startTime is older than this many days
   const olderThanDays = parseInt(body?.olderThanDays ?? '0', 10);
 
   const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -50,7 +49,10 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
 
   // Find all runs older than the cutoff
-  const oldRuns = await db.select({ id: testRuns.id }).from(testRuns).where(lt(testRuns.startTime, cutoffDate));
+  const oldRuns = await db
+    .select({ id: testRuns.id, projectId: testRuns.projectId })
+    .from(testRuns)
+    .where(lt(testRuns.startTime, cutoffDate));
 
   if (oldRuns.length === 0) {
     return { success: true, deletedRuns: 0 };
@@ -60,11 +62,26 @@ export default eventHandler(async (event) => {
 
   // Collect all test run case IDs for these runs
   const runsCases = await db
-    .select({ id: testRunsCases.id })
+    .select({ id: testRunsCases.id, failureClusterId: testRunsCases.failureClusterId })
     .from(testRunsCases)
     .where(inArray(testRunsCases.testRunId, runIds));
 
   const caseIds = runsCases.map((c) => c.id);
+
+  // Recompute cluster occurrence counters before deleting
+  const affectedClusterIds = [...new Set(runsCases.filter((c) => c.failureClusterId).map((c) => c.failureClusterId!))];
+  if (affectedClusterIds.length > 0) {
+    for (const clusterId of affectedClusterIds) {
+      const remaining = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(testRunsCases)
+        .where(and(eq(testRunsCases.failureClusterId, clusterId), eq(testRunsCases.status, 'failed')));
+      await db
+        .update(failureClusters)
+        .set({ occurrences: remaining[0]?.count ?? 0, updatedAt: new Date() })
+        .where(eq(failureClusters.id, clusterId));
+    }
+  }
 
   // Delete files linked to cases (traces) from storage and DB
   if (caseIds.length > 0) {
@@ -85,8 +102,11 @@ export default eventHandler(async (event) => {
   }
   await db.delete(files).where(inArray(files.testRunId, runIds));
 
-  // Delete the test runs
+  // Delete the test runs (cascade handles child rows)
   await db.delete(testRuns).where(inArray(testRuns.id, runIds));
+
+  // Reclaim free space
+  await db.run(sql`PRAGMA incremental_vacuum`);
 
   return { success: true, deletedRuns: oldRuns.length };
 });

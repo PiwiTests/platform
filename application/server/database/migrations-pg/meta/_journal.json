@@ -50,6 +50,13 @@
       "when": 1781885977071,
       "tag": "0006_moaning_guardian",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1781937703324,
+      "tag": "0007_chunky_warpath",
+      "breakpoints": true
     }
   ]
 }

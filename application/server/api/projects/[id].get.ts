@@ -39,7 +39,33 @@ export default eventHandler(async (event) => {
     });
   }
 
-  const runs = await db.select().from(testRuns).where(eq(testRuns.projectId, id)).orderBy(desc(testRuns.startTime));
+  // Select only the columns needed for the run list — omit wide JSON columns
+  const runs = await db
+    .select({
+      id: testRuns.id,
+      projectId: testRuns.projectId,
+      status: testRuns.status,
+      startTime: testRuns.startTime,
+      duration: testRuns.duration,
+      totalTests: testRuns.totalTests,
+      passedTests: testRuns.passedTests,
+      failedTests: testRuns.failedTests,
+      skippedTests: testRuns.skippedTests,
+      flakyTests: testRuns.flakyTests,
+      avgTestDuration: testRuns.avgTestDuration,
+      p90TestDuration: testRuns.p90TestDuration,
+      shardTotal: testRuns.shardTotal,
+      shardsFinished: testRuns.shardsFinished,
+      environment: testRuns.environment,
+      label: testRuns.label,
+      instanceId: testRuns.instanceId,
+      playwrightVersion: testRuns.playwrightVersion,
+      createdAt: testRuns.createdAt,
+      updatedAt: testRuns.updatedAt,
+    })
+    .from(testRuns)
+    .where(eq(testRuns.projectId, id))
+    .orderBy(desc(testRuns.startTime));
 
   // Fetch reports for all runs in a single query
   const runIds = runs.map((r) => r.id);

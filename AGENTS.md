@@ -21,8 +21,14 @@ Piwi test results dashboard built with **Nuxt 4**, Nuxt UI dashboard template. S
 application/            — Nuxt 4 dashboard app
 application/shared/     — Shared types, constants & utilities
 application/tests/      — Functional tests (Playwright)
+plans/                  — Design docs, audit plans & roadmap (see below)
 reporter/               — Custom Playwright reporter package (TypeScript → compiled JS)
 ```
+
+> **Global tracking file:** `plans/roadmap.md` is the single source of truth for product
+> direction, priorities, and progress — keep it updated as features land or plans change.
+> Detailed per-feature implementation plans live alongside it under `plans/`. (`plans/` is
+> gitignored, so these are local working docs, not committed.)
 
 ## Quick Start
 
@@ -47,6 +53,7 @@ SQLite database auto-initializes on first API call.
 - **Schema**: `application/server/database/schema.ts`
 - **Migrations**: `application/server/database/migrations/` (SQLite) or `migrations-pg/` (PostgreSQL, auto-run on startup based on `PIWI_DATABASE_URL`)
 - **Tables**: `projects`, `test_runs`, `test_cases`, `test_runs_cases`, `failure_clusters`, `failure_diagnoses`, `app_settings`, `files`, `trace_resources`, `trace_blobs`, `tags`, `project_tags`, `users`, `api_keys`
+- **Audit**: See `plans/` for schema audit plans with findings and recommended changes
 
 ### Backend (server/api/)
 Nuxt file-based routing:

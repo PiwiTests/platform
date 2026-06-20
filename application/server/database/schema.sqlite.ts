@@ -29,7 +29,7 @@ export const testRuns = sqliteTable(
     id: integer('id').primaryKey({ autoIncrement: true }),
     projectId: integer('project_id')
       .notNull()
-      .references(() => projects.id),
+      .references(() => projects.id, { onDelete: 'cascade' }),
     status: text('status').notNull(), // 'passed', 'failed', 'timedout', 'interrupted', 'running', 'cancelled', 'initialising', 'finalizing'
     startTime: integer('start_time', { mode: 'timestamp' }).notNull(),
     duration: integer('duration'), // in milliseconds
@@ -57,6 +57,7 @@ export const testRuns = sqliteTable(
   },
   (table) => ({
     projectIdIdx: index('idx_test_runs_project_id').on(table.projectId),
+    projectStartTimeIdx: index('idx_test_runs_project_start').on(table.projectId, table.startTime),
     startTimeIdx: index('idx_test_runs_start_time').on(table.startTime),
   }),
 );
@@ -92,7 +93,7 @@ export const testCases = sqliteTable(
     id: integer('id').primaryKey({ autoIncrement: true }),
     projectId: integer('project_id')
       .notNull()
-      .references(() => projects.id),
+      .references(() => projects.id, { onDelete: 'cascade' }),
     filePath: text('file_path').notNull(), // relative path from project root
     suitePath: text('suite_path').notNull().default(''), // \x1f-delimited describe block path, e.g. 'Auth\x1fLogin'
     suiteId: integer('suite_id').references(() => testSuites.id), // FK to immediate parent describe block (null for root-level tests)
@@ -200,10 +201,10 @@ export const testRunsCases = sqliteTable(
     id: integer('id').primaryKey({ autoIncrement: true }),
     testRunId: integer('test_run_id')
       .notNull()
-      .references(() => testRuns.id),
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
     testCaseId: integer('test_case_id')
       .notNull()
-      .references(() => testCases.id),
+      .references(() => testCases.id, { onDelete: 'cascade' }),
     status: text('status').notNull(), // 'passed', 'failed', 'timedout', 'skipped'
     duration: integer('duration'), // in milliseconds
     error: text('error'),
@@ -221,10 +222,11 @@ export const testRunsCases = sqliteTable(
     ariaSnapshot: text('aria_snapshot'), // ARIA snapshot of the page (YAML-like string from locator.ariaSnapshot())
     testSource: text('test_source'), // Source snippet around the failing assertion (sent by reporter)
     browser: text('browser', { mode: 'json' }), // Playwright project/browser config: { projectName, browserName, channel, viewport }
+    browserName: text('browser_name'), // Scalar browser identity (projectName) for index efficiency
     testAnnotations: text('test_annotations', { mode: 'json' }), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
     workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
     shardIndex: integer('shard_index'), // Shard index (1-based) for sharded runs; null = not sharded
-    startedAt: integer('started_at'), // Unix timestamp in ms when the test started
+    startedAt: integer('started_at', { mode: 'timestamp_ms' }), // Unix timestamp in ms when the test started
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -237,7 +239,7 @@ export const testRunsCases = sqliteTable(
       table.testRunId,
       table.testCaseId,
       table.retries,
-      table.browser,
+      table.browserName,
     ),
   }),
 );
@@ -288,8 +290,8 @@ export const files = sqliteTable(
   'files',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
-    testRunId: integer('test_run_id').references(() => testRuns.id),
-    testRunsCaseId: integer('test_runs_case_id').references(() => testRunsCases.id),
+    testRunId: integer('test_run_id').references(() => testRuns.id, { onDelete: 'cascade' }),
+    testRunsCaseId: integer('test_runs_case_id').references(() => testRunsCases.id, { onDelete: 'cascade' }),
     type: text('type').notNull(), // 'report', 'trace', 'screenshot', etc.
     subtype: text('subtype'), // 'html', 'monocart', 'blob' for reports; null for traces
     label: text('label'), // Display label e.g. 'HTML Report'
@@ -307,17 +309,23 @@ export const files = sqliteTable(
 );
 
 // Tags table - for labeling projects
-export const tags = sqliteTable('tags', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  text: text('text').notNull().unique(),
-  color: text('color').notNull().default('neutral'),
-  createdAt: integer('created_at', { mode: 'timestamp' })
-    .notNull()
-    .$defaultFn(() => new Date()),
-  updatedAt: integer('updated_at', { mode: 'timestamp' })
-    .notNull()
-    .$defaultFn(() => new Date()),
-});
+export const tags = sqliteTable(
+  'tags',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    text: text('text').notNull().unique(),
+    color: text('color').notNull().default('neutral'),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    updatedAtIdx: index('idx_tags_updated_at').on(table.updatedAt),
+  }),
+);
 
 // Project tags junction table
 export const projectTags = sqliteTable(
@@ -380,7 +388,6 @@ export const apiKeys = sqliteTable(
   },
   (table) => ({
     userIdIdx: index('idx_api_keys_user_id').on(table.userId),
-    keyHashIdx: index('idx_api_keys_key_hash').on(table.keyHash),
   }),
 );
 

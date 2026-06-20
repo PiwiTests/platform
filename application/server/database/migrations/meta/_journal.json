@@ -57,6 +57,13 @@
       "when": 1781885970385,
       "tag": "0007_happy_maestro",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1781937693830,
+      "tag": "0008_lonely_wild_child",
+      "breakpoints": true
     }
   ]
 }

@@ -37,8 +37,6 @@ blob-report/
 .test-temp-gzip/
 .temp-dashboard/
 
-# Plan documents
-docs/plans/
 
 # Playwright artifacts
 .playwright-cli/
@@ -46,3 +44,7 @@ docs/plans/
 
 # Build artifacts
 obj/
+bin/
+
+# Plan documents
+plans/

@@ -437,7 +437,7 @@ async function persistRunCases(
       browser: c.browser ?? null,
       workerIndex: c.workerIndex ?? null,
       shardIndex: c.shardIndex ?? null,
-      startedAt: c.startedAt ?? null,
+      startedAt: c.startedAt ? new Date(c.startedAt) : null,
     });
   }
 
