@@ -21,9 +21,14 @@ Piwi test results dashboard built with **Nuxt 4**, Nuxt UI dashboard template. S
 application/            — Nuxt 4 dashboard app
 application/shared/     — Shared types, constants & utilities
 application/tests/      — Functional tests (Playwright)
-plans/                  — Design documents & audit plans
+plans/                  — Design docs, audit plans & roadmap (see below)
 reporter/               — Custom Playwright reporter package (TypeScript → compiled JS)
 ```
+
+> **Global tracking file:** `plans/roadmap.md` is the single source of truth for product
+> direction, priorities, and progress — keep it updated as features land or plans change.
+> Detailed per-feature implementation plans live alongside it under `plans/`. (`plans/` is
+> gitignored, so these are local working docs, not committed.)
 
 ## Quick Start
 

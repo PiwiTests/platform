@@ -47,9 +47,11 @@ function buildRunSummary() {
 const labelInput = ref('');
 const editingLabel = ref(false);
 const savingLabel = ref(false);
+let labelCancelled = false;
 const labelInputRef = ref<HTMLInputElement | null>(null);
 
 function startEditLabel() {
+  labelCancelled = false;
   labelInput.value = props.testRun?.label ?? '';
   editingLabel.value = true;
   nextTick(() => labelInputRef.value?.focus());
@@ -57,6 +59,10 @@ function startEditLabel() {
 
 async function saveLabel() {
   if (savingLabel.value) return;
+  if (labelCancelled) {
+    labelCancelled = false;
+    return;
+  }
   const run = props.testRun;
   if (!run) return;
   savingLabel.value = true;
@@ -79,6 +85,7 @@ async function saveLabel() {
 }
 
 function cancelEditLabel() {
+  labelCancelled = true;
   editingLabel.value = false;
 }
 
