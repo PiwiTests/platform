@@ -61,15 +61,15 @@ test.describe('Performance UI Tests', () => {
     projectId = data.projectId;
   });
 
-  test('should navigate to performance page', async ({ page }) => {
-    await page.goto(`/projects/${projectId}/performance`);
+  test('should show performance tab content', async ({ page }) => {
+    await page.goto(`/projects/${projectId}?tab=performance`);
     await expect(page.getByText('Performance trend')).toBeVisible();
     await expect(page.getByText('Slowest tests')).toBeVisible();
     await expect(page.getByText('Run comparison')).toBeVisible();
   });
 
-  test('should show slowest tests on performance page', async ({ page }) => {
-    await page.goto(`/projects/${projectId}/performance`);
+  test('should show slowest tests in performance tab', async ({ page }) => {
+    await page.goto(`/projects/${projectId}?tab=performance`);
     // Should show at least one slow test
     await expect(page.getByText('form submission is slow')).toBeVisible();
   });
@@ -98,7 +98,7 @@ test.describe('Performance UI Tests', () => {
     const testCaseWithSteps = runData.testCases.find((tc: { slowestStep: string | null }) => tc.slowestStep !== null);
 
     if (testCaseWithSteps) {
-      await page.goto(`/test-cases/${testCaseWithSteps.id}`);
+      await page.goto(`/test-run-cases/${testCaseWithSteps.id}`);
       await expect(page.getByText('Slowest step')).toBeVisible();
 
       // Should show steps section
@@ -106,9 +106,8 @@ test.describe('Performance UI Tests', () => {
     }
   });
 
-  test('should show performance link in sidebar navigation', async ({ page }) => {
+  test('should show performance tab in page navigation', async ({ page }) => {
     await page.goto(`/projects/${projectId}`);
-    // The sidebar should have a Performance link
-    await expect(page.getByRole('link', { name: 'Performance' }).first()).toBeVisible();
+    await expect(page.getByRole('tab', { name: /Performance/ })).toBeVisible();
   });
 });

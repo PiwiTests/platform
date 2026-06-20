@@ -366,8 +366,8 @@ test.describe.serial('Run Comparison', () => {
     await expect(page.getByText('beta test')).toBeVisible();
   });
 
-  test('performance page shows comparison section', async ({ page }) => {
-    await page.goto(`/projects/${projectId}/performance`);
+  test('performance tab shows comparison section', async ({ page }) => {
+    await page.goto(`/projects/${projectId}?tab=performance`);
     await waitForHydration(page);
 
     await expect(page.getByText('Run comparison')).toBeVisible();

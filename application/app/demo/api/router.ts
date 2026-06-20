@@ -45,7 +45,7 @@ import {
   apiCreateUserApiKey,
   apiDeleteUserApiKey,
 } from './users';
-import { apiGetTestCase, apiGetTestCaseHistory, apiGetTestCaseTraces } from './test-cases';
+import { apiGetTestCase, apiGetTestRunCase, apiGetTestCaseHistory, apiGetTestRunCaseTraces } from './test-cases';
 import { apiGetDemoFile } from './files';
 import {
   apiGetFailureCluster,
@@ -205,10 +205,13 @@ const routes: RouteEntry[] = [
   // Test-run streaming (no-op in demo mode; only terminal-status runs exist)
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/stream$/, handler: () => Promise.resolve({ ok: true }) },
 
-  // Test cases
+  // Test cases (stable)
   { method: 'GET', pattern: /^\/api\/test-cases\/(\d+)$/, handler: (m) => apiGetTestCase(+m[1]!) },
   { method: 'GET', pattern: /^\/api\/test-cases\/(\d+)\/history$/, handler: (m) => apiGetTestCaseHistory(+m[1]!) },
-  { method: 'GET', pattern: /^\/api\/test-cases\/(\d+)\/traces$/, handler: (m) => apiGetTestCaseTraces(+m[1]!) },
+
+  // Test run cases (executions)
+  { method: 'GET', pattern: /^\/api\/test-run-cases\/(\d+)$/, handler: (m) => apiGetTestRunCase(+m[1]!) },
+  { method: 'GET', pattern: /^\/api\/test-run-cases\/(\d+)\/traces$/, handler: (m) => apiGetTestRunCaseTraces(+m[1]!) },
 
   // Tags
   { method: 'GET', pattern: /^\/api\/tags$/, handler: () => apiGetTags() },

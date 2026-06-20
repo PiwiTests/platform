@@ -8,9 +8,9 @@ const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
 defineRouteMeta({
   openAPI: {
-    tags: ['Test Cases'],
-    summary: 'Get trace files for a test case',
-    description: 'Returns a list of trace files associated with a specific test case.',
+    tags: ['Test Run Cases'],
+    summary: 'Get trace files for a test run case',
+    description: 'Returns a list of trace files associated with a specific test run case (one execution).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': REQUIRED_ROLES,
   },
@@ -35,7 +35,7 @@ export default eventHandler(async (event) => {
   if (!testRunsCase) {
     throw createError({
       statusCode: 404,
-      message: 'Test case not found',
+      message: 'Test run case not found',
     });
   }
 

@@ -1,6 +1,6 @@
 import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
-import { testRuns, testRunsCases } from '../../../database/schema';
+import { testRuns, testRunsCases, testCases } from '../../../database/schema';
 import { eq, desc } from 'drizzle-orm';
 import { Role } from '../../../../shared/types';
 
@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['Test Cases'],
     summary: 'Get execution history for a test case',
     description:
-      'Returns the execution history across multiple test runs for a shared test case, ordered by most recent first.',
+      'Returns the execution history across multiple test runs for a stable test case, ordered by most recent first. Accepts a test_case.id directly.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': REQUIRED_ROLES,
   },
@@ -24,28 +24,21 @@ export default eventHandler(async (event) => {
   if (!id) {
     throw createError({
       statusCode: 400,
-      message: 'Invalid test run case ID',
+      message: 'Invalid test case ID',
     });
   }
 
   const db = await getDatabase();
 
-  // First, look up the shared test_cases record via this test_runs_case id
-  const sourceResult = await db
-    .select({ testCaseId: testRunsCases.testCaseId })
-    .from(testRunsCases)
-    .where(eq(testRunsCases.id, id));
+  const [testCase] = await db.select({ id: testCases.id }).from(testCases).where(eq(testCases.id, id));
 
-  if (sourceResult.length === 0) {
+  if (!testCase) {
     throw createError({
       statusCode: 404,
       message: 'Test case not found',
     });
   }
 
-  const testCaseId = sourceResult[0]!.testCaseId;
-
-  // Fetch all test_runs_cases rows for this shared test case, joined to test_runs
   const history = await db
     .select({
       id: testRunsCases.id,
@@ -59,7 +52,7 @@ export default eventHandler(async (event) => {
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(eq(testRunsCases.testCaseId, testCaseId))
+    .where(eq(testRunsCases.testCaseId, id))
     .orderBy(desc(testRuns.startTime))
     .limit(50);
 

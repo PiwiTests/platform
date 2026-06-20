@@ -1,16 +1,7 @@
 import { requireAuth } from '../../utils/auth';
 import { getDatabase } from '../../database';
-import {
-  testCases,
-  testRuns,
-  testRunsCases,
-  projects,
-  files,
-  failureClusters,
-  failureDiagnoses,
-  entityLinks,
-} from '../../database/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { testCases, testRunsCases, testRuns, projects, failureClusters, entityLinks } from '../../database/schema';
+import { eq, sql, desc } from 'drizzle-orm';
 import { Role } from '../../../shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
@@ -18,9 +9,9 @@ const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 defineRouteMeta({
   openAPI: {
     tags: ['Test Cases'],
-    summary: 'Get test case detail',
+    summary: 'Get test case detail (stable identity)',
     description:
-      'Returns detailed information about a test case including test run data, failure cluster context, reports, and attachments.',
+      'Returns the stable test case identity with aggregated run stats, recent executions, linked failure clusters, and entity links.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': REQUIRED_ROLES,
   },
@@ -33,145 +24,122 @@ export default eventHandler(async (event) => {
   if (!id) {
     throw createError({
       statusCode: 400,
-      message: 'Invalid test run case ID',
+      message: 'Invalid test case ID',
     });
   }
 
   const db = await getDatabase();
 
-  // Get the test_runs_case record
-  const testRunsCaseResults = await db.select().from(testRunsCases).where(eq(testRunsCases.id, id));
-  const testRunsCase = testRunsCaseResults[0];
+  const [testCase] = await db.select().from(testCases).where(eq(testCases.id, id));
 
-  if (!testRunsCase) {
+  if (!testCase) {
     throw createError({
       statusCode: 404,
       message: 'Test case not found',
     });
   }
 
-  // Fetch test case + test run in parallel (both depend on testRunsCase IDs)
-  const [[testCase], [testRun], reportList, attachmentList] = await Promise.all([
+  const [[project], aggResult, [lastExecution]] = await Promise.all([
     db
       .select()
-      .from(testCases)
-      .where(eq(testCases.id, testRunsCase.testCaseId))
+      .from(projects)
+      .where(eq(projects.id, testCase.projectId))
       .then((r) => (r.length > 0 ? [r[0]] : [undefined])),
     db
-      .select()
-      .from(testRuns)
-      .where(eq(testRuns.id, testRunsCase.testRunId))
+      .select({
+        totalRuns: sql<number>`COUNT(${testRunsCases.id})`,
+        passedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`,
+        failedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'failed' THEN 1 ELSE 0 END)`,
+        skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`,
+        timedOutRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'timedOut' THEN 1 ELSE 0 END)`,
+        flakyRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`,
+        recentFlakyRuns: sql<number>`(
+          SELECT COUNT(*) FROM (
+            SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
+            FROM ${testRunsCases}
+            WHERE ${testRunsCases.testCaseId} = ${testCases.id}
+            ORDER BY ${testRunsCases.createdAt} DESC
+            LIMIT 10
+          ) WHERE s = 'passed' AND r > 0
+        )`,
+        avgDuration: sql<number>`AVG(${testRunsCases.duration})`,
+        lastRunAt: sql<number>`MAX(${testRunsCases.createdAt})`,
+      })
+      .from(testRunsCases)
+      .where(eq(testRunsCases.testCaseId, id)),
+    db
+      .select({ id: testRunsCases.id })
+      .from(testRunsCases)
+      .where(eq(testRunsCases.testCaseId, id))
+      .orderBy(desc(testRunsCases.createdAt))
+      .limit(1)
       .then((r) => (r.length > 0 ? [r[0]] : [undefined])),
-    db
-      .select()
-      .from(files)
-      .where(sql`${files.testRunId} = ${testRunsCase.testRunId} AND ${files.type} = 'report'`)
-      .then((r) =>
-        r.map((rep) => ({
-          id: rep.id,
-          type: rep.subtype || rep.type,
-          label: rep.label || rep.type,
-          path: rep.path,
-          size: rep.size,
-        })),
-      ),
-    db
-      .select()
-      .from(files)
-      .where(sql`${files.testRunsCaseId} = ${testRunsCase.id} AND ${files.type} = 'attachment'`)
-      .then((r) =>
-        r.map((att) => ({ id: att.id, name: att.subtype, contentType: att.label, path: att.path, size: att.size })),
-      ),
   ]);
 
-  // Get project info (only when testRun is available)
-  let project;
-  if (testRun) {
-    const [projectResult] = await db.select().from(projects).where(eq(projects.id, testRun.projectId));
-    project = projectResult;
-  }
+  // Recent executions (last 20)
+  const recentExecutions = await db
+    .select({
+      id: testRunsCases.id,
+      status: testRunsCases.status,
+      duration: testRunsCases.duration,
+      error: testRunsCases.error,
+      retries: testRunsCases.retries,
+      workerIndex: testRunsCases.workerIndex,
+      browser: testRunsCases.browser,
+      runId: testRuns.id,
+      runStatus: testRuns.status,
+      runLabel: testRuns.label,
+      startTime: testRuns.startTime,
+    })
+    .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+    .where(eq(testRunsCases.testCaseId, id))
+    .orderBy(desc(testRuns.startTime))
+    .limit(20);
 
-  // Failure cluster context (only for clustered failures)
-  let failureCluster = null;
-  if (testRunsCase.failureClusterId) {
-    const [cluster] = await db
-      .select()
-      .from(failureClusters)
-      .where(eq(failureClusters.id, testRunsCase.failureClusterId));
-    if (cluster) {
-      const [sameRun] = await db
-        .select({
-          count: sql<number>`count(distinct ${testRunsCases.testCaseId})`,
-        })
-        .from(testRunsCases)
-        .where(
-          and(eq(testRunsCases.testRunId, testRunsCase.testRunId), eq(testRunsCases.failureClusterId, cluster.id)),
-        );
-      const [firstSeenRun] = await db
-        .select({ startTime: testRuns.startTime })
-        .from(testRuns)
-        .where(eq(testRuns.id, cluster.firstSeenRunId));
+  // Linked failure clusters for this test case
+  const clusterRows = await db
+    .selectDistinct({
+      id: failureClusters.id,
+      signature: failureClusters.signature,
+      errorType: failureClusters.errorType,
+      status: failureClusters.status,
+      occurrences: failureClusters.occurrences,
+    })
+    .from(failureClusters)
+    .innerJoin(testRunsCases, eq(testRunsCases.failureClusterId, failureClusters.id))
+    .where(eq(testRunsCases.testCaseId, id));
 
-      const diagnosisRows = await db
-        .select({
-          status: failureDiagnoses.status,
-          category: failureDiagnoses.category,
-          confidence: failureDiagnoses.confidence,
-          summary: failureDiagnoses.summary,
-        })
-        .from(failureDiagnoses)
-        .where(eq(failureDiagnoses.clusterId, cluster.id));
+  // Entity links at test-case level (stable)
+  const links = await db.select().from(entityLinks).where(eq(entityLinks.testCaseId, id));
 
-      failureCluster = {
-        id: cluster.id,
-        signature: cluster.signature,
-        errorType: cluster.errorType,
-        selector: cluster.selector,
-        status: cluster.status ?? 'open',
-        triageNote: cluster.triageNote ?? null,
-        occurrences: cluster.occurrences,
-        firstSeenRunId: cluster.firstSeenRunId,
-        firstSeenAt: firstSeenRun?.startTime ?? null,
-        isNew: cluster.firstSeenRunId === testRunsCase.testRunId,
-        sameRunCaseCount: Number(sameRun?.count ?? 0),
-        diagnosis: diagnosisRows[0] ?? null,
-      };
-    }
-  }
+  const totalRuns = aggResult[0]?.totalRuns ?? 0;
 
-  // Fetch entity links for this test case (stable) and this test-case run
-  const linksForTestCase = testCase
-    ? await db.select().from(entityLinks).where(eq(entityLinks.testCaseId, testCase.id))
-    : [];
-
-  const linksForCaseRun = await db.select().from(entityLinks).where(eq(entityLinks.testRunsCaseId, testRunsCase.id));
-
-  // Format the response to match the expected structure
   return {
-    id: testRunsCase.id,
-    title: testCase?.title,
-    location:
-      testRunsCase.line && testRunsCase.column
-        ? `${testCase?.filePath}:${testRunsCase.line}:${testRunsCase.column}`
-        : testCase?.filePath,
-    status: testRunsCase.status,
-    duration: testRunsCase.duration,
-    error: testRunsCase.error,
-    retries: testRunsCase.retries,
-    steps: testRunsCase.steps,
-    slowestStep: testRunsCase.slowestStep,
-    slowestStepDuration: testRunsCase.slowestStepDuration,
-    networkRequests: testRunsCase.networkRequests,
-    webVitals: testRunsCase.webVitals,
-    consoleLogs: testRunsCase.consoleLogs,
-    ariaSnapshot: testRunsCase.ariaSnapshot,
-    workerIndex: testRunsCase.workerIndex,
-    shardIndex: testRunsCase.shardIndex,
-    browser: testRunsCase.browser,
-    failureCluster,
-    testRun: testRun ? { ...testRun, project, reports: reportList } : testRun,
-    attachments: attachmentList,
-    links: linksForCaseRun,
-    stableLinks: linksForTestCase,
+    id: testCase.id,
+    filePath: testCase.filePath,
+    suitePath: testCase.suitePath,
+    title: testCase.title,
+    project: project ? { id: project.id, name: project.name, label: project.label } : null,
+    totalRuns,
+    passedRuns: aggResult[0]?.passedRuns ?? 0,
+    failedRuns: aggResult[0]?.failedRuns ?? 0,
+    skippedRuns: aggResult[0]?.skippedRuns ?? 0,
+    timedOutRuns: aggResult[0]?.timedOutRuns ?? 0,
+    flakyRuns: aggResult[0]?.flakyRuns ?? 0,
+    recentFlakyRuns: aggResult[0]?.recentFlakyRuns ?? 0,
+    avgDuration: aggResult[0]?.avgDuration ?? null,
+    passRate:
+      totalRuns > 0
+        ? Math.round((((aggResult[0]?.passedRuns ?? 0) + (aggResult[0]?.skippedRuns ?? 0)) / totalRuns) * 100)
+        : null,
+    lastRunAt: aggResult[0]?.lastRunAt ?? null,
+    lastExecutionId: lastExecution?.id ?? null,
+    failureClusters: clusterRows.map((c) => ({
+      ...c,
+      status: c.status ?? 'open',
+    })),
+    recentExecutions,
+    links,
   };
 });

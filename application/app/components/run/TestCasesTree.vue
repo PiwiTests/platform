@@ -306,9 +306,9 @@ const flatRows = computed<FlatRow[]>(() => {
             {{ annotationLabel(ann) }}
           </UBadge>
           <a
-            :href="`/test-cases/${row.test.id}`"
+            :href="`/test-run-cases/${row.test.id}`"
             class="text-primary hover:underline truncate flex-1 min-w-0"
-            @click.prevent="navigateTo(`/test-cases/${row.test.id}`)"
+            @click.prevent="navigateTo(`/test-run-cases/${row.test.id}`)"
           >
             {{ row.test.title }}
           </a>
@@ -330,7 +330,7 @@ const flatRows = computed<FlatRow[]>(() => {
             <UBadge v-if="(row.test.retries ?? 0) > 0" color="warning" variant="soft" size="xs">
               {{ row.test.retries }}x
             </UBadge>
-            <UButton :to="`/test-cases/${row.test.id}`" size="xs" variant="outline"> View </UButton>
+            <UButton :to="`/test-run-cases/${row.test.id}`" size="xs" variant="outline"> View </UButton>
           </div>
         </div>
       </template>

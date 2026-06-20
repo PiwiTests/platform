@@ -49,8 +49,8 @@ test.describe('Dashboard UI Tests', () => {
   test('should display projects list page', async ({ page }) => {
     await page.goto('/projects');
 
-    // Check for at least one project - use more specific selector for the table
-    await expect(page.getByRole('link', { name: PROJECT.UI_TEST })).toBeVisible();
+    // Check for at least one project - scope to page content
+    await expect(page.getByRole('link', { name: PROJECT.UI_TEST }).first()).toBeVisible();
 
     // Check for test run count
     await expect(page.getByText(/\d+ runs/).first()).toBeVisible(); // There may be multiple projects
@@ -59,24 +59,23 @@ test.describe('Dashboard UI Tests', () => {
   test('should navigate to project details page', async ({ page }) => {
     await page.goto('/projects');
 
-    // Click on a project - use link role to target the table link, not sidebar
-    await page.getByRole('link', { name: PROJECT.UI_TEST }).click();
+    // Click on a project - scope to page content to avoid sidebar duplicate
+    await page.getByRole('link', { name: PROJECT.UI_TEST }).first().click();
 
     await page.waitForURL(/\/projects\/\d+/);
 
     // Wait for main content to confirm page loaded
     await expect(page.getByText('Test run statistics over time')).toBeVisible({ timeout: 30000 });
 
-    // Sidebar accordion remounts on navigation (keyed by currentProjectId), so
-    // defaultOpen:true takes effect and 'Test runs' should be visible promptly.
-    await expect(page.getByRole('link', { name: 'Test runs' })).toBeVisible({ timeout: 15000 });
+    // Project name should be visible in the breadcrumb/pill
+    await expect(page.getByRole('button', { name: PROJECT.UI_TEST })).toBeVisible({ timeout: 15000 });
   });
 
   test('should navigate to test run details page', async ({ page }) => {
     await page.goto('/projects');
 
-    // Navigate to project - use link role to target table link
-    await page.getByRole('link', { name: PROJECT.UI_TEST }).click();
+    // Click on a project - scope to page content to avoid sidebar duplicate
+    await page.getByRole('link', { name: PROJECT.UI_TEST }).first().click();
     await page.waitForURL(/\/projects\/\d+/);
     await waitForHydration(page);
 
@@ -94,7 +93,7 @@ test.describe('Dashboard UI Tests', () => {
 
   test('should switch between tabs on test run detail page', async ({ page }) => {
     await page.goto('/projects');
-    await page.getByRole('link', { name: PROJECT.UI_TEST }).click();
+    await page.getByRole('link', { name: PROJECT.UI_TEST }).first().click();
     await page.waitForURL(/\/projects\/\d+/);
     await waitForHydration(page);
     const viewButton = page.locator('table').getByRole('link', { name: 'View' }).first();
@@ -178,7 +177,7 @@ test.describe('Dashboard UI Tests', () => {
     await refreshButton.click();
 
     // Data should still be visible after refresh - use link to target table
-    await expect(page.getByRole('link', { name: PROJECT.UI_TEST })).toBeVisible();
+    await expect(page.getByRole('link', { name: PROJECT.UI_TEST }).first()).toBeVisible();
   });
 
   test('should display storage settings page', async ({ page }) => {
@@ -378,8 +377,8 @@ test.describe('Foldable Summary', () => {
     const runData = await runRes.json();
     const testCaseId = runData.testCases[0].id;
 
-    await page.goto(`/test-cases/${testCaseId}`);
-    await page.waitForURL(/\/test-cases\/\d+/);
+    await page.goto(`/test-run-cases/${testCaseId}`);
+    await page.waitForURL(/\/test-run-cases\/\d+/);
 
     await expect(page.getByTitle('Collapse summary')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'fold test case' })).toBeVisible();
@@ -391,8 +390,8 @@ test.describe('Foldable Summary', () => {
     const runData = await runRes.json();
     const testCaseId = runData.testCases[0].id;
 
-    await page.goto(`/test-cases/${testCaseId}`);
-    await page.waitForURL(/\/test-cases\/\d+/);
+    await page.goto(`/test-run-cases/${testCaseId}`);
+    await page.waitForURL(/\/test-run-cases\/\d+/);
     await waitForHydration(page);
 
     await expect(page.getByTitle('Collapse summary')).toBeVisible();
