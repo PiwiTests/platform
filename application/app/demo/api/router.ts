@@ -15,6 +15,8 @@ import {
   apiGetProjectFailureClusters,
   apiUpdateProject,
   apiCreateProject,
+  apiGetProjectMenu,
+  apiDeleteProject,
   apiGetTags,
   apiCreateTag,
   apiUpdateTag,
@@ -55,6 +57,7 @@ import {
   apiGetClusterCommitDiff,
   apiGetClusterContext,
   apiExtractClusterCases,
+  apiGetClusterBranches,
 } from './failure-clusters';
 import { apiGetAdminStats } from './admin';
 import {
@@ -65,8 +68,11 @@ import {
   apiPutAiSettings,
   apiTestAiSettings,
   apiGetProjectFlakyTests,
+  apiGetAiLimits,
+  apiPutAiLimits,
 } from './ai';
 import { apiSearch } from './search';
+import { apiGetLinks, apiCreateLink, apiPatchLink, apiDeleteLink, apiRefreshLink } from './links';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
@@ -84,12 +90,18 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects$/,
     handler: (_, body) => apiCreateProject(body as Parameters<typeof apiCreateProject>[0]),
   },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/menu$/,
+    handler: () => apiGetProjectMenu(),
+  },
   { method: 'GET', pattern: /^\/api\/projects\/(\d+)$/, handler: (m) => apiGetProject(+m[1]!) },
   {
     method: 'PUT',
     pattern: /^\/api\/projects\/(\d+)$/,
     handler: (m, body) => apiUpdateProject(+m[1]!, body as Parameters<typeof apiUpdateProject>[1]),
   },
+  { method: 'DELETE', pattern: /^\/api\/projects\/(\d+)$/, handler: (m) => apiDeleteProject(+m[1]!) },
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/performance$/,
@@ -177,6 +189,11 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/failure-clusters\/(\d+)\/base-commit$/,
     handler: (m, body) => apiPatchClusterBaseCommit(+m[1]!, body as Parameters<typeof apiPatchClusterBaseCommit>[1]),
   },
+  {
+    method: 'GET',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/branches$/,
+    handler: (m) => apiGetClusterBranches(+m[1]!),
+  },
   { method: 'GET', pattern: /^\/api\/failure-clusters\/(\d+)\/commits$/, handler: (m) => apiGetClusterCommits(+m[1]!) },
   {
     method: 'GET',
@@ -201,6 +218,16 @@ const routes: RouteEntry[] = [
   { method: 'GET', pattern: /^\/api\/settings\/ai$/, handler: () => apiGetAiSettings() },
   { method: 'PUT', pattern: /^\/api\/settings\/ai$/, handler: (_, body) => apiPutAiSettings(body) },
   { method: 'POST', pattern: /^\/api\/settings\/ai\/test$/, handler: () => apiTestAiSettings() },
+  {
+    method: 'GET',
+    pattern: /^\/api\/settings\/ai\/limits$/,
+    handler: () => apiGetAiLimits(),
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/settings\/ai\/limits$/,
+    handler: (_, body) => apiPutAiLimits(body),
+  },
 
   // Test-run streaming (no-op in demo mode; only terminal-status runs exist)
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/stream$/, handler: () => Promise.resolve({ ok: true }) },
@@ -251,10 +278,30 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/links$/,
-    handler: (_q, _m, _body) => {
-      // No-op in demo — links are embedded in run/test-case responses
-      return Promise.resolve({ links: [] });
+    handler: (_, __, q) => {
+      const entityType = q?.get('entityType') ?? '';
+      const entityId = parseInt(q?.get('entityId') ?? '0', 10);
+      if (!['test_run', 'test_runs_case', 'test_case'].includes(entityType) || !entityId) {
+        throw new Error('Invalid entityType or entityId');
+      }
+      return apiGetLinks(entityType, entityId);
     },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/links$/,
+    handler: (_, body) => apiCreateLink(body as Parameters<typeof apiCreateLink>[0]),
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/links\/(\d+)$/,
+    handler: (m, body) => apiPatchLink(+m[1]!, body as Parameters<typeof apiPatchLink>[1]),
+  },
+  { method: 'DELETE', pattern: /^\/api\/links\/(\d+)$/, handler: (m) => apiDeleteLink(+m[1]!) },
+  {
+    method: 'POST',
+    pattern: /^\/api\/links\/(\d+)\/refresh$/,
+    handler: (m) => apiRefreshLink(+m[1]!),
   },
 
   // Search

@@ -121,6 +121,14 @@ export async function apiGetClusterCommits(_id: number) {
 }
 
 /**
+ * GET /api/failure-clusters/:id/branches
+ * No SCM access in demo mode — return an empty branches list.
+ */
+export async function apiGetClusterBranches(_id: number) {
+  return { branches: [] };
+}
+
+/**
  * GET /api/failure-clusters/:id/commit-diff
  * Not available without SCM access in demo mode.
  */

@@ -387,6 +387,46 @@ export async function apiDeleteTag(id: number) {
   return { success: true };
 }
 
+/** GET /api/projects/menu — slim list for sidebar navigation */
+export async function apiGetProjectMenu() {
+  const db = await getDemoDb();
+  return db
+    .select({ id: projects.id, name: projects.name, label: projects.label })
+    .from(projects)
+    .orderBy(desc(projects.updatedAt));
+}
+
+/** DELETE /api/projects/:id */
+export async function apiDeleteProject(id: number) {
+  const db = await getDemoDb();
+
+  const existing = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, id));
+  if (!existing[0]) throw new Error('Project not found');
+
+  const runRows = await db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.projectId, id));
+  const runIds = runRows.map((r) => r.id);
+
+  if (runIds.length > 0) {
+    const caseRows = await db
+      .select({ id: testRunsCases.id })
+      .from(testRunsCases)
+      .where(inArray(testRunsCases.testRunId, runIds));
+    const caseIds = caseRows.map((c) => c.id);
+
+    if (caseIds.length > 0) {
+      await db.delete(files).where(inArray(files.testRunsCaseId, caseIds));
+    }
+
+    await db.delete(files).where(inArray(files.testRunId, runIds));
+    await db.delete(testRunsCases).where(inArray(testRunsCases.testRunId, runIds));
+    await db.delete(testRuns).where(eq(testRuns.projectId, id));
+  }
+
+  await db.delete(testCases).where(eq(testCases.projectId, id));
+  await db.delete(projects).where(eq(projects.id, id));
+  return { success: true };
+}
+
 /** GET /api/projects/:id/failure-clusters */
 export async function apiGetProjectFailureClusters(id: number) {
   const db = await getDemoDb();
