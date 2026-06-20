@@ -16,7 +16,7 @@ const { data: groups, pending: loading } = await useFetch<FailureGroup[]>(`/api/
 });
 
 const diagnosisClusterId = ref<number | null>(null);
-const { copy } = useCopy();
+const { copy, copied } = useCopy();
 
 const allFailedCases = computed(() => {
   if (!groups.value) return [];
@@ -32,8 +32,10 @@ const allFailedCases = computed(() => {
   );
 });
 
+const retryCommand = computed(() => buildRetryCommand(allFailedCases.value));
+
 function copyRetryCommand() {
-  const cmd = buildRetryCommand(allFailedCases.value);
+  const cmd = retryCommand.value;
   if (cmd) copy(cmd, { toast: 'Retry command copied' });
 }
 
@@ -69,7 +71,8 @@ const totalCases = computed(() => groups.value?.reduce((sum, g) => sum + g.caseC
           size="xs"
           variant="outline"
           color="neutral"
-          icon="i-lucide-play"
+          :icon="copied ? 'i-lucide-check' : 'i-lucide-play'"
+          :title="copied ? 'Copied!' : copyPreview(retryCommand)"
           @click="copyRetryCommand()"
         >
           Copy retry command

@@ -36,7 +36,6 @@ defineProps<{
   blockColSpanClass: string;
   traces?: TraceInfo[];
   attachments?: AttachmentInfo[];
-  links?: EntityLinkInfo[] | null;
   stableLinks?: EntityLinkInfo[] | null;
 }>();
 
@@ -257,33 +256,6 @@ function fileName(path: string): string {
         </div>
       </UCard>
 
-      <!-- Entity links: run links -->
-      <UCard v-if="(links?.length ?? 0) > 0" :class="blockColSpanClass">
-        <template #header>
-          <div class="flex items-center gap-2">
-            <UIcon name="i-lucide-link" class="w-4 h-4 text-primary" />
-            <span class="text-sm font-medium">Run links</span>
-          </div>
-        </template>
-        <EntityLinks v-if="testCase?.id" entity-type="test_runs_case" :entity-id="testCase.id" :links="links ?? null" />
-      </UCard>
-
-      <!-- Entity links: stable test case links -->
-      <UCard v-if="(stableLinks?.length ?? 0) > 0" :class="blockColSpanClass">
-        <template #header>
-          <div class="flex items-center gap-2">
-            <UIcon name="i-lucide-bookmark" class="w-4 h-4 text-primary" />
-            <span class="text-sm font-medium">Test case links</span>
-          </div>
-        </template>
-        <EntityLinks
-          v-if="testCase?.id"
-          entity-type="test_case"
-          :entity-id="testCase.id"
-          :links="stableLinks ?? null"
-        />
-      </UCard>
-
       <!-- Storage: traces + attachments -->
       <UCard v-if="(traces?.length ?? 0) > 0 || (attachments?.length ?? 0) > 0" :class="blockColSpanClass">
         <template #header>
@@ -354,6 +326,22 @@ function fileName(path: string): string {
             </div>
           </div>
         </div>
+      </UCard>
+
+      <!-- Links -->
+      <UCard :class="blockColSpanClass">
+        <template #header>
+          <div class="flex items-center gap-2">
+            <UIcon name="i-lucide-link" class="w-4 h-4 text-primary" />
+            <span class="text-sm font-medium">Links</span>
+          </div>
+        </template>
+        <EntityLinks
+          v-if="testCase?.id"
+          entity-type="test_case"
+          :entity-id="testCase.id"
+          :links="stableLinks ?? null"
+        />
       </UCard>
     </div>
   </FoldableSummary>

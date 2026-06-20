@@ -14,7 +14,8 @@ const { copy, copied } = useCopy();
         size="xs"
         color="neutral"
         variant="ghost"
-        label="Copy"
+        :label="copied ? 'Copied!' : 'Copy'"
+        :title="copied ? 'Copied!' : copyPreview(prompt)"
         @click="copy(prompt)"
       />
     </template>

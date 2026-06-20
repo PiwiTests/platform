@@ -53,6 +53,11 @@ async function copyRetryCommand() {
   }, 2000);
 }
 
+const retryTitle = computed(() => {
+  if (retryCopied.value) return 'Copied!';
+  return copyPreview(buildRetry());
+});
+
 function buildRunSummary() {
   const run = props.testRun;
   if (!run) return '';
@@ -282,13 +287,14 @@ function onLabelKeydown(e: KeyboardEvent) {
                     <UPopover v-if="failedCases.length > 0">
                       <UButton
                         size="xs"
-                        variant="ghost"
-                        color="neutral"
+                        color="warning"
+                        variant="subtle"
                         :icon="retryCopied ? 'i-lucide-check' : 'i-lucide-play'"
-                        class="shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                        :title="retryCopied ? 'Copied!' : 'Copy retry command'"
+                        :title="retryTitle"
                         @click="copyRetryCommand()"
-                      />
+                      >
+                        Retry
+                      </UButton>
                       <template #content>
                         <div class="p-2 space-y-1 min-w-32">
                           <p class="text-xs font-medium text-gray-500 px-2 py-1">Mode</p>
@@ -487,7 +493,8 @@ function onLabelKeydown(e: KeyboardEvent) {
           testRun?.metadata?.tags?.length ||
           testRun?.metadata?.projectDescription ||
           testRun?.metadata?.relatedIssue ||
-          testRun?.metadata?.customData
+          testRun?.metadata?.customData ||
+          testRun?.links?.length
         "
         :class="blockColSpanClass"
       >
@@ -512,14 +519,12 @@ function onLabelKeydown(e: KeyboardEvent) {
             <UIcon name="i-lucide-link" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
             <span>{{ testRun.metadata.relatedIssue }}</span>
           </p>
-          <div v-if="testRun.links || testRun.id" class="flex flex-wrap gap-1.5">
-            <EntityLinks
-              entity-type="test_run"
-              :entity-id="testRun.id"
-              :links="testRun.links ?? null"
-              @updated="$emit('label-updated')"
-            />
-          </div>
+          <EntityLinks
+            entity-type="test_run"
+            :entity-id="testRun.id"
+            :links="testRun.links ?? null"
+            @updated="$emit('label-updated')"
+          />
           <UButton
             v-if="testRun.metadata.customData"
             size="xs"

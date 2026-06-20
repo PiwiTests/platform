@@ -50,7 +50,7 @@ const highlighted = computed(() => {
       color="neutral"
       variant="ghost"
       :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
-      title="Copy to clipboard"
+      :title="copied ? 'Copied!' : copyPreview(code)"
       class="absolute top-1.5 right-1.5 opacity-40 hover:opacity-100 transition-opacity"
       @click="copy(code, { toast: true })"
     />

@@ -68,7 +68,7 @@ const failingSteps = computed(() => {
 
 const showSteps = ref(false);
 const showAriaSnapshot = ref(false);
-const { copy } = useCopy();
+const { copy, copied } = useCopy();
 
 const clusterCases = computed(() =>
   props.affectedTestCases.map((tc) => ({
@@ -79,8 +79,10 @@ const clusterCases = computed(() =>
   })),
 );
 
+const retryCommand = computed(() => buildRetryCommand(clusterCases.value));
+
 function copyRetryCommand() {
-  const cmd = buildRetryCommand(clusterCases.value);
+  const cmd = retryCommand.value;
   if (cmd) copy(cmd, { toast: 'Retry command copied' });
 }
 </script>
@@ -112,7 +114,14 @@ function copyRetryCommand() {
     <p v-if="selectedCase" class="text-xs font-mono text-gray-400 truncate">{{ selectedCase.filePath }}</p>
 
     <div v-if="affectedTestCases.length > 0" class="flex justify-end">
-      <UButton size="xs" variant="outline" color="neutral" icon="i-lucide-play" @click="copyRetryCommand()">
+      <UButton
+        size="xs"
+        variant="outline"
+        color="neutral"
+        :icon="copied ? 'i-lucide-check' : 'i-lucide-play'"
+        :title="copied ? 'Copied!' : copyPreview(retryCommand)"
+        @click="copyRetryCommand()"
+      >
         Copy retry command
       </UButton>
     </div>
