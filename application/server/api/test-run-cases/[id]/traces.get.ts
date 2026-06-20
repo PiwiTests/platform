@@ -1,7 +1,8 @@
 import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
-import { testRunsCases, files } from '../../../database/schema';
-import { eq, sql } from 'drizzle-orm';
+import { testRunsCases } from '../../../database/schema';
+import { eq } from 'drizzle-orm';
+import { getTestRunCaseTraces } from '~~/shared/handlers/test-cases';
 import { Role } from '../../../../shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
@@ -28,25 +29,9 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
-
-  const testRunsCaseResults = await db.select().from(testRunsCases).where(eq(testRunsCases.id, id));
-  const testRunsCase = testRunsCaseResults[0];
-
-  if (!testRunsCase) {
-    throw createError({
-      statusCode: 404,
-      message: 'Test run case not found',
-    });
+  const [exists] = await db.select({ id: testRunsCases.id }).from(testRunsCases).where(eq(testRunsCases.id, id));
+  if (!exists) {
+    throw createError({ statusCode: 404, message: 'Test run case not found' });
   }
-
-  const traceRows = await db
-    .select()
-    .from(files)
-    .where(sql`${files.testRunsCaseId} = ${id} AND ${files.type} = 'trace'`);
-
-  return traceRows.map((t) => ({
-    id: t.id,
-    filePath: t.path,
-    createdAt: t.createdAt,
-  }));
+  return getTestRunCaseTraces(db, id);
 });

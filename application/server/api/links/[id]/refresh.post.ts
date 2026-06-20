@@ -2,8 +2,8 @@ import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
 import { entityLinks } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
+import { refreshLinkMeta } from '~~/shared/handlers/links';
 import { Role } from '../../../../shared/types';
-import { detectProvider, extractKey } from '../../../../shared/link-detect';
 import { unfurlUrl } from '../../../utils/unfurl';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
@@ -28,23 +28,26 @@ export default eventHandler(async (event) => {
 
   const db = await getDatabase();
 
-  const existing = await db.select().from(entityLinks).where(eq(entityLinks.id, id));
-  if (!existing[0]) {
-    throw createError({ statusCode: 404, message: 'Link not found' });
+  let result: { link: any };
+  try {
+    result = await refreshLinkMeta(db, id);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to refresh link';
+    const statusCode = message === 'Link not found' ? 404 : 400;
+    throw createError({ statusCode, message });
   }
 
-  const link = existing[0];
-  const provider = detectProvider(link.url);
-  const key = extractKey(link.url, provider);
+  const link = result.link;
+  if (!link) {
+    throw createError({ statusCode: 500, message: 'Failed to refresh link' });
+  }
 
-  // Generic unfurl: fetch the page and extract title
+  // Unfurl enrichment (server-only)
   const { title, statusText, statusColor } = await unfurlUrl(link.url);
 
   await db
     .update(entityLinks)
     .set({
-      provider,
-      key,
       title: title ?? link.title,
       statusText: statusText ?? link.statusText,
       statusColor: statusColor ?? link.statusColor,

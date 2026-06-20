@@ -1,6 +1,7 @@
 import { getDatabase } from '../../database';
 import { users } from '../../database/schema';
 import { eq } from 'drizzle-orm';
+import { deleteUserRecord } from '~~/shared/handlers/users';
 import { requireAuth, isAuthEnabled } from '../../utils/auth';
 import { Role } from '../../../shared/types';
 
@@ -18,7 +19,6 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  // If auth is enabled, require administrator role
   const currentUser = await requireAuth(event, REQUIRED_ROLES);
 
   const id = parseInt(getRouterParam(event, 'id') || '0');
@@ -32,16 +32,6 @@ export default eventHandler(async (event) => {
 
   const db = await getDatabase();
 
-  // Check if user exists
-  const userResults = await db.select().from(users).where(eq(users.id, id));
-  const targetUser = userResults[0];
-  if (!targetUser) {
-    throw createError({
-      statusCode: 404,
-      message: 'User not found',
-    });
-  }
-
   // Guard against lockout (only meaningful when authentication is enabled)
   if (isAuthEnabled(event)) {
     if (currentUser.id === id) {
@@ -50,6 +40,16 @@ export default eventHandler(async (event) => {
         message: 'You cannot delete your own account',
       });
     }
+
+    const userResults = await db.select().from(users).where(eq(users.id, id));
+    const targetUser = userResults[0];
+    if (!targetUser) {
+      throw createError({
+        statusCode: 404,
+        message: 'User not found',
+      });
+    }
+
     if (targetUser.role === Role.ADMINISTRATOR) {
       const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, Role.ADMINISTRATOR));
       if (admins.length <= 1) {
@@ -61,10 +61,11 @@ export default eventHandler(async (event) => {
     }
   }
 
-  // Delete user
-  await db.delete(users).where(eq(users.id, id));
-
-  return {
-    success: true,
-  };
+  try {
+    return await deleteUserRecord(db, id);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to delete user';
+    const statusCode = message === 'User not found' ? 404 : 400;
+    throw createError({ statusCode, message });
+  }
 });

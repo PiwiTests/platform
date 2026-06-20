@@ -1,6 +1,5 @@
 import { getDatabase } from '../../../../database';
-import { apiKeys, users } from '../../../../database/schema';
-import { eq } from 'drizzle-orm';
+import { listUserApiKeys } from '~~/shared/handlers/users';
 import { requireAuth } from '../../../../utils/auth';
 import { Role } from '../../../../../shared/types';
 
@@ -29,25 +28,5 @@ export default eventHandler(async (event) => {
     throw createError({ statusCode: 403, message: 'Insufficient permissions' });
   }
 
-  const db = await getDatabase();
-
-  // Verify target user exists
-  const targetUsers = await db.select({ id: users.id }).from(users).where(eq(users.id, targetId));
-  if (!targetUsers[0]) {
-    throw createError({ statusCode: 404, message: 'User not found' });
-  }
-
-  const keys = await db
-    .select({
-      id: apiKeys.id,
-      name: apiKeys.name,
-      keyPrefix: apiKeys.keyPrefix,
-      createdAt: apiKeys.createdAt,
-      lastUsedAt: apiKeys.lastUsedAt,
-      expiresAt: apiKeys.expiresAt,
-    })
-    .from(apiKeys)
-    .where(eq(apiKeys.userId, targetId));
-
-  return { apiKeys: keys };
+  return listUserApiKeys(await getDatabase(), targetId);
 });

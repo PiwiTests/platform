@@ -1,10 +1,8 @@
 import { requireAuth } from '../../utils/auth';
 import { getDatabase } from '../../database';
-import { entityLinks } from '../../database/schema';
-import { eq } from 'drizzle-orm';
+import { patchLink } from '~~/shared/handlers/links';
 import { z } from 'zod';
 import { Role } from '../../../shared/types';
-import { detectProvider, extractKey } from '../../../shared/link-detect';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
 
@@ -31,13 +29,6 @@ export default eventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Invalid link ID' });
   }
 
-  const db = await getDatabase();
-
-  const existing = await db.select().from(entityLinks).where(eq(entityLinks.id, id));
-  if (!existing[0]) {
-    throw createError({ statusCode: 404, message: 'Link not found' });
-  }
-
   const body = await readBody(event);
   const validation = updateLinkSchema.safeParse(body);
 
@@ -49,21 +40,12 @@ export default eventHandler(async (event) => {
     });
   }
 
-  const updates: Record<string, unknown> = { updatedAt: new Date() };
-
-  if (validation.data.url !== undefined) {
-    updates.url = validation.data.url;
-    const detectedProvider = detectProvider(validation.data.url);
-    updates.provider = detectedProvider;
-    updates.key = extractKey(validation.data.url, detectedProvider);
+  try {
+    const db = await getDatabase();
+    return await patchLink(db, id, validation.data);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to update link';
+    const statusCode = message === 'Link not found' ? 404 : 400;
+    throw createError({ statusCode, message });
   }
-
-  if (validation.data.title !== undefined) {
-    updates.title = validation.data.title;
-  }
-
-  await db.update(entityLinks).set(updates).where(eq(entityLinks.id, id));
-
-  const updated = await db.select().from(entityLinks).where(eq(entityLinks.id, id));
-  return { link: updated[0] };
 });

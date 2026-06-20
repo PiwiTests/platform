@@ -1,6 +1,5 @@
 import { getDatabase } from '../../database';
-import { tags } from '../../database/schema';
-import { eq } from 'drizzle-orm';
+import { deleteTag } from '~~/shared/handlers/tags';
 import { requireAuth } from '../../utils/auth';
 import { Role } from '../../../shared/types';
 
@@ -24,14 +23,12 @@ export default eventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Invalid tag ID' });
   }
 
-  const db = await getDatabase();
-
-  const existing = await db.select().from(tags).where(eq(tags.id, id));
-  if (!existing[0]) {
-    throw createError({ statusCode: 404, message: 'Tag not found' });
+  try {
+    const db = await getDatabase();
+    return await deleteTag(db, id);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to delete tag';
+    const statusCode = message === 'Tag not found' ? 404 : 400;
+    throw createError({ statusCode, message });
   }
-
-  await db.delete(tags).where(eq(tags.id, id));
-
-  return { success: true };
 });

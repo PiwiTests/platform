@@ -1,10 +1,10 @@
 import { requireAuth } from '../../utils/auth';
 import { getDatabase } from '../../database';
-import { entityLinks, testRuns, testRunsCases, testCases } from '../../database/schema';
+import { entityLinks } from '../../database/schema';
 import { eq } from 'drizzle-orm';
+import { createLink } from '~~/shared/handlers/links';
 import { z } from 'zod';
 import { Role } from '../../../shared/types';
-import { detectProvider, extractKey } from '../../../shared/link-detect';
 import { unfurlUrl } from '../../utils/unfurl';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
@@ -43,48 +43,22 @@ export default eventHandler(async (event) => {
   const { entityType, entityId, url, title } = validation.data;
   const db = await getDatabase();
 
-  // Validate the referenced entity exists
-  let exists = false;
-  if (entityType === 'test_run') {
-    const row = await db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.id, entityId));
-    exists = row.length > 0;
-  } else if (entityType === 'test_runs_case') {
-    const row = await db.select({ id: testRunsCases.id }).from(testRunsCases).where(eq(testRunsCases.id, entityId));
-    exists = row.length > 0;
-  } else {
-    const row = await db.select({ id: testCases.id }).from(testCases).where(eq(testCases.id, entityId));
-    exists = row.length > 0;
+  let result: { link: any };
+  try {
+    result = await createLink(db, { entityType, entityId, url, title });
+  } catch (err) {
+    throw createError({
+      statusCode: 404,
+      message: err instanceof Error ? err.message : 'Failed to create link',
+    });
   }
 
-  if (!exists) {
-    throw createError({ statusCode: 404, message: `${entityType} not found` });
+  const inserted = result.link;
+  if (!inserted) {
+    throw createError({ statusCode: 500, message: 'Failed to create link' });
   }
 
-  // Detect provider and key from URL
-  const provider = detectProvider(url);
-  const key = extractKey(url, provider);
-
-  const fkColumn =
-    entityType === 'test_run'
-      ? { testRunId: entityId }
-      : entityType === 'test_runs_case'
-        ? { testRunsCaseId: entityId }
-        : { testCaseId: entityId };
-
-  const result = await db
-    .insert(entityLinks)
-    .values({
-      ...fkColumn,
-      url,
-      provider,
-      key,
-      title: title ?? null,
-    })
-    .returning();
-
-  const inserted = result[0]!;
-
-  // Best-effort unfurl
+  // Best-effort unfurl (server-only enrichment)
   const { title: fetchedTitle, statusText, statusColor } = await unfurlUrl(url);
   if (fetchedTitle || statusText) {
     await db

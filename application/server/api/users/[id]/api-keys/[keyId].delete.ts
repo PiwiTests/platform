@@ -1,6 +1,5 @@
 import { getDatabase } from '../../../../database';
-import { apiKeys } from '../../../../database/schema';
-import { eq, and } from 'drizzle-orm';
+import { deleteUserApiKeyRecord } from '~~/shared/handlers/users';
 import { requireAuth } from '../../../../utils/auth';
 import { Role } from '../../../../../shared/types';
 
@@ -34,18 +33,12 @@ export default eventHandler(async (event) => {
     throw createError({ statusCode: 403, message: 'Insufficient permissions' });
   }
 
-  const db = await getDatabase();
-
-  // Verify the key exists and belongs to the target user
-  const keyResults = await db
-    .select()
-    .from(apiKeys)
-    .where(and(eq(apiKeys.id, keyId), eq(apiKeys.userId, targetId)));
-  if (!keyResults[0]) {
-    throw createError({ statusCode: 404, message: 'API key not found' });
+  try {
+    const db = await getDatabase();
+    return await deleteUserApiKeyRecord(db, targetId, keyId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to delete API key';
+    const statusCode = message === 'API key not found' ? 404 : 400;
+    throw createError({ statusCode, message });
   }
-
-  await db.delete(apiKeys).where(eq(apiKeys.id, keyId));
-
-  return { success: true };
 });

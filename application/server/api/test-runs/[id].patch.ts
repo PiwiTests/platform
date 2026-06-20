@@ -1,6 +1,5 @@
 import { getDatabase } from '../../database';
-import { testRuns } from '../../database/schema';
-import { eq } from 'drizzle-orm';
+import { patchTestRun } from '~~/shared/handlers/test-runs';
 import { requireAuth } from '../../utils/auth';
 import { Role } from '../../../shared/types';
 
@@ -51,25 +50,12 @@ export default eventHandler(async (event) => {
 
   const db = await getDatabase();
 
-  const existing = await db.select().from(testRuns).where(eq(testRuns.id, id));
-  if (!existing[0]) {
-    throw createError({
-      statusCode: 404,
-      message: 'Test run not found',
-    });
+  try {
+    return await patchTestRun(db, id, body.label);
+  } catch (err: any) {
+    if (err?.message === 'Test run not found') {
+      throw createError({ statusCode: 404, message: 'Test run not found' });
+    }
+    throw err;
   }
-
-  await db
-    .update(testRuns)
-    .set({
-      label: body.label ?? null,
-      updatedAt: new Date(),
-    })
-    .where(eq(testRuns.id, id));
-
-  return {
-    success: true,
-    testRunId: id,
-    label: body.label ?? null,
-  };
 });

@@ -1,8 +1,7 @@
 import { getDatabase } from '../../database';
-import { projects, tags, projectTags } from '../../database/schema';
-import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireAuth } from '../../utils/auth';
+import { createProject } from '~~/shared/handlers/projects';
 import { Role } from '../../../shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
@@ -41,29 +40,15 @@ export default eventHandler(async (event) => {
   const { name, label, description, tagIds } = validation.data;
   const db = await getDatabase();
 
-  // Check if a project with this name already exists
-  const existing = await db.select().from(projects).where(eq(projects.name, name));
-  if (existing.length > 0) {
-    throw createError({
-      statusCode: 400,
-      message: 'A project with this name already exists',
-    });
-  }
-
-  const result = await db.insert(projects).values({ name, label, description }).returning();
-  const project = result[0]!;
-
-  // Link tags if provided
-  if (tagIds && tagIds.length > 0) {
-    const existingTags = await db.select().from(tags).where(inArray(tags.id, tagIds));
-    if (existingTags.length !== tagIds.length) {
-      throw createError({
-        statusCode: 400,
-        message: 'One or more tag IDs are invalid',
-      });
+  try {
+    return await createProject(db, name, label, description, tagIds);
+  } catch (e: any) {
+    if (e?.message === 'A project with this name already exists') {
+      throw createError({ statusCode: 400, message: e.message });
     }
-    await db.insert(projectTags).values(tagIds.map((tagId) => ({ projectId: project.id, tagId })));
+    if (e?.message === 'One or more tag IDs are invalid') {
+      throw createError({ statusCode: 400, message: e.message });
+    }
+    throw e;
   }
-
-  return { project };
 });

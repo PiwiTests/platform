@@ -1,7 +1,8 @@
 import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
-import { testRuns, testRunsCases, testCases } from '../../../database/schema';
-import { eq, desc } from 'drizzle-orm';
+import { testCases } from '../../../database/schema';
+import { eq } from 'drizzle-orm';
+import { getTestCaseHistory } from '~~/shared/handlers/test-cases';
 import { Role } from '../../../../shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
@@ -29,32 +30,9 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
-
   const [testCase] = await db.select({ id: testCases.id }).from(testCases).where(eq(testCases.id, id));
-
   if (!testCase) {
-    throw createError({
-      statusCode: 404,
-      message: 'Test case not found',
-    });
+    throw createError({ statusCode: 404, message: 'Test case not found' });
   }
-
-  const history = await db
-    .select({
-      id: testRunsCases.id,
-      runId: testRuns.id,
-      status: testRunsCases.status,
-      duration: testRunsCases.duration,
-      error: testRunsCases.error,
-      retries: testRunsCases.retries,
-      startTime: testRuns.startTime,
-      runStatus: testRuns.status,
-    })
-    .from(testRunsCases)
-    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(eq(testRunsCases.testCaseId, id))
-    .orderBy(desc(testRuns.startTime))
-    .limit(50);
-
-  return history;
+  return getTestCaseHistory(db, id);
 });

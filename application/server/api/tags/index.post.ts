@@ -1,6 +1,5 @@
 import { getDatabase } from '../../database';
-import { tags } from '../../database/schema';
-import { eq } from 'drizzle-orm';
+import { createTag } from '~~/shared/handlers/tags';
 import { z } from 'zod';
 import { requireAuth } from '../../utils/auth';
 import { Role } from '../../../shared/types';
@@ -36,18 +35,14 @@ export default eventHandler(async (event) => {
   }
 
   const { text, color } = validation.data;
-  const db = await getDatabase();
 
-  // Check if tag text already exists
-  const existing = await db.select().from(tags).where(eq(tags.text, text));
-  if (existing.length > 0) {
+  try {
+    const db = await getDatabase();
+    return await createTag(db, text, color);
+  } catch (err) {
     throw createError({
       statusCode: 400,
-      message: 'A tag with this text already exists',
+      message: err instanceof Error ? err.message : 'Failed to create tag',
     });
   }
-
-  const result = await db.insert(tags).values({ text, color }).returning();
-
-  return { tag: result[0] };
 });

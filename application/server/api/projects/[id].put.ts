@@ -1,8 +1,7 @@
 import { getDatabase } from '../../database';
-import { projects, tags, projectTags } from '../../database/schema';
-import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireAuth } from '../../utils/auth';
+import { updateProject } from '~~/shared/handlers/projects';
 import { Role } from '../../../shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
@@ -41,15 +40,6 @@ export default eventHandler(async (event) => {
 
   const db = await getDatabase();
 
-  // Check if project exists
-  const projectResults = await db.select().from(projects).where(eq(projects.id, id));
-  if (!projectResults[0]) {
-    throw createError({
-      statusCode: 404,
-      message: 'Project not found',
-    });
-  }
-
   // Parse and validate request body
   const body = await readBody(event);
   const validation = updateProjectSchema.safeParse(body);
@@ -64,48 +54,15 @@ export default eventHandler(async (event) => {
 
   const { label, description, diagnosisInstructions, scmToken, tagIds } = validation.data;
 
-  // Update project
-  await db
-    .update(projects)
-    .set({
-      label,
-      description,
-      diagnosisInstructions: diagnosisInstructions ?? undefined,
-      scmToken: scmToken !== undefined ? scmToken : undefined,
-      updatedAt: new Date(),
-    })
-    .where(eq(projects.id, id));
-
-  // Update project tags if provided
-  if (tagIds !== undefined) {
-    // Remove all existing tags for this project
-    await db.delete(projectTags).where(eq(projectTags.projectId, id));
-
-    if (tagIds.length > 0) {
-      // Validate that all tag IDs exist
-      const existingTags = await db.select().from(tags).where(inArray(tags.id, tagIds));
-      if (existingTags.length !== tagIds.length) {
-        throw createError({
-          statusCode: 400,
-          message: 'One or more tag IDs are invalid',
-        });
-      }
-
-      // Insert new tag associations
-      await db.insert(projectTags).values(tagIds.map((tagId) => ({ projectId: id, tagId })));
+  try {
+    return await updateProject(db, id, { label, description, diagnosisInstructions, scmToken, tagIds });
+  } catch (e: any) {
+    if (e?.message === 'Project not found') {
+      throw createError({ statusCode: 404, message: 'Project not found' });
     }
+    if (e?.message === 'One or more tag IDs are invalid') {
+      throw createError({ statusCode: 400, message: e.message });
+    }
+    throw e;
   }
-
-  // Get updated project with tags
-  const updatedProject = await db.select().from(projects).where(eq(projects.id, id));
-  const projectTagRows = await db
-    .select({ tag: tags })
-    .from(projectTags)
-    .innerJoin(tags, eq(projectTags.tagId, tags.id))
-    .where(eq(projectTags.projectId, id));
-
-  return {
-    ...updatedProject[0],
-    tags: projectTagRows.map((r) => r.tag),
-  };
 });

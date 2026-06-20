@@ -1,7 +1,6 @@
 import { requireAuth } from '../../utils/auth';
 import { getDatabase } from '../../database';
-import { entityLinks } from '../../database/schema';
-import { eq } from 'drizzle-orm';
+import { listLinks } from '~~/shared/handlers/links';
 import { Role } from '../../../shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
@@ -35,15 +34,5 @@ export default eventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Invalid entityType or entityId' });
   }
 
-  const fkColumn =
-    entityType === 'test_run'
-      ? entityLinks.testRunId
-      : entityType === 'test_runs_case'
-        ? entityLinks.testRunsCaseId
-        : entityLinks.testCaseId;
-
-  const db = await getDatabase();
-  const links = await db.select().from(entityLinks).where(eq(fkColumn, entityId));
-
-  return { links };
+  return listLinks(await getDatabase(), entityType, entityId);
 });

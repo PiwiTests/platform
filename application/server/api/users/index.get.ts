@@ -1,5 +1,5 @@
 import { getDatabase } from '../../database';
-import { users } from '../../database/schema';
+import { listUsers } from '~~/shared/handlers/users';
 import { isAuthEnabled, requireAuth } from '../../utils/auth';
 import { Role } from '../../../shared/types';
 
@@ -15,27 +15,11 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  // Require authentication (when enabled) so the user list — usernames and
-  // roles — is not exposed to anonymous callers. When auth is disabled,
-  // requireAuth returns a virtual admin, so this is a no-op.
   await requireAuth(event);
 
-  const db = await getDatabase();
-
-  // Get all users (exclude password field)
-  const allUsers = await db
-    .select({
-      id: users.id,
-      username: users.username,
-      role: users.role,
-      name: users.name,
-      createdAt: users.createdAt,
-      updatedAt: users.updatedAt,
-    })
-    .from(users);
-
+  const result = await listUsers(await getDatabase());
   return {
-    users: allUsers,
+    ...result,
     authEnabled: isAuthEnabled(event),
   };
 });
