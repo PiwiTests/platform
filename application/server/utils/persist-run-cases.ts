@@ -41,6 +41,15 @@ export interface RunCaseInput {
   browser?: unknown;
 }
 
+function resolveBrowserName(browser: unknown): string | null {
+  if (typeof browser === 'string') return browser;
+  if (browser && typeof browser === 'object') {
+    const b = browser as Record<string, unknown>;
+    if (typeof b.projectName === 'string') return b.projectName;
+  }
+  return null;
+}
+
 /** Per-fingerprint accumulator for the batch being persisted. */
 interface PendingCluster {
   fp: ErrorFingerprint;
@@ -323,7 +332,7 @@ export async function persistRunCases(
       testSource: c.testSource ?? null,
       testAnnotations: (c.testAnnotations as any) ?? null,
       browser: c.browser ?? null,
-      browserName: ((c.browser as Record<string, unknown> | null)?.projectName as string | null) ?? null,
+      browserName: resolveBrowserName(c.browser),
       workerIndex: c.workerIndex ?? null,
       shardIndex: c.shardIndex ?? null,
       startedAt: c.startedAt ? new Date(c.startedAt) : null,
