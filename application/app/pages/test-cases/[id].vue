@@ -404,6 +404,8 @@ function copyFailure() {
             :block-col-span-class="blockColSpanClass"
             :traces="traceData ?? []"
             :attachments="(testCase as any)?.attachments ?? []"
+            :links="(testCase as any)?.links ?? null"
+            :stable-links="(testCase as any)?.stableLinks ?? null"
             @refresh="refresh()"
           />
         </template>

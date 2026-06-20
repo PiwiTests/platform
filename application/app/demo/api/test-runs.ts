@@ -12,6 +12,7 @@ import {
   projects,
   files,
   failureClusters,
+  entityLinks,
 } from '~~/server/database/schema.sqlite';
 import { normalizeRoute } from '~~/shared/utils/route';
 import { fetchAndFormatSuites } from '~~/shared/utils/suites';
@@ -110,9 +111,29 @@ export async function apiGetTestRun(id: number) {
     inArray,
   );
 
+  // Fetch entity links for this run and its cases
+  const runsCaseIds = runsCases.map((tc) => tc.id);
+  const linksForRun = await db.select().from(entityLinks).where(eq(entityLinks.testRunId, id));
+
+  const linksForCases =
+    runsCaseIds.length > 0
+      ? await db.select().from(entityLinks).where(inArray(entityLinks.testRunsCaseId, runsCaseIds))
+      : [];
+
+  const caseLinksMap = new Map<number, typeof linksForCases>();
+  for (const link of linksForCases) {
+    if (link.testRunsCaseId != null) {
+      if (!caseLinksMap.has(link.testRunsCaseId)) {
+        caseLinksMap.set(link.testRunsCaseId, []);
+      }
+      caseLinksMap.get(link.testRunsCaseId)!.push(link);
+    }
+  }
+
   return {
     ...testRunPublic,
     project,
+    links: linksForRun,
     reports: reportResults.map((r) => ({
       id: r.id,
       type: r.subtype || r.type,
@@ -120,7 +141,10 @@ export async function apiGetTestRun(id: number) {
       path: r.path,
       size: r.size,
     })),
-    testCases: formattedTestCases,
+    testCases: formattedTestCases.map((tc) => ({
+      ...tc,
+      links: caseLinksMap.get(tc.id) ?? [],
+    })),
     suites,
     storageStats,
   };

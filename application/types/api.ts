@@ -257,6 +257,7 @@ export interface TestRunDetails {
     testCaseFilesSize: number;
     testCaseFilesCount: number;
   };
+  links?: EntityLinkInfo[];
 }
 
 /**
@@ -434,6 +435,7 @@ export interface TestCaseResult {
     channel?: string | null;
     viewport?: { width: number; height: number } | null;
   } | null;
+  links?: EntityLinkInfo[];
 }
 
 /**
@@ -889,6 +891,63 @@ export interface AiSettings {
   hasScmToken: boolean;
   envManaged: boolean;
   customInstructions: string | null;
+}
+
+// ============================================================================
+// Entity Link types (A.4)
+// ============================================================================
+
+/**
+ * Entity link — attach an external URL to a run, test-case run, or test case.
+ * API response type, mirrors the DB row minus internal-only fields.
+ */
+export interface EntityLinkInfo {
+  id: number;
+  testRunId?: number | null;
+  testRunsCaseId?: number | null;
+  testCaseId?: number | null;
+  url: string;
+  provider: string;
+  key?: string | null;
+  title?: string | null;
+  statusText?: string | null;
+  statusColor?: string | null;
+  unfurledAt?: string | Date | null;
+  createdBy?: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Request body for POST /api/links
+ */
+export interface CreateLinkBody {
+  entityType: 'test_run' | 'test_runs_case' | 'test_case';
+  entityId: number;
+  url: string;
+  title?: string | null;
+}
+
+/**
+ * Request body for PATCH /api/links/[id]
+ */
+export interface UpdateLinkBody {
+  url?: string;
+  title?: string | null;
+}
+
+/**
+ * Links API response (list)
+ */
+export interface LinksResponse {
+  links: EntityLinkInfo[];
+}
+
+/**
+ * Single link API response
+ */
+export interface LinkResponse {
+  link: EntityLinkInfo;
 }
 
 // ============================================================================

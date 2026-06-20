@@ -1071,6 +1071,61 @@ const FAILURE_DIAGNOSES = [
   },
 ];
 
+// ── Entity links ────────────────────────────────────────────────────────────
+const ENTITY_LINKS = [
+  {
+    id: 1,
+    test_run_id: 1,
+    test_runs_case_id: null,
+    test_case_id: null,
+    url: 'https://example.atlassian.net/browse/PROJ-123',
+    provider: 'jira',
+    key: 'PROJ-123',
+    title: 'Checkout flow improvements',
+    status_text: null,
+    status_color: null,
+    metadata: null,
+    unfurled_at: null,
+    created_by: null,
+    created_at: ts('2025-04-25T08:30:00'),
+    updated_at: ts('2025-04-25T08:30:00'),
+  },
+  {
+    id: 2,
+    test_run_id: null,
+    test_runs_case_id: null,
+    test_case_id: 1,
+    url: 'https://github.com/example/repo/issues/456',
+    provider: 'github-issue',
+    key: '#456',
+    title: 'Fix credit card checkout timeout',
+    status_text: 'open',
+    status_color: 'neutral',
+    metadata: null,
+    unfurled_at: null,
+    created_by: null,
+    created_at: ts('2025-04-24T10:00:00'),
+    updated_at: ts('2025-04-24T10:00:00'),
+  },
+  {
+    id: 3,
+    test_run_id: null,
+    test_runs_case_id: 5,
+    test_case_id: null,
+    url: 'https://linear.app/team/issue/TEAM-789/paypal-issue',
+    provider: 'linear',
+    key: 'TEAM-789',
+    title: 'PayPal sandbox timeout investigation',
+    status_text: null,
+    status_color: null,
+    metadata: null,
+    unfurled_at: null,
+    created_by: null,
+    created_at: ts('2025-04-25T09:00:00'),
+    updated_at: ts('2025-04-25T09:00:00'),
+  },
+];
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
@@ -1113,6 +1168,9 @@ const lines = [
   '-- Demo AI diagnoses',
   insert('failure_diagnoses', FAILURE_DIAGNOSES),
   '',
+  '-- Entity links',
+  insert('entity_links', ENTITY_LINKS),
+  '',
   '-- Test run cases',
   insert('test_runs_cases', TEST_RUNS_CASES),
   '',
@@ -1146,3 +1204,4 @@ console.log(`   TRC rows   : ${TEST_RUNS_CASES.length}`);
 console.log(`   Reports    : ${REPORTS.length}`);
 console.log(`   Clusters   : ${FAILURE_CLUSTERS.length}`);
 console.log(`   Diagnoses  : ${FAILURE_DIAGNOSES.length}`);
+console.log(`   Links      : ${ENTITY_LINKS.length}`);

@@ -307,6 +307,40 @@ export const files = pgTable(
   }),
 );
 
+// Entity links table - attach external URLs (Jira, GitHub, etc.) to runs, test-case runs, or test cases
+export const entityLinks = pgTable(
+  'entity_links',
+  {
+    id: serial('id').primaryKey(),
+
+    testRunId: integer('test_run_id').references(() => testRuns.id, { onDelete: 'cascade' }),
+    testRunsCaseId: integer('test_runs_case_id').references(() => testRunsCases.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'cascade' }),
+
+    url: text('url').notNull(),
+
+    // Detected nature — drives the icon
+    provider: text('provider').notNull().default('generic'),
+
+    // Smart-link enrichment (best-effort; null until/if unfurled)
+    key: text('key'),
+    title: text('title'),
+    statusText: text('status_text'),
+    statusColor: text('status_color'),
+    metadata: jsonb('metadata'),
+    unfurledAt: timestamp('unfurled_at', { withTimezone: true, mode: 'date' }),
+
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    runIdx: index('idx_entity_links_run').on(t.testRunId),
+    caseRunIdx: index('idx_entity_links_case_run').on(t.testRunsCaseId),
+    caseIdx: index('idx_entity_links_case').on(t.testCaseId),
+  }),
+);
+
 // Tags table - for labeling projects
 export const tags = pgTable(
   'tags',
@@ -421,3 +455,5 @@ export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;
 export type ProjectTag = typeof projectTags.$inferSelect;
 export type NewProjectTag = typeof projectTags.$inferInsert;
+export type EntityLink = typeof entityLinks.$inferSelect;
+export type NewEntityLink = typeof entityLinks.$inferInsert;

@@ -24,6 +24,7 @@ export const {
   traceBlobs,
   tags,
   projectTags,
+  entityLinks,
   users,
   apiKeys,
 } = schema;
@@ -60,4 +61,6 @@ export type {
   NewTag,
   ProjectTag,
   NewProjectTag,
+  EntityLink,
+  NewEntityLink,
 } from './schema.sqlite';

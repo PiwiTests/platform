@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { EntityLinkInfo } from '~~/types/api';
+
 const props = defineProps<{
   testCase: {
     id: number;
@@ -18,6 +20,7 @@ const props = defineProps<{
     diff: number;
     pct: number;
   } | null;
+  stableLinks?: EntityLinkInfo[] | null;
 }>();
 
 const { copy, copied } = useCopy();
@@ -111,6 +114,11 @@ const { copy, copied } = useCopy();
             {{ historicalTiming.pct > 0 ? '+' : '' }}{{ historicalTiming.pct }}%
           </span>
         </p>
+      </div>
+
+      <div v-if="stableLinks || testCase.id" class="pt-3 border-t border-gray-200 dark:border-gray-700">
+        <p class="text-sm text-gray-500 mb-1.5">Links</p>
+        <EntityLinks entity-type="test_case" :entity-id="testCase.id" :links="stableLinks ?? null" />
       </div>
     </div>
   </UCard>

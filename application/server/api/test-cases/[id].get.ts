@@ -8,6 +8,7 @@ import {
   files,
   failureClusters,
   failureDiagnoses,
+  entityLinks,
 } from '../../database/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import { Role } from '../../../shared/types';
@@ -138,6 +139,13 @@ export default eventHandler(async (event) => {
     }
   }
 
+  // Fetch entity links for this test case (stable) and this test-case run
+  const linksForTestCase = testCase
+    ? await db.select().from(entityLinks).where(eq(entityLinks.testCaseId, testCase.id))
+    : [];
+
+  const linksForCaseRun = await db.select().from(entityLinks).where(eq(entityLinks.testRunsCaseId, testRunsCase.id));
+
   // Format the response to match the expected structure
   return {
     id: testRunsCase.id,
@@ -163,5 +171,7 @@ export default eventHandler(async (event) => {
     failureCluster,
     testRun: testRun ? { ...testRun, project, reports: reportList } : testRun,
     attachments: attachmentList,
+    links: linksForCaseRun,
+    stableLinks: linksForTestCase,
   };
 });

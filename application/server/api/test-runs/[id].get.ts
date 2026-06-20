@@ -1,6 +1,6 @@
 import { requireAuth } from '../../utils/auth';
 import { getDatabase } from '../../database';
-import { testRuns, testCases, testRunsCases, testSuites, projects, files } from '../../database/schema';
+import { testRuns, testCases, testRunsCases, testSuites, projects, files, entityLinks } from '../../database/schema';
 import { eq, sql, inArray, and } from 'drizzle-orm';
 import { fetchAndFormatSuites } from '../../../shared/utils/suites';
 import { Role } from '../../../shared/types';
@@ -137,6 +137,25 @@ export default eventHandler(async (event) => {
     browser: tc.browser,
   }));
 
+  // Fetch entity links for this run and its cases
+  const runsCaseIds = runsCases.map((tc) => tc.id);
+  const linksForRun = await db.select().from(entityLinks).where(eq(entityLinks.testRunId, id));
+
+  const linksForCases =
+    runsCaseIds.length > 0
+      ? await db.select().from(entityLinks).where(inArray(entityLinks.testRunsCaseId, runsCaseIds))
+      : [];
+
+  const caseLinksMap = new Map<number, typeof linksForCases>();
+  for (const link of linksForCases) {
+    if (link.testRunsCaseId != null) {
+      if (!caseLinksMap.has(link.testRunsCaseId)) {
+        caseLinksMap.set(link.testRunsCaseId, []);
+      }
+      caseLinksMap.get(link.testRunsCaseId)!.push(link);
+    }
+  }
+
   // Omit streamToken — it is an internal secret and must not be sent to clients
   const { streamToken: _streamToken, ...testRunPublic } = testRun;
 
@@ -150,7 +169,11 @@ export default eventHandler(async (event) => {
       path: r.path,
       size: r.size,
     })),
-    testCases: formattedTestCases,
+    links: linksForRun,
+    testCases: formattedTestCases.map((tc) => ({
+      ...tc,
+      links: caseLinksMap.get(tc.id) ?? [],
+    })),
     suites,
     storageStats,
   };
