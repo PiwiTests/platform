@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui';
 import type { FailureGroup } from '~~/types/api';
+import { buildRetryCommand } from '~/utils/retry-command';
 
 const emit = defineEmits<{
   selectCluster: [clusterId: number];
@@ -15,6 +16,28 @@ const { data: groups, pending: loading } = await useFetch<FailureGroup[]>(`/api/
 });
 
 const diagnosisClusterId = ref<number | null>(null);
+const { copy, copied } = useCopy();
+
+const allFailedCases = computed(() => {
+  if (!groups.value) return [];
+  return groups.value.flatMap((g) =>
+    g.cases
+      .filter((c) => !c.passedOnRetry)
+      .map((c) => ({
+        filePath: c.filePath,
+        title: c.title,
+        line: null,
+        projectName: null,
+      })),
+  );
+});
+
+const retryCommand = computed(() => buildRetryCommand(allFailedCases.value));
+
+function copyRetryCommand() {
+  const cmd = retryCommand.value;
+  if (cmd) copy(cmd, { toast: 'Retry command copied' });
+}
 
 const columns: TableColumn<FailureGroup>[] = [
   { accessorKey: 'signature', header: createSortHeader<FailureGroup>('Signature') },
@@ -38,10 +61,23 @@ const totalCases = computed(() => groups.value?.reduce((sum, g) => sum + g.caseC
     </div>
 
     <template v-else-if="groups && groups.length">
-      <p class="text-sm text-gray-500 dark:text-gray-400">
-        {{ totalCases }} failing {{ totalCases === 1 ? 'test' : 'tests' }} across {{ groups.length }}
-        {{ groups.length === 1 ? 'group' : 'groups' }} — each group likely shares one root cause
-      </p>
+      <div class="flex items-center justify-between gap-3">
+        <p class="text-sm text-gray-500 dark:text-gray-400">
+          {{ totalCases }} failing {{ totalCases === 1 ? 'test' : 'tests' }} across {{ groups.length }}
+          {{ groups.length === 1 ? 'group' : 'groups' }} — each group likely shares one root cause
+        </p>
+        <UButton
+          v-if="allFailedCases.length > 0"
+          size="xs"
+          variant="outline"
+          color="neutral"
+          :icon="copied ? 'i-lucide-check' : 'i-lucide-play'"
+          :title="copied ? 'Copied!' : copyPreview(retryCommand)"
+          @click="copyRetryCommand()"
+        >
+          Copy retry command
+        </UButton>
+      </div>
 
       <UCard :ui="{ body: 'p-0 sm:p-0' }">
         <UTable :data="groups" :columns="columns">

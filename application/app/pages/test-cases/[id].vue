@@ -127,6 +127,7 @@ const { summaryColSpanClass, blockColSpanClass } = useDetailGrid(() => {
     ((testCase.value as { attachments?: { length: number } } | null)?.attachments?.length ?? 0) > 0
   )
     count++;
+  count++; // Links card is always visible
   return count;
 });
 
@@ -404,6 +405,7 @@ function copyFailure() {
             :block-col-span-class="blockColSpanClass"
             :traces="traceData ?? []"
             :attachments="(testCase as any)?.attachments ?? []"
+            :stable-links="(testCase as any)?.stableLinks ?? null"
             @refresh="refresh()"
           />
         </template>

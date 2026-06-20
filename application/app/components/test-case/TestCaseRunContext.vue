@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { EntityLinkInfo } from '~~/types/api';
+
 defineProps<{
   testRun?: {
     environment?: string | null;
@@ -21,6 +23,8 @@ defineProps<{
     browserName?: string;
     viewport?: { width?: number; height?: number };
   } | null;
+  entityId?: number | null;
+  links?: EntityLinkInfo[] | null;
 }>();
 </script>
 
@@ -94,6 +98,10 @@ defineProps<{
           {{ scmInfo.author }}
         </p>
       </div>
+    </div>
+    <div v-if="entityId" class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">Links</p>
+      <EntityLinks entity-type="test_runs_case" :entity-id="entityId" :links="links ?? null" />
     </div>
   </SectionCard>
 </template>

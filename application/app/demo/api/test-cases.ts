@@ -4,7 +4,15 @@
 
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { getDemoDb } from '../db.client';
-import { testCases, testRunsCases, testRuns, projects, files, failureClusters } from '~~/server/database/schema.sqlite';
+import {
+  testCases,
+  testRunsCases,
+  testRuns,
+  projects,
+  files,
+  failureClusters,
+  entityLinks,
+} from '~~/server/database/schema.sqlite';
 
 /** GET /api/test-cases/:id — returns a single test_runs_case (not test_case) */
 export async function apiGetTestCase(id: number) {
@@ -67,6 +75,13 @@ export async function apiGetTestCase(id: number) {
     }
   }
 
+  // Fetch entity links for this test case (stable) and this test-case run
+  const linksForTestCase = testCase
+    ? await db.select().from(entityLinks).where(eq(entityLinks.testCaseId, testCase.id))
+    : [];
+
+  const linksForCaseRun = await db.select().from(entityLinks).where(eq(entityLinks.testRunsCaseId, testRunsCase.id));
+
   return {
     id: testRunsCase.id,
     title: testCase?.title,
@@ -91,6 +106,8 @@ export async function apiGetTestCase(id: number) {
     failureCluster,
     testRun: testRun ? { ...testRun, project, reports: [] } : testRun,
     attachments: attachmentList,
+    links: linksForCaseRun,
+    stableLinks: linksForTestCase,
   };
 }
 

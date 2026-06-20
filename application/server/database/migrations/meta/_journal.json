@@ -64,6 +64,13 @@
       "when": 1781937693830,
       "tag": "0008_lonely_wild_child",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1781940747835,
+      "tag": "0009_massive_lord_hawal",
+      "breakpoints": true
     }
   ]
 }

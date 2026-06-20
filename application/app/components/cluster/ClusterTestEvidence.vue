@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TraceInfo, AttachmentInfo } from '~~/types/api';
+import { buildRetryCommand } from '~/utils/retry-command';
 
 interface AffectedCase {
   testCaseId: number;
@@ -67,6 +68,23 @@ const failingSteps = computed(() => {
 
 const showSteps = ref(false);
 const showAriaSnapshot = ref(false);
+const { copy, copied } = useCopy();
+
+const clusterCases = computed(() =>
+  props.affectedTestCases.map((tc) => ({
+    filePath: tc.filePath,
+    title: tc.title,
+    line: null,
+    projectName: null,
+  })),
+);
+
+const retryCommand = computed(() => buildRetryCommand(clusterCases.value));
+
+function copyRetryCommand() {
+  const cmd = retryCommand.value;
+  if (cmd) copy(cmd, { toast: 'Retry command copied' });
+}
 </script>
 
 <template>
@@ -94,6 +112,19 @@ const showAriaSnapshot = ref(false);
 
     <!-- Test file location -->
     <p v-if="selectedCase" class="text-xs font-mono text-gray-400 truncate">{{ selectedCase.filePath }}</p>
+
+    <div v-if="affectedTestCases.length > 0" class="flex justify-end">
+      <UButton
+        size="xs"
+        variant="outline"
+        color="neutral"
+        :icon="copied ? 'i-lucide-check' : 'i-lucide-play'"
+        :title="copied ? 'Copied!' : copyPreview(retryCommand)"
+        @click="copyRetryCommand()"
+      >
+        Copy retry command
+      </UButton>
+    </div>
 
     <div v-if="loading" class="flex items-center justify-center py-10">
       <UIcon name="i-lucide-loader-circle" class="size-5 animate-spin text-gray-400" />

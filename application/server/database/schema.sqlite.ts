@@ -308,6 +308,46 @@ export const files = sqliteTable(
   }),
 );
 
+// Entity links table - attach external URLs (Jira, GitHub, etc.) to runs, test-case runs, or test cases
+export const entityLinks = sqliteTable(
+  'entity_links',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+
+    testRunId: integer('test_run_id').references(() => testRuns.id, { onDelete: 'cascade' }),
+    testRunsCaseId: integer('test_runs_case_id').references(() => testRunsCases.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'cascade' }),
+
+    url: text('url').notNull(),
+
+    // Detected nature — drives the icon
+    provider: text('provider').notNull().default('generic'),
+    // 'jira' | 'github-issue' | 'github-pr' | 'gitlab-issue' | 'gitlab-mr' |
+    // 'bitbucket' | 'confluence' | 'slack' | 'linear' | 'notion' | 'generic'
+
+    // Smart-link enrichment (best-effort; null until/if unfurled)
+    key: text('key'), // compact id, e.g. 'PROJ-123' or '#456'
+    title: text('title'), // fetched or user-supplied label
+    statusText: text('status_text'), // e.g. 'In Progress', 'open', 'closed'
+    statusColor: text('status_color'), // resolved badge color token (e.g. 'success')
+    metadata: text('metadata', { mode: 'json' }), // raw unfurl payload
+    unfurledAt: integer('unfurled_at', { mode: 'timestamp_ms' }), // last successful fetch
+
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    runIdx: index('idx_entity_links_run').on(t.testRunId),
+    caseRunIdx: index('idx_entity_links_case_run').on(t.testRunsCaseId),
+    caseIdx: index('idx_entity_links_case').on(t.testCaseId),
+  }),
+);
+
 // Tags table - for labeling projects
 export const tags = sqliteTable(
   'tags',
@@ -422,3 +462,5 @@ export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;
 export type ProjectTag = typeof projectTags.$inferSelect;
 export type NewProjectTag = typeof projectTags.$inferInsert;
+export type EntityLink = typeof entityLinks.$inferSelect;
+export type NewEntityLink = typeof entityLinks.$inferInsert;

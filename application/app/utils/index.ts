@@ -414,3 +414,9 @@ export function renderAnsi(text: string): string {
   push(text.slice(last));
   return parts.join('');
 }
+
+export function copyPreview(text: string | null | undefined, max = 120): string {
+  if (!text) return '';
+  const singleLine = text.replace(/\n/g, ' · ');
+  return singleLine.length <= max ? singleLine : singleLine.slice(0, max) + '…';
+}

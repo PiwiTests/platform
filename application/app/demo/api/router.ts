@@ -244,6 +244,16 @@ const routes: RouteEntry[] = [
     handler: (m) => apiDeleteUserApiKey(+m[1]!, +m[2]!),
   },
 
+  // Entity links
+  {
+    method: 'GET',
+    pattern: /^\/api\/links$/,
+    handler: (_q, _m, _body) => {
+      // No-op in demo — links are embedded in run/test-case responses
+      return Promise.resolve({ links: [] });
+    },
+  },
+
   // Search
   { method: 'GET', pattern: /^\/api\/search$/, handler: (_, __, q) => apiSearch(q?.get('q') || '') },
 

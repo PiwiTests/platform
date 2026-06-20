@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { TestRunDetails, ReportInfo } from '~~/types/api';
+import type { RetryMode } from '~/utils/retry-command';
+import { buildRetryCommand } from '~/utils/retry-command';
 
 const props = defineProps<{
   testRun: TestRunDetails;
@@ -22,6 +24,39 @@ const toast = useToast();
 const storageStats = computed(() => props.testRun?.storageStats);
 
 const { copy, copied } = useCopy();
+const retryMode = ref<RetryMode>('file-line');
+const retryCopied = ref(false);
+
+const failedCases = computed(() => {
+  if (!props.testRun?.testCases) return [];
+  return props.testRun.testCases
+    .filter((tc) => tc.status === 'failed' || tc.status === 'timedout')
+    .map((tc) => ({
+      filePath: (tc.filePath || tc.location?.split(':')[0]) ?? '',
+      title: tc.title,
+      line: tc.location ? parseInt(tc.location.split(':')[1] ?? '', 10) || null : null,
+      projectName: (tc.browser as { projectName?: string } | null)?.projectName || null,
+    }));
+});
+
+function buildRetry() {
+  return buildRetryCommand(failedCases.value, { mode: retryMode.value });
+}
+
+async function copyRetryCommand() {
+  const cmd = buildRetry();
+  if (!cmd) return;
+  retryCopied.value = true;
+  await copy(cmd, { toast: 'Retry command copied' });
+  setTimeout(() => {
+    retryCopied.value = false;
+  }, 2000);
+}
+
+const retryTitle = computed(() => {
+  if (retryCopied.value) return 'Copied!';
+  return copyPreview(buildRetry());
+});
 
 function buildRunSummary() {
   const run = props.testRun;
@@ -249,6 +284,32 @@ function onLabelKeydown(e: KeyboardEvent) {
                         @click="copy(buildRunSummary(), { toast: 'Run summary copied' })"
                       />
                     </UTooltip>
+                    <UPopover v-if="failedCases.length > 0">
+                      <UButton
+                        size="xs"
+                        color="warning"
+                        variant="subtle"
+                        :icon="retryCopied ? 'i-lucide-check' : 'i-lucide-play'"
+                        :title="retryTitle"
+                        @click="copyRetryCommand()"
+                      >
+                        Retry
+                      </UButton>
+                      <template #content>
+                        <div class="p-2 space-y-1 min-w-32">
+                          <p class="text-xs font-medium text-gray-500 px-2 py-1">Mode</p>
+                          <button
+                            v-for="m in ['file-line', 'grep', 'file'] as RetryMode[]"
+                            :key="m"
+                            class="w-full text-left px-2 py-1 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-800"
+                            :class="retryMode === m ? 'bg-primary/10 text-primary' : ''"
+                            @click="retryMode = m"
+                          >
+                            {{ m === 'file-line' ? 'File:line' : m === 'grep' ? 'Title (grep)' : 'File only' }}
+                          </button>
+                        </div>
+                      </template>
+                    </UPopover>
                   </div>
                 </div>
               </div>
@@ -432,7 +493,8 @@ function onLabelKeydown(e: KeyboardEvent) {
           testRun?.metadata?.tags?.length ||
           testRun?.metadata?.projectDescription ||
           testRun?.metadata?.relatedIssue ||
-          testRun?.metadata?.customData
+          testRun?.metadata?.customData ||
+          testRun?.links?.length
         "
         :class="blockColSpanClass"
       >
@@ -457,6 +519,12 @@ function onLabelKeydown(e: KeyboardEvent) {
             <UIcon name="i-lucide-link" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
             <span>{{ testRun.metadata.relatedIssue }}</span>
           </p>
+          <EntityLinks
+            entity-type="test_run"
+            :entity-id="testRun.id"
+            :links="testRun.links ?? null"
+            @updated="$emit('label-updated')"
+          />
           <UButton
             v-if="testRun.metadata.customData"
             size="xs"

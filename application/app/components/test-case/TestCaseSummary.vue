@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TestCaseResult, TraceInfo, AttachmentInfo } from '~~/types/api';
+import type { EntityLinkInfo } from '~~/types/api';
 import type { BrowserConfig } from '~~/shared/types';
 
 interface ScmInfo {
@@ -35,6 +36,7 @@ defineProps<{
   blockColSpanClass: string;
   traces?: TraceInfo[];
   attachments?: AttachmentInfo[];
+  stableLinks?: EntityLinkInfo[] | null;
 }>();
 
 defineEmits<{
@@ -324,6 +326,22 @@ function fileName(path: string): string {
             </div>
           </div>
         </div>
+      </UCard>
+
+      <!-- Links -->
+      <UCard :class="blockColSpanClass">
+        <template #header>
+          <div class="flex items-center gap-2">
+            <UIcon name="i-lucide-link" class="w-4 h-4 text-primary" />
+            <span class="text-sm font-medium">Links</span>
+          </div>
+        </template>
+        <EntityLinks
+          v-if="testCase?.id"
+          entity-type="test_case"
+          :entity-id="testCase.id"
+          :links="stableLinks ?? null"
+        />
       </UCard>
     </div>
   </FoldableSummary>
