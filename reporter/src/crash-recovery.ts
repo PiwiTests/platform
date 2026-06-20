@@ -57,6 +57,10 @@ export class CrashRecovery {
 
     console.log('[Piwi Dashboard] Found saved test data from a previous run, uploading...');
 
+    // Strip instanceId so /submit doesn't cancel the current run (which shares
+    // the same instanceId for the same project + hostname combination).
+    delete data.instanceId;
+
     try {
       await httpClient.postJSON('/api/test-runs/submit', data, auth);
       console.log('[Piwi Dashboard] Successfully uploaded saved test data');

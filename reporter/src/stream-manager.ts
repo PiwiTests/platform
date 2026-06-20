@@ -96,11 +96,36 @@ export class StreamManager {
       const shardTotal = shardInfo?.total;
 
       if (setupInfo) {
-        response = await this.httpClient.postJSON(
-          `/api/test-runs/${setupInfo.runId}/begin`,
-          { setupToken: setupInfo.setupToken, totalTests: 0, metadata, playwrightVersion, shardIndex, shardTotal },
-          this._auth,
-        );
+        try {
+          response = await this.httpClient.postJSON(
+            `/api/test-runs/${setupInfo.runId}/begin`,
+            { setupToken: setupInfo.setupToken, totalTests: 0, metadata, playwrightVersion, shardIndex, shardTotal },
+            this._auth,
+          );
+        } catch (beginError: any) {
+          // Stale setupInfo — the run was cancelled (e.g. by crash recovery submit).
+          // Fall back to creating a fresh run instead of silently disabling streaming.
+          if (!beginError.message?.includes('409')) throw beginError;
+          if (this.options.verbose) {
+            console.log(`[Piwi Dashboard] Setup info expired, creating fresh run...`);
+          }
+          response = await this.httpClient.postJSON(
+            '/api/test-runs/start',
+            {
+              projectName: this.options.projectName,
+              projectDescription: this.options.projectDescription,
+              startTime,
+              environment: this.options.environment || null,
+              label: this.options.label || null,
+              metadata,
+              instanceId,
+              playwrightVersion,
+              shardIndex,
+              shardTotal,
+            },
+            this._auth,
+          );
+        }
       } else {
         response = await this.httpClient.postJSON(
           '/api/test-runs/start',
