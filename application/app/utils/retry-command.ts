@@ -14,7 +14,7 @@ function escapeGrep(text: string): string {
 }
 
 function escapeShellArg(arg: string): string {
-  return '"' + arg.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  return '"' + arg.replace(/"/g, '\\"') + '"';
 }
 
 function groupByProject(cases: RetryCase[]): Map<string, RetryCase[]> {

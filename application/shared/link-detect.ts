@@ -53,7 +53,7 @@ const providerPatterns: { provider: LinkProvider; tests: RegExp[]; keyExtract?: 
   {
     provider: 'linear',
     tests: [/^https:\/\/linear\.app\//i],
-    keyExtract: /\/([A-Za-z]+-\d+)(?:\?|$|#)/,
+    keyExtract: /\/([A-Za-z]+-\d+)(?:\/|\?|$|#)/,
   },
   {
     provider: 'notion',

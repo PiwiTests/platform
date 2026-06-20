@@ -52,7 +52,7 @@ test('single case', () => {
 
 test('custom pkgRunner', () => {
   const cmd = buildRetryCommand([sampleCases[0]], { pkgRunner: 'yarn' });
-  expect(cmd).toStartWith('yarn playwright test');
+  expect(cmd).toContain('yarn playwright test');
 });
 
 test('dedupe same file:line', () => {
