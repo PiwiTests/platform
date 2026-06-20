@@ -1,8 +1,6 @@
 import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
-import { testRuns } from '../../../database/schema';
-import { eq } from 'drizzle-orm';
-import { computeRegressionContext } from '../../../utils/regression-context';
+import { computeRegressionContextForRun } from '~~/shared/handlers/test-runs';
 import { Role } from '../../../../shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
@@ -22,23 +20,8 @@ export default eventHandler(async (event) => {
   await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
   if (!id) throw createError({ statusCode: 400, message: 'Invalid test run ID' });
-
   const db = await getDatabase();
-
-  const runResults = await db
-    .select({
-      id: testRuns.id,
-      projectId: testRuns.projectId,
-      status: testRuns.status,
-      startTime: testRuns.startTime,
-      environment: testRuns.environment,
-      metadata: testRuns.metadata,
-    })
-    .from(testRuns)
-    .where(eq(testRuns.id, id));
-
-  const run = runResults[0];
-  if (!run) throw createError({ statusCode: 404, message: 'Test run not found' });
-
-  return computeRegressionContext(db, run);
+  const result = await computeRegressionContextForRun(db, id);
+  if (!result) throw createError({ statusCode: 404, message: 'Test run not found' });
+  return result;
 });

@@ -1,6 +1,5 @@
 import { getDatabase } from '../../../database';
-import { failureClusters } from '../../../database/schema';
-import { eq } from 'drizzle-orm';
+import { patchClusterStatus } from '~~/shared/handlers/failure-clusters';
 import { Role } from '../../../../shared/types';
 import { requireAuth } from '../../../utils/auth';
 
@@ -35,15 +34,11 @@ export default eventHandler(async (event) => {
 
   const db = await getDatabase();
 
-  const [cluster] = await db.select({ id: failureClusters.id }).from(failureClusters).where(eq(failureClusters.id, id));
-
-  if (!cluster) {
+  const triageNote = body?.triageNote;
+  const result = await patchClusterStatus(db, id, status, triageNote);
+  if (!result) {
     throw createError({ statusCode: 404, message: 'Failure cluster not found' });
   }
 
-  const triageNote = body?.triageNote ?? null;
-
-  await db.update(failureClusters).set({ status, triageNote, updatedAt: new Date() }).where(eq(failureClusters.id, id));
-
-  return { success: true, id, status, triageNote };
+  return result;
 });

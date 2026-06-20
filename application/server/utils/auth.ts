@@ -11,7 +11,7 @@ import { Role } from '../../shared/types';
 const scryptAsync = promisify(scrypt);
 
 // Password hashing using scrypt
-async function hashPassword(password: string): Promise<string> {
+export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString('hex');
   const derivedKey = (await scryptAsync(password, salt, 64)) as Buffer;
   return `${salt}:${derivedKey.toString('hex')}`;

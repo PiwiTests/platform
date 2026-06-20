@@ -1,7 +1,6 @@
 import { requireAuth } from '../../utils/auth';
 import { getDatabase } from '../../database';
-import { entityLinks } from '../../database/schema';
-import { eq } from 'drizzle-orm';
+import { deleteLink } from '~~/shared/handlers/links';
 import { Role } from '../../../shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
@@ -24,14 +23,12 @@ export default eventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Invalid link ID' });
   }
 
-  const db = await getDatabase();
-
-  const existing = await db.select().from(entityLinks).where(eq(entityLinks.id, id));
-  if (!existing[0]) {
-    throw createError({ statusCode: 404, message: 'Link not found' });
+  try {
+    const db = await getDatabase();
+    return await deleteLink(db, id);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to delete link';
+    const statusCode = message === 'Link not found' ? 404 : 400;
+    throw createError({ statusCode, message });
   }
-
-  await db.delete(entityLinks).where(eq(entityLinks.id, id));
-
-  return { success: true };
 });

@@ -1,8 +1,7 @@
 import { getDatabase } from '../../database';
-import { users } from '../../database/schema';
-import { eq } from 'drizzle-orm';
+import { createUserRecord } from '~~/shared/handlers/users';
 import { Role } from '../../../shared/types';
-import { createUser, requireAuth } from '../../utils/auth';
+import { hashPassword, requireAuth } from '../../utils/auth';
 import { z } from 'zod';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
@@ -25,7 +24,6 @@ const createUserSchema = z.object({
 });
 
 export default eventHandler(async (event) => {
-  // If auth is enabled, require administrator role
   await requireAuth(event, REQUIRED_ROLES);
 
   const body = await readBody(event);
@@ -41,27 +39,27 @@ export default eventHandler(async (event) => {
 
   const { username, password, role, name } = validation.data;
 
-  const db = await getDatabase();
+  try {
+    const hashedPassword = await hashPassword(password);
+    const user = await createUserRecord(await getDatabase(), { username, password: hashedPassword, role, name });
 
-  // Check if username already exists
-  const existingUsers = await db.select().from(users).where(eq(users.username, username));
-  if (existingUsers.length > 0) {
+    if (!user) {
+      throw createError({ statusCode: 500, message: 'Failed to create user' });
+    }
+
+    return {
+      success: true,
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role as Role,
+        name: user.name,
+      },
+    };
+  } catch (err) {
     throw createError({
       statusCode: 400,
-      message: 'Username already exists',
+      message: err instanceof Error ? err.message : 'Failed to create user',
     });
   }
-
-  // Create user
-  const user = await createUser(username, password, role, name);
-
-  return {
-    success: true,
-    user: {
-      id: user.id,
-      username: user.username,
-      role: user.role as Role,
-      name: user.name,
-    },
-  };
 });

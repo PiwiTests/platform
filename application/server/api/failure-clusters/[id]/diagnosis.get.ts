@@ -1,7 +1,6 @@
 import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
-import { failureClusters, failureDiagnoses } from '../../../database/schema';
-import { eq } from 'drizzle-orm';
+import { getClusterDiagnosis } from '~~/shared/handlers/failure-clusters';
 import { Role } from '../../../../shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
@@ -22,16 +21,5 @@ export default eventHandler(async (event) => {
   if (!id) throw createError({ statusCode: 400, message: 'Invalid cluster ID' });
 
   const db = await getDatabase();
-
-  const [cluster] = await db
-    .select({ id: failureClusters.id, manualBaseCommit: failureClusters.manualBaseCommit })
-    .from(failureClusters)
-    .where(eq(failureClusters.id, id));
-  if (!cluster) throw createError({ statusCode: 404, message: 'Failure cluster not found' });
-
-  const [diag] = await db.select().from(failureDiagnoses).where(eq(failureDiagnoses.clusterId, id));
-  return {
-    diagnosis: diag ?? null,
-    manualBaseCommit: cluster.manualBaseCommit ?? null,
-  };
+  return getClusterDiagnosis(db, id);
 });

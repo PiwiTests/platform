@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { getDatabase } from '../../../../database';
-import { apiKeys, users } from '../../../../database/schema';
-import { eq } from 'drizzle-orm';
+import { createUserApiKeyRecord } from '~~/shared/handlers/users';
 import { requireAuth, generateApiKey } from '../../../../utils/auth';
 import { Role } from '../../../../../shared/types';
 
@@ -36,15 +35,6 @@ export default eventHandler(async (event) => {
     throw createError({ statusCode: 403, message: 'Insufficient permissions' });
   }
 
-  const db = await getDatabase();
-
-  // Verify target user exists
-  const targetUsers = await db.select().from(users).where(eq(users.id, targetId));
-  const targetUser = targetUsers[0];
-  if (!targetUser) {
-    throw createError({ statusCode: 404, message: 'User not found' });
-  }
-
   const body = await readBody(event);
   const validation = createKeySchema.safeParse(body);
   if (!validation.success) {
@@ -58,15 +48,13 @@ export default eventHandler(async (event) => {
   const { name, expiresAt } = validation.data;
   const { plaintext, hash, prefix } = generateApiKey();
 
-  await db.insert(apiKeys).values({
-    userId: targetId,
+  await createUserApiKeyRecord(await getDatabase(), targetId, {
     name,
-    keyHash: hash,
-    keyPrefix: prefix,
+    hash,
+    prefix,
     expiresAt: expiresAt ? new Date(expiresAt) : null,
   });
 
-  // Return the plaintext key ONCE – it will never be retrievable again
   return {
     key: plaintext,
     prefix,
