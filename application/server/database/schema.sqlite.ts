@@ -98,6 +98,7 @@ export const testCases = sqliteTable(
     suitePath: text('suite_path').notNull().default(''), // \x1f-delimited describe block path, e.g. 'Auth\x1fLogin'
     suiteId: integer('suite_id').references(() => testSuites.id), // FK to immediate parent describe block (null for root-level tests)
     title: text('title').notNull(),
+    flakyRootCause: text('flaky_root_cause'), // 'timing' | 'network' | 'assertion' | 'environment' | 'other'
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -268,6 +269,8 @@ export const testRunsCases = sqliteTable(
     workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
     shardIndex: integer('shard_index'), // Shard index (1-based) for sharded runs; null = not sharded
     startedAt: integer('started_at', { mode: 'timestamp_ms' }), // Unix timestamp in ms when the test started
+    isNewRegression: integer('is_new_regression'), // boolean: passed in baseline, failed in this run
+    isNewFlaky: integer('is_new_flaky'), // boolean: no retries in baseline, retry-pass in this run
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
       .$defaultFn(() => new Date()),

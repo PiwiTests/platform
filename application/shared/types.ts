@@ -109,6 +109,8 @@ export interface TestRunCounters {
 
 // ── Submit (JSON) payload ─────────────────────────────────────────────────────
 
+export type FlakyRootCause = 'timing' | 'network' | 'assertion' | 'environment' | 'other';
+
 export interface TestRunSubmitPayload {
   projectName: string;
   projectDescription?: string;

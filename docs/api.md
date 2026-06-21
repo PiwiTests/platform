@@ -521,7 +521,7 @@ Detect tests that fail intermittently across recent runs. Analyzes up to `runs` 
 |-----------|------|---------|-------------|
 | `runs` | `number` | `50` | Maximum number of recent runs to analyze (clamped to 1–200) |
 
-**Response** — array of flaky test entries sorted by score descending:
+**Response** — array of flaky test entries sorted by impact descending:
 
 ```json
 [
@@ -536,7 +536,11 @@ Detect tests that fail intermittently across recent runs. Analyzes up to `runs` 
     "alternations": 2,
     "failureRate": 0.25,
     "score": 63,
-    "lastFlakeAt": "2024-01-01T12:00:00.000Z"
+    "lastFlakeAt": "2024-01-01T12:00:00.000Z",
+    "rootCause": "timing",
+    "impact": 42,
+    "wastedCiMinutes": 3.5,
+    "avgFailedDurationMs": 12000
   }
 ]
 ```
@@ -552,8 +556,102 @@ Detect tests that fail intermittently across recent runs. Analyzes up to `runs` 
 | `failureRate` | Fraction of runs where the test's final status was failed/timed out |
 | `score` | Composite score 1–100: `round(100 × (0.6 × retryRate + 0.4 × altRate))` |
 | `lastFlakeAt` | Start time of the run where flakiness was last detected |
+| `rootCause` | Classified root cause: `timing`, `network`, `assertion`, `environment`, or `other` (nullable) |
+| `impact` | Impact score based on wasted CI minutes and pipeline blocks |
+| `wastedCiMinutes` | Estimated CI minutes wasted on retries (`avgFailedDurationMs / 60000 × retryPassRuns`) |
+| `avgFailedDurationMs` | Average duration of failed executions in milliseconds |
 
 Only tests with at least 3 runs AND (`retryPassRuns ≥ 1` OR `alternations ≥ 2`) are included. Returns 404 for unknown projects.
+
+---
+
+### POST `/api/projects/[id]/flaky-classify`
+
+Classify a flaky test's root cause using keyword heuristics. Requires `ADMINISTRATOR` or `REPORTER` role.
+
+**Request body**
+
+```json
+{ "testCaseId": 45 }
+```
+
+**Response**
+
+```json
+{ "testCaseId": 45, "rootCause": "timing" }
+```
+
+Classification categories: `timing`, `network`, `assertion`, `environment`, `other`. Returns 404 if the test case is not found.
+
+---
+
+### GET `/api/test-runs/[id]/insights`
+
+Compare a test run against its most recent passing baseline. Returns status changes (regressions, recoveries, recurrences), flaky new tests, performance changes, worker distribution, and new failure clusters.
+
+**Response**
+
+```json
+{
+  "newRegressions": [{ "title": "...", "filePath": "...", "duration": 5000 }],
+  "recurrences": [],
+  "recovered": [{ "title": "...", "filePath": "...", "duration": 3000 }],
+  "newFlaky": [],
+  "slowestTests": [{ "title": "...", "filePath": "...", "duration": 15000 }],
+  "mostImproved": [{ "title": "...", "filePath": "...", "durationBefore": 8000, "durationAfter": 3000, "pctChange": -62 }],
+  "mostRegressed": [],
+  "workerImbalance": [{ "workerIndex": 0, "count": 8 }, { "workerIndex": 1, "count": 3 }],
+  "flakyOnRetry": [],
+  "clusterNew": [{ "clusterId": 5, "signature": "TimeoutError: locator.click" }]
+}
+```
+
+Returns 404 for unknown run IDs.
+
+---
+
+### GET `/api/test-cases/[id]/stability-trend`
+
+Time-series data for a single test case's flaky rate, pass rate, and average duration grouped into buckets.
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `buckets` | `number` | `20` | Number of time buckets (clamped to 5–50) |
+
+**Response**
+
+```json
+{
+  "testCaseId": 45,
+  "buckets": [
+    { "date": "2025-03-15", "flakyRate": 0.1, "passRate": 0.9, "avgDuration": 4200, "totalRuns": 10 }
+  ]
+}
+```
+
+---
+
+### GET `/api/projects/[id]/spec-health`
+
+Group test cases by spec file prefix and compute health metrics over the last N days.
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `days` | `number` | `30` | Lookback window (clamped to 1–90) |
+
+**Response**
+
+```json
+{
+  "specs": [
+    { "prefix": "tests/checkout", "passRate": 0.92, "flakyRate": 0.05, "failureCount": 3, "testCount": 45, "avgDuration": 3200 }
+  ]
+}
+```
 
 ---
 

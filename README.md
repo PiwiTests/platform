@@ -80,6 +80,12 @@ Piwi solves what standalone HTML reports cannot:
 - 🔗 **Failure clustering** — failed tests sharing the same root cause are grouped automatically via error fingerprinting; run page shows failure groups with flaky and worker-correlation heuristics; each cluster has its own detail page with triage tools
 - 🤖 **AI diagnosis** — LLM analysis of any failure cluster (Anthropic, OpenAI-compatible, Ollama, etc.); pin a baseline commit so the diagnosis includes the relevant SCM diff; browse and cherry-pick specific commits to add their full diffs to the context; diagnosis includes category, confidence, root cause, evidence, suggested fix, and prevention tips; auto-diagnose new clusters on run completion; supports global and per-project custom instructions to tailor analysis to your stack
 - 🔀 **Flaky test detection** — composite flakiness score based on retry passes, status alternations, and failure rate; dedicated project tab with configurable lookback window
+- 🏷️ **Flaky root cause classification** — automatic 5-category classification (timing, network, assertion, environment, other) using keyword heuristics; filterable by root cause in the flaky tests table
+- 📊 **Impact-ranked flaky list** — flaky tests sorted by wasted CI minutes and pipeline-block impact; color-coded impact dots (green < 5 min, amber < 30 min, red ≥ 30 min)
+- 📈 **Per-test stability trend** — time-series of pass rate, flaky rate, and average duration for each test case; returns bucketed trend data via API
+- 🔍 **Run insights tab** — compares current run against its last passing baseline; highlights new regressions, recurring failures, fixed tests, new flaky tests, performance changes (most regressed/improved), worker imbalance, and new failure clusters
+- 🏷️ **Regression signals** — `NEW` (red) and `FLAKY` (purple) badges on individual test cases in run detail; filter toggles for "New regressions" and "New flaky"
+- 📋 **Spec health heatmap** — project-level spec-file overview with pass-rate colored indicators; clickable cells link to filtered test-case lists
 - 🔌 **Playwright reporter** — drop-in custom reporter for automatic result submission, with HTML report and trace uploads
 - 🔌 **MCP server** — built-in Model Context Protocol server at `/mcp`; connect Claude Code, Cursor, VS Code Copilot, Claude Desktop, Gemini CLI, and others directly to your test data; 11 tools covering projects, runs, failures, flaky tests, clusters, AI diagnoses, and raw SCM-grounded evidence context
 - 📖 **Interactive API docs** — auto-generated OpenAPI 3.1 specification with Scalar UI at `/docs`; all endpoints annotated with `defineRouteMeta()`
@@ -166,10 +172,11 @@ Results appear automatically in the dashboard. The project is created on first s
 |------|---------------|
 | **Home** | Aggregate stats (total projects, runs, passing rate, flaky count), test results trend chart, recent projects |
 | **Projects** | Searchable/filterable table of all projects with last-run status, duration, test ratio, and report links |
-| **Project detail** | Run history, failure clusters, flaky tests, trends, test cases, and run comparison — all in one tabbed view |
-| **Performance** | Avg/P90 duration trend chart, top 20 slowest tests, side-by-side run comparison |
-| **Test cases** | Per-project view of all unique test cases with pass rate, result breakdown, and link to each test's history |
-| **Test run detail** | Every test case in a run with browser icon, status, duration, location, error messages, traces, and reports; filter by browser; failure groups with AI diagnosis |
+| **Project detail** | Run history, failure clusters, flaky tests with root cause classification, trends, test cases, spec health heatmap, and run comparison — all in one tabbed view |
+| **Performance** | Avg/P90 duration trend chart, top 20 slowest tests, side-by-side run comparison, stability trend per test case |
+| **Test cases** | Per-project view of all unique test cases with pass rate, result breakdown, stability trend, and link to each test's history |
+| **Test run detail** | Every test case in a run with browser icon, status, duration, location, error messages, traces, and reports; filter by browser; regression signal badges (NEW/FLAKY); failure groups with AI diagnosis; run insights tab |
+| **Flaky tests** | Impact-ranked list with root cause classification badges, color-coded wasted CI minutes, filterable by root cause category |
 | **Failure cluster** | Cluster detail with affected tests, triage tools (status + note), and LLM diagnosis with SCM diff context (baseline commit picker, commit browser for targeted context selection) |
 | **API Docs** (`/docs`) | Auto-generated interactive API reference powered by Scalar with all endpoints, request/response schemas, and try-it console |
 | **Settings › Account** | Email address, verification status, change password, OAuth info (when authentication is enabled) |

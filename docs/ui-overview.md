@@ -60,7 +60,7 @@ Shows the complete run history for a single project, with six tabs:
 
 - **Test runs** — each row shows run status, start time, duration, test counts, browser badges, and links to reports/traces; select two runs to compare them
 - **Failure clusters** — all unique failure signatures across all runs, with status, error type, occurrence count, AI diagnosis badge, and a link to the cluster detail page
-- **Flaky tests** — tests that fail intermittently, scored by a composite flakiness metric; shows failure rate, retry passes, and status alternation count
+- **Flaky tests** — tests that fail intermittently, scored by a composite flakiness metric; shows failure rate, retry passes, status alternation count, root cause classification, and impact score (wasted CI minutes); sortable and filterable by root cause
 - **Trends** — duration trend chart with date filter, and a slowest-tests table
 - **Test cases** — all unique test cases with status, pass rate, result breakdown (with icons), average duration, and last run date
 - **Compare** — side-by-side delta view between two selected runs (new failures, recovered, duration changes)

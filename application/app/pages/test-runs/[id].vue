@@ -422,6 +422,12 @@ const tabItems = computed(() => [
     value: 'test-cases',
     slot: 'test-cases',
   },
+  {
+    label: 'Insights',
+    icon: 'i-lucide-sparkles',
+    value: 'insights',
+    slot: 'insights',
+  },
   ...(hasFailures.value
     ? [
         {
@@ -552,6 +558,10 @@ function handleSelectCluster(clusterId: number) {
             :failure-cluster-filter="selectedClusterFilter"
             class="flex-1 min-h-0"
           />
+        </template>
+
+        <template #tab-insights>
+          <RunInsights :test-run-id="Number(runId)" :run-status="testRun?.status ?? ''" class="flex-1 min-h-0 p-4" />
         </template>
 
         <template #tab-failure-groups>

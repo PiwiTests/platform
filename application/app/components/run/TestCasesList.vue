@@ -17,6 +17,9 @@ const testCaseSearch = defineModel<string>('search', { default: '' });
 const activeStatuses = defineModel<string[]>('activeStatuses', { default: () => [] });
 const testCaseBrowserFilter = defineModel<string>('browserFilter', { default: 'all' });
 
+const showNewRegressionsOnly = ref(false);
+const showNewFlakyOnly = ref(false);
+
 const STATUS_OPTIONS = [
   { label: 'Passed', value: 'passed', color: 'green' },
   { label: 'Failed', value: 'failed', color: 'red' },
@@ -68,6 +71,12 @@ const filteredTestCases = computed<TestCaseResult[]>(() => {
     cases = cases.filter(
       (tc) => tc.title.toLowerCase().includes(query) || (tc.location && tc.location.toLowerCase().includes(query)),
     );
+  }
+  if (showNewRegressionsOnly.value) {
+    cases = cases.filter((tc) => tc.isNewRegression);
+  }
+  if (showNewFlakyOnly.value) {
+    cases = cases.filter((tc) => tc.isNewFlaky);
   }
   return cases;
 });
@@ -268,6 +277,8 @@ defineExpose({ scrollToCase });
           </button>
         </div>
         <USelect v-model="testCaseBrowserFilter" :items="testCaseBrowserOptions" size="sm" class="w-36" />
+        <UCheckbox v-if="!isLive" v-model="showNewRegressionsOnly" label="New regressions" size="sm" />
+        <UCheckbox v-if="!isLive" v-model="showNewFlakyOnly" label="New flaky" size="sm" />
       </div>
     </div>
 
@@ -305,12 +316,32 @@ defineExpose({ scrollToCase });
         }"
       >
         <template #title-cell="{ row }">
-          <a
-            :href="`/test-run-cases/${row.original.id}`"
-            class="text-primary hover:underline font-medium"
-            @click.prevent="navigateTo(`/test-run-cases/${row.original.id}`)"
-            >{{ row.original.title }}</a
-          >
+          <div class="flex items-center gap-1.5">
+            <UBadge
+              v-if="row.original.isNewRegression"
+              color="error"
+              variant="solid"
+              size="xs"
+              class="uppercase tracking-wider"
+            >
+              NEW
+            </UBadge>
+            <UBadge
+              v-if="row.original.isNewFlaky"
+              color="info"
+              variant="solid"
+              size="xs"
+              class="uppercase tracking-wider"
+            >
+              FLAKY
+            </UBadge>
+            <a
+              :href="`/test-run-cases/${row.original.id}`"
+              class="text-primary hover:underline font-medium"
+              @click.prevent="navigateTo(`/test-run-cases/${row.original.id}`)"
+              >{{ row.original.title }}</a
+            >
+          </div>
         </template>
 
         <template #status-cell="{ row }">

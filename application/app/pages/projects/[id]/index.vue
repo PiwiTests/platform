@@ -74,7 +74,15 @@ async function handleDeleteRun(runId: number) {
 const activeTab = ref('test-runs');
 
 // Support ?tab= query param for sidebar/redirect links
-const validTabs = ['test-runs', 'failure-clusters', 'flaky-tests', 'performance', 'test-cases', 'compare'] as const;
+const validTabs = [
+  'test-runs',
+  'failure-clusters',
+  'flaky-tests',
+  'performance',
+  'test-cases',
+  'compare',
+  'spec-health',
+] as const;
 const queryTab = route.query.tab;
 if (typeof queryTab === 'string' && validTabs.includes(queryTab as (typeof validTabs)[number])) {
   activeTab.value = queryTab as string;
@@ -108,6 +116,7 @@ const tabItems = computed(() => [
     slot: 'test-cases',
   },
   { label: 'Compare', icon: 'i-lucide-git-compare-arrows', value: 'compare', slot: 'compare' },
+  { label: 'Spec health', icon: 'i-lucide-table-2', value: 'spec-health', slot: 'spec-health' },
 ]);
 
 // === TEST RUNS TAB ===
@@ -1105,6 +1114,11 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                 </div>
               </div>
             </UCard>
+          </template>
+
+          <!-- SPEC HEALTH TAB -->
+          <template #spec-health>
+            <SpecHealthHeatmap :project-id="String(projectId)" />
           </template>
         </UTabs>
       </div>

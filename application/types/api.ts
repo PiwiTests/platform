@@ -436,6 +436,8 @@ export interface TestCaseResult {
     viewport?: { width: number; height: number } | null;
   } | null;
   links?: EntityLinkInfo[];
+  isNewRegression?: boolean | null;
+  isNewFlaky?: boolean | null;
 }
 
 /**
@@ -972,4 +974,8 @@ export interface FlakyTest {
   failureRate: number;
   score: number;
   lastFlakeAt: string | Date | null;
+  rootCause: string | null;
+  impact: number;
+  wastedCiMinutes: number;
+  avgFailedDurationMs: number;
 }
