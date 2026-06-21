@@ -94,12 +94,11 @@ By default, Piwi uses SQLite stored in `/app/.data/piwi.db`. Set `PIWI_DATABASE_
 | `PIWI_S3_ENDPOINT`         | —         | Custom endpoint for S3-compatible services (MinIO, R2, Spaces…) |
 | `PIWI_S3_FORCE_PATH_STYLE` | `true` when `PIWI_S3_ENDPOINT` is set | Override path-style URL behavior |
 
-### Authentication
-
-Authentication is **disabled by default**. All endpoints are open. Enable it to add login, roles, and API keys.
+### Security & authentication
 
 | Variable                       | Default | Description                                                             |
 |--------------------------------|---------|-------------------------------------------------------------------------|
+| `PIWI_SECRET_KEY`              | —       | **Recommended in all deployments.** Master key for AES-256-GCM encryption of sensitive values stored in the database (AI API keys, SCM tokens). Generate with: `openssl rand -hex 32` |
 | `PIWI_AUTH_ENABLED`            | —       | Set to `true` to enable authentication                                  |
 | `PIWI_AUTH_SECRET`             | —       | **Required when auth is enabled.** Random string used to sign session cookies. Generate with: `openssl rand -hex 32` |
 | `PIWI_OAUTH_GOOGLE_CLIENT_ID`  | —       | Google OAuth client ID (shows "Sign in with Google" when set with secret) |
@@ -147,8 +146,9 @@ services:
     volumes:
       - ./data:/app/.data
     environment:
+      PIWI_SECRET_KEY: "replace-with-openssl-rand-hex-32-output"
       PIWI_AUTH_ENABLED: "true"
-      PIWI_AUTH_SECRET: "replace-with-openssl-rand-hex-32-output"
+      PIWI_AUTH_SECRET: "replace-with-a-different-openssl-rand-hex-32-output"
     restart: unless-stopped
 ```
 
@@ -177,8 +177,9 @@ services:
       PIWI_S3_REGION: us-east-1
       PIWI_S3_ACCESS_KEY_ID: your-access-key
       PIWI_S3_SECRET_ACCESS_KEY: your-secret-key
+      PIWI_SECRET_KEY: "replace-with-openssl-rand-hex-32-output"
       PIWI_AUTH_ENABLED: "true"
-      PIWI_AUTH_SECRET: "replace-with-openssl-rand-hex-32-output"
+      PIWI_AUTH_SECRET: "replace-with-a-different-openssl-rand-hex-32-output"
     depends_on:
       - postgres
     restart: unless-stopped

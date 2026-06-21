@@ -157,6 +157,7 @@ Nuxt file-based routing:
 ## Environment
 - `.env.example` in `application/` — `PIWI_SITE_URL` (optional)
 - Works with no env vars set; `.data/` created automatically
+- `PIWI_SECRET_KEY` — master key for AES-256-GCM encryption of secrets stored in the DB (AI API keys, SCM tokens). Recommended in production even without auth enabled. Generate with `openssl rand -hex 32`. Falls back to an insecure default in development.
 - AI diagnosis env vars (all optional — can also be set via Settings UI):
   - `PIWI_AI_PROVIDER` — `anthropic` or `openai`
   - `PIWI_AI_API_KEY` — API key (env takes precedence over DB; `envManaged: true` in status)

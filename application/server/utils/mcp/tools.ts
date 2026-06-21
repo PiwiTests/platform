@@ -107,7 +107,7 @@ export const MCP_TOOLS: McpTool[] = [
       const id = Number(params.id);
       const limit = Math.min(50, Number(params.limit) || 20);
       const project = await getProject(db, id);
-      const runs = (project.runs as any[])?.slice(0, limit).map((r: any) =>
+      const runs = (project.testRuns as any[])?.slice(0, limit).map((r: any) =>
         dropNulls({
           id: r.id,
           status: r.status,

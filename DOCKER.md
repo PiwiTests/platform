@@ -46,8 +46,9 @@ The Dockerfile uses a two-stage build:
 | `NODE_ENV`             | `production`    | Set automatically in the container                                           |
 | `HOST`                 | `0.0.0.0`       | Listens on all interfaces                                                    |
 | `PORT`                 | `3000`          | Application port                                                             |
+| `PIWI_SECRET_KEY`      | —               | Master key for encrypting secrets in the DB (AI keys, SCM tokens). Recommended in all deployments. |
 | `PIWI_AUTH_ENABLED`    | —               | Enable authentication (`true`/`false`)                                       |
-| `PIWI_AUTH_SECRET`     | —               | Secret for session encryption (required if auth enabled)                     |
+| `PIWI_AUTH_SECRET`     | —               | Secret for encrypting session cookies (required if auth enabled)             |
 | `PIWI_DATABASE_URL`         | —               | PostgreSQL connection string; when set, PostgreSQL is used instead of SQLite |
 | `PIWI_DATABASE_PATH`        | `.data/piwi.db` | SQLite database path (ignored when `PIWI_DATABASE_URL` is set)                    |
 | `PIWI_STORAGE_TYPE`         | `local`         | Storage backend (`local` or `s3`)                                            |
@@ -131,7 +132,8 @@ The container runs as a non-root user (`nodejs:nodejs` with UID/GID 1001) for en
 
 Best practices:
 - Always use HTTPS in production (use a reverse proxy like nginx or Traefik)
-- Set a strong `PIWI_AUTH_SECRET` with `openssl rand -hex 32`
+- Set `PIWI_SECRET_KEY` with `openssl rand -hex 32` to encrypt secrets at rest (recommended even without auth)
+- Set `PIWI_AUTH_SECRET` with `openssl rand -hex 32` when authentication is enabled
 - Enable authentication for multi-user or internet-facing deployments
 
 ## Available Tags
