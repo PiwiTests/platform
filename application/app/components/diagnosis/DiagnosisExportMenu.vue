@@ -72,6 +72,100 @@ function copyContextJson() {
   exportOpen.value = false;
 }
 
+function markdownToHtml(md: string): string {
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const out: string[] = [];
+  let inCode = false;
+  let codeLang = '';
+  const codeLines: string[] = [];
+  let inList = false;
+
+  function flushCode() {
+    if (codeLines.length) {
+      const langTag = codeLang ? ` class="language-${esc(codeLang)}"` : '';
+      out.push(`<pre><code${langTag}>${esc(codeLines.join('\n'))}</code></pre>`);
+      codeLines.length = 0;
+    }
+    codeLang = '';
+  }
+
+  function closeList() {
+    if (inList) {
+      out.push('</ul>');
+      inList = false;
+    }
+  }
+
+  for (const line of md.split('\n')) {
+    if (line.startsWith('```')) {
+      closeList();
+      if (inCode) {
+        flushCode();
+        inCode = false;
+      } else {
+        flushCode();
+        inCode = true;
+        codeLang = line.slice(3).trim();
+      }
+      continue;
+    }
+    if (inCode) {
+      codeLines.push(line);
+      continue;
+    }
+
+    if (line.startsWith('- ')) {
+      if (!inList) {
+        out.push('<ul>');
+        inList = true;
+      }
+      out.push(`<li>${esc(line.slice(2))}</li>`);
+      continue;
+    }
+    closeList();
+    if (line.startsWith('## ')) {
+      out.push(`<h2>${esc(line.slice(3))}</h2>`);
+      continue;
+    }
+    if (line.startsWith('### ')) {
+      out.push(`<h3>${esc(line.slice(4))}</h3>`);
+      continue;
+    }
+    if (line.startsWith('> ')) {
+      out.push(`<blockquote>${esc(line.slice(2))}</blockquote>`);
+      continue;
+    }
+    if (line.trim() === '') {
+      out.push('<br>');
+      continue;
+    }
+    out.push(`<p>${esc(line)}</p>`);
+  }
+  closeList();
+  if (inCode) flushCode();
+  return out.join('\n');
+}
+
+function copyContextHtml() {
+  if (!props.contextText) return;
+  const plain = props.contextText;
+  const body = markdownToHtml(plain);
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI Diagnosis Context</title><style>body{font-family:system-ui,sans-serif;max-width:800px;margin:2em auto;padding:0 1em;line-height:1.6}h2{color:#1a1a2e;margin-top:1.5em}h3{color:#16213e;margin-top:1.2em}pre{background:#f4f4f5;padding:1em;border-radius:6px;overflow-x:auto;font-size:0.9em}code{font-family:ui-monospace,monospace}blockquote{border-left:3px solid #d4d4d8;padding-left:1em;color:#52525b;margin:1em 0}li{margin:0.25em 0}</style></head><body>${body}</body></html>`;
+  try {
+    navigator.clipboard.write([
+      new ClipboardItem({
+        'text/plain': new Blob([plain], { type: 'text/plain' }),
+        'text/html': new Blob([html], { type: 'text/html' }),
+      }),
+    ]);
+    const toast = useToast();
+    toast.add({ title: 'AI context (HTML) copied', icon: 'i-lucide-check', color: 'success', duration: 2000 });
+  } catch {
+    copy(html, { toast: 'AI context (HTML) copied' });
+  }
+  exportOpen.value = false;
+}
+
 function copyAsCurl() {
   const text = props.contextText ?? '';
   const systemHint = 'You are a test failure analyst. Analyze the following context and provide a diagnosis.';
@@ -187,6 +281,19 @@ function stripAnsi(s: string): string {
           @click="copyContextJson"
         >
           Full context (JSON)
+        </UButton>
+
+        <UButton
+          v-if="contextText"
+          block
+          size="sm"
+          color="neutral"
+          variant="ghost"
+          class="justify-start"
+          icon="i-lucide-file-code"
+          @click="copyContextHtml"
+        >
+          Full context (HTML)
         </UButton>
 
         <UButton

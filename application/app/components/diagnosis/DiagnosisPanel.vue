@@ -36,6 +36,7 @@ const additionalContext = ref('');
 const fileInputRef = ref<HTMLInputElement | null>(null);
 
 const showAiContext = ref(false);
+const showAdditionalContext = ref(false);
 
 function buildPromptContext() {
   const parts: string[] = [];
@@ -111,36 +112,53 @@ function isStale(d: FailureDiagnosis) {
 
     <!-- AI configured: full panel -->
     <template v-if="aiStatus?.configured">
-      <!-- Additional context -->
+      <!-- Additional context (collapsible, collapsed by default) -->
       <div>
-        <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Additional context</label>
-        <div
-          class="rounded-lg border-2 transition-colors"
-          :class="dragOver ? 'border-primary bg-primary/5 border-solid' : 'border-dashed border-default'"
-          @dragover="onDragOver"
-          @dragleave="onDragLeave"
-          @drop="onDrop"
+        <button
+          class="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mb-1 w-full text-left"
+          @click="showAdditionalContext = !showAdditionalContext"
         >
-          <UTextarea
-            v-model="additionalContext"
-            placeholder="e.g. We deployed a new auth middleware yesterday\u2026"
-            :rows="3"
-            class="w-full text-sm border-0 bg-transparent focus:ring-0"
-          />
-          <div class="flex items-center gap-2 px-3 pb-2 pt-1 border-t border-default">
-            <input
-              ref="fileInputRef"
-              type="file"
-              multiple
-              class="hidden"
-              accept=".txt,.log,.md,.json,.ts,.js,.py,.sql,.xml,.yaml,.yml,.html,.css,.env,image/*"
-              @change="processFiles(($event.target as HTMLInputElement).files!)"
+          <UIcon :name="showAdditionalContext ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5" />
+          Additional context
+          <span v-if="attachedFiles.length || attachedImages.length || additionalContext.trim()" class="text-primary">
+            ({{ attachedFiles.length + attachedImages.length + (additionalContext.trim() ? 1 : 0) }})
+          </span>
+        </button>
+        <div v-if="showAdditionalContext">
+          <div
+            class="rounded-lg border-2 transition-colors"
+            :class="dragOver ? 'border-primary bg-primary/5 border-solid' : 'border-dashed border-default'"
+            @dragover="onDragOver"
+            @dragleave="onDragLeave"
+            @drop="onDrop"
+          >
+            <UTextarea
+              v-model="additionalContext"
+              placeholder="e.g. We deployed a new auth middleware yesterday\u2026"
+              :rows="3"
+              class="w-full text-sm border-0 bg-transparent focus:ring-0"
             />
-            <UButton icon="i-lucide-paperclip" size="xs" color="neutral" variant="ghost" @click="fileInputRef?.click()">
-              Attach files
-            </UButton>
-            <span v-if="dragOver" class="text-xs text-primary">Drop files here\u2026</span>
-            <span v-else class="text-xs text-gray-400">or drag &amp; drop text files and images</span>
+            <div class="flex items-center gap-2 px-3 pb-2 pt-1 border-t border-default">
+              <input
+                ref="fileInputRef"
+                type="file"
+                multiple
+                class="hidden"
+                accept=".txt,.log,.md,.json,.ts,.js,.py,.sql,.xml,.yaml,.yml,.html,.css,.env,image/*"
+                @change="processFiles(($event.target as HTMLInputElement).files!)"
+              />
+              <UButton
+                icon="i-lucide-paperclip"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                @click="fileInputRef?.click()"
+              >
+                Attach files
+              </UButton>
+              <span v-if="dragOver" class="text-xs text-primary">Drop files here\u2026</span>
+              <span v-else class="text-xs text-gray-400">or drag &amp; drop text files and images</span>
+            </div>
           </div>
         </div>
       </div>

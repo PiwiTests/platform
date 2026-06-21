@@ -269,6 +269,16 @@ const routes: RouteEntry[] = [
       return extractClusterCases(await getDemoDb(), +m[1]!, b.testCaseIds, b.triageNote);
     },
   },
+  {
+    method: 'GET',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/diagnoses$/,
+    handler: async () => [],
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/failure-diagnoses\/(\d+)\/feedback$/,
+    handler: async () => ({ success: true }),
+  },
 
   // AI status and settings
   { method: 'GET', pattern: /^\/api\/ai\/status$/, handler: () => apiGetAiStatus() },
