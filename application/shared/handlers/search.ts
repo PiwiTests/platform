@@ -1,5 +1,5 @@
 import { like, or, eq, desc } from 'drizzle-orm';
-import { testRuns, testCases, projects } from '../../server/database/schema.sqlite';
+import { testRuns, testCases, projects } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 
 export async function searchProjectsTestRunsCases(db: DrizzleDB, q: string) {

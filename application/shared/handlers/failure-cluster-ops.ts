@@ -4,7 +4,7 @@
  */
 
 import { eq, ne, and, or, inArray, sql, isNull } from 'drizzle-orm';
-import { testRuns, failureClusters } from '../../server/database/schema.sqlite';
+import { testRuns, failureClusters } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 
 /** Per-fingerprint accumulator for the batch being persisted. */

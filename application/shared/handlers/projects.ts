@@ -8,7 +8,7 @@ import {
   projectTags,
   failureClusters,
   failureDiagnoses,
-} from '../../server/database/schema.sqlite';
+} from '../../server/database/schema';
 import { desc, eq, sql, and, inArray, gte, lte, isNotNull } from 'drizzle-orm';
 import type { BrowserConfig } from '../types';
 

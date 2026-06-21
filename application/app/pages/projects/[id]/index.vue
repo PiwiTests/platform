@@ -306,36 +306,8 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
       }),
   },
   {
-    accessorKey: 'actions',
-    header: () => h('div', { class: 'text-right' }, 'Actions'),
-    cell: ({ row }) => {
-      const UButton = resolveComponent('UButton');
-      return h('div', { class: 'flex justify-end gap-2' }, [
-        h(
-          UButton,
-          {
-            to: `/test-runs/${row.original.id}`,
-            size: 'sm',
-            variant: 'outline',
-          },
-          () => 'View',
-        ),
-        h(
-          UButton,
-          {
-            size: 'sm',
-            color: 'error',
-            variant: 'soft',
-            icon: 'i-lucide-trash-2',
-            loading: deletingRunId.value === row.original.id,
-            onClick: () => {
-              confirmDeleteRunId.value = row.original.id;
-            },
-          },
-          () => 'Delete',
-        ),
-      ]);
-    },
+    id: 'actions',
+    header: 'Actions',
   },
 ];
 
@@ -397,6 +369,7 @@ const performanceQueryParams = computed(() => {
 // Only fetch when the trends tab is active; re-fetch when date filters change
 const performanceData = ref<PerformanceTrendPoint[] | null>(null);
 const slowTests = ref<SlowTest[] | null>(null);
+const slowTestsError = ref(false);
 
 watch(
   [activeTab, performanceQueryParams],
@@ -405,9 +378,17 @@ watch(
     const qs = new URLSearchParams(params as Record<string, string>).toString();
     performanceData.value = await $fetch<PerformanceTrendPoint[]>(
       `/api/projects/${projectId}/performance${qs ? `?${qs}` : ''}`,
-    ).catch(() => null);
+    ).catch((err) => {
+      console.warn('[PerformanceTab] Failed to fetch performance trend:', err);
+      return null;
+    });
     if (!slowTests.value) {
-      slowTests.value = await $fetch<SlowTest[]>(`/api/projects/${projectId}/slow-tests`).catch(() => null);
+      slowTestsError.value = false;
+      slowTests.value = await $fetch<SlowTest[]>(`/api/projects/${projectId}/slow-tests`).catch((err) => {
+        slowTestsError.value = true;
+        console.warn('[PerformanceTab] Failed to fetch slow tests:', err);
+        return null;
+      });
     }
   },
   { immediate: true },
@@ -747,7 +728,27 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                   th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
                   td: 'border-b border-default',
                 }"
-              />
+              >
+                <template #actions-header>
+                  <div class="text-right">Actions</div>
+                </template>
+
+                <template #actions-cell="{ row }">
+                  <div class="flex justify-end gap-2">
+                    <UButton :to="`/test-runs/${row.original.id}`" size="sm" variant="outline"> View </UButton>
+                    <UButton
+                      size="sm"
+                      color="error"
+                      variant="soft"
+                      icon="i-lucide-trash-2"
+                      :loading="deletingRunId === row.original.id"
+                      @click="confirmDeleteRunId = row.original.id"
+                    >
+                      Delete
+                    </UButton>
+                  </div>
+                </template>
+              </UTable>
 
               <div v-else-if="project?.testRuns && project.testRuns.length > 0" class="text-center py-8 text-gray-500">
                 No test runs match the selected environment filter.

@@ -5,7 +5,7 @@
   testRunsCases,
   testCases,
   projects,
-} from '../../server/database/schema.sqlite';
+} from '../../server/database/schema';
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 
 import type { DrizzleDB } from './db';

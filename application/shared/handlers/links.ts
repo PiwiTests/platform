@@ -1,4 +1,4 @@
-import { entityLinks, testRuns, testRunsCases, testCases } from '../../server/database/schema.sqlite';
+import { entityLinks, testRuns, testRunsCases, testCases } from '../../server/database/schema';
 import { eq } from 'drizzle-orm';
 import { detectProvider, extractKey } from '../link-detect';
 

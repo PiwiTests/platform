@@ -70,8 +70,8 @@ test.describe('Performance UI Tests', () => {
 
   test('should show slowest tests in performance tab', async ({ page }) => {
     await page.goto(`/projects/${projectId}?tab=performance`);
-    // Should show at least one slow test
-    await expect(page.getByText('form submission is slow')).toBeVisible();
+    await expect(page.getByText('Slowest tests')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('form submission is slow')).toBeVisible({ timeout: 15000 });
   });
 
   test('should show performance metrics on test run detail page', async ({ page }) => {

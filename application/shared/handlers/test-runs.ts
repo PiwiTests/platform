@@ -10,7 +10,7 @@ import {
   failureDiagnoses,
   entityLinks,
   networkRequests,
-} from '../../server/database/schema.sqlite';
+} from '../../server/database/schema';
 import { fetchAndFormatSuites, splitSuitePath } from '../utils/suites';
 import { normalizeRoute } from '../utils/route';
 import { percentile } from '../utils/stats';
