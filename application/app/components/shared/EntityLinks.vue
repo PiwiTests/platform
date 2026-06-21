@@ -100,9 +100,10 @@ watch(
 
           <div class="relative">
             <UInput v-model="newUrl" placeholder="https://..." size="sm" class="w-full" autofocus />
-            <span
+            <UIcon
               v-if="previewIcon"
-              :class="[previewIcon, 'absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400']"
+              :name="previewIcon!"
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
             />
           </div>
 

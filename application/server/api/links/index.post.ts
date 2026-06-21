@@ -58,8 +58,8 @@ export default eventHandler(async (event) => {
     throw createError({ statusCode: 500, message: 'Failed to create link' });
   }
 
-  // Best-effort unfurl (server-only enrichment)
-  const { title: fetchedTitle, statusText, statusColor } = await unfurlUrl(url);
+  // Best-effort unfurl (server-only enrichment) — tries rich provider first, falls back to OpenGraph
+  const { title: fetchedTitle, statusText, statusColor } = await unfurlUrl(url, db);
   if (fetchedTitle || statusText) {
     await db
       .update(entityLinks)

@@ -14,7 +14,11 @@ export type LinkProvider =
 const providerPatterns: { provider: LinkProvider; tests: RegExp[]; keyExtract?: RegExp }[] = [
   {
     provider: 'jira',
-    tests: [/^https:\/\/([^./]+)\.atlassian\.net\/browse\//i, /^https:\/\/[^/]+\/jira\/software\/c\/projects\//i],
+    tests: [
+      /^https:\/\/([^./]+)\.atlassian\.net\/browse\//i,
+      /^https:\/\/[^/]+\/jira\/software\/c\/projects\//i,
+      /^https:\/\/[^/]+\/.+\/browse\//i,
+    ],
     keyExtract: /\/([A-Z][A-Z0-9_]+-\d+)(?:\?|$|#)/i,
   },
   {
