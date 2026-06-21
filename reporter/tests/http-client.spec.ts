@@ -1,0 +1,215 @@
+import { describe, it } from 'node:test';
+import * as assert from 'node:assert/strict';
+import * as http from 'http';
+import { HttpClient } from '../src/http-client.js';
+import { Logger } from '../src/logger.js';
+
+interface RecordedReq {
+  method: string;
+  url: string;
+  headers: http.IncomingHttpHeaders;
+  body: string;
+}
+
+function startServer(
+  handler: (req: RecordedReq, res: http.ServerResponse) => void,
+): { server: http.Server; url: string; requests: RecordedReq[] } {
+  const requests: RecordedReq[] = [];
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+    });
+    req.on('end', () => {
+      const rec: RecordedReq = { method: req.method ?? 'GET', url: req.url ?? '/', headers: req.headers, body };
+      requests.push(rec);
+      handler(rec, res);
+    });
+  });
+  return new Promise((resolve, reject) => {
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address();
+      if (!addr || typeof addr === 'string') return reject(new Error('no addr'));
+      resolve({ server, url: `http://127.0.0.1:${addr.port}`, requests });
+    });
+  });
+}
+
+function jsonRes(res: http.ServerResponse, status: number, body: unknown): void {
+  const data = JSON.stringify(body);
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) });
+  res.end(data);
+}
+
+describe('HttpClient (against fake http.Server)', () => {
+  describe('postJSON', () => {
+    it('sends a JSON POST and parses the response', async () => {
+      const { server, url, requests } = await startServer((req, res) => {
+        assert.equal(req.method, 'POST');
+        assert.equal(req.url, '/api/echo');
+        jsonRes(res, 200, { ok: true, echoed: JSON.parse(req.body) });
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        const out = await client.postJSON('/api/echo', { hello: 'world' }, null);
+        assert.equal(out.ok, true);
+        assert.deepEqual(out.echoed, { hello: 'world' });
+        assert.equal(requests.length, 1);
+        assert.equal(requests[0].headers['content-type'], 'application/json');
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('rejects with "Request failed with status N" on non-2xx', async () => {
+      const { server, url } = await startServer((_req, res) => jsonRes(res, 404, { error: 'nope' }));
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        await assert.rejects(client.postJSON('/api/x', {}, null), /Request failed with status 404/);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('resolves to {} when the response body is not JSON', async () => {
+      const { server, url } = await startServer((_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('not json');
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        const out = await client.postJSON('/api/x', {}, null);
+        assert.deepEqual(out, {});
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('applies apiKey as Bearer header (pd_ prefix)', async () => {
+      const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, {}));
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        await client.postJSON('/api/x', {}, 'pd_secret123');
+        assert.equal(requests[0].headers['authorization'], 'Bearer pd_secret123');
+        assert.equal(requests[0].headers['cookie'], undefined);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('applies session cookie as Cookie header', async () => {
+      const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, {}));
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        await client.postJSON('/api/x', {}, 'session=abc; path=/');
+        assert.equal(requests[0].headers['cookie'], 'session=abc; path=/');
+        assert.equal(requests[0].headers['authorization'], undefined);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+  });
+
+  describe('login', () => {
+    it('returns the session cookie on 200', async () => {
+      const { server, url, requests } = await startServer((req, res) => {
+        assert.deepEqual(JSON.parse(req.body), { username: 'u', password: 'p' });
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Set-Cookie': ['session=abc; Path=/', 'other=xyz; HttpOnly'],
+        });
+        res.end(JSON.stringify({ ok: true }));
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        const cookie = await client.login('u', 'p');
+        assert.equal(cookie, 'session=abc; other=xyz');
+        assert.equal(requests[0].url, '/api/auth/login');
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('rejects when no set-cookie header is returned', async () => {
+      const { server, url } = await startServer((_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end('{}');
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        await assert.rejects(client.login('u', 'p'), /no session cookie/);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('rejects with "Login failed with status N" on non-2xx', async () => {
+      const { server, url } = await startServer((_req, res) => jsonRes(res, 401, { error: 'bad' }));
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        await assert.rejects(client.login('u', 'p'), /Login failed with status 401/);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+  });
+
+  describe('resolveAuth', () => {
+    it('returns apiKey directly when set', async () => {
+      const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, {}));
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        const auth = await client.resolveAuth({ apiKey: 'pd_key', username: 'u', password: 'p' });
+        assert.equal(auth, 'pd_key');
+        assert.equal(requests.length, 0); // no login call
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('returns null when neither apiKey nor username/password configured', async () => {
+      const { server, url } = await startServer((_req, res) => jsonRes(res, 200, {}));
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        const auth = await client.resolveAuth({ apiKey: null, username: null, password: null });
+        assert.equal(auth, null);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('logs in when username/password provided', async () => {
+      const { server, url, requests } = await startServer((_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Set-Cookie': ['sess=1; Path=/'] });
+        res.end('{}');
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        const auth = await client.resolveAuth({ apiKey: null, username: 'u', password: 'p' });
+        assert.equal(auth, 'sess=1');
+        assert.equal(requests[0].url, '/api/auth/login');
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+  });
+
+  describe('request timeout', () => {
+    it('rejects when the server never responds within the timeout', async () => {
+      // Server accepts the request but never responds (never calls res.end).
+      const { server, url } = await startServer((_req, _res) => {
+        // intentionally swallow the request and never respond
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false), 100);
+        await assert.rejects(client.postJSON('/api/slow', {}, null), /timed out after 100ms/);
+      } finally {
+        // Drop the hung connection and stop accepting new ones.
+        (server as any).closeAllConnections?.();
+        server.close();
+        await new Promise<void>((r) => server.on('close', () => r()));
+      }
+    });
+  });
+});

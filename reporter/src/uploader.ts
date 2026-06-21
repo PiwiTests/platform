@@ -3,6 +3,9 @@ import path from 'path';
 import FormData from 'form-data';
 import { HttpClient } from './http-client.js';
 import { FileHandler } from './file-handler.js';
+import { Logger } from './logger.js';
+import { serializeRun, toWireTestCase } from './serializer.js';
+import type { CollectedTestCase, TraceHashInfo } from './types.js';
 
 /** Payload for a batch test-run submission */
 export interface RunPayload {
@@ -28,8 +31,8 @@ export interface RunPayload {
   metadata: Record<string, any>;
   /** Unique instance identifier for deduplication */
   instanceId: string;
-  /** Test case results */
-  testCases: any[];
+  /** Test case results in their collected form (with attachments). Projected to the wire shape by `serializeRun`/`toWireTestCase` at the JSON boundary. */
+  testCases: CollectedTestCase[];
   /** Playwright framework version used for this run */
   playwrightVersion?: string;
   /** 1-based shard index (e.g. 1, 2, 3) */
@@ -57,43 +60,24 @@ export class Uploader {
   /**
    * @param httpClient  HTTP client for server communication.
    * @param fileHandler File discovery and compression helper.
-   * @param verbose     Enable verbose logging.
+   * @param logger      Prefixed logger.
    */
   constructor(
     private httpClient: HttpClient,
     private fileHandler: FileHandler,
-    private verbose?: boolean,
+    private logger: Logger,
   ) {}
 
   /** Submit test results as a plain JSON payload (no file attachments) */
   async uploadJSON(payload: RunPayload, auth: string | null): Promise<any> {
     const response = await this.httpClient.postJSON(
       '/api/test-runs/submit',
-      {
-        projectName: payload.projectName,
-        projectDescription: payload.projectDescription,
-        status: payload.status,
-        startTime: payload.startTime,
-        duration: payload.duration,
-        totalTests: payload.totalTests,
-        passedTests: payload.passedTests,
-        failedTests: payload.failedTests,
-        skippedTests: payload.skippedTests,
-        environment: payload.environment || null,
-        label: (payload as any).label || null,
-        metadata: payload.metadata,
-        instanceId: payload.instanceId,
-        playwrightVersion: payload.playwrightVersion,
-        testCases: payload.testCases,
-        shardIndex: payload.shardIndex,
-        shardTotal: payload.shardTotal,
-      },
+      serializeRun(payload, { includeTestCases: true }),
       auth,
     );
 
-    console.log(`[Piwi Dashboard] Successfully uploaded test results`);
-    if (response.testRunId)
-      console.log(`[Piwi Dashboard] Test Run ID: ${response.testRunId}, Project ID: ${response.projectId}`);
+    this.logger.info(`Successfully uploaded test results`);
+    if (response.testRunId) this.logger.info(`Test Run ID: ${response.testRunId}, Project ID: ${response.projectId}`);
     return response;
   }
 
@@ -101,37 +85,17 @@ export class Uploader {
   async uploadWithFiles(payload: RunPayload, reportOptions: ReportOptions, auth: string | null): Promise<any> {
     const form = new FormData();
     form.append('projectName', payload.projectName);
-    form.append(
-      'testRun',
-      JSON.stringify({
-        status: payload.status,
-        startTime: payload.startTime,
-        duration: payload.duration,
-        totalTests: payload.totalTests,
-        passedTests: payload.passedTests,
-        failedTests: payload.failedTests,
-        skippedTests: payload.skippedTests,
-        environment: payload.environment || null,
-        label: (payload as any).label || null,
-        metadata: payload.metadata,
-        projectDescription: payload.projectDescription,
-        instanceId: payload.instanceId,
-        playwrightVersion: payload.playwrightVersion,
-        shardIndex: payload.shardIndex,
-        shardTotal: payload.shardTotal,
-      }),
-    );
-    form.append('testCases', JSON.stringify(payload.testCases));
+    form.append('testRun', JSON.stringify(serializeRun(payload, { includeTestCases: false })));
+    form.append('testCases', JSON.stringify(payload.testCases.map((tc) => toWireTestCase(tc))));
 
     await this.appendReportsToForm(form, reportOptions.reports, reportOptions.uploadReport);
     await this.appendFilesToForm(form, payload.testCases, reportOptions.uploadTraces);
 
     const response = await this.httpClient.postFormData('/api/test-runs/upload', form, auth);
-    console.log(`[Piwi Dashboard] Successfully uploaded test results with files`);
-    if (response.testRunId)
-      console.log(`[Piwi Dashboard] Test Run ID: ${response.testRunId}, Project ID: ${response.projectId}`);
+    this.logger.info(`Successfully uploaded test results with files`);
+    if (response.testRunId) this.logger.info(`Test Run ID: ${response.testRunId}, Project ID: ${response.projectId}`);
     if (response.reports) {
-      for (const r of response.reports) console.log(`[Piwi Dashboard] ${r.label}: ${r.path}`);
+      for (const r of response.reports) this.logger.info(`${r.label}: ${r.path}`);
     }
     return response;
   }
@@ -165,18 +129,12 @@ export class Uploader {
     await this.appendReportsToForm(form, reportOptions.reports, reportOptions.uploadReport);
 
     const response = await this.httpClient.postFormData('/api/test-runs/upload', form, auth);
-    console.log(`[Piwi Dashboard] Successfully uploaded reports for streaming run #${runId}`);
+    this.logger.info(`Successfully uploaded reports for streaming run #${runId}`);
     if (response.reports) {
-      for (const r of response.reports) console.log(`[Piwi Dashboard] ${r.label}: ${r.path}`);
+      for (const r of response.reports) this.logger.info(`${r.label}: ${r.path}`);
     }
   }
 
-  /**
-   * Upload one test case's trace and attachments to a streaming run, as soon
-   * as the test finishes. The server links them to the run case persisted by
-   * the events endpoint, so the matching `complete` event must be flushed
-   * before calling this. Returns false when the case has no files to upload.
-   */
   /**
    * Upload one test case's trace and attachments for a streaming run.
    * The matching `complete` event must have been flushed to the server first.
@@ -186,13 +144,13 @@ export class Uploader {
     projectName: string,
     runId: number,
     streamToken: string,
-    testCase: any,
+    testCase: CollectedTestCase,
     uploadTraces: boolean | undefined,
     auth: string | null,
   ): Promise<boolean> {
     const attachments = this.fileHandler.findAllAttachments(testCase);
 
-    let traceInfo: { tracePath: string; hash: string; size: number } | null = null;
+    let traceInfo: TraceHashInfo | null = null;
     if (uploadTraces) {
       traceInfo = await this.fileHandler.computeSingleTraceHash(testCase);
     }
@@ -255,11 +213,9 @@ export class Uploader {
       }
     }
 
-    if (this.verbose) {
-      console.log(
-        `[Piwi Dashboard] Uploaded files for "${testCase.title}" (trace: ${traceInfo ? 'yes' : 'no'}, attachments: ${attachments.length})`,
-      );
-    }
+    this.logger.debug(
+      `Uploaded files for "${testCase.title}" (trace: ${traceInfo ? 'yes' : 'no'}, attachments: ${attachments.length})`,
+    );
     return true;
   }
 
@@ -280,7 +236,7 @@ export class Uploader {
           : this.fileHandler.findReportDirectory(defaultDir);
 
       if (!reportDir) {
-        if (this.verbose) console.log(`[Piwi Dashboard] No report directory found for type '${cfg.type}'`);
+        this.logger.debug(`No report directory found for type '${cfg.type}'`);
         continue;
       }
 
@@ -292,7 +248,11 @@ export class Uploader {
     }
   }
 
-  private async appendFilesToForm(form: FormData, testCases: any[], uploadTraces?: boolean): Promise<void> {
+  private async appendFilesToForm(
+    form: FormData,
+    testCases: CollectedTestCase[],
+    uploadTraces?: boolean,
+  ): Promise<void> {
     let attachmentCount = 0;
     for (const [i, tc] of testCases.entries()) {
       const attachments = this.fileHandler.findAllAttachments(tc);
@@ -314,7 +274,7 @@ export class Uploader {
         attachmentCount++;
       }
     }
-    if (attachmentCount > 0) console.log(`[Piwi Dashboard] Uploading ${attachmentCount} non-trace attachments`);
+    if (attachmentCount > 0) this.logger.info(`Uploading ${attachmentCount} non-trace attachments`);
 
     if (!uploadTraces) return;
 
@@ -327,6 +287,6 @@ export class Uploader {
         }
       }
     }
-    console.log(`[Piwi Dashboard] Found ${traceCount} trace files`);
+    this.logger.info(`Found ${traceCount} trace files`);
   }
 }

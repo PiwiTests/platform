@@ -1,11 +1,23 @@
 import { execSync } from 'child_process';
 import type { FullConfig, Suite, TestCase } from '@playwright/test/reporter';
+import { Logger } from './logger.js';
+import type { SuiteConfigEntry } from './types.js';
 
 /**
  * Collects CI/CD environment metadata, SCM (git) information, and Playwright
  * config metadata to attach to each test run submission.
+ *
+ * Also owns all reach-through access to Playwright-internal suite fields
+ * (`_parallelMode`, `_annotations`, `project()`) so the surface area that
+ * breaks when Playwright renames those internals is guarded behind one class.
  */
 export class MetadataCollector {
+  private readonly logger: Logger;
+
+  constructor(logger: Logger = new Logger()) {
+    this.logger = logger;
+  }
+
   /** Collect all available metadata from the environment, config, and suite */
   collect(config: FullConfig, suite: Suite, options: any): Record<string, unknown> {
     const metadata: Record<string, unknown> = {};
@@ -88,7 +100,37 @@ export class MetadataCollector {
     }
   }
 
-  private collectScmInfo(options: any): Record<string, string> | undefined {
+  /**
+   * Walk the test's parent `describe` suites to extract the suite path (titles)
+   * and per-level config (parallel mode + annotations). Reaches into Playwright
+   * suite internals (`_parallelMode`, `_annotations`) — kept here next to
+   * `getBrowserConfig` so all such access is guarded behind one class.
+   */
+  getSuiteInfo(test: TestCase): { suitePath: string[]; suiteConfig: SuiteConfigEntry[] } {
+    const suitePath: string[] = [];
+    const suiteConfig: SuiteConfigEntry[] = [];
+    const suites: Suite[] = [];
+
+    let suite: Suite | undefined = test.parent;
+    while (suite && suite.type === 'describe') {
+      suites.unshift(suite);
+      suite = suite.parent;
+    }
+
+    for (const s of suites) {
+      if (!s.title) continue;
+      suitePath.push(s.title);
+      const rawMode = (s as any)._parallelMode as string | undefined;
+      const mode: SuiteConfigEntry['mode'] =
+        rawMode === 'parallel' ? 'parallel' : rawMode === 'serial' ? 'serial' : 'default';
+      const annotations: Array<{ type: string; description?: string }> = (s as any)._annotations ?? [];
+      suiteConfig.push({ mode, annotations });
+    }
+
+    return { suitePath, suiteConfig };
+  }
+
+  private collectScmInfo(_options: any): Record<string, string> | undefined {
     const scm: Record<string, string> = {};
     try {
       const execOpts = { encoding: 'utf8' as const, timeout: 5000, maxBuffer: 1024 * 1024 };
@@ -102,7 +144,7 @@ export class MetadataCollector {
         /* optional */
       }
     } catch (error: any) {
-      if (options.verbose) console.log('[Piwi Dashboard] Git info not available:', error.message);
+      this.logger.debug(`Git info not available: ${error.message}`);
     }
     return Object.keys(scm).length > 0 ? scm : undefined;
   }

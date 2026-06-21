@@ -5,7 +5,9 @@ import { StreamBuffer } from './stream-buffer.js';
 import { CrashRecovery } from './crash-recovery.js';
 import { Uploader } from './uploader.js';
 import { FileHandler } from './file-handler.js';
+import { Logger } from './logger.js';
 import { createLimiter, readSetupInfo } from './helpers.js';
+import type { CollectedTestCase, StreamEvent } from './types.js';
 
 /**
  * Manages the streaming protocol: queues events (begin / complete), flushes
@@ -13,8 +15,8 @@ import { createLimiter, readSetupInfo } from './helpers.js';
  * live file uploads.
  */
 export class StreamManager {
-  private pendingEvents: any[] = [];
-  private pendingBeginEvents: any[] = [];
+  private pendingEvents: StreamEvent[] = [];
+  private pendingBeginEvents: StreamEvent[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private flushPromises: Array<Promise<boolean>> = [];
   private liveUploadPromises: Array<Promise<void>> = [];
@@ -22,6 +24,8 @@ export class StreamManager {
   private retryCount = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly maxRetryDelay = 30000;
+  /** Tracks cases whose files have already been uploaded live, so `uploadRemaining` can skip them. */
+  private readonly uploadedCaseFiles = new WeakSet<CollectedTestCase>();
 
   private _enabled = false;
   private _runId: number | null = null;
@@ -57,6 +61,7 @@ export class StreamManager {
    * @param uploader    Uploader for per-test-case file uploads.
    * @param fileHandler File-discovery helper for finding traces and attachments.
    * @param options     Piwi Dashboard reporter options.
+   * @param logger      Prefixed logger.
    */
   constructor(
     private readonly httpClient: HttpClient,
@@ -65,6 +70,7 @@ export class StreamManager {
     private readonly uploader: Uploader,
     private readonly fileHandler: FileHandler,
     private readonly options: PiwiDashboardOptions,
+    private readonly logger: Logger = new Logger(),
   ) {}
 
   /** Begin the streaming session after `onBegin` fires. Non-blocking — the actual handshake runs asynchronously. */
@@ -106,9 +112,7 @@ export class StreamManager {
           // Stale setupInfo — the run was cancelled (e.g. by crash recovery submit).
           // Fall back to creating a fresh run instead of silently disabling streaming.
           if (!beginError.message?.includes('409')) throw beginError;
-          if (this.options.verbose) {
-            console.log(`[Piwi Dashboard] Setup info expired, creating fresh run...`);
-          }
+          this.logger.debug(`Setup info expired, creating fresh run...`);
           response = await this.httpClient.postJSON(
             '/api/test-runs/start',
             {
@@ -149,7 +153,7 @@ export class StreamManager {
         this._runId = response.runId;
         this._token = response.streamToken;
         this._enabled = true;
-        console.log(`[Piwi Dashboard] Streaming enabled. Run ID: ${response.runId}`);
+        this.logger.info(`Streaming enabled. Run ID: ${response.runId}`);
 
         if (this.pendingBeginEvents.length > 0) {
           this.pendingEvents = [...this.pendingBeginEvents, ...this.pendingEvents];
@@ -158,9 +162,7 @@ export class StreamManager {
         }
       }
     } catch (error: any) {
-      if (this.options.verbose) {
-        console.log(`[Piwi Dashboard] Streaming not available: ${error.message}. Will use batch mode.`);
-      }
+      this.logger.debug(`Streaming not available: ${error.message}. Will use batch mode.`);
       this._enabled = false;
     }
   }
@@ -168,7 +170,7 @@ export class StreamManager {
   // Queues a begin event; held in a pre-start buffer until the stream is open,
   // then prepended to the main queue so it arrives before the matching complete event.
   /** Queue a test-case `begin` event. Held in a pre-start buffer if the stream is not yet open, then prepended so it arrives before the matching `complete` event. */
-  queueBeginEvent(event: any): void {
+  queueBeginEvent(event: StreamEvent): void {
     if (this._enabled && this._runId) {
       this.queueEvent(event);
     } else {
@@ -177,7 +179,7 @@ export class StreamManager {
   }
 
   /** Queue a test-case event. Triggers an immediate flush when the batch size is reached, otherwise schedules a timer-based flush. */
-  queueEvent(event: any): void {
+  queueEvent(event: StreamEvent): void {
     this.pendingEvents.push(event);
 
     if (this.pendingEvents.length >= this.options.streamingBatchSize!) {
@@ -220,9 +222,7 @@ export class StreamManager {
     if (this.retryTimer) return;
     this.retryCount++;
     const delay = Math.min(1000 * Math.pow(2, this.retryCount - 1), this.maxRetryDelay);
-    if (this.options.verbose) {
-      console.log(`[Piwi Dashboard] Will retry streaming flush in ${delay}ms (attempt ${this.retryCount})`);
-    }
+    this.logger.debug(`Will retry streaming flush in ${delay}ms (attempt ${this.retryCount})`);
 
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
@@ -259,11 +259,9 @@ export class StreamManager {
         }
         return;
       }
-      if (this.options.verbose) {
-        console.warn(
-          `[Piwi Dashboard] ${this.pendingEvents.length} events pending, retrying (attempt ${attempt + 1}/${MAX_ATTEMPTS})...`,
-        );
-      }
+      this.logger.debugError(
+        `${this.pendingEvents.length} events pending, retrying (attempt ${attempt + 1}/${MAX_ATTEMPTS})...`,
+      );
       await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * Math.pow(2, attempt), 10000)));
     }
 
@@ -274,7 +272,7 @@ export class StreamManager {
   }
 
   /** Schedule a live upload of trace and attachment files for a test case. Skips cases with no files. Concurrency is limited to 2 simultaneous uploads. */
-  scheduleLiveUpload(tc: any): void {
+  scheduleLiveUpload(tc: CollectedTestCase): void {
     const hasTrace = !!this.options.uploadTraces && this.fileHandler.findTraceFiles(tc).some((p) => fs.existsSync(p));
     const hasAttachments = this.fileHandler.findAllAttachments(tc).length > 0;
     if (!hasTrace && !hasAttachments) return;
@@ -308,14 +306,12 @@ export class StreamManager {
               this._auth,
             ),
           );
-          tc._filesUploaded = true;
+          this.uploadedCaseFiles.add(tc);
           return;
         } catch (error: any) {
           const retryable = error.message?.includes('404');
           if (!retryable || attempt === delays.length - 1) {
-            if (this.options.verbose) {
-              console.log(`[Piwi Dashboard] Live file upload failed for "${tc.title}": ${error.message}`);
-            }
+            this.logger.debug(`Live file upload failed for "${tc.title}": ${error.message}`);
             return; // The end-of-run pass retries cases that failed here
           }
         }
@@ -326,7 +322,7 @@ export class StreamManager {
   }
 
   /** Wait for all live uploads to settle, then upload files for any test cases that weren't uploaded live */
-  async uploadRemaining(testCases: any[]): Promise<void> {
+  async uploadRemaining(testCases: CollectedTestCase[]): Promise<void> {
     if (this.liveUploadPromises.length > 0) {
       await Promise.allSettled(this.liveUploadPromises);
       this.liveUploadPromises = [];
@@ -334,7 +330,7 @@ export class StreamManager {
     if (!this._enabled || !this._runId || !this._token) return;
 
     for (const tc of testCases) {
-      if (tc._filesUploaded) continue;
+      if (this.uploadedCaseFiles.has(tc)) continue;
       try {
         const uploaded = await this.uploader.uploadCaseFiles(
           this.options.projectName!,
@@ -344,9 +340,9 @@ export class StreamManager {
           this.options.uploadTraces,
           this._auth,
         );
-        if (uploaded) tc._filesUploaded = true;
+        if (uploaded) this.uploadedCaseFiles.add(tc);
       } catch (error: any) {
-        console.warn(`[Piwi Dashboard] Failed to upload files for "${tc.title}": ${error.message}`);
+        this.logger.warn(`Failed to upload files for "${tc.title}": ${error.message}`);
       }
     }
   }

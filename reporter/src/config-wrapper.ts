@@ -1,5 +1,5 @@
 import type { PlaywrightTestConfig } from '@playwright/test';
-import type { PiwiDashboardOptions } from './config.js';
+import { applyOptionsToEnv, type PiwiDashboardOptions } from './config.js';
 
 const PIWI_MODULE = '@phenx/piwi-dashboard-reporter';
 
@@ -41,19 +41,16 @@ function resolveSetupModule(): string {
  * which registers the run on the server. The original setup path(s) are
  * preserved and executed first.
  *
- * Playwright options required in `globalSetup` are forwarded via environment
- * variables:
- * - `serverUrl` → `PIWI_DASHBOARD_URL`
- * - `projectName` → `PIWI_PROJECT_NAME`
- * - `verbose` → `PIWI_VERBOSE`
+ * Playwright options required in `globalSetup` are forwarded via `PIWI_*`
+ * environment variables (see `applyOptionsToEnv` in `config.ts` for the
+ * supported set — `serverUrl`, `projectName`, `verbose`, `apiKey`,
+ * `username`, `password`, `environment`, `label`, `runLabel`).
  *
  * @param config      The user's Playwright config.
  * @param piwiOptions Optional Piwi Dashboard options (serverUrl, projectName, …).
  */
 export function wrapConfig<T extends PlaywrightTestConfig>(config: T, piwiOptions?: PiwiDashboardOptions): T {
-  if (piwiOptions?.serverUrl) process.env.PIWI_DASHBOARD_URL = piwiOptions.serverUrl;
-  if (piwiOptions?.projectName) process.env.PIWI_PROJECT_NAME = piwiOptions.projectName;
-  if (piwiOptions?.verbose !== undefined) process.env.PIWI_VERBOSE = String(piwiOptions.verbose);
+  if (piwiOptions) applyOptionsToEnv(piwiOptions);
 
   const globalSetupModules: string[] = [];
   if (config.globalSetup) {

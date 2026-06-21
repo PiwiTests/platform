@@ -62,6 +62,30 @@ export default defineConfig({
 | `runLabel`                  | string   | auto-detected from CI     | Stable label tying shards together (e.g. CI run ID). Auto-detected from CI env; override if needed |
 | `verbose`                   | boolean  | `false`                   | Enable verbose logging for debugging                                                        |
 
+### Environment variables
+
+Every option above can also be set via a `PIWI_*` environment variable. Env vars are fallbacks — an option passed in the reporter config takes precedence. The one exception is `PIWI_VERBOSE`, which wins over both the default and an explicit option (useful for toggling debug output without editing the config). The mapping is centralized in `src/config.ts` (`PIWI_ENV_KEYS`):
+
+| Env var                         | Option                  | Format          |
+|---------------------------------|-------------------------|-----------------|
+| `PIWI_DASHBOARD_URL`            | `serverUrl`             | string          |
+| `PIWI_PROJECT_NAME`             | `projectName`           | string          |
+| `PIWI_API_KEY`                  | `apiKey`                | string (`pd_…`) |
+| `PIWI_USERNAME`                 | `username`              | string          |
+| `PIWI_PASSWORD`                 | `password`              | string          |
+| `PIWI_ENVIRONMENT`              | `environment`           | string          |
+| `PIWI_LABEL`                    | `label`                 | string          |
+| `PIWI_RUN_LABEL`                | `runLabel`              | string          |
+| `PIWI_STREAMING`                | `streaming`             | `true`/`false`  |
+| `PIWI_STREAMING_BATCH_SIZE`     | `streamingBatchSize`    | number          |
+| `PIWI_STREAMING_BATCH_DELAY`    | `streamingBatchDelay`   | number          |
+| `PIWI_LIVE_FILE_UPLOADS`        | `liveFileUploads`       | `true`/`false`  |
+| `PIWI_UPLOAD_TRACES`            | `uploadTraces`          | `true`/`false`  |
+| `PIWI_UPLOAD_REPORT`            | `uploadReport`          | `true`/`false`  |
+| `PIWI_VERBOSE`                  | `verbose`               | `true`/`false`  |
+
+`wrapConfig` forwards the same `PIWI_*` vars into the isolated `global-setup` process so the run registration step shares the reporter's server/auth config.
+
 ## Sharding
 
 When using Playwright's built-in test execution sharding (`--shard=1/3`), the reporter automatically groups
@@ -422,7 +446,7 @@ npm run reporter:build   # compile TypeScript from src/ to dist/
 npm run reporter:dev     # watch mode — auto-recompile on changes
 ```
 
-This produces 13 `.js` + 13 `.d.ts` files in `dist/` — one for each `.ts` source in `src/`.
+This produces one `.js` + one `.d.ts` file per `.ts` source in `src/` (currently 21 modules).
 
 The compiled output is what Playwright loads at runtime. The `package.json` `exports` field maps `@phenx/piwi-dashboard-reporter/fixtures` directly to `dist/fixtures.js`.
 
@@ -431,19 +455,25 @@ The compiled output is what Playwright loads at runtime. The `package.json` `exp
 | File                        | Purpose                                                                                                  |
 |-----------------------------|----------------------------------------------------------------------------------------------------------|
 | `src/index.ts`              | Entry point — re-exports the class with `createGlobalSetup` attached                                     |
-| `src/reporter.ts`           | Main `PiwiDashboardReporter` orchestrator class (Playwright hooks, streaming lifecycle, upload fallback) |
-| `src/config.ts`             | `PiwiDashboardOptions` interface + `resolveOptions()` defaults merger                                    |
-| `src/helpers.ts`            | Utility functions: `getSetupFilePath`, `computeInstanceId`, `createGlobalSetup`                          |
-| `src/http-client.ts`        | `HttpClient` class — HTTP/HTTPS transport (login, postJSON, postFormData)                                |
+| `src/reporter.ts`           | `PiwiDashboardReporter` — Playwright hooks + running counters; hands the collected run to `RunSubmitter` |
+| `src/run-submitter.ts`      | `RunSubmitter` — the three-tier submit/fallback ladder (streaming → multipart → JSON → recovery)         |
+| `src/config.ts`             | `PiwiDashboardOptions` interface, `resolveOptions()` defaults merger, and the centralized `PIWI_*` env map |
+| `src/config-wrapper.ts`     | `wrapConfig` — injects the reporter + global setup into a Playwright config                              |
+| `src/helpers.ts`            | Utilities: `getSetupFilePath`, `computeInstanceId`, `workerIndexOf`, `createGlobalSetup`                 |
+| `src/http-client.ts`        | `HttpClient` class — one `request()` core (login, postJSON, postFormData) with socket timeout            |
 | `src/uploader.ts`           | `Uploader` class — upload strategies (JSON, multipart, streaming files)                                  |
+| `src/serializer.ts`         | Pure serializers: `toWireTestCase`, `serializeRun`, `resolveOverallStatus`                               |
+| `src/types.ts`              | Reporter-local domain model (`CollectedTestCase`, `WireTestCase`, `StreamEvent` union)                   |
+| `src/logger.ts`             | `Logger` — owns the `[Piwi Dashboard]` prefix and the verbose gate                                        |
+| `src/stream-manager.ts`     | `StreamManager` class — event batching, retry/backoff, live file uploads                                 |
 | `src/stream-buffer.ts`      | `StreamBuffer` class — persistent JSONL event buffer with staleness cleanup                              |
 | `src/crash-recovery.ts`     | `CrashRecovery` class — save/load/retry recovery data after total failure                                |
-| `src/file-handler.ts`       | `FileHandler` class — report directory detection, trace/attachment file ops                              |
-| `src/metadata-collector.ts` | `MetadataCollector` class — CI, SCM, and Playwright config metadata                                      |
+| `src/file-handler.ts`       | `FileHandler` class — report directory detection, trace/attachment file ops, single-case trace hashing  |
+| `src/metadata-collector.ts` | `MetadataCollector` class — CI, SCM, browser config, and suite-hierarchy (describe) metadata             |
 | `src/step-analyzer.ts`      | Pure functions — step categorization, flattening, performance summary                                    |
 | `src/compression.ts`        | Directory gzip archiver                                                                                  |
 | `src/fixtures.ts`           | Playwright fixtures for network/web-vitals/console capture                                               |
 
 ### Shared types
 
-Wire contract types are defined in `application/shared/types.ts` and used by the server for request validation. The reporter does not import them directly — it uses structural `any` typing (Playwright's runtime API is inherently untyped from the reporter's perspective). When making changes, keep the two sides consistent: the reporter's payload shapes must match the server's `TestCasePayload`, `StreamEventPayload`, and `TestRunFinishPayload`.
+Wire contract types are defined in `application/shared/types.ts` and used by the server for request validation. The reporter does not import them directly — it keeps its own structurally-compatible interfaces in `src/types.ts` (`CollectedTestCase`, `WireTestCase`, `StreamEvent`) so the monorepo path isn't leaked into the published `.d.ts`. When making changes, keep the two sides consistent: the reporter's wire shapes must match the server's `TestCasePayload`, `StreamEventPayload`, and `TestRunFinishPayload`.

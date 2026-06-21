@@ -5,10 +5,22 @@ import * as fs from 'fs';
 import type { PiwiDashboardOptions, ShardInfo } from './config.js';
 import { resolveOptions } from './config.js';
 import { HttpClient } from './http-client.js';
+import { Logger } from './logger.js';
 
 /** Produce a deterministic short SHA-1 hex hash for a project name (used in temp file names) */
 export function hashForProject(projectName: string): string {
   return crypto.createHash('sha1').update(projectName).digest('hex').slice(0, 16);
+}
+
+/**
+ * Extract a worker index from a Playwright `TestResult`, falling back to
+ * `parallelIndex` when `workerIndex` is absent. Returns `null` when neither is
+ * set. Localizes the `as any` reach into Playwright's result object so the
+ * cast lives in exactly one place.
+ */
+export function workerIndexOf(result: any): number | null {
+  if (!result) return null;
+  return result.workerIndex ?? result.parallelIndex ?? null;
 }
 
 /** Return the temp-file path used to exchange setup info between globalSetup and the reporter instance */
@@ -126,9 +138,10 @@ export function createGlobalSetup(
 ): (config: any) => Promise<any> {
   return async function globalSetupFn(config: any) {
     const opts = resolveOptions((options ?? {}) as Record<string, any>);
+    const logger = new Logger(opts.verbose ?? false);
 
     if (!opts.serverUrl) {
-      console.log('[Piwi Dashboard] Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');
+      logger.info('Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');
       if (userSetup) return userSetup(config);
       return;
     }
@@ -147,12 +160,12 @@ export function createGlobalSetup(
       });
 
     if (!hasPiwi) {
-      if (opts.verbose) console.log('[Piwi Dashboard] Not reporting — Piwi is not in the Playwright reporters list.');
+      logger.debug('Not reporting — Piwi is not in the Playwright reporters list.');
       if (userSetup) return userSetup(config);
       return;
     }
 
-    const httpClient = new HttpClient(opts.serverUrl, opts.verbose);
+    const httpClient = new HttpClient(opts.serverUrl, logger);
 
     try {
       const auth = await httpClient.resolveAuth(opts);
@@ -187,10 +200,10 @@ export function createGlobalSetup(
             projectName: opts.projectName,
           }),
         );
-        if (opts.verbose) console.log(`[Piwi Dashboard] Global setup: initialising run #${response.runId}`);
+        logger.debug(`Global setup: initialising run #${response.runId}`);
       }
     } catch (error: any) {
-      console.warn(`[Piwi Dashboard] Could not register global setup: ${error.message}`);
+      logger.warn(`Could not register global setup: ${error.message}`);
     }
 
     if (userSetup) return userSetup(config);

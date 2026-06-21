@@ -116,15 +116,21 @@ Nuxt file-based routing:
 
 ### Reporter
 - `reporter/src/index.ts` — Entry point (re-exports class + `createGlobalSetup`)
-- `reporter/src/reporter.ts` — Main `PiwiDashboardReporter` orchestrator class
-- `reporter/src/config.ts` — `PiwiDashboardOptions` interface + defaults
-- `reporter/src/helpers.ts` — `getSetupFilePath`, `computeInstanceId`, `createGlobalSetup`
-- `reporter/src/http-client.ts` — `HttpClient` class (HTTP transport)
-- `reporter/src/uploader.ts` — `Uploader` class (upload strategies)
+- `reporter/src/reporter.ts` — `PiwiDashboardReporter` (Playwright hooks + running counters; hands off to `RunSubmitter`)
+- `reporter/src/run-submitter.ts` — `RunSubmitter` class (the three-tier submit/fallback ladder: streaming → multipart → JSON → recovery)
+- `reporter/src/config.ts` — `PiwiDashboardOptions` interface + defaults + centralized `PIWI_*` env map (`PIWI_ENV_KEYS`, `resolveOptions`, `applyOptionsToEnv`)
+- `reporter/src/config-wrapper.ts` — `wrapConfig` (injects reporter + global setup into a Playwright config)
+- `reporter/src/helpers.ts` — `getSetupFilePath`, `computeInstanceId`, `workerIndexOf`, `createGlobalSetup`
+- `reporter/src/http-client.ts` — `HttpClient` class (one `request()` core with socket timeout; login/postJSON/postFormData)
+- `reporter/src/uploader.ts` — `Uploader` class (upload strategies: JSON, multipart, streaming files)
+- `reporter/src/serializer.ts` — Pure serializers: `toWireTestCase`, `serializeRun`, `resolveOverallStatus` (single source of truth for the wire field list)
+- `reporter/src/types.ts` — Reporter-local domain model (`CollectedTestCase`, `WireTestCase`, `StreamEvent` discriminated union). Structurally compatible with `shared/types.ts` but not imported from it (avoids leaking the monorepo path into the published `.d.ts`)
+- `reporter/src/logger.ts` — `Logger` class (owns the `[Piwi Dashboard]` prefix and the verbose gate; replaces ~46 hand-typed prefixes + scattered `verbose` constructor params)
+- `reporter/src/stream-manager.ts` — `StreamManager` class (event batching, retry/backoff, live file uploads; tracks uploaded cases in a `WeakSet` instead of a `_filesUploaded` side-channel on the data object)
 - `reporter/src/stream-buffer.ts` — `StreamBuffer` class (persistent event buffer)
 - `reporter/src/crash-recovery.ts` — `CrashRecovery` class (recovery data)
-- `reporter/src/file-handler.ts` — `FileHandler` class (report/trace/attachment ops)
-- `reporter/src/metadata-collector.ts` — `MetadataCollector` class (CI/SCM metadata)
+- `reporter/src/file-handler.ts` — `FileHandler` class (report/trace/attachment ops; single-case trace hashing)
+- `reporter/src/metadata-collector.ts` — `MetadataCollector` class (CI/SCM/browser config + suite-hierarchy metadata; owns all Playwright-internal suite access via `getSuiteInfo`/`getBrowserConfig`)
 - `reporter/src/step-analyzer.ts` — Pure functions (step analysis, performance)
 - `reporter/src/compression.ts` — Directory gzip archiver
 - `reporter/src/fixtures.ts` — Playwright fixtures for network/web-vitals/console
@@ -283,7 +289,7 @@ When the `User` type from DB has `role: string`, cast to `Role`: `user.role as R
 - **Entity links** (`shared/link-detect.ts`): Pure utility for detecting external URL provider (Jira, GitHub, etc.) and extracting keys. Uses domain regex matching, no dependencies. Provider enum includes `jira`, `github-issue`, `github-pr`, `gitlab-issue`, `gitlab-mr`, `bitbucket`, `confluence`, `slack`, `linear`, `notion`, `generic`.
 - **Retry command** (`app/utils/retry-command.ts`): Pure function `buildRetryCommand(cases, opts?)` that builds a Playwright CLI command string. Three modes: `file-line` (default, most precise), `grep` (by title, survives line shifts), `file` (broadest, deduped files). Groups by project, escapes shell args, caps at 4096 chars with fallback modes.
 - **Entity Links API** (`server/api/links/`): CRUD endpoints for attaching external URLs to runs, test-case runs, or test cases. Uses three nullable FK columns (`test_run_id`, `test_runs_case_id`, `test_case_id`) with `ON DELETE CASCADE` — matches the `files` table pattern. Provider auto-detected on create. `entityType` query param accepts `test_run`, `test_runs_case`, or `test_case`. Write requires `[ADMINISTRATOR, REPORTER]` role, read requires any authenticated role. Embed links in existing GET responses (`test-runs/[id]`, `test-cases/[id]`).
-- **Adding a field to test run data**: Add to `shared/types.ts` payload(s) → add column to both `schema.sqlite.ts` and `schema.pg.ts` → `npm run db:generate && npm run db:generate:pg` → update `types/api.ts` (frontend types) → update all API handlers (`submit`, `upload`, `[id]/events`, `[id].get`, `[id]/stream.get`, `test-cases/[id].get`) → update server utils (`persist-run-cases.ts`) → update reporter (`reporter.ts`, `uploader.ts`, `stream-manager.ts`) → update demo (`scripts/generate-demo-seed.mjs`, `demo/api/reporter.ts`, `demo/api/test-runs.ts`, `demo/api/test-cases.ts`, `demo/simulator.ts`) → update UI components that consume the new field → `npm run app:seed:demo`
+- **Adding a field to test run data**: Add to `shared/types.ts` payload(s) → add column to both `schema.sqlite.ts` and `schema.pg.ts` → `npm run db:generate && npm run db:generate:pg` → update `types/api.ts` (frontend types) → update all API handlers (`submit`, `upload`, `[id]/events`, `[id].get`, `[id]/stream.get`, `test-cases/[id].get`) → update server utils (`persist-run-cases.ts`) → **update reporter**: add the field to `reporter/src/types.ts` (`CollectedTestCase` + `WireTestCase`), accumulate it in `reporter.ts` `onTestEnd`/`onTestBegin`, and project it in `reporter/src/serializer.ts` `toWireTestCase` (per-case) or `serializeRun` (run-level). `serializeRun` is the single source of truth for the run body — both `Uploader.uploadJSON` and `Uploader.uploadWithFiles` call it, so a run-level field only touches one serializer now. → update demo (`scripts/generate-demo-seed.mjs`, `demo/api/reporter.ts`, `demo/api/test-runs.ts`, `demo/api/test-cases.ts`, `demo/simulator.ts`) → update UI components that consume the new field → `npm run app:seed:demo`
 
 ### Sharding Pattern
 
