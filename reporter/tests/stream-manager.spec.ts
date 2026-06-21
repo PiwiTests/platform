@@ -1,0 +1,207 @@
+﻿import { describe, it, beforeEach, afterEach } from 'node:test';
+import * as assert from 'node:assert/strict';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import { StreamManager } from '../src/stream-manager.js';
+import { StreamBuffer } from '../src/stream-buffer.js';
+import { CrashRecovery } from '../src/crash-recovery.js';
+import { FileHandler } from '../src/file-handler.js';
+import type { PiwiDashboardOptions } from '../src/config.js';
+
+const projectName = 'piwi-stream-test-' + process.pid;
+
+function cleanup(): void {
+  const tmp = os.tmpdir();
+  for (const f of fs.readdirSync(tmp)) {
+    if (f.startsWith('piwi-dashboard-stream-') || f.startsWith('piwi-dashboard-recovery-')) {
+      try {
+        fs.unlinkSync(path.join(tmp, f));
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
+function makeOptions(overrides: Partial<PiwiDashboardOptions> = {}): PiwiDashboardOptions {
+  return {
+    serverUrl: 'http://localhost:3000',
+    projectName,
+    streaming: true,
+    streamingBatchSize: 3,
+    streamingBatchDelay: 1000,
+    uploadTraces: false,
+    liveFileUploads: false,
+    verbose: false,
+    ...overrides,
+  } as PiwiDashboardOptions;
+}
+
+describe('StreamManager batching & drain', () => {
+  beforeEach(cleanup);
+  afterEach(cleanup);
+
+  it('flushes immediately when batchSize is reached', async () => {
+    const calls: string[] = [];
+    const http = {
+      async postJSON(url: string) {
+        calls.push(url);
+        return {};
+      },
+      async resolveAuth() {
+        return null;
+      },
+    };
+    const options = makeOptions({ streamingBatchSize: 3, streamingBatchDelay: 60000 });
+    const sm = new StreamManager(
+      http as any,
+      new StreamBuffer(projectName),
+      new CrashRecovery(projectName),
+      {} as any,
+      new FileHandler(),
+      options,
+    );
+    // Force enabled state without going through the async handshake.
+    (sm as any)._enabled = true;
+    (sm as any)._runId = 1;
+    (sm as any)._token = 'tok';
+
+    sm.queueEvent({ type: 'complete', title: 'a' });
+    sm.queueEvent({ type: 'complete', title: 'b' });
+    assert.equal(calls.length, 0, 'no flush before batchSize');
+    sm.queueEvent({ type: 'complete', title: 'c' });
+    assert.equal(calls.length, 1, 'flush at batchSize');
+    // wait for the in-flight flush to settle
+    await sm.drain();
+    assert.equal(calls.length, 1);
+  });
+
+  it('drain flushes pending events', async () => {
+    const calls: string[] = [];
+    const http = {
+      async postJSON(url: string) {
+        calls.push(url);
+        return {};
+      },
+      async resolveAuth() {
+        return null;
+      },
+    };
+    const options = makeOptions({ streamingBatchSize: 100, streamingBatchDelay: 60000 });
+    const sm = new StreamManager(
+      http as any,
+      new StreamBuffer(projectName),
+      new CrashRecovery(projectName),
+      {} as any,
+      new FileHandler(),
+      options,
+    );
+    (sm as any)._enabled = true;
+    (sm as any)._runId = 1;
+    (sm as any)._token = 'tok';
+
+    sm.queueEvent({ type: 'complete', title: 'a' });
+    sm.queueEvent({ type: 'complete', title: 'b' });
+    // batchSize not reached and no timer fired yet → drain must flush
+    await sm.drain();
+    assert.equal(calls.length, 1);
+  });
+
+  it('re-queues events on flush failure so drain can retry', async () => {
+    let attempts = 0;
+    const http = {
+      async postJSON() {
+        attempts++;
+        if (attempts < 2) throw new Error('Request failed with status 500');
+        return {};
+      },
+      async resolveAuth() {
+        return null;
+      },
+    };
+    const options = makeOptions({ streamingBatchSize: 100, streamingBatchDelay: 60000 });
+    const sm = new StreamManager(
+      http as any,
+      new StreamBuffer(projectName),
+      new CrashRecovery(projectName),
+      {} as any,
+      new FileHandler(),
+      options,
+    );
+    (sm as any)._enabled = true;
+    (sm as any)._runId = 1;
+    (sm as any)._token = 'tok';
+
+    sm.queueEvent({ type: 'complete', title: 'a' });
+    await sm.drain();
+    assert.ok(attempts >= 2, `expected at least 2 attempts, got ${attempts}`);
+  });
+
+  it('drain is a no-op when streaming is disabled', async () => {
+    const calls: string[] = [];
+    const http = {
+      async postJSON(url: string) {
+        calls.push(url);
+        return {};
+      },
+      async resolveAuth() {
+        return null;
+      },
+    };
+    const sm = new StreamManager(
+      http as any,
+      new StreamBuffer(projectName),
+      new CrashRecovery(projectName),
+      {} as any,
+      new FileHandler(),
+      makeOptions(),
+    );
+    (sm as any)._enabled = false;
+    (sm as any).pendingEvents = [{ type: 'complete', title: 'x' }];
+    await sm.drain();
+    assert.equal(calls.length, 0);
+  });
+
+  it('persisted buffer events are replayed on retry', async () => {
+    // Simulate a crash: events were persisted to the StreamBuffer file.
+    // On the next drain, after a failed flush + retry, the buffered events
+    // should be loaded back and re-sent.
+    const buffer = new StreamBuffer(projectName);
+    buffer.append([{ type: 'complete', title: 'buffered-1' }]);
+
+    let seen: any[] = [];
+    let attempt = 0;
+    const http = {
+      async postJSON(_url: string, body: any) {
+        attempt++;
+        if (attempt === 1) {
+          // first flush fails → scheduleRetry loads the buffer back
+          throw new Error('Request failed with status 500');
+        }
+        seen = body.testCases;
+        return {};
+      },
+      async resolveAuth() {
+        return null;
+      },
+    };
+    const options = makeOptions({ streamingBatchSize: 100, streamingBatchDelay: 60000 });
+    const sm = new StreamManager(
+      http as any,
+      buffer,
+      new CrashRecovery(projectName),
+      {} as any,
+      new FileHandler(),
+      options,
+    );
+    (sm as any)._enabled = true;
+    (sm as any)._runId = 1;
+    (sm as any)._token = 'tok';
+
+    sm.queueEvent({ type: 'complete', title: 'queued-1' });
+    await sm.drain();
+    // After retry, the buffered event should be among those sent.
+    assert.ok(seen.some((e: any) => e.title === 'buffered-1'), `seen: ${JSON.stringify(seen)}`);
+  });
+});

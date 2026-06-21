@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 import { hashForProject } from './helpers.js';
+import type { StreamEvent } from './types.js';
 
 /**
  * Persistent JSONL buffer on disk.  Events are appended to a temp file so they
@@ -15,7 +16,7 @@ export class StreamBuffer {
   }
 
   /** Append one or more events to the on-disk buffer */
-  append(events: any[]): void {
+  append(events: StreamEvent[]): void {
     if (events.length === 0) return;
     try {
       const lines = events.map((e) => JSON.stringify(e) + '\n').join('');
@@ -26,14 +27,14 @@ export class StreamBuffer {
   }
 
   /** Load all buffered events from disk, clearing the file */
-  load(): any[] {
+  load(): StreamEvent[] {
     try {
       if (fs.existsSync(this.filePath)) {
         const content = fs.readFileSync(this.filePath, 'utf8');
         return content
           .split('\n')
           .filter(Boolean)
-          .map((line) => JSON.parse(line));
+          .map((line) => JSON.parse(line) as StreamEvent);
       }
     } catch {
       // Non-fatal

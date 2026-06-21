@@ -48,6 +48,9 @@ export interface FlatStep {
   category: string;
 }
 
+/** Step-event category restricted to the values `extractTestStepEvents` emits. */
+export type StepEventCategory = 'hook' | 'fixture' | 'test.step' | 'expect';
+
 /** Recursively flatten a nested step tree into a flat list. Uses Playwright's built-in category when available. */
 export function flattenSteps(steps: any[]): FlatStep[] {
   const result: FlatStep[] = [];
@@ -167,10 +170,10 @@ export function computePerformanceSummary(testCases: any[]): PerformanceSummary 
  */
 export function extractTestStepEvents(
   steps: any[],
-  testStartTime: Date,
+  _testStartTime: Date,
 ): Array<{
   title: string;
-  category: string;
+  category: StepEventCategory;
   startedAt: number;
   duration: number;
   status: string;
@@ -178,7 +181,7 @@ export function extractTestStepEvents(
 }> {
   const events: Array<{
     title: string;
-    category: string;
+    category: StepEventCategory;
     startedAt: number;
     duration: number;
     status: string;
@@ -193,7 +196,7 @@ export function extractTestStepEvents(
     const startedAt = step.startTime instanceof Date ? step.startTime.getTime() : step.startTime;
     events.push({
       title: step.title,
-      category: cat,
+      category: cat as StepEventCategory,
       startedAt,
       duration: step.duration || 0,
       status: step.error ? 'failed' : 'passed',

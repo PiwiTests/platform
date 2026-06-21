@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as fs from 'fs';
 import { hashForProject } from './helpers.js';
 import { HttpClient } from './http-client.js';
+import { Logger } from './logger.js';
 
 /**
  * Persists a test-run payload to disk when all upload strategies fail, so the
@@ -10,14 +11,14 @@ import { HttpClient } from './http-client.js';
  */
 export class CrashRecovery {
   private filePath: string;
-  private verbose: boolean;
+  private readonly logger: Logger;
 
   /**
    * @param projectName Used to derive the temp-file name so recovery data is project-scoped.
-   * @param verbose     Enable verbose logging.
+   * @param logger      Prefixed logger.
    */
-  constructor(projectName: string, verbose?: boolean) {
-    this.verbose = verbose ?? false;
+  constructor(projectName: string, logger: Logger = new Logger()) {
+    this.logger = logger;
     this.filePath = path.join(os.tmpdir(), `piwi-dashboard-recovery-${hashForProject(projectName)}.json`);
   }
 
@@ -25,9 +26,9 @@ export class CrashRecovery {
   save(data: Record<string, any>): void {
     try {
       fs.writeFileSync(this.filePath, JSON.stringify(data), 'utf8');
-      console.log('[Piwi Dashboard] Saved recovery data for later upload');
+      this.logger.info('Saved recovery data for later upload');
     } catch (error: any) {
-      console.error(`[Piwi Dashboard] Failed to save recovery data: ${error.message}`);
+      this.logger.error(`Failed to save recovery data: ${error.message}`);
     }
   }
 
@@ -55,7 +56,7 @@ export class CrashRecovery {
     const data = this.load();
     if (!data) return;
 
-    console.log('[Piwi Dashboard] Found saved test data from a previous run, uploading...');
+    this.logger.info('Found saved test data from a previous run, uploading...');
 
     // Strip instanceId so /submit doesn't cancel the current run (which shares
     // the same instanceId for the same project + hostname combination).
@@ -63,10 +64,10 @@ export class CrashRecovery {
 
     try {
       await httpClient.postJSON('/api/test-runs/submit', data, auth);
-      console.log('[Piwi Dashboard] Successfully uploaded saved test data');
+      this.logger.info('Successfully uploaded saved test data');
       this.clear();
     } catch (error: any) {
-      console.warn(`[Piwi Dashboard] Could not upload saved test data: ${error.message}`);
+      this.logger.warn(`Could not upload saved test data: ${error.message}`);
     }
   }
 }

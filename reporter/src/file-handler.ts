@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { compressDirectory } from './compression.js';
+import { Logger } from './logger.js';
+import type { CollectedTestCase, RawAttachment, TraceHashInfo } from './types.js';
 
 /**
  * File-system helpers for discovering report directories, trace files, and
@@ -9,6 +11,12 @@ import { compressDirectory } from './compression.js';
  * trace-file hashes for deduplication.
  */
 export class FileHandler {
+  private readonly logger: Logger;
+
+  constructor(logger: Logger = new Logger()) {
+    this.logger = logger;
+  }
+
   /** Locate a Playwright HTML report directory containing `index.html`. Optionally override the search path. */
   findHTMLReportDirectory(customDir?: string): string | null {
     const possibleDirs = customDir
@@ -37,13 +45,13 @@ export class FileHandler {
     try {
       return (await compressDirectory(reportDir)) || null;
     } catch (error: any) {
-      console.warn(`[Piwi Dashboard] Failed to compress report directory ${reportDir}: ${error.message}`);
+      this.logger.warn(`Failed to compress report directory ${reportDir}: ${error.message}`);
       return null;
     }
   }
 
   /** Return resolved paths for all trace attachments on a test case */
-  findTraceFiles(testCase: any): string[] {
+  findTraceFiles(testCase: CollectedTestCase): string[] {
     const set = new Set<string>();
     if (testCase.attachments) {
       for (const a of testCase.attachments) {
@@ -54,7 +62,9 @@ export class FileHandler {
   }
 
   /** Return all non-trace, non-internal attachments from a test case. Skips `trace` and `piwi-dashboard-*` attachments. */
-  findAllAttachments(testCase: any): Array<{ name: string; path: string; contentType: string; originalName: string }> {
+  findAllAttachments(
+    testCase: CollectedTestCase,
+  ): Array<{ name: string; path: string; contentType: string; originalName: string }> {
     const result: Array<{ name: string; path: string; contentType: string; originalName: string }> = [];
     if (testCase.attachments) {
       for (const a of testCase.attachments) {
@@ -84,13 +94,13 @@ export class FileHandler {
   }
 
   /** Parse Piwi-internal attachment bodies (`piwi-dashboard-network`, `-web-vitals`, `-console`, `-aria-snapshot`) into structured fields on the test case */
-  parsePerformanceAttachments(testCase: any, attachments: any[]): void {
-    const find = (name: string) => attachments.find((a: any) => a.name === name);
+  parsePerformanceAttachments(testCase: CollectedTestCase, attachments: RawAttachment[]): void {
+    const find = (name: string) => attachments.find((a) => a.name === name);
 
     const net = find('piwi-dashboard-network');
     if (net?.body) {
       try {
-        testCase.networkRequests = JSON.parse(net.body.toString());
+        testCase.networkRequests = JSON.parse((net.body as Buffer).toString());
       } catch {
         /* ignore */
       }
@@ -99,7 +109,7 @@ export class FileHandler {
     const vitals = find('piwi-dashboard-web-vitals');
     if (vitals?.body) {
       try {
-        testCase.webVitals = JSON.parse(vitals.body.toString());
+        testCase.webVitals = JSON.parse((vitals.body as Buffer).toString());
       } catch {
         /* ignore */
       }
@@ -108,47 +118,37 @@ export class FileHandler {
     const consoleLog = find('piwi-dashboard-console');
     if (consoleLog?.body) {
       try {
-        testCase.consoleLogs = JSON.parse(consoleLog.body.toString());
+        testCase.consoleLogs = JSON.parse((consoleLog.body as Buffer).toString());
       } catch {
         /* ignore */
       }
     }
 
     const aria = find('piwi-dashboard-aria-snapshot');
-    if (aria?.body) testCase.ariaSnapshot = aria.body.toString();
+    if (aria?.body) testCase.ariaSnapshot = (aria.body as Buffer).toString();
   }
 
-  /** Compute SHA-256 hashes and sizes for trace files across all test cases, keyed by case index */
-  async computeTraceHashes(testCases: any[]): Promise<Map<number, { tracePath: string; hash: string; size: number }>> {
-    const result = new Map<number, { tracePath: string; hash: string; size: number }>();
-    for (let i = 0; i < testCases.length; i++) {
-      const tracePaths = this.findTraceFiles(testCases[i]);
-      let lastPath: string | null = null;
-      for (const tp of tracePaths) {
-        if (fs.existsSync(tp)) lastPath = tp;
-      }
-      if (!lastPath) continue;
-
-      const hash = crypto.createHash('sha256');
-      await new Promise<void>((resolve, reject) => {
-        fs.createReadStream(lastPath!)
-          .on('data', (chunk: Buffer) => hash.update(chunk))
-          .on('end', resolve)
-          .on('error', reject);
-      });
-      result.set(i, {
-        tracePath: lastPath,
-        hash: hash.digest('hex'),
-        size: fs.statSync(lastPath).size,
-      });
+  /** Compute SHA-256 hash and size for a single test case's trace file. Returns `null` when the case has no trace on disk. */
+  async computeSingleTraceHash(testCase: CollectedTestCase): Promise<TraceHashInfo | null> {
+    const tracePaths = this.findTraceFiles(testCase);
+    let lastPath: string | null = null;
+    for (const tp of tracePaths) {
+      if (fs.existsSync(tp)) lastPath = tp;
     }
-    return result;
-  }
+    if (!lastPath) return null;
 
-  /** Compute SHA-256 hash for a single test case's trace file */
-  async computeSingleTraceHash(testCase: any): Promise<{ tracePath: string; hash: string; size: number } | null> {
-    const hashes = await this.computeTraceHashes([testCase]);
-    return hashes.get(0) ?? null;
+    const hash = crypto.createHash('sha256');
+    await new Promise<void>((resolve, reject) => {
+      fs.createReadStream(lastPath!)
+        .on('data', (chunk: Buffer) => hash.update(chunk))
+        .on('end', resolve)
+        .on('error', reject);
+    });
+    return {
+      tracePath: lastPath,
+      hash: hash.digest('hex'),
+      size: fs.statSync(lastPath).size,
+    };
   }
 
   /** Ask the server which trace hashes it already has, returning the set of hashes that are missing */
