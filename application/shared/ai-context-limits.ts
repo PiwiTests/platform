@@ -27,6 +27,14 @@ export interface ContextLimits {
   serverLogEntries: number;
   /** Max characters per backend server log entry. */
   serverLogEntryChars: number;
+  /** Max screenshots auto-included in the diagnosis context (D1). */
+  maxImages: number;
+  /** Max peer tests in the same file listed when they passed (D5). */
+  maxPassedPeers: number;
+  /** Max console entries of any type in the window before failure (D8). */
+  maxConsoleWindow: number;
+  /** Network request duration (ms) threshold for flagging as slow (D9). */
+  slowRequestMs: number;
 }
 
 export const DEFAULT_CONTEXT_LIMITS: ContextLimits = {
@@ -41,6 +49,10 @@ export const DEFAULT_CONTEXT_LIMITS: ContextLimits = {
   testSourceChars: 3000,
   serverLogEntries: 30,
   serverLogEntryChars: 400,
+  maxImages: 3,
+  maxPassedPeers: 10,
+  maxConsoleWindow: 30,
+  slowRequestMs: 1500,
 };
 
 export interface ContextLimitField {
@@ -142,6 +154,38 @@ export const CONTEXT_LIMIT_FIELDS: ContextLimitField[] = [
     description: 'Max characters per backend server log entry.',
     min: 50,
     max: 5000,
+  },
+  {
+    key: 'maxImages',
+    label: 'Max screenshots',
+    envVar: 'PIWI_AI_MAX_IMAGES',
+    description: 'Max screenshots auto-included in the diagnosis context.',
+    min: 0,
+    max: 20,
+  },
+  {
+    key: 'maxPassedPeers',
+    label: 'Max passed peers',
+    envVar: 'PIWI_AI_MAX_PASSED_PEERS',
+    description: 'Max peer tests in the same file listed when they passed.',
+    min: 0,
+    max: 100,
+  },
+  {
+    key: 'maxConsoleWindow',
+    label: 'Console window entries',
+    envVar: 'PIWI_AI_MAX_CONSOLE_WINDOW',
+    description: 'Max console entries of any type in the window before failure.',
+    min: 0,
+    max: 200,
+  },
+  {
+    key: 'slowRequestMs',
+    label: 'Slow request threshold (ms)',
+    envVar: 'PIWI_AI_SLOW_REQUEST_MS',
+    description: 'Network request duration threshold for flagging as slow.',
+    min: 100,
+    max: 30000,
   },
 ];
 

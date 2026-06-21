@@ -5,7 +5,7 @@ import { DIAGNOSIS_JSON_SCHEMA, parseDiagnosisJson } from '#shared/ai-diagnosis'
 import type { AiConfig } from '~~/types/api';
 import { callAiProvider, resolveAiConfig } from './ai-provider';
 import type { AiAttachedImage } from './ai-provider';
-import { buildClusterDiagnosisContext } from './ai-context';
+import { buildDiagnosisContext } from './ai-context';
 import { buildDiagnosisSystemPrompt } from './ai-system-prompt';
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>;
@@ -90,17 +90,21 @@ export async function runClusterDiagnosis(
   const t0 = Date.now();
 
   try {
-    const { text: userContent } = await buildClusterDiagnosisContext(db, cluster, {
+    const ctx = await buildDiagnosisContext(db, {
+      kind: 'cluster',
+      clusterId: cluster.id,
       baseCommit: opts?.baseCommit,
       selectedCommitShas: opts?.selectedCommitShas,
     });
     const extra = opts?.additionalContext?.trim();
-    const fullUserContent = extra ? `${userContent}\n\n## Additional Context Provided by User\n${extra}` : userContent;
+    const fullUserContent = extra ? `${ctx.text}\n\n## Additional Context Provided by User\n${extra}` : ctx.text;
+    // Merge auto-resolved screenshots (D1) with user-provided images
+    const allImages = [...(ctx.images ?? []), ...(opts?.images ?? [])];
     const result = await callAiProvider(config, {
       system: systemPrompt,
       user: fullUserContent,
       jsonSchema: DIAGNOSIS_JSON_SCHEMA,
-      images: opts?.images,
+      images: allImages.length > 0 ? allImages : undefined,
     });
     const diagnosis = parseDiagnosisJson(result.text);
 
