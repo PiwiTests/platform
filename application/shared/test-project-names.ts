@@ -50,6 +50,7 @@ export const PROJECT = {
   LABEL_OVERRIDE: 'label-override-project',
   LIST_VISIBLE: 'list-visible-project',
   MALFORMED: 'malformed-project',
+  MCP_TEST: 'mcp-test-project',
   METADATA_RETRIEVAL: 'metadata-retrieval-test',
   METADATA_TEST: 'metadata-test-project',
   MINIMAL: 'minimal-project',

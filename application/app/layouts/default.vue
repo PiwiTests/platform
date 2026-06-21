@@ -148,6 +148,14 @@ const links = computed(() => {
       target: '_blank',
     },
   ];
+  bottomLinks.unshift({
+    label: 'MCP server',
+    icon: 'i-lucide-bot',
+    to: '/mcp',
+    onSelect: () => {
+      open.value = false;
+    },
+  });
   if (!isDemo) {
     bottomLinks.unshift({
       label: 'API Docs',

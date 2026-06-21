@@ -479,5 +479,16 @@ function isStale(d: FailureDiagnosis) {
         </p>
       </div>
     </template>
+
+    <!-- MCP agent access -->
+    <div class="pt-1 text-center">
+      <NuxtLink
+        to="/mcp"
+        class="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-primary transition-colors"
+      >
+        <UIcon name="i-lucide-bot" class="size-3" />
+        Query this cluster from your AI agent via the MCP server
+      </NuxtLink>
+    </div>
   </div>
 </template>

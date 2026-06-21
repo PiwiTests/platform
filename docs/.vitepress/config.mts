@@ -25,6 +25,7 @@ export default defineConfig({
       { text: 'Reporter', link: '/reporter' },
       { text: 'Backend logs', link: '/backend-logs' },
       { text: 'API reference', link: '/api' },
+      { text: 'MCP server', link: '/mcp' },
       { text: 'Authentication', link: '/authentication' },
       { text: 'Storage configuration', link: '/storage' },
       { text: 'Deployment', link: '/deployment' },
