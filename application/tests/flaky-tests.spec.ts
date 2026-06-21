@@ -180,7 +180,7 @@ test.describe.serial('Flaky tests endpoint', () => {
     expect(tests).toHaveLength(0);
   });
 
-  test('results are sorted by score descending', async ({ request }) => {
+  test('results are sorted by impact descending', async ({ request }) => {
     expect(projectId).toBeTruthy();
 
     const res = await request.get(`/api/projects/${projectId}/flaky-tests?runs=50`);
@@ -189,7 +189,7 @@ test.describe.serial('Flaky tests endpoint', () => {
 
     if (tests.length >= 2) {
       for (let i = 0; i < tests.length - 1; i++) {
-        expect(tests[i].score).toBeGreaterThanOrEqual(tests[i + 1].score);
+        expect(tests[i].impact).toBeGreaterThanOrEqual(tests[i + 1].impact);
       }
     }
   });

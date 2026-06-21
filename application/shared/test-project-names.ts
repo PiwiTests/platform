@@ -46,6 +46,7 @@ export const PROJECT = {
   GZIP_TEST: 'gzip-test-project',
   HISTORY: 'history-test',
   INCOMPLETE: 'incomplete-project',
+  INSIGHTS_SPEC_HEALTH: 'insights-spec-health-test',
   INVALID_KEY: 'invalid-key-test',
   LABEL_OVERRIDE: 'label-override-project',
   LIST_VISIBLE: 'list-visible-project',

@@ -688,6 +688,7 @@ export async function getProjectFlakyTests(db: DrizzleDB, projectId: number, run
       testCaseId: testRunsCases.testCaseId,
       status: testRunsCases.status,
       retries: testRunsCases.retries,
+      duration: testRunsCases.duration,
       browser: testRunsCases.browser,
     })
     .from(testRunsCases)
@@ -743,6 +744,7 @@ export async function getProjectFlakyTests(db: DrizzleDB, projectId: number, run
     lastFlakeRunId: number | null;
     lastFlakeAt: Date | null;
     latestRunsCaseId: number;
+    failedDurations: number[];
   };
 
   const caseAggMap = new Map<number, CaseAgg>();
@@ -760,6 +762,7 @@ export async function getProjectFlakyTests(db: DrizzleDB, projectId: number, run
     let lastFlakeRunId: number | null = null;
     let lastFlakeAt: Date | null = null;
     let latestRunsCaseId = 0;
+    const failedDurations: number[] = [];
 
     for (const run of sortedRuns) {
       const byBrowser = byRun.get(run.id);
@@ -773,9 +776,11 @@ export async function getProjectFlakyTests(db: DrizzleDB, projectId: number, run
         if (group.finalStatus === 'failed' || group.finalStatus === 'timedOut') runFinalFailed = true;
         if (group.retryPass) runRetryPass = true;
 
-        // Track latest case id
         for (const row of group.rows) {
           if (row.id > latestRunsCaseId) latestRunsCaseId = row.id;
+          if ((row.status === 'failed' || row.status === 'timedOut') && row.duration != null) {
+            failedDurations.push(row.duration);
+          }
         }
       }
 
@@ -804,6 +809,7 @@ export async function getProjectFlakyTests(db: DrizzleDB, projectId: number, run
       lastFlakeRunId,
       lastFlakeAt,
       latestRunsCaseId,
+      failedDurations,
     });
   }
 
@@ -818,6 +824,9 @@ export async function getProjectFlakyTests(db: DrizzleDB, projectId: number, run
     failureRate: number;
     score: number;
     lastFlakeAt: Date | null;
+    avgFailedDurationMs: number;
+    wastedCiMinutes: number;
+    impact: number;
   }> = [];
 
   for (const [testCaseId, agg] of caseAggMap) {
@@ -829,6 +838,14 @@ export async function getProjectFlakyTests(db: DrizzleDB, projectId: number, run
     const score = Math.min(100, Math.max(1, Math.round(100 * (0.6 * retryRate + 0.4 * altRate))));
     const failureRate = agg.failedRuns / agg.totalRuns;
 
+    const avgFailedDurationMs =
+      agg.failedDurations.length > 0
+        ? Math.round(agg.failedDurations.reduce((a, b) => a + b, 0) / agg.failedDurations.length)
+        : 0;
+    const wastedCiMinutes = (avgFailedDurationMs / 60000) * agg.retryPassRuns;
+    const wastedCiMinutesVal = Math.round(wastedCiMinutes * 100) / 100;
+    const impact = Math.round(wastedCiMinutesVal * 0.7 + agg.retryPassRuns * 30 * 0.3);
+
     candidates.push({
       testCaseId,
       latestRunsCaseId: agg.latestRunsCaseId,
@@ -839,18 +856,26 @@ export async function getProjectFlakyTests(db: DrizzleDB, projectId: number, run
       failureRate,
       score,
       lastFlakeAt: agg.lastFlakeAt,
+      avgFailedDurationMs,
+      wastedCiMinutes: wastedCiMinutesVal,
+      impact,
     });
   }
 
   if (candidates.length === 0) return [];
 
-  candidates.sort((a, b) => b.score - a.score || b.retryPassRuns - a.retryPassRuns);
+  candidates.sort((a, b) => b.impact - a.impact || b.score - a.score || b.retryPassRuns - a.retryPassRuns);
   const top = candidates.slice(0, 50);
 
-  // Step 6: Join titles/filePaths
+  // Step 6: Join titles/filePaths + rootCause
   const testCaseIds: number[] = top.map((c) => c.testCaseId);
   const testCaseRows: any[] = await db
-    .select({ id: testCases.id, title: testCases.title, filePath: testCases.filePath })
+    .select({
+      id: testCases.id,
+      title: testCases.title,
+      filePath: testCases.filePath,
+      flakyRootCause: testCases.flakyRootCause,
+    })
     .from(testCases)
     .where(inArray(testCases.id, testCaseIds));
   const testCaseById = new Map(testCaseRows.map((t: any) => [t.id, t]));
@@ -869,6 +894,10 @@ export async function getProjectFlakyTests(db: DrizzleDB, projectId: number, run
       failureRate: Math.round(c.failureRate * 100) / 100,
       score: c.score,
       lastFlakeAt: c.lastFlakeAt,
+      rootCause: tc?.flakyRootCause ?? null,
+      impact: c.impact,
+      wastedCiMinutes: c.wastedCiMinutes,
+      avgFailedDurationMs: c.avgFailedDurationMs,
     };
   });
 }

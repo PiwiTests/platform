@@ -68,6 +68,8 @@ export async function getTestCase(db: DrizzleDB, id: number) {
         runStatus: testRuns.status,
         runLabel: testRuns.label,
         startTime: testRuns.startTime,
+        isNewRegression: testRunsCases.isNewRegression,
+        isNewFlaky: testRunsCases.isNewFlaky,
       })
       .from(testRunsCases)
       .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
@@ -264,6 +266,8 @@ export async function getTestRunCase(db: DrizzleDB, id: number) {
     workerIndex: trc.workerIndex,
     shardIndex: trc.shardIndex,
     browser: trc.browser,
+    isNewRegression: trc.isNewRegression ?? null,
+    isNewFlaky: trc.isNewFlaky ?? null,
     failureCluster,
     testRun: testRun ? { ...testRun, project, reports: reportList } : testRun,
     attachments: attachmentList,

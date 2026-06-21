@@ -77,6 +77,8 @@ export async function getTestRun(db: DrizzleDB, id: number) {
       filePath: testCases.filePath,
       suitePath: testCases.suitePath,
       testAnnotations: testRunsCases.testAnnotations,
+      isNewRegression: testRunsCases.isNewRegression,
+      isNewFlaky: testRunsCases.isNewFlaky,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
@@ -111,6 +113,8 @@ export async function getTestRun(db: DrizzleDB, id: number) {
     shardIndex: tc.shardIndex,
     startedAt: tc.startedAt,
     browser: tc.browser,
+    isNewRegression: tc.isNewRegression ?? null,
+    isNewFlaky: tc.isNewFlaky ?? null,
   }));
 
   const runsCaseIds = runsCases.map((tc: any) => tc.id);

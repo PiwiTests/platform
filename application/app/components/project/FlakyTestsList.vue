@@ -7,11 +7,17 @@ const props = defineProps<{
 }>();
 
 const runsWindow = ref(50);
+const rootCauseFilter = ref<string[]>([]);
 
 const { data: tests, pending: loading } = await useFetch<FlakyTest[]>(
   () => `/api/projects/${props.projectId}/flaky-tests?runs=${runsWindow.value}`,
   { lazy: true, server: false, watch: [runsWindow] },
 );
+
+const filteredTests = computed(() => {
+  if (rootCauseFilter.value.length === 0) return tests.value ?? [];
+  return (tests.value ?? []).filter((t) => rootCauseFilter.value.includes(t.rootCause ?? ''));
+});
 
 function scoreColor(score: number): 'error' | 'warning' | 'neutral' {
   if (score >= 60) return 'error';
@@ -19,12 +25,46 @@ function scoreColor(score: number): 'error' | 'warning' | 'neutral' {
   return 'neutral';
 }
 
+function rootCauseColor(cause: string | null): string {
+  switch (cause) {
+    case 'timing':
+      return 'amber';
+    case 'network':
+      return 'red';
+    case 'assertion':
+      return 'blue';
+    case 'environment':
+      return 'purple';
+    default:
+      return 'gray';
+  }
+}
+
+function toggleRootCauseFilter(cause: string) {
+  const idx = rootCauseFilter.value.indexOf(cause);
+  if (idx >= 0) {
+    rootCauseFilter.value = rootCauseFilter.value.filter((c) => c !== cause);
+  } else {
+    rootCauseFilter.value = [...rootCauseFilter.value, cause];
+  }
+}
+
+const ROOT_CAUSE_OPTIONS = [
+  { label: 'Timing', value: 'timing' },
+  { label: 'Network', value: 'network' },
+  { label: 'Assertion', value: 'assertion' },
+  { label: 'Environment', value: 'environment' },
+  { label: 'Other', value: 'other' },
+];
+
 const columns: TableColumn<FlakyTest>[] = [
   { accessorKey: 'title', header: createSortHeader<FlakyTest>('Test') },
+  { accessorKey: 'impact', header: createSortHeader<FlakyTest>('Impact') },
   { accessorKey: 'score', header: createSortHeader<FlakyTest>('Score') },
   { accessorKey: 'failureRate', header: createSortHeader<FlakyTest>('Failure rate') },
   { accessorKey: 'retryPassRuns', header: createSortHeader<FlakyTest>('Retry passes') },
   { accessorKey: 'alternations', header: createSortHeader<FlakyTest>('Flips') },
+  { accessorKey: 'rootCause', header: 'Root cause' },
   { accessorKey: 'lastFlakeAt', header: createSortHeader<FlakyTest>('Last flake') },
   { id: 'actions', header: 'Actions' },
 ];
@@ -34,9 +74,23 @@ const columns: TableColumn<FlakyTest>[] = [
   <UCard>
     <template #header>
       <div class="flex items-center justify-between">
-        <p class="text-sm text-gray-500">
-          Tests that fail intermittently — detected by retry passes and status alternations
-        </p>
+        <div class="flex items-center gap-3">
+          <p class="text-sm text-gray-500">
+            Tests that fail intermittently — detected by retry passes and status alternations
+          </p>
+          <div class="flex items-center gap-1.5">
+            <UButton
+              v-for="opt in ROOT_CAUSE_OPTIONS"
+              :key="opt.value"
+              size="xs"
+              :variant="rootCauseFilter.includes(opt.value) ? 'solid' : 'outline'"
+              :color="rootCauseFilter.includes(opt.value) ? 'neutral' : 'neutral'"
+              @click="toggleRootCauseFilter(opt.value)"
+            >
+              {{ opt.label }}
+            </UButton>
+          </div>
+        </div>
         <USelect
           v-model="runsWindow"
           :items="[
@@ -50,7 +104,7 @@ const columns: TableColumn<FlakyTest>[] = [
       </div>
     </template>
 
-    <UTable :data="tests ?? []" :columns="columns" :loading="loading">
+    <UTable :data="filteredTests" :columns="columns" :loading="loading">
       <template #actions-header>
         <div class="text-right">Actions</div>
       </template>
@@ -65,6 +119,20 @@ const columns: TableColumn<FlakyTest>[] = [
             {{ row.original.title }}
           </NuxtLink>
           <span class="text-xs text-gray-400 font-mono truncate block">{{ row.original.filePath }}</span>
+        </div>
+      </template>
+
+      <template #impact-cell="{ row }">
+        <div class="flex items-center gap-2">
+          <span
+            class="inline-block w-2 h-2 rounded-full shrink-0"
+            :class="{
+              'bg-red-500': row.original.wastedCiMinutes >= 30,
+              'bg-amber-500': row.original.wastedCiMinutes >= 5 && row.original.wastedCiMinutes < 30,
+              'bg-green-500': row.original.wastedCiMinutes >= 0 && row.original.wastedCiMinutes < 5,
+            }"
+          />
+          <span class="text-sm tabular-nums">{{ Math.round(row.original.wastedCiMinutes) }} min wasted</span>
         </div>
       </template>
 
@@ -92,6 +160,15 @@ const columns: TableColumn<FlakyTest>[] = [
         <span v-else class="text-gray-400 text-xs">—</span>
       </template>
 
+      <template #rootCause-cell="{ row }">
+        <TagBadge
+          v-if="row.original.rootCause"
+          :text="row.original.rootCause"
+          :color="rootCauseColor(row.original.rootCause)"
+        />
+        <span v-else class="text-gray-400 text-xs">—</span>
+      </template>
+
       <template #lastFlakeAt-cell="{ row }">
         <span v-if="row.original.lastFlakeAt" class="text-sm text-gray-500">
           {{ formatRelativeTime(row.original.lastFlakeAt) }}
@@ -113,7 +190,7 @@ const columns: TableColumn<FlakyTest>[] = [
       </template>
     </UTable>
 
-    <p v-if="!loading && tests && tests.length === 0" class="text-sm text-gray-500 py-4 text-center">
+    <p v-if="!loading && filteredTests.length === 0" class="text-sm text-gray-500 py-4 text-center">
       No flaky tests detected in the last {{ runsWindow }} runs.
     </p>
   </UCard>

@@ -260,6 +260,12 @@ for (const [pid, fileDefs] of Object.entries(SUITE_DEFS)) {
   }
 }
 
+const ROOT_CAUSES = ['timing', 'network', 'assertion', 'other'];
+function randomRootCause() {
+  if (Math.random() < 0.75) return null;
+  return ROOT_CAUSES[Math.floor(Math.random() * ROOT_CAUSES.length)];
+}
+
 const ALL_CASE_DEFS = [
   [1, P1_CASES],
   [2, P2_CASES],
@@ -281,6 +287,7 @@ for (const [pid, cases] of ALL_CASE_DEFS) {
       suite_path: suitePathStr,
       suite_id: suiteId,
       title,
+      flaky_root_cause: randomRootCause(),
       created_at: now,
       updated_at: now,
     });
@@ -670,6 +677,8 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
         error,
         failure_cluster_id: clusterId,
         retries: isFlakyCase ? 1 : 0,
+        is_new_regression: isFailedCase && Math.random() < 0.25 ? 1 : 0,
+        is_new_flaky: !isFailedCase && Math.random() < 0.1 ? 1 : 0,
         line: 10 + j * 8,
         column: 5,
         browser,

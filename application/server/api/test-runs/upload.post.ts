@@ -16,6 +16,7 @@ import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-case
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { runEventBus } from '../../utils/run-events';
 import { autoDiagnoseRun } from '../../utils/ai-diagnosis';
+import { computeRegressionSignals } from '../../utils/compute-regression-signals';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
 
@@ -421,6 +422,9 @@ export default eventHandler(async (event) => {
         status: finalStatus,
       });
 
+      computeRegressionSignals(db, existingTestRunId!).catch((e) =>
+        console.error('[regression-signals] computeRegressionSignals failed', e),
+      );
       autoDiagnoseRun(db, testRun.projectId, existingTestRunId!).catch((e) =>
         console.error('[ai-diagnosis] autoDiagnoseRun failed', e),
       );

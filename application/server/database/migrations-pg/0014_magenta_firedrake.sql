@@ -1,0 +1,1 @@
+ALTER TABLE "test_cases" ADD COLUMN "flaky_root_cause" text;
