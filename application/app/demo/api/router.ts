@@ -459,31 +459,49 @@ routes.push(
   },
 );
 
-// Notification channels — demo returns empty lists and no-ops on mutations
+// ── Demo notification channels & subscriptions (stateful in-memory) ───────────
+
+const DEMO_CHANNEL = {
+  id: 1,
+  name: 'Account email',
+  type: 'personal_email',
+  userId: null as number | null,
+  verified: true,
+  config: { address: 'demo@example.com' },
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+};
+
+interface DemoSubscription {
+  id: number;
+  userId: number | null;
+  channelId: number;
+  projectId: number | null;
+  events: string[];
+  filters: null;
+  mode: string;
+  digestAt: null;
+  mutedUntil: string | null;
+  active: boolean;
+  channel: { id: number; name: string; type: string };
+  createdAt: string;
+  updatedAt: string;
+}
+
+let _nextSubId = 1;
+const _demoSubs: DemoSubscription[] = [];
+
 routes.push(
+  // Channels
   {
     method: 'GET',
     pattern: /^\/api\/channels$/,
-    handler: () =>
-      Promise.resolve({
-        channels: [
-          {
-            id: 1,
-            name: 'Account email',
-            type: 'personal_email',
-            userId: 1,
-            verified: false,
-            config: { address: 'demo@example.com' },
-            createdAt: null,
-            updatedAt: null,
-          },
-        ],
-      }),
+    handler: () => Promise.resolve({ channels: [DEMO_CHANNEL] }),
   },
   {
     method: 'POST',
     pattern: /^\/api\/channels$/,
-    handler: () => Promise.resolve({ success: true, channel: { id: 0, name: 'Demo channel', type: 'email' } }),
+    handler: () => Promise.resolve({ success: true, channel: DEMO_CHANNEL }),
   },
   { method: 'DELETE', pattern: /^\/api\/channels\/(\d+)$/, handler: () => Promise.resolve({ success: true }) },
   {
@@ -491,18 +509,66 @@ routes.push(
     pattern: /^\/api\/channels\/(\d+)\/test$/,
     handler: () => Promise.resolve({ success: false, error: 'Not available in demo mode' }),
   },
-);
 
-// Subscriptions — demo returns empty lists and no-ops on mutations
-routes.push(
-  { method: 'GET', pattern: /^\/api\/subscriptions$/, handler: () => Promise.resolve({ subscriptions: [] }) },
+  // Subscriptions — stateful within the SW's lifetime
+  {
+    method: 'GET',
+    pattern: /^\/api\/subscriptions$/,
+    handler: (_, __, q) => {
+      const projectIdParam = q?.get('projectId');
+      const filtered =
+        projectIdParam != null ? _demoSubs.filter((s) => s.projectId === parseInt(projectIdParam)) : _demoSubs;
+      return Promise.resolve({ subscriptions: filtered });
+    },
+  },
   {
     method: 'POST',
     pattern: /^\/api\/subscriptions$/,
-    handler: () => Promise.resolve({ success: true, subscriptionId: 0 }),
+    handler: (_, body) => {
+      const b = body as { channelId: number; projectId?: number | null; events?: string[]; mode?: string };
+      const sub: DemoSubscription = {
+        id: _nextSubId++,
+        userId: null,
+        channelId: b.channelId ?? 1,
+        projectId: b.projectId ?? null,
+        events: b.events ?? ['run.failed'],
+        filters: null,
+        mode: b.mode ?? 'realtime',
+        digestAt: null,
+        mutedUntil: null,
+        active: true,
+        channel: { id: DEMO_CHANNEL.id, name: DEMO_CHANNEL.name, type: DEMO_CHANNEL.type },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      _demoSubs.push(sub);
+      return Promise.resolve({ success: true, subscriptionId: sub.id });
+    },
   },
-  { method: 'PATCH', pattern: /^\/api\/subscriptions\/(\d+)$/, handler: () => Promise.resolve({ success: true }) },
-  { method: 'DELETE', pattern: /^\/api\/subscriptions\/(\d+)$/, handler: () => Promise.resolve({ success: true }) },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/subscriptions\/(\d+)$/,
+    handler: (m, body) => {
+      const sub = _demoSubs.find((s) => s.id === parseInt(m[1]!));
+      if (sub) {
+        const b = body as Partial<DemoSubscription>;
+        if (b.events) sub.events = b.events;
+        if (b.mutedUntil !== undefined) sub.mutedUntil = b.mutedUntil;
+        if (b.active !== undefined) sub.active = b.active;
+        sub.updatedAt = new Date().toISOString();
+      }
+      return Promise.resolve({ success: true });
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/subscriptions\/(\d+)$/,
+    handler: (m) => {
+      const idx = _demoSubs.findIndex((s) => s.id === parseInt(m[1]!));
+      if (idx >= 0) _demoSubs.splice(idx, 1);
+      return Promise.resolve({ success: true });
+    },
+  },
 );
 
 // Global SSE stream – no-op in demo mode (useRunStream skips it)

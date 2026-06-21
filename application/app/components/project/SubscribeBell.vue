@@ -2,15 +2,18 @@
 import type { NotificationEvent } from '#shared/notification-events';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
 
-const props = defineProps<{ projectId: number }>();
+const props = defineProps<{ projectId: number; projectLabel?: string }>();
 
 const config = useRuntimeConfig();
+const isDemoMode = config.public.demoMode;
 const authEnabled = computed(() => config.public.authEnabled);
 const { authState } = useAuth();
 const isAuthenticated = computed(() => authState.value.authenticated);
 
 const toast = useToast();
 const open = ref(false);
+
+const demoNotifications = isDemoMode ? useDemoNotifications() : null;
 
 // ── Subscriptions for this project ─────────────────────────────────────────
 interface Subscription {
@@ -22,7 +25,7 @@ interface Subscription {
   channel: { id: number; name: string; type: string };
 }
 
-const shouldFetch = authEnabled.value && isAuthenticated.value;
+const shouldFetch = isDemoMode || (authEnabled.value && isAuthenticated.value);
 
 const { data: subsData, refresh: refreshSubs } = await useFetch<{ subscriptions: Subscription[] }>(
   `/api/subscriptions?projectId=${props.projectId}`,
@@ -123,6 +126,9 @@ async function subscribe() {
     await refreshSubs();
     showForm.value = false;
     toast.add({ title: 'Subscribed', color: 'success' });
+    if (isDemoMode) {
+      demoNotifications?.scheduleFor(props.projectId, props.projectLabel || 'this project', selectedEvents.value);
+    }
   } catch (e) {
     toast.add({ title: 'Subscribe failed', description: String((e as Error)?.message ?? e), color: 'error' });
   } finally {
@@ -135,6 +141,9 @@ async function unsubscribe(id: number) {
     await $fetch(`/api/subscriptions/${id}`, { method: 'DELETE' });
     await refreshSubs();
     toast.add({ title: 'Unsubscribed', color: 'success' });
+    if (isDemoMode && subs.value.length === 0) {
+      demoNotifications?.cancelFor(props.projectId);
+    }
   } catch (e) {
     toast.add({ title: 'Failed', description: String((e as Error)?.message ?? e), color: 'error' });
   }
@@ -166,7 +175,7 @@ function channelIcon(type: string) {
 </script>
 
 <template>
-  <UPopover v-if="authEnabled && isAuthenticated" v-model:open="open" :ui="{ content: 'w-72' }">
+  <UPopover v-if="isDemoMode || (authEnabled && isAuthenticated)" v-model:open="open" :ui="{ content: 'w-72' }">
     <UButton
       :icon="isSubscribed ? 'i-lucide-bell-ring' : 'i-lucide-bell'"
       size="sm"
@@ -192,8 +201,14 @@ function channelIcon(type: string) {
           </UButton>
         </div>
 
-        <!-- No channels hint -->
-        <div v-if="channels.length === 0" class="text-xs text-muted text-center py-2">
+        <!-- Demo hint -->
+        <div v-if="isDemoMode" class="text-xs text-muted bg-primary/5 rounded px-2 py-1.5">
+          <UIcon name="i-lucide-sparkles" class="size-3 inline-block mr-1 text-primary" />
+          Demo — notifications will appear as toasts in ~8 s.
+        </div>
+
+        <!-- No channels hint (non-demo only) -->
+        <div v-else-if="channels.length === 0" class="text-xs text-muted text-center py-2">
           No channels configured.<br />
           <NuxtLink to="/settings/notifications" class="text-primary underline">Add one in Settings</NuxtLink>
         </div>
