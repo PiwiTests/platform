@@ -269,6 +269,16 @@ const routes: RouteEntry[] = [
       return extractClusterCases(await getDemoDb(), +m[1]!, b.testCaseIds, b.triageNote);
     },
   },
+  {
+    method: 'GET',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/diagnoses$/,
+    handler: async () => [],
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/failure-diagnoses\/(\d+)\/feedback$/,
+    handler: async () => ({ success: true }),
+  },
 
   // AI status and settings
   { method: 'GET', pattern: /^\/api\/ai\/status$/, handler: () => apiGetAiStatus() },
@@ -311,6 +321,18 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/test-run-cases\/(\d+)\/traces$/,
     handler: async (m) => getTestRunCaseTraces(await getDemoDb(), +m[1]!),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/diagnosis-context$/,
+    handler: async () => ({ context: '', sections: [], coverage: {}, scmChanges: null, tokenEstimate: 0 }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/diagnose$/,
+    handler: () => {
+      throw new Error('AI diagnosis not available in demo mode');
+    },
   },
 
   // Tags

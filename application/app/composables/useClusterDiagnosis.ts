@@ -17,6 +17,15 @@ export interface DiagnoseImage {
   data: string;
 }
 
+export interface ContextSection {
+  id: string;
+  title: string;
+  chars: number;
+  truncated: boolean;
+  markdown: string;
+  items?: number;
+}
+
 export interface ClusterDiagnosisStore {
   clusterId: number;
 
@@ -28,6 +37,8 @@ export interface ClusterDiagnosisStore {
 
   // Shared context (single fetch, used by both panels)
   contextText: Ref<string | null>;
+  contextSections: Ref<ContextSection[]>;
+  tokenEstimate: Ref<number>;
   coverage: Ref<DiagnosisContextCoverage | null>;
   scmChanges: Ref<ScmChanges | null>;
   contextLoading: Ref<boolean>;
@@ -50,6 +61,8 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
   const baseCommitIsPinned = computed(() => !!savedBaseCommit.value);
 
   const contextText = ref<string | null>(null);
+  const contextSections = ref<ContextSection[]>([]);
+  const tokenEstimate = ref(0);
   const coverage = ref<DiagnosisContextCoverage | null>(null);
   const scmChanges = ref<ScmChanges | null>(null);
   const contextLoading = ref(false);
@@ -68,18 +81,29 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
     return query;
   }
 
+  interface ContextJsonResponse {
+    text: string;
+    sections: ContextSection[];
+    tokenEstimate: number;
+    coverage: DiagnosisContextCoverage;
+    scmChanges: ScmChanges | null;
+  }
+
   async function refreshContext() {
     contextLoading.value = true;
     try {
-      const res = await $fetch<{ context: string; coverage: DiagnosisContextCoverage; scmChanges: ScmChanges | null }>(
-        `/api/failure-clusters/${clusterId}/context`,
-        { query: buildContextQuery() },
-      );
-      contextText.value = res.context;
+      const res = await $fetch<ContextJsonResponse>(`/api/failure-clusters/${clusterId}/context`, {
+        query: { ...buildContextQuery(), format: 'json' },
+      });
+      contextText.value = res.text;
+      contextSections.value = res.sections;
+      tokenEstimate.value = res.tokenEstimate;
       coverage.value = res.coverage;
       scmChanges.value = res.scmChanges ?? null;
     } catch {
       contextText.value = '(failed to load context)';
+      contextSections.value = [];
+      tokenEstimate.value = 0;
       coverage.value = null;
       scmChanges.value = null;
     } finally {
@@ -208,6 +232,8 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
     selectedCommitShas,
     baseCommitIsPinned,
     contextText,
+    contextSections,
+    tokenEstimate,
     coverage,
     scmChanges,
     contextLoading,

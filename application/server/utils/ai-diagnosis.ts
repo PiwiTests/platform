@@ -1,11 +1,17 @@
 import { eq, and } from 'drizzle-orm';
-import { failureDiagnoses, failureClusters, projects } from '../database/schema';
+import {
+  failureDiagnoses,
+  failureDiagnosisVersions,
+  failureClusters,
+  projects,
+  testRunsCases,
+} from '../database/schema';
 import type { FailureDiagnosis, FailureCluster } from '../database/schema';
 import { DIAGNOSIS_JSON_SCHEMA, parseDiagnosisJson } from '#shared/ai-diagnosis';
 import type { AiConfig } from '~~/types/api';
 import { callAiProvider, resolveAiConfig } from './ai-provider';
 import type { AiAttachedImage } from './ai-provider';
-import { buildClusterDiagnosisContext } from './ai-context';
+import { buildDiagnosisContext } from './ai-context';
 import { buildDiagnosisSystemPrompt } from './ai-system-prompt';
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>;
@@ -58,6 +64,8 @@ export async function runClusterDiagnosis(
     images?: AiAttachedImage[];
     baseCommit?: string;
     selectedCommitShas?: string[];
+    /** When set, scope is 'execution' and the diagnosis is for a specific test-run-case. */
+    testRunsCaseId?: number;
   },
 ): Promise<FailureDiagnosis> {
   if (running.has(cluster.id)) {
@@ -65,6 +73,8 @@ export async function runClusterDiagnosis(
   }
 
   running.add(cluster.id);
+
+  const isExecutionScope = Boolean(opts?.testRunsCaseId);
 
   // Load custom instructions (global + project) to build the combined system prompt
   const [globalInstructionsRow, projectRows] = await Promise.all([
@@ -80,29 +90,79 @@ export async function runClusterDiagnosis(
     projectInstructions: projectRows[0]?.diagnosisInstructions?.trim() || null,
   });
 
-  // Upsert to 'running' state
+  // Upsert to 'running' state (SELECT-then-INSERT/UPDATE to avoid unique-index dependency)
   const runningFields = runningDiagnosisFields(config);
-  await db
-    .insert(failureDiagnoses)
-    .values({ clusterId: cluster.id, createdAt: new Date(), ...runningFields })
-    .onConflictDoUpdate({ target: failureDiagnoses.clusterId, set: runningFields });
+  const scope = isExecutionScope ? ('execution' as const) : ('cluster' as const);
+
+  if (isExecutionScope) {
+    const [existing] = await db
+      .select({ id: failureDiagnoses.id })
+      .from(failureDiagnoses)
+      .where(and(eq(failureDiagnoses.testRunsCaseId, opts!.testRunsCaseId!), eq(failureDiagnoses.scope, 'execution')))
+      .limit(1);
+    if (existing) {
+      await snapshotDiagnosis(db, existing.id);
+      await db.update(failureDiagnoses).set(runningFields).where(eq(failureDiagnoses.id, existing.id));
+    } else {
+      await db.insert(failureDiagnoses).values({
+        clusterId: cluster.id,
+        scope: 'execution',
+        testRunsCaseId: opts!.testRunsCaseId!,
+        createdAt: new Date(),
+        ...runningFields,
+      });
+    }
+  } else {
+    const [existing] = await db
+      .select({ id: failureDiagnoses.id })
+      .from(failureDiagnoses)
+      .where(and(eq(failureDiagnoses.clusterId, cluster.id), eq(failureDiagnoses.scope, 'cluster')))
+      .limit(1);
+    if (existing) {
+      await snapshotDiagnosis(db, existing.id);
+      await db.update(failureDiagnoses).set(runningFields).where(eq(failureDiagnoses.id, existing.id));
+    } else {
+      await db.insert(failureDiagnoses).values({
+        clusterId: cluster.id,
+        scope: 'cluster',
+        createdAt: new Date(),
+        ...runningFields,
+      });
+    }
+  }
 
   const t0 = Date.now();
 
   try {
-    const { text: userContent } = await buildClusterDiagnosisContext(db, cluster, {
-      baseCommit: opts?.baseCommit,
-      selectedCommitShas: opts?.selectedCommitShas,
-    });
+    const ctx = isExecutionScope
+      ? await buildDiagnosisContext(db, {
+          kind: 'execution',
+          clusterId: cluster.id,
+          testRunsCaseId: opts!.testRunsCaseId!,
+          baseCommit: opts?.baseCommit,
+          selectedCommitShas: opts?.selectedCommitShas,
+        })
+      : await buildDiagnosisContext(db, {
+          kind: 'cluster',
+          clusterId: cluster.id,
+          baseCommit: opts?.baseCommit,
+          selectedCommitShas: opts?.selectedCommitShas,
+        });
     const extra = opts?.additionalContext?.trim();
-    const fullUserContent = extra ? `${userContent}\n\n## Additional Context Provided by User\n${extra}` : userContent;
+    const fullUserContent = extra ? `${ctx.text}\n\n## Additional Context Provided by User\n${extra}` : ctx.text;
+    // Merge auto-resolved screenshots (D1) with user-provided images
+    const allImages = [...(ctx.images ?? []), ...(opts?.images ?? [])];
     const result = await callAiProvider(config, {
       system: systemPrompt,
       user: fullUserContent,
       jsonSchema: DIAGNOSIS_JSON_SCHEMA,
-      images: opts?.images,
+      images: allImages.length > 0 ? allImages : undefined,
     });
     const diagnosis = parseDiagnosisJson(result.text);
+
+    const whereClause = isExecutionScope
+      ? and(eq(failureDiagnoses.testRunsCaseId, opts!.testRunsCaseId!), eq(failureDiagnoses.scope, 'execution'))
+      : and(eq(failureDiagnoses.clusterId, cluster.id), eq(failureDiagnoses.scope, 'cluster'));
 
     const updated = await db
       .update(failureDiagnoses)
@@ -124,12 +184,16 @@ export async function runClusterDiagnosis(
         durationMs: Date.now() - t0,
         updatedAt: new Date(),
       })
-      .where(eq(failureDiagnoses.clusterId, cluster.id))
+      .where(whereClause)
       .returning();
 
     return updated[0]!;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    const whereClause = isExecutionScope
+      ? and(eq(failureDiagnoses.testRunsCaseId, opts!.testRunsCaseId!), eq(failureDiagnoses.scope, 'execution'))
+      : and(eq(failureDiagnoses.clusterId, cluster.id), eq(failureDiagnoses.scope, 'cluster'));
+
     const failed = await db
       .update(failureDiagnoses)
       .set({
@@ -138,13 +202,43 @@ export async function runClusterDiagnosis(
         durationMs: Date.now() - t0,
         updatedAt: new Date(),
       })
-      .where(eq(failureDiagnoses.clusterId, cluster.id))
+      .where(whereClause)
       .returning();
 
     return failed[0]!;
   } finally {
     running.delete(cluster.id);
   }
+}
+
+/**
+ * Snapshot the current state of a diagnosis row into `failure_diagnosis_versions`
+ * before it gets overwritten by a re-diagnose.
+ */
+async function snapshotDiagnosis(db: DbClient, diagnosisId: number): Promise<void> {
+  const [row] = await db.select().from(failureDiagnoses).where(eq(failureDiagnoses.id, diagnosisId)).limit(1);
+  if (!row) return;
+  const fields = {
+    diagnosisId: row.id,
+    clusterId: row.clusterId,
+    scope: row.scope,
+    testRunsCaseId: row.testRunsCaseId,
+    status: row.status,
+    provider: row.provider,
+    model: row.model,
+    category: row.category,
+    confidence: row.confidence,
+    summary: row.summary,
+    rootCause: row.rootCause,
+    details: row.details as Record<string, unknown> | null,
+    error: row.error,
+    inputTokens: row.inputTokens,
+    outputTokens: row.outputTokens,
+    durationMs: row.durationMs,
+    contextSha: row.contextSha,
+    createdAt: new Date(),
+  };
+  await db.insert(failureDiagnosisVersions).values(fields);
 }
 
 export async function autoDiagnoseRun(db: DbClient, projectId: number, runId: number): Promise<void> {

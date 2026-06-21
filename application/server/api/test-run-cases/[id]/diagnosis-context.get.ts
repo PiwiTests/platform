@@ -1,6 +1,6 @@
 import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
-import { failureClusters } from '../../../database/schema';
+import { testRunsCases } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
 import { buildDiagnosisContext } from '../../../utils/ai-context';
 import { Role } from '../../../../shared/types';
@@ -9,10 +9,10 @@ const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
 defineRouteMeta({
   openAPI: {
-    tags: ['Failure Clusters'],
-    summary: 'Get AI diagnosis context preview',
+    tags: ['Test Run Cases'],
+    summary: 'Get execution-scoped diagnosis context preview',
     description:
-      'Returns a preview of the full AI context that would be sent for diagnosis. Supports ?format=json for a structured response with per-section breakdown, token estimate, and coverage metadata.',
+      'Returns a preview of the full AI context that would be sent for diagnosing a specific test-run-case. Supports ?format=json for a structured response with per-section breakdown.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'format', in: 'query', required: false, schema: { type: 'string', enum: ['json'] } },
@@ -24,11 +24,16 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw createError({ statusCode: 400, message: 'Invalid cluster ID' });
+  if (!id) throw createError({ statusCode: 400, message: 'Invalid test run case ID' });
 
   const db = await getDatabase();
-  const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, id));
-  if (!cluster) throw createError({ statusCode: 404, message: 'Failure cluster not found' });
+
+  const [trc] = await db
+    .select({ id: testRunsCases.id, failureClusterId: testRunsCases.failureClusterId })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.id, id))
+    .limit(1);
+  if (!trc) throw createError({ statusCode: 404, message: 'Test run case not found' });
 
   const query = getQuery(event);
   const baseCommit = query.baseCommit as string | undefined;
@@ -39,12 +44,15 @@ export default eventHandler(async (event) => {
       ? [String(selectedCommitShasRaw)]
       : undefined;
   const format = query.format as string | undefined;
+  const includeImages = query.includeImages === 'true';
 
   const ctx = await buildDiagnosisContext(db, {
-    kind: 'cluster',
-    clusterId: id,
+    kind: 'execution',
+    testRunsCaseId: id,
+    clusterId: trc.failureClusterId ?? undefined,
     baseCommit,
     selectedCommitShas,
+    includeImages,
   });
 
   if (format === 'json') {
@@ -59,5 +67,12 @@ export default eventHandler(async (event) => {
     };
   }
 
-  return { context: ctx.text, coverage: ctx.coverage, scmChanges: ctx.scmChanges };
+  return {
+    context: ctx.text,
+    sections: ctx.sections,
+    coverage: ctx.coverage,
+    scmChanges: ctx.scmChanges,
+    tokenEstimate: ctx.tokenEstimate,
+    cluster: ctx.cluster,
+  };
 });

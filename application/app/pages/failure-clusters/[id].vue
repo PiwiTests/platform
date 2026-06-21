@@ -268,7 +268,7 @@ function copyCluster() {
 
         <!-- Right: diagnosis -->
         <div>
-          <ClusterDiagnosis />
+          <DiagnosisPanel :cluster-id="clusterId" :last-seen-run-id="cluster?.lastSeenRunId" />
         </div>
       </div>
     </div>

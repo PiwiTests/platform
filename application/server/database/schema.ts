@@ -18,6 +18,7 @@ export const {
   testRunsCases,
   failureClusters,
   failureDiagnoses,
+  failureDiagnosisVersions,
   appSettings,
   files,
   traceResources,

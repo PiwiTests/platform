@@ -27,7 +27,10 @@ export async function getFailureCluster(db: DrizzleDB, clusterId: number) {
       .from(testRuns)
       .where(eq(testRuns.id, cluster.lastSeenRunId)),
 
-    db.select().from(failureDiagnoses).where(eq(failureDiagnoses.clusterId, clusterId)),
+    db
+      .select()
+      .from(failureDiagnoses)
+      .where(and(eq(failureDiagnoses.clusterId, clusterId), eq(failureDiagnoses.scope, 'cluster'))),
 
     db
       .select({ id: projects.id, name: projects.name, label: projects.label })
@@ -69,7 +72,10 @@ export async function getFailureCluster(db: DrizzleDB, clusterId: number) {
 }
 
 export async function getClusterDiagnosis(db: DrizzleDB, clusterId: number) {
-  const [diag] = await db.select().from(failureDiagnoses).where(eq(failureDiagnoses.clusterId, clusterId));
+  const [diag] = await db
+    .select()
+    .from(failureDiagnoses)
+    .where(and(eq(failureDiagnoses.clusterId, clusterId), eq(failureDiagnoses.scope, 'cluster')));
   const [cluster] = await db
     .select({ manualBaseCommit: failureClusters.manualBaseCommit })
     .from(failureClusters)

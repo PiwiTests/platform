@@ -17,11 +17,9 @@ const showCluster = computed(() => !!props.cluster && (props.cluster.sameRunCase
 </script>
 
 <template>
-  <UCard>
-    <div
-      v-if="cluster"
-      class="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-gray-400"
-    >
+  <div class="space-y-4">
+    <!-- Cluster info row -->
+    <div v-if="cluster" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
       <UIcon name="i-lucide-layers" class="size-3.5 shrink-0" />
       <template v-if="showCluster">
         <span v-if="cluster.sameRunCaseCount > 1">
@@ -30,7 +28,7 @@ const showCluster = computed(() => !!props.cluster && (props.cluster.sameRunCase
         </span>
         <UBadge v-if="cluster.isNew" color="warning" variant="subtle" size="sm"> New failure </UBadge>
         <span v-else>
-          <template v-if="cluster.sameRunCaseCount > 1">· </template>Known failure — first seen in
+          <template v-if="cluster.sameRunCaseCount > 1">\u00B7 </template>Known failure \u2014 first seen in
           <NuxtLink :to="`/test-runs/${cluster.firstSeenRunId}`" class="text-primary hover:underline">
             run #{{ cluster.firstSeenRunId }}
           </NuxtLink>
@@ -44,7 +42,9 @@ const showCluster = computed(() => !!props.cluster && (props.cluster.sameRunCase
         >
           {{ cluster.status }}
         </UBadge>
-        <span v-if="cluster.triageNote" class="italic" :title="cluster.triageNote"> — {{ cluster.triageNote }} </span>
+        <span v-if="cluster.triageNote" class="italic" :title="cluster.triageNote">
+          \u2014 {{ cluster.triageNote }}
+        </span>
       </template>
       <template v-else>
         <UBadge v-if="cluster.isNew" color="warning" variant="subtle" size="sm">New failure</UBadge>
@@ -61,6 +61,7 @@ const showCluster = computed(() => !!props.cluster && (props.cluster.sameRunCase
       </UButton>
     </div>
 
-    <ClusterDiagnosis v-if="cluster" :cluster-id="cluster.id" />
-  </UCard>
+    <!-- Diagnosis panel -->
+    <DiagnosisPanel :cluster-id="cluster?.id" />
+  </div>
 </template>

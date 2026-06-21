@@ -1,6 +1,6 @@
 import { getDatabase } from '../../../database';
-import { failureClusters, failureDiagnoses } from '../../../database/schema';
-import { eq } from 'drizzle-orm';
+import { failureClusters, failureDiagnoses, testRunsCases } from '../../../database/schema';
+import { eq, and } from 'drizzle-orm';
 import { requireAuth } from '../../../utils/auth';
 import { Role } from '../../../../shared/types';
 import { resolveAiConfig } from '../../../utils/ai-provider';
@@ -32,6 +32,8 @@ export default eventHandler(async (event) => {
     images?: AiAttachedImage[];
     baseCommit?: string;
     selectedCommitShas?: string[];
+    scope?: string;
+    testRunsCaseId?: number;
   } | null;
 
   const db = await getDatabase();
@@ -42,6 +44,18 @@ export default eventHandler(async (event) => {
   const config = await resolveAiConfig(db);
   if (!config) throw createError({ statusCode: 503, message: 'AI diagnosis is not configured' });
 
+  const isExecutionScope = body?.scope === 'execution' && Boolean(body?.testRunsCaseId);
+
+  // Validate testRunsCaseId if execution scope
+  if (isExecutionScope) {
+    const [trc] = await db
+      .select({ id: testRunsCases.id })
+      .from(testRunsCases)
+      .where(eq(testRunsCases.id, body!.testRunsCaseId!))
+      .limit(1);
+    if (!trc) throw createError({ statusCode: 404, message: 'Test run case not found' });
+  }
+
   // Check if already running
   if (isDiagnosisRunning(id)) {
     throw createError({ statusCode: 409, message: 'Diagnosis is already running for this cluster' });
@@ -49,11 +63,15 @@ export default eventHandler(async (event) => {
 
   // Return existing completed diagnosis if not forcing
   if (!force) {
-    const existingRows = await db.select().from(failureDiagnoses).where(eq(failureDiagnoses.clusterId, id));
+    const whereClause = isExecutionScope
+      ? and(eq(failureDiagnoses.testRunsCaseId, body!.testRunsCaseId!), eq(failureDiagnoses.scope, 'execution'))
+      : and(eq(failureDiagnoses.clusterId, id), eq(failureDiagnoses.scope, 'cluster'));
+
+    const existingRows = await db.select().from(failureDiagnoses).where(whereClause).limit(1);
     const existing = existingRows[0];
     if (existing) {
       if (existing.status === 'running' && !isDiagnosisStale(existing)) {
-        throw createError({ statusCode: 409, message: 'Diagnosis is already running for this cluster' });
+        throw createError({ statusCode: 409, message: 'Diagnosis is already running' });
       }
       if (existing.status === 'completed') {
         return existing;
@@ -67,5 +85,6 @@ export default eventHandler(async (event) => {
     images: body?.images,
     baseCommit: body?.baseCommit,
     selectedCommitShas: body?.selectedCommitShas,
+    testRunsCaseId: isExecutionScope ? body!.testRunsCaseId : undefined,
   });
 });
