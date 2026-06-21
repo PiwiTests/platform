@@ -153,7 +153,7 @@ export const failureClusters = pgTable(
   }),
 );
 
-// AI failure diagnoses - one per failure cluster, produced by the configured LLM provider
+// AI failure diagnoses - scope-aware diagnosis results
 export const failureDiagnoses = pgTable(
   'failure_diagnoses',
   {
@@ -161,6 +161,9 @@ export const failureDiagnoses = pgTable(
     clusterId: integer('cluster_id')
       .notNull()
       .references(() => failureClusters.id, { onDelete: 'cascade' }),
+    scope: text('scope').notNull().default('cluster'), // 'cluster', 'execution'
+    testRunsCaseId: integer('test_runs_case_id').references(() => testRunsCases.id, { onDelete: 'cascade' }),
+    contextSha: text('context_sha'), // hash of the context sent, for staleness detection
     status: text('status').notNull().default('running'), // 'running', 'completed', 'failed'
     provider: text('provider'), // 'anthropic', 'openai'
     model: text('model'), // model id that produced the diagnosis
@@ -181,7 +184,7 @@ export const failureDiagnoses = pgTable(
       .$defaultFn(() => new Date()),
   },
   (table) => ({
-    clusterIdIdx: uniqueIndex('idx_failure_diagnoses_cluster_id').on(table.clusterId),
+    executionScopeIdx: uniqueIndex('idx_failure_diagnoses_execution_scope').on(table.testRunsCaseId, table.scope),
   }),
 );
 
