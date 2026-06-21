@@ -52,8 +52,14 @@ const sectionsByCategory = computed(() => {
   return categories;
 });
 
-function sectionCount(s: ContextSection): string {
-  return s.items != null ? `${s.items} items` : '';
+function sectionHeading(s: ContextSection): string {
+  let h = `## ${s.title}`;
+  const meta: string[] = [];
+  meta.push(`${s.chars} chars`);
+  if (s.truncated) meta.push('truncated');
+  if (s.items != null) meta.push(`${s.items} items`);
+  if (meta.length) h += ` — ${meta.join(', ')}`;
+  return h;
 }
 </script>
 
@@ -93,32 +99,16 @@ function sectionCount(s: ContextSection): string {
         <div v-for="cat in sectionsByCategory" :key="cat.label">
           <p class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">{{ cat.label }}</p>
           <div class="space-y-2">
-            <div v-for="s in cat.items" :key="s.id" class="rounded-lg border border-default bg-elevated/30">
-              <div class="flex items-center justify-between px-3 py-2 border-b border-default">
-                <div class="flex items-center gap-2 min-w-0">
-                  <span class="text-xs font-medium truncate">{{ s.title }}</span>
-                  <span class="text-xs text-gray-400 shrink-0">{{ s.chars }} chars</span>
-                  <UBadge v-if="s.truncated" color="warning" variant="subtle" size="xs">truncated</UBadge>
-                  <span v-if="sectionCount(s)" class="text-xs text-gray-400 shrink-0">{{ sectionCount(s) }}</span>
-                </div>
-                <UButton
-                  :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
-                  size="xs"
-                  color="neutral"
-                  variant="ghost"
-                  @click="copy(s.markdown)"
-                />
-              </div>
-              <div class="px-3 py-2 max-h-48 overflow-y-auto">
-                <MarkdownPreview
-                  :text="
-                    '```\n' +
-                    s.markdown.slice(0, 2000) +
-                    (s.markdown.length > 2000 ? '\n... [truncated in preview]' : '') +
-                    '\n```'
-                  "
-                />
-              </div>
+            <div v-for="s in cat.items" :key="s.id" class="relative">
+              <MarkdownPreview :text="sectionHeading(s) + '\n\n' + s.markdown" />
+              <UButton
+                :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                class="absolute top-1 right-1"
+                @click="copy(s.markdown)"
+              />
             </div>
           </div>
         </div>

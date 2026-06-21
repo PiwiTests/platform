@@ -2,7 +2,7 @@ import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
 import { failureClusters } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
-import { buildClusterDiagnosisContext } from '../../../utils/ai-context';
+import { buildDiagnosisContext } from '../../../utils/ai-context';
 import { Role } from '../../../../shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
@@ -12,8 +12,11 @@ defineRouteMeta({
     tags: ['Failure Clusters'],
     summary: 'Get AI diagnosis context preview',
     description:
-      'Returns a preview of the full AI context that would be sent for diagnosis, including optional base commit and selected commit SHAs.',
-    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+      'Returns a preview of the full AI context that would be sent for diagnosis. Supports ?format=json for a structured response with per-section breakdown, token estimate, and coverage metadata.',
+    parameters: [
+      { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
+      { name: 'format', in: 'query', required: false, schema: { type: 'string', enum: ['json'] } },
+    ],
     'x-required-roles': REQUIRED_ROLES,
   },
 });
@@ -35,9 +38,26 @@ export default eventHandler(async (event) => {
     : selectedCommitShasRaw
       ? [String(selectedCommitShasRaw)]
       : undefined;
-  const { text, coverage, scmChanges } = await buildClusterDiagnosisContext(db, cluster, {
+  const format = query.format as string | undefined;
+
+  const ctx = await buildDiagnosisContext(db, {
+    kind: 'cluster',
+    clusterId: id,
     baseCommit,
     selectedCommitShas,
   });
-  return { context: text, coverage, scmChanges };
+
+  if (format === 'json') {
+    return {
+      scope: ctx.scope,
+      text: ctx.text,
+      sections: ctx.sections,
+      coverage: ctx.coverage,
+      scmChanges: ctx.scmChanges,
+      tokenEstimate: ctx.tokenEstimate,
+      cluster: ctx.cluster,
+    };
+  }
+
+  return { context: ctx.text, coverage: ctx.coverage, scmChanges: ctx.scmChanges };
 });

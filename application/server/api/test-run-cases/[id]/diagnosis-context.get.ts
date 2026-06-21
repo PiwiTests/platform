@@ -1,7 +1,7 @@
 import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
-import { testRunsCases, failureClusters } from '../../../database/schema';
-import { eq, and } from 'drizzle-orm';
+import { testRunsCases } from '../../../database/schema';
+import { eq } from 'drizzle-orm';
 import { buildDiagnosisContext } from '../../../utils/ai-context';
 import { Role } from '../../../../shared/types';
 
@@ -12,8 +12,11 @@ defineRouteMeta({
     tags: ['Test Run Cases'],
     summary: 'Get execution-scoped diagnosis context preview',
     description:
-      'Returns a preview of the full AI context that would be sent for diagnosing a specific test-run-case, including optional base commit and selected commit SHAs.',
-    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+      'Returns a preview of the full AI context that would be sent for diagnosing a specific test-run-case. Supports ?format=json for a structured response with per-section breakdown.',
+    parameters: [
+      { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
+      { name: 'format', in: 'query', required: false, schema: { type: 'string', enum: ['json'] } },
+    ],
     'x-required-roles': REQUIRED_ROLES,
   },
 });
@@ -40,6 +43,8 @@ export default eventHandler(async (event) => {
     : selectedCommitShasRaw
       ? [String(selectedCommitShasRaw)]
       : undefined;
+  const format = query.format as string | undefined;
+  const includeImages = query.includeImages === 'true';
 
   const ctx = await buildDiagnosisContext(db, {
     kind: 'execution',
@@ -47,7 +52,20 @@ export default eventHandler(async (event) => {
     clusterId: trc.failureClusterId ?? undefined,
     baseCommit,
     selectedCommitShas,
+    includeImages,
   });
+
+  if (format === 'json') {
+    return {
+      scope: ctx.scope,
+      text: ctx.text,
+      sections: ctx.sections,
+      coverage: ctx.coverage,
+      scmChanges: ctx.scmChanges,
+      tokenEstimate: ctx.tokenEstimate,
+      cluster: ctx.cluster,
+    };
+  }
 
   return {
     context: ctx.text,

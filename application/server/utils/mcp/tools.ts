@@ -3,10 +3,11 @@ import { listProjects, getProject, getProjectFailureClusters, getProjectFlakyTes
 import { getTestRun } from '~~/shared/handlers/test-runs';
 import { getTestCase } from '~~/shared/handlers/test-cases';
 import { getFailureCluster, getClusterDiagnosis } from '~~/shared/handlers/failure-clusters';
-import { testRuns, testRunsCases, testCases, failureClusters } from '../../database/schema';
-import { buildClusterDiagnosisContext } from '../ai-context';
+import { testRuns, testRunsCases, testCases, failureClusters, files } from '../../database/schema';
+import { buildDiagnosisContext, buildClusterDiagnosisContext } from '../ai-context';
 import { stripAnsi } from '#shared/error-fingerprint';
 import type { RunMetadata, BrowserConfig } from '../run-json-types';
+import { getStorage } from '../../storage';
 
 type DbClient = Awaited<ReturnType<typeof import('../../database').getDatabase>>;
 
@@ -56,6 +57,11 @@ export function toContent(data: unknown): { content: Array<{ type: 'text'; text:
 }
 
 // ── Tools ────────────────────────────────────────────────────────────────────
+
+async function getClusterDbRow(db: DbClient, id: number) {
+  const [row] = await db.select().from(failureClusters).where(eq(failureClusters.id, id));
+  return row ?? null;
+}
 
 export const MCP_TOOLS: McpTool[] = [
   // ── list_projects ──────────────────────────────────────────────────────────
@@ -564,6 +570,136 @@ export const MCP_TOOLS: McpTool[] = [
         updatedAt: iso(diag.updatedAt),
         manualBaseCommit: result.manualBaseCommit || null,
       });
+    },
+  },
+
+  // ── get_cluster_context_structured ─────────────────────────────────────────
+  {
+    name: 'get_cluster_context_structured',
+    description:
+      'Get the full AI evidence context for a failure cluster as a structured JSON response with per-section breakdown. Includes the same data as get_cluster_context but organized into named sections with char counts and truncation flags. Use this when you need to reference individual evidence sections.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'Cluster ID' },
+        baseCommit: {
+          type: 'string',
+          description: 'Optional: override the baseline commit SHA for SCM diff comparison',
+        },
+      },
+      required: ['id'],
+    },
+    async handler(db, params) {
+      const id = Number(params.id);
+      const row = await getClusterDbRow(db, id);
+      if (!row) return null;
+      const baseCommit = params.baseCommit as string | undefined;
+      const ctx = await buildDiagnosisContext(db, { kind: 'cluster', clusterId: id, baseCommit });
+      return dropNulls({
+        clusterId: id,
+        text: ctx.text,
+        sections: ctx.sections.map((s) => ({
+          id: s.id,
+          title: s.title,
+          chars: s.chars,
+          truncated: s.truncated,
+          items: s.items ?? null,
+        })),
+        tokenEstimate: ctx.tokenEstimate,
+        coverage: ctx.coverage?.scm
+          ? dropNulls({
+              hasLastGreen: ctx.coverage.scm.hasLastGreen,
+              hasCommitRange: ctx.coverage.scm.hasCommitRange,
+              provider: ctx.coverage.scm.provider || null,
+              commitsCount: ctx.coverage.scm.commitsCount || null,
+              filesCount: ctx.coverage.scm.filesCount || null,
+            })
+          : null,
+      });
+    },
+  },
+
+  // ── get_test_case_context ─────────────────────────────────────────────────
+  {
+    name: 'get_test_case_context',
+    description:
+      'Get the AI evidence context for a specific test-run-case (execution scope). Use this when debugging a single test failure — it provides the execution-scoped evidence including steps, console, network, and SCM diff.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'Test run case ID' },
+      },
+      required: ['id'],
+    },
+    async handler(db, params) {
+      const id = Number(params.id);
+      const [trc] = await db
+        .select({ id: testRunsCases.id, failureClusterId: testRunsCases.failureClusterId })
+        .from(testRunsCases)
+        .where(eq(testRunsCases.id, id))
+        .limit(1);
+      if (!trc) return null;
+      const ctx = await buildDiagnosisContext(db, {
+        kind: 'execution',
+        testRunsCaseId: id,
+        clusterId: trc.failureClusterId ?? undefined,
+      });
+      return dropNulls({
+        testRunsCaseId: id,
+        text: ctx.text,
+        sections: ctx.sections.map((s) => ({
+          id: s.id,
+          title: s.title,
+          chars: s.chars,
+          truncated: s.truncated,
+          items: s.items ?? null,
+        })),
+        tokenEstimate: ctx.tokenEstimate,
+        cluster: ctx.cluster ?? null,
+      });
+    },
+  },
+
+  // ── get_case_screenshots ───────────────────────────────────────────────────
+  {
+    name: 'get_case_screenshots',
+    description:
+      'Get screenshot files for a test-run-case. Returns small base64 thumbnails of failure screenshots (capped at ~100 KB each, max 3). Use this when you need to see the visual state of the page at the time of failure.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        testRunsCaseId: { type: 'number', description: 'Test run case ID' },
+      },
+      required: ['testRunsCaseId'],
+    },
+    async handler(db, params) {
+      const id = Number(params.testRunsCaseId);
+      const screenshotRows = await db
+        .select({ path: files.path, label: files.label })
+        .from(files)
+        .where(and(eq(files.testRunsCaseId, id), eq(files.type, 'screenshot')))
+        .limit(3);
+      if (screenshotRows.length === 0) return [];
+      const storage = getStorage();
+      const results: { name: string; mediaType: string; dataLength: number }[] = [];
+      for (const f of screenshotRows) {
+        try {
+          const buf = await storage.readFile(f.path);
+          const ext = f.path.toLowerCase().split('.').pop() || 'png';
+          const mediaType =
+            ext === 'jpg' || ext === 'jpeg'
+              ? 'image/jpeg'
+              : ext === 'gif'
+                ? 'image/gif'
+                : ext === 'webp'
+                  ? 'image/webp'
+                  : 'image/png';
+          results.push({ name: f.label || f.path.split('/').pop() || 'screenshot', mediaType, dataLength: buf.length });
+        } catch {
+          // skip inaccessible files
+        }
+      }
+      return results;
     },
   },
 

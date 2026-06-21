@@ -5,9 +5,16 @@ const props = defineProps<{
   clusterId?: number;
 }>();
 
-const { diagnosis, posting, contextText, contextLoading, refreshContext, runDiagnosis } = useOrProvideClusterDiagnosis(
-  props.clusterId,
-);
+const {
+  diagnosis,
+  posting,
+  contextText,
+  contextSections,
+  tokenEstimate,
+  contextLoading,
+  refreshContext,
+  runDiagnosis,
+} = useOrProvideClusterDiagnosis(props.clusterId);
 const { aiStatus } = useAiStatus();
 const toast = useToast();
 
@@ -65,6 +72,7 @@ function isStale(d: FailureDiagnosis) {
           </span>
         </div>
         <div class="flex items-center gap-1.5">
+          <DiagnosisExportMenu :context-text="contextText" :diagnosis="diagnosis" />
           <UButton
             :icon="showAiContext ? 'i-lucide-eye-off' : 'i-lucide-eye'"
             size="xs"
@@ -93,8 +101,8 @@ function isStale(d: FailureDiagnosis) {
     <!-- Context modal -->
     <DiagnosisContextModal
       :open="showAiContext"
-      :sections="[]"
-      :token-estimate="0"
+      :sections="contextSections"
+      :token-estimate="tokenEstimate"
       :loading="contextLoading"
       @update:open="showAiContext = $event"
       @refresh="refreshContext"
