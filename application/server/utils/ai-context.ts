@@ -17,15 +17,11 @@ import type {
 } from './run-json-types';
 import { resolveContextLimits } from './ai-context-limits';
 import type { ContextLimits } from '#shared/ai-context-limits';
+import type { BuildContextOptions } from './ai-context.types';
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>;
 
 type ScmCoverage = NonNullable<DiagnosisContextCoverage['scm']>;
-
-export interface BuildContextOptions {
-  baseCommit?: string;
-  selectedCommitShas?: string[];
-}
 
 // ── SCM diff rendering ──────────────────────────────────────────────────────
 
