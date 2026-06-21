@@ -216,7 +216,6 @@ export const testRunsCases = pgTable(
     stepEvents: jsonb('step_events'), // Array of { title, category, startedAt, duration, status, location } — hook/fixture steps for timeline
     slowestStep: text('slowest_step'), // Title of the slowest step
     slowestStepDuration: integer('slowest_step_duration'), // Duration of the slowest step in ms
-    networkRequests: jsonb('network_requests'), // Array of { method, url, status, duration, resourceType }
     webVitals: jsonb('web_vitals'), // { navigation: {...}, paint: {...} }
     consoleLogs: jsonb('console_logs'), // Array of { type, text, timestamp, location } console entries
     ariaSnapshot: text('aria_snapshot'), // ARIA snapshot of the page (YAML-like string from locator.ariaSnapshot())
@@ -241,6 +240,33 @@ export const testRunsCases = pgTable(
       table.retries,
       table.browserName,
     ),
+  }),
+);
+
+// Network requests table - normalized child table of test_runs_cases
+export const networkRequests = pgTable(
+  'network_requests',
+  {
+    id: serial('id').primaryKey(),
+    testRunsCaseId: integer('test_runs_case_id')
+      .notNull()
+      .references(() => testRunsCases.id, { onDelete: 'cascade' }),
+    testRunId: integer('test_run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    method: text('method').notNull(),
+    url: text('url'),
+    normalizedUrl: text('normalized_url'),
+    status: integer('status').notNull(),
+    duration: integer('duration'),
+    resourceType: text('resource_type'),
+    contentType: text('content_type'),
+    serverLogs: jsonb('server_logs'),
+  },
+  (t) => ({
+    runIdx: index('idx_nr_run').on(t.testRunId),
+    caseStatusIdx: index('idx_nr_case').on(t.testRunsCaseId, t.status),
+    normalizedUrlIdx: index('idx_nr_normalized_url').on(t.normalizedUrl),
   }),
 );
 
@@ -457,3 +483,5 @@ export type ProjectTag = typeof projectTags.$inferSelect;
 export type NewProjectTag = typeof projectTags.$inferInsert;
 export type EntityLink = typeof entityLinks.$inferSelect;
 export type NewEntityLink = typeof entityLinks.$inferInsert;
+export type NetworkRequest = typeof networkRequests.$inferSelect;
+export type NewNetworkRequest = typeof networkRequests.$inferInsert;

@@ -1,5 +1,5 @@
 import { eq, and, desc, sql } from 'drizzle-orm';
-import { testRunsCases, testCases, testRuns } from '../database/schema';
+import { testRunsCases, testCases, testRuns, networkRequests } from '../database/schema';
 import type { FailureCluster } from '../database/schema';
 import type { DiagnosisContextCoverage } from '~~/types/api';
 import { stripAnsi } from '#shared/error-fingerprint';
@@ -10,7 +10,6 @@ import type { ScmChanges, ChangedFile } from './scm/ScmProvider';
 import type {
   BrowserConfig,
   ConsoleLogEntry,
-  NetworkRequestEntry,
   RunMetadata,
   ServerLogEntry,
   TestStepInfo,
@@ -181,7 +180,6 @@ async function loadRepresentativeExecution(db: DbClient, cluster: FailureCluster
       column: testRunsCases.column,
       steps: testRunsCases.steps,
       consoleLogs: testRunsCases.consoleLogs,
-      networkRequests: testRunsCases.networkRequests,
       ariaSnapshot: testRunsCases.ariaSnapshot,
       testSource: testRunsCases.testSource,
       webVitals: testRunsCases.webVitals,
@@ -194,7 +192,12 @@ async function loadRepresentativeExecution(db: DbClient, cluster: FailureCluster
     .orderBy(desc(testRunsCases.id))
     .limit(1);
 
-  return repRows[0] ?? null;
+  const rep = repRows[0] ?? null;
+  if (!rep) return null;
+
+  const nrRows = await db.select().from(networkRequests).where(eq(networkRequests.testRunsCaseId, rep.id));
+
+  return { ...rep, nrItems: nrRows };
 }
 
 type RepresentativeRow = NonNullable<Awaited<ReturnType<typeof loadRepresentativeExecution>>>;
@@ -256,20 +259,21 @@ function representativeExecutionSections(
   }
 
   // Failed network requests
-  const networkRequests = (rep.networkRequests as NetworkRequestEntry[] | null) ?? [];
-  const failedReqs = networkRequests.filter((r) => r.status >= 400 || r.status === 0).slice(0, limits.networkRequests);
+  const nrItems = (rep as any).nrItems ?? [];
+  const failedReqs = nrItems.filter((r: any) => r.status >= 400 || r.status === 0).slice(0, limits.networkRequests);
   if (failedReqs.length > 0) {
     out.push(
-      `### Failed Network Requests\n${failedReqs.map((r) => `${r.method} ${r.url} → ${r.status}${r.duration != null ? ` (${r.duration}ms)` : ''}`).join('\n')}`,
+      `### Failed Network Requests\n${failedReqs.map((r: any) => `${r.method} ${r.url} → ${r.status}${r.duration != null ? ` (${r.duration}ms)` : ''}`).join('\n')}`,
     );
   }
 
   // Backend server logs (aggregated from X-Piwi-Logs headers across all requests)
   if (limits.serverLogEntries > 0) {
     const allServerLogs: ServerLogEntry[] = [];
-    for (const req of networkRequests) {
-      if (Array.isArray(req.serverLogs)) {
-        for (const log of req.serverLogs) allServerLogs.push(log as ServerLogEntry);
+    for (const req of nrItems) {
+      const logs = (req as any).serverLogs;
+      if (Array.isArray(logs)) {
+        for (const log of logs) allServerLogs.push(log as ServerLogEntry);
       }
     }
     allServerLogs.sort((a, b) => a.timestamp - b.timestamp);

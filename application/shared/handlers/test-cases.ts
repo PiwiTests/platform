@@ -7,6 +7,7 @@ import {
   failureClusters,
   failureDiagnoses,
   entityLinks,
+  networkRequests,
 } from '../../server/database/schema.sqlite';
 import { eq, and, desc, sql } from 'drizzle-orm';
 
@@ -229,10 +230,20 @@ export async function getTestRunCase(db: DrizzleDB, id: number) {
     }
   }
 
-  const [linksForCaseRun, linksForTestCase] = await Promise.all([
+  const [networkRequestRows, linksForCaseRun, linksForTestCase] = await Promise.all([
+    db.select().from(networkRequests).where(eq(networkRequests.testRunsCaseId, trc.id)),
     db.select().from(entityLinks).where(eq(entityLinks.testRunsCaseId, trc.id)),
     testCase ? db.select().from(entityLinks).where(eq(entityLinks.testCaseId, testCase.id)) : Promise.resolve([]),
   ]);
+
+  const networkRequestsData = networkRequestRows.map((nr) => ({
+    method: nr.method,
+    url: nr.url,
+    status: nr.status,
+    duration: nr.duration,
+    resourceType: nr.resourceType,
+    serverLogs: nr.serverLogs,
+  }));
 
   return {
     id: trc.id,
@@ -246,7 +257,7 @@ export async function getTestRunCase(db: DrizzleDB, id: number) {
     steps: trc.steps,
     slowestStep: trc.slowestStep,
     slowestStepDuration: trc.slowestStepDuration,
-    networkRequests: trc.networkRequests,
+    networkRequests: networkRequestsData,
     webVitals: trc.webVitals,
     consoleLogs: trc.consoleLogs,
     ariaSnapshot: trc.ariaSnapshot,

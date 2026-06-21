@@ -27,6 +27,7 @@ export const {
   entityLinks,
   users,
   apiKeys,
+  networkRequests,
 } = schema;
 
 // TypeScript type exports – always based on SQLite schema (the canonical reference)
@@ -63,4 +64,6 @@ export type {
   NewProjectTag,
   EntityLink,
   NewEntityLink,
+  NetworkRequest,
+  NewNetworkRequest,
 } from './schema.sqlite';

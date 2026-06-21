@@ -216,7 +216,6 @@ export const testRunsCases = sqliteTable(
     stepEvents: text('step_events', { mode: 'json' }), // Array of { title, category, startedAt, duration, status, location } — hook/fixture steps for timeline
     slowestStep: text('slowest_step'), // Title of the slowest step
     slowestStepDuration: integer('slowest_step_duration'), // Duration of the slowest step in ms
-    networkRequests: text('network_requests', { mode: 'json' }), // Array of { method, url, status, duration, resourceType }
     webVitals: text('web_vitals', { mode: 'json' }), // { navigation: {...}, paint: {...} }
     consoleLogs: text('console_logs', { mode: 'json' }), // Array of { type, text, timestamp, location } console entries
     ariaSnapshot: text('aria_snapshot'), // ARIA snapshot of the page (YAML-like string from locator.ariaSnapshot())
@@ -227,7 +226,7 @@ export const testRunsCases = sqliteTable(
     workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
     shardIndex: integer('shard_index'), // Shard index (1-based) for sharded runs; null = not sharded
     startedAt: integer('started_at', { mode: 'timestamp_ms' }), // Unix timestamp in ms when the test started
-    createdAt: integer('created_at', { mode: 'timestamp' })
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
       .$defaultFn(() => new Date()),
   },
@@ -241,6 +240,37 @@ export const testRunsCases = sqliteTable(
       table.retries,
       table.browserName,
     ),
+  }),
+);
+
+// Network requests table - normalized child table of test_runs_cases
+// Stores one row per filtered network request (API/document types only).
+// Normalized URLs enable endpoint-grouped stats without parsing JSON.
+// Populated at ingest time alongside test_runs_cases; the old JSON column
+// is kept for backward compat with existing data.
+export const networkRequests = sqliteTable(
+  'network_requests',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    testRunsCaseId: integer('test_runs_case_id')
+      .notNull()
+      .references(() => testRunsCases.id, { onDelete: 'cascade' }),
+    testRunId: integer('test_run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    method: text('method').notNull(),
+    url: text('url'), // Raw URL (query-params stripped by sanitizeUrl)
+    normalizedUrl: text('normalized_url'), // Route pattern for grouping (no ids, no query)
+    status: integer('status').notNull(),
+    duration: integer('duration'), // Response time in ms
+    resourceType: text('resource_type'), // 'fetch', 'xhr', 'document', 'other'
+    contentType: text('content_type'), // Response content-type header
+    serverLogs: text('server_logs', { mode: 'json' }), // Backend server logs from X-Piwi-Logs header
+  },
+  (t) => ({
+    runIdx: index('idx_nr_run').on(t.testRunId),
+    caseStatusIdx: index('idx_nr_case').on(t.testRunsCaseId, t.status),
+    normalizedUrlIdx: index('idx_nr_normalized_url').on(t.normalizedUrl),
   }),
 );
 
@@ -464,3 +494,5 @@ export type ProjectTag = typeof projectTags.$inferSelect;
 export type NewProjectTag = typeof projectTags.$inferInsert;
 export type EntityLink = typeof entityLinks.$inferSelect;
 export type NewEntityLink = typeof entityLinks.$inferInsert;
+export type NetworkRequest = typeof networkRequests.$inferSelect;
+export type NewNetworkRequest = typeof networkRequests.$inferInsert;
