@@ -268,7 +268,7 @@ function copyCluster() {
 
         <!-- Right: diagnosis -->
         <div>
-          <ClusterDiagnosis />
+          <DiagnosisPanel :cluster-id="clusterId" />
         </div>
       </div>
     </div>
