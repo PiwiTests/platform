@@ -138,7 +138,6 @@ Nuxt file-based routing:
   - `/reset-password` — Public, layout-free; handles both reset and invite (`?mode=invite`) flows
 - **Utilities** (`app/utils/`):
   - `performance-hints.ts` — Generates performance warnings for slow/flaky tests
-  - `fix-prompt.ts` — Generates structured AI debug prompts from test failure context
   - `index.ts` — Shared helpers: `formatDuration`, `getStatusColor`, `getFileApiPath`, `formatRelativeTime`, `createSortHeader`, `formatBytes`, `errorMessage` (unwrap `$fetch` errors), `filterCommits`, `scmFileStatusMeta`, `parsePatchLines`/`patchLineClass`, `clusterStatusColor`, `clusterErrorTypeColor`
 
 ### Reporter
