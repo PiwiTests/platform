@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getAppSetting } from './app-settings';
+import { decryptSecret, getEncryptionKey } from './crypto';
 import type { AiProvider, AiConfig } from '~~/types/api';
 
 export type { AiConfig };
@@ -38,7 +39,7 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
 
   const config: AiConfig = {
     provider: stored.provider as AiProvider,
-    apiKey: stored.apiKey || '',
+    apiKey: stored.apiKey ? decryptSecret(stored.apiKey, getEncryptionKey()) : '',
     model: stored.model || '',
     baseUrl: stored.baseUrl || null,
     autoDiagnose: Boolean(stored.autoDiagnose),

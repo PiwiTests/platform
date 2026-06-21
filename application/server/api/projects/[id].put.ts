@@ -2,6 +2,7 @@ import { getDatabase } from '../../database';
 import { z } from 'zod';
 import { requireAuth } from '../../utils/auth';
 import { updateProject } from '~~/shared/handlers/projects';
+import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
 import { Role } from '../../../shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
@@ -54,8 +55,18 @@ export default eventHandler(async (event) => {
 
   const { label, description, diagnosisInstructions, scmToken, tagIds } = validation.data;
 
+  // Encrypt SCM token before persisting; null/empty clears the stored value
+  const encryptedScmToken =
+    scmToken != null && scmToken.trim() ? encryptSecret(scmToken.trim(), getEncryptionKey()) : scmToken;
+
   try {
-    return await updateProject(db, id, { label, description, diagnosisInstructions, scmToken, tagIds });
+    return await updateProject(db, id, {
+      label,
+      description,
+      diagnosisInstructions,
+      scmToken: encryptedScmToken,
+      tagIds,
+    });
   } catch (e: any) {
     if (e?.message === 'Project not found') {
       throw createError({ statusCode: 404, message: 'Project not found' });

@@ -57,8 +57,9 @@ The `.data` directory contains:
 | `NODE_ENV` | `production` | Set automatically |
 | `HOST` | `0.0.0.0` | Listen on all interfaces |
 | `PORT` | `3000` | Application port |
+| `PIWI_SECRET_KEY` | — | Master key for encrypting secrets in the database (AI API keys, SCM tokens). Recommended in all deployments. Generate with `openssl rand -hex 32`. |
 | `PIWI_AUTH_ENABLED` | — | Enable authentication |
-| `PIWI_AUTH_SECRET` | — | Secret for authentication (required if auth enabled) |
+| `PIWI_AUTH_SECRET` | — | Secret for encrypting session cookies (required if auth enabled). Generate with `openssl rand -hex 32`. |
 | `PIWI_STORAGE_TYPE` | `local` | Storage backend (`local` or `s3`) |
 | `PIWI_DATABASE_URL` | — | PostgreSQL connection string (e.g. `postgresql://user:pass@host:5432/db`). When set, PostgreSQL is used instead of SQLite. |
 | `PIWI_DATABASE_PATH` | `.data/piwi.db` | SQLite database path (ignored when `PIWI_DATABASE_URL` is set) |
@@ -195,7 +196,8 @@ Security best practices:
 
 - Always use HTTPS in production
 - Mount `.data/` on a persistent volume
-- Set a strong `PIWI_AUTH_SECRET` and enable authentication
+- Set a strong `PIWI_SECRET_KEY` (`openssl rand -hex 32`) to encrypt secrets at rest
+- Set a strong `PIWI_AUTH_SECRET` and enable authentication for multi-user deployments
 
 ## Troubleshooting
 

@@ -2,6 +2,7 @@ import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
 import { Role } from '../../../shared/types';
 import { getAppSetting, setAppSetting, deleteAppSetting } from '../../utils/app-settings';
+import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
 import type { AiProvider } from '~~/types/api';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
@@ -55,7 +56,7 @@ export default eventHandler(async (event) => {
   if (body.scmToken !== undefined) {
     const trimmed = body.scmToken?.trim() || null;
     if (trimmed) {
-      await setAppSetting(db, 'scm_token', { value: trimmed });
+      await setAppSetting(db, 'scm_token', { value: encryptSecret(trimmed, getEncryptionKey()) });
     } else {
       await deleteAppSetting(db, 'scm_token');
     }
@@ -96,11 +97,12 @@ export default eventHandler(async (event) => {
 
   let apiKey: string | undefined;
   if (body.apiKey === undefined) {
+    // Preserve the existing encrypted value as-is
     apiKey = existing.apiKey;
   } else if (body.apiKey === '') {
     apiKey = undefined;
   } else {
-    apiKey = body.apiKey;
+    apiKey = encryptSecret(body.apiKey, getEncryptionKey());
   }
 
   const value = {

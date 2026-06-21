@@ -1,4 +1,5 @@
 import { getAppSetting } from '../app-settings';
+import { decryptSecret, getEncryptionKey } from '../crypto';
 import { projects } from '../../database/schema';
 import { eq } from 'drizzle-orm';
 import { GitHubProvider } from './GitHubProvider';
@@ -61,14 +62,16 @@ export async function createScmProvider(
   if (projectId) {
     const [project] = await db.select({ scmToken: projects.scmToken }).from(projects).where(eq(projects.id, projectId));
     if (project?.scmToken) {
-      token = project.scmToken;
+      token = decryptSecret(project.scmToken, getEncryptionKey());
     }
   }
 
   // Fall back to global token
   if (!token) {
     const tokenSetting = await getAppSetting<{ value?: string }>(db, 'scm_token');
-    token = tokenSetting?.value ?? null;
+    if (tokenSetting?.value) {
+      token = decryptSecret(tokenSetting.value, getEncryptionKey());
+    }
   }
 
   return scmProviderForUrl(repositoryUrl, token);

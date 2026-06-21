@@ -27,14 +27,15 @@ The dashboard supports optional user authentication with role-based access contr
 2. Edit `.env` and set:
 
    ```bash
+   PIWI_SECRET_KEY=your-secret-key-here   # encrypts DB secrets (AI keys, SCM tokens)
    PIWI_AUTH_ENABLED=true
-   PIWI_AUTH_SECRET=your-secret-key-here
+   PIWI_AUTH_SECRET=your-auth-secret-here  # encrypts session cookies
    ```
 
-   Generate a strong secret key for production:
+   Generate strong random values for both:
 
    ```bash
-   openssl rand -hex 32
+   openssl rand -hex 32   # run twice — once for PIWI_SECRET_KEY, once for PIWI_AUTH_SECRET
    ```
 
 3. Restart the application.
@@ -218,9 +219,10 @@ The reporter automatically calls `/api/auth/login` before each upload and uses t
 
 - Always use HTTPS in production.
 - Use strong, unique passwords.
-- Generate a strong random secret for `PIWI_AUTH_SECRET`.
+- Set `PIWI_SECRET_KEY` (`openssl rand -hex 32`) to encrypt AI API keys and SCM tokens at rest in the database. This is recommended even when authentication is disabled.
+- Set `PIWI_AUTH_SECRET` (`openssl rand -hex 32`) for session cookie encryption — required when `PIWI_AUTH_ENABLED=true`.
 - Passwords are hashed using scrypt with per-password salts.
-- Never use the default secret in production.
+- Never use the default secrets in production.
 
 ## Disabling authentication
 
