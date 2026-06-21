@@ -341,10 +341,25 @@ for (const cl of CLUSTERS) {
   }
 }
 
+// Simple URL normalizer for seed data (mirrors shared/utils/route.ts)
+function seedNormalizeUrl(url) {
+  try {
+    const parsed = new URL(url);
+    let pathname = parsed.pathname;
+    pathname = pathname.replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\/|$)/gi, '/:uuid');
+    pathname = pathname.replace(/\/\d+(?=\/|$)/g, '/:id');
+    return `${parsed.protocol}//${parsed.host}${pathname}`;
+  } catch {
+    return url;
+  }
+}
+
 // ── Test runs + test_runs_cases ────────────────────────────────────────────
 
 const TEST_RUNS = [];
 const TEST_RUNS_CASES = [];
+const NETWORK_REQUESTS = [];
+let nrId = 1;
 const REPORTS = [];
 const FAILURE_CLUSTERS = [];
 
@@ -645,8 +660,9 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
         testAnnotations = [{ type: 'smoke' }];
       }
 
+      const trcIdVal = trcId++;
       const trc = {
-        id: trcId++,
+        id: trcIdVal,
         test_run_id: runId,
         test_case_id: caseId,
         status: caseStatus,
@@ -661,7 +677,6 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
         steps,
         slowest_step: slowestStep.title,
         slowest_step_duration: slowestStep.duration,
-        network_requests: netWithLogs,
         web_vitals: {
           navigation: {
             url: 'https://app.example.com/',
@@ -691,6 +706,21 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
         created_at: startTime + Math.floor((j * caseDuration) / 1000),
       };
       TEST_RUNS_CASES.push(trc);
+
+      for (const req of netWithLogs) {
+        NETWORK_REQUESTS.push({
+          id: nrId++,
+          test_runs_case_id: trcIdVal,
+          test_run_id: runId,
+          method: req.method,
+          url: req.url,
+          normalized_url: seedNormalizeUrl(req.url),
+          status: req.status,
+          duration: req.duration ?? null,
+          resource_type: req.resourceType ?? null,
+          server_logs: req.serverLogs ?? null,
+        });
+      }
     }
 
     runId++;
@@ -1174,6 +1204,9 @@ const lines = [
   '-- Test run cases',
   insert('test_runs_cases', TEST_RUNS_CASES),
   '',
+  '-- Network requests (child table)',
+  insert('network_requests', NETWORK_REQUESTS),
+  '',
   'COMMIT;',
 ];
 
@@ -1201,6 +1234,7 @@ console.log(`   Suites     : ${TEST_SUITES.length}`);
 console.log(`   TestCases  : ${TEST_CASES.length}`);
 console.log(`   TestRuns   : ${TEST_RUNS.length}`);
 console.log(`   TRC rows   : ${TEST_RUNS_CASES.length}`);
+console.log(`   NR rows    : ${NETWORK_REQUESTS.length}`);
 console.log(`   Reports    : ${REPORTS.length}`);
 console.log(`   Clusters   : ${FAILURE_CLUSTERS.length}`);
 console.log(`   Diagnoses  : ${FAILURE_DIAGNOSES.length}`);
