@@ -10,6 +10,9 @@ export async function listUsers(db: DrizzleDB) {
       username: users.username,
       role: users.role,
       name: users.name,
+      email: users.email,
+      emailVerified: users.emailVerified,
+      oauthProvider: users.oauthProvider,
       createdAt: users.createdAt,
       updatedAt: users.updatedAt,
     })
@@ -19,7 +22,7 @@ export async function listUsers(db: DrizzleDB) {
 
 export async function createUserRecord(
   db: DrizzleDB,
-  data: { username: string; password: string; role: string; name?: string },
+  data: { username: string; password: string; role: string; name?: string; email?: string | null },
 ) {
   const existing = await db.select().from(users).where(eq(users.username, data.username));
   if (existing.length > 0) throw new Error('Username already exists');
@@ -30,6 +33,7 @@ export async function createUserRecord(
       password: data.password,
       role: data.role,
       name: data.name ?? null,
+      email: data.email ?? null,
       avatarUrl: null,
       oauthProvider: null,
       oauthProviderId: null,
@@ -76,6 +80,21 @@ export async function createUserApiKeyRecord(
     expiresAt: data.expiresAt ?? null,
   });
   return { success: true };
+}
+
+export async function updateUserRecord(
+  db: DrizzleDB,
+  id: number,
+  data: { name?: string | null; email?: string | null; role?: string },
+) {
+  const userResults = await db.select().from(users).where(eq(users.id, id));
+  if (!userResults[0]) throw new Error('User not found');
+  await db
+    .update(users)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(users.id, id));
+  const updated = await db.select().from(users).where(eq(users.id, id));
+  return updated[0] ?? null;
 }
 
 export async function deleteUserApiKeyRecord(db: DrizzleDB, userId: number, keyId: number) {

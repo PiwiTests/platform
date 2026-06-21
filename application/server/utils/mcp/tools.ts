@@ -1,4 +1,4 @@
-import { eq, and, inArray, desc, or, sql } from 'drizzle-orm';
+import { eq, and, desc, or } from 'drizzle-orm';
 import { listProjects, getProject, getProjectFailureClusters, getProjectFlakyTests } from '~~/shared/handlers/projects';
 import { getTestRun } from '~~/shared/handlers/test-runs';
 import { getTestCase } from '~~/shared/handlers/test-cases';

@@ -424,6 +424,151 @@ routes.push(
     handler: () => Promise.resolve({ success: false, message: 'Login not available in demo mode' }),
   },
   { method: 'POST', pattern: /^\/api\/auth\/logout$/, handler: () => Promise.resolve({ success: true }) },
+  // Account management stubs — not functional in demo, return graceful no-ops
+  { method: 'POST', pattern: /^\/api\/auth\/forgot-password$/, handler: () => Promise.resolve({ success: true }) },
+  { method: 'POST', pattern: /^\/api\/auth\/reset-password$/, handler: () => Promise.resolve({ success: true }) },
+  { method: 'POST', pattern: /^\/api\/auth\/change-password$/, handler: () => Promise.resolve({ success: true }) },
+  { method: 'POST', pattern: /^\/api\/auth\/send-verify-email$/, handler: () => Promise.resolve({ success: true }) },
+  { method: 'GET', pattern: /^\/api\/auth\/verify-email$/, handler: () => Promise.resolve({ success: true }) },
+  { method: 'POST', pattern: /^\/api\/users\/(\d+)\/invite$/, handler: () => Promise.resolve({ success: true }) },
+  { method: 'PATCH', pattern: /^\/api\/users\/(\d+)$/, handler: () => Promise.resolve({ success: true }) },
+);
+
+// SMTP / email — demo has no email capability; return read-only "not configured" status
+routes.push(
+  {
+    method: 'GET',
+    pattern: /^\/api\/settings\/smtp$/,
+    handler: () =>
+      Promise.resolve({
+        host: null,
+        port: 587,
+        user: null,
+        from: null,
+        fromName: null,
+        hasPassword: false,
+        secure: false,
+        configured: false,
+        envManaged: true,
+      }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/settings\/smtp\/test$/,
+    handler: () => Promise.resolve({ success: false, error: 'Email not available in demo mode' }),
+  },
+);
+
+// ── Demo notification channels & subscriptions (stateful in-memory) ───────────
+
+const DEMO_CHANNEL = {
+  id: 1,
+  name: 'Account email',
+  type: 'personal_email',
+  userId: null as number | null,
+  verified: true,
+  config: { address: 'demo@example.com' },
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+};
+
+interface DemoSubscription {
+  id: number;
+  userId: number | null;
+  channelId: number;
+  projectId: number | null;
+  events: string[];
+  filters: null;
+  mode: string;
+  digestAt: null;
+  mutedUntil: string | null;
+  active: boolean;
+  channel: { id: number; name: string; type: string };
+  createdAt: string;
+  updatedAt: string;
+}
+
+let _nextSubId = 1;
+const _demoSubs: DemoSubscription[] = [];
+
+routes.push(
+  // Channels
+  {
+    method: 'GET',
+    pattern: /^\/api\/channels$/,
+    handler: () => Promise.resolve({ channels: [DEMO_CHANNEL] }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/channels$/,
+    handler: () => Promise.resolve({ success: true, channel: DEMO_CHANNEL }),
+  },
+  { method: 'DELETE', pattern: /^\/api\/channels\/(\d+)$/, handler: () => Promise.resolve({ success: true }) },
+  {
+    method: 'POST',
+    pattern: /^\/api\/channels\/(\d+)\/test$/,
+    handler: () => Promise.resolve({ success: false, error: 'Not available in demo mode' }),
+  },
+
+  // Subscriptions — stateful within the SW's lifetime
+  {
+    method: 'GET',
+    pattern: /^\/api\/subscriptions$/,
+    handler: (_, __, q) => {
+      const projectIdParam = q?.get('projectId');
+      const filtered =
+        projectIdParam != null ? _demoSubs.filter((s) => s.projectId === parseInt(projectIdParam)) : _demoSubs;
+      return Promise.resolve({ subscriptions: filtered });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/subscriptions$/,
+    handler: (_, body) => {
+      const b = body as { channelId: number; projectId?: number | null; events?: string[]; mode?: string };
+      const sub: DemoSubscription = {
+        id: _nextSubId++,
+        userId: null,
+        channelId: b.channelId ?? 1,
+        projectId: b.projectId ?? null,
+        events: b.events ?? ['run.failed'],
+        filters: null,
+        mode: b.mode ?? 'realtime',
+        digestAt: null,
+        mutedUntil: null,
+        active: true,
+        channel: { id: DEMO_CHANNEL.id, name: DEMO_CHANNEL.name, type: DEMO_CHANNEL.type },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      _demoSubs.push(sub);
+      return Promise.resolve({ success: true, subscriptionId: sub.id });
+    },
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/subscriptions\/(\d+)$/,
+    handler: (m, body) => {
+      const sub = _demoSubs.find((s) => s.id === parseInt(m[1]!));
+      if (sub) {
+        const b = body as Partial<DemoSubscription>;
+        if (b.events) sub.events = b.events;
+        if (b.mutedUntil !== undefined) sub.mutedUntil = b.mutedUntil;
+        if (b.active !== undefined) sub.active = b.active;
+        sub.updatedAt = new Date().toISOString();
+      }
+      return Promise.resolve({ success: true });
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/subscriptions\/(\d+)$/,
+    handler: (m) => {
+      const idx = _demoSubs.findIndex((s) => s.id === parseInt(m[1]!));
+      if (idx >= 0) _demoSubs.splice(idx, 1);
+      return Promise.resolve({ success: true });
+    },
+  },
 );
 
 // Global SSE stream – no-op in demo mode (useRunStream skips it)

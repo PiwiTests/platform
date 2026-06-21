@@ -573,6 +573,9 @@ export interface UserDetails {
   username: string;
   role: Role;
   name?: string | null;
+  email?: string | null;
+  emailVerified?: boolean;
+  oauthProvider?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

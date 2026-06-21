@@ -24,7 +24,10 @@ export const useAuth = () => {
       return demoUser;
     }
     try {
-      const data = await $fetch<AuthState>('/api/auth/me');
+      // During SSR, $fetch doesn't forward the browser's cookie header automatically.
+      // useRequestHeaders forwards it so the session can be read server-side.
+      const headers = import.meta.server ? useRequestHeaders(['cookie']) : {};
+      const data = await $fetch<AuthState>('/api/auth/me', { headers });
       authState.value = data;
       return data;
     } catch {

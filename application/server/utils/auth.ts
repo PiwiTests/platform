@@ -17,7 +17,7 @@ export async function hashPassword(password: string): Promise<string> {
   return `${salt}:${derivedKey.toString('hex')}`;
 }
 
-async function verifyPassword(password: string, hash: string): Promise<boolean> {
+export async function verifyPassword(password: string, hash: string): Promise<boolean> {
   const [salt, storedHash] = hash.split(':');
   if (!salt || !storedHash) {
     return false;
@@ -252,6 +252,8 @@ export async function requireAuth(event: H3Event, allowedRoles?: Role[]): Promis
       avatarUrl: null,
       oauthProvider: null,
       oauthProviderId: null,
+      email: null,
+      emailVerified: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };

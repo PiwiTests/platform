@@ -74,13 +74,12 @@ definePageMeta({
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-elevated/50">
+  <div class="min-h-screen flex flex-col items-center justify-center bg-elevated/50 gap-6 px-4">
+    <img src="/logo-wide.svg" alt="Piwi Dashboard" class="h-16 rounded-xl" />
+
     <UCard class="w-full max-w-md">
       <template #header>
-        <div class="flex items-center gap-2">
-          <UIcon name="i-lucide-lock" class="size-6" />
-          <h1 class="text-2xl font-bold">Login</h1>
-        </div>
+        <h1 class="text-xl font-semibold">Sign in to your account</h1>
       </template>
 
       <UAlert v-if="error" color="error" :title="error" variant="subtle" class="mb-4" />
@@ -113,7 +112,7 @@ definePageMeta({
           Sign in with GitHub
         </UButton>
 
-        <UDivider v-if="oauthProviders.length > 0" class="my-4"> or continue with password </UDivider>
+        <USeparator v-if="oauthProviders.length > 0" label="or continue with password" class="my-4" />
       </div>
 
       <!-- Password login form -->
@@ -142,6 +141,27 @@ definePageMeta({
 
         <UButton type="submit" block :loading="loading" :disabled="loading"> Login </UButton>
       </form>
+
+      <div class="mt-4 text-center">
+        <NuxtLink to="/forgot-password" class="text-sm text-muted hover:text-default"> Forgot password? </NuxtLink>
+      </div>
     </UCard>
+
+    <div class="flex items-center gap-4 text-sm text-muted">
+      <a
+        href="https://github.com/PhenX/piwi-dashboard"
+        target="_blank"
+        rel="noopener"
+        class="flex items-center gap-1.5 hover:text-default transition-colors"
+      >
+        <UIcon name="i-lucide-github" class="size-4" />
+        GitHub
+      </a>
+      <span>·</span>
+      <a href="/docs" class="flex items-center gap-1.5 hover:text-default transition-colors">
+        <UIcon name="i-lucide-book-open" class="size-4" />
+        API Docs
+      </a>
+    </div>
   </div>
 </template>

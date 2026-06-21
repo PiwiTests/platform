@@ -413,6 +413,8 @@ export const users = pgTable(
     password: text('password').notNull(), // hashed password (empty string for OAuth-only users)
     role: text('role').notNull(), // Role enum: 'administrator', 'reporter', 'user'
     name: text('name'), // Display name
+    email: text('email'), // Email address (nullable; OAuth callback can populate it)
+    emailVerified: integer('email_verified').notNull().default(0), // boolean (0/1)
     avatarUrl: text('avatar_url'), // Avatar from OAuth provider
     oauthProvider: text('oauth_provider'), // 'google', 'github', etc.
     oauthProviderId: text('oauth_provider_id'), // User ID from the OAuth provider
@@ -425,6 +427,105 @@ export const users = pgTable(
   },
   (table) => ({
     oauthIdx: uniqueIndex('idx_users_oauth').on(table.oauthProvider, table.oauthProviderId),
+    emailIdx: uniqueIndex('idx_users_email').on(table.email),
+  }),
+);
+
+// Account tokens table - single-use, hashed, expiring tokens for reset / verify / invite
+export const accountTokens = pgTable(
+  'account_tokens',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    purpose: text('purpose').notNull(), // 'reset' | 'verify' | 'invite'
+    tokenHash: text('token_hash').notNull(), // SHA-256 of the emailed token
+    expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
+    usedAt: timestamp('used_at', { mode: 'date' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({ hashIdx: uniqueIndex('idx_account_tokens_hash').on(t.tokenHash) }),
+);
+
+// Notification channels table - a configured delivery destination (email / Slack / webhook)
+export const notificationChannels = pgTable(
+  'notification_channels',
+  {
+    id: serial('id').primaryKey(),
+    name: text('name').notNull(),
+    type: text('type').notNull(), // 'email' | 'slack' | 'webhook'
+    config: jsonb('config'), // { address } | { webhookUrl } | { url, secret (encrypted) }
+    userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }), // null = global (admin-managed)
+    verified: integer('verified').notNull().default(0),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    userIdx: index('idx_notification_channels_user').on(t.userId),
+  }),
+);
+
+// Subscriptions table - who wants notifications for which projects/events
+export const subscriptions = pgTable(
+  'subscriptions',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    channelId: integer('channel_id')
+      .notNull()
+      .references(() => notificationChannels.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }), // null = all projects
+    events: jsonb('events'), // string[] of event keys
+    filters: jsonb('filters'), // { branches?, tags?, statuses?, defaultBranchOnly?, flakinessThreshold?, perfRegressionPct? }
+    mode: text('mode').notNull().default('realtime'), // 'realtime' | 'digest'
+    digestAt: text('digest_at'), // 'HH:mm' UTC for daily digest
+    mutedUntil: timestamp('muted_until', { mode: 'date' }),
+    active: integer('active').notNull().default(1),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectIdx: index('idx_subscriptions_project').on(t.projectId),
+    userIdx: index('idx_subscriptions_user').on(t.userId),
+    channelIdx: index('idx_subscriptions_channel').on(t.channelId),
+  }),
+);
+
+// Notification deliveries table - outbox for reliability, retries, dedup, audit
+export const notificationDeliveries = pgTable(
+  'notification_deliveries',
+  {
+    id: serial('id').primaryKey(),
+    subscriptionId: integer('subscription_id').references(() => subscriptions.id, { onDelete: 'cascade' }),
+    channelId: integer('channel_id')
+      .notNull()
+      .references(() => notificationChannels.id, { onDelete: 'cascade' }),
+    event: text('event').notNull(),
+    payload: jsonb('payload'),
+    dedupeKey: text('dedupe_key'), // e.g. `${event}:${runId}:${channelId}` — prevents double-send
+    status: text('status').notNull().default('pending'), // 'pending' | 'sent' | 'failed' | 'skipped'
+    attempts: integer('attempts').notNull().default(0),
+    error: text('error'),
+    scheduledFor: timestamp('scheduled_for', { mode: 'date' }), // digest batching / backoff
+    sentAt: timestamp('sent_at', { mode: 'date' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    statusScheduledIdx: index('idx_notification_deliveries_status').on(t.status, t.scheduledFor),
+    dedupeKeyIdx: uniqueIndex('idx_notification_deliveries_dedupe').on(t.dedupeKey),
   }),
 );
 
@@ -477,6 +578,14 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type NewApiKey = typeof apiKeys.$inferInsert;
+export type AccountToken = typeof accountTokens.$inferSelect;
+export type NewAccountToken = typeof accountTokens.$inferInsert;
+export type NotificationChannel = typeof notificationChannels.$inferSelect;
+export type NewNotificationChannel = typeof notificationChannels.$inferInsert;
+export type Subscription = typeof subscriptions.$inferSelect;
+export type NewSubscription = typeof subscriptions.$inferInsert;
+export type NotificationDelivery = typeof notificationDeliveries.$inferSelect;
+export type NewNotificationDelivery = typeof notificationDeliveries.$inferInsert;
 export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;
 export type ProjectTag = typeof projectTags.$inferSelect;

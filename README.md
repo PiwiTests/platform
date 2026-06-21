@@ -85,6 +85,8 @@ Piwi solves what standalone HTML reports cannot:
 - 📖 **Interactive API docs** — auto-generated OpenAPI 3.1 specification with Scalar UI at `/docs`; all endpoints annotated with `defineRouteMeta()`
 - ⚡ **Real-time streaming** — live dashboard via Server-Sent Events; pages refresh instantly when a run starts or finishes, with no polling
 - 🔐 **Authentication** — optional role-based access control (administrator, reporter, user) with API key support for CI and OAuth (Google, GitHub)
+- 🔔 **Notifications** — subscribe to run events (`run.finished`, `run.failed`, `run.failed.default_branch`, `cluster.new`, `flakiness.spike`, `perf.regression`) via email, Slack webhooks, or HTTP webhooks; realtime or daily digest; per-project subscribe bell; mute, filter by branch/status/threshold
+- 📧 **Account management** — user email verification, forgot/reset password, admin invite-by-email flow; change password from account settings
 - ☁️ **Flexible storage** — SQLite or PostgreSQL database; local file system or S3-compatible object storage for artifacts
 - 🐳 **Docker support** — pre-built multi-platform container images (~200 MB) on GitHub Container Registry
 
@@ -170,8 +172,10 @@ Results appear automatically in the dashboard. The project is created on first s
 | **Test run detail** | Every test case in a run with browser icon, status, duration, location, error messages, traces, and reports; filter by browser; failure groups with AI diagnosis |
 | **Failure cluster** | Cluster detail with affected tests, triage tools (status + note), and LLM diagnosis with SCM diff context (baseline commit picker, commit browser for targeted context selection) |
 | **API Docs** (`/docs`) | Auto-generated interactive API reference powered by Scalar with all endpoints, request/response schemas, and try-it console |
+| **Settings › Account** | Email address, verification status, change password, OAuth info (when authentication is enabled) |
+| **Settings › Notifications** | SMTP status, notification channels (email/Slack/webhook), subscription management with mute/edit/delete |
 | **Settings › AI** | Configure AI provider, auto-diagnose, and global analysis instructions |
-| **Settings › Users** | User management and API key generation (when authentication is enabled) |
+| **Settings › Users** | User management with email, invite-by-email, and API key generation (when authentication is enabled) |
 | **Settings › Storage** | Storage statistics and cleanup tools for old runs |
 | **Settings › Tags** | Tag management for organizing projects |
 

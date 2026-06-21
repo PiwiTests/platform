@@ -25,6 +25,7 @@ const currentUserId = computed(() => authState.value.user?.id ?? null);
 const columns: TableColumn<UserDetails>[] = [
   { accessorKey: 'username', header: createSortHeader<UserDetails>('Username') },
   { accessorKey: 'name', header: createSortHeader<UserDetails>('Name') },
+  { accessorKey: 'email', header: createSortHeader<UserDetails>('Email') },
   { accessorKey: 'role', header: createSortHeader<UserDetails>('Role') },
   { accessorKey: 'createdAt', header: createSortHeader<UserDetails>('Created') },
   { accessorKey: 'actions', header: '' },
@@ -37,6 +38,7 @@ const addUserSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters'),
   role: z.enum(['administrator', 'reporter', 'user']),
   name: z.string().optional(),
+  email: z.string().email().optional().or(z.literal('')),
 });
 
 type AddUserSchema = z.output<typeof addUserSchema>;
@@ -46,6 +48,7 @@ const newUser = reactive<Partial<AddUserSchema>>({
   password: '',
   role: 'user',
   name: '',
+  email: '',
 });
 
 const roleOptions = [
@@ -72,6 +75,7 @@ async function handleAddUser() {
     newUser.password = '';
     newUser.role = 'user';
     newUser.name = '';
+    newUser.email = '';
 
     await refresh();
   } catch (error: unknown) {
@@ -263,6 +267,26 @@ function canManageApiKeys(user: UserDetails): boolean {
   if (!config.public.authEnabled) return true;
   return isAdmin.value || currentUserId.value === user.id;
 }
+
+// Invite user
+const invitingUserId = ref<number | null>(null);
+
+async function handleInviteUser(user: UserDetails) {
+  if (!user.email) {
+    toast.add({ title: 'No email address', description: 'Set an email address for this user first.', color: 'error' });
+    return;
+  }
+  invitingUserId.value = user.id;
+  try {
+    await $fetch(`/api/users/${user.id}/invite`, { method: 'POST' });
+    toast.add({ title: 'Invite sent', description: `Invitation sent to ${user.email}`, color: 'success' });
+  } catch (e) {
+    const msg = e && typeof e === 'object' && 'data' in e ? (e.data as { message?: string })?.message : undefined;
+    toast.add({ title: 'Failed to send invite', description: msg || 'An error occurred', color: 'error' });
+  } finally {
+    invitingUserId.value = null;
+  }
+}
 </script>
 
 <template>
@@ -298,6 +322,19 @@ function canManageApiKeys(user: UserDetails): boolean {
             <span class="text-muted">{{ row.original.name || '-' }}</span>
           </template>
 
+          <template #email-cell="{ row }">
+            <span v-if="row.original.email" class="flex items-center gap-1 text-sm">
+              {{ row.original.email }}
+              <UIcon
+                v-if="row.original.emailVerified"
+                name="i-lucide-circle-check-big"
+                class="size-3.5 text-success-500"
+                title="Email verified"
+              />
+            </span>
+            <span v-else class="text-muted">—</span>
+          </template>
+
           <template #role-cell="{ row }">
             <UBadge :color="getRoleBadgeColor(row.original.role)" variant="subtle">
               {{ row.original.role }}
@@ -311,7 +348,17 @@ function canManageApiKeys(user: UserDetails): boolean {
           </template>
 
           <template #actions-cell="{ row }">
-            <div class="flex items-center gap-1">
+            <div class="flex items-center gap-1 justify-end">
+              <UButton
+                v-if="isAdmin && row.original.email && !row.original.oauthProvider"
+                icon="i-lucide-send"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                title="Send invite email"
+                :loading="invitingUserId === row.original.id"
+                @click="handleInviteUser(row.original)"
+              />
               <UButton
                 v-if="canManageApiKeys(row.original)"
                 icon="i-lucide-key"
@@ -327,6 +374,7 @@ function canManageApiKeys(user: UserDetails): boolean {
                 color="error"
                 variant="ghost"
                 size="sm"
+                title="Delete user"
                 @click="handleDeleteUser(row.original)"
               />
             </div>
@@ -363,6 +411,15 @@ function canManageApiKeys(user: UserDetails): boolean {
 
           <UFormField label="Display name" name="name" class="mb-4">
             <UInput v-model="newUser.name" placeholder="Enter display name (optional)" />
+          </UFormField>
+
+          <UFormField
+            label="Email"
+            name="email"
+            class="mb-4"
+            description="Optional — needed for invites and notifications"
+          >
+            <UInput v-model="newUser.email" type="email" placeholder="user@example.com (optional)" />
           </UFormField>
 
           <UFormField label="Role" name="role" required>

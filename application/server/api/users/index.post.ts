@@ -21,6 +21,7 @@ const createUserSchema = z.object({
   password: z.string().min(6),
   role: z.nativeEnum(Role),
   name: z.string().optional(),
+  email: z.string().email().optional().or(z.literal('')),
 });
 
 export default eventHandler(async (event) => {
@@ -37,11 +38,17 @@ export default eventHandler(async (event) => {
     });
   }
 
-  const { username, password, role, name } = validation.data;
+  const { username, password, role, name, email } = validation.data;
 
   try {
     const hashedPassword = await hashPassword(password);
-    const user = await createUserRecord(await getDatabase(), { username, password: hashedPassword, role, name });
+    const user = await createUserRecord(await getDatabase(), {
+      username,
+      password: hashedPassword,
+      role,
+      name,
+      email: email || null,
+    });
 
     if (!user) {
       throw createError({ statusCode: 500, message: 'Failed to create user' });
