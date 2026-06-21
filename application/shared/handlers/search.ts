@@ -1,14 +1,12 @@
 import { like, or, eq, desc } from 'drizzle-orm';
-import { getDemoDb } from '../db.client';
-import { testRuns, testCases, projects } from '~~/server/database/schema.sqlite';
+import { testRuns, testCases, projects } from '../../server/database/schema.sqlite';
+import type { DrizzleDB } from './db';
 
-/** GET /api/search?q=... */
-export async function apiSearch(q: string) {
+export async function searchProjectsTestRunsCases(db: DrizzleDB, q: string) {
   if (!q || q.trim().length < 2) {
     return { projects: [], runs: [], cases: [] };
   }
 
-  const db = await getDemoDb();
   const term = q.trim();
   const pattern = `%${term}%`;
   const isNumeric = /^\d+$/.test(term);

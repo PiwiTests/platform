@@ -6,32 +6,51 @@
  * RegExp patterns – the same routes the Nuxt server exposes.
  */
 
+import { getDemoDb } from '../db.client';
 import {
-  apiGetProjects,
-  apiGetProject,
-  apiGetProjectPerformance,
-  apiGetProjectTestCases,
-  apiGetProjectSlowTests,
-  apiGetProjectFailureClusters,
-  apiUpdateProject,
-  apiCreateProject,
-  apiGetProjectMenu,
-  apiDeleteProject,
-  apiGetTags,
-  apiCreateTag,
-  apiUpdateTag,
-  apiDeleteTag,
-} from './projects';
+  listProjects,
+  getProject,
+  getProjectPerformance,
+  getProjectTestCases,
+  getProjectSlowTests,
+  getProjectFailureClusters,
+  updateProject,
+  createProject,
+  getProjectMenu,
+  deleteProjectData,
+  getProjectFlakyTests,
+} from '~~/shared/handlers/projects';
+import { listTags, createTag, updateTag, deleteTag } from '~~/shared/handlers/tags';
+import { getTestCase, getTestRunCase, getTestCaseHistory, getTestRunCaseTraces } from '~~/shared/handlers/test-cases';
 import {
-  apiGetTestRun,
-  apiGetNetworkRequests,
-  apiGetRecentTestRuns,
-  apiGetTestRunSummary,
-  apiDeleteTestRun,
-  apiPatchTestRun,
-  apiGetFailureGroups,
-  apiGetRegressionContext,
-} from './test-runs';
+  getFailureCluster,
+  patchClusterStatus,
+  patchClusterBaseCommit,
+  getClusterCommits,
+  getClusterCommitDiff,
+  getClusterContext,
+  getClusterBranches,
+  extractClusterCases,
+  getClusterDiagnosis,
+} from '~~/shared/handlers/failure-clusters';
+import { listLinks, createLink, patchLink, deleteLink, refreshLinkMeta } from '~~/shared/handlers/links';
+import {
+  getTestRun,
+  getRecentTestRuns,
+  getTestRunSummary,
+  patchTestRun,
+  getNetworkRequests,
+  getFailureGroups,
+  computeRegressionContextForRun,
+} from '~~/shared/handlers/test-runs';
+import {
+  listUsers,
+  createUserRecord,
+  deleteUserRecord,
+  listUserApiKeys,
+  deleteUserApiKeyRecord,
+} from '~~/shared/handlers/users';
+import { searchProjectsTestRunsCases } from '~~/shared/handlers/search';
 import {
   apiSetupTestRun,
   apiBeginTestRun,
@@ -39,40 +58,19 @@ import {
   apiFinishTestRun,
   apiCancelStaleSimulatorRuns,
 } from './reporter';
-import {
-  apiGetUsers,
-  apiCreateUser,
-  apiDeleteUser,
-  apiGetUserApiKeys,
-  apiCreateUserApiKey,
-  apiDeleteUserApiKey,
-} from './users';
-import { apiGetTestCase, apiGetTestRunCase, apiGetTestCaseHistory, apiGetTestRunCaseTraces } from './test-cases';
+import { apiCreateUserApiKey } from './users';
 import { apiGetDemoFile } from './files';
 import {
-  apiGetFailureCluster,
-  apiPatchClusterStatus,
-  apiPatchClusterBaseCommit,
-  apiGetClusterCommits,
-  apiGetClusterCommitDiff,
-  apiGetClusterContext,
-  apiExtractClusterCases,
-  apiGetClusterBranches,
-} from './failure-clusters';
-import { apiGetAdminStats } from './admin';
-import {
   apiGetAiStatus,
-  apiGetClusterDiagnosis,
   apiDiagnoseCluster,
   apiGetAiSettings,
   apiPutAiSettings,
   apiTestAiSettings,
-  apiGetProjectFlakyTests,
   apiGetAiLimits,
   apiPutAiLimits,
 } from './ai';
-import { apiSearch } from './search';
-import { apiGetLinks, apiCreateLink, apiPatchLink, apiDeleteLink, apiRefreshLink } from './links';
+import { apiGetAdminStats } from './admin';
+import { apiDeleteTestRun } from './test-runs';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
@@ -84,44 +82,67 @@ interface RouteEntry {
 
 const routes: RouteEntry[] = [
   // Projects
-  { method: 'GET', pattern: /^\/api\/projects$/, handler: () => apiGetProjects() },
+  { method: 'GET', pattern: /^\/api\/projects$/, handler: async () => listProjects(await getDemoDb()) },
   {
     method: 'POST',
     pattern: /^\/api\/projects$/,
-    handler: (_, body) => apiCreateProject(body as Parameters<typeof apiCreateProject>[0]),
+    handler: async (_, body) => {
+      const b = body as { name: string; label?: string; description?: string };
+      return createProject(await getDemoDb(), b.name, b.label, b.description);
+    },
   },
   {
     method: 'GET',
     pattern: /^\/api\/projects\/menu$/,
-    handler: () => apiGetProjectMenu(),
+    handler: async () => getProjectMenu(await getDemoDb()),
   },
-  { method: 'GET', pattern: /^\/api\/projects\/(\d+)$/, handler: (m) => apiGetProject(+m[1]!) },
+  { method: 'GET', pattern: /^\/api\/projects\/(\d+)$/, handler: async (m) => getProject(await getDemoDb(), +m[1]!) },
   {
     method: 'PUT',
     pattern: /^\/api\/projects\/(\d+)$/,
-    handler: (m, body) => apiUpdateProject(+m[1]!, body as Parameters<typeof apiUpdateProject>[1]),
+    handler: async (m, body) => updateProject(await getDemoDb(), +m[1]!, body as Parameters<typeof updateProject>[2]),
   },
-  { method: 'DELETE', pattern: /^\/api\/projects\/(\d+)$/, handler: (m) => apiDeleteProject(+m[1]!) },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/projects\/(\d+)$/,
+    handler: async (m) => {
+      await deleteProjectData(await getDemoDb(), +m[1]!);
+      return { success: true };
+    },
+  },
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/performance$/,
-    handler: (m, _, q) => apiGetProjectPerformance(+m[1]!, q ? Number(q.get('limit')) || 50 : 50),
+    handler: async (m, _, q) => {
+      const limit = q ? Number(q.get('limit')) || 50 : 50;
+      return getProjectPerformance(await getDemoDb(), +m[1]!, limit);
+    },
   },
-  { method: 'GET', pattern: /^\/api\/projects\/(\d+)\/test-cases$/, handler: (m) => apiGetProjectTestCases(+m[1]!) },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/test-cases$/,
+    handler: async (m) => getProjectTestCases(await getDemoDb(), +m[1]!),
+  },
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/slow-tests$/,
-    handler: (m, _, q) => apiGetProjectSlowTests(+m[1]!, q ? Number(q.get('runs')) || 10 : 10),
+    handler: async (m, _, q) => {
+      const runs = q ? Number(q.get('runs')) || 10 : 10;
+      return getProjectSlowTests(await getDemoDb(), +m[1]!, runs);
+    },
   },
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/failure-clusters$/,
-    handler: (m) => apiGetProjectFailureClusters(+m[1]!),
+    handler: async (m) => getProjectFailureClusters(await getDemoDb(), +m[1]!),
   },
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/flaky-tests$/,
-    handler: (m, _, q) => apiGetProjectFlakyTests(+m[1]!, q ? Number(q.get('runs')) || 50 : 50),
+    handler: async (m, _, q) => {
+      const limit = q ? Number(q.get('runs')) || 50 : 50;
+      return getProjectFlakyTests(await getDemoDb(), +m[1]!, limit);
+    },
   },
 
   // Reporter streaming protocol (used by the demo run simulator)
@@ -152,65 +173,101 @@ const routes: RouteEntry[] = [
   },
 
   // Test runs
-  { method: 'GET', pattern: /^\/api\/test-runs\/recent$/, handler: () => apiGetRecentTestRuns() },
-  { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)$/, handler: (m) => apiGetTestRun(+m[1]!) },
+  { method: 'GET', pattern: /^\/api\/test-runs\/recent$/, handler: async () => getRecentTestRuns(await getDemoDb()) },
+  { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)$/, handler: async (m) => getTestRun(await getDemoDb(), +m[1]!) },
   {
     method: 'PATCH',
     pattern: /^\/api\/test-runs\/(\d+)$/,
-    handler: (m, body) => apiPatchTestRun(+m[1]!, body as Parameters<typeof apiPatchTestRun>[1]),
+    handler: async (m, body) => {
+      const b = body as { label?: string | null };
+      return patchTestRun(await getDemoDb(), +m[1]!, b.label ?? null);
+    },
   },
   { method: 'DELETE', pattern: /^\/api\/test-runs\/(\d+)$/, handler: (m) => apiDeleteTestRun(+m[1]!) },
   {
     method: 'GET',
     pattern: /^\/api\/test-runs\/(\d+)\/network-requests$/,
-    handler: (m) => apiGetNetworkRequests(+m[1]!),
+    handler: async (m) => getNetworkRequests(await getDemoDb(), +m[1]!),
   },
-  { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/summary$/, handler: (m) => apiGetTestRunSummary(+m[1]!) },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/summary$/,
+    handler: async (m) => getTestRunSummary(await getDemoDb(), +m[1]!),
+  },
 
   // Failure groups
-  { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/failure-groups$/, handler: (m) => apiGetFailureGroups(+m[1]!) },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/failure-groups$/,
+    handler: async (m) => getFailureGroups(await getDemoDb(), +m[1]!),
+  },
 
   // Regression context (Pillar 2)
   {
     method: 'GET',
     pattern: /^\/api\/test-runs\/(\d+)\/regression-context$/,
-    handler: (m) => apiGetRegressionContext(+m[1]!),
+    handler: async (m) => computeRegressionContextForRun(await getDemoDb(), +m[1]!),
   },
 
   // Failure clusters
-  { method: 'GET', pattern: /^\/api\/failure-clusters\/(\d+)$/, handler: (m) => apiGetFailureCluster(+m[1]!) },
+  {
+    method: 'GET',
+    pattern: /^\/api\/failure-clusters\/(\d+)$/,
+    handler: async (m) => getFailureCluster(await getDemoDb(), +m[1]!),
+  },
   {
     method: 'PATCH',
     pattern: /^\/api\/failure-clusters\/(\d+)\/status$/,
-    handler: (m, body) => apiPatchClusterStatus(+m[1]!, body as Parameters<typeof apiPatchClusterStatus>[1]),
+    handler: async (m, body) => {
+      const b = body as { status?: string; triageNote?: string | null };
+      return patchClusterStatus(await getDemoDb(), +m[1]!, b.status ?? '', b.triageNote);
+    },
   },
   {
     method: 'PATCH',
     pattern: /^\/api\/failure-clusters\/(\d+)\/base-commit$/,
-    handler: (m, body) => apiPatchClusterBaseCommit(+m[1]!, body as Parameters<typeof apiPatchClusterBaseCommit>[1]),
+    handler: async (m, body) => {
+      const b = body as { commit?: string | null };
+      return patchClusterBaseCommit(await getDemoDb(), +m[1]!, b.commit);
+    },
   },
   {
     method: 'GET',
     pattern: /^\/api\/failure-clusters\/(\d+)\/branches$/,
-    handler: (m) => apiGetClusterBranches(+m[1]!),
+    handler: async (m) => getClusterBranches(await getDemoDb(), +m[1]!),
   },
-  { method: 'GET', pattern: /^\/api\/failure-clusters\/(\d+)\/commits$/, handler: (m) => apiGetClusterCommits(+m[1]!) },
+  {
+    method: 'GET',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/commits$/,
+    handler: async (m) => getClusterCommits(await getDemoDb(), +m[1]!),
+  },
   {
     method: 'GET',
     pattern: /^\/api\/failure-clusters\/(\d+)\/commit-diff$/,
-    handler: (m) => apiGetClusterCommitDiff(+m[1]!),
+    handler: async (m) => getClusterCommitDiff(await getDemoDb(), +m[1]!),
   },
-  { method: 'GET', pattern: /^\/api\/failure-clusters\/(\d+)\/context$/, handler: (m) => apiGetClusterContext(+m[1]!) },
+  {
+    method: 'GET',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/context$/,
+    handler: async (m) => getClusterContext(await getDemoDb(), +m[1]!),
+  },
   {
     method: 'GET',
     pattern: /^\/api\/failure-clusters\/(\d+)\/diagnosis$/,
-    handler: (m) => apiGetClusterDiagnosis(+m[1]!),
+    handler: async (m) => getClusterDiagnosis(await getDemoDb(), +m[1]!),
   },
-  { method: 'POST', pattern: /^\/api\/failure-clusters\/(\d+)\/diagnose$/, handler: (m) => apiDiagnoseCluster(+m[1]!) },
+  {
+    method: 'POST',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/diagnose$/,
+    handler: (m) => apiDiagnoseCluster(+m[1]!),
+  },
   {
     method: 'POST',
     pattern: /^\/api\/failure-clusters\/(\d+)\/extract-cases$/,
-    handler: (m, body) => apiExtractClusterCases(+m[1]!, body as Parameters<typeof apiExtractClusterCases>[1]),
+    handler: async (m, body) => {
+      const b = body as { testCaseIds: number[]; triageNote?: string };
+      return extractClusterCases(await getDemoDb(), +m[1]!, b.testCaseIds, b.triageNote);
+    },
   },
 
   // AI status and settings
@@ -233,36 +290,71 @@ const routes: RouteEntry[] = [
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/stream$/, handler: () => Promise.resolve({ ok: true }) },
 
   // Test cases (stable)
-  { method: 'GET', pattern: /^\/api\/test-cases\/(\d+)$/, handler: (m) => apiGetTestCase(+m[1]!) },
-  { method: 'GET', pattern: /^\/api\/test-cases\/(\d+)\/history$/, handler: (m) => apiGetTestCaseHistory(+m[1]!) },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-cases\/(\d+)$/,
+    handler: async (m) => getTestCase(await getDemoDb(), +m[1]!),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-cases\/(\d+)\/history$/,
+    handler: async (m) => getTestCaseHistory(await getDemoDb(), +m[1]!),
+  },
 
   // Test run cases (executions)
-  { method: 'GET', pattern: /^\/api\/test-run-cases\/(\d+)$/, handler: (m) => apiGetTestRunCase(+m[1]!) },
-  { method: 'GET', pattern: /^\/api\/test-run-cases\/(\d+)\/traces$/, handler: (m) => apiGetTestRunCaseTraces(+m[1]!) },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)$/,
+    handler: async (m) => getTestRunCase(await getDemoDb(), +m[1]!),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/traces$/,
+    handler: async (m) => getTestRunCaseTraces(await getDemoDb(), +m[1]!),
+  },
 
   // Tags
-  { method: 'GET', pattern: /^\/api\/tags$/, handler: () => apiGetTags() },
+  { method: 'GET', pattern: /^\/api\/tags$/, handler: async () => listTags(await getDemoDb()) },
   {
     method: 'POST',
     pattern: /^\/api\/tags$/,
-    handler: (_, body) => apiCreateTag(body as Parameters<typeof apiCreateTag>[0]),
+    handler: async (_, body) => {
+      const b = body as { text: string; color?: string };
+      return createTag(await getDemoDb(), b.text, b.color ?? 'neutral');
+    },
   },
   {
     method: 'PUT',
     pattern: /^\/api\/tags\/(\d+)$/,
-    handler: (m, body) => apiUpdateTag(+m[1]!, body as Parameters<typeof apiUpdateTag>[1]),
+    handler: async (m, body) => updateTag(await getDemoDb(), +m[1]!, body as Parameters<typeof updateTag>[2]),
   },
-  { method: 'DELETE', pattern: /^\/api\/tags\/(\d+)$/, handler: (m) => apiDeleteTag(+m[1]!) },
+  { method: 'DELETE', pattern: /^\/api\/tags\/(\d+)$/, handler: async (m) => deleteTag(await getDemoDb(), +m[1]!) },
 
   // Users
-  { method: 'GET', pattern: /^\/api\/users$/, handler: () => apiGetUsers() },
+  { method: 'GET', pattern: /^\/api\/users$/, handler: async () => listUsers(await getDemoDb()) },
   {
     method: 'POST',
     pattern: /^\/api\/users$/,
-    handler: (_, body) => apiCreateUser(body as Parameters<typeof apiCreateUser>[0]),
+    handler: async (_, body) => {
+      const b = body as { username: string; password: string; role?: string; name?: string };
+      return createUserRecord(await getDemoDb(), {
+        username: b.username,
+        password: b.password,
+        role: b.role ?? 'user',
+        name: b.name,
+      });
+    },
   },
-  { method: 'DELETE', pattern: /^\/api\/users\/(\d+)$/, handler: (m) => apiDeleteUser(+m[1]!) },
-  { method: 'GET', pattern: /^\/api\/users\/(\d+)\/api-keys$/, handler: (m) => apiGetUserApiKeys(+m[1]!) },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/users\/(\d+)$/,
+    handler: async (m) => deleteUserRecord(await getDemoDb(), +m[1]!),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/users\/(\d+)\/api-keys$/,
+    handler: async (m) => listUserApiKeys(await getDemoDb(), +m[1]!),
+  },
   {
     method: 'POST',
     pattern: /^\/api\/users\/(\d+)\/api-keys$/,
@@ -271,41 +363,45 @@ const routes: RouteEntry[] = [
   {
     method: 'DELETE',
     pattern: /^\/api\/users\/(\d+)\/api-keys\/(\d+)$/,
-    handler: (m) => apiDeleteUserApiKey(+m[1]!, +m[2]!),
+    handler: async (m) => deleteUserApiKeyRecord(await getDemoDb(), +m[1]!, +m[2]!),
   },
 
   // Entity links
   {
     method: 'GET',
     pattern: /^\/api\/links$/,
-    handler: (_, __, q) => {
+    handler: async (_, __, q) => {
       const entityType = q?.get('entityType') ?? '';
       const entityId = parseInt(q?.get('entityId') ?? '0', 10);
       if (!['test_run', 'test_runs_case', 'test_case'].includes(entityType) || !entityId) {
         throw new Error('Invalid entityType or entityId');
       }
-      return apiGetLinks(entityType, entityId);
+      return listLinks(await getDemoDb(), entityType, entityId);
     },
   },
   {
     method: 'POST',
     pattern: /^\/api\/links$/,
-    handler: (_, body) => apiCreateLink(body as Parameters<typeof apiCreateLink>[0]),
+    handler: async (_, body) => createLink(await getDemoDb(), body as Parameters<typeof createLink>[1]),
   },
   {
     method: 'PATCH',
     pattern: /^\/api\/links\/(\d+)$/,
-    handler: (m, body) => apiPatchLink(+m[1]!, body as Parameters<typeof apiPatchLink>[1]),
+    handler: async (m, body) => patchLink(await getDemoDb(), +m[1]!, body as Parameters<typeof patchLink>[2]),
   },
-  { method: 'DELETE', pattern: /^\/api\/links\/(\d+)$/, handler: (m) => apiDeleteLink(+m[1]!) },
+  { method: 'DELETE', pattern: /^\/api\/links\/(\d+)$/, handler: async (m) => deleteLink(await getDemoDb(), +m[1]!) },
   {
     method: 'POST',
     pattern: /^\/api\/links\/(\d+)\/refresh$/,
-    handler: (m) => apiRefreshLink(+m[1]!),
+    handler: async (m) => refreshLinkMeta(await getDemoDb(), +m[1]!),
   },
 
   // Search
-  { method: 'GET', pattern: /^\/api\/search$/, handler: (_, __, q) => apiSearch(q?.get('q') || '') },
+  {
+    method: 'GET',
+    pattern: /^\/api\/search$/,
+    handler: async (_, __, q) => searchProjectsTestRunsCases(await getDemoDb(), q?.get('q') || ''),
+  },
 
   // Admin
   { method: 'GET', pattern: /^\/api\/admin\/stats$/, handler: () => apiGetAdminStats() },

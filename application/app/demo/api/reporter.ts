@@ -9,22 +9,20 @@
  * (see app/demo/run-events.ts).
  */
 
-import { eq, ne, and, or, inArray, sql } from 'drizzle-orm';
+import { eq, and, or, inArray, sql } from 'drizzle-orm';
 import { getDemoDb } from '../db.client';
 import { publishDemoGlobalEvent, publishDemoRunEvent } from '../run-events';
-import {
-  projects,
-  testRuns,
-  testCases,
-  testRunsCases,
-  failureClusters,
-  networkRequests,
-} from '~~/server/database/schema.sqlite';
+import { projects, testRuns, testCases, testRunsCases, networkRequests } from '~~/server/database/schema.sqlite';
 import { parseLocation } from '~~/server/utils/parse-location';
 import { buildNetworkRequestItems, buildNetworkRequestInsertValues } from '~~/server/utils/network-request-helpers';
 import { sanitizeMetadata, sanitizeWebVitals, sanitizeConsoleLogs } from '~~/server/utils/sanitize';
 import { computeErrorFingerprint, type ErrorFingerprint } from '~~/shared/error-fingerprint';
 import { durationStats } from '~~/shared/utils/stats';
+import {
+  cancelInstanceRuns as sharedCancelInstanceRuns,
+  getOrCreateFailureClusters,
+  type PendingCluster,
+} from '~~/shared/handlers/failure-cluster-ops';
 import type { StreamEventPayload, TestRunFinishPayload, TestRunStartPayload } from '~~/shared/types';
 
 type DemoDb = Awaited<ReturnType<typeof getDemoDb>>;
@@ -38,7 +36,6 @@ function randomToken(): string {
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** Mirrors server/utils/cancel-instance-runs.ts */
 async function cancelInstanceRuns(
   db: DemoDb,
   projectId: number,
@@ -46,28 +43,7 @@ async function cancelInstanceRuns(
   excludeRunId?: number,
   isShardedRun?: boolean,
 ): Promise<void> {
-  if (!instanceId) return;
-
-  const conditions = [
-    eq(testRuns.projectId, projectId),
-    eq(testRuns.instanceId, instanceId),
-    or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initialising'), eq(testRuns.status, 'finalizing')),
-  ];
-
-  if (excludeRunId !== undefined) {
-    conditions.push(ne(testRuns.id, excludeRunId));
-  }
-
-  if (isShardedRun) {
-    conditions.push(eq(testRuns.shardTotal as any, null));
-  }
-
-  const cancelledRuns = await db
-    .update(testRuns)
-    .set({ status: 'cancelled', streamToken: null, updatedAt: new Date() })
-    .where(and(...conditions))
-    .returning({ id: testRuns.id, projectId: testRuns.projectId });
-
+  const cancelledRuns = await sharedCancelInstanceRuns(db, projectId, instanceId, excludeRunId, isShardedRun);
   for (const run of cancelledRuns) {
     publishDemoGlobalEvent({ type: 'run-cancelled', runId: run.id, projectId: run.projectId, status: 'cancelled' });
   }
@@ -271,81 +247,6 @@ interface RunCaseInput {
   shardIndex?: number | null;
   startedAt?: number | null;
   browser?: unknown;
-}
-
-interface PendingCluster {
-  fp: ErrorFingerprint;
-  sampleError: string;
-  count: number;
-}
-
-async function getOrCreateFailureClusters(
-  db: DemoDb,
-  projectId: number,
-  testRunId: number,
-  pending: Map<string, PendingCluster>,
-): Promise<Map<string, number>> {
-  const ids = new Map<string, number>();
-  if (pending.size === 0) return ids;
-
-  const bumpExisting = async (clusterId: number, count: number) => {
-    await db
-      .update(failureClusters)
-      .set({
-        lastSeenRunId: testRunId,
-        occurrences: sql`${failureClusters.occurrences} + ${count}`,
-        updatedAt: new Date(),
-      })
-      .where(eq(failureClusters.id, clusterId));
-  };
-
-  const existing = await db
-    .select({ id: failureClusters.id, fingerprint: failureClusters.fingerprint })
-    .from(failureClusters)
-    .where(and(eq(failureClusters.projectId, projectId), inArray(failureClusters.fingerprint, [...pending.keys()])));
-
-  for (const cluster of existing) {
-    const p = pending.get(cluster.fingerprint);
-    if (!p) continue;
-    ids.set(cluster.fingerprint, cluster.id);
-    await bumpExisting(cluster.id, p.count);
-  }
-
-  for (const [fingerprint, p] of pending) {
-    if (ids.has(fingerprint)) continue;
-    const inserted = await db
-      .insert(failureClusters)
-      .values({
-        projectId,
-        fingerprint,
-        signature: p.fp.signature,
-        errorType: p.fp.errorType,
-        selector: p.fp.selector,
-        sampleError: p.sampleError,
-        firstSeenRunId: testRunId,
-        lastSeenRunId: testRunId,
-        occurrences: p.count,
-      })
-      .onConflictDoNothing()
-      .returning({ id: failureClusters.id });
-
-    if (inserted[0]) {
-      ids.set(fingerprint, inserted[0].id);
-      continue;
-    }
-
-    // Lost the insert race — another batch created the cluster; bump it instead
-    const winner = await db
-      .select({ id: failureClusters.id })
-      .from(failureClusters)
-      .where(and(eq(failureClusters.projectId, projectId), eq(failureClusters.fingerprint, fingerprint)));
-    if (winner[0]) {
-      ids.set(fingerprint, winner[0].id);
-      await bumpExisting(winner[0].id, p.count);
-    }
-  }
-
-  return ids;
 }
 
 async function persistRunCases(

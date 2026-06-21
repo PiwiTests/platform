@@ -1,11 +1,12 @@
-import { testCases, testRunsCases, testSuites, failureClusters, networkRequests } from '../database/schema';
-import { eq, and, inArray, sql } from 'drizzle-orm';
+import { testCases, testRunsCases, testSuites, networkRequests } from '../database/schema';
+import { eq } from 'drizzle-orm';
 import { buildNetworkRequestItems, buildNetworkRequestInsertValues } from './network-request-helpers';
 import { sanitizeWebVitals, sanitizeConsoleLogs } from './sanitize';
 import { computeErrorFingerprint, type ErrorFingerprint } from '../../shared/error-fingerprint';
 import { testCaseCache } from './test-case-cache';
 import { testSuiteCache } from './test-suite-cache';
 import { SUITE_PATH_SEP, joinSuitePath } from '../../shared/utils/suites';
+import { getOrCreateFailureClusters, type PendingCluster } from '~~/shared/handlers/failure-cluster-ops';
 import type { getDatabase } from '../database';
 
 type DB = Awaited<ReturnType<typeof getDatabase>>;
@@ -49,99 +50,6 @@ function resolveBrowserName(browser: unknown): string | null {
     if (typeof b.projectName === 'string') return b.projectName;
   }
   return null;
-}
-
-/** Per-fingerprint accumulator for the batch being persisted. */
-interface PendingCluster {
-  fp: ErrorFingerprint;
-  sampleError: string;
-  count: number;
-}
-
-/**
- * Get-or-create the `failure_clusters` rows for a batch of fingerprints and
- * return fingerprint → cluster id. Existing clusters get their lastSeenRunId
- * and occurrences bumped; new ones start at this run. Insert races with
- * concurrent streaming batches are resolved via the unique
- * (projectId, fingerprint) index + onConflictDoNothing.
- *
- * Bumps and inserts are issued in parallel — the JS event loop interleaves the
- * awaits but each operation touches a distinct fingerprint, so there are no
- * Map write conflicts (JS is single-threaded).
- */
-async function getOrCreateFailureClusters(
-  db: DB,
-  projectId: number,
-  testRunId: number,
-  pending: Map<string, PendingCluster>,
-): Promise<Map<string, number>> {
-  const ids = new Map<string, number>();
-  if (pending.size === 0) return ids;
-
-  const bumpExisting = (clusterId: number, count: number) =>
-    db
-      .update(failureClusters)
-      .set({
-        lastSeenRunId: testRunId,
-        occurrences: sql`${failureClusters.occurrences} + ${count}`,
-        updatedAt: new Date(),
-      })
-      .where(eq(failureClusters.id, clusterId));
-
-  const existing = await db
-    .select({ id: failureClusters.id, fingerprint: failureClusters.fingerprint })
-    .from(failureClusters)
-    .where(and(eq(failureClusters.projectId, projectId), inArray(failureClusters.fingerprint, [...pending.keys()])));
-
-  // Bump all existing clusters in parallel
-  await Promise.all(
-    existing.map(async (cluster) => {
-      const p = pending.get(cluster.fingerprint);
-      if (!p) return;
-      ids.set(cluster.fingerprint, cluster.id);
-      await bumpExisting(cluster.id, p.count);
-    }),
-  );
-
-  // Insert new clusters in parallel (each fingerprint is unique, no Map conflicts)
-  const newFingerprints = [...pending.keys()].filter((fp) => !ids.has(fp));
-  await Promise.all(
-    newFingerprints.map(async (fingerprint) => {
-      const p = pending.get(fingerprint)!;
-      const inserted = await db
-        .insert(failureClusters)
-        .values({
-          projectId,
-          fingerprint,
-          signature: p.fp.signature,
-          errorType: p.fp.errorType,
-          selector: p.fp.selector,
-          sampleError: p.sampleError,
-          firstSeenRunId: testRunId,
-          lastSeenRunId: testRunId,
-          occurrences: p.count,
-        })
-        .onConflictDoNothing()
-        .returning({ id: failureClusters.id });
-
-      if (inserted[0]) {
-        ids.set(fingerprint, inserted[0].id);
-        return;
-      }
-
-      // Lost the insert race — another batch created the cluster; bump it instead
-      const winner = await db
-        .select({ id: failureClusters.id })
-        .from(failureClusters)
-        .where(and(eq(failureClusters.projectId, projectId), eq(failureClusters.fingerprint, fingerprint)));
-      if (winner[0]) {
-        ids.set(fingerprint, winner[0].id);
-        await bumpExisting(winner[0].id, p.count);
-      }
-    }),
-  );
-
-  return ids;
 }
 
 /**
