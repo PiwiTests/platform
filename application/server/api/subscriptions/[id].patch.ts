@@ -21,7 +21,7 @@ defineRouteMeta({
 const schema = z.object({
   channelId: z.number().int().positive().optional(),
   events: z.array(z.enum(NOTIFICATION_EVENTS)).optional(),
-  filters: z.record(z.unknown()).nullable().optional(),
+  filters: z.record(z.string(), z.unknown()).nullable().optional(),
   mode: z.enum(['realtime', 'digest']).optional(),
   digestAt: z
     .string()

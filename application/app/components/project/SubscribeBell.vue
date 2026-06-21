@@ -46,13 +46,13 @@ const channels = computed(() => channelsData.value?.channels ?? []);
 
 // ── New subscription form ─────────────────────────────────────────────────────
 const showForm = ref(false);
-const selectedChannelId = ref<number | null>(null);
+const selectedChannelId = ref<number | undefined>(undefined);
 const selectedEvents = ref<string[]>(['run.failed']);
 const subscribing = ref(false);
 
 // ── Edit subscription ─────────────────────────────────────────────────────────
 const editingSub = ref<Subscription | null>(null);
-const editChannelId = ref<number | null>(null);
+const editChannelId = ref<number | undefined>(undefined);
 const editEvents = ref<string[]>([]);
 const savingEdit = ref(false);
 

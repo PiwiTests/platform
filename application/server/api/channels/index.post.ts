@@ -19,7 +19,7 @@ defineRouteMeta({
 const schema = z.object({
   name: z.string().min(1),
   type: z.enum(['email', 'slack', 'webhook']),
-  config: z.record(z.unknown()),
+  config: z.record(z.string(), z.unknown()),
   global: z.boolean().optional(), // admin only: create a global (userId=null) channel
 });
 
