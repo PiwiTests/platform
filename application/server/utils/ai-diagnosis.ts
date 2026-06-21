@@ -1,5 +1,11 @@
 import { eq, and } from 'drizzle-orm';
-import { failureDiagnoses, failureClusters, projects, testRunsCases } from '../database/schema';
+import {
+  failureDiagnoses,
+  failureDiagnosisVersions,
+  failureClusters,
+  projects,
+  testRunsCases,
+} from '../database/schema';
 import type { FailureDiagnosis, FailureCluster } from '../database/schema';
 import { DIAGNOSIS_JSON_SCHEMA, parseDiagnosisJson } from '#shared/ai-diagnosis';
 import type { AiConfig } from '~~/types/api';
@@ -95,6 +101,7 @@ export async function runClusterDiagnosis(
       .where(and(eq(failureDiagnoses.testRunsCaseId, opts!.testRunsCaseId!), eq(failureDiagnoses.scope, 'execution')))
       .limit(1);
     if (existing) {
+      await snapshotDiagnosis(db, existing.id);
       await db.update(failureDiagnoses).set(runningFields).where(eq(failureDiagnoses.id, existing.id));
     } else {
       await db.insert(failureDiagnoses).values({
@@ -112,6 +119,7 @@ export async function runClusterDiagnosis(
       .where(and(eq(failureDiagnoses.clusterId, cluster.id), eq(failureDiagnoses.scope, 'cluster')))
       .limit(1);
     if (existing) {
+      await snapshotDiagnosis(db, existing.id);
       await db.update(failureDiagnoses).set(runningFields).where(eq(failureDiagnoses.id, existing.id));
     } else {
       await db.insert(failureDiagnoses).values({
@@ -201,6 +209,36 @@ export async function runClusterDiagnosis(
   } finally {
     running.delete(cluster.id);
   }
+}
+
+/**
+ * Snapshot the current state of a diagnosis row into `failure_diagnosis_versions`
+ * before it gets overwritten by a re-diagnose.
+ */
+async function snapshotDiagnosis(db: DbClient, diagnosisId: number): Promise<void> {
+  const [row] = await db.select().from(failureDiagnoses).where(eq(failureDiagnoses.id, diagnosisId)).limit(1);
+  if (!row) return;
+  const fields = {
+    diagnosisId: row.id,
+    clusterId: row.clusterId,
+    scope: row.scope,
+    testRunsCaseId: row.testRunsCaseId,
+    status: row.status,
+    provider: row.provider,
+    model: row.model,
+    category: row.category,
+    confidence: row.confidence,
+    summary: row.summary,
+    rootCause: row.rootCause,
+    details: row.details as Record<string, unknown> | null,
+    error: row.error,
+    inputTokens: row.inputTokens,
+    outputTokens: row.outputTokens,
+    durationMs: row.durationMs,
+    contextSha: row.contextSha,
+    createdAt: new Date(),
+  };
+  await db.insert(failureDiagnosisVersions).values(fields);
 }
 
 export async function autoDiagnoseRun(db: DbClient, projectId: number, runId: number): Promise<void> {

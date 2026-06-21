@@ -3,6 +3,7 @@ import type { FailureDiagnosis } from '~~/server/database/schema';
 
 const props = defineProps<{
   clusterId?: number;
+  lastSeenRunId?: number;
 }>();
 
 const {
@@ -198,7 +199,7 @@ function isStale(d: FailureDiagnosis) {
       </div>
 
       <!-- Diagnosis result -->
-      <DiagnosisResult :diagnosis="diagnosis" />
+      <DiagnosisResult :diagnosis="diagnosis" :last-seen-run-id="lastSeenRunId" />
 
       <div
         v-if="diagnosis?.status === 'running' && !isStale(diagnosis)"

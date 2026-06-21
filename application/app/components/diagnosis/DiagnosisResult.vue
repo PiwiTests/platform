@@ -4,6 +4,8 @@ import { formatRelativeTime } from '~/utils';
 
 const props = defineProps<{
   diagnosis: FailureDiagnosis | null;
+  /** The cluster's lastSeenRunId — for staleness detection */
+  lastSeenRunId?: number;
 }>();
 
 const { copy, copied } = useCopy();
@@ -16,9 +18,45 @@ function formatTokens(i: number | null, o: number | null) {
   return `${i ?? 0} in / ${o ?? 0} out tokens`;
 }
 
-function isStale(d: FailureDiagnosis) {
+function isRunningStale(d: FailureDiagnosis) {
   return d.status === 'running' && Date.now() - new Date(d.updatedAt).getTime() > 5 * 60 * 1000;
 }
+
+const feedbackSaving = ref(false);
+const localFeedback = ref<string | null>(null);
+
+watch(
+  () => props.diagnosis?.feedback,
+  (v) => {
+    localFeedback.value = v ?? null;
+  },
+  { immediate: true },
+);
+
+async function setFeedback(value: 'up' | 'down') {
+  if (!props.diagnosis) return;
+  const newValue = localFeedback.value === value ? null : value;
+  localFeedback.value = newValue;
+  feedbackSaving.value = true;
+  try {
+    await $fetch(`/api/failure-diagnoses/${props.diagnosis.id}/feedback`, {
+      method: 'PATCH',
+      body: { feedback: newValue },
+    });
+  } catch {
+    localFeedback.value = props.diagnosis.feedback ?? null;
+  } finally {
+    feedbackSaving.value = false;
+  }
+}
+
+const isStale = computed(() => {
+  const d = props.diagnosis;
+  if (!d || d.status !== 'completed') return false;
+  const runId = props.lastSeenRunId;
+  if (runId == null) return false;
+  return new Date(d.updatedAt).getTime() < Date.now() - 5 * 60 * 1000;
+});
 
 function diagnosisMarkdown(): string {
   if (!props.diagnosis || props.diagnosis.status !== 'completed') return '';
@@ -110,6 +148,15 @@ async function copyDiagnosis() {
   }
 }
 
+function copyGitApply() {
+  const d = props.diagnosis;
+  if (!d) return;
+  const patch = (d.details as any)?.suggestedFix?.patch as string | undefined;
+  if (!patch) return;
+  const cmd = `git apply <<'EOF'\n${patch}\nEOF`;
+  copy(cmd, { toast: 'git apply command copied' });
+}
+
 const categoryColors: Record<string, 'error' | 'warning' | 'info' | 'secondary' | 'neutral'> = {
   'app-bug': 'error',
   'test-bug': 'warning',
@@ -129,10 +176,18 @@ const confidenceColors: Record<string, 'success' | 'warning' | 'neutral'> = {
 <template>
   <div class="space-y-3">
     <UAlert
-      v-if="diagnosis && (diagnosis.status === 'failed' || isStale(diagnosis))"
+      v-if="diagnosis && (diagnosis.status === 'failed' || isRunningStale(diagnosis))"
       color="error"
       title="Diagnosis failed"
       :description="diagnosis.error || 'Unknown error'"
+    />
+
+    <UAlert
+      v-if="isStale"
+      color="warning"
+      icon="i-lucide-clock"
+      title="Diagnosis may be stale"
+      description="New evidence may have appeared since this diagnosis was made. Consider re-running."
     />
 
     <div
@@ -189,17 +244,25 @@ const confidenceColors: Record<string, 'success' | 'warning' | 'neutral'> = {
 
         <div v-if="details.suggestedFix.patch" class="mt-2">
           <div class="flex items-center justify-between mb-1">
-            <span class="text-xs text-gray-500 font-mono">
-              patch — apply with <code class="bg-muted px-1 rounded">git apply</code>
-            </span>
-            <UButton
-              :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
-              size="xs"
-              color="neutral"
-              variant="ghost"
-              title="Copy patch"
-              @click="copy(details.suggestedFix.patch)"
-            />
+            <span class="text-xs text-gray-500 font-mono">patch</span>
+            <div class="flex items-center gap-1">
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-terminal"
+                title="Copy git apply command"
+                @click="copyGitApply"
+              />
+              <UButton
+                :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                title="Copy patch"
+                @click="copy(details.suggestedFix.patch)"
+              />
+            </div>
           </div>
           <MarkdownPreview :text="'```diff\n' + details.suggestedFix.patch + '\n```'" />
         </div>
@@ -221,9 +284,29 @@ const confidenceColors: Record<string, 'success' | 'warning' | 'neutral'> = {
         </li>
       </ul>
 
-      <div class="text-xs text-gray-400 pt-1 border-t border-default">
-        {{ diagnosis.model }} · {{ formatTokens(diagnosis.inputTokens, diagnosis.outputTokens) }} ·
-        {{ formatRelativeTime(diagnosis.updatedAt) }}
+      <div class="flex items-center justify-between pt-1 border-t border-default">
+        <div class="flex items-center gap-2">
+          <UButton
+            :icon="localFeedback === 'up' ? 'i-lucide-thumbs-up' : 'i-lucide-thumbs-up'"
+            :color="localFeedback === 'up' ? 'success' : 'neutral'"
+            variant="ghost"
+            size="xs"
+            :loading="feedbackSaving"
+            @click="setFeedback('up')"
+          />
+          <UButton
+            :icon="localFeedback === 'down' ? 'i-lucide-thumbs-down' : 'i-lucide-thumbs-down'"
+            :color="localFeedback === 'down' ? 'error' : 'neutral'"
+            variant="ghost"
+            size="xs"
+            :loading="feedbackSaving"
+            @click="setFeedback('down')"
+          />
+        </div>
+        <div class="text-xs text-gray-400">
+          {{ diagnosis.model }} · {{ formatTokens(diagnosis.inputTokens, diagnosis.outputTokens) }} ·
+          {{ formatRelativeTime(diagnosis.updatedAt) }}
+        </div>
       </div>
     </div>
 

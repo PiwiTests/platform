@@ -176,6 +176,8 @@ export const failureDiagnoses = pgTable(
     inputTokens: integer('input_tokens'),
     outputTokens: integer('output_tokens'),
     durationMs: integer('duration_ms'),
+    feedback: text('feedback'), // 'up', 'down'
+    feedbackNote: text('feedback_note'), // optional note from user
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -185,6 +187,42 @@ export const failureDiagnoses = pgTable(
   },
   (table) => ({
     executionScopeIdx: uniqueIndex('idx_failure_diagnoses_execution_scope').on(table.testRunsCaseId, table.scope),
+  }),
+);
+
+// Diagnosis version history — snapshotted on each re-diagnose
+export const failureDiagnosisVersions = pgTable(
+  'failure_diagnosis_versions',
+  {
+    id: serial('id').primaryKey(),
+    diagnosisId: integer('diagnosis_id')
+      .notNull()
+      .references(() => failureDiagnoses.id, { onDelete: 'cascade' }),
+    clusterId: integer('cluster_id')
+      .notNull()
+      .references(() => failureClusters.id, { onDelete: 'cascade' }),
+    scope: text('scope').notNull().default('cluster'),
+    testRunsCaseId: integer('test_runs_case_id').references(() => testRunsCases.id, { onDelete: 'cascade' }),
+    status: text('status').notNull().default('running'),
+    provider: text('provider'),
+    model: text('model'),
+    category: text('category'),
+    confidence: text('confidence'),
+    summary: text('summary'),
+    rootCause: text('root_cause'),
+    details: jsonb('details'),
+    error: text('error'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    durationMs: integer('duration_ms'),
+    contextSha: text('context_sha'),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    diagnosisIdIdx: index('idx_fdv_diagnosis_id').on(table.diagnosisId),
+    clusterIdIdx: index('idx_fdv_cluster_id').on(table.clusterId),
   }),
 );
 

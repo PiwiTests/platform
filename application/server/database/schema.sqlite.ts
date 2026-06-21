@@ -176,6 +176,8 @@ export const failureDiagnoses = sqliteTable(
     inputTokens: integer('input_tokens'),
     outputTokens: integer('output_tokens'),
     durationMs: integer('duration_ms'),
+    feedback: text('feedback'), // 'up', 'down'
+    feedbackNote: text('feedback_note'), // optional note from user
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -186,6 +188,42 @@ export const failureDiagnoses = sqliteTable(
   (table) => ({
     clusterScopeIdx: uniqueIndex('idx_failure_diagnoses_cluster_scope').on(table.clusterId, table.scope),
     executionIdx: uniqueIndex('idx_failure_diagnoses_execution').on(table.testRunsCaseId, table.scope),
+  }),
+);
+
+// Diagnosis version history — snapshotted on each re-diagnose
+export const failureDiagnosisVersions = sqliteTable(
+  'failure_diagnosis_versions',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    diagnosisId: integer('diagnosis_id')
+      .notNull()
+      .references(() => failureDiagnoses.id, { onDelete: 'cascade' }),
+    clusterId: integer('cluster_id')
+      .notNull()
+      .references(() => failureClusters.id, { onDelete: 'cascade' }),
+    scope: text('scope').notNull().default('cluster'),
+    testRunsCaseId: integer('test_runs_case_id').references(() => testRunsCases.id, { onDelete: 'cascade' }),
+    status: text('status').notNull().default('running'),
+    provider: text('provider'),
+    model: text('model'),
+    category: text('category'),
+    confidence: text('confidence'),
+    summary: text('summary'),
+    rootCause: text('root_cause'),
+    details: text('details', { mode: 'json' }),
+    error: text('error'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    durationMs: integer('duration_ms'),
+    contextSha: text('context_sha'),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    diagnosisIdIdx: index('idx_fdv_diagnosis_id').on(table.diagnosisId),
+    clusterIdIdx: index('idx_fdv_cluster_id').on(table.clusterId),
   }),
 );
 
