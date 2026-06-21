@@ -81,6 +81,7 @@ Piwi solves what standalone HTML reports cannot:
 - 🤖 **AI diagnosis** — LLM analysis of any failure cluster (Anthropic, OpenAI-compatible, Ollama, etc.); pin a baseline commit so the diagnosis includes the relevant SCM diff; browse and cherry-pick specific commits to add their full diffs to the context; diagnosis includes category, confidence, root cause, evidence, suggested fix, and prevention tips; auto-diagnose new clusters on run completion; supports global and per-project custom instructions to tailor analysis to your stack
 - 🔀 **Flaky test detection** — composite flakiness score based on retry passes, status alternations, and failure rate; dedicated project tab with configurable lookback window
 - 🔌 **Playwright reporter** — drop-in custom reporter for automatic result submission, with HTML report and trace uploads
+- 🔌 **MCP server** — built-in Model Context Protocol server at `/mcp`; connect Claude Code, Cursor, VS Code Copilot, Claude Desktop, Gemini CLI, and others directly to your test data; 11 tools covering projects, runs, failures, flaky tests, clusters, AI diagnoses, and raw SCM-grounded evidence context
 - 📖 **Interactive API docs** — auto-generated OpenAPI 3.1 specification with Scalar UI at `/docs`; all endpoints annotated with `defineRouteMeta()`
 - ⚡ **Real-time streaming** — live dashboard via Server-Sent Events; pages refresh instantly when a run starts or finishes, with no polling
 - 🔐 **Authentication** — optional role-based access control (administrator, reporter, user) with API key support for CI and OAuth (Google, GitHub)
@@ -108,6 +109,7 @@ Piwi keeps what works and adds what HTML reports cannot do alone:
 | **Team triage workflow (status, notes, assignment)** | ❌           | ✅              |
 | **Side-by-side run comparison**                      | ❌           | ✅              |
 | **REST API for automation & integration**            | ❌           | ✅              |
+| **MCP server for AI agent access**                   | ❌           | ✅              |
 | No server required — open HTML file directly         | ✅           | ❌              |
 | Self-hosted (your infra, your data)                  | ✅           | ✅              |
 

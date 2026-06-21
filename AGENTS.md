@@ -25,10 +25,11 @@ plans/                  — Design docs, audit plans & roadmap (see below)
 reporter/               — Custom Playwright reporter package (TypeScript → compiled JS)
 ```
 
-> **Global tracking file:** `plans/roadmap.md` is the single source of truth for product
-> direction, priorities, and progress — keep it updated as features land or plans change.
-> Detailed per-feature implementation plans live alongside it under `plans/`. (`plans/` is
-> gitignored, so these are local working docs, not committed.)
+> **Global tracking files:** 
+> - `plans/roadmap.md` — single source of truth for product direction, priorities, and progress
+> - `plans/exploration-findings.md` — log of bugs, tech debt, inconsistencies, and non-critical issues discovered during exploration (auto-appended by agents)
+> 
+> Detailed per-feature implementation plans live alongside them. (`plans/` is gitignored, so these are local working docs, not committed.)
 
 ## Quick Start
 
@@ -398,3 +399,19 @@ The app can be built as a fully client-side SPA (no server needed) by setting `P
 - Projects auto-created on first submission
 - Dates stored as Unix timestamps in SQLite
 - Run typecheck, lint, and tests only at the end before final commit (not after every task)
+
+### Exploration & Audit Findings
+
+When exploring the codebase or performing audits (schema reviews, dependency checks, code quality scans, etc.), log any bugs, inconsistencies, tech debt, or non-critical issues discovered in **`plans/exploration-findings.md`**. Use a structured format:
+
+```markdown
+## [Date] — [Exploration Type/Area]
+
+### Finding: [Brief title]
+- **File/Component**: location in codebase
+- **Issue**: Description of the bug or inconsistency
+- **Impact**: Severity and effect (e.g., "Low", "May affect performance", "Blocks feature X")
+- **Suggested fix**: Recommended action (optional if the fix is obvious from the issue)
+```
+
+**Do not commit these findings to git** — they're local working notes. The roadmap (`plans/roadmap.md`) should reference notable findings under a dedicated "Known Issues & Tech Debt" section if they impact ongoing work or priorities.

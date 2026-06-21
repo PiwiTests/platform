@@ -110,6 +110,9 @@ export default defineNuxtConfig({
     '/api/**': {
       cors: true,
     },
+    '/mcp': {
+      cors: true,
+    },
   },
 
   experimental: {
