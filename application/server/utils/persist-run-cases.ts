@@ -1,6 +1,7 @@
-import { testCases, testRunsCases, testSuites, failureClusters } from '../database/schema';
+import { testCases, testRunsCases, testSuites, failureClusters, networkRequests } from '../database/schema';
 import { eq, and, inArray, sql } from 'drizzle-orm';
-import { sanitizeNetworkRequests, sanitizeWebVitals, sanitizeConsoleLogs } from './sanitize';
+import { buildNetworkRequestItems, buildNetworkRequestInsertValues } from './network-request-helpers';
+import { sanitizeWebVitals, sanitizeConsoleLogs } from './sanitize';
 import { computeErrorFingerprint, type ErrorFingerprint } from '../../shared/error-fingerprint';
 import { testCaseCache } from './test-case-cache';
 import { testSuiteCache } from './test-suite-cache';
@@ -269,6 +270,17 @@ export async function persistRunCases(
   );
 
   const runCasesRows: Array<typeof testRunsCases.$inferInsert> = [];
+  const networkRequestBuilders: Array<{
+    items: Array<{
+      method: string;
+      url: string | null;
+      normalizedUrl: string;
+      status: number;
+      duration: number | null;
+      resourceType: string | null;
+      serverLogs: unknown;
+    }>;
+  }> = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
   const pendingClusters = new Map<string, PendingCluster>();
 
@@ -324,8 +336,6 @@ export async function persistRunCases(
       stepEvents: c.stepEvents ?? null,
       slowestStep: c.slowestStep ?? null,
       slowestStepDuration: c.slowestStepDuration ?? null,
-      networkRequests:
-        sanitizeNetworkRequests(c.networkRequests as Array<Record<string, unknown>> | null | undefined) ?? null,
       webVitals: sanitizeWebVitals(c.webVitals as Record<string, unknown> | null | undefined) ?? null,
       consoleLogs: sanitizeConsoleLogs(c.consoleLogs as Array<Record<string, unknown>> | null | undefined) ?? null,
       ariaSnapshot: c.ariaSnapshot ?? null,
@@ -337,6 +347,9 @@ export async function persistRunCases(
       shardIndex: c.shardIndex ?? null,
       startedAt: c.startedAt ? new Date(c.startedAt) : null,
     });
+
+    const nrItems = buildNetworkRequestItems(c.networkRequests as Array<Record<string, unknown>> | null | undefined);
+    networkRequestBuilders.push({ items: nrItems as any });
   }
 
   if (runCasesRows.length === 0) return [];
@@ -347,9 +360,16 @@ export async function persistRunCases(
     if (fingerprint) row.failureClusterId = clusterIds.get(fingerprint.fingerprint) ?? null;
   });
 
-  return await db
+  const insertedCases = await db
     .insert(testRunsCases)
     .values(runCasesRows)
     .onConflictDoNothing()
     .returning({ id: testRunsCases.id, status: testRunsCases.status });
+
+  const nrValues = buildNetworkRequestInsertValues(networkRequestBuilders, insertedCases, testRunId);
+  if (nrValues.length > 0) {
+    await db.insert(networkRequests).values(nrValues);
+  }
+
+  return insertedCases;
 }

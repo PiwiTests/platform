@@ -71,6 +71,20 @@
       "when": 1781940747835,
       "tag": "0009_massive_lord_hawal",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1782023964022,
+      "tag": "0010_youthful_deathbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1782024662256,
+      "tag": "0011_huge_luminals",
+      "breakpoints": true
     }
   ]
 }

@@ -12,14 +12,17 @@
 import { eq, ne, and, or, inArray, sql } from 'drizzle-orm';
 import { getDemoDb } from '../db.client';
 import { publishDemoGlobalEvent, publishDemoRunEvent } from '../run-events';
-import { projects, testRuns, testCases, testRunsCases, failureClusters } from '~~/server/database/schema.sqlite';
-import { parseLocation } from '~~/server/utils/parse-location';
 import {
-  sanitizeMetadata,
-  sanitizeNetworkRequests,
-  sanitizeWebVitals,
-  sanitizeConsoleLogs,
-} from '~~/server/utils/sanitize';
+  projects,
+  testRuns,
+  testCases,
+  testRunsCases,
+  failureClusters,
+  networkRequests,
+} from '~~/server/database/schema.sqlite';
+import { parseLocation } from '~~/server/utils/parse-location';
+import { buildNetworkRequestItems, buildNetworkRequestInsertValues } from '~~/server/utils/network-request-helpers';
+import { sanitizeMetadata, sanitizeWebVitals, sanitizeConsoleLogs } from '~~/server/utils/sanitize';
 import { computeErrorFingerprint, type ErrorFingerprint } from '~~/shared/error-fingerprint';
 import { durationStats } from '~~/shared/utils/stats';
 import type { StreamEventPayload, TestRunFinishPayload, TestRunStartPayload } from '~~/shared/types';
@@ -375,6 +378,17 @@ async function persistRunCases(
   }
 
   const runCasesRows: Array<typeof testRunsCases.$inferInsert> = [];
+  const networkRequestBuilders: Array<{
+    items: Array<{
+      method: string;
+      url: string | null;
+      normalizedUrl: string;
+      status: number;
+      duration: number | null;
+      resourceType: string | null;
+      serverLogs: unknown;
+    }>;
+  }> = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
   const pendingClusters = new Map<string, PendingCluster>();
 
@@ -429,8 +443,6 @@ async function persistRunCases(
       stepEvents: c.stepEvents ?? null,
       slowestStep: c.slowestStep ?? null,
       slowestStepDuration: c.slowestStepDuration ?? null,
-      networkRequests:
-        sanitizeNetworkRequests(c.networkRequests as Array<Record<string, unknown>> | null | undefined) ?? null,
       webVitals: sanitizeWebVitals(c.webVitals as Record<string, unknown> | null | undefined) ?? null,
       consoleLogs: sanitizeConsoleLogs(c.consoleLogs as Array<Record<string, unknown>> | null | undefined) ?? null,
       ariaSnapshot: c.ariaSnapshot ?? null,
@@ -439,6 +451,9 @@ async function persistRunCases(
       shardIndex: c.shardIndex ?? null,
       startedAt: c.startedAt ? new Date(c.startedAt) : null,
     });
+
+    const nrItems = buildNetworkRequestItems(c.networkRequests as Array<Record<string, unknown>> | null | undefined);
+    networkRequestBuilders.push({ items: nrItems as any });
   }
 
   if (runCasesRows.length === 0) return [];
@@ -449,7 +464,14 @@ async function persistRunCases(
     if (fingerprint) row.failureClusterId = clusterIds.get(fingerprint.fingerprint) ?? null;
   });
 
-  return await db.insert(testRunsCases).values(runCasesRows).returning({ id: testRunsCases.id });
+  const insertedCases = await db.insert(testRunsCases).values(runCasesRows).returning({ id: testRunsCases.id });
+
+  const nrValues = buildNetworkRequestInsertValues(networkRequestBuilders, insertedCases, testRunId);
+  if (nrValues.length > 0) {
+    await db.insert(networkRequests).values(nrValues);
+  }
+
+  return insertedCases;
 }
 
 /** POST /api/test-runs/:id/events */

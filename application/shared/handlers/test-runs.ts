@@ -9,6 +9,7 @@ import {
   failureClusters,
   failureDiagnoses,
   entityLinks,
+  networkRequests,
 } from '../../server/database/schema.sqlite';
 import { fetchAndFormatSuites, splitSuitePath } from '../utils/suites';
 import { normalizeRoute } from '../utils/route';
@@ -257,15 +258,6 @@ export async function patchTestRun(db: DrizzleDB, id: number, label: string | nu
 
 // ─── getNetworkRequests — aggregated network endpoint stats ──────────────────
 
-interface NetworkRequest {
-  method: string;
-  url: string;
-  status: number;
-  duration: number;
-  resourceType: string;
-  startTime?: number;
-}
-
 interface EndpointSummary {
   method: string;
   route: string;
@@ -282,15 +274,34 @@ export async function getNetworkRequests(db: DrizzleDB, runId: number) {
   const runResults = await db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.id, runId));
   if (!runResults[0]) return null;
 
-  const runsCases = await db
+  const rows = await db
     .select({
-      networkRequests: testRunsCases.networkRequests,
+      method: networkRequests.method,
+      normalizedUrl: networkRequests.normalizedUrl,
+      url: networkRequests.url,
+      status: networkRequests.status,
+      duration: networkRequests.duration,
       title: testCases.title,
     })
-    .from(testRunsCases)
+    .from(networkRequests)
+    .innerJoin(testRunsCases, eq(networkRequests.testRunsCaseId, testRunsCases.id))
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-    .where(eq(testRunsCases.testRunId, runId));
+    .where(eq(networkRequests.testRunId, runId));
 
+  return buildEndpointSummaries(
+    rows.map((r) => ({
+      method: r.method,
+      route: r.normalizedUrl ?? (r.url ? normalizeRoute(r.url) : r.method),
+      duration: r.duration ?? 0,
+      status: r.status,
+      title: r.title,
+    })),
+  );
+}
+
+function buildEndpointSummaries(
+  rows: Array<{ method: string; route: string; duration: number; status: number; title: string }>,
+): EndpointSummary[] {
   const grouped = new Map<
     string,
     {
@@ -302,31 +313,21 @@ export async function getNetworkRequests(db: DrizzleDB, runId: number) {
     }
   >();
 
-  for (const runCase of runsCases) {
-    const requests = runCase.networkRequests as NetworkRequest[] | null;
-    if (!requests || !Array.isArray(requests)) continue;
-
-    for (const req of requests) {
-      if (req.resourceType && !['fetch', 'xhr', 'document', 'other'].includes(req.resourceType)) continue;
-
-      const route = normalizeRoute(req.url);
-      const key = `${req.method}|${route}`;
-
-      if (!grouped.has(key)) {
-        grouped.set(key, {
-          method: req.method,
-          route,
-          durations: [],
-          statuses: [],
-          testCases: new Set(),
-        });
-      }
-
-      const group = grouped.get(key)!;
-      group.durations.push(req.duration);
-      group.statuses.push(req.status);
-      group.testCases.add(runCase.title);
+  for (const row of rows) {
+    const key = `${row.method}|${row.route}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        method: row.method,
+        route: row.route,
+        durations: [],
+        statuses: [],
+        testCases: new Set(),
+      });
     }
+    const group = grouped.get(key)!;
+    group.durations.push(row.duration);
+    group.statuses.push(row.status);
+    group.testCases.add(row.title);
   }
 
   const summaries: EndpointSummary[] = [];

@@ -283,7 +283,13 @@ export class StreamManager {
       if (this._startPromise) await this._startPromise;
       if (!this._enabled || !this._runId || !this._token) return;
 
-      // The complete event must reach the server before it can link files
+      // The complete event must reach the server before it can link files.
+      // queueEvent may have already triggered a batch-size flush that took all
+      // pending events, making our flush() return null.  Wait for any in-flight
+      // flush promises first, then try to flush remaining events.
+      if (this.flushPromises.length > 0) {
+        await Promise.allSettled(this.flushPromises);
+      }
       const flush = this.flush();
       if (flush) await flush;
 

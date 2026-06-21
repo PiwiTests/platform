@@ -64,6 +64,20 @@
       "when": 1781940753610,
       "tag": "0008_stormy_surge",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782023970390,
+      "tag": "0009_flaky_switch",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782024678965,
+      "tag": "0010_known_yellow_claw",
+      "breakpoints": true
     }
   ]
 }
