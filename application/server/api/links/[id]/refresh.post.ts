@@ -42,8 +42,8 @@ export default eventHandler(async (event) => {
     throw createError({ statusCode: 500, message: 'Failed to refresh link' });
   }
 
-  // Unfurl enrichment (server-only)
-  const { title, statusText, statusColor } = await unfurlUrl(link.url);
+  // Unfurl enrichment (server-only) — tries rich provider first, falls back to OpenGraph
+  const { title, statusText, statusColor } = await unfurlUrl(link.url, db);
 
   await db
     .update(entityLinks)

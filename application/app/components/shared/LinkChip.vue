@@ -22,7 +22,7 @@ const providerIcon = computed(() => getProviderIcon(props.link.provider as any))
   <span
     class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 group hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
   >
-    <span :class="[providerIcon, 'w-3.5 h-3.5 shrink-0']" />
+    <UIcon :name="providerIcon" class="w-3.5 h-3.5 shrink-0" />
 
     <span v-if="link.key" class="font-mono text-primary font-medium">{{ link.key }}</span>
 
