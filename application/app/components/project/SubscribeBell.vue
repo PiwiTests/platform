@@ -26,10 +26,12 @@ interface Subscription {
 }
 
 const shouldFetch = isDemoMode || (authEnabled.value && isAuthenticated.value);
+// server: false keeps SSR/prerendering safe in demo mode (SW not active server-side)
+const fetchOpts = isDemoMode ? ({ server: false } as const) : {};
 
 const { data: subsData, refresh: refreshSubs } = await useFetch<{ subscriptions: Subscription[] }>(
   `/api/subscriptions?projectId=${props.projectId}`,
-  { immediate: shouldFetch },
+  { immediate: shouldFetch, ...fetchOpts },
 );
 
 const subs = computed(() => subsData.value?.subscriptions ?? []);
@@ -43,7 +45,10 @@ interface Channel {
   config?: Record<string, unknown>;
 }
 
-const { data: channelsData } = await useFetch<{ channels: Channel[] }>('/api/channels', { immediate: shouldFetch });
+const { data: channelsData } = await useFetch<{ channels: Channel[] }>('/api/channels', {
+  immediate: shouldFetch,
+  ...fetchOpts,
+});
 
 const channels = computed(() => channelsData.value?.channels ?? []);
 
