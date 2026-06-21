@@ -1,4 +1,4 @@
-import { testRuns, testCases, testRunsCases, files, projects } from '../../server/database/schema.sqlite';
+import { testRuns, testCases, testRunsCases, files, projects } from '../../server/database/schema';
 import { sql } from 'drizzle-orm';
 
 import type { DrizzleDB } from './db';

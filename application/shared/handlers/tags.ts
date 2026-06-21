@@ -1,4 +1,4 @@
-import { tags } from '../../server/database/schema.sqlite';
+import { tags } from '../../server/database/schema';
 import { eq, asc } from 'drizzle-orm';
 
 import type { DrizzleDB } from './db';

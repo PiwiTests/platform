@@ -1,4 +1,4 @@
-import { users, apiKeys } from '../../server/database/schema.sqlite';
+import { users, apiKeys } from '../../server/database/schema';
 import { eq, and } from 'drizzle-orm';
 
 import type { DrizzleDB } from './db';

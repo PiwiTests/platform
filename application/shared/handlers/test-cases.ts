@@ -8,7 +8,7 @@ import {
   failureDiagnoses,
   entityLinks,
   networkRequests,
-} from '../../server/database/schema.sqlite';
+} from '../../server/database/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 
 import type { DrizzleDB } from './db';
