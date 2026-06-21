@@ -46,6 +46,7 @@
     "date-fns": "^4.1.0",
     "drizzle-orm": "^0.45.0",
     "highlight.js": "^11.11.1",
+    "nodemailer": "^8.0.11",
     "nuxt": "^4.2.1",
     "postgres": "^3.4.9",
     "sql.js": "^1.14.1",
@@ -53,6 +54,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.58.0",
+    "@types/nodemailer": "^8.0.1",
     "@types/sql.js": "^1.4.11",
     "cross-env": "^10.1.0",
     "drizzle-kit": "^0.31.8",

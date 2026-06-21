@@ -78,6 +78,13 @@
       "when": 1782024678965,
       "tag": "0010_known_yellow_claw",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782035455928,
+      "tag": "0011_absurd_squirrel_girl",
+      "breakpoints": true
     }
   ]
 }

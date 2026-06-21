@@ -199,6 +199,11 @@ export default defineNuxtConfig({
       // during Nitro server bundling on Windows.
       // See: https://github.com/nuxt/nuxt/issues/31836
       legacyExternals: process.platform === 'win32' && process.env.NODE_ENV === 'production',
+      tasks: true,
+    },
+    scheduledTasks: {
+      // Run the notification outbox sweeper every minute
+      '* * * * *': ['notifications:sweep'],
     },
   },
 

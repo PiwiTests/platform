@@ -424,6 +424,8 @@ export const users = sqliteTable(
     password: text('password').notNull(), // hashed password (empty string for OAuth-only users)
     role: text('role').notNull(), // Role enum: 'administrator', 'reporter', 'user'
     name: text('name'), // Display name
+    email: text('email'), // Email address (nullable; OAuth callback can populate it)
+    emailVerified: integer('email_verified', { mode: 'boolean' }).notNull().default(false),
     avatarUrl: text('avatar_url'), // Avatar from OAuth provider
     oauthProvider: text('oauth_provider'), // 'google', 'github', etc.
     oauthProviderId: text('oauth_provider_id'), // User ID from the OAuth provider
@@ -436,6 +438,105 @@ export const users = sqliteTable(
   },
   (table) => ({
     oauthIdx: uniqueIndex('idx_users_oauth').on(table.oauthProvider, table.oauthProviderId),
+    emailIdx: uniqueIndex('idx_users_email').on(table.email),
+  }),
+);
+
+// Account tokens table - single-use, hashed, expiring tokens for reset / verify / invite
+export const accountTokens = sqliteTable(
+  'account_tokens',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    purpose: text('purpose').notNull(), // 'reset' | 'verify' | 'invite'
+    tokenHash: text('token_hash').notNull(), // SHA-256 of the emailed token
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+    usedAt: integer('used_at', { mode: 'timestamp_ms' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({ hashIdx: uniqueIndex('idx_account_tokens_hash').on(t.tokenHash) }),
+);
+
+// Notification channels table - a configured delivery destination (email / Slack / webhook)
+export const notificationChannels = sqliteTable(
+  'notification_channels',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    name: text('name').notNull(),
+    type: text('type').notNull(), // 'email' | 'slack' | 'webhook'
+    config: text('config', { mode: 'json' }), // { address } | { webhookUrl } | { url, secret (encrypted) }
+    userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }), // null = global (admin-managed)
+    verified: integer('verified', { mode: 'boolean' }).notNull().default(false),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    userIdx: index('idx_notification_channels_user').on(t.userId),
+  }),
+);
+
+// Subscriptions table - who wants notifications for which projects/events
+export const subscriptions = sqliteTable(
+  'subscriptions',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    channelId: integer('channel_id')
+      .notNull()
+      .references(() => notificationChannels.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }), // null = all projects
+    events: text('events', { mode: 'json' }), // string[] of event keys
+    filters: text('filters', { mode: 'json' }), // { branches?, tags?, statuses?, defaultBranchOnly?, flakinessThreshold?, perfRegressionPct? }
+    mode: text('mode').notNull().default('realtime'), // 'realtime' | 'digest'
+    digestAt: text('digest_at'), // 'HH:mm' UTC for daily digest
+    mutedUntil: integer('muted_until', { mode: 'timestamp_ms' }),
+    active: integer('active', { mode: 'boolean' }).notNull().default(true),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectIdx: index('idx_subscriptions_project').on(t.projectId),
+    userIdx: index('idx_subscriptions_user').on(t.userId),
+    channelIdx: index('idx_subscriptions_channel').on(t.channelId),
+  }),
+);
+
+// Notification deliveries table - outbox for reliability, retries, dedup, audit
+export const notificationDeliveries = sqliteTable(
+  'notification_deliveries',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    subscriptionId: integer('subscription_id').references(() => subscriptions.id, { onDelete: 'cascade' }),
+    channelId: integer('channel_id')
+      .notNull()
+      .references(() => notificationChannels.id, { onDelete: 'cascade' }),
+    event: text('event').notNull(),
+    payload: text('payload', { mode: 'json' }),
+    dedupeKey: text('dedupe_key'), // e.g. `${event}:${runId}:${channelId}` — prevents double-send
+    status: text('status').notNull().default('pending'), // 'pending' | 'sent' | 'failed' | 'skipped'
+    attempts: integer('attempts').notNull().default(0),
+    error: text('error'),
+    scheduledFor: integer('scheduled_for', { mode: 'timestamp_ms' }), // digest batching / backoff
+    sentAt: integer('sent_at', { mode: 'timestamp_ms' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    statusScheduledIdx: index('idx_notification_deliveries_status').on(t.status, t.scheduledFor),
+    dedupeKeyIdx: uniqueIndex('idx_notification_deliveries_dedupe').on(t.dedupeKey),
   }),
 );
 
@@ -488,6 +589,14 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type NewApiKey = typeof apiKeys.$inferInsert;
+export type AccountToken = typeof accountTokens.$inferSelect;
+export type NewAccountToken = typeof accountTokens.$inferInsert;
+export type NotificationChannel = typeof notificationChannels.$inferSelect;
+export type NewNotificationChannel = typeof notificationChannels.$inferInsert;
+export type Subscription = typeof subscriptions.$inferSelect;
+export type NewSubscription = typeof subscriptions.$inferInsert;
+export type NotificationDelivery = typeof notificationDeliveries.$inferSelect;
+export type NewNotificationDelivery = typeof notificationDeliveries.$inferInsert;
 export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;
 export type ProjectTag = typeof projectTags.$inferSelect;

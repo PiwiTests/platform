@@ -424,6 +424,85 @@ routes.push(
     handler: () => Promise.resolve({ success: false, message: 'Login not available in demo mode' }),
   },
   { method: 'POST', pattern: /^\/api\/auth\/logout$/, handler: () => Promise.resolve({ success: true }) },
+  // Account management stubs — not functional in demo, return graceful no-ops
+  { method: 'POST', pattern: /^\/api\/auth\/forgot-password$/, handler: () => Promise.resolve({ success: true }) },
+  { method: 'POST', pattern: /^\/api\/auth\/reset-password$/, handler: () => Promise.resolve({ success: true }) },
+  { method: 'POST', pattern: /^\/api\/auth\/change-password$/, handler: () => Promise.resolve({ success: true }) },
+  { method: 'POST', pattern: /^\/api\/auth\/send-verify-email$/, handler: () => Promise.resolve({ success: true }) },
+  { method: 'GET', pattern: /^\/api\/auth\/verify-email$/, handler: () => Promise.resolve({ success: true }) },
+  { method: 'POST', pattern: /^\/api\/users\/(\d+)\/invite$/, handler: () => Promise.resolve({ success: true }) },
+  { method: 'PATCH', pattern: /^\/api\/users\/(\d+)$/, handler: () => Promise.resolve({ success: true }) },
+);
+
+// SMTP / email — demo has no email capability; return read-only "not configured" status
+routes.push(
+  {
+    method: 'GET',
+    pattern: /^\/api\/settings\/smtp$/,
+    handler: () =>
+      Promise.resolve({
+        host: null,
+        port: 587,
+        user: null,
+        from: null,
+        fromName: null,
+        hasPassword: false,
+        secure: false,
+        configured: false,
+        envManaged: true,
+      }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/settings\/smtp\/test$/,
+    handler: () => Promise.resolve({ success: false, error: 'Email not available in demo mode' }),
+  },
+);
+
+// Notification channels — demo returns empty lists and no-ops on mutations
+routes.push(
+  {
+    method: 'GET',
+    pattern: /^\/api\/channels$/,
+    handler: () =>
+      Promise.resolve({
+        channels: [
+          {
+            id: 1,
+            name: 'Account email',
+            type: 'personal_email',
+            userId: 1,
+            verified: false,
+            config: { address: 'demo@example.com' },
+            createdAt: null,
+            updatedAt: null,
+          },
+        ],
+      }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/channels$/,
+    handler: () => Promise.resolve({ success: true, channel: { id: 0, name: 'Demo channel', type: 'email' } }),
+  },
+  { method: 'DELETE', pattern: /^\/api\/channels\/(\d+)$/, handler: () => Promise.resolve({ success: true }) },
+  {
+    method: 'POST',
+    pattern: /^\/api\/channels\/(\d+)\/test$/,
+    handler: () => Promise.resolve({ success: false, error: 'Not available in demo mode' }),
+  },
+);
+
+// Subscriptions — demo returns empty lists and no-ops on mutations
+routes.push(
+  { method: 'GET', pattern: /^\/api\/subscriptions$/, handler: () => Promise.resolve({ subscriptions: [] }) },
+  {
+    method: 'POST',
+    pattern: /^\/api\/subscriptions$/,
+    handler: () => Promise.resolve({ success: true, subscriptionId: 0 }),
+  },
+  { method: 'PATCH', pattern: /^\/api\/subscriptions\/(\d+)$/, handler: () => Promise.resolve({ success: true }) },
+  { method: 'DELETE', pattern: /^\/api\/subscriptions\/(\d+)$/, handler: () => Promise.resolve({ success: true }) },
 );
 
 // Global SSE stream – no-op in demo mode (useRunStream skips it)

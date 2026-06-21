@@ -340,6 +340,7 @@ function copyFailure() {
   const origin = window.location.origin;
   const title = tc.title ?? 'Unknown test';
   const loc = tc.location ?? '';
+  // eslint-disable-next-line no-control-regex
   const rawError = tc.error.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const clusterUrl = failureCluster.value ? `${origin}/failure-clusters/${failureCluster.value.id}` : null;

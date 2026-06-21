@@ -616,6 +616,7 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
           />
         </template>
         <template #right>
+          <SubscribeBell :project-id="parseInt(projectId)" />
           <UButton
             v-if="canDelete"
             icon="i-lucide-trash-2"

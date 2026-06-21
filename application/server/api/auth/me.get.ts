@@ -38,6 +38,9 @@ export default eventHandler(async (event) => {
       role: user.role as Role,
       name: user.name,
       avatarUrl: user.avatarUrl,
+      email: user.email,
+      emailVerified: user.emailVerified,
+      oauthProvider: user.oauthProvider,
     },
   };
 });

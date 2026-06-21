@@ -10,6 +10,7 @@ import { sanitizeMetadata } from '../../utils/sanitize';
 import { runEventBus } from '../../utils/run-events';
 import { autoDiagnoseRun } from '../../utils/ai-diagnosis';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
+import { emitRunNotifications } from '../../utils/notifications/run-notifications';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
 
@@ -319,6 +320,7 @@ export default eventHandler(async (event) => {
   runEventBus.publishGlobal({ type: 'run-submitted', runId: testRun.id, projectId: project.id, status: body.status });
 
   autoDiagnoseRun(db, project.id, testRun.id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
+  emitRunNotifications(db, testRun.id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));
 
   return {
     success: true,

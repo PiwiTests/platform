@@ -85,6 +85,20 @@
       "when": 1782024662256,
       "tag": "0011_huge_luminals",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1782035418129,
+      "tag": "0012_foamy_king_bedlam",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1782035445775,
+      "tag": "0013_spooky_mole_man",
+      "breakpoints": true
     }
   ]
 }

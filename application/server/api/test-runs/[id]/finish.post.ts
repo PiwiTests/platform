@@ -6,6 +6,7 @@ import { sanitizeMetadata } from '../../../utils/sanitize';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { autoDiagnoseRun } from '../../../utils/ai-diagnosis';
 import { readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/shard-tokens';
+import { emitRunNotifications } from '../../../utils/notifications/run-notifications';
 import { Role } from '../../../../shared/types';
 
 const REQUIRED_ROLES: Role[] = [];
@@ -196,6 +197,7 @@ export default eventHandler(async (event) => {
       autoDiagnoseRun(db, testRun.projectId, id).catch((e) =>
         console.error('[ai-diagnosis] autoDiagnoseRun failed', e),
       );
+      emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));
 
       runEventBus.cleanup(id);
     } else {
@@ -296,6 +298,7 @@ export default eventHandler(async (event) => {
     runEventBus.publishGlobal({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
 
     autoDiagnoseRun(db, testRun.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
+    emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));
 
     runEventBus.cleanup(id);
   }

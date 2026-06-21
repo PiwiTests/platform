@@ -85,6 +85,49 @@ const baseConfig = defineConfig({
             reuseExistingServer: false,
             timeout: 90 * 1000,
           },
+          // Notifications server used by notifications.spec.ts.
+          // Auth-enabled, no SMTP (channel test endpoint verifies SMTP-not-configured path).
+          {
+            command: 'npm run app:dev',
+            url: 'http://localhost:3097/api/auth/me',
+            env: {
+              PIWI_AUTH_ENABLED: 'true',
+              PIWI_AUTH_SECRET: 'test-auth-secret-key-for-notifications-tests',
+              PIWI_DATABASE_PATH: join(process.cwd(), '.test-temp', 'notif-test.db'),
+              PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'notif-test-storage'),
+              NITRO_PORT: '3097',
+              PIWI_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-notif'),
+            },
+            reuseExistingServer: false,
+            timeout: 90 * 1000,
+          },
+        ]
+      : []),
+    // Auth+email server used by email-notifications.spec.ts.
+    // Requires a Mailpit instance (docker run -p 1025:1025 -p 8025:8025 axllent/mailpit).
+    // Set PIWI_MAILPIT_URL=http://localhost:8025 to opt in; tests are skipped otherwise.
+    ...(process.env.PIWI_MAILPIT_URL
+      ? [
+          {
+            command: 'npm run app:dev',
+            url: 'http://localhost:3098/api/auth/me',
+            env: {
+              PIWI_AUTH_ENABLED: 'true',
+              PIWI_AUTH_SECRET: 'test-email-secret-key-for-mailpit-tests',
+              PIWI_DATABASE_PATH: join(process.cwd(), '.test-temp', 'email-test.db'),
+              PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'email-test-storage'),
+              NITRO_PORT: '3098',
+              PIWI_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-email'),
+              PIWI_SMTP_HOST: 'localhost',
+              PIWI_SMTP_PORT: process.env.PIWI_MAILPIT_SMTP_PORT ?? '1025',
+              PIWI_SMTP_USER: 'test',
+              PIWI_SMTP_PASS: 'test',
+              PIWI_SMTP_FROM: 'noreply@piwi.test',
+              PIWI_SMTP_FROM_NAME: 'Piwi Test',
+            },
+            reuseExistingServer: !process.env.CI,
+            timeout: 90 * 1000,
+          },
         ]
       : []),
     // PostgreSQL-backed server used by postgresql.spec.ts.

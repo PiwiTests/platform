@@ -28,6 +28,10 @@ export const {
   users,
   apiKeys,
   networkRequests,
+  accountTokens,
+  notificationChannels,
+  subscriptions,
+  notificationDeliveries,
 } = schema;
 
 // TypeScript type exports – always based on SQLite schema (the canonical reference)
@@ -66,4 +70,12 @@ export type {
   NewEntityLink,
   NetworkRequest,
   NewNetworkRequest,
+  AccountToken,
+  NewAccountToken,
+  NotificationChannel,
+  NewNotificationChannel,
+  Subscription,
+  NewSubscription,
+  NotificationDelivery,
+  NewNotificationDelivery,
 } from './schema.sqlite';

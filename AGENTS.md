@@ -53,7 +53,12 @@ SQLite database auto-initializes on first API call.
 - **ORM**: Drizzle ORM (SQLite via libSQL, or PostgreSQL via postgres.js)
 - **Schema**: `application/server/database/schema.ts`
 - **Migrations**: `application/server/database/migrations/` (SQLite) or `migrations-pg/` (PostgreSQL, auto-run on startup based on `PIWI_DATABASE_URL`)
-- **Tables**: `projects`, `test_runs`, `test_cases`, `test_runs_cases`, `failure_clusters`, `failure_diagnoses`, `app_settings`, `files`, `trace_resources`, `trace_blobs`, `tags`, `project_tags`, `users`, `api_keys`
+- **Tables**: `projects`, `test_runs`, `test_cases`, `test_runs_cases`, `failure_clusters`, `failure_diagnoses`, `app_settings`, `files`, `trace_resources`, `trace_blobs`, `tags`, `project_tags`, `users`, `api_keys`, `account_tokens`, `notification_channels`, `subscriptions`, `notification_deliveries`
+- `users` has `email` (unique, nullable) and `emailVerified` (boolean) columns added
+- `account_tokens`: single-use SHA-256-hashed tokens for reset/invite/verify; purpose enum; TTL enforced at query time
+- `notification_channels`: email/slack/webhook destinations; webhook secrets AES-256-GCM encrypted via `crypto.ts`
+- `subscriptions`: links a user to a channel + optional project; `events` JSON array; `filters` JSON; `mode` realtime/digest; `mutedUntil` timestamp; `active` boolean
+- `notification_deliveries`: outbox table; `dedupeKey` unique constraint for idempotency; `status` pending/sent/failed/skipped; `attempts` + `scheduledFor` for progressive retry (1/5/15/60/240 min backoff)
 - **Audit**: See `plans/` for schema audit plans with findings and recommended changes
 
 ### Backend (server/api/)
@@ -83,6 +88,23 @@ Nuxt file-based routing:
 - `GET /api/settings/ai` — Admin: full AI settings including `hasApiKey`, `envManaged`
 - `PUT /api/settings/ai` — Admin: save provider/model/key/baseUrl/autoDiagnose
 - `POST /api/settings/ai/test` — Admin: smoke-test the configured AI provider
+- `GET /api/settings/smtp` — Admin: SMTP display config (host/port/user/from; never returns password); `envManaged: true`
+- `POST /api/settings/smtp/test` — Admin: send test email to `{ to }` via env-configured SMTP
+- `POST /api/auth/forgot-password` — Public, rate-limited (5/15 min/IP); sends reset email; always returns `{ success: true }` (no enumeration)
+- `POST /api/auth/reset-password` — Public; accepts `{ token, password }`; accepts both `reset` and `invite` token purposes; single-use
+- `POST /api/auth/change-password` — Authenticated; `{ currentPassword, newPassword }`
+- `GET /api/auth/verify-email?token=` — Public; marks email verified; redirects to `/settings/account?verified=1`
+- `POST /api/auth/send-verify-email` — Authenticated; mints a `verify` token and emails it
+- `POST /api/users/[id]/invite` — Admin; sends invite email with a reset-password link (mode=invite)
+- `PATCH /api/users/[id]` — Admin; update name, email, or role
+- `GET /api/channels` — Authenticated; lists user's channels + global channels (admins see all)
+- `POST /api/channels` — Authenticated; creates channel; admins can set `global: true`; webhook secrets encrypted at rest
+- `DELETE /api/channels/[id]` — Authenticated; owner or admin
+- `POST /api/channels/[id]/test` — Authenticated; sends a test delivery through the channel
+- `GET /api/subscriptions?projectId=` — Authenticated; lists subscriptions with joined channel info; optional projectId filter
+- `POST /api/subscriptions` — Authenticated; `{ channelId, projectId?, events[], filters?, mode, digestAt? }`
+- `PATCH /api/subscriptions/[id]` — Authenticated; update events/filters/mode/digestAt/mutedUntil/active
+- `DELETE /api/subscriptions/[id]` — Authenticated; owner or admin
 
 ### Frontend (app/)
 - **Pages** (`app/pages/`):
@@ -96,7 +118,7 @@ Nuxt file-based routing:
   - **`run/`** — Test run detail page (`/test-runs/[id]`): `RunSummary` (summary card + CI/Source/Other metadata), `TestCasesList` (paginated table, sticky headers, row highlighting via `meta.class.tr`), `WorkersTimeline` (clickable bars, emits `selectTestCase`), `RunCompare` (self-contained, watches internal `compareRunA`), `SlowEndpoints` (fetches `/api/test-runs/:id/network-requests` internally), `FailureGroups`, `RunReports`
   - **`test-case/`** — Test case detail page (`/test-cases/[id]`): `TestCaseStatusCard` (title, location, duration, retries, worker, slowest step, timing vs avg), `TestCaseSummary`, `TestCaseRunContext` (environment, CI, branch, commit, browser), `TestCaseTracesCard`, `TestCaseErrorCard` (copy button, collapsible errors, cluster info row), `TestCaseConsoleCard`, `TestCaseAttachmentsCard`, `TestCaseFixPromptCard`, `TestCaseHistoryChart`, `TestEvidenceSection`, `TestEvidenceScreenshots`, `TestEvidenceSignals`, `TestEvidenceTraces`
   - **`cluster/`** — Failure cluster detail (`/failure-clusters/[id]`): `ClusterDiagnosis` (AI diagnosis panel: commit picker, context preview, run/re-run, result display), `CommitPicker` (baseline selector with aggregate diff stats, caches per baseline), `CommitBrowserModal` (full-screen split modal: paginated commit list + per-commit diff), `ClusterInvestigation`, `ClusterTestEvidence`, `RegressionContext`
-  - **`project/`** — Project detail page (`/projects/[id]`): `PassRateChart`, `PerformanceTrendChart`, `TestRunsChart`, `FlakyTestsList` (score badges, retry-pass / alternation breakdown), `FailureClustersList`, `ScmChangesView`
+  - **`project/`** — Project detail page (`/projects/[id]`): `PassRateChart`, `PerformanceTrendChart`, `TestRunsChart`, `FlakyTestsList` (score badges, retry-pass / alternation breakdown), `FailureClustersList`, `ScmChangesView`, `SubscribeBell` (notification subscribe popover; hidden when auth disabled)
   - **`layout/`** — App shell / navigation: `ProjectsMenu`, `UserMenu`, `GetStartedWizard`
   - **`demo/`** — Demo mode only: `DemoBanner`, `DemoInitScreen`, `DemoSimulator`
   - **Shared building blocks in `shared/`** (prefer these over re-implementing):
@@ -109,7 +131,11 @@ Nuxt file-based routing:
   - `useCopy.ts` — `{ copy, copied }` clipboard helper (wraps VueUse `useClipboard`); `copy(text, { toast })`. Use instead of hand-rolling `navigator.clipboard` + a `copied` flag.
   - `useChartMarkers.ts` — Shared interactive SVG-marker + floating-tooltip logic for the `@unovis/vue` trend charts. Returns `{ tooltipData, tooltipPos, onRenderComplete }`; bind `:on-render-complete` on the `VisXYContainer`.
 - **Pages** (`app/pages/`):
+  - `/settings/account` — Email address + verification, change password, OAuth provider info (auth-gated)
+  - `/settings/notifications` — SMTP status card (read-only from env), notification channels CRUD, subscription list with mute/delete
   - `/settings/ai` — AI diagnosis configuration (provider, model, API key, base URL, auto-diagnose toggle)
+  - `/forgot-password` — Public, layout-free; no user enumeration in UI
+  - `/reset-password` — Public, layout-free; handles both reset and invite (`?mode=invite`) flows
 - **Utilities** (`app/utils/`):
   - `performance-hints.ts` — Generates performance warnings for slow/flaky tests
   - `fix-prompt.ts` — Generates structured AI debug prompts from test failure context
@@ -165,6 +191,15 @@ Nuxt file-based routing:
   - `PIWI_AI_BASE_URL` — base URL for OpenAI-compatible providers (e.g. `http://localhost:11434/v1`)
   - `PIWI_AI_AUTO_DIAGNOSE` — `true` to auto-diagnose new clusters on run finish
 - AI diagnosis **context limits** — cap how much evidence (and tokens) go into each diagnosis. Defaults live in `shared/ai-context-limits.ts`; resolved as defaults ← stored settings (`ai_context_limits` in `app_settings`) ← env (`server/utils/ai-context-limits.ts#resolveContextLimits`). Editable in Settings → AI, or pinned via env (env wins, UI shows the field read-only). Env vars: `PIWI_AI_MAX_SAMPLE_ERROR_CHARS`, `PIWI_AI_MAX_SCM_PATCH_BUDGET`, `PIWI_AI_MAX_AFFECTED_TESTS`, `PIWI_AI_MAX_STEPS`, `PIWI_AI_MAX_CONSOLE_ENTRIES`, `PIWI_AI_MAX_CONSOLE_ENTRY_CHARS`, `PIWI_AI_MAX_NETWORK_REQUESTS`, `PIWI_AI_MAX_ARIA_SNAPSHOT_CHARS`, `PIWI_AI_MAX_TEST_SOURCE_CHARS`.
+- SMTP email env vars (all required for email features; read-only in Settings UI — not stored in DB):
+  - `PIWI_SMTP_HOST` — SMTP hostname
+  - `PIWI_SMTP_PORT` — port (default: `587`)
+  - `PIWI_SMTP_USER` — SMTP username
+  - `PIWI_SMTP_PASS` — SMTP password (never returned by API)
+  - `PIWI_SMTP_FROM` — from address (`noreply@example.com`)
+  - `PIWI_SMTP_FROM_NAME` — display name (optional)
+  - `PIWI_SMTP_SECURE` — `true` for port 465 TLS (default: `false`)
+  - `PIWI_SITE_URL` — public base URL used in email links (e.g. `https://piwi.example.com`)
 
 ## Dev Commands (from `application/`)
 
@@ -228,6 +263,20 @@ node scripts/db-query.mjs "SELECT id, name FROM projects" --json
 | `src/fixtures.ts`             | Playwright fixtures                         |
 | `src/index.ts`                | Package entry point (class + `wrapConfig` + types) |
 
+## Key server utilities
+
+| File | Purpose |
+|------|---------|
+| `server/utils/email.ts` | `getSmtpConfig()`, `isEmailConfigured()`, `sendEmail({to,subject,html,text})` (lazy transport, no-op if unconfigured), template renderers for reset/invite/verify/test/run-notification emails |
+| `server/utils/account-tokens.ts` | `mintAccountToken(db, userId, purpose)` → plaintext (SHA-256 stored), `validateAccountToken`, `consumeAccountToken`; TTLs: reset=1h, verify=24h, invite=72h |
+| `server/utils/rate-limit.ts` | `checkRateLimit(key, limit, windowMs)` — simple in-memory sliding-window rate limiter |
+| `server/utils/notifications/match.ts` | `matchAndEnqueue(db, event, payload)` — queries active subscriptions, applies filters (branch/status/mute/threshold), inserts `notification_deliveries` rows with dedupeKey |
+| `server/utils/notifications/dispatch.ts` | `sweepOutbox(db)` — dispatches pending deliveries to email/Slack/webhook; handles retry backoff; webhook uses HMAC-SHA256 `X-Piwi-Signature` |
+| `server/utils/notifications/emit.ts` | `emitNotification(db, event, payload)` — gates on `isAuthEnabled`, calls matchAndEnqueue then kicks sweepOutbox fire-and-forget |
+| `server/utils/notifications/run-notifications.ts` | `emitRunNotifications(db, runId)` — emits `run.finished` / `run.failed` / `run.failed.default_branch` / `cluster.new` after run finalization |
+| `server/tasks/notifications/sweep.ts` | Nitro scheduled task (`notifications:sweep`) — calls `sweepOutbox(db)` every minute |
+| `shared/notification-events.ts` | `NOTIFICATION_EVENTS` tuple, `NotificationEvent` type, payload interfaces, `renderEventSubject(event, payload)` |
+
 ## Authentication & Authorization
 
 - **Roles are defined as a TypeScript string enum** (`Role` in `shared/types.ts`): `ADMINISTRATOR`, `REPORTER`, `USER`. Use `Role.ADMINISTRATOR` etc. everywhere — never raw string literals.
@@ -246,7 +295,7 @@ All endpoints MUST call `requireAuth(event)` or `requireAuth(event, [roles])` at
 | `[Role.ADMINISTRATOR, Role.REPORTER, Role.USER]` | All roles | Self-service API key management |
 
 - **Streaming protocol** endpoints (`begin`, `events`, `finish`, `case-files`) use **stream token** auth (not `requireAuth`) — the token is validated against the stored run's `streamToken`.
-- **Public endpoints** (no auth required): `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`, `POST /api/auth/setup`, OAuth flow endpoints, `GET /api/ai/status`.
+- **Public endpoints** (no auth required): `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`, `POST /api/auth/setup`, OAuth flow endpoints, `GET /api/ai/status`, `POST /api/auth/forgot-password`, `POST /api/auth/reset-password`, `GET /api/auth/verify-email`.
 
 ### Implementing Auth on a New Endpoint
 
