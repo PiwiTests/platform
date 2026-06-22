@@ -13,6 +13,8 @@ const props = defineProps<{
   sections: ContextSection[];
   tokenEstimate: number;
   loading: boolean;
+  /** Section id to scroll to and briefly highlight when the modal opens. */
+  focusSection?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -51,6 +53,23 @@ const sectionsByCategory = computed(() => {
   categorize(other, 'Other');
   return categories;
 });
+
+// Scroll to and briefly highlight a section when opened via an evidence citation.
+const highlightedId = ref<string | null>(null);
+watch(
+  () => [props.open, props.focusSection] as const,
+  async ([open, focus]) => {
+    if (!open || !focus) return;
+    await nextTick();
+    const el = document.querySelector(`[data-section-id="${focus}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    highlightedId.value = focus;
+    setTimeout(() => {
+      if (highlightedId.value === focus) highlightedId.value = null;
+    }, 2500);
+  },
+);
 
 function sectionHeading(s: ContextSection): string {
   let h = `## ${s.title}`;
@@ -99,7 +118,13 @@ function sectionHeading(s: ContextSection): string {
         <div v-for="cat in sectionsByCategory" :key="cat.label">
           <p class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">{{ cat.label }}</p>
           <div class="space-y-2">
-            <div v-for="s in cat.items" :key="s.id" class="relative">
+            <div
+              v-for="s in cat.items"
+              :key="s.id"
+              :data-section-id="s.id"
+              class="relative rounded-lg transition-shadow"
+              :class="highlightedId === s.id ? 'ring-2 ring-primary' : ''"
+            >
               <MarkdownPreview :text="sectionHeading(s) + '\n\n' + s.markdown" />
               <UButton
                 :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"

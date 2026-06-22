@@ -37,6 +37,13 @@ const fileInputRef = ref<HTMLInputElement | null>(null);
 
 const showAiContext = ref(false);
 const showAdditionalContext = ref(false);
+const focusSection = ref<string | null>(null);
+
+/** Open the AI context modal focused on a section (from an evidence citation). */
+function onViewSection(sectionId: string) {
+  focusSection.value = sectionId;
+  showAiContext.value = true;
+}
 
 function buildPromptContext() {
   const parts: string[] = [];
@@ -106,7 +113,11 @@ function isStale(d: FailureDiagnosis) {
       :sections="contextSections"
       :token-estimate="tokenEstimate"
       :loading="contextLoading"
-      @update:open="showAiContext = $event"
+      :focus-section="focusSection"
+      @update:open="
+        showAiContext = $event;
+        if (!$event) focusSection = null;
+      "
       @refresh="refreshContext"
     />
 
@@ -195,9 +206,8 @@ function isStale(d: FailureDiagnosis) {
       </div>
 
       <!-- Diagnose button -->
-      <div class="pt-1">
+      <div v-if="!diagnosis || diagnosis.status === 'failed' || isStale(diagnosis)" class="pt-1">
         <UButton
-          v-if="!diagnosis || diagnosis.status === 'failed' || isStale(diagnosis)"
           icon="i-lucide-sparkles"
           size="sm"
           color="primary"
@@ -207,25 +217,33 @@ function isStale(d: FailureDiagnosis) {
         >
           Diagnose with AI
         </UButton>
-        <div
-          v-else-if="diagnosis.status === 'running' && !isStale(diagnosis)"
-          class="flex items-center gap-2 text-sm text-gray-500"
-        >
-          <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
+      </div>
+
+      <!-- Loading skeleton while a diagnosis runs -->
+      <div
+        v-if="diagnosis?.status === 'running' && !isStale(diagnosis)"
+        class="space-y-3 rounded-lg border border-default p-4 bg-elevated/30"
+      >
+        <div class="flex items-center gap-2 text-sm text-gray-500">
+          <UIcon name="i-lucide-loader-2" class="size-4 animate-spin text-primary" />
           <span>Analyzing failure cluster\u2026</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="size-12 rounded-full bg-elevated animate-pulse shrink-0" />
+          <div class="flex-1 space-y-2">
+            <div class="h-3 w-1/3 rounded bg-elevated animate-pulse" />
+            <div class="h-3 w-3/4 rounded bg-elevated animate-pulse" />
+          </div>
+        </div>
+        <div class="space-y-2">
+          <div class="h-3 w-full rounded bg-elevated animate-pulse" />
+          <div class="h-3 w-5/6 rounded bg-elevated animate-pulse" />
+          <div class="h-3 w-2/3 rounded bg-elevated animate-pulse" />
         </div>
       </div>
 
       <!-- Diagnosis result -->
-      <DiagnosisResult :diagnosis="diagnosis" :last-seen-run-id="lastSeenRunId" />
-
-      <div
-        v-if="diagnosis?.status === 'running' && !isStale(diagnosis)"
-        class="flex items-center gap-2 p-4 text-sm text-gray-500 border border-default rounded-lg"
-      >
-        <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
-        <span>Analyzing failure cluster\u2026</span>
-      </div>
+      <DiagnosisResult v-else :diagnosis="diagnosis" :last-seen-run-id="lastSeenRunId" @view-section="onViewSection" />
     </template>
 
     <!-- AI not configured -->

@@ -207,9 +207,87 @@ const severityColors: Record<string, 'error' | 'warning' | 'info' | 'neutral'> =
   low: 'neutral',
 };
 
+const emit = defineEmits<{
+  /** Request the parent to open the AI context modal focused on a section. */
+  'view-section': [sectionId: string];
+}>();
+
 const confidenceScore = computed<number | null>(() => {
   const v = details.value?.confidenceScore;
   return typeof v === 'number' ? v : null;
+});
+
+/** A diagnosis we should visually flag as needing more evidence. */
+const lowConfidence = computed(() => {
+  const s = confidenceScore.value;
+  if (s !== null) return s < 50;
+  return props.diagnosis?.confidence === 'low' || props.diagnosis?.category === 'unknown';
+});
+
+/** Category icon for the header. */
+const categoryIcons: Record<string, string> = {
+  'app-bug': 'i-lucide-bug',
+  'test-bug': 'i-lucide-flask-conical',
+  'flaky-test': 'i-lucide-dice-5',
+  infrastructure: 'i-lucide-server',
+  environment: 'i-lucide-settings-2',
+  unknown: 'i-lucide-circle-help',
+};
+
+/** Confidence gauge ring color (text color → stroke=currentColor). */
+const gaugeColorClass = computed(() => {
+  const c = props.diagnosis?.confidence;
+  if (c === 'high') return 'text-emerald-500';
+  if (c === 'medium') return 'text-amber-500';
+  return 'text-rose-500';
+});
+
+/** Short labels for the `[sectionId]` evidence citations. */
+const SECTION_LABELS: Record<string, string> = {
+  clusterSummary: 'Cluster',
+  sampleError: 'Error',
+  executionError: 'Error',
+  affectedTests: 'Tests',
+  testSource: 'Source',
+  steps: 'Steps',
+  failingSteps: 'Steps',
+  console: 'Console',
+  networkRequests: 'Network',
+  serverLogs: 'Server logs',
+  webVitals: 'Web vitals',
+  ariaSnapshot: 'ARIA',
+  browserDistribution: 'Browsers',
+  recurrenceFlakiness: 'Flakiness',
+  passedPeers: 'Peers',
+  scmInvestigation: 'SCM diff',
+  selectedCommits: 'Commits',
+  priorDiagnosis: 'Prior',
+  tracePointers: 'Traces',
+};
+
+function sectionLabel(id: string): string {
+  return SECTION_LABELS[id] ?? id;
+}
+
+/** Split an evidence line into its prose and any `[sectionId]` citations. */
+function parseEvidence(raw: string): { text: string; citations: string[] } {
+  const citations: string[] = [];
+  const text = raw
+    .replace(/\[([a-zA-Z][a-zA-Z0-9]*)\]/g, (_m, id) => {
+      if (SECTION_LABELS[id]) {
+        citations.push(id);
+        return '';
+      }
+      return _m;
+    })
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return { text, citations };
+}
+
+const evidenceParsed = computed(() => {
+  const ev = details.value?.evidence as string[] | undefined;
+  return Array.isArray(ev) ? ev.map(parseEvidence) : [];
 });
 
 /** Hypotheses beyond the primary one (index 0), shown as ranked alternatives. */
@@ -217,6 +295,8 @@ const alternateHypotheses = computed<Array<{ category?: string; rootCause?: stri
   const h = details.value?.hypotheses;
   return Array.isArray(h) ? h.slice(1) : [];
 });
+
+const showAlternates = ref(false);
 </script>
 
 <template>
@@ -240,56 +320,104 @@ const alternateHypotheses = computed<Array<{ category?: string; rootCause?: stri
       v-if="diagnosis && diagnosis.status === 'completed'"
       class="space-y-3 rounded-lg border border-default p-4 bg-elevated/30"
     >
-      <div class="flex items-start justify-between gap-2">
-        <div v-if="diagnosis.category || diagnosis.confidence" class="flex flex-wrap items-center gap-1.5">
-          <UBadge
-            v-if="diagnosis.category"
-            :color="categoryColors[diagnosis.category] || 'neutral'"
-            variant="subtle"
-            size="sm"
-          >
-            {{ diagnosis.category }}
-          </UBadge>
-          <UBadge
-            v-if="diagnosis.confidence"
-            :color="confidenceColors[diagnosis.confidence] || 'neutral'"
-            variant="outline"
-            size="sm"
-          >
-            {{ diagnosis.confidence }} confidence<template v-if="confidenceScore !== null">
-              · {{ confidenceScore }}/100</template
-            >
-          </UBadge>
-          <UBadge
-            v-if="details?.severity"
-            :color="severityColors[details.severity] || 'neutral'"
-            variant="soft"
-            size="sm"
-          >
-            {{ details.severity }} severity
-          </UBadge>
-          <span v-if="details?.affectedArea" class="text-xs text-gray-500 inline-flex items-center gap-1">
-            <UIcon name="i-lucide-crosshair" class="size-3 shrink-0" />
-            {{ details.affectedArea }}
-          </span>
+      <!-- Header: confidence gauge + category/severity badges + summary -->
+      <div class="flex items-start gap-3">
+        <div v-if="confidenceScore !== null" class="shrink-0" :title="`Confidence ${confidenceScore}/100`">
+          <div class="relative size-12">
+            <svg viewBox="0 0 36 36" class="size-12 -rotate-90">
+              <circle
+                cx="18"
+                cy="18"
+                r="15.9155"
+                fill="none"
+                class="text-gray-200 dark:text-gray-700"
+                stroke="currentColor"
+                stroke-width="3"
+              />
+              <circle
+                cx="18"
+                cy="18"
+                r="15.9155"
+                fill="none"
+                :class="gaugeColorClass"
+                stroke="currentColor"
+                stroke-width="3"
+                stroke-linecap="round"
+                :stroke-dasharray="`${confidenceScore} 100`"
+              />
+            </svg>
+            <span class="absolute inset-0 flex items-center justify-center text-xs font-semibold">
+              {{ confidenceScore }}
+            </span>
+          </div>
         </div>
-        <UButton
-          :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
-          size="xs"
-          color="neutral"
-          variant="ghost"
-          title="Copy full diagnosis (Markdown + HTML)"
-          @click="copyDiagnosis"
-        />
-      </div>
 
-      <p v-if="diagnosis.summary" class="text-sm font-medium">{{ diagnosis.summary }}</p>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex flex-wrap items-center gap-1.5">
+              <UBadge
+                v-if="diagnosis.category"
+                :color="categoryColors[diagnosis.category] || 'neutral'"
+                variant="subtle"
+                size="sm"
+                :icon="categoryIcons[diagnosis.category]"
+              >
+                {{ diagnosis.category }}
+              </UBadge>
+              <UBadge
+                v-if="diagnosis.confidence"
+                :color="confidenceColors[diagnosis.confidence] || 'neutral'"
+                variant="outline"
+                size="sm"
+              >
+                {{ diagnosis.confidence }} confidence
+              </UBadge>
+              <UBadge
+                v-if="details?.severity"
+                :color="severityColors[details.severity] || 'neutral'"
+                variant="soft"
+                size="sm"
+              >
+                {{ details.severity }} severity
+              </UBadge>
+              <span v-if="details?.affectedArea" class="text-xs text-gray-500 inline-flex items-center gap-1">
+                <UIcon name="i-lucide-crosshair" class="size-3 shrink-0" />
+                {{ details.affectedArea }}
+              </span>
+            </div>
+            <UButton
+              :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              title="Copy full diagnosis (Markdown + HTML)"
+              @click="copyDiagnosis"
+            />
+          </div>
+          <p v-if="diagnosis.summary" class="text-sm font-medium mt-1.5">{{ diagnosis.summary }}</p>
+        </div>
+      </div>
 
       <p v-if="diagnosis.rootCause" class="text-sm text-gray-600 dark:text-gray-400">{{ diagnosis.rootCause }}</p>
 
-      <ul v-if="details?.evidence?.length" class="list-disc list-inside space-y-1">
-        <li v-for="(e, i) in details.evidence" :key="i" class="text-sm text-gray-600 dark:text-gray-400">
-          {{ e }}
+      <ul v-if="evidenceParsed.length" class="space-y-1">
+        <li
+          v-for="(e, i) in evidenceParsed"
+          :key="i"
+          class="text-sm text-gray-600 dark:text-gray-400 flex flex-wrap items-baseline gap-x-1.5 gap-y-1"
+        >
+          <span class="text-gray-400 shrink-0">&bull;</span>
+          <span>{{ e.text }}</span>
+          <button
+            v-for="c in e.citations"
+            :key="c"
+            class="inline-flex items-center gap-0.5 rounded bg-elevated border border-default px-1.5 text-xs text-gray-500 hover:text-primary hover:border-primary transition-colors"
+            :title="`View ${sectionLabel(c)} in the AI context`"
+            @click="emit('view-section', c)"
+          >
+            <UIcon name="i-lucide-link" class="size-2.5" />
+            {{ sectionLabel(c) }}
+          </button>
         </li>
       </ul>
 
@@ -333,24 +461,54 @@ const alternateHypotheses = computed<Array<{ category?: string; rootCause?: stri
       </div>
 
       <div v-if="alternateHypotheses.length" class="space-y-1.5">
-        <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Other hypotheses considered</p>
-        <div
-          v-for="(h, i) in alternateHypotheses"
-          :key="i"
-          class="rounded-md border border-default bg-elevated/40 px-2.5 py-1.5"
+        <button
+          class="flex items-center gap-1.5 text-xs font-medium text-gray-500 uppercase tracking-wide hover:text-gray-700 dark:hover:text-gray-300"
+          @click="showAlternates = !showAlternates"
         >
-          <div class="flex items-center gap-1.5">
-            <UBadge v-if="h.category" :color="categoryColors[h.category] || 'neutral'" variant="subtle" size="sm">
-              {{ h.category }}
-            </UBadge>
-            <span v-if="typeof h.likelihood === 'number'" class="text-xs text-gray-400">{{ h.likelihood }}/100</span>
+          <UIcon :name="showAlternates ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5" />
+          Other hypotheses considered ({{ alternateHypotheses.length }})
+        </button>
+        <div v-if="showAlternates" class="space-y-1.5">
+          <div
+            v-for="(h, i) in alternateHypotheses"
+            :key="i"
+            class="rounded-md border border-default bg-elevated/40 px-2.5 py-1.5"
+          >
+            <div class="flex items-center gap-1.5">
+              <UBadge v-if="h.category" :color="categoryColors[h.category] || 'neutral'" variant="subtle" size="sm">
+                {{ h.category }}
+              </UBadge>
+              <div v-if="typeof h.likelihood === 'number'" class="flex items-center gap-1.5 flex-1 min-w-0">
+                <div class="h-1.5 flex-1 max-w-24 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                  <div
+                    class="h-full rounded-full bg-gray-400 dark:bg-gray-500"
+                    :style="{ width: `${h.likelihood}%` }"
+                  />
+                </div>
+                <span class="text-xs text-gray-400 shrink-0">{{ h.likelihood }}/100</span>
+              </div>
+            </div>
+            <p v-if="h.rootCause" class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ h.rootCause }}</p>
           </div>
-          <p v-if="h.rootCause" class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ h.rootCause }}</p>
         </div>
       </div>
 
-      <div v-if="details?.investigationSteps?.length" class="space-y-1">
-        <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">To confirm this diagnosis</p>
+      <div
+        v-if="details?.investigationSteps?.length"
+        class="space-y-1.5"
+        :class="
+          lowConfidence
+            ? 'rounded-lg border border-amber-300/60 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/10 p-3'
+            : ''
+        "
+      >
+        <p
+          class="text-xs font-medium uppercase tracking-wide flex items-center gap-1.5"
+          :class="lowConfidence ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500'"
+        >
+          <UIcon v-if="lowConfidence" name="i-lucide-flask-conical" class="size-3.5 shrink-0" />
+          {{ lowConfidence ? 'Low confidence — gather more evidence' : 'To confirm this diagnosis' }}
+        </p>
         <ul class="space-y-1">
           <li
             v-for="(s, i) in details.investigationSteps"
