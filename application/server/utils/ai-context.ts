@@ -11,6 +11,7 @@ import {
 import type { FailureCluster, FailureDiagnosis } from '../database/schema';
 import type { DiagnosisContextCoverage } from '~~/types/api';
 import { stripAnsi } from '#shared/error-fingerprint';
+import { DIAGNOSIS_SECTIONS } from '#shared/diagnosis-sections';
 import { computeRegressionContext, normalizeGitUrl } from './regression-context';
 import { createScmProvider, detectScmProvider } from './scm';
 import { MAX_RAW_DIFF_BYTES } from './scm/ScmProvider';
@@ -59,35 +60,10 @@ function section(
 }
 
 /**
- * Evidence sections the model should know to expect, with a human label. Used to
- * tell the model — up front — which evidence is present, truncated or absent so
- * it can calibrate `confidenceScore`. Order roughly mirrors importance.
- */
-const EXPECTED_SECTIONS: Array<[SectionId, string]> = [
-  ['clusterSummary', 'Failure cluster summary'],
-  ['sampleError', 'Raw error message'],
-  ['executionError', 'Representative execution error'],
-  ['affectedTests', 'Affected tests'],
-  ['testSource', 'Test source code'],
-  ['steps', 'Test steps'],
-  ['failingSteps', 'Failing steps'],
-  ['console', 'Browser console logs'],
-  ['networkRequests', 'Network requests'],
-  ['serverLogs', 'Backend server logs'],
-  ['webVitals', 'Web vitals'],
-  ['ariaSnapshot', 'ARIA snapshot'],
-  ['browserDistribution', 'Browser distribution'],
-  ['recurrenceFlakiness', 'Recurrence & flakiness'],
-  ['passedPeers', 'Passing peers in same file'],
-  ['scmInvestigation', 'SCM diff since last green'],
-  ['selectedCommits', 'Manually selected commits'],
-  ['priorDiagnosis', 'Prior diagnosis & triage'],
-];
-
-/**
  * Build the "## Data Coverage" block: a compact present/truncated/absent map of
  * the evidence available for this diagnosis, prepended to the AI context so the
- * model can ground its confidence in what it could actually see.
+ * model can ground its confidence in what it could actually see. The expected
+ * section list is shared with the UI via `#shared/diagnosis-sections`.
  */
 function buildCoverageBlock(sections: ContextSection[]): string {
   const byId = new Map<string, ContextSection>();
@@ -98,7 +74,7 @@ function buildCoverageBlock(sections: ContextSection[]): string {
     'Evidence available for this diagnosis. Absent or truncated sections mean you are working with partial information — calibrate confidenceScore accordingly and do not assert what you could not see.',
     '',
   ];
-  for (const [id, label] of EXPECTED_SECTIONS) {
+  for (const { id, label } of DIAGNOSIS_SECTIONS) {
     const s = byId.get(id);
     const state = !s ? 'absent' : s.truncated ? 'present (truncated)' : 'present';
     lines.push(`- [${id}] ${label}: ${state}`);

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { FailureDiagnosis } from '~~/server/database/schema';
 import { formatRelativeTime } from '~/utils';
+import { DIAGNOSIS_SECTION_SHORT, isKnownSectionId } from '#shared/diagnosis-sections';
 
 const props = defineProps<{
   diagnosis: FailureDiagnosis | null;
@@ -210,7 +211,20 @@ const severityColors: Record<string, 'error' | 'warning' | 'info' | 'neutral'> =
 const emit = defineEmits<{
   /** Request the parent to open the AI context modal focused on a section. */
   'view-section': [sectionId: string];
+  /** Pre-fill the additional-context box (assisted iteration). */
+  'prefill-context': [text: string];
 }>();
+
+/** Seed the additional-context box with the investigation checklist to refine. */
+function prefillFromInvestigation() {
+  const steps = (details.value?.investigationSteps as string[]) ?? [];
+  if (!steps.length) return;
+  const text = [
+    'Investigation findings (fill in the results, then re-diagnose):',
+    ...steps.map((s) => `- ${s}: `),
+  ].join('\n');
+  emit('prefill-context', text);
+}
 
 const confidenceScore = computed<number | null>(() => {
   const v = details.value?.confidenceScore;
@@ -242,31 +256,8 @@ const gaugeColorClass = computed(() => {
   return 'text-rose-500';
 });
 
-/** Short labels for the `[sectionId]` evidence citations. */
-const SECTION_LABELS: Record<string, string> = {
-  clusterSummary: 'Cluster',
-  sampleError: 'Error',
-  executionError: 'Error',
-  affectedTests: 'Tests',
-  testSource: 'Source',
-  steps: 'Steps',
-  failingSteps: 'Steps',
-  console: 'Console',
-  networkRequests: 'Network',
-  serverLogs: 'Server logs',
-  webVitals: 'Web vitals',
-  ariaSnapshot: 'ARIA',
-  browserDistribution: 'Browsers',
-  recurrenceFlakiness: 'Flakiness',
-  passedPeers: 'Peers',
-  scmInvestigation: 'SCM diff',
-  selectedCommits: 'Commits',
-  priorDiagnosis: 'Prior',
-  tracePointers: 'Traces',
-};
-
 function sectionLabel(id: string): string {
-  return SECTION_LABELS[id] ?? id;
+  return DIAGNOSIS_SECTION_SHORT[id] ?? id;
 }
 
 /** Split an evidence line into its prose and any `[sectionId]` citations. */
@@ -274,7 +265,7 @@ function parseEvidence(raw: string): { text: string; citations: string[] } {
   const citations: string[] = [];
   const text = raw
     .replace(/\[([a-zA-Z][a-zA-Z0-9]*)\]/g, (_m, id) => {
-      if (SECTION_LABELS[id]) {
+      if (isKnownSectionId(id)) {
         citations.push(id);
         return '';
       }
@@ -517,6 +508,18 @@ const showAlternates = ref(false);
             {{ s }}
           </li>
         </ul>
+        <UButton
+          v-if="lowConfidence"
+          size="xs"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-clipboard-pen"
+          class="mt-1"
+          title="Pre-fill the additional-context box with these checks, then re-diagnose"
+          @click="prefillFromInvestigation"
+        >
+          Add to context & refine
+        </UButton>
       </div>
 
       <ul v-if="details?.preventionTips?.length" class="space-y-1">

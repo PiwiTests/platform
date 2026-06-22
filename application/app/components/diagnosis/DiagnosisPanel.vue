@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { FailureDiagnosis } from '~~/server/database/schema';
+import { extractCitedSectionIds } from '#shared/diagnosis-sections';
 
 const props = defineProps<{
   clusterId?: number;
@@ -43,6 +44,25 @@ const focusSection = ref<string | null>(null);
 function onViewSection(sectionId: string) {
   focusSection.value = sectionId;
   showAiContext.value = true;
+}
+
+/** Section ids the diagnosis actually cited — highlighted in the context modal. */
+const citedSections = computed<string[]>(() => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const det = diagnosis.value?.details as any;
+  if (!det) return [];
+  const texts: string[] = [];
+  if (Array.isArray(det.evidence)) texts.push(...det.evidence);
+  if (Array.isArray(det.hypotheses)) {
+    for (const h of det.hypotheses) if (Array.isArray(h?.evidence)) texts.push(...h.evidence);
+  }
+  return extractCitedSectionIds(texts);
+});
+
+/** Assisted iteration: pre-fill the additional-context box and open it. */
+function onPrefillContext(text: string) {
+  additionalContext.value = additionalContext.value ? `${additionalContext.value}\n\n${text}` : text;
+  showAdditionalContext.value = true;
 }
 
 function buildPromptContext() {
@@ -114,6 +134,7 @@ function isStale(d: FailureDiagnosis) {
       :token-estimate="tokenEstimate"
       :loading="contextLoading"
       :focus-section="focusSection"
+      :cited-sections="citedSections"
       @update:open="
         showAiContext = $event;
         if (!$event) focusSection = null;
@@ -243,7 +264,13 @@ function isStale(d: FailureDiagnosis) {
       </div>
 
       <!-- Diagnosis result -->
-      <DiagnosisResult v-else :diagnosis="diagnosis" :last-seen-run-id="lastSeenRunId" @view-section="onViewSection" />
+      <DiagnosisResult
+        v-else
+        :diagnosis="diagnosis"
+        :last-seen-run-id="lastSeenRunId"
+        @view-section="onViewSection"
+        @prefill-context="onPrefillContext"
+      />
     </template>
 
     <!-- AI not configured -->
