@@ -120,10 +120,14 @@ function onCancel() {
             </UFormField>
 
             <UFormField
-              label="AI diagnosis instructions"
               name="diagnosisInstructions"
-              description="Project-specific context sent to the AI when diagnosing failures from this project. Combined with global instructions from Settings → AI."
+              description="Combined with the global instructions from Settings → AI."
             >
+              <template #label>
+                <span class="inline-flex items-center gap-1">
+                  AI diagnosis instructions <HelpHint topic="project.ai-instructions" />
+                </span>
+              </template>
               <UTextarea
                 v-model="state.diagnosisInstructions"
                 placeholder="e.g. This project tests the payment checkout flow. The backend uses Stripe for payments and the payment API is at /api/v2/payments. Database errors are usually caused by connection pool exhaustion under load."
@@ -133,14 +137,16 @@ function onCancel() {
             </UFormField>
 
             <UFormField
-              label="SCM token"
               name="scmToken"
               :description="
                 hasToken
                   ? 'Leave empty to keep the stored token, enter a new value to replace it, or save empty to remove it'
-                  : 'Optional per-project SCM token for GitHub, GitLab, or Bitbucket API access. Used by AI diagnosis to fetch changed files. Falls back to the global SCM token if not set.'
+                  : 'For GitHub, GitLab, or Bitbucket. Falls back to the global SCM token if not set.'
               "
             >
+              <template #label>
+                <span class="inline-flex items-center gap-1">SCM token <HelpHint topic="project.scm-token" /></span>
+              </template>
               <UInput
                 v-model="state.scmToken"
                 type="password"

@@ -73,7 +73,9 @@ function sectionHeading(s: ContextSection): string {
     <template #header>
       <div class="flex items-center justify-between w-full">
         <div class="flex items-center gap-2">
-          <span class="font-semibold">Context sent to AI</span>
+          <span class="font-semibold inline-flex items-center gap-1">
+            Context sent to AI <HelpHint topic="cluster.context-preview" />
+          </span>
           <span class="text-xs text-gray-400">~{{ tokenEstimate }} tokens</span>
         </div>
         <div class="flex items-center gap-1">
@@ -91,9 +93,7 @@ function sectionHeading(s: ContextSection): string {
     </template>
 
     <template #body>
-      <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
-        Full prompt that would be sent to the AI provider. Copy individual sections or the full context below.
-      </p>
+      <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Copy individual sections or the full context below.</p>
 
       <div class="space-y-4">
         <div v-for="cat in sectionsByCategory" :key="cat.label">

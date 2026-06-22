@@ -62,9 +62,10 @@ const totalCases = computed(() => groups.value?.reduce((sum, g) => sum + g.caseC
 
     <template v-else-if="groups && groups.length">
       <div class="flex items-center justify-between gap-3">
-        <p class="text-sm text-gray-500 dark:text-gray-400">
+        <p class="text-sm text-gray-500 dark:text-gray-400 inline-flex items-center gap-1">
           {{ totalCases }} failing {{ totalCases === 1 ? 'test' : 'tests' }} across {{ groups.length }}
-          {{ groups.length === 1 ? 'group' : 'groups' }} — each group likely shares one root cause
+          {{ groups.length === 1 ? 'group' : 'groups' }}
+          <HelpHint topic="cluster.concept" />
         </p>
         <UButton
           v-if="allFailedCases.length > 0"

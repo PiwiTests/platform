@@ -387,7 +387,7 @@ async function handleInviteUser(user: UserDetails) {
       />
 
       <!-- Users table -->
-      <SectionCard v-if="users.length > 0" title="Users" :count="users.length">
+      <SectionCard v-if="users.length > 0" title="Users" :count="users.length" help="settings.users">
         <UTable :data="users" :columns="columns">
           <template #username-cell="{ row }">
             {{ row.original.username }}
@@ -532,6 +532,12 @@ async function handleInviteUser(user: UserDetails) {
         }
       "
     >
+      <template #title>
+        <span class="inline-flex items-center gap-1">
+          API keys – {{ selectedUserForKeys?.username }}
+          <HelpHint topic="settings.api-keys" />
+        </span>
+      </template>
       <template #body>
         <div class="space-y-4">
           <p class="text-sm text-muted">
@@ -682,6 +688,12 @@ async function handleInviteUser(user: UserDetails) {
       size="xl"
       @update:open="isProjectAccessModalOpen = $event"
     >
+      <template #title>
+        <span class="inline-flex items-center gap-1">
+          Project access – {{ selectedUserForAccess?.username }}
+          <HelpHint topic="project.members" />
+        </span>
+      </template>
       <template #body>
         <div class="space-y-6">
           <p class="text-sm text-muted">

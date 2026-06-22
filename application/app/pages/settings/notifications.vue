@@ -206,7 +206,7 @@ function eventLabel(e: string) {
 <template>
   <div class="space-y-6">
     <!-- SMTP status (read-only, admin only) -->
-    <SectionCard icon="i-lucide-mail" title="SMTP email delivery">
+    <SectionCard icon="i-lucide-mail" title="SMTP email delivery" help="settings.smtp">
       <template #subtitle> Configure SMTP via environment variables. The connection cannot be changed here. </template>
 
       <div class="space-y-3">
@@ -263,11 +263,7 @@ PIWI_SMTP_FROM_NAME=Piwi Dashboard"
 
     <!-- Channels (gated on auth) -->
     <template v-if="authEnabled">
-      <SectionCard icon="i-lucide-radio" title="Notification channels" :count="channels.length">
-        <template #subtitle>
-          Channels are destinations for notifications: email addresses, Slack webhooks, or HTTP endpoints.
-        </template>
-
+      <SectionCard icon="i-lucide-radio" title="Notification channels" :count="channels.length" help="notifications.channels">
         <template #actions>
           <UButton size="sm" icon="i-lucide-plus" @click="showNewChannel = !showNewChannel"> Add channel </UButton>
         </template>
@@ -366,9 +362,7 @@ PIWI_SMTP_FROM_NAME=Piwi Dashboard"
       </SectionCard>
 
       <!-- Subscriptions -->
-      <SectionCard icon="i-lucide-bell" title="My subscriptions" :count="subs.length">
-        <template #subtitle> Manage which events trigger notifications through your channels. </template>
-
+      <SectionCard icon="i-lucide-bell" title="My subscriptions" :count="subs.length" help="notifications.subscriptions">
         <div v-if="subs.length === 0" class="text-sm text-muted py-4 text-center">
           No subscriptions yet. Use the <strong>Subscribe</strong> bell on a project page to get started.
         </div>

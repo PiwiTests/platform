@@ -236,7 +236,7 @@ const envVars = computed(() => {
         description="PIWI_AI_* environment variables are set. The form below reflects the current environment configuration and cannot be changed here."
       />
 
-      <SectionCard title="Provider configuration">
+      <SectionCard title="Provider configuration" help="settings.ai-provider">
         <div class="space-y-4">
           <UFormField label="Provider">
             <USelect v-model="provider" :items="providerOptions" :disabled="settings?.envManaged" class="w-full" />
@@ -341,12 +341,8 @@ const envVars = computed(() => {
         </template>
       </SectionCard>
 
-      <SectionCard title="Repository access">
-        <template #subtitle>
-          Optional SCM token used to fetch changed files between the last passing and current failing run. Works with
-          GitHub, GitLab, and Bitbucket. Without a token, only public repositories are accessible (60 req/hr rate
-          limit). Required for private repositories. Per-project tokens can be set in the project edit page.
-        </template>
+      <SectionCard title="Repository access" help="project.scm-token">
+        <template #subtitle> Optional — required for private repositories. Per-project tokens override this. </template>
 
         <UFormField
           label="SCM token"
@@ -373,12 +369,7 @@ const envVars = computed(() => {
         </template>
       </SectionCard>
 
-      <SectionCard title="Global analysis instructions">
-        <template #subtitle>
-          Applied to every diagnosis, across all projects. Use this to set general preferences: preferred remediation
-          steps, tone, focus areas, or output format.
-        </template>
-
+      <SectionCard title="Global analysis instructions" help="settings.ai-instructions">
         <UTextarea
           v-model="customInstructions"
           :rows="6"
@@ -400,11 +391,8 @@ const envVars = computed(() => {
         </template>
       </SectionCard>
 
-      <SectionCard title="Diagnosis context limits">
-        <template #subtitle>
-          Caps on how much evidence is packed into each AI diagnosis (and therefore token cost). Leave a field empty to
-          use its default. Fields set via environment variables are read-only.
-        </template>
+      <SectionCard title="Diagnosis context limits" help="settings.ai-limits">
+        <template #subtitle> Leave a field empty to use its default; env-managed fields are read-only. </template>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
           <UFormField

@@ -153,7 +153,9 @@ const executionColumns: TableColumn<ExecutionRow>[] = [
             </p>
           </div>
           <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3">
-            <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Flaky</p>
+            <p class="text-xs font-medium text-gray-500 uppercase tracking-wider inline-flex items-center gap-1">
+              Flaky <HelpHint topic="case.flaky-count" />
+            </p>
             <p class="text-xl font-bold mt-0.5" :class="(testCase?.flakyRuns ?? 0) > 0 ? 'text-purple-600' : ''">
               {{ testCase?.flakyRuns ?? 0 }}
             </p>
@@ -168,23 +170,11 @@ const executionColumns: TableColumn<ExecutionRow>[] = [
 
         <!-- Evolution charts -->
         <div v-if="historyData && historyData.length > 1" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <UCard>
-            <template #header>
-              <div class="flex items-center gap-2">
-                <UIcon name="i-lucide-trending-up" class="size-4 text-primary" />
-                <span class="text-sm font-medium">Duration trend</span>
-              </div>
-            </template>
+          <ChartCard title="Duration trend" icon="i-lucide-trending-up" help="case.history-chart">
             <TestCaseHistoryChart :data="historyData" :height="200" />
-          </UCard>
+          </ChartCard>
 
-          <UCard>
-            <template #header>
-              <div class="flex items-center gap-2">
-                <UIcon name="i-lucide-check-circle" class="size-4 text-primary" />
-                <span class="text-sm font-medium">Status history</span>
-              </div>
-            </template>
+          <ChartCard title="Status history" icon="i-lucide-check-circle" help="case.sparkline">
             <div class="flex items-center gap-1 flex-wrap max-h-[200px] overflow-y-auto py-1">
               <UTooltip
                 v-for="(point, i) in historyData"
@@ -207,7 +197,7 @@ const executionColumns: TableColumn<ExecutionRow>[] = [
               </UTooltip>
               <span v-if="historyData.length === 0" class="text-sm text-gray-400">No history yet</span>
             </div>
-          </UCard>
+          </ChartCard>
         </div>
 
         <div v-else-if="historyData && historyData.length <= 1" class="text-center py-6 text-gray-400">
@@ -292,6 +282,7 @@ const executionColumns: TableColumn<ExecutionRow>[] = [
           v-if="testCase?.failureClusters?.length"
           icon="i-lucide-bug"
           :title="`Failure clusters (${testCase.failureClusters.length})`"
+          help="cluster.concept"
         >
           <div class="space-y-2">
             <div
@@ -321,7 +312,7 @@ const executionColumns: TableColumn<ExecutionRow>[] = [
         </SectionCard>
 
         <!-- Entity links -->
-        <SectionCard v-if="testCase?.links?.length" icon="i-lucide-link" title="Links">
+        <SectionCard v-if="testCase?.links?.length" icon="i-lucide-link" title="Links" help="shared.entity-links">
           <EntityLinks
             entity-type="test_case"
             :entity-id="Number(testCaseId)"

@@ -225,10 +225,13 @@ defineExpose({ scrollToCase });
             <UIcon name="i-lucide-folder-tree" class="size-3.5" />
           </button>
         </div>
-        <span v-if="isLive" class="text-sm text-gray-500 tabular-nums"> {{ testCases.length }} completed </span>
-        <span v-else class="text-sm text-gray-500 tabular-nums">
+        <span v-if="isLive" class="text-sm text-gray-500 tabular-nums inline-flex items-center gap-1">
+          {{ testCases.length }} completed <HelpHint topic="run.live" />
+        </span>
+        <span v-else class="text-sm text-gray-500 tabular-nums inline-flex items-center gap-1">
           {{ filteredTestCases.length
           }}{{ filteredTestCases.length !== testCases.length ? ` / ${testCases.length}` : '' }} cases
+          <HelpHint topic="run.test-cases" />
         </span>
       </div>
       <div class="flex items-center gap-2">

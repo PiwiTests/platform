@@ -65,8 +65,9 @@ const columns: TableColumn<SpecHealth>[] = [
   <UCard>
     <template #header>
       <div class="flex items-center justify-between">
-        <p class="text-sm text-gray-500">
+        <p class="text-sm text-gray-500 inline-flex items-center gap-1">
           Spec-file health overview — pass rate, flaky rate, and failure count per spec prefix
+          <HelpHint topic="project.spec-health" />
         </p>
         <USelect v-model="days" :items="DAY_OPTIONS" size="xs" class="w-32" />
       </div>

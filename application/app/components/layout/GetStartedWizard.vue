@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { docsUrl } from '~~/shared/docs';
+
 // Reflect the actual dashboard URL so the generated config snippet is correct
 const serverUrl = ref('http://localhost:3000');
 onMounted(() => {
@@ -104,7 +106,9 @@ const goFurtherOpen = ref(false);
           <UIcon name="i-lucide-rocket" class="size-5 text-primary" />
         </div>
         <div>
-          <h2 class="text-xl font-semibold">Get started in 60 seconds</h2>
+          <h2 class="text-xl font-semibold inline-flex items-center gap-1">
+            Get started in 60 seconds <HelpHint topic="home.get-started" />
+          </h2>
           <p class="text-sm text-gray-500 dark:text-gray-400">Send your first test run in four steps</p>
         </div>
       </div>
@@ -202,12 +206,10 @@ const goFurtherOpen = ref(false);
       <div class="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
         <span
           >Need more options? See the
-          <a href="https://phenx.github.io/piwi-dashboard/reporter" target="_blank" class="text-primary hover:underline"
-            >full reporter docs</a
-          >.</span
+          <DocLink to="reporter" no-icon class="text-primary hover:underline">full reporter docs</DocLink>.</span
         >
         <UButton
-          to="https://phenx.github.io/piwi-dashboard/demo/"
+          :to="docsUrl('demo/')"
           target="_blank"
           variant="ghost"
           size="sm"

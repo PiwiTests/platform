@@ -4,7 +4,12 @@
  * a w-4 icon + text-sm title, with an optional smaller subtitle line below. Use
  * the `actions` slot for header-right controls and the default slot for the body.
  * The `subtitle` slot overrides the `subtitle` prop when richer markup is needed.
+ *
+ * Pass `help` (a registry topic key) to render an inline `HelpHint` beside the
+ * title.
  */
+import type { HelpTopicKey } from '~/utils/help-content';
+
 withDefaults(
   defineProps<{
     title: string;
@@ -12,6 +17,8 @@ withDefaults(
     subtitle?: string;
     /** Tailwind color class for the header icon. */
     iconClass?: string;
+    /** Inline-help topic rendered next to the title. */
+    help?: HelpTopicKey;
   }>(),
   { iconClass: 'text-primary' },
 );
@@ -24,7 +31,9 @@ withDefaults(
         <div class="flex items-center gap-2 min-w-0">
           <UIcon v-if="icon" :name="icon" class="w-4 h-4 shrink-0" :class="iconClass" />
           <div class="min-w-0">
-            <span class="text-sm font-medium">{{ title }}</span>
+            <span class="text-sm font-medium inline-flex items-center gap-1">
+              {{ title }}<HelpHint v-if="help" :topic="help" />
+            </span>
             <p v-if="subtitle || $slots.subtitle" class="text-xs text-gray-400 mt-0.5">
               <slot name="subtitle">{{ subtitle }}</slot>
             </p>
