@@ -58,6 +58,54 @@ function section(
   };
 }
 
+/**
+ * Evidence sections the model should know to expect, with a human label. Used to
+ * tell the model — up front — which evidence is present, truncated or absent so
+ * it can calibrate `confidenceScore`. Order roughly mirrors importance.
+ */
+const EXPECTED_SECTIONS: Array<[SectionId, string]> = [
+  ['clusterSummary', 'Failure cluster summary'],
+  ['sampleError', 'Raw error message'],
+  ['executionError', 'Representative execution error'],
+  ['affectedTests', 'Affected tests'],
+  ['testSource', 'Test source code'],
+  ['steps', 'Test steps'],
+  ['failingSteps', 'Failing steps'],
+  ['console', 'Browser console logs'],
+  ['networkRequests', 'Network requests'],
+  ['serverLogs', 'Backend server logs'],
+  ['webVitals', 'Web vitals'],
+  ['ariaSnapshot', 'ARIA snapshot'],
+  ['browserDistribution', 'Browser distribution'],
+  ['recurrenceFlakiness', 'Recurrence & flakiness'],
+  ['passedPeers', 'Passing peers in same file'],
+  ['scmInvestigation', 'SCM diff since last green'],
+  ['selectedCommits', 'Manually selected commits'],
+  ['priorDiagnosis', 'Prior diagnosis & triage'],
+];
+
+/**
+ * Build the "## Data Coverage" block: a compact present/truncated/absent map of
+ * the evidence available for this diagnosis, prepended to the AI context so the
+ * model can ground its confidence in what it could actually see.
+ */
+function buildCoverageBlock(sections: ContextSection[]): string {
+  const byId = new Map<string, ContextSection>();
+  for (const s of sections) if (!byId.has(s.id)) byId.set(s.id, s);
+
+  const lines = [
+    '## Data Coverage',
+    'Evidence available for this diagnosis. Absent or truncated sections mean you are working with partial information — calibrate confidenceScore accordingly and do not assert what you could not see.',
+    '',
+  ];
+  for (const [id, label] of EXPECTED_SECTIONS) {
+    const s = byId.get(id);
+    const state = !s ? 'absent' : s.truncated ? 'present (truncated)' : 'present';
+    lines.push(`- [${id}] ${label}: ${state}`);
+  }
+  return lines.join('\n');
+}
+
 // ── SCM diff rendering ──────────────────────────────────────────────────────
 
 /** "- path (status, +A -B)" line for a changed file. */
@@ -998,11 +1046,9 @@ export async function buildDiagnosisContext(
     push(section('priorDiagnosis', 'Prior Assessment', await priorDiagnosisSection(db, cluster)));
   }
 
-  const text = contextSections
-    .map((s) => s.markdown)
-    .filter(Boolean)
-    .join('\n\n');
-  const totalChars = contextSections.reduce((sum, s) => sum + s.chars, 0);
+  const coverageBlock = buildCoverageBlock(contextSections);
+  const text = [coverageBlock, ...contextSections.map((s) => s.markdown).filter(Boolean)].join('\n\n');
+  const totalChars = contextSections.reduce((sum, s) => sum + s.chars, 0) + coverageBlock.length;
 
   return {
     scope:

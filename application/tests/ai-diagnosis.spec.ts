@@ -33,14 +33,28 @@ function buildMockAiResponse(): AiDiagnosisResult {
   return {
     category: 'app-bug',
     confidence: 'high',
+    confidenceScore: 88,
+    severity: 'high',
+    affectedArea: 'auth / login',
     summary: 'Mock diagnosis summary from test',
     rootCause: 'Mock root cause explanation',
     evidence: ['Evidence line 1', 'Evidence line 2'],
+    hypotheses: [
+      {
+        category: 'app-bug',
+        rootCause: 'Mock root cause explanation',
+        likelihood: 88,
+        evidence: ['Evidence line 1', 'Evidence line 2'],
+      },
+      { category: 'test-bug', rootCause: 'Alternative cause', likelihood: 30, evidence: ['Alt evidence'] },
+    ],
     suggestedFix: {
       description: 'Mock suggested fix',
       file: 'tests/mock.spec.ts',
       code: null,
+      patch: null,
     },
+    investigationSteps: ['Check the auth endpoint logs'],
     preventionTips: ['Add more tests'],
   };
 }
@@ -198,6 +212,13 @@ test.describe.serial('AI diagnosis endpoints', () => {
     expect(diagnosis.confidence).toBe('high');
     expect(typeof diagnosis.summary).toBe('string');
     expect(typeof diagnosis.rootCause).toBe('string');
+    // Structured Phase-1 fields are persisted in details
+    expect(diagnosis.details.confidenceScore).toBe(88);
+    expect(diagnosis.details.severity).toBe('high');
+    expect(diagnosis.details.affectedArea).toBe('auth / login');
+    expect(Array.isArray(diagnosis.details.hypotheses)).toBe(true);
+    expect(diagnosis.details.hypotheses.length).toBeGreaterThanOrEqual(2);
+    expect(Array.isArray(diagnosis.details.investigationSteps)).toBe(true);
   });
 
   test('GET /api/failure-clusters/:id/diagnosis returns the stored diagnosis', async ({ request }) => {

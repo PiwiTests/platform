@@ -64,7 +64,10 @@ function diagnosisMarkdown(): string {
   const det = details.value;
   const lines: string[] = [];
   if (d.category) lines.push(`**Category:** ${d.category}`);
-  if (d.confidence) lines.push(`**Confidence:** ${d.confidence}`);
+  if (d.confidence)
+    lines.push(`**Confidence:** ${d.confidence}${det?.confidenceScore != null ? ` (${det.confidenceScore}/100)` : ''}`);
+  if (det?.severity) lines.push(`**Severity:** ${det.severity}`);
+  if (det?.affectedArea) lines.push(`**Affected area:** ${det.affectedArea}`);
   lines.push('');
   if (d.summary) lines.push(`${d.summary}\n`);
   if (d.rootCause) lines.push(`**Root cause:** ${d.rootCause}\n`);
@@ -83,6 +86,20 @@ function diagnosisMarkdown(): string {
     else if (fix.code) lines.push(`\`\`\`\n${fix.code}\n\`\`\``);
     lines.push('');
   }
+  const altHyps = (det?.hypotheses as Array<Record<string, unknown>> | undefined)?.slice(1) ?? [];
+  if (altHyps.length) {
+    lines.push('**Other hypotheses considered:**');
+    altHyps.forEach((h) =>
+      lines.push(`- (${h.category ?? 'unknown'}, ${h.likelihood ?? '?'}/100) ${h.rootCause ?? ''}`),
+    );
+    lines.push('');
+  }
+  const steps = (det?.investigationSteps as string[]) ?? [];
+  if (steps.length) {
+    lines.push('**To confirm this diagnosis:**');
+    steps.forEach((s) => lines.push(`- ${s}`));
+    lines.push('');
+  }
   const tips = (det?.preventionTips as string[]) ?? [];
   if (tips.length) {
     lines.push('**Prevention tips:**');
@@ -99,7 +116,12 @@ function diagnosisHtml(): string {
   const det = details.value;
   const parts: string[] = ['<dl>'];
   if (d.category) parts.push(`<dt>Category</dt><dd>${escapeHtml(d.category)}</dd>`);
-  if (d.confidence) parts.push(`<dt>Confidence</dt><dd>${escapeHtml(d.confidence)}</dd>`);
+  if (d.confidence)
+    parts.push(
+      `<dt>Confidence</dt><dd>${escapeHtml(d.confidence)}${det?.confidenceScore != null ? ` (${det.confidenceScore}/100)` : ''}</dd>`,
+    );
+  if (det?.severity) parts.push(`<dt>Severity</dt><dd>${escapeHtml(String(det.severity))}</dd>`);
+  if (det?.affectedArea) parts.push(`<dt>Affected area</dt><dd>${escapeHtml(String(det.affectedArea))}</dd>`);
   parts.push('</dl>');
   if (d.summary) parts.push(`<p><strong>${escapeHtml(d.summary)}</strong></p>`);
   if (d.rootCause) parts.push(`<p><strong>Root cause:</strong> ${escapeHtml(d.rootCause)}</p>`);
@@ -116,6 +138,12 @@ function diagnosisHtml(): string {
     if (fix.file) parts.push(`<code>${escapeHtml(String(fix.file))}</code>`);
     if (fix.patch) parts.push(`<pre>${escapeHtml(String(fix.patch))}</pre>`);
     else if (fix.code) parts.push(`<pre>${escapeHtml(String(fix.code))}</pre>`);
+  }
+  const steps = (det?.investigationSteps as string[]) ?? [];
+  if (steps.length) {
+    parts.push('<p><strong>To confirm this diagnosis:</strong></p><ul>');
+    steps.forEach((s) => parts.push(`<li>${escapeHtml(s)}</li>`));
+    parts.push('</ul>');
   }
   const tips = (det?.preventionTips as string[]) ?? [];
   if (tips.length) {
@@ -171,6 +199,24 @@ const confidenceColors: Record<string, 'success' | 'warning' | 'neutral'> = {
   medium: 'warning',
   low: 'neutral',
 };
+
+const severityColors: Record<string, 'error' | 'warning' | 'info' | 'neutral'> = {
+  blocker: 'error',
+  high: 'warning',
+  medium: 'info',
+  low: 'neutral',
+};
+
+const confidenceScore = computed<number | null>(() => {
+  const v = details.value?.confidenceScore;
+  return typeof v === 'number' ? v : null;
+});
+
+/** Hypotheses beyond the primary one (index 0), shown as ranked alternatives. */
+const alternateHypotheses = computed<Array<{ category?: string; rootCause?: string; likelihood?: number }>>(() => {
+  const h = details.value?.hypotheses;
+  return Array.isArray(h) ? h.slice(1) : [];
+});
 </script>
 
 <template>
@@ -210,8 +256,22 @@ const confidenceColors: Record<string, 'success' | 'warning' | 'neutral'> = {
             variant="outline"
             size="sm"
           >
-            {{ diagnosis.confidence }} confidence
+            {{ diagnosis.confidence }} confidence<template v-if="confidenceScore !== null">
+              · {{ confidenceScore }}/100</template
+            >
           </UBadge>
+          <UBadge
+            v-if="details?.severity"
+            :color="severityColors[details.severity] || 'neutral'"
+            variant="soft"
+            size="sm"
+          >
+            {{ details.severity }} severity
+          </UBadge>
+          <span v-if="details?.affectedArea" class="text-xs text-gray-500 inline-flex items-center gap-1">
+            <UIcon name="i-lucide-crosshair" class="size-3 shrink-0" />
+            {{ details.affectedArea }}
+          </span>
         </div>
         <UButton
           :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
@@ -270,6 +330,37 @@ const confidenceColors: Record<string, 'success' | 'warning' | 'neutral'> = {
         <div v-else-if="details.suggestedFix.code" class="mt-2">
           <CodeBlock :code="details.suggestedFix.code" />
         </div>
+      </div>
+
+      <div v-if="alternateHypotheses.length" class="space-y-1.5">
+        <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Other hypotheses considered</p>
+        <div
+          v-for="(h, i) in alternateHypotheses"
+          :key="i"
+          class="rounded-md border border-default bg-elevated/40 px-2.5 py-1.5"
+        >
+          <div class="flex items-center gap-1.5">
+            <UBadge v-if="h.category" :color="categoryColors[h.category] || 'neutral'" variant="subtle" size="sm">
+              {{ h.category }}
+            </UBadge>
+            <span v-if="typeof h.likelihood === 'number'" class="text-xs text-gray-400">{{ h.likelihood }}/100</span>
+          </div>
+          <p v-if="h.rootCause" class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ h.rootCause }}</p>
+        </div>
+      </div>
+
+      <div v-if="details?.investigationSteps?.length" class="space-y-1">
+        <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">To confirm this diagnosis</p>
+        <ul class="space-y-1">
+          <li
+            v-for="(s, i) in details.investigationSteps"
+            :key="i"
+            class="text-sm text-gray-600 dark:text-gray-400 flex gap-1.5"
+          >
+            <UIcon name="i-lucide-search-check" class="size-3.5 shrink-0 mt-0.5 text-primary" />
+            {{ s }}
+          </li>
+        </ul>
       </div>
 
       <ul v-if="details?.preventionTips?.length" class="space-y-1">
