@@ -186,13 +186,7 @@ function fileName(path: string): string {
       <CiEnvCard v-if="ciInfo || environment" :ci="ciInfo" :environment="environment" :class="blockColSpanClass" />
 
       <!-- Browser -->
-      <UCard v-if="browser" :class="blockColSpanClass">
-        <template #header>
-          <div class="flex items-center gap-2">
-            <UIcon name="i-lucide-globe" class="w-4 h-4 text-primary" />
-            <span class="text-sm font-medium">Browser</span>
-          </div>
-        </template>
+      <BlockCard v-if="browser" :class="blockColSpanClass" title="Browser" icon="i-lucide-globe">
         <div class="space-y-2">
           <div class="flex items-center gap-2 flex-wrap">
             <BrowserBadge :browser="browser ? { ...browser, viewport: undefined } : null" size="md" />
@@ -254,20 +248,16 @@ function fileName(path: string): string {
             {{ browser.userAgent }}
           </div>
         </div>
-      </UCard>
+      </BlockCard>
 
       <!-- Storage: traces + attachments -->
-      <UCard v-if="(traces?.length ?? 0) > 0 || (attachments?.length ?? 0) > 0" :class="blockColSpanClass">
-        <template #header>
-          <div class="flex items-center gap-2">
-            <UIcon name="i-lucide-database" class="w-4 h-4 text-primary" />
-            <span class="text-sm font-medium">Storage</span>
-            <span class="text-xs text-gray-400">
-              · {{ (traces?.length ?? 0) + (attachments?.length ?? 0) }} files ·
-              {{ formatBytes(totalStorageSize(traces, attachments)) }}
-            </span>
-          </div>
-        </template>
+      <BlockCard
+        v-if="(traces?.length ?? 0) > 0 || (attachments?.length ?? 0) > 0"
+        :class="blockColSpanClass"
+        title="Storage"
+        icon="i-lucide-database"
+        :subtitle="`${(traces?.length ?? 0) + (attachments?.length ?? 0)} files · ${formatBytes(totalStorageSize(traces, attachments))}`"
+      >
         <div class="space-y-2">
           <!-- Traces -->
           <div v-for="trace in traces" :key="trace.id" class="flex items-center justify-between gap-2 py-1.5">
@@ -326,23 +316,17 @@ function fileName(path: string): string {
             </div>
           </div>
         </div>
-      </UCard>
+      </BlockCard>
 
       <!-- Links -->
-      <UCard :class="blockColSpanClass">
-        <template #header>
-          <div class="flex items-center gap-2">
-            <UIcon name="i-lucide-link" class="w-4 h-4 text-primary" />
-            <span class="text-sm font-medium">Links</span>
-          </div>
-        </template>
+      <BlockCard :class="blockColSpanClass" title="Links" icon="i-lucide-link">
         <EntityLinks
           v-if="testCase?.id"
           entity-type="test_case"
           :entity-id="testCase.id"
           :links="stableLinks ?? null"
         />
-      </UCard>
+      </BlockCard>
     </div>
   </FoldableSummary>
 </template>
