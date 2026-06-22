@@ -1,4 +1,5 @@
 import { requireAuth } from '../utils/auth';
+import { getProjectScope } from '../utils/project-access';
 import { getDatabase } from '../database';
 import { listProjects } from '~~/shared/handlers/projects';
 import { Role } from '../../shared/types';
@@ -15,9 +16,10 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
+  const user = await requireAuth(event);
   const db = await getDatabase();
-  const result = await listProjects(db);
+  const scope = await getProjectScope(db, user as any);
+  const result = await listProjects(db, scope);
   return result.map((p: any) => {
     const { scmToken: _scm, ...rest } = p;
     return rest;

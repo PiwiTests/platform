@@ -1,7 +1,7 @@
-import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
 import { computeRegressionContextForRun } from '~~/shared/handlers/test-runs';
 import { Role } from '../../../../shared/types';
+import { requireProjectAccess, resolveRunProjectId } from '../../../utils/project-access';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
@@ -17,10 +17,14 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
   if (!id) throw createError({ statusCode: 400, message: 'Invalid test run ID' });
   const db = await getDatabase();
+  const projectId = await resolveRunProjectId(db, id);
+  if (!projectId) throw createError({ statusCode: 404, message: 'Test run not found' });
+
+  await requireProjectAccess(event, projectId);
+
   const result = await computeRegressionContextForRun(db, id);
   if (!result) throw createError({ statusCode: 404, message: 'Test run not found' });
   return result;

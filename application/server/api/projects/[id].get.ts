@@ -1,7 +1,7 @@
-import { requireAuth } from '../../utils/auth';
 import { getDatabase } from '../../database';
 import { getProject } from '~~/shared/handlers/projects';
 import { Role } from '../../../shared/types';
+import { requireProjectAccess } from '../../utils/project-access';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
@@ -15,7 +15,6 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {
@@ -24,6 +23,8 @@ export default eventHandler(async (event) => {
       message: 'Invalid project ID',
     });
   }
+
+  await requireProjectAccess(event, id);
 
   const db = await getDatabase();
   try {

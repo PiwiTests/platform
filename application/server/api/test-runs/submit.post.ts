@@ -11,6 +11,7 @@ import { runEventBus } from '../../utils/run-events';
 import { autoDiagnoseRun } from '../../utils/ai-diagnosis';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { emitRunNotifications } from '../../utils/notifications/run-notifications';
+import { getProjectScope, scopeAllows } from '../../utils/project-access';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
 
@@ -43,7 +44,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   // Require reporter or administrator role for submitting test results
-  await requireAuth(event, REQUIRED_ROLES);
+  const user = await requireAuth(event, REQUIRED_ROLES);
 
   const body = await readBody(event);
 
@@ -56,12 +57,20 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
+  const scope = await getProjectScope(db, user as any);
 
   // Get or create project
   const existingProjects = await db.select().from(projects).where(eq(projects.name, body.projectName));
   let project = existingProjects[0];
 
-  if (!project) {
+  if (project) {
+    if (!scopeAllows(scope, project.id)) {
+      throw createError({ statusCode: 403, message: 'No access to this project' });
+    }
+  } else {
+    if (scope !== 'all') {
+      throw createError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
+    }
     const result = await db
       .insert(projects)
       .values({

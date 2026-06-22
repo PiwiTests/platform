@@ -1,4 +1,4 @@
-import { requireAuth } from '../../utils/auth';
+import { requireProjectAccess, resolveClusterProjectId } from '../../utils/project-access';
 import { getDatabase } from '../../database';
 import { getFailureCluster } from '~~/shared/handlers/failure-clusters';
 import { Role } from '../../../shared/types';
@@ -17,11 +17,15 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
   if (!id) throw createError({ statusCode: 400, message: 'Invalid cluster ID' });
 
   const db = await getDatabase();
+
+  const projectId = await resolveClusterProjectId(db, id);
+  if (!projectId) throw createError({ statusCode: 404, message: 'Failure cluster not found' });
+
+  await requireProjectAccess(event, projectId);
 
   const result = await getFailureCluster(db, id);
   if (!result) throw createError({ statusCode: 404, message: 'Failure cluster not found' });

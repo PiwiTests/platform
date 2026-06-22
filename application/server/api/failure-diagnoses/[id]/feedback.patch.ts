@@ -1,7 +1,7 @@
 import { getDatabase } from '../../../database';
 import { failureDiagnoses } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
-import { requireAuth } from '../../../utils/auth';
+import { requireProjectAccess, resolveDiagnosisProjectId } from '../../../utils/project-access';
 import { Role } from '../../../../shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
@@ -17,9 +17,15 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
   if (!id) throw createError({ statusCode: 400, message: 'Invalid diagnosis ID' });
+
+  const db = await getDatabase();
+
+  const projectId = await resolveDiagnosisProjectId(db, id);
+  if (!projectId) throw createError({ statusCode: 404, message: 'Diagnosis not found' });
+
+  await requireProjectAccess(event, projectId);
 
   const body = (await readBody(event).catch(() => null)) as {
     feedback?: string | null;
@@ -32,7 +38,6 @@ export default eventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Feedback must be "up", "down", or null' });
   }
 
-  const db = await getDatabase();
   const [existing] = await db
     .select({ id: failureDiagnoses.id })
     .from(failureDiagnoses)

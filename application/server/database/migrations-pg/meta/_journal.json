@@ -120,6 +120,13 @@
       "when": 1782108769233,
       "tag": "0016_warm_sersi",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1782124561043,
+      "tag": "0017_lovely_squadron_supreme",
+      "breakpoints": true
     }
   ]
 }

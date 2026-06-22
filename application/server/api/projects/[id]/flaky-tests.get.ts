@@ -1,4 +1,4 @@
-import { requireAuth } from '../../../utils/auth';
+import { requireProjectAccess } from '../../../utils/project-access';
 import { getDatabase } from '../../../database';
 import { getProjectFlakyTests } from '~~/shared/handlers/projects';
 import { Role } from '../../../../shared/types';
@@ -17,9 +17,9 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
   const projectId = parseInt(getRouterParam(event, 'id') || '0');
   if (!projectId) throw createError({ statusCode: 400, message: 'Invalid project ID' });
+  await requireProjectAccess(event, projectId);
 
   const runsParam = parseInt((getQuery(event).runs as string) || '50');
   const runsLimit = Math.min(200, Math.max(1, isNaN(runsParam) ? 50 : runsParam));

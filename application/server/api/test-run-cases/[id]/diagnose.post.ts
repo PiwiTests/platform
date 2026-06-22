@@ -1,7 +1,7 @@
 import { getDatabase } from '../../../database';
 import { testRunsCases, testRuns, failureClusters, failureDiagnoses } from '../../../database/schema';
 import { eq, and } from 'drizzle-orm';
-import { requireAuth } from '../../../utils/auth';
+import { requireProjectAccess, resolveTestRunCaseProjectId } from '../../../utils/project-access';
 import { Role } from '../../../../shared/types';
 import { resolveAiConfig } from '../../../utils/ai-provider';
 import type { AiAttachedImage } from '../../../utils/ai-provider';
@@ -24,7 +24,12 @@ export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0');
   if (!id) throw createError({ statusCode: 400, message: 'Invalid test run case ID' });
 
-  await requireAuth(event);
+  const db = await getDatabase();
+
+  const projectId = await resolveTestRunCaseProjectId(db, id);
+  if (!projectId) throw createError({ statusCode: 404, message: 'Test run case not found' });
+
+  await requireProjectAccess(event, projectId, REQUIRED_ROLES);
 
   const force = getQuery(event).force === 'true';
   const body = (await readBody(event).catch(() => null)) as {
@@ -33,8 +38,6 @@ export default eventHandler(async (event) => {
     baseCommit?: string;
     selectedCommitShas?: string[];
   } | null;
-
-  const db = await getDatabase();
 
   const [trc] = await db
     .select({
@@ -50,20 +53,10 @@ export default eventHandler(async (event) => {
   const config = await resolveAiConfig(db);
   if (!config) throw createError({ statusCode: 503, message: 'AI diagnosis is not configured' });
 
-  // Resolve the cluster (if any) and project ID
+  // Resolve the cluster (if any)
   let cluster = null;
-  let projectId = 0;
   if (trc.failureClusterId) {
     [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, trc.failureClusterId));
-    if (cluster) projectId = cluster.projectId;
-  }
-  if (!projectId) {
-    const [run] = await db
-      .select({ projectId: testRuns.projectId })
-      .from(testRuns)
-      .where(eq(testRuns.id, trc.testRunId))
-      .limit(1);
-    if (run) projectId = run.projectId;
   }
 
   // Check if already running

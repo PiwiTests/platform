@@ -1,7 +1,7 @@
 import { getDatabase } from '../../database';
 import { testRuns, testRunsCases, files, failureClusters } from '../../database/schema';
 import { eq, inArray, and, sql } from 'drizzle-orm';
-import { requireAuth } from '../../utils/auth';
+import { requireProjectAccess, resolveRunProjectId } from '../../utils/project-access';
 import { Role } from '../../../shared/types';
 import { deleteFileRow } from '../../utils/delete-run-files';
 
@@ -19,8 +19,6 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event, REQUIRED_ROLES);
-
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {
@@ -31,6 +29,11 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
+
+  const projectId = await resolveRunProjectId(db, id);
+  if (!projectId) throw createError({ statusCode: 404, message: 'Test run not found' });
+
+  await requireProjectAccess(event, projectId, REQUIRED_ROLES);
 
   const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id));
   const testRun = testRunResults[0];

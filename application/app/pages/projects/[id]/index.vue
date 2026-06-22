@@ -8,6 +8,8 @@ import type {
   SlowTest,
   TestRunForCompare,
   FlakyTest,
+  ProjectMemberEntry,
+  ProjectMembersResponse,
 } from '~~/types/api';
 import { useRunComparison } from '~/composables/useRunComparison';
 import type { ComparisonRow } from '~/composables/useRunComparison';
@@ -69,6 +71,63 @@ async function handleDeleteRun(runId: number) {
   }
 }
 
+// === MEMBERS TAB ===
+const members = ref<ProjectMemberEntry[]>([]);
+const selectedMemberIds = ref<number[]>([]);
+
+const membersChanged = computed(() => {
+  const originalIds = members.value
+    .filter((m) => m.role !== 'administrator' && !m.global)
+    .map((m) => m.id)
+    .sort();
+  const currentIds = [...selectedMemberIds.value].sort();
+  return JSON.stringify(originalIds) !== JSON.stringify(currentIds);
+});
+
+watch(
+  () => project.value?.id,
+  async (newId) => {
+    if (!newId || !isAdmin.value) return;
+    try {
+      const data = await $fetch<ProjectMembersResponse>(`/api/projects/${projectId}/members`);
+      members.value = data.users;
+      selectedMemberIds.value = data.users
+        .filter((m) => m.role !== 'administrator' && !m.global)
+        .map((m) => m.id);
+    } catch {
+      members.value = [];
+      selectedMemberIds.value = [];
+    }
+  },
+  { immediate: true },
+);
+
+function toggleMemberSelection(userId: number) {
+  const idx = selectedMemberIds.value.indexOf(userId);
+  if (idx >= 0) {
+    selectedMemberIds.value.splice(idx, 1);
+  } else {
+    selectedMemberIds.value.push(userId);
+  }
+}
+
+async function handleSaveMembers() {
+  try {
+    await $fetch(`/api/projects/${projectId}/members`, {
+      method: 'PUT',
+      body: { userIds: selectedMemberIds.value },
+    });
+    toast.add({ title: 'Members updated', color: 'success' });
+    // Reload
+    const data = await $fetch<ProjectMembersResponse>(`/api/projects/${projectId}/members`);
+    members.value = data.users;
+  } catch (error: unknown) {
+    const errorMessage =
+      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
+    toast.add({ title: 'Update failed', description: errorMessage || 'An error occurred', color: 'error' });
+  }
+}
+
 // === TABS ===
 const activeTab = ref('test-runs');
 
@@ -81,6 +140,7 @@ const validTabs = [
   'test-cases',
   'compare',
   'spec-health',
+  'members',
 ] as const;
 const queryTab = route.query.tab;
 if (typeof queryTab === 'string' && validTabs.includes(queryTab as (typeof validTabs)[number])) {
@@ -116,6 +176,9 @@ const tabItems = computed(() => [
   },
   { label: 'Compare', icon: 'i-lucide-git-compare-arrows', value: 'compare', slot: 'compare' },
   { label: 'Spec health', icon: 'i-lucide-table-2', value: 'spec-health', slot: 'spec-health' },
+  ...(isAdmin.value
+    ? [{ label: 'Members', icon: 'i-lucide-users', value: 'members', slot: 'members' }]
+    : []),
 ]);
 
 // === TEST RUNS TAB ===
@@ -1186,6 +1249,63 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
           <!-- SPEC HEALTH TAB -->
           <template #spec-health>
             <SpecHealthHeatmap :project-id="String(projectId)" />
+          </template>
+
+          <!-- MEMBERS TAB -->
+          <template #members>
+            <UCard>
+              <template #header>
+                <div class="flex items-center justify-between">
+                  <p class="text-sm text-gray-600">
+                    Users with access to this project
+                  </p>
+                  <UButton
+                    label="Save changes"
+                    icon="i-lucide-check"
+                    size="sm"
+                    :disabled="!membersChanged"
+                    @click="handleSaveMembers"
+                  />
+                </div>
+              </template>
+
+              <div v-if="members.length > 0" class="space-y-2">
+                <div
+                  v-for="member in members"
+                  :key="member.id"
+                  class="flex items-center justify-between rounded-lg border border-default px-4 py-3"
+                >
+                  <div class="flex items-center gap-3">
+                    <UAvatar :alt="member.username" :text="member.name || member.username" size="sm" />
+                    <div>
+                      <div class="font-medium text-sm">{{ member.name || member.username }}</div>
+                      <div class="text-xs text-muted flex items-center gap-2">
+                        <span>@{{ member.username }}</span>
+                        <UBadge
+                          :color="member.role === 'administrator' ? 'primary' : member.role === 'reporter' ? 'info' : 'neutral'"
+                          variant="subtle"
+                          size="xs"
+                        >
+                          {{ member.role }}
+                        </UBadge>
+                        <span v-if="member.global" class="italic">Global access</span>
+                      </div>
+                    </div>
+                  </div>
+                  <UCheckbox
+                    v-if="member.role !== 'administrator'"
+                    :model-value="selectedMemberIds.includes(member.id)"
+                    :disabled="member.global"
+                    :title="member.global ? 'Has global access — remove global assignment first' : ''"
+                    @change="toggleMemberSelection(member.id)"
+                  />
+                  <span v-else class="text-xs text-muted italic">Admin</span>
+                </div>
+              </div>
+              <div v-else class="text-center py-8 text-muted text-sm">
+                Loading members…
+              </div>
+            </UCard>
           </template>
         </UTabs>
       </div>

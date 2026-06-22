@@ -1,7 +1,7 @@
-import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
 import { testRunsCases, testRuns, testCases } from '../../../database/schema';
 import { eq, desc } from 'drizzle-orm';
+import { requireProjectAccess, resolveCaseProjectId } from '../../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
@@ -17,13 +17,17 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
   const testCaseId = parseInt(getRouterParam(event, 'id') || '0');
   if (!testCaseId) throw createError({ statusCode: 400, message: 'Invalid test case ID' });
 
-  const bucketCount = Math.min(50, Math.max(5, parseInt((getQuery(event).buckets as string) || '20')));
-
   const db = await getDatabase();
+
+  const projectId = await resolveCaseProjectId(db, testCaseId);
+  if (!projectId) throw createError({ statusCode: 404, message: 'Test case not found' });
+
+  await requireProjectAccess(event, projectId);
+
+  const bucketCount = Math.min(50, Math.max(5, parseInt((getQuery(event).buckets as string) || '20')));
 
   // Verify test case exists
   const tcRows: any[] = await db.select({ id: testCases.id }).from(testCases).where(eq(testCases.id, testCaseId));

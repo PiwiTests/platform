@@ -1,7 +1,7 @@
 import { getDatabase } from '../../../database';
 import { patchClusterStatus } from '~~/shared/handlers/failure-clusters';
 import { Role } from '../../../../shared/types';
-import { requireAuth } from '../../../utils/auth';
+import { requireProjectAccess, resolveClusterProjectId } from '../../../utils/project-access';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
 
@@ -18,12 +18,17 @@ defineRouteMeta({
 const VALID_STATUSES = ['open', 'resolved', 'ignored'];
 
 export default eventHandler(async (event) => {
-  await requireAuth(event, REQUIRED_ROLES);
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {
     throw createError({ statusCode: 400, message: 'Invalid cluster ID' });
   }
+
+  const db = await getDatabase();
+  const projectId = await resolveClusterProjectId(db, id);
+  if (!projectId) throw createError({ statusCode: 404, message: 'Failure cluster not found' });
+
+  await requireProjectAccess(event, projectId, REQUIRED_ROLES);
 
   const body = await readBody(event);
   const status = body?.status;
@@ -31,8 +36,6 @@ export default eventHandler(async (event) => {
   if (!status || !VALID_STATUSES.includes(status)) {
     throw createError({ statusCode: 400, message: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` });
   }
-
-  const db = await getDatabase();
 
   const triageNote = body?.triageNote;
   const result = await patchClusterStatus(db, id, status, triageNote);

@@ -14,10 +14,17 @@ import type { BrowserConfig } from '../types';
 
 import type { DrizzleDB } from './db';
 
+type ProjectScope = 'all' | Set<number>;
+
 // ─── listProjects ────────────────────────────────────────────────
 
-export async function listProjects(db: DrizzleDB) {
-  const allProjects: any[] = await db.select().from(projects).orderBy(desc(projects.updatedAt));
+export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
+  let allProjects: any[] = await db.select().from(projects).orderBy(desc(projects.updatedAt));
+
+  if (scope !== 'all') {
+    if (scope.size === 0) return [];
+    allProjects = allProjects.filter((p: any) => scope.has(p.id));
+  }
 
   if (allProjects.length === 0) return [];
 
@@ -329,11 +336,15 @@ export async function deleteProjectData(db: DrizzleDB, projectId: number) {
 
 // ─── getProjectMenu ──────────────────────────────────────────────
 
-export async function getProjectMenu(db: DrizzleDB): Promise<{ id: number; name: string; label: string | null }[]> {
-  return db
+export async function getProjectMenu(db: DrizzleDB, scope: ProjectScope = 'all'): Promise<{ id: number; name: string; label: string | null }[]> {
+  if (scope !== 'all' && scope.size === 0) return [];
+  const query = db
     .select({ id: projects.id, name: projects.name, label: projects.label })
     .from(projects)
     .orderBy(desc(projects.updatedAt));
+  const rows = await query;
+  if (scope === 'all') return rows;
+  return rows.filter((p) => scope.has(p.id));
 }
 
 // ─── getProjectPerformance ───────────────────────────────────────

@@ -17,6 +17,7 @@ import { sanitizeMetadata } from '../../utils/sanitize';
 import { runEventBus } from '../../utils/run-events';
 import { autoDiagnoseRun } from '../../utils/ai-diagnosis';
 import { computeRegressionSignals } from '../../utils/compute-regression-signals';
+import { getProjectScope, scopeAllows } from '../../utils/project-access';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
 
@@ -62,7 +63,7 @@ const MAX_UPLOAD_BYTES = 500 * 1024 * 1024; // 500 MB
 
 export default eventHandler(async (event) => {
   // Require reporter or administrator role for uploading test results
-  await requireAuth(event, REQUIRED_ROLES);
+  const user = await requireAuth(event, REQUIRED_ROLES);
 
   const contentLength = parseInt(getRequestHeader(event, 'content-length') ?? '0', 10);
   if (contentLength > MAX_UPLOAD_BYTES) {
@@ -205,6 +206,7 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
+  const scope = await getProjectScope(db, user as any);
   const storage = getStorage();
 
   // If attaching to an existing streaming run, look up the run and its project
@@ -220,6 +222,9 @@ export default eventHandler(async (event) => {
     }
     const projectRows = await db.select().from(projects).where(eq(projects.id, existingRun.projectId));
     project = projectRows[0];
+    if (!project || !scopeAllows(scope, project.id)) {
+      throw createError({ statusCode: 403, message: 'No access to this project' });
+    }
     attachingToExistingRun = true;
     existingRunStatus = existingRun.status;
   }
@@ -229,7 +234,14 @@ export default eventHandler(async (event) => {
     const existingProjects = await db.select().from(projects).where(eq(projects.name, projectName));
     project = existingProjects[0];
 
-    if (!project) {
+    if (project) {
+      if (!scopeAllows(scope, project.id)) {
+        throw createError({ statusCode: 403, message: 'No access to this project' });
+      }
+    } else {
+      if (scope !== 'all') {
+        throw createError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
+      }
       const result = await db
         .insert(projects)
         .values({

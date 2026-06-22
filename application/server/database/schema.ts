@@ -33,6 +33,7 @@ export const {
   notificationChannels,
   subscriptions,
   notificationDeliveries,
+  projectAssignments,
 } = schema;
 
 // TypeScript type exports – always based on SQLite schema (the canonical reference)
@@ -79,4 +80,6 @@ export type {
   NewSubscription,
   NotificationDelivery,
   NewNotificationDelivery,
+  ProjectAssignment,
+  NewProjectAssignment,
 } from './schema.sqlite';

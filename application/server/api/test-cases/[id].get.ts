@@ -1,4 +1,4 @@
-import { requireAuth } from '../../utils/auth';
+import { requireProjectAccess, resolveCaseProjectId } from '../../utils/project-access';
 import { getDatabase } from '../../database';
 import { getTestCase } from '~~/shared/handlers/test-cases';
 import { Role } from '../../../shared/types';
@@ -17,7 +17,6 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {
@@ -28,6 +27,11 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
+
+  const projectId = await resolveCaseProjectId(db, id);
+  if (!projectId) throw createError({ statusCode: 404, message: 'Test case not found' });
+
+  await requireProjectAccess(event, projectId);
 
   const result = (await getTestCase(db, id)) as any;
   if (!result) {

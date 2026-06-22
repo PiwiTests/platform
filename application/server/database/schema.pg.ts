@@ -575,6 +575,28 @@ export const notificationDeliveries = pgTable(
   }),
 );
 
+// Project assignments table — user-to-project access (null projectId = global access)
+export const projectAssignments = pgTable(
+  'project_assignments',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    // null = affectation GLOBALE (tous les projets, présents et futurs)
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    userIdx: index('idx_project_assignments_user').on(t.userId),
+    projectIdx: index('idx_project_assignments_project').on(t.projectId),
+    userProjectUnique: uniqueIndex('idx_project_assignments_user_project').on(t.userId, t.projectId),
+  }),
+);
+
 // API keys table - for reporter/CI authentication
 export const apiKeys = pgTable(
   'api_keys',
@@ -636,6 +658,8 @@ export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;
 export type ProjectTag = typeof projectTags.$inferSelect;
 export type NewProjectTag = typeof projectTags.$inferInsert;
+export type ProjectAssignment = typeof projectAssignments.$inferSelect;
+export type NewProjectAssignment = typeof projectAssignments.$inferInsert;
 export type EntityLink = typeof entityLinks.$inferSelect;
 export type NewEntityLink = typeof entityLinks.$inferInsert;
 export type NetworkRequest = typeof networkRequests.$inferSelect;

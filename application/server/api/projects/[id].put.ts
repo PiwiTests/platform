@@ -1,6 +1,6 @@
 import { getDatabase } from '../../database';
 import { z } from 'zod';
-import { requireAuth } from '../../utils/auth';
+import { requireProjectAccess } from '../../utils/project-access';
 import { updateProject } from '~~/shared/handlers/projects';
 import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
 import { Role } from '../../../shared/types';
@@ -27,9 +27,6 @@ const updateProjectSchema = z.object({
 });
 
 export default eventHandler(async (event) => {
-  // Require administrator role for updating projects
-  await requireAuth(event, REQUIRED_ROLES);
-
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {
@@ -38,6 +35,9 @@ export default eventHandler(async (event) => {
       message: 'Invalid project ID',
     });
   }
+
+  // Require administrator role for updating projects
+  await requireProjectAccess(event, id, REQUIRED_ROLES);
 
   const db = await getDatabase();
 

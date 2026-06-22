@@ -17,6 +17,8 @@ import { percentile } from '../utils/stats';
 
 import type { DrizzleDB } from './db';
 
+type ProjectScope = 'all' | Set<number>;
+
 // ─── getTestRun — full test run detail ───────────────────────────────────────
 
 export async function getTestRun(db: DrizzleDB, id: number) {
@@ -180,7 +182,7 @@ const RECENT_FIELDS = {
   playwrightVersion: testRuns.playwrightVersion,
 };
 
-export async function getRecentTestRuns(db: DrizzleDB) {
+export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'all') {
   const [activeRuns, recentRuns] = await Promise.all([
     db
       .select(RECENT_FIELDS)
@@ -205,7 +207,9 @@ export async function getRecentTestRuns(db: DrizzleDB) {
       result.push(run);
     }
   }
-  return result;
+  if (scope === 'all') return result;
+  if (scope.size === 0) return [];
+  return result.filter((run) => scope.has(run.projectId));
 }
 
 // ─── getTestRunSummary — lightweight summary ─────────────────────────────────
