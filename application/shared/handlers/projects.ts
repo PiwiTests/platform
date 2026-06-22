@@ -150,6 +150,7 @@ export async function getProject(db: DrizzleDB, id: number) {
       playwrightVersion: testRuns.playwrightVersion,
       isFullRun: testRuns.isFullRun,
       filterDetails: testRuns.filterDetails,
+      metadata: testRuns.metadata,
       createdAt: testRuns.createdAt,
       updatedAt: testRuns.updatedAt,
     })
@@ -207,11 +208,17 @@ export async function getProject(db: DrizzleDB, id: number) {
     ...project,
     hasScmToken: !!project.scmToken,
     tags: projectTagRows.map((r: any) => r.tag),
-    testRuns: runs.map((r: any) => ({
-      ...r,
-      reports: reportsByRunId.get(r.id) ?? [],
-      browsers: browsersByRunId.get(r.id) ?? [],
-    })),
+    testRuns: runs.map((r: any) => {
+      // Slim the wide metadata JSON down to just the SCM branch/commit shown in the run list
+      const scm = (r.metadata as { scm?: { branch?: string | null; commit?: string | null } } | null)?.scm;
+      return {
+        ...r,
+        metadata:
+          scm?.branch || scm?.commit ? { scm: { branch: scm.branch ?? null, commit: scm.commit ?? null } } : null,
+        reports: reportsByRunId.get(r.id) ?? [],
+        browsers: browsersByRunId.get(r.id) ?? [],
+      };
+    }),
   };
 }
 

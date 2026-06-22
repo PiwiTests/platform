@@ -1248,7 +1248,7 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
 
           <!-- SPEC HEALTH TAB -->
           <template #spec-health>
-            <SpecHealthHeatmap :project-id="String(projectId)" />
+            <SpecHealthTable :project-id="String(projectId)" />
           </template>
 
           <!-- MEMBERS TAB -->
