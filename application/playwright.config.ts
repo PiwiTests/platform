@@ -64,7 +64,7 @@ const baseConfig = defineConfig({
     {
       command: 'npm run app:dev',
       url: 'http://localhost:3000',
-      reuseExistingServer: !process.env.CI || !!process.env.PW_REUSE_BASE,
+      reuseExistingServer: !process.env.CI,
       timeout: 60 * 1000,
     },
     // Auth-enabled server used by reporter-with-auth.spec.ts.
