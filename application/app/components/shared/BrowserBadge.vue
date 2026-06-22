@@ -10,6 +10,8 @@ const name = computed(() => props.browser?.projectName ?? null);
 const icon = computed(() => getBrowserIcon(name.value));
 const hexColor = computed(() => getBrowserHexColor(name.value));
 
+const iconSizeClass = computed(() => (props.size === 'sm' ? 'size-3.5' : props.size === 'lg' ? 'size-5' : 'size-4'));
+
 const tooltipLines = computed(() => {
   const b = props.browser;
   if (!b) return [];
@@ -34,39 +36,16 @@ const tooltipLines = computed(() => {
   return lines;
 });
 
-function hexToRgba(hex: string, alpha: number): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
-}
+// The browser name is no longer shown inline, so surface it (plus any config) on hover.
+const tooltipText = computed(() => {
+  if (!name.value) return '';
+  return tooltipLines.value.length ? `${name.value} · ${tooltipLines.value.join(' · ')}` : name.value;
+});
 </script>
 
 <template>
-  <UTooltip v-if="name && tooltipLines.length" :text="tooltipLines.join(' · ')" :popper="{ placement: 'top' }">
-    <span
-      class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium font-mono capitalize gap-1 cursor-help whitespace-nowrap"
-      :style="{
-        color: hexColor,
-        backgroundColor: hexToRgba(hexColor, 0.12),
-        border: `1px solid ${hexToRgba(hexColor, 0.3)}`,
-      }"
-    >
-      <UIcon :name="icon" class="shrink-0" :class="size === 'sm' ? 'size-3' : size === 'lg' ? 'size-4' : 'size-3.5'" />
-      {{ name }}
-    </span>
+  <UTooltip v-if="name" :text="tooltipText" :popper="{ placement: 'top' }">
+    <UIcon :name="icon" class="shrink-0 cursor-help" :class="iconSizeClass" :style="{ color: hexColor }" />
   </UTooltip>
-  <span
-    v-else-if="name"
-    class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium font-mono capitalize gap-1 whitespace-nowrap"
-    :style="{
-      color: hexColor,
-      backgroundColor: hexToRgba(hexColor, 0.12),
-      border: `1px solid ${hexToRgba(hexColor, 0.3)}`,
-    }"
-  >
-    <UIcon :name="icon" class="shrink-0" :class="size === 'sm' ? 'size-3' : size === 'lg' ? 'size-4' : 'size-3.5'" />
-    {{ name }}
-  </span>
   <span v-else class="text-xs text-gray-400 dark:text-gray-500 italic">—</span>
 </template>

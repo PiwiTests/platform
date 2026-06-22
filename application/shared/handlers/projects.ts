@@ -213,6 +213,7 @@ export async function getProject(db: DrizzleDB, id: number) {
       const scm = (r.metadata as { scm?: { branch?: string | null; commit?: string | null } } | null)?.scm;
       return {
         ...r,
+        isFullRun: r.isFullRun === 1,
         metadata:
           scm?.branch || scm?.commit ? { scm: { branch: scm.branch ?? null, commit: scm.commit ?? null } } : null,
         reports: reportsByRunId.get(r.id) ?? [],

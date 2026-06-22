@@ -149,10 +149,6 @@ const testCasesColumns: TableColumn<TestCaseResult>[] = [
     header: createSortHeader<TestCaseResult>('Status'),
   },
   {
-    accessorKey: 'location',
-    header: createSortHeader<TestCaseResult>('Location'),
-  },
-  {
     accessorKey: 'duration',
     header: createSortHeader<TestCaseResult>('Duration'),
   },
@@ -316,30 +312,39 @@ defineExpose({ scrollToCase });
         }"
       >
         <template #title-cell="{ row }">
-          <div class="flex items-center gap-1.5">
-            <UBadge
-              v-if="row.original.isNewRegression"
-              color="error"
-              variant="solid"
-              size="xs"
-              class="uppercase tracking-wider"
-            >
-              NEW
-            </UBadge>
-            <UBadge
-              v-if="row.original.isNewFlaky"
-              color="info"
-              variant="solid"
-              size="xs"
-              class="uppercase tracking-wider"
-            >
-              FLAKY
-            </UBadge>
-            <a
-              :href="`/test-run-cases/${row.original.id}`"
-              class="text-primary hover:underline font-medium"
-              @click.prevent="navigateTo(`/test-run-cases/${row.original.id}`)"
-              >{{ row.original.title }}</a
+          <div class="min-w-0 space-y-0.5">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <UBadge
+                v-if="row.original.isNewRegression"
+                color="error"
+                variant="solid"
+                size="xs"
+                class="uppercase tracking-wider"
+              >
+                NEW
+              </UBadge>
+              <UBadge
+                v-if="row.original.isNewFlaky"
+                color="info"
+                variant="solid"
+                size="xs"
+                class="uppercase tracking-wider"
+              >
+                FLAKY
+              </UBadge>
+              <a
+                :href="`/test-run-cases/${row.original.id}`"
+                class="text-primary hover:underline font-medium truncate"
+                :title="row.original.title"
+                @click.prevent="navigateTo(`/test-run-cases/${row.original.id}`)"
+                >{{ row.original.title }}</a
+              >
+            </div>
+            <code
+              v-if="row.original.location"
+              class="block text-xs text-gray-400 dark:text-gray-500 truncate"
+              :title="row.original.location"
+              >{{ row.original.location }}</code
             >
           </div>
         </template>
@@ -359,10 +364,6 @@ defineExpose({ scrollToCase });
               row.original.status === 'timedOut' || row.original.status === 'timedout' ? 'failed' : row.original.status
             }}
           </UBadge>
-        </template>
-
-        <template #location-cell="{ row }">
-          <code v-if="row.original.location" class="text-xs">{{ row.original.location }}</code>
         </template>
 
         <template #duration-cell="{ row }">

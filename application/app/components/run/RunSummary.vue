@@ -465,23 +465,25 @@ function onLabelKeydown(e: KeyboardEvent) {
           </div>
         </div>
         <div v-if="storageStats?.totalFiles" class="space-y-1.5 text-sm">
-          <div v-for="report in allReports" :key="report.label" class="flex items-center justify-between">
+          <div v-for="report in allReports" :key="report.label" class="flex items-center justify-between gap-2 min-w-0">
             <UButton
               :href="`/api/files/${getFileApiPath(report.path)}`"
               :icon="reportIcon(report.type)"
               target="_blank"
               size="xs"
               variant="outline"
+              class="min-w-0"
+              :ui="{ label: 'truncate' }"
             >
               {{ report.label }}
             </UButton>
-            <span class="font-medium tabular-nums text-gray-600 dark:text-gray-400">{{
+            <span class="text-xs tabular-nums text-gray-400 dark:text-gray-500 shrink-0">{{
               formatBytes(report.size)
             }}</span>
           </div>
-          <div v-if="storageStats.testCaseFilesCount > 0" class="flex items-center justify-between">
-            <span>Test files ({{ storageStats.testCaseFilesCount }})</span>
-            <span class="font-medium tabular-nums text-gray-600 dark:text-gray-400">{{
+          <div v-if="storageStats.testCaseFilesCount > 0" class="flex items-center justify-between gap-2 min-w-0">
+            <span class="truncate">Test files ({{ storageStats.testCaseFilesCount }})</span>
+            <span class="text-xs tabular-nums text-gray-400 dark:text-gray-500 shrink-0">{{
               formatBytes(storageStats.testCaseFilesSize)
             }}</span>
           </div>
