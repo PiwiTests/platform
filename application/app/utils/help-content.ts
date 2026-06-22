@@ -274,7 +274,7 @@ export const HELP_TOPICS = {
 
   // ── Notifications / subscribe ─────────────────────────────────────────
   'notifications.subscribe': {
-    title: 'Subscribe',
+    title: 'Project notifications',
     text: 'Get notified about this project’s runs through your channels. Choose which events trigger an alert.',
     doc: 'notifications#subscriptions',
   },
