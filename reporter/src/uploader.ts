@@ -181,6 +181,7 @@ export class Uploader {
           title: testCase.title,
           location: testCase.location,
           retries: testCase.retries ?? 0,
+          suitePath: testCase.suitePath ?? null,
         }),
       );
       if (traceInfo) {
