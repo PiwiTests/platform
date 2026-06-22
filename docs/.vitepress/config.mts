@@ -23,12 +23,31 @@ export default defineConfig({
       { text: 'Getting started', link: '/getting-started' },
       { text: 'UI overview', link: '/ui-overview' },
       { text: 'Reporter', link: '/reporter' },
-      { text: 'Backend logs', link: '/backend-logs' },
-      { text: 'API reference', link: '/api' },
-      { text: 'MCP server', link: '/mcp' },
-      { text: 'Authentication', link: '/authentication' },
-      { text: 'Storage configuration', link: '/storage' },
-      { text: 'Deployment', link: '/deployment' },
+      {
+        text: 'Features',
+        items: [
+          { text: 'AI diagnosis & clustering', link: '/ai-diagnosis' },
+          { text: 'Flaky tests & analytics', link: '/flaky-tests' },
+          { text: 'Notifications & alerts', link: '/notifications' },
+        ],
+      },
+      {
+        text: 'Configuration',
+        items: [
+          { text: 'Configuration reference', link: '/configuration' },
+          { text: 'Authentication', link: '/authentication' },
+          { text: 'Storage configuration', link: '/storage' },
+          { text: 'Deployment', link: '/deployment' },
+        ],
+      },
+      {
+        text: 'Integrate',
+        items: [
+          { text: 'API reference', link: '/api' },
+          { text: 'MCP server', link: '/mcp' },
+          { text: 'Backend logs', link: '/backend-logs' },
+        ],
+      },
     ],
 
     editLink: {

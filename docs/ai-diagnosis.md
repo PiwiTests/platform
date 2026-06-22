@@ -1,0 +1,114 @@
+---
+title: AI diagnosis & failure clustering
+lang: en-US
+---
+
+# AI diagnosis & failure clustering
+
+When a run finishes, Piwi groups related failures and — optionally — asks an LLM to explain them. The two features work together: clustering decides *what* to diagnose, AI diagnosis explains *why* it broke.
+
+## Failure clustering
+
+Failed test cases that share the same **error fingerprint** are grouped into a cluster automatically. Instead of scrolling through 20 unrelated stack traces, you see something like *"20 failures, 3 root causes."*
+
+- **Fingerprinting** normalizes error messages (stripping timestamps, IDs, and other volatile fragments) so that the same underlying failure groups together across tests and runs.
+- The run detail page shows each failure group with **flaky** and **worker-correlation** heuristics, so you can tell "the app is broken" from "worker 3 is misbehaving."
+- Every cluster has its own **detail page** with the affected tests, triage tools (status + notes), and the AI diagnosis panel.
+
+Clustering is always on and requires no configuration. AI diagnosis is opt-in.
+
+## Enabling AI diagnosis
+
+Configure a provider via **Settings → AI**, or with environment variables (env always takes precedence over values stored through the UI, and the UI shows env-managed fields read-only).
+
+| Variable | Description |
+|----------|-------------|
+| `PIWI_AI_PROVIDER` | `anthropic` or `openai` |
+| `PIWI_AI_API_KEY` | Provider API key (stored encrypted when set via the UI; never returned by the API) |
+| `PIWI_AI_MODEL` | Model name (default: `claude-opus-4-8` for Anthropic) |
+| `PIWI_AI_BASE_URL` | Base URL for OpenAI-compatible providers (e.g. Ollama, LM Studio, vLLM) |
+| `PIWI_AI_AUTO_DIAGNOSE` | `true` to automatically diagnose new clusters when a run finishes |
+
+`GET /api/ai/status` reports whether AI is configured (without ever exposing the key); the UI uses it to show or hide AI actions.
+
+### Providers
+
+**Anthropic (recommended)**
+
+```bash
+PIWI_AI_PROVIDER=anthropic
+PIWI_AI_API_KEY=sk-ant-...
+PIWI_AI_MODEL=claude-opus-4-8
+```
+
+**OpenAI**
+
+```bash
+PIWI_AI_PROVIDER=openai
+PIWI_AI_API_KEY=sk-...
+PIWI_AI_MODEL=gpt-4o
+```
+
+**OpenAI-compatible / local (Ollama, etc.)** — set `provider` to `openai` and point `base URL` at the local endpoint:
+
+```bash
+PIWI_AI_PROVIDER=openai
+PIWI_AI_BASE_URL=http://localhost:11434/v1
+PIWI_AI_MODEL=llama3.1
+PIWI_AI_API_KEY=ollama   # any non-empty value for local servers
+```
+
+Use **Settings → AI → Test** to smoke-test the configured provider.
+
+## What a diagnosis contains
+
+A diagnosis is grounded in your actual run — it is not a generic "ask AI" button. Each result includes:
+
+- **Category** and **confidence**
+- **Root cause** — the most likely explanation
+- **Evidence** — the signals the model relied on
+- **Suggested fix** and **prevention tips**
+
+## SCM-grounded context
+
+The real power is feeding the model the code that changed. On a cluster page you can:
+
+- **Pin a baseline commit** — the diagnosis includes the aggregate diff between that commit and the run, so the model sees what changed.
+- **Browse and cherry-pick commits** — add the full diff of specific commits to the context for targeted analysis.
+- **Preview the exact context** that will be sent before running (`GET /api/failure-clusters/[id]/context`), so there are no surprises about what leaves your server.
+
+## Custom instructions
+
+Tailor the analysis to your stack with **global** instructions (Settings → AI) and **per-project** instructions. Use them to describe your architecture, common false positives, or house style for fixes.
+
+## Context limits (and token cost)
+
+Every piece of evidence sent to the model costs tokens. Piwi caps each input so diagnoses stay fast and affordable. Defaults live in `shared/ai-context-limits.ts`; override them in **Settings → AI** or via env (env wins; the UI then shows the field read-only).
+
+| Environment variable | Default | What it caps |
+|----------------------|--------:|--------------|
+| `PIWI_AI_MAX_SAMPLE_ERROR_CHARS` | 3000 | Characters of raw error text per error block |
+| `PIWI_AI_MAX_SCM_PATCH_BUDGET` | 4000 | Total characters of diff patches across changed files |
+| `PIWI_AI_MAX_AFFECTED_TESTS` | 15 | Affected tests listed |
+| `PIWI_AI_MAX_STEPS` | 30 | Recent test steps included |
+| `PIWI_AI_MAX_CONSOLE_ENTRIES` | 15 | Console error/warning entries |
+| `PIWI_AI_MAX_CONSOLE_ENTRY_CHARS` | 400 | Characters per console entry |
+| `PIWI_AI_MAX_NETWORK_REQUESTS` | 15 | Failed network requests included |
+| `PIWI_AI_MAX_ARIA_SNAPSHOT_CHARS` | 4000 | Characters of the page ARIA snapshot |
+| `PIWI_AI_MAX_TEST_SOURCE_CHARS` | 3000 | Characters of the test source snippet |
+| `PIWI_AI_MAX_SERVER_LOG_ENTRIES` | 30 | Backend server log entries (from the `X-Piwi-Logs` header) |
+| `PIWI_AI_MAX_SERVER_LOG_ENTRY_CHARS` | 400 | Characters per server log entry |
+| `PIWI_AI_MAX_IMAGES` | 3 | Screenshots auto-included in the context |
+| `PIWI_AI_MAX_PASSED_PEERS` | 10 | Passing peer tests in the same file listed |
+| `PIWI_AI_MAX_CONSOLE_WINDOW` | 30 | Console entries (any level) in the window before failure |
+| `PIWI_AI_SLOW_REQUEST_MS` | 1500 | Duration (ms) above which a network request is flagged as slow |
+
+## Privacy
+
+API keys are encrypted at rest with [`PIWI_SECRET_KEY`](./configuration#general). When you run a diagnosis, the bounded context above is sent to your configured provider — so for fully local analysis, use Ollama or another self-hosted OpenAI-compatible model and keep everything on your own infrastructure.
+
+## See also
+
+- [Configuration reference](./configuration) — all environment variables
+- [Notifications](./notifications) — get alerted with `cluster.new` when a new cluster appears
+- [MCP server](./mcp) — let AI agents query clusters and diagnoses directly
