@@ -7,7 +7,7 @@ import { Uploader } from './uploader.js';
 import { FileHandler } from './file-handler.js';
 import { Logger } from './logger.js';
 import { createLimiter, readSetupInfo } from './helpers.js';
-import type { CollectedTestCase, StreamEvent } from './types.js';
+import type { CollectedTestCase, StreamEvent, FilterDetails } from './types.js';
 
 /**
  * Manages the streaming protocol: queues events (begin / complete), flushes
@@ -81,7 +81,7 @@ export class StreamManager {
     playwrightVersion?: string | null,
     shardInfo?: ShardInfo | null,
     isFullRun?: boolean,
-    filterDetails?: { grep?: string; grepInvert?: string } | null,
+    filterDetails?: FilterDetails | null,
   ): void {
     this._startPromise = this._doStart(
       startTime,
@@ -101,7 +101,7 @@ export class StreamManager {
     playwrightVersion?: string | null,
     shardInfo?: ShardInfo | null,
     isFullRun?: boolean,
-    filterDetails?: { grep?: string; grepInvert?: string } | null,
+    filterDetails?: FilterDetails | null,
   ): Promise<void> {
     const setupInfo = readSetupInfo(this.options.projectName!);
 

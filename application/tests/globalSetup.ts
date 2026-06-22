@@ -1,13 +1,3 @@
-import PiwiDashboardReporter from '@phenx/piwi-dashboard-reporter';
-const { createGlobalSetup } = PiwiDashboardReporter;
-
-const _setup = createGlobalSetup({
-  serverUrl: 'http://localhost:3000',
-  projectName: 'Piwi Dashboard',
-  projectDescription: 'The Piwi Dashboard project',
-  verbose: true,
-});
-
 async function preCleanup() {
   try {
     const response = await fetch('http://localhost:3000/api/tests/cleanup', {
@@ -25,7 +15,11 @@ async function preCleanup() {
   }
 }
 
-export default async function globalSetup(config: any) {
+// NOTE: Piwi run registration is handled by `wrapConfig()` in playwright.config.ts,
+// which injects the reporter's own global-setup module. We must NOT call
+// `createGlobalSetup()` here as well — doing so registered the run twice (same
+// instanceId), and the second registration cancelled the first, leaving an
+// orphaned "full"/cancelled run with no test cases alongside the real run.
+export default async function globalSetup(_config: any) {
   await preCleanup();
-  return _setup(config);
 }

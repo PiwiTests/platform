@@ -5,7 +5,7 @@ import { HttpClient } from './http-client.js';
 import { FileHandler } from './file-handler.js';
 import { Logger } from './logger.js';
 import { serializeRun, toWireTestCase } from './serializer.js';
-import type { CollectedTestCase, TraceHashInfo } from './types.js';
+import type { CollectedTestCase, TraceHashInfo, FilterDetails } from './types.js';
 
 /** Payload for a batch test-run submission */
 export interface RunPayload {
@@ -42,7 +42,7 @@ export interface RunPayload {
   /** Whether this run represents the full test suite (true) or a filtered subset (false) */
   isFullRun?: boolean;
   /** Filter details when isFullRun is false */
-  filterDetails?: { grep?: string; grepInvert?: string } | null;
+  filterDetails?: FilterDetails | null;
 }
 
 /** Options controlling which report files and traces to upload */

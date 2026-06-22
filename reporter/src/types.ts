@@ -23,6 +23,19 @@ export interface TestAnnotation {
   description?: string;
 }
 
+/**
+ * Filter that narrowed a run to a subset of tests, recorded when `isFullRun`
+ * is false. Mirrors `FilterDetails` in `application/shared/types.ts`.
+ */
+export interface FilterDetails {
+  /** A non-default `--grep` pattern (Playwright's default `.*` is excluded). */
+  grep?: string;
+  /** A `--grep-invert` pattern. */
+  grepInvert?: string;
+  /** Positional file/path filters from the CLI invocation (e.g. ["tests/login.spec.ts"]). */
+  files?: string[];
+}
+
 export interface BrowserConfig {
   projectName?: string;
   browserName?: string | null;

@@ -12,6 +12,7 @@ import {
   createLimiter,
   readSetupInfo,
   workerIndexOf,
+  detectCliFileFilters,
 } from '../src/helpers.js';
 
 // CI env tests mutate process.env and must run serially.
@@ -69,6 +70,31 @@ describe('getSetupFilePath', () => {
     assert.ok(base.startsWith('piwi-dashboard-setup-'), base);
     assert.ok(base.includes(hashForProject('my-project')));
     assert.ok(base.endsWith('.json'));
+  });
+});
+
+describe('detectCliFileFilters', () => {
+  const N = ['node', 'playwright'];
+  it('returns [] for a full-suite run with no positional args', () => {
+    assert.deepEqual(detectCliFileFilters([...N, 'test']), []);
+    assert.deepEqual(detectCliFileFilters([...N, 'test', '--workers=4', '--headed']), []);
+  });
+  it('captures positional file/path filters', () => {
+    assert.deepEqual(detectCliFileFilters([...N, 'test', 'tests/login.spec.ts']), ['tests/login.spec.ts']);
+    assert.deepEqual(detectCliFileFilters([...N, 'test', 'auth/', 'checkout/']), ['auth/', 'checkout/']);
+  });
+  it('does not mistake value-taking flag values for files', () => {
+    assert.deepEqual(detectCliFileFilters([...N, 'test', '-g', '@smoke']), []);
+    assert.deepEqual(detectCliFileFilters([...N, 'test', '--grep', '@smoke', 'tests/a.spec.ts']), ['tests/a.spec.ts']);
+    assert.deepEqual(detectCliFileFilters([...N, 'test', '-j', '4', '--project', 'chromium', 'a.spec.ts']), [
+      'a.spec.ts',
+    ]);
+  });
+  it('handles --flag=value forms (no extra token consumed)', () => {
+    assert.deepEqual(detectCliFileFilters([...N, 'test', '--project=chromium', 'a.spec.ts']), ['a.spec.ts']);
+  });
+  it('works when no explicit test subcommand is present', () => {
+    assert.deepEqual(detectCliFileFilters([...N, 'a.spec.ts']), ['a.spec.ts']);
   });
 });
 
