@@ -122,6 +122,8 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
         streamToken: setupToken,
         shardTotal,
         shardsFinished: 0,
+        isFullRun: body.isFullRun !== false ? 1 : 0,
+        filterDetails: body.filterDetails ?? null,
       })
       .returning();
 
@@ -152,6 +154,8 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
       streamToken: setupToken,
+      isFullRun: body.isFullRun !== false ? 1 : 0,
+      filterDetails: body.filterDetails ?? null,
     })
     .returning();
 
@@ -175,6 +179,8 @@ export async function apiBeginTestRun(
     playwrightVersion?: string | null;
     shardIndex?: number;
     shardTotal?: number;
+    isFullRun?: boolean;
+    filterDetails?: Record<string, unknown> | null;
   },
 ) {
   const db = await getDemoDb();
@@ -210,6 +216,8 @@ export async function apiBeginTestRun(
         totalTests: body.totalTests || 0,
         metadata: sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
         playwrightVersion: body.playwrightVersion || (testRun.playwrightVersion as string | null),
+        isFullRun: body.isFullRun !== false ? 1 : 0,
+        filterDetails: body.filterDetails ?? (testRun.filterDetails as Record<string, unknown> | null),
       })
       .where(eq(testRuns.id, id));
 
@@ -547,6 +555,8 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         shardsFinished: sql`${testRuns.shardsFinished} + 1`,
         duration: sql`MAX(coalesce(${testRuns.duration}, 0), ${duration})`,
         metadata: { ...currentMeta, shardDurations: allDurations },
+        ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
+        ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
       })
       .where(eq(testRuns.id, id));
 
@@ -650,6 +660,8 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       ...(body.metadata && { metadata: sanitizeMetadata(body.metadata) }),
       ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
+      ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
+      ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     })
     .where(eq(testRuns.id, id));
 

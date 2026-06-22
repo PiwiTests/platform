@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { h, resolveComponent } from 'vue';
 import type { TableColumn } from '@nuxt/ui';
 import type { EndpointSummary } from '~~/types/api';
 
@@ -17,68 +16,34 @@ watch(endpoints, (val) => {
   emitSlow('endpointsCount', val?.length ?? 0);
 });
 
-const UBadge = resolveComponent('UBadge');
-
 const endpointColumns: TableColumn<EndpointSummary>[] = [
   {
     accessorKey: 'method',
     header: createSortHeader<EndpointSummary>('Method'),
-    cell: ({ row }) => {
-      const method = row.getValue('method') as string;
-      const color =
-        method === 'GET'
-          ? 'sky'
-          : method === 'POST'
-            ? 'green'
-            : method === 'PUT' || method === 'PATCH'
-              ? 'amber'
-              : method === 'DELETE'
-                ? 'red'
-                : 'gray';
-      return h(UBadge, { color, variant: 'soft', class: 'font-mono text-xs' }, () => method);
-    },
   },
   {
     accessorKey: 'route',
     header: createSortHeader<EndpointSummary>('Route'),
-    cell: ({ row }) => h('code', { class: 'text-xs font-mono break-all' }, row.getValue('route')),
   },
   {
     accessorKey: 'count',
     header: createSortHeader<EndpointSummary>('Calls'),
-    cell: ({ row }) => row.getValue('count'),
   },
   {
     accessorKey: 'avgDuration',
     header: createSortHeader<EndpointSummary>('Avg'),
-    cell: ({ row }) => {
-      const val = row.getValue('avgDuration') as number;
-      const color = val > 1000 ? 'text-red-600 font-medium' : val > 500 ? 'text-orange-500 font-medium' : '';
-      return h('span', { class: color }, formatDuration(val));
-    },
   },
   {
     accessorKey: 'p90Duration',
     header: createSortHeader<EndpointSummary>('P90'),
-    cell: ({ row }) => {
-      const val = row.getValue('p90Duration') as number;
-      const color = val > 2000 ? 'text-red-600 font-medium' : val > 1000 ? 'text-orange-500' : '';
-      return h('span', { class: color }, formatDuration(val));
-    },
   },
   {
     accessorKey: 'maxDuration',
     header: createSortHeader<EndpointSummary>('Max'),
-    cell: ({ row }) => formatDuration(row.getValue('maxDuration')),
   },
   {
     accessorKey: 'errorRate',
     header: createSortHeader<EndpointSummary>('Errors'),
-    cell: ({ row }) => {
-      const rate = row.getValue('errorRate') as number;
-      if (rate === 0) return h('span', { class: 'text-gray-400' }, '0%');
-      return h('span', { class: 'text-red-600 font-medium' }, `${rate}%`);
-    },
   },
 ];
 </script>
@@ -103,7 +68,60 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
         th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
         td: 'border-b border-default',
       }"
-    />
+    >
+      <template #method-cell="{ row }">
+        <UBadge
+          :color="
+            row.original.method === 'GET'
+              ? 'info'
+              : row.original.method === 'POST'
+                ? 'success'
+                : row.original.method === 'PUT' || row.original.method === 'PATCH'
+                  ? 'warning'
+                  : row.original.method === 'DELETE'
+                    ? 'error'
+                    : 'neutral'
+          "
+          variant="soft"
+          class="font-mono text-xs"
+        >
+          {{ row.original.method }}
+        </UBadge>
+      </template>
+      <template #route-cell="{ row }">
+        <code class="text-xs font-mono break-all">{{ row.original.route }}</code>
+      </template>
+      <template #avgDuration-cell="{ row }">
+        <span
+          :class="
+            row.original.avgDuration > 1000
+              ? 'text-red-600 font-medium'
+              : row.original.avgDuration > 500
+                ? 'text-orange-500 font-medium'
+                : ''
+          "
+        >
+          {{ formatDuration(row.original.avgDuration) }}
+        </span>
+      </template>
+      <template #p90Duration-cell="{ row }">
+        <span
+          :class="
+            row.original.p90Duration > 2000
+              ? 'text-red-600 font-medium'
+              : row.original.p90Duration > 1000
+                ? 'text-orange-500'
+                : ''
+          "
+        >
+          {{ formatDuration(row.original.p90Duration) }}
+        </span>
+      </template>
+      <template #errorRate-cell="{ row }">
+        <span v-if="row.original.errorRate === 0" class="text-gray-400">0%</span>
+        <span v-else class="text-red-600 font-medium">{{ row.original.errorRate }}%</span>
+      </template>
+    </UTable>
 
     <div v-else class="flex-1 flex items-center justify-center text-center text-gray-500">
       <UIcon name="i-lucide-wifi-off" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />

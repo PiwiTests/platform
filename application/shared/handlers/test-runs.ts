@@ -139,6 +139,7 @@ export async function getTestRun(db: DrizzleDB, id: number) {
 
   return {
     ...testRunPublic,
+    isFullRun: testRun.isFullRun === 1,
     project,
     reports: reportResults.map((r: any) => ({
       id: r.id,

@@ -100,6 +100,8 @@ export function serializeRun(payload: RunPayload, opts: SerializeRunOptions): Re
     playwrightVersion: payload.playwrightVersion,
     shardIndex: payload.shardIndex,
     shardTotal: payload.shardTotal,
+    isFullRun: payload.isFullRun ?? true,
+    filterDetails: payload.filterDetails ?? null,
   };
   if (opts.includeTestCases) {
     body.testCases = payload.testCases.map((tc) => toWireTestCase(tc));

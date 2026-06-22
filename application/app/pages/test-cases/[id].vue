@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { TestCaseHistoryPoint } from '~~/types/api';
 import type { TableColumn } from '@nuxt/ui';
-import { h, resolveComponent } from 'vue';
 
 const route = useRoute();
 const testCaseId = route.params.id;
@@ -25,8 +24,6 @@ const clusterColor = (status: string) => {
   return status === 'open' ? 'error' : status === 'resolved' ? 'success' : 'neutral';
 };
 
-const UBadge = resolveComponent('UBadge');
-
 interface ExecutionRow {
   id: number;
   status: string;
@@ -44,74 +41,27 @@ interface ExecutionRow {
 const executionColumns: TableColumn<ExecutionRow>[] = [
   {
     accessorKey: 'startTime',
-    header: () => h('span', 'Date'),
-    cell: ({ row }) => {
-      const ts = row.getValue('startTime') as string | Date;
-      const d = new Date(ts);
-      return h('span', { class: 'text-xs whitespace-nowrap' }, [
-        h('span', { class: 'text-gray-500' }, d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })),
-        h(
-          'span',
-          { class: 'text-gray-400 ml-1' },
-          d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-        ),
-      ]);
-    },
+    header: 'Date',
   },
   {
     accessorKey: 'status',
-    header: () => h('span', 'Status'),
-    cell: ({ row }) => {
-      const status = row.getValue('status') as string;
-      const color = getStatusColor(status);
-      return h(UBadge, { color, class: 'capitalize' }, () => status);
-    },
+    header: 'Status',
   },
   {
     accessorKey: 'duration',
-    header: () => h('span', 'Duration'),
-    cell: ({ row }) => {
-      const val = row.getValue('duration') as number | null;
-      return val !== null ? formatDuration(val) : h('span', { class: 'text-gray-400' }, '—');
-    },
+    header: 'Duration',
   },
   {
     accessorKey: 'retries',
-    header: () => h('span', 'Retries'),
-    cell: ({ row }) => {
-      const retries = row.getValue('retries') as number | null;
-      return retries && retries > 0 ? retries.toString() : '';
-    },
+    header: 'Retries',
   },
   {
     accessorKey: 'runId',
-    header: () => h('span', 'Run'),
-    cell: ({ row }) => {
-      const runId = row.getValue('runId') as number;
-      const runLabel = (row.original as ExecutionRow).runLabel;
-      return h(
-        'a',
-        {
-          href: `/test-runs/${runId}`,
-          class: 'text-primary hover:underline',
-          onClick: (e: MouseEvent) => {
-            e.preventDefault();
-            navigateTo(`/test-runs/${runId}`);
-          },
-        },
-        runLabel ? `${runLabel} (#${runId})` : `#${runId}`,
-      );
-    },
+    header: 'Run',
   },
   {
     accessorKey: 'error',
-    header: () => h('span', 'Error'),
-    cell: ({ row }) => {
-      const err = row.getValue('error') as string | null;
-      if (!err) return '';
-      const truncated = err.length > 80 ? `${err.substring(0, 80)}…` : err;
-      return h('span', { class: 'text-red-600 text-xs truncate max-w-xs block', title: err }, truncated);
-    },
+    header: 'Error',
   },
   {
     id: 'actions',
@@ -282,6 +232,42 @@ const executionColumns: TableColumn<ExecutionRow>[] = [
               td: 'border-b border-default',
             }"
           >
+            <template #startTime-cell="{ row }">
+              <span class="text-xs whitespace-nowrap">
+                <span class="text-gray-500">{{
+                  new Date(row.original.startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                }}</span>
+                <span class="text-gray-400 ml-1">{{
+                  new Date(row.original.startTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                }}</span>
+              </span>
+            </template>
+            <template #status-cell="{ row }">
+              <UBadge :color="getStatusColor(row.original.status)" class="capitalize">{{ row.original.status }}</UBadge>
+            </template>
+            <template #duration-cell="{ row }">
+              <span v-if="row.original.duration !== null">{{ formatDuration(row.original.duration) }}</span>
+              <span v-else class="text-gray-400">&mdash;</span>
+            </template>
+            <template #retries-cell="{ row }">
+              {{ row.original.retries && row.original.retries > 0 ? row.original.retries : '' }}
+            </template>
+            <template #runId-cell="{ row }">
+              <NuxtLink :to="`/test-runs/${row.original.runId}`" class="text-primary hover:underline">
+                {{
+                  row.original.runLabel ? `${row.original.runLabel} (#${row.original.runId})` : `#${row.original.runId}`
+                }}
+              </NuxtLink>
+            </template>
+            <template #error-cell="{ row }">
+              <span
+                v-if="row.original.error"
+                class="text-red-600 text-xs truncate max-w-xs block"
+                :title="row.original.error"
+              >
+                {{ row.original.error.length > 80 ? `${row.original.error.substring(0, 80)}…` : row.original.error }}
+              </span>
+            </template>
             <template #actions-header>
               <div class="text-right">Actions</div>
             </template>

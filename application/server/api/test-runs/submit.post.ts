@@ -221,6 +221,8 @@ export default eventHandler(async (event) => {
       playwrightVersion: body.playwrightVersion || null,
       shardTotal: isSharded ? shardTotal : null,
       shardsFinished: isSharded ? 0 : undefined,
+      isFullRun: body.isFullRun !== false ? 1 : 0,
+      filterDetails: body.filterDetails ?? null,
     })
     .returning();
 

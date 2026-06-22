@@ -38,6 +38,8 @@ export class PiwiDashboardReporter {
   private shardInfo: ShardInfo | null = null;
   private metadata: Record<string, any> = {};
   private enabled: boolean;
+  private isFullRun = true;
+  private filterDetails: { grep?: string; grepInvert?: string } | null = null;
 
   private httpClient: HttpClient;
   private uploader: Uploader;
@@ -93,6 +95,20 @@ export class PiwiDashboardReporter {
     this.logger.info(
       `Starting test run for project: ${this.options.projectName} (Playwright v${this.playwrightVersion})`,
     );
+
+    // Detect partial-run filters so the dashboard can distinguish full-suite runs from ad-hoc focused runs
+    const rawConfig = config as any;
+    const detectedGrep = rawConfig.grep instanceof RegExp ? rawConfig.grep : undefined;
+    const detectedGrepInvert = rawConfig.grepInvert instanceof RegExp ? rawConfig.grepInvert : undefined;
+    if (detectedGrep || detectedGrepInvert) {
+      this.isFullRun = false;
+      this.filterDetails = {
+        grep: detectedGrep?.source,
+        grepInvert: detectedGrepInvert?.source,
+      };
+      this.logger.info('Partial run detected (grep/filter active)');
+    }
+
     this.metadata = this.metadataCollector.collect(config, suite, this.options);
 
     // Detect Playwright shard config (--shard=1/3)
@@ -102,7 +118,15 @@ export class PiwiDashboardReporter {
       this.logger.info(`Shard ${this.shardInfo.current}/${this.shardInfo.total} detected`);
     }
 
-    this.streamManager?.start(this.startTime, this.metadata, this.instanceId, this.playwrightVersion, this.shardInfo);
+    this.streamManager?.start(
+      this.startTime,
+      this.metadata,
+      this.instanceId,
+      this.playwrightVersion,
+      this.shardInfo,
+      this.isFullRun,
+      this.filterDetails,
+    );
   }
 
   /** Playwright reporter hook: called when an individual test begins */
@@ -262,6 +286,8 @@ export class PiwiDashboardReporter {
         instanceId: this.instanceId,
         shardInfo: this.shardInfo,
         setupSteps: this.setupSteps,
+        isFullRun: this.isFullRun,
+        filterDetails: this.filterDetails,
       },
       result,
     );

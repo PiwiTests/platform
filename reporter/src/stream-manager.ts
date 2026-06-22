@@ -80,8 +80,18 @@ export class StreamManager {
     instanceId: string,
     playwrightVersion?: string | null,
     shardInfo?: ShardInfo | null,
+    isFullRun?: boolean,
+    filterDetails?: { grep?: string; grepInvert?: string } | null,
   ): void {
-    this._startPromise = this._doStart(startTime, metadata, instanceId, playwrightVersion, shardInfo);
+    this._startPromise = this._doStart(
+      startTime,
+      metadata,
+      instanceId,
+      playwrightVersion,
+      shardInfo,
+      isFullRun,
+      filterDetails,
+    );
   }
 
   private async _doStart(
@@ -90,6 +100,8 @@ export class StreamManager {
     instanceId: string,
     playwrightVersion?: string | null,
     shardInfo?: ShardInfo | null,
+    isFullRun?: boolean,
+    filterDetails?: { grep?: string; grepInvert?: string } | null,
   ): Promise<void> {
     const setupInfo = readSetupInfo(this.options.projectName!);
 
@@ -105,7 +117,16 @@ export class StreamManager {
         try {
           response = await this.httpClient.postJSON(
             `/api/test-runs/${setupInfo.runId}/begin`,
-            { setupToken: setupInfo.setupToken, totalTests: 0, metadata, playwrightVersion, shardIndex, shardTotal },
+            {
+              setupToken: setupInfo.setupToken,
+              totalTests: 0,
+              metadata,
+              playwrightVersion,
+              shardIndex,
+              shardTotal,
+              isFullRun,
+              filterDetails,
+            },
             this._auth,
           );
         } catch (beginError: any) {
@@ -126,6 +147,8 @@ export class StreamManager {
               playwrightVersion,
               shardIndex,
               shardTotal,
+              isFullRun,
+              filterDetails,
             },
             this._auth,
           );
@@ -144,6 +167,8 @@ export class StreamManager {
             playwrightVersion,
             shardIndex,
             shardTotal,
+            isFullRun,
+            filterDetails,
           },
           this._auth,
         );

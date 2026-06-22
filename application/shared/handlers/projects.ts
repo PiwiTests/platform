@@ -141,6 +141,8 @@ export async function getProject(db: DrizzleDB, id: number) {
       label: testRuns.label,
       instanceId: testRuns.instanceId,
       playwrightVersion: testRuns.playwrightVersion,
+      isFullRun: testRuns.isFullRun,
+      filterDetails: testRuns.filterDetails,
       createdAt: testRuns.createdAt,
       updatedAt: testRuns.updatedAt,
     })
@@ -342,6 +344,7 @@ export async function getProjectPerformance(
   limit: number,
   from?: string,
   to?: string,
+  fullRunsOnly: boolean = true,
 ) {
   // Verify project exists
   const projectResults: any[] = await db.select().from(projects).where(eq(projects.id, projectId));
@@ -349,6 +352,9 @@ export async function getProjectPerformance(
 
   // Build conditions
   const conditions = [eq(testRuns.projectId, projectId)];
+  if (fullRunsOnly) {
+    conditions.push(eq(testRuns.isFullRun, 1));
+  }
   if (from) {
     const fromDate = new Date(from);
     if (Number.isNaN(fromDate.getTime())) throw new Error('Invalid from date');
@@ -371,6 +377,7 @@ export async function getProjectPerformance(
       status: testRuns.status,
       totalTests: testRuns.totalTests,
       metadata: testRuns.metadata,
+      isFullRun: testRuns.isFullRun,
     })
     .from(testRuns)
     .where(and(...conditions))
@@ -395,6 +402,7 @@ export async function getProjectPerformance(
       totalTests: run.totalTests,
       commit: (scm?.commit as string | null) || null,
       branch: (scm?.branch as string | null) || null,
+      isFullRun: run.isFullRun === 1,
     };
   });
 

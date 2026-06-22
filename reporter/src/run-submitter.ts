@@ -28,6 +28,8 @@ export interface CollectedRun {
   instanceId: string;
   shardInfo: ShardInfo | null;
   setupSteps: SetupStep[];
+  isFullRun: boolean;
+  filterDetails: { grep?: string; grepInvert?: string } | null;
 }
 
 /**
@@ -133,6 +135,8 @@ export class RunSubmitter {
       testCases: run.testCases,
       shardIndex: run.shardInfo?.current,
       shardTotal: run.shardInfo?.total,
+      isFullRun: run.isFullRun,
+      filterDetails: run.filterDetails,
     };
   }
 
@@ -164,6 +168,8 @@ export class RunSubmitter {
         hasPendingUploads: this.hasReports(run),
         playwrightVersion: run.playwrightVersion ?? undefined,
         setupSteps: run.setupSteps.length > 0 ? run.setupSteps : undefined,
+        isFullRun: run.isFullRun,
+        filterDetails: run.filterDetails ?? null,
       };
       if (run.shardInfo) {
         finishBody.shardIndex = run.shardInfo.current;
