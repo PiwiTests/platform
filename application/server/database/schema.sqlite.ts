@@ -42,6 +42,8 @@ export const testRuns = sqliteTable(
     p90TestDuration: integer('p90_test_duration'), // 90th percentile test duration in ms
     shardTotal: integer('shard_total'), // Total number of shards for sharded runs; null = not sharded
     shardsFinished: integer('shards_finished').notNull().default(0), // How many shards have finished
+    isFullRun: integer('is_full_run').notNull().default(1), // 1 = full suite, 0 = partial/filtered (--grep, file filter, etc.)
+    filterDetails: text('filter_details', { mode: 'json' }), // JSON: { grep?, grepInvert? }
 
     environment: text('environment'), // Deployment environment (e.g. 'production', 'staging', 'development')
     metadata: text('metadata', { mode: 'json' }), // Additional metadata as JSON

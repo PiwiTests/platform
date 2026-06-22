@@ -39,6 +39,10 @@ export interface RunPayload {
   shardIndex?: number;
   /** Total number of shards (e.g. 3) */
   shardTotal?: number;
+  /** Whether this run represents the full test suite (true) or a filtered subset (false) */
+  isFullRun?: boolean;
+  /** Filter details when isFullRun is false */
+  filterDetails?: { grep?: string; grepInvert?: string } | null;
 }
 
 /** Options controlling which report files and traces to upload */
@@ -177,6 +181,7 @@ export class Uploader {
           title: testCase.title,
           location: testCase.location,
           retries: testCase.retries ?? 0,
+          suitePath: testCase.suitePath ?? null,
         }),
       );
       if (traceInfo) {

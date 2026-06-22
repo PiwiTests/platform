@@ -31,11 +31,12 @@ export default eventHandler(async (event) => {
   const limit = Math.min(parseInt(query.limit as string) || 50, 200);
   const from = query.from as string | undefined;
   const to = query.to as string | undefined;
+  const fullRunsOnly = query.fullRunsOnly !== 'false';
 
   const db = await getDatabase();
 
   try {
-    return await getProjectPerformance(db, id, limit, from, to);
+    return await getProjectPerformance(db, id, limit, from, to, fullRunsOnly);
   } catch (e: any) {
     if (e?.message === 'Project not found') {
       throw createError({ statusCode: 404, message: 'Project not found' });

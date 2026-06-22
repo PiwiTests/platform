@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { h, resolveComponent, computed, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { z } from 'zod';
 import type { TableColumn } from '@nuxt/ui';
 import type { ProjectWithStats, TagInfo, TagsResponse } from '~~/types/api';
-import { formatDuration } from '~/utils';
 
 useHead({ title: 'Projects — Piwi Dashboard' });
 
@@ -102,13 +101,6 @@ async function handleCreateProject() {
   }
 }
 
-const TagBadge = resolveComponent('TagBadge');
-const RunStatusBadge = resolveComponent('RunStatusBadge');
-const TestStatusBar = resolveComponent('TestStatusBar');
-const RunReports = resolveComponent('RunReports');
-
-const noData = h('span', { class: 'text-xs text-gray-600 italic' }, 'No data');
-
 const columns: TableColumn<ProjectWithStats>[] = [
   {
     header: 'Project',
@@ -116,51 +108,10 @@ const columns: TableColumn<ProjectWithStats>[] = [
       {
         accessorKey: 'name',
         header: createSortHeader<ProjectWithStats>('Name'),
-        cell: ({ row }) => {
-          const displayName = (row.original.label || row.getValue('name')) as string;
-          const tags = (row.original.tags || []) as TagInfo[];
-
-          return h(
-            'div',
-            { class: 'flex flex-col gap-1' },
-            [
-              h('div', { class: 'flex items-center gap-2' }, [
-                h(
-                  'a',
-                  {
-                    href: `/projects/${row.original.id}`,
-                    class: 'text-primary hover:underline font-medium',
-                    onClick: (e: MouseEvent) => {
-                      e.preventDefault();
-                      navigateTo(`/projects/${row.original.id}`);
-                    },
-                  },
-                  displayName,
-                ),
-              ]),
-              tags.length > 0
-                ? h(
-                    'div',
-                    { class: 'flex flex-wrap gap-1' },
-                    tags.map((tag) => h(TagBadge, { text: tag.text, color: tag.color })),
-                  )
-                : null,
-            ].filter(Boolean),
-          );
-        },
       },
       {
         accessorKey: 'totalRuns',
         header: createSortHeader<ProjectWithStats>('Runs'),
-        cell: ({ row }) => {
-          const totalRuns = row.getValue('totalRuns') as ProjectWithStats['totalRuns'];
-
-          if (totalRuns === 0) {
-            return noData;
-          }
-
-          return `${totalRuns} runs`;
-        },
       },
     ],
   },
@@ -171,109 +122,33 @@ const columns: TableColumn<ProjectWithStats>[] = [
       {
         accessorKey: 'latestRun',
         header: createSortHeader<ProjectWithStats>('Date'),
-        cell: ({ row }) => {
-          const latestRun = row.getValue('latestRun') as ProjectWithStats['latestRun'];
-          return latestRun ? prettyDateFormat(latestRun.startTime) : noData;
-        },
       },
       {
         accessorKey: 'branch',
         header: 'Branch',
-        cell: ({ row }) => {
-          const latestRun = row.original.latestRun;
-          const metadata = latestRun?.metadata;
-          if (!metadata?.scm) return '';
-          const parts: ReturnType<typeof h>[] = [];
-          if (metadata.scm.branch) {
-            parts.push(
-              h(
-                'span',
-                { class: 'text-xs font-medium bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded' },
-                metadata.scm.branch,
-              ),
-            );
-          }
-          if (metadata.scm.commit) {
-            parts.push(h('code', { class: 'text-xs text-gray-500 ml-1' }, metadata.scm.commit.substring(0, 7)));
-          }
-          return parts.length > 0 ? h('div', { class: 'flex items-center gap-1 flex-wrap' }, parts) : '';
-        },
       },
 
       {
         accessorKey: 'duration',
         header: createSortHeader<ProjectWithStats>('Duration'),
-        cell: ({ row }) => {
-          const latestRun = row.original.latestRun;
-          return latestRun?.duration != null ? formatDuration(latestRun.duration) : noData;
-        },
       },
       {
         accessorKey: 'status',
         header: createSortHeader<ProjectWithStats>('Status'),
-        cell: ({ row }) => {
-          const latestRun = row.original.latestRun;
-          if (!latestRun) return noData;
-
-          return h(RunStatusBadge, { status: latestRun.status });
-        },
       },
       {
         accessorKey: 'testRatio',
         header: 'Test status',
-        cell: ({ row }) => {
-          const latestRun = row.original.latestRun;
-          if (!latestRun) return noData;
-
-          return h(TestStatusBar, {
-            passed: latestRun.passedTests,
-            failed: latestRun.failedTests,
-            skipped: latestRun.skippedTests,
-            flaky: latestRun.flakyTests,
-            total: latestRun.totalTests,
-          });
-        },
       },
       {
         accessorKey: 'report',
         header: 'Reports',
-        cell: ({ row }) => {
-          const latestRun = row.original.latestRun;
-          if (!latestRun) return '';
-          return h(RunReports, {
-            reports: latestRun.reports,
-          });
-        },
       },
     ],
   },
   {
     accessorKey: 'actions',
-    header: () => h('div', { class: 'text-right' }, 'Project actions'),
-    cell: ({ row }) => {
-      const UButton = resolveComponent('UButton');
-      return h('div', { class: 'flex justify-end gap-2' }, [
-        h(
-          UButton,
-          {
-            to: `/projects/${row.original.id}`,
-            size: 'sm',
-            variant: 'outline',
-          },
-          () => 'View details',
-        ),
-        h(
-          UButton,
-          {
-            to: `/projects/${row.original.id}/edit`,
-            size: 'sm',
-            variant: 'ghost',
-            icon: 'i-lucide-pencil',
-          },
-          () => 'Edit',
-        ),
-      ]);
-    },
+    header: 'Project actions',
   },
 ];
 </script>
@@ -339,7 +214,76 @@ const columns: TableColumn<ProjectWithStats>[] = [
           th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
           td: 'border-b border-default',
         }"
-      />
+      >
+        <template #name-cell="{ row }">
+          <div class="flex flex-col gap-1">
+            <div class="flex items-center gap-2">
+              <NuxtLink :to="`/projects/${row.original.id}`" class="text-primary hover:underline font-medium">
+                {{ row.original.label || row.original.name }}
+              </NuxtLink>
+            </div>
+            <div v-if="row.original.tags?.length" class="flex flex-wrap gap-1">
+              <TagBadge v-for="tag in row.original.tags" :key="tag.id" :text="tag.text" :color="tag.color" />
+            </div>
+          </div>
+        </template>
+        <template #totalRuns-cell="{ row }">
+          <span v-if="row.original.totalRuns === 0" class="text-xs text-gray-600 italic">No data</span>
+          <span v-else>{{ row.original.totalRuns }} runs</span>
+        </template>
+        <template #latestRun-cell="{ row }">
+          <span v-if="row.original.latestRun" class="text-xs text-gray-600">{{
+            prettyDateFormat(row.original.latestRun.startTime)
+          }}</span>
+          <span v-else class="text-xs text-gray-600 italic">No data</span>
+        </template>
+        <template #branch-cell="{ row }">
+          <div v-if="row.original.latestRun?.metadata?.scm" class="flex items-center gap-1 flex-wrap">
+            <span
+              v-if="row.original.latestRun.metadata.scm.branch"
+              class="text-xs font-medium bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded"
+            >
+              {{ row.original.latestRun.metadata.scm.branch }}
+            </span>
+            <code v-if="row.original.latestRun.metadata.scm.commit" class="text-xs text-gray-500">
+              {{ row.original.latestRun.metadata.scm.commit.substring(0, 7) }}
+            </code>
+          </div>
+        </template>
+        <template #duration-cell="{ row }">
+          <span v-if="row.original.latestRun?.duration != null" class="text-sm text-gray-600">{{
+            formatDuration(row.original.latestRun.duration)
+          }}</span>
+          <span v-else class="text-xs text-gray-600 italic">No data</span>
+        </template>
+        <template #status-cell="{ row }">
+          <RunStatusBadge v-if="row.original.latestRun" :status="row.original.latestRun.status" />
+          <span v-else class="text-xs text-gray-600 italic">No data</span>
+        </template>
+        <template #testRatio-cell="{ row }">
+          <TestStatusBar
+            v-if="row.original.latestRun"
+            :passed="row.original.latestRun.passedTests"
+            :failed="row.original.latestRun.failedTests"
+            :skipped="row.original.latestRun.skippedTests"
+            :flaky="row.original.latestRun.flakyTests"
+            :total="row.original.latestRun.totalTests"
+          />
+          <span v-else class="text-xs text-gray-600 italic">No data</span>
+        </template>
+        <template #report-cell="{ row }">
+          <RunReports v-if="row.original.latestRun" :reports="row.original.latestRun.reports" />
+        </template>
+        <template #actions-header>
+          <div class="text-right">Project actions</div>
+        </template>
+        <template #actions-cell="{ row }">
+          <div class="flex justify-end gap-2">
+            <UButton :to="`/projects/${row.original.id}`" size="sm" variant="outline">View details</UButton>
+            <UButton :to="`/projects/${row.original.id}/edit`" size="sm" variant="ghost" icon="i-lucide-pencil" />
+          </div>
+        </template>
+      </UTable>
 
       <div v-else-if="projects && projects.length > 0" class="text-center py-12 text-gray-500">
         <p class="text-lg mb-2">No projects match your search</p>

@@ -6,6 +6,7 @@ import { parseLocation } from '../../../utils/parse-location';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { upsertTraceBlob, findTraceBlob } from '../../../utils/trace-blobs';
 import { getStorage } from '../../../storage';
+import { joinSuitePath } from '../../../../shared/utils/suites';
 import { Role } from '../../../../shared/types';
 
 const REQUIRED_ROLES: Role[] = [];
@@ -31,7 +32,7 @@ defineRouteMeta({
  *
  * Multipart fields:
  *  - streamToken   — run stream token
- *  - testCase      — JSON { title, location, retries } identifying the run case
+ *  - testCase      — JSON { title, location, retries, suitePath } identifying the run case
  *  - trace         — optional trace ZIP file
  *  - trace_hash    — optional SHA-256 of the trace; enables blob deduplication.
  *                    May be sent without a file when the blob already exists.
@@ -62,7 +63,7 @@ export default eventHandler(async (event) => {
   }
 
   let streamToken: string | undefined;
-  let caseInfo: { title?: string; location?: string; retries?: number } | undefined;
+  let caseInfo: { title?: string; location?: string; retries?: number; suitePath?: string[] | null } | undefined;
   let traceFile: { filename: string; data: Buffer } | undefined;
   let traceHash: string | undefined;
   let attachmentMeta: { name: string; contentType: string; originalName: string }[] = [];
@@ -140,6 +141,7 @@ export default eventHandler(async (event) => {
   // Locate the run case row the reporter streamed earlier
   const { filePath } = parseLocation(caseInfo.location);
   const retries = caseInfo.retries ?? 0;
+  const suitePath = caseInfo.suitePath ? joinSuitePath(caseInfo.suitePath) : '';
 
   const sharedCases = await db
     .select({ id: testCases.id })
@@ -148,6 +150,7 @@ export default eventHandler(async (event) => {
       and(
         eq(testCases.projectId, testRun.projectId),
         eq(testCases.filePath, filePath),
+        eq(testCases.suitePath, suitePath),
         eq(testCases.title, caseInfo.title),
       ),
     );

@@ -3,7 +3,7 @@
  * These types are used by both the server API and the app frontend
  */
 
-import type { Role } from '../shared/types';
+import type { Role, FilterDetails } from '../shared/types';
 
 // Re-export database types that are used in API responses
 export type {
@@ -215,6 +215,8 @@ export interface TestRunSummary {
   label?: string | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null;
+  isFullRun?: boolean;
+  filterDetails?: FilterDetails | null;
   createdAt: Date;
 }
 
@@ -236,6 +238,8 @@ export interface TestRunDetails {
   p90TestDuration?: number | null;
   shardTotal?: number | null;
   shardsFinished?: number;
+  isFullRun?: boolean;
+  filterDetails?: FilterDetails | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null;
   setupSteps?: TestStepEvent[] | null;
@@ -294,6 +298,7 @@ export interface TestRunForChart {
   duration?: number | null;
   avgTestDuration?: number | null;
   p90TestDuration?: number | null;
+  isFullRun?: boolean;
 }
 
 // ============================================================================
@@ -696,6 +701,7 @@ export interface PerformanceTrendPoint {
   totalTests: number;
   commit?: string | null;
   branch?: string | null;
+  isFullRun?: boolean;
 }
 
 /**

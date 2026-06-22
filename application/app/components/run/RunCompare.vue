@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, resolveComponent, computed, ref, onMounted } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import type { TableColumn } from '@nuxt/ui';
 import type { TestRunDetails, ProjectWithTestRuns } from '~~/types/api';
 import type { ComparisonRow } from '~/composables/useRunComparison';
@@ -88,65 +88,30 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
   {
     accessorKey: 'title',
     header: createSortHeader<ComparisonRow>('Test case'),
-    cell: ({ row }) => h('span', { class: 'font-medium' }, row.getValue('title')),
   },
   {
     accessorKey: 'statusA',
     header: createSortHeader<ComparisonRow>('Status A'),
-    cell: ({ row }) => {
-      const status = row.getValue('statusA') as string | null;
-      if (!status) return h('span', { class: 'text-gray-400' }, '—');
-      const color = getStatusColor(status);
-      return h(resolveComponent('UBadge'), { color, class: 'capitalize' }, () => status);
-    },
   },
   {
     accessorKey: 'statusB',
     header: createSortHeader<ComparisonRow>('Status B'),
-    cell: ({ row }) => {
-      const status = row.getValue('statusB') as string | null;
-      if (!status) return h('span', { class: 'text-gray-400' }, '—');
-      const color = getStatusColor(status);
-      return h(resolveComponent('UBadge'), { color, class: 'capitalize' }, () => status);
-    },
   },
   {
     accessorKey: 'durationA',
     header: createSortHeader<ComparisonRow>('Duration A'),
-    cell: ({ row }) => {
-      const val = row.getValue('durationA') as number | null;
-      return val !== null ? formatDuration(val) : h('span', { class: 'text-gray-400' }, '—');
-    },
   },
   {
     accessorKey: 'durationB',
     header: createSortHeader<ComparisonRow>('Duration B'),
-    cell: ({ row }) => {
-      const val = row.getValue('durationB') as number | null;
-      return val !== null ? formatDuration(val) : h('span', { class: 'text-gray-400' }, '—');
-    },
   },
   {
     accessorKey: 'delta',
     header: createSortHeader<ComparisonRow>('Delta'),
-    cell: ({ row }) => {
-      const delta = row.getValue('delta') as number | null;
-      if (delta === null) return h('span', { class: 'text-gray-400' }, '—');
-      const sign = delta > 0 ? '+' : '';
-      const color = delta > 0 ? 'text-red-600' : delta < 0 ? 'text-green-600' : 'text-gray-500';
-      return h('span', { class: color }, `${sign}${formatDuration(delta)}`);
-    },
   },
   {
     accessorKey: 'percentChange',
     header: createSortHeader<ComparisonRow>('Change'),
-    cell: ({ row }) => {
-      const pct = row.getValue('percentChange') as number | null;
-      if (pct === null) return h('span', { class: 'text-gray-400' }, '—');
-      const sign = pct > 0 ? '+' : '';
-      const color = pct > 10 ? 'text-red-600 font-medium' : pct < -10 ? 'text-green-600 font-medium' : 'text-gray-500';
-      return h('span', { class: color }, `${sign}${pct}%`);
-    },
   },
 ];
 </script>
@@ -227,7 +192,54 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
               th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
               td: 'border-b border-default',
             }"
-          />
+          >
+            <template #statusA-cell="{ row }">
+              <span v-if="!row.original.statusA" class="text-gray-400">&mdash;</span>
+              <UBadge v-else :color="getStatusColor(row.original.statusA)" class="capitalize">{{
+                row.original.statusA
+              }}</UBadge>
+            </template>
+            <template #statusB-cell="{ row }">
+              <span v-if="!row.original.statusB" class="text-gray-400">&mdash;</span>
+              <UBadge v-else :color="getStatusColor(row.original.statusB)" class="capitalize">{{
+                row.original.statusB
+              }}</UBadge>
+            </template>
+            <template #durationA-cell="{ row }">
+              <span v-if="row.original.durationA !== null">{{ formatDuration(row.original.durationA) }}</span>
+              <span v-else class="text-gray-400">&mdash;</span>
+            </template>
+            <template #durationB-cell="{ row }">
+              <span v-if="row.original.durationB !== null">{{ formatDuration(row.original.durationB) }}</span>
+              <span v-else class="text-gray-400">&mdash;</span>
+            </template>
+            <template #delta-cell="{ row }">
+              <span v-if="row.original.delta === null" class="text-gray-400">&mdash;</span>
+              <span
+                v-else
+                :class="
+                  row.original.delta > 0 ? 'text-red-600' : row.original.delta < 0 ? 'text-green-600' : 'text-gray-500'
+                "
+              >
+                {{ row.original.delta > 0 ? '+' : '' }}{{ formatDuration(row.original.delta) }}
+              </span>
+            </template>
+            <template #percentChange-cell="{ row }">
+              <span v-if="row.original.percentChange === null" class="text-gray-400">&mdash;</span>
+              <span
+                v-else
+                :class="
+                  row.original.percentChange > 10
+                    ? 'text-red-600 font-medium'
+                    : row.original.percentChange < -10
+                      ? 'text-green-600 font-medium'
+                      : 'text-gray-500'
+                "
+              >
+                {{ row.original.percentChange > 0 ? '+' : '' }}{{ row.original.percentChange }}%
+              </span>
+            </template>
+          </UTable>
         </template>
 
         <div v-else-if="compareRunA && !loadingBaseline" class="text-center py-8 text-gray-500">

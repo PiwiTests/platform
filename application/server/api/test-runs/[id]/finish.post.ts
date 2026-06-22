@@ -125,6 +125,8 @@ export default eventHandler(async (event) => {
       shardsFinished: sql`${testRuns.shardsFinished} + 1`,
       duration: sql`MAX(coalesce(${testRuns.duration}, 0), ${duration})`,
       metadata: { ...currentMeta, shardDurations: allDurations },
+      ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
+      ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     };
 
     await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));
@@ -246,6 +248,8 @@ export default eventHandler(async (event) => {
       ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.setupSteps && { setupSteps: body.setupSteps }),
+      ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
+      ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     };
 
     await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));
@@ -282,6 +286,8 @@ export default eventHandler(async (event) => {
       ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.setupSteps && { setupSteps: body.setupSteps }),
+      ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
+      ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     };
 
     await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));

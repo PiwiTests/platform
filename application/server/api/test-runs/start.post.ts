@@ -143,6 +143,8 @@ export default eventHandler(async (event) => {
         streamToken,
         shardTotal,
         shardsFinished: 0,
+        isFullRun: body.isFullRun !== false ? 1 : 0,
+        filterDetails: body.filterDetails ?? null,
       })
       .returning();
 
@@ -188,6 +190,8 @@ export default eventHandler(async (event) => {
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
       streamToken,
+      isFullRun: body.isFullRun !== false ? 1 : 0,
+      filterDetails: body.filterDetails ?? null,
     })
     .returning();
 

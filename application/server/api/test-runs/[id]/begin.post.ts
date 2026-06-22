@@ -105,6 +105,8 @@ export default eventHandler(async (event) => {
         totalTests: body.totalTests || 0,
         metadata: sanitizeMetadata(body.metadata || testRun.metadata),
         playwrightVersion: body.playwrightVersion || testRun.playwrightVersion,
+        isFullRun: body.isFullRun !== false ? 1 : 0,
+        filterDetails: body.filterDetails ?? testRun.filterDetails,
         ...(isSharded ? { shardTotal: testRun.shardTotal, shardsFinished: testRun.shardsFinished } : {}),
       })
       .where(eq(testRuns.id, id));

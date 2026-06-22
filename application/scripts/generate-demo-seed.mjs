@@ -591,6 +591,8 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
       stream_token: null,
       instance_id: null,
       playwright_version: '1.51.0',
+      is_full_run: i % 5 !== 4 ? 1 : 0,
+      filter_details: i % 5 === 4 ? JSON.stringify({ grep: 'login|checkout' }) : null,
       created_at: startTime,
       updated_at: startTime + Math.floor(duration / 1000),
     };

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { h, resolveComponent } from 'vue';
 import type { TableColumn } from '@nuxt/ui';
 import type {
   ProjectWithTestRuns,
@@ -152,6 +151,7 @@ function compareSelectedRuns() {
 
 // Environment filter
 const selectedEnvironments = ref<string[]>([]);
+const fullRunsOnly = ref(true);
 
 const availableEnvironments = computed(() => {
   const envs = new Set<string>();
@@ -175,144 +175,67 @@ function isEnvironmentFilterActive(env: string) {
 }
 
 const filteredRuns = computed(() => {
-  const runs = project.value?.testRuns || [];
+  let runs = project.value?.testRuns || [];
+  if (fullRunsOnly.value) {
+    runs = runs.filter((r) => r.isFullRun !== false);
+  }
   if (selectedEnvironments.value.length === 0) return runs;
   return runs.filter((r) => r.environment && selectedEnvironments.value.includes(r.environment));
 });
 
-const RunStatusBadge = resolveComponent('RunStatusBadge');
-const TestStatusBar = resolveComponent('TestStatusBar');
-const RunReports = resolveComponent('RunReports');
-const BrowserBadge = resolveComponent('BrowserBadge');
+const chartRuns = computed(() => {
+  const runs = project.value?.testRuns || [];
+  if (fullRunsOnly.value) {
+    return runs.filter((r) => r.isFullRun !== false);
+  }
+  return runs;
+});
 
 const runsColumns: TableColumn<TestRunSummary>[] = [
   {
     accessorKey: 'select',
     header: '',
-    cell: ({ row }) => {
-      const runId = row.original.id;
-      const checked = isRunSelected(runId);
-      return h('input', {
-        type: 'checkbox',
-        checked,
-        class: 'cursor-pointer size-4 accent-primary',
-        onClick: (e: MouseEvent) => {
-          e.stopPropagation();
-          toggleRunSelection(runId);
-        },
-      });
-    },
   },
   {
     accessorKey: 'id',
     header: createSortHeader<TestRunSummary>('Run'),
-    cell: ({ row }) => {
-      const id = row.original.id;
-      const label = row.original.label;
-      return h('div', { class: 'flex items-center gap-2' }, [
-        h(
-          'a',
-          {
-            href: `/test-runs/${id}`,
-            class: 'text-primary hover:underline font-medium',
-            onClick: (e: MouseEvent) => {
-              e.preventDefault();
-              navigateTo(`/test-runs/${id}`);
-            },
-          },
-          `Run #${id}`,
-        ),
-        label ? h('span', { class: 'text-xs text-gray-500 dark:text-gray-400 truncate max-w-32' }, label) : null,
-      ]);
-    },
   },
   {
     accessorKey: 'status',
     header: createSortHeader<TestRunSummary>('Status'),
-    cell: ({ row }) => h(RunStatusBadge, { status: row.getValue('status') as string }),
+  },
+  {
+    accessorKey: 'isFullRun',
+    header: 'Scope',
   },
   {
     id: 'browsers',
     accessorFn: (row) => row.browsers,
     header: '',
-    cell: ({ row }) => {
-      const browsers = row.original.browsers;
-      if (!browsers?.length) return '';
-      return h(
-        'div',
-        { class: 'flex items-center gap-1' },
-        browsers.map((name) => h(BrowserBadge, { browser: { projectName: name }, size: 'sm' })),
-      );
-    },
   },
   {
     accessorKey: 'startTime',
     header: createSortHeader<TestRunSummary>('Started'),
-    cell: ({ row }) => prettyDateFormat(row.getValue('startTime')),
   },
   {
     accessorKey: 'environment',
     header: createSortHeader<TestRunSummary>('Environment'),
-    cell: ({ row }) => {
-      const env = row.original.environment;
-      if (!env) return '';
-      return h(
-        'span',
-        {
-          class:
-            'text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded',
-        },
-        env,
-      );
-    },
   },
   {
     accessorKey: 'metadata',
     header: 'Branch / Commit',
-    cell: ({ row }) => {
-      const metadata = row.original.metadata;
-      if (!metadata?.scm) return '';
-      const parts: ReturnType<typeof h>[] = [];
-      if (metadata.scm.branch) {
-        parts.push(
-          h(
-            'span',
-            { class: 'text-xs font-medium bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded' },
-            metadata.scm.branch,
-          ),
-        );
-      }
-      if (metadata.scm.commit) {
-        parts.push(h('code', { class: 'text-xs text-gray-500 ml-1' }, metadata.scm.commit.substring(0, 7)));
-      }
-      return h('div', { class: 'flex items-center gap-1 flex-wrap' }, parts);
-    },
   },
   {
     accessorKey: 'duration',
     header: createSortHeader<TestRunSummary>('Duration'),
-    cell: ({ row }) => formatDuration(row.getValue('duration')),
   },
   {
     accessorKey: 'tests',
     header: 'Test Status',
-    cell: ({ row }) => {
-      return h(TestStatusBar, {
-        passed: row.original.passedTests,
-        failed: row.original.failedTests,
-        skipped: row.original.skippedTests,
-        flaky: row.original.flakyTests,
-        total: row.original.totalTests,
-      });
-    },
   },
   {
     accessorKey: 'reports',
     header: 'Reports',
-    cell: ({ row }) =>
-      h(RunReports, {
-        reports: row.original.reports,
-      }),
   },
   {
     id: 'actions',
@@ -332,8 +255,6 @@ watch(
   },
   { immediate: true },
 );
-
-const UBadge = resolveComponent('UBadge');
 
 function getPassRate(testCase: TestCaseWithStats) {
   if (testCase.totalRuns === 0) return 0;
@@ -381,12 +302,14 @@ const slowTests = ref<SlowTest[] | null>(null);
 const slowTestsError = ref(false);
 
 watch(
-  [activeTab, performanceQueryParams],
+  [activeTab, performanceQueryParams, fullRunsOnly],
   async ([tab, params]) => {
     if (tab !== 'performance') return;
     const qs = new URLSearchParams(params as Record<string, string>).toString();
+    const fullParam = fullRunsOnly.value ? `${qs ? '&' : ''}fullRunsOnly=true` : '';
+    const queryString = qs || fullParam ? `?${qs}${fullParam}` : '';
     performanceData.value = await $fetch<PerformanceTrendPoint[]>(
-      `/api/projects/${projectId}/performance${qs ? `?${qs}` : ''}`,
+      `/api/projects/${projectId}/performance${queryString}`,
     ).catch((err) => {
       console.warn('[PerformanceTab] Failed to fetch performance trend:', err);
       return null;
@@ -407,47 +330,30 @@ const slowTestsColumns: TableColumn<SlowTest>[] = [
   {
     accessorKey: 'title',
     header: createSortHeader<SlowTest>('Test case'),
-    cell: ({ row }) => {
-      return h('div', {}, [
-        h('div', { class: 'font-medium' }, row.getValue('title')),
-        h('code', { class: 'text-xs bg-gray-100 dark:bg-gray-800 p-1 rounded mt-1 block' }, row.original.filePath),
-      ]);
-    },
   },
   {
     accessorKey: 'avgDuration',
     header: createSortHeader<SlowTest>('Avg duration'),
-    cell: ({ row }) => formatDuration(row.getValue('avgDuration')),
   },
   {
     accessorKey: 'maxDuration',
     header: createSortHeader<SlowTest>('Max'),
-    cell: ({ row }) => formatDuration(row.getValue('maxDuration')),
   },
   {
     accessorKey: 'minDuration',
     header: createSortHeader<SlowTest>('Min'),
-    cell: ({ row }) => formatDuration(row.getValue('minDuration')),
   },
   {
     accessorKey: 'latestDuration',
     header: createSortHeader<SlowTest>('Latest'),
-    cell: ({ row }) => formatDuration(row.getValue('latestDuration')),
   },
   {
     accessorKey: 'trend',
     header: createSortHeader<SlowTest>('Trend'),
-    cell: ({ row }) => {
-      const trend = row.getValue('trend') as string;
-      if (trend === 'slower') return h('span', { class: 'text-red-600 font-medium' }, '▲ Slower');
-      if (trend === 'faster') return h('span', { class: 'text-green-600 font-medium' }, '▼ Faster');
-      return h('span', { class: 'text-gray-500' }, '— Stable');
-    },
   },
   {
     accessorKey: 'runCount',
     header: createSortHeader<SlowTest>('Runs'),
-    cell: ({ row }) => row.getValue('runCount'),
   },
 ];
 
@@ -547,65 +453,30 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
   {
     accessorKey: 'title',
     header: createSortHeader<ComparisonRow>('Test case'),
-    cell: ({ row }) => h('span', { class: 'font-medium' }, row.getValue('title')),
   },
   {
     accessorKey: 'statusA',
     header: createSortHeader<ComparisonRow>('Status A'),
-    cell: ({ row }) => {
-      const status = row.getValue('statusA') as string | null;
-      if (!status) return h('span', { class: 'text-gray-400' }, '—');
-      const color = getStatusColor(status);
-      return h(UBadge, { color, class: 'capitalize' }, () => status);
-    },
   },
   {
     accessorKey: 'statusB',
     header: createSortHeader<ComparisonRow>('Status B'),
-    cell: ({ row }) => {
-      const status = row.getValue('statusB') as string | null;
-      if (!status) return h('span', { class: 'text-gray-400' }, '—');
-      const color = getStatusColor(status);
-      return h(UBadge, { color, class: 'capitalize' }, () => status);
-    },
   },
   {
     accessorKey: 'durationA',
     header: createSortHeader<ComparisonRow>('Duration A'),
-    cell: ({ row }) => {
-      const val = row.getValue('durationA') as number | null;
-      return val !== null ? formatDuration(val) : h('span', { class: 'text-gray-400' }, '—');
-    },
   },
   {
     accessorKey: 'durationB',
     header: createSortHeader<ComparisonRow>('Duration B'),
-    cell: ({ row }) => {
-      const val = row.getValue('durationB') as number | null;
-      return val !== null ? formatDuration(val) : h('span', { class: 'text-gray-400' }, '—');
-    },
   },
   {
     accessorKey: 'delta',
     header: createSortHeader<ComparisonRow>('Delta'),
-    cell: ({ row }) => {
-      const delta = row.getValue('delta') as number | null;
-      if (delta === null) return h('span', { class: 'text-gray-400' }, '—');
-      const sign = delta > 0 ? '+' : '';
-      const color = delta > 0 ? 'text-red-600' : delta < 0 ? 'text-green-600' : 'text-gray-500';
-      return h('span', { class: color }, `${sign}${formatDuration(delta)}`);
-    },
   },
   {
     accessorKey: 'percentChange',
     header: createSortHeader<ComparisonRow>('Change'),
-    cell: ({ row }) => {
-      const pct = row.getValue('percentChange') as number | null;
-      if (pct === null) return h('span', { class: 'text-gray-400' }, '—');
-      const sign = pct > 0 ? '+' : '';
-      const color = pct > 10 ? 'text-red-600 font-medium' : pct < -10 ? 'text-green-600 font-medium' : 'text-gray-500';
-      return h('span', { class: color }, `${sign}${pct}%`);
-    },
   },
 ];
 </script>
@@ -668,36 +539,39 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                 </p>
               </template>
 
-              <TestRunsChart :test-runs="project.testRuns" :height="200" />
+              <TestRunsChart :test-runs="chartRuns" :height="200" />
             </UCard>
 
             <UCard class="mt-4">
-              <!-- Environment filter -->
-              <div v-if="availableEnvironments.length > 0" class="flex flex-wrap items-center gap-2 mb-4">
-                <span class="text-sm text-muted shrink-0">Filter by environment:</span>
-                <button
-                  v-for="env in availableEnvironments"
-                  :key="env"
-                  type="button"
-                  :class="[
-                    'text-xs font-medium px-2 py-1 rounded border cursor-pointer focus:outline-none transition-colors',
-                    isEnvironmentFilterActive(env)
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-800',
-                  ]"
-                  @click="toggleEnvironmentFilter(env)"
-                >
-                  {{ env }}
-                </button>
-                <UButton
-                  v-if="selectedEnvironments.length > 0"
-                  size="xs"
-                  variant="ghost"
-                  color="neutral"
-                  icon="i-lucide-x"
-                  label="Clear filter"
-                  @click="selectedEnvironments = []"
-                />
+              <!-- Full runs toggle + Environment filter -->
+              <div class="flex flex-wrap items-center gap-3 mb-4">
+                <USwitch v-model="fullRunsOnly" label="Full runs only" :ui="{ label: 'text-sm' }" />
+                <template v-if="availableEnvironments.length > 0">
+                  <span class="text-sm text-muted shrink-0">Environment:</span>
+                  <button
+                    v-for="env in availableEnvironments"
+                    :key="env"
+                    type="button"
+                    :class="[
+                      'text-xs font-medium px-2 py-1 rounded border cursor-pointer focus:outline-none transition-colors',
+                      isEnvironmentFilterActive(env)
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-800',
+                    ]"
+                    @click="toggleEnvironmentFilter(env)"
+                  >
+                    {{ env }}
+                  </button>
+                  <UButton
+                    v-if="selectedEnvironments.length > 0"
+                    size="xs"
+                    variant="ghost"
+                    color="neutral"
+                    icon="i-lucide-x"
+                    label="Clear filter"
+                    @click="selectedEnvironments = []"
+                  />
+                </template>
               </div>
 
               <!-- Comparison action bar -->
@@ -739,10 +613,87 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                   td: 'border-b border-default',
                 }"
               >
+                <template #select-cell="{ row }">
+                  <input
+                    type="checkbox"
+                    :checked="isRunSelected(row.original.id)"
+                    class="cursor-pointer size-4 accent-primary"
+                    @click.stop="toggleRunSelection(row.original.id)"
+                  />
+                </template>
+                <template #id-cell="{ row }">
+                  <div class="flex items-center gap-2">
+                    <NuxtLink :to="`/test-runs/${row.original.id}`" class="text-primary hover:underline font-medium">
+                      Run #{{ row.original.id }}
+                    </NuxtLink>
+                    <span v-if="row.original.label" class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-32">
+                      {{ row.original.label }}
+                    </span>
+                  </div>
+                </template>
+                <template #status-cell="{ row }">
+                  <RunStatusBadge :status="row.original.status" />
+                </template>
+                <template #isFullRun-cell="{ row }">
+                  <span
+                    v-if="row.original.isFullRun === false"
+                    class="text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 px-1.5 py-0.5 rounded"
+                  >
+                    Partial
+                  </span>
+                </template>
+                <template #browsers-cell="{ row }">
+                  <div v-if="row.original.browsers?.length" class="flex items-center gap-1">
+                    <BrowserBadge
+                      v-for="name in row.original.browsers"
+                      :key="name"
+                      :browser="{ projectName: name }"
+                      size="sm"
+                    />
+                  </div>
+                </template>
+                <template #startTime-cell="{ row }">
+                  <span class="text-xs text-gray-600">{{ prettyDateFormat(row.original.startTime) }}</span>
+                </template>
+                <template #environment-cell="{ row }">
+                  <span
+                    v-if="row.original.environment"
+                    class="text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded"
+                  >
+                    {{ row.original.environment }}
+                  </span>
+                </template>
+                <template #metadata-cell="{ row }">
+                  <div v-if="row.original.metadata?.scm" class="flex items-center gap-1 flex-wrap">
+                    <span
+                      v-if="row.original.metadata.scm.branch"
+                      class="text-xs font-medium bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded"
+                    >
+                      {{ row.original.metadata.scm.branch }}
+                    </span>
+                    <code v-if="row.original.metadata.scm.commit" class="text-xs text-gray-500">
+                      {{ row.original.metadata.scm.commit.substring(0, 7) }}
+                    </code>
+                  </div>
+                </template>
+                <template #duration-cell="{ row }">
+                  <span>{{ formatDuration(row.original.duration) }}</span>
+                </template>
+                <template #tests-cell="{ row }">
+                  <TestStatusBar
+                    :passed="row.original.passedTests"
+                    :failed="row.original.failedTests"
+                    :skipped="row.original.skippedTests"
+                    :flaky="row.original.flakyTests"
+                    :total="row.original.totalTests"
+                  />
+                </template>
+                <template #reports-cell="{ row }">
+                  <RunReports :reports="row.original.reports" />
+                </template>
                 <template #actions-header>
                   <div class="text-right">Actions</div>
                 </template>
-
                 <template #actions-cell="{ row }">
                   <div class="flex justify-end gap-2">
                     <UButton :to="`/test-runs/${row.original.id}`" size="sm" variant="outline"> View </UButton>
@@ -825,7 +776,21 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                   th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
                   td: 'border-b border-default',
                 }"
-              />
+              >
+                <template #title-cell="{ row }">
+                  <div>
+                    <div class="font-medium">{{ row.original.title }}</div>
+                    <code class="text-xs bg-gray-100 dark:bg-gray-800 p-1 rounded mt-1 block">{{
+                      row.original.filePath
+                    }}</code>
+                  </div>
+                </template>
+                <template #trend-cell="{ row }">
+                  <span v-if="row.original.trend === 'slower'" class="text-red-600 font-medium">▲ Slower</span>
+                  <span v-else-if="row.original.trend === 'faster'" class="text-green-600 font-medium">▼ Faster</span>
+                  <span v-else class="text-gray-500">&mdash; Stable</span>
+                </template>
+              </UTable>
 
               <div v-else class="text-center py-8 text-gray-500">No slow test data available yet.</div>
             </UCard>
@@ -884,7 +849,58 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                       th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
                       td: 'border-b border-default',
                     }"
-                  />
+                  >
+                    <template #statusA-cell="{ row }">
+                      <span v-if="!row.original.statusA" class="text-gray-400">&mdash;</span>
+                      <UBadge v-else :color="getStatusColor(row.original.statusA)" class="capitalize">{{
+                        row.original.statusA
+                      }}</UBadge>
+                    </template>
+                    <template #statusB-cell="{ row }">
+                      <span v-if="!row.original.statusB" class="text-gray-400">&mdash;</span>
+                      <UBadge v-else :color="getStatusColor(row.original.statusB)" class="capitalize">{{
+                        row.original.statusB
+                      }}</UBadge>
+                    </template>
+                    <template #durationA-cell="{ row }">
+                      <span v-if="row.original.durationA !== null">{{ formatDuration(row.original.durationA) }}</span>
+                      <span v-else class="text-gray-400">&mdash;</span>
+                    </template>
+                    <template #durationB-cell="{ row }">
+                      <span v-if="row.original.durationB !== null">{{ formatDuration(row.original.durationB) }}</span>
+                      <span v-else class="text-gray-400">&mdash;</span>
+                    </template>
+                    <template #delta-cell="{ row }">
+                      <span v-if="row.original.delta === null" class="text-gray-400">&mdash;</span>
+                      <span
+                        v-else
+                        :class="
+                          row.original.delta > 0
+                            ? 'text-red-600'
+                            : row.original.delta < 0
+                              ? 'text-green-600'
+                              : 'text-gray-500'
+                        "
+                      >
+                        {{ row.original.delta > 0 ? '+' : '' }}{{ formatDuration(row.original.delta) }}
+                      </span>
+                    </template>
+                    <template #percentChange-cell="{ row }">
+                      <span v-if="row.original.percentChange === null" class="text-gray-400">&mdash;</span>
+                      <span
+                        v-else
+                        :class="
+                          row.original.percentChange > 10
+                            ? 'text-red-600 font-medium'
+                            : row.original.percentChange < -10
+                              ? 'text-green-600 font-medium'
+                              : 'text-gray-500'
+                        "
+                      >
+                        {{ row.original.percentChange > 0 ? '+' : '' }}{{ row.original.percentChange }}%
+                      </span>
+                    </template>
+                  </UTable>
                 </div>
                 <div v-else-if="!compareRunA || !compareRunB" class="text-center py-8 text-gray-500">
                   Select two runs to compare their performance.
@@ -1102,7 +1118,58 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                       th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
                       td: 'border-b border-default',
                     }"
-                  />
+                  >
+                    <template #statusA-cell="{ row }">
+                      <span v-if="!row.original.statusA" class="text-gray-400">&mdash;</span>
+                      <UBadge v-else :color="getStatusColor(row.original.statusA)" class="capitalize">{{
+                        row.original.statusA
+                      }}</UBadge>
+                    </template>
+                    <template #statusB-cell="{ row }">
+                      <span v-if="!row.original.statusB" class="text-gray-400">&mdash;</span>
+                      <UBadge v-else :color="getStatusColor(row.original.statusB)" class="capitalize">{{
+                        row.original.statusB
+                      }}</UBadge>
+                    </template>
+                    <template #durationA-cell="{ row }">
+                      <span v-if="row.original.durationA !== null">{{ formatDuration(row.original.durationA) }}</span>
+                      <span v-else class="text-gray-400">&mdash;</span>
+                    </template>
+                    <template #durationB-cell="{ row }">
+                      <span v-if="row.original.durationB !== null">{{ formatDuration(row.original.durationB) }}</span>
+                      <span v-else class="text-gray-400">&mdash;</span>
+                    </template>
+                    <template #delta-cell="{ row }">
+                      <span v-if="row.original.delta === null" class="text-gray-400">&mdash;</span>
+                      <span
+                        v-else
+                        :class="
+                          row.original.delta > 0
+                            ? 'text-red-600'
+                            : row.original.delta < 0
+                              ? 'text-green-600'
+                              : 'text-gray-500'
+                        "
+                      >
+                        {{ row.original.delta > 0 ? '+' : '' }}{{ formatDuration(row.original.delta) }}
+                      </span>
+                    </template>
+                    <template #percentChange-cell="{ row }">
+                      <span v-if="row.original.percentChange === null" class="text-gray-400">&mdash;</span>
+                      <span
+                        v-else
+                        :class="
+                          row.original.percentChange > 10
+                            ? 'text-red-600 font-medium'
+                            : row.original.percentChange < -10
+                              ? 'text-green-600 font-medium'
+                              : 'text-gray-500'
+                        "
+                      >
+                        {{ row.original.percentChange > 0 ? '+' : '' }}{{ row.original.percentChange }}%
+                      </span>
+                    </template>
+                  </UTable>
                 </div>
 
                 <div v-else-if="!compareRunA || !compareRunB" class="text-center py-8 text-gray-500">

@@ -111,6 +111,11 @@ export interface TestRunCounters {
 
 export type FlakyRootCause = 'timing' | 'network' | 'assertion' | 'environment' | 'other';
 
+export interface FilterDetails {
+  grep?: string;
+  grepInvert?: string;
+}
+
 export interface TestRunSubmitPayload {
   projectName: string;
   projectDescription?: string;
@@ -129,6 +134,8 @@ export interface TestRunSubmitPayload {
   testCases?: TestCasePayload[];
   shardIndex?: number;
   shardTotal?: number;
+  isFullRun?: boolean;
+  filterDetails?: FilterDetails | null;
 }
 
 // ── Step / hook events within a test case ─────────────────────────────────────
@@ -191,6 +198,8 @@ export interface TestRunFinishPayload {
   playwrightVersion?: string;
   shardIndex?: number;
   shardTotal?: number;
+  isFullRun?: boolean;
+  filterDetails?: FilterDetails | null;
 }
 
 // ── Setup / start payload ─────────────────────────────────────────────────────
@@ -206,4 +215,6 @@ export interface TestRunStartPayload {
   playwrightVersion?: string;
   shardIndex?: number;
   shardTotal?: number;
+  isFullRun?: boolean;
+  filterDetails?: FilterDetails | null;
 }
