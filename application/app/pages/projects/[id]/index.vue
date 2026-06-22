@@ -254,6 +254,23 @@ const chartRuns = computed(() => {
   return runs;
 });
 
+// Tooltip for the Scope icon: full runs are self-explanatory; partial runs surface
+// the grep / grep-invert filter that narrowed the run, when the reporter captured it.
+function scopeTooltip(run: TestRunSummary): string {
+  if (run.isFullRun !== false) return 'Full run — the complete test suite ran';
+  const parts: string[] = [];
+  const grep = run.filterDetails?.grep?.trim();
+  const grepInvert = run.filterDetails?.grepInvert?.trim();
+  const files = run.filterDetails?.files;
+  // ".*" is Playwright's default grep (matches everything) → not a real filter, skip it.
+  if (grep && grep !== '.*') parts.push(`grep: ${grep}`);
+  if (grepInvert) parts.push(`grep-invert: ${grepInvert}`);
+  if (files?.length) parts.push(`files: ${files.join(', ')}`);
+  return parts.length
+    ? `Partial run — ${parts.join(' · ')}`
+    : 'Partial run — only a filtered subset of tests ran (grep, file, or line filter)';
+}
+
 const runsColumns: TableColumn<TestRunSummary>[] = [
   {
     accessorKey: 'select',
@@ -694,21 +711,12 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                   <RunStatusBadge :status="row.original.status" />
                 </template>
                 <template #isFullRun-cell="{ row }">
-                  <UTooltip
-                    :text="
-                      row.original.isFullRun === false
-                        ? 'Partial run — only a filtered subset of tests ran (grep, file, or line filter)'
-                        : 'Full run — the complete test suite ran'
-                    "
-                  >
-                    <UBadge
-                      :color="row.original.isFullRun === false ? 'warning' : 'success'"
-                      :icon="row.original.isFullRun === false ? 'i-lucide-list-filter' : 'i-lucide-list-checks'"
-                      variant="subtle"
-                      size="sm"
-                    >
-                      {{ row.original.isFullRun === false ? 'Partial' : 'Full' }}
-                    </UBadge>
+                  <UTooltip :text="scopeTooltip(row.original)">
+                    <UIcon
+                      :name="row.original.isFullRun === false ? 'i-lucide-list-filter' : 'i-lucide-list-checks'"
+                      class="size-4 shrink-0 cursor-help"
+                      :class="row.original.isFullRun === false ? 'text-amber-500' : 'text-green-500'"
+                    />
                   </UTooltip>
                 </template>
                 <template #browsers-cell="{ row }">

@@ -114,6 +114,8 @@ export type FlakyRootCause = 'timing' | 'network' | 'assertion' | 'environment' 
 export interface FilterDetails {
   grep?: string;
   grepInvert?: string;
+  /** Positional file/path filters from the CLI invocation (e.g. ["tests/login.spec.ts"]). */
+  files?: string[];
 }
 
 export interface TestRunSubmitPayload {

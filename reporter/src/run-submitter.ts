@@ -7,7 +7,7 @@ import { StreamManager } from './stream-manager.js';
 import { Logger } from './logger.js';
 import { computePerformanceSummary } from './step-analyzer.js';
 import { resolveOverallStatus, serializeRun } from './serializer.js';
-import type { CollectedTestCase, SetupStep } from './types.js';
+import type { CollectedTestCase, SetupStep, FilterDetails } from './types.js';
 
 /**
  * Snapshot of everything the reporter has collected by `onEnd`, handed off to
@@ -29,7 +29,7 @@ export interface CollectedRun {
   shardInfo: ShardInfo | null;
   setupSteps: SetupStep[];
   isFullRun: boolean;
-  filterDetails: { grep?: string; grepInvert?: string } | null;
+  filterDetails: FilterDetails | null;
 }
 
 /**

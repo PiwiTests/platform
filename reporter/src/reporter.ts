@@ -9,11 +9,18 @@ import { FileHandler } from './file-handler.js';
 import { MetadataCollector } from './metadata-collector.js';
 import { StreamManager } from './stream-manager.js';
 import { collectStepMetrics, extractTestStepEvents } from './step-analyzer.js';
-import { computeInstanceId, readSourceSnippet, createGlobalSetup, detectCiRunLabel, workerIndexOf } from './helpers.js';
+import {
+  computeInstanceId,
+  readSourceSnippet,
+  createGlobalSetup,
+  detectCiRunLabel,
+  workerIndexOf,
+  detectCliFileFilters,
+} from './helpers.js';
 import { toWireTestCase } from './serializer.js';
 import { RunSubmitter } from './run-submitter.js';
 import { Logger } from './logger.js';
-import type { CollectedTestCase, StreamEvent, SetupStep } from './types.js';
+import type { CollectedTestCase, StreamEvent, SetupStep, FilterDetails } from './types.js';
 
 /**
  * Piwi Dashboard Playwright reporter.
@@ -39,7 +46,7 @@ export class PiwiDashboardReporter {
   private metadata: Record<string, any> = {};
   private enabled: boolean;
   private isFullRun = true;
-  private filterDetails: { grep?: string; grepInvert?: string } | null = null;
+  private filterDetails: FilterDetails | null = null;
 
   private httpClient: HttpClient;
   private uploader: Uploader;
@@ -96,17 +103,23 @@ export class PiwiDashboardReporter {
       `Starting test run for project: ${this.options.projectName} (Playwright v${this.playwrightVersion})`,
     );
 
-    // Detect partial-run filters so the dashboard can distinguish full-suite runs from ad-hoc focused runs
+    // Detect partial-run filters so the dashboard can distinguish full-suite runs from ad-hoc focused runs.
     const rawConfig = config as any;
-    const detectedGrep = rawConfig.grep instanceof RegExp ? rawConfig.grep : undefined;
-    const detectedGrepInvert = rawConfig.grepInvert instanceof RegExp ? rawConfig.grepInvert : undefined;
-    if (detectedGrep || detectedGrepInvert) {
+    const grepRe = rawConfig.grep instanceof RegExp ? rawConfig.grep : undefined;
+    const grepInvertRe = rawConfig.grepInvert instanceof RegExp ? rawConfig.grepInvert : undefined;
+    // Playwright's default grep is /.*/ (matches everything) — only a non-default pattern is a real filter.
+    const grep = grepRe && grepRe.source !== '.*' ? grepRe.source : undefined;
+    const grepInvert = grepInvertRe?.source;
+    // File/path filters come from the CLI invocation, not config.grep.
+    const fileFilters = detectCliFileFilters();
+    if (grep || grepInvert || fileFilters.length > 0) {
       this.isFullRun = false;
       this.filterDetails = {
-        grep: detectedGrep?.source,
-        grepInvert: detectedGrepInvert?.source,
+        ...(grep ? { grep } : {}),
+        ...(grepInvert ? { grepInvert } : {}),
+        ...(fileFilters.length > 0 ? { files: fileFilters } : {}),
       };
-      this.logger.info('Partial run detected (grep/filter active)');
+      this.logger.info('Partial run detected (filter active)');
     }
 
     this.metadata = this.metadataCollector.collect(config, suite, this.options);
