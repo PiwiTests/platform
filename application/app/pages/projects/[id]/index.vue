@@ -290,11 +290,7 @@ const runsColumns: TableColumn<TestRunSummary>[] = [
   },
   {
     accessorKey: 'duration',
-    header: createSortHeader<TestRunSummary>('Duration'),
-  },
-  {
-    accessorKey: 'tests',
-    header: 'Test Status',
+    header: createSortHeader<TestRunSummary>('Test status / Dur.'),
   },
   {
     accessorKey: 'reports',
@@ -698,12 +694,22 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                   <RunStatusBadge :status="row.original.status" />
                 </template>
                 <template #isFullRun-cell="{ row }">
-                  <span
-                    v-if="row.original.isFullRun === false"
-                    class="text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 px-1.5 py-0.5 rounded"
+                  <UTooltip
+                    :text="
+                      row.original.isFullRun === false
+                        ? 'Partial run — only a filtered subset of tests ran (grep, file, or line filter)'
+                        : 'Full run — the complete test suite ran'
+                    "
                   >
-                    Partial
-                  </span>
+                    <UBadge
+                      :color="row.original.isFullRun === false ? 'warning' : 'success'"
+                      :icon="row.original.isFullRun === false ? 'i-lucide-list-filter' : 'i-lucide-list-checks'"
+                      variant="subtle"
+                      size="sm"
+                    >
+                      {{ row.original.isFullRun === false ? 'Partial' : 'Full' }}
+                    </UBadge>
+                  </UTooltip>
                 </template>
                 <template #browsers-cell="{ row }">
                   <div v-if="row.original.browsers?.length" class="flex items-center gap-1">
@@ -740,16 +746,16 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                   </div>
                 </template>
                 <template #duration-cell="{ row }">
-                  <span>{{ formatDuration(row.original.duration) }}</span>
-                </template>
-                <template #tests-cell="{ row }">
-                  <TestStatusBar
-                    :passed="row.original.passedTests"
-                    :failed="row.original.failedTests"
-                    :skipped="row.original.skippedTests"
-                    :flaky="row.original.flakyTests"
-                    :total="row.original.totalTests"
-                  />
+                  <div class="space-y-1">
+                    <TestStatusBar
+                      :passed="row.original.passedTests"
+                      :failed="row.original.failedTests"
+                      :skipped="row.original.skippedTests"
+                      :flaky="row.original.flakyTests"
+                      :total="row.original.totalTests"
+                    />
+                    <span class="text-xs text-gray-500">{{ formatDuration(row.original.duration) }}</span>
+                  </div>
                 </template>
                 <template #reports-cell="{ row }">
                   <RunReports :reports="row.original.reports" />
@@ -1248,7 +1254,7 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
 
           <!-- SPEC HEALTH TAB -->
           <template #spec-health>
-            <SpecHealthHeatmap :project-id="String(projectId)" />
+            <SpecHealthTable :project-id="String(projectId)" />
           </template>
 
           <!-- MEMBERS TAB -->

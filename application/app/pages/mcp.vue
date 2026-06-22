@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { MCP_TOOL_DEFS } from '#shared/mcp-tools';
+
 const config = useRuntimeConfig();
 const isDemo = config.public.demoMode;
 
@@ -10,22 +12,9 @@ const mcpUrl = computed(() => {
 
 useHead({ title: 'MCP server — Piwi Dashboard' });
 
-const tools = [
-  { name: 'list_projects', desc: 'All projects with run stats and latest status' },
-  { name: 'get_project', desc: 'Project details and recent test runs' },
-  { name: 'list_runs', desc: 'Filter runs by project, branch, status' },
-  { name: 'get_run', desc: 'Run summary and test cases filtered by status' },
-  { name: 'list_failed_cases', desc: 'Failed/timed-out cases across runs for a project' },
-  { name: 'list_flaky_tests', desc: 'Flaky test analysis with scores and retry patterns' },
-  { name: 'get_test_case', desc: 'Test case stats and recent execution history' },
-  { name: 'list_clusters', desc: 'Failure clusters grouped by error fingerprint' },
-  { name: 'get_cluster', desc: 'Cluster detail with affected tests and diagnosis summary' },
-  { name: 'get_cluster_diagnosis', desc: 'Full AI diagnosis: root cause, evidence, suggested fix' },
-  {
-    name: 'get_cluster_context',
-    desc: 'Raw AI evidence: errors, steps, console logs, SCM diff — the same context the built-in AI receives',
-  },
-];
+// Single source of truth: the exact catalog the MCP server exposes over
+// `tools/list` (see shared/mcp-tools.ts). New tools appear here automatically.
+const tools = MCP_TOOL_DEFS;
 
 const clientItems = [
   { label: 'Claude Code', slot: 'claude-code' },
@@ -141,7 +130,7 @@ const windsurfSnippet = computed(() =>
               <UIcon name="i-lucide-wrench" class="size-3.5 mt-0.5 shrink-0 text-primary" />
               <div>
                 <p class="text-xs font-mono font-semibold text-foreground">{{ t.name }}</p>
-                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t.desc }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t.description }}</p>
               </div>
             </div>
           </div>

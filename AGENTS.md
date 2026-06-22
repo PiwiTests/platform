@@ -181,7 +181,7 @@ Nuxt file-based routing:
 - **Flaky root cause classification**: Add new categories to `classifyFlakyRootCause()` in `server/utils/flaky-classify.ts`. Keyword arrays at the top of the file. New column `flaky_root_cause` on `test_cases` table. Include `rootCause` field in `FlakyTest` response type (`types/api.ts`). `FlakyTestsList.vue` renders it via `TagBadge` with root-cause color mapping.
 - **Impact scoring**: Compute `wastedCiMinutes` and `impact` in `getProjectFlakyTests` (`shared/handlers/projects.ts`). Sort flaky tests by impact descending. Include `impact`, `wastedCiMinutes`, `avgFailedDurationMs` in `FlakyTest`. Color scale: green < 5min, amber < 30min, red >= 30min in UI.
 - **Regression signals**: `isNewRegression` and `isNewFlaky` columns on `test_runs_cases` (integer, 0/1). Computed after run finish via `computeRegressionSignals()` (`server/utils/compute-regression-signals.ts`). Called from `finish.post.ts`. Included in `getTestRun` and `getTestRunCase` response mappers. `TestCasesList.vue` shows red "NEW" and purple "FLAKY" badges with checkbox filter toggles.
-- **Spec health**: Endpoint `GET /api/projects/[id]/spec-health` groups by spec prefix. `SpecHealthHeatmap.vue` renders pass-rate colored cells. Add `spec-health` to `validTabs` and `tabItems` in project `index.vue` page.
+- **Spec health**: Endpoint `GET /api/projects/[id]/spec-health` groups by spec prefix. `SpecHealthTable.vue` renders a sortable `UTable` (pass rate, flaky rate, failures, tests, avg time per spec prefix; pass-rate dot + linked prefix). Add `spec-health` to `validTabs` and `tabItems` in project `index.vue` page.
 
 ## Environment
 - `.env.example` in `application/` — `PIWI_SITE_URL` (optional)

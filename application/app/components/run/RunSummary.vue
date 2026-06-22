@@ -443,16 +443,17 @@ function onLabelKeydown(e: KeyboardEvent) {
       <SourceInfoCard v-if="testRun?.metadata?.scm" :scm="testRun.metadata.scm" :class="blockColSpanClass" />
 
       <!-- Block 3: Storage stats -->
-      <UCard v-if="storageStats?.totalFiles || finalizing" :class="blockColSpanClass" class="shadow-xs">
-        <template #header>
-          <div class="flex items-center gap-2">
-            <UIcon name="i-lucide-database" class="w-4 h-4 text-primary" />
-            <span class="text-sm font-medium">Storage</span>
-            <span v-if="storageStats?.totalFiles" class="text-xs text-gray-400">
-              · {{ storageStats.totalFiles }} files · {{ formatBytes(storageStats.totalSize) }}
-            </span>
-          </div>
-        </template>
+      <BlockCard
+        v-if="storageStats?.totalFiles || finalizing"
+        :class="blockColSpanClass"
+        title="Storage"
+        icon="i-lucide-database"
+        :subtitle="
+          storageStats?.totalFiles
+            ? `${storageStats.totalFiles} files · ${formatBytes(storageStats.totalSize)}`
+            : undefined
+        "
+      >
         <div v-if="finalizing" class="flex items-center gap-3">
           <UIcon name="i-lucide-upload" class="size-5 text-info shrink-0 animate-pulse" />
           <div class="flex-1 min-w-0">
@@ -464,31 +465,33 @@ function onLabelKeydown(e: KeyboardEvent) {
           </div>
         </div>
         <div v-if="storageStats?.totalFiles" class="space-y-1.5 text-sm">
-          <div v-for="report in allReports" :key="report.label" class="flex items-center justify-between">
+          <div v-for="report in allReports" :key="report.label" class="flex items-center justify-between gap-2 min-w-0">
             <UButton
               :href="`/api/files/${getFileApiPath(report.path)}`"
               :icon="reportIcon(report.type)"
               target="_blank"
               size="xs"
               variant="outline"
+              class="min-w-0"
+              :ui="{ label: 'truncate' }"
             >
               {{ report.label }}
             </UButton>
-            <span class="font-medium tabular-nums text-gray-600 dark:text-gray-400">{{
+            <span class="text-xs tabular-nums text-gray-400 dark:text-gray-500 shrink-0">{{
               formatBytes(report.size)
             }}</span>
           </div>
-          <div v-if="storageStats.testCaseFilesCount > 0" class="flex items-center justify-between">
-            <span>Test files ({{ storageStats.testCaseFilesCount }})</span>
-            <span class="font-medium tabular-nums text-gray-600 dark:text-gray-400">{{
+          <div v-if="storageStats.testCaseFilesCount > 0" class="flex items-center justify-between gap-2 min-w-0">
+            <span class="truncate">Test files ({{ storageStats.testCaseFilesCount }})</span>
+            <span class="text-xs tabular-nums text-gray-400 dark:text-gray-500 shrink-0">{{
               formatBytes(storageStats.testCaseFilesSize)
             }}</span>
           </div>
         </div>
-      </UCard>
+      </BlockCard>
 
       <!-- Block 4: Tags / Details / Custom data -->
-      <UCard
+      <BlockCard
         v-if="
           testRun?.metadata?.tags?.length ||
           testRun?.metadata?.projectDescription ||
@@ -497,13 +500,9 @@ function onLabelKeydown(e: KeyboardEvent) {
           testRun?.links?.length
         "
         :class="blockColSpanClass"
+        title="Other"
+        icon="i-lucide-tags"
       >
-        <template #header>
-          <div class="flex items-center gap-2">
-            <UIcon name="i-lucide-tags" class="w-4 h-4 text-primary" />
-            <span class="text-sm font-medium">Other</span>
-          </div>
-        </template>
         <div class="space-y-3 text-sm">
           <div v-if="testRun.metadata.tags && testRun.metadata.tags.length > 0">
             <div class="flex flex-wrap gap-1.5">
@@ -512,9 +511,6 @@ function onLabelKeydown(e: KeyboardEvent) {
               </UBadge>
             </div>
           </div>
-          <p v-if="testRun.metadata.projectDescription" class="text-gray-700 dark:text-gray-300">
-            {{ testRun.metadata.projectDescription }}
-          </p>
           <p v-if="testRun.metadata.relatedIssue" class="flex items-center gap-1">
             <UIcon name="i-lucide-link" class="w-3.5 h-3.5 text-gray-400 shrink-0" />
             <span>{{ testRun.metadata.relatedIssue }}</span>
@@ -543,7 +539,7 @@ function onLabelKeydown(e: KeyboardEvent) {
             </div>
           </div>
         </div>
-      </UCard>
+      </BlockCard>
     </div>
   </FoldableSummary>
 </template>

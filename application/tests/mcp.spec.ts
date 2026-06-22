@@ -182,6 +182,6 @@ test.describe.serial('MCP server', () => {
     const ping = body.find((r: any) => r.id === 1);
     const list = body.find((r: any) => r.id === 2);
     expect(ping.result).toEqual({});
-    expect(list.result.tools.length).toBe(11);
+    expect(list.result.tools.length).toBe(14);
   });
 });
