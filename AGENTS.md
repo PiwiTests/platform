@@ -428,6 +428,41 @@ When implementing or extending sharding support:
 - **Backend logs** are documented in `docs/backend-logs.md`
 - **Suite hierarchy (describe blocks)** and **test annotations** are documented in `docs/reporter.md` and `docs/api.md`
 
+### Regenerating dashboard screenshots (light/dark split)
+
+Marketing screenshots in `docs/public/screenshots/*.png` (used by `README.md` and `docs/index.md`) are **1280×720**. The hero shots use a diagonal **light-top-left / dark-bottom-right** split. Reproduce one with the `playwright-cli` skill against the **live demo** (it already has seed data — no local server needed):
+
+1. **Capture both themes at the same viewport and scroll position** so they align pixel-for-pixel:
+   ```bash
+   playwright-cli open && playwright-cli resize 1280 720
+   playwright-cli goto "https://phenx.github.io/piwi-dashboard/demo/"
+   # Hide the demo banner for a clean shot (position:fixed, reflows cleanly when hidden):
+   playwright-cli eval "(()=>{const s=document.createElement('style');s.id='hero-clean';s.textContent='.demo-banner{display:none!important}';document.head.appendChild(s)})()"
+   playwright-cli screenshot --filename=hero-light.png
+   # Switch to dark — color mode is the localStorage key 'nuxt-color-mode'; reload to apply, then re-hide the banner:
+   playwright-cli localstorage-set nuxt-color-mode dark && playwright-cli reload
+   playwright-cli eval "(()=>{const s=document.createElement('style');s.id='hero-clean';s.textContent='.demo-banner{display:none!important}';document.head.appendChild(s)})()"
+   playwright-cli screenshot --filename=hero-dark.png
+   ```
+2. **Composite the diagonal split.** `playwright-cli` blocks `file://` and `run-code` has no `require`, so serve the repo over a throwaway local HTTP server and load an overlay page (the dark image is clipped to the bottom-right triangle, plus an SVG seam line):
+   ```html
+   <!-- hero-composite.html, alongside hero-light.png / hero-dark.png -->
+   <div id="stage" style="position:relative;width:1280px;height:720px">
+     <img src="hero-light.png" style="position:absolute;inset:0;width:1280px;height:720px">
+     <img src="hero-dark.png"  style="position:absolute;inset:0;width:1280px;height:720px;clip-path:polygon(100% 0,100% 100%,0 100%)">
+     <svg width="1280" height="720" style="position:absolute;inset:0;pointer-events:none">
+       <line x1="1280" y1="0" x2="0" y2="720" stroke="rgba(0,0,0,.35)" stroke-width="4"/>
+       <line x1="1280" y1="0" x2="0" y2="720" stroke="rgba(255,255,255,.85)" stroke-width="1.5"/>
+     </svg>
+   </div>
+   ```
+   ```bash
+   node -e "const h=require('http'),f=require('fs'),p=require('path'),t={'.html':'text/html','.png':'image/png'};h.createServer((q,r)=>{const fp=p.join(process.cwd(),q.url.split('?')[0]);f.readFile(fp,(e,d)=>e?(r.writeHead(404),r.end()):(r.writeHead(200,{'content-type':t[p.extname(fp)]||'application/octet-stream'}),r.end(d)))}).listen(8799)" &
+   playwright-cli goto "http://127.0.0.1:8799/hero-composite.html"
+   playwright-cli screenshot "#stage" --filename=docs/public/screenshots/home.png
+   ```
+3. **Clean up** the temp PNGs/HTML and the server; `playwright-cli close`. For a non-split refresh, skip step 2 and use a single capture.
+
 ## Demo Data Requirements
 
 When adding features with database columns, API response fields, or UI-visible changes, the demo data must be updated in four places:

@@ -69,7 +69,6 @@ const { tooltipData, tooltipPos, onRenderComplete } = useChartMarkers(xyContaine
         <VisAxis
           type="x"
           :tick-format="(d: Date) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })"
-          label="Date"
         />
         <VisAxis type="y" label="" :tick-format="(d: number) => `${d}%`" />
       </VisXYContainer>

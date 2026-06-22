@@ -9,6 +9,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY application/package.json ./application/
 COPY reporter/package.json ./reporter/
+COPY integrations/nitro/package.json ./integrations/nitro/
 
 # Install all dependencies; --ignore-scripts skips application's postinstall
 # (nuxt prepare) which requires source files not yet present.
@@ -21,6 +22,9 @@ COPY tsconfig.json ./
 
 # Copy application source
 COPY application/ ./application/
+
+# Copy integrations (imported by server/plugins/piwi-test-logs.ts via relative path)
+COPY integrations/ ./integrations/
 
 # Build the application
 ENV NITRO_PRESET=node-server

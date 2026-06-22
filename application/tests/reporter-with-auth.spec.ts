@@ -161,6 +161,14 @@ test.describe.serial('Reporter with authentication enabled', () => {
     const data = await res.json();
     expect(data.user.username).toBe('ci-reporter');
     expect(data.user.role).toBe('reporter');
+
+    // Grant the reporter global project access. With the project-affectation
+    // feature, newly created users have no project access by default, so the
+    // reporter must be assigned access before it can create/submit projects.
+    const assignRes = await request.put(`${AUTH_SERVER_URL}/api/users/${data.user.id}/projects`, {
+      data: { global: true, projectIds: [] },
+    });
+    expect(assignRes.ok()).toBeTruthy();
   });
 
   // ---------------------------------------------------------------------------

@@ -337,6 +337,22 @@ test.describe.serial('Subscribe Bell UI', () => {
     await page.context().request.post(`${BASE}/api/auth/login`, { data: ADMIN });
   }
 
+  // The project page is server-rendered; in dev mode Vue hydration can lag a
+  // second or more behind the first paint, so a bell click fired immediately
+  // after navigation is lost before the popover's click handler is attached.
+  // Retry opening the bell until the popover content (`marker`) is visible.
+  async function openBell(page: import('@playwright/test').Page, marker: import('@playwright/test').Locator) {
+    const bell = page.getByTitle('Notification subscriptions for this project');
+    await expect(async () => {
+      // Only click while the popover is closed — clicking again once it is open
+      // would toggle it shut.
+      if (!(await marker.isVisible())) {
+        await bell.click();
+      }
+      await expect(marker).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 20000 });
+  }
+
   test('bell is not visible when not authenticated', async ({ page }) => {
     skip();
     await page.goto(`${BASE}/projects/${projectId}`);
@@ -355,14 +371,15 @@ test.describe.serial('Subscribe Bell UI', () => {
     await loginBrowser(page);
     await page.goto(`${BASE}/projects/${projectId}`);
 
-    const bell = page.getByTitle('Notification subscriptions for this project');
-    await bell.click();
-    await page.getByRole('button', { name: 'Add' }).click();
+    const addButton = page.getByRole('button', { name: 'Add' });
+    await openBell(page, addButton);
+    await addButton.click();
     await expect(page.getByRole('button', { name: 'Subscribe' })).toBeVisible();
     await page.getByRole('button', { name: 'Subscribe' }).click();
 
-    // Wait for success toast
-    await expect(page.getByText('Subscribed')).toBeVisible();
+    // Wait for success toast (exact match: the toast also exposes an aria-live
+    // alert reading "Notification Subscribed", which a substring match would also hit)
+    await expect(page.getByText('Subscribed', { exact: true })).toBeVisible();
 
     // Verify via API that subscription was created
     const res = await api('GET', `/api/subscriptions?projectId=${projectId}`, undefined, adminCookie);
@@ -376,9 +393,8 @@ test.describe.serial('Subscribe Bell UI', () => {
     await loginBrowser(page);
     await page.goto(`${BASE}/projects/${projectId}`);
 
-    const bell = page.getByTitle('Notification subscriptions for this project');
-    await bell.click();
     // The subscription row and unsubscribe button should be visible
+    await openBell(page, page.getByTitle('Unsubscribe'));
     await expect(page.getByTitle('Unsubscribe')).toBeVisible();
   });
 
@@ -387,12 +403,13 @@ test.describe.serial('Subscribe Bell UI', () => {
     await loginBrowser(page);
     await page.goto(`${BASE}/projects/${projectId}`);
 
-    const bell = page.getByTitle('Notification subscriptions for this project');
-    await bell.click();
-    await page.getByTitle('Unsubscribe').first().click();
+    const unsubscribe = page.getByTitle('Unsubscribe').first();
+    await openBell(page, unsubscribe);
+    await unsubscribe.click();
 
-    // Wait for success toast
-    await expect(page.getByText('Unsubscribed')).toBeVisible();
+    // Wait for success toast (exact match: the toast also exposes an aria-live
+    // alert reading "Notification Unsubscribed", which a substring match would also hit)
+    await expect(page.getByText('Unsubscribed', { exact: true })).toBeVisible();
 
     // Verify via API that subscription was removed
     const res = await api('GET', `/api/subscriptions?projectId=${projectId}`, undefined, adminCookie);
