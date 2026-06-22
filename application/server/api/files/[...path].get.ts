@@ -1,5 +1,6 @@
 import { extname } from 'path';
 import { requireAuth } from '../../utils/auth';
+import { requireProjectAccess } from '../../utils/project-access';
 import { getStorage } from '../../storage';
 import { gunzip } from 'zlib';
 import { promisify } from 'util';
@@ -95,10 +96,23 @@ async function reconstructTraceZip(
 }
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
   const path = getRouterParam(event, 'path');
   const query = getQuery(event);
   const overrideContentType = typeof query.contentType === 'string' ? query.contentType : null;
+
+  // Extract project ID from path for access control
+  const pathStr = path || '';
+  const pathMatch = pathStr.match(/^project-(\d+)\//);
+  if (pathMatch && pathMatch[1]) {
+    const projectId = parseInt(pathMatch[1]);
+    if (projectId) {
+      await requireProjectAccess(event, projectId);
+    } else {
+      await requireAuth(event);
+    }
+  } else {
+    await requireAuth(event);
+  }
 
   if (!path) {
     throw createError({

@@ -1,4 +1,4 @@
-import { requireAuth } from '../../../utils/auth';
+import { requireProjectAccess } from '../../../utils/project-access';
 import { getDatabase } from '../../../database';
 import { projects, testCases, testRunsCases, testRuns } from '../../../database/schema';
 import { eq, and, desc, inArray, gte } from 'drizzle-orm';
@@ -21,9 +21,10 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
   const projectId = parseInt(getRouterParam(event, 'id') || '0');
   if (!projectId) throw createError({ statusCode: 400, message: 'Invalid project ID' });
+
+  await requireProjectAccess(event, projectId);
 
   const days = Math.min(90, Math.max(1, parseInt((getQuery(event).days as string) || '30')));
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);

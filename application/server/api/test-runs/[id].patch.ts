@@ -1,6 +1,6 @@
 import { getDatabase } from '../../database';
 import { patchTestRun } from '~~/shared/handlers/test-runs';
-import { requireAuth } from '../../utils/auth';
+import { requireProjectAccess, resolveRunProjectId } from '../../utils/project-access';
 import { Role } from '../../../shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
@@ -28,8 +28,6 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
-
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {
@@ -39,6 +37,12 @@ export default eventHandler(async (event) => {
     });
   }
 
+  const db = await getDatabase();
+  const projectId = await resolveRunProjectId(db, id);
+  if (!projectId) throw createError({ statusCode: 404, message: 'Test run not found' });
+
+  await requireProjectAccess(event, projectId);
+
   const body = await readBody(event);
 
   if (body.label === undefined) {
@@ -47,8 +51,6 @@ export default eventHandler(async (event) => {
       message: 'No fields to update',
     });
   }
-
-  const db = await getDatabase();
 
   try {
     return await patchTestRun(db, id, body.label);

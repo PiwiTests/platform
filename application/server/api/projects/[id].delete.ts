@@ -1,7 +1,7 @@
 import { getDatabase } from '../../database';
 import { projects } from '../../database/schema';
 import { eq } from 'drizzle-orm';
-import { requireAuth } from '../../utils/auth';
+import { requireProjectAccess } from '../../utils/project-access';
 import { Role } from '../../../shared/types';
 import { deleteProject } from '../../utils/delete-project';
 
@@ -19,13 +19,13 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event, REQUIRED_ROLES);
-
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {
     throw createError({ statusCode: 400, message: 'Invalid project ID' });
   }
+
+  await requireProjectAccess(event, id, REQUIRED_ROLES);
 
   const db = await getDatabase();
   const existing = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, id));

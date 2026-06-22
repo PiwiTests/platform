@@ -1,4 +1,4 @@
-import { requireAuth } from '../../../utils/auth';
+import { requireProjectAccess } from '../../../utils/project-access';
 import { getDatabase } from '../../../database';
 import { testCases, testRunsCases, testRuns } from '../../../database/schema';
 import { eq, and, desc } from 'drizzle-orm';
@@ -30,9 +30,10 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event, REQUIRED_ROLES);
   const projectId = parseInt(getRouterParam(event, 'id') || '0');
   if (!projectId) throw createError({ statusCode: 400, message: 'Invalid project ID' });
+
+  await requireProjectAccess(event, projectId, REQUIRED_ROLES);
 
   const body = await readBody<{ testCaseId: number }>(event);
   if (!body?.testCaseId) throw createError({ statusCode: 400, message: 'testCaseId is required' });

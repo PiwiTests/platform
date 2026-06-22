@@ -3,6 +3,7 @@
 // TypeScript uses the SQLite types as the canonical reference throughout.
 import { drizzle as sqliteDrizzle } from 'drizzle-orm/libsql/sqlite3';
 import * as sqliteSchema from './schema.sqlite';
+import { backfillProjectAssignments } from '~~/shared/handlers/project-assignments';
 import { existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -34,6 +35,13 @@ export async function initDatabase() {
           console.log(`[Database] Running PostgreSQL migrations from ${migrationsFolder}`);
           await migrate(pgDb, { migrationsFolder });
           console.log('[Database] PostgreSQL migrations completed successfully');
+          // Backfill project assignments for existing users (idempotent)
+          try {
+            await backfillProjectAssignments(db as any);
+            console.log('[Database] Project assignments backfill completed');
+          } catch (bfErr) {
+            console.error('[Database] Project assignments backfill failed:', bfErr);
+          }
         } catch (error) {
           console.error('[Database] Migration error:', error);
           throw error;
@@ -65,6 +73,13 @@ export async function initDatabase() {
           console.log(`[Database] Running SQLite migrations from ${migrationsFolder}`);
           await migrate(db, { migrationsFolder });
           console.log('[Database] SQLite migrations completed successfully');
+          // Backfill project assignments for existing users (idempotent)
+          try {
+            await backfillProjectAssignments(db);
+            console.log('[Database] Project assignments backfill completed');
+          } catch (bfErr) {
+            console.error('[Database] Project assignments backfill failed:', bfErr);
+          }
         } catch (error) {
           console.error('[Database] Migration error:', error);
           throw error;

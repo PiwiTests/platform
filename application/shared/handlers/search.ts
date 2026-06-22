@@ -2,7 +2,9 @@ import { like, or, eq, desc } from 'drizzle-orm';
 import { testRuns, testCases, projects } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 
-export async function searchProjectsTestRunsCases(db: DrizzleDB, q: string) {
+type ProjectScope = 'all' | Set<number>;
+
+export async function searchProjectsTestRunsCases(db: DrizzleDB, q: string, scope: ProjectScope = 'all') {
   if (!q || q.trim().length < 2) {
     return { projects: [], runs: [], cases: [] };
   }
@@ -49,5 +51,18 @@ export async function searchProjectsTestRunsCases(db: DrizzleDB, q: string) {
       .limit(5),
   ]);
 
-  return { projects: projectResults, runs: runResults, cases: caseResults };
+  let filteredProjects = projectResults;
+  let filteredRuns = runResults;
+  let filteredCases = caseResults;
+
+  if (scope !== 'all') {
+    if (scope.size === 0) {
+      return { projects: [], runs: [], cases: [] };
+    }
+    filteredProjects = projectResults.filter((p) => scope.has(p.id));
+    filteredRuns = runResults.filter((r) => scope.has(r.projectId));
+    filteredCases = caseResults.filter((c) => scope.has(c.projectId));
+  }
+
+  return { projects: filteredProjects, runs: filteredRuns, cases: filteredCases };
 }

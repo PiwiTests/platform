@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { z } from 'zod';
 import type { TableColumn } from '@nuxt/ui';
-import type { UserDetails, UsersResponse, ApiKeySummary, ApiKeysResponse, CreateApiKeyResponse } from '~~/types/api';
+import type {
+  UserDetails,
+  UsersResponse,
+  ApiKeySummary,
+  ApiKeysResponse,
+  CreateApiKeyResponse,
+  UserProjectAssignments,
+  ProjectMenuItem,
+} from '~~/types/api';
 
 const { data: usersData, refresh } = await useFetch<UsersResponse>('/api/users');
 const toast = useToast();
@@ -268,6 +276,73 @@ function canManageApiKeys(user: UserDetails): boolean {
   return isAdmin.value || currentUserId.value === user.id;
 }
 
+// Project access modal
+const selectedUserForAccess = ref<UserDetails | null>(null);
+const isProjectAccessModalOpen = ref(false);
+const projectAccessGlobal = ref(false);
+const projectAccessProjects = ref<{ id: number; name: string; label: string }[]>([]);
+const allProjectsList = ref<{ id: number; name: string; label: string }[]>([]);
+
+async function openProjectAccessModal(user: UserDetails) {
+  selectedUserForAccess.value = user;
+  isProjectAccessModalOpen.value = true;
+
+  // Load all projects for the multi-select
+  try {
+    const projects = await $fetch<ProjectMenuItem[]>('/api/projects/menu');
+    allProjectsList.value = projects.map((p) => ({ ...p, label: p.label || p.name }));
+  } catch {
+    allProjectsList.value = [];
+  }
+
+  // Load current assignments
+  try {
+    const assignments = await $fetch<UserProjectAssignments>(`/api/users/${user.id}/projects`);
+    projectAccessGlobal.value = assignments.global;
+    projectAccessProjects.value = allProjectsList.value.filter((p) => assignments.projectIds.includes(p.id));
+  } catch {
+    projectAccessGlobal.value = false;
+    projectAccessProjects.value = [];
+  }
+}
+
+async function handleSaveProjectAccess() {
+  const user = selectedUserForAccess.value;
+  if (!user) return;
+
+  try {
+    await $fetch(`/api/users/${user.id}/projects`, {
+      method: 'PUT',
+      body: {
+        global: projectAccessGlobal.value,
+        projectIds: projectAccessProjects.value.map((p) => p.id),
+      },
+    });
+
+    toast.add({
+      title: 'Project access updated',
+      description: `Access for ${user.username} has been updated`,
+      color: 'success',
+    });
+
+    isProjectAccessModalOpen.value = false;
+  } catch (error: unknown) {
+    const errorMessage =
+      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
+    toast.add({
+      title: 'Failed to update project access',
+      description: errorMessage || 'An error occurred',
+      color: 'error',
+    });
+  }
+}
+
+function getAssignmentSummary(user: UserDetails): string {
+  if (user.role === 'administrator') return 'All projects';
+  if (projectAccessGlobal.value && selectedUserForAccess.value?.id === user.id) return 'Global';
+  return '';
+}
+
 // Invite user
 const invitingUserId = ref<number | null>(null);
 
@@ -358,6 +433,15 @@ async function handleInviteUser(user: UserDetails) {
                 title="Send invite email"
                 :loading="invitingUserId === row.original.id"
                 @click="handleInviteUser(row.original)"
+              />
+              <UButton
+                v-if="isAdmin && row.original.role !== 'administrator'"
+                icon="i-lucide-folder-lock"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                title="Project access"
+                @click="openProjectAccessModal(row.original)"
               />
               <UButton
                 v-if="canManageApiKeys(row.original)"
@@ -586,6 +670,57 @@ async function handleInviteUser(user: UserDetails) {
       <template #footer>
         <UButton color="neutral" variant="ghost" label="Cancel" @click="isRevokeKeyConfirmOpen = false" />
         <UButton color="error" label="Revoke" icon="i-lucide-trash-2" @click="handleRevokeApiKey" />
+      </template>
+    </UModal>
+  </ClientOnly>
+
+  <!-- Project Access Modal -->
+  <ClientOnly>
+    <UModal
+      :open="isProjectAccessModalOpen"
+      :title="`Project access – ${selectedUserForAccess?.username}`"
+      size="xl"
+      @update:open="isProjectAccessModalOpen = $event"
+    >
+      <template #body>
+        <div class="space-y-6">
+          <p class="text-sm text-muted">
+            Control which projects this user can access. Users without any project access will see no projects.
+          </p>
+
+          <!-- Global access toggle -->
+          <UFormField label="Global access" description="Access to all projects (current and future)">
+            <UToggle v-model="projectAccessGlobal" />
+          </UFormField>
+
+          <template v-if="!projectAccessGlobal">
+            <UDivider />
+            <UFormField
+              label="Specific projects"
+              :description="`Select ${allProjectsList.length > 0 ? allProjectsList.length : '0'} available projects`"
+            >
+              <USelectMenu
+                v-model="projectAccessProjects"
+                :items="allProjectsList"
+                by="id"
+                multiple
+                searchable
+                class="w-full"
+                placeholder="Search and select projects…"
+              >
+                <template #default="{ modelValue: selected }">
+                  <span v-if="(selected as any[]).length === 0" class="text-[var(--ui-text-muted)]">Select projects…</span>
+                  <span v-else>{{ (selected as any[]).length }} project(s) selected</span>
+                </template>
+              </USelectMenu>
+            </UFormField>
+          </template>
+        </div>
+      </template>
+
+      <template #footer>
+        <UButton color="neutral" variant="ghost" label="Cancel" @click="isProjectAccessModalOpen = false" />
+        <UButton label="Save" icon="i-lucide-check" @click="handleSaveProjectAccess" />
       </template>
     </UModal>
   </ClientOnly>

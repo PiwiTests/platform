@@ -1,4 +1,5 @@
 import { requireAuth } from '../../utils/auth';
+import { getProjectScope } from '../../utils/project-access';
 import { getDatabase } from '../../database';
 import { getRecentTestRuns } from '~~/shared/handlers/test-runs';
 import { Role } from '../../../shared/types';
@@ -16,6 +17,8 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
-  return getRecentTestRuns(await getDatabase());
+  const user = await requireAuth(event);
+  const db = await getDatabase();
+  const scope = await getProjectScope(db, user as any);
+  return getRecentTestRuns(db, scope);
 });

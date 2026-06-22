@@ -323,6 +323,25 @@ When the `User` type from DB has `role: string`, cast to `Role`: `user.role as R
 - The root `nuxt.config.ts` defines `components.securitySchemes` with `bearerAuth` (API key) and `sessionCookie` (session) schemes. The `meta` is type-cast with `as any` to allow these extra OpenAPI fields — this is intentional.
 - When adding a new endpoint, include `security: []` ONLY if it's truly public. All other endpoints inherit the default security automatically.
 
+### Project-level Permissions
+
+A **project assignment** layer sits atop the role system:
+
+- **`ADMINISTRATOR`**: full access to all projects, never filtered, no assignment needed.
+- **`REPORTER`** and **`USER`**: only see projects they're assigned to. Assignment can be **per-project** (list of project IDs) or **global** (all projects, `projectId = null`).
+- **Default**: no assignments = no access. Existing users get backfilled with global access on upgrade.
+
+Key implementation details:
+
+- **Schema**: `project_assignments` table in both `schema.sqlite.ts` and `schema.pg.ts` with `userId` (FK users, cascade), `projectId` (nullable FK projects, cascade = global), `createdBy`, `createdAt`.
+- **Authorization**: `server/utils/project-access.ts` — `getProjectScope(db, user)` returns `'all' | Set<number>`. `requireProjectAccess(event, projectId, roles?)` combines role + scope check. Admin/auth-off short-circuits to `'all'`.
+- **List filtering**: Pass `scope` to shared handlers (`listProjects(db, scope)`, `getProjectMenu(db, scope)`, `getRecentTestRuns(db, scope)`, `searchProjectsTestRunsCases(db, q, scope)`). Empty set → `[]` immediate return.
+- **Route verification**: Use `requireProjectAccess(event, projectId)` (or `resolveRunProjectId`/`resolveCaseProjectId`/`resolveClusterProjectId` + `requireProjectAccess`) in scoped endpoints instead of plain `requireAuth`.
+- **Write endpoints** (`submit`, `upload`, `start`, `setup`): Existing project → `scopeAllows(scope, projectId)`. New project creation → only if `scope === 'all'`.
+- **Management API**: `GET/PUT /api/users/[id]/projects` (per-user) and `GET/PUT /api/projects/[id]/members` (per-project), both admin-only.
+- **Backfill**: Runs idempotently after DB migrations in `server/database/index.ts`. Gives all existing `USER`/`REPORTER` rows a global `projectId = null` assignment.
+- **403 everywhere**: Role refusal AND scope refusal both return 403 with an explicit message.
+
 ## Making Changes
 
 - **DB fields**: Update `schema.ts` → `npm run db:generate` (or `db:generate:pg` for PostgreSQL) → review migration → restart

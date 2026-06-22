@@ -1,7 +1,7 @@
 import { getDatabase } from '../../../database';
 import { failureClusters, failureDiagnoses, testRunsCases } from '../../../database/schema';
 import { eq, and } from 'drizzle-orm';
-import { requireAuth } from '../../../utils/auth';
+import { requireProjectAccess, resolveClusterProjectId } from '../../../utils/project-access';
 import { Role } from '../../../../shared/types';
 import { resolveAiConfig } from '../../../utils/ai-provider';
 import type { AiAttachedImage } from '../../../utils/ai-provider';
@@ -24,7 +24,11 @@ export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0');
   if (!id) throw createError({ statusCode: 400, message: 'Invalid cluster ID' });
 
-  await requireAuth(event);
+  const db = await getDatabase();
+  const projectId = await resolveClusterProjectId(db, id);
+  if (!projectId) throw createError({ statusCode: 404, message: 'Failure cluster not found' });
+
+  await requireProjectAccess(event, projectId);
 
   const force = getQuery(event).force === 'true';
   const body = (await readBody(event).catch(() => null)) as {
@@ -35,8 +39,6 @@ export default eventHandler(async (event) => {
     scope?: string;
     testRunsCaseId?: number;
   } | null;
-
-  const db = await getDatabase();
 
   const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, id));
   if (!cluster) throw createError({ statusCode: 404, message: 'Failure cluster not found' });

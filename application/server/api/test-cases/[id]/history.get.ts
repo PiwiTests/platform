@@ -1,9 +1,9 @@
-import { requireAuth } from '../../../utils/auth';
 import { getDatabase } from '../../../database';
 import { testCases } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
 import { getTestCaseHistory } from '~~/shared/handlers/test-cases';
 import { Role } from '../../../../shared/types';
+import { requireProjectAccess, resolveCaseProjectId } from '../../../utils/project-access';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
@@ -19,7 +19,6 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {
@@ -30,6 +29,12 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
+
+  const projectId = await resolveCaseProjectId(db, id);
+  if (!projectId) throw createError({ statusCode: 404, message: 'Test case not found' });
+
+  await requireProjectAccess(event, projectId);
+
   const [testCase] = await db.select({ id: testCases.id }).from(testCases).where(eq(testCases.id, id));
   if (!testCase) {
     throw createError({ statusCode: 404, message: 'Test case not found' });

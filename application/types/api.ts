@@ -628,6 +628,36 @@ export interface CreateApiKeyResponse {
 }
 
 // ============================================================================
+// Project assignment types
+// ============================================================================
+
+/**
+ * User's project assignments (GET /api/users/[id]/projects)
+ */
+export interface UserProjectAssignments {
+  global: boolean;
+  projectIds: number[];
+}
+
+/**
+ * Project member entry (GET /api/projects/[id]/members)
+ */
+export interface ProjectMemberEntry {
+  id: number;
+  username: string;
+  name: string | null;
+  role: string;
+  global: boolean;
+}
+
+/**
+ * Project members response
+ */
+export interface ProjectMembersResponse {
+  users: ProjectMemberEntry[];
+}
+
+// ============================================================================
 // Admin types
 // ============================================================================
 

@@ -1,7 +1,7 @@
-import { requireAuth } from '../../utils/auth';
 import { getDatabase } from '../../database';
 import { getTestRunCase } from '~~/shared/handlers/test-cases';
 import { Role } from '../../../shared/types';
+import { requireProjectAccess, resolveTestRunCaseProjectId } from '../../utils/project-access';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
@@ -17,7 +17,6 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {
@@ -28,6 +27,11 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
+
+  const projectId = await resolveTestRunCaseProjectId(db, id);
+  if (!projectId) throw createError({ statusCode: 404, message: 'Test run case not found' });
+
+  await requireProjectAccess(event, projectId);
 
   const result = (await getTestRunCase(db, id)) as any;
   if (!result) {
