@@ -4,6 +4,7 @@
 import { drizzle as sqliteDrizzle } from 'drizzle-orm/libsql/sqlite3';
 import * as sqliteSchema from './schema.sqlite';
 import { backfillProjectAssignments } from '~~/shared/handlers/project-assignments';
+import { reclusterFailureFingerprints } from '~~/shared/handlers/failure-cluster-recluster';
 import { existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -42,6 +43,14 @@ export async function initDatabase() {
           } catch (bfErr) {
             console.error('[Database] Project assignments backfill failed:', bfErr);
           }
+          try {
+            const { updated, merged } = await reclusterFailureFingerprints(db as any);
+            if (updated || merged) {
+              console.log(`[Database] Failure-cluster re-fingerprinting: ${updated} updated, ${merged} merged`);
+            }
+          } catch (rcErr) {
+            console.error('[Database] Failure-cluster re-fingerprinting failed:', rcErr);
+          }
         } catch (error) {
           console.error('[Database] Migration error:', error);
           throw error;
@@ -79,6 +88,14 @@ export async function initDatabase() {
             console.log('[Database] Project assignments backfill completed');
           } catch (bfErr) {
             console.error('[Database] Project assignments backfill failed:', bfErr);
+          }
+          try {
+            const { updated, merged } = await reclusterFailureFingerprints(db);
+            if (updated || merged) {
+              console.log(`[Database] Failure-cluster re-fingerprinting: ${updated} updated, ${merged} merged`);
+            }
+          } catch (rcErr) {
+            console.error('[Database] Failure-cluster re-fingerprinting failed:', rcErr);
           }
         } catch (error) {
           console.error('[Database] Migration error:', error);

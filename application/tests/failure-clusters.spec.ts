@@ -54,14 +54,47 @@ test.describe('Error fingerprinting', () => {
     );
   });
 
-  test('stack frame file paths are part of the fingerprint without line numbers', async () => {
-    const error = (line: number) =>
-      `Error: boom\n    at doLogin (tests/helpers/auth.ts:${line}:11)\n    at node_modules/playwright/lib/runner.js:5:1`;
+  test('stack frame file paths are extracted but do NOT influence the fingerprint', async () => {
+    const error = (file: string, line: number) =>
+      `Error: boom\n    at doLogin (${file}:${line}:11)\n    at node_modules/playwright/lib/runner.js:5:1`;
 
-    const a = await computeErrorFingerprint(error(10));
-    const b = await computeErrorFingerprint(error(99));
+    const a = await computeErrorFingerprint(error('tests/helpers/auth.ts', 10));
+    const b = await computeErrorFingerprint(error('tests/helpers/auth.ts', 99));
+    // Same root cause reached from a different spec file → still one cluster
+    const c = await computeErrorFingerprint(error('tests/pages/checkout.spec.ts', 4));
 
     expect(a.topFrameFile).toBe('tests/helpers/auth.ts');
+    expect(c.topFrameFile).toBe('tests/pages/checkout.spec.ts');
+    expect(a.fingerprint).toBe(b.fingerprint);
+    expect(a.fingerprint).toBe(c.fingerprint);
+  });
+
+  test('dynamic locator option values are masked so per-row failures group', async () => {
+    const error = (rowName: string) =>
+      `TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('row', { name: '${rowName}' }).getByRole('button')`;
+
+    const alice = await computeErrorFingerprint(error('Alice Smith'));
+    const bob = await computeErrorFingerprint(error('Bob Jones'));
+
+    expect(alice.fingerprint).toBe(bob.fingerprint);
+    // The unmasked locator is still kept for display
+    expect(alice.selector).toContain('Alice Smith');
+  });
+
+  test('expected and received assertion values are both masked', async () => {
+    const error = (expected: string, received: string) =>
+      `Error: expect(locator).toHaveText(expected)\n\nLocator: getByTestId('greeting')\nExpected string: "${expected}"\nReceived string: "${received}"`;
+
+    const a = await computeErrorFingerprint(error('Welcome, Alice', 'Goodbye'));
+    const b = await computeErrorFingerprint(error('Welcome, Bob', 'Loading'));
+
+    expect(a.fingerprint).toBe(b.fingerprint);
+  });
+
+  test('URLs and emails are masked out of the message head', async () => {
+    const a = await computeErrorFingerprint('Error: page.goto: net::ERR_CONNECTION_REFUSED at https://pr-1234.preview.example.com/login');
+    const b = await computeErrorFingerprint('Error: page.goto: net::ERR_CONNECTION_REFUSED at https://pr-5678.preview.example.com/login');
+
     expect(a.fingerprint).toBe(b.fingerprint);
   });
 });

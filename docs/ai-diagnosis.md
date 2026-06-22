@@ -11,11 +11,12 @@ When a run finishes, Piwi groups related failures and — optionally — asks an
 
 Failed test cases that share the same **error fingerprint** are grouped into a cluster automatically. Instead of scrolling through 20 unrelated stack traces, you see something like *"20 failures, 3 root causes."*
 
-- **Fingerprinting** normalizes error messages (stripping timestamps, IDs, and other volatile fragments) so that the same underlying failure groups together across tests and runs.
+- **Fingerprinting** normalizes error messages so that the same underlying failure groups together across tests, spec files, and runs. Volatile fragments are masked out: timeouts and other numbers, UUIDs and hashes, URLs and emails, and both the *expected* and *received* values of an assertion. Dynamic locator options (e.g. the `{ name: '…' }` of a table row) are masked too, so per-row failures collapse into one cluster — while the locator target itself (the test id / role) still distinguishes genuinely different failures.
+- Fingerprints are **call-site agnostic**: the failing stack frame is shown for context but doesn't split clusters, so one root cause reached from several spec files stays a single cluster.
 - The run detail page shows each failure group with **flaky** and **worker-correlation** heuristics, so you can tell "the app is broken" from "worker 3 is misbehaving."
 - Every cluster has its own **detail page** with the affected tests, triage tools (status + notes), and the AI diagnosis panel.
 
-Clustering is always on and requires no configuration. AI diagnosis is opt-in.
+Clustering is always on and requires no configuration. When the normalization algorithm is improved, existing clusters are migrated in place (re-fingerprinted from a stored sample error), so triage status, notes, and diagnoses survive the change. AI diagnosis is opt-in.
 
 ## Enabling AI diagnosis
 
