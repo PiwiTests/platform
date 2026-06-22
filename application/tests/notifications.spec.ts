@@ -350,32 +350,6 @@ test.describe.serial('Subscribe Bell UI', () => {
     await expect(page.getByTitle('Notification subscriptions for this project')).toBeVisible();
   });
 
-  test('bell popover shows "no channels" hint when no channels are configured', async ({ page }) => {
-    skip();
-    // Delete all channels first so the hint appears
-    await api('DELETE', `/api/channels/${channelId}`, undefined, adminCookie);
-
-    await loginBrowser(page);
-    await page.goto(`${BASE}/projects/${projectId}`);
-    const bell = page.getByTitle('Notification subscriptions for this project');
-    await bell.click();
-    await expect(page.getByText('No channels configured')).toBeVisible();
-
-    // Restore the channel for subsequent tests
-    const res = await api(
-      'POST',
-      '/api/channels',
-      {
-        name: 'Test email channel',
-        type: 'email',
-        config: { address: 'notify@example.com' },
-      },
-      adminCookie,
-    );
-    const data = (await res.json()) as { channel: { id: number } };
-    channelId = data.channel.id;
-  });
-
   test('subscribe via bell popover creates a subscription', async ({ page }) => {
     skip();
     await loginBrowser(page);

@@ -69,10 +69,10 @@ test.describe.serial('MCP server', () => {
     expect(body.result).toEqual({});
   });
 
-  test('tools/list — returns all 11 tools', async ({ request }) => {
+  test('tools/list — returns all tools', async ({ request }) => {
     const body = await mcp(request, 'tools/list');
     const tools: { name: string }[] = body.result.tools;
-    expect(tools.length).toBe(11);
+    expect(tools.length).toBe(14);
     const names = tools.map((t) => t.name);
     expect(names).toContain('list_projects');
     expect(names).toContain('get_run');
