@@ -17,6 +17,8 @@ export const DIAGNOSIS_SECTIONS: DiagnosisSectionMeta[] = [
   { id: 'clusterSummary', label: 'Failure cluster summary', short: 'Cluster' },
   { id: 'sampleError', label: 'Raw error message', short: 'Error' },
   { id: 'executionError', label: 'Representative execution error', short: 'Error' },
+  { id: 'runContext', label: 'Run context (partial run, parallelism, flaky class)', short: 'Run context' },
+  { id: 'testAnnotations', label: 'Test annotations (@fixme/@flaky …)', short: 'Annotations' },
   { id: 'affectedTests', label: 'Affected tests', short: 'Tests' },
   { id: 'testSource', label: 'Test source code', short: 'Source' },
   { id: 'steps', label: 'Test steps', short: 'Steps' },

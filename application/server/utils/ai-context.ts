@@ -238,8 +238,13 @@ async function loadRepresentativeExecution(db: DbClient, cluster: FailureCluster
       ariaSnapshot: testRunsCases.ariaSnapshot,
       testSource: testRunsCases.testSource,
       webVitals: testRunsCases.webVitals,
+      testAnnotations: testRunsCases.testAnnotations,
+      workerIndex: testRunsCases.workerIndex,
+      shardIndex: testRunsCases.shardIndex,
       testTitle: testCases.title,
       testFilePath: testCases.filePath,
+      testSuitePath: testCases.suitePath,
+      flakyRootCause: testCases.flakyRootCause,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
@@ -255,6 +260,8 @@ async function loadRepresentativeExecution(db: DbClient, cluster: FailureCluster
       .select({
         environment: testRuns.environment,
         metadata: testRuns.metadata,
+        isFullRun: testRuns.isFullRun,
+        filterDetails: testRuns.filterDetails,
       })
       .from(testRuns)
       .where(eq(testRuns.id, rep.testRunId))
@@ -269,6 +276,8 @@ async function loadRepresentativeExecution(db: DbClient, cluster: FailureCluster
     nrItems: nrRows,
     runEnvironment: run?.environment ?? null,
     runMetadata: (run?.metadata as RunMetadata | null) ?? null,
+    runIsFullRun: run?.isFullRun ?? null,
+    runFilterDetails: (run?.filterDetails as { grep?: string; grepInvert?: string } | null) ?? null,
   };
 }
 
@@ -302,6 +311,49 @@ function failingStepsSection(rep: RepresentativeRow, limits: ContextLimits): str
       `- [${s.category ?? 'step'}] ${s.title}\n\`\`\`\n${s.error!.message!.slice(0, limits.sampleErrorChars)}\n\`\`\``,
   );
   return `### Failed Steps\n${out.join('\n')}`;
+}
+
+/** Runtime test annotations (@fixme/@flaky/@slow …) declared on the test. */
+function testAnnotationsSection(rep: RepresentativeRow): string | null {
+  const ann = rep.testAnnotations as Array<{ type?: string; description?: string }> | null;
+  if (!ann || ann.length === 0) return null;
+  const lines = ann.filter((a) => a?.type).map((a) => `- @${a.type}${a.description ? `: ${a.description}` : ''}`);
+  if (lines.length === 0) return null;
+  return `## Test Annotations\nMarks declared on the test — treat known @fixme/@flaky/@skip as established context, not new findings:\n${lines.join('\n')}`;
+}
+
+/**
+ * Run-level context that shapes interpretation: partial/filtered run, parallel
+ * worker/shard (race hint), describe-block path, and any pre-classified flaky
+ * root cause. All from data already stored — no extra collection.
+ */
+function runContextSection(rep: RepresentativeRow): string | null {
+  const lines: string[] = [];
+
+  if (rep.runIsFullRun === 0) {
+    const fd = rep.runFilterDetails;
+    const filt = fd?.grep ? ` (grep: ${fd.grep})` : fd?.grepInvert ? ` (grepInvert: ${fd.grepInvert})` : '';
+    lines.push(
+      `- Partial/filtered run${filt} — not the full suite; missing peers may be due to filtering, not passing`,
+    );
+  }
+
+  const sp = rep.testSuitePath;
+  if (sp) lines.push(`- Describe path: ${sp.split('').join(' › ')}`);
+
+  if (rep.workerIndex != null) {
+    const shard = rep.shardIndex != null ? `, shard ${rep.shardIndex}` : '';
+    lines.push(
+      `- Parallel worker #${rep.workerIndex}${shard} — consider a race if peers on the same worker also failed`,
+    );
+  }
+
+  if (rep.flakyRootCause) {
+    lines.push(`- Pre-classified flaky root cause (heuristic): ${rep.flakyRootCause}`);
+  }
+
+  if (lines.length === 0) return null;
+  return `## Run Context\n${lines.join('\n')}`;
 }
 
 /** Tests in the same file that passed in the representative execution's run (D5). */
@@ -953,6 +1005,12 @@ export async function buildDiagnosisContext(
 
       // Failing steps (D6)
       push(section('failingSteps', 'Failed Steps', failingStepsSection(rep, limits)));
+
+      // Run context (partial run, parallelism, describe path, flaky class)
+      push(section('runContext', 'Run Context', runContextSection(rep)));
+
+      // Test annotations (@fixme/@flaky/@slow …)
+      push(section('testAnnotations', 'Test Annotations', testAnnotationsSection(rep)));
 
       // Web vitals
       const vitalsSub = repSections.find((s) => s.startsWith('### Web Vitals'));

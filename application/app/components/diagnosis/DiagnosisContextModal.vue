@@ -65,8 +65,9 @@ const { copy, copied } = useCopy();
 
 const sectionsByCategory = computed(() => {
   const categories: { label: string; items: ContextSection[] }[] = [];
-  const primary = ['clusterSummary', 'sampleError', 'representativeExecution', 'executionError'];
+  const primary = ['clusterSummary', 'sampleError', 'representativeExecution', 'executionError', 'runContext'];
   const evidence = [
+    'testAnnotations',
     'testSource',
     'steps',
     'failingSteps',
