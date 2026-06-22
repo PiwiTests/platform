@@ -412,15 +412,18 @@ function resetView() {
 <template>
   <div v-if="timelineData.length > 0" class="relative select-none">
     <div class="flex items-center justify-between mb-2">
-      <span class="text-xs text-gray-500"
-        >{{ workerRows.length }} worker{{ workerRows.length > 1 ? 's' : '' }}
-        <template v-if="shardTotal && shardTotal > 1">
-          &middot; {{ shardTotal }} shard{{ shardTotal > 1 ? 's' : '' }}
-        </template>
-        &middot; {{ timelineData.filter((d) => !d.isHook).length }} tests
-        <template v-if="timelineData.some((d) => d.isHook)">
-          &middot; {{ timelineData.filter((d) => d.isHook).length }} hooks
-        </template>
+      <span class="text-xs text-gray-500 inline-flex items-center gap-1"
+        ><span
+          >{{ workerRows.length }} worker{{ workerRows.length > 1 ? 's' : '' }}
+          <template v-if="shardTotal && shardTotal > 1">
+            &middot; {{ shardTotal }} shard{{ shardTotal > 1 ? 's' : '' }}
+          </template>
+          &middot; {{ timelineData.filter((d) => !d.isHook).length }} tests
+          <template v-if="timelineData.some((d) => d.isHook)">
+            &middot; {{ timelineData.filter((d) => d.isHook).length }} hooks
+          </template></span
+        >
+        <HelpHint topic="run.timeline" />
       </span>
       <UButton v-if="!live" size="xs" color="neutral" variant="ghost" icon="i-lucide-rotate-ccw" @click="resetView">
         Reset view

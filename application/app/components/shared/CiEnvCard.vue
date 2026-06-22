@@ -15,7 +15,7 @@ defineProps<{
 </script>
 
 <template>
-  <BlockCard :class="$props.class" title="CI / Env" icon="i-lucide-cloud">
+  <BlockCard :class="$props.class" title="CI / Env" icon="i-lucide-cloud" help="run.ci-env">
     <div class="space-y-2 text-sm">
       <div v-if="environment" class="flex items-center gap-1.5">
         <UIcon name="i-lucide-server" class="w-3.5 h-3.5 text-gray-400 shrink-0" />

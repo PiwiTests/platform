@@ -84,6 +84,12 @@ function formatMs(ms: number | null | undefined): string {
   </div>
 
   <div v-else class="space-y-6 p-4">
+    <div class="flex items-center gap-1.5 text-sm text-muted">
+      <UIcon name="i-lucide-sparkles" class="size-4 shrink-0 text-primary/70" />
+      <span>Automatic highlights from this run</span>
+      <HelpHint topic="run.insights" />
+    </div>
+
     <!-- New regressions -->
     <SectionCard
       v-if="data.newRegressions.length > 0"

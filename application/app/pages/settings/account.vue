@@ -112,9 +112,7 @@ const authEnabled = computed(() => config.public.authEnabled);
 
     <template v-else-if="me?.user">
       <!-- Email section -->
-      <SectionCard icon="i-lucide-mail" title="Email address">
-        <template #subtitle> Used for password reset and notifications. </template>
-
+      <SectionCard icon="i-lucide-mail" title="Email address" help="account.email">
         <div class="space-y-3">
           <div
             v-if="me.user.emailVerified"

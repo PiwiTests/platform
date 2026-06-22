@@ -113,14 +113,7 @@ const windsurfSnippet = computed(() =>
         />
 
         <!-- What it is -->
-        <SectionCard icon="i-lucide-bot" title="What it provides">
-          <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            Your Piwi instance is itself an MCP server — no extra deployment needed. Point any MCP-compatible AI client
-            at
-            <code class="px-1 py-0.5 bg-muted rounded text-xs font-mono">{{ mcpUrl }}</code> and it can query test
-            results, failure clusters, AI diagnoses, and the full SCM-grounded evidence context.
-          </p>
-
+        <SectionCard icon="i-lucide-bot" title="What it provides" help="mcp.tools">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div
               v-for="t in tools"
@@ -137,7 +130,7 @@ const windsurfSnippet = computed(() =>
         </SectionCard>
 
         <!-- Authentication -->
-        <SectionCard icon="i-lucide-key" title="Authentication">
+        <SectionCard icon="i-lucide-key" title="Authentication" help="mcp.auth">
           <div class="space-y-3 text-sm text-gray-600 dark:text-gray-400">
             <p>
               MCP requests are authenticated with the same API keys used by the REST API. API keys start with
@@ -155,7 +148,7 @@ const windsurfSnippet = computed(() =>
         </SectionCard>
 
         <!-- Client setup -->
-        <SectionCard icon="i-lucide-settings-2" title="Client setup">
+        <SectionCard icon="i-lucide-settings-2" title="Client setup" help="mcp.client-setup">
           <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
             Replace <code class="px-1 py-0.5 bg-muted rounded text-xs font-mono">pd_YOUR_API_KEY</code> with your actual
             API key. The MCP URL shown below is auto-detected from your current browser origin.
