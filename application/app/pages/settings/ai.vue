@@ -316,6 +316,11 @@ const envVars = computed(() => {
               label="Research model"
               description="Optional cheaper/faster model for a pre-analysis pass before the main model writes the final diagnosis. Leave empty for single-stage."
             >
+              <template #label>
+                <span class="inline-flex items-center gap-1">
+                  Research model <HelpHint topic="settings.ai-research" />
+                </span>
+              </template>
               <UInput
                 v-model="researchModel"
                 :placeholder="provider === 'anthropic' ? 'e.g. claude-haiku-4-5-20251001' : 'e.g. llama-3.1-8b-instant'"

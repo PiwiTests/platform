@@ -164,7 +164,9 @@ function sectionHeading(s: ContextSection): string {
       <!-- Data coverage map -->
       <div class="rounded-lg border border-default bg-elevated/30 p-3 mb-4">
         <div class="flex items-center justify-between gap-2 mb-2">
-          <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Data coverage</p>
+          <p class="text-xs font-medium text-gray-500 uppercase tracking-wide inline-flex items-center gap-1">
+            Data coverage <HelpHint topic="cluster.coverage" />
+          </p>
           <p class="text-xs text-gray-400">
             {{ coverageCounts.present }} present · {{ coverageCounts.truncated }} truncated ·
             {{ coverageCounts.absent }} absent

@@ -369,6 +369,7 @@ const pipeline = computed<Array<{ role: string; model: string }>>(() => {
               >
                 {{ diagnosis.confidence }} confidence
               </UBadge>
+              <HelpHint v-if="diagnosis.confidence" topic="cluster.confidence" />
               <UBadge
                 v-if="details?.severity"
                 :color="severityColors[details.severity] || 'neutral'"
@@ -459,13 +460,16 @@ const pipeline = computed<Array<{ role: string; model: string }>>(() => {
       </div>
 
       <div v-if="alternateHypotheses.length" class="space-y-1.5">
-        <button
-          class="flex items-center gap-1.5 text-xs font-medium text-gray-500 uppercase tracking-wide hover:text-gray-700 dark:hover:text-gray-300"
-          @click="showAlternates = !showAlternates"
-        >
-          <UIcon :name="showAlternates ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5" />
-          Other hypotheses considered ({{ alternateHypotheses.length }})
-        </button>
+        <div class="flex items-center gap-1">
+          <button
+            class="flex items-center gap-1.5 text-xs font-medium text-gray-500 uppercase tracking-wide hover:text-gray-700 dark:hover:text-gray-300"
+            @click="showAlternates = !showAlternates"
+          >
+            <UIcon :name="showAlternates ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5" />
+            Other hypotheses considered ({{ alternateHypotheses.length }})
+          </button>
+          <HelpHint topic="cluster.hypotheses" />
+        </div>
         <div v-if="showAlternates" class="space-y-1.5">
           <div
             v-for="(h, i) in alternateHypotheses"
