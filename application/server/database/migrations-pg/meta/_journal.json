@@ -127,6 +127,13 @@
       "when": 1782124561043,
       "tag": "0017_lovely_squadron_supreme",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1782211219414,
+      "tag": "0018_great_clint_barton",
+      "breakpoints": true
     }
   ]
 }

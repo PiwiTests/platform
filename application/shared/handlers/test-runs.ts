@@ -175,6 +175,7 @@ const RECENT_FIELDS = {
   passedTests: testRuns.passedTests,
   failedTests: testRuns.failedTests,
   skippedTests: testRuns.skippedTests,
+  didNotRunTests: testRuns.didNotRunTests,
   flakyTests: testRuns.flakyTests,
   duration: testRuns.duration,
   avgTestDuration: testRuns.avgTestDuration,

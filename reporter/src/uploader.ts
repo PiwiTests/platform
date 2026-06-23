@@ -23,6 +23,8 @@ export interface RunPayload {
   passedTests: number;
   failedTests: number;
   skippedTests: number;
+  /** Tests that never executed (cut short by `maxFailures` or a serial-group failure) */
+  didNotRunTests?: number;
   /** Deployment environment label (e.g. `"staging"`, `"production"`) */
   environment?: string;
   /** Optional display label for the test run (e.g. "v2.3.1 release") */

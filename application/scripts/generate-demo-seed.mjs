@@ -535,6 +535,7 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
     let failedTests = 0;
     let passedTests = cfg.totalTests;
     let flakyTests = 0;
+    let didNotRunTests = 0;
 
     if (roll < cfg.failRate) {
       status = 'failed';
@@ -542,9 +543,12 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
       passedTests = cfg.totalTests - failedTests;
       flakyTests = Math.random() < 0.35 ? 1 : 0;
     } else if (roll < cfg.failRate + 0.05) {
+      // An interrupted run: a failure cut the suite short, so the trailing
+      // tests never executed (didnotrun).
       status = 'interrupted';
       failedTests = 1;
-      passedTests = cfg.totalTests - 1;
+      didNotRunTests = Math.min(3, Math.max(0, cfg.totalTests - 2));
+      passedTests = cfg.totalTests - failedTests - didNotRunTests;
     } else {
       status = 'passed';
       flakyTests = Math.random() < cfg.flakyRate ? 1 : 0;
@@ -581,6 +585,7 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
       passed_tests: passedTests,
       failed_tests: failedTests,
       skipped_tests: 0,
+      did_not_run_tests: didNotRunTests,
       flaky_tests: flakyTests,
       avg_test_duration: avgTestDuration,
       p90_test_duration: p90TestDuration,
@@ -620,11 +625,12 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
     for (let j = 0; j < caseIds.length; j++) {
       const caseId = caseIds[j];
       const isFailedCase = failedTests > 0 && j < failedTests;
-      const isFlakyCase = !isFailedCase && flakyTests > 0 && j === caseIds.length - 1;
+      const isDidNotRunCase = !isFailedCase && didNotRunTests > 0 && j >= caseIds.length - didNotRunTests;
+      const isFlakyCase = !isFailedCase && !isDidNotRunCase && flakyTests > 0 && j === caseIds.length - 1;
 
-      const caseStatus = isFailedCase ? 'failed' : 'passed';
+      const caseStatus = isFailedCase ? 'failed' : isDidNotRunCase ? 'didnotrun' : 'passed';
       const caseDurationVariance = (Math.random() - 0.5) * 0.3 * avgTestDuration;
-      const caseDuration = Math.max(500, Math.round(avgTestDuration + caseDurationVariance));
+      const caseDuration = isDidNotRunCase ? 0 : Math.max(500, Math.round(avgTestDuration + caseDurationVariance));
 
       // Determine cluster and error text for this case
       const clusterId = isFailedCase ? lookup[j] || null : null;

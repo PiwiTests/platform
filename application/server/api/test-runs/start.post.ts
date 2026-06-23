@@ -141,6 +141,7 @@ export default eventHandler(async (event) => {
         passedTests: 0,
         failedTests: 0,
         skippedTests: 0,
+        didNotRunTests: 0,
         environment: body.environment || null,
         label: body.label || null,
         metadata: { ...(sanitizeMetadata(body.metadata ?? {}) ?? {}), shardTokens: [streamToken] } as Record<
@@ -193,6 +194,7 @@ export default eventHandler(async (event) => {
       passedTests: 0,
       failedTests: 0,
       skippedTests: 0,
+      didNotRunTests: 0,
       environment: body.environment || null,
       label: body.label || null,
       metadata: sanitizeMetadata(body.metadata || null),

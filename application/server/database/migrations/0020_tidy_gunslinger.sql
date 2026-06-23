@@ -1,0 +1,1 @@
+ALTER TABLE `test_runs` ADD `did_not_run_tests` integer DEFAULT 0 NOT NULL;

@@ -765,6 +765,7 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                       :failed="row.original.failedTests"
                       :skipped="row.original.skippedTests"
                       :flaky="row.original.flakyTests"
+                      :did-not-run="row.original.didNotRunTests ?? 0"
                       :total="row.original.totalTests"
                     />
                     <span class="text-xs text-gray-500">{{ formatDuration(row.original.duration) }}</span>

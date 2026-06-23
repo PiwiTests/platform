@@ -33,6 +33,7 @@ Submit test results as JSON. The project is created automatically if it doesn't 
   "passedTests": 9,
   "failedTests": 1,
   "skippedTests": 0,
+  "didNotRunTests": 0,
   "environment": "production",
   "testCases": [
     {

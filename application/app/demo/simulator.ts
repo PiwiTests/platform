@@ -805,7 +805,9 @@ async function runSingleSimulation(
       totalTests: tests.length,
       passedTests: completed - failedCount,
       failedTests: failedCount,
-      skippedTests: tests.length - completed,
+      skippedTests: 0,
+      // Tests that never ran because the run was cut short (interrupted/maxFailures).
+      didNotRunTests: tests.length - completed,
       flakyTests: flakyCount,
       durations,
       metadata,

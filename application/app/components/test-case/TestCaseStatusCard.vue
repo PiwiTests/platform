@@ -32,8 +32,8 @@ const { copy, copied } = useCopy();
       <div class="flex justify-between items-center">
         <h2 class="text-xl font-semibold">Test case #{{ testCase.id }}</h2>
         <div class="flex items-center gap-2">
-          <UBadge :color="getStatusColor(testCase.status)" size="lg">
-            {{ testCase.status }}
+          <UBadge :color="getStatusColor(testCase.status)" size="lg" class="capitalize">
+            {{ formatStatusLabel(testCase.status) }}
           </UBadge>
         </div>
       </div>
