@@ -1196,27 +1196,29 @@ export async function buildDiagnosisContext(
         }
       }
 
-      // SCM investigation
-      const scm = await scmInvestigationSections(db, cluster, opts, limits);
-      for (const s of scm.sections) {
-        if (s.startsWith('## What Changed')) {
-          push(section('scmInvestigation', 'SCM Investigation', s));
+      // SCM investigation (network fetch) — skippable for the lean research pass
+      if (!opts.skipScm) {
+        const scm = await scmInvestigationSections(db, cluster, opts, limits);
+        for (const s of scm.sections) {
+          if (s.startsWith('## What Changed')) {
+            push(section('scmInvestigation', 'SCM Investigation', s));
+          }
         }
+        coverage = { scm: scm.coverage };
+        scmChanges = scm.scmChanges;
+
+        // Selected commits (network fetch)
+        push(
+          section(
+            'selectedCommits',
+            'Manually Selected Commits',
+            await selectedCommitsSection(db, cluster, opts, limits),
+          ),
+        );
       }
-      coverage = { scm: scm.coverage };
-      scmChanges = scm.scmChanges;
 
-      // Retry behavior (kept for backward compat — folded into recurrenceFlakiness)
+      // Retry behavior (DB only; kept for backward compat — folded into recurrenceFlakiness)
       push(section('scmInvestigation', 'SCM Investigation', await retryBehaviorSection(db, cluster)));
-
-      // Selected commits
-      push(
-        section(
-          'selectedCommits',
-          'Manually Selected Commits',
-          await selectedCommitsSection(db, cluster, opts, limits),
-        ),
-      );
     }
 
     // D10: Prior diagnosis + triage note

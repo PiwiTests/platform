@@ -13,6 +13,12 @@ export interface BuildContextOptions {
   includeImages?: boolean;
   /** Omit a section by id (used by the UI include/exclude toggles). */
   omitSections?: SectionId[];
+  /**
+   * Skip the SCM investigation network fetch (diff since last green + selected
+   * commit diffs). Used by the two-stage pipeline to keep the research pass
+   * cheap and to only pay for the SCM fetch when it's actually needed.
+   */
+  skipScm?: boolean;
 }
 
 export type SectionId =
