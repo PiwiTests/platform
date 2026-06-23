@@ -130,6 +130,8 @@ async function handleSaveMembers() {
 
 // === TABS ===
 const activeTab = ref('test-runs');
+// Bumped after a suggested merge is approved, to refresh the clusters list.
+const clustersRefreshKey = ref(0);
 
 // Support ?tab= query param for sidebar/redirect links
 const validTabs = [
@@ -804,7 +806,10 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
 
           <!-- FAILURE CLUSTERS TAB -->
           <template #failure-clusters>
-            <FailureClustersList v-if="activeTab === 'failure-clusters'" :project-id="String(projectId)" />
+            <template v-if="activeTab === 'failure-clusters'">
+              <ClusterMergeSuggestions :key="`sug-${clustersRefreshKey}`" :project-id="String(projectId)" @merged="clustersRefreshKey++" />
+              <FailureClustersList :key="clustersRefreshKey" :project-id="String(projectId)" />
+            </template>
           </template>
 
           <!-- FLAKY TESTS TAB -->

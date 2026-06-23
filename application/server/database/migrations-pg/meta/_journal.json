@@ -141,6 +141,13 @@
       "when": 1782217752430,
       "tag": "0019_opposite_layla_miller",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1782232067622,
+      "tag": "0020_concerned_power_man",
+      "breakpoints": true
     }
   ]
 }

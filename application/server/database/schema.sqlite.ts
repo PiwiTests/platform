@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core';
 
 // Projects table
 export const projects = sqliteTable(
@@ -184,6 +184,41 @@ export const failureClusterAliases = sqliteTable(
       table.fingerprint,
     ),
     clusterIdx: index('idx_failure_cluster_aliases_cluster').on(table.clusterId),
+  }),
+);
+
+// Proposed cluster merges awaiting human review (Phase 3). Surfaced when the
+// embedding reconciler / LLM adjudicator find two clusters that are probably —
+// but not certainly — the same root cause. Approving runs mergeFailureClusters.
+export const clusterMergeSuggestions = sqliteTable(
+  'cluster_merge_suggestions',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    // Convention: clusterAId < clusterBId so a symmetric pair maps to one row.
+    clusterAId: integer('cluster_a_id')
+      .notNull()
+      .references(() => failureClusters.id, { onDelete: 'cascade' }),
+    clusterBId: integer('cluster_b_id')
+      .notNull()
+      .references(() => failureClusters.id, { onDelete: 'cascade' }),
+    score: real('score'), // cosine similarity that surfaced the pair
+    method: text('method').notNull(), // 'embedding' | 'llm'
+    llmConfidence: text('llm_confidence'), // 'high' | 'medium' | 'low' (when method = 'llm')
+    llmReason: text('llm_reason'), // adjudicator rationale
+    status: text('status').notNull().default('pending'), // 'pending' | 'approved' | 'rejected'
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    pairIdx: uniqueIndex('idx_cluster_merge_suggestions_pair').on(table.clusterAId, table.clusterBId),
+    projectStatusIdx: index('idx_cluster_merge_suggestions_project_status').on(table.projectId, table.status),
   }),
 );
 
@@ -677,6 +712,8 @@ export type FailureCluster = typeof failureClusters.$inferSelect;
 export type NewFailureCluster = typeof failureClusters.$inferInsert;
 export type FailureClusterAlias = typeof failureClusterAliases.$inferSelect;
 export type NewFailureClusterAlias = typeof failureClusterAliases.$inferInsert;
+export type ClusterMergeSuggestion = typeof clusterMergeSuggestions.$inferSelect;
+export type NewClusterMergeSuggestion = typeof clusterMergeSuggestions.$inferInsert;
 export type FailureDiagnosis = typeof failureDiagnoses.$inferSelect;
 export type NewFailureDiagnosis = typeof failureDiagnoses.$inferInsert;
 export type AppSetting = typeof appSettings.$inferSelect;

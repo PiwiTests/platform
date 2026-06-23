@@ -368,8 +368,14 @@ export async function autoDiagnoseRun(db: DbClient, projectId: number, runId: nu
   // diagnose a cluster that's about to be merged away. Independent of autoDiagnose.
   if (config?.roles.embedding) {
     try {
-      const { embedded, merged } = await reconcileNewClusters(db, projectId, runId, config.roles.embedding);
-      if (merged > 0) console.log(`[cluster-reconcile] run ${runId}: embedded ${embedded}, merged ${merged}`);
+      const reasoningRole = config.roles.research ?? config.roles.diagnosis;
+      const { embedded, merged, suggested } = await reconcileNewClusters(db, projectId, runId, {
+        embeddingRole: config.roles.embedding,
+        reasoningRole,
+      });
+      if (merged > 0 || suggested > 0) {
+        console.log(`[cluster-reconcile] run ${runId}: embedded ${embedded}, merged ${merged}, suggested ${suggested}`);
+      }
     } catch (e) {
       console.error('[cluster-reconcile] failed for run', runId, e);
     }

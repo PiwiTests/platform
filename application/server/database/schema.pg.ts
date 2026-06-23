@@ -1,4 +1,15 @@
-import { pgTable, text, integer, serial, timestamp, jsonb, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  text,
+  integer,
+  serial,
+  timestamp,
+  jsonb,
+  doublePrecision,
+  index,
+  uniqueIndex,
+  primaryKey,
+} from 'drizzle-orm/pg-core';
 
 // Projects table
 export const projects = pgTable(
@@ -181,6 +192,38 @@ export const failureClusterAliases = pgTable(
       table.fingerprint,
     ),
     clusterIdx: index('idx_failure_cluster_aliases_cluster').on(table.clusterId),
+  }),
+);
+
+// Proposed cluster merges awaiting human review (Phase 3; see schema.sqlite.ts).
+export const clusterMergeSuggestions = pgTable(
+  'cluster_merge_suggestions',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    clusterAId: integer('cluster_a_id')
+      .notNull()
+      .references(() => failureClusters.id, { onDelete: 'cascade' }),
+    clusterBId: integer('cluster_b_id')
+      .notNull()
+      .references(() => failureClusters.id, { onDelete: 'cascade' }),
+    score: doublePrecision('score'),
+    method: text('method').notNull(),
+    llmConfidence: text('llm_confidence'),
+    llmReason: text('llm_reason'),
+    status: text('status').notNull().default('pending'),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    pairIdx: uniqueIndex('idx_cluster_merge_suggestions_pair').on(table.clusterAId, table.clusterBId),
+    projectStatusIdx: index('idx_cluster_merge_suggestions_project_status').on(table.projectId, table.status),
   }),
 );
 
