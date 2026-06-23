@@ -11,8 +11,15 @@ This guide explains how to deploy the Piwi Dashboard using Docker.
 Pull the latest image from GitHub Container Registry and run it:
 
 ```bash
+# Linux / macOS
 docker pull ghcr.io/phenx/piwi-dashboard:latest
 docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+```
+
+```powershell
+# Windows (PowerShell)
+docker pull ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v ${PWD}/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
 
 The dashboard will be available at `http://localhost:3000`.
@@ -28,9 +35,17 @@ The dashboard will be available at `http://localhost:3000`.
 ## Building the Image Locally
 
 ```bash
+# Linux / macOS
 cd application
 docker build -t piwi-dashboard:local .
 docker run -p 3000:3000 -v $(pwd)/.data:/app/.data piwi-dashboard:local
+```
+
+```powershell
+# Windows (PowerShell)
+cd application
+docker build -t piwi-dashboard:local .
+docker run -p 3000:3000 -v ${PWD}/.data:/app/.data piwi-dashboard:local
 ```
 
 The Dockerfile uses a two-stage build:
@@ -63,10 +78,10 @@ The Dockerfile uses a two-stage build:
 Mount a volume to persist data:
 
 ```bash
-docker run -p 3000:3000 \
-  -v /path/to/data:/app/.data \
-  ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v /path/to/data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
+
+> On Windows (PowerShell), use a host path like `C:\piwi\data` in place of `/path/to/data`.
 
 The `.data` directory contains:
 - `piwi.db` — SQLite database (unless using PostgreSQL)
@@ -132,8 +147,8 @@ The container runs as a non-root user (`nodejs:nodejs` with UID/GID 1001) for en
 
 Best practices:
 - Always use HTTPS in production (use a reverse proxy like nginx or Traefik)
-- Set `PIWI_SECRET_KEY` with `openssl rand -hex 32` to encrypt secrets at rest (recommended even without auth)
-- Set `PIWI_AUTH_SECRET` with `openssl rand -hex 32` when authentication is enabled
+- Set `PIWI_SECRET_KEY` to encrypt secrets at rest (recommended even without auth). Generate a value with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` (cross-platform) or `openssl rand -hex 32` (Linux/macOS)
+- Set `PIWI_AUTH_SECRET` (same generator) when authentication is enabled
 - Enable authentication for multi-user or internet-facing deployments
 
 ## Available Tags
@@ -147,12 +162,19 @@ Best practices:
 
 ### Permission Issues
 
-If you encounter permission issues with volumes, ensure the mounted directory is writable by UID 1001:
+On **Linux hosts**, ensure the mounted directory is writable by the container's UID 1001:
 
 ```bash
 mkdir -p .data
 chmod 777 .data  # or chown 1001:1001 .data
 docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+```
+
+On **Windows** and **macOS**, Docker Desktop handles volume permissions automatically — no `chmod` needed:
+
+```powershell
+# Windows (PowerShell)
+docker run -p 3000:3000 -v ${PWD}/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
 
 ### Database Locked
@@ -164,7 +186,13 @@ SQLite doesn't support concurrent writes well. For high-concurrency deployments,
 Map to a different host port:
 
 ```bash
+# Linux / macOS
 docker run -p 8080:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+```
+
+```powershell
+# Windows (PowerShell)
+docker run -p 8080:3000 -v ${PWD}/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
 
 The dashboard will be available at `http://localhost:8080`.

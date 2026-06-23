@@ -11,10 +11,20 @@
 ## Quick start
 
 ```bash
+# Linux / macOS
 docker run -d \
   --name piwi-dashboard \
   -p 3000:3000 \
   -v $(pwd)/.data:/app/.data \
+  ghcr.io/phenx/piwi-dashboard:latest
+```
+
+```powershell
+# Windows (PowerShell)
+docker run -d `
+  --name piwi-dashboard `
+  -p 3000:3000 `
+  -v ${PWD}/.data:/app/.data `
   ghcr.io/phenx/piwi-dashboard:latest
 ```
 
@@ -48,18 +58,17 @@ Open `http://localhost:3000`. The SQLite database and file storage are created a
 Mount a host directory at `/app/.data` to persist all data between container restarts:
 
 ```bash
-docker run -d \
-  -p 3000:3000 \
-  -v /your/data/path:/app/.data \
-  ghcr.io/phenx/piwi-dashboard:latest
+docker run -d -p 3000:3000 -v /your/data/path:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
+
+> On Windows (PowerShell), use a host path like `C:\piwi\data` in place of `/your/data/path`.
 
 `/app/.data` contains:
 
 - `piwi.db` — SQLite database (skipped when `PIWI_DATABASE_URL` is set)
 - `storage/` — HTML reports and trace files (skipped when S3 is configured)
 
-> **Permission note:** The container runs as UID 1001. If you see permission errors, run `chmod -R 777 /your/data/path` or `chown -R 1001:1001 /your/data/path`.
+> **Permission note (Linux hosts only):** The container runs as UID 1001. If you see permission errors, run `chmod -R 777 /your/data/path` or `chown -R 1001:1001 /your/data/path`. On Windows/macOS, Docker Desktop manages this automatically.
 
 ---
 
@@ -98,9 +107,9 @@ By default, Piwi uses SQLite stored in `/app/.data/piwi.db`. Set `PIWI_DATABASE_
 
 | Variable                       | Default | Description                                                             |
 |--------------------------------|---------|-------------------------------------------------------------------------|
-| `PIWI_SECRET_KEY`              | —       | **Recommended in all deployments.** Master key for AES-256-GCM encryption of sensitive values stored in the database (AI API keys, SCM tokens). Generate with: `openssl rand -hex 32` |
+| `PIWI_SECRET_KEY`              | —       | **Recommended in all deployments.** Master key for AES-256-GCM encryption of sensitive values stored in the database (AI API keys, SCM tokens). Generate with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` (or `openssl rand -hex 32`) |
 | `PIWI_AUTH_ENABLED`            | —       | Set to `true` to enable authentication                                  |
-| `PIWI_AUTH_SECRET`             | —       | **Required when auth is enabled.** Random string used to sign session cookies. Generate with: `openssl rand -hex 32` |
+| `PIWI_AUTH_SECRET`             | —       | **Required when auth is enabled.** Random string used to sign session cookies. Generate with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` (or `openssl rand -hex 32`) |
 | `PIWI_OAUTH_GOOGLE_CLIENT_ID`  | —       | Google OAuth client ID (shows "Sign in with Google" when set with secret) |
 | `PIWI_OAUTH_GOOGLE_CLIENT_SECRET` | —    | Google OAuth client secret                                              |
 | `PIWI_OAUTH_GITHUB_CLIENT_ID`  | —       | GitHub OAuth client ID (shows "Sign in with GitHub" when set with secret) |
@@ -228,6 +237,7 @@ volumes:
 When `PIWI_AUTH_ENABLED=true`, authentication is required. On first run (empty user table), create the initial admin account:
 
 ```bash
+# Linux / macOS
 curl -X POST http://localhost:3000/api/auth/setup \
   -H "Content-Type: application/json" \
   -d '{
@@ -235,6 +245,13 @@ curl -X POST http://localhost:3000/api/auth/setup \
     "password": "your-secure-password",
     "name": "Administrator"
   }'
+```
+
+```powershell
+# Windows (PowerShell)
+$body = @{ username = 'admin'; password = 'your-secure-password'; name = 'Administrator' } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/setup `
+  -ContentType 'application/json' -Body $body
 ```
 
 This endpoint is only available before any user is created. After that, manage users from **Settings → Users** in the dashboard UI.
@@ -322,7 +339,7 @@ Database migrations run automatically on startup — no manual steps required.
 
 ## Troubleshooting
 
-**Volume permission error**
+**Volume permission error** (Linux hosts only — Docker Desktop on Windows/macOS handles this automatically)
 
 ```bash
 mkdir -p .data && chmod 777 .data
@@ -336,7 +353,13 @@ mkdir -p .data && chown 1001:1001 .data
 **Port already in use** — map to a different host port:
 
 ```bash
+# Linux / macOS
 docker run -p 8080:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+```
+
+```powershell
+# Windows (PowerShell)
+docker run -p 8080:3000 -v ${PWD}/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
 
 **SQLite locked / concurrent write errors** — SQLite supports only one writer at a time. For multi-instance or high-concurrency deployments, switch to PostgreSQL by setting `PIWI_DATABASE_URL`.

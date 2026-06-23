@@ -163,5 +163,11 @@ test('slow test', async ({ page }) => {
 Tests use the same database as dev. If tests fail due to data conflicts, delete the database (and all data) before running tests:
 
 ```bash
+# Linux / macOS
 rm -rf .data
+```
+
+```powershell
+# Windows (PowerShell)
+Remove-Item -Recurse -Force .data
 ```

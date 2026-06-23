@@ -62,8 +62,7 @@ Replace `<your-piwi-url>` with your dashboard base URL (e.g. `http://localhost:3
 ### Claude Code (CLI)
 
 ```bash
-claude mcp add --transport http piwi <your-piwi-url>/mcp \
-  --header "Authorization: Bearer pd_YOUR_API_KEY"
+claude mcp add --transport http piwi <your-piwi-url>/mcp --header "Authorization: Bearer pd_YOUR_API_KEY"
 ```
 
 After adding, restart Claude Code. Use `/mcp` to verify **piwi** is listed. Claude will invoke the tools automatically when you ask about test failures or flaky tests.
@@ -129,8 +128,7 @@ Requires Claude Desktop with remote MCP support (early 2025 release). Restart th
 ### Gemini CLI
 
 ```bash
-gemini mcp add --transport http piwi <your-piwi-url>/mcp \
-  --header "Authorization: Bearer pd_YOUR_API_KEY"
+gemini mcp add --transport http piwi <your-piwi-url>/mcp --header "Authorization: Bearer pd_YOUR_API_KEY"
 ```
 
 ### Windsurf / Continue
