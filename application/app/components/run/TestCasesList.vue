@@ -24,6 +24,7 @@ const STATUS_OPTIONS = [
   { label: 'Passed', value: 'passed', color: 'green' },
   { label: 'Failed', value: 'failed', color: 'red' },
   { label: 'Skipped', value: 'skipped', color: 'gray' },
+  { label: "Didn't run", value: 'didnotrun', color: 'amber' },
   { label: 'Flaky', value: 'flaky', color: 'orange' },
 ] as const;
 
@@ -363,9 +364,7 @@ defineExpose({ scrollToCase });
             "
             class="capitalize"
           >
-            {{
-              row.original.status === 'timedOut' || row.original.status === 'timedout' ? 'failed' : row.original.status
-            }}
+            {{ formatStatusLabel(row.original.status) }}
           </UBadge>
         </template>
 

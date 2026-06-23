@@ -21,6 +21,7 @@ interface Stats {
   passed: number;
   failed: number;
   skipped: number;
+  didnotrun: number;
   running: number;
   total: number;
 }
@@ -78,7 +79,7 @@ function annotationLabel(ann: { type: string; description?: string }): string {
 }
 
 function computeStats(tests: TestCaseResult[]): Stats {
-  const stats: Stats = { passed: 0, failed: 0, skipped: 0, running: 0, total: 0 };
+  const stats: Stats = { passed: 0, failed: 0, skipped: 0, didnotrun: 0, running: 0, total: 0 };
   for (const t of tests) {
     const s = normalizeStatus(t.status) as keyof Stats;
     if (s in stats) (stats[s] as number)++;
@@ -270,6 +271,9 @@ const flatRows = computed<FlatRow[]>(() => {
               {{ row.stats.passed }} passed
             </span>
             <span v-if="row.stats.skipped > 0" class="text-xs text-muted">{{ row.stats.skipped }} skipped</span>
+            <span v-if="row.stats.didnotrun > 0" class="text-xs text-amber-600 dark:text-amber-400">
+              {{ row.stats.didnotrun }} didn't run
+            </span>
             <span v-if="row.stats.running > 0" class="text-xs text-info">{{ row.stats.running }} running</span>
           </div>
         </div>
@@ -291,7 +295,7 @@ const flatRows = computed<FlatRow[]>(() => {
             size="xs"
             class="capitalize shrink-0"
           >
-            {{ row.test.status === 'timedOut' || row.test.status === 'timedout' ? 'failed' : row.test.status }}
+            {{ formatStatusLabel(row.test.status) }}
           </UBadge>
           <UBadge
             v-for="ann in row.test.testAnnotations ?? []"

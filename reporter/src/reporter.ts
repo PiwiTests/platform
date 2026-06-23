@@ -18,6 +18,7 @@ import {
   detectCliFileFilters,
 } from './helpers.js';
 import { toWireTestCase } from './serializer.js';
+import { mergeAnnotations, classifyStatus } from './skip-classify.js';
 import { RunSubmitter } from './run-submitter.js';
 import { Logger } from './logger.js';
 import type { CollectedTestCase, StreamEvent, SetupStep, FilterDetails } from './types.js';
@@ -40,6 +41,11 @@ export class PiwiDashboardReporter {
   private failedTests = 0;
   private skippedTests = 0;
   private timedOutTests = 0;
+  private didNotRunTests = 0;
+  /** Full set of tests Playwright planned to run this shard (captured in `onBegin`). */
+  private plannedTests: TestCase[] = [];
+  /** Ids of tests that actually reported via `onTestEnd`, to find the ones that never ran. */
+  private reportedTestIds = new Set<string>();
   private instanceId: string;
   private runLabel: string | null = null;
   private shardInfo: ShardInfo | null = null;
@@ -123,6 +129,12 @@ export class PiwiDashboardReporter {
     }
 
     this.metadata = this.metadataCollector.collect(config, suite, this.options);
+
+    // Snapshot the planned test list so `onEnd` can materialize tests that
+    // never ran (e.g. cut short by `maxFailures`) as `didnotrun` cases. The
+    // suite is already filtered/sharded, so this matches what this shard
+    // attempts.
+    this.plannedTests = suite.allTests();
 
     // Detect Playwright shard config (--shard=1/3)
     const pwShard = (config as any).shard as ShardInfo | null | undefined;
@@ -224,12 +236,16 @@ export class PiwiDashboardReporter {
     this.totalTests++;
     const relativeFilePath = path.relative(process.cwd(), test.location.file);
 
+    this.reportedTestIds.add(test.id);
+
     const { suitePath, suiteConfig } = this.metadataCollector.getSuiteInfo(test);
+    const annotations = mergeAnnotations(test, result);
+    const status = classifyStatus(result.status, annotations);
     const testCase: CollectedTestCase = {
       type: 'complete',
       title: test.title,
       location: `${relativeFilePath}:${test.location.line}:${test.location.column}`,
-      status: result.status,
+      status,
       duration: result.duration,
       error: result.error ? result.error.message : null,
       retries: result.retry,
@@ -240,7 +256,7 @@ export class PiwiDashboardReporter {
       browser: this.metadataCollector.getBrowserConfig(test) || undefined,
       suitePath,
       suiteConfig,
-      testAnnotations: test.annotations?.length ? (test.annotations as any) : null,
+      testAnnotations: annotations.length ? annotations : null,
     };
 
     if (result.status === 'failed' || result.status === 'timedOut') {
@@ -258,7 +274,7 @@ export class PiwiDashboardReporter {
       this.fileHandler.parsePerformanceAttachments(testCase, result.attachments);
     }
 
-    switch (result.status) {
+    switch (status) {
       case 'passed':
         this.passedTests++;
         break;
@@ -267,6 +283,9 @@ export class PiwiDashboardReporter {
         break;
       case 'skipped':
         this.skippedTests++;
+        break;
+      case 'didnotrun':
+        this.didNotRunTests++;
         break;
       case 'timedOut':
         this.timedOutTests++;
@@ -281,9 +300,53 @@ export class PiwiDashboardReporter {
     }
   }
 
+  /**
+   * Synthesize `didnotrun` cases for tests Playwright planned but never reported
+   * (no `onTestEnd`) — typically because `maxFailures` cut the run short. These
+   * carry no result, so they're emitted with zero duration and no error. In
+   * streaming mode they're queued as complete events so the pre-finish drain
+   * sends them alongside the rest.
+   */
+  private materializeUnrunTests(): void {
+    for (const test of this.plannedTests) {
+      if (this.reportedTestIds.has(test.id)) continue;
+
+      const relativeFilePath = path.relative(process.cwd(), test.location.file);
+      const { suitePath, suiteConfig } = this.metadataCollector.getSuiteInfo(test);
+      const testCase: CollectedTestCase = {
+        type: 'complete',
+        title: test.title,
+        location: `${relativeFilePath}:${test.location.line}:${test.location.column}`,
+        status: 'didnotrun',
+        duration: 0,
+        error: null,
+        retries: 0,
+        workerIndex: null,
+        shardIndex: this.shardInfo?.current ?? null,
+        startedAt: null,
+        attachments: [],
+        browser: this.metadataCollector.getBrowserConfig(test) || undefined,
+        suitePath,
+        suiteConfig,
+        testAnnotations: test.annotations?.length ? (test.annotations as any) : null,
+      };
+
+      this.testCases.push(testCase);
+      this.totalTests++;
+      this.didNotRunTests++;
+
+      if (this.streamManager) {
+        this.streamManager.queueEvent(toWireTestCase(testCase) as StreamEvent);
+      }
+    }
+  }
+
   /** Playwright reporter hook: called when the full test run finishes */
   async onEnd(result: FullResult): Promise<void> {
     if (!this.enabled) return;
+
+    this.materializeUnrunTests();
+
     await this.submitter.submit(
       {
         options: this.options,
@@ -295,6 +358,7 @@ export class PiwiDashboardReporter {
         failedTests: this.failedTests,
         skippedTests: this.skippedTests,
         timedOutTests: this.timedOutTests,
+        didNotRunTests: this.didNotRunTests,
         metadata: this.metadata,
         instanceId: this.instanceId,
         shardInfo: this.shardInfo,

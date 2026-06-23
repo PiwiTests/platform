@@ -139,6 +139,7 @@ export async function getProject(db: DrizzleDB, id: number) {
       passedTests: testRuns.passedTests,
       failedTests: testRuns.failedTests,
       skippedTests: testRuns.skippedTests,
+      didNotRunTests: testRuns.didNotRunTests,
       flakyTests: testRuns.flakyTests,
       avgTestDuration: testRuns.avgTestDuration,
       p90TestDuration: testRuns.p90TestDuration,

@@ -328,6 +328,17 @@ In the dashboard UI, the test run detail page offers a **Tree** view that groups
 
 The reporter captures Playwright test marks set via `test.info().annotations` (e.g. `@fixme`, `@slow`, `@skip`) and sends them as `testAnnotations` in every test case payload. These are stored per-run on the `test_runs_cases` table and rendered as badges on the test case row and test case detail page.
 
+### Skipped vs "didn't run"
+
+The reporter distinguishes two outcomes that Playwright both reports as `skipped`:
+
+- **`skipped`** — an intentional skip via `test.skip()` / `test.fixme()` (static, conditional, or runtime). These always carry a `skip`/`fixme` annotation, so the skip reason (when provided) is preserved in `testAnnotations` and shown on the test case.
+- **`didnotrun`** — a test that never actually executed. This covers two cases:
+  - a test skipped as a side effect of an **earlier failure in a `describe.serial` group** (Playwright reports it as `skipped` with no annotation; the reporter reclassifies it);
+  - a test that Playwright **never started because `maxFailures` cut the run short** (no `onTestEnd` fires for these — the reporter materializes them from the planned test list so they still appear, with zero duration and no error).
+
+The run-level counter `didNotRunTests` aggregates these, and the dashboard renders them as a distinct "Didn't run" segment/badge separate from skipped.
+
 ## With custom metadata
 
 ```typescript

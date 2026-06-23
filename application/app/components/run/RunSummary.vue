@@ -69,13 +69,15 @@ function buildRunSummary() {
   const passed = run.passedTests ?? 0;
   const failed = run.failedTests ?? 0;
   const skipped = run.skippedTests ?? 0;
+  const didNotRun = run.didNotRunTests ?? 0;
   const flaky = run.flakyTests ?? 0;
   const duration = formatDuration(run.duration);
   const flakyPart = flaky > 0 ? ` · ${flaky} flaky` : '';
+  const didNotRunPart = didNotRun > 0 ? ` · ${didNotRun} didn't run` : '';
   return [
     `*Run #${run.id}*${label}`,
     `Status: ${statusEmoji} ${run.status} | Project: ${project}`,
-    `Tests: ${total} total · ${passed} passed · ${failed} failed · ${skipped} skipped${flakyPart}`,
+    `Tests: ${total} total · ${passed} passed · ${failed} failed · ${skipped} skipped${didNotRunPart}${flakyPart}`,
     `Duration: ${duration}`,
   ].join('\n');
 }
@@ -199,6 +201,13 @@ function onLabelKeydown(e: KeyboardEvent) {
           <span class="text-xs text-gray-500 tabular-nums whitespace-nowrap">
             S: <strong>{{ displayProgress?.skippedTests ?? testRun?.skippedTests ?? 0 }}</strong>
           </span>
+          <span
+            v-if="(testRun?.didNotRunTests ?? 0) > 0"
+            class="text-xs text-amber-600 dark:text-amber-400 tabular-nums whitespace-nowrap"
+            title="Tests that never ran (maxFailures cutoff or a serial-group failure)"
+          >
+            DNR: <strong>{{ testRun?.didNotRunTests ?? 0 }}</strong>
+          </span>
           <span class="text-xs text-orange-600 dark:text-orange-400 tabular-nums whitespace-nowrap">
             Fl: <strong>{{ testRun?.flakyTests ?? 0 }}</strong>
           </span>
@@ -207,6 +216,7 @@ function onLabelKeydown(e: KeyboardEvent) {
             :failed="displayProgress?.failedTests ?? testRun?.failedTests ?? 0"
             :skipped="displayProgress?.skippedTests ?? testRun?.skippedTests ?? 0"
             :flaky="testRun?.flakyTests ?? 0"
+            :did-not-run="testRun?.didNotRunTests ?? 0"
             :total="displayProgress?.totalTests ?? testRun?.totalTests ?? 0"
           />
           <span class="text-xs text-gray-400 tabular-nums whitespace-nowrap">{{
@@ -316,7 +326,10 @@ function onLabelKeydown(e: KeyboardEvent) {
               </div>
             </div>
 
-            <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            <div
+              class="grid grid-cols-2 gap-2"
+              :class="(testRun?.didNotRunTests ?? 0) > 0 ? 'sm:grid-cols-6' : 'sm:grid-cols-5'"
+            >
               <button
                 class="rounded-lg p-3 text-left w-full transition-colors cursor-pointer"
                 :class="
@@ -380,6 +393,24 @@ function onLabelKeydown(e: KeyboardEvent) {
                 </p>
               </button>
               <button
+                v-if="(testRun?.didNotRunTests ?? 0) > 0"
+                class="rounded-lg p-3 text-left w-full transition-colors cursor-pointer"
+                :class="
+                  activeFilter === 'didnotrun'
+                    ? 'bg-amber-100 dark:bg-amber-900/30 ring-2 ring-amber-400 dark:ring-amber-600'
+                    : 'bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30'
+                "
+                title="Tests that never ran (maxFailures cutoff or a serial-group failure)"
+                @click="emit('filter-status', 'didnotrun')"
+              >
+                <p class="text-xs font-medium text-amber-700 dark:text-amber-400 uppercase tracking-wider">
+                  <span class="inline-block size-1.5 rounded-full bg-amber-400 mr-1 align-middle" /> Didn't run
+                </p>
+                <p class="text-xl font-bold mt-0.5 text-amber-600 dark:text-amber-400">
+                  {{ testRun?.didNotRunTests ?? 0 }}
+                </p>
+              </button>
+              <button
                 class="rounded-lg p-3 text-left w-full transition-colors cursor-pointer"
                 :class="
                   activeFilter === 'flaky'
@@ -405,6 +436,7 @@ function onLabelKeydown(e: KeyboardEvent) {
                     :failed="displayProgress?.failedTests ?? testRun?.failedTests ?? 0"
                     :skipped="displayProgress?.skippedTests ?? testRun?.skippedTests ?? 0"
                     :flaky="testRun?.flakyTests ?? 0"
+                    :did-not-run="testRun?.didNotRunTests ?? 0"
                     :total="displayProgress?.totalTests ?? testRun?.totalTests ?? 0"
                   />
                 </div>

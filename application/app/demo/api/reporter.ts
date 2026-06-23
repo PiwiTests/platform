@@ -476,6 +476,7 @@ export async function apiPostRunEvents(
       passedTests: sql`${testRuns.passedTests} + ${insertedStatusCounts['passed'] || 0}`,
       failedTests: sql`${testRuns.failedTests} + ${insertedStatusCounts['failed'] || 0}`,
       skippedTests: sql`${testRuns.skippedTests} + ${insertedStatusCounts['skipped'] || 0}`,
+      didNotRunTests: sql`${testRuns.didNotRunTests} + ${insertedStatusCounts['didnotrun'] || 0}`,
     })
     .where(eq(testRuns.id, id))
     .returning();
@@ -551,6 +552,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         passedTests: sql`${testRuns.passedTests} + ${body.passedTests ?? 0}`,
         failedTests: sql`${testRuns.failedTests} + ${body.failedTests ?? 0}`,
         skippedTests: sql`${testRuns.skippedTests} + ${body.skippedTests ?? 0}`,
+        didNotRunTests: sql`${testRuns.didNotRunTests} + ${body.didNotRunTests ?? 0}`,
         flakyTests: sql`${testRuns.flakyTests} + ${flakyTests}`,
         shardsFinished: sql`${testRuns.shardsFinished} + 1`,
         duration: sql`MAX(coalesce(${testRuns.duration}, 0), ${duration})`,
@@ -654,6 +656,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       ...(body.passedTests !== undefined && { passedTests: body.passedTests }),
       ...(body.failedTests !== undefined && { failedTests: body.failedTests }),
       ...(body.skippedTests !== undefined && { skippedTests: body.skippedTests }),
+      ...(body.didNotRunTests !== undefined && { didNotRunTests: body.didNotRunTests }),
       ...(body.flakyTests !== undefined && { flakyTests }),
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),

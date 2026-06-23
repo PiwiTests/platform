@@ -366,6 +366,7 @@ export default eventHandler(async (event) => {
         passedTests: (testRunData.passedTests as number | undefined) || 0,
         failedTests: (testRunData.failedTests as number | undefined) || 0,
         skippedTests: (testRunData.skippedTests as number | undefined) || 0,
+        didNotRunTests: (testRunData.didNotRunTests as number | undefined) || 0,
         environment: (testRunData.environment as string | null | undefined) || null,
         label: (testRunData.label as string | null | undefined) || null,
         metadata: sanitizeMetadata((testRunData.metadata || null) as Record<string, unknown> | null),
