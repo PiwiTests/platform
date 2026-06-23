@@ -3,7 +3,8 @@ import { requireAuth } from '../../utils/auth';
 import { Role } from '../../../shared/types';
 import { getAppSetting, setAppSetting, deleteAppSetting } from '../../utils/app-settings';
 import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
-import type { AiProvider } from '~~/types/api';
+import { AI_ROLES, storedRoles, readAiSettings, type RawStoredAi, type RawStoredRole } from '../../utils/ai-settings';
+import type { AiModelRole, AiProvider } from '~~/types/api';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 
@@ -12,142 +13,112 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Save AI settings',
     description:
-      'Updates AI provider configuration, model, API key, base URL, auto-diagnose toggle, custom instructions, and SCM token. Requires administrator role. Not available when AI is managed via environment variables.',
+      'Updates the per-role AI configuration (diagnosis, research, embedding), auto-diagnose toggle, custom instructions, and SCM token. Each role has its own provider/model/baseUrl/apiKey, or `reuse` to inherit another role. Requires administrator role. Not available when AI is managed via environment variables.',
     'x-required-roles': REQUIRED_ROLES,
   },
 });
 
 const VALID_PROVIDERS: AiProvider[] = ['anthropic', 'openai'];
 
+/** A role config as submitted by the client (apiKey is plaintext or omitted). */
+interface RoleInput {
+  provider?: string | null;
+  model?: string | null;
+  baseUrl?: string | null;
+  apiKey?: string | null;
+  reuse?: AiModelRole | null;
+}
+
 export default eventHandler(async (event) => {
   await requireAuth(event, REQUIRED_ROLES);
 
   const runtimeConfig = useRuntimeConfig();
   const envAi = runtimeConfig.ai as { provider?: string } | undefined;
-  if (envAi?.provider) {
-    throw createError({
-      statusCode: 409,
-      message: 'AI configuration is managed by environment variables and cannot be changed via the API',
-    });
-  }
 
   const body = (await readBody(event)) as {
-    provider?: string | null;
-    model?: string;
-    baseUrl?: string;
-    apiKey?: string;
+    roles?: Partial<Record<AiModelRole, RoleInput | null>> | null;
     autoDiagnose?: boolean;
-    researchModel?: string | null;
-    researchProvider?: string | null;
-    researchBaseUrl?: string | null;
-    researchApiKey?: string | null;
     customInstructions?: string | null;
     scmToken?: string | null;
   };
 
   const db = await getDatabase();
 
-  // Custom instructions and SCM token are stored independently
+  // Custom instructions and SCM token are stored independently of the provider config.
   if (body.customInstructions !== undefined) {
     const trimmed = body.customInstructions?.trim() || null;
-    if (trimmed) {
-      await setAppSetting(db, 'ai_instructions', { value: trimmed });
-    } else {
-      await deleteAppSetting(db, 'ai_instructions');
-    }
+    if (trimmed) await setAppSetting(db, 'ai_instructions', { value: trimmed });
+    else await deleteAppSetting(db, 'ai_instructions');
   }
 
   if (body.scmToken !== undefined) {
     const trimmed = body.scmToken?.trim() || null;
-    if (trimmed) {
-      await setAppSetting(db, 'scm_token', { value: encryptSecret(trimmed, getEncryptionKey()) });
-    } else {
-      await deleteAppSetting(db, 'scm_token');
+    if (trimmed) await setAppSetting(db, 'scm_token', { value: encryptSecret(trimmed, getEncryptionKey()) });
+    else await deleteAppSetting(db, 'scm_token');
+  }
+
+  // Only touch the provider config when the request actually carries it.
+  const touchesAi = 'roles' in body || 'autoDiagnose' in body;
+  if (touchesAi) {
+    if (envAi?.provider) {
+      throw createError({
+        statusCode: 409,
+        message: 'AI configuration is managed by environment variables and cannot be changed via the API',
+      });
     }
-  }
 
-  const [instructions, scmTokenSetting] = await Promise.all([
-    getAppSetting<{ value?: string }>(db, 'ai_instructions'),
-    getAppSetting<{ value?: string }>(db, 'scm_token'),
-  ]);
-  const customInstructions = instructions?.value || null;
-  const hasScmToken = Boolean(scmTokenSetting?.value);
+    if (body.roles === null) {
+      await deleteAppSetting(db, 'ai');
+      return readAiSettings(db);
+    }
 
-  // Clearing the provider configuration
-  if (!body.provider) {
-    await deleteAppSetting(db, 'ai');
-    return {
-      provider: null,
-      model: null,
-      baseUrl: null,
-      autoDiagnose: false,
-      researchModel: null,
-      researchProvider: null,
-      researchBaseUrl: null,
-      hasResearchApiKey: false,
-      hasApiKey: false,
-      hasScmToken,
-      envManaged: false,
-      customInstructions,
+    const existing = (await getAppSetting<RawStoredAi>(db, 'ai')) ?? {};
+    const existingRoles = storedRoles(existing);
+    const input = body.roles ?? {};
+
+    const resolveKey = (provided: string | null | undefined, existingEnc?: string): string | undefined => {
+      if (provided === undefined) return existingEnc; // preserve
+      if (provided === '' || provided === null) return undefined; // remove
+      return encryptSecret(provided, getEncryptionKey());
     };
+
+    const out: Partial<Record<AiModelRole, RawStoredRole>> = {};
+    for (const role of AI_ROLES) {
+      if (!(role in input)) {
+        // Untouched role — keep whatever was stored.
+        if (existingRoles[role]) out[role] = existingRoles[role];
+        continue;
+      }
+      const cfg = input[role];
+      if (cfg == null) continue; // explicit removal
+
+      if (cfg.reuse) {
+        if (cfg.reuse === role) throw createError({ statusCode: 400, message: `Role "${role}" cannot reuse itself` });
+        out[role] = { reuse: cfg.reuse, model: cfg.model?.trim() || '' };
+        continue;
+      }
+
+      const provider = (cfg.provider || '') as AiProvider;
+      if (!VALID_PROVIDERS.includes(provider)) {
+        throw createError({ statusCode: 400, message: `Role "${role}" has an invalid provider` });
+      }
+      const model = cfg.model?.trim() || '';
+      const baseUrl = cfg.baseUrl?.trim() || '';
+      if (provider === 'openai' && (!baseUrl || !model)) {
+        throw createError({ statusCode: 400, message: `Role "${role}": OpenAI-compatible provider requires baseUrl and model` });
+      }
+      const apiKey = resolveKey(cfg.apiKey, existingRoles[role]?.apiKey);
+      out[role] = { provider, model, baseUrl, ...(apiKey ? { apiKey } : {}) };
+    }
+
+    // The diagnosis role is the required root and cannot reuse another role.
+    if (!out.diagnosis || out.diagnosis.reuse) {
+      throw createError({ statusCode: 400, message: 'A diagnosis role with its own provider is required' });
+    }
+
+    const autoDiagnose = 'autoDiagnose' in body ? Boolean(body.autoDiagnose) : Boolean(existing.autoDiagnose);
+    await setAppSetting(db, 'ai', { autoDiagnose, roles: out });
   }
 
-  if (!VALID_PROVIDERS.includes(body.provider as AiProvider)) {
-    throw createError({ statusCode: 400, message: `Invalid provider. Must be one of: ${VALID_PROVIDERS.join(', ')}` });
-  }
-
-  if (body.provider === 'openai' && (!body.baseUrl || !body.model)) {
-    throw createError({ statusCode: 400, message: 'OpenAI-compatible provider requires baseUrl and model' });
-  }
-
-  // Retrieve existing stored value to preserve secrets if not provided
-  const existing = (await getAppSetting<{ apiKey?: string; researchApiKey?: string }>(db, 'ai')) ?? {};
-
-  let apiKey: string | undefined;
-  if (body.apiKey === undefined) {
-    // Preserve the existing encrypted value as-is
-    apiKey = existing.apiKey;
-  } else if (body.apiKey === '') {
-    apiKey = undefined;
-  } else {
-    apiKey = encryptSecret(body.apiKey, getEncryptionKey());
-  }
-
-  let researchApiKey: string | undefined;
-  if (body.researchApiKey === undefined) {
-    researchApiKey = existing.researchApiKey;
-  } else if (body.researchApiKey === '' || body.researchApiKey === null) {
-    researchApiKey = undefined;
-  } else {
-    researchApiKey = encryptSecret(body.researchApiKey, getEncryptionKey());
-  }
-
-  const value = {
-    provider: body.provider,
-    model: body.model || '',
-    baseUrl: body.baseUrl || '',
-    autoDiagnose: Boolean(body.autoDiagnose),
-    researchModel: body.researchModel?.trim() || '',
-    researchProvider: body.researchProvider?.trim() || '',
-    researchBaseUrl: body.researchBaseUrl?.trim() || '',
-    ...(apiKey ? { apiKey } : {}),
-    ...(researchApiKey ? { researchApiKey } : {}),
-  };
-
-  await setAppSetting(db, 'ai', value);
-
-  return {
-    provider: value.provider,
-    model: value.model || null,
-    baseUrl: value.baseUrl || null,
-    autoDiagnose: value.autoDiagnose,
-    researchModel: value.researchModel || null,
-    researchProvider: (value.researchProvider || null) as AiProvider | null,
-    researchBaseUrl: value.researchBaseUrl || null,
-    hasResearchApiKey: Boolean(researchApiKey),
-    hasApiKey: Boolean(apiKey),
-    hasScmToken,
-    envManaged: false,
-    customInstructions,
-  };
+  return readAiSettings(db);
 });

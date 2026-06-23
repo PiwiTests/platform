@@ -70,6 +70,10 @@ export default defineNuxtConfig({
       researchProvider: process.env.PIWI_AI_RESEARCH_PROVIDER || '',
       researchBaseUrl: process.env.PIWI_AI_RESEARCH_BASE_URL || '',
       researchApiKey: process.env.PIWI_AI_RESEARCH_API_KEY || '',
+      embeddingProvider: process.env.PIWI_AI_EMBEDDING_PROVIDER || '',
+      embeddingModel: process.env.PIWI_AI_EMBEDDING_MODEL || '',
+      embeddingBaseUrl: process.env.PIWI_AI_EMBEDDING_BASE_URL || '',
+      embeddingApiKey: process.env.PIWI_AI_EMBEDDING_API_KEY || '',
     },
     authSecret: (() => {
       if (process.env.PIWI_AUTH_ENABLED === 'true' && !process.env.PIWI_AUTH_SECRET) {

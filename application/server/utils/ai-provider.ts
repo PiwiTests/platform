@@ -1,11 +1,99 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getAppSetting } from './app-settings';
 import { decryptSecret, getEncryptionKey } from './crypto';
-import type { AiProvider, AiConfig } from '~~/types/api';
+import type { AiProvider, AiConfig, AiModelRole, ResolvedAiRole } from '~~/types/api';
 
 export type { AiConfig };
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>;
+
+/** Stored shape of a single role in the `ai` app-setting (apiKey is encrypted). */
+interface StoredRole {
+  provider?: string;
+  model?: string;
+  baseUrl?: string;
+  apiKey?: string; // encrypted at rest
+  /** When set, inherit provider/apiKey/baseUrl from the named role (model may still differ). */
+  reuse?: AiModelRole | null;
+}
+
+/** Stored shape of the `ai` app-setting. New installs use `roles`; older installs use the flat fields. */
+interface StoredAi {
+  autoDiagnose?: boolean;
+  roles?: Partial<Record<AiModelRole, StoredRole>>;
+  // ── Legacy flat fields (pre-roles installs) ──
+  provider?: string;
+  apiKey?: string;
+  model?: string;
+  baseUrl?: string;
+  researchModel?: string;
+  researchProvider?: string;
+  researchBaseUrl?: string;
+  researchApiKey?: string;
+}
+
+function isValidRole(role: ResolvedAiRole): boolean {
+  if (role.provider === 'anthropic') return Boolean(role.apiKey);
+  if (role.provider === 'openai') return Boolean(role.baseUrl && role.model);
+  return false;
+}
+
+/** Build a resolved role from raw (already-decrypted) values, or null if incomplete/invalid. */
+function makeRole(
+  provider?: string | null,
+  apiKey?: string | null,
+  model?: string | null,
+  baseUrl?: string | null,
+): ResolvedAiRole | null {
+  const p = (provider || '') as AiProvider;
+  if (p !== 'anthropic' && p !== 'openai') return null;
+  const role: ResolvedAiRole = { provider: p, apiKey: apiKey || '', model: model || '', baseUrl: baseUrl || null };
+  return isValidRole(role) ? role : null;
+}
+
+const ROLE_ORDER: AiModelRole[] = ['diagnosis', 'research', 'embedding'];
+
+/** Resolve the new `roles` storage shape, decrypting keys and following `reuse` links. */
+function resolveStoredRoles(roles: Partial<Record<AiModelRole, StoredRole>>): AiConfig['roles'] {
+  const decrypt = (enc?: string) => (enc ? decryptSecret(enc, getEncryptionKey()) : '');
+  const out: Record<AiModelRole, ResolvedAiRole | null> = { diagnosis: null, research: null, embedding: null };
+
+  for (const role of ROLE_ORDER) {
+    const cfg = roles[role];
+    if (!cfg) continue;
+    if (cfg.reuse && out[cfg.reuse]) {
+      const base = out[cfg.reuse]!;
+      out[role] = makeRole(base.provider, base.apiKey, cfg.model || base.model, base.baseUrl);
+    } else {
+      out[role] = makeRole(cfg.provider, decrypt(cfg.apiKey), cfg.model, cfg.baseUrl);
+    }
+  }
+
+  return { diagnosis: out.diagnosis!, research: out.research, embedding: out.embedding };
+}
+
+/**
+ * Assemble the full AiConfig from a resolved diagnosis role plus optional
+ * research/embedding roles. Returns null when the diagnosis role is unusable.
+ */
+function assembleConfig(
+  diagnosis: ResolvedAiRole | null,
+  research: ResolvedAiRole | null,
+  embedding: ResolvedAiRole | null,
+  autoDiagnose: boolean,
+  source: 'env' | 'settings',
+): AiConfig | null {
+  if (!diagnosis) return null;
+  return {
+    provider: diagnosis.provider,
+    apiKey: diagnosis.apiKey,
+    model: diagnosis.model,
+    baseUrl: diagnosis.baseUrl,
+    autoDiagnose,
+    source,
+    roles: { diagnosis, research, embedding },
+  };
+}
 
 export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
   const runtimeConfig = useRuntimeConfig();
@@ -20,65 +108,57 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
         researchProvider?: string;
         researchBaseUrl?: string;
         researchApiKey?: string;
+        embeddingProvider?: string;
+        embeddingModel?: string;
+        embeddingBaseUrl?: string;
+        embeddingApiKey?: string;
       }
     | undefined;
 
   if (envAi?.provider) {
-    const provider = envAi.provider as AiProvider;
-    const config: AiConfig = {
-      provider,
-      apiKey: envAi.apiKey || '',
-      model: envAi.model || '',
-      baseUrl: envAi.baseUrl || null,
-      autoDiagnose: String(envAi.autoDiagnose) === 'true',
-      source: 'env',
-      researchModel: envAi.researchModel || null,
-      researchProvider: (envAi.researchProvider as AiProvider) || null,
-      researchBaseUrl: envAi.researchBaseUrl || null,
-      researchApiKey: envAi.researchApiKey || null,
-    };
-    if (!isValidConfig(config)) return null;
-    return config;
+    const diagnosis = makeRole(envAi.provider, envAi.apiKey, envAi.model, envAi.baseUrl);
+    // Research defaults its provider/baseUrl/key to the diagnosis role when not overridden.
+    const research = envAi.researchModel
+      ? makeRole(
+          envAi.researchProvider || envAi.provider,
+          envAi.researchApiKey || envAi.apiKey,
+          envAi.researchModel,
+          envAi.researchBaseUrl || envAi.baseUrl,
+        )
+      : null;
+    const embedding = makeRole(envAi.embeddingProvider, envAi.embeddingApiKey, envAi.embeddingModel, envAi.embeddingBaseUrl);
+    return assembleConfig(diagnosis, research, embedding, String(envAi.autoDiagnose) === 'true', 'env');
   }
 
-  const stored = await getAppSetting<{
-    provider?: string;
-    apiKey?: string;
-    model?: string;
-    baseUrl?: string;
-    autoDiagnose?: boolean;
-    researchModel?: string;
-    researchProvider?: string;
-    researchBaseUrl?: string;
-    researchApiKey?: string;
-  }>(db, 'ai');
+  const stored = await getAppSetting<StoredAi>(db, 'ai');
+  if (!stored) return null;
 
-  if (!stored?.provider) return null;
+  const autoDiagnose = Boolean(stored.autoDiagnose);
 
-  const config: AiConfig = {
-    provider: stored.provider as AiProvider,
-    apiKey: stored.apiKey ? decryptSecret(stored.apiKey, getEncryptionKey()) : '',
-    model: stored.model || '',
-    baseUrl: stored.baseUrl || null,
-    autoDiagnose: Boolean(stored.autoDiagnose),
-    source: 'settings',
-    researchModel: stored.researchModel || null,
-    researchProvider: (stored.researchProvider as AiProvider) || null,
-    researchBaseUrl: stored.researchBaseUrl || null,
-    researchApiKey: stored.researchApiKey ? decryptSecret(stored.researchApiKey, getEncryptionKey()) : null,
-  };
-  if (!isValidConfig(config)) return null;
-  return config;
+  // New role-based storage
+  if (stored.roles) {
+    const roles = resolveStoredRoles(stored.roles);
+    return assembleConfig(roles.diagnosis, roles.research, roles.embedding, autoDiagnose, 'settings');
+  }
+
+  // Legacy flat storage → map onto roles
+  if (!stored.provider) return null;
+  const decrypt = (enc?: string) => (enc ? decryptSecret(enc, getEncryptionKey()) : '');
+  const diagnosis = makeRole(stored.provider, decrypt(stored.apiKey), stored.model, stored.baseUrl);
+  const research = stored.researchModel
+    ? makeRole(
+        stored.researchProvider || stored.provider,
+        stored.researchApiKey ? decrypt(stored.researchApiKey) : decrypt(stored.apiKey),
+        stored.researchModel,
+        stored.researchBaseUrl || stored.baseUrl,
+      )
+    : null;
+  return assembleConfig(diagnosis, research, null, autoDiagnose, 'settings');
 }
 
-function isValidConfig(config: AiConfig): boolean {
-  if (config.provider === 'anthropic') {
-    return Boolean(config.apiKey);
-  }
-  if (config.provider === 'openai') {
-    return Boolean(config.baseUrl && config.model);
-  }
-  return false;
+/** Resolved config for a given role, or null when that role is unconfigured. */
+export function resolveAiRole(config: AiConfig, role: AiModelRole): ResolvedAiRole | null {
+  return config.roles[role];
 }
 
 export interface AiAttachedImage {
@@ -102,7 +182,7 @@ export interface AiCallResult {
   outputTokens: number | null;
 }
 
-export async function callAiProvider(config: AiConfig, opts: AiCallOptions): Promise<AiCallResult> {
+export async function callAiProvider(config: ResolvedAiRole, opts: AiCallOptions): Promise<AiCallResult> {
   try {
     if (config.provider === 'anthropic') {
       return await callAnthropic(config, opts);
@@ -114,7 +194,7 @@ export async function callAiProvider(config: AiConfig, opts: AiCallOptions): Pro
   }
 }
 
-async function callAnthropic(config: AiConfig, opts: AiCallOptions): Promise<AiCallResult> {
+async function callAnthropic(config: ResolvedAiRole, opts: AiCallOptions): Promise<AiCallResult> {
   const client = new Anthropic({
     apiKey: config.apiKey,
     baseURL: config.baseUrl || undefined,
@@ -167,7 +247,7 @@ async function callAnthropic(config: AiConfig, opts: AiCallOptions): Promise<AiC
   };
 }
 
-async function callOpenAiCompat(config: AiConfig, opts: AiCallOptions): Promise<AiCallResult> {
+async function callOpenAiCompat(config: ResolvedAiRole, opts: AiCallOptions): Promise<AiCallResult> {
   const baseUrl = (config.baseUrl || '').replace(/\/$/, '');
   const url = `${baseUrl}/chat/completions`;
 

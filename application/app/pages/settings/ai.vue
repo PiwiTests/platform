@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AiSettings } from '~~/types/api';
+import type { AiSettings, AiModelRole } from '~~/types/api';
 import { CONTEXT_LIMIT_FIELDS } from '#shared/ai-context-limits';
 import type { ContextLimits, ContextLimitField } from '#shared/ai-context-limits';
 
@@ -7,15 +7,28 @@ const toast = useToast();
 
 const { data: settings, refresh } = await useFetch<AiSettings>('/api/settings/ai');
 
-const provider = ref<string | null>(null);
-const model = ref<string>('');
-const researchEnabled = ref(false);
-const researchModel = ref<string>('');
-const researchProvider = ref<string | null>(null);
-const researchBaseUrl = ref<string>('');
-const researchApiKey = ref<string>('');
-const baseUrl = ref<string>('');
-const apiKey = ref<string>('');
+// ── Per-role provider configuration ─────────────────────────────────────────
+type RoleKey = AiModelRole;
+
+interface RoleForm {
+  enabled: boolean;
+  reuse: RoleKey | null;
+  provider: string;
+  model: string;
+  baseUrl: string;
+  apiKey: string;
+}
+
+function blankRole(): RoleForm {
+  return { enabled: false, reuse: null, provider: '', model: '', baseUrl: '', apiKey: '' };
+}
+
+const roles = reactive<Record<RoleKey, RoleForm>>({
+  diagnosis: blankRole(),
+  research: blankRole(),
+  embedding: blankRole(),
+});
+
 const autoDiagnose = ref(false);
 const customInstructions = ref<string>('');
 const scmToken = ref<string>('');
@@ -24,38 +37,204 @@ const savingInstructions = ref(false);
 const savingScmToken = ref(false);
 const testing = ref(false);
 
+const ROLE_META = [
+  {
+    key: 'diagnosis',
+    title: 'Diagnosis model',
+    icon: 'i-lucide-stethoscope',
+    help: 'settings.ai-provider',
+    optional: false,
+    enableLabel: '',
+    blurb: 'The main model that writes the final diagnosis. Required to enable AI features.',
+    reuseTargets: [],
+    modelPlaceholderAnthropic: 'claude-opus-4-8',
+    modelPlaceholderOpenai: 'e.g. gpt-4o, llama3.1',
+  },
+  {
+    key: 'research',
+    title: 'Research model',
+    icon: 'i-lucide-search',
+    help: 'settings.ai-research',
+    optional: true,
+    enableLabel: 'Two-stage diagnosis',
+    blurb: 'A cheaper/faster model that pre-analyzes the failure before the diagnosis model writes the final answer.',
+    reuseTargets: ['diagnosis'],
+    modelPlaceholderAnthropic: 'e.g. claude-haiku-4-5',
+    modelPlaceholderOpenai: 'e.g. llama-3.1-8b-instant',
+  },
+  {
+    key: 'embedding',
+    title: 'Embedding model',
+    icon: 'i-lucide-vector-square',
+    help: 'settings.ai-provider',
+    optional: true,
+    enableLabel: 'Semantic clustering',
+    blurb: 'Embeds failures so semantically-similar errors group together (used by failure clustering).',
+    reuseTargets: ['diagnosis', 'research'],
+    modelPlaceholderAnthropic: '— Anthropic has no embeddings API —',
+    modelPlaceholderOpenai: 'e.g. text-embedding-3-small',
+  },
+] as const;
+
+const providerOptions = [
+  { label: 'Anthropic API', value: 'anthropic' },
+  { label: 'OpenAI-compatible', value: 'openai' },
+];
+
+function reuseOptions(role: RoleKey) {
+  const meta = ROLE_META.find((m) => m.key === role)!;
+  return [
+    { label: 'Configure its own provider', value: '' },
+    ...meta.reuseTargets
+      .filter((t) => roles[t].enabled || t === 'diagnosis')
+      .map((t) => ({ label: `Reuse ${ROLE_META.find((m) => m.key === t)!.title.toLowerCase()}`, value: t })),
+  ];
+}
+
+const envManaged = computed(() => Boolean(settings.value?.envManaged));
+
 watch(
   settings,
   (val) => {
     if (!val) return;
-    provider.value = val.provider || null;
-    model.value = val.model || '';
-    researchEnabled.value = Boolean(val.researchModel);
-    researchModel.value = val.researchModel || '';
-    researchProvider.value = val.researchProvider || null;
-    researchBaseUrl.value = val.researchBaseUrl || '';
-    researchApiKey.value = '';
-    baseUrl.value = val.baseUrl || '';
-    apiKey.value = '';
+    for (const meta of ROLE_META) {
+      const r = val.roles[meta.key];
+      const form = roles[meta.key];
+      form.enabled = Boolean(r);
+      form.reuse = r?.reuse ?? null;
+      form.provider = r?.provider ?? '';
+      form.model = r?.model ?? '';
+      form.baseUrl = r?.baseUrl ?? '';
+      form.apiKey = '';
+    }
     autoDiagnose.value = val.autoDiagnose;
     customInstructions.value = val.customInstructions || '';
   },
   { immediate: true },
 );
 
-const providerOptions = [
-  { label: 'None (disabled)', value: null },
-  { label: 'Anthropic API', value: 'anthropic' },
-  { label: 'OpenAI-compatible', value: 'openai' },
-];
+function hasStoredKey(role: RoleKey): boolean {
+  return Boolean(settings.value?.roles[role]?.hasApiKey);
+}
 
-const researchProviderOptions = [
-  { label: 'Same as main provider', value: null },
-  { label: 'Anthropic API', value: 'anthropic' },
-  { label: 'OpenAI-compatible', value: 'openai' },
-];
+// ── OpenAI presets ──────────────────────────────────────────────────────────
+interface OpenAiPreset {
+  label: string;
+  baseUrl: string;
+  model: string;
+}
 
-// ── Diagnosis context limits ────────────────────────────────────────────────
+const OPENAI_PRESETS: OpenAiPreset[] = [
+  { label: 'ollama (local)', baseUrl: 'http://localhost:11434/v1', model: 'llama3.1' },
+  { label: 'LM Studio (local)', baseUrl: 'http://localhost:1234/v1', model: '' },
+  { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.1-8b-instruct' },
+  { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant' },
+  { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o' },
+  { label: 'Mistral AI', baseUrl: 'https://api.mistral.ai/v1', model: 'mistral-small-latest' },
+  { label: 'Custom', baseUrl: '', model: '' },
+];
+const presetOptions = OPENAI_PRESETS.map((p) => ({ label: p.label, value: p.label }));
+
+function applyPreset(role: RoleKey, label: string) {
+  const preset = OPENAI_PRESETS.find((p) => p.label === label);
+  if (!preset || preset.label === 'Custom') return;
+  roles[role].baseUrl = preset.baseUrl;
+  roles[role].model = preset.model;
+}
+
+// ── Save ─────────────────────────────────────────────────────────────────────
+function roleBody(role: RoleKey): Record<string, unknown> | null {
+  const r = roles[role];
+  if (!r.enabled) return null;
+  if (r.reuse) return { reuse: r.reuse, model: r.model || undefined };
+  const body: Record<string, unknown> = {
+    provider: r.provider,
+    model: r.model || undefined,
+    baseUrl: r.baseUrl || undefined,
+  };
+  if (r.apiKey !== '') body.apiKey = r.apiKey;
+  return body;
+}
+
+async function save() {
+  saving.value = true;
+  try {
+    // Diagnosis disabled → clear the whole AI configuration.
+    if (!roles.diagnosis.enabled || !roles.diagnosis.provider) {
+      await $fetch('/api/settings/ai', { method: 'PUT', body: { roles: null, autoDiagnose: autoDiagnose.value } });
+    } else {
+      await $fetch('/api/settings/ai', {
+        method: 'PUT',
+        body: {
+          roles: {
+            diagnosis: roleBody('diagnosis'),
+            research: roleBody('research'),
+            embedding: roleBody('embedding'),
+          },
+          autoDiagnose: autoDiagnose.value,
+        },
+      });
+    }
+    await refresh();
+    for (const meta of ROLE_META) roles[meta.key].apiKey = '';
+    toast.add({ title: 'Settings saved', color: 'success' });
+  } catch (err) {
+    toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' });
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function saveScmToken() {
+  savingScmToken.value = true;
+  try {
+    await $fetch('/api/settings/ai', { method: 'PUT', body: { scmToken: scmToken.value || null } });
+    await refresh();
+    scmToken.value = '';
+    toast.add({ title: 'SCM token saved', color: 'success' });
+  } catch (err) {
+    toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' });
+  } finally {
+    savingScmToken.value = false;
+  }
+}
+
+async function saveInstructions() {
+  savingInstructions.value = true;
+  try {
+    await $fetch('/api/settings/ai', { method: 'PUT', body: { customInstructions: customInstructions.value || null } });
+    await refresh();
+    toast.add({ title: 'Instructions saved', color: 'success' });
+  } catch (err) {
+    toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' });
+  } finally {
+    savingInstructions.value = false;
+  }
+}
+
+async function testConnection() {
+  testing.value = true;
+  try {
+    const d = roles.diagnosis;
+    const res = await $fetch<{ success: boolean; model?: string; error?: string }>('/api/settings/ai/test', {
+      method: 'POST',
+      body: {
+        provider: d.provider,
+        apiKey: d.apiKey || undefined,
+        model: d.model || undefined,
+        baseUrl: d.baseUrl || undefined,
+      },
+    });
+    if (res.success) toast.add({ title: 'Connection successful', description: `Model: ${res.model}`, color: 'success' });
+    else toast.add({ title: 'Connection failed', description: res.error || 'Unknown error', color: 'error' });
+  } catch (err) {
+    toast.add({ title: 'Connection failed', description: String((err as Error)?.message ?? err), color: 'error' });
+  } finally {
+    testing.value = false;
+  }
+}
+
+// ── Diagnosis context limits (unchanged) ─────────────────────────────────────
 interface ContextLimitsResponse {
   limits: ContextLimits;
   defaults: ContextLimits;
@@ -67,7 +246,6 @@ const { data: limitsData } = await useFetch<ContextLimitsResponse>('/api/setting
 const limitFields = CONTEXT_LIMIT_FIELDS;
 const limitValues = reactive<Record<string, number | undefined>>({});
 const savingLimits = ref(false);
-
 const envManagedLimits = computed(() => new Set<string>(limitsData.value?.envManaged ?? []));
 
 watch(
@@ -88,11 +266,7 @@ async function saveLimits() {
     });
     toast.add({ title: 'Context limits saved', color: 'success' });
   } catch (e) {
-    toast.add({
-      title: 'Failed to save context limits',
-      description: String((e as Error)?.message ?? e),
-      color: 'error',
-    });
+    toast.add({ title: 'Failed to save context limits', description: String((e as Error)?.message ?? e), color: 'error' });
   } finally {
     savingLimits.value = false;
   }
@@ -105,153 +279,6 @@ function resetLimits() {
     limitValues[f.key] = limitsData.value.defaults[f.key];
   }
 }
-
-interface OpenAiPreset {
-  label: string;
-  baseUrl: string;
-  model: string;
-  apiKeyRequired: boolean;
-}
-
-const OPENAI_PRESETS: OpenAiPreset[] = [
-  { label: 'ollama (local)', baseUrl: 'http://localhost:11434/v1', model: 'llama3.1', apiKeyRequired: false },
-  { label: 'LM Studio (local)', baseUrl: 'http://localhost:1234/v1', model: '', apiKeyRequired: false },
-  {
-    label: 'OpenRouter',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    model: 'meta-llama/llama-3.1-8b-instruct',
-    apiKeyRequired: true,
-  },
-  { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant', apiKeyRequired: true },
-  {
-    label: 'Together AI',
-    baseUrl: 'https://api.together.xyz/v1',
-    model: 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
-    apiKeyRequired: true,
-  },
-  { label: 'Mistral AI', baseUrl: 'https://api.mistral.ai/v1', model: 'mistral-small-latest', apiKeyRequired: true },
-  { label: 'Custom', baseUrl: '', model: '', apiKeyRequired: false },
-];
-
-const presetOptions = OPENAI_PRESETS.map((p) => ({ label: p.label, value: p.label }));
-
-function applyPreset(label: string) {
-  const preset = OPENAI_PRESETS.find((p) => p.label === label);
-  if (!preset || preset.label === 'Custom') return;
-  baseUrl.value = preset.baseUrl;
-  model.value = preset.model;
-}
-
-async function save() {
-  saving.value = true;
-  try {
-    // When the two-stage toggle is off, clear the whole research config.
-    const research = researchEnabled.value;
-    const body: Record<string, unknown> = {
-      provider: provider.value || null,
-      model: model.value || undefined,
-      researchModel: research ? researchModel.value || null : null,
-      researchProvider: research ? researchProvider.value || null : null,
-      researchBaseUrl: research ? researchBaseUrl.value || null : null,
-      baseUrl: baseUrl.value || undefined,
-      autoDiagnose: autoDiagnose.value,
-    };
-    if (apiKey.value !== '') {
-      body.apiKey = apiKey.value;
-    }
-    if (!research) {
-      body.researchApiKey = null;
-    } else if (researchApiKey.value !== '') {
-      body.researchApiKey = researchApiKey.value;
-    }
-    await $fetch('/api/settings/ai', { method: 'PUT', body });
-    await refresh();
-    apiKey.value = '';
-    researchApiKey.value = '';
-    toast.add({ title: 'Settings saved', color: 'success' });
-  } catch (err) {
-    toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' });
-  } finally {
-    saving.value = false;
-  }
-}
-
-async function saveScmToken() {
-  savingScmToken.value = true;
-  try {
-    await $fetch('/api/settings/ai', {
-      method: 'PUT',
-      body: { scmToken: scmToken.value || null },
-    });
-    await refresh();
-    scmToken.value = '';
-    toast.add({ title: 'SCM token saved', color: 'success' });
-  } catch (err) {
-    toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' });
-  } finally {
-    savingScmToken.value = false;
-  }
-}
-
-async function saveInstructions() {
-  savingInstructions.value = true;
-  try {
-    await $fetch('/api/settings/ai', {
-      method: 'PUT',
-      body: { customInstructions: customInstructions.value || null },
-    });
-    await refresh();
-    toast.add({ title: 'Instructions saved', color: 'success' });
-  } catch (err) {
-    toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' });
-  } finally {
-    savingInstructions.value = false;
-  }
-}
-
-async function testConnection() {
-  testing.value = true;
-  try {
-    const res = await $fetch<{ success: boolean; model?: string; error?: string }>('/api/settings/ai/test', {
-      method: 'POST',
-      body: {
-        provider: provider.value,
-        apiKey: apiKey.value || undefined,
-        model: model.value || undefined,
-        baseUrl: baseUrl.value || undefined,
-      },
-    });
-    if (res.success) {
-      toast.add({ title: 'Connection successful', description: `Model: ${res.model}`, color: 'success' });
-    } else {
-      toast.add({ title: 'Connection failed', description: res.error || 'Unknown error', color: 'error' });
-    }
-  } catch (err) {
-    toast.add({ title: 'Connection failed', description: String((err as Error)?.message ?? err), color: 'error' });
-  } finally {
-    testing.value = false;
-  }
-}
-
-const envVars = computed(() => {
-  if (!provider.value) return null;
-  const lines: string[] = [];
-  lines.push(`PIWI_AI_PROVIDER=${provider.value}`);
-  if (model.value) lines.push(`PIWI_AI_MODEL=${model.value}`);
-  if (researchEnabled.value && researchModel.value) lines.push(`PIWI_AI_RESEARCH_MODEL=${researchModel.value}`);
-  if (researchEnabled.value && researchProvider.value)
-    lines.push(`PIWI_AI_RESEARCH_PROVIDER=${researchProvider.value}`);
-  if (researchEnabled.value && researchBaseUrl.value) lines.push(`PIWI_AI_RESEARCH_BASE_URL=${researchBaseUrl.value}`);
-  if (baseUrl.value) lines.push(`PIWI_AI_BASE_URL=${baseUrl.value}`);
-  const keyDisplay = apiKey.value
-    ? apiKey.value
-    : settings.value?.hasApiKey
-      ? '(use existing stored key)'
-      : 'your-api-key-here';
-  lines.push(`PIWI_AI_API_KEY=${keyDisplay}`);
-  lines.push(`PIWI_AI_AUTO_DIAGNOSE=${autoDiagnose.value ? 'true' : 'false'}`);
-  return lines.join('\n');
-});
 </script>
 
 <template>
@@ -260,165 +287,141 @@ const envVars = computed(() => {
 
     <div class="max-w-2xl mx-auto p-6 space-y-6">
       <UAlert
-        v-if="settings?.envManaged"
+        v-if="envManaged"
         color="info"
         icon="i-lucide-info"
         title="Configuration managed by environment variables"
         description="PIWI_AI_* environment variables are set. The form below reflects the current environment configuration and cannot be changed here."
       />
 
-      <SectionCard title="Provider configuration" help="settings.ai-provider">
-        <div class="space-y-4">
-          <UFormField label="Provider">
-            <USelect v-model="provider" :items="providerOptions" :disabled="settings?.envManaged" class="w-full" />
-          </UFormField>
+      <SectionCard title="Model providers" help="settings.ai-provider">
+        <template #subtitle>
+          Configure a complete provider for each model role. Optional roles can reuse another role's provider so you
+          don't re-enter credentials.
+        </template>
 
-          <template v-if="provider">
-            <UFormField
-              v-if="provider === 'openai'"
-              label="Preset"
-              description="Pick a known provider to auto-fill the URL and model, then adjust as needed"
-            >
-              <USelect
-                :items="presetOptions"
-                placeholder="Choose a preset…"
-                :disabled="settings?.envManaged"
-                class="w-full"
-                @update:model-value="applyPreset"
-              />
-            </UFormField>
-
-            <UFormField
-              label="API key"
-              :description="
-                settings?.hasApiKey
-                  ? 'Leave empty to keep the stored key, clear and save to remove it'
-                  : 'Required for Anthropic; optional for local OpenAI-compatible servers'
-              "
-            >
-              <UInput
-                v-model="apiKey"
-                type="password"
-                :placeholder="settings?.hasApiKey ? '•••••••• (unchanged)' : 'sk-ant-...'"
-                :disabled="settings?.envManaged"
-                class="w-full font-mono"
-              />
-            </UFormField>
-
-            <UFormField
-              label="Model"
-              :description="
-                provider === 'anthropic' ? 'Default: claude-opus-4-8' : 'Required, e.g. llama3.1, gpt-4o, mistral'
-              "
-            >
-              <UInput
-                v-model="model"
-                :placeholder="provider === 'anthropic' ? 'claude-opus-4-8' : 'e.g. llama3.1, gpt-4o'"
-                :disabled="settings?.envManaged"
-                class="w-full"
-              />
-            </UFormField>
-
-            <UFormField>
-              <template #label>
-                <span class="inline-flex items-center gap-1">
-                  Two-stage diagnosis <HelpHint topic="settings.ai-research" />
-                </span>
-              </template>
-              <div class="flex items-center gap-3">
-                <USwitch v-model="researchEnabled" :disabled="settings?.envManaged" />
-                <span class="text-sm text-gray-500">
-                  Run a cheaper/faster research model first to pre-analyze the failure, then the main model writes the
-                  final diagnosis
-                </span>
+        <div class="space-y-5">
+          <div
+            v-for="meta in ROLE_META"
+            :key="meta.key"
+            class="rounded-lg border border-default p-4 space-y-4"
+            :class="meta.optional && !roles[meta.key].enabled ? 'opacity-80' : ''"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex items-start gap-2">
+                <UIcon :name="meta.icon" class="size-5 mt-0.5 text-primary" />
+                <div>
+                  <p class="font-medium inline-flex items-center gap-1">
+                    {{ meta.title }} <HelpHint :topic="meta.help" />
+                  </p>
+                  <p class="text-sm text-gray-500">{{ meta.blurb }}</p>
+                </div>
               </div>
-            </UFormField>
+              <USwitch
+                v-if="meta.optional"
+                v-model="roles[meta.key].enabled"
+                :disabled="envManaged"
+                :aria-label="meta.enableLabel"
+              />
+            </div>
 
-            <template v-if="researchEnabled">
-              <UFormField
-                label="Research model"
-                description="The cheaper/faster model used for the pre-analysis pass — e.g. Haiku, or a small local model."
-              >
-                <UInput
-                  v-model="researchModel"
-                  :placeholder="
-                    provider === 'anthropic' ? 'e.g. claude-haiku-4-5-20251001' : 'e.g. llama-3.1-8b-instant'
-                  "
-                  :disabled="settings?.envManaged"
+            <template v-if="!meta.optional || roles[meta.key].enabled">
+              <!-- Reuse another role -->
+              <UFormField v-if="meta.reuseTargets.length" label="Provider source">
+                <USelect
+                  :model-value="roles[meta.key].reuse ?? ''"
+                  :items="reuseOptions(meta.key)"
+                  :disabled="envManaged"
                   class="w-full"
+                  @update:model-value="(v: string) => (roles[meta.key].reuse = v ? (v as RoleKey) : null)"
                 />
               </UFormField>
 
-              <div class="rounded-lg border border-default bg-elevated/30 p-3 space-y-3">
-                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                  Research provider override (optional)
-                </p>
-                <UFormField
-                  label="Provider"
-                  description="Run the research stage on a different provider — e.g. a small local model. Defaults to the main provider."
-                >
+              <template v-if="!roles[meta.key].reuse">
+                <UFormField label="Provider">
                   <USelect
-                    v-model="researchProvider"
-                    :items="researchProviderOptions"
-                    :disabled="settings?.envManaged"
+                    v-model="roles[meta.key].provider"
+                    :items="providerOptions"
+                    :disabled="envManaged"
+                    placeholder="Choose a provider…"
                     class="w-full"
                   />
                 </UFormField>
-                <template v-if="researchProvider">
-                  <UFormField label="Base URL" description="Required for an OpenAI-compatible research provider.">
-                    <UInput
-                      v-model="researchBaseUrl"
-                      placeholder="http://localhost:11434/v1"
-                      :disabled="settings?.envManaged"
-                      class="w-full"
-                    />
-                  </UFormField>
-                  <UFormField
-                    label="API key"
-                    :description="
-                      settings?.hasResearchApiKey
-                        ? 'Leave empty to keep the stored key, clear and save to remove it'
-                        : 'Optional — falls back to the main API key when empty'
-                    "
-                  >
-                    <UInput
-                      v-model="researchApiKey"
-                      type="password"
-                      :placeholder="settings?.hasResearchApiKey ? '•••••••• (unchanged)' : 'optional'"
-                      :disabled="settings?.envManaged"
-                      class="w-full font-mono"
-                    />
-                  </UFormField>
-                </template>
-              </div>
-            </template>
 
-            <UFormField
-              label="Base URL"
-              :description="
-                provider === 'openai' ? 'Required, e.g. http://localhost:11434/v1' : 'Optional proxy override'
-              "
-            >
-              <UInput
-                v-model="baseUrl"
-                :placeholder="
-                  provider === 'openai' ? 'http://localhost:11434/v1' : 'https://api.anthropic.com (default)'
-                "
-                :disabled="settings?.envManaged"
-                class="w-full"
-              />
-            </UFormField>
-
-            <UFormField label="Auto-diagnose">
-              <div class="flex items-center gap-3">
-                <USwitch v-model="autoDiagnose" :disabled="settings?.envManaged" />
-                <span class="text-sm text-gray-500"
-                  >Automatically diagnose new failure clusters when a run finishes — one LLM call per new cluster, max 3
-                  per run</span
+                <UFormField
+                  v-if="roles[meta.key].provider === 'openai'"
+                  label="Preset"
+                  description="Pick a known provider to auto-fill the URL and model, then adjust as needed"
                 >
-              </div>
-            </UFormField>
-          </template>
+                  <USelect
+                    :items="presetOptions"
+                    placeholder="Choose a preset…"
+                    :disabled="envManaged"
+                    class="w-full"
+                    @update:model-value="(v: string) => applyPreset(meta.key, v)"
+                  />
+                </UFormField>
+
+                <UFormField
+                  v-if="roles[meta.key].provider"
+                  label="API key"
+                  :description="
+                    hasStoredKey(meta.key)
+                      ? 'Leave empty to keep the stored key, clear and save to remove it'
+                      : 'Required for Anthropic; optional for local OpenAI-compatible servers'
+                  "
+                >
+                  <UInput
+                    v-model="roles[meta.key].apiKey"
+                    type="password"
+                    :placeholder="hasStoredKey(meta.key) ? '•••••••• (unchanged)' : 'sk-…'"
+                    :disabled="envManaged"
+                    class="w-full font-mono"
+                  />
+                </UFormField>
+
+                <UFormField
+                  v-if="roles[meta.key].provider === 'openai'"
+                  label="Base URL"
+                  description="Required, e.g. http://localhost:11434/v1"
+                >
+                  <UInput
+                    v-model="roles[meta.key].baseUrl"
+                    placeholder="http://localhost:11434/v1"
+                    :disabled="envManaged"
+                    class="w-full"
+                  />
+                </UFormField>
+              </template>
+
+              <UFormField
+                v-if="roles[meta.key].reuse || roles[meta.key].provider"
+                label="Model"
+                :description="roles[meta.key].reuse ? 'Leave empty to use the reused role\'s model' : undefined"
+              >
+                <UInput
+                  v-model="roles[meta.key].model"
+                  :placeholder="
+                    roles[meta.key].provider === 'anthropic'
+                      ? meta.modelPlaceholderAnthropic
+                      : meta.modelPlaceholderOpenai
+                  "
+                  :disabled="envManaged"
+                  class="w-full"
+                />
+              </UFormField>
+            </template>
+          </div>
+
+          <UFormField label="Auto-diagnose">
+            <div class="flex items-center gap-3">
+              <USwitch v-model="autoDiagnose" :disabled="envManaged || !roles.diagnosis.enabled" />
+              <span class="text-sm text-gray-500">
+                Automatically diagnose new failure clusters when a run finishes — one LLM call per new cluster, max 3
+                per run
+              </span>
+            </div>
+          </UFormField>
         </div>
 
         <template #footer>
@@ -427,19 +430,13 @@ const envVars = computed(() => {
               color="neutral"
               variant="soft"
               :loading="testing"
-              :disabled="!provider"
+              :disabled="!roles.diagnosis.provider"
               icon="i-lucide-plug"
               @click="testConnection"
             >
-              Test connection
+              Test diagnosis connection
             </UButton>
-            <UButton
-              color="primary"
-              :loading="saving"
-              :disabled="settings?.envManaged"
-              icon="i-lucide-save"
-              @click="save"
-            >
+            <UButton color="primary" :loading="saving" :disabled="envManaged" icon="i-lucide-save" @click="save">
               Save
             </UButton>
           </div>
@@ -535,13 +532,6 @@ const envVars = computed(() => {
         </template>
       </SectionCard>
 
-      <SectionCard v-if="!settings?.envManaged && provider && envVars" title="Environment variables">
-        <p class="text-sm text-gray-500 mb-3">
-          Use these environment variables instead of storing credentials in the database:
-        </p>
-        <CodeBlock :code="envVars!" lang="bash" />
-      </SectionCard>
-
       <SectionCard title="Privacy notice">
         <div class="space-y-2 text-sm text-gray-600 dark:text-gray-400">
           <p>When diagnosing a failure cluster, the following data is sent to the configured LLM provider:</p>
@@ -557,8 +547,8 @@ const envVars = computed(() => {
             </li>
           </ul>
           <p class="mt-2">
-            The API key is stored plaintext in the application database (admin-only access). For stricter setups, use
-            <code class="font-mono text-xs">PIWI_AI_API_KEY</code> instead of the UI.
+            API keys are stored encrypted in the application database (admin-only access). For stricter setups, use
+            <code class="font-mono text-xs">PIWI_AI_*</code> environment variables instead of the UI.
           </p>
         </div>
       </SectionCard>

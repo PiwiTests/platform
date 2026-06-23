@@ -22,11 +22,9 @@ export async function apiDiagnoseCluster(_clusterId: number) {
 /** GET /api/settings/ai */
 export async function apiGetAiSettings() {
   return {
-    provider: null,
-    model: null,
-    baseUrl: null,
+    roles: { diagnosis: null, research: null, embedding: null },
     autoDiagnose: false,
-    hasApiKey: false,
+    hasScmToken: false,
     envManaged: false,
     customInstructions: null,
   };

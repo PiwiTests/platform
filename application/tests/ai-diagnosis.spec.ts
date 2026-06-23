@@ -137,13 +137,13 @@ test.describe.serial('AI diagnosis endpoints', () => {
 
   test.afterAll(async ({ request }) => {
     // Clean up AI settings
-    await request.put('/api/settings/ai', { data: { provider: null } });
+    await request.put('/api/settings/ai', { data: { roles: null } });
     mockServer.close();
   });
 
   test('GET /api/ai/status returns configured: false when no provider is set', async ({ request }) => {
     // Clean slate: ensure no AI is configured (env may not set it, DB may have stale state)
-    await request.put('/api/settings/ai', { data: { provider: null } });
+    await request.put('/api/settings/ai', { data: { roles: null } });
 
     const res = await request.get('/api/ai/status');
     expect(res.ok()).toBeTruthy();
@@ -154,10 +154,14 @@ test.describe.serial('AI diagnosis endpoints', () => {
   test('PUT /api/settings/ai saves provider and model', async ({ request }) => {
     const res = await request.put('/api/settings/ai', {
       data: {
-        provider: 'openai',
-        apiKey: 'test-key-unused',
-        model: 'gpt-test',
-        baseUrl: `http://127.0.0.1:${mockPort}/v1`,
+        roles: {
+          diagnosis: {
+            provider: 'openai',
+            apiKey: 'test-key-unused',
+            model: 'gpt-test',
+            baseUrl: `http://127.0.0.1:${mockPort}/v1`,
+          },
+        },
         autoDiagnose: false,
       },
     });
@@ -288,10 +292,10 @@ test.describe.serial('AI diagnosis endpoints', () => {
     // Add a distinct research model; both stages hit the same mock server.
     const put = await request.put('/api/settings/ai', {
       data: {
-        provider: 'openai',
-        model: 'gpt-test',
-        researchModel: 'gpt-research-small',
-        baseUrl: `http://127.0.0.1:${mockPort}/v1`,
+        roles: {
+          diagnosis: { provider: 'openai', model: 'gpt-test', baseUrl: `http://127.0.0.1:${mockPort}/v1` },
+          research: { provider: 'openai', model: 'gpt-research-small', baseUrl: `http://127.0.0.1:${mockPort}/v1` },
+        },
         autoDiagnose: false,
       },
     });
@@ -322,7 +326,7 @@ test.describe.serial('AI diagnosis — unconfigured error cases', () => {
     }
     if (!isEnvManaged) {
       // Ensure AI is not configured
-      await request.put('/api/settings/ai', { data: { provider: null } });
+      await request.put('/api/settings/ai', { data: { roles: null } });
     }
   });
 

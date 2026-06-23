@@ -202,18 +202,9 @@ export async function runClusterDiagnosis(
     type PipelineStage = { role: string; model: string; inputTokens: number | null; outputTokens: number | null };
     const pipeline: PipelineStage[] = [];
 
-    // Resolve the research stage config (its own provider/key/baseUrl, falling
-    // back to the main ones) and decide whether a distinct research pass runs.
-    const researchModel = config.researchModel?.trim();
-    const researchConfig: AiConfig | null = researchModel
-      ? {
-          ...config,
-          provider: config.researchProvider || config.provider,
-          model: researchModel,
-          baseUrl: config.researchBaseUrl ?? config.baseUrl,
-          apiKey: config.researchApiKey || config.apiKey,
-        }
-      : null;
+    // The research stage runs only when a distinct research role is configured
+    // (its own provider/key/baseUrl/model, resolved in resolveAiConfig).
+    const researchConfig = config.roles.research;
     const useResearch =
       researchConfig != null &&
       !(

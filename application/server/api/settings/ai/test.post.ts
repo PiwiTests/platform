@@ -3,7 +3,7 @@ import { requireAuth } from '../../../utils/auth';
 import { Role } from '../../../../shared/types';
 import { resolveAiConfig, callAiProvider } from '../../../utils/ai-provider';
 import { getAppSetting } from '../../../utils/app-settings';
-import type { AiConfig, AiProvider } from '~~/types/api';
+import type { AiProvider, ResolvedAiRole } from '~~/types/api';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 
@@ -29,10 +29,11 @@ export default eventHandler(async (event) => {
 
   const db = await getDatabase();
 
-  let config: AiConfig | null;
+  let config: ResolvedAiRole | null;
 
   if (!body?.provider) {
-    config = await resolveAiConfig(db);
+    const resolved = await resolveAiConfig(db);
+    config = resolved ? resolved.roles.diagnosis : null;
   } else {
     let apiKey = body.apiKey || '';
     if (!apiKey) {
@@ -51,8 +52,6 @@ export default eventHandler(async (event) => {
       apiKey,
       model: body.model || '',
       baseUrl: body.baseUrl || null,
-      autoDiagnose: false,
-      source: 'settings',
     };
   }
 
