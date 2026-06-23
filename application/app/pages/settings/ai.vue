@@ -9,6 +9,7 @@ const { data: settings, refresh } = await useFetch<AiSettings>('/api/settings/ai
 
 const provider = ref<string | null>(null);
 const model = ref<string>('');
+const researchEnabled = ref(false);
 const researchModel = ref<string>('');
 const researchProvider = ref<string | null>(null);
 const researchBaseUrl = ref<string>('');
@@ -29,6 +30,7 @@ watch(
     if (!val) return;
     provider.value = val.provider || null;
     model.value = val.model || '';
+    researchEnabled.value = Boolean(val.researchModel);
     researchModel.value = val.researchModel || '';
     researchProvider.value = val.researchProvider || null;
     researchBaseUrl.value = val.researchBaseUrl || '';
@@ -143,19 +145,23 @@ function applyPreset(label: string) {
 async function save() {
   saving.value = true;
   try {
+    // When the two-stage toggle is off, clear the whole research config.
+    const research = researchEnabled.value;
     const body: Record<string, unknown> = {
       provider: provider.value || null,
       model: model.value || undefined,
-      researchModel: researchModel.value || null,
-      researchProvider: researchProvider.value || null,
-      researchBaseUrl: researchBaseUrl.value || null,
+      researchModel: research ? researchModel.value || null : null,
+      researchProvider: research ? researchProvider.value || null : null,
+      researchBaseUrl: research ? researchBaseUrl.value || null : null,
       baseUrl: baseUrl.value || undefined,
       autoDiagnose: autoDiagnose.value,
     };
     if (apiKey.value !== '') {
       body.apiKey = apiKey.value;
     }
-    if (researchApiKey.value !== '') {
+    if (!research) {
+      body.researchApiKey = null;
+    } else if (researchApiKey.value !== '') {
       body.researchApiKey = researchApiKey.value;
     }
     await $fetch('/api/settings/ai', { method: 'PUT', body });
@@ -232,9 +238,10 @@ const envVars = computed(() => {
   const lines: string[] = [];
   lines.push(`PIWI_AI_PROVIDER=${provider.value}`);
   if (model.value) lines.push(`PIWI_AI_MODEL=${model.value}`);
-  if (researchModel.value) lines.push(`PIWI_AI_RESEARCH_MODEL=${researchModel.value}`);
-  if (researchProvider.value) lines.push(`PIWI_AI_RESEARCH_PROVIDER=${researchProvider.value}`);
-  if (researchBaseUrl.value) lines.push(`PIWI_AI_RESEARCH_BASE_URL=${researchBaseUrl.value}`);
+  if (researchEnabled.value && researchModel.value) lines.push(`PIWI_AI_RESEARCH_MODEL=${researchModel.value}`);
+  if (researchEnabled.value && researchProvider.value)
+    lines.push(`PIWI_AI_RESEARCH_PROVIDER=${researchProvider.value}`);
+  if (researchEnabled.value && researchBaseUrl.value) lines.push(`PIWI_AI_RESEARCH_BASE_URL=${researchBaseUrl.value}`);
   if (baseUrl.value) lines.push(`PIWI_AI_BASE_URL=${baseUrl.value}`);
   const keyDisplay = apiKey.value
     ? apiKey.value
@@ -312,65 +319,79 @@ const envVars = computed(() => {
               />
             </UFormField>
 
-            <UFormField
-              label="Research model"
-              description="Optional cheaper/faster model for a pre-analysis pass before the main model writes the final diagnosis. Leave empty for single-stage."
-            >
+            <UFormField>
               <template #label>
                 <span class="inline-flex items-center gap-1">
-                  Research model <HelpHint topic="settings.ai-research" />
+                  Two-stage diagnosis <HelpHint topic="settings.ai-research" />
                 </span>
               </template>
-              <UInput
-                v-model="researchModel"
-                :placeholder="provider === 'anthropic' ? 'e.g. claude-haiku-4-5-20251001' : 'e.g. llama-3.1-8b-instant'"
-                :disabled="settings?.envManaged"
-                class="w-full"
-              />
+              <div class="flex items-center gap-3">
+                <USwitch v-model="researchEnabled" :disabled="settings?.envManaged" />
+                <span class="text-sm text-gray-500">
+                  Run a cheaper/faster research model first to pre-analyze the failure, then the main model writes the
+                  final diagnosis
+                </span>
+              </div>
             </UFormField>
 
-            <div v-if="researchModel" class="rounded-lg border border-default bg-elevated/30 p-3 space-y-3">
-              <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                Research provider override (optional)
-              </p>
+            <template v-if="researchEnabled">
               <UFormField
-                label="Provider"
-                description="Run the research stage on a different provider — e.g. a small local model."
+                label="Research model"
+                description="The cheaper/faster model used for the pre-analysis pass — e.g. Haiku, or a small local model."
               >
-                <USelect
-                  v-model="researchProvider"
-                  :items="researchProviderOptions"
+                <UInput
+                  v-model="researchModel"
+                  :placeholder="
+                    provider === 'anthropic' ? 'e.g. claude-haiku-4-5-20251001' : 'e.g. llama-3.1-8b-instant'
+                  "
                   :disabled="settings?.envManaged"
                   class="w-full"
                 />
               </UFormField>
-              <template v-if="researchProvider">
-                <UFormField label="Base URL" description="Required for an OpenAI-compatible research provider.">
-                  <UInput
-                    v-model="researchBaseUrl"
-                    placeholder="http://localhost:11434/v1"
+
+              <div class="rounded-lg border border-default bg-elevated/30 p-3 space-y-3">
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  Research provider override (optional)
+                </p>
+                <UFormField
+                  label="Provider"
+                  description="Run the research stage on a different provider — e.g. a small local model. Defaults to the main provider."
+                >
+                  <USelect
+                    v-model="researchProvider"
+                    :items="researchProviderOptions"
                     :disabled="settings?.envManaged"
                     class="w-full"
                   />
                 </UFormField>
-                <UFormField
-                  label="API key"
-                  :description="
-                    settings?.hasResearchApiKey
-                      ? 'Leave empty to keep the stored key, clear and save to remove it'
-                      : 'Optional — falls back to the main API key when empty'
-                  "
-                >
-                  <UInput
-                    v-model="researchApiKey"
-                    type="password"
-                    :placeholder="settings?.hasResearchApiKey ? '•••••••• (unchanged)' : 'optional'"
-                    :disabled="settings?.envManaged"
-                    class="w-full font-mono"
-                  />
-                </UFormField>
-              </template>
-            </div>
+                <template v-if="researchProvider">
+                  <UFormField label="Base URL" description="Required for an OpenAI-compatible research provider.">
+                    <UInput
+                      v-model="researchBaseUrl"
+                      placeholder="http://localhost:11434/v1"
+                      :disabled="settings?.envManaged"
+                      class="w-full"
+                    />
+                  </UFormField>
+                  <UFormField
+                    label="API key"
+                    :description="
+                      settings?.hasResearchApiKey
+                        ? 'Leave empty to keep the stored key, clear and save to remove it'
+                        : 'Optional — falls back to the main API key when empty'
+                    "
+                  >
+                    <UInput
+                      v-model="researchApiKey"
+                      type="password"
+                      :placeholder="settings?.hasResearchApiKey ? '•••••••• (unchanged)' : 'optional'"
+                      :disabled="settings?.envManaged"
+                      class="w-full font-mono"
+                    />
+                  </UFormField>
+                </template>
+              </div>
+            </template>
 
             <UFormField
               label="Base URL"
