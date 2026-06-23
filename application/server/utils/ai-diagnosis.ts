@@ -14,6 +14,7 @@ import type { AiAttachedImage } from './ai-provider';
 import { buildDiagnosisContext } from './ai-context';
 import { buildDiagnosisSystemPrompt } from './ai-system-prompt';
 import { reconcileNewClusters } from './cluster-reconcile';
+import { nameNewClusters } from './cluster-naming';
 import { RESEARCH_SYSTEM_PROMPT, RESEARCH_JSON_SCHEMA, parseResearchJson, formatResearchBlock } from './ai-research';
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>;
@@ -382,6 +383,13 @@ export async function autoDiagnoseRun(db: DbClient, projectId: number, runId: nu
   }
 
   if (!config?.autoDiagnose) return;
+
+  // Name new, still-unnamed clusters in one cheap batched call (best-effort).
+  try {
+    await nameNewClusters(db, projectId, runId, config.roles.research ?? config.roles.diagnosis);
+  } catch (e) {
+    console.error('[cluster-naming] failed for run', runId, e);
+  }
 
   const clusters = await db
     .select()

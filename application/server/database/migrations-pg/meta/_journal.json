@@ -148,6 +148,13 @@
       "when": 1782232067622,
       "tag": "0020_concerned_power_man",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1782241451140,
+      "tag": "0021_vengeful_husk",
+      "breakpoints": true
     }
   ]
 }

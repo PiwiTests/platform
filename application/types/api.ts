@@ -468,6 +468,7 @@ export interface FailureGroupCase {
 export interface FailureGroup {
   clusterId: number;
   signature: string;
+  title: string | null;
   errorType: string | null;
   selector: string | null;
   status: string;
@@ -491,6 +492,7 @@ export interface FailureClusterDetail {
   projectId: number;
   fingerprint: string;
   signature: string;
+  title: string | null;
   errorType: string | null;
   selector: string | null;
   sampleError: string | null;
@@ -520,6 +522,7 @@ export interface ProjectFailureCluster {
   id: number;
   fingerprint: string;
   signature: string;
+  title: string | null;
   errorType: string | null;
   selector: string | null;
   sampleError: string | null;
