@@ -1,5 +1,4 @@
-﻿import { describe, it, beforeEach, afterEach } from 'node:test';
-import * as assert from 'node:assert/strict';
+import { describe, it, beforeEach, afterEach, expect } from 'vitest';
 import { resolveOptions } from '../src/config.js';
 
 const PIWI_KEYS = [
@@ -34,7 +33,7 @@ function restoreEnv(): void {
   }
 }
 
-describe('resolveOptions', { concurrency: 1 }, () => {
+describe('resolveOptions', () => {
   beforeEach(() => {
     saveEnv();
     deletePiwiEnv();
@@ -43,39 +42,39 @@ describe('resolveOptions', { concurrency: 1 }, () => {
 
   it('applies built-in defaults', () => {
     const opts = resolveOptions({});
-    assert.equal(opts.projectName, 'default-project');
-    assert.equal(opts.uploadTraces, true);
-    assert.equal(opts.uploadReport, true);
-    assert.equal(opts.liveFileUploads, true);
-    assert.equal(opts.collectScmInfo, true);
-    assert.equal(opts.collectCiInfo, true);
-    assert.equal(opts.collectPerformanceMetrics, true);
-    assert.equal(opts.streaming, true);
-    assert.equal(opts.streamingBatchSize, 5);
-    assert.equal(opts.streamingBatchDelay, 2000);
-    assert.equal(opts.verbose, false);
-    assert.equal(opts.apiKey, null);
-    assert.equal(opts.username, null);
-    assert.equal(opts.password, null);
+    expect(opts.projectName).toBe('default-project');
+    expect(opts.uploadTraces).toBe(true);
+    expect(opts.uploadReport).toBe(true);
+    expect(opts.liveFileUploads).toBe(true);
+    expect(opts.collectScmInfo).toBe(true);
+    expect(opts.collectCiInfo).toBe(true);
+    expect(opts.collectPerformanceMetrics).toBe(true);
+    expect(opts.streaming).toBe(true);
+    expect(opts.streamingBatchSize).toBe(5);
+    expect(opts.streamingBatchDelay).toBe(2000);
+    expect(opts.verbose).toBe(false);
+    expect(opts.apiKey).toBe(null);
+    expect(opts.username).toBe(null);
+    expect(opts.password).toBe(null);
   });
 
   it('user options override defaults', () => {
     const opts = resolveOptions({ projectName: 'mine', streaming: false, streamingBatchSize: 10 });
-    assert.equal(opts.projectName, 'mine');
-    assert.equal(opts.streaming, false);
-    assert.equal(opts.streamingBatchSize, 10);
+    expect(opts.projectName).toBe('mine');
+    expect(opts.streaming).toBe(false);
+    expect(opts.streamingBatchSize).toBe(10);
   });
 
   it('reads PIWI_DASHBOARD_URL when serverUrl not provided', () => {
     process.env.PIWI_DASHBOARD_URL = 'http://env-host:3000';
     const opts = resolveOptions({});
-    assert.equal(opts.serverUrl, 'http://env-host:3000');
+    expect(opts.serverUrl).toBe('http://env-host:3000');
   });
 
   it('user serverUrl wins over env', () => {
     process.env.PIWI_DASHBOARD_URL = 'http://env-host:3000';
     const opts = resolveOptions({ serverUrl: 'http://explicit:3000' });
-    assert.equal(opts.serverUrl, 'http://explicit:3000');
+    expect(opts.serverUrl).toBe('http://explicit:3000');
   });
 
   it('PIWI_PROJECT_NAME now overrides the built-in default (Phase-4 env fix)', () => {
@@ -84,13 +83,13 @@ describe('resolveOptions', { concurrency: 1 }, () => {
     // the env var now wins when the caller didn't provide projectName.
     process.env.PIWI_PROJECT_NAME = 'env-project';
     const opts = resolveOptions({});
-    assert.equal(opts.projectName, 'env-project');
+    expect(opts.projectName).toBe('env-project');
   });
 
   it('user projectName still wins over env and default', () => {
     process.env.PIWI_PROJECT_NAME = 'env-project';
     const opts = resolveOptions({ projectName: 'explicit' });
-    assert.equal(opts.projectName, 'explicit');
+    expect(opts.projectName).toBe('explicit');
   });
 
   it('reads PIWI_API_KEY / USERNAME / PASSWORD from env', () => {
@@ -98,9 +97,9 @@ describe('resolveOptions', { concurrency: 1 }, () => {
     process.env.PIWI_USERNAME = 'envuser';
     process.env.PIWI_PASSWORD = 'envpass';
     const opts = resolveOptions({});
-    assert.equal(opts.apiKey, 'pd_env');
-    assert.equal(opts.username, 'envuser');
-    assert.equal(opts.password, 'envpass');
+    expect(opts.apiKey).toBe('pd_env');
+    expect(opts.username).toBe('envuser');
+    expect(opts.password).toBe('envpass');
   });
 
   it('reads PIWI_ENVIRONMENT / LABEL / RUN_LABEL from env', () => {
@@ -108,9 +107,9 @@ describe('resolveOptions', { concurrency: 1 }, () => {
     process.env.PIWI_LABEL = 'v2';
     process.env.PIWI_RUN_LABEL = 'run-1';
     const opts = resolveOptions({});
-    assert.equal(opts.environment, 'staging');
-    assert.equal(opts.label, 'v2');
-    assert.equal(opts.runLabel, 'run-1');
+    expect(opts.environment).toBe('staging');
+    expect(opts.label).toBe('v2');
+    expect(opts.runLabel).toBe('run-1');
   });
 
   it('reads PIWI_STREAMING=false and numeric batch params from env', () => {
@@ -118,27 +117,27 @@ describe('resolveOptions', { concurrency: 1 }, () => {
     process.env.PIWI_STREAMING_BATCH_SIZE = '7';
     process.env.PIWI_STREAMING_BATCH_DELAY = '9000';
     const opts = resolveOptions({});
-    assert.equal(opts.streaming, false);
-    assert.equal(opts.streamingBatchSize, 7);
-    assert.equal(opts.streamingBatchDelay, 9000);
+    expect(opts.streaming).toBe(false);
+    expect(opts.streamingBatchSize).toBe(7);
+    expect(opts.streamingBatchDelay).toBe(9000);
   });
 
   it('user streaming=false is not overridden by a missing env var', () => {
     const opts = resolveOptions({ streaming: false });
-    assert.equal(opts.streaming, false);
+    expect(opts.streaming).toBe(false);
   });
 
   it('PIWI_VERBOSE env wins over user option (preserved quirk)', () => {
     const opts1 = resolveOptions({ verbose: false });
-    assert.equal(opts1.verbose, false);
+    expect(opts1.verbose).toBe(false);
     process.env.PIWI_VERBOSE = 'true';
     const opts2 = resolveOptions({ verbose: false });
-    assert.equal(opts2.verbose, true);
+    expect(opts2.verbose).toBe(true);
   });
 
   it('PIWI_VERBOSE=false stays false', () => {
     process.env.PIWI_VERBOSE = 'false';
     const opts = resolveOptions({});
-    assert.equal(opts.verbose, false);
+    expect(opts.verbose).toBe(false);
   });
 });

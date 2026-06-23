@@ -222,7 +222,9 @@ Nuxt file-based routing:
 | `npm run app:lint:fix` | oxlint (auto-fix) |
 | `npm run app:format` | oxfmt (format files) |
 | `npm run app:format:check` | oxfmt (check formatting) |
-| `npm test` | Run functional tests |
+| `npm test` | Run all tests (unit + Playwright) |
+| `npm run app:test:unit` | Run unit tests (Vitest) |
+| `npm run app:test` | Run Playwright E2E tests |
 | `npm run db:generate` | Generate migration |
 | `npm run db:migrate` | Apply migrations |
 | `npm run db:push` | Push schema (dev only) |
@@ -245,7 +247,8 @@ node scripts/db-query.mjs "SELECT id, name FROM projects" --json
 | `npm run reporter:build` | Compile TypeScript (from `src/`) to `.js` + `.d.ts` (in `dist/`) |
 | `npm run reporter:dev`   | Watch mode — auto-recompile on changes |
 | `npm run reporter:format`| Format source code with oxfmt |
-| `npm run reporter:test`  | Run unit tests with `tsx --test` |
+| `npm run reporter:test`  | Run unit tests with Vitest |
+| `npm run reporter:test:watch` | Watch mode — re-run tests on changes |
 | `npm run lint`           | Lint with oxlint               |
 | `npm run lint:fix`       | Lint with auto-fix             |
 
@@ -360,7 +363,10 @@ Key implementation details:
   - Pass props from parent page only for data already fetched at the page level
   - Use `v-if` for tab-switched components to ensure clean mount/unmount
 - **Navigation**: Edit `app/layouts/default.vue` links array
-- **Tests**: Create `.spec.ts` in `application/tests/` → run `npm test`
+- **Tests**: Two test runners — **Vitest** for unit tests, **Playwright** for E2E/integration tests.
+  - **Unit tests** (pure functions, no server/browser): Create `.test.ts` in `application/tests/unit/` → run `npm run app:test:unit`
+  - **E2E/integration tests** (need server or browser): Create `.spec.ts` in `application/tests/` → run `npm run app:test`
+  - `npm test` runs both (Vitest first, then Playwright).
   - If the test creates a project, **add its name to `shared/test-project-names.ts`** (alphabetically sorted) so the global setup cleanup deletes it before the next run. Tests must use static project names, not `Date.now()` suffixes.
   - Use `PROJECT.YOUR_KEY` from `../shared/test-project-names` in test code instead of raw string literals. This ensures every project name is tracked in one place.
 - **Reporter**: Edit `.ts` files in `reporter/src/` → `npm run reporter:build` (from `reporter/`) → test with `npm link`

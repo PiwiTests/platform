@@ -1,5 +1,4 @@
-﻿import { describe, it } from 'node:test';
-import * as assert from 'node:assert/strict';
+import { describe, it, expect } from 'vitest';
 import { Logger } from '../src/logger.js';
 
 function captureConsole(): { stdout: string[]; stderr: string[]; restore: () => void } {
@@ -36,11 +35,11 @@ describe('Logger', () => {
       log.info('hello');
       log.warn('careful');
       log.error('boom');
-      assert.ok(cap.stdout.every((l) => l.startsWith('[Piwi Dashboard] ')));
-      assert.ok(cap.stderr.every((l) => l.startsWith('[Piwi Dashboard] ')));
-      assert.ok(cap.stdout.some((l) => l.includes('hello')));
-      assert.ok(cap.stderr.some((l) => l.includes('careful')));
-      assert.ok(cap.stderr.some((l) => l.includes('boom')));
+      expect(cap.stdout.every((l) => l.startsWith('[Piwi Dashboard] '))).toBeTruthy();
+      expect(cap.stderr.every((l) => l.startsWith('[Piwi Dashboard] '))).toBeTruthy();
+      expect(cap.stdout.some((l) => l.includes('hello'))).toBeTruthy();
+      expect(cap.stderr.some((l) => l.includes('careful'))).toBeTruthy();
+      expect(cap.stderr.some((l) => l.includes('boom'))).toBeTruthy();
     } finally {
       cap.restore();
     }
@@ -51,8 +50,8 @@ describe('Logger', () => {
     try {
       const log = new Logger(false);
       log.debug('hidden');
-      assert.equal(cap.stdout.length, 0);
-      assert.equal(cap.stderr.length, 0);
+      expect(cap.stdout.length).toBe(0);
+      expect(cap.stderr.length).toBe(0);
     } finally {
       cap.restore();
     }
@@ -63,9 +62,9 @@ describe('Logger', () => {
     try {
       const log = new Logger(true);
       log.debug('shown');
-      assert.equal(cap.stdout.length, 1);
-      assert.ok(cap.stdout[0].includes('shown'));
-      assert.equal(cap.stderr.length, 0);
+      expect(cap.stdout.length).toBe(1);
+      expect(cap.stdout[0].includes('shown')).toBeTruthy();
+      expect(cap.stderr.length).toBe(0);
     } finally {
       cap.restore();
     }
@@ -76,13 +75,13 @@ describe('Logger', () => {
     try {
       const log = new Logger(false);
       log.debugError('hidden');
-      assert.equal(cap.stderr.length, 0);
+      expect(cap.stderr.length).toBe(0);
 
       const log2 = new Logger(true);
       log2.debugError('shown-err');
-      assert.equal(cap.stderr.length, 1);
-      assert.ok(cap.stderr[0].includes('shown-err'));
-      assert.equal(cap.stdout.length, 0);
+      expect(cap.stderr.length).toBe(1);
+      expect(cap.stderr[0].includes('shown-err')).toBeTruthy();
+      expect(cap.stdout.length).toBe(0);
     } finally {
       cap.restore();
     }
@@ -95,8 +94,8 @@ describe('Logger', () => {
       log.info('i');
       log.warn('w');
       log.error('e');
-      assert.equal(cap.stdout.length, 1);
-      assert.equal(cap.stderr.length, 2);
+      expect(cap.stdout.length).toBe(1);
+      expect(cap.stderr.length).toBe(2);
     } finally {
       cap.restore();
     }

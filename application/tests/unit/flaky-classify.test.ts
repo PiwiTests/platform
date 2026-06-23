@@ -1,8 +1,8 @@
-import { test, expect } from './fixtures';
+import { describe, test, expect } from 'vitest';
 
-test.describe('Flaky root cause classification', () => {
+describe('Flaky root cause classification', () => {
   test('classifies timing errors', async () => {
-    const { classifyFlakyRootCause } = await import('../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['TimeoutError: locator.click: Timeout 30000ms exceeded'],
       stepErrors: [],
@@ -15,7 +15,7 @@ test.describe('Flaky root cause classification', () => {
   });
 
   test('classifies network errors', async () => {
-    const { classifyFlakyRootCause } = await import('../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['net::ERR_CONNECTION_REFUSED', 'status 500 on POST /api/orders'],
       stepErrors: [],
@@ -28,7 +28,7 @@ test.describe('Flaky root cause classification', () => {
   });
 
   test('classifies assertion errors without timing/network keywords', async () => {
-    const { classifyFlakyRootCause } = await import('../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['expect(received).toBe(expected)\n\nExpected: 3\nReceived: 0'],
       stepErrors: [],
@@ -41,7 +41,7 @@ test.describe('Flaky root cause classification', () => {
   });
 
   test('falls back to timing when assertion also has timing keywords', async () => {
-    const { classifyFlakyRootCause } = await import('../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['expect(element).toBeVisible: Timeout 5000ms exceeded'],
       stepErrors: [],
@@ -55,7 +55,7 @@ test.describe('Flaky root cause classification', () => {
   });
 
   test('classifies environment when only one browser fails across multiple', async () => {
-    const { classifyFlakyRootCause } = await import('../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['Some intermittent error'],
       stepErrors: [],
@@ -70,7 +70,7 @@ test.describe('Flaky root cause classification', () => {
   });
 
   test('returns other for empty inputs', async () => {
-    const { classifyFlakyRootCause } = await import('../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: [],
       stepErrors: [],
@@ -83,7 +83,7 @@ test.describe('Flaky root cause classification', () => {
   });
 
   test('returns other for unrecognized errors', async () => {
-    const { classifyFlakyRootCause } = await import('../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['Something went wrong: undefined is not a function'],
       stepErrors: [],

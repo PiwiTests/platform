@@ -1,5 +1,4 @@
-﻿import { describe, it, beforeEach, afterEach } from 'node:test';
-import * as assert from 'node:assert/strict';
+import { describe, it, beforeEach, afterEach, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -69,12 +68,12 @@ describe('StreamManager batching & drain', () => {
 
     sm.queueEvent({ type: 'complete', title: 'a' });
     sm.queueEvent({ type: 'complete', title: 'b' });
-    assert.equal(calls.length, 0, 'no flush before batchSize');
+    expect(calls.length, 'no flush before batchSize').toBe(0);
     sm.queueEvent({ type: 'complete', title: 'c' });
-    assert.equal(calls.length, 1, 'flush at batchSize');
+    expect(calls.length, 'flush at batchSize').toBe(1);
     // wait for the in-flight flush to settle
     await sm.drain();
-    assert.equal(calls.length, 1);
+    expect(calls.length).toBe(1);
   });
 
   it('drain flushes pending events', async () => {
@@ -105,7 +104,7 @@ describe('StreamManager batching & drain', () => {
     sm.queueEvent({ type: 'complete', title: 'b' });
     // batchSize not reached and no timer fired yet → drain must flush
     await sm.drain();
-    assert.equal(calls.length, 1);
+    expect(calls.length).toBe(1);
   });
 
   it('re-queues events on flush failure so drain can retry', async () => {
@@ -135,7 +134,7 @@ describe('StreamManager batching & drain', () => {
 
     sm.queueEvent({ type: 'complete', title: 'a' });
     await sm.drain();
-    assert.ok(attempts >= 2, `expected at least 2 attempts, got ${attempts}`);
+    expect(attempts, `expected at least 2 attempts, got ${attempts}`).toBeGreaterThanOrEqual(2);
   });
 
   it('drain is a no-op when streaming is disabled', async () => {
@@ -160,7 +159,7 @@ describe('StreamManager batching & drain', () => {
     (sm as any)._enabled = false;
     (sm as any).pendingEvents = [{ type: 'complete', title: 'x' }];
     await sm.drain();
-    assert.equal(calls.length, 0);
+    expect(calls.length).toBe(0);
   });
 
   it('persisted buffer events are replayed on retry', async () => {
@@ -202,6 +201,6 @@ describe('StreamManager batching & drain', () => {
     sm.queueEvent({ type: 'complete', title: 'queued-1' });
     await sm.drain();
     // After retry, the buffered event should be among those sent.
-    assert.ok(seen.some((e: any) => e.title === 'buffered-1'), `seen: ${JSON.stringify(seen)}`);
+    expect(seen.some((e: any) => e.title === 'buffered-1'), `seen: ${JSON.stringify(seen)}`).toBeTruthy();
   });
 });
