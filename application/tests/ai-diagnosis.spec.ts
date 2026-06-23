@@ -281,6 +281,33 @@ test.describe.serial('AI diagnosis endpoints', () => {
     expect(group.diagnosis.status).toBe('completed');
     expect(group.diagnosis.category).toBe('app-bug');
   });
+
+  test('a configured researchModel runs a two-stage pipeline', async ({ request }) => {
+    expect(clusterId).toBeTruthy();
+
+    // Add a distinct research model; both stages hit the same mock server.
+    const put = await request.put('/api/settings/ai', {
+      data: {
+        provider: 'openai',
+        model: 'gpt-test',
+        researchModel: 'gpt-research-small',
+        baseUrl: `http://127.0.0.1:${mockPort}/v1`,
+        autoDiagnose: false,
+      },
+    });
+    expect(put.ok()).toBeTruthy();
+
+    const res = await request.post(`/api/failure-clusters/${clusterId}/diagnose?force=true`);
+    expect(res.ok()).toBeTruthy();
+    const d = await res.json();
+    expect(d.status).toBe('completed');
+    expect(Array.isArray(d.details.pipeline)).toBe(true);
+    expect(d.details.pipeline).toHaveLength(2);
+    expect(d.details.pipeline[0].role).toBe('research');
+    expect(d.details.pipeline[1].role).toBe('diagnosis');
+    // Total tokens are summed across both stages
+    expect(d.inputTokens).toBeGreaterThan(0);
+  });
 });
 
 test.describe.serial('AI diagnosis — unconfigured error cases', () => {

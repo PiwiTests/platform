@@ -13,6 +13,7 @@ import { callAiProvider, resolveAiConfig } from './ai-provider';
 import type { AiAttachedImage } from './ai-provider';
 import { buildDiagnosisContext } from './ai-context';
 import { buildDiagnosisSystemPrompt } from './ai-system-prompt';
+import { RESEARCH_SYSTEM_PROMPT, RESEARCH_JSON_SCHEMA, parseResearchJson, formatResearchBlock } from './ai-research';
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>;
 
@@ -149,16 +150,59 @@ export async function runClusterDiagnosis(
           selectedCommitShas: opts?.selectedCommitShas,
         });
     const extra = opts?.additionalContext?.trim();
-    const fullUserContent = extra ? `${ctx.text}\n\n## Additional Context Provided by User\n${extra}` : ctx.text;
+    const baseContent = extra ? `${ctx.text}\n\n## Additional Context Provided by User\n${extra}` : ctx.text;
     // Merge auto-resolved screenshots (D1) with user-provided images
     const allImages = [...(ctx.images ?? []), ...(opts?.images ?? [])];
+    const images = allImages.length > 0 ? allImages : undefined;
+
+    type PipelineStage = { role: string; model: string; inputTokens: number | null; outputTokens: number | null };
+    const pipeline: PipelineStage[] = [];
+
+    // Two-stage pipeline: an optional cheaper "research" model pre-analyzes the
+    // failure, and its hints are folded into the final diagnosis prompt. A
+    // research failure is non-fatal — we fall back to single-stage.
+    let userContent = baseContent;
+    const researchModel = config.researchModel?.trim();
+    if (researchModel && researchModel !== config.model) {
+      try {
+        const research = await callAiProvider(
+          { ...config, model: researchModel },
+          {
+            system: RESEARCH_SYSTEM_PROMPT,
+            user: baseContent,
+            jsonSchema: RESEARCH_JSON_SCHEMA,
+            images,
+            maxTokens: 2048,
+          },
+        );
+        pipeline.push({
+          role: 'research',
+          model: research.model,
+          inputTokens: research.inputTokens,
+          outputTokens: research.outputTokens,
+        });
+        const block = formatResearchBlock(parseResearchJson(research.text));
+        if (block) userContent = `${baseContent}\n\n${block}`;
+      } catch (e) {
+        console.error('[ai-diagnosis] research stage failed, falling back to single-stage:', e);
+      }
+    }
+
     const result = await callAiProvider(config, {
       system: systemPrompt,
-      user: fullUserContent,
+      user: userContent,
       jsonSchema: DIAGNOSIS_JSON_SCHEMA,
-      images: allImages.length > 0 ? allImages : undefined,
+      images,
+    });
+    pipeline.push({
+      role: 'diagnosis',
+      model: result.model,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
     });
     const diagnosis = parseDiagnosisJson(result.text);
+
+    const sumTokens = (k: 'inputTokens' | 'outputTokens') => pipeline.reduce((acc, s) => acc + (s[k] ?? 0), 0) || null;
 
     const whereClause = isExecutionScope
       ? and(eq(failureDiagnoses.testRunsCaseId, opts!.testRunsCaseId!), eq(failureDiagnoses.scope, 'execution'))
@@ -182,10 +226,11 @@ export async function runClusterDiagnosis(
           affectedArea: diagnosis.affectedArea,
           hypotheses: diagnosis.hypotheses,
           investigationSteps: diagnosis.investigationSteps,
+          ...(pipeline.length > 1 ? { pipeline } : {}),
         },
         error: null,
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
+        inputTokens: sumTokens('inputTokens'),
+        outputTokens: sumTokens('outputTokens'),
         durationMs: Date.now() - t0,
         updatedAt: new Date(),
       })

@@ -37,6 +37,7 @@ export default eventHandler(async (event) => {
     baseUrl?: string;
     apiKey?: string;
     autoDiagnose?: boolean;
+    researchModel?: string | null;
     customInstructions?: string | null;
     scmToken?: string | null;
   };
@@ -77,6 +78,7 @@ export default eventHandler(async (event) => {
       model: null,
       baseUrl: null,
       autoDiagnose: false,
+      researchModel: null,
       hasApiKey: false,
       hasScmToken,
       envManaged: false,
@@ -110,6 +112,7 @@ export default eventHandler(async (event) => {
     model: body.model || '',
     baseUrl: body.baseUrl || '',
     autoDiagnose: Boolean(body.autoDiagnose),
+    researchModel: body.researchModel?.trim() || '',
     ...(apiKey ? { apiKey } : {}),
   };
 
@@ -120,6 +123,7 @@ export default eventHandler(async (event) => {
     model: value.model || null,
     baseUrl: value.baseUrl || null,
     autoDiagnose: value.autoDiagnose,
+    researchModel: value.researchModel || null,
     hasApiKey: Boolean(apiKey),
     hasScmToken,
     envManaged: false,

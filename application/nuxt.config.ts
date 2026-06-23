@@ -66,6 +66,7 @@ export default defineNuxtConfig({
       model: process.env.PIWI_AI_MODEL || '',
       baseUrl: process.env.PIWI_AI_BASE_URL || '',
       autoDiagnose: process.env.PIWI_AI_AUTO_DIAGNOSE === 'true',
+      researchModel: process.env.PIWI_AI_RESEARCH_MODEL || '',
     },
     authSecret: (() => {
       if (process.env.PIWI_AUTH_ENABLED === 'true' && !process.env.PIWI_AUTH_SECRET) {

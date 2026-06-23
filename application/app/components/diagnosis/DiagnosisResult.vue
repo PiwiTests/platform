@@ -288,6 +288,12 @@ const alternateHypotheses = computed<Array<{ category?: string; rootCause?: stri
 });
 
 const showAlternates = ref(false);
+
+/** Pipeline stages (two-stage research → diagnosis), when present. */
+const pipeline = computed<Array<{ role: string; model: string }>>(() => {
+  const p = details.value?.pipeline;
+  return Array.isArray(p) ? p : [];
+});
 </script>
 
 <template>
@@ -553,9 +559,21 @@ const showAlternates = ref(false);
             @click="setFeedback('down')"
           />
         </div>
-        <div class="text-xs text-gray-400">
-          {{ diagnosis.model }} · {{ formatTokens(diagnosis.inputTokens, diagnosis.outputTokens) }} ·
-          {{ formatRelativeTime(diagnosis.updatedAt) }}
+        <div class="flex items-center gap-1.5 text-xs text-gray-400">
+          <UBadge
+            v-if="pipeline.length > 1"
+            color="neutral"
+            variant="subtle"
+            size="sm"
+            icon="i-lucide-workflow"
+            :title="pipeline.map((s) => `${s.role}: ${s.model}`).join('  →  ')"
+          >
+            2-stage
+          </UBadge>
+          <span>
+            {{ diagnosis.model }} · {{ formatTokens(diagnosis.inputTokens, diagnosis.outputTokens) }} ·
+            {{ formatRelativeTime(diagnosis.updatedAt) }}
+          </span>
         </div>
       </div>
     </div>

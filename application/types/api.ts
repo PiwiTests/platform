@@ -907,6 +907,12 @@ export interface AiConfig {
   baseUrl: string | null;
   autoDiagnose: boolean;
   source: 'env' | 'settings';
+  /**
+   * Optional cheaper/faster model (same provider/key/baseUrl) used for a
+   * pre-analysis pass before the main `model` produces the final diagnosis.
+   * Empty/unset → single-stage diagnosis.
+   */
+  researchModel?: string | null;
 }
 
 /**
@@ -928,6 +934,7 @@ export interface AiSettings {
   model: string | null;
   baseUrl: string | null;
   autoDiagnose: boolean;
+  researchModel: string | null;
   hasApiKey: boolean;
   hasScmToken: boolean;
   envManaged: boolean;

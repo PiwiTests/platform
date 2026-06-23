@@ -9,6 +9,7 @@ const { data: settings, refresh } = await useFetch<AiSettings>('/api/settings/ai
 
 const provider = ref<string | null>(null);
 const model = ref<string>('');
+const researchModel = ref<string>('');
 const baseUrl = ref<string>('');
 const apiKey = ref<string>('');
 const autoDiagnose = ref(false);
@@ -25,6 +26,7 @@ watch(
     if (!val) return;
     provider.value = val.provider || null;
     model.value = val.model || '';
+    researchModel.value = val.researchModel || '';
     baseUrl.value = val.baseUrl || '';
     apiKey.value = '';
     autoDiagnose.value = val.autoDiagnose;
@@ -132,6 +134,7 @@ async function save() {
     const body: Record<string, unknown> = {
       provider: provider.value || null,
       model: model.value || undefined,
+      researchModel: researchModel.value || null,
       baseUrl: baseUrl.value || undefined,
       autoDiagnose: autoDiagnose.value,
     };
@@ -211,6 +214,7 @@ const envVars = computed(() => {
   const lines: string[] = [];
   lines.push(`PIWI_AI_PROVIDER=${provider.value}`);
   if (model.value) lines.push(`PIWI_AI_MODEL=${model.value}`);
+  if (researchModel.value) lines.push(`PIWI_AI_RESEARCH_MODEL=${researchModel.value}`);
   if (baseUrl.value) lines.push(`PIWI_AI_BASE_URL=${baseUrl.value}`);
   const keyDisplay = apiKey.value
     ? apiKey.value
@@ -283,6 +287,18 @@ const envVars = computed(() => {
               <UInput
                 v-model="model"
                 :placeholder="provider === 'anthropic' ? 'claude-opus-4-8' : 'e.g. llama3.1, gpt-4o'"
+                :disabled="settings?.envManaged"
+                class="w-full"
+              />
+            </UFormField>
+
+            <UFormField
+              label="Research model"
+              description="Optional cheaper/faster model (same provider) for a pre-analysis pass before the main model writes the final diagnosis. Leave empty for single-stage."
+            >
+              <UInput
+                v-model="researchModel"
+                :placeholder="provider === 'anthropic' ? 'e.g. claude-haiku-4-5-20251001' : 'e.g. llama-3.1-8b-instant'"
                 :disabled="settings?.envManaged"
                 class="w-full"
               />
