@@ -12,6 +12,7 @@ import type { FailureCluster, FailureDiagnosis } from '../database/schema';
 import type { DiagnosisContextCoverage } from '~~/types/api';
 import { stripAnsi } from '#shared/error-fingerprint';
 import { DIAGNOSIS_SECTIONS } from '#shared/diagnosis-sections';
+import { durationStats } from '#shared/utils/stats';
 import { computeRegressionContext, normalizeGitUrl } from './regression-context';
 import { createScmProvider, detectScmProvider } from './scm';
 import { MAX_RAW_DIFF_BYTES } from './scm/ScmProvider';
@@ -241,6 +242,7 @@ async function loadRepresentativeExecution(db: DbClient, cluster: FailureCluster
       testAnnotations: testRunsCases.testAnnotations,
       workerIndex: testRunsCases.workerIndex,
       shardIndex: testRunsCases.shardIndex,
+      testCaseId: testRunsCases.testCaseId,
       testTitle: testCases.title,
       testFilePath: testCases.filePath,
       testSuitePath: testCases.suitePath,
@@ -354,6 +356,94 @@ function runContextSection(rep: RepresentativeRow): string | null {
 
   if (lines.length === 0) return null;
   return `## Run Context\n${lines.join('\n')}`;
+}
+
+function countConsoleErrors(logs: ConsoleLogEntry[] | null): number {
+  if (!Array.isArray(logs)) return 0;
+  return logs.filter((l) => l?.type === 'error').length;
+}
+
+function relativeDays(d: Date): string {
+  const days = Math.floor((Date.now() - d.getTime()) / 86_400_000);
+  if (days <= 0) return 'today';
+  if (days === 1) return '1 day ago';
+  return `${days} days ago`;
+}
+
+/** Failing-vs-passing deltas for the web vitals we collect. */
+function compareVitals(fail: WebVitals | null, pass: WebVitals | null): string[] {
+  if (!fail || !pass) return [];
+  const pairs: Array<[string, number | null | undefined, number | null | undefined]> = [
+    ['LCP', fail.paint?.LCP, pass.paint?.LCP],
+    ['FCP', fail.paint?.FCP, pass.paint?.FCP],
+    ['DOMContentLoaded', fail.navigation?.domContentLoaded, pass.navigation?.domContentLoaded],
+  ];
+  const out: string[] = [];
+  for (const [name, f, p] of pairs) {
+    if (typeof f === 'number' && typeof p === 'number') {
+      const delta = Math.round(f - p);
+      out.push(
+        `- ${name}: failing ${Math.round(f)}ms vs passing ${Math.round(p)}ms (${delta >= 0 ? '+' : ''}${delta}ms)`,
+      );
+    }
+  }
+  return out;
+}
+
+/**
+ * Compare the failing execution to the same test's recent passing runs:
+ * duration vs baseline, web-vitals deltas, console-error delta, and how far the
+ * run got (steps executed). All from data already stored — no extra collection.
+ */
+async function baselineComparisonSection(db: DbClient, rep: RepresentativeRow): Promise<string | null> {
+  if (rep.testCaseId == null) return null;
+
+  const passing = await db
+    .select({
+      duration: testRunsCases.duration,
+      webVitals: testRunsCases.webVitals,
+      consoleLogs: testRunsCases.consoleLogs,
+      steps: testRunsCases.steps,
+      runId: testRunsCases.testRunId,
+      startTime: testRuns.startTime,
+    })
+    .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+    .where(and(eq(testRunsCases.testCaseId, rep.testCaseId), eq(testRunsCases.status, 'passed')))
+    .orderBy(desc(testRuns.startTime))
+    .limit(20);
+
+  if (passing.length === 0) return null;
+
+  const last = passing[0]!;
+  const lines: string[] = [];
+
+  const when = last.startTime instanceof Date ? relativeDays(last.startTime) : null;
+  lines.push(`- Last passed: run #${last.runId}${when ? ` (${when})` : ''}`);
+
+  const stats = durationStats(passing.map((p) => p.duration));
+  if (stats && rep.duration != null) {
+    const ratio = stats.avg > 0 ? rep.duration / stats.avg : 0;
+    const ratioStr = ratio >= 1.5 ? ` — ${ratio.toFixed(1)}× the passing average` : '';
+    lines.push(`- Duration: failing ${rep.duration}ms vs passing avg ${stats.avg}ms / p90 ${stats.p90}ms${ratioStr}`);
+  }
+
+  lines.push(...compareVitals(rep.webVitals as WebVitals | null, last.webVitals as WebVitals | null));
+
+  const failErrors = countConsoleErrors(rep.consoleLogs as ConsoleLogEntry[] | null);
+  const passErrors = countConsoleErrors(last.consoleLogs as ConsoleLogEntry[] | null);
+  if (failErrors !== passErrors) {
+    lines.push(`- Console errors: ${failErrors} in the failing run vs ${passErrors} when it last passed`);
+  }
+
+  const failSteps = Array.isArray(rep.steps) ? rep.steps.length : null;
+  const passSteps = Array.isArray(last.steps) ? last.steps.length : null;
+  if (failSteps != null && passSteps != null && failSteps < passSteps) {
+    lines.push(`- Steps executed: ${failSteps} (stopped early) vs ${passSteps} when passing`);
+  }
+
+  if (lines.length === 0) return null;
+  return `## Compared to Last Pass\nSame test, failing execution vs its recent passing runs:\n${lines.join('\n')}`;
 }
 
 /** Tests in the same file that passed in the representative execution's run (D5). */
@@ -1026,6 +1116,9 @@ export async function buildDiagnosisContext(
 
       // D5: Passed peers
       push(section('passedPeers', 'Passed Peers', await passedPeersSection(db, rep, limits)));
+
+      // Compared to last pass (duration/vitals/console/steps deltas)
+      push(section('baselineComparison', 'Compared to Last Pass', await baselineComparisonSection(db, rep)));
 
       // D2/D3: Recurrence & flakiness
       const flakinessText = await recurrenceFlakinessSection(db, cluster, limits);

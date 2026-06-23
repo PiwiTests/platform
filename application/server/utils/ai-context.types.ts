@@ -33,6 +33,7 @@ export type SectionId =
   | 'webVitals'
   | 'ariaSnapshot'
   | 'recurrenceFlakiness'
+  | 'baselineComparison'
   | 'scmInvestigation'
   | 'selectedCommits'
   | 'priorDiagnosis'

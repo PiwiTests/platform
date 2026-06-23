@@ -77,7 +77,7 @@ const sectionsByCategory = computed(() => {
     'webVitals',
     'ariaSnapshot',
   ];
-  const analysis = ['recurrenceFlakiness', 'passedPeers', 'browserDistribution', 'affectedTests'];
+  const analysis = ['recurrenceFlakiness', 'baselineComparison', 'passedPeers', 'browserDistribution', 'affectedTests'];
   const scm = ['scmInvestigation', 'selectedCommits'];
   const other = ['priorDiagnosis', 'tracePointers'];
 
