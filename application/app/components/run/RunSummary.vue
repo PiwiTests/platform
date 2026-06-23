@@ -202,7 +202,6 @@ function onLabelKeydown(e: KeyboardEvent) {
             S: <strong>{{ displayProgress?.skippedTests ?? testRun?.skippedTests ?? 0 }}</strong>
           </span>
           <span
-            v-if="(testRun?.didNotRunTests ?? 0) > 0"
             class="text-xs text-amber-600 dark:text-amber-400 tabular-nums whitespace-nowrap"
             title="Tests that never ran (maxFailures cutoff or a serial-group failure)"
           >
@@ -326,10 +325,7 @@ function onLabelKeydown(e: KeyboardEvent) {
               </div>
             </div>
 
-            <div
-              class="grid grid-cols-2 gap-2"
-              :class="(testRun?.didNotRunTests ?? 0) > 0 ? 'sm:grid-cols-6' : 'sm:grid-cols-5'"
-            >
+            <div class="grid grid-cols-2 sm:grid-cols-6 gap-2">
               <button
                 class="rounded-lg p-3 text-left w-full transition-colors cursor-pointer"
                 :class="
@@ -354,7 +350,7 @@ function onLabelKeydown(e: KeyboardEvent) {
                 @click="emit('filter-status', 'passed')"
               >
                 <p class="text-xs font-medium text-green-700 dark:text-green-400 uppercase tracking-wider">
-                  <span class="inline-block size-1.5 rounded-full bg-green-500 mr-1 align-middle" /> Passed
+                  Passed
                 </p>
                 <p class="text-xl font-bold mt-0.5 text-green-600 dark:text-green-400">
                   {{ displayProgress?.passedTests ?? testRun?.passedTests ?? 0 }}
@@ -370,7 +366,7 @@ function onLabelKeydown(e: KeyboardEvent) {
                 @click="emit('filter-status', 'failed')"
               >
                 <p class="text-xs font-medium text-red-700 dark:text-red-400 uppercase tracking-wider">
-                  <span class="inline-block size-1.5 rounded-full bg-red-500 mr-1 align-middle" /> Failed
+                  Failed
                 </p>
                 <p class="text-xl font-bold mt-0.5 text-red-600 dark:text-red-400">
                   {{ displayProgress?.failedTests ?? testRun?.failedTests ?? 0 }}
@@ -386,14 +382,13 @@ function onLabelKeydown(e: KeyboardEvent) {
                 @click="emit('filter-status', 'skipped')"
               >
                 <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <span class="inline-block size-1.5 rounded-full bg-gray-400 mr-1 align-middle" /> Skipped
+                  Skipped
                 </p>
                 <p class="text-xl font-bold mt-0.5 text-gray-600 dark:text-gray-400">
                   {{ displayProgress?.skippedTests ?? testRun?.skippedTests ?? 0 }}
                 </p>
               </button>
               <button
-                v-if="(testRun?.didNotRunTests ?? 0) > 0"
                 class="rounded-lg p-3 text-left w-full transition-colors cursor-pointer"
                 :class="
                   activeFilter === 'didnotrun'
@@ -404,7 +399,7 @@ function onLabelKeydown(e: KeyboardEvent) {
                 @click="emit('filter-status', 'didnotrun')"
               >
                 <p class="text-xs font-medium text-amber-700 dark:text-amber-400 uppercase tracking-wider">
-                  <span class="inline-block size-1.5 rounded-full bg-amber-400 mr-1 align-middle" /> Didn't run
+                  Didn't run
                 </p>
                 <p class="text-xl font-bold mt-0.5 text-amber-600 dark:text-amber-400">
                   {{ testRun?.didNotRunTests ?? 0 }}
@@ -420,7 +415,7 @@ function onLabelKeydown(e: KeyboardEvent) {
                 @click="emit('filter-status', 'flaky')"
               >
                 <p class="text-xs font-medium text-orange-700 dark:text-orange-400 uppercase tracking-wider">
-                  <span class="inline-block size-1.5 rounded-full bg-orange-500 mr-1 align-middle" /> Flaky
+                  Flaky
                 </p>
                 <p class="text-xl font-bold mt-0.5 text-orange-600 dark:text-orange-400">
                   {{ testRun?.flakyTests ?? 0 }}
