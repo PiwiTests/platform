@@ -52,7 +52,10 @@ async function handleCleanup() {
     <!-- Stats Overview -->
     <UPageCard variant="subtle">
       <template #header>
-        <h2 class="font-semibold text-base">Storage statistics</h2>
+        <h2 class="font-semibold text-base inline-flex items-center gap-1">
+          Storage statistics
+          <HelpHint topic="settings.storage-stats" />
+        </h2>
       </template>
 
       <div v-if="pending" class="flex items-center gap-2 py-4 text-muted">
@@ -120,12 +123,10 @@ async function handleCleanup() {
     <!-- Cleanup Section -->
     <UPageCard variant="subtle">
       <template #header>
-        <div>
-          <h2 class="font-semibold text-base">Cleanup old test runs</h2>
-          <p class="text-sm text-muted mt-1">
-            Permanently delete test runs (and their reports, traces, and test results) older than a given period.
-          </p>
-        </div>
+        <h2 class="font-semibold text-base inline-flex items-center gap-1">
+          Cleanup old test runs
+          <HelpHint topic="settings.cleanup" />
+        </h2>
       </template>
 
       <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">

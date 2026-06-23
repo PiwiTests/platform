@@ -1,32 +1,8 @@
 <script setup lang="ts">
-import * as z from 'zod';
-import type { FormSubmitEvent } from '@nuxt/ui';
-
-const settingsSchema = z.object({
-  foo: z.string().min(2, 'Too short'),
-});
-
-type SettingsSchema = z.output<typeof settingsSchema>;
-
-const profile = reactive<Partial<SettingsSchema>>({
-  foo: 'Bar',
-});
-const toast = useToast();
-async function onSubmit(event: FormSubmitEvent<SettingsSchema>) {
-  toast.add({
-    title: 'Success',
-    description: 'Your settings have been updated.',
-    icon: 'i-lucide-check',
-    color: 'success',
-  });
-
-  // Save settings
-  console.log('Submitted settings:', event.data);
-}
-
 const runtimeConfig = useRuntimeConfig();
 const isDemoMode = runtimeConfig.public.demoMode;
 const isResetting = ref(false);
+const toast = useToast();
 
 async function resetDemo() {
   isResetting.value = true;
@@ -54,32 +30,28 @@ async function resetDemo() {
 </script>
 
 <template>
-  <UForm id="settings" :schema="settingsSchema" :state="profile" @submit="onSubmit">
-    <UPageCard variant="subtle">
-      <UFormField
-        name="foo"
-        label="Foo"
-        description="Foo description."
-        required
-        class="flex max-sm:flex-col justify-between items-start gap-4"
-      >
-        <UInput v-model="profile.foo" autocomplete="off" />
-      </UFormField>
-      <USeparator />
-    </UPageCard>
-  </UForm>
-  <UPageCard v-if="isDemoMode" variant="subtle" class="mt-4">
+  <UPageCard v-if="isDemoMode" variant="subtle">
     <div class="flex max-sm:flex-col justify-between items-start gap-4">
       <div>
-        <p class="font-medium text-sm">Reset Demo Data</p>
+        <p class="font-medium text-sm">Reset demo data</p>
         <p class="text-sm text-muted">
           Wipe the in-browser database and reload with the original seed data. All changes made during this demo session
           will be lost.
         </p>
       </div>
       <UButton color="error" variant="soft" icon="i-lucide-refresh-cw" :loading="isResetting" @click="resetDemo">
-        Reset Demo
+        Reset demo
       </UButton>
+    </div>
+  </UPageCard>
+
+  <UPageCard v-else variant="subtle">
+    <div class="text-sm text-muted">
+      <p class="font-medium text-default">General settings</p>
+      <p class="mt-1">
+        Appearance and theme are in the top bar. Use the sidebar to manage your account, users, AI diagnosis,
+        notifications, storage, and tags.
+      </p>
     </div>
   </UPageCard>
 </template>

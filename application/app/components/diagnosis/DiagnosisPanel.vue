@@ -94,6 +94,7 @@ function isStale(d: FailureDiagnosis) {
         <div class="flex items-center gap-1.5">
           <UIcon name="i-lucide-sparkles" class="size-4 text-primary shrink-0" />
           <span class="text-sm font-semibold">Diagnosis</span>
+          <HelpHint topic="cluster.diagnosis" />
           <span class="text-xs text-gray-400">
             &mdash;
             <UIcon name="i-lucide-triangle-alert" class="size-3 shrink-0 inline" />
@@ -146,16 +147,22 @@ function isStale(d: FailureDiagnosis) {
     <template v-if="aiStatus?.configured">
       <!-- Additional context (collapsible, collapsed by default) -->
       <div>
-        <button
-          class="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mb-1 w-full text-left"
-          @click="showAdditionalContext = !showAdditionalContext"
-        >
-          <UIcon :name="showAdditionalContext ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5" />
-          Additional context
-          <span v-if="attachedFiles.length || attachedImages.length || additionalContext.trim()" class="text-primary">
-            ({{ attachedFiles.length + attachedImages.length + (additionalContext.trim() ? 1 : 0) }})
-          </span>
-        </button>
+        <div class="flex items-center gap-1 mb-1">
+          <button
+            class="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-left"
+            @click="showAdditionalContext = !showAdditionalContext"
+          >
+            <UIcon
+              :name="showAdditionalContext ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+              class="size-3.5"
+            />
+            Additional context
+            <span v-if="attachedFiles.length || attachedImages.length || additionalContext.trim()" class="text-primary">
+              ({{ attachedFiles.length + attachedImages.length + (additionalContext.trim() ? 1 : 0) }})
+            </span>
+          </button>
+          <HelpHint topic="cluster.context-input" />
+        </div>
         <div v-if="showAdditionalContext">
           <div
             class="rounded-lg border-2 transition-colors"
@@ -279,7 +286,9 @@ function isStale(d: FailureDiagnosis) {
         class="flex flex-col items-center justify-center p-8 text-center text-gray-400 border border-dashed border-default rounded-lg"
       >
         <UIcon name="i-lucide-sparkles" class="size-8 mb-2 opacity-30" />
-        <p class="text-sm">AI diagnosis is not configured</p>
+        <p class="text-sm inline-flex items-center gap-1">
+          AI diagnosis is not configured <HelpHint topic="cluster.ai-setup" />
+        </p>
         <UButton to="/settings/ai" size="xs" color="neutral" variant="outline" class="mt-3">
           Configure in Settings
         </UButton>

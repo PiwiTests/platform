@@ -192,7 +192,9 @@ function channelIcon(type: string) {
     <template #content>
       <div class="p-3 space-y-3">
         <div class="flex items-center justify-between">
-          <span class="font-medium text-sm">Notifications</span>
+          <span class="font-medium text-sm inline-flex items-center gap-1">
+            Notifications <HelpHint topic="notifications.subscribe" />
+          </span>
           <UButton
             v-if="!showForm"
             size="xs"

@@ -75,8 +75,9 @@ const columns: TableColumn<FlakyTest>[] = [
     <template #header>
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <p class="text-sm text-gray-500">
+          <p class="text-sm text-gray-500 inline-flex items-center gap-1">
             Tests that fail intermittently — detected by retry passes and status alternations
+            <HelpHint topic="project.flaky-tests" />
           </p>
           <div class="flex items-center gap-1.5">
             <UButton

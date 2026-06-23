@@ -382,14 +382,17 @@ const pipeline = computed<Array<{ role: string; model: string }>>(() => {
                 {{ details.affectedArea }}
               </span>
             </div>
-            <UButton
-              :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
-              size="xs"
-              color="neutral"
-              variant="ghost"
-              title="Copy full diagnosis (Markdown + HTML)"
-              @click="copyDiagnosis"
-            />
+            <div class="flex items-center gap-1 shrink-0">
+              <HelpHint topic="cluster.result" />
+              <UButton
+                :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                title="Copy full diagnosis (Markdown + HTML)"
+                @click="copyDiagnosis"
+              />
+            </div>
           </div>
           <p v-if="diagnosis.summary" class="text-sm font-medium mt-1.5">{{ diagnosis.summary }}</p>
         </div>

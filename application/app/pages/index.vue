@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ProjectWithStats, TestRunForChart } from '~~/types/api';
+import type { HelpTopicKey } from '~/utils/help-content';
 
 useHead({ title: 'Piwi Dashboard' });
 
@@ -28,7 +29,13 @@ const stats = computed(() => {
   // Passing projects: latest run status is 'passed'
   const passedRuns = projects.value?.filter((p) => p.latestRun?.status === 'passed').length || 0;
 
-  const statItems: { label: string; value: string | number; icon: string; description?: string }[] = [
+  const statItems: {
+    label: string;
+    value: string | number;
+    icon: string;
+    description?: string;
+    help?: HelpTopicKey;
+  }[] = [
     { label: 'Total projects', value: totalProjects, icon: 'i-lucide-folder' },
     { label: 'Total test runs', value: totalRuns, icon: 'i-lucide-play-circle' },
     {
@@ -38,7 +45,13 @@ const stats = computed(() => {
       description: `Run in last ${ACTIVE_WINDOW_DAYS} days`,
     },
     { label: 'Passing projects', value: passedRuns, icon: 'i-lucide-check-circle', description: 'Latest run passed' },
-    { label: 'Flaky tests', value: totalFlakyTests, icon: 'i-lucide-alert-triangle', description: 'In latest runs' },
+    {
+      label: 'Flaky tests',
+      value: totalFlakyTests,
+      icon: 'i-lucide-alert-triangle',
+      description: 'In latest runs',
+      help: 'home.flaky',
+    },
   ];
 
   return statItems;
@@ -142,8 +155,8 @@ const allTestRuns = computed(() => {
                 <p class="text-2xl font-bold">
                   {{ stat.value }}
                 </p>
-                <p class="text-sm text-gray-600">
-                  {{ stat.label }}
+                <p class="text-sm text-gray-600 inline-flex items-center gap-1">
+                  {{ stat.label }}<HelpHint v-if="stat.help" :topic="stat.help" />
                 </p>
                 <p v-if="stat.description" class="text-xs text-gray-400">
                   {{ stat.description }}
@@ -154,40 +167,41 @@ const allTestRuns = computed(() => {
         </div>
 
         <!-- Pass rate sparkline -->
-        <UCard v-if="allTestRuns.length > 0">
-          <template #header>
-            <div class="flex items-center justify-between">
-              <div>
-                <h2 class="text-xl font-semibold">Pass rate trend</h2>
-                <p class="text-sm text-gray-600 mt-1">Pass rate across all projects (last 30 runs)</p>
-              </div>
-              <div class="flex items-center gap-4 text-sm">
-                <span class="tabular-nums font-medium"
-                  >{{
-                    Math.round(
-                      (allTestRuns.reduce((sum, r) => sum + (r.passedTests || 0), 0) /
-                        Math.max(
-                          allTestRuns.reduce((sum, r) => sum + (r.totalTests || 0), 0),
-                          1,
-                        )) *
-                        100,
-                    )
-                  }}%</span
-                >
-                <span class="text-gray-400 tabular-nums">{{ allTestRuns.length }} runs</span>
-              </div>
+        <ChartCard
+          v-if="allTestRuns.length > 0"
+          title="Pass rate trend"
+          subtitle="Pass rate across all projects (last 30 runs)"
+          help="home.pass-rate-trend"
+        >
+          <template #actions>
+            <div class="flex items-center gap-4 text-sm">
+              <span class="tabular-nums font-medium"
+                >{{
+                  Math.round(
+                    (allTestRuns.reduce((sum, r) => sum + (r.passedTests || 0), 0) /
+                      Math.max(
+                        allTestRuns.reduce((sum, r) => sum + (r.totalTests || 0), 0),
+                        1,
+                      )) *
+                      100,
+                  )
+                }}%</span
+              >
+              <span class="text-gray-400 tabular-nums">{{ allTestRuns.length }} runs</span>
             </div>
           </template>
 
           <PassRateChart :test-runs="allTestRuns" />
-        </UCard>
+        </ChartCard>
 
         <!-- Projects + Recent activity (hidden when no projects yet) -->
         <div v-if="projects && projects.length > 0" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <UCard>
             <template #header>
               <div class="flex justify-between items-center">
-                <h2 class="text-xl font-semibold">Project health</h2>
+                <h2 class="text-xl font-semibold inline-flex items-center gap-1">
+                  Project health <HelpHint topic="home.project-health" />
+                </h2>
                 <UButton to="/projects" variant="outline" size="sm"> View all </UButton>
               </div>
             </template>

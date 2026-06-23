@@ -608,20 +608,22 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
         <UTabs v-model="activeTab" :items="tabItems" size="sm" class="p-1">
           <!-- TEST RUNS TAB -->
           <template #test-runs>
-            <UCard v-if="project?.testRuns && project.testRuns.length > 0">
-              <template #header>
-                <p class="text-sm text-gray-600 mt-1">
-                  Test run statistics over time for {{ project?.label || project?.name }}
-                </p>
-              </template>
-
+            <ChartCard
+              v-if="project?.testRuns && project.testRuns.length > 0"
+              title="Run trend"
+              :subtitle="`Test run statistics over time for ${project?.label || project?.name}`"
+              help="project.runs-trend"
+            >
               <TestRunsChart :test-runs="chartRuns" :height="200" />
-            </UCard>
+            </ChartCard>
 
             <UCard class="mt-4">
               <!-- Full runs toggle + Environment filter -->
               <div class="flex flex-wrap items-center gap-3 mb-4">
-                <USwitch v-model="fullRunsOnly" label="Full runs only" :ui="{ label: 'text-sm' }" />
+                <div class="inline-flex items-center gap-1">
+                  <USwitch v-model="fullRunsOnly" label="Full runs only" :ui="{ label: 'text-sm' }" />
+                  <HelpHint topic="project.run-scope" />
+                </div>
                 <template v-if="availableEnvironments.length > 0">
                   <span class="text-sm text-muted shrink-0">Environment:</span>
                   <button
@@ -709,6 +711,9 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                 </template>
                 <template #status-cell="{ row }">
                   <RunStatusBadge :status="row.original.status" />
+                </template>
+                <template #isFullRun-header>
+                  <span class="inline-flex items-center gap-1">Scope <HelpHint topic="run.partial" /></span>
                 </template>
                 <template #isFullRun-cell="{ row }">
                   <UTooltip :text="scopeTooltip(row.original)">
@@ -827,18 +832,15 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
               />
             </div>
 
-            <UCard>
-              <template #header>
-                <h2 class="text-xl font-semibold">Performance trend</h2>
-                <p class="text-sm text-gray-600 mt-1">Duration metrics over time</p>
-              </template>
-
+            <ChartCard title="Performance trend" subtitle="Duration metrics over time" help="project.performance">
               <PerformanceTrendChart :data="performanceData || []" :height="350" />
-            </UCard>
+            </ChartCard>
 
             <UCard>
               <template #header>
-                <h2 class="text-xl font-semibold">Slowest tests</h2>
+                <h2 class="text-xl font-semibold inline-flex items-center gap-1">
+                  Slowest tests <HelpHint topic="project.slowest-tests" />
+                </h2>
                 <p class="text-sm text-gray-600 mt-1">Top 20 slowest test cases across recent runs</p>
               </template>
 
@@ -876,7 +878,9 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
               <template #header>
                 <div class="flex items-center justify-between">
                   <div>
-                    <h2 class="text-xl font-semibold">Run comparison</h2>
+                    <h2 class="text-xl font-semibold inline-flex items-center gap-1">
+                      Run comparison <HelpHint topic="project.run-compare" />
+                    </h2>
                     <p class="text-sm text-gray-600 mt-1">Compare duration changes between two runs</p>
                   </div>
                   <UButton
@@ -993,8 +997,9 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
           <template #test-cases>
             <UCard>
               <template #header>
-                <p class="text-sm text-gray-600">
+                <p class="text-sm text-gray-600 inline-flex items-center gap-1">
                   All test cases in {{ project?.name }} with statistics across all runs
+                  <HelpHint topic="project.test-cases" />
                 </p>
               </template>
 
@@ -1105,8 +1110,9 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
             <UCard>
               <template #header>
                 <div class="flex items-center justify-between">
-                  <p class="text-sm text-gray-600">
+                  <p class="text-sm text-gray-600 inline-flex items-center gap-1">
                     Compare two test runs side-by-side — status changes and duration deltas
+                    <HelpHint topic="project.compare" />
                   </p>
                   <UButton
                     v-if="runOptions.length >= 2"
@@ -1270,8 +1276,9 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
             <UCard>
               <template #header>
                 <div class="flex items-center justify-between">
-                  <p class="text-sm text-gray-600">
+                  <p class="text-sm text-gray-600 inline-flex items-center gap-1">
                     Users with access to this project
+                    <HelpHint topic="project.members" />
                   </p>
                   <UButton
                     label="Save changes"

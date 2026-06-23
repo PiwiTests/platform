@@ -258,6 +258,7 @@ function onLabelKeydown(e: KeyboardEvent) {
                           + label
                         </button>
                       </template>
+                      <HelpHint topic="run.summary" />
                     </h2>
                     <UBadge
                       v-if="testRun?.shardTotal && testRun.shardTotal > 1"
@@ -448,6 +449,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         :class="blockColSpanClass"
         title="Storage"
         icon="i-lucide-database"
+        help="run.reports"
         :subtitle="
           storageStats?.totalFiles
             ? `${storageStats.totalFiles} files · ${formatBytes(storageStats.totalSize)}`
@@ -502,6 +504,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         :class="blockColSpanClass"
         title="Other"
         icon="i-lucide-tags"
+        help="run.metadata"
       >
         <div class="space-y-3 text-sm">
           <div v-if="testRun.metadata.tags && testRun.metadata.tags.length > 0">
