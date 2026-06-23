@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AiSettings, AiModelRole } from '~~/types/api';
+import type { RoleForm } from '~/components/settings/AiRoleConfigForm.vue';
 import { CONTEXT_LIMIT_FIELDS } from '#shared/ai-context-limits';
 import type { ContextLimits, ContextLimitField } from '#shared/ai-context-limits';
 
@@ -9,15 +10,6 @@ const { data: settings, refresh } = await useFetch<AiSettings>('/api/settings/ai
 
 // ── Per-role provider configuration ─────────────────────────────────────────
 type RoleKey = AiModelRole;
-
-interface RoleForm {
-  enabled: boolean;
-  reuse: RoleKey | null;
-  provider: string;
-  model: string;
-  baseUrl: string;
-  apiKey: string;
-}
 
 function blankRole(): RoleForm {
   return { enabled: false, reuse: null, provider: '', model: '', baseUrl: '', apiKey: '' };
@@ -301,117 +293,18 @@ function resetLimits() {
         </template>
 
         <div class="space-y-5">
-          <div
+          <AiRoleConfigForm
             v-for="meta in ROLE_META"
             :key="meta.key"
-            class="rounded-lg border border-default p-4 space-y-4"
-            :class="meta.optional && !roles[meta.key].enabled ? 'opacity-80' : ''"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="flex items-start gap-2">
-                <UIcon :name="meta.icon" class="size-5 mt-0.5 text-primary" />
-                <div>
-                  <p class="font-medium inline-flex items-center gap-1">
-                    {{ meta.title }} <HelpHint :topic="meta.help" />
-                  </p>
-                  <p class="text-sm text-gray-500">{{ meta.blurb }}</p>
-                </div>
-              </div>
-              <USwitch
-                v-if="meta.optional"
-                v-model="roles[meta.key].enabled"
-                :disabled="envManaged"
-                :aria-label="meta.enableLabel"
-              />
-            </div>
-
-            <template v-if="!meta.optional || roles[meta.key].enabled">
-              <!-- Reuse another role -->
-              <UFormField v-if="meta.reuseTargets.length" label="Provider source">
-                <USelect
-                  :model-value="roles[meta.key].reuse ?? ''"
-                  :items="reuseOptions(meta.key)"
-                  :disabled="envManaged"
-                  class="w-full"
-                  @update:model-value="(v: string) => (roles[meta.key].reuse = v ? (v as RoleKey) : null)"
-                />
-              </UFormField>
-
-              <template v-if="!roles[meta.key].reuse">
-                <UFormField label="Provider">
-                  <USelect
-                    v-model="roles[meta.key].provider"
-                    :items="providerOptions"
-                    :disabled="envManaged"
-                    placeholder="Choose a provider…"
-                    class="w-full"
-                  />
-                </UFormField>
-
-                <UFormField
-                  v-if="roles[meta.key].provider === 'openai'"
-                  label="Preset"
-                  description="Pick a known provider to auto-fill the URL and model, then adjust as needed"
-                >
-                  <USelect
-                    :items="presetOptions"
-                    placeholder="Choose a preset…"
-                    :disabled="envManaged"
-                    class="w-full"
-                    @update:model-value="(v: string) => applyPreset(meta.key, v)"
-                  />
-                </UFormField>
-
-                <UFormField
-                  v-if="roles[meta.key].provider"
-                  label="API key"
-                  :description="
-                    hasStoredKey(meta.key)
-                      ? 'Leave empty to keep the stored key, clear and save to remove it'
-                      : 'Required for Anthropic; optional for local OpenAI-compatible servers'
-                  "
-                >
-                  <UInput
-                    v-model="roles[meta.key].apiKey"
-                    type="password"
-                    :placeholder="hasStoredKey(meta.key) ? '•••••••• (unchanged)' : 'sk-…'"
-                    :disabled="envManaged"
-                    class="w-full font-mono"
-                  />
-                </UFormField>
-
-                <UFormField
-                  v-if="roles[meta.key].provider === 'openai'"
-                  label="Base URL"
-                  description="Required, e.g. http://localhost:11434/v1"
-                >
-                  <UInput
-                    v-model="roles[meta.key].baseUrl"
-                    placeholder="http://localhost:11434/v1"
-                    :disabled="envManaged"
-                    class="w-full"
-                  />
-                </UFormField>
-              </template>
-
-              <UFormField
-                v-if="roles[meta.key].reuse || roles[meta.key].provider"
-                label="Model"
-                :description="roles[meta.key].reuse ? 'Leave empty to use the reused role\'s model' : undefined"
-              >
-                <UInput
-                  v-model="roles[meta.key].model"
-                  :placeholder="
-                    roles[meta.key].provider === 'anthropic'
-                      ? meta.modelPlaceholderAnthropic
-                      : meta.modelPlaceholderOpenai
-                  "
-                  :disabled="envManaged"
-                  class="w-full"
-                />
-              </UFormField>
-            </template>
-          </div>
+            v-model="roles[meta.key]"
+            :meta="meta"
+            :has-api-key="hasStoredKey(meta.key)"
+            :reuse-options="reuseOptions(meta.key)"
+            :provider-options="providerOptions"
+            :preset-options="presetOptions"
+            :disabled="envManaged"
+            @apply-preset="(label: string) => applyPreset(meta.key, label)"
+          />
 
           <UFormField label="Auto-diagnose">
             <div class="flex items-center gap-3">
