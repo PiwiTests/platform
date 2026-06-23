@@ -271,6 +271,21 @@ export const HELP_TOPICS = {
     text: 'Diagnosis needs an AI provider and API key. Configure one in Settings → AI to enable automatic and on-demand analysis.',
     doc: 'ai-diagnosis#enabling-ai-diagnosis',
   },
+  'cluster.confidence': {
+    title: 'Confidence score',
+    text: 'How sure the model is of the top hypothesis (0–100). It is lowered when key evidence is missing or truncated, so treat a low score as “gather more before acting”.',
+    doc: 'ai-diagnosis#what-a-diagnosis-contains',
+  },
+  'cluster.hypotheses': {
+    title: 'Other hypotheses',
+    text: 'Alternative root causes the model weighed, ranked by likelihood. Useful when the evidence is ambiguous and the top pick is not conclusive.',
+    doc: 'ai-diagnosis#what-a-diagnosis-contains',
+  },
+  'cluster.coverage': {
+    title: 'Data coverage',
+    text: 'Which evidence sections were present, truncated or absent for this diagnosis — the same map the model sees. Absent or trimmed evidence lowers confidence; the quote icon marks sections the diagnosis cited.',
+    doc: 'ai-diagnosis#context-limits-and-token-cost',
+  },
 
   // ── Notifications / subscribe ─────────────────────────────────────────
   'notifications.subscribe': {
@@ -319,6 +334,11 @@ export const HELP_TOPICS = {
     title: 'Global analysis instructions',
     text: 'Guidance applied to every diagnosis across all projects — house style, terminology, or things to always check. Per-project instructions add to this.',
     doc: 'ai-diagnosis#custom-instructions',
+  },
+  'settings.ai-research': {
+    title: 'Research model',
+    text: 'An optional cheaper/faster model that pre-analyzes the failure (on a lean view) before the main model writes the final diagnosis. It can use its own provider, and the costly SCM diff is only fetched when it flags a likely regression.',
+    doc: 'ai-diagnosis#enabling-ai-diagnosis',
   },
   'settings.ai-limits': {
     title: 'Diagnosis context limits',

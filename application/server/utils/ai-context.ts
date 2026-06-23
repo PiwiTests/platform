@@ -11,6 +11,8 @@ import {
 import type { FailureCluster, FailureDiagnosis } from '../database/schema';
 import type { DiagnosisContextCoverage } from '~~/types/api';
 import { stripAnsi } from '#shared/error-fingerprint';
+import { DIAGNOSIS_SECTIONS } from '#shared/diagnosis-sections';
+import { durationStats } from '#shared/utils/stats';
 import { computeRegressionContext, normalizeGitUrl } from './regression-context';
 import { createScmProvider, detectScmProvider } from './scm';
 import { MAX_RAW_DIFF_BYTES } from './scm/ScmProvider';
@@ -56,6 +58,29 @@ function section(
     markdown: content,
     ...(items !== undefined ? { items } : {}),
   };
+}
+
+/**
+ * Build the "## Data Coverage" block: a compact present/truncated/absent map of
+ * the evidence available for this diagnosis, prepended to the AI context so the
+ * model can ground its confidence in what it could actually see. The expected
+ * section list is shared with the UI via `#shared/diagnosis-sections`.
+ */
+function buildCoverageBlock(sections: ContextSection[]): string {
+  const byId = new Map<string, ContextSection>();
+  for (const s of sections) if (!byId.has(s.id)) byId.set(s.id, s);
+
+  const lines = [
+    '## Data Coverage',
+    'Evidence available for this diagnosis. Absent or truncated sections mean you are working with partial information — calibrate confidenceScore accordingly and do not assert what you could not see.',
+    '',
+  ];
+  for (const { id, label } of DIAGNOSIS_SECTIONS) {
+    const s = byId.get(id);
+    const state = !s ? 'absent' : s.truncated ? 'present (truncated)' : 'present';
+    lines.push(`- [${id}] ${label}: ${state}`);
+  }
+  return lines.join('\n');
 }
 
 // ── SCM diff rendering ──────────────────────────────────────────────────────
@@ -214,8 +239,15 @@ async function loadRepresentativeExecution(db: DbClient, cluster: FailureCluster
       ariaSnapshot: testRunsCases.ariaSnapshot,
       testSource: testRunsCases.testSource,
       webVitals: testRunsCases.webVitals,
+      testAnnotations: testRunsCases.testAnnotations,
+      workerIndex: testRunsCases.workerIndex,
+      shardIndex: testRunsCases.shardIndex,
+      testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
       testTitle: testCases.title,
       testFilePath: testCases.filePath,
+      testSuitePath: testCases.suitePath,
+      flakyRootCause: testCases.flakyRootCause,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
@@ -231,6 +263,8 @@ async function loadRepresentativeExecution(db: DbClient, cluster: FailureCluster
       .select({
         environment: testRuns.environment,
         metadata: testRuns.metadata,
+        isFullRun: testRuns.isFullRun,
+        filterDetails: testRuns.filterDetails,
       })
       .from(testRuns)
       .where(eq(testRuns.id, rep.testRunId))
@@ -245,6 +279,8 @@ async function loadRepresentativeExecution(db: DbClient, cluster: FailureCluster
     nrItems: nrRows,
     runEnvironment: run?.environment ?? null,
     runMetadata: (run?.metadata as RunMetadata | null) ?? null,
+    runIsFullRun: run?.isFullRun ?? null,
+    runFilterDetails: (run?.filterDetails as { grep?: string; grepInvert?: string } | null) ?? null,
   };
 }
 
@@ -280,6 +316,183 @@ function failingStepsSection(rep: RepresentativeRow, limits: ContextLimits): str
   return `### Failed Steps\n${out.join('\n')}`;
 }
 
+/** Runtime test annotations (@fixme/@flaky/@slow …) declared on the test. */
+function testAnnotationsSection(rep: RepresentativeRow): string | null {
+  const ann = rep.testAnnotations as Array<{ type?: string; description?: string }> | null;
+  if (!ann || ann.length === 0) return null;
+  const lines = ann.filter((a) => a?.type).map((a) => `- @${a.type}${a.description ? `: ${a.description}` : ''}`);
+  if (lines.length === 0) return null;
+  return `## Test Annotations\nMarks declared on the test — treat known @fixme/@flaky/@skip as established context, not new findings:\n${lines.join('\n')}`;
+}
+
+/**
+ * Run-level context that shapes interpretation: partial/filtered run, parallel
+ * worker/shard (race hint), describe-block path, and any pre-classified flaky
+ * root cause. All from data already stored — no extra collection.
+ */
+function runContextSection(rep: RepresentativeRow): string | null {
+  const lines: string[] = [];
+
+  if (rep.runIsFullRun === 0) {
+    const fd = rep.runFilterDetails;
+    const filt = fd?.grep ? ` (grep: ${fd.grep})` : fd?.grepInvert ? ` (grepInvert: ${fd.grepInvert})` : '';
+    lines.push(
+      `- Partial/filtered run${filt} — not the full suite; missing peers may be due to filtering, not passing`,
+    );
+  }
+
+  const sp = rep.testSuitePath;
+  if (sp) lines.push(`- Describe path: ${sp.split('').join(' › ')}`);
+
+  if (rep.workerIndex != null) {
+    const shard = rep.shardIndex != null ? `, shard ${rep.shardIndex}` : '';
+    lines.push(
+      `- Parallel worker #${rep.workerIndex}${shard} — consider a race if peers on the same worker also failed`,
+    );
+  }
+
+  if (rep.flakyRootCause) {
+    lines.push(`- Pre-classified flaky root cause (heuristic): ${rep.flakyRootCause}`);
+  }
+
+  if (lines.length === 0) return null;
+  return `## Run Context\n${lines.join('\n')}`;
+}
+
+function countConsoleErrors(logs: ConsoleLogEntry[] | null): number {
+  if (!Array.isArray(logs)) return 0;
+  return logs.filter((l) => l?.type === 'error').length;
+}
+
+function relativeDays(d: Date): string {
+  const days = Math.floor((Date.now() - d.getTime()) / 86_400_000);
+  if (days <= 0) return 'today';
+  if (days === 1) return '1 day ago';
+  return `${days} days ago`;
+}
+
+/** Failing-vs-passing deltas for the web vitals we collect. */
+function compareVitals(fail: WebVitals | null, pass: WebVitals | null): string[] {
+  if (!fail || !pass) return [];
+  const pairs: Array<[string, number | null | undefined, number | null | undefined]> = [
+    ['LCP', fail.paint?.LCP, pass.paint?.LCP],
+    ['FCP', fail.paint?.FCP, pass.paint?.FCP],
+    ['DOMContentLoaded', fail.navigation?.domContentLoaded, pass.navigation?.domContentLoaded],
+  ];
+  const out: string[] = [];
+  for (const [name, f, p] of pairs) {
+    if (typeof f === 'number' && typeof p === 'number') {
+      const delta = Math.round(f - p);
+      out.push(
+        `- ${name}: failing ${Math.round(f)}ms vs passing ${Math.round(p)}ms (${delta >= 0 ? '+' : ''}${delta}ms)`,
+      );
+    }
+  }
+  return out;
+}
+
+/**
+ * Compare the failing execution to the same test's recent passing runs:
+ * duration vs baseline, web-vitals deltas, console-error delta, and how far the
+ * run got (steps executed). All from data already stored — no extra collection.
+ */
+async function baselineComparisonSection(db: DbClient, rep: RepresentativeRow): Promise<string | null> {
+  if (rep.testCaseId == null) return null;
+
+  const passing = await db
+    .select({
+      duration: testRunsCases.duration,
+      webVitals: testRunsCases.webVitals,
+      consoleLogs: testRunsCases.consoleLogs,
+      steps: testRunsCases.steps,
+      runId: testRunsCases.testRunId,
+      startTime: testRuns.startTime,
+    })
+    .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+    .where(and(eq(testRunsCases.testCaseId, rep.testCaseId), eq(testRunsCases.status, 'passed')))
+    .orderBy(desc(testRuns.startTime))
+    .limit(20);
+
+  if (passing.length === 0) return null;
+
+  const last = passing[0]!;
+  const lines: string[] = [];
+
+  const when = last.startTime instanceof Date ? relativeDays(last.startTime) : null;
+  lines.push(`- Last passed: run #${last.runId}${when ? ` (${when})` : ''}`);
+
+  const stats = durationStats(passing.map((p) => p.duration));
+  if (stats && rep.duration != null) {
+    const ratio = stats.avg > 0 ? rep.duration / stats.avg : 0;
+    const ratioStr = ratio >= 1.5 ? ` — ${ratio.toFixed(1)}× the passing average` : '';
+    lines.push(`- Duration: failing ${rep.duration}ms vs passing avg ${stats.avg}ms / p90 ${stats.p90}ms${ratioStr}`);
+  }
+
+  lines.push(...compareVitals(rep.webVitals as WebVitals | null, last.webVitals as WebVitals | null));
+
+  const failErrors = countConsoleErrors(rep.consoleLogs as ConsoleLogEntry[] | null);
+  const passErrors = countConsoleErrors(last.consoleLogs as ConsoleLogEntry[] | null);
+  if (failErrors !== passErrors) {
+    lines.push(`- Console errors: ${failErrors} in the failing run vs ${passErrors} when it last passed`);
+  }
+
+  const failSteps = Array.isArray(rep.steps) ? rep.steps.length : null;
+  const passSteps = Array.isArray(last.steps) ? last.steps.length : null;
+  if (failSteps != null && passSteps != null && failSteps < passSteps) {
+    lines.push(`- Steps executed: ${failSteps} (stopped early) vs ${passSteps} when passing`);
+  }
+
+  if (lines.length === 0) return null;
+  return `## Compared to Last Pass\nSame test, failing execution vs its recent passing runs:\n${lines.join('\n')}`;
+}
+
+/**
+ * Per-attempt error progression for the failing test in its run. Each retry is
+ * already stored as its own row (dedup key includes `retries`), so this needs no
+ * extra collection. The progression discriminates a deterministic bug (same
+ * error every attempt) from flakiness (passes on retry) or a race (differing
+ * errors).
+ */
+async function retryProgressionSection(db: DbClient, rep: RepresentativeRow): Promise<string | null> {
+  if (rep.testCaseId == null) return null;
+
+  const conds = [eq(testRunsCases.testRunId, rep.testRunId), eq(testRunsCases.testCaseId, rep.testCaseId)];
+  if (rep.browserName) conds.push(eq(testRunsCases.browserName, rep.browserName));
+
+  const attempts = await db
+    .select({ retries: testRunsCases.retries, status: testRunsCases.status, error: testRunsCases.error })
+    .from(testRunsCases)
+    .where(and(...conds))
+    .orderBy(testRunsCases.retries);
+
+  if (attempts.length <= 1) return null;
+
+  const firstLine = (e: string | null) =>
+    e
+      ? (stripAnsi(e)
+          .split('\n')
+          .find((l) => l.trim()) ?? '')
+      : '';
+  const lines = attempts.map((a) => {
+    const head = a.error ? firstLine(a.error).slice(0, 200) : '(no error)';
+    return `- Attempt ${a.retries ?? 0} — ${a.status}: ${head}`;
+  });
+
+  const failHeads = attempts.filter((a) => a.error).map((a) => firstLine(a.error));
+  const passed = attempts.some((a) => a.status === 'passed');
+  const allSameError = failHeads.length > 1 && failHeads.every((h) => h === failHeads[0]);
+  let insight: string;
+  if (passed) {
+    insight = `The test passed on retry — an intermittent/flaky failure${allSameError ? ' (the same error on each failing attempt)' : ''}.`;
+  } else if (allSameError) {
+    insight = 'Every attempt failed with the same error — points to a deterministic bug, not flakiness.';
+  } else {
+    insight = 'Attempts failed with differing errors — suggests an unstable environment or a race condition.';
+  }
+  return `## Retry Progression\n${insight}\n${lines.join('\n')}`;
+}
+
 /** Tests in the same file that passed in the representative execution's run (D5). */
 async function passedPeersSection(db: DbClient, rep: RepresentativeRow, limits: ContextLimits): Promise<string | null> {
   const testFilePath = rep.testFilePath;
@@ -313,6 +526,34 @@ async function tracePointersSection(db: DbClient, rep: RepresentativeRow): Promi
   if (traceFiles.length === 0) return null;
   const lines = traceFiles.map((f) => `- ${f.label || 'Trace'}: /api/files/${f.path}`);
   return `## Trace Files\n${lines.join('\n')}`;
+}
+
+function formatFileSize(n: number | null): string {
+  if (n == null) return '';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)} MB`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)} KB`;
+  return `${n} B`;
+}
+
+/**
+ * Pointers to the execution's captured artifacts (video, HAR, custom
+ * attachments). Already uploaded — surfaced as links so the diagnosis knows they
+ * exist and a human can inspect them. Not inlined (videos/HAR can be large).
+ */
+async function artifactsSection(db: DbClient, rep: RepresentativeRow): Promise<string | null> {
+  const rows = await db
+    .select({ subtype: files.subtype, label: files.label, path: files.path, size: files.size })
+    .from(files)
+    .where(and(eq(files.testRunsCaseId, rep.id), eq(files.type, 'attachment')))
+    .limit(15);
+  if (rows.length === 0) return null;
+  const lines = rows.map((f) => {
+    const name = f.subtype || 'attachment';
+    const ct = f.label ? ` (${f.label})` : '';
+    const sz = f.size != null ? ` — ${formatFileSize(f.size)}` : '';
+    return `- ${name}${ct}${sz}: /api/files/${f.path}`;
+  });
+  return `## Attachments & Artifacts\nFiles captured for this execution (video, HAR, custom artifacts) — available for inspection, not inlined:\n${lines.join('\n')}`;
 }
 
 /** Auto-resolve screenshots for the representative execution (D1). */
@@ -930,6 +1171,12 @@ export async function buildDiagnosisContext(
       // Failing steps (D6)
       push(section('failingSteps', 'Failed Steps', failingStepsSection(rep, limits)));
 
+      // Run context (partial run, parallelism, describe path, flaky class)
+      push(section('runContext', 'Run Context', runContextSection(rep)));
+
+      // Test annotations (@fixme/@flaky/@slow …)
+      push(section('testAnnotations', 'Test Annotations', testAnnotationsSection(rep)));
+
       // Web vitals
       const vitalsSub = repSections.find((s) => s.startsWith('### Web Vitals'));
       if (vitalsSub) push(section('webVitals', 'Web Vitals', vitalsSub));
@@ -945,6 +1192,12 @@ export async function buildDiagnosisContext(
       // D5: Passed peers
       push(section('passedPeers', 'Passed Peers', await passedPeersSection(db, rep, limits)));
 
+      // Compared to last pass (duration/vitals/console/steps deltas)
+      push(section('baselineComparison', 'Compared to Last Pass', await baselineComparisonSection(db, rep)));
+
+      // Retry progression (per-attempt error evolution)
+      push(section('retryProgression', 'Retry Progression', await retryProgressionSection(db, rep)));
+
       // D2/D3: Recurrence & flakiness
       const flakinessText = await recurrenceFlakinessSection(db, cluster, limits);
       push(section('recurrenceFlakiness', 'Recurrence & Flakiness', flakinessText));
@@ -956,6 +1209,9 @@ export async function buildDiagnosisContext(
 
       // D12: Trace pointers
       push(section('tracePointers', 'Trace Files', await tracePointersSection(db, rep)));
+
+      // Attachments & artifacts (video, HAR, custom files) — pointers only
+      push(section('artifacts', 'Attachments & Artifacts', await artifactsSection(db, rep)));
 
       // D1: Auto-resolve screenshots
       images = await resolveScreenshots(db, rep, limits);
@@ -971,38 +1227,38 @@ export async function buildDiagnosisContext(
         }
       }
 
-      // SCM investigation
-      const scm = await scmInvestigationSections(db, cluster, opts, limits);
-      for (const s of scm.sections) {
-        if (s.startsWith('## What Changed')) {
-          push(section('scmInvestigation', 'SCM Investigation', s));
+      // SCM investigation (network fetch) — skippable for the lean research pass
+      if (!opts.skipScm) {
+        const scm = await scmInvestigationSections(db, cluster, opts, limits);
+        for (const s of scm.sections) {
+          if (s.startsWith('## What Changed')) {
+            push(section('scmInvestigation', 'SCM Investigation', s));
+          }
         }
+        coverage = { scm: scm.coverage };
+        scmChanges = scm.scmChanges;
+
+        // Selected commits (network fetch)
+        push(
+          section(
+            'selectedCommits',
+            'Manually Selected Commits',
+            await selectedCommitsSection(db, cluster, opts, limits),
+          ),
+        );
       }
-      coverage = { scm: scm.coverage };
-      scmChanges = scm.scmChanges;
 
-      // Retry behavior (kept for backward compat — folded into recurrenceFlakiness)
+      // Retry behavior (DB only; kept for backward compat — folded into recurrenceFlakiness)
       push(section('scmInvestigation', 'SCM Investigation', await retryBehaviorSection(db, cluster)));
-
-      // Selected commits
-      push(
-        section(
-          'selectedCommits',
-          'Manually Selected Commits',
-          await selectedCommitsSection(db, cluster, opts, limits),
-        ),
-      );
     }
 
     // D10: Prior diagnosis + triage note
     push(section('priorDiagnosis', 'Prior Assessment', await priorDiagnosisSection(db, cluster)));
   }
 
-  const text = contextSections
-    .map((s) => s.markdown)
-    .filter(Boolean)
-    .join('\n\n');
-  const totalChars = contextSections.reduce((sum, s) => sum + s.chars, 0);
+  const coverageBlock = buildCoverageBlock(contextSections);
+  const text = [coverageBlock, ...contextSections.map((s) => s.markdown).filter(Boolean)].join('\n\n');
+  const totalChars = contextSections.reduce((sum, s) => sum + s.chars, 0) + coverageBlock.length;
 
   return {
     scope:

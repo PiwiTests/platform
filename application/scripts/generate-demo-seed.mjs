@@ -976,6 +976,31 @@ const FAILURE_DIAGNOSES = [
     root_cause:
       'The locator.click timeout (30 000 ms) is exceeded when the checkout page renders slowly on the CI runner. The root cause is a missing explicit wait for the payment form to become interactive before clicking, combined with CI infrastructure variability.',
     details: JSON.stringify({
+      confidenceScore: 82,
+      severity: 'high',
+      affectedArea: 'checkout / payment',
+      hypotheses: [
+        {
+          category: 'infrastructure',
+          likelihood: 82,
+          rootCause:
+            'Slow CI runner renders the payment form too late; locator.click exceeds the 30s timeout before the button becomes interactive.',
+          evidence: [
+            'Failure rate correlates with high-load CI runs (build numbers 1180-1200) [recurrenceFlakiness]',
+            'Element present in DOM but not interactive at click time [steps]',
+          ],
+        },
+        {
+          category: 'test-bug',
+          likelihood: 40,
+          rootCause: 'The test clicks without an explicit wait for the payment form to be ready.',
+          evidence: ['No waitFor/waitForLoadState precedes the click [testSource]'],
+        },
+      ],
+      investigationSteps: [
+        'Re-run the cluster on a low-load runner to confirm CI variability is the driver',
+        'Check whether the payment form fires a network-idle event before becoming interactive',
+      ],
       evidence: [
         'TimeoutError occurs at tests/checkout/checkout.spec.ts:42 in both affected tests',
         'Error fires during locator.click — the element is present in DOM but not yet interactive',
@@ -1013,6 +1038,25 @@ const FAILURE_DIAGNOSES = [
     root_cause:
       'The authentication endpoint returns HTTP 500 instead of the expected 200, causing the assertion expect(received).toBe(200).toBe(500) to fail. This indicates a regression in the auth service — likely an unhandled exception in the login handler introduced in recent commits.',
     details: JSON.stringify({
+      confidenceScore: 90,
+      severity: 'blocker',
+      affectedArea: 'authentication / login',
+      hypotheses: [
+        {
+          category: 'app-bug',
+          likelihood: 90,
+          rootCause:
+            'The /auth/login handler throws an unhandled exception introduced in the auth refactor, returning HTTP 500 instead of 200.',
+          evidence: [
+            'Expected: 200 / Received: 500 in two separate auth test cases [executionError]',
+            'Error started appearing in builds after the auth refactor commits [scmInvestigation]',
+          ],
+        },
+      ],
+      investigationSteps: [
+        'Inspect server logs for the stack trace behind the 500 on POST /auth/login',
+        'Bisect the auth refactor commits to find the breaking change',
+      ],
       evidence: [
         'Expected: 200 / Received: 500 in two separate auth test cases',
         'Both failures share the same cluster fingerprint, confirming a single root cause',
@@ -1050,6 +1094,25 @@ const FAILURE_DIAGNOSES = [
     root_cause:
       "getByRole('button') resolves to 3 elements on the UI components test page. This occurs because the page intentionally renders primary, disabled, and loading button variants simultaneously. The test should scope its locator to a specific container or use a more specific selector.",
     details: JSON.stringify({
+      confidenceScore: 65,
+      severity: 'medium',
+      affectedArea: 'UI components / button',
+      hypotheses: [
+        {
+          category: 'test-bug',
+          likelihood: 65,
+          rootCause:
+            "getByRole('button') matches 3 rendered button variants, triggering a strict-mode violation; the locator needs scoping.",
+          evidence: [
+            'Three button elements rendered by design (primary, disabled, loading) [ariaSnapshot]',
+            'Failure is deterministic, not intermittent [recurrenceFlakiness]',
+          ],
+        },
+      ],
+      investigationSteps: [
+        'Confirm the page intentionally renders multiple button variants',
+        'Decide on a scoping strategy (name filter or container) with the component owner',
+      ],
       evidence: [
         'Error consistently occurs on the button spec page',
         'Three button elements are rendered by design (primary, disabled, loading variants)',
@@ -1086,6 +1149,30 @@ const FAILURE_DIAGNOSES = [
     root_cause:
       'page.goto timeout (30000ms) exceeded during mobile Safari tests. The navigation endpoint loads heavy assets (images, JS bundles) that are not optimized for mobile connections. Combined with CI network variability, this consistently exceeds the default timeout.',
     details: JSON.stringify({
+      confidenceScore: 78,
+      severity: 'high',
+      affectedArea: 'mobile navigation',
+      hypotheses: [
+        {
+          category: 'infrastructure',
+          likelihood: 78,
+          rootCause: 'Heavy unoptimized assets push mobile Safari page load past the 30s goto timeout on CI networks.',
+          evidence: [
+            'Timeout on main navigation load, not subsequent interactions [steps]',
+            'Only affects the mobile Safari browser config [browserDistribution]',
+          ],
+        },
+        {
+          category: 'environment',
+          likelihood: 35,
+          rootCause: 'CI network throttling specific to the mobile project profile.',
+          evidence: ['Page load time correlates with asset bundle deployments [webVitals]'],
+        },
+      ],
+      investigationSteps: [
+        'Measure the page weight and largest-contentful-paint on the mobile profile',
+        'Compare goto timing on a local mobile emulation vs CI',
+      ],
       evidence: [
         'Timeout occurs on main navigation page load, not on subsequent interactions',
         'Only affects the mobile Safari browser config',

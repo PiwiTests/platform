@@ -21,7 +21,17 @@ export default eventHandler(async (event) => {
 
   const runtimeConfig = useRuntimeConfig();
   const envAi = runtimeConfig.ai as
-    | { provider?: string; apiKey?: string; model?: string; baseUrl?: string; autoDiagnose?: boolean | string }
+    | {
+        provider?: string;
+        apiKey?: string;
+        model?: string;
+        baseUrl?: string;
+        autoDiagnose?: boolean | string;
+        researchModel?: string;
+        researchProvider?: string;
+        researchBaseUrl?: string;
+        researchApiKey?: string;
+      }
     | undefined;
   const envManaged = Boolean(envAi?.provider);
 
@@ -39,6 +49,10 @@ export default eventHandler(async (event) => {
       model: envAi!.model || null,
       baseUrl: envAi!.baseUrl || null,
       autoDiagnose: String(envAi!.autoDiagnose) === 'true',
+      researchModel: envAi!.researchModel || null,
+      researchProvider: (envAi!.researchProvider || null) as AiProvider | null,
+      researchBaseUrl: envAi!.researchBaseUrl || null,
+      hasResearchApiKey: Boolean(envAi!.researchApiKey),
       hasApiKey: Boolean(envAi!.apiKey),
       hasScmToken,
       envManaged: true,
@@ -52,6 +66,10 @@ export default eventHandler(async (event) => {
     model?: string;
     baseUrl?: string;
     autoDiagnose?: boolean;
+    researchModel?: string;
+    researchProvider?: string;
+    researchBaseUrl?: string;
+    researchApiKey?: string;
   }>(db, 'ai');
 
   return {
@@ -59,6 +77,10 @@ export default eventHandler(async (event) => {
     model: stored?.model || null,
     baseUrl: stored?.baseUrl || null,
     autoDiagnose: Boolean(stored?.autoDiagnose),
+    researchModel: stored?.researchModel || null,
+    researchProvider: (stored?.researchProvider || null) as AiProvider | null,
+    researchBaseUrl: stored?.researchBaseUrl || null,
+    hasResearchApiKey: Boolean(stored?.researchApiKey),
     hasApiKey: Boolean(stored?.apiKey),
     hasScmToken,
     envManaged: false,

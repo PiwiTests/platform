@@ -1182,12 +1182,31 @@ Get the stored AI diagnosis for a cluster. Returns `null` if no diagnosis has be
   "summary": "Login button click timed out due to a race condition in the auth flow",
   "rootCause": "The auth token refresh is triggered asynchronously but the click handler does not await it…",
   "details": {
+    "confidenceScore": 82,
+    "severity": "high",
+    "affectedArea": "authentication / login",
     "evidence": ["3/12 runs failed in the login step", "All failures show the same locator timeout"],
+    "hypotheses": [
+      {
+        "category": "app-bug",
+        "likelihood": 82,
+        "rootCause": "The auth token refresh is triggered asynchronously but the click handler does not await it.",
+        "evidence": ["All failures show the same locator timeout [steps]"]
+      },
+      {
+        "category": "flaky-test",
+        "likelihood": 35,
+        "rootCause": "Intermittent timing race that occasionally passes on retry.",
+        "evidence": ["3/12 runs failed [recurrenceFlakiness]"]
+      }
+    ],
     "suggestedFix": {
       "description": "Await the token refresh before asserting login state",
       "file": "tests/auth.spec.ts",
-      "code": null
+      "code": null,
+      "patch": null
     },
+    "investigationSteps": ["Confirm whether the failure clears on retry to distinguish race from regression"],
     "preventionTips": ["Add an explicit wait for auth state before navigation assertions"]
   },
   "inputTokens": 1840,
