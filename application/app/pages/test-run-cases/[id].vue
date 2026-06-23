@@ -395,7 +395,7 @@ function copyFailure() {
             >
           </SectionCard>
 
-          <SectionCard v-if="testCase?.ariaSnapshot" icon="i-lucide-scan-text" title="ARIA snapshot">
+          <SectionCard v-if="testCase?.ariaSnapshot" icon="i-lucide-scan-text" title="ARIA snapshot" help="case.aria">
             <pre class="text-xs font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto">{{
               testCase.ariaSnapshot
             }}</pre>
@@ -487,7 +487,7 @@ function copyFailure() {
             </div>
           </div>
 
-          <SectionCard v-if="webVitals" icon="i-lucide-gauge" title="Browser performance (Web Vitals)">
+          <SectionCard v-if="webVitals" icon="i-lucide-gauge" title="Browser performance (Web Vitals)" help="case.web-vitals">
             <div class="space-y-4">
               <div v-if="webVitals.navigation" class="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
@@ -598,7 +598,7 @@ function copyFailure() {
               v-if="(testCase as any)?.consoleLogs?.length"
               :entries="(testCase as any)?.consoleLogs ?? []"
             />
-            <SectionCard v-if="groupedNetworkRequests.length > 0" icon="i-lucide-network" title="Network requests">
+            <SectionCard v-if="groupedNetworkRequests.length > 0" icon="i-lucide-network" title="Network requests" help="case.network">
               <div class="space-y-1 max-h-96 overflow-y-auto">
                 <div
                   v-for="req in groupedNetworkRequests"
@@ -640,7 +640,7 @@ function copyFailure() {
               </div>
             </SectionCard>
 
-            <SectionCard v-if="allServerLogs.length > 0" icon="i-lucide-server" title="Backend server logs">
+            <SectionCard v-if="allServerLogs.length > 0" icon="i-lucide-server" title="Backend server logs" help="case.backend-logs">
               <div class="space-y-1 max-h-64 overflow-y-auto font-mono text-xs">
                 <div v-for="(log, i) in allServerLogs" :key="i" class="flex items-start gap-2 py-0.5">
                   <UBadge
@@ -662,9 +662,7 @@ function copyFailure() {
             >
               <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />
               No backend server logs captured — install
-              <a href="https://phenx.github.io/piwi-dashboard/backend-logs" target="_blank" class="underline"
-                >a Piwi backend integration</a
-              >
+              <DocLink to="backend-logs" no-icon class="underline">a Piwi backend integration</DocLink>
               to see server-side warnings and errors here.
             </p>
 

@@ -167,6 +167,7 @@ function copyCluster() {
                 <UIcon name="i-lucide-sparkles" class="size-3" />
                 {{ cluster.diagnosis.category }}
               </UBadge>
+              <HelpHint topic="cluster.concept" />
             </div>
             <p class="text-sm text-gray-500">
               First seen in
@@ -184,7 +185,9 @@ function copyCluster() {
           <!-- Right: triage -->
           <div class="shrink-0 sm:w-[26rem] space-y-3">
             <div class="space-y-1.5">
-              <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Triage</p>
+              <p class="text-xs font-medium text-gray-500 uppercase tracking-wide inline-flex items-center gap-1">
+                Triage <HelpHint topic="cluster.triage" />
+              </p>
               <div class="flex items-start gap-3">
                 <div class="flex flex-col gap-1 shrink-0">
                   <UButton
@@ -250,7 +253,12 @@ function copyCluster() {
           </SectionCard>
 
           <!-- Test evidence: source, screenshots, traces, steps, aria, signals -->
-          <SectionCard v-if="cluster.affectedTestCases?.length" icon="i-lucide-flask-conical" title="Test evidence">
+          <SectionCard
+            v-if="cluster.affectedTestCases?.length"
+            icon="i-lucide-flask-conical"
+            title="Test evidence"
+            help="cluster.evidence"
+          >
             <template #actions>
               <UBadge color="neutral" variant="subtle" size="sm">
                 {{ cluster.affectedTestCases.length }}
@@ -261,7 +269,7 @@ function copyCluster() {
           </SectionCard>
 
           <!-- SCM investigation: baseline picker + commit diff -->
-          <SectionCard icon="i-lucide-git-compare-arrows" title="What changed">
+          <SectionCard icon="i-lucide-git-compare-arrows" title="What changed" help="cluster.scm">
             <ClusterInvestigation />
           </SectionCard>
         </div>

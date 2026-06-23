@@ -89,7 +89,9 @@ const scmStatus = computed(() => {
   <div class="space-y-3">
     <div class="pb-2 border-b border-default">
       <div class="flex items-center gap-2 flex-wrap">
-        <span class="text-xs text-gray-500 font-medium shrink-0">Baseline</span>
+        <span class="text-xs text-gray-500 font-medium shrink-0 inline-flex items-center gap-1">
+          Baseline <HelpHint topic="cluster.baseline" />
+        </span>
         <CommitPicker v-model="baseCommit" :cluster-id="clusterId" />
         <UTooltip v-if="baseCommitIsPinned" text="Baseline commit pinned for this cluster">
           <UIcon name="i-lucide-pin" class="size-3.5 text-primary shrink-0" />

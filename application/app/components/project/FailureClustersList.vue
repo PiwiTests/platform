@@ -33,8 +33,9 @@ const columns: TableColumn<ProjectFailureCluster>[] = [
   <UCard>
     <template #header>
       <div class="flex items-center justify-between">
-        <p class="text-sm text-gray-500">
-          Ongoing failure signatures grouped by normalized error. Each cluster represents a distinct root cause.
+        <p class="text-sm text-gray-500 inline-flex items-center gap-1">
+          Ongoing failure signatures grouped by normalized error.
+          <HelpHint topic="cluster.concept" />
         </p>
         <USelect
           v-model="statusFilter"

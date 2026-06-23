@@ -9,6 +9,11 @@ const { data: settings, refresh } = await useFetch<AiSettings>('/api/settings/ai
 
 const provider = ref<string | null>(null);
 const model = ref<string>('');
+const researchEnabled = ref(false);
+const researchModel = ref<string>('');
+const researchProvider = ref<string | null>(null);
+const researchBaseUrl = ref<string>('');
+const researchApiKey = ref<string>('');
 const baseUrl = ref<string>('');
 const apiKey = ref<string>('');
 const autoDiagnose = ref(false);
@@ -25,6 +30,11 @@ watch(
     if (!val) return;
     provider.value = val.provider || null;
     model.value = val.model || '';
+    researchEnabled.value = Boolean(val.researchModel);
+    researchModel.value = val.researchModel || '';
+    researchProvider.value = val.researchProvider || null;
+    researchBaseUrl.value = val.researchBaseUrl || '';
+    researchApiKey.value = '';
     baseUrl.value = val.baseUrl || '';
     apiKey.value = '';
     autoDiagnose.value = val.autoDiagnose;
@@ -35,6 +45,12 @@ watch(
 
 const providerOptions = [
   { label: 'None (disabled)', value: null },
+  { label: 'Anthropic API', value: 'anthropic' },
+  { label: 'OpenAI-compatible', value: 'openai' },
+];
+
+const researchProviderOptions = [
+  { label: 'Same as main provider', value: null },
   { label: 'Anthropic API', value: 'anthropic' },
   { label: 'OpenAI-compatible', value: 'openai' },
 ];
@@ -129,18 +145,29 @@ function applyPreset(label: string) {
 async function save() {
   saving.value = true;
   try {
+    // When the two-stage toggle is off, clear the whole research config.
+    const research = researchEnabled.value;
     const body: Record<string, unknown> = {
       provider: provider.value || null,
       model: model.value || undefined,
+      researchModel: research ? researchModel.value || null : null,
+      researchProvider: research ? researchProvider.value || null : null,
+      researchBaseUrl: research ? researchBaseUrl.value || null : null,
       baseUrl: baseUrl.value || undefined,
       autoDiagnose: autoDiagnose.value,
     };
     if (apiKey.value !== '') {
       body.apiKey = apiKey.value;
     }
+    if (!research) {
+      body.researchApiKey = null;
+    } else if (researchApiKey.value !== '') {
+      body.researchApiKey = researchApiKey.value;
+    }
     await $fetch('/api/settings/ai', { method: 'PUT', body });
     await refresh();
     apiKey.value = '';
+    researchApiKey.value = '';
     toast.add({ title: 'Settings saved', color: 'success' });
   } catch (err) {
     toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' });
@@ -211,6 +238,10 @@ const envVars = computed(() => {
   const lines: string[] = [];
   lines.push(`PIWI_AI_PROVIDER=${provider.value}`);
   if (model.value) lines.push(`PIWI_AI_MODEL=${model.value}`);
+  if (researchEnabled.value && researchModel.value) lines.push(`PIWI_AI_RESEARCH_MODEL=${researchModel.value}`);
+  if (researchEnabled.value && researchProvider.value)
+    lines.push(`PIWI_AI_RESEARCH_PROVIDER=${researchProvider.value}`);
+  if (researchEnabled.value && researchBaseUrl.value) lines.push(`PIWI_AI_RESEARCH_BASE_URL=${researchBaseUrl.value}`);
   if (baseUrl.value) lines.push(`PIWI_AI_BASE_URL=${baseUrl.value}`);
   const keyDisplay = apiKey.value
     ? apiKey.value
@@ -236,7 +267,7 @@ const envVars = computed(() => {
         description="PIWI_AI_* environment variables are set. The form below reflects the current environment configuration and cannot be changed here."
       />
 
-      <SectionCard title="Provider configuration">
+      <SectionCard title="Provider configuration" help="settings.ai-provider">
         <div class="space-y-4">
           <UFormField label="Provider">
             <USelect v-model="provider" :items="providerOptions" :disabled="settings?.envManaged" class="w-full" />
@@ -287,6 +318,80 @@ const envVars = computed(() => {
                 class="w-full"
               />
             </UFormField>
+
+            <UFormField>
+              <template #label>
+                <span class="inline-flex items-center gap-1">
+                  Two-stage diagnosis <HelpHint topic="settings.ai-research" />
+                </span>
+              </template>
+              <div class="flex items-center gap-3">
+                <USwitch v-model="researchEnabled" :disabled="settings?.envManaged" />
+                <span class="text-sm text-gray-500">
+                  Run a cheaper/faster research model first to pre-analyze the failure, then the main model writes the
+                  final diagnosis
+                </span>
+              </div>
+            </UFormField>
+
+            <template v-if="researchEnabled">
+              <UFormField
+                label="Research model"
+                description="The cheaper/faster model used for the pre-analysis pass — e.g. Haiku, or a small local model."
+              >
+                <UInput
+                  v-model="researchModel"
+                  :placeholder="
+                    provider === 'anthropic' ? 'e.g. claude-haiku-4-5-20251001' : 'e.g. llama-3.1-8b-instant'
+                  "
+                  :disabled="settings?.envManaged"
+                  class="w-full"
+                />
+              </UFormField>
+
+              <div class="rounded-lg border border-default bg-elevated/30 p-3 space-y-3">
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  Research provider override (optional)
+                </p>
+                <UFormField
+                  label="Provider"
+                  description="Run the research stage on a different provider — e.g. a small local model. Defaults to the main provider."
+                >
+                  <USelect
+                    v-model="researchProvider"
+                    :items="researchProviderOptions"
+                    :disabled="settings?.envManaged"
+                    class="w-full"
+                  />
+                </UFormField>
+                <template v-if="researchProvider">
+                  <UFormField label="Base URL" description="Required for an OpenAI-compatible research provider.">
+                    <UInput
+                      v-model="researchBaseUrl"
+                      placeholder="http://localhost:11434/v1"
+                      :disabled="settings?.envManaged"
+                      class="w-full"
+                    />
+                  </UFormField>
+                  <UFormField
+                    label="API key"
+                    :description="
+                      settings?.hasResearchApiKey
+                        ? 'Leave empty to keep the stored key, clear and save to remove it'
+                        : 'Optional — falls back to the main API key when empty'
+                    "
+                  >
+                    <UInput
+                      v-model="researchApiKey"
+                      type="password"
+                      :placeholder="settings?.hasResearchApiKey ? '•••••••• (unchanged)' : 'optional'"
+                      :disabled="settings?.envManaged"
+                      class="w-full font-mono"
+                    />
+                  </UFormField>
+                </template>
+              </div>
+            </template>
 
             <UFormField
               label="Base URL"
@@ -341,12 +446,8 @@ const envVars = computed(() => {
         </template>
       </SectionCard>
 
-      <SectionCard title="Repository access">
-        <template #subtitle>
-          Optional SCM token used to fetch changed files between the last passing and current failing run. Works with
-          GitHub, GitLab, and Bitbucket. Without a token, only public repositories are accessible (60 req/hr rate
-          limit). Required for private repositories. Per-project tokens can be set in the project edit page.
-        </template>
+      <SectionCard title="Repository access" help="project.scm-token">
+        <template #subtitle> Optional — required for private repositories. Per-project tokens override this. </template>
 
         <UFormField
           label="SCM token"
@@ -373,12 +474,7 @@ const envVars = computed(() => {
         </template>
       </SectionCard>
 
-      <SectionCard title="Global analysis instructions">
-        <template #subtitle>
-          Applied to every diagnosis, across all projects. Use this to set general preferences: preferred remediation
-          steps, tone, focus areas, or output format.
-        </template>
-
+      <SectionCard title="Global analysis instructions" help="settings.ai-instructions">
         <UTextarea
           v-model="customInstructions"
           :rows="6"
@@ -400,11 +496,8 @@ const envVars = computed(() => {
         </template>
       </SectionCard>
 
-      <SectionCard title="Diagnosis context limits">
-        <template #subtitle>
-          Caps on how much evidence is packed into each AI diagnosis (and therefore token cost). Leave a field empty to
-          use its default. Fields set via environment variables are read-only.
-        </template>
+      <SectionCard title="Diagnosis context limits" help="settings.ai-limits">
+        <template #subtitle> Leave a field empty to use its default; env-managed fields are read-only. </template>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
           <UFormField

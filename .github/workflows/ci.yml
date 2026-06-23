@@ -71,6 +71,9 @@ jobs:
         working-directory: ./reporter
         run: npm run reporter:test
 
+      - name: Test application unit tests
+        run: npm run app:test:unit
+
       - name: Install Playwright Browsers
         run: npx playwright install chromium firefox --with-deps --only-shell
 
@@ -95,7 +98,7 @@ jobs:
           PIWI_S3_TEST_ACCESS_KEY_ID: minioadmin
           PIWI_S3_TEST_SECRET_ACCESS_KEY: minioadmin
           PIWI_POSTGRES_TEST_URL: postgresql://postgres:postgres@localhost:5432/playwright_test
-        run: npm test
+        run: npm run app:test
 
   demo:
     name: Test demo generation

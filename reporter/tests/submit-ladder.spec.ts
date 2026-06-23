@@ -1,5 +1,4 @@
-﻿import { describe, it, beforeEach, afterEach } from 'node:test';
-import * as assert from 'node:assert/strict';
+import { describe, it, beforeEach, afterEach, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -92,20 +91,20 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     await runOneTest(reporter, 'streaming-test');
 
     const urls = urlsHit(server).filter((u) => u !== '/api/auth/me');
-    assert.ok(urls.includes('/api/test-runs/start'), `urls: ${urls.join(', ')}`);
-    assert.ok(urls.includes('/api/test-runs/1/events'), `urls: ${urls.join(', ')}`);
-    assert.ok(urls.includes('/api/test-runs/1/finish'), `urls: ${urls.join(', ')}`);
-    assert.ok(!urls.includes('/api/test-runs/submit'));
-    assert.ok(!urls.includes('/api/test-runs/upload'));
+    expect(urls.includes('/api/test-runs/start'), `urls: ${urls.join(', ')}`).toBeTruthy();
+    expect(urls.includes('/api/test-runs/1/events'), `urls: ${urls.join(', ')}`).toBeTruthy();
+    expect(urls.includes('/api/test-runs/1/finish'), `urls: ${urls.join(', ')}`).toBeTruthy();
+    expect(urls.includes('/api/test-runs/submit')).toBeFalsy();
+    expect(urls.includes('/api/test-runs/upload')).toBeFalsy();
 
     // finish body carries the run status + counters
-    assert.equal(finishBody.status, 'passed');
-    assert.equal(finishBody.streamToken, 'tok-123');
-    assert.equal(finishBody.totalTests, 1);
-    assert.equal(finishBody.passedTests, 1);
+    expect(finishBody.status).toBe('passed');
+    expect(finishBody.streamToken).toBe('tok-123');
+    expect(finishBody.totalTests).toBe(1);
+    expect(finishBody.passedTests).toBe(1);
     // events body carries testCases array
-    assert.ok(Array.isArray(eventsBody.testCases));
-    assert.ok(eventsBody.testCases.length >= 1);
+    expect(Array.isArray(eventsBody.testCases)).toBeTruthy();
+    expect(eventsBody.testCases.length >= 1).toBeTruthy();
   });
 
   it('streaming disabled, no files: JSON /submit only', async () => {
@@ -130,15 +129,15 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     await runOneTest(reporter, 'json-test');
 
     const urls = urlsHit(server);
-    assert.ok(urls.includes('/api/test-runs/submit'));
-    assert.ok(!urls.includes('/api/test-runs/upload'));
-    assert.ok(!urls.some((u) => u.endsWith('/finish')));
+    expect(urls.includes('/api/test-runs/submit')).toBeTruthy();
+    expect(urls.includes('/api/test-runs/upload')).toBeFalsy();
+    expect(urls.some((u) => u.endsWith('/finish'))).toBeFalsy();
     // submit payload has the wire testCases (no `attachments` / `_filesUploaded`)
-    assert.equal(submitBody.projectName, projectName);
-    assert.equal(submitBody.status, 'passed');
-    assert.equal(submitBody.testCases.length, 1);
-    assert.equal('attachments' in submitBody.testCases[0], false);
-    assert.equal('_filesUploaded' in submitBody.testCases[0], false);
+    expect(submitBody.projectName).toBe(projectName);
+    expect(submitBody.status).toBe('passed');
+    expect(submitBody.testCases.length).toBe(1);
+    expect('attachments' in submitBody.testCases[0]).toBe(false);
+    expect('_filesUploaded' in submitBody.testCases[0]).toBe(false);
   });
 
   it('streaming disabled, uploadReport=true: multipart /upload only (no /submit)', async () => {
@@ -164,8 +163,8 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     const urls = urlsHit(server);
     // hasReports is true (reports array non-empty) so /upload is attempted;
     // it succeeds so /submit is NOT called.
-    assert.ok(urls.includes('/api/test-runs/upload'), `urls: ${urls.join(', ')}`);
-    assert.ok(!urls.includes('/api/test-runs/submit'));
+    expect(urls.includes('/api/test-runs/upload'), `urls: ${urls.join(', ')}`).toBeTruthy();
+    expect(urls.includes('/api/test-runs/submit')).toBeFalsy();
   });
 
   it('fallback: /upload fails → /submit succeeds', async () => {
@@ -193,9 +192,9 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     const urls = urlsHit(server);
     const uploadIdx = urls.indexOf('/api/test-runs/upload');
     const submitIdx = urls.indexOf('/api/test-runs/submit');
-    assert.ok(uploadIdx >= 0, `urls: ${urls.join(', ')}`);
-    assert.ok(submitIdx >= 0, `urls: ${urls.join(', ')}`);
-    assert.ok(uploadIdx < submitIdx, 'upload must be tried before submit');
+    expect(uploadIdx, `urls: ${urls.join(', ')}`).toBeGreaterThanOrEqual(0);
+    expect(submitIdx, `urls: ${urls.join(', ')}`).toBeGreaterThanOrEqual(0);
+    expect(uploadIdx < submitIdx, 'upload must be tried before submit').toBeTruthy();
   });
 
   it('all upload methods fail → recovery file is written', async () => {
@@ -223,9 +222,9 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     // A recovery file should now exist in tmpdir for this project.
     const tmp = os.tmpdir();
     const files = fs.readdirSync(tmp).filter((f) => f.startsWith(RECOVERY_PREFIX));
-    assert.ok(files.length > 0, 'expected a recovery file to be written');
+    expect(files.length > 0, 'expected a recovery file to be written').toBeTruthy();
     const recovered = JSON.parse(fs.readFileSync(path.join(tmp, files[0]), 'utf8'));
-    assert.equal(recovered.projectName, projectName);
+    expect(recovered.projectName).toBe(projectName);
   });
 
   it('401 with no auth propagates (does not fall back)', async () => {
@@ -248,6 +247,6 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
       liveFileUploads: false,
       reports: [{ type: 'missing-type', dir: '/nonexistent' }],
     });
-    await assert.rejects(runOneTest(reporter, 'auth-fail-test'), /401/);
+    await expect(runOneTest(reporter, 'auth-fail-test')).rejects.toThrow(/401/);
   });
 });

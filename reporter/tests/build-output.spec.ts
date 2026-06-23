@@ -1,5 +1,4 @@
-import { describe, it } from 'node:test';
-import * as assert from 'node:assert/strict';
+import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
@@ -8,81 +7,81 @@ const dist = (...segments: string[]) => join(import.meta.dirname, '..', 'dist', 
 describe('Build output', () => {
   it('package.json should have correct metadata', () => {
     const pkg = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf-8'));
-    assert.equal(pkg.name, '@phenx/piwi-dashboard-reporter');
-    assert.equal(pkg.main, 'dist/index.js');
-    assert.equal(pkg.types, 'dist/index.d.ts');
-    assert.ok(pkg.peerDependencies);
-    assert.ok(pkg.peerDependencies['@playwright/test']);
+    expect(pkg.name).toBe('@phenx/piwi-dashboard-reporter');
+    expect(pkg.main).toBe('dist/index.js');
+    expect(pkg.types).toBe('dist/index.d.ts');
+    expect(pkg.peerDependencies).toBeTruthy();
+    expect(pkg.peerDependencies['@playwright/test']).toBeTruthy();
   });
 
   it('config.d.ts should define PiwiDashboardOptions with all fields', () => {
     const content = readFileSync(dist('config.d.ts'), 'utf-8');
-    assert.ok(content.includes('PiwiDashboardOptions'));
-    assert.ok(content.includes('serverUrl'));
-    assert.ok(content.includes('projectName'));
-    assert.ok(content.includes('uploadReport'));
-    assert.ok(content.includes('uploadTraces'));
-    assert.ok(content.includes('apiKey'));
-    assert.ok(content.includes('username'));
-    assert.ok(content.includes('password'));
-    assert.ok(content.includes('reports'));
-    assert.ok(content.includes('type: string'));
-    assert.ok(content.includes('dir?: string'));
-    assert.ok(content.includes('label?: string'));
-    assert.ok(content.includes('collectPerformanceMetrics'));
+    expect(content).toContain('PiwiDashboardOptions');
+    expect(content).toContain('serverUrl');
+    expect(content).toContain('projectName');
+    expect(content).toContain('uploadReport');
+    expect(content).toContain('uploadTraces');
+    expect(content).toContain('apiKey');
+    expect(content).toContain('username');
+    expect(content).toContain('password');
+    expect(content).toContain('reports');
+    expect(content).toContain('type: string');
+    expect(content).toContain('dir?: string');
+    expect(content).toContain('label?: string');
+    expect(content).toContain('collectPerformanceMetrics');
   });
 
   it('fixtures.js should exist and export dashboardFixtures', () => {
-    assert.ok(existsSync(dist('fixtures.js')));
+    expect(existsSync(dist('fixtures.js'))).toBe(true);
     const source = readFileSync(dist('fixtures.js'), 'utf-8');
-    assert.ok(source.includes('dashboardFixtures'));
-    assert.ok(source.includes('exports.dashboardFixtures'));
-    assert.ok(source.includes('page.on'));
-    assert.ok(source.includes('requestfinished'));
-    assert.ok(source.includes('piwi-dashboard-network'));
-    assert.ok(source.includes('piwi-dashboard-web-vitals'));
+    expect(source).toContain('dashboardFixtures');
+    expect(source).toContain('exports.dashboardFixtures');
+    expect(source).toContain('page.on');
+    expect(source).toContain('requestfinished');
+    expect(source).toContain('piwi-dashboard-network');
+    expect(source).toContain('piwi-dashboard-web-vitals');
   });
 
   it('fixtures.d.ts should export dashboardFixtures type', () => {
     const content = readFileSync(dist('fixtures.d.ts'), 'utf-8');
-    assert.ok(content.includes('dashboardFixtures'));
+    expect(content).toContain('dashboardFixtures');
   });
 
   it('step-analyzer.js should export step metrics functions', () => {
-    assert.ok(existsSync(dist('step-analyzer.js')));
+    expect(existsSync(dist('step-analyzer.js'))).toBe(true);
     const source = readFileSync(dist('step-analyzer.js'), 'utf-8');
-    assert.ok(source.includes('collectStepMetrics'));
-    assert.ok(source.includes('computePerformanceSummary'));
-    assert.ok(source.includes('flattenSteps'));
-    assert.ok(source.includes('categorizeStep'));
+    expect(source).toContain('collectStepMetrics');
+    expect(source).toContain('computePerformanceSummary');
+    expect(source).toContain('flattenSteps');
+    expect(source).toContain('categorizeStep');
   });
 
   it('metadata-collector.js should have MetadataCollector class', () => {
-    assert.ok(existsSync(dist('metadata-collector.js')));
+    expect(existsSync(dist('metadata-collector.js'))).toBe(true);
     const source = readFileSync(dist('metadata-collector.js'), 'utf-8');
-    assert.ok(source.includes('class MetadataCollector'));
-    assert.ok(source.includes('collectScmInfo'));
-    assert.ok(source.includes('collectCiInfo'));
+    expect(source).toContain('class MetadataCollector');
+    expect(source).toContain('collectScmInfo');
+    expect(source).toContain('collectCiInfo');
   });
 
   it('http-client.js should have HttpClient class with HTTP helpers', () => {
-    assert.ok(existsSync(dist('http-client.js')));
+    expect(existsSync(dist('http-client.js'))).toBe(true);
     const source = readFileSync(dist('http-client.js'), 'utf-8');
-    assert.ok(source.includes('class HttpClient'));
-    assert.ok(source.includes('postJSON'));
-    assert.ok(source.includes('postFormData'));
-    assert.ok(source.includes('login'));
+    expect(source).toContain('class HttpClient');
+    expect(source).toContain('postJSON');
+    expect(source).toContain('postFormData');
+    expect(source).toContain('login');
   });
 
   it('file-handler.js should export file discovery functions', () => {
-    assert.ok(existsSync(dist('file-handler.js')));
+    expect(existsSync(dist('file-handler.js'))).toBe(true);
     const source = readFileSync(dist('file-handler.js'), 'utf-8');
-    assert.ok(source.includes('findHTMLReportDirectory'));
-    assert.ok(source.includes('findReportDirectory'));
-    assert.ok(source.includes('compressReportDirectory'));
-    assert.ok(source.includes('findTraceFiles'));
-    assert.ok(source.includes('getDefaultReportDirs'));
-    assert.ok(source.includes('monocart'));
-    assert.ok(source.includes('blob'));
+    expect(source).toContain('findHTMLReportDirectory');
+    expect(source).toContain('findReportDirectory');
+    expect(source).toContain('compressReportDirectory');
+    expect(source).toContain('findTraceFiles');
+    expect(source).toContain('getDefaultReportDirs');
+    expect(source).toContain('monocart');
+    expect(source).toContain('blob');
   });
 });

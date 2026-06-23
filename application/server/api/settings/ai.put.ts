@@ -37,6 +37,10 @@ export default eventHandler(async (event) => {
     baseUrl?: string;
     apiKey?: string;
     autoDiagnose?: boolean;
+    researchModel?: string | null;
+    researchProvider?: string | null;
+    researchBaseUrl?: string | null;
+    researchApiKey?: string | null;
     customInstructions?: string | null;
     scmToken?: string | null;
   };
@@ -77,6 +81,10 @@ export default eventHandler(async (event) => {
       model: null,
       baseUrl: null,
       autoDiagnose: false,
+      researchModel: null,
+      researchProvider: null,
+      researchBaseUrl: null,
+      hasResearchApiKey: false,
       hasApiKey: false,
       hasScmToken,
       envManaged: false,
@@ -92,8 +100,8 @@ export default eventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'OpenAI-compatible provider requires baseUrl and model' });
   }
 
-  // Retrieve existing stored value to preserve apiKey if not provided
-  const existing = (await getAppSetting<{ apiKey?: string }>(db, 'ai')) ?? {};
+  // Retrieve existing stored value to preserve secrets if not provided
+  const existing = (await getAppSetting<{ apiKey?: string; researchApiKey?: string }>(db, 'ai')) ?? {};
 
   let apiKey: string | undefined;
   if (body.apiKey === undefined) {
@@ -105,12 +113,25 @@ export default eventHandler(async (event) => {
     apiKey = encryptSecret(body.apiKey, getEncryptionKey());
   }
 
+  let researchApiKey: string | undefined;
+  if (body.researchApiKey === undefined) {
+    researchApiKey = existing.researchApiKey;
+  } else if (body.researchApiKey === '' || body.researchApiKey === null) {
+    researchApiKey = undefined;
+  } else {
+    researchApiKey = encryptSecret(body.researchApiKey, getEncryptionKey());
+  }
+
   const value = {
     provider: body.provider,
     model: body.model || '',
     baseUrl: body.baseUrl || '',
     autoDiagnose: Boolean(body.autoDiagnose),
+    researchModel: body.researchModel?.trim() || '',
+    researchProvider: body.researchProvider?.trim() || '',
+    researchBaseUrl: body.researchBaseUrl?.trim() || '',
     ...(apiKey ? { apiKey } : {}),
+    ...(researchApiKey ? { researchApiKey } : {}),
   };
 
   await setAppSetting(db, 'ai', value);
@@ -120,6 +141,10 @@ export default eventHandler(async (event) => {
     model: value.model || null,
     baseUrl: value.baseUrl || null,
     autoDiagnose: value.autoDiagnose,
+    researchModel: value.researchModel || null,
+    researchProvider: (value.researchProvider || null) as AiProvider | null,
+    researchBaseUrl: value.researchBaseUrl || null,
+    hasResearchApiKey: Boolean(researchApiKey),
     hasApiKey: Boolean(apiKey),
     hasScmToken,
     envManaged: false,

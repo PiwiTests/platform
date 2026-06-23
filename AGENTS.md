@@ -126,6 +126,10 @@ Nuxt file-based routing:
     - `EmptyState` / `LoadingState` / `ErrorState` — centered empty/loading/error blocks (`ErrorState` has an `action` slot for a retry button). Default `py-8` padding, disable with `:padded="false"`.
     - `ChartLegend` — `{ color, label }[]` legend dots (use `dense` for inline charts).
     - `DiffPatch` (colored unified-diff lines) and `DiffFile` (file card: sticky header + `DiffPatch`). Use for any SCM patch rendering.
+    - `HelpHint` — discreet inline-help affordance (muted `i-lucide-circle-help` icon → click popover with a short explanation + optional "Learn more" docs link). Pass a `topic` key from `app/utils/help-content.ts` (preferred) or inline `title`/`text`/`doc`. Use `i-lucide-circle-help` for help; reserve `i-lucide-info` for informational/empty-state callouts. NOTE: a topic's `title` becomes the trigger's accessible name `Help: <title>`, so avoid titles that are substrings of nearby action-button labels on the same view (e.g. don't title it "Subscribe" next to a "Subscribe" button) — Playwright's substring `getByRole('button', { name })` will match both.
+    - `DocLink` — standardized "Learn more →" external docs link. Pass a docs path (page + optional `#anchor`); it runs through `docsUrl()` (`shared/docs.ts`) and opens in a new tab with `rel` hardening + external-link icon. Route all outbound docs links through this.
+    - `ChartCard` — thin wrapper over `SectionCard` for `@unovis/vue` trend charts: standard header (`icon`/`title`/`subtitle`/`help`/`actions`) + optional `legend` slot. Use instead of ad-hoc `UCard + #header` so charts get headers and inline help.
+  - **Inline-help convention (MUST follow):** any new **block-level** shared component that renders a header MUST accept an optional `help?: HelpTopicKey` prop (typed from `app/utils/help-content.ts`) and render `<HelpHint v-if="help" :topic="help" />` in its header. Add help copy by adding one entry to the `HELP_TOPICS` registry — never hardcode hint strings at call sites. Document only non-self-explanatory blocks; skip self-explanatory ones (counters, search boxes, basic CRUD forms, theme switcher, plain metadata). When adding a hint, **remove any always-on prose it now carries** (subtitle/intro paragraph) so the page gets quieter, not busier.
 - **Composables** (`app/composables/`):
   - `useAiStatus.ts` — Fetches `GET /api/ai/status` once; shared across components to show/hide AI actions
   - `useCopy.ts` — `{ copy, copied }` clipboard helper (wraps VueUse `useClipboard`); `copy(text, { toast })`. Use instead of hand-rolling `navigator.clipboard` + a `copied` flag.
@@ -192,6 +196,8 @@ Nuxt file-based routing:
   - `PIWI_AI_PROVIDER` — `anthropic` or `openai`
   - `PIWI_AI_API_KEY` — API key (env takes precedence over DB; `envManaged: true` in status)
   - `PIWI_AI_MODEL` — model name (default: `claude-opus-4-8` for Anthropic)
+  - `PIWI_AI_RESEARCH_MODEL` — optional cheaper/faster model for a pre-analysis pass before the main model writes the final diagnosis; empty → single-stage. The research stage analyzes a lean projection (high-signal sections only) for token efficiency; the final stage sees the full context. Two-stage breakdown is stored in `failure_diagnoses.details.pipeline` and shown as a "2-stage" badge in the UI.
+  - `PIWI_AI_RESEARCH_PROVIDER` / `PIWI_AI_RESEARCH_BASE_URL` / `PIWI_AI_RESEARCH_API_KEY` — optional per-role overrides so the research stage can run on a different provider (e.g. a small local OpenAI-compatible model). Each falls back to the main `PIWI_AI_*` value when unset.
   - `PIWI_AI_BASE_URL` — base URL for OpenAI-compatible providers (e.g. `http://localhost:11434/v1`)
   - `PIWI_AI_AUTO_DIAGNOSE` — `true` to auto-diagnose new clusters on run finish
 - AI diagnosis **context limits** — cap how much evidence (and tokens) go into each diagnosis. Defaults live in `shared/ai-context-limits.ts`; resolved as defaults ← stored settings (`ai_context_limits` in `app_settings`) ← env (`server/utils/ai-context-limits.ts#resolveContextLimits`). Editable in Settings → AI, or pinned via env (env wins, UI shows the field read-only). Env vars: `PIWI_AI_MAX_SAMPLE_ERROR_CHARS`, `PIWI_AI_MAX_SCM_PATCH_BUDGET`, `PIWI_AI_MAX_AFFECTED_TESTS`, `PIWI_AI_MAX_STEPS`, `PIWI_AI_MAX_CONSOLE_ENTRIES`, `PIWI_AI_MAX_CONSOLE_ENTRY_CHARS`, `PIWI_AI_MAX_NETWORK_REQUESTS`, `PIWI_AI_MAX_ARIA_SNAPSHOT_CHARS`, `PIWI_AI_MAX_TEST_SOURCE_CHARS`.
@@ -217,7 +223,9 @@ Nuxt file-based routing:
 | `npm run app:lint:fix` | oxlint (auto-fix) |
 | `npm run app:format` | oxfmt (format files) |
 | `npm run app:format:check` | oxfmt (check formatting) |
-| `npm test` | Run functional tests |
+| `npm test` | Run all tests (unit + Playwright) |
+| `npm run app:test:unit` | Run unit tests (Vitest) |
+| `npm run app:test` | Run Playwright E2E tests |
 | `npm run db:generate` | Generate migration |
 | `npm run db:migrate` | Apply migrations |
 | `npm run db:push` | Push schema (dev only) |
@@ -240,7 +248,8 @@ node scripts/db-query.mjs "SELECT id, name FROM projects" --json
 | `npm run reporter:build` | Compile TypeScript (from `src/`) to `.js` + `.d.ts` (in `dist/`) |
 | `npm run reporter:dev`   | Watch mode — auto-recompile on changes |
 | `npm run reporter:format`| Format source code with oxfmt |
-| `npm run reporter:test`  | Run unit tests with `tsx --test` |
+| `npm run reporter:test`  | Run unit tests with Vitest |
+| `npm run reporter:test:watch` | Watch mode — re-run tests on changes |
 | `npm run lint`           | Lint with oxlint               |
 | `npm run lint:fix`       | Lint with auto-fix             |
 
@@ -355,7 +364,10 @@ Key implementation details:
   - Pass props from parent page only for data already fetched at the page level
   - Use `v-if` for tab-switched components to ensure clean mount/unmount
 - **Navigation**: Edit `app/layouts/default.vue` links array
-- **Tests**: Create `.spec.ts` in `application/tests/` → run `npm test`
+- **Tests**: Two test runners — **Vitest** for unit tests, **Playwright** for E2E/integration tests.
+  - **Unit tests** (pure functions, no server/browser): Create `.test.ts` in `application/tests/unit/` → run `npm run app:test:unit`
+  - **E2E/integration tests** (need server or browser): Create `.spec.ts` in `application/tests/` → run `npm run app:test`
+  - `npm test` runs both (Vitest first, then Playwright).
   - If the test creates a project, **add its name to `shared/test-project-names.ts`** (alphabetically sorted) so the global setup cleanup deletes it before the next run. Tests must use static project names, not `Date.now()` suffixes.
   - Use `PROJECT.YOUR_KEY` from `../shared/test-project-names` in test code instead of raw string literals. This ensures every project name is tracked in one place.
 - **Reporter**: Edit `.ts` files in `reporter/src/` → `npm run reporter:build` (from `reporter/`) → test with `npm link`

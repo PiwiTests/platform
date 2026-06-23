@@ -10,7 +10,17 @@ type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>;
 export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
   const runtimeConfig = useRuntimeConfig();
   const envAi = runtimeConfig.ai as
-    | { provider?: string; apiKey?: string; model?: string; baseUrl?: string; autoDiagnose?: boolean | string }
+    | {
+        provider?: string;
+        apiKey?: string;
+        model?: string;
+        baseUrl?: string;
+        autoDiagnose?: boolean | string;
+        researchModel?: string;
+        researchProvider?: string;
+        researchBaseUrl?: string;
+        researchApiKey?: string;
+      }
     | undefined;
 
   if (envAi?.provider) {
@@ -22,6 +32,10 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
       baseUrl: envAi.baseUrl || null,
       autoDiagnose: String(envAi.autoDiagnose) === 'true',
       source: 'env',
+      researchModel: envAi.researchModel || null,
+      researchProvider: (envAi.researchProvider as AiProvider) || null,
+      researchBaseUrl: envAi.researchBaseUrl || null,
+      researchApiKey: envAi.researchApiKey || null,
     };
     if (!isValidConfig(config)) return null;
     return config;
@@ -33,6 +47,10 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
     model?: string;
     baseUrl?: string;
     autoDiagnose?: boolean;
+    researchModel?: string;
+    researchProvider?: string;
+    researchBaseUrl?: string;
+    researchApiKey?: string;
   }>(db, 'ai');
 
   if (!stored?.provider) return null;
@@ -44,6 +62,10 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
     baseUrl: stored.baseUrl || null,
     autoDiagnose: Boolean(stored.autoDiagnose),
     source: 'settings',
+    researchModel: stored.researchModel || null,
+    researchProvider: (stored.researchProvider as AiProvider) || null,
+    researchBaseUrl: stored.researchBaseUrl || null,
+    researchApiKey: stored.researchApiKey ? decryptSecret(stored.researchApiKey, getEncryptionKey()) : null,
   };
   if (!isValidConfig(config)) return null;
   return config;

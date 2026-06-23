@@ -21,6 +21,8 @@ const showCluster = computed(() => !!props.cluster && (props.cluster.sameRunCase
     <!-- Cluster info row -->
     <div v-if="cluster" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
       <UIcon name="i-lucide-layers" class="size-3.5 shrink-0" />
+      <HelpHint topic="cluster.new-vs-known" />
+
       <template v-if="showCluster">
         <span v-if="cluster.sameRunCaseCount > 1">
           Matches {{ cluster.sameRunCaseCount - 1 }} other failing

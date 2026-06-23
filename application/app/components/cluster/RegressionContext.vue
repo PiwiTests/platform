@@ -31,7 +31,7 @@ function copyCommand() {
         <!-- Last green run header -->
         <div class="flex flex-wrap items-center gap-2 text-sm">
           <UIcon name="i-lucide-circle-check" class="size-4 text-green-500 shrink-0" />
-          <span class="text-gray-500">Last passing run:</span>
+          <span class="text-gray-500 inline-flex items-center gap-1">Last passing run: <HelpHint topic="run.regression" /></span>
           <NuxtLink :to="`/test-runs/${context.lastGreenRunId}`" class="font-medium text-primary hover:underline">
             Run #{{ context.lastGreenRunId }}
           </NuxtLink>

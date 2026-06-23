@@ -1,5 +1,4 @@
-import { describe, it } from 'node:test';
-import * as assert from 'node:assert/strict';
+import { describe, it, expect } from 'vitest';
 import { resolveOverallStatus, toWireTestCase, serializeRun } from '../src/serializer.js';
 import type { RunPayload } from '../src/uploader.js';
 import type { CollectedTestCase } from '../src/types.js';
@@ -8,76 +7,75 @@ describe('resolveOverallStatus', () => {
   const counters = { failedTests: 0, timedOutTests: 0, totalTests: 5 };
 
   it('maps Playwright status directly (passed/failed)', () => {
-    assert.equal(resolveOverallStatus({ status: 'passed' } as any, counters), 'passed');
-    assert.equal(resolveOverallStatus({ status: 'failed' } as any, counters), 'failed');
+    expect(resolveOverallStatus({ status: 'passed' } as any, counters)).toBe('passed');
+    expect(resolveOverallStatus({ status: 'failed' } as any, counters)).toBe('failed');
   });
 
   it('maps timedout/interrupted to failed', () => {
-    assert.equal(resolveOverallStatus({ status: 'timedout' } as any, counters), 'failed');
-    assert.equal(resolveOverallStatus({ status: 'interrupted' } as any, counters), 'failed');
+    expect(resolveOverallStatus({ status: 'timedout' } as any, counters)).toBe('failed');
+    expect(resolveOverallStatus({ status: 'interrupted' } as any, counters)).toBe('failed');
   });
 
   it('falls back to "failed" for unknown status', () => {
-    assert.equal(resolveOverallStatus({ status: 'something-weird' } as any, counters), 'failed');
+    expect(resolveOverallStatus({ status: 'something-weird' } as any, counters)).toBe('failed');
   });
 
   it('returns "passed" when no status but no failures and totalTests > 0', () => {
-    assert.equal(resolveOverallStatus({} as any, counters), 'passed');
+    expect(resolveOverallStatus({} as any, counters)).toBe('passed');
   });
 
   it('returns "failed" when no status and there are failures', () => {
-    assert.equal(resolveOverallStatus({} as any, { failedTests: 1, timedOutTests: 0, totalTests: 5 }), 'failed');
+    expect(resolveOverallStatus({} as any, { failedTests: 1, timedOutTests: 0, totalTests: 5 })).toBe('failed');
   });
 
   it('returns "failed" when no status and there are timeouts', () => {
-    assert.equal(resolveOverallStatus({} as any, { failedTests: 0, timedOutTests: 1, totalTests: 5 }), 'failed');
+    expect(resolveOverallStatus({} as any, { failedTests: 0, timedOutTests: 1, totalTests: 5 })).toBe('failed');
   });
 
   it('returns "failed" when no status and totalTests is 0', () => {
-    assert.equal(resolveOverallStatus({} as any, { failedTests: 0, timedOutTests: 0, totalTests: 0 }), 'failed');
+    expect(resolveOverallStatus({} as any, { failedTests: 0, timedOutTests: 0, totalTests: 0 })).toBe('failed');
   });
 
   it('status takes precedence over counters', () => {
-    assert.equal(
+    expect(
       resolveOverallStatus({ status: 'passed' } as any, { failedTests: 5, timedOutTests: 5, totalTests: 10 }),
-      'passed',
-    );
+    ).toBe('passed');
   });
 });
 
 describe('toWireTestCase', () => {
   it('carries the type discriminant through', () => {
     const out = toWireTestCase({ type: 'begin', title: 't', location: 'l' });
-    assert.equal(out.type, 'begin');
+    expect(out.type).toBe('begin');
   });
 
   it('passes status/duration/error/retries through unchanged (no null default)', () => {
     const out = toWireTestCase({ type: 'begin', title: 't', location: 'l' });
-    assert.equal('status' in out, true);
-    assert.equal(out.status, undefined);
-    assert.equal(out.duration, undefined);
-    assert.equal(out.error, undefined);
-    assert.equal(out.retries, undefined);
+    expect('status' in out).toBe(true);
+    expect(out.status).toBe(undefined);
+    expect(out.duration).toBe(undefined);
+    expect(out.error).toBe(undefined);
+    expect(out.retries).toBe(undefined);
   });
 
   it('defaults workerIndex/shardIndex/startedAt/suitePath/suiteConfig/testAnnotations to null via ??', () => {
     const out = toWireTestCase({ type: 'begin', title: 't', location: 'l' });
-    assert.equal(out.workerIndex, null);
-    assert.equal(out.shardIndex, null);
-    assert.equal(out.startedAt, null);
-    assert.equal(out.suitePath, null);
-    assert.equal(out.suiteConfig, null);
-    assert.equal(out.testAnnotations, null);
+    expect(out.workerIndex).toBe(null);
+    expect(out.shardIndex).toBe(null);
+    expect(out.startedAt).toBe(null);
+    expect(out.suitePath).toBe(null);
+    expect(out.suiteConfig).toBe(null);
+    expect(out.testAnnotations).toBe(null);
   });
 
   it('preserves workerIndex=0 (?? null, not || null)', () => {
     const out = toWireTestCase({ type: 'begin', title: 't', location: 'l', workerIndex: 0 });
-    assert.equal(out.workerIndex, 0);
+    expect(out.workerIndex).toBe(0);
   });
 
   it('preserves startedAt=0', () => {
     const out = toWireTestCase({ type: 'begin', title: 't', location: 'l', startedAt: 0 });
-    assert.equal(out.startedAt, 0);
+    expect(out.startedAt).toBe(0);
   });
 
   it('collapses slowestStepDuration=0 to null (|| null quirk)', () => {
@@ -87,8 +85,8 @@ describe('toWireTestCase', () => {
       location: 'l',
       performanceMetrics: { slowestStep: { title: 's', duration: 0 } },
     });
-    assert.equal(out.slowestStepDuration, null);
-    assert.equal(out.slowestStep, 's');
+    expect(out.slowestStepDuration).toBe(null);
+    expect(out.slowestStep).toBe('s');
   });
 
   it('preserves empty steps array (|| null does not collapse truthy [])', () => {
@@ -98,7 +96,7 @@ describe('toWireTestCase', () => {
       location: 'l',
       performanceMetrics: { steps: [] },
     });
-    assert.deepEqual(out.steps, []);
+    expect(out.steps).toEqual([]);
   });
 
   it('exposes steps from performanceMetrics.steps', () => {
@@ -109,7 +107,7 @@ describe('toWireTestCase', () => {
       location: 'l',
       performanceMetrics: { steps },
     });
-    assert.equal(out.steps, steps);
+    expect(out.steps).toBe(steps);
   });
 
   it('exposes stepEvents, networkRequests, webVitals, consoleLogs, ariaSnapshot, testSource when present', () => {
@@ -124,23 +122,23 @@ describe('toWireTestCase', () => {
       ariaSnapshot: 'snapshot',
       testSource: 'src',
     });
-    assert.deepEqual(out.stepEvents, [{ t: 1 }]);
-    assert.deepEqual(out.networkRequests, [{ url: 'u' }]);
-    assert.deepEqual(out.webVitals, { navigation: {} });
-    assert.deepEqual(out.consoleLogs, [{ type: 'error' }]);
-    assert.equal(out.ariaSnapshot, 'snapshot');
-    assert.equal(out.testSource, 'src');
+    expect(out.stepEvents).toEqual([{ t: 1 }]);
+    expect(out.networkRequests).toEqual([{ url: 'u' }]);
+    expect(out.webVitals).toEqual({ navigation: {} });
+    expect(out.consoleLogs).toEqual([{ type: 'error' }]);
+    expect(out.ariaSnapshot).toBe('snapshot');
+    expect(out.testSource).toBe('src');
   });
 
   it('collapses browser=undefined to null', () => {
     const out = toWireTestCase({ type: 'begin', title: 't', location: 'l' });
-    assert.equal(out.browser, null);
+    expect(out.browser).toBe(null);
   });
 
   it('preserves a populated browser object', () => {
     const browser = { projectName: 'chromium' };
     const out = toWireTestCase({ type: 'begin', title: 't', location: 'l', browser });
-    assert.equal(out.browser, browser);
+    expect(out.browser).toBe(browser);
   });
 
   it('drops unknown/internal fields (only listed fields are emitted)', () => {
@@ -148,16 +146,16 @@ describe('toWireTestCase', () => {
       type: 'complete',
       title: 't',
       location: 'l',
-      attachments: [{ name: 'trace' }], // raw attachment � must NOT appear on the wire
-      _filesUploaded: true, // bookkeeping � must NOT appear on the wire
+      attachments: [{ name: 'trace' }], // raw attachment — must NOT appear on the wire
+      _filesUploaded: true, // bookkeeping — must NOT appear on the wire
     });
-    assert.equal('attachments' in out, false);
-    assert.equal('_filesUploaded' in out, false);
+    expect('attachments' in out).toBe(false);
+    expect('_filesUploaded' in out).toBe(false);
   });
 
   it('emits exactly the expected set of keys', () => {
     const out = toWireTestCase({ type: 'complete', title: 't', location: 'l' });
-    assert.deepEqual(Object.keys(out).sort(), [
+    expect(Object.keys(out).sort()).toEqual([
       'ariaSnapshot',
       'browser',
       'consoleLogs',
@@ -210,7 +208,7 @@ describe('serializeRun', () => {
 
   it('includes all run-level fields exactly once', () => {
     const body = serializeRun(makePayload(), { includeTestCases: false });
-    assert.deepEqual(Object.keys(body).sort(), [
+    expect(Object.keys(body).sort()).toEqual([
       'duration',
       'environment',
       'failedTests',
@@ -236,7 +234,7 @@ describe('serializeRun', () => {
     const body = serializeRun(makePayload([{ type: 'complete', title: 't', location: 'l' } as any]), {
       includeTestCases: false,
     });
-    assert.equal('testCases' in body, false);
+    expect('testCases' in body).toBe(false);
   });
 
   it('projects testCases to wire shape when includeTestCases is true', () => {
@@ -249,11 +247,11 @@ describe('serializeRun', () => {
       attachments: [{ name: 'trace', path: '/tmp/trace.zip' }],
     } as any;
     const body = serializeRun(makePayload([collected]), { includeTestCases: true });
-    assert.ok(Array.isArray(body.testCases));
-    assert.equal(body.testCases.length, 1);
+    expect(Array.isArray(body.testCases)).toBeTruthy();
+    expect(body.testCases.length).toBe(1);
     // attachments are stripped on the wire
-    assert.equal('attachments' in body.testCases[0], false);
-    assert.equal(body.testCases[0].title, 't');
+    expect('attachments' in body.testCases[0]).toBe(false);
+    expect(body.testCases[0].title).toBe('t');
   });
 
   it('coerces environment/label to null when absent', () => {
@@ -261,13 +259,13 @@ describe('serializeRun', () => {
     delete payload.environment;
     delete payload.label;
     const body = serializeRun(payload, { includeTestCases: false });
-    assert.equal(body.environment, null);
-    assert.equal(body.label, null);
+    expect(body.environment).toBe(null);
+    expect(body.label).toBe(null);
   });
 
   it('preserves metadata object by reference', () => {
     const payload = makePayload();
     const body = serializeRun(payload, { includeTestCases: false });
-    assert.equal(body.metadata, payload.metadata);
+    expect(body.metadata).toBe(payload.metadata);
   });
 });

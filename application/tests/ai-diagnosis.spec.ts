@@ -33,14 +33,28 @@ function buildMockAiResponse(): AiDiagnosisResult {
   return {
     category: 'app-bug',
     confidence: 'high',
+    confidenceScore: 88,
+    severity: 'high',
+    affectedArea: 'auth / login',
     summary: 'Mock diagnosis summary from test',
     rootCause: 'Mock root cause explanation',
     evidence: ['Evidence line 1', 'Evidence line 2'],
+    hypotheses: [
+      {
+        category: 'app-bug',
+        rootCause: 'Mock root cause explanation',
+        likelihood: 88,
+        evidence: ['Evidence line 1', 'Evidence line 2'],
+      },
+      { category: 'test-bug', rootCause: 'Alternative cause', likelihood: 30, evidence: ['Alt evidence'] },
+    ],
     suggestedFix: {
       description: 'Mock suggested fix',
       file: 'tests/mock.spec.ts',
       code: null,
+      patch: null,
     },
+    investigationSteps: ['Check the auth endpoint logs'],
     preventionTips: ['Add more tests'],
   };
 }
@@ -198,6 +212,13 @@ test.describe.serial('AI diagnosis endpoints', () => {
     expect(diagnosis.confidence).toBe('high');
     expect(typeof diagnosis.summary).toBe('string');
     expect(typeof diagnosis.rootCause).toBe('string');
+    // Structured Phase-1 fields are persisted in details
+    expect(diagnosis.details.confidenceScore).toBe(88);
+    expect(diagnosis.details.severity).toBe('high');
+    expect(diagnosis.details.affectedArea).toBe('auth / login');
+    expect(Array.isArray(diagnosis.details.hypotheses)).toBe(true);
+    expect(diagnosis.details.hypotheses.length).toBeGreaterThanOrEqual(2);
+    expect(Array.isArray(diagnosis.details.investigationSteps)).toBe(true);
   });
 
   test('GET /api/failure-clusters/:id/diagnosis returns the stored diagnosis', async ({ request }) => {
@@ -259,6 +280,33 @@ test.describe.serial('AI diagnosis endpoints', () => {
     expect(group.diagnosis).toBeDefined();
     expect(group.diagnosis.status).toBe('completed');
     expect(group.diagnosis.category).toBe('app-bug');
+  });
+
+  test('a configured researchModel runs a two-stage pipeline', async ({ request }) => {
+    expect(clusterId).toBeTruthy();
+
+    // Add a distinct research model; both stages hit the same mock server.
+    const put = await request.put('/api/settings/ai', {
+      data: {
+        provider: 'openai',
+        model: 'gpt-test',
+        researchModel: 'gpt-research-small',
+        baseUrl: `http://127.0.0.1:${mockPort}/v1`,
+        autoDiagnose: false,
+      },
+    });
+    expect(put.ok()).toBeTruthy();
+
+    const res = await request.post(`/api/failure-clusters/${clusterId}/diagnose?force=true`);
+    expect(res.ok()).toBeTruthy();
+    const d = await res.json();
+    expect(d.status).toBe('completed');
+    expect(Array.isArray(d.details.pipeline)).toBe(true);
+    expect(d.details.pipeline).toHaveLength(2);
+    expect(d.details.pipeline[0].role).toBe('research');
+    expect(d.details.pipeline[1].role).toBe('diagnosis');
+    // Total tokens are summed across both stages
+    expect(d.inputTokens).toBeGreaterThan(0);
   });
 });
 

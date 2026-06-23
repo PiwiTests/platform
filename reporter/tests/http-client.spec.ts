@@ -1,5 +1,4 @@
-import { describe, it } from 'node:test';
-import * as assert from 'node:assert/strict';
+import { describe, it, expect } from 'vitest';
 import * as http from 'http';
 import { HttpClient } from '../src/http-client.js';
 import { Logger } from '../src/logger.js';
@@ -46,17 +45,17 @@ describe('HttpClient (against fake http.Server)', () => {
   describe('postJSON', () => {
     it('sends a JSON POST and parses the response', async () => {
       const { server, url, requests } = await startServer((req, res) => {
-        assert.equal(req.method, 'POST');
-        assert.equal(req.url, '/api/echo');
+        expect(req.method).toBe('POST');
+        expect(req.url).toBe('/api/echo');
         jsonRes(res, 200, { ok: true, echoed: JSON.parse(req.body) });
       });
       try {
         const client = new HttpClient(url, new Logger(false));
         const out = await client.postJSON('/api/echo', { hello: 'world' }, null);
-        assert.equal(out.ok, true);
-        assert.deepEqual(out.echoed, { hello: 'world' });
-        assert.equal(requests.length, 1);
-        assert.equal(requests[0].headers['content-type'], 'application/json');
+        expect(out.ok).toBe(true);
+        expect(out.echoed).toEqual({ hello: 'world' });
+        expect(requests.length).toBe(1);
+        expect(requests[0].headers['content-type']).toBe('application/json');
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
@@ -66,7 +65,7 @@ describe('HttpClient (against fake http.Server)', () => {
       const { server, url } = await startServer((_req, res) => jsonRes(res, 404, { error: 'nope' }));
       try {
         const client = new HttpClient(url, new Logger(false));
-        await assert.rejects(client.postJSON('/api/x', {}, null), /Request failed with status 404/);
+        await expect(client.postJSON('/api/x', {}, null)).rejects.toThrow(/Request failed with status 404/);
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
@@ -80,7 +79,7 @@ describe('HttpClient (against fake http.Server)', () => {
       try {
         const client = new HttpClient(url, new Logger(false));
         const out = await client.postJSON('/api/x', {}, null);
-        assert.deepEqual(out, {});
+        expect(out).toEqual({});
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
@@ -91,8 +90,8 @@ describe('HttpClient (against fake http.Server)', () => {
       try {
         const client = new HttpClient(url, new Logger(false));
         await client.postJSON('/api/x', {}, 'pd_secret123');
-        assert.equal(requests[0].headers['authorization'], 'Bearer pd_secret123');
-        assert.equal(requests[0].headers['cookie'], undefined);
+        expect(requests[0].headers['authorization']).toBe('Bearer pd_secret123');
+        expect(requests[0].headers['cookie']).toBe(undefined);
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
@@ -103,8 +102,8 @@ describe('HttpClient (against fake http.Server)', () => {
       try {
         const client = new HttpClient(url, new Logger(false));
         await client.postJSON('/api/x', {}, 'session=abc; path=/');
-        assert.equal(requests[0].headers['cookie'], 'session=abc; path=/');
-        assert.equal(requests[0].headers['authorization'], undefined);
+        expect(requests[0].headers['cookie']).toBe('session=abc; path=/');
+        expect(requests[0].headers['authorization']).toBe(undefined);
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
@@ -114,7 +113,7 @@ describe('HttpClient (against fake http.Server)', () => {
   describe('login', () => {
     it('returns the session cookie on 200', async () => {
       const { server, url, requests } = await startServer((req, res) => {
-        assert.deepEqual(JSON.parse(req.body), { username: 'u', password: 'p' });
+        expect(JSON.parse(req.body)).toEqual({ username: 'u', password: 'p' });
         res.writeHead(200, {
           'Content-Type': 'application/json',
           'Set-Cookie': ['session=abc; Path=/', 'other=xyz; HttpOnly'],
@@ -124,8 +123,8 @@ describe('HttpClient (against fake http.Server)', () => {
       try {
         const client = new HttpClient(url, new Logger(false));
         const cookie = await client.login('u', 'p');
-        assert.equal(cookie, 'session=abc; other=xyz');
-        assert.equal(requests[0].url, '/api/auth/login');
+        expect(cookie).toBe('session=abc; other=xyz');
+        expect(requests[0].url).toBe('/api/auth/login');
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
@@ -138,7 +137,7 @@ describe('HttpClient (against fake http.Server)', () => {
       });
       try {
         const client = new HttpClient(url, new Logger(false));
-        await assert.rejects(client.login('u', 'p'), /no session cookie/);
+        await expect(client.login('u', 'p')).rejects.toThrow(/no session cookie/);
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
@@ -148,7 +147,7 @@ describe('HttpClient (against fake http.Server)', () => {
       const { server, url } = await startServer((_req, res) => jsonRes(res, 401, { error: 'bad' }));
       try {
         const client = new HttpClient(url, new Logger(false));
-        await assert.rejects(client.login('u', 'p'), /Login failed with status 401/);
+        await expect(client.login('u', 'p')).rejects.toThrow(/Login failed with status 401/);
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
@@ -161,8 +160,8 @@ describe('HttpClient (against fake http.Server)', () => {
       try {
         const client = new HttpClient(url, new Logger(false));
         const auth = await client.resolveAuth({ apiKey: 'pd_key', username: 'u', password: 'p' });
-        assert.equal(auth, 'pd_key');
-        assert.equal(requests.length, 0); // no login call
+        expect(auth).toBe('pd_key');
+        expect(requests.length).toBe(0); // no login call
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
@@ -173,7 +172,7 @@ describe('HttpClient (against fake http.Server)', () => {
       try {
         const client = new HttpClient(url, new Logger(false));
         const auth = await client.resolveAuth({ apiKey: null, username: null, password: null });
-        assert.equal(auth, null);
+        expect(auth).toBe(null);
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
@@ -187,8 +186,8 @@ describe('HttpClient (against fake http.Server)', () => {
       try {
         const client = new HttpClient(url, new Logger(false));
         const auth = await client.resolveAuth({ apiKey: null, username: 'u', password: 'p' });
-        assert.equal(auth, 'sess=1');
-        assert.equal(requests[0].url, '/api/auth/login');
+        expect(auth).toBe('sess=1');
+        expect(requests[0].url).toBe('/api/auth/login');
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
@@ -203,7 +202,7 @@ describe('HttpClient (against fake http.Server)', () => {
       });
       try {
         const client = new HttpClient(url, new Logger(false), 100);
-        await assert.rejects(client.postJSON('/api/slow', {}, null), /timed out after 100ms/);
+        await expect(client.postJSON('/api/slow', {}, null)).rejects.toThrow(/timed out after 100ms/);
       } finally {
         // Drop the hung connection and stop accepting new ones.
         (server as any).closeAllConnections?.();

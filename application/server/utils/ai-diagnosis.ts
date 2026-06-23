@@ -13,6 +13,7 @@ import { callAiProvider, resolveAiConfig } from './ai-provider';
 import type { AiAttachedImage } from './ai-provider';
 import { buildDiagnosisContext } from './ai-context';
 import { buildDiagnosisSystemPrompt } from './ai-system-prompt';
+import { RESEARCH_SYSTEM_PROMPT, RESEARCH_JSON_SCHEMA, parseResearchJson, formatResearchBlock } from './ai-research';
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>;
 
@@ -33,6 +34,52 @@ export function isDiagnosisStale(row: FailureDiagnosis): boolean {
 /** Default model when none is configured (Anthropic only; OpenAI requires an explicit model). */
 function resolveModel(config: AiConfig): string {
   return config.model || (config.provider === 'anthropic' ? 'claude-opus-4-8' : config.model);
+}
+
+/**
+ * High-signal sections included in the lean projection sent to the research
+ * model. The heavy sections (full test source, console, network, ARIA, SCM
+ * patches) are deliberately excluded — the research stage only narrows the
+ * search, so it gets a cheap summary view while the final stage sees everything.
+ */
+const CORE_RESEARCH_SECTIONS = new Set([
+  'clusterSummary',
+  'sampleError',
+  'executionError',
+  'runContext',
+  'recurrenceFlakiness',
+  'retryProgression',
+  'baselineComparison',
+  'browserDistribution',
+  'failingSteps',
+  'testAnnotations',
+  'priorDiagnosis',
+]);
+const RESEARCH_PROJECTION_CAP = 8000;
+
+const SCM_GAP_RE = /\b(scm|commit|diff|regression|changed files?|git|bisect|last green|since .*green)\b/i;
+
+/** Whether the research stage's findings warrant fetching the SCM diff. */
+function researchWantsScm(research: { dataGaps: string[]; notes: string }): boolean {
+  return research.dataGaps.some((g) => SCM_GAP_RE.test(g)) || SCM_GAP_RE.test(research.notes);
+}
+
+/** Build the compact, token-cheap context the research stage analyzes. */
+function buildResearchProjection(ctx: { sections: Array<{ id: string; markdown: string }> }): string {
+  const presentIds = [...new Set(ctx.sections.map((s) => s.id))];
+  const core = ctx.sections.filter((s) => CORE_RESEARCH_SECTIONS.has(s.id));
+  const scmHint = presentIds.includes('scmInvestigation')
+    ? ''
+    : '\nThe SCM diff (changes since the last green run) has NOT been fetched yet — include "scmInvestigation" in dataGaps if you suspect a regression and it should be pulled in for the final diagnosis.';
+  const head =
+    `Sections available in the full context: ${presentIds.join(', ')}.\n` +
+    '(This research view includes only the high-signal summary sections; the senior engineer sees the rest.)' +
+    scmHint;
+  let text = [head, ...core.map((s) => s.markdown)].filter(Boolean).join('\n\n');
+  if (text.length > RESEARCH_PROJECTION_CAP) {
+    text = text.slice(0, RESEARCH_PROJECTION_CAP) + '\n[... research view truncated ...]';
+  }
+  return text;
 }
 
 /** Column values that reset a diagnosis row to the 'running' state (shared by insert + update). */
@@ -134,31 +181,105 @@ export async function runClusterDiagnosis(
   const t0 = Date.now();
 
   try {
-    const ctx = isExecutionScope
-      ? await buildDiagnosisContext(db, {
-          kind: 'execution',
-          clusterId: cluster.id,
-          testRunsCaseId: opts!.testRunsCaseId!,
-          baseCommit: opts?.baseCommit,
-          selectedCommitShas: opts?.selectedCommitShas,
-        })
-      : await buildDiagnosisContext(db, {
-          kind: 'cluster',
-          clusterId: cluster.id,
-          baseCommit: opts?.baseCommit,
-          selectedCommitShas: opts?.selectedCommitShas,
+    const buildCtx = (skipScm: boolean) =>
+      isExecutionScope
+        ? buildDiagnosisContext(db, {
+            kind: 'execution',
+            clusterId: cluster.id,
+            testRunsCaseId: opts!.testRunsCaseId!,
+            baseCommit: opts?.baseCommit,
+            selectedCommitShas: opts?.selectedCommitShas,
+            skipScm,
+          })
+        : buildDiagnosisContext(db, {
+            kind: 'cluster',
+            clusterId: cluster.id,
+            baseCommit: opts?.baseCommit,
+            selectedCommitShas: opts?.selectedCommitShas,
+            skipScm,
+          });
+
+    type PipelineStage = { role: string; model: string; inputTokens: number | null; outputTokens: number | null };
+    const pipeline: PipelineStage[] = [];
+
+    // Resolve the research stage config (its own provider/key/baseUrl, falling
+    // back to the main ones) and decide whether a distinct research pass runs.
+    const researchModel = config.researchModel?.trim();
+    const researchConfig: AiConfig | null = researchModel
+      ? {
+          ...config,
+          provider: config.researchProvider || config.provider,
+          model: researchModel,
+          baseUrl: config.researchBaseUrl ?? config.baseUrl,
+          apiKey: config.researchApiKey || config.apiKey,
+        }
+      : null;
+    const useResearch =
+      researchConfig != null &&
+      !(
+        researchConfig.provider === config.provider &&
+        researchConfig.model === config.model &&
+        (researchConfig.baseUrl ?? null) === (config.baseUrl ?? null)
+      );
+
+    // The user may have pinned a baseline/commits — always fetch SCM then.
+    const manualScm = Boolean(opts?.baseCommit || opts?.selectedCommitShas?.length);
+
+    // Two-stage pipeline: the research model pre-analyzes a lean, SCM-free
+    // projection of the context. Its hints are folded into the final prompt, and
+    // — targeted expansion — the expensive SCM diff is only fetched when the
+    // research flags it (or the user pinned commits). A research failure is
+    // non-fatal: we fall back to single-stage with SCM included.
+    let ctx = await buildCtx(useResearch);
+    let researchBlock = '';
+    if (useResearch) {
+      try {
+        const research = await callAiProvider(researchConfig!, {
+          system: RESEARCH_SYSTEM_PROMPT,
+          user: buildResearchProjection(ctx),
+          jsonSchema: RESEARCH_JSON_SCHEMA,
+          maxTokens: 2048,
         });
+        pipeline.push({
+          role: 'research',
+          model: research.model,
+          inputTokens: research.inputTokens,
+          outputTokens: research.outputTokens,
+        });
+        const parsed = parseResearchJson(research.text);
+        researchBlock = formatResearchBlock(parsed);
+        // Targeted expansion: pay for the SCM fetch only when it's warranted.
+        if (researchWantsScm(parsed) || manualScm) {
+          ctx = await buildCtx(false);
+        }
+      } catch (e) {
+        console.error('[ai-diagnosis] research stage failed, falling back to single-stage:', e);
+        ctx = await buildCtx(false);
+      }
+    }
+
     const extra = opts?.additionalContext?.trim();
-    const fullUserContent = extra ? `${ctx.text}\n\n## Additional Context Provided by User\n${extra}` : ctx.text;
+    const baseContent = extra ? `${ctx.text}\n\n## Additional Context Provided by User\n${extra}` : ctx.text;
+    const userContent = researchBlock ? `${baseContent}\n\n${researchBlock}` : baseContent;
     // Merge auto-resolved screenshots (D1) with user-provided images
     const allImages = [...(ctx.images ?? []), ...(opts?.images ?? [])];
+    const images = allImages.length > 0 ? allImages : undefined;
+
     const result = await callAiProvider(config, {
       system: systemPrompt,
-      user: fullUserContent,
+      user: userContent,
       jsonSchema: DIAGNOSIS_JSON_SCHEMA,
-      images: allImages.length > 0 ? allImages : undefined,
+      images,
+    });
+    pipeline.push({
+      role: 'diagnosis',
+      model: result.model,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
     });
     const diagnosis = parseDiagnosisJson(result.text);
+
+    const sumTokens = (k: 'inputTokens' | 'outputTokens') => pipeline.reduce((acc, s) => acc + (s[k] ?? 0), 0) || null;
 
     const whereClause = isExecutionScope
       ? and(eq(failureDiagnoses.testRunsCaseId, opts!.testRunsCaseId!), eq(failureDiagnoses.scope, 'execution'))
@@ -177,10 +298,16 @@ export async function runClusterDiagnosis(
           evidence: diagnosis.evidence,
           suggestedFix: diagnosis.suggestedFix,
           preventionTips: diagnosis.preventionTips,
+          confidenceScore: diagnosis.confidenceScore,
+          severity: diagnosis.severity,
+          affectedArea: diagnosis.affectedArea,
+          hypotheses: diagnosis.hypotheses,
+          investigationSteps: diagnosis.investigationSteps,
+          ...(pipeline.length > 1 ? { pipeline } : {}),
         },
         error: null,
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
+        inputTokens: sumTokens('inputTokens'),
+        outputTokens: sumTokens('outputTokens'),
         durationMs: Date.now() - t0,
         updatedAt: new Date(),
       })

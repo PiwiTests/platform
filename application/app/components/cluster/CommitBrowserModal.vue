@@ -163,6 +163,9 @@ function confirm() {
     :ui="{ content: 'max-w-6xl', body: 'p-0 overflow-hidden' }"
     @update:open="emit('update:open', $event)"
   >
+    <template #title>
+      <span class="inline-flex items-center gap-1">Browse commits <HelpHint topic="cluster.commit-browser" /></span>
+    </template>
     <template #body>
       <div class="flex h-[72vh] overflow-hidden">
         <!-- ── Left: commit list ─────────────────────────────────────── -->

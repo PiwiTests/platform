@@ -162,6 +162,7 @@ const columns: TableColumn<ProjectWithStats>[] = [
           <UBreadcrumb :items="[{ label: 'Home', icon: 'i-lucide-house', to: '/' }, { label: 'Projects' }]" />
         </template>
         <template #right>
+          <HelpHint topic="projects.table" size="sm" />
           <UButton icon="i-lucide-plus" size="md" label="New project" @click="isNewProjectModalOpen = true" />
           <UButton icon="i-lucide-refresh-cw" size="md" label="Refresh" variant="outline" @click="() => refresh()" />
         </template>
@@ -180,7 +181,9 @@ const columns: TableColumn<ProjectWithStats>[] = [
         />
 
         <div v-if="allTags.length > 0" class="flex flex-wrap items-center gap-2">
-          <span class="text-sm text-muted shrink-0">Filter by tag (any match):</span>
+          <span class="text-sm text-muted shrink-0 inline-flex items-center gap-1">
+            Filter by tag (any match): <HelpHint topic="projects.tag-filter" />
+          </span>
           <button
             v-for="tag in allTags"
             :key="tag.id"

@@ -7,6 +7,10 @@ lang: en-US
 
 The Piwi Dashboard is a single-page application built with [Nuxt UI](https://ui.nuxt.com). It uses a sidebar navigation layout with real-time updates via Server-Sent Events — pages refresh automatically when test runs start or finish, without requiring manual reload.
 
+## Inline help
+
+Throughout the dashboard, blocks that aren't self-explanatory carry a small muted help icon (a circled question mark) next to their title. Click it for a short explanation of the feature and, where available, a **Learn more** link to the relevant documentation page. The icon is keyboard-focusable and the popover closes with `Esc`. Self-explanatory blocks (counters, search boxes, basic forms) intentionally have no icon, keeping the interface uncluttered.
+
 ## Navigation structure
 
 The dashboard sidebar provides access to the main sections:

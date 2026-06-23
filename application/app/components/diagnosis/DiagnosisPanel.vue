@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { FailureDiagnosis } from '~~/server/database/schema';
+import { extractCitedSectionIds } from '#shared/diagnosis-sections';
 
 const props = defineProps<{
   clusterId?: number;
@@ -37,6 +38,32 @@ const fileInputRef = ref<HTMLInputElement | null>(null);
 
 const showAiContext = ref(false);
 const showAdditionalContext = ref(false);
+const focusSection = ref<string | null>(null);
+
+/** Open the AI context modal focused on a section (from an evidence citation). */
+function onViewSection(sectionId: string) {
+  focusSection.value = sectionId;
+  showAiContext.value = true;
+}
+
+/** Section ids the diagnosis actually cited — highlighted in the context modal. */
+const citedSections = computed<string[]>(() => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const det = diagnosis.value?.details as any;
+  if (!det) return [];
+  const texts: string[] = [];
+  if (Array.isArray(det.evidence)) texts.push(...det.evidence);
+  if (Array.isArray(det.hypotheses)) {
+    for (const h of det.hypotheses) if (Array.isArray(h?.evidence)) texts.push(...h.evidence);
+  }
+  return extractCitedSectionIds(texts);
+});
+
+/** Assisted iteration: pre-fill the additional-context box and open it. */
+function onPrefillContext(text: string) {
+  additionalContext.value = additionalContext.value ? `${additionalContext.value}\n\n${text}` : text;
+  showAdditionalContext.value = true;
+}
 
 function buildPromptContext() {
   const parts: string[] = [];
@@ -67,6 +94,7 @@ function isStale(d: FailureDiagnosis) {
         <div class="flex items-center gap-1.5">
           <UIcon name="i-lucide-sparkles" class="size-4 text-primary shrink-0" />
           <span class="text-sm font-semibold">Diagnosis</span>
+          <HelpHint topic="cluster.diagnosis" />
           <span class="text-xs text-gray-400">
             &mdash;
             <UIcon name="i-lucide-triangle-alert" class="size-3 shrink-0 inline" />
@@ -106,7 +134,12 @@ function isStale(d: FailureDiagnosis) {
       :sections="contextSections"
       :token-estimate="tokenEstimate"
       :loading="contextLoading"
-      @update:open="showAiContext = $event"
+      :focus-section="focusSection"
+      :cited-sections="citedSections"
+      @update:open="
+        showAiContext = $event;
+        if (!$event) focusSection = null;
+      "
       @refresh="refreshContext"
     />
 
@@ -114,16 +147,22 @@ function isStale(d: FailureDiagnosis) {
     <template v-if="aiStatus?.configured">
       <!-- Additional context (collapsible, collapsed by default) -->
       <div>
-        <button
-          class="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mb-1 w-full text-left"
-          @click="showAdditionalContext = !showAdditionalContext"
-        >
-          <UIcon :name="showAdditionalContext ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5" />
-          Additional context
-          <span v-if="attachedFiles.length || attachedImages.length || additionalContext.trim()" class="text-primary">
-            ({{ attachedFiles.length + attachedImages.length + (additionalContext.trim() ? 1 : 0) }})
-          </span>
-        </button>
+        <div class="flex items-center gap-1 mb-1">
+          <button
+            class="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-left"
+            @click="showAdditionalContext = !showAdditionalContext"
+          >
+            <UIcon
+              :name="showAdditionalContext ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+              class="size-3.5"
+            />
+            Additional context
+            <span v-if="attachedFiles.length || attachedImages.length || additionalContext.trim()" class="text-primary">
+              ({{ attachedFiles.length + attachedImages.length + (additionalContext.trim() ? 1 : 0) }})
+            </span>
+          </button>
+          <HelpHint topic="cluster.context-input" />
+        </div>
         <div v-if="showAdditionalContext">
           <div
             class="rounded-lg border-2 transition-colors"
@@ -195,9 +234,8 @@ function isStale(d: FailureDiagnosis) {
       </div>
 
       <!-- Diagnose button -->
-      <div class="pt-1">
+      <div v-if="!diagnosis || diagnosis.status === 'failed' || isStale(diagnosis)" class="pt-1">
         <UButton
-          v-if="!diagnosis || diagnosis.status === 'failed' || isStale(diagnosis)"
           icon="i-lucide-sparkles"
           size="sm"
           color="primary"
@@ -207,25 +245,39 @@ function isStale(d: FailureDiagnosis) {
         >
           Diagnose with AI
         </UButton>
-        <div
-          v-else-if="diagnosis.status === 'running' && !isStale(diagnosis)"
-          class="flex items-center gap-2 text-sm text-gray-500"
-        >
-          <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
+      </div>
+
+      <!-- Loading skeleton while a diagnosis runs -->
+      <div
+        v-if="diagnosis?.status === 'running' && !isStale(diagnosis)"
+        class="space-y-3 rounded-lg border border-default p-4 bg-elevated/30"
+      >
+        <div class="flex items-center gap-2 text-sm text-gray-500">
+          <UIcon name="i-lucide-loader-2" class="size-4 animate-spin text-primary" />
           <span>Analyzing failure cluster\u2026</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="size-12 rounded-full bg-elevated animate-pulse shrink-0" />
+          <div class="flex-1 space-y-2">
+            <div class="h-3 w-1/3 rounded bg-elevated animate-pulse" />
+            <div class="h-3 w-3/4 rounded bg-elevated animate-pulse" />
+          </div>
+        </div>
+        <div class="space-y-2">
+          <div class="h-3 w-full rounded bg-elevated animate-pulse" />
+          <div class="h-3 w-5/6 rounded bg-elevated animate-pulse" />
+          <div class="h-3 w-2/3 rounded bg-elevated animate-pulse" />
         </div>
       </div>
 
       <!-- Diagnosis result -->
-      <DiagnosisResult :diagnosis="diagnosis" :last-seen-run-id="lastSeenRunId" />
-
-      <div
-        v-if="diagnosis?.status === 'running' && !isStale(diagnosis)"
-        class="flex items-center gap-2 p-4 text-sm text-gray-500 border border-default rounded-lg"
-      >
-        <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" />
-        <span>Analyzing failure cluster\u2026</span>
-      </div>
+      <DiagnosisResult
+        v-else
+        :diagnosis="diagnosis"
+        :last-seen-run-id="lastSeenRunId"
+        @view-section="onViewSection"
+        @prefill-context="onPrefillContext"
+      />
     </template>
 
     <!-- AI not configured -->
@@ -234,7 +286,9 @@ function isStale(d: FailureDiagnosis) {
         class="flex flex-col items-center justify-center p-8 text-center text-gray-400 border border-dashed border-default rounded-lg"
       >
         <UIcon name="i-lucide-sparkles" class="size-8 mb-2 opacity-30" />
-        <p class="text-sm">AI diagnosis is not configured</p>
+        <p class="text-sm inline-flex items-center gap-1">
+          AI diagnosis is not configured <HelpHint topic="cluster.ai-setup" />
+        </p>
         <UButton to="/settings/ai" size="xs" color="neutral" variant="outline" class="mt-3">
           Configure in Settings
         </UButton>
