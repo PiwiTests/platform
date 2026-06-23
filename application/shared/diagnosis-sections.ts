@@ -31,6 +31,7 @@ export const DIAGNOSIS_SECTIONS: DiagnosisSectionMeta[] = [
   { id: 'browserDistribution', label: 'Browser distribution', short: 'Browsers' },
   { id: 'recurrenceFlakiness', label: 'Recurrence & flakiness', short: 'Flakiness' },
   { id: 'baselineComparison', label: 'Compared to last pass (duration/vitals/steps)', short: 'Baseline' },
+  { id: 'retryProgression', label: 'Retry progression (per-attempt errors)', short: 'Retries' },
   { id: 'passedPeers', label: 'Passing peers in same file', short: 'Peers' },
   { id: 'scmInvestigation', label: 'SCM diff since last green', short: 'SCM diff' },
   { id: 'selectedCommits', label: 'Manually selected commits', short: 'Commits' },

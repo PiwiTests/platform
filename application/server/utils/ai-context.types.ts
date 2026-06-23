@@ -34,6 +34,7 @@ export type SectionId =
   | 'ariaSnapshot'
   | 'recurrenceFlakiness'
   | 'baselineComparison'
+  | 'retryProgression'
   | 'scmInvestigation'
   | 'selectedCommits'
   | 'priorDiagnosis'

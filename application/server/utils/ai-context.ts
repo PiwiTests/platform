@@ -243,6 +243,7 @@ async function loadRepresentativeExecution(db: DbClient, cluster: FailureCluster
       workerIndex: testRunsCases.workerIndex,
       shardIndex: testRunsCases.shardIndex,
       testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
       testTitle: testCases.title,
       testFilePath: testCases.filePath,
       testSuitePath: testCases.suitePath,
@@ -444,6 +445,52 @@ async function baselineComparisonSection(db: DbClient, rep: RepresentativeRow): 
 
   if (lines.length === 0) return null;
   return `## Compared to Last Pass\nSame test, failing execution vs its recent passing runs:\n${lines.join('\n')}`;
+}
+
+/**
+ * Per-attempt error progression for the failing test in its run. Each retry is
+ * already stored as its own row (dedup key includes `retries`), so this needs no
+ * extra collection. The progression discriminates a deterministic bug (same
+ * error every attempt) from flakiness (passes on retry) or a race (differing
+ * errors).
+ */
+async function retryProgressionSection(db: DbClient, rep: RepresentativeRow): Promise<string | null> {
+  if (rep.testCaseId == null) return null;
+
+  const conds = [eq(testRunsCases.testRunId, rep.testRunId), eq(testRunsCases.testCaseId, rep.testCaseId)];
+  if (rep.browserName) conds.push(eq(testRunsCases.browserName, rep.browserName));
+
+  const attempts = await db
+    .select({ retries: testRunsCases.retries, status: testRunsCases.status, error: testRunsCases.error })
+    .from(testRunsCases)
+    .where(and(...conds))
+    .orderBy(testRunsCases.retries);
+
+  if (attempts.length <= 1) return null;
+
+  const firstLine = (e: string | null) =>
+    e
+      ? (stripAnsi(e)
+          .split('\n')
+          .find((l) => l.trim()) ?? '')
+      : '';
+  const lines = attempts.map((a) => {
+    const head = a.error ? firstLine(a.error).slice(0, 200) : '(no error)';
+    return `- Attempt ${a.retries ?? 0} — ${a.status}: ${head}`;
+  });
+
+  const failHeads = attempts.filter((a) => a.error).map((a) => firstLine(a.error));
+  const passed = attempts.some((a) => a.status === 'passed');
+  const allSameError = failHeads.length > 1 && failHeads.every((h) => h === failHeads[0]);
+  let insight: string;
+  if (passed) {
+    insight = `The test passed on retry — an intermittent/flaky failure${allSameError ? ' (the same error on each failing attempt)' : ''}.`;
+  } else if (allSameError) {
+    insight = 'Every attempt failed with the same error — points to a deterministic bug, not flakiness.';
+  } else {
+    insight = 'Attempts failed with differing errors — suggests an unstable environment or a race condition.';
+  }
+  return `## Retry Progression\n${insight}\n${lines.join('\n')}`;
 }
 
 /** Tests in the same file that passed in the representative execution's run (D5). */
@@ -1119,6 +1166,9 @@ export async function buildDiagnosisContext(
 
       // Compared to last pass (duration/vitals/console/steps deltas)
       push(section('baselineComparison', 'Compared to Last Pass', await baselineComparisonSection(db, rep)));
+
+      // Retry progression (per-attempt error evolution)
+      push(section('retryProgression', 'Retry Progression', await retryProgressionSection(db, rep)));
 
       // D2/D3: Recurrence & flakiness
       const flakinessText = await recurrenceFlakinessSection(db, cluster, limits);
