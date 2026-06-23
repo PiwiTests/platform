@@ -234,6 +234,7 @@ export default eventHandler(async (event) => {
       passedTests: sql`${testRuns.passedTests} + ${insertedStatusCounts['passed'] || 0}`,
       failedTests: sql`${testRuns.failedTests} + ${insertedStatusCounts['failed'] || 0}`,
       skippedTests: sql`${testRuns.skippedTests} + ${insertedStatusCounts['skipped'] || 0}`,
+      didNotRunTests: sql`${testRuns.didNotRunTests} + ${insertedStatusCounts['didnotrun'] || 0}`,
     })
     .where(eq(testRuns.id, id))
     .returning();
@@ -269,6 +270,7 @@ export default eventHandler(async (event) => {
         passedTests: updatedRun.passedTests,
         failedTests: updatedRun.failedTests,
         skippedTests: updatedRun.skippedTests,
+        didNotRunTests: updatedRun.didNotRunTests,
       },
     });
   }

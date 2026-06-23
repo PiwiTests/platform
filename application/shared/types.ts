@@ -19,7 +19,11 @@ export type TestRunStatus =
   | 'initialising'
   | 'finalizing';
 
-export type TestCaseStatus = 'passed' | 'failed' | 'skipped' | 'timedout';
+// `didnotrun` = a test that never executed: cut short by `maxFailures` or
+// skipped as a side effect of an earlier failure in a `describe.serial` group.
+// Distinct from `skipped`, which is reserved for intentional `test.skip()` /
+// `test.fixme()`.
+export type TestCaseStatus = 'passed' | 'failed' | 'skipped' | 'timedout' | 'didnotrun';
 
 export type ClusterStatus = 'open' | 'resolved' | 'ignored';
 
@@ -103,6 +107,7 @@ export interface TestRunCounters {
   passedTests: number;
   failedTests: number;
   skippedTests: number;
+  didNotRunTests?: number;
   flakyTests?: number;
   duration?: number;
 }
@@ -128,6 +133,7 @@ export interface TestRunSubmitPayload {
   passedTests?: number;
   failedTests?: number;
   skippedTests?: number;
+  didNotRunTests?: number;
   environment?: string | null;
   label?: string | null;
   metadata?: Record<string, unknown> | null;
@@ -193,6 +199,7 @@ export interface TestRunFinishPayload {
   passedTests: number;
   failedTests: number;
   skippedTests: number;
+  didNotRunTests?: number;
   flakyTests: number;
   durations: number[];
   label?: string | null;

@@ -149,6 +149,7 @@ export interface ProjectWithStats {
     passedTests: number;
     failedTests: number;
     skippedTests: number;
+    didNotRunTests: number;
     flakyTests: number;
     totalTests: number;
     reports?: ReportInfo[];
@@ -206,6 +207,7 @@ export interface TestRunSummary {
   passedTests: number;
   failedTests: number;
   skippedTests: number;
+  didNotRunTests: number;
   flakyTests: number;
   avgTestDuration?: number | null;
   p90TestDuration?: number | null;
@@ -233,6 +235,7 @@ export interface TestRunDetails {
   passedTests: number;
   failedTests: number;
   skippedTests: number;
+  didNotRunTests: number;
   flakyTests: number;
   avgTestDuration?: number | null;
   p90TestDuration?: number | null;
@@ -293,6 +296,7 @@ export interface TestRunForChart {
   passedTests: number;
   failedTests: number;
   skippedTests: number;
+  didNotRunTests: number;
   flakyTests: number;
   totalTests: number;
   duration?: number | null;
@@ -691,6 +695,7 @@ export interface TestRunSubmitBody {
   passedTests: number;
   failedTests: number;
   skippedTests: number;
+  didNotRunTests: number;
   flakyTests?: number;
   environment?: string;
   label?: string | null;

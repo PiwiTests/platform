@@ -44,6 +44,7 @@ async function cleanupStaleRuns() {
             passedTests: 0,
             failedTests: 0,
             skippedTests: 0,
+            didNotRunTests: 0,
           },
         });
         runEventBus.cleanup(run.id);

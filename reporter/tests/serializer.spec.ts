@@ -209,6 +209,7 @@ describe('serializeRun', () => {
   it('includes all run-level fields exactly once', () => {
     const body = serializeRun(makePayload(), { includeTestCases: false });
     expect(Object.keys(body).sort()).toEqual([
+      'didNotRunTests',
       'duration',
       'environment',
       'failedTests',

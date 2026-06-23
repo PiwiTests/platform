@@ -37,6 +37,7 @@ export const testRuns = sqliteTable(
     passedTests: integer('passed_tests').notNull().default(0),
     failedTests: integer('failed_tests').notNull().default(0),
     skippedTests: integer('skipped_tests').notNull().default(0),
+    didNotRunTests: integer('did_not_run_tests').notNull().default(0), // Tests that never executed (maxFailures cutoff or serial-group failure)
     flakyTests: integer('flaky_tests').notNull().default(0),
     avgTestDuration: integer('avg_test_duration'), // average test case duration in ms
     p90TestDuration: integer('p90_test_duration'), // 90th percentile test duration in ms

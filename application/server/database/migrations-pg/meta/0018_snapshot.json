@@ -1,5 +1,5 @@
 {
-  "id": "684768d0-23a7-4f42-bb60-4aa3a1b8a0d5",
+  "id": "ebd13ef6-f47a-4a1d-a3db-dbd4c55a3bca",
   "prevId": "17d2bac1-f8e1-4974-af25-fef47234be34",
   "version": "7",
   "dialect": "postgresql",
@@ -424,113 +424,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.failure_cluster_aliases": {
-      "name": "failure_cluster_aliases",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "fingerprint": {
-          "name": "fingerprint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cluster_id": {
-          "name": "cluster_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "idx_failure_cluster_aliases_project_fingerprint": {
-          "name": "idx_failure_cluster_aliases_project_fingerprint",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "fingerprint",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_failure_cluster_aliases_cluster": {
-          "name": "idx_failure_cluster_aliases_cluster",
-          "columns": [
-            {
-              "expression": "cluster_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "failure_cluster_aliases_project_id_projects_id_fk": {
-          "name": "failure_cluster_aliases_project_id_projects_id_fk",
-          "tableFrom": "failure_cluster_aliases",
-          "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "failure_cluster_aliases_cluster_id_failure_clusters_id_fk": {
-          "name": "failure_cluster_aliases_cluster_id_failure_clusters_id_fk",
-          "tableFrom": "failure_cluster_aliases",
-          "tableTo": "failure_clusters",
-          "columnsFrom": [
-            "cluster_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.failure_clusters": {
       "name": "failure_clusters",
       "schema": "",
@@ -614,18 +507,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "embedding": {
-          "name": "embedding",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "embedding_model": {
-          "name": "embedding_model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -2393,6 +2274,13 @@
         },
         "skipped_tests": {
           "name": "skipped_tests",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "did_not_run_tests": {
+          "name": "did_not_run_tests",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,

@@ -147,6 +147,17 @@ export function getStatusColor(status: string) {
   }
 }
 
+/**
+ * Human-readable label for a test-case status badge. Normalizes Playwright's
+ * `timedOut` to `failed` (as the UI treats timeouts as failures) and renders
+ * `didnotrun` as "didn't run".
+ */
+export function formatStatusLabel(status: string): string {
+  if (status === 'timedOut' || status === 'timedout') return 'failed';
+  if (status === 'didnotrun') return "didn't run";
+  return status;
+}
+
 /** Badge color for a failure-cluster triage status (open/resolved/ignored). */
 export function clusterStatusColor(status: string | null | undefined): 'success' | 'warning' | 'neutral' {
   const map: Record<string, 'success' | 'warning' | 'neutral'> = {

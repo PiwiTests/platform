@@ -5,6 +5,7 @@ const props = defineProps<{
   skipped: number;
   flaky: number;
   total: number;
+  didNotRun?: number;
 }>();
 
 const segments = computed(() => {
@@ -19,6 +20,7 @@ const segments = computed(() => {
     { key: 'failed', label: 'Failed', count: props.failed, color: 'bg-red-500' },
     { key: 'flaky', label: 'Flaky', count: props.flaky, color: 'bg-purple-500' },
     { key: 'skipped', label: 'Skipped', count: props.skipped, color: 'bg-gray-400' },
+    { key: 'didNotRun', label: "Didn't run", count: props.didNotRun ?? 0, color: 'bg-amber-300 dark:bg-amber-700' },
   ]
     .filter((s) => s.count > 0)
     .map((s) => ({

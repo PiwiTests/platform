@@ -93,6 +93,7 @@ export function serializeRun(payload: RunPayload, opts: SerializeRunOptions): Re
     passedTests: payload.passedTests,
     failedTests: payload.failedTests,
     skippedTests: payload.skippedTests,
+    didNotRunTests: payload.didNotRunTests ?? 0,
     environment: payload.environment ?? null,
     label: payload.label ?? null,
     metadata: payload.metadata,

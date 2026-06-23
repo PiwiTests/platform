@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "ff87db64-e8f4-4d34-9378-16ca1e13d4db",
-  "prevId": "9a3f8e5c-899d-4567-8b39-4859d3595ceb",
+  "id": "5ecc176f-313e-49ed-a5ec-5b3580b49b53",
+  "prevId": "ff87db64-e8f4-4d34-9378-16ca1e13d4db",
   "tables": {
     "account_tokens": {
       "name": "account_tokens",
@@ -402,6 +402,94 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "failure_cluster_aliases": {
+      "name": "failure_cluster_aliases",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cluster_id": {
+          "name": "cluster_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_failure_cluster_aliases_project_fingerprint": {
+          "name": "idx_failure_cluster_aliases_project_fingerprint",
+          "columns": [
+            "project_id",
+            "fingerprint"
+          ],
+          "isUnique": true
+        },
+        "idx_failure_cluster_aliases_cluster": {
+          "name": "idx_failure_cluster_aliases_cluster",
+          "columns": [
+            "cluster_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "failure_cluster_aliases_project_id_projects_id_fk": {
+          "name": "failure_cluster_aliases_project_id_projects_id_fk",
+          "tableFrom": "failure_cluster_aliases",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "failure_cluster_aliases_cluster_id_failure_clusters_id_fk": {
+          "name": "failure_cluster_aliases_cluster_id_failure_clusters_id_fk",
+          "tableFrom": "failure_cluster_aliases",
+          "tableTo": "failure_clusters",
+          "columnsFrom": [
+            "cluster_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "failure_clusters": {
       "name": "failure_clusters",
       "columns": {
@@ -497,6 +585,20 @@
           "notNull": true,
           "autoincrement": false,
           "default": 0
+        },
+        "embedding": {
+          "name": "embedding",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "embedding_model": {
+          "name": "embedding_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "created_at": {
           "name": "created_at",

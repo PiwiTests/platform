@@ -24,6 +24,7 @@ export interface CollectedRun {
   failedTests: number;
   skippedTests: number;
   timedOutTests: number;
+  didNotRunTests: number;
   metadata: Record<string, any>;
   instanceId: string;
   shardInfo: ShardInfo | null;
@@ -74,7 +75,7 @@ export class RunSubmitter {
       `Test run completed. Status: ${overallStatus} (Playwright result.status: ${result?.status || 'undefined'})`,
     );
     this.logger.info(
-      `Total: ${run.totalTests}, Passed: ${run.passedTests}, Failed: ${run.failedTests}, Skipped: ${run.skippedTests}, TimedOut: ${run.timedOutTests}`,
+      `Total: ${run.totalTests}, Passed: ${run.passedTests}, Failed: ${run.failedTests}, Skipped: ${run.skippedTests}, TimedOut: ${run.timedOutTests}, DidNotRun: ${run.didNotRunTests}`,
     );
 
     if (run.options.collectPerformanceMetrics) {
@@ -127,6 +128,7 @@ export class RunSubmitter {
       passedTests: run.passedTests,
       failedTests: run.failedTests,
       skippedTests: run.skippedTests,
+      didNotRunTests: run.didNotRunTests,
       environment: run.options.environment,
       label: run.options.label || null,
       metadata: run.metadata,
@@ -161,6 +163,7 @@ export class RunSubmitter {
         passedTests: run.passedTests,
         failedTests: run.failedTests,
         skippedTests: run.skippedTests,
+        didNotRunTests: run.didNotRunTests,
         flakyTests,
         durations,
         label: run.options.label || null,
