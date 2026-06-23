@@ -8,6 +8,7 @@ import {
   testRuns,
   testRunsCases,
   failureClusters,
+  failureClusterAliases,
   failureDiagnoses,
   failureDiagnosisVersions,
 } from '../../server/database/schema';
@@ -64,6 +65,29 @@ export async function getOrCreateFailureClusters(
       await bumpExisting(cluster.id, p.count);
     }),
   );
+
+  // Route fingerprints that were absorbed by a prior merge to their surviving
+  // cluster (instead of forking a fresh one), via the alias table.
+  const unmatched = [...pending.keys()].filter((fp) => !ids.has(fp));
+  if (unmatched.length > 0) {
+    const aliases = await db
+      .select({ fingerprint: failureClusterAliases.fingerprint, clusterId: failureClusterAliases.clusterId })
+      .from(failureClusterAliases)
+      .where(
+        and(
+          eq(failureClusterAliases.projectId, projectId),
+          inArray(failureClusterAliases.fingerprint, unmatched),
+        ),
+      );
+    await Promise.all(
+      aliases.map(async (a) => {
+        const p = pending.get(a.fingerprint);
+        if (!p || ids.has(a.fingerprint)) return;
+        ids.set(a.fingerprint, a.clusterId);
+        await bumpExisting(a.clusterId, p.count);
+      }),
+    );
+  }
 
   const newFingerprints = [...pending.keys()].filter((fp) => !ids.has(fp));
   await Promise.all(
@@ -154,12 +178,28 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
     .where(eq(failureClusters.id, survivorId));
   const [victim] = await db
     .select({
+      projectId: failureClusters.projectId,
+      fingerprint: failureClusters.fingerprint,
       occurrences: failureClusters.occurrences,
       firstSeenRunId: failureClusters.firstSeenRunId,
       lastSeenRunId: failureClusters.lastSeenRunId,
     })
     .from(failureClusters)
     .where(eq(failureClusters.id, victimId));
+
+  // Record the victim's fingerprint → survivor so future failures with that
+  // fingerprint attach to the survivor, and re-home any aliases that pointed
+  // at the victim (keeps chained merges consistent).
+  if (victim) {
+    await db
+      .insert(failureClusterAliases)
+      .values({ projectId: victim.projectId, fingerprint: victim.fingerprint, clusterId: survivorId })
+      .onConflictDoNothing();
+    await db
+      .update(failureClusterAliases)
+      .set({ clusterId: survivorId })
+      .where(eq(failureClusterAliases.clusterId, victimId));
+  }
 
   if (survivor && victim) {
     await db

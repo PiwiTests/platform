@@ -140,6 +140,8 @@ export const failureClusters = sqliteTable(
     triageNote: text('triage_note'), // Optional comment attached when triaging (status change)
     manualBaseCommit: text('manual_base_commit'), // user-pinned baseline commit SHA for AI diagnosis diff context
     occurrences: integer('occurrences').notNull().default(0), // denormalized count of linked test_runs_cases rows (not decremented on run deletion)
+    embedding: text('embedding'), // JSON-encoded number[] — semantic centroid for near-duplicate clustering (Phase 2)
+    embeddingModel: text('embedding_model'), // model id that produced `embedding` (for invalidation)
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -153,6 +155,34 @@ export const failureClusters = sqliteTable(
       table.fingerprint,
     ),
     projectLastSeenIdx: index('idx_failure_clusters_project_last_seen').on(table.projectId, table.lastSeenRunId),
+  }),
+);
+
+// Fingerprint → surviving cluster routing. When two clusters are merged (e.g. the
+// embedding reconciler collapses near-duplicates), the absorbed cluster's
+// fingerprint is recorded here so future failures with that fingerprint attach to
+// the survivor instead of forking a fresh cluster.
+export const failureClusterAliases = sqliteTable(
+  'failure_cluster_aliases',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    fingerprint: text('fingerprint').notNull(),
+    clusterId: integer('cluster_id')
+      .notNull()
+      .references(() => failureClusters.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    projectFingerprintIdx: uniqueIndex('idx_failure_cluster_aliases_project_fingerprint').on(
+      table.projectId,
+      table.fingerprint,
+    ),
+    clusterIdx: index('idx_failure_cluster_aliases_cluster').on(table.clusterId),
   }),
 );
 
@@ -644,6 +674,8 @@ export type TestRunsCase = typeof testRunsCases.$inferSelect;
 export type NewTestRunsCase = typeof testRunsCases.$inferInsert;
 export type FailureCluster = typeof failureClusters.$inferSelect;
 export type NewFailureCluster = typeof failureClusters.$inferInsert;
+export type FailureClusterAlias = typeof failureClusterAliases.$inferSelect;
+export type NewFailureClusterAlias = typeof failureClusterAliases.$inferInsert;
 export type FailureDiagnosis = typeof failureDiagnoses.$inferSelect;
 export type NewFailureDiagnosis = typeof failureDiagnoses.$inferInsert;
 export type AppSetting = typeof appSettings.$inferSelect;

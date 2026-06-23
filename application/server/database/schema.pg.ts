@@ -140,6 +140,8 @@ export const failureClusters = pgTable(
     triageNote: text('triage_note'), // Optional comment attached when triaging (status change)
     manualBaseCommit: text('manual_base_commit'), // user-pinned baseline commit SHA for AI diagnosis diff context
     occurrences: integer('occurrences').notNull().default(0), // denormalized count of linked test_runs_cases rows (not decremented on run deletion)
+    embedding: text('embedding'), // JSON-encoded number[] — semantic centroid for near-duplicate clustering (Phase 2)
+    embeddingModel: text('embedding_model'), // model id that produced `embedding` (for invalidation)
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -153,6 +155,31 @@ export const failureClusters = pgTable(
       table.fingerprint,
     ),
     projectLastSeenIdx: index('idx_failure_clusters_project_last_seen').on(table.projectId, table.lastSeenRunId),
+  }),
+);
+
+// Fingerprint → surviving cluster routing (see schema.sqlite.ts for rationale).
+export const failureClusterAliases = pgTable(
+  'failure_cluster_aliases',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    fingerprint: text('fingerprint').notNull(),
+    clusterId: integer('cluster_id')
+      .notNull()
+      .references(() => failureClusters.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    projectFingerprintIdx: uniqueIndex('idx_failure_cluster_aliases_project_fingerprint').on(
+      table.projectId,
+      table.fingerprint,
+    ),
+    clusterIdx: index('idx_failure_cluster_aliases_cluster').on(table.clusterId),
   }),
 );
 

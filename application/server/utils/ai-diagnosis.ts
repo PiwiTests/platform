@@ -13,6 +13,7 @@ import { callAiProvider, resolveAiConfig } from './ai-provider';
 import type { AiAttachedImage } from './ai-provider';
 import { buildDiagnosisContext } from './ai-context';
 import { buildDiagnosisSystemPrompt } from './ai-system-prompt';
+import { reconcileNewClusters } from './cluster-reconcile';
 import { RESEARCH_SYSTEM_PROMPT, RESEARCH_JSON_SCHEMA, parseResearchJson, formatResearchBlock } from './ai-research';
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>;
@@ -361,6 +362,19 @@ async function snapshotDiagnosis(db: DbClient, diagnosisId: number): Promise<voi
 
 export async function autoDiagnoseRun(db: DbClient, projectId: number, runId: number): Promise<void> {
   const config = await resolveAiConfig(db);
+
+  // Always-on (when an embedding role is configured): collapse semantic
+  // near-duplicate clusters from this run before any diagnosis runs, so we don't
+  // diagnose a cluster that's about to be merged away. Independent of autoDiagnose.
+  if (config?.roles.embedding) {
+    try {
+      const { embedded, merged } = await reconcileNewClusters(db, projectId, runId, config.roles.embedding);
+      if (merged > 0) console.log(`[cluster-reconcile] run ${runId}: embedded ${embedded}, merged ${merged}`);
+    } catch (e) {
+      console.error('[cluster-reconcile] failed for run', runId, e);
+    }
+  }
+
   if (!config?.autoDiagnose) return;
 
   const clusters = await db
