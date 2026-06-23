@@ -5,6 +5,7 @@ import { join } from 'path';
 
 const baseConfig = defineConfig({
   testDir: './tests',
+  testMatch: '**/*.spec.ts',
 
   /* Run tests in files in parallel */
   fullyParallel: true,
