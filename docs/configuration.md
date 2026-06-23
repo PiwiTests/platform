@@ -14,7 +14,7 @@ Variables can go in `application/.env` (see `application/.env.example`) or be pa
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PIWI_SITE_URL` | — | Public base URL of the instance (e.g. `https://piwi.example.com`). Used to build links in emails. |
-| `PIWI_SECRET_KEY` | insecure dev default | Master key for AES-256-GCM encryption of secrets stored in the database (AI API keys, webhook/SCM secrets). **Strongly recommended in production**, even without auth. Generate with `openssl rand -hex 32`. |
+| `PIWI_SECRET_KEY` | insecure dev default | Master key for AES-256-GCM encryption of secrets stored in the database (AI API keys, webhook/SCM secrets). **Strongly recommended in production**, even without auth. Generate with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` (or `openssl rand -hex 32`). |
 
 ## Database
 

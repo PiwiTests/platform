@@ -114,46 +114,76 @@ The dashboard supports two database backends: **SQLite** (default, zero-configur
 
 SQLite requires no configuration. The database file is created automatically at `.data/piwi.db`.
 
-To customize the path:
+To customize the path, set the variable in `application/.env` (recommended, cross-platform), or pass it inline:
 
-```bash
+::: code-group
+
+```bash [Linux / macOS]
 PIWI_DATABASE_PATH=/custom/path/database.db npm run dev
 ```
 
+```powershell [Windows (PowerShell)]
+$env:PIWI_DATABASE_PATH = '/custom/path/database.db'; npm run dev
+```
+
+:::
+
 ### PostgreSQL
 
-Set the `PIWI_DATABASE_URL` environment variable to switch to PostgreSQL:
+Set the `PIWI_DATABASE_URL` environment variable to switch to PostgreSQL (in `application/.env`, or inline):
 
-```bash
+::: code-group
+
+```bash [Linux / macOS]
 PIWI_DATABASE_URL=postgresql://user:password@localhost:5432/piwi_dashboard npm run dev
 ```
+
+```powershell [Windows (PowerShell)]
+$env:PIWI_DATABASE_URL = 'postgresql://user:password@localhost:5432/piwi_dashboard'; npm run dev
+```
+
+:::
 
 The dashboard creates all required tables automatically on startup via migrations.
 
 #### Local development with Docker
 
 ```bash
-docker run -d -p 5432:5432 \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=piwi_dashboard \
-  postgres:16-alpine
+docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=piwi_dashboard postgres:16-alpine
 ```
 
 Then start the dashboard:
 
-```bash
+::: code-group
+
+```bash [Linux / macOS]
 PIWI_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/piwi_dashboard npm run dev
 ```
+
+```powershell [Windows (PowerShell)]
+$env:PIWI_DATABASE_URL = 'postgresql://postgres:postgres@localhost:5432/piwi_dashboard'; npm run dev
+```
+
+:::
 
 #### Schema changes (PostgreSQL)
 
 To generate a new PostgreSQL migration after editing `schema.pg.ts`:
 
-```bash
+::: code-group
+
+```bash [Linux / macOS]
 PIWI_DATABASE_URL=postgresql://... npm run db:generate:pg
 npm run db:migrate:pg
 ```
+
+```powershell [Windows (PowerShell)]
+$env:PIWI_DATABASE_URL = 'postgresql://...'
+npm run db:generate:pg
+npm run db:migrate:pg
+```
+
+:::
 
 | Script | Description |
 |--------|-------------|
