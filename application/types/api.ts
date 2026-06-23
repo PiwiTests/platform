@@ -908,11 +908,16 @@ export interface AiConfig {
   autoDiagnose: boolean;
   source: 'env' | 'settings';
   /**
-   * Optional cheaper/faster model (same provider/key/baseUrl) used for a
-   * pre-analysis pass before the main `model` produces the final diagnosis.
-   * Empty/unset → single-stage diagnosis.
+   * Optional cheaper/faster model used for a pre-analysis pass before the main
+   * `model` produces the final diagnosis. Empty/unset → single-stage diagnosis.
    */
   researchModel?: string | null;
+  /** Optional provider override for the research stage (defaults to `provider`). */
+  researchProvider?: AiProvider | null;
+  /** Optional base URL override for the research stage (defaults to `baseUrl`). */
+  researchBaseUrl?: string | null;
+  /** Optional API key for the research stage (defaults to `apiKey`). */
+  researchApiKey?: string | null;
 }
 
 /**
@@ -935,6 +940,9 @@ export interface AiSettings {
   baseUrl: string | null;
   autoDiagnose: boolean;
   researchModel: string | null;
+  researchProvider: AiProvider | null;
+  researchBaseUrl: string | null;
+  hasResearchApiKey: boolean;
   hasApiKey: boolean;
   hasScmToken: boolean;
   envManaged: boolean;

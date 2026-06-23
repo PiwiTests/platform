@@ -36,6 +36,41 @@ function resolveModel(config: AiConfig): string {
   return config.model || (config.provider === 'anthropic' ? 'claude-opus-4-8' : config.model);
 }
 
+/**
+ * High-signal sections included in the lean projection sent to the research
+ * model. The heavy sections (full test source, console, network, ARIA, SCM
+ * patches) are deliberately excluded — the research stage only narrows the
+ * search, so it gets a cheap summary view while the final stage sees everything.
+ */
+const CORE_RESEARCH_SECTIONS = new Set([
+  'clusterSummary',
+  'sampleError',
+  'executionError',
+  'runContext',
+  'recurrenceFlakiness',
+  'retryProgression',
+  'baselineComparison',
+  'browserDistribution',
+  'failingSteps',
+  'testAnnotations',
+  'priorDiagnosis',
+]);
+const RESEARCH_PROJECTION_CAP = 8000;
+
+/** Build the compact, token-cheap context the research stage analyzes. */
+function buildResearchProjection(ctx: { sections: Array<{ id: string; markdown: string }> }): string {
+  const presentIds = [...new Set(ctx.sections.map((s) => s.id))];
+  const core = ctx.sections.filter((s) => CORE_RESEARCH_SECTIONS.has(s.id));
+  const head =
+    `Sections available in the full context: ${presentIds.join(', ')}.\n` +
+    '(This research view includes only the high-signal summary sections; the senior engineer sees the rest.)';
+  let text = [head, ...core.map((s) => s.markdown)].filter(Boolean).join('\n\n');
+  if (text.length > RESEARCH_PROJECTION_CAP) {
+    text = text.slice(0, RESEARCH_PROJECTION_CAP) + '\n[... research view truncated ...]';
+  }
+  return text;
+}
+
 /** Column values that reset a diagnosis row to the 'running' state (shared by insert + update). */
 function runningDiagnosisFields(config: AiConfig) {
   return {
@@ -158,33 +193,44 @@ export async function runClusterDiagnosis(
     type PipelineStage = { role: string; model: string; inputTokens: number | null; outputTokens: number | null };
     const pipeline: PipelineStage[] = [];
 
-    // Two-stage pipeline: an optional cheaper "research" model pre-analyzes the
-    // failure, and its hints are folded into the final diagnosis prompt. A
-    // research failure is non-fatal — we fall back to single-stage.
+    // Two-stage pipeline: an optional cheaper/different "research" model (its own
+    // provider/key/baseUrl, falling back to the main ones) pre-analyzes a lean
+    // projection of the context, and its hints are folded into the final
+    // diagnosis prompt. A research failure is non-fatal — we fall back to
+    // single-stage.
     let userContent = baseContent;
     const researchModel = config.researchModel?.trim();
-    if (researchModel && researchModel !== config.model) {
-      try {
-        const research = await callAiProvider(
-          { ...config, model: researchModel },
-          {
+    if (researchModel) {
+      const researchConfig: AiConfig = {
+        ...config,
+        provider: config.researchProvider || config.provider,
+        model: researchModel,
+        baseUrl: config.researchBaseUrl ?? config.baseUrl,
+        apiKey: config.researchApiKey || config.apiKey,
+      };
+      const sameAsMain =
+        researchConfig.provider === config.provider &&
+        researchConfig.model === config.model &&
+        (researchConfig.baseUrl ?? null) === (config.baseUrl ?? null);
+      if (!sameAsMain) {
+        try {
+          const research = await callAiProvider(researchConfig, {
             system: RESEARCH_SYSTEM_PROMPT,
-            user: baseContent,
+            user: buildResearchProjection(ctx),
             jsonSchema: RESEARCH_JSON_SCHEMA,
-            images,
             maxTokens: 2048,
-          },
-        );
-        pipeline.push({
-          role: 'research',
-          model: research.model,
-          inputTokens: research.inputTokens,
-          outputTokens: research.outputTokens,
-        });
-        const block = formatResearchBlock(parseResearchJson(research.text));
-        if (block) userContent = `${baseContent}\n\n${block}`;
-      } catch (e) {
-        console.error('[ai-diagnosis] research stage failed, falling back to single-stage:', e);
+          });
+          pipeline.push({
+            role: 'research',
+            model: research.model,
+            inputTokens: research.inputTokens,
+            outputTokens: research.outputTokens,
+          });
+          const block = formatResearchBlock(parseResearchJson(research.text));
+          if (block) userContent = `${baseContent}\n\n${block}`;
+        } catch (e) {
+          console.error('[ai-diagnosis] research stage failed, falling back to single-stage:', e);
+        }
       }
     }
 

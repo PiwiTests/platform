@@ -10,6 +10,9 @@ const { data: settings, refresh } = await useFetch<AiSettings>('/api/settings/ai
 const provider = ref<string | null>(null);
 const model = ref<string>('');
 const researchModel = ref<string>('');
+const researchProvider = ref<string | null>(null);
+const researchBaseUrl = ref<string>('');
+const researchApiKey = ref<string>('');
 const baseUrl = ref<string>('');
 const apiKey = ref<string>('');
 const autoDiagnose = ref(false);
@@ -27,6 +30,9 @@ watch(
     provider.value = val.provider || null;
     model.value = val.model || '';
     researchModel.value = val.researchModel || '';
+    researchProvider.value = val.researchProvider || null;
+    researchBaseUrl.value = val.researchBaseUrl || '';
+    researchApiKey.value = '';
     baseUrl.value = val.baseUrl || '';
     apiKey.value = '';
     autoDiagnose.value = val.autoDiagnose;
@@ -37,6 +43,12 @@ watch(
 
 const providerOptions = [
   { label: 'None (disabled)', value: null },
+  { label: 'Anthropic API', value: 'anthropic' },
+  { label: 'OpenAI-compatible', value: 'openai' },
+];
+
+const researchProviderOptions = [
+  { label: 'Same as main provider', value: null },
   { label: 'Anthropic API', value: 'anthropic' },
   { label: 'OpenAI-compatible', value: 'openai' },
 ];
@@ -135,15 +147,21 @@ async function save() {
       provider: provider.value || null,
       model: model.value || undefined,
       researchModel: researchModel.value || null,
+      researchProvider: researchProvider.value || null,
+      researchBaseUrl: researchBaseUrl.value || null,
       baseUrl: baseUrl.value || undefined,
       autoDiagnose: autoDiagnose.value,
     };
     if (apiKey.value !== '') {
       body.apiKey = apiKey.value;
     }
+    if (researchApiKey.value !== '') {
+      body.researchApiKey = researchApiKey.value;
+    }
     await $fetch('/api/settings/ai', { method: 'PUT', body });
     await refresh();
     apiKey.value = '';
+    researchApiKey.value = '';
     toast.add({ title: 'Settings saved', color: 'success' });
   } catch (err) {
     toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' });
@@ -215,6 +233,8 @@ const envVars = computed(() => {
   lines.push(`PIWI_AI_PROVIDER=${provider.value}`);
   if (model.value) lines.push(`PIWI_AI_MODEL=${model.value}`);
   if (researchModel.value) lines.push(`PIWI_AI_RESEARCH_MODEL=${researchModel.value}`);
+  if (researchProvider.value) lines.push(`PIWI_AI_RESEARCH_PROVIDER=${researchProvider.value}`);
+  if (researchBaseUrl.value) lines.push(`PIWI_AI_RESEARCH_BASE_URL=${researchBaseUrl.value}`);
   if (baseUrl.value) lines.push(`PIWI_AI_BASE_URL=${baseUrl.value}`);
   const keyDisplay = apiKey.value
     ? apiKey.value
@@ -294,7 +314,7 @@ const envVars = computed(() => {
 
             <UFormField
               label="Research model"
-              description="Optional cheaper/faster model (same provider) for a pre-analysis pass before the main model writes the final diagnosis. Leave empty for single-stage."
+              description="Optional cheaper/faster model for a pre-analysis pass before the main model writes the final diagnosis. Leave empty for single-stage."
             >
               <UInput
                 v-model="researchModel"
@@ -303,6 +323,49 @@ const envVars = computed(() => {
                 class="w-full"
               />
             </UFormField>
+
+            <div v-if="researchModel" class="rounded-lg border border-default bg-elevated/30 p-3 space-y-3">
+              <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                Research provider override (optional)
+              </p>
+              <UFormField
+                label="Provider"
+                description="Run the research stage on a different provider — e.g. a small local model."
+              >
+                <USelect
+                  v-model="researchProvider"
+                  :items="researchProviderOptions"
+                  :disabled="settings?.envManaged"
+                  class="w-full"
+                />
+              </UFormField>
+              <template v-if="researchProvider">
+                <UFormField label="Base URL" description="Required for an OpenAI-compatible research provider.">
+                  <UInput
+                    v-model="researchBaseUrl"
+                    placeholder="http://localhost:11434/v1"
+                    :disabled="settings?.envManaged"
+                    class="w-full"
+                  />
+                </UFormField>
+                <UFormField
+                  label="API key"
+                  :description="
+                    settings?.hasResearchApiKey
+                      ? 'Leave empty to keep the stored key, clear and save to remove it'
+                      : 'Optional — falls back to the main API key when empty'
+                  "
+                >
+                  <UInput
+                    v-model="researchApiKey"
+                    type="password"
+                    :placeholder="settings?.hasResearchApiKey ? '•••••••• (unchanged)' : 'optional'"
+                    :disabled="settings?.envManaged"
+                    class="w-full font-mono"
+                  />
+                </UFormField>
+              </template>
+            </div>
 
             <UFormField
               label="Base URL"
