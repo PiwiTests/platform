@@ -1,5 +1,4 @@
-﻿import { describe, it } from 'node:test';
-import * as assert from 'node:assert/strict';
+import { describe, it, expect } from 'vitest';
 import { MetadataCollector } from '../src/metadata-collector.js';
 
 /** Build a fake describe suite chain: root → parent → child (the test's parent). */
@@ -31,11 +30,11 @@ describe('MetadataCollector.getSuiteInfo', () => {
     });
     const test = { parent: inner } as any;
     const info = mc.getSuiteInfo(test);
-    assert.deepEqual(info.suitePath, ['Outer', 'Inner']);
-    assert.equal(info.suiteConfig.length, 2);
-    assert.equal(info.suiteConfig[0].mode, 'serial');
-    assert.deepEqual(info.suiteConfig[0].annotations, [{ type: 'skip', description: 'flaky' }]);
-    assert.equal(info.suiteConfig[1].mode, 'parallel');
+    expect(info.suitePath).toEqual(['Outer', 'Inner']);
+    expect(info.suiteConfig.length).toBe(2);
+    expect(info.suiteConfig[0].mode).toBe('serial');
+    expect(info.suiteConfig[0].annotations).toEqual([{ type: 'skip', description: 'flaky' }]);
+    expect(info.suiteConfig[1].mode).toBe('parallel');
   });
 
   it('defaults unknown mode to "default"', () => {
@@ -44,7 +43,7 @@ describe('MetadataCollector.getSuiteInfo', () => {
     const inner = { type: 'describe', title: 'Inner', parent: outer, _parallelMode: undefined, _annotations: [] };
     const test = { parent: inner } as any;
     const info = mc.getSuiteInfo(test);
-    assert.equal(info.suiteConfig[info.suiteConfig.length - 1].mode, 'default');
+    expect(info.suiteConfig[info.suiteConfig.length - 1].mode).toBe('default');
   });
 
   it('skips suites with empty titles', () => {
@@ -54,7 +53,7 @@ describe('MetadataCollector.getSuiteInfo', () => {
     const named = { type: 'describe', title: 'Named', parent: empty, _parallelMode: 'serial', _annotations: [] };
     const test = { parent: named } as any;
     const info = mc.getSuiteInfo(test);
-    assert.deepEqual(info.suitePath, ['Named']);
+    expect(info.suitePath).toEqual(['Named']);
   });
 
   it('returns empty arrays when the test has no describe parents', () => {
@@ -62,8 +61,8 @@ describe('MetadataCollector.getSuiteInfo', () => {
     const root = { type: 'project', title: '', parent: undefined };
     const test = { parent: root } as any;
     const info = mc.getSuiteInfo(test);
-    assert.deepEqual(info.suitePath, []);
-    assert.deepEqual(info.suiteConfig, []);
+    expect(info.suitePath).toEqual([]);
+    expect(info.suiteConfig).toEqual([]);
   });
 });
 
@@ -74,14 +73,14 @@ describe('MetadataCollector.getBrowserConfig', () => {
     const suite = { parent: { project: () => project } };
     const test = { parent: suite } as any;
     const cfg = mc.getBrowserConfig(test);
-    assert.equal(cfg?.projectName, 'chromium');
-    assert.equal(cfg?.browserName, 'chromium');
-    assert.deepEqual(cfg?.viewport, { width: 1280, height: 720 });
+    expect(cfg?.projectName).toBe('chromium');
+    expect(cfg?.browserName).toBe('chromium');
+    expect(cfg?.viewport).toEqual({ width: 1280, height: 720 });
   });
 
   it('returns null when no project() is found within the depth limit', () => {
     const mc = new MetadataCollector();
     const test = { parent: { parent: { parent: undefined } } } as any;
-    assert.equal(mc.getBrowserConfig(test), null);
+    expect(mc.getBrowserConfig(test)).toBe(null);
   });
 });

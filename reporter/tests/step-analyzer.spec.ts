@@ -1,5 +1,4 @@
-﻿import { describe, it } from 'node:test';
-import * as assert from 'node:assert/strict';
+import { describe, it, expect } from 'vitest';
 import {
   categorizeStep,
   flattenSteps,
@@ -11,65 +10,65 @@ import {
 
 describe('categorizeStep', () => {
   it('returns "other" for empty title', () => {
-    assert.equal(categorizeStep(''), 'other');
+    expect(categorizeStep('')).toBe('other');
   });
 
   it('passes through hook/fixture pwCategory verbatim', () => {
-    assert.equal(categorizeStep('Before Hooks', 'hook'), 'hook');
-    assert.equal(categorizeStep('fixture: browser', 'fixture'), 'fixture');
+    expect(categorizeStep('Before Hooks', 'hook')).toBe('hook');
+    expect(categorizeStep('fixture: browser', 'fixture')).toBe('fixture');
   });
 
   it('classifies navigation steps', () => {
-    assert.equal(categorizeStep('page.goto'), 'navigation');
-    assert.equal(categorizeStep('Page.goto'), 'navigation');
-    assert.equal(categorizeStep('page.reload'), 'navigation');
-    assert.equal(categorizeStep('page.goBack'), 'navigation');
-    assert.equal(categorizeStep('page.goForward'), 'navigation');
+    expect(categorizeStep('page.goto')).toBe('navigation');
+    expect(categorizeStep('Page.goto')).toBe('navigation');
+    expect(categorizeStep('page.reload')).toBe('navigation');
+    expect(categorizeStep('page.goBack')).toBe('navigation');
+    expect(categorizeStep('page.goForward')).toBe('navigation');
   });
 
   it('classifies action steps', () => {
-    assert.equal(categorizeStep('locator.click'), 'action');
-    assert.equal(categorizeStep('locator.dblclick'), 'action');
-    assert.equal(categorizeStep('locator.check'), 'action');
-    assert.equal(categorizeStep('locator.uncheck'), 'action');
-    assert.equal(categorizeStep('locator.selectOption'), 'action');
-    assert.equal(categorizeStep('locator.tap'), 'action');
+    expect(categorizeStep('locator.click')).toBe('action');
+    expect(categorizeStep('locator.dblclick')).toBe('action');
+    expect(categorizeStep('locator.check')).toBe('action');
+    expect(categorizeStep('locator.uncheck')).toBe('action');
+    expect(categorizeStep('locator.selectOption')).toBe('action');
+    expect(categorizeStep('locator.tap')).toBe('action');
   });
 
   it('classifies input steps', () => {
-    assert.equal(categorizeStep('locator.fill'), 'input');
-    assert.equal(categorizeStep('locator.type'), 'input');
-    assert.equal(categorizeStep('locator.press'), 'input');
-    assert.equal(categorizeStep('locator.clear'), 'input');
-    assert.equal(categorizeStep('locator.setInputFiles'), 'input');
+    expect(categorizeStep('locator.fill')).toBe('input');
+    expect(categorizeStep('locator.type')).toBe('input');
+    expect(categorizeStep('locator.press')).toBe('input');
+    expect(categorizeStep('locator.clear')).toBe('input');
+    expect(categorizeStep('locator.setInputFiles')).toBe('input');
   });
 
   it('classifies assertions', () => {
-    assert.equal(categorizeStep('expect.toBeVisible'), 'assertion');
-    assert.equal(categorizeStep('locator.expect.toBeVisible'), 'assertion');
-    assert.equal(categorizeStep('page.expect'), 'assertion');
+    expect(categorizeStep('expect.toBeVisible')).toBe('assertion');
+    expect(categorizeStep('locator.expect.toBeVisible')).toBe('assertion');
+    expect(categorizeStep('page.expect')).toBe('assertion');
   });
 
   it('classifies wait steps', () => {
-    assert.equal(categorizeStep('locator.waitFor'), 'wait');
-    assert.equal(categorizeStep('page.waitFor'), 'wait');
-    assert.equal(categorizeStep('page.waitForLoadState'), 'wait');
-    assert.equal(categorizeStep('page.waitForURL'), 'wait');
+    expect(categorizeStep('locator.waitFor')).toBe('wait');
+    expect(categorizeStep('page.waitFor')).toBe('wait');
+    expect(categorizeStep('page.waitForLoadState')).toBe('wait');
+    expect(categorizeStep('page.waitForURL')).toBe('wait');
   });
 
   it('classifies api steps', () => {
-    assert.equal(categorizeStep('apiRequestContext.get'), 'api');
-    assert.equal(categorizeStep('apiResponse'), 'api');
+    expect(categorizeStep('apiRequestContext.get')).toBe('api');
+    expect(categorizeStep('apiResponse')).toBe('api');
   });
 
   it('classifies hook phrases', () => {
-    assert.equal(categorizeStep('Before Hooks'), 'hook');
-    assert.equal(categorizeStep('After Hooks'), 'hook');
-    assert.equal(categorizeStep('fixture: browser'), 'hook');
+    expect(categorizeStep('Before Hooks')).toBe('hook');
+    expect(categorizeStep('After Hooks')).toBe('hook');
+    expect(categorizeStep('fixture: browser')).toBe('hook');
   });
 
   it('returns "other" for unknown titles', () => {
-    assert.equal(categorizeStep('someCustomStep'), 'other');
+    expect(categorizeStep('someCustomStep')).toBe('other');
   });
 });
 
@@ -85,24 +84,23 @@ describe('flattenSteps', () => {
       { title: 'outer', duration: 3, steps: [] },
     ];
     const flat = flattenSteps(steps as any);
-    assert.equal(flat.length, 5);
-    assert.deepEqual(
+    expect(flat.length).toBe(5);
+    expect(
       flat.map((s) => s.title),
-      ['page.goto', 'locator.click', 'expect.toBe', 'inner', 'outer'],
-    );
-    assert.equal(flat[0].category, 'navigation');
-    assert.equal(flat[1].category, 'action');
-    assert.equal(flat[2].category, 'assertion');
-    assert.equal(flat[3].category, 'other');
+    ).toEqual(['page.goto', 'locator.click', 'expect.toBe', 'inner', 'outer']);
+    expect(flat[0].category).toBe('navigation');
+    expect(flat[1].category).toBe('action');
+    expect(flat[2].category).toBe('assertion');
+    expect(flat[3].category).toBe('other');
   });
 
   it('handles empty input', () => {
-    assert.deepEqual(flattenSteps([]), []);
+    expect(flattenSteps([])).toEqual([]);
   });
 
   it('preserves durations', () => {
     const flat = flattenSteps([{ title: 'x', duration: 42, steps: [] }] as any);
-    assert.equal(flat[0].duration, 42);
+    expect(flat[0].duration).toBe(42);
   });
 });
 
@@ -114,18 +112,18 @@ describe('collectStepMetrics', () => {
       { title: 'page.reload', duration: 80, steps: [] },
     ];
     const m = collectStepMetrics(steps as any);
-    assert.equal(m.steps.length, 3);
-    assert.equal(m.totalStepDuration, 230);
-    assert.deepEqual(m.slowestStep, { title: 'page.goto', duration: 100 });
-    assert.equal(m.navigationCount, 2);
-    assert.equal(m.navigationTotalDuration, 180);
+    expect(m.steps.length).toBe(3);
+    expect(m.totalStepDuration).toBe(230);
+    expect(m.slowestStep).toEqual({ title: 'page.goto', duration: 100 });
+    expect(m.navigationCount).toBe(2);
+    expect(m.navigationTotalDuration).toBe(180);
   });
 
   it('returns null slowestStep when there are no flat steps', () => {
     const m = collectStepMetrics([] as any);
-    assert.equal(m.slowestStep, null);
-    assert.equal(m.totalStepDuration, 0);
-    assert.equal(m.navigationCount, 0);
+    expect(m.slowestStep).toBe(null);
+    expect(m.totalStepDuration).toBe(0);
+    expect(m.navigationCount).toBe(0);
   });
 
   it('totalStepDuration sums top-level only (nested not double-counted)', () => {
@@ -133,13 +131,13 @@ describe('collectStepMetrics', () => {
       { title: 'outer', duration: 100, steps: [{ title: 'inner', duration: 50, steps: [] }] },
     ];
     const m = collectStepMetrics(steps as any);
-    assert.equal(m.totalStepDuration, 100); // reduce over top-level only
+    expect(m.totalStepDuration).toBe(100); // reduce over top-level only
   });
 });
 
 describe('percentile', () => {
   it('returns 0 for empty array', () => {
-    assert.equal(percentile([], 50), 0);
+    expect(percentile([], 50)).toBe(0);
   });
 
   it('computes p50, p90, p95 on a sorted array', () => {
@@ -148,21 +146,21 @@ describe('percentile', () => {
     // p50: ceil(5) - 1 = 4 -> 5
     // p90: ceil(9) - 1 = 8 -> 9
     // p95: ceil(9.5) - 1 = 9 -> 10
-    assert.equal(percentile(sorted, 50), 5);
-    assert.equal(percentile(sorted, 90), 9);
-    assert.equal(percentile(sorted, 95), 10);
+    expect(percentile(sorted, 50)).toBe(5);
+    expect(percentile(sorted, 90)).toBe(9);
+    expect(percentile(sorted, 95)).toBe(10);
   });
 
   it('clamps index to 0 for low percentiles', () => {
-    assert.equal(percentile([42], 10), 42);
-    assert.equal(percentile([42], 1), 42);
+    expect(percentile([42], 10)).toBe(42);
+    expect(percentile([42], 1)).toBe(42);
   });
 });
 
 describe('computePerformanceSummary', () => {
   it('returns empty object when no test cases have durations', () => {
-    assert.deepEqual(computePerformanceSummary([]), {});
-    assert.deepEqual(computePerformanceSummary([{ duration: null }]), {});
+    expect(computePerformanceSummary([])).toEqual({});
+    expect(computePerformanceSummary([{ duration: null }])).toEqual({});
   });
 
   it('computes averages, percentiles, and slowest tests', () => {
@@ -172,11 +170,11 @@ describe('computePerformanceSummary', () => {
       { title: 'c', duration: 300 },
     ];
     const s = computePerformanceSummary(cases as any);
-    assert.equal(s.avgTestDuration, 200);
-    assert.equal(s.p50TestDuration, 200);
-    assert.equal(s.p90TestDuration, 300);
-    assert.equal(s.p95TestDuration, 300);
-    assert.deepEqual(s.slowestTests, [
+    expect(s.avgTestDuration).toBe(200);
+    expect(s.p50TestDuration).toBe(200);
+    expect(s.p90TestDuration).toBe(300);
+    expect(s.p95TestDuration).toBe(300);
+    expect(s.slowestTests).toEqual([
       { title: 'c', duration: 300 },
       { title: 'b', duration: 200 },
       { title: 'a', duration: 100 },
@@ -186,8 +184,8 @@ describe('computePerformanceSummary', () => {
   it('caps slowest tests at 5', () => {
     const cases = Array.from({ length: 10 }, (_, i) => ({ title: `t${i}`, duration: i * 10 }));
     const s = computePerformanceSummary(cases as any);
-    assert.equal(s.slowestTests?.length, 5);
-    assert.equal(s.slowestTests?.[0].title, 't9');
+    expect(s.slowestTests?.length).toBe(5);
+    expect(s.slowestTests?.[0].title).toBe('t9');
   });
 
   it('aggregates navigation stats from performanceMetrics', () => {
@@ -196,14 +194,14 @@ describe('computePerformanceSummary', () => {
       { title: 'b', duration: 200, performanceMetrics: { navigationTotalDuration: 30, navigationCount: 3 } },
     ];
     const s = computePerformanceSummary(cases as any);
-    assert.equal(s.totalNavigationDuration, 80);
-    assert.equal(s.avgNavigationDuration, Math.round(80 / 5));
+    expect(s.totalNavigationDuration).toBe(80);
+    expect(s.avgNavigationDuration).toBe(Math.round(80 / 5));
   });
 
   it('avgNavigationDuration is 0 when no navigation steps', () => {
     const s = computePerformanceSummary([{ title: 'a', duration: 100 }] as any);
-    assert.equal(s.avgNavigationDuration, 0);
-    assert.equal(s.totalNavigationDuration, 0);
+    expect(s.avgNavigationDuration).toBe(0);
+    expect(s.totalNavigationDuration).toBe(0);
   });
 });
 
@@ -216,18 +214,18 @@ describe('extractTestStepEvents', () => {
       { title: 'fixture: browser', category: 'fixture', startTime: start, duration: 3, error: new Error('x') },
     ];
     const events = extractTestStepEvents(steps as any, start);
-    assert.equal(events.length, 2);
-    assert.equal(events[0].title, 'Before Hooks');
-    assert.equal(events[0].category, 'hook');
-    assert.equal(events[0].startedAt, start.getTime());
-    assert.equal(events[0].status, 'passed');
-    assert.equal(events[0].location, 'a.ts:1:2');
-    assert.equal(events[1].status, 'failed'); // error present
+    expect(events.length).toBe(2);
+    expect(events[0].title).toBe('Before Hooks');
+    expect(events[0].category).toBe('hook');
+    expect(events[0].startedAt).toBe(start.getTime());
+    expect(events[0].status).toBe('passed');
+    expect(events[0].location).toBe('a.ts:1:2');
+    expect(events[1].status).toBe('failed'); // error present
   });
 
   it('skips steps without startTime', () => {
     const events = extractTestStepEvents([{ title: 'Before Hooks', category: 'hook', duration: 1 }] as any, new Date());
-    assert.equal(events.length, 0);
+    expect(events.length).toBe(0);
   });
 
   it('accepts numeric startTime (passes through)', () => {
@@ -235,6 +233,6 @@ describe('extractTestStepEvents', () => {
       [{ title: 'Before Hooks', category: 'hook', startTime: 12345, duration: 1 }] as any,
       new Date(),
     );
-    assert.equal(events[0].startedAt, 12345);
+    expect(events[0].startedAt).toBe(12345);
   });
 });

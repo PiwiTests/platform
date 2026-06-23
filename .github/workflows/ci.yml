@@ -71,6 +71,9 @@ jobs:
         working-directory: ./reporter
         run: npm run reporter:test
 
+      - name: Test application unit tests
+        run: npm run app:test:unit
+
       - name: Install Playwright Browsers
         run: npx playwright install chromium firefox --with-deps --only-shell
 
