@@ -73,15 +73,21 @@ const providerOptions = [
   { label: 'OpenAI-compatible', value: 'openai' },
 ];
 
-function reuseOptions(role: RoleKey) {
-  const meta = ROLE_META.find((m) => m.key === role)!;
-  return [
-    { label: 'Configure its own provider', value: '' },
-    ...meta.reuseTargets
-      .filter((t) => roles[t].enabled || t === 'diagnosis')
-      .map((t) => ({ label: `Reuse ${ROLE_META.find((m) => m.key === t)!.title.toLowerCase()}`, value: t })),
-  ];
-}
+// Stable per-role reuse options (recomputed only when role-enable state changes),
+// so the child <USelect>'s `items` keep a stable reference and the listbox doesn't
+// reset on every parent render. 'own' is the sentinel for "configure own provider".
+const reuseOptionsByRole = computed<Record<RoleKey, Array<{ label: string; value: string }>>>(() => {
+  const out = {} as Record<RoleKey, Array<{ label: string; value: string }>>;
+  for (const meta of ROLE_META) {
+    out[meta.key] = [
+      { label: 'Configure its own provider', value: 'own' },
+      ...meta.reuseTargets
+        .filter((t) => roles[t].enabled || t === 'diagnosis')
+        .map((t) => ({ label: `Reuse ${ROLE_META.find((m) => m.key === t)!.title.toLowerCase()}`, value: t })),
+    ];
+  }
+  return out;
+});
 
 const envManaged = computed(() => Boolean(settings.value?.envManaged));
 
@@ -299,7 +305,7 @@ function resetLimits() {
             v-model="roles[meta.key]"
             :meta="meta"
             :has-api-key="hasStoredKey(meta.key)"
-            :reuse-options="reuseOptions(meta.key)"
+            :reuse-options="reuseOptionsByRole[meta.key]"
             :provider-options="providerOptions"
             :preset-options="presetOptions"
             :disabled="envManaged"

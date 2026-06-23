@@ -42,6 +42,13 @@ defineProps<{
 const emit = defineEmits<{ applyPreset: [label: string] }>();
 
 const model = defineModel<RoleForm>({ required: true });
+
+// 'own' sentinel ↔ null (configure own provider). Proxied so the <USelect> can
+// use a plain v-model with non-empty option values.
+const reuseModel = computed<string>({
+  get: () => model.value.reuse ?? 'own',
+  set: (v) => (model.value.reuse = v === 'own' ? null : (v as AiModelRole)),
+});
 </script>
 
 <template>
@@ -62,13 +69,7 @@ const model = defineModel<RoleForm>({ required: true });
 
     <template v-if="!meta.optional || model.enabled">
       <UFormField v-if="meta.reuseTargets.length" label="Provider source">
-        <USelect
-          :model-value="model.reuse ?? ''"
-          :items="reuseOptions"
-          :disabled="disabled"
-          class="w-full"
-          @update:model-value="(v: string) => (model.reuse = v ? (v as AiModelRole) : null)"
-        />
+        <USelect v-model="reuseModel" :items="reuseOptions" :disabled="disabled" class="w-full" />
       </UFormField>
 
       <template v-if="!model.reuse">
