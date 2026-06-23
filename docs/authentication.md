@@ -32,10 +32,14 @@ The dashboard supports optional user authentication with role-based access contr
    PIWI_AUTH_SECRET=your-auth-secret-here  # encrypts session cookies
    ```
 
-   Generate strong random values for both:
+   Generate strong random values for both (run twice — once for `PIWI_SECRET_KEY`, once for `PIWI_AUTH_SECRET`):
 
    ```bash
-   openssl rand -hex 32   # run twice — once for PIWI_SECRET_KEY, once for PIWI_AUTH_SECRET
+   # Cross-platform — works anywhere Node is installed (Node is already required)
+   node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+
+   # …or with openssl on Linux / macOS / Git Bash
+   openssl rand -hex 32
    ```
 
 3. Restart the application.
@@ -44,7 +48,9 @@ The dashboard supports optional user authentication with role-based access contr
 
 When authentication is first enabled and no users exist, create the first administrator account:
 
-```bash
+::: code-group
+
+```bash [Linux / macOS]
 curl -X POST http://localhost:3000/api/auth/setup \
   -H "Content-Type: application/json" \
   -d '{
@@ -54,17 +60,35 @@ curl -X POST http://localhost:3000/api/auth/setup \
   }'
 ```
 
+```powershell [Windows (PowerShell)]
+$body = @{ username = 'admin'; password = 'your-secure-password'; name = 'Administrator' } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/setup `
+  -ContentType 'application/json' -Body $body
+```
+
+:::
+
 This endpoint is only available when the users table is empty.
 
 ## Logging in
 
 Navigate to `/login` in your browser, or use the API:
 
-```bash
+::: code-group
+
+```bash [Linux / macOS]
 curl -X POST http://localhost:3000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "your-secure-password"}'
 ```
+
+```powershell [Windows (PowerShell)]
+$body = @{ username = 'admin'; password = 'your-secure-password' } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/login `
+  -ContentType 'application/json' -Body $body
+```
+
+:::
 
 Sessions are stored in encrypted cookies and last for 7 days.
 
@@ -173,7 +197,9 @@ export default defineConfig({
 
 ### Using the API key in raw HTTP calls
 
-```bash
+::: code-group
+
+```bash [Linux / macOS]
 # Authorization: Bearer header (recommended)
 curl -X POST https://your-dashboard.example.com/api/test-runs/submit \
   -H "Authorization: Bearer pd_<your-key>" \
@@ -186,6 +212,20 @@ curl -X POST https://your-dashboard.example.com/api/test-runs/submit \
   -H "Content-Type: application/json" \
   -d '{ ... }'
 ```
+
+```powershell [Windows (PowerShell)]
+# Authorization: Bearer header (recommended)
+Invoke-RestMethod -Method Post -Uri https://your-dashboard.example.com/api/test-runs/submit `
+  -Headers @{ Authorization = 'Bearer pd_<your-key>' } `
+  -ContentType 'application/json' -Body '{ ... }'
+
+# X-API-Key header (alternative)
+Invoke-RestMethod -Method Post -Uri https://your-dashboard.example.com/api/test-runs/submit `
+  -Headers @{ 'X-API-Key' = 'pd_<your-key>' } `
+  -ContentType 'application/json' -Body '{ ... }'
+```
+
+:::
 
 ## Using the reporter with session authentication (username/password)
 
@@ -219,8 +259,8 @@ The reporter automatically calls `/api/auth/login` before each upload and uses t
 
 - Always use HTTPS in production.
 - Use strong, unique passwords.
-- Set `PIWI_SECRET_KEY` (`openssl rand -hex 32`) to encrypt AI API keys and SCM tokens at rest in the database. This is recommended even when authentication is disabled.
-- Set `PIWI_AUTH_SECRET` (`openssl rand -hex 32`) for session cookie encryption — required when `PIWI_AUTH_ENABLED=true`.
+- Set `PIWI_SECRET_KEY` (generate with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`, or `openssl rand -hex 32`) to encrypt AI API keys and SCM tokens at rest in the database. This is recommended even when authentication is disabled.
+- Set `PIWI_AUTH_SECRET` (same generator) for session cookie encryption — required when `PIWI_AUTH_ENABLED=true`.
 - Passwords are hashed using scrypt with per-password salts.
 - Never use the default secrets in production.
 

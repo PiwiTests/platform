@@ -28,10 +28,19 @@ Piwi Dashboard is a self-hosted observability platform for [Playwright](https://
 
 The fastest way to get started is with the pre-built container image:
 
-```bash
+::: code-group
+
+```bash [Linux / macOS]
 docker pull ghcr.io/phenx/piwi-dashboard:latest
 docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
+
+```powershell [Windows (PowerShell)]
+docker pull ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v ${PWD}/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+```
+
+:::
 
 Visit `http://localhost:3000` to access the dashboard.
 
@@ -58,7 +67,9 @@ The SQLite database is automatically created on the first API call.
 
 Once the dashboard is running, submit a test result to verify everything works:
 
-```bash
+::: code-group
+
+```bash [Linux / macOS]
 curl -X POST http://localhost:3000/api/test-runs/submit \
   -H "Content-Type: application/json" \
   -d '{
@@ -89,6 +100,28 @@ curl -X POST http://localhost:3000/api/test-runs/submit \
     ]
   }'
 ```
+
+```powershell [Windows (PowerShell)]
+$body = @{
+  projectName  = 'my-project'
+  status       = 'passed'
+  startTime    = '2024-01-01T12:00:00Z'
+  duration     = 120000
+  totalTests   = 2
+  passedTests  = 1
+  failedTests  = 1
+  skippedTests = 0
+  testCases    = @(
+    @{ title = 'should login successfully'; status = 'passed'; duration = 1500; location = 'tests/login.spec.ts:10:5'; retries = 0 }
+    @{ title = 'should handle errors'; status = 'failed'; duration = 2300; location = 'tests/errors.spec.ts:5:5'; error = 'Expected true but got false'; retries = 1 }
+  )
+} | ConvertTo-Json -Depth 5
+
+Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/test-runs/submit `
+  -ContentType 'application/json' -Body $body
+```
+
+:::
 
 The project `my-project` is created automatically if it doesn't exist yet.
 

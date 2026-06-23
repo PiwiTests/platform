@@ -39,7 +39,13 @@ Native Playwright HTML reports are great for local debugging — but they're eph
 **1. Start the dashboard**
 
 ```bash
+# Linux / macOS
 docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+```
+
+```powershell
+# Windows (PowerShell)
+docker run -p 3000:3000 -v ${PWD}/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
 
 Visit `http://localhost:3000`.

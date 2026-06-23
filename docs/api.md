@@ -11,6 +11,10 @@ All endpoints are relative to the dashboard base URL (e.g. `http://localhost:300
 >
 > The OpenAPI 3.1 JSON spec is also served at `GET /_openapi.json`.
 
+::: tip Windows users
+The `curl` examples below use Linux/macOS shell syntax (single-quoted bodies, `\` line continuation). On Windows, run them in **Git Bash** or **WSL**, or translate them to PowerShell with `Invoke-RestMethod` — build the body as a hashtable piped through `ConvertTo-Json`. The authentication examples show both forms.
+:::
+
 ## Submission
 
 ### POST `/api/test-runs/submit`
@@ -959,11 +963,21 @@ Returns the current session status.
 
 Create the first administrator account. Only available when no users exist in the database.
 
-```bash
+::: code-group
+
+```bash [Linux / macOS]
 curl -X POST http://localhost:3000/api/auth/setup \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "your-secure-password", "name": "Administrator"}'
 ```
+
+```powershell [Windows (PowerShell)]
+$body = @{ username = 'admin'; password = 'your-secure-password'; name = 'Administrator' } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/setup `
+  -ContentType 'application/json' -Body $body
+```
+
+:::
 
 ---
 
@@ -971,11 +985,21 @@ curl -X POST http://localhost:3000/api/auth/setup \
 
 Log in and receive a session cookie.
 
-```bash
+::: code-group
+
+```bash [Linux / macOS]
 curl -X POST http://localhost:3000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "your-secure-password"}'
 ```
+
+```powershell [Windows (PowerShell)]
+$body = @{ username = 'admin'; password = 'your-secure-password' } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/login `
+  -ContentType 'application/json' -Body $body
+```
+
+:::
 
 ---
 

@@ -9,10 +9,19 @@ lang: en-US
 
 ### Quick start
 
-```bash
+::: code-group
+
+```bash [Linux / macOS]
 docker pull ghcr.io/phenx/piwi-dashboard:latest
 docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
+
+```powershell [Windows (PowerShell)]
+docker pull ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v ${PWD}/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+```
+
+:::
 
 The dashboard will be available at `http://localhost:3000`.
 
@@ -40,10 +49,10 @@ The dashboard will be available at `http://localhost:3000`.
 Mount a volume to persist data:
 
 ```bash
-docker run -p 3000:3000 \
-  -v /path/to/data:/app/.data \
-  ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v /path/to/data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
+
+> On Windows, use a host path like `C:\piwi\data` (PowerShell) in place of `/path/to/data`.
 
 The `.data` directory contains:
 
@@ -57,20 +66,30 @@ The `.data` directory contains:
 | `NODE_ENV` | `production` | Set automatically |
 | `HOST` | `0.0.0.0` | Listen on all interfaces |
 | `PORT` | `3000` | Application port |
-| `PIWI_SECRET_KEY` | — | Master key for encrypting secrets in the database (AI API keys, SCM tokens). Recommended in all deployments. Generate with `openssl rand -hex 32`. |
+| `PIWI_SECRET_KEY` | — | Master key for encrypting secrets in the database (AI API keys, SCM tokens). Recommended in all deployments. Generate with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` (or `openssl rand -hex 32`). |
 | `PIWI_AUTH_ENABLED` | — | Enable authentication |
-| `PIWI_AUTH_SECRET` | — | Secret for encrypting session cookies (required if auth enabled). Generate with `openssl rand -hex 32`. |
+| `PIWI_AUTH_SECRET` | — | Secret for encrypting session cookies (required if auth enabled). Generate with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` (or `openssl rand -hex 32`). |
 | `PIWI_STORAGE_TYPE` | `local` | Storage backend (`local` or `s3`) |
 | `PIWI_DATABASE_URL` | — | PostgreSQL connection string (e.g. `postgresql://user:pass@host:5432/db`). When set, PostgreSQL is used instead of SQLite. |
 | `PIWI_DATABASE_PATH` | `.data/piwi.db` | SQLite database path (ignored when `PIWI_DATABASE_URL` is set) |
 
 ## Building locally
 
-```bash
+::: code-group
+
+```bash [Linux / macOS]
 cd application
 docker build -t piwi-dashboard:local .
 docker run -p 3000:3000 -v $(pwd)/.data:/app/.data piwi-dashboard:local
 ```
+
+```powershell [Windows (PowerShell)]
+cd application
+docker build -t piwi-dashboard:local .
+docker run -p 3000:3000 -v ${PWD}/.data:/app/.data piwi-dashboard:local
+```
+
+:::
 
 ## Docker Compose
 
@@ -196,18 +215,22 @@ Security best practices:
 
 - Always use HTTPS in production
 - Mount `.data/` on a persistent volume
-- Set a strong `PIWI_SECRET_KEY` (`openssl rand -hex 32`) to encrypt secrets at rest
+- Set a strong `PIWI_SECRET_KEY` (`node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`, or `openssl rand -hex 32`) to encrypt secrets at rest
 - Set a strong `PIWI_AUTH_SECRET` and enable authentication for multi-user deployments
 
 ## Troubleshooting
 
 ### Permission issues with volumes
 
+On **Linux hosts**, the bind-mounted directory must be writable by the container's UID 1001:
+
 ```bash
 mkdir -p .data
 chmod 777 .data
 docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
+
+> On Windows and macOS, Docker Desktop manages volume permissions automatically — no `chmod` is needed. Just run the container with `-v ${PWD}/.data:/app/.data` (PowerShell).
 
 ### Database locked
 
@@ -217,8 +240,16 @@ SQLite doesn't support concurrent writes well. For high-concurrency deployments,
 
 Map to a different host port:
 
-```bash
+::: code-group
+
+```bash [Linux / macOS]
 docker run -p 8080:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
 ```
+
+```powershell [Windows (PowerShell)]
+docker run -p 8080:3000 -v ${PWD}/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+```
+
+:::
 
 The dashboard will be available at `http://localhost:8080`.
