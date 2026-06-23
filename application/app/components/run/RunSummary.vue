@@ -12,6 +12,7 @@ const props = defineProps<{
   blockColSpanClass: string;
   finalizing?: boolean;
   activeFilter?: string;
+  totalWastedTime?: number;
 }>();
 
 const emit = defineEmits<{
@@ -349,9 +350,7 @@ function onLabelKeydown(e: KeyboardEvent) {
                 "
                 @click="emit('filter-status', 'passed')"
               >
-                <p class="text-xs font-medium text-green-700 dark:text-green-400 uppercase tracking-wider">
-                  Passed
-                </p>
+                <p class="text-xs font-medium text-green-700 dark:text-green-400 uppercase tracking-wider">Passed</p>
                 <p class="text-xl font-bold mt-0.5 text-green-600 dark:text-green-400">
                   {{ displayProgress?.passedTests ?? testRun?.passedTests ?? 0 }}
                 </p>
@@ -365,9 +364,7 @@ function onLabelKeydown(e: KeyboardEvent) {
                 "
                 @click="emit('filter-status', 'failed')"
               >
-                <p class="text-xs font-medium text-red-700 dark:text-red-400 uppercase tracking-wider">
-                  Failed
-                </p>
+                <p class="text-xs font-medium text-red-700 dark:text-red-400 uppercase tracking-wider">Failed</p>
                 <p class="text-xl font-bold mt-0.5 text-red-600 dark:text-red-400">
                   {{ displayProgress?.failedTests ?? testRun?.failedTests ?? 0 }}
                 </p>
@@ -381,9 +378,7 @@ function onLabelKeydown(e: KeyboardEvent) {
                 "
                 @click="emit('filter-status', 'skipped')"
               >
-                <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Skipped
-                </p>
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">Skipped</p>
                 <p class="text-xl font-bold mt-0.5 text-gray-600 dark:text-gray-400">
                   {{ displayProgress?.skippedTests ?? testRun?.skippedTests ?? 0 }}
                 </p>
@@ -414,9 +409,7 @@ function onLabelKeydown(e: KeyboardEvent) {
                 "
                 @click="emit('filter-status', 'flaky')"
               >
-                <p class="text-xs font-medium text-orange-700 dark:text-orange-400 uppercase tracking-wider">
-                  Flaky
-                </p>
+                <p class="text-xs font-medium text-orange-700 dark:text-orange-400 uppercase tracking-wider">Flaky</p>
                 <p class="text-xl font-bold mt-0.5 text-orange-600 dark:text-orange-400">
                   {{ testRun?.flakyTests ?? 0 }}
                 </p>
@@ -450,6 +443,13 @@ function onLabelKeydown(e: KeyboardEvent) {
                     <span class="text-gray-500 hidden sm:inline">P90</span>
                     <span class="font-medium tabular-nums text-orange-600 dark:text-orange-400">{{
                       formatDuration(testRun.p90TestDuration)
+                    }}</span>
+                  </div>
+                  <div v-if="totalWastedTime && totalWastedTime > 0" class="flex items-center gap-1">
+                    <UIcon name="i-lucide-clock" class="size-3.5 text-amber-500" />
+                    <span class="text-gray-500 hidden sm:inline">Wasted</span>
+                    <span class="font-medium tabular-nums text-amber-600 dark:text-amber-400">{{
+                      formatDuration(totalWastedTime)
                     }}</span>
                   </div>
                 </div>

@@ -102,7 +102,13 @@ export async function reconcileNewClusters(
   const pool = await db
     .select({ id: failureClusters.id, embedding: failureClusters.embedding })
     .from(failureClusters)
-    .where(and(eq(failureClusters.projectId, projectId), eq(failureClusters.status, 'open'), isNotNull(failureClusters.embedding)));
+    .where(
+      and(
+        eq(failureClusters.projectId, projectId),
+        eq(failureClusters.status, 'open'),
+        isNotNull(failureClusters.embedding),
+      ),
+    );
 
   const poolVecs = pool
     .map((p) => ({ id: p.id, vec: parseEmbedding(p.embedding) }))

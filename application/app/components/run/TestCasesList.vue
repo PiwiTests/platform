@@ -135,37 +135,50 @@ watch(
 );
 
 // Columns (without cell render functions — using template slots for custom cells)
-const testCasesColumns: TableColumn<TestCaseResult>[] = [
-  {
-    id: 'browser',
-    accessorFn: (row: TestCaseResult) => row.browser?.projectName ?? '',
-    header: createSortHeader<TestCaseResult>('Browser'),
-  },
-  {
-    accessorKey: 'title',
-    header: createSortHeader<TestCaseResult>('Test case'),
-  },
-  {
-    accessorKey: 'status',
-    header: createSortHeader<TestCaseResult>('Status'),
-  },
-  {
-    accessorKey: 'duration',
-    header: createSortHeader<TestCaseResult>('Duration'),
-  },
-  {
-    accessorKey: 'workerIndex',
-    header: createSortHeader<TestCaseResult>('Worker'),
-  },
-  {
-    accessorKey: 'retries',
-    header: createSortHeader<TestCaseResult>('Retries'),
-  },
-  {
+const testCasesColumns = computed<TableColumn<TestCaseResult>[]>(() => {
+  const cols: TableColumn<TestCaseResult>[] = [
+    {
+      id: 'browser',
+      accessorFn: (row: TestCaseResult) => row.browser?.projectName ?? '',
+      header: createSortHeader<TestCaseResult>('Browser'),
+    },
+    {
+      accessorKey: 'title',
+      header: createSortHeader<TestCaseResult>('Test case'),
+    },
+    {
+      accessorKey: 'status',
+      header: createSortHeader<TestCaseResult>('Status'),
+    },
+    {
+      accessorKey: 'duration',
+      header: createSortHeader<TestCaseResult>('Duration'),
+    },
+    {
+      accessorKey: 'workerIndex',
+      header: createSortHeader<TestCaseResult>('Worker'),
+    },
+    {
+      accessorKey: 'retries',
+      header: createSortHeader<TestCaseResult>('Retries'),
+    },
+  ];
+  if (hasWastedTime.value) {
+    cols.push({
+      accessorKey: 'wastedTimeMs' as any,
+      header: createSortHeader<TestCaseResult>('Wasted'),
+    });
+  }
+  cols.push({
     id: 'actions',
     header: () => h('div', { class: 'text-right' }, 'Actions'),
-  },
-];
+  });
+  return cols;
+});
+
+const hasWastedTime = computed(() =>
+  props.testCases.some((tc) => (tc as any).wastedTimeMs && (tc as any).wastedTimeMs > 0),
+);
 
 const hasFilter = computed(
   () =>
@@ -385,6 +398,13 @@ defineExpose({ scrollToCase });
 
         <template #retries-cell="{ row }">
           {{ row.original.retries && row.original.retries > 0 ? row.original.retries : '' }}
+        </template>
+
+        <template v-if="hasWastedTime" #wastedTimeMs-cell="{ row }">
+          <span v-if="(row.original as any).wastedTimeMs" class="text-amber-600 dark:text-amber-400">
+            {{ formatDuration((row.original as any).wastedTimeMs) }}
+          </span>
+          <span v-else class="text-gray-400">&mdash;</span>
         </template>
 
         <template #actions-cell="{ row }">

@@ -79,12 +79,14 @@ export interface CollectedPerformanceMetrics {
   slowestStep: { title: string; duration: number } | null;
   navigationCount: number;
   navigationTotalDuration: number;
+  waitTotalDuration: number;
+  waitCount: number;
 }
 
 /** A hook/fixture step event with absolute timings (for the workers timeline). */
 export interface TestStepEvent {
   title: string;
-  category: 'hook' | 'fixture' | 'test.step' | 'expect';
+  category: 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait';
   startedAt: number;
   duration: number;
   status: string;
@@ -157,6 +159,7 @@ export interface WireTestCase {
   stepEvents?: TestStepEvent[] | null;
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
+  wastedTimeMs?: number | null;
   networkRequests?: unknown;
   webVitals?: unknown;
   consoleLogs?: unknown;

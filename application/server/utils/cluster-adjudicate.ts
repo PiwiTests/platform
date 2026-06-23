@@ -57,7 +57,8 @@ export async function adjudicateClusterPair(
   try {
     const j = JSON.parse(res.text) as Partial<AdjudicationResult>;
     if (typeof j.merge !== 'boolean') return null;
-    const confidence = j.confidence === 'high' || j.confidence === 'medium' || j.confidence === 'low' ? j.confidence : 'low';
+    const confidence =
+      j.confidence === 'high' || j.confidence === 'medium' || j.confidence === 'low' ? j.confidence : 'low';
     return { merge: j.merge, confidence, reason: String(j.reason ?? '').slice(0, 500) };
   } catch {
     return null;

@@ -223,7 +223,8 @@ async function testConnection() {
         baseUrl: d.baseUrl || undefined,
       },
     });
-    if (res.success) toast.add({ title: 'Connection successful', description: `Model: ${res.model}`, color: 'success' });
+    if (res.success)
+      toast.add({ title: 'Connection successful', description: `Model: ${res.model}`, color: 'success' });
     else toast.add({ title: 'Connection failed', description: res.error || 'Unknown error', color: 'error' });
   } catch (err) {
     toast.add({ title: 'Connection failed', description: String((err as Error)?.message ?? err), color: 'error' });
@@ -264,7 +265,11 @@ async function saveLimits() {
     });
     toast.add({ title: 'Context limits saved', color: 'success' });
   } catch (e) {
-    toast.add({ title: 'Failed to save context limits', description: String((e as Error)?.message ?? e), color: 'error' });
+    toast.add({
+      title: 'Failed to save context limits',
+      description: String((e as Error)?.message ?? e),
+      color: 'error',
+    });
   } finally {
     savingLimits.value = false;
   }

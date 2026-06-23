@@ -126,7 +126,12 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
           envAi.researchBaseUrl || envAi.baseUrl,
         )
       : null;
-    const embedding = makeRole(envAi.embeddingProvider, envAi.embeddingApiKey, envAi.embeddingModel, envAi.embeddingBaseUrl);
+    const embedding = makeRole(
+      envAi.embeddingProvider,
+      envAi.embeddingApiKey,
+      envAi.embeddingModel,
+      envAi.embeddingBaseUrl,
+    );
     return assembleConfig(diagnosis, research, embedding, String(envAi.autoDiagnose) === 'true', 'env');
   }
 

@@ -71,7 +71,9 @@ export async function generateClusterTitles(
     const parsed = JSON.parse(res.text) as { titles?: Array<{ id: number; title: string }> };
     const valid = new Set(clusters.map((c) => c.id));
     for (const t of parsed.titles ?? []) {
-      const title = String(t.title ?? '').trim().slice(0, TITLE_MAX_CHARS);
+      const title = String(t.title ?? '')
+        .trim()
+        .slice(0, TITLE_MAX_CHARS);
       if (valid.has(t.id) && title) result.set(t.id, title);
     }
   } catch {

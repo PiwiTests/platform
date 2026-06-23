@@ -8,7 +8,7 @@ import { CrashRecovery } from './crash-recovery.js';
 import { FileHandler } from './file-handler.js';
 import { MetadataCollector } from './metadata-collector.js';
 import { StreamManager } from './stream-manager.js';
-import { collectStepMetrics, extractTestStepEvents } from './step-analyzer.js';
+import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from './step-analyzer.js';
 import {
   computeInstanceId,
   readSourceSnippet,
@@ -267,7 +267,9 @@ export class PiwiDashboardReporter {
     if (this.options.collectPerformanceMetrics && result.steps?.length > 0) {
       testCase.performanceMetrics = collectStepMetrics(result.steps);
       const stepEvents = extractTestStepEvents(result.steps, result.startTime);
-      if (stepEvents.length > 0) testCase.stepEvents = stepEvents;
+      const waitEvents = extractWaitEvents(result.steps);
+      const allEvents = [...stepEvents, ...waitEvents];
+      if (allEvents.length > 0) testCase.stepEvents = allEvents;
     }
 
     if (this.options.collectPerformanceMetrics && result.attachments) {

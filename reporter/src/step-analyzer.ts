@@ -29,12 +29,7 @@ export function categorizeStep(title: string, pwCategory?: string): string {
     return 'input';
   if (lower.startsWith('expect') || lower.startsWith('locator.expect') || lower.startsWith('page.expect'))
     return 'assertion';
-  if (
-    lower.startsWith('locator.waitfor') ||
-    lower.startsWith('page.waitfor') ||
-    lower.startsWith('page.waitforloadstate') ||
-    lower.startsWith('page.waitforurl')
-  )
+  if (lower.startsWith('locator.waitfor') || lower.startsWith('page.waitfor') || lower.startsWith('frame.waitfor'))
     return 'wait';
   if (lower.startsWith('apirequestcontext') || lower.startsWith('apiresponse')) return 'api';
   if (lower === 'before hooks' || lower === 'after hooks' || lower.startsWith('fixture:')) return 'hook';
@@ -49,7 +44,7 @@ export interface FlatStep {
 }
 
 /** Step-event category restricted to the values `extractTestStepEvents` emits. */
-export type StepEventCategory = 'hook' | 'fixture' | 'test.step' | 'expect';
+export type StepEventCategory = 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait';
 
 /** Recursively flatten a nested step tree into a flat list. Uses Playwright's built-in category when available. */
 export function flattenSteps(steps: any[]): FlatStep[] {
@@ -77,6 +72,10 @@ export interface StepMetrics {
   navigationCount: number;
   /** Total wall-clock time spent in navigation steps */
   navigationTotalDuration: number;
+  /** Total wall-clock time spent in wait steps (wasted time) */
+  waitTotalDuration: number;
+  /** Count of wait steps */
+  waitCount: number;
 }
 
 /** Collect step metrics (flat steps, slowest step, navigation stats) from a Playwright step array */
@@ -90,6 +89,8 @@ export function collectStepMetrics(steps: any[]): StepMetrics {
   }
 
   const navSteps = flatSteps.filter((s) => s.category === 'navigation');
+  const waitSteps = flatSteps.filter((s) => s.category === 'wait');
+  const waitTotalDuration = waitSteps.reduce((sum, s) => sum + (s.duration || 0), 0);
 
   return {
     steps: flatSteps,
@@ -97,6 +98,8 @@ export function collectStepMetrics(steps: any[]): StepMetrics {
     slowestStep,
     navigationCount: navSteps.length,
     navigationTotalDuration: navSteps.reduce((sum: number, s) => sum + (s.duration || 0), 0),
+    waitTotalDuration,
+    waitCount: waitSteps.length,
   };
 }
 
@@ -123,6 +126,8 @@ export interface PerformanceSummary {
   totalNavigationDuration?: number;
   /** Average time per navigation step */
   avgNavigationDuration?: number;
+  /** Total time spent in wait steps across all cases */
+  totalWastedTimeMs?: number;
 }
 
 /** Compute run-level performance summary (averages, percentiles, slowest tests) from all test cases */
@@ -157,6 +162,14 @@ export function computePerformanceSummary(testCases: any[]): PerformanceSummary 
 
   result.totalNavigationDuration = totalNavDur;
   result.avgNavigationDuration = totalNavCount > 0 ? Math.round(totalNavDur / totalNavCount) : 0;
+
+  let totalWasted = 0;
+  for (const tc of testCases) {
+    if (tc.performanceMetrics) {
+      totalWasted += tc.performanceMetrics.waitTotalDuration || 0;
+    }
+  }
+  result.totalWastedTimeMs = totalWasted;
 
   return result;
 }
@@ -204,5 +217,50 @@ export function extractTestStepEvents(
     });
   }
 
+  return events;
+}
+
+/**
+ * Recursively extract wait-category steps from the Playwright step tree
+ * with absolute timings. These are rendered as semi-transparent amber bars
+ * on WorkersTimeline to visualize wasted time.
+ */
+export function extractWaitEvents(
+  steps: any[],
+  insideWait: boolean = false,
+): Array<{
+  title: string;
+  category: StepEventCategory;
+  startedAt: number;
+  duration: number;
+  status: string;
+  location?: string | null;
+}> {
+  const events: Array<{
+    title: string;
+    category: StepEventCategory;
+    startedAt: number;
+    duration: number;
+    status: string;
+    location?: string | null;
+  }> = [];
+  for (const step of steps) {
+    const cat = categorizeStep(step.title, step.category);
+    const isWait = cat === 'wait';
+    if (isWait && !insideWait && step.startTime) {
+      const startedAt = step.startTime instanceof Date ? step.startTime.getTime() : step.startTime;
+      events.push({
+        title: step.title,
+        category: 'wait' as StepEventCategory,
+        startedAt,
+        duration: step.duration || 0,
+        status: 'wasted',
+        location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : null,
+      });
+    }
+    if (step.steps?.length > 0) {
+      events.push(...extractWaitEvents(step.steps, insideWait || isWait));
+    }
+  }
   return events;
 }

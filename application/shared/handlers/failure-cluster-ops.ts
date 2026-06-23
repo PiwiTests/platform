@@ -74,10 +74,7 @@ export async function getOrCreateFailureClusters(
       .select({ fingerprint: failureClusterAliases.fingerprint, clusterId: failureClusterAliases.clusterId })
       .from(failureClusterAliases)
       .where(
-        and(
-          eq(failureClusterAliases.projectId, projectId),
-          inArray(failureClusterAliases.fingerprint, unmatched),
-        ),
+        and(eq(failureClusterAliases.projectId, projectId), inArray(failureClusterAliases.fingerprint, unmatched)),
       );
     await Promise.all(
       aliases.map(async (a) => {
@@ -165,7 +162,10 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
         survivorClusterDiag ? eq(failureDiagnoses.scope, 'execution') : sql`1 = 1`,
       ),
     );
-  await db.update(failureDiagnosisVersions).set({ clusterId: survivorId }).where(eq(failureDiagnosisVersions.clusterId, victimId));
+  await db
+    .update(failureDiagnosisVersions)
+    .set({ clusterId: survivorId })
+    .where(eq(failureDiagnosisVersions.clusterId, victimId));
 
   // Recompute aggregates from both clusters' surviving links.
   const [survivor] = await db

@@ -1,6 +1,13 @@
 import type { H3Event } from 'h3';
 import { getDatabase } from '../database';
-import { projectAssignments, testRuns, testCases, testRunsCases, failureClusters, failureDiagnoses } from '../database/schema';
+import {
+  projectAssignments,
+  testRuns,
+  testCases,
+  testRunsCases,
+  failureClusters,
+  failureDiagnoses,
+} from '../database/schema';
 import { eq } from 'drizzle-orm';
 import { requireAuth, isAuthEnabled } from './auth';
 import { Role } from '../../shared/types';
@@ -8,12 +15,15 @@ import type { User } from '../database/schema';
 
 export type ProjectScope = 'all' | Set<number>;
 
-export async function getProjectScope(db: Awaited<ReturnType<typeof getDatabase>>, user: User | null): Promise<ProjectScope> {
+export async function getProjectScope(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  user: User | null,
+): Promise<ProjectScope> {
   if (!user || !isAuthEnabled()) {
     return 'all';
   }
 
-  if (user.role as Role === Role.ADMINISTRATOR) {
+  if ((user.role as Role) === Role.ADMINISTRATOR) {
     return 'all';
   }
 
@@ -47,11 +57,7 @@ export async function canAccessProject(
   return scopeAllows(scope, projectId);
 }
 
-export async function requireProjectAccess(
-  event: H3Event,
-  projectId: number,
-  roles?: Role[],
-): Promise<User> {
+export async function requireProjectAccess(event: H3Event, projectId: number, roles?: Role[]): Promise<User> {
   const user = await requireAuth(event, roles);
   const db = await getDatabase();
   const canAccess = await canAccessProject(db, user, projectId);
@@ -65,22 +71,37 @@ export async function requireProjectAccess(
 }
 
 // Helpers to resolve projectId from entity IDs
-export async function resolveRunProjectId(db: Awaited<ReturnType<typeof getDatabase>>, runId: number): Promise<number | null> {
+export async function resolveRunProjectId(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  runId: number,
+): Promise<number | null> {
   const rows = await db.select({ projectId: testRuns.projectId }).from(testRuns).where(eq(testRuns.id, runId));
   return rows[0]?.projectId ?? null;
 }
 
-export async function resolveCaseProjectId(db: Awaited<ReturnType<typeof getDatabase>>, caseId: number): Promise<number | null> {
+export async function resolveCaseProjectId(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  caseId: number,
+): Promise<number | null> {
   const rows = await db.select({ projectId: testCases.projectId }).from(testCases).where(eq(testCases.id, caseId));
   return rows[0]?.projectId ?? null;
 }
 
-export async function resolveClusterProjectId(db: Awaited<ReturnType<typeof getDatabase>>, clusterId: number): Promise<number | null> {
-  const rows = await db.select({ projectId: failureClusters.projectId }).from(failureClusters).where(eq(failureClusters.id, clusterId));
+export async function resolveClusterProjectId(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  clusterId: number,
+): Promise<number | null> {
+  const rows = await db
+    .select({ projectId: failureClusters.projectId })
+    .from(failureClusters)
+    .where(eq(failureClusters.id, clusterId));
   return rows[0]?.projectId ?? null;
 }
 
-export async function resolveTestRunCaseProjectId(db: Awaited<ReturnType<typeof getDatabase>>, runCaseId: number): Promise<number | null> {
+export async function resolveTestRunCaseProjectId(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  runCaseId: number,
+): Promise<number | null> {
   const rows = await db
     .select({ projectId: testRuns.projectId })
     .from(testRunsCases)
@@ -90,7 +111,10 @@ export async function resolveTestRunCaseProjectId(db: Awaited<ReturnType<typeof 
   return rows[0]?.projectId ?? null;
 }
 
-export async function resolveDiagnosisProjectId(db: Awaited<ReturnType<typeof getDatabase>>, diagnosisId: number): Promise<number | null> {
+export async function resolveDiagnosisProjectId(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  diagnosisId: number,
+): Promise<number | null> {
   const rows = await db
     .select({ projectId: failureClusters.projectId })
     .from(failureDiagnoses)

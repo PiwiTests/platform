@@ -259,6 +259,7 @@ export async function getTestRunCase(db: DrizzleDB, id: number) {
     steps: trc.steps,
     slowestStep: trc.slowestStep,
     slowestStepDuration: trc.slowestStepDuration,
+    wastedTimeMs: trc.wastedTimeMs,
     networkRequests: networkRequestsData,
     webVitals: trc.webVitals,
     consoleLogs: trc.consoleLogs,

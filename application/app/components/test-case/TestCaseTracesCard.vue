@@ -18,7 +18,13 @@ function downloadUrl(path: string): string {
 </script>
 
 <template>
-  <SectionCard v-if="traces.length > 0" icon="i-lucide-bug-play" title="Traces" :count="traces.length" help="case.traces">
+  <SectionCard
+    v-if="traces.length > 0"
+    icon="i-lucide-bug-play"
+    title="Traces"
+    :count="traces.length"
+    help="case.traces"
+  >
     <div class="space-y-2">
       <div
         v-for="trace in traces"

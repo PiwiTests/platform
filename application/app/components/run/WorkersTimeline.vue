@@ -12,6 +12,7 @@ interface TimelineItem {
   duration: number;
   rowIndex: number;
   isHook: boolean;
+  isWait: boolean;
   category?: string;
   parentTitle?: string | null;
 }
@@ -102,6 +103,7 @@ const timelineData = computed<TimelineItem[]>(() => {
           duration: dur,
           rowIndex: ri,
           isHook: false,
+          isWait: false,
         });
 
         // Add hook/fixture segments for this test
@@ -118,7 +120,8 @@ const timelineData = computed<TimelineItem[]>(() => {
               start: stepStart,
               duration: step.duration || 0,
               rowIndex: ri,
-              isHook: true,
+              isHook: step.category !== 'wait',
+              isWait: step.category === 'wait',
               category: step.category,
               parentTitle: tc.title,
             });
@@ -154,6 +157,7 @@ const timelineData = computed<TimelineItem[]>(() => {
           duration: step.duration || 0,
           rowIndex: ri,
           isHook: true,
+          isWait: false,
           category: step.category,
           parentTitle: null,
         });
@@ -178,6 +182,7 @@ const timelineData = computed<TimelineItem[]>(() => {
           duration: dur,
           rowIndex: ri,
           isHook: false,
+          isWait: false,
         });
         cursor += dur;
       }
@@ -418,9 +423,12 @@ function resetView() {
           <template v-if="shardTotal && shardTotal > 1">
             &middot; {{ shardTotal }} shard{{ shardTotal > 1 ? 's' : '' }}
           </template>
-          &middot; {{ timelineData.filter((d) => !d.isHook).length }} tests
+          &middot; {{ timelineData.filter((d) => !d.isHook && !d.isWait).length }} tests
           <template v-if="timelineData.some((d) => d.isHook)">
             &middot; {{ timelineData.filter((d) => d.isHook).length }} hooks
+          </template>
+          <template v-if="timelineData.some((d) => d.isWait)">
+            &middot; {{ timelineData.filter((d) => d.isWait).length }} waits
           </template></span
         >
         <HelpHint topic="run.timeline" />
@@ -548,6 +556,30 @@ function resetView() {
               {{ item.title }}
             </text>
           </template>
+          <template v-else-if="item.isWait">
+            <rect
+              :x="getBarX(item)"
+              :y="getBarTop(item)"
+              :width="getBarWidth(item)"
+              :height="barHeight"
+              :rx="3"
+              :ry="3"
+              fill="#f59e0b66"
+              stroke="#f59e0b"
+              stroke-width="1"
+              stroke-dasharray="3,2"
+              class="transition-opacity duration-100 cursor-default"
+              :class="hoveredItem && hoveredItem.id !== item.id ? 'opacity-40' : 'opacity-80'"
+            />
+            <text
+              v-if="getBarWidth(item) > 50"
+              :x="getBarX(item) + 4"
+              :y="getBarTop(item) + barHeight / 2 + 4"
+              class="fill-amber-700 dark:fill-amber-300 text-[9px] font-medium pointer-events-none"
+            >
+              wait: {{ formatTime(item.duration) }}
+            </text>
+          </template>
           <template v-else-if="item.status === 'running'">
             <circle
               :cx="getBarX(item) + 300 * pxPerMs"
@@ -607,7 +639,7 @@ function resetView() {
       >
         <div class="flex items-center gap-2 mb-1">
           <span
-            v-if="!hoveredItem.isHook"
+            v-if="!hoveredItem.isHook && !hoveredItem.isWait"
             class="inline-block size-2.5 rounded-full shrink-0"
             :style="{ backgroundColor: getStatusHex(hoveredItem.status) }"
           />
@@ -615,13 +647,17 @@ function resetView() {
             v-else
             class="inline-block size-2.5 rounded-full shrink-0 border border-dashed"
             :style="{
-              backgroundColor: getHookFill(hoveredItem),
-              borderColor: getHookStroke(hoveredItem),
+              backgroundColor: hoveredItem.isWait ? '#f59e0b66' : getHookFill(hoveredItem),
+              borderColor: hoveredItem.isWait ? '#f59e0b' : getHookStroke(hoveredItem),
             }"
           />
           <span class="font-medium text-gray-900 dark:text-white max-w-64 truncate">
             <template v-if="hoveredItem.isHook">
               <span class="uppercase text-[10px] tracking-wider text-gray-500 mr-1">{{ hoveredItem.category }}</span>
+              {{ hoveredItem.title }}
+            </template>
+            <template v-else-if="hoveredItem.isWait">
+              <span class="uppercase text-[10px] tracking-wider text-amber-500 mr-1">{{ hoveredItem.category }}</span>
               {{ hoveredItem.title }}
             </template>
             <template v-else>

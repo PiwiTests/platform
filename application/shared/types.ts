@@ -87,6 +87,7 @@ export interface TestCasePayload {
   stepEvents?: TestStepEvent[] | null;
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
+  wastedTimeMs?: number | null;
   networkRequests?: unknown;
   webVitals?: unknown;
   consoleLogs?: unknown;
@@ -152,7 +153,7 @@ export interface TestRunSubmitPayload {
 
 export interface TestStepEvent {
   title: string;
-  category: 'hook' | 'fixture' | 'test.step' | 'expect';
+  category: 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait';
   startedAt: number;
   duration: number;
   status: string;

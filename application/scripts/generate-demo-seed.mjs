@@ -704,6 +704,7 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
         browser,
         test_annotations: testAnnotations,
         steps,
+        wasted_time_ms: 0,
         slowest_step: slowestStep.title,
         slowest_step_duration: slowestStep.duration,
         web_vitals: {

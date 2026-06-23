@@ -328,6 +328,7 @@ export const testRunsCases = sqliteTable(
     stepEvents: text('step_events', { mode: 'json' }), // Array of { title, category, startedAt, duration, status, location } — hook/fixture steps for timeline
     slowestStep: text('slowest_step'), // Title of the slowest step
     slowestStepDuration: integer('slowest_step_duration'), // Duration of the slowest step in ms
+    wastedTimeMs: integer('wasted_time_ms'), // Aggregated ms spent in wait steps
     webVitals: text('web_vitals', { mode: 'json' }), // { navigation: {...}, paint: {...} }
     consoleLogs: text('console_logs', { mode: 'json' }), // Array of { type, text, timestamp, location } console entries
     ariaSnapshot: text('aria_snapshot'), // ARIA snapshot of the page (YAML-like string from locator.ariaSnapshot())

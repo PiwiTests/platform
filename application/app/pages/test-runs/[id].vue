@@ -381,6 +381,13 @@ function handleFilterStatus(status: string) {
 // Reports from the files table
 const allReports = computed<ReportInfo[]>(() => testRun.value?.reports || []);
 
+// Total wasted time across all test cases
+const totalWastedTime = computed(() => {
+  const cases = testRun.value?.testCases;
+  if (!cases) return 0;
+  return cases.reduce((sum, tc) => sum + ((tc as any).wastedTimeMs ?? 0), 0);
+});
+
 // Right panel tabs
 const activeTab = ref('test-cases');
 
@@ -529,6 +536,7 @@ function handleSelectCluster(clusterId: number) {
             :block-col-span-class="blockColSpanClass"
             :finalizing="isFinalizing"
             :active-filter="statusFilterForSummary"
+            :total-wasted-time="totalWastedTime"
             @update:show-custom-data="showCustomData = $event"
             @filter-status="handleFilterStatus"
             @label-updated="refresh"

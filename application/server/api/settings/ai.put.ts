@@ -105,7 +105,10 @@ export default eventHandler(async (event) => {
       const model = cfg.model?.trim() || '';
       const baseUrl = cfg.baseUrl?.trim() || '';
       if (provider === 'openai' && (!baseUrl || !model)) {
-        throw createError({ statusCode: 400, message: `Role "${role}": OpenAI-compatible provider requires baseUrl and model` });
+        throw createError({
+          statusCode: 400,
+          message: `Role "${role}": OpenAI-compatible provider requires baseUrl and model`,
+        });
       }
       const apiKey = resolveKey(cfg.apiKey, existingRoles[role]?.apiKey);
       out[role] = { provider, model, baseUrl, ...(apiKey ? { apiKey } : {}) };

@@ -140,8 +140,7 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/cluster-merge-suggestions$/,
-    handler: async (m, _, q) =>
-      listMergeSuggestions(await getDemoDb(), +m[1]!, (q && q.get('status')) || 'pending'),
+    handler: async (m, _, q) => listMergeSuggestions(await getDemoDb(), +m[1]!, (q && q.get('status')) || 'pending'),
   },
   {
     method: 'GET',
