@@ -45,7 +45,8 @@ export type SectionId =
   | 'selectedCommits'
   | 'priorDiagnosis'
   | 'passedPeers'
-  | 'tracePointers';
+  | 'tracePointers'
+  | 'artifacts';
 
 export interface ContextSection {
   id: SectionId;

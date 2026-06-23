@@ -37,6 +37,7 @@ export const DIAGNOSIS_SECTIONS: DiagnosisSectionMeta[] = [
   { id: 'selectedCommits', label: 'Manually selected commits', short: 'Commits' },
   { id: 'priorDiagnosis', label: 'Prior diagnosis & triage', short: 'Prior' },
   { id: 'tracePointers', label: 'Trace files', short: 'Traces' },
+  { id: 'artifacts', label: 'Attachments & artifacts (video, HAR)', short: 'Artifacts' },
 ];
 
 const SECTION_IDS = new Set(DIAGNOSIS_SECTIONS.map((s) => s.id));

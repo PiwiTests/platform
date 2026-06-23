@@ -528,6 +528,34 @@ async function tracePointersSection(db: DbClient, rep: RepresentativeRow): Promi
   return `## Trace Files\n${lines.join('\n')}`;
 }
 
+function formatFileSize(n: number | null): string {
+  if (n == null) return '';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)} MB`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)} KB`;
+  return `${n} B`;
+}
+
+/**
+ * Pointers to the execution's captured artifacts (video, HAR, custom
+ * attachments). Already uploaded — surfaced as links so the diagnosis knows they
+ * exist and a human can inspect them. Not inlined (videos/HAR can be large).
+ */
+async function artifactsSection(db: DbClient, rep: RepresentativeRow): Promise<string | null> {
+  const rows = await db
+    .select({ subtype: files.subtype, label: files.label, path: files.path, size: files.size })
+    .from(files)
+    .where(and(eq(files.testRunsCaseId, rep.id), eq(files.type, 'attachment')))
+    .limit(15);
+  if (rows.length === 0) return null;
+  const lines = rows.map((f) => {
+    const name = f.subtype || 'attachment';
+    const ct = f.label ? ` (${f.label})` : '';
+    const sz = f.size != null ? ` — ${formatFileSize(f.size)}` : '';
+    return `- ${name}${ct}${sz}: /api/files/${f.path}`;
+  });
+  return `## Attachments & Artifacts\nFiles captured for this execution (video, HAR, custom artifacts) — available for inspection, not inlined:\n${lines.join('\n')}`;
+}
+
 /** Auto-resolve screenshots for the representative execution (D1). */
 async function resolveScreenshots(
   db: DbClient,
@@ -1181,6 +1209,9 @@ export async function buildDiagnosisContext(
 
       // D12: Trace pointers
       push(section('tracePointers', 'Trace Files', await tracePointersSection(db, rep)));
+
+      // Attachments & artifacts (video, HAR, custom files) — pointers only
+      push(section('artifacts', 'Attachments & Artifacts', await artifactsSection(db, rep)));
 
       // D1: Auto-resolve screenshots
       images = await resolveScreenshots(db, rep, limits);

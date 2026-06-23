@@ -86,7 +86,7 @@ const sectionsByCategory = computed(() => {
     'affectedTests',
   ];
   const scm = ['scmInvestigation', 'selectedCommits'];
-  const other = ['priorDiagnosis', 'tracePointers'];
+  const other = ['priorDiagnosis', 'tracePointers', 'artifacts'];
 
   const categorize = (ids: string[], label: string) => {
     const items = props.sections.filter((s) => ids.includes(s.id));
