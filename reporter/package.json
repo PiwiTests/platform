@@ -2,14 +2,14 @@
   "name": "@piwitests/reporter",
   "version": "0.1.1",
   "description": "Playwright reporter for sending test results to Piwi Dashboard",
-  "url": "https://github.com/piwitests/platform",
+  "url": "https://github.com/PiwiTests/platform",
   "homepage": "https://piwitests.github.io",
   "repository": {
     "type": "git",
-    "url": "https://github.com/piwitests/platform"
+    "url": "https://github.com/PiwiTests/platform"
   },
   "bugs": {
-    "url": "https://github.com/piwitests/platform/issues"
+    "url": "https://github.com/PiwiTests/platform/issues"
   },
   "type": "commonjs",
   "main": "dist/index.js",
@@ -32,8 +32,12 @@
     "dashboard",
     "test-results"
   ],
-  "author": "PhenX",
+  "author": "piwitests",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "reporter:build": "tsc",
     "reporter:dev": "tsc --watch",

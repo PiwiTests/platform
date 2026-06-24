@@ -5,10 +5,10 @@
   "homepage": "https://piwitests.github.io",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/piwitests/platform.git"
+    "url": "https://github.com/PiwiTests/platform"
   },
   "bugs": {
-    "url": "https://github.com/piwitests/platform/issues"
+    "url": "https://github.com/PiwiTests/platform/issues"
   },
   "type": "module",
   "main": "dist/index.js",
