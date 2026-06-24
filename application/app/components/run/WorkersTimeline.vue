@@ -48,6 +48,21 @@ function workerKey(tc: TestCaseResult): WorkerKey | null {
   return `${tc.shardIndex ?? 'null'}|${w}`;
 }
 
+/**
+ * Normalise a timestamp to epoch milliseconds. The live SSE stream delivers
+ * `startedAt` as a number, but the REST API serialises it from a DB timestamp
+ * column to an ISO string. Without this, string values fail `> 0` checks and
+ * `string - number` arithmetic yields NaN — collapsing bars to the left edge
+ * and dropping the timeline into its squished sequential-fallback layout.
+ */
+function toMs(v: unknown): number | null {
+  if (v == null) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (v instanceof Date) return v.getTime();
+  const t = new Date(v as string).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
 const timelineData = computed<TimelineItem[]>(() => {
   const byWorker = new Map<WorkerKey, TestCaseResult[]>();
 
@@ -72,8 +87,9 @@ const timelineData = computed<TimelineItem[]>(() => {
   let hasStartedAt = false;
   for (const [, cases] of sortedWorkers) {
     for (const tc of cases) {
-      if (tc.startedAt != null && tc.startedAt > 0) {
-        minStartedAt = Math.min(minStartedAt, tc.startedAt);
+      const sa = toMs(tc.startedAt);
+      if (sa != null && sa > 0) {
+        minStartedAt = Math.min(minStartedAt, sa);
         hasStartedAt = true;
       }
     }
@@ -99,7 +115,7 @@ const timelineData = computed<TimelineItem[]>(() => {
           status: tc.status,
           workerIndex: tc.workerIndex ?? 0,
           shardIndex,
-          start: Math.max(0, (tc.startedAt ?? minStartedAt) - minStartedAt),
+          start: Math.max(0, (toMs(tc.startedAt) ?? minStartedAt) - minStartedAt),
           duration: dur,
           rowIndex: ri,
           isHook: false,
@@ -110,7 +126,7 @@ const timelineData = computed<TimelineItem[]>(() => {
         const steps = tc.stepEvents as TestStepEvent[] | null | undefined;
         if (steps && steps.length > 0) {
           for (const step of steps) {
-            const stepStart = Math.max(0, step.startedAt - minStartedAt);
+            const stepStart = Math.max(0, (toMs(step.startedAt) ?? minStartedAt) - minStartedAt);
             workerItems.push({
               id: -tc.id - steps.indexOf(step) - 1,
               title: step.title,
@@ -146,7 +162,7 @@ const timelineData = computed<TimelineItem[]>(() => {
         if (!row) continue;
         const ri = sortedWorkers.indexOf(row);
 
-        const stepStart = Math.max(0, step.startedAt - minStartedAt);
+        const stepStart = Math.max(0, (toMs(step.startedAt) ?? minStartedAt) - minStartedAt);
         result.push({
           id: -999 - result.length,
           title: `[Setup] ${step.title}`,
@@ -168,7 +184,7 @@ const timelineData = computed<TimelineItem[]>(() => {
       const [key, rawCases] = sortedWorkers[ri]!;
       const shardIdx = key.split('|')[0];
       const shardIndex = shardIdx === 'null' ? null : Number(shardIdx);
-      const sortedCases = [...rawCases].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
+      const sortedCases = [...rawCases].sort((a, b) => (toMs(a.startedAt) ?? 0) - (toMs(b.startedAt) ?? 0));
       let cursor = 0;
       for (const tc of sortedCases) {
         const dur = tc.duration ?? 1000;
