@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, watch, onUnmounted } from 'vue';
-import type { TestRunDetails, TestCaseResult, ReportInfo } from '~~/types/api';
+import type { TestRunDetails, TestCaseResult, ReportInfo, TestStepEvent } from '~~/types/api';
 import { subscribeDemoEvents } from '~/demo/run-events';
 
 const route = useRoute();
@@ -84,7 +84,13 @@ function flushPendingEvents() {
         workerIndex?: number;
         startedAt?: number;
         browser?: { projectName?: string } | null;
+        stepCategory?: string | null;
       };
+      // Hook/fixture step-begin events are published as `test-begin` with a
+      // `stepCategory`. They are not test cases — ignore them so they don't
+      // create phantom rows (which left orphaned "running" dots on the
+      // timeline). Hooks render from `stepEvents` once their test completes.
+      if (d.stepCategory) continue;
       const key = `${d.title}@@${d.location}@@${JSON.stringify(d.browser)}`;
       if (!liveTestCaseKeys.has(key)) {
         liveTestCaseKeys.set(key, true);
@@ -113,10 +119,17 @@ function flushPendingEvents() {
         status: string;
         duration?: number;
         error?: string | null;
+        stepEvents?: TestStepEvent[] | null;
+        wastedTimeMs?: number | null;
         workerIndex?: number;
         startedAt?: number;
         browser?: { projectName?: string } | null;
+        stepCategory?: string | null;
       };
+      // Ignore hook/fixture step-end events (published as `test-completed`
+      // with a `stepCategory`) — they are not test cases. The hook segments
+      // arrive via the owning test's `stepEvents` below.
+      if (d.stepCategory) continue;
       const key = `${d.title}@@${d.location}@@${JSON.stringify(d.browser)}`;
       if (liveTestCaseKeys.has(key)) {
         const idx = liveTestCases.value.findIndex(
@@ -132,6 +145,8 @@ function flushPendingEvents() {
             status: d.status,
             duration: d.duration,
             error: d.error,
+            stepEvents: d.stepEvents ?? existing.stepEvents,
+            wastedTimeMs: d.wastedTimeMs ?? existing.wastedTimeMs,
             workerIndex: d.workerIndex ?? existing.workerIndex,
             startedAt: d.startedAt ? d.startedAt : existing.startedAt,
             browser: d.browser ?? existing.browser,
@@ -152,6 +167,8 @@ function flushPendingEvents() {
             duration: d.duration,
             location: d.location,
             error: d.error,
+            stepEvents: d.stepEvents ?? null,
+            wastedTimeMs: d.wastedTimeMs ?? null,
             workerIndex: d.workerIndex ?? null,
             startedAt: d.startedAt ?? undefined,
             browser: d.browser ?? null,

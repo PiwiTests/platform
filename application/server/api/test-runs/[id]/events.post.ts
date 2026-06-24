@@ -254,6 +254,8 @@ export default eventHandler(async (event) => {
         duration: tc.duration,
         location: tc.location,
         error: tc.error ?? null,
+        stepEvents: (tc as { stepEvents?: unknown }).stepEvents ?? null,
+        wastedTimeMs: tc.wastedTimeMs ?? null,
         workerIndex: tc.workerIndex ?? null,
         shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
