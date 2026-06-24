@@ -11,8 +11,12 @@
     <PackageProjectUrl>https://piwitests.github.io</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageTags>playwright;testing;aspnetcore;instrumentation;logs</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath=""/>
   </ItemGroup>
 </Project>
