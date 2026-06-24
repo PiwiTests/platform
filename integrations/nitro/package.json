@@ -5,7 +5,7 @@
   "homepage": "https://piwitests.github.io",
   "repository": {
     "type": "git",
-    "url": "https://github.com/piwitests/platform"
+    "url": "git+https://github.com/piwitests/platform.git"
   },
   "bugs": {
     "url": "https://github.com/piwitests/platform/issues"
@@ -27,7 +27,7 @@
     "server-logs",
     "test-results"
   ],
-  "author": "PhenX",
+  "author": "piwitests",
   "license": "MIT",
   "scripts": {
     "build": "tsc",
