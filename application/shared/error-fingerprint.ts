@@ -24,7 +24,7 @@
  * `sampleError` on startup (see shared/handlers/failure-cluster-recluster.ts),
  * so triage status, notes and diagnoses survive an algorithm change.
  */
-export const FINGERPRINT_VERSION = 2;
+export const FINGERPRINT_VERSION = 3;
 
 export type ErrorType = 'timeout' | 'assertion' | 'strict-mode' | 'navigation' | 'crash' | 'unknown';
 
@@ -105,9 +105,15 @@ function extractMessageHead(text: string): string {
 /**
  * Mask tokens that vary between occurrences of the same root cause:
  * received/expected values in assertions, URLs, emails, UUIDs, hashes, and
- * all numbers (timeouts, ports, ids, durations). Order matters — structured
- * tokens are masked before the catch-all digit pass so their digits don't
- * leak through.
+ * standalone numbers (timeouts, ports, ids, durations). Order matters —
+ * structured tokens are masked before the catch-all number pass so their digits
+ * don't leak through.
+ *
+ * A digit run is only masked when it is NOT glued to a preceding letter, so
+ * numbers-with-units (`30000ms`) and delimited indices (`row-5`) collapse, while
+ * digits that are part of an identifier/parameter name (`p1`, `field2`, `utf8`)
+ * are preserved — those discriminate genuinely different failures. (Capture-group
+ * form rather than a lookbehind, for Safari < 16.4 compatibility in demo mode.)
  */
 function maskVolatile(text: string): string {
   return text
@@ -117,7 +123,7 @@ function maskVolatile(text: string): string {
     .replace(UUID_RE, '<UUID>')
     .replace(LONG_HEX_RE, '<HASH>')
     .replace(SHORT_HEX_RE, '<HASH>')
-    .replace(/\d+/g, '<N>');
+    .replace(/([A-Za-z])?(\d+)/g, (whole, letter) => (letter ? whole : '<N>'));
 }
 
 /**

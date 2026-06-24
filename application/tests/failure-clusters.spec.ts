@@ -91,6 +91,25 @@ test.describe('Error fingerprinting', () => {
     expect(a.fingerprint).toBe(b.fingerprint);
   });
 
+  test('digits glued to a letter are kept (identifiers), standalone numbers are masked', async () => {
+    const assertOn = (id: string) => `Error: expect(locator).toBeVisible()\n\nLocator: getByTestId('${id}')`;
+
+    // Distinct parameter/test-id names → distinct fingerprints (not collapsed to <N>).
+    const field1 = await computeErrorFingerprint(assertOn('field1'));
+    const field2 = await computeErrorFingerprint(assertOn('field2'));
+    expect(field1.fingerprint).not.toBe(field2.fingerprint);
+
+    // But a delimiter-separated dynamic index still collapses to one cluster.
+    const row1 = await computeErrorFingerprint(assertOn('row-1'));
+    const row2 = await computeErrorFingerprint(assertOn('row-2'));
+    expect(row1.fingerprint).toBe(row2.fingerprint);
+
+    // And a standalone number with a unit (timeout) is still masked → still groups.
+    const t1 = await computeErrorFingerprint(timeoutError(30000));
+    const t2 = await computeErrorFingerprint(timeoutError(15000));
+    expect(t1.fingerprint).toBe(t2.fingerprint);
+  });
+
   test('URLs and emails are masked out of the message head', async () => {
     const a = await computeErrorFingerprint('Error: page.goto: net::ERR_CONNECTION_REFUSED at https://pr-1234.preview.example.com/login');
     const b = await computeErrorFingerprint('Error: page.goto: net::ERR_CONNECTION_REFUSED at https://pr-5678.preview.example.com/login');
