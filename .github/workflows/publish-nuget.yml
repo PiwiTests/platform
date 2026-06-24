@@ -7,6 +7,9 @@ on:
 jobs:
   publish-nuget:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-dotnet@v4
@@ -20,5 +23,4 @@ jobs:
             -p:Version="$VERSION" \
             -o ./nupkg
           dotnet nuget push ./nupkg/*.nupkg \
-            --api-key ${{ secrets.NUGET_API_KEY }} \
             --source https://api.nuget.org/v3/index.json
