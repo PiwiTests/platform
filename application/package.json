@@ -1,5 +1,5 @@
 {
-  "name": "@phenx/piwi-dashboard",
+  "name": "@piwi-tests/dashboard",
   "private": true,
   "type": "module",
   "scripts": {

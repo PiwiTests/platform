@@ -2,7 +2,7 @@
  * Single source of truth for the documentation site base URL and link building.
  * Lives in `shared/` so server, email, demo and app code can all reuse it.
  */
-export const DOCS_BASE_URL = 'https://phenx.github.io/piwi-dashboard';
+export const DOCS_BASE_URL = 'https://piwi-tests.github.io';
 
 /**
  * Build an absolute docs URL from a page + optional `#anchor`.

@@ -9,7 +9,7 @@ const links = [
     {
       label: 'Documentation',
       icon: 'i-lucide-book-open',
-      to: 'https://github.com/PhenX/piwi-dashboard',
+      to: 'https://github.com/piwi-tests/platform',
       target: '_blank',
     },
   ],

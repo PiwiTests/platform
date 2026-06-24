@@ -1,7 +1,7 @@
 import type { PlaywrightTestConfig } from '@playwright/test';
 import { applyOptionsToEnv, type PiwiDashboardOptions } from './config.js';
 
-const PIWI_MODULE = '@phenx/piwi-dashboard-reporter';
+const PIWI_MODULE = '@piwi-tests/reporter';
 
 function isPiwiReporterEntry(entry: unknown): boolean {
   if (typeof entry === 'string') return entry.toLowerCase().includes('piwi');

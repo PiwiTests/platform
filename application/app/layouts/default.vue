@@ -144,7 +144,7 @@ const links = computed(() => {
     {
       label: 'GitHub',
       icon: 'i-lucide-github',
-      to: 'https://github.com/PhenX/piwi-dashboard',
+      to: 'https://github.com/piwi-tests/platform',
       target: '_blank',
     },
   ];
@@ -209,8 +209,8 @@ const toCommandPaletteItem = (item: NavigationMenuItem): CommandPaletteItem => (
 // from the URL — it may be `[id].vue` or `[id]/index.vue` — so for dynamic
 // routes we link to the pages directory instead of a guessed (404-ing) file.
 const pageSourceUrl = computed(() => {
-  const blobBase = 'https://github.com/PhenX/piwi-dashboard/blob/main/application/app/pages';
-  const treeBase = 'https://github.com/PhenX/piwi-dashboard/tree/main/application/app/pages';
+  const blobBase = 'https://github.com/piwi-tests/platform/blob/main/application/app/pages';
+  const treeBase = 'https://github.com/piwi-tests/platform/tree/main/application/app/pages';
   const pattern = route.matched[route.matched.length - 1]?.path ?? route.path;
   if (pattern.includes(':')) return treeBase;
   return `${blobBase}${pattern === '/' ? '/index' : pattern}.vue`;

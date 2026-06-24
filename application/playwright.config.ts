@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
-import PiwiDashboardReporter from '@phenx/piwi-dashboard-reporter';
+import PiwiDashboardReporter from '@piwi-tests/reporter';
 const { wrapConfig } = PiwiDashboardReporter;
 import { join } from 'path';
 

@@ -149,7 +149,7 @@ definePageMeta({
 
     <div class="flex items-center gap-4 text-sm text-muted">
       <a
-        href="https://github.com/PhenX/piwi-dashboard"
+        href="https://github.com/piwi-tests/platform"
         target="_blank"
         rel="noopener"
         class="flex items-center gap-1.5 hover:text-default transition-colors"

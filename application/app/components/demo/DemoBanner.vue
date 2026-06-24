@@ -26,7 +26,7 @@ if (config.public.demoMode) {
       <div class="demo-banner-inner">
         <span>
           ⚠️ <strong>Demo mode</strong> — sample data running entirely in your browser.
-          <a href="https://github.com/PhenX/piwi-dashboard" target="_blank" class="underline"
+          <a href="https://github.com/piwi-tests/platform" target="_blank" class="underline"
             >Deploy your own instance</a
           >
           for live data.

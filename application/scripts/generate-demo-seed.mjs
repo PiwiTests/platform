@@ -320,7 +320,8 @@ const CLUSTER_DEFS = [
   { projectId: 2, errorText: 'expect(received).toBe(expected)\n\nExpected: 200\nReceived: 500', caseIndices: [0, 1] },
   {
     projectId: 2,
-    errorText: 'expect(received).toBe(expected)\n\nExpected: truthy\nReceived: undefined',
+    errorText:
+      'expect(received).toHaveText(expected)\n\nExpected pattern: /success/i\n\nReceived: "Server error"\n    at tests/api/payments.spec.ts:88',
     caseIndices: [2],
   },
   {

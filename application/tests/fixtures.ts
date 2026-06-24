@@ -2,7 +2,7 @@
  * Shared test fixtures for the Piwi Dashboard test suite.
  *
  * Extends the base Playwright `test` with dashboard fixtures that mirror the
- * behavior of `@phenx/piwi-dashboard-reporter/fixtures` — automatically
+ * behavior of `@piwi-tests/reporter/fixtures` — automatically
  * capturing network request timing and browser performance (Web Vitals) for
  * every page interaction so they appear in the dashboard.
  *
