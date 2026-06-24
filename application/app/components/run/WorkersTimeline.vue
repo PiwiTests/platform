@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, nextTick, watchEffect } from 'vue';
 import type { TestCaseResult, TestStepEvent } from '~~/types/api';
+import { isWastedWait, DEFAULT_WASTED_WAIT_PATTERNS } from '~~/shared/utils/wasted-waits';
 
 interface TimelineItem {
   id: number;
@@ -29,7 +30,14 @@ const props = defineProps<{
   setupSteps?: TestStepEvent[] | null;
   shardTotal?: number | null;
   live?: boolean;
+  /** Allowlist of glob patterns classifying which waits count as wasted time. */
+  wastedPatterns?: string[] | null;
 }>();
+
+/** Effective wasted-wait patterns (falls back to the built-in default). */
+const wastedPatterns = computed<readonly string[]>(() =>
+  props.wastedPatterns && props.wastedPatterns.length > 0 ? props.wastedPatterns : DEFAULT_WASTED_WAIT_PATTERNS,
+);
 
 const emit = defineEmits<{
   selectTestCase: [id: number];
@@ -126,6 +134,10 @@ const timelineData = computed<TimelineItem[]>(() => {
         const steps = tc.stepEvents as TestStepEvent[] | null | undefined;
         if (steps && steps.length > 0) {
           for (const step of steps) {
+            const isWaitStep = step.category === 'wait';
+            // Non-wasted waits are framework noise already covered by the test
+            // bar — only render waits the configured allowlist flags as wasted.
+            if (isWaitStep && !isWastedWait(step, wastedPatterns.value)) continue;
             const stepStart = Math.max(0, (toMs(step.startedAt) ?? minStartedAt) - minStartedAt);
             workerItems.push({
               id: -tc.id - steps.indexOf(step) - 1,
@@ -136,8 +148,8 @@ const timelineData = computed<TimelineItem[]>(() => {
               start: stepStart,
               duration: step.duration || 0,
               rowIndex: ri,
-              isHook: step.category !== 'wait',
-              isWait: step.category === 'wait',
+              isHook: !isWaitStep,
+              isWait: isWaitStep,
               category: step.category,
               parentTitle: tc.title,
             });
@@ -205,6 +217,8 @@ const timelineData = computed<TimelineItem[]>(() => {
         const steps = tc.stepEvents as TestStepEvent[] | null | undefined;
         if (steps && steps.length > 0) {
           for (const step of steps) {
+            const isWaitStep = step.category === 'wait';
+            if (isWaitStep && !isWastedWait(step, wastedPatterns.value)) continue;
             result.push({
               id: -tc.id - steps.indexOf(step) - 1,
               title: step.title,
@@ -214,8 +228,8 @@ const timelineData = computed<TimelineItem[]>(() => {
               start: cursor,
               duration: step.duration || 0,
               rowIndex: ri,
-              isHook: step.category !== 'wait',
-              isWait: step.category === 'wait',
+              isHook: !isWaitStep,
+              isWait: isWaitStep,
               category: step.category,
               parentTitle: tc.title,
             });

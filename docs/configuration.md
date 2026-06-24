@@ -59,6 +59,16 @@ Authentication is optional and off by default. When disabled, all endpoints beha
 
 See [Authentication](./authentication) for roles, API keys, and project assignments.
 
+## Wasted time
+
+Controls which Playwright wait steps are counted as "wasted time" on the run timeline and in per-test/run totals. Classification happens when a run is viewed, so changing it re-classifies historical runs immediately.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PIWI_WASTED_WAIT_PATTERNS` | `Wait for timeout*,*waitForTimeout*` | Comma/newline-separated allowlist of glob patterns. A wait is wasted when a pattern matches its step **title** or its source **location**. Case-insensitive; supports `*` and `?`. Use `*` to count every wait. When set, the in-app **Settings → Wasted time** editor is locked. |
+
+When unset, configure the patterns from **Settings → Wasted time** (administrator only). The default counts only explicit `waitForTimeout` sleeps, since framework-injected waits (load-state, wait-for-function) are usually unavoidable.
+
 ## AI diagnosis
 
 | Variable | Default | Description |

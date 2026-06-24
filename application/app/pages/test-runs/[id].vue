@@ -603,6 +603,7 @@ function handleSelectCluster(clusterId: number) {
             :setup-steps="testRun?.setupSteps ?? null"
             :shard-total="testRun?.shardTotal ?? null"
             :live="isLive"
+            :wasted-patterns="testRun?.wastedWaitPatterns ?? null"
             @select-test-case="handleSelectTestCase"
           />
         </template>

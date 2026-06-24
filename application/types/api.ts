@@ -265,6 +265,8 @@ export interface TestRunDetails {
     testCaseFilesCount: number;
   };
   links?: EntityLinkInfo[];
+  /** Effective allowlist of glob patterns classifying waits as wasted time. */
+  wastedWaitPatterns?: string[];
 }
 
 /**
