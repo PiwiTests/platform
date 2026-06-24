@@ -5,12 +5,12 @@ lang: en-US
 
 # Piwi Dashboard reporter
 
-The `@phenx/piwi-dashboard-reporter` package is a custom Playwright reporter that automatically uploads test results, HTML reports, and trace files to the dashboard after each run.
+The `@piwitests/reporter` package is a custom Playwright reporter that automatically uploads test results, HTML reports, and trace files to the dashboard after each run.
 
 ## Installation
 
 ```bash
-npm install --save-dev @phenx/piwi-dashboard-reporter
+npm install --save-dev @piwitests/reporter
 ```
 
 ## Basic configuration
@@ -23,7 +23,7 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   reporter: [
     ['list'],
-    ['@phenx/piwi-dashboard-reporter', {
+    ['@piwitests/reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-project',
     }],
@@ -120,7 +120,7 @@ variables. Ensure all shards use the same `projectName`.
 If auto-detection doesn't work for your CI setup, set `runLabel` manually to a value common to all shards:
 
 ```typescript
-['@phenx/piwi-dashboard-reporter', {
+['@piwitests/reporter', {
   serverUrl: 'http://localhost:3000',
   projectName: 'my-project',
   runLabel: process.env.BUILD_TAG || 'my-custom-label',
@@ -149,7 +149,7 @@ By default, the reporter streams test results to the dashboard in real-time as t
 If you prefer the original batch-only behavior (all results sent at the end):
 
 ```typescript
-['@phenx/piwi-dashboard-reporter', {
+['@piwitests/reporter', {
   serverUrl: 'http://localhost:3000',
   projectName: 'my-project',
   streaming: false,
@@ -161,7 +161,7 @@ If you prefer the original batch-only behavior (all results sent at the end):
 Control how frequently results are sent during streaming:
 
 ```typescript
-['@phenx/piwi-dashboard-reporter', {
+['@piwitests/reporter', {
   serverUrl: 'http://localhost:3000',
   projectName: 'my-project',
   streamingBatchSize: 10,     // send every 10 tests
@@ -183,7 +183,7 @@ Wrap your config's `globalSetup` with `createGlobalSetup`, passing the same opti
 ```typescript
 // playwright.config.ts
 import { defineConfig } from '@playwright/test'
-import { createGlobalSetup } from '@phenx/piwi-dashboard-reporter'
+import { createGlobalSetup } from '@piwitests/reporter'
 
 const dashboard = {
   serverUrl: 'http://localhost:3000',
@@ -195,7 +195,7 @@ export default defineConfig({
   globalSetup: createGlobalSetup(dashboard),
   reporter: [
     ['list'],
-    ['@phenx/piwi-dashboard-reporter', dashboard],
+    ['@piwitests/reporter', dashboard],
   ],
 })
 ```
@@ -221,7 +221,7 @@ export default defineConfig({
     ['@playwright/test/reporter-html', { outputFolder: 'playwright-report' }],
     ['monocart-reporter', { name: 'My Tests', outputFile: 'monocart-report/index.html' }],
     ['blob'],
-    ['@phenx/piwi-dashboard-reporter', {
+    ['@piwitests/reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-project',
       reports: [
@@ -253,7 +253,7 @@ To automatically capture network request timing and browser Web Vitals, use the 
 ```typescript
 // tests/fixtures.ts
 import { test as base, expect } from '@playwright/test'
-import { dashboardFixtures } from '@phenx/piwi-dashboard-reporter/fixtures'
+import { dashboardFixtures } from '@piwitests/reporter/fixtures'
 
 export const test = base.extend(dashboardFixtures)
 export { expect }
@@ -273,7 +273,7 @@ test('homepage loads', async ({ page }) => {
 **Option B – drop-in replacement:**
 
 ```typescript
-import { test, expect } from '@phenx/piwi-dashboard-reporter/fixtures'
+import { test, expect } from '@piwitests/reporter/fixtures'
 ```
 
 ### What gets captured
@@ -344,7 +344,7 @@ The run-level counter `didNotRunTests` aggregates these, and the dashboard rende
 ```typescript
 export default defineConfig({
   reporter: [
-    ['@phenx/piwi-dashboard-reporter', {
+    ['@piwitests/reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-project',
       projectDescription: 'End-to-end tests for the main application',
@@ -364,7 +364,7 @@ export default defineConfig({
 ```typescript
 export default defineConfig({
   reporter: [
-    ['@phenx/piwi-dashboard-reporter', {
+    ['@piwitests/reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-project',
       collectScmInfo: false,
@@ -394,7 +394,7 @@ export default defineConfig({
 
 ### Network/Web Vitals not appearing
 
-- Import `test` from `@phenx/piwi-dashboard-reporter/fixtures` (or extend with `dashboardFixtures`)
+- Import `test` from `@piwitests/reporter/fixtures` (or extend with `dashboardFixtures`)
 - Verify `collectPerformanceMetrics` is not set to `false`
 - Ensure tests navigate to at least one page (`await page.goto(...)`)
 
@@ -414,7 +414,7 @@ Generate an API key in the dashboard UI (Settings → Users → API keys button)
 ```typescript
 export default defineConfig({
   reporter: [
-    ['@phenx/piwi-dashboard-reporter', {
+    ['@piwitests/reporter', {
       serverUrl: 'http://your-dashboard.example.com',
       projectName: 'my-project',
       apiKey: process.env.PIWI_API_KEY,
@@ -430,7 +430,7 @@ The key is sent as an `Authorization: Bearer <key>` header. Store it in a CI sec
 ```typescript
 export default defineConfig({
   reporter: [
-    ['@phenx/piwi-dashboard-reporter', {
+    ['@piwitests/reporter', {
       serverUrl: 'http://your-dashboard.example.com',
       projectName: 'my-project',
       username: process.env.PIWI_USERNAME,
@@ -459,7 +459,7 @@ npm run reporter:dev     # watch mode — auto-recompile on changes
 
 This produces one `.js` + one `.d.ts` file per `.ts` source in `src/` (currently 21 modules).
 
-The compiled output is what Playwright loads at runtime. The `package.json` `exports` field maps `@phenx/piwi-dashboard-reporter/fixtures` directly to `dist/fixtures.js`.
+The compiled output is what Playwright loads at runtime. The `package.json` `exports` field maps `@piwitests/reporter/fixtures` directly to `dist/fixtures.js`.
 
 ### Source layout
 

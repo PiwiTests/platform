@@ -1,0 +1,29 @@
+name: Publish Instrumentation (npm)
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+      - run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          npm version "$VERSION" --no-git-tag-version
+        working-directory: integrations/nitro
+      - run: npm run build
+        working-directory: integrations/nitro
+      - run: npm publish --access public --provenance
+        working-directory: integrations/nitro
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

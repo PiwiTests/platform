@@ -174,7 +174,7 @@ This means you never need to manually refresh the dashboard — it updates itsel
 
 ## Demo run simulator
 
-The [live demo](https://phenx.github.io/piwi-dashboard/demo/) includes a **Simulate a test run** menu in the demo banner. It replays the exact streaming protocol a Piwi reporter speaks during a real Playwright run — entirely in your browser — so you can watch a run arrive live. Available scenarios:
+The [live demo](https://piwitests.github.io/demo/) includes a **Simulate a test run** menu in the demo banner. It replays the exact streaming protocol a Piwi reporter speaks during a real Playwright run — entirely in your browser — so you can watch a run arrive live. Available scenarios:
 
 - **Passing run** — all tests pass across 4 parallel workers
 - **Run with failures** — failures joining a known failure cluster, plus a brand-new cluster

@@ -42,26 +42,26 @@ describe('wrapConfig', () => {
     const config = wrapConfig({ testDir: './tests' });
     expect(Array.isArray(config.reporter)).toBeTruthy();
     expect((config.reporter as any[]).length).toBe(1);
-    expect((config.reporter as any[])[0][0]).toBe('@phenx/piwi-dashboard-reporter');
+    expect((config.reporter as any[])[0][0]).toBe('@piwitests/reporter');
   });
 
   it('injects piwi reporter alongside an existing string reporter', () => {
     const config = wrapConfig({ reporter: 'list' });
     expect(Array.isArray(config.reporter)).toBeTruthy();
     expect((config.reporter as any[]).length).toBe(2);
-    expect((config.reporter as any[])[1][0]).toBe('@phenx/piwi-dashboard-reporter');
+    expect((config.reporter as any[])[1][0]).toBe('@piwitests/reporter');
   });
 
   it('injects piwi reporter alongside an existing array reporter', () => {
     const config = wrapConfig({ reporter: [['json', { outputFile: 'report.json' }]] });
     expect(Array.isArray(config.reporter)).toBeTruthy();
     expect((config.reporter as any[]).length).toBe(2);
-    expect((config.reporter as any[])[1][0]).toBe('@phenx/piwi-dashboard-reporter');
+    expect((config.reporter as any[])[1][0]).toBe('@piwitests/reporter');
   });
 
   it('does not duplicate piwi reporter if already present', () => {
     const config = wrapConfig({
-      reporter: [['@phenx/piwi-dashboard-reporter', { projectName: 'test' }]],
+      reporter: [['@piwitests/reporter', { projectName: 'test' }]],
     });
     expect(Array.isArray(config.reporter)).toBeTruthy();
     expect((config.reporter as any[]).length).toBe(1);
@@ -72,7 +72,7 @@ describe('wrapConfig', () => {
       { testDir: './tests' },
       { projectName: 'my-project', serverUrl: 'http://localhost:3000' },
     );
-    const entry = (config.reporter as any[]).find((r: any) => r[0] === '@phenx/piwi-dashboard-reporter');
+    const entry = (config.reporter as any[]).find((r: any) => r[0] === '@piwitests/reporter');
     expect(entry).toBeTruthy();
     expect(entry[1]?.projectName).toBe('my-project');
     expect(entry[1]?.serverUrl).toBe('http://localhost:3000');

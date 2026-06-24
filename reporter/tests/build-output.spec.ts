@@ -7,7 +7,7 @@ const dist = (...segments: string[]) => join(import.meta.dirname, '..', 'dist', 
 describe('Build output', () => {
   it('package.json should have correct metadata', () => {
     const pkg = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf-8'));
-    expect(pkg.name).toBe('@phenx/piwi-dashboard-reporter');
+    expect(pkg.name).toBe('@piwitests/reporter');
     expect(pkg.main).toBe('dist/index.js');
     expect(pkg.types).toBe('dist/index.d.ts');
     expect(pkg.peerDependencies).toBeTruthy();

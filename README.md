@@ -9,13 +9,13 @@
 </p>
 
 <p align="center">
-  <a href="https://phenx.github.io/piwi-dashboard/demo/"><img src="https://img.shields.io/badge/▶_Live_demo-try_it_now-2496ED?style=for-the-badge" alt="Live demo"></a>
-  <a href="https://phenx.github.io/piwi-dashboard"><img src="https://img.shields.io/badge/📖_Documentation-read_the_docs-020420?style=for-the-badge" alt="Documentation"></a>
+  <a href="https://piwitests.github.io/demo/"><img src="https://img.shields.io/badge/▶_Live_demo-try_it_now-2496ED?style=for-the-badge" alt="Live demo"></a>
+  <a href="https://piwitests.github.io"><img src="https://img.shields.io/badge/📖_Documentation-read_the_docs-020420?style=for-the-badge" alt="Documentation"></a>
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@phenx/piwi-dashboard-reporter"><img src="https://img.shields.io/npm/v/@phenx/piwi-dashboard-reporter?logo=npm&labelColor=020420&color=CB3837" alt="npm"></a>
-  <a href="https://hub.docker.com/r/phenx/piwi-dashboard"><img src="https://img.shields.io/docker/v/phenx/piwi-dashboard?logo=docker&labelColor=020420&color=2496ED" alt="Docker"></a>
+  <a href="https://www.npmjs.com/package/@piwitests/reporter"><img src="https://img.shields.io/npm/v/@piwitests/reporter?logo=npm&labelColor=020420&color=CB3837" alt="npm"></a>
+  <a href="https://hub.docker.com/r/piwitests/dashboard"><img src="https://img.shields.io/docker/v/piwitests/dashboard?logo=docker&labelColor=020420&color=2496ED" alt="Docker"></a>
 </p>
 
 ![Dashboard home — overview stats and test results trend](docs/public/screenshots/home.png)
@@ -32,7 +32,7 @@ Native Playwright HTML reports are great for local debugging — but they're eph
 - 🔌 **Built for automation** — drop-in reporter, REST API, OpenAPI docs, and an MCP server for AI agents.
 - ☁️ **Zero lock-in** — self-hosted with Docker; your data in SQLite/PostgreSQL and local/S3 storage.
 
-👉 **[Explore the live demo](https://phenx.github.io/piwi-dashboard/demo/)** — no install required.
+👉 **[Explore the live demo](https://piwitests.github.io/demo/)** — no install required.
 
 ## Quick start
 
@@ -40,12 +40,12 @@ Native Playwright HTML reports are great for local debugging — but they're eph
 
 ```bash
 # Linux / macOS
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/piwitests/dashboard:latest
 ```
 
 ```powershell
 # Windows (PowerShell)
-docker run -p 3000:3000 -v ${PWD}/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v ${PWD}/.data:/app/.data ghcr.io/piwitests/dashboard:latest
 ```
 
 Visit `http://localhost:3000`.
@@ -53,7 +53,7 @@ Visit `http://localhost:3000`.
 **2. Add the reporter to your test project**
 
 ```bash
-npm install --save-dev @phenx/piwi-dashboard-reporter
+npm install --save-dev @piwitests/reporter
 ```
 
 ```typescript
@@ -63,7 +63,7 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   reporter: [
     ['list'],
-    ['@phenx/piwi-dashboard-reporter', {
+    ['@piwitests/reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-project',
     }],
@@ -74,24 +74,24 @@ export default defineConfig({
 
 **3. Run your tests** — `npx playwright test`. Results appear automatically; the project is created on first submission.
 
-➡️ Full setup, configuration, and CI integration in the **[Getting started guide](https://phenx.github.io/piwi-dashboard/getting-started)**.
+➡️ Full setup, configuration, and CI integration in the **[Getting started guide](https://piwitests.github.io/getting-started)**.
 
 ## Documentation
 
 | Topic | Link |
 |-------|------|
-| Getting started | [phenx.github.io/piwi-dashboard/getting-started](https://phenx.github.io/piwi-dashboard/getting-started) |
-| Playwright reporter | [phenx.github.io/piwi-dashboard/reporter](https://phenx.github.io/piwi-dashboard/reporter) |
-| UI overview | [phenx.github.io/piwi-dashboard/ui-overview](https://phenx.github.io/piwi-dashboard/ui-overview) |
-| AI diagnosis & clustering | [phenx.github.io/piwi-dashboard/ai-diagnosis](https://phenx.github.io/piwi-dashboard/ai-diagnosis) |
-| Flaky tests & analytics | [phenx.github.io/piwi-dashboard/flaky-tests](https://phenx.github.io/piwi-dashboard/flaky-tests) |
-| Notifications & alerts | [phenx.github.io/piwi-dashboard/notifications](https://phenx.github.io/piwi-dashboard/notifications) |
-| Configuration reference | [phenx.github.io/piwi-dashboard/configuration](https://phenx.github.io/piwi-dashboard/configuration) |
-| API reference | [phenx.github.io/piwi-dashboard/api](https://phenx.github.io/piwi-dashboard/api) |
-| MCP server | [phenx.github.io/piwi-dashboard/mcp](https://phenx.github.io/piwi-dashboard/mcp) |
-| Authentication | [phenx.github.io/piwi-dashboard/authentication](https://phenx.github.io/piwi-dashboard/authentication) |
-| Storage configuration | [phenx.github.io/piwi-dashboard/storage](https://phenx.github.io/piwi-dashboard/storage) |
-| Deployment | [phenx.github.io/piwi-dashboard/deployment](https://phenx.github.io/piwi-dashboard/deployment) |
+| Getting started | [piwitests.github.io/getting-started](https://piwitests.github.io/getting-started) |
+| Playwright reporter | [piwitests.github.io/reporter](https://piwitests.github.io/reporter) |
+| UI overview | [piwitests.github.io/ui-overview](https://piwitests.github.io/ui-overview) |
+| AI diagnosis & clustering | [piwitests.github.io/ai-diagnosis](https://piwitests.github.io/ai-diagnosis) |
+| Flaky tests & analytics | [piwitests.github.io/flaky-tests](https://piwitests.github.io/flaky-tests) |
+| Notifications & alerts | [piwitests.github.io/notifications](https://piwitests.github.io/notifications) |
+| Configuration reference | [piwitests.github.io/configuration](https://piwitests.github.io/configuration) |
+| API reference | [piwitests.github.io/api](https://piwitests.github.io/api) |
+| MCP server | [piwitests.github.io/mcp](https://piwitests.github.io/mcp) |
+| Authentication | [piwitests.github.io/authentication](https://piwitests.github.io/authentication) |
+| Storage configuration | [piwitests.github.io/storage](https://piwitests.github.io/storage) |
+| Deployment | [piwitests.github.io/deployment](https://piwitests.github.io/deployment) |
 
 The running dashboard also serves interactive API docs (Scalar) at `/docs`.
 

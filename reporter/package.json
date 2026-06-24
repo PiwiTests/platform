@@ -1,15 +1,15 @@
 {
-  "name": "@phenx/piwi-dashboard-reporter",
+  "name": "@piwitests/reporter",
   "version": "0.1.1",
   "description": "Playwright reporter for sending test results to Piwi Dashboard",
-  "url": "https://github.com/PhenX/piwi-dashboard",
-  "homepage": "https://phenx.github.io/piwi-dashboard",
+  "url": "https://github.com/piwitests/platform",
+  "homepage": "https://piwitests.github.io",
   "repository": {
     "type": "git",
-    "url": "https://github.com/PhenX/piwi-dashboard"
+    "url": "https://github.com/piwitests/platform"
   },
   "bugs": {
-    "url": "https://github.com/PhenX/piwi-dashboard/issues"
+    "url": "https://github.com/piwitests/platform/issues"
   },
   "type": "commonjs",
   "main": "dist/index.js",

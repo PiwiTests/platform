@@ -1,4 +1,4 @@
-name: Deploy docs to GitHub Pages
+name: Deploy Docs & Demo
 
 on:
   push:
@@ -8,23 +8,14 @@ on:
       - 'docs/**'
       - 'application/**'
       - '.github/workflows/docs.yml'
-
-  # Allows manual triggering from the Actions tab
   workflow_dispatch:
 
-# Allow deployment to GitHub Pages
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-# Allow only one concurrent deployment
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -45,7 +36,6 @@ jobs:
       - name: Build docs with VitePress
         working-directory: ./docs
         run: npm run docs:build
-        # Output: docs/.vitepress/dist/
 
       # VitePress generates its own 404.html from the theme, overwriting the
       # file VitePress copied from docs/public/.  Explicitly replace it so
@@ -65,33 +55,29 @@ jobs:
         working-directory: .
         run: npm ci
 
+      - name: Generate demo seed data
+        working-directory: ./application
+        run: npm run app:seed:demo
+        env:
+          PIWI_DEMO_MODE: 'true'
+
       - name: Generate static demo site
         working-directory: ./application
         run: npm run app:generate:demo
         env:
           PIWI_DEMO_MODE: 'true'
-        # Output: application/.output/public/
 
-      # ── Combine into a single artifact ────────────────────────────────────
+      # ── Combine into a single deploy directory ────────────────────────────
       - name: Copy demo into docs output at /demo/
         run: cp -r application/.output/public docs/.vitepress/dist/demo
 
-      # ── Upload & deploy ───────────────────────────────────────────────────
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      # ── Deploy to piwitests.github.io (org-level Pages) ───────────────────
+      - name: Deploy to piwitests.github.io
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: docs/.vitepress/dist
-
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          personal_token: ${{ secrets.GH_PAGES_TOKEN }}
+          external_repository: piwitests/piwitests.github.io
+          publish_branch: main
+          publish_dir: docs/.vitepress/dist
+          user_name: 'piwitests-bot'
+          user_email: 'bot@piwitests.github.io'

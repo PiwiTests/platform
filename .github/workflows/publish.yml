@@ -53,12 +53,12 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           echo "## NPM Package Published :package:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Package**: \`@phenx/piwi-dashboard-reporter\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package**: \`@piwitests/reporter\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Version**: \`${VERSION}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Install" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "npm install @phenx/piwi-dashboard-reporter" >> $GITHUB_STEP_SUMMARY
+          echo "npm install @piwitests/reporter" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
   build-and-push:
@@ -105,7 +105,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/metadata-action@v5
         with:
-          images: docker.io/phenx/piwi-dashboard
+          images: docker.io/piwitests/dashboard
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -143,7 +143,7 @@ jobs:
           echo "### Registries" >> $GITHUB_STEP_SUMMARY
           echo "- **GitHub Container Registry**: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
           if [[ "$IS_RELEASE" == "true" ]]; then
-            echo "- **Docker Hub**: \`phenx/piwi-dashboard\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **Docker Hub**: \`piwitests/dashboard\`" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Tags" >> $GITHUB_STEP_SUMMARY
@@ -161,7 +161,7 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### Pull from Docker Hub" >> $GITHUB_STEP_SUMMARY
             echo '```bash' >> $GITHUB_STEP_SUMMARY
-            echo "docker pull phenx/piwi-dashboard:${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+            echo "docker pull piwitests/dashboard:${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY

@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 
-namespace PiwiDashboard.AspNetCore;
+namespace PiwiTests.Instrumentation.AspNetCore;
 
 public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
 {
