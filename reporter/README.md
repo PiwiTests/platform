@@ -1,13 +1,13 @@
 # Piwi Dashboard Reporter
 
-A custom Playwright reporter that sends test results to a [Piwi Dashboard](https://github.com/PhenX/piwi-dashboard) server. It handles uploading test results, HTML reports, trace files, and performance metrics — with optional live streaming of results as tests execute.
+A custom Playwright reporter that sends test results to a [Piwi Dashboard](https://piwitests.github.io) server. It handles uploading test results, HTML reports, trace files, and performance metrics — with optional live streaming of results as tests execute.
 
-📖 **[Full documentation](https://phenx.github.io/piwi-dashboard/reporter)**
+📖 **[Full documentation](https://piwitests.github.io/reporter)**
 
 ## Installation
 
 ```bash
-npm install --save-dev @phenx/piwi-dashboard-reporter
+npm install --save-dev @piwitests/reporter
 ```
 
 ## Quick start
@@ -20,7 +20,7 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   reporter: [
     ['list'],
-    ['@phenx/piwi-dashboard-reporter', {
+    ['@piwitests/reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-project',
     }],
@@ -70,7 +70,7 @@ By default, the reporter streams test results to the dashboard in real-time. Thi
 To disable streaming and send all results at the end:
 
 ```typescript
-['@phenx/piwi-dashboard-reporter', {
+['@piwitests/reporter', {
   serverUrl: 'http://localhost:3000',
   projectName: 'my-project',
   streaming: false,
@@ -89,7 +89,7 @@ export default defineConfig({
     ['list'],
     ['@playwright/test/reporter-html', { outputFolder: 'playwright-report' }],
     ['monocart-reporter', { name: 'My Tests', outputFile: 'monocart-report/index.html' }],
-    ['@phenx/piwi-dashboard-reporter', {
+    ['@piwitests/reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-project',
       reports: [
@@ -109,7 +109,7 @@ To capture network request timing and browser Web Vitals, use the provided fixtu
 ```typescript
 // tests/fixtures.ts
 import { test as base, expect } from '@playwright/test'
-import { dashboardFixtures } from '@phenx/piwi-dashboard-reporter/fixtures'
+import { dashboardFixtures } from '@piwitests/reporter/fixtures'
 
 export const test = base.extend(dashboardFixtures)
 export { expect }
@@ -118,7 +118,7 @@ export { expect }
 Or as a drop-in replacement:
 
 ```typescript
-import { test, expect } from '@phenx/piwi-dashboard-reporter/fixtures'
+import { test, expect } from '@piwitests/reporter/fixtures'
 ```
 
 ### What gets captured
@@ -133,7 +133,7 @@ Both are only collected when `collectPerformanceMetrics` is `true` (the default)
 When the dashboard has authentication enabled, use an API key (recommended for CI):
 
 ```typescript
-['@phenx/piwi-dashboard-reporter', {
+['@piwitests/reporter', {
   serverUrl: 'https://your-dashboard.example.com',
   projectName: 'my-project',
   apiKey: process.env.PIWI_API_KEY,
@@ -220,7 +220,7 @@ The `package.json` `exports` field maps the main entry and `./fixtures` to their
 
 ### Network/Web Vitals not appearing
 
-- Import `test` from `@phenx/piwi-dashboard-reporter/fixtures` (or extend with `dashboardFixtures`)
+- Import `test` from `@piwitests/reporter/fixtures` (or extend with `dashboardFixtures`)
 - Verify `collectPerformanceMetrics` is not set to `false`
 - Ensure tests navigate to at least one page (`await page.goto(...)`)
 

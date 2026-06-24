@@ -4,7 +4,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: 'Piwi Dashboard',
   description: 'A modern dashboard for storing and visualising Playwright test results',
-  base: '/piwi-dashboard/',
+  base: '/',
   themeConfig: {
     outline: 'deep',
     search: {
@@ -16,7 +16,7 @@ export default defineConfig({
       { text: 'Getting started', link: '/getting-started' },
       { text: 'Reporter', link: '/reporter' },
       { text: 'API reference', link: '/api' },
-      { text: 'Demo', link: 'https://phenx.github.io/piwi-dashboard/demo/' },
+      { text: 'Demo', link: 'https://piwitests.github.io/demo/' },
     ],
 
     sidebar: [
@@ -51,7 +51,7 @@ export default defineConfig({
     ],
 
     editLink: {
-      pattern: 'https://github.com/PhenX/piwi-dashboard/edit/main/docs/:path',
+      pattern: 'https://github.com/piwitests/platform/edit/main/docs/:path',
       text: 'Edit this page on GitHub',
     },
 
@@ -64,7 +64,7 @@ export default defineConfig({
     },
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/PhenX/piwi-dashboard' },
+      { icon: 'github', link: 'https://github.com/piwitests/platform' },
     ],
 
     externalLinkIcon: true,

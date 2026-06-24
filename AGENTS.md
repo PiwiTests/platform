@@ -449,7 +449,7 @@ Marketing screenshots in `docs/public/screenshots/*.png` (used by `README.md` an
 1. **Capture both themes at the same viewport and scroll position** so they align pixel-for-pixel:
    ```bash
    playwright-cli open && playwright-cli resize 1280 720
-   playwright-cli goto "https://phenx.github.io/piwi-dashboard/demo/"
+   playwright-cli goto "https://piwitests.github.io/demo/"
    # Hide the demo banner for a clean shot (position:fixed, reflows cleanly when hidden):
    playwright-cli eval "(()=>{const s=document.createElement('style');s.id='hero-clean';s.textContent='.demo-banner{display:none!important}';document.head.appendChild(s)})()"
    playwright-cli screenshot --filename=hero-light.png

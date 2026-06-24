@@ -1,6 +1,6 @@
-# @phenx/piwi-dashboard-nitro
+# @piwitests/instrumentation
 
-Nitro / Nuxt server plugin for [Piwi Dashboard](https://phenx.github.io/piwi-dashboard) — captures Warning and Error log entries per HTTP request and delivers them to the Piwi Dashboard reporter via the `X-Piwi-Logs` response header.
+Nitro / Nuxt server plugin for [Piwi Dashboard](https://piwitests.github.io) — captures Warning and Error log entries per HTTP request and delivers them to the Piwi Dashboard reporter via the `X-Piwi-Logs` response header.
 
 During a Playwright test run, the reporter reads this header from every response and stores the entries alongside the network request. The entries are then available in the Piwi Dashboard test-case view and are included in the AI diagnosis context.
 
@@ -9,7 +9,7 @@ During a Playwright test run, the reporter reads this header from every response
 ## Installation
 
 ```bash
-npm install @phenx/piwi-dashboard-nitro
+npm install @piwitests/instrumentation
 ```
 
 ## Usage
@@ -18,7 +18,7 @@ Create a file in your project's `server/plugins/` directory:
 
 ```typescript
 // server/plugins/piwi-test-logs.ts
-export { default } from '@phenx/piwi-dashboard-nitro'
+export { default } from '@piwitests/instrumentation'
 ```
 
 That's all. Nitro auto-loads all files in `server/plugins/` on startup.

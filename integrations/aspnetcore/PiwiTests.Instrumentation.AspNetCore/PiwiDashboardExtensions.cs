@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace PiwiDashboard.AspNetCore;
+namespace PiwiTests.Instrumentation.AspNetCore;
 
 public static class PiwiDashboardExtensions
 {

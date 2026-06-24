@@ -23,7 +23,7 @@ When backend logs are captured, they appear in:
 ### ASP.NET Core (NuGet)
 
 ```bash
-dotnet add package PiwiDashboard.AspNetCore
+dotnet add package PiwiTests.Instrumentation.AspNetCore
 ```
 
 ```csharp
@@ -49,14 +49,14 @@ app.Run();
 ### Nitro / Nuxt (npm)
 
 ```bash
-npm install @phenx/piwi-dashboard-nitro
+npm install @piwitests/instrumentation
 ```
 
 Create a file in your project's `server/plugins/` directory:
 
 ```typescript
 // server/plugins/piwi-test-logs.ts
-export { default } from '@phenx/piwi-dashboard-nitro'
+export { default } from '@piwitests/instrumentation'
 ```
 
 The plugin is auto-loaded by Nitro. It captures `consola` Warning/Error entries and unhandled H3 errors, then writes them to the `X-Piwi-Logs` header in the `beforeResponse` hook — only when `NODE_ENV !== 'production'`.
@@ -72,7 +72,7 @@ Make sure your test files import `test` from the Piwi Dashboard fixtures (or ext
 ```typescript
 // tests/fixtures.ts
 import { test as base, expect } from '@playwright/test'
-import { dashboardFixtures } from '@phenx/piwi-dashboard-reporter/fixtures'
+import { dashboardFixtures } from '@piwitests/reporter/fixtures'
 
 export const test = base.extend(dashboardFixtures)
 export { expect }

@@ -2,7 +2,7 @@
 
 **Self-hosted Playwright test results dashboard.** Collect, store, and visualize your end-to-end test results over time — failures, performance trends, flaky tests, and live run streaming — without sending data to any third party.
 
-📖 [Full documentation](https://phenx.github.io/piwi-dashboard) · 🎮 [Live demo](https://phenx.github.io/piwi-dashboard/demo/) · 💬 [GitHub](https://github.com/PhenX/piwi-dashboard)
+📖 [Full documentation](https://piwitests.github.io) · 🎮 [Live demo](https://piwitests.github.io/demo/) · 💬 [GitHub](https://github.com/piwitests/platform)
 
 > **Disclaimer:** Piwi Dashboard is not affiliated with, endorsed by, or connected to Microsoft Corporation.
 
@@ -16,7 +16,7 @@ docker run -d \
   --name piwi-dashboard \
   -p 3000:3000 \
   -v $(pwd)/.data:/app/.data \
-  ghcr.io/phenx/piwi-dashboard:latest
+  ghcr.io/piwitests/dashboard:latest
 ```
 
 ```powershell
@@ -25,7 +25,7 @@ docker run -d `
   --name piwi-dashboard `
   -p 3000:3000 `
   -v ${PWD}/.data:/app/.data `
-  ghcr.io/phenx/piwi-dashboard:latest
+  ghcr.io/piwitests/dashboard:latest
 ```
 
 Open `http://localhost:3000`. The SQLite database and file storage are created automatically inside `.data/`.
@@ -39,7 +39,7 @@ Open `http://localhost:3000`. The SQLite database and file storage are created a
 | Base image | `node:24-alpine`                   |
 | Platforms  | `linux/amd64`, `linux/arm64`       |
 | Image size | ~200 MB                            |
-| Registry   | `ghcr.io/phenx/piwi-dashboard`     |
+| Registry   | `ghcr.io/piwitests/dashboard`     |
 | Run as     | Non-root (`nodejs`, UID/GID 1001)  |
 
 ### Available tags
@@ -58,7 +58,7 @@ Open `http://localhost:3000`. The SQLite database and file storage are created a
 Mount a host directory at `/app/.data` to persist all data between container restarts:
 
 ```bash
-docker run -d -p 3000:3000 -v /your/data/path:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+docker run -d -p 3000:3000 -v /your/data/path:/app/.data ghcr.io/piwitests/dashboard:latest
 ```
 
 > On Windows (PowerShell), use a host path like `C:\piwi\data` in place of `/your/data/path`.
@@ -136,7 +136,7 @@ These can also be configured through the Settings UI at runtime.
 ```yaml
 services:
   piwi-dashboard:
-    image: ghcr.io/phenx/piwi-dashboard:latest
+    image: ghcr.io/piwitests/dashboard:latest
     ports:
       - "3000:3000"
     volumes:
@@ -149,7 +149,7 @@ services:
 ```yaml
 services:
   piwi-dashboard:
-    image: ghcr.io/phenx/piwi-dashboard:latest
+    image: ghcr.io/piwitests/dashboard:latest
     ports:
       - "3000:3000"
     volumes:
@@ -176,7 +176,7 @@ services:
     restart: unless-stopped
 
   piwi-dashboard:
-    image: ghcr.io/phenx/piwi-dashboard:latest
+    image: ghcr.io/piwitests/dashboard:latest
     ports:
       - "3000:3000"
     environment:
@@ -212,7 +212,7 @@ services:
     restart: unless-stopped
 
   piwi-dashboard:
-    image: ghcr.io/phenx/piwi-dashboard:latest
+    image: ghcr.io/piwitests/dashboard:latest
     ports:
       - "3000:3000"
     volumes:
@@ -271,7 +271,7 @@ This endpoint is only available before any user is created. After that, manage u
 Install the reporter in your test project:
 
 ```bash
-npm install --save-dev @phenx/piwi-dashboard-reporter
+npm install --save-dev @piwitests/reporter
 ```
 
 Add it to `playwright.config.ts`:
@@ -282,7 +282,7 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   reporter: [
     ['list'],
-    ['@phenx/piwi-dashboard-reporter', {
+    ['@piwitests/reporter', {
       serverUrl: 'http://your-dashboard:3000',
       projectName: 'my-project',
     }],
@@ -300,7 +300,7 @@ Results appear in the dashboard after each run. The project is created automatic
 Generate an API key in **Settings → Users → API keys**, store it as a CI secret, then:
 
 ```typescript
-['@phenx/piwi-dashboard-reporter', {
+['@piwitests/reporter', {
   serverUrl: 'https://your-dashboard.example.com',
   projectName: 'my-project',
   apiKey: process.env.PIWI_API_KEY,
@@ -329,7 +329,7 @@ Generate an API key in **Settings → Users → API keys**, store it as a CI sec
 Pull the latest image and recreate the container:
 
 ```bash
-docker pull ghcr.io/phenx/piwi-dashboard:latest
+docker pull ghcr.io/piwitests/dashboard:latest
 docker compose up -d --pull always
 ```
 
@@ -354,12 +354,12 @@ mkdir -p .data && chown 1001:1001 .data
 
 ```bash
 # Linux / macOS
-docker run -p 8080:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 8080:3000 -v $(pwd)/.data:/app/.data ghcr.io/piwitests/dashboard:latest
 ```
 
 ```powershell
 # Windows (PowerShell)
-docker run -p 8080:3000 -v ${PWD}/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 8080:3000 -v ${PWD}/.data:/app/.data ghcr.io/piwitests/dashboard:latest
 ```
 
 **SQLite locked / concurrent write errors** — SQLite supports only one writer at a time. For multi-instance or high-concurrency deployments, switch to PostgreSQL by setting `PIWI_DATABASE_URL`.
@@ -376,4 +376,4 @@ docker logs piwi-dashboard
 
 ## License
 
-MIT — [source code on GitHub](https://github.com/PhenX/piwi-dashboard)
+MIT — [source code on GitHub](https://github.com/piwitests/platform)

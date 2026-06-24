@@ -14,10 +14,10 @@ hero:
       link: /getting-started
     - theme: alt
       text: Live demo
-      link: https://phenx.github.io/piwi-dashboard/demo/
+      link: https://piwitests.github.io/demo/
     - theme: alt
       text: GitHub
-      link: https://github.com/PhenX/piwi-dashboard
+      link: https://github.com/piwitests/platform
 
 features:
   - icon: 📊

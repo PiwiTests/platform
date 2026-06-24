@@ -2,7 +2,7 @@
 
 This guide explains how to deploy the Piwi Dashboard using Docker.
 
-> **Note:** For the complete deployment reference including Kubernetes and production build from source, see the [full deployment documentation](https://phenx.github.io/piwi-dashboard/deployment).
+> **Note:** For the complete deployment reference including Kubernetes and production build from source, see the [full deployment documentation](https://piwitests.github.io/deployment).
 
 ## Quick Start with Docker
 
@@ -12,14 +12,14 @@ Pull the latest image from GitHub Container Registry and run it:
 
 ```bash
 # Linux / macOS
-docker pull ghcr.io/phenx/piwi-dashboard:latest
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+docker pull ghcr.io/piwitests/dashboard:latest
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/piwitests/dashboard:latest
 ```
 
 ```powershell
 # Windows (PowerShell)
-docker pull ghcr.io/phenx/piwi-dashboard:latest
-docker run -p 3000:3000 -v ${PWD}/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+docker pull ghcr.io/piwitests/dashboard:latest
+docker run -p 3000:3000 -v ${PWD}/.data:/app/.data ghcr.io/piwitests/dashboard:latest
 ```
 
 The dashboard will be available at `http://localhost:3000`.
@@ -78,7 +78,7 @@ The Dockerfile uses a two-stage build:
 Mount a volume to persist data:
 
 ```bash
-docker run -p 3000:3000 -v /path/to/data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v /path/to/data:/app/.data ghcr.io/piwitests/dashboard:latest
 ```
 
 > On Windows (PowerShell), use a host path like `C:\piwi\data` in place of `/path/to/data`.
@@ -94,7 +94,7 @@ The `.data` directory contains:
 ```yaml
 services:
   piwi-dashboard:
-    image: ghcr.io/phenx/piwi-dashboard:latest
+    image: ghcr.io/piwitests/dashboard:latest
     ports:
       - "3000:3000"
     volumes:
@@ -119,7 +119,7 @@ services:
     restart: unless-stopped
 
   piwi-dashboard:
-    image: ghcr.io/phenx/piwi-dashboard:latest
+    image: ghcr.io/piwitests/dashboard:latest
     ports:
       - "3000:3000"
     volumes:
@@ -167,14 +167,14 @@ On **Linux hosts**, ensure the mounted directory is writable by the container's 
 ```bash
 mkdir -p .data
 chmod 777 .data  # or chown 1001:1001 .data
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/piwitests/dashboard:latest
 ```
 
 On **Windows** and **macOS**, Docker Desktop handles volume permissions automatically — no `chmod` needed:
 
 ```powershell
 # Windows (PowerShell)
-docker run -p 3000:3000 -v ${PWD}/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v ${PWD}/.data:/app/.data ghcr.io/piwitests/dashboard:latest
 ```
 
 ### Database Locked
@@ -187,12 +187,12 @@ Map to a different host port:
 
 ```bash
 # Linux / macOS
-docker run -p 8080:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 8080:3000 -v $(pwd)/.data:/app/.data ghcr.io/piwitests/dashboard:latest
 ```
 
 ```powershell
 # Windows (PowerShell)
-docker run -p 8080:3000 -v ${PWD}/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+docker run -p 8080:3000 -v ${PWD}/.data:/app/.data ghcr.io/piwitests/dashboard:latest
 ```
 
 The dashboard will be available at `http://localhost:8080`.

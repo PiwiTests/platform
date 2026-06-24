@@ -1,0 +1,24 @@
+name: Publish NuGet Package
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish-nuget:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+      - name: Pack & push
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          dotnet pack integrations/aspnetcore/PiwiTests.Instrumentation.AspNetCore \
+            -c Release \
+            -p:Version="$VERSION" \
+            -o ./nupkg
+          dotnet nuget push ./nupkg/*.nupkg \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --source https://api.nuget.org/v3/index.json

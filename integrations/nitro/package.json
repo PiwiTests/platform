@@ -1,14 +1,14 @@
 {
-  "name": "@phenx/piwi-dashboard-nitro",
+  "name": "@piwitests/instrumentation",
   "version": "0.1.0",
   "description": "Nitro/Nuxt server plugin for sending backend logs to Piwi Dashboard via the X-Piwi-Logs response header",
-  "homepage": "https://phenx.github.io/piwi-dashboard",
+  "homepage": "https://piwitests.github.io",
   "repository": {
     "type": "git",
-    "url": "https://github.com/PhenX/piwi-dashboard"
+    "url": "https://github.com/piwitests/platform"
   },
   "bugs": {
-    "url": "https://github.com/PhenX/piwi-dashboard/issues"
+    "url": "https://github.com/piwitests/platform/issues"
   },
   "type": "module",
   "main": "dist/index.js",

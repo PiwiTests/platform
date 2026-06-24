@@ -153,7 +153,7 @@ export const dashboardFixtures: Fixtures = {
  * @example
  * ```ts
  * import { test as base } from '@playwright/test';
- * import { extendDashboardFixtures } from '@piwi-tests/reporter/fixtures';
+ * import { extendDashboardFixtures } from '@piwitests/reporter/fixtures';
  *
  * export const test = extendDashboardFixtures(base);
  * ```

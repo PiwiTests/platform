@@ -1,4 +1,4 @@
-namespace PiwiDashboard.AspNetCore;
+namespace PiwiTests.Instrumentation.AspNetCore;
 
 public sealed record PiwiTestLogEntry(
     long Timestamp,

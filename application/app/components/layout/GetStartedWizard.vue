@@ -13,7 +13,7 @@ const configCode = computed(
 export default defineConfig({
   reporter: [
     ['list'],
-    ['@piwi-tests/reporter', {
+    ['@piwitests/reporter', {
       serverUrl: '${serverUrl.value}',
       projectName: 'my-project',
     }],
@@ -26,7 +26,7 @@ export default defineConfig({
 
 const wrapConfigCode = computed(
   () => `import { defineConfig } from '@playwright/test'
-import PiwiDashboard from '@piwi-tests/reporter'
+import PiwiDashboard from '@piwitests/reporter'
 
 export default PiwiDashboard.wrapConfig(
   defineConfig({
@@ -44,7 +44,7 @@ export default PiwiDashboard.wrapConfig(
 
 const fixturesExtendCode = `// tests/fixtures.ts
 import { test as base, expect } from '@playwright/test'
-import { dashboardFixtures } from '@piwi-tests/reporter/fixtures'
+import { dashboardFixtures } from '@piwitests/reporter/fixtures'
 
 export const test = base.extend(dashboardFixtures)
 export { expect }`;
@@ -58,7 +58,7 @@ test('homepage loads', async ({ page }) => {
   // are captured automatically and appear in the dashboard
 })`;
 
-const fixturesDropInCode = `import { test, expect } from '@piwi-tests/reporter/fixtures'`;
+const fixturesDropInCode = `import { test, expect } from '@piwitests/reporter/fixtures'`;
 
 const steps = computed(() => [
   {
@@ -74,7 +74,7 @@ const steps = computed(() => [
     title: 'Install the reporter',
     description: 'Add the Piwi reporter to your Playwright project.',
     done: false,
-    code: 'npm install --save-dev @piwi-tests/reporter',
+    code: 'npm install --save-dev @piwitests/reporter',
     lang: 'bash',
   },
   {

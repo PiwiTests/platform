@@ -31,13 +31,13 @@ The fastest way to get started is with the pre-built container image:
 ::: code-group
 
 ```bash [Linux / macOS]
-docker pull ghcr.io/phenx/piwi-dashboard:latest
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+docker pull ghcr.io/piwitests/dashboard:latest
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/piwitests/dashboard:latest
 ```
 
 ```powershell [Windows (PowerShell)]
-docker pull ghcr.io/phenx/piwi-dashboard:latest
-docker run -p 3000:3000 -v ${PWD}/.data:/app/.data ghcr.io/phenx/piwi-dashboard:latest
+docker pull ghcr.io/piwitests/dashboard:latest
+docker run -p 3000:3000 -v ${PWD}/.data:/app/.data ghcr.io/piwitests/dashboard:latest
 ```
 
 :::
@@ -50,7 +50,7 @@ See [Deployment](./deployment) for detailed Docker, Docker Compose, PostgreSQL, 
 
 ```bash
 # Clone the repository
-git clone https://github.com/PhenX/piwi-dashboard.git
+git clone https://github.com/piwitests/platform.git
 cd piwi-dashboard/application
 
 # Install dependencies
@@ -132,7 +132,7 @@ The recommended way to integrate is via the custom reporter package — it handl
 Install it:
 
 ```bash
-npm install --save-dev @phenx/piwi-dashboard-reporter
+npm install --save-dev @piwitests/reporter
 ```
 
 Then add it to your `playwright.config.ts`:
@@ -143,7 +143,7 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   reporter: [
     ['list'],
-    ['@phenx/piwi-dashboard-reporter', {
+    ['@piwitests/reporter', {
       serverUrl: 'http://localhost:3000',
       projectName: 'my-project',
     }],
