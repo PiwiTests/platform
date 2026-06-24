@@ -32,6 +32,7 @@ export interface RunCaseInput {
   stepEvents?: unknown;
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
+  wastedTimeMs?: number | null;
   networkRequests?: unknown;
   webVitals?: unknown;
   consoleLogs?: unknown;
@@ -244,6 +245,7 @@ export async function persistRunCases(
       stepEvents: c.stepEvents ?? null,
       slowestStep: c.slowestStep ?? null,
       slowestStepDuration: c.slowestStepDuration ?? null,
+      wastedTimeMs: c.wastedTimeMs ?? null,
       webVitals: sanitizeWebVitals(c.webVitals as Record<string, unknown> | null | undefined) ?? null,
       consoleLogs: sanitizeConsoleLogs(c.consoleLogs as Array<Record<string, unknown>> | null | undefined) ?? null,
       ariaSnapshot: c.ariaSnapshot ?? null,
@@ -253,7 +255,7 @@ export async function persistRunCases(
       browserName: resolveBrowserName(c.browser),
       workerIndex: c.workerIndex ?? null,
       shardIndex: c.shardIndex ?? null,
-      startedAt: c.startedAt ? new Date(c.startedAt) : null,
+      startedAt: c.startedAt ?? null,
     });
 
     const nrItems = buildNetworkRequestItems(c.networkRequests as Array<Record<string, unknown>> | null | undefined);

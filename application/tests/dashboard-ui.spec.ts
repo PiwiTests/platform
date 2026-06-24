@@ -315,6 +315,7 @@ test.describe('Foldable Summary', () => {
             steps: [{ title: 'page.goto(url)', duration: 500, category: 'navigation' }],
             slowestStep: 'page.goto(url)',
             slowestStepDuration: 500,
+            wastedTimeMs: 0,
           },
         ],
       },

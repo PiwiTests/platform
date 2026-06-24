@@ -14,6 +14,8 @@ import {
 import { fetchAndFormatSuites, splitSuitePath } from '../utils/suites';
 import { normalizeRoute } from '../utils/route';
 import { percentile } from '../utils/stats';
+import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
+import type { TestStepEvent } from '../types';
 
 import type { DrizzleDB } from './db';
 
@@ -21,7 +23,11 @@ type ProjectScope = 'all' | Set<number>;
 
 // ─── getTestRun — full test run detail ───────────────────────────────────────
 
-export async function getTestRun(db: DrizzleDB, id: number) {
+export async function getTestRun(
+  db: DrizzleDB,
+  id: number,
+  wastedPatterns: readonly string[] = DEFAULT_WASTED_WAIT_PATTERNS,
+) {
   const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id));
   const testRun = testRunResults[0];
   if (!testRun) return null;
@@ -70,6 +76,7 @@ export async function getTestRun(db: DrizzleDB, id: number) {
       column: testRunsCases.column,
       slowestStep: testRunsCases.slowestStep,
       slowestStepDuration: testRunsCases.slowestStepDuration,
+      wastedTimeMs: testRunsCases.wastedTimeMs,
       stepEvents: testRunsCases.stepEvents,
       workerIndex: testRunsCases.workerIndex,
       shardIndex: testRunsCases.shardIndex,
@@ -110,6 +117,13 @@ export async function getTestRun(db: DrizzleDB, id: number) {
     retries: tc.retries,
     slowestStep: tc.slowestStep,
     slowestStepDuration: tc.slowestStepDuration,
+    // Wasted time is recomputed at read time from the stored wait events using
+    // the configured allowlist, so changing the patterns re-classifies existing
+    // runs. Falls back to the stored column only when no step events exist.
+    wastedTimeMs:
+      tc.stepEvents != null
+        ? computeWastedMs(tc.stepEvents as TestStepEvent[], wastedPatterns)
+        : (tc.wastedTimeMs ?? null),
     stepEvents: (tc as { stepEvents?: unknown }).stepEvents ?? null,
     workerIndex: tc.workerIndex,
     shardIndex: tc.shardIndex,
@@ -157,6 +171,7 @@ export async function getTestRun(db: DrizzleDB, id: number) {
     })),
     suites,
     storageStats,
+    wastedWaitPatterns: [...wastedPatterns],
   };
 }
 

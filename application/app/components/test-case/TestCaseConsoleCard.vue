@@ -39,7 +39,13 @@ function consoleTypeIcon(type: string): string {
 </script>
 
 <template>
-  <SectionCard v-if="entries.length > 0" icon="i-lucide-terminal" title="Console output" :count="entries.length" help="case.console">
+  <SectionCard
+    v-if="entries.length > 0"
+    icon="i-lucide-terminal"
+    title="Console output"
+    :count="entries.length"
+    help="case.console"
+  >
     <div class="space-y-1 max-h-80 overflow-y-auto">
       <div
         v-for="(entry, index) in entries"

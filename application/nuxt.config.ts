@@ -60,6 +60,9 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     authEnabled: process.env.PIWI_AUTH_ENABLED === 'true',
+    // Allowlist of glob patterns (comma/newline separated) for wait steps counted
+    // as "wasted time". When set, locks the in-app "Wasted time" setting.
+    wastedWaitPatterns: process.env.PIWI_WASTED_WAIT_PATTERNS || '',
     ai: {
       provider: process.env.PIWI_AI_PROVIDER || '',
       apiKey: process.env.PIWI_AI_API_KEY || '',

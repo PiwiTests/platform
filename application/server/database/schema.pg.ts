@@ -332,6 +332,7 @@ export const testRunsCases = pgTable(
     stepEvents: jsonb('step_events'), // Array of { title, category, startedAt, duration, status, location } — hook/fixture steps for timeline
     slowestStep: text('slowest_step'), // Title of the slowest step
     slowestStepDuration: integer('slowest_step_duration'), // Duration of the slowest step in ms
+    wastedTimeMs: integer('wasted_time_ms'), // Aggregated ms spent in wait steps
     webVitals: jsonb('web_vitals'), // { navigation: {...}, paint: {...} }
     consoleLogs: jsonb('console_logs'), // Array of { type, text, timestamp, location } console entries
     ariaSnapshot: text('aria_snapshot'), // ARIA snapshot of the page (YAML-like string from locator.ariaSnapshot())

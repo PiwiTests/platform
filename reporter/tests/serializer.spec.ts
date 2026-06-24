@@ -177,6 +177,7 @@ describe('toWireTestCase', () => {
       'testSource',
       'title',
       'type',
+      'wastedTimeMs',
       'webVitals',
       'workerIndex',
     ]);

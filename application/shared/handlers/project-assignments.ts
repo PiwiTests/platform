@@ -15,9 +15,7 @@ export async function getUserAssignments(db: DrizzleDB, userId: number): Promise
     .where(eq(projectAssignments.userId, userId));
 
   const hasGlobal = rows.some((r) => r.projectId === null);
-  const projectIds = rows
-    .filter((r): r is { projectId: number } => r.projectId !== null)
-    .map((r) => r.projectId);
+  const projectIds = rows.filter((r): r is { projectId: number } => r.projectId !== null).map((r) => r.projectId);
 
   return { global: hasGlobal, projectIds };
 }
@@ -126,9 +124,7 @@ export async function setProjectMembers(
   createdBy?: number,
 ): Promise<void> {
   // Remove all explicit (non-global) assignments for this project
-  await db
-    .delete(projectAssignments)
-    .where(and(eq(projectAssignments.projectId, projectId)));
+  await db.delete(projectAssignments).where(and(eq(projectAssignments.projectId, projectId)));
 
   // Insert new assignments
   if (userIds.length > 0) {

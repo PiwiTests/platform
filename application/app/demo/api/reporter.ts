@@ -358,7 +358,7 @@ async function persistRunCases(
       browser: c.browser ?? null,
       workerIndex: c.workerIndex ?? null,
       shardIndex: c.shardIndex ?? null,
-      startedAt: c.startedAt ? new Date(c.startedAt) : null,
+      startedAt: c.startedAt ?? null,
     });
 
     const nrItems = buildNetworkRequestItems(c.networkRequests as Array<Record<string, unknown>> | null | undefined);
@@ -494,6 +494,8 @@ export async function apiPostRunEvents(
         duration: tc.duration,
         location: tc.location,
         error: tc.error ?? null,
+        stepEvents: (tc as { stepEvents?: unknown }).stepEvents ?? null,
+        wastedTimeMs: (tc as { wastedTimeMs?: number | null }).wastedTimeMs ?? null,
         workerIndex: tc.workerIndex ?? null,
         shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,

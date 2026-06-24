@@ -10,6 +10,8 @@ import {
   networkRequests,
 } from '../../server/database/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
+import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
+import type { TestStepEvent } from '../types';
 
 import type { DrizzleDB } from './db';
 
@@ -140,7 +142,11 @@ export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
     .limit(50);
 }
 
-export async function getTestRunCase(db: DrizzleDB, id: number) {
+export async function getTestRunCase(
+  db: DrizzleDB,
+  id: number,
+  wastedPatterns: readonly string[] = DEFAULT_WASTED_WAIT_PATTERNS,
+) {
   const [trc] = await db.select().from(testRunsCases).where(eq(testRunsCases.id, id));
   if (!trc) return null;
 
@@ -259,6 +265,10 @@ export async function getTestRunCase(db: DrizzleDB, id: number) {
     steps: trc.steps,
     slowestStep: trc.slowestStep,
     slowestStepDuration: trc.slowestStepDuration,
+    wastedTimeMs:
+      trc.stepEvents != null
+        ? computeWastedMs(trc.stepEvents as TestStepEvent[], wastedPatterns)
+        : trc.wastedTimeMs,
     networkRequests: networkRequestsData,
     webVitals: trc.webVitals,
     consoleLogs: trc.consoleLogs,

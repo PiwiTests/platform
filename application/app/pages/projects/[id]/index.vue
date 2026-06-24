@@ -91,9 +91,7 @@ watch(
     try {
       const data = await $fetch<ProjectMembersResponse>(`/api/projects/${projectId}/members`);
       members.value = data.users;
-      selectedMemberIds.value = data.users
-        .filter((m) => m.role !== 'administrator' && !m.global)
-        .map((m) => m.id);
+      selectedMemberIds.value = data.users.filter((m) => m.role !== 'administrator' && !m.global).map((m) => m.id);
     } catch {
       members.value = [];
       selectedMemberIds.value = [];
@@ -178,9 +176,7 @@ const tabItems = computed(() => [
   },
   { label: 'Compare', icon: 'i-lucide-git-compare-arrows', value: 'compare', slot: 'compare' },
   { label: 'Spec health', icon: 'i-lucide-table-2', value: 'spec-health', slot: 'spec-health' },
-  ...(isAdmin.value
-    ? [{ label: 'Members', icon: 'i-lucide-users', value: 'members', slot: 'members' }]
-    : []),
+  ...(isAdmin.value ? [{ label: 'Members', icon: 'i-lucide-users', value: 'members', slot: 'members' }] : []),
 ]);
 
 // === TEST RUNS TAB ===
@@ -807,7 +803,11 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
           <!-- FAILURE CLUSTERS TAB -->
           <template #failure-clusters>
             <template v-if="activeTab === 'failure-clusters'">
-              <ClusterMergeSuggestions :key="`sug-${clustersRefreshKey}`" :project-id="String(projectId)" @merged="clustersRefreshKey++" />
+              <ClusterMergeSuggestions
+                :key="`sug-${clustersRefreshKey}`"
+                :project-id="String(projectId)"
+                @merged="clustersRefreshKey++"
+              />
               <FailureClustersList :key="clustersRefreshKey" :project-id="String(projectId)" />
             </template>
           </template>
@@ -1309,7 +1309,13 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                       <div class="text-xs text-muted flex items-center gap-2">
                         <span>@{{ member.username }}</span>
                         <UBadge
-                          :color="member.role === 'administrator' ? 'primary' : member.role === 'reporter' ? 'info' : 'neutral'"
+                          :color="
+                            member.role === 'administrator'
+                              ? 'primary'
+                              : member.role === 'reporter'
+                                ? 'info'
+                                : 'neutral'
+                          "
                           variant="subtle"
                           size="xs"
                         >
@@ -1329,9 +1335,7 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                   <span v-else class="text-xs text-muted italic">Admin</span>
                 </div>
               </div>
-              <div v-else class="text-center py-8 text-muted text-sm">
-                Loading members…
-              </div>
+              <div v-else class="text-center py-8 text-muted text-sm">Loading members…</div>
             </UCard>
           </template>
         </UTabs>

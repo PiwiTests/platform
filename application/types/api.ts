@@ -265,6 +265,8 @@ export interface TestRunDetails {
     testCaseFilesCount: number;
   };
   links?: EntityLinkInfo[];
+  /** Effective allowlist of glob patterns classifying waits as wasted time. */
+  wastedWaitPatterns?: string[];
 }
 
 /**
@@ -324,7 +326,7 @@ export interface PerformanceStep {
  */
 export interface TestStepEvent {
   title: string;
-  category: 'hook' | 'fixture' | 'test.step' | 'expect';
+  category: 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait';
   startedAt: number;
   duration: number;
   status: string;
@@ -431,6 +433,7 @@ export interface TestCaseResult {
   stepEvents?: TestStepEvent[] | null;
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
+  wastedTimeMs?: number | null;
   networkRequests?: NetworkRequest[] | null;
   webVitals?: WebVitals | null;
   consoleLogs?: ConsoleEntry[] | null;

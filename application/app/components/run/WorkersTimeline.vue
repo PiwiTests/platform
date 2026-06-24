@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, nextTick, watchEffect } from 'vue';
 import type { TestCaseResult, TestStepEvent } from '~~/types/api';
+import { isWastedWait, DEFAULT_WASTED_WAIT_PATTERNS } from '~~/shared/utils/wasted-waits';
 
 interface TimelineItem {
   id: number;
@@ -12,6 +13,7 @@ interface TimelineItem {
   duration: number;
   rowIndex: number;
   isHook: boolean;
+  isWait: boolean;
   category?: string;
   parentTitle?: string | null;
 }
@@ -28,7 +30,14 @@ const props = defineProps<{
   setupSteps?: TestStepEvent[] | null;
   shardTotal?: number | null;
   live?: boolean;
+  /** Allowlist of glob patterns classifying which waits count as wasted time. */
+  wastedPatterns?: string[] | null;
 }>();
+
+/** Effective wasted-wait patterns (falls back to the built-in default). */
+const wastedPatterns = computed<readonly string[]>(() =>
+  props.wastedPatterns && props.wastedPatterns.length > 0 ? props.wastedPatterns : DEFAULT_WASTED_WAIT_PATTERNS,
+);
 
 const emit = defineEmits<{
   selectTestCase: [id: number];
@@ -45,6 +54,21 @@ function workerKey(tc: TestCaseResult): WorkerKey | null {
   const w = tc.workerIndex;
   if (w == null || w < 0) return null;
   return `${tc.shardIndex ?? 'null'}|${w}`;
+}
+
+/**
+ * Coerce a `startedAt` value to epoch milliseconds. Timestamps are numeric ms
+ * end-to-end now (live SSE, REST, and both DB backends), so this is just a
+ * finite-number guard. The Date/string fallbacks remain only to degrade
+ * gracefully on any stray legacy value rather than yielding NaN — which would
+ * collapse bars to the left edge and trigger the squished sequential fallback.
+ */
+function toMs(v: unknown): number | null {
+  if (v == null) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (v instanceof Date) return v.getTime();
+  const t = new Date(v as string).getTime();
+  return Number.isNaN(t) ? null : t;
 }
 
 const timelineData = computed<TimelineItem[]>(() => {
@@ -71,8 +95,9 @@ const timelineData = computed<TimelineItem[]>(() => {
   let hasStartedAt = false;
   for (const [, cases] of sortedWorkers) {
     for (const tc of cases) {
-      if (tc.startedAt != null && tc.startedAt > 0) {
-        minStartedAt = Math.min(minStartedAt, tc.startedAt);
+      const sa = toMs(tc.startedAt);
+      if (sa != null && sa > 0) {
+        minStartedAt = Math.min(minStartedAt, sa);
         hasStartedAt = true;
       }
     }
@@ -98,17 +123,22 @@ const timelineData = computed<TimelineItem[]>(() => {
           status: tc.status,
           workerIndex: tc.workerIndex ?? 0,
           shardIndex,
-          start: Math.max(0, (tc.startedAt ?? minStartedAt) - minStartedAt),
+          start: Math.max(0, (toMs(tc.startedAt) ?? minStartedAt) - minStartedAt),
           duration: dur,
           rowIndex: ri,
           isHook: false,
+          isWait: false,
         });
 
         // Add hook/fixture segments for this test
         const steps = tc.stepEvents as TestStepEvent[] | null | undefined;
         if (steps && steps.length > 0) {
           for (const step of steps) {
-            const stepStart = Math.max(0, step.startedAt - minStartedAt);
+            const isWaitStep = step.category === 'wait';
+            // Non-wasted waits are framework noise already covered by the test
+            // bar — only render waits the configured allowlist flags as wasted.
+            if (isWaitStep && !isWastedWait(step, wastedPatterns.value)) continue;
+            const stepStart = Math.max(0, (toMs(step.startedAt) ?? minStartedAt) - minStartedAt);
             workerItems.push({
               id: -tc.id - steps.indexOf(step) - 1,
               title: step.title,
@@ -118,7 +148,8 @@ const timelineData = computed<TimelineItem[]>(() => {
               start: stepStart,
               duration: step.duration || 0,
               rowIndex: ri,
-              isHook: true,
+              isHook: !isWaitStep,
+              isWait: isWaitStep,
               category: step.category,
               parentTitle: tc.title,
             });
@@ -143,7 +174,7 @@ const timelineData = computed<TimelineItem[]>(() => {
         if (!row) continue;
         const ri = sortedWorkers.indexOf(row);
 
-        const stepStart = Math.max(0, step.startedAt - minStartedAt);
+        const stepStart = Math.max(0, (toMs(step.startedAt) ?? minStartedAt) - minStartedAt);
         result.push({
           id: -999 - result.length,
           title: `[Setup] ${step.title}`,
@@ -154,6 +185,7 @@ const timelineData = computed<TimelineItem[]>(() => {
           duration: step.duration || 0,
           rowIndex: ri,
           isHook: true,
+          isWait: false,
           category: step.category,
           parentTitle: null,
         });
@@ -164,7 +196,7 @@ const timelineData = computed<TimelineItem[]>(() => {
       const [key, rawCases] = sortedWorkers[ri]!;
       const shardIdx = key.split('|')[0];
       const shardIndex = shardIdx === 'null' ? null : Number(shardIdx);
-      const sortedCases = [...rawCases].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
+      const sortedCases = [...rawCases].sort((a, b) => (toMs(a.startedAt) ?? 0) - (toMs(b.startedAt) ?? 0));
       let cursor = 0;
       for (const tc of sortedCases) {
         const dur = tc.duration ?? 1000;
@@ -178,8 +210,32 @@ const timelineData = computed<TimelineItem[]>(() => {
           duration: dur,
           rowIndex: ri,
           isHook: false,
+          isWait: false,
         });
         cursor += dur;
+
+        const steps = tc.stepEvents as TestStepEvent[] | null | undefined;
+        if (steps && steps.length > 0) {
+          for (const step of steps) {
+            const isWaitStep = step.category === 'wait';
+            if (isWaitStep && !isWastedWait(step, wastedPatterns.value)) continue;
+            result.push({
+              id: -tc.id - steps.indexOf(step) - 1,
+              title: step.title,
+              status: step.status || 'passed',
+              workerIndex: tc.workerIndex ?? 0,
+              shardIndex,
+              start: cursor,
+              duration: step.duration || 0,
+              rowIndex: ri,
+              isHook: !isWaitStep,
+              isWait: isWaitStep,
+              category: step.category,
+              parentTitle: tc.title,
+            });
+            cursor += step.duration || 0;
+          }
+        }
       }
     }
   }
@@ -418,9 +474,12 @@ function resetView() {
           <template v-if="shardTotal && shardTotal > 1">
             &middot; {{ shardTotal }} shard{{ shardTotal > 1 ? 's' : '' }}
           </template>
-          &middot; {{ timelineData.filter((d) => !d.isHook).length }} tests
+          &middot; {{ timelineData.filter((d) => !d.isHook && !d.isWait).length }} tests
           <template v-if="timelineData.some((d) => d.isHook)">
             &middot; {{ timelineData.filter((d) => d.isHook).length }} hooks
+          </template>
+          <template v-if="timelineData.some((d) => d.isWait)">
+            &middot; {{ timelineData.filter((d) => d.isWait).length }} waits
           </template></span
         >
         <HelpHint topic="run.timeline" />
@@ -548,6 +607,51 @@ function resetView() {
               {{ item.title }}
             </text>
           </template>
+          <template v-else-if="item.isWait">
+            <!-- slightly taller bar, offset into the row gap above/below -->
+            <rect
+              :x="getBarX(item)"
+              :y="getBarTop(item) - 3"
+              :width="getBarWidth(item)"
+              :height="barHeight + 6"
+              :rx="2"
+              :ry="2"
+              fill="#facc15"
+              fill-opacity="0.28"
+              stroke="#ca8a04"
+              stroke-width="1.5"
+              class="transition-opacity duration-100 cursor-default"
+              :class="hoveredItem && hoveredItem.id !== item.id ? 'opacity-40' : 'opacity-90'"
+            />
+            <line
+              v-if="getBarWidth(item) > 4"
+              :x1="getBarX(item) + 1"
+              :y1="getBarTop(item) - 3"
+              :x2="getBarX(item) + getBarWidth(item) - 1"
+              :y2="getBarTop(item) + barHeight + 3"
+              stroke="#ca8a04"
+              stroke-width="1"
+              stroke-opacity="0.25"
+            />
+            <line
+              v-if="getBarWidth(item) > 4"
+              :x1="getBarX(item) + getBarWidth(item) - 1"
+              :y1="getBarTop(item) - 3"
+              :x2="getBarX(item) + 1"
+              :y2="getBarTop(item) + barHeight + 3"
+              stroke="#ca8a04"
+              stroke-width="1"
+              stroke-opacity="0.25"
+            />
+            <text
+              v-if="getBarWidth(item) > 50"
+              :x="getBarX(item) + 4"
+              :y="getBarTop(item) + barHeight / 2 + 4"
+              class="fill-yellow-800 dark:fill-yellow-200 text-[9px] font-bold pointer-events-none"
+            >
+              wasted {{ formatTime(item.duration) }}
+            </text>
+          </template>
           <template v-else-if="item.status === 'running'">
             <circle
               :cx="getBarX(item) + 300 * pxPerMs"
@@ -607,7 +711,7 @@ function resetView() {
       >
         <div class="flex items-center gap-2 mb-1">
           <span
-            v-if="!hoveredItem.isHook"
+            v-if="!hoveredItem.isHook && !hoveredItem.isWait"
             class="inline-block size-2.5 rounded-full shrink-0"
             :style="{ backgroundColor: getStatusHex(hoveredItem.status) }"
           />
@@ -615,13 +719,17 @@ function resetView() {
             v-else
             class="inline-block size-2.5 rounded-full shrink-0 border border-dashed"
             :style="{
-              backgroundColor: getHookFill(hoveredItem),
-              borderColor: getHookStroke(hoveredItem),
+              backgroundColor: hoveredItem.isWait ? '#f59e0b66' : getHookFill(hoveredItem),
+              borderColor: hoveredItem.isWait ? '#f59e0b' : getHookStroke(hoveredItem),
             }"
           />
           <span class="font-medium text-gray-900 dark:text-white max-w-64 truncate">
             <template v-if="hoveredItem.isHook">
               <span class="uppercase text-[10px] tracking-wider text-gray-500 mr-1">{{ hoveredItem.category }}</span>
+              {{ hoveredItem.title }}
+            </template>
+            <template v-else-if="hoveredItem.isWait">
+              <span class="uppercase text-[10px] tracking-wider text-amber-500 mr-1">{{ hoveredItem.category }}</span>
               {{ hoveredItem.title }}
             </template>
             <template v-else>

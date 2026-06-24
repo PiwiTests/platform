@@ -55,6 +55,7 @@ export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
     stepEvents: rest.stepEvents || null,
     slowestStep: rest.performanceMetrics?.slowestStep?.title || null,
     slowestStepDuration: rest.performanceMetrics?.slowestStep?.duration || null,
+    wastedTimeMs: rest.performanceMetrics?.waitTotalDuration ?? null,
     networkRequests: rest.networkRequests || null,
     webVitals: rest.webVitals || null,
     consoleLogs: rest.consoleLogs || null,

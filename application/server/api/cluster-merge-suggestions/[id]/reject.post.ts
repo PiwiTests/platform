@@ -9,7 +9,8 @@ defineRouteMeta({
   openAPI: {
     tags: ['Failure Clusters'],
     summary: 'Reject a cluster merge suggestion',
-    description: 'Marks the suggestion as rejected; both clusters are left untouched. Requires reporter or administrator role.',
+    description:
+      'Marks the suggestion as rejected; both clusters are left untouched. Requires reporter or administrator role.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': REQUIRED_ROLES,
   },

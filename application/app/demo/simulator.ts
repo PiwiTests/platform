@@ -49,6 +49,7 @@ interface SimTest {
   stepEvents?: Array<Record<string, unknown>> | null;
   slowestStep: string;
   slowestStepDuration: number;
+  wastedTimeMs?: number | null;
   networkRequests: Array<Record<string, unknown>>;
   webVitals: Record<string, unknown>;
   browser?: Record<string, unknown> | null;
@@ -322,12 +323,28 @@ interface BaseTestOptions {
   slowSteps?: boolean;
 }
 
+function buildWaitStepEvents(): Array<Record<string, unknown>> {
+  const waitDuration = vary(1200, 0.3);
+  return [
+    {
+      title: 'waitForLoadState',
+      category: 'wait',
+      startedAt: Date.now() + 100,
+      duration: waitDuration,
+      status: 'wasted',
+      location: null,
+    },
+  ];
+}
+
 function baseTests(opts: BaseTestOptions = {}): SimTest[] {
   return CHECKOUT_TESTS.map((t, i) => {
     const duration = vary(Math.round(t.duration * (opts.durationFactor ?? 1)), 0.12);
     const steps = buildSteps(duration, opts.slowSteps);
     const slowest = steps.reduce((a, b) => (a.duration > b.duration ? a : b));
     const suite = SUITE_MAP[t.file];
+    const waitEvents = buildWaitStepEvents();
+    const waitTime = waitEvents.reduce((sum, e) => sum + (e.duration as number), 0);
 
     return {
       title: t.title,
@@ -335,8 +352,10 @@ function baseTests(opts: BaseTestOptions = {}): SimTest[] {
       duration,
       attempts: [{ status: 'passed' as const }],
       steps,
+      stepEvents: waitEvents,
       slowestStep: slowest.title,
       slowestStepDuration: slowest.duration,
+      wastedTimeMs: waitTime,
       networkRequests: buildNetworkRequests({ slow: opts.slowNetwork }),
       webVitals: buildWebVitals(opts.slowNetwork),
       suitePath: suite?.suitePath,
@@ -758,6 +777,7 @@ async function runSingleSimulation(
             stepEvents: test.stepEvents ?? null,
             slowestStep: test.slowestStep,
             slowestStepDuration: test.slowestStepDuration,
+            wastedTimeMs: test.wastedTimeMs ?? null,
             networkRequests: test.networkRequests,
             webVitals: test.webVitals,
             consoleLogs: a.consoleLogs ?? null,

@@ -5,12 +5,14 @@ test.describe('Performance UI Tests', () => {
   let projectId: number;
 
   test.beforeAll(async ({ request }) => {
+    const runStartTime = Date.now();
+
     // Submit test data with performance metrics
     const response = await request.post('/api/test-runs/submit', {
       data: {
         projectName: PROJECT.DASHBOARD_PERF,
         status: 'passed',
-        startTime: new Date().toISOString(),
+        startTime: new Date(runStartTime).toISOString(),
         duration: 60000,
         totalTests: 3,
         passedTests: 2,
@@ -23,12 +25,16 @@ test.describe('Performance UI Tests', () => {
             duration: 2000,
             location: 'tests/home.spec.ts:1:1',
             retries: 0,
+            workerIndex: 0,
+            startedAt: runStartTime,
             steps: [
               { title: 'page.goto(http://localhost)', duration: 800, category: 'navigation' },
               { title: 'expect(locator).toBeVisible()', duration: 100, category: 'assertion' },
             ],
+            stepEvents: [],
             slowestStep: 'page.goto(http://localhost)',
             slowestStepDuration: 800,
+            wastedTimeMs: 0,
           },
           {
             title: 'form submission is slow',
@@ -36,14 +42,27 @@ test.describe('Performance UI Tests', () => {
             duration: 15000,
             location: 'tests/form.spec.ts:1:1',
             retries: 0,
+            workerIndex: 0,
+            startedAt: runStartTime,
             steps: [
               { title: 'page.goto(http://localhost/form)', duration: 5000, category: 'navigation' },
               { title: 'locator.fill(email)', duration: 100, category: 'input' },
+              { title: 'page.waitForTimeout', duration: 2000, category: 'wait' },
               { title: 'locator.click(submit)', duration: 3000, category: 'action' },
               { title: 'expect(locator).toHaveText(success)', duration: 4000, category: 'assertion' },
             ],
+            stepEvents: [
+              {
+                title: 'page.waitForTimeout',
+                category: 'wait',
+                startedAt: runStartTime + 5100,
+                duration: 2000,
+                status: 'wasted',
+              },
+            ],
             slowestStep: 'page.goto(http://localhost/form)',
             slowestStepDuration: 5000,
+            wastedTimeMs: 2000,
           },
           {
             title: 'broken page',
@@ -52,6 +71,7 @@ test.describe('Performance UI Tests', () => {
             location: 'tests/broken.spec.ts:1:1',
             error: 'Timeout',
             retries: 1,
+            workerIndex: 0,
           },
         ],
       },

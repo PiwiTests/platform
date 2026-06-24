@@ -328,6 +328,7 @@ export const testRunsCases = sqliteTable(
     stepEvents: text('step_events', { mode: 'json' }), // Array of { title, category, startedAt, duration, status, location } — hook/fixture steps for timeline
     slowestStep: text('slowest_step'), // Title of the slowest step
     slowestStepDuration: integer('slowest_step_duration'), // Duration of the slowest step in ms
+    wastedTimeMs: integer('wasted_time_ms'), // Aggregated ms spent in wait steps
     webVitals: text('web_vitals', { mode: 'json' }), // { navigation: {...}, paint: {...} }
     consoleLogs: text('console_logs', { mode: 'json' }), // Array of { type, text, timestamp, location } console entries
     ariaSnapshot: text('aria_snapshot'), // ARIA snapshot of the page (YAML-like string from locator.ariaSnapshot())
@@ -337,7 +338,7 @@ export const testRunsCases = sqliteTable(
     testAnnotations: text('test_annotations', { mode: 'json' }), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
     workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
     shardIndex: integer('shard_index'), // Shard index (1-based) for sharded runs; null = not sharded
-    startedAt: integer('started_at', { mode: 'timestamp_ms' }), // Unix timestamp in ms when the test started
+    startedAt: integer('started_at'), // Unix timestamp in ms when the test started (stored/read as a plain number)
     isNewRegression: integer('is_new_regression'), // boolean: passed in baseline, failed in this run
     isNewFlaky: integer('is_new_flaky'), // boolean: no retries in baseline, retry-pass in this run
     createdAt: integer('created_at', { mode: 'timestamp_ms' })

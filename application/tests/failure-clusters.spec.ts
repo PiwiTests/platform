@@ -111,8 +111,12 @@ test.describe('Error fingerprinting', () => {
   });
 
   test('URLs and emails are masked out of the message head', async () => {
-    const a = await computeErrorFingerprint('Error: page.goto: net::ERR_CONNECTION_REFUSED at https://pr-1234.preview.example.com/login');
-    const b = await computeErrorFingerprint('Error: page.goto: net::ERR_CONNECTION_REFUSED at https://pr-5678.preview.example.com/login');
+    const a = await computeErrorFingerprint(
+      'Error: page.goto: net::ERR_CONNECTION_REFUSED at https://pr-1234.preview.example.com/login',
+    );
+    const b = await computeErrorFingerprint(
+      'Error: page.goto: net::ERR_CONNECTION_REFUSED at https://pr-5678.preview.example.com/login',
+    );
 
     expect(a.fingerprint).toBe(b.fingerprint);
   });

@@ -1,0 +1,1 @@
+ALTER TABLE "test_runs_cases" ADD COLUMN "wasted_time_ms" integer;

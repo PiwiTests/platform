@@ -13,6 +13,7 @@ const props = defineProps<{
     shardIndex?: number | null;
     slowestStep?: string | null;
     slowestStepDuration?: number | null;
+    wastedTimeMs?: number | null;
   };
   historicalTiming?: {
     avg: number;
@@ -90,6 +91,12 @@ const { copy, copied } = useCopy();
             <span v-if="testCase.slowestStepDuration" class="text-sm"
               >({{ formatDuration(testCase.slowestStepDuration) }})</span
             >
+          </p>
+        </div>
+        <div v-if="testCase.wastedTimeMs && testCase.wastedTimeMs > 0">
+          <p class="text-sm text-gray-500">Wasted time</p>
+          <p class="font-medium text-amber-600">
+            {{ formatDuration(testCase.wastedTimeMs) }}
           </p>
         </div>
       </div>

@@ -1,6 +1,6 @@
 {
-  "id": "9d61d017-7fc4-4c19-b0d0-e343a0436b2f",
-  "prevId": "ebd13ef6-f47a-4a1d-a3db-dbd4c55a3bca",
+  "id": "c9195746-d2be-4a04-b2dd-336a73eb7c02",
+  "prevId": "e7940de7-82fc-4380-bd0f-694e4bd62910",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -203,6 +203,157 @@
       },
       "indexes": {},
       "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.cluster_merge_suggestions": {
+      "name": "cluster_merge_suggestions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cluster_a_id": {
+          "name": "cluster_a_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cluster_b_id": {
+          "name": "cluster_b_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "score": {
+          "name": "score",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "method": {
+          "name": "method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "llm_confidence": {
+          "name": "llm_confidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "llm_reason": {
+          "name": "llm_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "idx_cluster_merge_suggestions_pair": {
+          "name": "idx_cluster_merge_suggestions_pair",
+          "columns": [
+            {
+              "expression": "cluster_a_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "cluster_b_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_cluster_merge_suggestions_project_status": {
+          "name": "idx_cluster_merge_suggestions_project_status",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "cluster_merge_suggestions_project_id_projects_id_fk": {
+          "name": "cluster_merge_suggestions_project_id_projects_id_fk",
+          "tableFrom": "cluster_merge_suggestions",
+          "tableTo": "projects",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "cluster_merge_suggestions_cluster_a_id_failure_clusters_id_fk": {
+          "name": "cluster_merge_suggestions_cluster_a_id_failure_clusters_id_fk",
+          "tableFrom": "cluster_merge_suggestions",
+          "tableTo": "failure_clusters",
+          "columnsFrom": ["cluster_a_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "cluster_merge_suggestions_cluster_b_id_failure_clusters_id_fk": {
+          "name": "cluster_merge_suggestions_cluster_b_id_failure_clusters_id_fk",
+          "tableFrom": "cluster_merge_suggestions",
+          "tableTo": "failure_clusters",
+          "columnsFrom": ["cluster_b_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -580,6 +731,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "embedding": {
           "name": "embedding",
@@ -2523,6 +2680,12 @@
         },
         "slowest_step_duration": {
           "name": "slowest_step_duration",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "wasted_time_ms": {
+          "name": "wasted_time_ms",
           "type": "integer",
           "primaryKey": false,
           "notNull": false

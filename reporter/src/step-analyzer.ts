@@ -1,16 +1,52 @@
-/** Categorise a Playwright step into `navigation`, `action`, `input`, `assertion`, `wait`, `api`, `hook`, or `other` */
+/**
+ * Categorise a Playwright step into `navigation`, `action`, `input`,
+ * `assertion`, `wait`, `api`, `hook`, or `other`.
+ *
+ * Supports two title formats:
+ *  - Legacy api-path titles ("page.goto", "locator.click", "page.waitForTimeout")
+ *  - Modern human-readable titles introduced in newer Playwright versions
+ *    ("Navigate to \"{url}\"", "Click", "Wait for timeout", "Wait for load state").
+ * Hook/fixture/expect steps are detected via Playwright's own `category`.
+ */
 export function categorizeStep(title: string, pwCategory?: string): string {
   if (!title) return 'other';
   if (pwCategory === 'hook' || pwCategory === 'fixture') return pwCategory;
+  if (pwCategory === 'expect') return 'assertion';
   const lower = title.toLowerCase();
+
+  // Waits — modern "Wait for timeout/function/selector/state/navigation/load state/url/event"
+  // and legacy "*.waitFor*" (locator.waitFor, page.waitForLoadState, frame.waitForTimeout, ...).
   if (
+    lower.startsWith('wait for') ||
+    lower.startsWith('locator.waitfor') ||
+    lower.startsWith('page.waitfor') ||
+    lower.startsWith('frame.waitfor')
+  )
+    return 'wait';
+
+  // Navigation — modern "Navigate to ...", "Go back", "Go forward", "Reload"; legacy "page.goto" etc.
+  if (
+    lower.startsWith('navigate to') ||
+    lower.startsWith('go back') ||
+    lower.startsWith('go forward') ||
+    lower.startsWith('reload') ||
     lower.startsWith('page.goto') ||
     lower.startsWith('page.reload') ||
     lower.startsWith('page.goback') ||
     lower.startsWith('page.goforward')
   )
     return 'navigation';
+
+  // Actions — clicks, taps, checks, selects, hovers
   if (
+    lower.startsWith('click') ||
+    lower.startsWith('double click') ||
+    lower.startsWith('check') ||
+    lower.startsWith('uncheck') ||
+    lower.startsWith('tap') ||
+    lower.startsWith('hover') ||
+    lower.startsWith('select option') ||
+    lower.startsWith('drag') ||
     lower.startsWith('locator.click') ||
     lower.startsWith('locator.dblclick') ||
     lower.startsWith('locator.check') ||
@@ -19,7 +55,15 @@ export function categorizeStep(title: string, pwCategory?: string): string {
     lower.startsWith('locator.tap')
   )
     return 'action';
+
+  // Input — fill, type, press, insert text, set input files
   if (
+    lower.startsWith('fill ') ||
+    lower === 'fill' ||
+    lower.startsWith('type') ||
+    lower.startsWith('press') ||
+    lower.startsWith('insert ') ||
+    lower.startsWith('set input files') ||
     lower.startsWith('locator.fill') ||
     lower.startsWith('locator.type') ||
     lower.startsWith('locator.press') ||
@@ -27,15 +71,11 @@ export function categorizeStep(title: string, pwCategory?: string): string {
     lower.startsWith('locator.setinputfiles')
   )
     return 'input';
+
+  // Assertions — legacy "expect..." titles (modern ones caught via pwCategory above)
   if (lower.startsWith('expect') || lower.startsWith('locator.expect') || lower.startsWith('page.expect'))
     return 'assertion';
-  if (
-    lower.startsWith('locator.waitfor') ||
-    lower.startsWith('page.waitfor') ||
-    lower.startsWith('page.waitforloadstate') ||
-    lower.startsWith('page.waitforurl')
-  )
-    return 'wait';
+
   if (lower.startsWith('apirequestcontext') || lower.startsWith('apiresponse')) return 'api';
   if (lower === 'before hooks' || lower === 'after hooks' || lower.startsWith('fixture:')) return 'hook';
   return 'other';
@@ -49,7 +89,7 @@ export interface FlatStep {
 }
 
 /** Step-event category restricted to the values `extractTestStepEvents` emits. */
-export type StepEventCategory = 'hook' | 'fixture' | 'test.step' | 'expect';
+export type StepEventCategory = 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait';
 
 /** Recursively flatten a nested step tree into a flat list. Uses Playwright's built-in category when available. */
 export function flattenSteps(steps: any[]): FlatStep[] {
@@ -77,6 +117,10 @@ export interface StepMetrics {
   navigationCount: number;
   /** Total wall-clock time spent in navigation steps */
   navigationTotalDuration: number;
+  /** Total wall-clock time spent in wait steps (wasted time) */
+  waitTotalDuration: number;
+  /** Count of wait steps */
+  waitCount: number;
 }
 
 /** Collect step metrics (flat steps, slowest step, navigation stats) from a Playwright step array */
@@ -90,6 +134,8 @@ export function collectStepMetrics(steps: any[]): StepMetrics {
   }
 
   const navSteps = flatSteps.filter((s) => s.category === 'navigation');
+  const waitSteps = flatSteps.filter((s) => s.category === 'wait');
+  const waitTotalDuration = waitSteps.reduce((sum, s) => sum + (s.duration || 0), 0);
 
   return {
     steps: flatSteps,
@@ -97,6 +143,8 @@ export function collectStepMetrics(steps: any[]): StepMetrics {
     slowestStep,
     navigationCount: navSteps.length,
     navigationTotalDuration: navSteps.reduce((sum: number, s) => sum + (s.duration || 0), 0),
+    waitTotalDuration,
+    waitCount: waitSteps.length,
   };
 }
 
@@ -123,6 +171,8 @@ export interface PerformanceSummary {
   totalNavigationDuration?: number;
   /** Average time per navigation step */
   avgNavigationDuration?: number;
+  /** Total time spent in wait steps across all cases */
+  totalWastedTimeMs?: number;
 }
 
 /** Compute run-level performance summary (averages, percentiles, slowest tests) from all test cases */
@@ -157,6 +207,14 @@ export function computePerformanceSummary(testCases: any[]): PerformanceSummary 
 
   result.totalNavigationDuration = totalNavDur;
   result.avgNavigationDuration = totalNavCount > 0 ? Math.round(totalNavDur / totalNavCount) : 0;
+
+  let totalWasted = 0;
+  for (const tc of testCases) {
+    if (tc.performanceMetrics) {
+      totalWasted += tc.performanceMetrics.waitTotalDuration || 0;
+    }
+  }
+  result.totalWastedTimeMs = totalWasted;
 
   return result;
 }
@@ -204,5 +262,50 @@ export function extractTestStepEvents(
     });
   }
 
+  return events;
+}
+
+/**
+ * Recursively extract wait-category steps from the Playwright step tree
+ * with absolute timings. These are rendered as semi-transparent amber bars
+ * on WorkersTimeline to visualize wasted time.
+ */
+export function extractWaitEvents(
+  steps: any[],
+  insideWait: boolean = false,
+): Array<{
+  title: string;
+  category: StepEventCategory;
+  startedAt: number;
+  duration: number;
+  status: string;
+  location?: string | null;
+}> {
+  const events: Array<{
+    title: string;
+    category: StepEventCategory;
+    startedAt: number;
+    duration: number;
+    status: string;
+    location?: string | null;
+  }> = [];
+  for (const step of steps) {
+    const cat = categorizeStep(step.title, step.category);
+    const isWait = cat === 'wait';
+    if (isWait && !insideWait && step.startTime) {
+      const startedAt = step.startTime instanceof Date ? step.startTime.getTime() : step.startTime;
+      events.push({
+        title: step.title,
+        category: 'wait' as StepEventCategory,
+        startedAt,
+        duration: step.duration || 0,
+        status: 'wasted',
+        location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : null,
+      });
+    }
+    if (step.steps?.length > 0) {
+      events.push(...extractWaitEvents(step.steps, insideWait || isWait));
+    }
+  }
   return events;
 }

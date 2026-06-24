@@ -487,7 +487,12 @@ function copyFailure() {
             </div>
           </div>
 
-          <SectionCard v-if="webVitals" icon="i-lucide-gauge" title="Browser performance (Web Vitals)" help="case.web-vitals">
+          <SectionCard
+            v-if="webVitals"
+            icon="i-lucide-gauge"
+            title="Browser performance (Web Vitals)"
+            help="case.web-vitals"
+          >
             <div class="space-y-4">
               <div v-if="webVitals.navigation" class="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
@@ -598,7 +603,12 @@ function copyFailure() {
               v-if="(testCase as any)?.consoleLogs?.length"
               :entries="(testCase as any)?.consoleLogs ?? []"
             />
-            <SectionCard v-if="groupedNetworkRequests.length > 0" icon="i-lucide-network" title="Network requests" help="case.network">
+            <SectionCard
+              v-if="groupedNetworkRequests.length > 0"
+              icon="i-lucide-network"
+              title="Network requests"
+              help="case.network"
+            >
               <div class="space-y-1 max-h-96 overflow-y-auto">
                 <div
                   v-for="req in groupedNetworkRequests"
@@ -640,7 +650,12 @@ function copyFailure() {
               </div>
             </SectionCard>
 
-            <SectionCard v-if="allServerLogs.length > 0" icon="i-lucide-server" title="Backend server logs" help="case.backend-logs">
+            <SectionCard
+              v-if="allServerLogs.length > 0"
+              icon="i-lucide-server"
+              title="Backend server logs"
+              help="case.backend-logs"
+            >
               <div class="space-y-1 max-h-64 overflow-y-auto font-mono text-xs">
                 <div v-for="(log, i) in allServerLogs" :key="i" class="flex items-start gap-2 py-0.5">
                   <UBadge

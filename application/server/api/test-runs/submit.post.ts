@@ -151,8 +151,10 @@ export default eventHandler(async (event) => {
             line,
             column,
             steps: testCase.steps,
+            stepEvents: testCase.stepEvents,
             slowestStep: testCase.slowestStep,
             slowestStepDuration: testCase.slowestStepDuration,
+            wastedTimeMs: testCase.wastedTimeMs,
             networkRequests: testCase.networkRequests,
             webVitals: testCase.webVitals,
             consoleLogs: testCase.consoleLogs,
@@ -265,6 +267,7 @@ export default eventHandler(async (event) => {
         stepEvents?: unknown;
         slowestStep?: string;
         slowestStepDuration?: number;
+        wastedTimeMs?: number;
         networkRequests?: unknown;
         webVitals?: unknown;
         consoleLogs?: unknown;
@@ -298,6 +301,7 @@ export default eventHandler(async (event) => {
           stepEvents: testCase.stepEvents,
           slowestStep: testCase.slowestStep,
           slowestStepDuration: testCase.slowestStepDuration,
+          wastedTimeMs: testCase.wastedTimeMs,
           networkRequests: testCase.networkRequests,
           webVitals: testCase.webVitals,
           consoleLogs: testCase.consoleLogs,

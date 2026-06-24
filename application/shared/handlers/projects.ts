@@ -345,7 +345,10 @@ export async function deleteProjectData(db: DrizzleDB, projectId: number) {
 
 // ─── getProjectMenu ──────────────────────────────────────────────
 
-export async function getProjectMenu(db: DrizzleDB, scope: ProjectScope = 'all'): Promise<{ id: number; name: string; label: string | null }[]> {
+export async function getProjectMenu(
+  db: DrizzleDB,
+  scope: ProjectScope = 'all',
+): Promise<{ id: number; name: string; label: string | null }[]> {
   if (scope !== 'all' && scope.size === 0) return [];
   const query = db
     .select({ id: projects.id, name: projects.name, label: projects.label })

@@ -6,6 +6,7 @@ import {
   percentile,
   computePerformanceSummary,
   extractTestStepEvents,
+  extractWaitEvents,
 } from '../src/step-analyzer.js';
 
 describe('categorizeStep', () => {
@@ -49,11 +50,42 @@ describe('categorizeStep', () => {
     expect(categorizeStep('page.expect')).toBe('assertion');
   });
 
-  it('classifies wait steps', () => {
+  it('classifies wait steps (legacy api-path titles)', () => {
     expect(categorizeStep('locator.waitFor')).toBe('wait');
     expect(categorizeStep('page.waitFor')).toBe('wait');
     expect(categorizeStep('page.waitForLoadState')).toBe('wait');
     expect(categorizeStep('page.waitForURL')).toBe('wait');
+    expect(categorizeStep('page.waitForTimeout')).toBe('wait');
+    expect(categorizeStep('page.waitForRequest')).toBe('wait');
+    expect(categorizeStep('page.waitForResponse')).toBe('wait');
+    expect(categorizeStep('page.waitForEvent')).toBe('wait');
+    expect(categorizeStep('frame.waitFor')).toBe('wait');
+    expect(categorizeStep('frame.waitForTimeout')).toBe('wait');
+  });
+
+  it('classifies wait steps (modern human-readable titles)', () => {
+    // Playwright >=1.5x emits human-readable step titles instead of api paths.
+    expect(categorizeStep('Wait for timeout', 'pw:api')).toBe('wait');
+    expect(categorizeStep('Wait for load state', 'pw:api')).toBe('wait');
+    expect(categorizeStep('Wait for navigation', 'pw:api')).toBe('wait');
+    expect(categorizeStep('Wait for selector', 'pw:api')).toBe('wait');
+    expect(categorizeStep('Wait for function', 'pw:api')).toBe('wait');
+    expect(categorizeStep('Wait for event', 'pw:api')).toBe('wait');
+    expect(categorizeStep('Wait for URL', 'pw:api')).toBe('wait');
+  });
+
+  it('classifies modern human-readable navigation/action/input/expect titles', () => {
+    expect(categorizeStep('Navigate to "https://example.com"', 'pw:api')).toBe('navigation');
+    expect(categorizeStep('Go back', 'pw:api')).toBe('navigation');
+    expect(categorizeStep('Reload', 'pw:api')).toBe('navigation');
+    expect(categorizeStep('Click', 'pw:api')).toBe('action');
+    expect(categorizeStep('Double click', 'pw:api')).toBe('action');
+    expect(categorizeStep('Check', 'pw:api')).toBe('action');
+    expect(categorizeStep('Fill "value"', 'pw:api')).toBe('input');
+    expect(categorizeStep('Press "Enter"', 'pw:api')).toBe('input');
+    expect(categorizeStep('Set input files', 'pw:api')).toBe('input');
+    // expect steps carry pwCategory 'expect'
+    expect(categorizeStep('Expect "toBeVisible"', 'expect')).toBe('assertion');
   });
 
   it('classifies api steps', () => {
@@ -124,6 +156,19 @@ describe('collectStepMetrics', () => {
     expect(m.slowestStep).toBe(null);
     expect(m.totalStepDuration).toBe(0);
     expect(m.navigationCount).toBe(0);
+    expect(m.waitCount).toBe(0);
+    expect(m.waitTotalDuration).toBe(0);
+  });
+
+  it('aggregates wait metrics', () => {
+    const steps = [
+      { title: 'page.waitForTimeout', duration: 5000, steps: [] },
+      { title: 'locator.click', duration: 100, steps: [] },
+      { title: 'page.waitForLoadState', duration: 3000, steps: [] },
+    ];
+    const m = collectStepMetrics(steps as any);
+    expect(m.waitCount).toBe(2);
+    expect(m.waitTotalDuration).toBe(8000);
   });
 
   it('totalStepDuration sums top-level only (nested not double-counted)', () => {
@@ -203,6 +248,20 @@ describe('computePerformanceSummary', () => {
     expect(s.avgNavigationDuration).toBe(0);
     expect(s.totalNavigationDuration).toBe(0);
   });
+
+  it('computes totalWastedTimeMs from performanceMetrics', () => {
+    const cases = [
+      { title: 'a', duration: 100, performanceMetrics: { waitTotalDuration: 5000, waitCount: 1 } },
+      { title: 'b', duration: 200, performanceMetrics: { waitTotalDuration: 3000, waitCount: 2 } },
+    ];
+    const s = computePerformanceSummary(cases as any);
+    expect(s.totalWastedTimeMs).toBe(8000);
+  });
+
+  it('totalWastedTimeMs is 0 when no wait durations', () => {
+    const s = computePerformanceSummary([{ title: 'a', duration: 100 }] as any);
+    expect(s.totalWastedTimeMs).toBe(0);
+  });
 });
 
 describe('extractTestStepEvents', () => {
@@ -233,6 +292,70 @@ describe('extractTestStepEvents', () => {
       [{ title: 'Before Hooks', category: 'hook', startTime: 12345, duration: 1 }] as any,
       new Date(),
     );
+    expect(events[0].startedAt).toBe(12345);
+  });
+});
+
+describe('extractWaitEvents', () => {
+  it('extracts wait-category steps with absolute timings', () => {
+    const start = new Date('2024-01-01T00:00:00.000Z');
+    const steps = [
+      { title: 'page.waitForTimeout', category: undefined, startTime: start, duration: 5000, location: { file: 'test.spec.ts', line: 10, column: 5 } },
+      { title: 'locator.click', category: 'action', startTime: start, duration: 100 },
+    ];
+    const events = extractWaitEvents(steps as any);
+    expect(events.length).toBe(1);
+    expect(events[0].title).toBe('page.waitForTimeout');
+    expect(events[0].category).toBe('wait');
+    expect(events[0].startedAt).toBe(start.getTime());
+    expect(events[0].duration).toBe(5000);
+    expect(events[0].status).toBe('wasted');
+    expect(events[0].location).toBe('test.spec.ts:10:5');
+  });
+
+  it('skips steps without startTime', () => {
+    const events = extractWaitEvents([{ title: 'page.waitForTimeout', duration: 5000 }] as any);
+    expect(events.length).toBe(0);
+  });
+
+  it('extracts waits nested inside test.step() blocks', () => {
+    const start = new Date('2024-01-01T00:00:00.000Z');
+    const steps = [
+      {
+        title: 'test.step: fill form',
+        category: 'test.step',
+        startTime: start,
+        duration: 2000,
+        steps: [
+          { title: 'locator.fill', duration: 200, steps: [] },
+          { title: 'page.waitForTimeout', startTime: new Date(start.getTime() + 200), duration: 1000, steps: [] },
+        ],
+      },
+    ];
+    const events = extractWaitEvents(steps as any);
+    expect(events.length).toBe(1);
+    expect(events[0].title).toBe('page.waitForTimeout');
+  });
+
+  it('does NOT extract waits nested inside another wait step', () => {
+    const start = new Date('2024-01-01T00:00:00.000Z');
+    const steps = [
+      {
+        title: 'page.waitForResponse',
+        startTime: start,
+        duration: 3000,
+        steps: [
+          { title: 'page.waitForTimeout', startTime: new Date(start.getTime() + 100), duration: 500, steps: [] },
+        ],
+      },
+    ];
+    const events = extractWaitEvents(steps as any);
+    expect(events.length).toBe(1); // only the outer wait
+    expect(events[0].title).toBe('page.waitForResponse');
+  });
+
+  it('accepts numeric startTime', () => {
+    const events = extractWaitEvents([{ title: 'page.waitForTimeout', startTime: 12345, duration: 100 }] as any);
     expect(events[0].startedAt).toBe(12345);
   });
 });

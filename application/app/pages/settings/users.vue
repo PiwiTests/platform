@@ -721,7 +721,9 @@ async function handleInviteUser(user: UserDetails) {
                 placeholder="Search and select projects…"
               >
                 <template #default="{ modelValue: selected }">
-                  <span v-if="(selected as any[]).length === 0" class="text-[var(--ui-text-muted)]">Select projects…</span>
+                  <span v-if="(selected as any[]).length === 0" class="text-[var(--ui-text-muted)]"
+                    >Select projects…</span
+                  >
                   <span v-else>{{ (selected as any[]).length }} project(s) selected</span>
                 </template>
               </USelectMenu>
