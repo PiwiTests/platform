@@ -202,6 +202,7 @@ export default eventHandler(async (event) => {
     stepEvents: (tc as { stepEvents?: unknown }).stepEvents ?? null,
     slowestStep: tc.slowestStep,
     slowestStepDuration: tc.slowestStepDuration,
+    wastedTimeMs: tc.wastedTimeMs,
     networkRequests: tc.networkRequests,
     webVitals: tc.webVitals,
     consoleLogs: tc.consoleLogs,

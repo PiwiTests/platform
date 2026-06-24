@@ -185,6 +185,27 @@ const timelineData = computed<TimelineItem[]>(() => {
           isWait: false,
         });
         cursor += dur;
+
+        const steps = tc.stepEvents as TestStepEvent[] | null | undefined;
+        if (steps && steps.length > 0) {
+          for (const step of steps) {
+            result.push({
+              id: -tc.id - steps.indexOf(step) - 1,
+              title: step.title,
+              status: step.status || 'passed',
+              workerIndex: tc.workerIndex ?? 0,
+              shardIndex,
+              start: cursor,
+              duration: step.duration || 0,
+              rowIndex: ri,
+              isHook: step.category !== 'wait',
+              isWait: step.category === 'wait',
+              category: step.category,
+              parentTitle: tc.title,
+            });
+            cursor += step.duration || 0;
+          }
+        }
       }
     }
   }
@@ -557,27 +578,48 @@ function resetView() {
             </text>
           </template>
           <template v-else-if="item.isWait">
+            <!-- slightly taller bar, offset into the row gap above/below -->
             <rect
               :x="getBarX(item)"
-              :y="getBarTop(item)"
+              :y="getBarTop(item) - 3"
               :width="getBarWidth(item)"
-              :height="barHeight"
-              :rx="3"
-              :ry="3"
-              fill="#f59e0b66"
-              stroke="#f59e0b"
-              stroke-width="1"
-              stroke-dasharray="3,2"
+              :height="barHeight + 6"
+              :rx="2"
+              :ry="2"
+              fill="#facc15"
+              fill-opacity="0.28"
+              stroke="#ca8a04"
+              stroke-width="1.5"
               class="transition-opacity duration-100 cursor-default"
-              :class="hoveredItem && hoveredItem.id !== item.id ? 'opacity-40' : 'opacity-80'"
+              :class="hoveredItem && hoveredItem.id !== item.id ? 'opacity-40' : 'opacity-90'"
+            />
+            <line
+              v-if="getBarWidth(item) > 4"
+              :x1="getBarX(item) + 1"
+              :y1="getBarTop(item) - 3"
+              :x2="getBarX(item) + getBarWidth(item) - 1"
+              :y2="getBarTop(item) + barHeight + 3"
+              stroke="#ca8a04"
+              stroke-width="1"
+              stroke-opacity="0.25"
+            />
+            <line
+              v-if="getBarWidth(item) > 4"
+              :x1="getBarX(item) + getBarWidth(item) - 1"
+              :y1="getBarTop(item) - 3"
+              :x2="getBarX(item) + 1"
+              :y2="getBarTop(item) + barHeight + 3"
+              stroke="#ca8a04"
+              stroke-width="1"
+              stroke-opacity="0.25"
             />
             <text
               v-if="getBarWidth(item) > 50"
               :x="getBarX(item) + 4"
               :y="getBarTop(item) + barHeight / 2 + 4"
-              class="fill-amber-700 dark:fill-amber-300 text-[9px] font-medium pointer-events-none"
+              class="fill-yellow-800 dark:fill-yellow-200 text-[9px] font-bold pointer-events-none"
             >
-              wait: {{ formatTime(item.duration) }}
+              wasted {{ formatTime(item.duration) }}
             </text>
           </template>
           <template v-else-if="item.status === 'running'">

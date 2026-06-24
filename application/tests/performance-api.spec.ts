@@ -30,6 +30,7 @@ test.describe.serial('Performance API Tests', () => {
             ],
             slowestStep: 'page.goto(http://localhost)',
             slowestStepDuration: 200,
+            wastedTimeMs: 0,
           },
           {
             title: 'slow test',
@@ -39,11 +40,13 @@ test.describe.serial('Performance API Tests', () => {
             retries: 0,
             steps: [
               { title: 'page.goto(http://localhost/heavy)', duration: 5000, category: 'navigation' },
+              { title: 'page.waitForLoadState', duration: 1500, category: 'wait' },
               { title: 'locator.click(submit)', duration: 3000, category: 'action' },
               { title: 'expect(locator).toHaveText()', duration: 4000, category: 'assertion' },
             ],
             slowestStep: 'page.goto(http://localhost/heavy)',
             slowestStepDuration: 5000,
+            wastedTimeMs: 1500,
           },
           {
             title: 'failing test',

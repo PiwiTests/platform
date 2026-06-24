@@ -493,6 +493,7 @@ export default eventHandler(async (event) => {
         stepEvents: testCase.stepEvents,
         slowestStep: testCase.slowestStep as string | null | undefined,
         slowestStepDuration: testCase.slowestStepDuration as number | null | undefined,
+        wastedTimeMs: testCase.wastedTimeMs as number | null | undefined,
         networkRequests: testCase.networkRequests,
         webVitals: testCase.webVitals,
         consoleLogs: testCase.consoleLogs,

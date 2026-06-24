@@ -179,6 +179,7 @@ export interface StreamEventPayload {
   parentTitle?: string | null;
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
+  wastedTimeMs?: number | null;
   networkRequests?: unknown;
   webVitals?: unknown;
   consoleLogs?: unknown;

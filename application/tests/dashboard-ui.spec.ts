@@ -33,9 +33,11 @@ test.describe('Dashboard UI Tests', () => {
 
   test('should display dashboard home page', async ({ page }) => {
     await page.goto('/');
+    await page.waitForTimeout(1000); // triggers wasted-time tracking
 
     // Check page title
     await expect(page).toHaveTitle(/Piwi Dashboard/);
+    await page.waitForTimeout(1500); // second wait for cumulative wasted time
 
     // Check for statistics cards
     await expect(page.getByText('Total projects')).toBeVisible();
@@ -315,6 +317,7 @@ test.describe('Foldable Summary', () => {
             steps: [{ title: 'page.goto(url)', duration: 500, category: 'navigation' }],
             slowestStep: 'page.goto(url)',
             slowestStepDuration: 500,
+            wastedTimeMs: 0,
           },
         ],
       },
