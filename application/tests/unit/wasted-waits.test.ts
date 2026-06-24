@@ -41,9 +41,9 @@ describe('isWastedWait', () => {
   });
 
   test('matches against source location', () => {
-    expect(isWastedWait(wait('Wait for function', '/x/node_modules/@nuxt/test-utils/dist/a.mjs:54:16'), ['*node_modules*'])).toBe(
-      true,
-    );
+    expect(
+      isWastedWait(wait('Wait for function', '/x/node_modules/@nuxt/test-utils/dist/a.mjs:54:16'), ['*node_modules*']),
+    ).toBe(true);
     expect(isWastedWait(wait('Wait for function', '/x/tests/spec.ts:10:1'), ['*node_modules*'])).toBe(false);
   });
 

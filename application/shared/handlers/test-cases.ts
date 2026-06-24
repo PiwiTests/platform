@@ -266,9 +266,7 @@ export async function getTestRunCase(
     slowestStep: trc.slowestStep,
     slowestStepDuration: trc.slowestStepDuration,
     wastedTimeMs:
-      trc.stepEvents != null
-        ? computeWastedMs(trc.stepEvents as TestStepEvent[], wastedPatterns)
-        : trc.wastedTimeMs,
+      trc.stepEvents != null ? computeWastedMs(trc.stepEvents as TestStepEvent[], wastedPatterns) : trc.wastedTimeMs,
     networkRequests: networkRequestsData,
     webVitals: trc.webVitals,
     consoleLogs: trc.consoleLogs,

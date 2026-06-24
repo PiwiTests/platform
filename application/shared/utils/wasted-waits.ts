@@ -25,7 +25,10 @@ export function parseWastedWaitPatterns(raw: string | string[] | null | undefine
 
 /** Convert a single glob pattern (`*` and `?` wildcards) to an anchored, case-insensitive RegExp. */
 function globToRegExp(pattern: string): RegExp {
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.');
   return new RegExp(`^${escaped}$`, 'i');
 }
 
@@ -66,10 +69,7 @@ export function isWastedWait(
  * Sum the duration (ms) of every wait-category step event that counts as
  * wasted under the given allowlist. Non-wait events are ignored.
  */
-export function computeWastedMs(
-  stepEvents: TestStepEvent[] | null | undefined,
-  patterns: readonly string[],
-): number {
+export function computeWastedMs(stepEvents: TestStepEvent[] | null | undefined, patterns: readonly string[]): number {
   if (!stepEvents || stepEvents.length === 0) return 0;
   let total = 0;
   for (const ev of stepEvents) {

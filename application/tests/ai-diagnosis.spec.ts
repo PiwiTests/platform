@@ -404,7 +404,8 @@ function startReconcileMockServer(port: number): http.Server {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(obj));
       };
-      let parsed: { input?: string | string[]; model?: string; messages?: Array<{ role: string; content: string }> } = {};
+      let parsed: { input?: string | string[]; model?: string; messages?: Array<{ role: string; content: string }> } =
+        {};
       try {
         parsed = JSON.parse(body || '{}');
       } catch {
@@ -479,10 +480,7 @@ test.describe.serial('Cluster reconciliation, suggestions & naming', () => {
     server.close();
   });
 
-  async function configureAi(
-    request: APIRequestContext,
-    opts: { embedding: boolean; autoDiagnose: boolean },
-  ) {
+  async function configureAi(request: APIRequestContext, opts: { embedding: boolean; autoDiagnose: boolean }) {
     const base = `http://127.0.0.1:${port}/v1`;
     const roles: Record<string, unknown> = {
       diagnosis: { provider: 'openai', model: 'mock', baseUrl: base, apiKey: 'x' },
@@ -521,12 +519,27 @@ test.describe.serial('Cluster reconciliation, suggestions & naming', () => {
   test('auto-merges embedding near-duplicates', async ({ request }) => {
     await configureAi(request, { embedding: true, autoDiagnose: false });
     const { projectId } = await submitFailures(request, PROJECT.CLUSTER_MERGE, [
-      { title: 'login a', status: 'failed', duration: 1, location: 'tests/a.spec.ts:1:1', error: err("getByTestId('alpha')", '1,0,0') },
-      { title: 'login b', status: 'failed', duration: 1, location: 'tests/b.spec.ts:1:1', error: err("getByTestId('beta')", '1,0,0') },
+      {
+        title: 'login a',
+        status: 'failed',
+        duration: 1,
+        location: 'tests/a.spec.ts:1:1',
+        error: err("getByTestId('alpha')", '1,0,0'),
+      },
+      {
+        title: 'login b',
+        status: 'failed',
+        duration: 1,
+        location: 'tests/b.spec.ts:1:1',
+        error: err("getByTestId('beta')", '1,0,0'),
+      },
     ]);
 
     // Two distinct fingerprints form two clusters, then identical embeddings merge them.
-    const clusters = await pollUntil(() => clustersOf(request, projectId), (c) => c.length === 1);
+    const clusters = await pollUntil(
+      () => clustersOf(request, projectId),
+      (c) => c.length === 1,
+    );
     expect(clusters.length).toBe(1);
     expect(clusters[0].occurrences).toBe(2);
   });
@@ -536,13 +549,40 @@ test.describe.serial('Cluster reconciliation, suggestions & naming', () => {
     // Distinct, digit-free selectors → four distinct fingerprints (digits in a
     // selector are masked, which would otherwise collapse e.g. 'p1'/'p2').
     const { projectId } = await submitFailures(request, PROJECT.CLUSTER_SUGGEST, [
-      { title: 'alpha', status: 'failed', duration: 1, location: 'tests/alpha.spec.ts:1:1', error: err("getByTestId('alpha')", '1,0,0,0', 'ADJ=medium') },
-      { title: 'bravo', status: 'failed', duration: 1, location: 'tests/bravo.spec.ts:1:1', error: err("getByTestId('bravo')", '0.85,0.5268,0,0', 'ADJ=medium') },
-      { title: 'charlie', status: 'failed', duration: 1, location: 'tests/charlie.spec.ts:1:1', error: err("getByTestId('charlie')", '0,0,1,0', 'ADJ=medium') },
-      { title: 'delta', status: 'failed', duration: 1, location: 'tests/delta.spec.ts:1:1', error: err("getByTestId('delta')", '0,0,0.85,0.5268', 'ADJ=medium') },
+      {
+        title: 'alpha',
+        status: 'failed',
+        duration: 1,
+        location: 'tests/alpha.spec.ts:1:1',
+        error: err("getByTestId('alpha')", '1,0,0,0', 'ADJ=medium'),
+      },
+      {
+        title: 'bravo',
+        status: 'failed',
+        duration: 1,
+        location: 'tests/bravo.spec.ts:1:1',
+        error: err("getByTestId('bravo')", '0.85,0.5268,0,0', 'ADJ=medium'),
+      },
+      {
+        title: 'charlie',
+        status: 'failed',
+        duration: 1,
+        location: 'tests/charlie.spec.ts:1:1',
+        error: err("getByTestId('charlie')", '0,0,1,0', 'ADJ=medium'),
+      },
+      {
+        title: 'delta',
+        status: 'failed',
+        duration: 1,
+        location: 'tests/delta.spec.ts:1:1',
+        error: err("getByTestId('delta')", '0,0,0.85,0.5268', 'ADJ=medium'),
+      },
     ]);
 
-    const suggestions = await pollUntil(() => suggestionsOf(request, projectId), (s) => s.length === 2);
+    const suggestions = await pollUntil(
+      () => suggestionsOf(request, projectId),
+      (s) => s.length === 2,
+    );
     expect(suggestions.length).toBe(2);
     expect(suggestions.every((s) => s.method === 'llm' && s.llmConfidence === 'medium')).toBeTruthy();
 
@@ -554,7 +594,10 @@ test.describe.serial('Cluster reconciliation, suggestions & naming', () => {
     expect((await request.post(`/api/cluster-merge-suggestions/${s2.id}/reject`)).ok()).toBeTruthy();
 
     // Approved pair merged (4 → 3); rejected pair untouched; no pending left.
-    const after = await pollUntil(() => clustersOf(request, projectId), (c) => c.length === 3);
+    const after = await pollUntil(
+      () => clustersOf(request, projectId),
+      (c) => c.length === 3,
+    );
     expect(after.length).toBe(3);
     expect((await suggestionsOf(request, projectId)).length).toBe(0);
   });
@@ -562,11 +605,19 @@ test.describe.serial('Cluster reconciliation, suggestions & naming', () => {
   test('auto-diagnose generates human-readable cluster titles', async ({ request }) => {
     await configureAi(request, { embedding: false, autoDiagnose: true });
     const { projectId } = await submitFailures(request, PROJECT.CLUSTER_NAMING, [
-      { title: 'name me', status: 'failed', duration: 1, location: 'tests/n.spec.ts:1:1', error: err("getByTestId('name-me')", '1,0,0') },
+      {
+        title: 'name me',
+        status: 'failed',
+        duration: 1,
+        location: 'tests/n.spec.ts:1:1',
+        error: err("getByTestId('name-me')", '1,0,0'),
+      },
     ]);
 
-    const clusters = await pollUntil(() => clustersOf(request, projectId), (c) => c.length >= 1 && !!c[0].title);
+    const clusters = await pollUntil(
+      () => clustersOf(request, projectId),
+      (c) => c.length >= 1 && !!c[0].title,
+    );
     expect(clusters[0].title).toMatch(/^Mock cluster \d+$/);
   });
 });
-

@@ -74,8 +74,8 @@ async function resetToDefaults() {
 
       <div class="space-y-4">
         <p class="text-sm text-gray-500 dark:text-gray-400">
-          Define which wait steps count as <strong>wasted time</strong>. A wait is wasted when any pattern below
-          matches its step title (e.g. <code>Wait for timeout*</code>) or its source location (e.g.
+          Define which wait steps count as <strong>wasted time</strong>. A wait is wasted when any pattern below matches
+          its step title (e.g. <code>Wait for timeout*</code>) or its source location (e.g.
           <code>*node_modules*</code>). Patterns are case-insensitive and support <code>*</code> and <code>?</code>
           wildcards. Wasted time is recomputed when runs are viewed, so changes apply to existing runs immediately.
         </p>
@@ -89,7 +89,10 @@ async function resetToDefaults() {
           description="These patterns are set via PIWI_WASTED_WAIT_PATTERNS and cannot be edited here."
         />
 
-        <UFormField label="Patterns" description="One glob pattern per line. An empty list means no wait is counted as wasted.">
+        <UFormField
+          label="Patterns"
+          description="One glob pattern per line. An empty list means no wait is counted as wasted."
+        >
           <UTextarea
             v-model="text"
             :rows="6"
@@ -107,7 +110,13 @@ async function resetToDefaults() {
 
         <div v-if="!envManaged" class="flex items-center gap-2">
           <UButton :loading="saving" label="Save" @click="save" />
-          <UButton variant="ghost" color="neutral" :disabled="saving" label="Reset to defaults" @click="resetToDefaults" />
+          <UButton
+            variant="ghost"
+            color="neutral"
+            :disabled="saving"
+            label="Reset to defaults"
+            @click="resetToDefaults"
+          />
         </div>
       </div>
     </UPageCard>
