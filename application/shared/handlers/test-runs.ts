@@ -385,6 +385,7 @@ interface DiagnosisCompact {
 interface FailureGroup {
   clusterId: number;
   signature: string;
+  title: string | null;
   errorType: string | null;
   selector: string | null;
   status: string;
@@ -427,6 +428,7 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
       filePath: testCases.filePath,
       clusterId: failureClusters.id,
       signature: failureClusters.signature,
+      clusterTitle: failureClusters.title,
       errorType: failureClusters.errorType,
       selector: failureClusters.selector,
       status: failureClusters.status,
@@ -456,6 +458,7 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
       group = {
         clusterId: row.clusterId,
         signature: row.signature,
+        title: row.clusterTitle ?? null,
         errorType: row.errorType,
         selector: row.selector,
         status: row.status ?? 'open',

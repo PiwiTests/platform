@@ -145,7 +145,10 @@ function copyCluster() {
         <div class="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-8">
           <!-- Left: cluster metadata -->
           <div class="flex-1 min-w-0 space-y-2.5">
-            <p class="font-mono text-sm break-all text-gray-800 dark:text-gray-200">
+            <p v-if="cluster.title" class="text-base font-medium break-words text-gray-900 dark:text-gray-100">
+              {{ cluster.title }}
+            </p>
+            <p class="font-mono text-sm break-all text-gray-500 dark:text-gray-400">
               {{ cluster.signature }}
             </p>
             <div class="flex flex-wrap gap-2">

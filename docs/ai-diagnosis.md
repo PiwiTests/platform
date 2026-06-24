@@ -11,11 +11,20 @@ When a run finishes, Piwi groups related failures and — optionally — asks an
 
 Failed test cases that share the same **error fingerprint** are grouped into a cluster automatically. Instead of scrolling through 20 unrelated stack traces, you see something like *"20 failures, 3 root causes."*
 
-- **Fingerprinting** normalizes error messages (stripping timestamps, IDs, and other volatile fragments) so that the same underlying failure groups together across tests and runs.
+- **Fingerprinting** normalizes error messages so that the same underlying failure groups together across tests, spec files, and runs. Volatile fragments are masked out: timeouts and other numbers, UUIDs and hashes, URLs and emails, and both the *expected* and *received* values of an assertion. Dynamic locator options (e.g. the `{ name: '…' }` of a table row) are masked too, so per-row failures collapse into one cluster — while the locator target itself (the test id / role) still distinguishes genuinely different failures.
+- Fingerprints are **call-site agnostic**: the failing stack frame is shown for context but doesn't split clusters, so one root cause reached from several spec files stays a single cluster.
 - The run detail page shows each failure group with **flaky** and **worker-correlation** heuristics, so you can tell "the app is broken" from "worker 3 is misbehaving."
 - Every cluster has its own **detail page** with the affected tests, triage tools (status + notes), and the AI diagnosis panel.
 
-Clustering is always on and requires no configuration. AI diagnosis is opt-in.
+Clustering is always on and requires no configuration. When the normalization algorithm is improved, existing clusters are migrated in place (re-fingerprinted from a stored sample error), so triage status, notes, and diagnoses survive the change. AI diagnosis is opt-in.
+
+### Semantic merging (optional)
+
+If an **embedding** model role is configured (Settings → AI), Piwi adds a semantic layer on top of the deterministic fingerprint. After a run, the clusters first seen in it are embedded and compared (cosine similarity) against the project's other open clusters; near-duplicates above `PIWI_CLUSTER_SIMILARITY_THRESHOLD` (default `0.92`) are merged into the longest-lived cluster. This catches failures that are the same root cause but phrased differently enough to dodge the fingerprint. Merges record a fingerprint alias so future occurrences attach to the survivor instead of re-forking. With no embedding role configured, clustering stays purely deterministic.
+
+When auto-diagnose is enabled, new clusters are also given a short **human-readable title** (one cheap batched model call per run) shown in place of the raw normalized signature across the lists and the cluster page — the signature stays available on hover and below the title. Clusters fall back to the signature when no title has been generated.
+
+Pairs that fall in the **ambiguous band** (similarity between `PIWI_CLUSTER_SUGGEST_THRESHOLD`, default `0.80`, and the merge threshold) aren't merged automatically. If a **research** model is configured it adjudicates the pair ("same root cause?") and merges only on a high-confidence yes; otherwise — or when it's unsure — the pair becomes a **merge suggestion** on the project's Failure clusters tab, where a reporter or admin approves (merge) or dismisses it. Adjudication is budget-capped per run to control cost.
 
 ## Enabling AI diagnosis
 
@@ -28,8 +37,20 @@ Configure a provider via **Settings → AI**, or with environment variables (env
 | `PIWI_AI_MODEL` | Model name (default: `claude-opus-4-8` for Anthropic) |
 | `PIWI_AI_BASE_URL` | Base URL for OpenAI-compatible providers (e.g. Ollama, LM Studio, vLLM) |
 | `PIWI_AI_AUTO_DIAGNOSE` | `true` to automatically diagnose new clusters when a run finishes |
+| `PIWI_AI_RESEARCH_MODEL` / `_PROVIDER` / `_BASE_URL` / `_API_KEY` | Optional **research** model for two-stage diagnosis; provider/base URL/key default to the main ones |
+| `PIWI_AI_EMBEDDING_PROVIDER` / `_MODEL` / `_BASE_URL` / `_API_KEY` | Optional **embedding** model for semantic failure clustering (OpenAI-compatible only — Anthropic has no embeddings API) |
 
 `GET /api/ai/status` reports whether AI is configured (without ever exposing the key); the UI uses it to show or hide AI actions.
+
+### Model roles
+
+Piwi calls models in up to three distinct roles, each with its own complete provider configuration (or a **reuse** pointer to inherit another role's provider and credentials):
+
+- **Diagnosis** — the main model that writes the final diagnosis (required to enable AI).
+- **Research** — an optional cheaper/faster model that pre-analyzes the failure first (*two-stage diagnosis*).
+- **Embedding** — an optional embeddings model that powers semantic failure clustering.
+
+Configure each role in **Settings → AI → Model providers**. A role set to *reuse* another role uses that role's provider, key, and base URL — only its model can differ — so you don't re-enter credentials for, say, a Haiku research pass on the same Anthropic key.
 
 ### Providers
 

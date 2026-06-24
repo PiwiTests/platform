@@ -468,6 +468,7 @@ export interface FailureGroupCase {
 export interface FailureGroup {
   clusterId: number;
   signature: string;
+  title: string | null;
   errorType: string | null;
   selector: string | null;
   status: string;
@@ -491,6 +492,7 @@ export interface FailureClusterDetail {
   projectId: number;
   fingerprint: string;
   signature: string;
+  title: string | null;
   errorType: string | null;
   selector: string | null;
   sampleError: string | null;
@@ -520,6 +522,7 @@ export interface ProjectFailureCluster {
   id: number;
   fingerprint: string;
   signature: string;
+  title: string | null;
   errorType: string | null;
   selector: string | null;
   sampleError: string | null;
@@ -901,9 +904,29 @@ export interface ScmChanges {
 export type AiProvider = 'anthropic' | 'openai';
 
 /**
+ * The distinct model "slots" Piwi can call. Each role has its own complete
+ * provider configuration (or reuses another role's credentials):
+ * - `diagnosis`  — the main model that writes the final diagnosis (required root)
+ * - `research`   — optional cheaper/faster pre-analysis pass (two-stage diagnosis)
+ * - `embedding`  — optional embeddings model for semantic failure clustering
+ */
+export type AiModelRole = 'diagnosis' | 'research' | 'embedding';
+
+/** A fully-resolved provider config for a single role (server-side; holds the raw key). */
+export interface ResolvedAiRole {
+  provider: AiProvider;
+  apiKey: string;
+  model: string;
+  baseUrl: string | null;
+}
+
+/**
  * Runtime AI configuration — built from env vars or DB settings.
  * Contains the raw API key; never sent to the client.
  * AiSettings is the client-facing equivalent (hasApiKey + envManaged instead).
+ *
+ * The top-level `provider`/`apiKey`/`model`/`baseUrl` fields mirror the
+ * `diagnosis` role for back-compat with callers that take an AiConfig directly.
  */
 export interface AiConfig {
   provider: AiProvider;
@@ -912,17 +935,12 @@ export interface AiConfig {
   baseUrl: string | null;
   autoDiagnose: boolean;
   source: 'env' | 'settings';
-  /**
-   * Optional cheaper/faster model used for a pre-analysis pass before the main
-   * `model` produces the final diagnosis. Empty/unset → single-stage diagnosis.
-   */
-  researchModel?: string | null;
-  /** Optional provider override for the research stage (defaults to `provider`). */
-  researchProvider?: AiProvider | null;
-  /** Optional base URL override for the research stage (defaults to `baseUrl`). */
-  researchBaseUrl?: string | null;
-  /** Optional API key for the research stage (defaults to `apiKey`). */
-  researchApiKey?: string | null;
+  /** Per-role resolved configs. `diagnosis` is always present; others are null when unconfigured. */
+  roles: {
+    diagnosis: ResolvedAiRole;
+    research: ResolvedAiRole | null;
+    embedding: ResolvedAiRole | null;
+  };
 }
 
 /**
@@ -937,18 +955,28 @@ export interface AiStatus {
 }
 
 /**
- * AI settings — returned by GET /api/settings/ai
+ * Client-facing config for one model role (no raw secret — only `hasApiKey`).
+ * A role with `reuse` set inherits its provider/key/baseUrl from another role.
  */
-export interface AiSettings {
+export interface AiRoleSettings {
   provider: AiProvider | null;
   model: string | null;
   baseUrl: string | null;
-  autoDiagnose: boolean;
-  researchModel: string | null;
-  researchProvider: AiProvider | null;
-  researchBaseUrl: string | null;
-  hasResearchApiKey: boolean;
+  reuse: AiModelRole | null;
   hasApiKey: boolean;
+}
+
+/**
+ * AI settings — returned by GET /api/settings/ai.
+ * Each model role carries a complete (or reused) provider config.
+ */
+export interface AiSettings {
+  roles: {
+    diagnosis: AiRoleSettings | null;
+    research: AiRoleSettings | null;
+    embedding: AiRoleSettings | null;
+  };
+  autoDiagnose: boolean;
   hasScmToken: boolean;
   envManaged: boolean;
   customInstructions: string | null;

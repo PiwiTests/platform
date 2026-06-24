@@ -148,6 +148,27 @@
       "when": 1782211204187,
       "tag": "0020_tidy_gunslinger",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1782217751719,
+      "tag": "0021_strange_jack_power",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1782232066850,
+      "tag": "0022_sharp_mentor",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1782241450129,
+      "tag": "0023_material_plazm",
+      "breakpoints": true
     }
   ]
 }

@@ -51,10 +51,13 @@ function insert(table, rows) {
 
 // ── Fingerprint helpers (mirrors shared/error-fingerprint.ts) ──────────────
 const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
-const HEX_RE = /\b[0-9a-f]{8,}\b/gi;
+const LONG_HEX_RE = /\b[0-9a-f]{8,}\b/gi;
+const SHORT_HEX_RE = /\b(?=[0-9a-f]*[a-f])(?=[0-9a-f]*[0-9])[0-9a-f]{6,7}\b/gi;
+const URL_RE = /\bhttps?:\/\/[^\s'"`)]+/gi;
+const EMAIL_RE = /\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/gi;
 
 function computeDemoFingerprint(rawError) {
-  const FINGERPRINT_VERSION = 1;
+  const FINGERPRINT_VERSION = 3;
   let errorType = 'unknown';
   if (/strict mode violation/i.test(rawError)) errorType = 'strict-mode';
   else if (/\bexpect\(|\.toBe|\.toContain|\.toEqual/.test(rawError)) errorType = 'assertion';
@@ -68,9 +71,18 @@ function computeDemoFingerprint(rawError) {
     .map((l) => l.trim())
     .filter((l) => l.length > 0);
   const messageHead = lines.slice(0, 5).join('\n');
-  const masked = messageHead.replace(UUID_RE, '<UUID>').replace(HEX_RE, '<HASH>').replace(/\d+/g, '<N>');
+  const masked = messageHead
+    .replace(/^(\s*(?:Received|Expected)[^:\n]*:).*$/gm, '$1 <VALUE>')
+    .replace(URL_RE, '<URL>')
+    .replace(EMAIL_RE, '<EMAIL>')
+    .replace(UUID_RE, '<UUID>')
+    .replace(LONG_HEX_RE, '<HASH>')
+    .replace(SHORT_HEX_RE, '<HASH>')
+    .replace(/([A-Za-z])?(\d+)/g, (whole, letter) => (letter ? whole : '<N>'));
   const signature = (masked.split('\n')[0] || '').slice(0, 200) || 'Unknown error';
-  const input = `v${FINGERPRINT_VERSION}\0${errorType}\0${masked}\0\0`;
+  // The stack frame is no longer part of the fingerprint (see error-fingerprint.ts);
+  // the demo mirror does not extract selectors, so the locator field stays empty.
+  const input = `v${FINGERPRINT_VERSION}\0${errorType}\0${masked}\0`;
   const hash = createHash('sha256').update(input, 'utf-8').digest('hex');
   return { fingerprint: hash, errorType, signature };
 }

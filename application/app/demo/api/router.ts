@@ -33,6 +33,7 @@ import {
   extractClusterCases,
   getClusterDiagnosis,
 } from '~~/shared/handlers/failure-clusters';
+import { listMergeSuggestions } from '~~/shared/handlers/cluster-merge-suggestions';
 import { listLinks, createLink, patchLink, deleteLink, refreshLinkMeta } from '~~/shared/handlers/links';
 import {
   getTestRun,
@@ -135,6 +136,12 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/failure-clusters$/,
     handler: async (m) => getProjectFailureClusters(await getDemoDb(), +m[1]!),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/cluster-merge-suggestions$/,
+    handler: async (m, _, q) =>
+      listMergeSuggestions(await getDemoDb(), +m[1]!, (q && q.get('status')) || 'pending'),
   },
   {
     method: 'GET',

@@ -13,6 +13,8 @@ import { callAiProvider, resolveAiConfig } from './ai-provider';
 import type { AiAttachedImage } from './ai-provider';
 import { buildDiagnosisContext } from './ai-context';
 import { buildDiagnosisSystemPrompt } from './ai-system-prompt';
+import { reconcileNewClusters } from './cluster-reconcile';
+import { nameNewClusters } from './cluster-naming';
 import { RESEARCH_SYSTEM_PROMPT, RESEARCH_JSON_SCHEMA, parseResearchJson, formatResearchBlock } from './ai-research';
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>;
@@ -202,18 +204,9 @@ export async function runClusterDiagnosis(
     type PipelineStage = { role: string; model: string; inputTokens: number | null; outputTokens: number | null };
     const pipeline: PipelineStage[] = [];
 
-    // Resolve the research stage config (its own provider/key/baseUrl, falling
-    // back to the main ones) and decide whether a distinct research pass runs.
-    const researchModel = config.researchModel?.trim();
-    const researchConfig: AiConfig | null = researchModel
-      ? {
-          ...config,
-          provider: config.researchProvider || config.provider,
-          model: researchModel,
-          baseUrl: config.researchBaseUrl ?? config.baseUrl,
-          apiKey: config.researchApiKey || config.apiKey,
-        }
-      : null;
+    // The research stage runs only when a distinct research role is configured
+    // (its own provider/key/baseUrl/model, resolved in resolveAiConfig).
+    const researchConfig = config.roles.research;
     const useResearch =
       researchConfig != null &&
       !(
@@ -370,7 +363,33 @@ async function snapshotDiagnosis(db: DbClient, diagnosisId: number): Promise<voi
 
 export async function autoDiagnoseRun(db: DbClient, projectId: number, runId: number): Promise<void> {
   const config = await resolveAiConfig(db);
+
+  // Always-on (when an embedding role is configured): collapse semantic
+  // near-duplicate clusters from this run before any diagnosis runs, so we don't
+  // diagnose a cluster that's about to be merged away. Independent of autoDiagnose.
+  if (config?.roles.embedding) {
+    try {
+      const reasoningRole = config.roles.research ?? config.roles.diagnosis;
+      const { embedded, merged, suggested } = await reconcileNewClusters(db, projectId, runId, {
+        embeddingRole: config.roles.embedding,
+        reasoningRole,
+      });
+      if (merged > 0 || suggested > 0) {
+        console.log(`[cluster-reconcile] run ${runId}: embedded ${embedded}, merged ${merged}, suggested ${suggested}`);
+      }
+    } catch (e) {
+      console.error('[cluster-reconcile] failed for run', runId, e);
+    }
+  }
+
   if (!config?.autoDiagnose) return;
+
+  // Name new, still-unnamed clusters in one cheap batched call (best-effort).
+  try {
+    await nameNewClusters(db, projectId, runId, config.roles.research ?? config.roles.diagnosis);
+  } catch (e) {
+    console.error('[cluster-naming] failed for run', runId, e);
+  }
 
   const clusters = await db
     .select()

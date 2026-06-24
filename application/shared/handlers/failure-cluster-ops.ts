@@ -4,7 +4,14 @@
  */
 
 import { eq, ne, and, or, inArray, sql, isNull } from 'drizzle-orm';
-import { testRuns, failureClusters } from '../../server/database/schema';
+import {
+  testRuns,
+  testRunsCases,
+  failureClusters,
+  failureClusterAliases,
+  failureDiagnoses,
+  failureDiagnosisVersions,
+} from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 
 /** Per-fingerprint accumulator for the batch being persisted. */
@@ -59,6 +66,29 @@ export async function getOrCreateFailureClusters(
     }),
   );
 
+  // Route fingerprints that were absorbed by a prior merge to their surviving
+  // cluster (instead of forking a fresh one), via the alias table.
+  const unmatched = [...pending.keys()].filter((fp) => !ids.has(fp));
+  if (unmatched.length > 0) {
+    const aliases = await db
+      .select({ fingerprint: failureClusterAliases.fingerprint, clusterId: failureClusterAliases.clusterId })
+      .from(failureClusterAliases)
+      .where(
+        and(
+          eq(failureClusterAliases.projectId, projectId),
+          inArray(failureClusterAliases.fingerprint, unmatched),
+        ),
+      );
+    await Promise.all(
+      aliases.map(async (a) => {
+        const p = pending.get(a.fingerprint);
+        if (!p || ids.has(a.fingerprint)) return;
+        ids.set(a.fingerprint, a.clusterId);
+        await bumpExisting(a.clusterId, p.count);
+      }),
+    );
+  }
+
   const newFingerprints = [...pending.keys()].filter((fp) => !ids.has(fp));
   await Promise.all(
     newFingerprints.map(async (fingerprint) => {
@@ -96,6 +126,94 @@ export async function getOrCreateFailureClusters(
   );
 
   return ids;
+}
+
+/**
+ * Merge one failure cluster into another. The `survivorId` cluster keeps its
+ * triage state (status, notes, manual base commit) and absorbs the victim:
+ * all linked test-run cases and diagnoses are re-pointed, occurrence counts
+ * and seen-run bounds are recomputed, then the victim row is deleted.
+ *
+ * Used by the re-fingerprinting backfill (when an algorithm change makes two
+ * previously-distinct clusters collapse onto the same fingerprint) and is the
+ * building block for future cluster-reconciliation work.
+ */
+export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, victimId: number): Promise<void> {
+  if (survivorId === victimId) return;
+
+  // Re-point per-run case links.
+  await db
+    .update(testRunsCases)
+    .set({ failureClusterId: survivorId })
+    .where(eq(testRunsCases.failureClusterId, victimId));
+
+  // Execution-scope diagnoses are keyed by test-run-case and stay meaningful —
+  // move them to the survivor. A cluster-scope diagnosis on the victim is
+  // redundant with the survivor's own, so drop it (cascade on delete) unless
+  // the survivor has none, in which case keep the victim's.
+  const [survivorClusterDiag] = await db
+    .select({ id: failureDiagnoses.id })
+    .from(failureDiagnoses)
+    .where(and(eq(failureDiagnoses.clusterId, survivorId), eq(failureDiagnoses.scope, 'cluster')));
+
+  await db
+    .update(failureDiagnoses)
+    .set({ clusterId: survivorId })
+    .where(
+      and(
+        eq(failureDiagnoses.clusterId, victimId),
+        survivorClusterDiag ? eq(failureDiagnoses.scope, 'execution') : sql`1 = 1`,
+      ),
+    );
+  await db.update(failureDiagnosisVersions).set({ clusterId: survivorId }).where(eq(failureDiagnosisVersions.clusterId, victimId));
+
+  // Recompute aggregates from both clusters' surviving links.
+  const [survivor] = await db
+    .select({
+      occurrences: failureClusters.occurrences,
+      firstSeenRunId: failureClusters.firstSeenRunId,
+      lastSeenRunId: failureClusters.lastSeenRunId,
+    })
+    .from(failureClusters)
+    .where(eq(failureClusters.id, survivorId));
+  const [victim] = await db
+    .select({
+      projectId: failureClusters.projectId,
+      fingerprint: failureClusters.fingerprint,
+      occurrences: failureClusters.occurrences,
+      firstSeenRunId: failureClusters.firstSeenRunId,
+      lastSeenRunId: failureClusters.lastSeenRunId,
+    })
+    .from(failureClusters)
+    .where(eq(failureClusters.id, victimId));
+
+  // Record the victim's fingerprint → survivor so future failures with that
+  // fingerprint attach to the survivor, and re-home any aliases that pointed
+  // at the victim (keeps chained merges consistent).
+  if (victim) {
+    await db
+      .insert(failureClusterAliases)
+      .values({ projectId: victim.projectId, fingerprint: victim.fingerprint, clusterId: survivorId })
+      .onConflictDoNothing();
+    await db
+      .update(failureClusterAliases)
+      .set({ clusterId: survivorId })
+      .where(eq(failureClusterAliases.clusterId, victimId));
+  }
+
+  if (survivor && victim) {
+    await db
+      .update(failureClusters)
+      .set({
+        occurrences: (survivor.occurrences ?? 0) + (victim.occurrences ?? 0),
+        firstSeenRunId: Math.min(survivor.firstSeenRunId, victim.firstSeenRunId),
+        lastSeenRunId: Math.max(survivor.lastSeenRunId, victim.lastSeenRunId),
+        updatedAt: new Date(),
+      })
+      .where(eq(failureClusters.id, survivorId));
+  }
+
+  await db.delete(failureClusters).where(eq(failureClusters.id, victimId));
 }
 
 /**

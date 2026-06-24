@@ -605,6 +605,7 @@ export async function getProjectFailureClusters(db: DrizzleDB, projectId: number
       id: failureClusters.id,
       fingerprint: failureClusters.fingerprint,
       signature: failureClusters.signature,
+      title: failureClusters.title,
       errorType: failureClusters.errorType,
       selector: failureClusters.selector,
       sampleError: failureClusters.sampleError,

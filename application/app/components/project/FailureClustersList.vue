@@ -60,10 +60,11 @@ const columns: TableColumn<ProjectFailureCluster>[] = [
         <div class="min-w-0 space-y-0.5">
           <NuxtLink
             :to="`/failure-clusters/${row.original.id}`"
-            class="font-mono text-sm text-primary hover:underline truncate block"
+            class="text-sm text-primary hover:underline truncate block"
+            :class="row.original.title ? '' : 'font-mono'"
             :title="row.original.signature"
           >
-            {{ row.original.signature }}
+            {{ row.original.title || row.original.signature }}
           </NuxtLink>
           <p v-if="row.original.triageNote" class="text-xs text-gray-500 italic truncate">
             {{ row.original.triageNote }}
