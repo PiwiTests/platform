@@ -54,7 +54,7 @@ export default defineNuxtConfig({
   devtools: {
     enabled: false,
   },
-  app: isDemo ? { baseURL: '/piwi-dashboard/demo/' } : {},
+  app: isDemo ? { baseURL: '/demo/' } : {},
 
   css: ['~/assets/css/main.css'],
 

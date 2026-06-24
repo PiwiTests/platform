@@ -4,7 +4,7 @@ const colorMode = useColorMode();
 
 const color = computed(() => (colorMode.value === 'dark' ? '#1b1718' : 'white'));
 // Prepend the app base URL so the favicon resolves correctly in demo mode
-// (where baseURL is /piwi-dashboard/demo/) and in normal mode (where it is /).
+// (where baseURL is /demo/) and in normal mode (where it is /).
 const iconHref = (config.app?.baseURL ?? '/').replace(/\/$/, '') + '/logo.svg';
 
 useHead({
