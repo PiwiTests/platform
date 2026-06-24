@@ -338,7 +338,7 @@ export const testRunsCases = sqliteTable(
     testAnnotations: text('test_annotations', { mode: 'json' }), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
     workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
     shardIndex: integer('shard_index'), // Shard index (1-based) for sharded runs; null = not sharded
-    startedAt: integer('started_at', { mode: 'timestamp_ms' }), // Unix timestamp in ms when the test started
+    startedAt: integer('started_at'), // Unix timestamp in ms when the test started (stored/read as a plain number)
     isNewRegression: integer('is_new_regression'), // boolean: passed in baseline, failed in this run
     isNewFlaky: integer('is_new_flaky'), // boolean: no retries in baseline, retry-pass in this run
     createdAt: integer('created_at', { mode: 'timestamp_ms' })

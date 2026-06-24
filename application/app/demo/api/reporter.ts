@@ -358,7 +358,7 @@ async function persistRunCases(
       browser: c.browser ?? null,
       workerIndex: c.workerIndex ?? null,
       shardIndex: c.shardIndex ?? null,
-      startedAt: c.startedAt ? new Date(c.startedAt) : null,
+      startedAt: c.startedAt ?? null,
     });
 
     const nrItems = buildNetworkRequestItems(c.networkRequests as Array<Record<string, unknown>> | null | undefined);

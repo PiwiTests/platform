@@ -57,11 +57,11 @@ function workerKey(tc: TestCaseResult): WorkerKey | null {
 }
 
 /**
- * Normalise a timestamp to epoch milliseconds. The live SSE stream delivers
- * `startedAt` as a number, but the REST API serialises it from a DB timestamp
- * column to an ISO string. Without this, string values fail `> 0` checks and
- * `string - number` arithmetic yields NaN — collapsing bars to the left edge
- * and dropping the timeline into its squished sequential-fallback layout.
+ * Coerce a `startedAt` value to epoch milliseconds. Timestamps are numeric ms
+ * end-to-end now (live SSE, REST, and both DB backends), so this is just a
+ * finite-number guard. The Date/string fallbacks remain only to degrade
+ * gracefully on any stray legacy value rather than yielding NaN — which would
+ * collapse bars to the left edge and trigger the squished sequential fallback.
  */
 function toMs(v: unknown): number | null {
   if (v == null) return null;
