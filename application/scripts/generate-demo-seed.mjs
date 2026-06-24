@@ -57,7 +57,7 @@ const URL_RE = /\bhttps?:\/\/[^\s'"`)]+/gi;
 const EMAIL_RE = /\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/gi;
 
 function computeDemoFingerprint(rawError) {
-  const FINGERPRINT_VERSION = 2;
+  const FINGERPRINT_VERSION = 3;
   let errorType = 'unknown';
   if (/strict mode violation/i.test(rawError)) errorType = 'strict-mode';
   else if (/\bexpect\(|\.toBe|\.toContain|\.toEqual/.test(rawError)) errorType = 'assertion';
@@ -78,7 +78,7 @@ function computeDemoFingerprint(rawError) {
     .replace(UUID_RE, '<UUID>')
     .replace(LONG_HEX_RE, '<HASH>')
     .replace(SHORT_HEX_RE, '<HASH>')
-    .replace(/\d+/g, '<N>');
+    .replace(/([A-Za-z])?(\d+)/g, (whole, letter) => (letter ? whole : '<N>'));
   const signature = (masked.split('\n')[0] || '').slice(0, 200) || 'Unknown error';
   // The stack frame is no longer part of the fingerprint (see error-fingerprint.ts);
   // the demo mirror does not extract selectors, so the locator field stays empty.
