@@ -85,7 +85,6 @@ test.describe('Performance UI Tests', () => {
     await page.goto(`/projects/${projectId}?tab=performance`);
     await expect(page.getByText('Performance trend')).toBeVisible();
     await expect(page.getByText('Slowest tests')).toBeVisible();
-    await page.waitForTimeout(500);
     await expect(page.getByText('Run comparison')).toBeVisible();
   });
 
@@ -105,7 +104,6 @@ test.describe('Performance UI Tests', () => {
 
     // Should show avg and p90 test duration
     await expect(page.getByText('Avg', { exact: true })).toBeVisible();
-    await page.waitForTimeout(800);
     await expect(page.getByText('P90', { exact: true })).toBeVisible();
   });
 
