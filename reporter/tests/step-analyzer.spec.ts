@@ -50,7 +50,7 @@ describe('categorizeStep', () => {
     expect(categorizeStep('page.expect')).toBe('assertion');
   });
 
-  it('classifies wait steps', () => {
+  it('classifies wait steps (legacy api-path titles)', () => {
     expect(categorizeStep('locator.waitFor')).toBe('wait');
     expect(categorizeStep('page.waitFor')).toBe('wait');
     expect(categorizeStep('page.waitForLoadState')).toBe('wait');
@@ -61,6 +61,31 @@ describe('categorizeStep', () => {
     expect(categorizeStep('page.waitForEvent')).toBe('wait');
     expect(categorizeStep('frame.waitFor')).toBe('wait');
     expect(categorizeStep('frame.waitForTimeout')).toBe('wait');
+  });
+
+  it('classifies wait steps (modern human-readable titles)', () => {
+    // Playwright >=1.5x emits human-readable step titles instead of api paths.
+    expect(categorizeStep('Wait for timeout', 'pw:api')).toBe('wait');
+    expect(categorizeStep('Wait for load state', 'pw:api')).toBe('wait');
+    expect(categorizeStep('Wait for navigation', 'pw:api')).toBe('wait');
+    expect(categorizeStep('Wait for selector', 'pw:api')).toBe('wait');
+    expect(categorizeStep('Wait for function', 'pw:api')).toBe('wait');
+    expect(categorizeStep('Wait for event', 'pw:api')).toBe('wait');
+    expect(categorizeStep('Wait for URL', 'pw:api')).toBe('wait');
+  });
+
+  it('classifies modern human-readable navigation/action/input/expect titles', () => {
+    expect(categorizeStep('Navigate to "https://example.com"', 'pw:api')).toBe('navigation');
+    expect(categorizeStep('Go back', 'pw:api')).toBe('navigation');
+    expect(categorizeStep('Reload', 'pw:api')).toBe('navigation');
+    expect(categorizeStep('Click', 'pw:api')).toBe('action');
+    expect(categorizeStep('Double click', 'pw:api')).toBe('action');
+    expect(categorizeStep('Check', 'pw:api')).toBe('action');
+    expect(categorizeStep('Fill "value"', 'pw:api')).toBe('input');
+    expect(categorizeStep('Press "Enter"', 'pw:api')).toBe('input');
+    expect(categorizeStep('Set input files', 'pw:api')).toBe('input');
+    // expect steps carry pwCategory 'expect'
+    expect(categorizeStep('Expect "toBeVisible"', 'expect')).toBe('assertion');
   });
 
   it('classifies api steps', () => {

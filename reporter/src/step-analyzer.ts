@@ -1,16 +1,52 @@
-/** Categorise a Playwright step into `navigation`, `action`, `input`, `assertion`, `wait`, `api`, `hook`, or `other` */
+/**
+ * Categorise a Playwright step into `navigation`, `action`, `input`,
+ * `assertion`, `wait`, `api`, `hook`, or `other`.
+ *
+ * Supports two title formats:
+ *  - Legacy api-path titles ("page.goto", "locator.click", "page.waitForTimeout")
+ *  - Modern human-readable titles introduced in newer Playwright versions
+ *    ("Navigate to \"{url}\"", "Click", "Wait for timeout", "Wait for load state").
+ * Hook/fixture/expect steps are detected via Playwright's own `category`.
+ */
 export function categorizeStep(title: string, pwCategory?: string): string {
   if (!title) return 'other';
   if (pwCategory === 'hook' || pwCategory === 'fixture') return pwCategory;
+  if (pwCategory === 'expect') return 'assertion';
   const lower = title.toLowerCase();
+
+  // Waits — modern "Wait for timeout/function/selector/state/navigation/load state/url/event"
+  // and legacy "*.waitFor*" (locator.waitFor, page.waitForLoadState, frame.waitForTimeout, ...).
   if (
+    lower.startsWith('wait for') ||
+    lower.startsWith('locator.waitfor') ||
+    lower.startsWith('page.waitfor') ||
+    lower.startsWith('frame.waitfor')
+  )
+    return 'wait';
+
+  // Navigation — modern "Navigate to ...", "Go back", "Go forward", "Reload"; legacy "page.goto" etc.
+  if (
+    lower.startsWith('navigate to') ||
+    lower.startsWith('go back') ||
+    lower.startsWith('go forward') ||
+    lower.startsWith('reload') ||
     lower.startsWith('page.goto') ||
     lower.startsWith('page.reload') ||
     lower.startsWith('page.goback') ||
     lower.startsWith('page.goforward')
   )
     return 'navigation';
+
+  // Actions — clicks, taps, checks, selects, hovers
   if (
+    lower.startsWith('click') ||
+    lower.startsWith('double click') ||
+    lower.startsWith('check') ||
+    lower.startsWith('uncheck') ||
+    lower.startsWith('tap') ||
+    lower.startsWith('hover') ||
+    lower.startsWith('select option') ||
+    lower.startsWith('drag') ||
     lower.startsWith('locator.click') ||
     lower.startsWith('locator.dblclick') ||
     lower.startsWith('locator.check') ||
@@ -19,7 +55,15 @@ export function categorizeStep(title: string, pwCategory?: string): string {
     lower.startsWith('locator.tap')
   )
     return 'action';
+
+  // Input — fill, type, press, insert text, set input files
   if (
+    lower.startsWith('fill ') ||
+    lower === 'fill' ||
+    lower.startsWith('type') ||
+    lower.startsWith('press') ||
+    lower.startsWith('insert ') ||
+    lower.startsWith('set input files') ||
     lower.startsWith('locator.fill') ||
     lower.startsWith('locator.type') ||
     lower.startsWith('locator.press') ||
@@ -27,10 +71,11 @@ export function categorizeStep(title: string, pwCategory?: string): string {
     lower.startsWith('locator.setinputfiles')
   )
     return 'input';
+
+  // Assertions — legacy "expect..." titles (modern ones caught via pwCategory above)
   if (lower.startsWith('expect') || lower.startsWith('locator.expect') || lower.startsWith('page.expect'))
     return 'assertion';
-  if (lower.startsWith('locator.waitfor') || lower.startsWith('page.waitfor') || lower.startsWith('frame.waitfor'))
-    return 'wait';
+
   if (lower.startsWith('apirequestcontext') || lower.startsWith('apiresponse')) return 'api';
   if (lower === 'before hooks' || lower === 'after hooks' || lower.startsWith('fixture:')) return 'hook';
   return 'other';
