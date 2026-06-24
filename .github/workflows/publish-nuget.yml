@@ -23,4 +23,5 @@ jobs:
             -p:Version="$VERSION" \
             -o ./nupkg
           dotnet nuget push ./nupkg/*.nupkg \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
             --source https://api.nuget.org/v3/index.json
