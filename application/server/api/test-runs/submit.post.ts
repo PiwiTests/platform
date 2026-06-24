@@ -151,6 +151,7 @@ export default eventHandler(async (event) => {
             line,
             column,
             steps: testCase.steps,
+            stepEvents: testCase.stepEvents,
             slowestStep: testCase.slowestStep,
             slowestStepDuration: testCase.slowestStepDuration,
             wastedTimeMs: testCase.wastedTimeMs,
