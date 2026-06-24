@@ -372,3 +372,201 @@ test.describe.serial('AI diagnosis — unconfigured error cases', () => {
     expect(diagnoseRes.status()).toBe(503);
   });
 });
+
+// ── Cluster reconciliation, merge suggestions & naming (Phases 2–3) ──────────
+//
+// Uses an enhanced mock that also serves /embeddings and branches
+// /chat/completions into naming / adjudication / diagnosis. Embedding vectors
+// are driven by an `EMBVEC=` marker placed in the (raw) error text, and the
+// adjudication verdict by an `ADJ=` marker — both sit after the Playwright Call
+// log so they don't affect the deterministic fingerprint, only the embedding /
+// adjudication inputs.
+
+function vecFor(input: string): number[] {
+  const m = /EMBVEC=([0-9.,\- ]+)/.exec(input);
+  if (m) {
+    const nums = m[1]
+      .split(',')
+      .map((s) => Number(s.trim()))
+      .filter((n) => !Number.isNaN(n));
+    if (nums.length) return nums;
+  }
+  return [1, 1, 1];
+}
+
+function startReconcileMockServer(port: number): http.Server {
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      const url = req.url || '';
+      const send = (obj: unknown) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(obj));
+      };
+      let parsed: { input?: string | string[]; model?: string; messages?: Array<{ role: string; content: string }> } = {};
+      try {
+        parsed = JSON.parse(body || '{}');
+      } catch {
+        /* ignore */
+      }
+
+      if (url.includes('/embeddings')) {
+        const inputs = Array.isArray(parsed.input) ? parsed.input : [parsed.input ?? ''];
+        send({
+          model: parsed.model,
+          data: inputs.map((inp, i) => ({ index: i, embedding: vecFor(String(inp)) })),
+          usage: { prompt_tokens: 1, total_tokens: 1 },
+        });
+        return;
+      }
+
+      const msgs = Array.isArray(parsed.messages) ? parsed.messages : [];
+      const sys = String(msgs.find((m) => m.role === 'system')?.content ?? '');
+      const user = String(msgs.find((m) => m.role === 'user')?.content ?? '');
+      let content: string;
+      if (/name software-test failure clusters/i.test(sys)) {
+        const ids = [...user.matchAll(/\bid (\d+)/g)].map((m) => Number(m[1]));
+        content = JSON.stringify({ titles: ids.map((id) => ({ id, title: `Mock cluster ${id}` })) });
+      } else if (/triaging/i.test(sys)) {
+        let verdict = { merge: false, confidence: 'low', reason: 'different root causes' };
+        if (/ADJ=high/.test(user)) verdict = { merge: true, confidence: 'high', reason: 'same root cause' };
+        else if (/ADJ=medium/.test(user)) verdict = { merge: true, confidence: 'medium', reason: 'likely the same' };
+        content = JSON.stringify(verdict);
+      } else {
+        content = JSON.stringify(buildMockAiResponse());
+      }
+      send({
+        id: 'chatcmpl-test',
+        object: 'chat.completion',
+        choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+      });
+    });
+  });
+  server.listen(port, '127.0.0.1');
+  return server;
+}
+
+async function pollUntil<T>(fn: () => Promise<T>, pred: (v: T) => boolean, timeoutMs = 20000): Promise<T> {
+  const start = Date.now();
+  let last = await fn();
+  while (!pred(last) && Date.now() - start < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 300));
+    last = await fn();
+  }
+  return last;
+}
+
+test.describe.serial('Cluster reconciliation, suggestions & naming', () => {
+  let server: http.Server;
+  let port: number;
+  let envManaged = false;
+
+  test.beforeAll(async ({ request }) => {
+    const s = await request.get('/api/ai/status');
+    if (s.ok()) envManaged = ((await s.json()) as { source?: string }).source === 'env';
+    port = await getFreePort();
+    server = startReconcileMockServer(port);
+  });
+
+  test.beforeEach(async () => {
+    if (envManaged) test.skip();
+  });
+
+  test.afterAll(async ({ request }) => {
+    if (!envManaged) await request.put('/api/settings/ai', { data: { roles: null } });
+    server.close();
+  });
+
+  async function configureAi(
+    request: APIRequestContext,
+    opts: { embedding: boolean; autoDiagnose: boolean },
+  ) {
+    const base = `http://127.0.0.1:${port}/v1`;
+    const roles: Record<string, unknown> = {
+      diagnosis: { provider: 'openai', model: 'mock', baseUrl: base, apiKey: 'x' },
+    };
+    if (opts.embedding) roles.embedding = { provider: 'openai', model: 'mock-embed', baseUrl: base, apiKey: 'x' };
+    const r = await request.put('/api/settings/ai', { data: { roles, autoDiagnose: opts.autoDiagnose } });
+    expect(r.ok()).toBeTruthy();
+  }
+
+  async function submitFailures(request: APIRequestContext, projectName: string, cases: object[]) {
+    const r = await request.post('/api/test-runs/submit', {
+      data: {
+        projectName,
+        status: 'failed',
+        startTime: new Date().toISOString(),
+        duration: 1000,
+        totalTests: cases.length,
+        passedTests: 0,
+        failedTests: cases.length,
+        skippedTests: 0,
+        testCases: cases,
+      },
+    });
+    expect(r.ok()).toBeTruthy();
+    return r.json() as Promise<{ testRunId: number; projectId: number }>;
+  }
+
+  const err = (selector: string, embvec: string, extra = '') =>
+    `TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for ${selector}\nEMBVEC=${embvec}\n${extra}`;
+
+  const clustersOf = (request: APIRequestContext, projectId: number) =>
+    request.get(`/api/projects/${projectId}/failure-clusters`).then((r) => r.json()) as Promise<any[]>;
+  const suggestionsOf = (request: APIRequestContext, projectId: number) =>
+    request.get(`/api/projects/${projectId}/cluster-merge-suggestions`).then((r) => r.json()) as Promise<any[]>;
+
+  test('auto-merges embedding near-duplicates', async ({ request }) => {
+    await configureAi(request, { embedding: true, autoDiagnose: false });
+    const { projectId } = await submitFailures(request, PROJECT.CLUSTER_MERGE, [
+      { title: 'login a', status: 'failed', duration: 1, location: 'tests/a.spec.ts:1:1', error: err("getByTestId('alpha')", '1,0,0') },
+      { title: 'login b', status: 'failed', duration: 1, location: 'tests/b.spec.ts:1:1', error: err("getByTestId('beta')", '1,0,0') },
+    ]);
+
+    // Two distinct fingerprints form two clusters, then identical embeddings merge them.
+    const clusters = await pollUntil(() => clustersOf(request, projectId), (c) => c.length === 1);
+    expect(clusters.length).toBe(1);
+    expect(clusters[0].occurrences).toBe(2);
+  });
+
+  test('ambiguous pairs become LLM suggestions; approve merges, reject keeps', async ({ request }) => {
+    await configureAi(request, { embedding: true, autoDiagnose: false });
+    // Distinct, digit-free selectors → four distinct fingerprints (digits in a
+    // selector are masked, which would otherwise collapse e.g. 'p1'/'p2').
+    const { projectId } = await submitFailures(request, PROJECT.CLUSTER_SUGGEST, [
+      { title: 'alpha', status: 'failed', duration: 1, location: 'tests/alpha.spec.ts:1:1', error: err("getByTestId('alpha')", '1,0,0,0', 'ADJ=medium') },
+      { title: 'bravo', status: 'failed', duration: 1, location: 'tests/bravo.spec.ts:1:1', error: err("getByTestId('bravo')", '0.85,0.5268,0,0', 'ADJ=medium') },
+      { title: 'charlie', status: 'failed', duration: 1, location: 'tests/charlie.spec.ts:1:1', error: err("getByTestId('charlie')", '0,0,1,0', 'ADJ=medium') },
+      { title: 'delta', status: 'failed', duration: 1, location: 'tests/delta.spec.ts:1:1', error: err("getByTestId('delta')", '0,0,0.85,0.5268', 'ADJ=medium') },
+    ]);
+
+    const suggestions = await pollUntil(() => suggestionsOf(request, projectId), (s) => s.length === 2);
+    expect(suggestions.length).toBe(2);
+    expect(suggestions.every((s) => s.method === 'llm' && s.llmConfidence === 'medium')).toBeTruthy();
+
+    // medium confidence → not auto-merged; all four clusters still present.
+    expect((await clustersOf(request, projectId)).length).toBe(4);
+
+    const [s1, s2] = suggestions;
+    expect((await request.post(`/api/cluster-merge-suggestions/${s1.id}/approve`)).ok()).toBeTruthy();
+    expect((await request.post(`/api/cluster-merge-suggestions/${s2.id}/reject`)).ok()).toBeTruthy();
+
+    // Approved pair merged (4 → 3); rejected pair untouched; no pending left.
+    const after = await pollUntil(() => clustersOf(request, projectId), (c) => c.length === 3);
+    expect(after.length).toBe(3);
+    expect((await suggestionsOf(request, projectId)).length).toBe(0);
+  });
+
+  test('auto-diagnose generates human-readable cluster titles', async ({ request }) => {
+    await configureAi(request, { embedding: false, autoDiagnose: true });
+    const { projectId } = await submitFailures(request, PROJECT.CLUSTER_NAMING, [
+      { title: 'name me', status: 'failed', duration: 1, location: 'tests/n.spec.ts:1:1', error: err("getByTestId('name-me')", '1,0,0') },
+    ]);
+
+    const clusters = await pollUntil(() => clustersOf(request, projectId), (c) => c.length >= 1 && !!c[0].title);
+    expect(clusters[0].title).toMatch(/^Mock cluster \d+$/);
+  });
+});
+
