@@ -1,4 +1,5 @@
 import type { PlaywrightTestConfig } from '@playwright/test';
+export type { PlaywrightTestConfig } from '@playwright/test';
 
 /** Playwright shard info — mirrors `config.shard` shape */
 export interface ShardInfo {
