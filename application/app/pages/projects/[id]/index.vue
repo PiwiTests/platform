@@ -10,6 +10,8 @@ import type {
   FlakyTest,
   ProjectMemberEntry,
   ProjectMembersResponse,
+  UserDetails,
+  UsersResponse,
 } from '~~/types/api';
 import { useRunComparison } from '~/composables/useRunComparison';
 import type { ComparisonRow } from '~/composables/useRunComparison';
@@ -73,7 +75,32 @@ async function handleDeleteRun(runId: number) {
 
 // === MEMBERS TAB ===
 const members = ref<ProjectMemberEntry[]>([]);
+const allUsers = ref<UserDetails[]>([]);
 const selectedMemberIds = ref<number[]>([]);
+
+const mergedMembers = computed(() => {
+  // Build a lookup of project members by ID
+  const memberMap = new Map(members.value.map((m) => [m.id, m]));
+  // Show all non-admin users; admins always have access and are shown from members
+  const result: (ProjectMemberEntry & { hasAccess: boolean })[] = [];
+  for (const u of allUsers.value) {
+    if (u.role === 'administrator') continue;
+    const m = memberMap.get(u.id);
+    result.push({
+      id: u.id,
+      username: u.username,
+      name: u.name ?? null,
+      role: u.role,
+      global: m?.global ?? false,
+      hasAccess: !!m,
+    });
+  }
+  // Also include admins from the members list
+  for (const m of members.value) {
+    if (m.role === 'administrator') result.push({ ...m, hasAccess: true });
+  }
+  return result;
+});
 
 const membersChanged = computed(() => {
   const originalIds = members.value
@@ -89,11 +116,16 @@ watch(
   async (newId) => {
     if (!newId || !isAdmin.value) return;
     try {
-      const data = await $fetch<ProjectMembersResponse>(`/api/projects/${projectId}/members`);
-      members.value = data.users;
-      selectedMemberIds.value = data.users.filter((m) => m.role !== 'administrator' && !m.global).map((m) => m.id);
+      const [membersData, usersData] = await Promise.all([
+        $fetch<ProjectMembersResponse>(`/api/projects/${projectId}/members`),
+        $fetch<UsersResponse>('/api/users'),
+      ]);
+      members.value = membersData.users;
+      allUsers.value = usersData.users;
+      selectedMemberIds.value = membersData.users.filter((m) => m.role !== 'administrator' && !m.global).map((m) => m.id);
     } catch {
       members.value = [];
+      allUsers.value = [];
       selectedMemberIds.value = [];
     }
   },
@@ -116,7 +148,6 @@ async function handleSaveMembers() {
       body: { userIds: selectedMemberIds.value },
     });
     toast.add({ title: 'Members updated', color: 'success' });
-    // Reload
     const data = await $fetch<ProjectMembersResponse>(`/api/projects/${projectId}/members`);
     members.value = data.users;
   } catch (error: unknown) {
@@ -1296,33 +1327,30 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                 </div>
               </template>
 
-              <div v-if="members.length > 0" class="space-y-2">
+              <div v-if="mergedMembers.length > 0" class="space-y-2">
                 <div
-                  v-for="member in members"
+                  v-for="member in mergedMembers"
                   :key="member.id"
                   class="flex items-center justify-between rounded-lg border border-default px-4 py-3"
                 >
-                  <div class="flex items-center gap-3">
-                    <UAvatar :alt="member.username" :text="member.name || member.username" size="sm" />
-                    <div>
-                      <div class="font-medium text-sm">{{ member.name || member.username }}</div>
-                      <div class="text-xs text-muted flex items-center gap-2">
-                        <span>@{{ member.username }}</span>
-                        <UBadge
-                          :color="
-                            member.role === 'administrator'
-                              ? 'primary'
-                              : member.role === 'reporter'
-                                ? 'info'
-                                : 'neutral'
-                          "
-                          variant="subtle"
-                          size="xs"
-                        >
-                          {{ member.role }}
-                        </UBadge>
-                        <span v-if="member.global" class="italic">Global access</span>
-                      </div>
+                  <div>
+                    <div class="font-medium text-sm">{{ member.name || member.username }}</div>
+                    <div class="text-xs text-muted flex items-center gap-2">
+                      <span>@{{ member.username }}</span>
+                      <UBadge
+                        :color="
+                          member.role === 'administrator'
+                            ? 'primary'
+                            : member.role === 'reporter'
+                              ? 'info'
+                              : 'neutral'
+                        "
+                        variant="subtle"
+                        size="xs"
+                      >
+                        {{ member.role }}
+                      </UBadge>
+                      <span v-if="member.global" class="italic">Global access</span>
                     </div>
                   </div>
                   <UCheckbox
