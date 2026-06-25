@@ -328,113 +328,110 @@ interface BaseTestOptions {
  * Builds a realistic set of fine-grained step events for a test: before/after
  * hooks, fixture setup, framework-injected waits, and a single deliberate
  * waitForTimeout sleep that shows up as wasted time.
+ *
+ * startedAt values are stored as ms offsets from 0 (i.e. relative to the
+ * test's own startedAt). workerLoop remaps them to absolute epoch ms before
+ * posting, so events from different tests never pile up on the same spot.
  */
 function buildStepEvents(testDuration: number): Array<Record<string, unknown>> {
-  const now = Date.now();
-  let t = now;
+  let offset = 0;
   const events: Array<Record<string, unknown>> = [];
 
   const beforeHookDur = vary(130, 0.2);
-  events.push({ title: 'Before Hooks', category: 'hook', startedAt: t, duration: beforeHookDur, status: 'passed', location: null });
-  t += beforeHookDur;
+  events.push({ title: 'Before Hooks', category: 'hook', startedAt: offset, duration: beforeHookDur, status: 'passed', location: null });
+  offset += beforeHookDur;
 
   const contextDur = vary(75, 0.2);
-  events.push({ title: 'fixture: context', category: 'fixture', startedAt: t, duration: contextDur, status: 'passed', location: null });
-  t += contextDur;
+  events.push({ title: 'fixture: context', category: 'fixture', startedAt: offset, duration: contextDur, status: 'passed', location: null });
+  offset += contextDur;
 
   const pageDur = vary(55, 0.2);
-  events.push({ title: 'fixture: page', category: 'fixture', startedAt: t, duration: pageDur, status: 'passed', location: null });
-  t += pageDur;
+  events.push({ title: 'fixture: page', category: 'fixture', startedAt: offset, duration: pageDur, status: 'passed', location: null });
+  offset += pageDur;
 
   // Framework-injected navigation wait — not wasted
   const loadStateDur = vary(420, 0.25);
-  events.push({ title: 'Wait for load state', category: 'wait', startedAt: t, duration: loadStateDur, status: 'passed', location: null });
-  t += loadStateDur;
+  events.push({ title: 'Wait for load state', category: 'wait', startedAt: offset, duration: loadStateDur, status: 'passed', location: null });
+  offset += loadStateDur;
 
   // Explicit sleep added by the test author — counts as wasted
   const timeoutDur = vary(500, 0.2);
   events.push({
     title: 'Wait for timeout',
     category: 'wait',
-    startedAt: t,
+    startedAt: offset,
     duration: timeoutDur,
     status: 'wasted',
     location: 'tests/checkout/checkout.spec.ts:34:5',
   });
-  t += timeoutDur;
+  offset += timeoutDur;
 
   // Wait for selector — framework-injected, not wasted
   const selectorDur = vary(Math.round(testDuration * 0.08), 0.25);
-  events.push({ title: 'Wait for selector', category: 'wait', startedAt: t, duration: selectorDur, status: 'passed', location: null });
-  t += selectorDur;
+  events.push({ title: 'Wait for selector', category: 'wait', startedAt: offset, duration: selectorDur, status: 'passed', location: null });
+  offset += selectorDur;
 
   const afterHookDur = vary(90, 0.2);
-  events.push({ title: 'After Hooks', category: 'hook', startedAt: t, duration: afterHookDur, status: 'passed', location: null });
+  events.push({ title: 'After Hooks', category: 'hook', startedAt: offset, duration: afterHookDur, status: 'passed', location: null });
 
   return events;
 }
 
 /**
- * Builds step events for a wait-heavy test: many explicit `waitForTimeout`
- * calls mixed with framework waits, producing a high wasted-time total.
+ * Builds step events for a wait-heavy test: three explicit `waitForTimeout`
+ * sleeps interspersed with framework waits, producing a noticeable wasted-time
+ * total without overcrowding the timeline. startedAt values are 0-based
+ * offsets remapped to absolute epoch ms in workerLoop.
  */
 function buildWaitHeavyStepEvents(testDuration: number, file: string, line: number): Array<Record<string, unknown>> {
-  const now = Date.now();
-  let t = now;
+  let offset = 0;
   const events: Array<Record<string, unknown>> = [];
 
   const beforeHookDur = vary(140, 0.2);
-  events.push({ title: 'Before Hooks', category: 'hook', startedAt: t, duration: beforeHookDur, status: 'passed', location: null });
-  t += beforeHookDur;
+  events.push({ title: 'Before Hooks', category: 'hook', startedAt: offset, duration: beforeHookDur, status: 'passed', location: null });
+  offset += beforeHookDur;
 
   const contextDur = vary(80, 0.2);
-  events.push({ title: 'fixture: context', category: 'fixture', startedAt: t, duration: contextDur, status: 'passed', location: null });
-  t += contextDur;
+  events.push({ title: 'fixture: context', category: 'fixture', startedAt: offset, duration: contextDur, status: 'passed', location: null });
+  offset += contextDur;
 
   const pageDur = vary(60, 0.2);
-  events.push({ title: 'fixture: page', category: 'fixture', startedAt: t, duration: pageDur, status: 'passed', location: null });
-  t += pageDur;
+  events.push({ title: 'fixture: page', category: 'fixture', startedAt: offset, duration: pageDur, status: 'passed', location: null });
+  offset += pageDur;
 
   // Framework-injected load wait — not wasted
   const firstLoadDur = vary(380, 0.2);
-  events.push({ title: 'Wait for load state', category: 'wait', startedAt: t, duration: firstLoadDur, status: 'passed', location: null });
-  t += firstLoadDur;
+  events.push({ title: 'Wait for load state', category: 'wait', startedAt: offset, duration: firstLoadDur, status: 'passed', location: null });
+  offset += firstLoadDur;
 
-  // Series of explicit sleeps scattered through the test — all wasted
-  const sleeps = [
-    vary(500, 0.1),
-    vary(1000, 0.1),
-    vary(500, 0.1),
-    vary(2000, 0.1),
-    vary(500, 0.1),
-    vary(1000, 0.1),
-  ];
+  // Three explicit sleeps spread through the test — all wasted
+  const sleeps = [vary(500, 0.15), vary(1000, 0.15), vary(500, 0.15)];
   for (let i = 0; i < sleeps.length; i++) {
     events.push({
       title: 'Wait for timeout',
       category: 'wait',
-      startedAt: t,
+      startedAt: offset,
       duration: sleeps[i]!,
       status: 'wasted',
-      location: `${file}:${line + i * 4}:5`,
+      location: `${file}:${line + i * 6}:5`,
     });
-    t += sleeps[i]!;
+    offset += sleeps[i]!;
 
-    // Intersperse framework waits between the explicit sleeps
+    // Framework wait between each explicit sleep
     if (i < sleeps.length - 1) {
-      const fwDur = vary(250, 0.3);
-      events.push({ title: 'Wait for load state', category: 'wait', startedAt: t, duration: fwDur, status: 'passed', location: null });
-      t += fwDur;
+      const fwDur = vary(Math.round(testDuration * 0.12), 0.2);
+      events.push({ title: 'Wait for load state', category: 'wait', startedAt: offset, duration: fwDur, status: 'passed', location: null });
+      offset += fwDur;
     }
   }
 
-  // Final navigation wait — not wasted
+  // Final response wait — not wasted
   const navDur = vary(340, 0.2);
-  events.push({ title: 'Wait for response', category: 'wait', startedAt: t, duration: navDur, status: 'passed', location: null });
-  t += navDur;
+  events.push({ title: 'Wait for response', category: 'wait', startedAt: offset, duration: navDur, status: 'passed', location: null });
+  offset += navDur;
 
   const afterHookDur = vary(95, 0.2);
-  events.push({ title: 'After Hooks', category: 'hook', startedAt: t, duration: afterHookDur, status: 'passed', location: null });
+  events.push({ title: 'After Hooks', category: 'hook', startedAt: offset, duration: afterHookDur, status: 'passed', location: null });
 
   return events;
 }
@@ -896,7 +893,12 @@ async function runSingleSimulation(
             error: a.error ?? null,
             retries: attempt,
             steps: test.steps,
-            stepEvents: test.stepEvents ?? null,
+            // Remap 0-based step event offsets to absolute epoch ms anchored to
+            // this test's actual startedAt, so each test's segments appear in
+            // the correct position on the WorkersTimeline.
+            stepEvents: test.stepEvents
+              ? test.stepEvents.map((e) => ({ ...e, startedAt: startedAt + (e.startedAt as number) }))
+              : null,
             slowestStep: test.slowestStep,
             slowestStepDuration: test.slowestStepDuration,
             wastedTimeMs: test.wastedTimeMs ?? null,
