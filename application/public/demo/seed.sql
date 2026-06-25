@@ -613,10 +613,10 @@ ALTER TABLE `test_runs_cases` ADD `wasted_time_ms` integer;
 BEGIN TRANSACTION;
 
 -- Tags
-INSERT INTO tags (id, text, color, created_at, updated_at) VALUES (1, 'smoke', 'green', 1740787200, 1740787200);
-INSERT INTO tags (id, text, color, created_at, updated_at) VALUES (2, 'regression', 'blue', 1740787200, 1740787200);
-INSERT INTO tags (id, text, color, created_at, updated_at) VALUES (3, 'critical', 'red', 1741996800, 1741996800);
-INSERT INTO tags (id, text, color, created_at, updated_at) VALUES (4, 'performance', 'yellow', 1743465600, 1743465600);
+INSERT INTO tags (id, text, color, created_at, updated_at) VALUES (1, 'smoke', '#34d399', 1740787200, 1740787200);
+INSERT INTO tags (id, text, color, created_at, updated_at) VALUES (2, 'regression', '#818cf8', 1740787200, 1740787200);
+INSERT INTO tags (id, text, color, created_at, updated_at) VALUES (3, 'critical', '#fb7185', 1741996800, 1741996800);
+INSERT INTO tags (id, text, color, created_at, updated_at) VALUES (4, 'performance', '#fbbf24', 1743465600, 1743465600);
 
 -- Projects
 INSERT INTO projects (id, name, label, description, created_at, updated_at) VALUES (1, 'e2e-checkout', 'E2E Checkout', 'End-to-end tests for the checkout flow', 1740787200, 1745562600);
