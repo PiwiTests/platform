@@ -108,8 +108,8 @@ const columns: TableColumn<Row>[] = [
         :columns="columns"
         :ui="{
           base: 'min-w-[700px]',
-          td: 'py-2',
-          th: 'py-2 text-xs uppercase tracking-wide',
+          td: 'py-3',
+          th: 'py-3 text-xs uppercase tracking-wide',
         }"
       >
         <!-- Project name + tags -->
@@ -128,7 +128,7 @@ const columns: TableColumn<Row>[] = [
         <!-- Trend bars -->
         <template #recentRuns-cell="{ row }">
           <div class="w-40">
-            <MiniRunBars :runs="row.original.recentRuns" :height="24" />
+            <MiniRunBars :runs="row.original.recentRuns" :height="28" />
           </div>
         </template>
 

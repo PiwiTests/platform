@@ -132,11 +132,11 @@ const featureHighlights = [
     </template>
 
     <template #body>
-      <div class="p-4 space-y-6">
+      <div class="p-6 space-y-8">
         <!-- Compact stat strip (full-run-aware) -->
         <div
           v-if="hasProjects"
-          class="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-3 bg-gray-50 dark:bg-gray-900/50"
+          class="flex flex-wrap items-center gap-x-8 gap-y-3 text-sm border border-gray-200 dark:border-gray-700 rounded-xl px-6 py-4 bg-gray-50 dark:bg-gray-900/50"
         >
           <div class="flex items-center gap-1.5">
             <UIcon name="i-lucide-folder" class="size-4 text-primary shrink-0" />
@@ -217,7 +217,7 @@ const featureHighlights = [
                 v-for="run in visibleActivity"
                 :key="run.id"
                 :to="`/test-runs/${run.id}`"
-                class="flex items-center gap-3 py-2 pl-3 border-l-2 hover:bg-gray-50 dark:hover:bg-gray-800/60 rounded-r transition-colors"
+                class="flex items-center gap-3 py-3 pl-3 border-l-2 hover:bg-gray-50 dark:hover:bg-gray-800/60 rounded-r transition-colors"
                 :class="statusBorderClass(run.status)"
               >
                 <RunStatusBadge :status="run.status" />
