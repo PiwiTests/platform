@@ -2,12 +2,25 @@
 import { computed, nextTick, watch, onUnmounted } from 'vue';
 import type { TestRunDetails, TestCaseResult, ReportInfo, TestStepEvent } from '~~/types/api';
 import { subscribeDemoEvents } from '~/demo/run-events';
+import { useRunStream } from '~/composables/useRunStream';
 
 const route = useRoute();
 const runId = route.params.id;
 const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
 
 const { data: testRun, refresh } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`);
+
+// Lightweight poll for latest run info — avoids reloading full page data on run events
+const projectId = testRun.value?.projectId;
+type LatestRunInfo = { id: number; status: string } | null;
+const { data: latestRunInfo, refresh: refreshLatestRun } = projectId
+  ? await useFetch<LatestRunInfo>(`/api/projects/${projectId}/latest-run`, { key: `latest-run-${projectId}` })
+  : { data: ref<LatestRunInfo>(null), refresh: async () => {} };
+useRunStream(refreshLatestRun);
+
+const latestRunId = computed(() => latestRunInfo.value?.id ?? testRun.value?.project?.latestRunId ?? null);
+const latestRunStatus = computed(() => latestRunInfo.value?.status ?? testRun.value?.project?.latestRunStatus ?? null);
+const isLatestRunActive = computed(() => latestRunStatus.value === 'running' || latestRunStatus.value === 'finalizing');
 
 useHead(
   computed(() => ({
@@ -518,12 +531,29 @@ function handleSelectCluster(clusterId: number) {
                     {
                       label: testRun.project.label || testRun.project.name || 'Project',
                       to: `/projects/${testRun.project.id}`,
+                      slot: 'project',
                     },
                   ]
                 : [{ label: 'Project' }]),
               { label: `Run #${runId}` + (testRun?.label ? ` — ${testRun.label}` : '') },
             ]"
-          />
+          >
+            <template #project="{ item }">
+              <NuxtLink :to="item.to" class="text-sm font-medium text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] transition-colors">
+                {{ item.label }}
+              </NuxtLink>
+              <UTooltip
+                v-if="latestRunId && latestRunId !== Number(runId)"
+                :text="isLatestRunActive ? 'Go to running run' : 'Go to latest run'"
+              >
+                <NuxtLink :to="`/test-runs/${latestRunId}`">
+                  <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors ml-1">
+                    <UIcon name="i-lucide-circle-play" class="w-3.5 h-3.5 text-blue-500" :class="{ 'animate-pulse': isLatestRunActive }" />
+                  </span>
+                </NuxtLink>
+              </UTooltip>
+            </template>
+          </UBreadcrumb>
         </template>
         <template #right>
           <UButton icon="i-lucide-refresh-cw" size="md" label="Refresh" @click="() => refresh()" />

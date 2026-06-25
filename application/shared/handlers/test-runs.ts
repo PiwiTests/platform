@@ -35,6 +35,15 @@ export async function getTestRun(
   const projectResults = await db.select().from(projects).where(eq(projects.id, testRun.projectId));
   const project = projectResults[0];
 
+  const latestRunResult = await db
+    .select({ id: testRuns.id, status: testRuns.status })
+    .from(testRuns)
+    .where(eq(testRuns.projectId, testRun.projectId))
+    .orderBy(desc(testRuns.id))
+    .limit(1);
+  const latestRunId = latestRunResult[0]?.id ?? null;
+  const latestRunStatus = latestRunResult[0]?.status ?? null;
+
   const reportResults = await db
     .select()
     .from(files)
@@ -156,7 +165,7 @@ export async function getTestRun(
   return {
     ...testRunPublic,
     isFullRun: testRun.isFullRun === 1,
-    project,
+    project: project ? { ...project, latestRunId, latestRunStatus } : project,
     reports: reportResults.map((r: any) => ({
       id: r.id,
       type: r.subtype || r.type,
