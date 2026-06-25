@@ -254,6 +254,7 @@ export interface TestRunDetails {
     name: string;
     label?: string | null;
     latestRunId?: number | null;
+    latestRunStatus?: string | null;
   };
   reports?: ReportInfo[];
   testCases?: TestCaseResult[];

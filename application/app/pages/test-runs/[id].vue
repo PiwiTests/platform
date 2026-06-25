@@ -10,7 +10,17 @@ const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
 
 const { data: testRun, refresh } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`);
 
-useRunStream(refresh);
+// Lightweight poll for latest run info — avoids reloading full page data on run events
+const projectId = computed(() => testRun.value?.projectId);
+const { data: latestRunInfo, refresh: refreshLatestRun } = await useFetch<{ id: number; status: string } | null>(
+  () => projectId.value ? `/api/projects/${projectId.value}/latest-run` : null,
+  { key: `latest-run-${projectId.value}` },
+);
+useRunStream(refreshLatestRun);
+
+const latestRunId = computed(() => latestRunInfo.value?.id ?? testRun.value?.project?.latestRunId ?? null);
+const latestRunStatus = computed(() => latestRunInfo.value?.status ?? testRun.value?.project?.latestRunStatus ?? null);
+const isLatestRunActive = computed(() => latestRunStatus.value === 'running' || latestRunStatus.value === 'finalizing');
 
 useHead(
   computed(() => ({
@@ -533,12 +543,12 @@ function handleSelectCluster(clusterId: number) {
                 {{ item.label }}
               </NuxtLink>
               <UTooltip
-                v-if="testRun?.project?.latestRunId && testRun.project.latestRunId !== Number(runId)"
-                text="Go to latest run"
+                v-if="latestRunId && latestRunId !== Number(runId)"
+                :text="isLatestRunActive ? 'Go to running run' : 'Go to latest run'"
               >
-                <NuxtLink :to="`/test-runs/${testRun.project.latestRunId}`">
+                <NuxtLink :to="`/test-runs/${latestRunId}`">
                   <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors ml-1">
-                    <UIcon name="i-lucide-circle-play" class="w-3.5 h-3.5 text-blue-500 animate-pulse" />
+                    <UIcon name="i-lucide-circle-play" class="w-3.5 h-3.5 text-blue-500" :class="{ 'animate-pulse': isLatestRunActive }" />
                   </span>
                 </NuxtLink>
               </UTooltip>
