@@ -54,46 +54,6 @@ const networkRequests = computed<NetworkRequest[]>(() => {
   return (testCase.value?.networkRequests as unknown as NetworkRequest[] | null) ?? [];
 });
 
-interface GroupedRequest {
-  key: string;
-  method: string;
-  route: string;
-  count: number;
-  avgDuration: number;
-  maxDuration: number;
-}
-
-const allServerLogs = computed(() => {
-  const logs: import('~~/types/api').ServerLogEntry[] = [];
-  for (const req of networkRequests.value) {
-    if (Array.isArray(req.serverLogs)) {
-      for (const entry of req.serverLogs) logs.push(entry);
-    }
-  }
-  return logs.sort((a, b) => a.timestamp - b.timestamp);
-});
-
-const groupedNetworkRequests = computed<GroupedRequest[]>(() => {
-  const map = new Map<string, { method: string; route: string; durations: number[] }>();
-  for (const req of networkRequests.value) {
-    if (req.resourceType && !['fetch', 'xhr', 'document', 'other'].includes(req.resourceType)) continue;
-    const route = normalizeRoute(req.url);
-    const key = `${req.method}|${route}`;
-    if (!map.has(key)) map.set(key, { method: req.method, route, durations: [] });
-    map.get(key)!.durations.push(req.duration);
-  }
-  return Array.from(map.entries())
-    .map(([key, g]) => ({
-      key,
-      method: g.method,
-      route: g.route,
-      count: g.durations.length,
-      avgDuration: Math.round(g.durations.reduce((a, b) => a + b, 0) / g.durations.length),
-      maxDuration: Math.max(...g.durations),
-    }))
-    .sort((a, b) => b.avgDuration - a.avgDuration);
-});
-
 const historicalTiming = computed(() => {
   if (!historyData.value || historyData.value.length < 2 || !testCase.value?.duration) return null;
   const previous = historyData.value.filter((h) => h.duration !== null && h.id !== testCase.value?.id);
@@ -603,90 +563,14 @@ function copyFailure() {
               v-if="(testCase as any)?.consoleLogs?.length"
               :entries="(testCase as any)?.consoleLogs ?? []"
             />
-            <SectionCard
-              v-if="groupedNetworkRequests.length > 0"
-              icon="i-lucide-network"
-              title="Network requests"
-              help="case.network"
-            >
-              <div class="space-y-1 max-h-96 overflow-y-auto">
-                <div
-                  v-for="req in groupedNetworkRequests"
-                  :key="req.key"
-                  class="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800 text-sm"
-                >
-                  <div class="flex items-center gap-2 min-w-0">
-                    <UBadge
-                      :color="
-                        req.method === 'GET'
-                          ? 'info'
-                          : req.method === 'POST'
-                            ? 'success'
-                            : req.method === 'DELETE'
-                              ? 'error'
-                              : 'warning'
-                      "
-                      variant="soft"
-                      size="xs"
-                      class="font-mono shrink-0"
-                    >
-                      {{ req.method }}
-                    </UBadge>
-                    <code class="truncate text-xs">{{ req.route }}</code>
-                    <span v-if="req.count > 1" class="text-gray-400 text-xs shrink-0">&times;{{ req.count }}</span>
-                  </div>
-                  <span
-                    class="ml-2 shrink-0"
-                    :class="
-                      req.avgDuration > 1000
-                        ? 'text-red-600 font-medium'
-                        : req.avgDuration > 500
-                          ? 'text-orange-500'
-                          : 'text-gray-500'
-                    "
-                    >{{ formatDuration(req.avgDuration) }}</span
-                  >
-                </div>
-              </div>
-            </SectionCard>
-
-            <SectionCard
-              v-if="allServerLogs.length > 0"
-              icon="i-lucide-server"
-              title="Backend server logs"
-              help="case.backend-logs"
-            >
-              <div class="space-y-1 max-h-64 overflow-y-auto font-mono text-xs">
-                <div v-for="(log, i) in allServerLogs" :key="i" class="flex items-start gap-2 py-0.5">
-                  <UBadge
-                    :color="log.level === 'Error' ? 'error' : 'warning'"
-                    variant="soft"
-                    size="xs"
-                    class="shrink-0 capitalize"
-                    >{{ log.level }}</UBadge
-                  >
-                  <span v-if="log.category" class="text-gray-400 shrink-0">[{{ log.category }}]</span>
-                  <span class="break-all text-gray-700 dark:text-gray-300">{{ log.message }}</span>
-                </div>
-              </div>
-            </SectionCard>
-
-            <p
-              v-else-if="groupedNetworkRequests.length > 0"
-              class="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500"
-            >
-              <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />
-              No backend server logs captured — install
-              <DocLink to="backend-logs" no-icon class="underline">a Piwi backend integration</DocLink>
-              to see server-side warnings and errors here.
-            </p>
+            <TestCaseNetworkRequests v-if="networkRequests.length > 0" :requests="networkRequests" />
 
             <div
               v-if="
                 !(traceData as any[])?.length &&
                 !(testCase as any)?.attachments?.length &&
                 !(testCase as any)?.consoleLogs?.length &&
-                !groupedNetworkRequests.length
+                !networkRequests.length
               "
               class="flex flex-col items-center justify-center py-12 text-gray-400"
             >

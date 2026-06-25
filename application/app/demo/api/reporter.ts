@@ -295,6 +295,7 @@ async function persistRunCases(
       status: number;
       duration: number | null;
       resourceType: string | null;
+      contentType: string | null;
       serverLogs: unknown;
     }>;
   }> = [];

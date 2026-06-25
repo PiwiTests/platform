@@ -50,7 +50,13 @@ export const dashboardFixtures: Fixtures = {
           };
 
           if (response) {
-            const logHeader = response.headers()['x-piwi-logs'];
+            const headers = response.headers();
+            // Response content type (without charset/boundary params) — relevant
+            // per-request metadata for distinguishing API/JSON vs document/HTML calls.
+            const contentType = headers['content-type'];
+            if (contentType) entry.contentType = contentType.split(';')[0]!.trim();
+
+            const logHeader = headers['x-piwi-logs'];
             if (logHeader) {
               try {
                 entry.serverLogs = JSON.parse(gunzipSync(Buffer.from(logHeader, 'base64')).toString('utf-8'));

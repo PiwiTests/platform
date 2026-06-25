@@ -350,6 +350,7 @@ export interface NetworkRequest {
   status: number;
   duration: number;
   resourceType: string;
+  contentType?: string | null;
   startTime?: number;
   serverLogs?: ServerLogEntry[];
 }
