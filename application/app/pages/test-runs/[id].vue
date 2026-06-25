@@ -518,12 +518,29 @@ function handleSelectCluster(clusterId: number) {
                     {
                       label: testRun.project.label || testRun.project.name || 'Project',
                       to: `/projects/${testRun.project.id}`,
+                      slot: 'project',
                     },
                   ]
                 : [{ label: 'Project' }]),
               { label: `Run #${runId}` + (testRun?.label ? ` — ${testRun.label}` : '') },
             ]"
-          />
+          >
+            <template #project="{ item }">
+              <NuxtLink :to="item.to" class="text-sm font-medium text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] transition-colors">
+                {{ item.label }}
+              </NuxtLink>
+              <UTooltip
+                v-if="testRun?.project?.latestRunId && testRun.project.latestRunId !== Number(runId)"
+                text="Go to latest run"
+              >
+                <NuxtLink :to="`/test-runs/${testRun.project.latestRunId}`">
+                  <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors ml-1">
+                    <UIcon name="i-lucide-circle-play" class="w-3.5 h-3.5 text-blue-500 animate-pulse" />
+                  </span>
+                </NuxtLink>
+              </UTooltip>
+            </template>
+          </UBreadcrumb>
         </template>
         <template #right>
           <UButton icon="i-lucide-refresh-cw" size="md" label="Refresh" @click="() => refresh()" />
