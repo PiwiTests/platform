@@ -18,7 +18,11 @@
   <a href="https://hub.docker.com/r/piwitests/dashboard"><img src="https://img.shields.io/docker/v/piwitests/dashboard?logo=docker&labelColor=020420&color=2496ED" alt="Docker"></a>
 </p>
 
-![Dashboard home — overview stats and test results trend](docs/public/screenshots/home.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/public/screenshots/home-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/public/screenshots/home-light.png">
+  <img alt="Dashboard home — project health, tendency, and recent activity" src="docs/public/screenshots/home-light.png">
+</picture>
 
 ## Why Piwi?
 
