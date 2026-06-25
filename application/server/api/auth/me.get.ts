@@ -41,6 +41,7 @@ export default eventHandler(async (event) => {
       email: user.email,
       emailVerified: user.emailVerified,
       oauthProvider: user.oauthProvider,
+      hasPassword: Boolean(user.password),
     },
   };
 });

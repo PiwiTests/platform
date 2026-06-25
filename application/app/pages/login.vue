@@ -28,6 +28,9 @@ onMounted(() => {
       'missing-code': 'Authentication failed (missing code)',
       'oauth-failed': 'OAuth authentication failed',
       'account-exists': 'This email is already linked to a different sign-in method. Sign in with that method instead.',
+      'domain-not-allowed': 'Your email domain is not allowed to sign in here.',
+      'org-not-allowed': 'You are not a member of an allowed organization.',
+      'link-requires-login': 'Please sign in before connecting a provider.',
       'auth-disabled': 'Authentication is not enabled',
       'invalid-provider': 'Invalid OAuth provider',
     };

@@ -96,6 +96,11 @@ export default defineNuxtConfig({
         clientId: process.env.PIWI_OAUTH_GITHUB_CLIENT_ID || '',
         clientSecret: process.env.PIWI_OAUTH_GITHUB_CLIENT_SECRET || '',
       },
+      // Optional access-control allowlists for OAuth sign-in.
+      // Comma-separated verified email domains (applies to all providers).
+      allowedDomains: process.env.PIWI_OAUTH_ALLOWED_DOMAINS || '',
+      // Comma-separated GitHub org logins the user must belong to.
+      githubAllowedOrgs: process.env.PIWI_OAUTH_GITHUB_ALLOWED_ORGS || '',
     },
     public: {
       siteUrl: process.env.PIWI_SITE_URL || '',

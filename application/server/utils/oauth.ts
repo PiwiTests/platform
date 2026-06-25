@@ -1,10 +1,10 @@
 import type { H3Event } from 'h3';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { getDatabase } from '../database';
 import { users } from '../database/schema';
 import { eq, and } from 'drizzle-orm';
 import { Role } from '../../shared/types';
-import { setUserSession, isAuthEnabled } from './auth';
+import { setUserSession, isAuthEnabled, getCurrentUser } from './auth';
 import type { SessionData } from './auth';
 import type { User } from '../database/schema';
 
@@ -19,6 +19,10 @@ interface OAuthProviderConfig {
   tokenUrl: string;
   userInfoUrl: string;
   scopes: string[];
+  // Whether the provider supports Authorization Code flow with PKCE. Google
+  // does; GitHub OAuth Apps do not, so we only attach a PKCE challenge when the
+  // provider can verify it.
+  pkce: boolean;
   extraParams?: Record<string, string>;
   mapUser: (raw: Record<string, unknown>) => {
     id: string;
@@ -30,11 +34,16 @@ interface OAuthProviderConfig {
 }
 
 function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfig | null {
-  const config = useRuntimeConfig(event).oauth as
-    | Record<string, { clientId: string; clientSecret: string }>
+  const config = useRuntimeConfig(event).oauth as unknown as
+    | Record<string, { clientId?: string; clientSecret?: string } | string | undefined>
     | undefined;
   const providerConfig = config?.[provider];
-  if (!providerConfig?.clientId || !providerConfig?.clientSecret) {
+  if (
+    !providerConfig ||
+    typeof providerConfig === 'string' ||
+    !providerConfig.clientId ||
+    !providerConfig.clientSecret
+  ) {
     return null;
   }
 
@@ -47,6 +56,7 @@ function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfi
         tokenUrl: 'https://oauth2.googleapis.com/token',
         userInfoUrl: 'https://www.googleapis.com/oauth2/v2/userinfo',
         scopes: ['openid', 'email', 'profile'],
+        pkce: true,
         extraParams: { access_type: 'offline', prompt: 'consent' },
         mapUser: (raw) => ({
           id: String(raw.id),
@@ -65,6 +75,7 @@ function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfi
         tokenUrl: 'https://github.com/login/oauth/access_token',
         userInfoUrl: 'https://api.github.com/user',
         scopes: ['read:user', 'user:email'],
+        pkce: false,
         mapUser: (raw) => ({
           id: String(raw.id),
           email: String(raw.email ?? raw.login ?? ''),
@@ -80,53 +91,100 @@ function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfi
 }
 
 // ---------------------------------------------------------------------------
-// State cookie helpers
+// Access-control allowlists (optional, from runtime config)
+// ---------------------------------------------------------------------------
+
+function splitList(raw: unknown): string[] {
+  return String(raw ?? '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function getAllowedEmailDomains(event: H3Event): string[] {
+  return splitList((useRuntimeConfig(event).oauth as { allowedDomains?: string })?.allowedDomains);
+}
+
+function getGithubAllowedOrgs(event: H3Event): string[] {
+  return splitList((useRuntimeConfig(event).oauth as { githubAllowedOrgs?: string })?.githubAllowedOrgs);
+}
+
+// ---------------------------------------------------------------------------
+// Ephemeral cookie helpers (state, PKCE verifier, link intent)
 // ---------------------------------------------------------------------------
 
 const STATE_COOKIE = 'oauth_state';
+const VERIFIER_COOKIE = 'oauth_verifier';
+const LINK_COOKIE = 'oauth_link';
 const STATE_EXPIRY_SEC = 600; // 10 minutes
 
-function setOAuthState(event: H3Event, state: string): void {
+function ephemeralCookieOptions(event: H3Event) {
   const url = getRequestURL(event);
-  setCookie(event, STATE_COOKIE, state ?? '', {
+  return {
     httpOnly: true,
     secure: url.protocol === 'https:',
-    sameSite: 'lax',
+    sameSite: 'lax' as const,
     path: '/',
     maxAge: STATE_EXPIRY_SEC,
-  });
+  };
 }
 
-function getOAuthState(event: H3Event): string | null {
-  return getCookie(event, STATE_COOKIE) ?? null;
+function setEphemeralCookie(event: H3Event, name: string, value: string): void {
+  setCookie(event, name, value ?? '', ephemeralCookieOptions(event));
 }
 
-function clearOAuthState(event: H3Event): void {
-  deleteCookie(event, STATE_COOKIE);
+function clearEphemeralCookie(event: H3Event, name: string): void {
+  deleteCookie(event, name, { path: '/' });
 }
 
 // ---------------------------------------------------------------------------
-// Generate state parameter
+// State + PKCE primitives
 // ---------------------------------------------------------------------------
 
 function generateState(): string {
   return randomBytes(32).toString('hex');
 }
 
+function base64url(buf: Buffer): string {
+  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function generateCodeVerifier(): string {
+  return base64url(randomBytes(32));
+}
+
+function codeChallengeS256(verifier: string): string {
+  return base64url(createHash('sha256').update(verifier).digest());
+}
+
 // ---------------------------------------------------------------------------
 // Build redirect URI for the callback
 // ---------------------------------------------------------------------------
 
-function getRedirectUri(event: H3Event, provider: string): string {
+/**
+ * Public base URL of this instance. Prefers PIWI_SITE_URL so the redirect_uri
+ * stays stable and matches the value registered with the provider even when the
+ * app sits behind a reverse proxy (where the request Host/proto can differ).
+ * Falls back to the request URL when PIWI_SITE_URL is unset.
+ */
+function getPublicBaseUrl(event: H3Event): string {
+  const siteUrl = (useRuntimeConfig(event).public as { siteUrl?: string })?.siteUrl;
+  if (siteUrl) {
+    return siteUrl.replace(/\/+$/, '');
+  }
   const url = getRequestURL(event);
-  return `${url.protocol}//${url.host}/api/auth/oauth/${provider}/callback`;
+  return `${url.protocol}//${url.host}`;
+}
+
+function getRedirectUri(event: H3Event, provider: string): string {
+  return `${getPublicBaseUrl(event)}/api/auth/oauth/${provider}/callback`;
 }
 
 // ---------------------------------------------------------------------------
-// Initiate OAuth: generate state, set cookie, return redirect URL
+// Initiate OAuth: generate state (+ PKCE), set cookies, return redirect URL
 // ---------------------------------------------------------------------------
 
-export function initiateOAuth(event: H3Event, provider: string): string | null {
+export function initiateOAuth(event: H3Event, provider: string, opts: { link?: boolean } = {}): string | null {
   if (!isAuthEnabled(event)) {
     return null;
   }
@@ -137,15 +195,40 @@ export function initiateOAuth(event: H3Event, provider: string): string | null {
   }
 
   const state = generateState();
-  setOAuthState(event, state);
+  setEphemeralCookie(event, STATE_COOKIE, state);
+
+  // Request org scope only when a GitHub org allowlist is configured.
+  const scopes = [...providerCfg.scopes];
+  if (provider === 'github' && getGithubAllowedOrgs(event).length > 0 && !scopes.includes('read:org')) {
+    scopes.push('read:org');
+  }
 
   const params = new URLSearchParams({
     client_id: providerCfg.clientId,
     redirect_uri: getRedirectUri(event, provider),
     response_type: 'code',
-    scope: providerCfg.scopes.join(' '),
+    scope: scopes.join(' '),
     state,
   });
+
+  // PKCE (RFC 7636): bind the authorization request to a server-held secret so a
+  // stolen authorization code cannot be redeemed without the verifier.
+  if (providerCfg.pkce) {
+    const verifier = generateCodeVerifier();
+    setEphemeralCookie(event, VERIFIER_COOKIE, verifier);
+    params.set('code_challenge', codeChallengeS256(verifier));
+    params.set('code_challenge_method', 'S256');
+  } else {
+    clearEphemeralCookie(event, VERIFIER_COOKIE);
+  }
+
+  // Link intent: connect this provider to the already-signed-in user rather than
+  // signing in / creating an account.
+  if (opts.link) {
+    setEphemeralCookie(event, LINK_COOKIE, '1');
+  } else {
+    clearEphemeralCookie(event, LINK_COOKIE);
+  }
 
   if (providerCfg.extraParams) {
     for (const [key, value] of Object.entries(providerCfg.extraParams)) {
@@ -166,7 +249,12 @@ interface TokenResponse {
   scope: string;
 }
 
-async function exchangeCode(event: H3Event, provider: string, code: string): Promise<TokenResponse> {
+async function exchangeCode(
+  event: H3Event,
+  provider: string,
+  code: string,
+  codeVerifier?: string,
+): Promise<TokenResponse> {
   const providerCfg = getProviderConfig(event, provider);
   if (!providerCfg) {
     throw createError({ statusCode: 400, message: `Unknown OAuth provider: ${provider}` });
@@ -179,6 +267,11 @@ async function exchangeCode(event: H3Event, provider: string, code: string): Pro
     redirect_uri: getRedirectUri(event, provider),
     grant_type: 'authorization_code',
   });
+
+  // Only send the verifier for providers we issued a challenge to.
+  if (providerCfg.pkce && codeVerifier) {
+    body.set('code_verifier', codeVerifier);
+  }
 
   const res = await fetch(providerCfg.tokenUrl, {
     method: 'POST',
@@ -243,6 +336,66 @@ async function fetchProviderUser(
   }
 
   return user;
+}
+
+// ---------------------------------------------------------------------------
+// Allowlist enforcement (email domain + GitHub org)
+// ---------------------------------------------------------------------------
+
+async function fetchGithubOrgLogins(accessToken: string): Promise<string[]> {
+  try {
+    const res = await fetch('https://api.github.com/user/orgs', {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/vnd.github+json' },
+    });
+    if (!res.ok) {
+      return [];
+    }
+    const orgs = (await res.json()) as Array<{ login: string }>;
+    return orgs.map((o) => String(o.login).toLowerCase());
+  } catch {
+    return [];
+  }
+}
+
+async function enforceAllowlists(
+  event: H3Event,
+  provider: string,
+  providerUser: { email: string; emailVerified: boolean },
+  accessToken: string,
+): Promise<void> {
+  const allowedDomains = getAllowedEmailDomains(event);
+  if (allowedDomains.length > 0) {
+    // A domain check is only meaningful on a provider-verified email.
+    if (!providerUser.emailVerified || !providerUser.email) {
+      throw createError({
+        statusCode: 403,
+        data: { oauthError: 'domain-not-allowed' },
+        message: 'A verified email in an allowed domain is required to sign in.',
+      });
+    }
+    const domain = providerUser.email.split('@')[1]?.toLowerCase() ?? '';
+    if (!allowedDomains.includes(domain)) {
+      throw createError({
+        statusCode: 403,
+        data: { oauthError: 'domain-not-allowed' },
+        message: `Email domain "${domain}" is not allowed.`,
+      });
+    }
+  }
+
+  if (provider === 'github') {
+    const allowedOrgs = getGithubAllowedOrgs(event);
+    if (allowedOrgs.length > 0) {
+      const memberOf = await fetchGithubOrgLogins(accessToken);
+      if (!allowedOrgs.some((o) => memberOf.includes(o))) {
+        throw createError({
+          statusCode: 403,
+          data: { oauthError: 'org-not-allowed' },
+          message: 'You are not a member of an allowed GitHub organization.',
+        });
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -347,11 +500,94 @@ async function findOrCreateOAuthUser(
     throw createError({ statusCode: 500, message: 'Failed to create user' });
   }
 
+  // Signal for operators: a brand-new account was auto-provisioned via OAuth.
+  console.info(`[OAuth] New account provisioned: ${user.username} via ${provider} (role: ${user.role})`);
+
   return user;
 }
 
 // ---------------------------------------------------------------------------
-// Handle OAuth callback: validate state, exchange code, create/find user,
+// Link a provider identity to an already-signed-in user
+// ---------------------------------------------------------------------------
+
+async function linkProviderToUser(
+  userId: number,
+  provider: string,
+  providerId: string,
+  email: string,
+  emailVerified: boolean,
+  name: string,
+  avatar: string,
+): Promise<User> {
+  const db = await getDatabase();
+
+  // The provider identity must not already belong to a different account.
+  const taken = await db
+    .select()
+    .from(users)
+    .where(and(eq(users.oauthProvider, provider), eq(users.oauthProviderId, providerId)));
+  if (taken[0] && taken[0].id !== userId) {
+    throw createError({
+      statusCode: 409,
+      data: { oauthError: 'already-linked' },
+      message: 'That provider account is already linked to another user.',
+    });
+  }
+
+  const current = await db.select().from(users).where(eq(users.id, userId));
+  const u = current[0];
+  if (!u) {
+    throw createError({ statusCode: 404, message: 'User not found' });
+  }
+
+  const updated = await db
+    .update(users)
+    .set({
+      oauthProvider: provider,
+      oauthProviderId: providerId,
+      // Only backfill profile fields the account is missing — never overwrite
+      // values the user set themselves.
+      avatarUrl: u.avatarUrl ?? (avatar || null),
+      name: u.name ?? (name || null),
+      email: u.email ?? (email || null),
+      emailVerified: u.email ? u.emailVerified : emailVerified,
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, userId))
+    .returning();
+
+  return updated[0]!;
+}
+
+// ---------------------------------------------------------------------------
+// Unlink a provider from the current user (callable from the unlink endpoint)
+// ---------------------------------------------------------------------------
+
+export async function unlinkProvider(userId: number, provider: string): Promise<void> {
+  const db = await getDatabase();
+  const rows = await db.select().from(users).where(eq(users.id, userId));
+  const u = rows[0];
+
+  if (!u || u.oauthProvider !== provider) {
+    throw createError({ statusCode: 400, message: 'That provider is not linked to your account.' });
+  }
+  // Refuse to remove the only sign-in method — an OAuth-only user would be
+  // locked out. They must set a password first.
+  if (!u.password) {
+    throw createError({
+      statusCode: 400,
+      message: 'Set a password before disconnecting your only sign-in method.',
+    });
+  }
+
+  await db
+    .update(users)
+    .set({ oauthProvider: null, oauthProviderId: null, updatedAt: new Date() })
+    .where(eq(users.id, userId));
+}
+
+// ---------------------------------------------------------------------------
+// Handle OAuth callback: validate state, exchange code, sign in or link,
 // set session, return redirect URL
 // ---------------------------------------------------------------------------
 
@@ -367,29 +603,58 @@ export async function handleOAuthCallback(event: H3Event, provider: string): Pro
 
   const query = getQuery(event) as { code?: string; state?: string; error?: string };
 
+  const isLink = getCookie(event, LINK_COOKIE) === '1';
+  // Link failures belong on the account page; sign-in failures on /login.
+  const failBase = isLink ? '/settings/account' : '/login';
+
+  // Read then clear all ephemeral cookies up front.
+  const savedState = getOAuthState(event);
+  const verifier = getCookie(event, VERIFIER_COOKIE) || undefined;
+  clearEphemeralCookie(event, STATE_COOKIE);
+  clearEphemeralCookie(event, VERIFIER_COOKIE);
+  clearEphemeralCookie(event, LINK_COOKIE);
+
   // User denied the authorization request
   if (query.error) {
-    return '/login?error=access-denied';
+    return `${failBase}?error=access-denied`;
   }
 
   // Validate state to prevent CSRF
-  const savedState = getOAuthState(event);
-  clearOAuthState(event);
-
   if (!query.state || !savedState || query.state !== savedState) {
-    return '/login?error=invalid-state';
+    return `${failBase}?error=invalid-state`;
   }
 
   if (!query.code) {
-    return '/login?error=missing-code';
+    return `${failBase}?error=missing-code`;
   }
 
   try {
-    // Exchange code for access token
-    const token = await exchangeCode(event, provider, query.code);
+    // Exchange code for access token (with PKCE verifier when present)
+    const token = await exchangeCode(event, provider, query.code, verifier);
 
     // Fetch user info from provider
     const providerUser = await fetchProviderUser(event, provider, token.access_token);
+
+    // Enforce optional access-control allowlists before provisioning a session.
+    await enforceAllowlists(event, provider, providerUser, token.access_token);
+
+    if (isLink) {
+      // Connect this provider to the already-signed-in user.
+      const current = await getCurrentUser(event);
+      if (!current) {
+        return '/login?error=link-requires-login';
+      }
+      await linkProviderToUser(
+        current.id,
+        provider,
+        providerUser.id,
+        providerUser.email,
+        providerUser.emailVerified,
+        providerUser.name,
+        providerUser.avatar,
+      );
+      return '/settings/account?linked=1';
+    }
 
     // Find or create local user
     const user = await findOrCreateOAuthUser(
@@ -413,6 +678,10 @@ export async function handleOAuthCallback(event: H3Event, provider: string): Pro
   } catch (err) {
     console.error(`[OAuth] ${provider} callback failed:`, err);
     const oauthError = (err as { data?: { oauthError?: string } })?.data?.oauthError;
-    return `/login?error=${oauthError ?? 'oauth-failed'}`;
+    return `${failBase}?error=${oauthError ?? 'oauth-failed'}`;
   }
+}
+
+function getOAuthState(event: H3Event): string | null {
+  return getCookie(event, STATE_COOKIE) ?? null;
 }
