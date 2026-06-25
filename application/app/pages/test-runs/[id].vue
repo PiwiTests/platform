@@ -209,22 +209,28 @@ function flushPendingEvents() {
       isFinalizing.value = false;
       disconnectStream();
       refresh();
+      // Nudge child tabs (Failure groups, Slow endpoints, Regression context,
+      // Insights) to refetch — they keep their own useFetch state and would
+      // otherwise show stale/partial data from before the run finalized.
+      runRefreshKey.value++;
       pollForReports();
     }
   }
 }
 
 function pollForReports(attempts = 0): void {
-  // The reporter may upload HTML/Monocart reports AFTER the run finishes.
-  // Poll briefly so they appear without requiring a manual refresh.
+  // The reporter may upload HTML/Monocart reports and traces AFTER the run
+  // finishes. Poll for a few iterations so they appear without a manual
+  // refresh. We keep polling a fixed number of times regardless of whether
+  // some files already arrived, because uploads land in several batches
+  // (report directory, then per-case traces/attachments) — stopping at the
+  // first file would miss the rest.
   if (isDemoMode) return; // demo mode has no file uploads
-  if (attempts >= 10) return;
+  if (attempts >= 5) return;
   setTimeout(
     async () => {
       await refresh();
-      if (allReports.value.length === 0) {
-        pollForReports(attempts + 1);
-      }
+      pollForReports(attempts + 1);
     },
     1500 * (attempts + 1),
   );
@@ -411,9 +417,9 @@ function handleFilterStatus(status: string) {
 // Reports from the files table
 const allReports = computed<ReportInfo[]>(() => testRun.value?.reports || []);
 
-// Total wasted time across all test cases
+// Total wasted time across all displayed test cases (live or persisted)
 const totalWastedTime = computed(() => {
-  const cases = testRun.value?.testCases;
+  const cases = displayTestCases.value;
   if (!cases) return 0;
   return cases.reduce((sum, tc) => sum + ((tc as any).wastedTimeMs ?? 0), 0);
 });
@@ -423,6 +429,10 @@ const activeTab = ref('test-cases');
 
 // Cluster filter state — set by FailureGroups, consumed by TestCasesList
 const selectedClusterFilter = ref<number | null>(null);
+
+// Increments when a live run finishes, so child tabs that keep their own
+// fetch state can refetch instead of showing stale pre-finish data.
+const runRefreshKey = ref(0);
 
 // Endpoints count from SlowEndpoints
 const endpointsCount = ref(0);
@@ -539,7 +549,10 @@ function handleSelectCluster(clusterId: number) {
             ]"
           >
             <template #project="{ item }">
-              <NuxtLink :to="item.to" class="text-sm font-medium text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] transition-colors">
+              <NuxtLink
+                :to="item.to"
+                class="text-sm font-medium text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] transition-colors"
+              >
                 {{ item.label }}
               </NuxtLink>
               <UTooltip
@@ -547,8 +560,14 @@ function handleSelectCluster(clusterId: number) {
                 :text="isLatestRunActive ? 'Go to running run' : 'Go to latest run'"
               >
                 <NuxtLink :to="`/test-runs/${latestRunId}`">
-                  <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors ml-1">
-                    <UIcon name="i-lucide-circle-play" class="w-3.5 h-3.5 text-blue-500" :class="{ 'animate-pulse': isLatestRunActive }" />
+                  <span
+                    class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors ml-1"
+                  >
+                    <UIcon
+                      name="i-lucide-circle-play"
+                      class="w-3.5 h-3.5 text-blue-500"
+                      :class="{ 'animate-pulse': isLatestRunActive }"
+                    />
                   </span>
                 </NuxtLink>
               </UTooltip>
@@ -616,15 +635,20 @@ function handleSelectCluster(clusterId: number) {
         </template>
 
         <template #tab-insights>
-          <RunInsights :test-run-id="Number(runId)" :run-status="testRun?.status ?? ''" class="flex-1 min-h-0 p-4" />
+          <RunInsights
+            :test-run-id="Number(runId)"
+            :run-status="testRun?.status ?? ''"
+            :refresh-key="runRefreshKey"
+            class="flex-1 min-h-0 p-4"
+          />
         </template>
 
         <template #tab-failure-groups>
-          <FailureGroups @select-cluster="handleSelectCluster" />
+          <FailureGroups :refresh-key="runRefreshKey" @select-cluster="handleSelectCluster" />
         </template>
 
         <template #tab-regression>
-          <RegressionContext />
+          <RegressionContext :refresh-key="runRefreshKey" />
         </template>
 
         <template #tab-workers>
@@ -639,11 +663,15 @@ function handleSelectCluster(clusterId: number) {
         </template>
 
         <template #tab-compare>
-          <RunCompare />
+          <RunCompare :test-run="testRun" />
         </template>
 
         <template #tab-endpoints>
-          <SlowEndpoints class="flex-1 min-h-0" @endpoints-count="endpointsCount = $event" />
+          <SlowEndpoints
+            :refresh-key="runRefreshKey"
+            class="flex-1 min-h-0"
+            @endpoints-count="endpointsCount = $event"
+          />
         </template>
       </DetailPageLayout>
     </template>

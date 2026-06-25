@@ -41,10 +41,7 @@ export default eventHandler(async (event) => {
 
   // Validate that all supplied userIds actually exist
   if (parsed.data.userIds.length > 0) {
-    const found = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(inArray(users.id, parsed.data.userIds));
+    const found = await db.select({ id: users.id }).from(users).where(inArray(users.id, parsed.data.userIds));
     const foundIds = new Set(found.map((r) => r.id));
     const missing = parsed.data.userIds.filter((uid) => !foundIds.has(uid));
     if (missing.length > 0) {

@@ -133,6 +133,8 @@ export interface TestRunSubmitPayload {
   totalTests?: number;
   passedTests?: number;
   failedTests?: number;
+  /** Timed-out tests; folded into `failedTests` by the server (no separate column). */
+  timedOutTests?: number;
   skippedTests?: number;
   didNotRunTests?: number;
   environment?: string | null;
@@ -200,6 +202,8 @@ export interface TestRunFinishPayload {
   totalTests: number;
   passedTests: number;
   failedTests: number;
+  /** Timed-out tests; folded into `failedTests` by the server (no separate column). */
+  timedOutTests?: number;
   skippedTests: number;
   didNotRunTests?: number;
   flakyTests: number;

@@ -12,6 +12,7 @@ import { autoDiagnoseRun } from '../../utils/ai-diagnosis';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { emitRunNotifications } from '../../utils/notifications/run-notifications';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
+import { sumFailedAndTimedOut } from '../../../shared/utils/test-counts';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
 
@@ -123,7 +124,7 @@ export default eventHandler(async (event) => {
           status: 'running',
           totalTests: sql`${testRuns.totalTests} + ${body.totalTests ?? 0}`,
           passedTests: sql`${testRuns.passedTests} + ${body.passedTests ?? 0}`,
-          failedTests: sql`${testRuns.failedTests} + ${body.failedTests ?? 0}`,
+          failedTests: sql`${testRuns.failedTests} + ${sumFailedAndTimedOut(body.failedTests, body.timedOutTests)}`,
           skippedTests: sql`${testRuns.skippedTests} + ${body.skippedTests ?? 0}`,
           didNotRunTests: sql`${testRuns.didNotRunTests} + ${body.didNotRunTests ?? 0}`,
           flakyTests: sql`${testRuns.flakyTests} + ${flakyTestCount}`,
@@ -224,7 +225,7 @@ export default eventHandler(async (event) => {
       duration: body.duration || null,
       totalTests: body.totalTests || 0,
       passedTests: body.passedTests || 0,
-      failedTests: body.failedTests || 0,
+      failedTests: sumFailedAndTimedOut(body.failedTests, body.timedOutTests),
       skippedTests: body.skippedTests || 0,
       didNotRunTests: body.didNotRunTests || 0,
       environment: body.environment || null,

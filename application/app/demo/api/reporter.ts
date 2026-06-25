@@ -18,6 +18,7 @@ import { buildNetworkRequestItems, buildNetworkRequestInsertValues } from '~~/se
 import { sanitizeMetadata, sanitizeWebVitals, sanitizeConsoleLogs } from '~~/server/utils/sanitize';
 import { computeErrorFingerprint, type ErrorFingerprint } from '~~/shared/error-fingerprint';
 import { durationStats } from '~~/shared/utils/stats';
+import { countFailedFromTally, sumFailedAndTimedOut } from '~~/shared/utils/test-counts';
 import {
   cancelInstanceRuns as sharedCancelInstanceRuns,
   getOrCreateFailureClusters,
@@ -475,7 +476,7 @@ export async function apiPostRunEvents(
       updatedAt: new Date(),
       totalTests: sql`${testRuns.totalTests} + ${insertedCount}`,
       passedTests: sql`${testRuns.passedTests} + ${insertedStatusCounts['passed'] || 0}`,
-      failedTests: sql`${testRuns.failedTests} + ${insertedStatusCounts['failed'] || 0}`,
+      failedTests: sql`${testRuns.failedTests} + ${countFailedFromTally(insertedStatusCounts)}`,
       skippedTests: sql`${testRuns.skippedTests} + ${insertedStatusCounts['skipped'] || 0}`,
       didNotRunTests: sql`${testRuns.didNotRunTests} + ${insertedStatusCounts['didnotrun'] || 0}`,
     })
@@ -553,7 +554,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         status: 'running',
         totalTests: sql`${testRuns.totalTests} + ${body.totalTests ?? 0}`,
         passedTests: sql`${testRuns.passedTests} + ${body.passedTests ?? 0}`,
-        failedTests: sql`${testRuns.failedTests} + ${body.failedTests ?? 0}`,
+        failedTests: sql`${testRuns.failedTests} + ${sumFailedAndTimedOut(body.failedTests, body.timedOutTests)}`,
         skippedTests: sql`${testRuns.skippedTests} + ${body.skippedTests ?? 0}`,
         didNotRunTests: sql`${testRuns.didNotRunTests} + ${body.didNotRunTests ?? 0}`,
         flakyTests: sql`${testRuns.flakyTests} + ${flakyTests}`,
@@ -649,6 +650,12 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
 
   const flakyTests = body.flakyTests ?? 0;
 
+  // Fold timed-out into failed (see shared/utils/test-counts.ts).
+  const hasBodyFailed = body.failedTests !== undefined || body.timedOutTests !== undefined;
+  const failedTestsValue = hasBodyFailed
+    ? sumFailedAndTimedOut(body.failedTests, body.timedOutTests)
+    : testRun.failedTests;
+
   await db
     .update(testRuns)
     .set({
@@ -657,7 +664,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       streamToken: null,
       ...(body.totalTests !== undefined && { totalTests: body.totalTests }),
       ...(body.passedTests !== undefined && { passedTests: body.passedTests }),
-      ...(body.failedTests !== undefined && { failedTests: body.failedTests }),
+      ...(hasBodyFailed && { failedTests: failedTestsValue }),
       ...(body.skippedTests !== undefined && { skippedTests: body.skippedTests }),
       ...(body.didNotRunTests !== undefined && { didNotRunTests: body.didNotRunTests }),
       ...(body.flakyTests !== undefined && { flakyTests }),
@@ -678,7 +685,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       duration,
       totalTests: body.totalTests ?? testRun.totalTests,
       passedTests: body.passedTests ?? testRun.passedTests,
-      failedTests: body.failedTests ?? testRun.failedTests,
+      failedTests: failedTestsValue,
       skippedTests: body.skippedTests ?? testRun.skippedTests,
       flakyTests,
     },

@@ -4,9 +4,23 @@ import type { RegressionContext } from '~~/types/api';
 const route = useRoute();
 const runId = route.params.id;
 
-const { data: context, pending: loading } = await useFetch<RegressionContext>(
-  `/api/test-runs/${runId}/regression-context`,
-  { lazy: true, server: false },
+const props = defineProps<{
+  /** Increments when the run finishes so this tab can refetch. */
+  refreshKey?: number;
+}>();
+
+const {
+  data: context,
+  pending: loading,
+  refresh: refreshContext,
+} = await useFetch<RegressionContext>(`/api/test-runs/${runId}/regression-context`, { lazy: true, server: false });
+
+// Refetch when the run finishes (the tab stays mounted if it's active).
+watch(
+  () => props.refreshKey,
+  (key, oldKey) => {
+    if (key !== oldKey && key !== undefined) refreshContext();
+  },
 );
 
 const { copy, copied } = useCopy();

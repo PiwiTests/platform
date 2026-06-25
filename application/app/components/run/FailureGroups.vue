@@ -7,13 +7,27 @@ const emit = defineEmits<{
   selectCluster: [clusterId: number];
 }>();
 
+const props = defineProps<{
+  /** Increments when the run finishes so this tab can refetch. */
+  refreshKey?: number;
+}>();
+
 const route = useRoute();
 const runId = route.params.id;
 
-const { data: groups, pending: loading } = await useFetch<FailureGroup[]>(`/api/test-runs/${runId}/failure-groups`, {
-  lazy: true,
-  server: false,
-});
+const {
+  data: groups,
+  pending: loading,
+  refresh: refreshGroups,
+} = await useFetch<FailureGroup[]>(`/api/test-runs/${runId}/failure-groups`, { lazy: true, server: false });
+
+// Refetch when the run finishes (the tab stays mounted if it's active).
+watch(
+  () => props.refreshKey,
+  (key, oldKey) => {
+    if (key !== oldKey && key !== undefined) refreshGroups();
+  },
+);
 
 const diagnosisClusterId = ref<number | null>(null);
 const { copy, copied } = useCopy();

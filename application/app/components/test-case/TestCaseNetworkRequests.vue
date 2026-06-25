@@ -140,7 +140,8 @@ const visibleRequests = computed<DecoratedRequest[]>(() => {
   // Surface the requests that matter most: failures and those carrying backend
   // logs float to the top; the rest keep their original (chronological) order.
   return [...list].sort((a, b) => {
-    const score = (r: DecoratedRequest) => (r.errorLogCount > 0 ? 3 : 0) + (r.failed ? 2 : 0) + (r.logs.length > 0 ? 1 : 0);
+    const score = (r: DecoratedRequest) =>
+      (r.errorLogCount > 0 ? 3 : 0) + (r.failed ? 2 : 0) + (r.logs.length > 0 ? 1 : 0);
     return score(b) - score(a) || a._index - b._index;
   });
 });
@@ -162,12 +163,7 @@ function rowAccent(r: DecoratedRequest): string {
 </script>
 
 <template>
-  <SectionCard
-    icon="i-lucide-network"
-    title="Network & backend logs"
-    :count="totals.total"
-    help="case.network"
-  >
+  <SectionCard icon="i-lucide-network" title="Network & backend logs" :count="totals.total" help="case.network">
     <template #actions>
       <div class="flex items-center gap-3">
         <div v-if="totals.errorLogs > 0 || totals.warnLogs > 0" class="flex items-center gap-2 text-xs">

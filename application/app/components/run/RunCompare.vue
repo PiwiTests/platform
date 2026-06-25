@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { TableColumn } from '@nuxt/ui';
 import type { TestRunDetails, ProjectWithTestRuns } from '~~/types/api';
 import type { ComparisonRow } from '~/composables/useRunComparison';
@@ -9,28 +9,32 @@ interface RunOption {
   value: number;
 }
 
+const props = defineProps<{
+  testRun: TestRunDetails | null | undefined;
+}>();
+
 const route = useRoute();
 const runId = route.params.id;
 
-const testRun = ref<TestRunDetails | null>(null);
 const projectData = ref<ProjectWithTestRuns | null>(null);
-const loadingRun = ref(true);
 
-const isLive = computed(() => testRun.value?.status === 'running');
+// Live while running or finalizing — matches the run page's definition so the
+// compare view doesn't render against an unfinished run during the upload phase.
+const isLive = computed(() => props.testRun?.status === 'running' || props.testRun?.status === 'finalizing');
 
-onMounted(async () => {
-  try {
-    const data = await $fetch<TestRunDetails>(`/api/test-runs/${runId}`);
-    testRun.value = data;
-    if (data?.projectId) {
-      projectData.value = await $fetch<ProjectWithTestRuns>(`/api/projects/${data.projectId}`);
+// Fetch the project's run list for the baseline dropdown. Skipped while live.
+watch(
+  () => props.testRun?.projectId,
+  async (projectId) => {
+    if (!projectId || isLive.value) return;
+    try {
+      projectData.value = await $fetch<ProjectWithTestRuns>(`/api/projects/${projectId}`);
+    } catch (e) {
+      console.error('Failed to fetch project for RunCompare', e);
     }
-  } catch (e) {
-    console.error('Failed to fetch data for RunCompare', e);
-  } finally {
-    loadingRun.value = false;
-  }
-});
+  },
+  { immediate: true },
+);
 
 const projectRunOptions = computed<RunOption[]>(() => {
   if (!projectData.value?.testRuns) return [];
@@ -81,7 +85,7 @@ function compareWithPrevious() {
   }
 }
 
-const currentRunRef = computed<TestRunDetails | null>(() => testRun.value);
+const currentRunRef = computed<TestRunDetails | null>(() => props.testRun ?? null);
 const { comparisonData, comparisonSummary } = useRunComparison(baselineRun, currentRunRef);
 
 const comparisonColumns: TableColumn<ComparisonRow>[] = [

@@ -122,7 +122,9 @@ watch(
       ]);
       members.value = membersData.users;
       allUsers.value = usersData.users;
-      selectedMemberIds.value = membersData.users.filter((m) => m.role !== 'administrator' && !m.global).map((m) => m.id);
+      selectedMemberIds.value = membersData.users
+        .filter((m) => m.role !== 'administrator' && !m.global)
+        .map((m) => m.id);
     } catch {
       members.value = [];
       allUsers.value = [];
@@ -1339,11 +1341,7 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                       <span>@{{ member.username }}</span>
                       <UBadge
                         :color="
-                          member.role === 'administrator'
-                            ? 'primary'
-                            : member.role === 'reporter'
-                              ? 'info'
-                              : 'neutral'
+                          member.role === 'administrator' ? 'primary' : member.role === 'reporter' ? 'info' : 'neutral'
                         "
                         variant="subtle"
                         size="xs"
