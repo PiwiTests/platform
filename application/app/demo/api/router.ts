@@ -19,6 +19,7 @@ import {
   getProjectMenu,
   deleteProjectData,
   getProjectFlakyTests,
+  getProjectsOverview,
 } from '~~/shared/handlers/projects';
 import { listTags, createTag, updateTag, deleteTag } from '~~/shared/handlers/tags';
 import { getTestCase, getTestRunCase, getTestCaseHistory, getTestRunCaseTraces } from '~~/shared/handlers/test-cases';
@@ -83,6 +84,11 @@ interface RouteEntry {
 
 const routes: RouteEntry[] = [
   // Projects
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/overview$/,
+    handler: async () => getProjectsOverview(await getDemoDb()),
+  },
   { method: 'GET', pattern: /^\/api\/projects$/, handler: async () => listProjects(await getDemoDb()) },
   {
     method: 'POST',

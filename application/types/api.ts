@@ -162,6 +162,42 @@ export interface ProjectWithStats {
 }
 
 /**
+ * A single run entry in a project overview (slim, for trend bars)
+ */
+export interface ProjectOverviewRun {
+  id: number;
+  status: string;
+  passedTests: number;
+  failedTests: number;
+  flakyTests: number;
+  totalTests: number;
+  startTime: string | Date;
+}
+
+/**
+ * Per-project overview with trend data - returned by GET /api/projects/overview
+ */
+export interface ProjectOverview {
+  id: number;
+  name: string;
+  label: string | null;
+  tags: TagInfo[];
+  totalFullRuns: number;
+  latestFullRun: {
+    id: number;
+    status: string;
+    startTime: string | Date;
+    duration: number | null;
+    passedTests: number;
+    failedTests: number;
+    flakyTests: number;
+    totalTests: number;
+  } | null;
+  recentRuns: ProjectOverviewRun[];
+  tendency: 'passing' | 'flaky' | 'failing' | 'unknown';
+}
+
+/**
  * Project with test runs - returned by GET /api/projects/[id]
  */
 export interface ProjectWithTestRuns {
