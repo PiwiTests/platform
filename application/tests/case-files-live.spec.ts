@@ -405,7 +405,7 @@ test.describe.serial('Reporter live upload end-to-end', () => {
     const testFilePath = join(process.cwd(), 'tests', 'live-e2e.spec.ts');
 
     const { exitCode, stdout, stderr } = await runReporterScript(`
-      const PiwiDashboardReporter = require(${JSON.stringify(reporterPath)});
+      const _mod = require(${JSON.stringify(reporterPath)}); const PiwiDashboardReporter = _mod.default ?? _mod;
       const BASE = 'http://localhost:3000';
       const PROJECT_NAME = ${JSON.stringify(PROJECT.REPORTER_LIVE_UPLOAD)};
 

@@ -305,7 +305,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     const testFilePath = join(resolve(process.cwd()), 'tests', 'home.spec.ts');
 
     const { exitCode, stderr } = await runReporterScript(`
-      const PiwiDashboardReporter = require(${JSON.stringify(reporterPath)});
+      const _mod = require(${JSON.stringify(reporterPath)}); const PiwiDashboardReporter = _mod.default ?? _mod;
       const reporter = new PiwiDashboardReporter({
         serverUrl: ${JSON.stringify(AUTH_SERVER_URL)},
         projectName: ${JSON.stringify(PROJECT.REPORTER_FULL_AUTH)},
@@ -353,7 +353,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     const reporterPath = resolve(process.cwd(), '..', 'reporter', 'dist', 'index.js');
 
     const { exitCode } = await runReporterScript(`
-      const PiwiDashboardReporter = require(${JSON.stringify(reporterPath)});
+      const _mod = require(${JSON.stringify(reporterPath)}); const PiwiDashboardReporter = _mod.default ?? _mod;
       const reporter = new PiwiDashboardReporter({
         serverUrl: ${JSON.stringify(AUTH_SERVER_URL)},
         projectName: ${JSON.stringify(PROJECT.REPORTER_NO_AUTH)},
@@ -546,7 +546,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     const testFilePath = join(resolve(process.cwd()), 'tests', 'api-key.spec.ts');
 
     const { exitCode, stderr } = await runReporterScript(`
-      const PiwiDashboardReporter = require(${JSON.stringify(reporterPath)});
+      const _mod = require(${JSON.stringify(reporterPath)}); const PiwiDashboardReporter = _mod.default ?? _mod;
       const reporter = new PiwiDashboardReporter({
         serverUrl: ${JSON.stringify(AUTH_SERVER_URL)},
         projectName: ${JSON.stringify(PROJECT.REPORTER_API_KEY_E2E)},
