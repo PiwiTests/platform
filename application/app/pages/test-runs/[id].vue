@@ -2,12 +2,15 @@
 import { computed, nextTick, watch, onUnmounted } from 'vue';
 import type { TestRunDetails, TestCaseResult, ReportInfo, TestStepEvent } from '~~/types/api';
 import { subscribeDemoEvents } from '~/demo/run-events';
+import { useRunStream } from '~/composables/useRunStream';
 
 const route = useRoute();
 const runId = route.params.id;
 const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
 
 const { data: testRun, refresh } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`);
+
+useRunStream(refresh);
 
 useHead(
   computed(() => ({
