@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DiagnoseImage } from '~/composables/useClusterDiagnosis';
+import { formatRelativeTime } from '~/utils';
 
 interface AffectedCase {
   recentTestRunsCaseId: number;
@@ -12,6 +13,11 @@ interface ScreenshotItem {
   mediaType: string;
   name: string;
   selected: boolean;
+  caseTitle: string;
+  status: string;
+  retries: number;
+  browser: string | null;
+  startTime: string | null;
 }
 
 const props = defineProps<{
@@ -59,6 +65,10 @@ async function loadScreenshots() {
     try {
       const detail = await $fetch<{
         attachments: Array<{ path: string; contentType: string | null; name: string | null }>;
+        status: string;
+        retries: number;
+        browser: string | null;
+        testRun: { startTime: string | null } | null;
       }>(`/api/test-run-cases/${tc.recentTestRunsCaseId}`);
       for (const att of detail.attachments ?? []) {
         if (!isImage(att.path, att.contentType)) continue;
@@ -76,6 +86,11 @@ async function loadScreenshots() {
             mediaType,
             name: imgName,
             selected: true,
+            caseTitle: tc.title,
+            status: detail.status,
+            retries: detail.retries,
+            browser: detail.browser,
+            startTime: detail.testRun?.startTime ?? null,
           });
         } catch {
           // skip images that fail to fetch
@@ -140,21 +155,34 @@ onMounted(loadScreenshots);
       <div
         v-for="(img, i) in screenshots"
         :key="i"
-        class="relative cursor-pointer rounded overflow-hidden border-2 transition-all"
+        class="cursor-pointer rounded overflow-hidden border-2 transition-all"
         :class="img.selected ? 'border-primary' : 'border-default opacity-50'"
         @click="toggle(i)"
       >
-        <img :src="img.src" :alt="img.name" class="w-full h-14 object-cover object-top" />
-        <div class="absolute top-0.5 right-0.5">
-          <UIcon
-            :name="img.selected ? 'i-lucide-check-circle-2' : 'i-lucide-circle'"
-            class="size-3.5 drop-shadow"
-            :class="img.selected ? 'text-primary' : 'text-gray-300'"
-          />
+        <div class="relative">
+          <img :src="img.src" :alt="img.name" class="w-full h-14 object-cover object-top" />
+          <div class="absolute top-0.5 right-0.5">
+            <UIcon
+              :name="img.selected ? 'i-lucide-check-circle-2' : 'i-lucide-circle'"
+              class="size-3.5 drop-shadow"
+              :class="img.selected ? 'text-primary' : 'text-gray-300'"
+            />
+          </div>
         </div>
-        <p class="absolute bottom-0 inset-x-0 px-1 py-0.5 text-[9px] text-white bg-black/50 truncate">
-          {{ img.name }}
-        </p>
+        <div class="px-1 py-0.5 bg-elevated space-y-0.5">
+          <p class="text-[9px] text-gray-700 dark:text-gray-300 truncate font-medium leading-tight" :title="img.caseTitle">
+            {{ img.caseTitle }}
+          </p>
+          <div class="flex items-center gap-1 flex-wrap">
+            <span
+              class="text-[8px] px-1 rounded leading-tight font-medium"
+              :class="img.status === 'passed' ? 'bg-success/15 text-success' : img.status === 'failed' ? 'bg-error/15 text-error' : 'bg-neutral/15 text-gray-500'"
+            >{{ img.status }}</span>
+            <span v-if="img.retries > 0" class="text-[8px] text-gray-400 leading-tight">retry {{ img.retries }}</span>
+            <span v-if="img.browser" class="text-[8px] text-gray-400 leading-tight truncate">{{ img.browser }}</span>
+            <span v-if="img.startTime" class="text-[8px] text-gray-400 leading-tight ml-auto">{{ formatRelativeTime(img.startTime) }}</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
