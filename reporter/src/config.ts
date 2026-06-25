@@ -1,4 +1,5 @@
 import type { PlaywrightTestConfig } from '@playwright/test';
+export type { PlaywrightTestConfig } from '@playwright/test';
 
 /** Playwright shard info — mirrors `config.shard` shape */
 export interface ShardInfo {
@@ -8,6 +9,8 @@ export interface ShardInfo {
 
 /** Options for configuring the Piwi Dashboard reporter */
 export interface PiwiDashboardOptions extends PlaywrightTestConfig {
+  /** Explicitly enable or disable the reporter. Defaults to `true` when `serverUrl` is set. Set to `false` to disable even if `serverUrl` is provided. */
+  enabled?: boolean;
   /** URL of the Piwi Dashboard server */
   serverUrl?: string;
   /** Name of the project to report results under. Defaults to `'default-project'`. */

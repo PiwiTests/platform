@@ -17,6 +17,7 @@ import {
   workerIndexOf,
   detectCliFileFilters,
 } from './helpers.js';
+import { wrapConfig } from './config-wrapper.js';
 import { toWireTestCase } from './serializer.js';
 import { mergeAnnotations, classifyStatus } from './skip-classify.js';
 import { RunSubmitter } from './run-submitter.js';
@@ -63,11 +64,12 @@ export class PiwiDashboardReporter {
   private submitter: RunSubmitter;
   private readonly logger: Logger;
 
+  static wrapConfig = wrapConfig;
   static createGlobalSetup = createGlobalSetup;
 
   constructor(rawOptions: Record<string, any> = {}) {
     this.options = resolveOptions(rawOptions);
-    this.enabled = !!this.options.serverUrl;
+    this.enabled = this.options.enabled !== false && !!this.options.serverUrl;
     this.runLabel = this.options.runLabel || detectCiRunLabel();
     this.instanceId = computeInstanceId(this.options.projectName!, this.runLabel);
 
