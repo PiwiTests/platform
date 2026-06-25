@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { getDatabase } from '../../database';
 import { createUserRecord } from '~~/shared/handlers/users';
 import { Role } from '../../../shared/types';
@@ -18,7 +19,7 @@ defineRouteMeta({
 
 const createUserSchema = z.object({
   username: z.string().min(3),
-  password: z.string().min(6),
+  password: z.string().min(6).optional(),
   role: z.nativeEnum(Role),
   name: z.string().optional(),
   email: z.string().email().optional().or(z.literal('')),
@@ -41,7 +42,8 @@ export default eventHandler(async (event) => {
   const { username, password, role, name, email } = validation.data;
 
   try {
-    const hashedPassword = await hashPassword(password);
+    // If no password provided, generate a random one — the user will set their own via invite email
+    const hashedPassword = await hashPassword(password ?? randomBytes(32).toString('hex'));
     const user = await createUserRecord(await getDatabase(), {
       username,
       password: hashedPassword,
