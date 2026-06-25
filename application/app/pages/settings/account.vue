@@ -33,6 +33,10 @@ const oauthProviders = computed<string[]>(() => {
   return ((config.public.oauthProviders as string[]) || []).filter((p) => providerMeta[p]);
 });
 
+// Display name form
+const nameField = ref('');
+const savingName = ref(false);
+
 // Email form
 const emailField = ref('');
 const savingEmail = ref(false);
@@ -50,7 +54,10 @@ const disconnecting = ref('');
 watch(
   () => me.value?.user,
   (u) => {
-    if (u) emailField.value = u.email || '';
+    if (u) {
+      nameField.value = u.name || '';
+      emailField.value = u.email || '';
+    }
   },
   { immediate: true },
 );
@@ -86,6 +93,19 @@ onMounted(() => {
     router.replace({ query: {} });
   }
 });
+
+async function saveName() {
+  savingName.value = true;
+  try {
+    await $fetch(`/api/users/${me.value?.user?.id}`, { method: 'PATCH', body: { name: nameField.value || null } });
+    await refresh();
+    toast.add({ title: 'Display name updated', color: 'success' });
+  } catch (e) {
+    toast.add({ title: 'Failed to update display name', description: String((e as Error)?.message ?? e), color: 'error' });
+  } finally {
+    savingName.value = false;
+  }
+}
 
 async function saveEmail() {
   savingEmail.value = true;
@@ -177,6 +197,21 @@ const authEnabled = computed(() => config.public.authEnabled);
     />
 
     <template v-else-if="me?.user">
+      <!-- Display name section -->
+      <SectionCard icon="i-lucide-user" title="Display name">
+        <UFormField label="Display name" name="name">
+          <UInput v-model="nameField" placeholder="Your display name (optional)" class="w-full" />
+        </UFormField>
+
+        <template #footer>
+          <div class="flex justify-end">
+            <UButton color="primary" :loading="savingName" icon="i-lucide-save" @click="saveName">
+              Save name
+            </UButton>
+          </div>
+        </template>
+      </SectionCard>
+
       <!-- Email section -->
       <SectionCard icon="i-lucide-mail" title="Email address" help="account.email">
         <div class="space-y-3">

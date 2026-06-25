@@ -46,7 +46,8 @@ export default eventHandler(async (event) => {
   if (!user) throw createError({ statusCode: 400, message: 'Invalid or expired token' });
 
   const hashedPassword = await hashPassword(password);
-  await db.update(users).set({ password: hashedPassword, updatedAt: new Date() }).where(eq(users.id, user.id));
+  const extraFields = validated.purpose === 'invite' ? { emailVerified: true } : {};
+  await db.update(users).set({ password: hashedPassword, updatedAt: new Date(), ...extraFields }).where(eq(users.id, user.id));
 
   await consumeAccountToken(db, validated.tokenId);
 

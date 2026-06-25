@@ -10,8 +10,7 @@ defineRouteMeta({
   openAPI: {
     tags: ['Users'],
     summary: 'Update a user',
-    description: "Updates a user's name, email, or role. Requires administrator role.",
-    'x-required-roles': REQUIRED_ROLES,
+    description: "Updates a user's name, email, or role. Admins can update any user; non-admins can only update their own name and email.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
   },
 });
@@ -23,15 +22,27 @@ const schema = z.object({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event, REQUIRED_ROLES);
+  const currentUser = await requireAuth(event, []);
 
   const id = parseInt(getRouterParam(event, 'id') || '0');
   if (!id) throw createError({ statusCode: 400, message: 'Invalid user ID' });
+
+  const isAdmin = currentUser.role === Role.ADMINISTRATOR;
+  const isSelf = currentUser.id === id;
+
+  if (!isAdmin && !isSelf) {
+    throw createError({ statusCode: 403, message: 'Insufficient permissions' });
+  }
 
   const body = await readBody(event);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
     throw createError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
+  }
+
+  // Non-admins can only update their own name and email, not role
+  if (!isAdmin && parsed.data.role !== undefined) {
+    throw createError({ statusCode: 403, message: 'Only administrators can change roles' });
   }
 
   try {

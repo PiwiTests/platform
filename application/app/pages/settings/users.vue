@@ -43,7 +43,7 @@ const columns: TableColumn<UserDetails>[] = [
 const isAddUserModalOpen = ref(false);
 const addUserSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string().min(6, 'Password must be at least 6 characters').optional().or(z.literal('')),
   role: z.enum(['administrator', 'reporter', 'user']),
   name: z.string().optional(),
   email: z.string().email().optional().or(z.literal('')),
@@ -489,8 +489,13 @@ async function handleInviteUser(user: UserDetails) {
             <UInput v-model="newUser.username" placeholder="Enter username" />
           </UFormField>
 
-          <UFormField label="Password" name="password" required class="mb-4">
-            <UInput v-model="newUser.password" type="password" placeholder="Enter password" />
+          <UFormField
+            label="Password"
+            name="password"
+            class="mb-4"
+            description="Leave blank to let the user set their own password via invite email"
+          >
+            <UInput v-model="newUser.password" type="password" placeholder="Leave blank to send invite" />
           </UFormField>
 
           <UFormField label="Display name" name="name" class="mb-4">
