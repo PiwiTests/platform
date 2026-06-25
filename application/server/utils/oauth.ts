@@ -259,30 +259,55 @@ async function findOrCreateOAuthUser(
 ): Promise<User> {
   const db = await getDatabase();
 
-  // Try to find existing user by OAuth provider + id
+  // 1. Find a user already linked to this provider identity → refresh profile.
   const existing = await db
     .select()
     .from(users)
     .where(and(eq(users.oauthProvider, provider), eq(users.oauthProviderId, providerId)));
 
   if (existing[0]) {
-    // Update avatar and name in case they changed at the provider
+    // Keep name/avatar and the provider-asserted email in sync (the provider is
+    // the source of truth for OAuth-managed accounts).
     const updated = await db
       .update(users)
-      .set({ avatarUrl: avatar || null, name: name || null, updatedAt: new Date() })
+      .set({
+        avatarUrl: avatar || null,
+        name: name || null,
+        email: email || existing[0].email,
+        emailVerified: emailVerified || existing[0].emailVerified,
+        updatedAt: new Date(),
+      })
       .where(eq(users.id, existing[0].id))
       .returning();
     return updated[0]!;
   }
 
-  // Check if a user with this email/username already exists (for linking).
-  // Only auto-link when the provider asserts the email is verified, preventing
-  // account takeover via an attacker-controlled public email (§1.3).
-  if (emailVerified) {
-    const byUsername = await db.select().from(users).where(eq(users.username, email));
+  // 2. Link to an existing local account by its verified email address.
+  //    Only auto-link when the provider asserts the email is verified, preventing
+  //    account takeover via an attacker-controlled public email (§1.3). Match on
+  //    the dedicated `email` column (not `username`) so accounts created with a
+  //    non-email username still link, and so the link is symmetric with the data
+  //    surfaced in the account/admin UIs and used by email notifications.
+  if (emailVerified && email) {
+    const byEmail = await db.select().from(users).where(eq(users.email, email));
+    const match = byEmail[0];
 
-    if (byUsername[0]) {
-      // Link existing user to OAuth provider
+    if (match) {
+      // Never hijack an account already linked to a *different* provider
+      // identity — the single-provider schema cannot represent both, and
+      // silently overwriting would let two providers ping-pong the linkage.
+      if (
+        match.oauthProvider &&
+        match.oauthProviderId &&
+        (match.oauthProvider !== provider || match.oauthProviderId !== providerId)
+      ) {
+        throw createError({
+          statusCode: 409,
+          data: { oauthError: 'account-exists' },
+          message: 'This email is already linked to a different sign-in method.',
+        });
+      }
+
       const updated = await db
         .update(users)
         .set({
@@ -290,15 +315,18 @@ async function findOrCreateOAuthUser(
           oauthProviderId: providerId,
           avatarUrl: avatar || null,
           name: name || null,
+          emailVerified: true,
           updatedAt: new Date(),
         })
-        .where(eq(users.id, byUsername[0].id))
+        .where(eq(users.id, match.id))
         .returning();
       return updated[0]!;
     }
   }
 
-  // Create new user with empty password (OAuth-only)
+  // 3. Create a new user with empty password (OAuth-only). The provider email is
+  //    stored in both `username` (login identifier) and `email` (notifications,
+  //    account UI) so OAuth accounts are first-class for email features.
   const result = await db
     .insert(users)
     .values({
@@ -306,6 +334,8 @@ async function findOrCreateOAuthUser(
       password: '',
       role: Role.USER,
       name: name || null,
+      email: email || null,
+      emailVerified,
       avatarUrl: avatar || null,
       oauthProvider: provider,
       oauthProviderId: providerId,
@@ -382,6 +412,7 @@ export async function handleOAuthCallback(event: H3Event, provider: string): Pro
     return '/';
   } catch (err) {
     console.error(`[OAuth] ${provider} callback failed:`, err);
-    return '/login?error=oauth-failed';
+    const oauthError = (err as { data?: { oauthError?: string } })?.data?.oauthError;
+    return `/login?error=${oauthError ?? 'oauth-failed'}`;
   }
 }

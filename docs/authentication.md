@@ -123,17 +123,21 @@ The dashboard supports signing in with Google or GitHub as an alternative to use
 3. After authorization, the provider redirects back to the callback URL.
 4. The server validates the `state` cookie (CSRF protection), exchanges the code for an access token, and fetches the user's profile (name, email, avatar).
 5. A local user is created or linked:
-   - If a user with the same OAuth provider + ID exists, their name/avatar are updated.
-   - If a user with the same email exists, the existing account is linked to the OAuth provider.
-   - Otherwise, a new user is created with the **user** role and an empty password (password login disabled for OAuth-only users).
+   - If a user with the same OAuth provider + ID exists, their name/avatar/email are refreshed from the provider.
+   - If a user with the same **verified** email exists (and isn't already linked to a *different* provider), the existing account is linked to the OAuth provider. Linking only happens when the provider asserts the email is verified, which prevents account takeover via an attacker-controlled public email.
+   - Otherwise, a new user is created with the **user** role and an empty password (password login disabled for OAuth-only users). The provider email is stored on the account.
 6. A session is established (same encrypted cookie as password login), and the browser is redirected to the dashboard homepage.
 
 ### Notes
 
 - OAuth users have an empty password and **cannot sign in with username/password**. They must always use their OAuth provider.
+- The provider's email address is stored on the OAuth account, so OAuth users can receive email notifications and appear with a verified email in the admin user list.
+- If a sign-in's verified email matches an account that is **already linked to a different provider**, the login is rejected with an "already linked to a different sign-in method" message (the schema links one provider per account) — sign in with the original method instead.
+- GitHub accounts with no verified primary email are still allowed to sign in, but a fresh account is created rather than linked.
 - The reporter (CI/CD) authentication is unaffected — it continues to use API keys or username/password.
 - OAuth is **not available in demo mode**; the buttons are not shown.
 - Avatar URLs from the provider are displayed in the user menu when available.
+- The dashboard does not store provider refresh/access tokens — the access token is used once at sign-in to read the profile, then discarded; only the dashboard's own session cookie persists.
 
 ## User management
 

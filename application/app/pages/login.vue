@@ -27,6 +27,7 @@ onMounted(() => {
       'invalid-state': 'Authentication failed (invalid state)',
       'missing-code': 'Authentication failed (missing code)',
       'oauth-failed': 'OAuth authentication failed',
+      'account-exists': 'This email is already linked to a different sign-in method. Sign in with that method instead.',
       'auth-disabled': 'Authentication is not enabled',
       'invalid-provider': 'Invalid OAuth provider',
     };
