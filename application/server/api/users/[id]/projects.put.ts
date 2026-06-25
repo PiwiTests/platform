@@ -1,6 +1,6 @@
 import { getDatabase } from '../../../database';
-import { users } from '../../../database/schema';
-import { eq } from 'drizzle-orm';
+import { users, projects } from '../../../database/schema';
+import { eq, inArray } from 'drizzle-orm';
 import { requireAuth } from '../../../utils/auth';
 import { Role } from '../../../../shared/types';
 import { setUserAssignments } from '~~/shared/handlers/project-assignments';
@@ -44,6 +44,19 @@ export default eventHandler(async (event) => {
   // Administrators: assignments are irrelevant
   if (user.role === Role.ADMINISTRATOR) {
     throw createError({ statusCode: 400, message: 'Assignments not applicable for administrators' });
+  }
+
+  // Validate that all supplied projectIds actually exist
+  if (!parsed.data.global && parsed.data.projectIds.length > 0) {
+    const found = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(inArray(projects.id, parsed.data.projectIds));
+    const foundIds = new Set(found.map((r) => r.id));
+    const missing = parsed.data.projectIds.filter((pid) => !foundIds.has(pid));
+    if (missing.length > 0) {
+      throw createError({ statusCode: 400, message: `Project(s) not found: ${missing.join(', ')}` });
+    }
   }
 
   await setUserAssignments(db, id, parsed.data, currentUser.id);

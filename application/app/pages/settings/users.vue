@@ -706,16 +706,21 @@ async function handleInviteUser(user: UserDetails) {
             Control which projects this user can access. Users without any project access will see no projects.
           </p>
 
-          <!-- Global access toggle -->
-          <UFormField label="Global access" description="Access to all projects (current and future)">
-            <UToggle v-model="projectAccessGlobal" />
-          </UFormField>
+          <!-- Access type radio group -->
+          <URadioGroup
+            :model-value="projectAccessGlobal ? 'global' : 'specific'"
+            :items="[
+              { value: 'global', label: 'Global access', description: 'Access to all projects (current and future)' },
+              { value: 'specific', label: 'Specific projects', description: 'Access only to selected projects' },
+            ]"
+            @update:model-value="projectAccessGlobal = $event === 'global'"
+          />
 
           <template v-if="!projectAccessGlobal">
             <UDivider />
             <UFormField
               label="Specific projects"
-              :description="`Select ${allProjectsList.length > 0 ? allProjectsList.length : '0'} available projects`"
+              :description="`Select from ${allProjectsList.length > 0 ? allProjectsList.length : '0'} available projects`"
             >
               <USelectMenu
                 v-model="projectAccessProjects"
