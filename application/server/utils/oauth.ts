@@ -1,5 +1,4 @@
 import type { H3Event } from 'h3';
-import { randomBytes, createHash } from 'node:crypto';
 import { getDatabase } from '../database';
 import { users } from '../database/schema';
 import { eq, and } from 'drizzle-orm';
@@ -7,6 +6,20 @@ import { Role } from '../../shared/types';
 import { setUserSession, isAuthEnabled, getCurrentUser } from './auth';
 import type { SessionData } from './auth';
 import type { User } from '../database/schema';
+import {
+  generateState,
+  generateCodeVerifier,
+  codeChallengeS256,
+  resolvePublicBaseUrl,
+  buildRedirectUri,
+  parseAllowList,
+  isEmailDomainAllowed,
+  isOrgAllowed,
+  resolveProvisioningAction,
+  resolveLinkAction,
+  resolveUnlink,
+  type OAuthProfile,
+} from './oauth-helpers';
 
 // ---------------------------------------------------------------------------
 // Provider configurations
@@ -94,19 +107,12 @@ function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfi
 // Access-control allowlists (optional, from runtime config)
 // ---------------------------------------------------------------------------
 
-function splitList(raw: unknown): string[] {
-  return String(raw ?? '')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-}
-
 function getAllowedEmailDomains(event: H3Event): string[] {
-  return splitList((useRuntimeConfig(event).oauth as { allowedDomains?: string })?.allowedDomains);
+  return parseAllowList((useRuntimeConfig(event).oauth as { allowedDomains?: string })?.allowedDomains);
 }
 
 function getGithubAllowedOrgs(event: H3Event): string[] {
-  return splitList((useRuntimeConfig(event).oauth as { githubAllowedOrgs?: string })?.githubAllowedOrgs);
+  return parseAllowList((useRuntimeConfig(event).oauth as { githubAllowedOrgs?: string })?.githubAllowedOrgs);
 }
 
 // ---------------------------------------------------------------------------
@@ -138,26 +144,6 @@ function clearEphemeralCookie(event: H3Event, name: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// State + PKCE primitives
-// ---------------------------------------------------------------------------
-
-function generateState(): string {
-  return randomBytes(32).toString('hex');
-}
-
-function base64url(buf: Buffer): string {
-  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-function generateCodeVerifier(): string {
-  return base64url(randomBytes(32));
-}
-
-function codeChallengeS256(verifier: string): string {
-  return base64url(createHash('sha256').update(verifier).digest());
-}
-
-// ---------------------------------------------------------------------------
 // Build redirect URI for the callback
 // ---------------------------------------------------------------------------
 
@@ -167,17 +153,11 @@ function codeChallengeS256(verifier: string): string {
  * app sits behind a reverse proxy (where the request Host/proto can differ).
  * Falls back to the request URL when PIWI_SITE_URL is unset.
  */
-function getPublicBaseUrl(event: H3Event): string {
-  const siteUrl = (useRuntimeConfig(event).public as { siteUrl?: string })?.siteUrl;
-  if (siteUrl) {
-    return siteUrl.replace(/\/+$/, '');
-  }
-  const url = getRequestURL(event);
-  return `${url.protocol}//${url.host}`;
-}
-
 function getRedirectUri(event: H3Event, provider: string): string {
-  return `${getPublicBaseUrl(event)}/api/auth/oauth/${provider}/callback`;
+  const siteUrl = (useRuntimeConfig(event).public as { siteUrl?: string })?.siteUrl;
+  const url = getRequestURL(event);
+  const base = resolvePublicBaseUrl(siteUrl, `${url.protocol}//${url.host}`);
+  return buildRedirectUri(base, provider);
 }
 
 // ---------------------------------------------------------------------------
@@ -364,30 +344,19 @@ async function enforceAllowlists(
   accessToken: string,
 ): Promise<void> {
   const allowedDomains = getAllowedEmailDomains(event);
-  if (allowedDomains.length > 0) {
-    // A domain check is only meaningful on a provider-verified email.
-    if (!providerUser.emailVerified || !providerUser.email) {
-      throw createError({
-        statusCode: 403,
-        data: { oauthError: 'domain-not-allowed' },
-        message: 'A verified email in an allowed domain is required to sign in.',
-      });
-    }
-    const domain = providerUser.email.split('@')[1]?.toLowerCase() ?? '';
-    if (!allowedDomains.includes(domain)) {
-      throw createError({
-        statusCode: 403,
-        data: { oauthError: 'domain-not-allowed' },
-        message: `Email domain "${domain}" is not allowed.`,
-      });
-    }
+  if (!isEmailDomainAllowed(providerUser.email, providerUser.emailVerified, allowedDomains)) {
+    throw createError({
+      statusCode: 403,
+      data: { oauthError: 'domain-not-allowed' },
+      message: 'A verified email in an allowed domain is required to sign in.',
+    });
   }
 
   if (provider === 'github') {
     const allowedOrgs = getGithubAllowedOrgs(event);
     if (allowedOrgs.length > 0) {
       const memberOf = await fetchGithubOrgLogins(accessToken);
-      if (!allowedOrgs.some((o) => memberOf.includes(o))) {
+      if (!isOrgAllowed(memberOf, allowedOrgs)) {
         throw createError({
           statusCode: 403,
           data: { oauthError: 'org-not-allowed' },
@@ -402,131 +371,88 @@ async function enforceAllowlists(
 // Find existing OAuth user or create a new one
 // ---------------------------------------------------------------------------
 
-async function findOrCreateOAuthUser(
-  provider: string,
-  providerId: string,
-  email: string,
-  emailVerified: boolean,
-  name: string,
-  avatar: string,
-): Promise<User> {
+async function findOrCreateOAuthUser(profile: OAuthProfile): Promise<User> {
   const db = await getDatabase();
+  const { provider, providerId, email, emailVerified } = profile;
 
-  // 1. Find a user already linked to this provider identity → refresh profile.
-  const existing = await db
-    .select()
-    .from(users)
-    .where(and(eq(users.oauthProvider, provider), eq(users.oauthProviderId, providerId)));
+  // Look up the two candidate accounts the decision depends on: one already
+  // linked to this provider identity, and (only for a verified email) one that
+  // owns this email address. Matching email on the dedicated `email` column —
+  // not `username` — lets accounts created with a non-email username still link,
+  // and keeps linking symmetric with the account/admin UIs and notifications.
+  const identityMatch = (
+    await db
+      .select()
+      .from(users)
+      .where(and(eq(users.oauthProvider, provider), eq(users.oauthProviderId, providerId)))
+  )[0];
 
-  if (existing[0]) {
-    // Keep name/avatar and the provider-asserted email in sync (the provider is
-    // the source of truth for OAuth-managed accounts).
-    const updated = await db
-      .update(users)
-      .set({
-        avatarUrl: avatar || null,
-        name: name || null,
-        email: email || existing[0].email,
-        emailVerified: emailVerified || existing[0].emailVerified,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, existing[0].id))
-      .returning();
-    return updated[0]!;
-  }
+  const emailMatch =
+    !identityMatch && emailVerified && email
+      ? (await db.select().from(users).where(eq(users.email, email)))[0]
+      : undefined;
 
-  // 2. Link to an existing local account by its verified email address.
-  //    Only auto-link when the provider asserts the email is verified, preventing
-  //    account takeover via an attacker-controlled public email (§1.3). Match on
-  //    the dedicated `email` column (not `username`) so accounts created with a
-  //    non-email username still link, and so the link is symmetric with the data
-  //    surfaced in the account/admin UIs and used by email notifications.
-  if (emailVerified && email) {
-    const byEmail = await db.select().from(users).where(eq(users.email, email));
-    const match = byEmail[0];
+  const action = resolveProvisioningAction(profile, identityMatch, emailMatch);
 
-    if (match) {
+  switch (action.kind) {
+    case 'conflict':
       // Never hijack an account already linked to a *different* provider
-      // identity — the single-provider schema cannot represent both, and
-      // silently overwriting would let two providers ping-pong the linkage.
-      if (
-        match.oauthProvider &&
-        match.oauthProviderId &&
-        (match.oauthProvider !== provider || match.oauthProviderId !== providerId)
-      ) {
-        throw createError({
-          statusCode: 409,
-          data: { oauthError: 'account-exists' },
-          message: 'This email is already linked to a different sign-in method.',
-        });
-      }
+      // identity — the single-provider schema cannot represent both.
+      throw createError({
+        statusCode: 409,
+        data: { oauthError: 'account-exists' },
+        message: 'This email is already linked to a different sign-in method.',
+      });
 
+    case 'refresh':
+    case 'link': {
       const updated = await db
         .update(users)
-        .set({
-          oauthProvider: provider,
-          oauthProviderId: providerId,
-          avatarUrl: avatar || null,
-          name: name || null,
-          emailVerified: true,
-          updatedAt: new Date(),
-        })
-        .where(eq(users.id, match.id))
+        .set({ ...action.set, updatedAt: new Date() })
+        .where(eq(users.id, action.userId))
         .returning();
       return updated[0]!;
     }
+
+    case 'create': {
+      const result = await db
+        .insert(users)
+        .values(action.values as typeof users.$inferInsert)
+        .returning();
+      const user = result[0];
+      if (!user) {
+        throw createError({ statusCode: 500, message: 'Failed to create user' });
+      }
+      // Signal for operators: a brand-new account was auto-provisioned via OAuth.
+      console.info(`[OAuth] New account provisioned: ${user.username} via ${provider} (role: ${user.role})`);
+      return user;
+    }
   }
-
-  // 3. Create a new user with empty password (OAuth-only). The provider email is
-  //    stored in both `username` (login identifier) and `email` (notifications,
-  //    account UI) so OAuth accounts are first-class for email features.
-  const result = await db
-    .insert(users)
-    .values({
-      username: email,
-      password: '',
-      role: Role.USER,
-      name: name || null,
-      email: email || null,
-      emailVerified,
-      avatarUrl: avatar || null,
-      oauthProvider: provider,
-      oauthProviderId: providerId,
-    })
-    .returning();
-
-  const user = result[0];
-  if (!user) {
-    throw createError({ statusCode: 500, message: 'Failed to create user' });
-  }
-
-  // Signal for operators: a brand-new account was auto-provisioned via OAuth.
-  console.info(`[OAuth] New account provisioned: ${user.username} via ${provider} (role: ${user.role})`);
-
-  return user;
 }
 
 // ---------------------------------------------------------------------------
 // Link a provider identity to an already-signed-in user
 // ---------------------------------------------------------------------------
 
-async function linkProviderToUser(
-  userId: number,
-  provider: string,
-  providerId: string,
-  email: string,
-  emailVerified: boolean,
-  name: string,
-  avatar: string,
-): Promise<User> {
+async function linkProviderToUser(userId: number, profile: OAuthProfile): Promise<User> {
   const db = await getDatabase();
+  const { provider, providerId } = profile;
+
+  const current = (await db.select().from(users).where(eq(users.id, userId)))[0];
+  if (!current) {
+    throw createError({ statusCode: 404, message: 'User not found' });
+  }
 
   // The provider identity must not already belong to a different account.
-  const taken = await db
-    .select()
-    .from(users)
-    .where(and(eq(users.oauthProvider, provider), eq(users.oauthProviderId, providerId)));
-  if (taken[0] && taken[0].id !== userId) {
+  const identityTakenBy = (
+    await db
+      .select()
+      .from(users)
+      .where(and(eq(users.oauthProvider, provider), eq(users.oauthProviderId, providerId)))
+  )[0];
+
+  const action = resolveLinkAction(current, profile, identityTakenBy);
+  if (action.kind === 'conflict') {
     throw createError({
       statusCode: 409,
       data: { oauthError: 'already-linked' },
@@ -534,25 +460,9 @@ async function linkProviderToUser(
     });
   }
 
-  const current = await db.select().from(users).where(eq(users.id, userId));
-  const u = current[0];
-  if (!u) {
-    throw createError({ statusCode: 404, message: 'User not found' });
-  }
-
   const updated = await db
     .update(users)
-    .set({
-      oauthProvider: provider,
-      oauthProviderId: providerId,
-      // Only backfill profile fields the account is missing — never overwrite
-      // values the user set themselves.
-      avatarUrl: u.avatarUrl ?? (avatar || null),
-      name: u.name ?? (name || null),
-      email: u.email ?? (email || null),
-      emailVerified: u.email ? u.emailVerified : emailVerified,
-      updatedAt: new Date(),
-    })
+    .set({ ...action.set, updatedAt: new Date() })
     .where(eq(users.id, userId))
     .returning();
 
@@ -565,18 +475,16 @@ async function linkProviderToUser(
 
 export async function unlinkProvider(userId: number, provider: string): Promise<void> {
   const db = await getDatabase();
-  const rows = await db.select().from(users).where(eq(users.id, userId));
-  const u = rows[0];
+  const u = (await db.select().from(users).where(eq(users.id, userId)))[0];
 
-  if (!u || u.oauthProvider !== provider) {
-    throw createError({ statusCode: 400, message: 'That provider is not linked to your account.' });
-  }
-  // Refuse to remove the only sign-in method — an OAuth-only user would be
-  // locked out. They must set a password first.
-  if (!u.password) {
+  const decision = resolveUnlink(u, provider);
+  if (!decision.ok) {
     throw createError({
       statusCode: 400,
-      message: 'Set a password before disconnecting your only sign-in method.',
+      message:
+        decision.reason === 'no-password'
+          ? 'Set a password before disconnecting your only sign-in method.'
+          : 'That provider is not linked to your account.',
     });
   }
 
@@ -638,33 +546,27 @@ export async function handleOAuthCallback(event: H3Event, provider: string): Pro
     // Enforce optional access-control allowlists before provisioning a session.
     await enforceAllowlists(event, provider, providerUser, token.access_token);
 
+    const profile: OAuthProfile = {
+      provider,
+      providerId: providerUser.id,
+      email: providerUser.email,
+      emailVerified: providerUser.emailVerified,
+      name: providerUser.name,
+      avatar: providerUser.avatar,
+    };
+
     if (isLink) {
       // Connect this provider to the already-signed-in user.
       const current = await getCurrentUser(event);
       if (!current) {
         return '/login?error=link-requires-login';
       }
-      await linkProviderToUser(
-        current.id,
-        provider,
-        providerUser.id,
-        providerUser.email,
-        providerUser.emailVerified,
-        providerUser.name,
-        providerUser.avatar,
-      );
+      await linkProviderToUser(current.id, profile);
       return '/settings/account?linked=1';
     }
 
     // Find or create local user
-    const user = await findOrCreateOAuthUser(
-      provider,
-      providerUser.id,
-      providerUser.email,
-      providerUser.emailVerified,
-      providerUser.name,
-      providerUser.avatar,
-    );
+    const user = await findOrCreateOAuthUser(profile);
 
     // Set session
     const sessionData: SessionData = {

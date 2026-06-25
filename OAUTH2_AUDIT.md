@@ -17,6 +17,7 @@ Overall the implementation is solid and follows the Authorization Code flow corr
 > - **Round 1** (`oauth.ts`, `login.vue`, docs): 1.1, 1.2, 3.2, 3.3, and the conflict handling for 1.3/2.2.
 > - **Round 2**: **1.4** PKCE (S256, Google), **1.6** `PIWI_SITE_URL`-based redirect URI, **2.3** explicit Connect/Disconnect on the account page (new `POST /api/auth/oauth/[provider]/unlink`, `link=1` flow, `me` exposes `hasPassword`), **2.4** `PIWI_OAUTH_ALLOWED_DOMAINS` + `PIWI_OAUTH_GITHUB_ALLOWED_ORGS` allowlists and a new-account provisioning log. Granular error codes added for 2.2 (`domain-not-allowed`, `org-not-allowed`, `already-linked`, `link-requires-login`).
 > - **1.5** remains a note only (single-use random state cleared before compare — not exploitable).
+> - **Tests:** the security-relevant decision logic was extracted into a pure module (`server/utils/oauth-helpers.ts`) and covered by `tests/unit/oauth-helpers.test.ts` (PKCE S256 incl. the RFC 7636 vector, redirect-URI resolution, allowlist matching, and the find/link/create/conflict + unlink decisions). Run with `npm run app:test:unit`.
 
 ---
 
