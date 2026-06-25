@@ -56,6 +56,10 @@ Authentication is optional and off by default. When disabled, all endpoints beha
 | `PIWI_OAUTH_GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret. |
 | `PIWI_OAUTH_GITHUB_CLIENT_ID` | — | GitHub OAuth client ID (optional SSO). |
 | `PIWI_OAUTH_GITHUB_CLIENT_SECRET` | — | GitHub OAuth client secret. |
+| `PIWI_OAUTH_ALLOWED_DOMAINS` | — | Comma-separated verified email domains allowed to sign in via OAuth (applies to all providers). When set, only verified emails in these domains are accepted. |
+| `PIWI_OAUTH_GITHUB_ALLOWED_ORGS` | — | Comma-separated GitHub org logins a user must belong to. Requests the `read:org` scope and rejects sign-ins from non-members. |
+
+> Behind a reverse proxy, set `PIWI_SITE_URL` so the OAuth `redirect_uri` is built from your public URL and matches what you registered with the provider (instead of being inferred from the request `Host`).
 
 See [Authentication](./authentication) for roles, API keys, and project assignments.
 

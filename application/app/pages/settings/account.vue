@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const toast = useToast();
 const route = useRoute();
+const router = useRouter();
 const config = useRuntimeConfig();
 
 interface MeUser {
@@ -11,11 +12,26 @@ interface MeUser {
   email: string | null;
   emailVerified: boolean;
   oauthProvider: string | null;
+  hasPassword: boolean;
 }
 
 const { data: me, refresh } = await useFetch<{ authenticated: boolean; user: MeUser | null }>('/api/auth/me');
 
-const isOAuth = computed(() => Boolean(me.value?.user?.oauthProvider));
+const linkedProvider = computed(() => me.value?.user?.oauthProvider ?? null);
+const hasPassword = computed(() => Boolean(me.value?.user?.hasPassword));
+// An OAuth-only account (no password) is fully provider-managed: email and
+// password are owned by the provider and can't be edited here.
+const isOAuthOnly = computed(() => Boolean(linkedProvider.value) && !hasPassword.value);
+
+// Providers configured on this instance (empty in demo mode).
+const providerMeta: Record<string, { label: string; icon: string }> = {
+  google: { label: 'Google', icon: 'i-lucide-chrome' },
+  github: { label: 'GitHub', icon: 'i-lucide-github' },
+};
+const oauthProviders = computed<string[]>(() => {
+  if (config.public.demoMode) return [];
+  return ((config.public.oauthProviders as string[]) || []).filter((p) => providerMeta[p]);
+});
 
 // Email form
 const emailField = ref('');
@@ -28,6 +44,9 @@ const newPassword = ref('');
 const confirmPassword = ref('');
 const changingPassword = ref(false);
 
+// Provider disconnect
+const disconnecting = ref('');
+
 watch(
   () => me.value?.user,
   (u) => {
@@ -36,9 +55,35 @@ watch(
   { immediate: true },
 );
 
+const LINK_ERRORS: Record<string, string> = {
+  'already-linked': 'That provider account is already linked to another user.',
+  'link-requires-login': 'Please sign in before connecting a provider.',
+  'domain-not-allowed': 'That account’s email domain is not allowed.',
+  'org-not-allowed': 'You are not a member of an allowed organization.',
+  'invalid-state': 'Connecting failed (invalid state). Please try again.',
+  'access-denied': 'Authorization was cancelled.',
+  'oauth-failed': 'Connecting the provider failed.',
+};
+
 onMounted(() => {
   if (route.query.verified) {
     toast.add({ title: 'Email verified', color: 'success' });
+  }
+  if (route.query.linked) {
+    toast.add({ title: 'Account connected', color: 'success' });
+    refresh();
+  }
+  const err = route.query.error as string | undefined;
+  if (err) {
+    toast.add({
+      title: 'Could not connect account',
+      description: LINK_ERRORS[err] || 'Please try again.',
+      color: 'error',
+    });
+  }
+  if (route.query.linked || route.query.error || route.query.verified) {
+    // Clean the query so a refresh doesn't replay the toast.
+    router.replace({ query: {} });
   }
 });
 
@@ -97,6 +142,27 @@ async function changePassword() {
   }
 }
 
+function connectProvider(provider: string) {
+  window.location.href = `/api/auth/oauth/${provider}/login?link=1`;
+}
+
+async function disconnectProvider(provider: string) {
+  disconnecting.value = provider;
+  try {
+    await $fetch(`/api/auth/oauth/${provider}/unlink`, { method: 'POST' });
+    await refresh();
+    toast.add({ title: 'Account disconnected', color: 'success' });
+  } catch (e) {
+    toast.add({
+      title: 'Failed to disconnect',
+      description: String((e as { data?: { message?: string } })?.data?.message ?? (e as Error)?.message ?? e),
+      color: 'error',
+    });
+  } finally {
+    disconnecting.value = '';
+  }
+}
+
 const authEnabled = computed(() => config.public.authEnabled);
 </script>
 
@@ -125,7 +191,7 @@ const authEnabled = computed(() => config.public.authEnabled);
             <UIcon name="i-lucide-circle-alert" class="size-4" />
             Not verified
             <UButton
-              v-if="!isOAuth"
+              v-if="!isOAuthOnly"
               size="xs"
               variant="soft"
               color="warning"
@@ -141,18 +207,18 @@ const authEnabled = computed(() => config.public.authEnabled);
               v-model="emailField"
               type="email"
               placeholder="you@example.com"
-              :disabled="isOAuth"
+              :disabled="isOAuthOnly"
               class="w-full"
             />
           </UFormField>
 
-          <p v-if="isOAuth" class="text-xs text-gray-400">
-            Email is managed by <strong>{{ me.user.oauthProvider }}</strong
+          <p v-if="isOAuthOnly" class="text-xs text-gray-400">
+            Email is managed by <strong>{{ linkedProvider }}</strong
             >.
           </p>
         </div>
 
-        <template v-if="!isOAuth" #footer>
+        <template v-if="!isOAuthOnly" #footer>
           <div class="flex justify-end">
             <UButton color="primary" :loading="savingEmail" icon="i-lucide-save" @click="saveEmail">
               Save email
@@ -161,8 +227,54 @@ const authEnabled = computed(() => config.public.authEnabled);
         </template>
       </SectionCard>
 
+      <!-- Connected accounts section -->
+      <SectionCard v-if="oauthProviders.length > 0" icon="i-lucide-link" title="Connected accounts">
+        <div class="space-y-3">
+          <div
+            v-for="p in oauthProviders"
+            :key="p"
+            class="flex items-center justify-between gap-3 rounded-md border border-default px-3 py-2"
+          >
+            <div class="flex items-center gap-2 text-sm">
+              <UIcon :name="providerMeta[p]!.icon" class="size-5" />
+              <span>{{ providerMeta[p]!.label }}</span>
+              <UBadge v-if="linkedProvider === p" color="success" variant="subtle" size="sm">Connected</UBadge>
+            </div>
+
+            <template v-if="linkedProvider === p">
+              <UButton
+                v-if="hasPassword"
+                size="xs"
+                color="error"
+                variant="soft"
+                icon="i-lucide-unlink"
+                :loading="disconnecting === p"
+                @click="disconnectProvider(p)"
+              >
+                Disconnect
+              </UButton>
+              <span v-else class="text-xs text-gray-400" title="Set a password first to keep a way to sign in">
+                Set a password to disconnect
+              </span>
+            </template>
+            <UButton
+              v-else-if="!linkedProvider"
+              size="xs"
+              variant="outline"
+              color="neutral"
+              icon="i-lucide-plus"
+              @click="connectProvider(p)"
+            >
+              Connect
+            </UButton>
+            <span v-else class="text-xs text-gray-400">Another provider is connected</span>
+          </div>
+          <p class="text-xs text-gray-400">One provider can be connected per account.</p>
+        </div>
+      </SectionCard>
+
       <!-- Change password section -->
-      <SectionCard v-if="!isOAuth" icon="i-lucide-lock" title="Change password">
+      <SectionCard v-if="!isOAuthOnly" icon="i-lucide-lock" title="Change password">
         <div class="space-y-4">
           <UFormField label="Current password" name="currentPassword">
             <UInput
@@ -204,7 +316,7 @@ const authEnabled = computed(() => config.public.authEnabled);
 
       <SectionCard v-else icon="i-lucide-lock" title="Password">
         <p class="text-sm text-gray-500">
-          Your account is managed by <strong>{{ me.user.oauthProvider }}</strong
+          Your account is managed by <strong>{{ linkedProvider }}</strong
           >. Password management is handled by that provider.
         </p>
       </SectionCard>

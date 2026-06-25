@@ -116,24 +116,48 @@ The dashboard supports signing in with Google or GitHub as an alternative to use
 
 3. **Restart the application.** The login page now shows **Sign in with Google** and/or **Sign in with GitHub** buttons above the password form.
 
+> **Behind a reverse proxy:** set `PIWI_SITE_URL` to your public URL (e.g. `https://piwi.example.com`). The OAuth `redirect_uri` is built from it, so it stays consistent with the value you registered even when the proxy rewrites the request host. Without it the redirect URI is inferred from the incoming request.
+
+### Restricting who can sign in (allowlists)
+
+By default any account at a configured provider can sign in (and a new **user**-role account is created). To restrict access:
+
+- **`PIWI_OAUTH_ALLOWED_DOMAINS`** — comma-separated email domains (e.g. `example.com,acme.org`). Only **verified** provider emails in these domains may sign in. Applies to all providers — ideal for limiting Google Workspace sign-in to your company domain.
+- **`PIWI_OAUTH_GITHUB_ALLOWED_ORGS`** — comma-separated GitHub org logins. The user must be a member of at least one. Enabling this requests the `read:org` scope so membership (including private) can be checked.
+
+Rejected sign-ins are returned to the login page with an explanatory message.
+
 ### How it works
 
 1. User clicks an OAuth button on the login page.
-2. The server redirects to the provider's authorization page with a cryptographically random `state` parameter stored in an httpOnly cookie.
+2. The server redirects to the provider's authorization page with a cryptographically random `state` parameter stored in an httpOnly cookie. For providers that support it (Google), a PKCE `code_challenge` (S256) is also sent and its verifier stored in an httpOnly cookie, so a stolen authorization code can't be redeemed without the verifier.
 3. After authorization, the provider redirects back to the callback URL.
-4. The server validates the `state` cookie (CSRF protection), exchanges the code for an access token, and fetches the user's profile (name, email, avatar).
+4. The server validates the `state` cookie (CSRF protection), exchanges the code for an access token (sending the PKCE verifier when used), and fetches the user's profile (name, email, avatar).
 5. A local user is created or linked:
-   - If a user with the same OAuth provider + ID exists, their name/avatar are updated.
-   - If a user with the same email exists, the existing account is linked to the OAuth provider.
-   - Otherwise, a new user is created with the **user** role and an empty password (password login disabled for OAuth-only users).
+   - If a user with the same OAuth provider + ID exists, their name/avatar/email are refreshed from the provider.
+   - If a user with the same **verified** email exists (and isn't already linked to a *different* provider), the existing account is linked to the OAuth provider. Linking only happens when the provider asserts the email is verified, which prevents account takeover via an attacker-controlled public email.
+   - Otherwise, a new user is created with the **user** role and an empty password (password login disabled for OAuth-only users). The provider email is stored on the account.
 6. A session is established (same encrypted cookie as password login), and the browser is redirected to the dashboard homepage.
 
 ### Notes
 
 - OAuth users have an empty password and **cannot sign in with username/password**. They must always use their OAuth provider.
+- The provider's email address is stored on the OAuth account, so OAuth users can receive email notifications and appear with a verified email in the admin user list.
+- If a sign-in's verified email matches an account that is **already linked to a different provider**, the login is rejected with an "already linked to a different sign-in method" message (the schema links one provider per account) — sign in with the original method instead.
+- GitHub accounts with no verified primary email are still allowed to sign in, but a fresh account is created rather than linked.
 - The reporter (CI/CD) authentication is unaffected — it continues to use API keys or username/password.
 - OAuth is **not available in demo mode**; the buttons are not shown.
 - Avatar URLs from the provider are displayed in the user menu when available.
+- The dashboard does not store provider refresh/access tokens — the access token is used once at sign-in to read the profile, then discarded; only the dashboard's own session cookie persists.
+
+### Connecting / disconnecting a provider
+
+Signed-in users can link a provider explicitly from **Settings → Account → Connected accounts**:
+
+- **Connect** starts the OAuth flow in "link" mode and attaches the provider identity to the current account (rather than creating a new one). A provider identity already linked to another account is refused.
+- **Disconnect** removes the link. It's only allowed when the account also has a password set, so a provider-only user can't lock themselves out — set a password first.
+
+One provider can be connected per account.
 
 ## User management
 
