@@ -47,7 +47,10 @@ export default eventHandler(async (event) => {
 
   const hashedPassword = await hashPassword(password);
   const extraFields = validated.purpose === 'invite' ? { emailVerified: true } : {};
-  await db.update(users).set({ password: hashedPassword, updatedAt: new Date(), ...extraFields }).where(eq(users.id, user.id));
+  await db
+    .update(users)
+    .set({ password: hashedPassword, updatedAt: new Date(), ...extraFields })
+    .where(eq(users.id, user.id));
 
   await consumeAccountToken(db, validated.tokenId);
 

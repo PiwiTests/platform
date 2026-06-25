@@ -338,20 +338,48 @@ function buildStepEvents(testDuration: number): Array<Record<string, unknown>> {
   const events: Array<Record<string, unknown>> = [];
 
   const beforeHookDur = vary(130, 0.2);
-  events.push({ title: 'Before Hooks', category: 'hook', startedAt: offset, duration: beforeHookDur, status: 'passed', location: null });
+  events.push({
+    title: 'Before Hooks',
+    category: 'hook',
+    startedAt: offset,
+    duration: beforeHookDur,
+    status: 'passed',
+    location: null,
+  });
   offset += beforeHookDur;
 
   const contextDur = vary(75, 0.2);
-  events.push({ title: 'fixture: context', category: 'fixture', startedAt: offset, duration: contextDur, status: 'passed', location: null });
+  events.push({
+    title: 'fixture: context',
+    category: 'fixture',
+    startedAt: offset,
+    duration: contextDur,
+    status: 'passed',
+    location: null,
+  });
   offset += contextDur;
 
   const pageDur = vary(55, 0.2);
-  events.push({ title: 'fixture: page', category: 'fixture', startedAt: offset, duration: pageDur, status: 'passed', location: null });
+  events.push({
+    title: 'fixture: page',
+    category: 'fixture',
+    startedAt: offset,
+    duration: pageDur,
+    status: 'passed',
+    location: null,
+  });
   offset += pageDur;
 
   // Framework-injected navigation wait — not wasted
   const loadStateDur = vary(420, 0.25);
-  events.push({ title: 'Wait for load state', category: 'wait', startedAt: offset, duration: loadStateDur, status: 'passed', location: null });
+  events.push({
+    title: 'Wait for load state',
+    category: 'wait',
+    startedAt: offset,
+    duration: loadStateDur,
+    status: 'passed',
+    location: null,
+  });
   offset += loadStateDur;
 
   // Explicit sleep added by the test author — counts as wasted
@@ -368,11 +396,25 @@ function buildStepEvents(testDuration: number): Array<Record<string, unknown>> {
 
   // Wait for selector — framework-injected, not wasted
   const selectorDur = vary(Math.round(testDuration * 0.08), 0.25);
-  events.push({ title: 'Wait for selector', category: 'wait', startedAt: offset, duration: selectorDur, status: 'passed', location: null });
+  events.push({
+    title: 'Wait for selector',
+    category: 'wait',
+    startedAt: offset,
+    duration: selectorDur,
+    status: 'passed',
+    location: null,
+  });
   offset += selectorDur;
 
   const afterHookDur = vary(90, 0.2);
-  events.push({ title: 'After Hooks', category: 'hook', startedAt: offset, duration: afterHookDur, status: 'passed', location: null });
+  events.push({
+    title: 'After Hooks',
+    category: 'hook',
+    startedAt: offset,
+    duration: afterHookDur,
+    status: 'passed',
+    location: null,
+  });
 
   return events;
 }
@@ -388,20 +430,48 @@ function buildWaitHeavyStepEvents(testDuration: number, file: string, line: numb
   const events: Array<Record<string, unknown>> = [];
 
   const beforeHookDur = vary(140, 0.2);
-  events.push({ title: 'Before Hooks', category: 'hook', startedAt: offset, duration: beforeHookDur, status: 'passed', location: null });
+  events.push({
+    title: 'Before Hooks',
+    category: 'hook',
+    startedAt: offset,
+    duration: beforeHookDur,
+    status: 'passed',
+    location: null,
+  });
   offset += beforeHookDur;
 
   const contextDur = vary(80, 0.2);
-  events.push({ title: 'fixture: context', category: 'fixture', startedAt: offset, duration: contextDur, status: 'passed', location: null });
+  events.push({
+    title: 'fixture: context',
+    category: 'fixture',
+    startedAt: offset,
+    duration: contextDur,
+    status: 'passed',
+    location: null,
+  });
   offset += contextDur;
 
   const pageDur = vary(60, 0.2);
-  events.push({ title: 'fixture: page', category: 'fixture', startedAt: offset, duration: pageDur, status: 'passed', location: null });
+  events.push({
+    title: 'fixture: page',
+    category: 'fixture',
+    startedAt: offset,
+    duration: pageDur,
+    status: 'passed',
+    location: null,
+  });
   offset += pageDur;
 
   // Framework-injected load wait — not wasted
   const firstLoadDur = vary(380, 0.2);
-  events.push({ title: 'Wait for load state', category: 'wait', startedAt: offset, duration: firstLoadDur, status: 'passed', location: null });
+  events.push({
+    title: 'Wait for load state',
+    category: 'wait',
+    startedAt: offset,
+    duration: firstLoadDur,
+    status: 'passed',
+    location: null,
+  });
   offset += firstLoadDur;
 
   // Three explicit sleeps spread through the test — all wasted
@@ -420,18 +490,39 @@ function buildWaitHeavyStepEvents(testDuration: number, file: string, line: numb
     // Framework wait between each explicit sleep
     if (i < sleeps.length - 1) {
       const fwDur = vary(Math.round(testDuration * 0.12), 0.2);
-      events.push({ title: 'Wait for load state', category: 'wait', startedAt: offset, duration: fwDur, status: 'passed', location: null });
+      events.push({
+        title: 'Wait for load state',
+        category: 'wait',
+        startedAt: offset,
+        duration: fwDur,
+        status: 'passed',
+        location: null,
+      });
       offset += fwDur;
     }
   }
 
   // Final response wait — not wasted
   const navDur = vary(340, 0.2);
-  events.push({ title: 'Wait for response', category: 'wait', startedAt: offset, duration: navDur, status: 'passed', location: null });
+  events.push({
+    title: 'Wait for response',
+    category: 'wait',
+    startedAt: offset,
+    duration: navDur,
+    status: 'passed',
+    location: null,
+  });
   offset += navDur;
 
   const afterHookDur = vary(95, 0.2);
-  events.push({ title: 'After Hooks', category: 'hook', startedAt: offset, duration: afterHookDur, status: 'passed', location: null });
+  events.push({
+    title: 'After Hooks',
+    category: 'hook',
+    startedAt: offset,
+    duration: afterHookDur,
+    status: 'passed',
+    location: null,
+  });
 
   return events;
 }

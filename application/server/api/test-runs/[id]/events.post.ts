@@ -7,6 +7,7 @@ import { persistRunCases, type RunCaseInput } from '../../../utils/persist-run-c
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import type { StreamEventPayload } from '../../../../shared/types';
 import { Role } from '../../../../shared/types';
+import { countFailedFromTally } from '../../../../shared/utils/test-counts';
 
 const REQUIRED_ROLES: Role[] = [];
 
@@ -233,7 +234,7 @@ export default eventHandler(async (event) => {
       updatedAt: new Date(),
       totalTests: sql`${testRuns.totalTests} + ${insertedCount}`,
       passedTests: sql`${testRuns.passedTests} + ${insertedStatusCounts['passed'] || 0}`,
-      failedTests: sql`${testRuns.failedTests} + ${insertedStatusCounts['failed'] || 0}`,
+      failedTests: sql`${testRuns.failedTests} + ${countFailedFromTally(insertedStatusCounts)}`,
       skippedTests: sql`${testRuns.skippedTests} + ${insertedStatusCounts['skipped'] || 0}`,
       didNotRunTests: sql`${testRuns.didNotRunTests} + ${insertedStatusCounts['didnotrun'] || 0}`,
     })

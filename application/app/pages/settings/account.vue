@@ -101,7 +101,11 @@ async function saveName() {
     await refresh();
     toast.add({ title: 'Display name updated', color: 'success' });
   } catch (e) {
-    toast.add({ title: 'Failed to update display name', description: String((e as Error)?.message ?? e), color: 'error' });
+    toast.add({
+      title: 'Failed to update display name',
+      description: String((e as Error)?.message ?? e),
+      color: 'error',
+    });
   } finally {
     savingName.value = false;
   }
@@ -205,9 +209,7 @@ const authEnabled = computed(() => config.public.authEnabled);
 
         <template #footer>
           <div class="flex justify-end">
-            <UButton color="primary" :loading="savingName" icon="i-lucide-save" @click="saveName">
-              Save name
-            </UButton>
+            <UButton color="primary" :loading="savingName" icon="i-lucide-save" @click="saveName"> Save name </UButton>
           </div>
         </template>
       </SectionCard>

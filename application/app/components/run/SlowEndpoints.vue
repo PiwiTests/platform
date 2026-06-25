@@ -5,16 +5,30 @@ import type { EndpointSummary } from '~~/types/api';
 const route = useRoute();
 const runId = route.params.id;
 
+const props = defineProps<{
+  /** Increments when the run finishes so this tab can refetch. */
+  refreshKey?: number;
+}>();
+
 const emitSlow = defineEmits<{ endpointsCount: [count: number] }>();
 
-const { data: endpoints, pending: loading } = await useFetch<EndpointSummary[]>(
-  `/api/test-runs/${runId}/network-requests`,
-  { lazy: true, server: false },
-);
+const {
+  data: endpoints,
+  pending: loading,
+  refresh: refreshEndpoints,
+} = await useFetch<EndpointSummary[]>(`/api/test-runs/${runId}/network-requests`, { lazy: true, server: false });
 
 watch(endpoints, (val) => {
   emitSlow('endpointsCount', val?.length ?? 0);
 });
+
+// Refetch when the run finishes (the tab stays mounted if it's active).
+watch(
+  () => props.refreshKey,
+  (key, oldKey) => {
+    if (key !== oldKey && key !== undefined) refreshEndpoints();
+  },
+);
 
 const endpointColumns: TableColumn<EndpointSummary>[] = [
   {

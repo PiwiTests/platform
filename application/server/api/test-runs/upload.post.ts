@@ -18,6 +18,7 @@ import { runEventBus } from '../../utils/run-events';
 import { autoDiagnoseRun } from '../../utils/ai-diagnosis';
 import { computeRegressionSignals } from '../../utils/compute-regression-signals';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
+import { sumFailedAndTimedOut } from '../../../shared/utils/test-counts';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
 
@@ -364,7 +365,10 @@ export default eventHandler(async (event) => {
         duration: (testRunData.duration as number | null | undefined) || null,
         totalTests: (testRunData.totalTests as number | undefined) || 0,
         passedTests: (testRunData.passedTests as number | undefined) || 0,
-        failedTests: (testRunData.failedTests as number | undefined) || 0,
+        failedTests: sumFailedAndTimedOut(
+          testRunData.failedTests as number | undefined,
+          testRunData.timedOutTests as number | undefined,
+        ),
         skippedTests: (testRunData.skippedTests as number | undefined) || 0,
         didNotRunTests: (testRunData.didNotRunTests as number | undefined) || 0,
         environment: (testRunData.environment as string | null | undefined) || null,

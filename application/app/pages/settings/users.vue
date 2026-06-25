@@ -43,7 +43,9 @@ const columns: TableColumn<UserDetails>[] = [
 const isAddUserModalOpen = ref(false);
 const addUserSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters'),
-  password: z.union([z.string().min(6, 'Password must be at least 6 characters'), z.literal('').transform(() => undefined)]).optional(),
+  password: z
+    .union([z.string().min(6, 'Password must be at least 6 characters'), z.literal('').transform(() => undefined)])
+    .optional(),
   role: z.enum(['administrator', 'reporter', 'user']),
   name: z.string().optional(),
   email: z.string().email().optional().or(z.literal('')),

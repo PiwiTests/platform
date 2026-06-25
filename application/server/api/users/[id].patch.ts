@@ -10,7 +10,8 @@ defineRouteMeta({
   openAPI: {
     tags: ['Users'],
     summary: 'Update a user',
-    description: "Updates a user's name, email, or role. Admins can update any user; non-admins can only update their own name and email.",
+    description:
+      "Updates a user's name, email, or role. Admins can update any user; non-admins can only update their own name and email.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
   },
 });

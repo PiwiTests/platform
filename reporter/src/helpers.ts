@@ -221,17 +221,18 @@ export function createGlobalSetup(
       return;
     }
 
-    const hasPiwi = Object.keys(inlineReporterOptions).length > 0 ||
+    const hasPiwi =
+      Object.keys(inlineReporterOptions).length > 0 ||
       (Array.isArray(config?.reporter) &&
-      config.reporter.some((r: any) => {
-        if (!Array.isArray(r) || typeof r[0] !== 'string') return false;
-        if (r[0].toLowerCase().includes('piwi')) return true;
-        try {
-          return path.resolve(require.resolve(r[0])) === piwiReporterPath;
-        } catch {
-          return false;
-        }
-      }));
+        config.reporter.some((r: any) => {
+          if (!Array.isArray(r) || typeof r[0] !== 'string') return false;
+          if (r[0].toLowerCase().includes('piwi')) return true;
+          try {
+            return path.resolve(require.resolve(r[0])) === piwiReporterPath;
+          } catch {
+            return false;
+          }
+        }));
 
     if (!hasPiwi) {
       logger.debug('Not reporting — Piwi is not in the Playwright reporters list.');

@@ -9,6 +9,7 @@ import { readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/
 import { emitRunNotifications } from '../../../utils/notifications/run-notifications';
 import { computeRegressionSignals } from '../../../utils/compute-regression-signals';
 import { Role } from '../../../../shared/types';
+import { sumFailedAndTimedOut } from '../../../../shared/utils/test-counts';
 
 const REQUIRED_ROLES: Role[] = [];
 
@@ -118,7 +119,7 @@ export default eventHandler(async (event) => {
       updatedAt: new Date(),
       status: 'running', // keep running until all shards finish
       passedTests: sql`${testRuns.passedTests} + ${body.passedTests ?? 0}`,
-      failedTests: sql`${testRuns.failedTests} + ${body.failedTests ?? 0}`,
+      failedTests: sql`${testRuns.failedTests} + ${sumFailedAndTimedOut(body.failedTests, body.timedOutTests)}`,
       skippedTests: sql`${testRuns.skippedTests} + ${body.skippedTests ?? 0}`,
       didNotRunTests: sql`${testRuns.didNotRunTests} + ${body.didNotRunTests ?? 0}`,
       flakyTests: sql`${testRuns.flakyTests} + ${flakyTests}`,
@@ -233,6 +234,14 @@ export default eventHandler(async (event) => {
 
   // ── Non-sharded run (existing behaviour) ─────────────────────────────────
 
+  // Fold timed-out into failed for both the DB write and the live SSE events.
+  // Preserve the "use body value when provided, else keep existing DB value"
+  // semantics — the reporter sends both fields, but older clients may omit them.
+  const hasBodyFailed = body.failedTests !== undefined || body.timedOutTests !== undefined;
+  const failedTestsValue = hasBodyFailed
+    ? sumFailedAndTimedOut(body.failedTests, body.timedOutTests)
+    : testRun.failedTests;
+
   if (hasPendingUploads) {
     runEventBus.setFinalStatus(id, status);
 
@@ -242,7 +251,7 @@ export default eventHandler(async (event) => {
       streamToken: null,
       ...(body.totalTests !== undefined && { totalTests: body.totalTests }),
       ...(body.passedTests !== undefined && { passedTests: body.passedTests }),
-      ...(body.failedTests !== undefined && { failedTests: body.failedTests }),
+      ...(hasBodyFailed && { failedTests: failedTestsValue }),
       ...(body.skippedTests !== undefined && { skippedTests: body.skippedTests }),
       ...(body.didNotRunTests !== undefined && { didNotRunTests: body.didNotRunTests }),
       ...(body.flakyTests !== undefined && { flakyTests }),
@@ -267,7 +276,7 @@ export default eventHandler(async (event) => {
         duration,
         totalTests: body.totalTests ?? testRun.totalTests,
         passedTests: body.passedTests ?? testRun.passedTests,
-        failedTests: body.failedTests ?? testRun.failedTests,
+        failedTests: failedTestsValue,
         skippedTests: body.skippedTests ?? testRun.skippedTests,
         didNotRunTests: body.didNotRunTests ?? testRun.didNotRunTests,
         flakyTests,
@@ -282,7 +291,7 @@ export default eventHandler(async (event) => {
       streamToken: null,
       ...(body.totalTests !== undefined && { totalTests: body.totalTests }),
       ...(body.passedTests !== undefined && { passedTests: body.passedTests }),
-      ...(body.failedTests !== undefined && { failedTests: body.failedTests }),
+      ...(hasBodyFailed && { failedTests: failedTestsValue }),
       ...(body.skippedTests !== undefined && { skippedTests: body.skippedTests }),
       ...(body.didNotRunTests !== undefined && { didNotRunTests: body.didNotRunTests }),
       ...(body.flakyTests !== undefined && { flakyTests }),
@@ -305,7 +314,7 @@ export default eventHandler(async (event) => {
         duration,
         totalTests: body.totalTests ?? testRun.totalTests,
         passedTests: body.passedTests ?? testRun.passedTests,
-        failedTests: body.failedTests ?? testRun.failedTests,
+        failedTests: failedTestsValue,
         skippedTests: body.skippedTests ?? testRun.skippedTests,
         didNotRunTests: body.didNotRunTests ?? testRun.didNotRunTests,
         flakyTests,

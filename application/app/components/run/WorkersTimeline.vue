@@ -104,6 +104,9 @@ const timelineData = computed<TimelineItem[]>(() => {
   }
 
   const result: TimelineItem[] = [];
+  // Per-worker end cursor, used by the sequential fallback to append setup
+  // steps after each worker's test cases.
+  const rowEndByWorker = new Map<number, number>();
   if (hasStartedAt) {
     for (let ri = 0; ri < sortedWorkers.length; ri++) {
       const [key, cases] = sortedWorkers[ri]!;
@@ -161,18 +164,22 @@ const timelineData = computed<TimelineItem[]>(() => {
       result.push(...workerItems);
     }
 
-    // Add suite-level setup steps (beforeAll/afterAll)
+    // Add suite-level setup steps (beforeAll/afterAll). Setup steps carry only a
+    // `workerIndex` (no `shardIndex`), so place them on the first shard's worker
+    // row for that index. `sortedWorkers` is ordered by shardIndex then
+    // workerIndex, so the first match is shard 0 (or the null shard).
+    const setupRowIndexByWorker = new Map<number, number>();
+    for (let ri = 0; ri < sortedWorkers.length; ri++) {
+      const wIdx = Number(sortedWorkers[ri]![0].split('|')[1]);
+      if (!setupRowIndexByWorker.has(wIdx)) setupRowIndexByWorker.set(wIdx, ri);
+    }
+
     if (props.setupSteps && props.setupSteps.length > 0) {
       for (const step of props.setupSteps) {
         const workerIdx = (step as any).workerIndex;
         if (workerIdx == null || workerIdx < 0) continue;
-        const workerRow = sortedWorkers.findIndex(([,]) => {
-          // Try matching by workerIndex suffix alone (setup steps have no shardIndex)
-          return true;
-        });
-        const row = sortedWorkers.find(([key]) => key.endsWith(`|${workerIdx}`));
-        if (!row) continue;
-        const ri = sortedWorkers.indexOf(row);
+        const ri = setupRowIndexByWorker.get(workerIdx);
+        if (ri == null) continue;
 
         const stepStart = Math.max(0, (toMs(step.startedAt) ?? minStartedAt) - minStartedAt);
         result.push({
@@ -192,8 +199,11 @@ const timelineData = computed<TimelineItem[]>(() => {
       }
     }
   } else {
+    const setupRowIndexByWorkerFallback = new Map<number, number>();
     for (let ri = 0; ri < sortedWorkers.length; ri++) {
       const [key, rawCases] = sortedWorkers[ri]!;
+      const wIdx = Number(key.split('|')[1]);
+      if (!setupRowIndexByWorkerFallback.has(wIdx)) setupRowIndexByWorkerFallback.set(wIdx, ri);
       const shardIdx = key.split('|')[0];
       const shardIndex = shardIdx === 'null' ? null : Number(shardIdx);
       const sortedCases = [...rawCases].sort((a, b) => (toMs(a.startedAt) ?? 0) - (toMs(b.startedAt) ?? 0));
@@ -236,6 +246,36 @@ const timelineData = computed<TimelineItem[]>(() => {
             cursor += step.duration || 0;
           }
         }
+      }
+      // Remember this worker row's end cursor for appending setup steps.
+      rowEndByWorker.set(wIdx, cursor);
+    }
+
+    // Add suite-level setup steps in the sequential fallback too (appended
+    // after each worker's test cases, since without startedAt we can't
+    // interleave them accurately).
+    if (props.setupSteps && props.setupSteps.length > 0) {
+      for (const step of props.setupSteps) {
+        const workerIdx = (step as any).workerIndex;
+        if (workerIdx == null || workerIdx < 0) continue;
+        const ri = setupRowIndexByWorkerFallback.get(workerIdx);
+        if (ri == null) continue;
+        const start = rowEndByWorker.get(workerIdx) ?? 0;
+        rowEndByWorker.set(workerIdx, start + (step.duration || 0));
+        result.push({
+          id: -999 - result.length,
+          title: `[Setup] ${step.title}`,
+          status: step.status || 'passed',
+          workerIndex: workerIdx,
+          shardIndex: null,
+          start,
+          duration: step.duration || 0,
+          rowIndex: ri,
+          isHook: true,
+          isWait: false,
+          category: step.category,
+          parentTitle: null,
+        });
       }
     }
   }

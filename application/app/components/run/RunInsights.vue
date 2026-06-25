@@ -2,6 +2,8 @@
 const props = defineProps<{
   testRunId: number;
   runStatus: string;
+  /** Increments when the run finishes so this tab can refetch. */
+  refreshKey?: number;
 }>();
 
 interface RunInsightsData {
@@ -58,10 +60,14 @@ async function load() {
 
 watch(() => props.testRunId, load, { immediate: true });
 
-const totalRegressions = computed(
-  () => (data.value?.newRegressions.length ?? 0) + (data.value?.recurrences.length ?? 0),
+// Refetch when the run finishes (load() early-returns while the run is active,
+// so without this the tab stays empty until a remount).
+watch(
+  () => props.refreshKey,
+  (key, oldKey) => {
+    if (key !== oldKey && key !== undefined) load();
+  },
 );
-const totalFixed = computed(() => (data.value?.recovered.length ?? 0) + (data.value?.newFlaky.length ?? 0));
 
 function formatMs(ms: number | null | undefined): string {
   if (ms == null) return '—';
@@ -172,6 +178,28 @@ function formatMs(ms: number | null | undefined): string {
           <UBadge color="info" variant="solid" size="xs">FLAKY</UBadge>
           <span class="font-medium text-primary hover:underline truncate">{{ f.title }}</span>
           <span class="text-gray-400 text-xs ml-auto shrink-0">{{ formatMs(f.duration) }}</span>
+        </NuxtLink>
+      </div>
+    </SectionCard>
+
+    <!-- Passed on retry (flaky) -->
+    <SectionCard
+      v-if="data.flakyOnRetry.length > 0"
+      icon="i-lucide-repeat"
+      icon-class="text-orange-500"
+      title="Passed on retry"
+      :count="data.flakyOnRetry.length"
+      subtitle="Tests that passed but needed one or more retries"
+    >
+      <div class="space-y-1">
+        <NuxtLink
+          v-for="f in data.flakyOnRetry"
+          :key="f.testRunsCaseId"
+          :to="`/test-run-cases/${f.testRunsCaseId}`"
+          class="flex items-center gap-2 text-sm hover:bg-orange-50 dark:hover:bg-orange-900/10 rounded px-1 -mx-1 transition-colors"
+        >
+          <UBadge color="warning" variant="subtle" size="xs">×{{ f.retries }}</UBadge>
+          <span class="font-medium text-primary hover:underline truncate">{{ f.title }}</span>
         </NuxtLink>
       </div>
     </SectionCard>
