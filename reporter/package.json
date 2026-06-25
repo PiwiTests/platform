@@ -25,11 +25,6 @@
       "import": "./dist/fixtures.js",
       "require": "./dist/fixtures.js"
     },
-    "./config": {
-      "types": "./dist/config.d.ts",
-      "import": "./dist/config.js",
-      "require": "./dist/config.js"
-    }
   },
   "keywords": [
     "playwright",
