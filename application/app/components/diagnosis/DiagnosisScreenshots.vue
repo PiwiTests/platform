@@ -32,7 +32,7 @@ function isImage(path: string, contentType?: string | null): boolean {
 }
 
 async function blobToBase64(blob: Blob): Promise<{ data: string; mediaType: string }> {
-  const mediaType = (blob.type || 'image/png').split(';')[0]!.trim();
+  const mediaType = (blob.type || 'image/webp').split(';')[0]!.trim();
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -63,7 +63,8 @@ async function loadScreenshots() {
       for (const att of detail.attachments ?? []) {
         if (!isImage(att.path, att.contentType)) continue;
         if (results.length >= MAX_SCREENSHOTS) break;
-        const url = `/api/files/${getFileApiPath(att.path)}`;
+        const imgName = att.name || att.path.split('/').pop() || 'screenshot';
+        const url = `/api/files/${getFileApiPath(att.path)}?compress=1`;
         try {
           const res = await fetch(url);
           if (!res.ok) continue;
@@ -73,7 +74,7 @@ async function loadScreenshots() {
             src: `data:${mediaType};base64,${data}`,
             data,
             mediaType,
-            name: att.name || att.path.split('/').pop() || 'screenshot',
+            name: imgName,
             selected: true,
           });
         } catch {
