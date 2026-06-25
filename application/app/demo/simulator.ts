@@ -321,20 +321,122 @@ interface BaseTestOptions {
   durationFactor?: number;
   slowNetwork?: boolean;
   slowSteps?: boolean;
+  waitHeavy?: boolean;
 }
 
-function buildWaitStepEvents(): Array<Record<string, unknown>> {
-  const waitDuration = vary(1200, 0.3);
-  return [
-    {
-      title: 'waitForLoadState',
-      category: 'wait',
-      startedAt: Date.now() + 100,
-      duration: waitDuration,
-      status: 'wasted',
-      location: null,
-    },
+/**
+ * Builds a realistic set of fine-grained step events for a test: before/after
+ * hooks, fixture setup, framework-injected waits, and a single deliberate
+ * waitForTimeout sleep that shows up as wasted time.
+ */
+function buildStepEvents(testDuration: number): Array<Record<string, unknown>> {
+  const now = Date.now();
+  let t = now;
+  const events: Array<Record<string, unknown>> = [];
+
+  const beforeHookDur = vary(130, 0.2);
+  events.push({ title: 'Before Hooks', category: 'hook', startedAt: t, duration: beforeHookDur, status: 'passed', location: null });
+  t += beforeHookDur;
+
+  const contextDur = vary(75, 0.2);
+  events.push({ title: 'fixture: context', category: 'fixture', startedAt: t, duration: contextDur, status: 'passed', location: null });
+  t += contextDur;
+
+  const pageDur = vary(55, 0.2);
+  events.push({ title: 'fixture: page', category: 'fixture', startedAt: t, duration: pageDur, status: 'passed', location: null });
+  t += pageDur;
+
+  // Framework-injected navigation wait — not wasted
+  const loadStateDur = vary(420, 0.25);
+  events.push({ title: 'Wait for load state', category: 'wait', startedAt: t, duration: loadStateDur, status: 'passed', location: null });
+  t += loadStateDur;
+
+  // Explicit sleep added by the test author — counts as wasted
+  const timeoutDur = vary(500, 0.2);
+  events.push({
+    title: 'Wait for timeout',
+    category: 'wait',
+    startedAt: t,
+    duration: timeoutDur,
+    status: 'wasted',
+    location: 'tests/checkout/checkout.spec.ts:34:5',
+  });
+  t += timeoutDur;
+
+  // Wait for selector — framework-injected, not wasted
+  const selectorDur = vary(Math.round(testDuration * 0.08), 0.25);
+  events.push({ title: 'Wait for selector', category: 'wait', startedAt: t, duration: selectorDur, status: 'passed', location: null });
+  t += selectorDur;
+
+  const afterHookDur = vary(90, 0.2);
+  events.push({ title: 'After Hooks', category: 'hook', startedAt: t, duration: afterHookDur, status: 'passed', location: null });
+
+  return events;
+}
+
+/**
+ * Builds step events for a wait-heavy test: many explicit `waitForTimeout`
+ * calls mixed with framework waits, producing a high wasted-time total.
+ */
+function buildWaitHeavyStepEvents(testDuration: number, file: string, line: number): Array<Record<string, unknown>> {
+  const now = Date.now();
+  let t = now;
+  const events: Array<Record<string, unknown>> = [];
+
+  const beforeHookDur = vary(140, 0.2);
+  events.push({ title: 'Before Hooks', category: 'hook', startedAt: t, duration: beforeHookDur, status: 'passed', location: null });
+  t += beforeHookDur;
+
+  const contextDur = vary(80, 0.2);
+  events.push({ title: 'fixture: context', category: 'fixture', startedAt: t, duration: contextDur, status: 'passed', location: null });
+  t += contextDur;
+
+  const pageDur = vary(60, 0.2);
+  events.push({ title: 'fixture: page', category: 'fixture', startedAt: t, duration: pageDur, status: 'passed', location: null });
+  t += pageDur;
+
+  // Framework-injected load wait — not wasted
+  const firstLoadDur = vary(380, 0.2);
+  events.push({ title: 'Wait for load state', category: 'wait', startedAt: t, duration: firstLoadDur, status: 'passed', location: null });
+  t += firstLoadDur;
+
+  // Series of explicit sleeps scattered through the test — all wasted
+  const sleeps = [
+    vary(500, 0.1),
+    vary(1000, 0.1),
+    vary(500, 0.1),
+    vary(2000, 0.1),
+    vary(500, 0.1),
+    vary(1000, 0.1),
   ];
+  for (let i = 0; i < sleeps.length; i++) {
+    events.push({
+      title: 'Wait for timeout',
+      category: 'wait',
+      startedAt: t,
+      duration: sleeps[i]!,
+      status: 'wasted',
+      location: `${file}:${line + i * 4}:5`,
+    });
+    t += sleeps[i]!;
+
+    // Intersperse framework waits between the explicit sleeps
+    if (i < sleeps.length - 1) {
+      const fwDur = vary(250, 0.3);
+      events.push({ title: 'Wait for load state', category: 'wait', startedAt: t, duration: fwDur, status: 'passed', location: null });
+      t += fwDur;
+    }
+  }
+
+  // Final navigation wait — not wasted
+  const navDur = vary(340, 0.2);
+  events.push({ title: 'Wait for response', category: 'wait', startedAt: t, duration: navDur, status: 'passed', location: null });
+  t += navDur;
+
+  const afterHookDur = vary(95, 0.2);
+  events.push({ title: 'After Hooks', category: 'hook', startedAt: t, duration: afterHookDur, status: 'passed', location: null });
+
+  return events;
 }
 
 function baseTests(opts: BaseTestOptions = {}): SimTest[] {
@@ -343,8 +445,12 @@ function baseTests(opts: BaseTestOptions = {}): SimTest[] {
     const steps = buildSteps(duration, opts.slowSteps);
     const slowest = steps.reduce((a, b) => (a.duration > b.duration ? a : b));
     const suite = SUITE_MAP[t.file];
-    const waitEvents = buildWaitStepEvents();
-    const waitTime = waitEvents.reduce((sum, e) => sum + (e.duration as number), 0);
+    const stepEvents = opts.waitHeavy
+      ? buildWaitHeavyStepEvents(duration, t.file, 10 + i * 8)
+      : buildStepEvents(duration);
+    const wastedTimeMs = stepEvents
+      .filter((e) => e.category === 'wait' && e.title === 'Wait for timeout')
+      .reduce((sum, e) => sum + (e.duration as number), 0);
 
     return {
       title: t.title,
@@ -352,10 +458,10 @@ function baseTests(opts: BaseTestOptions = {}): SimTest[] {
       duration,
       attempts: [{ status: 'passed' as const }],
       steps,
-      stepEvents: waitEvents,
+      stepEvents,
       slowestStep: slowest.title,
       slowestStepDuration: slowest.duration,
-      wastedTimeMs: waitTime,
+      wastedTimeMs: wastedTimeMs > 0 ? wastedTimeMs : null,
       networkRequests: buildNetworkRequests({ slow: opts.slowNetwork }),
       webVitals: buildWebVitals(opts.slowNetwork),
       suitePath: suite?.suitePath,
@@ -566,6 +672,22 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
         ciInfo: { provider: 'GitHub Actions', runId: '12345678', workflow: 'ci.yml' },
       }),
     tests: () => baseTests({ durationFactor: 0.8 }),
+  },
+  {
+    id: 'wait-heavy',
+    label: 'Wait-heavy run',
+    description: 'Tests peppered with explicit waitForTimeout sleeps — wasted-time breakdown per test',
+    icon: 'i-lucide-hourglass',
+    speed: 4,
+    workers: 4,
+    environment: 'staging',
+    metadata: () =>
+      buildMetadata({
+        branch: 'feature/checkout-refactor',
+        author: 'George Tan',
+        commitMessage: 'wip: add temporary waits while debugging flaky checkout',
+      }),
+    tests: () => baseTests({ waitHeavy: true }),
   },
 ];
 
