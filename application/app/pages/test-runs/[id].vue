@@ -11,11 +11,11 @@ const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
 const { data: testRun, refresh } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`);
 
 // Lightweight poll for latest run info — avoids reloading full page data on run events
-const projectId = computed(() => testRun.value?.projectId);
-const { data: latestRunInfo, refresh: refreshLatestRun } = await useFetch<{ id: number; status: string } | null>(
-  () => projectId.value ? `/api/projects/${projectId.value}/latest-run` : null,
-  { key: `latest-run-${projectId.value}` },
-);
+const projectId = testRun.value?.projectId;
+type LatestRunInfo = { id: number; status: string } | null;
+const { data: latestRunInfo, refresh: refreshLatestRun } = projectId
+  ? await useFetch<LatestRunInfo>(`/api/projects/${projectId}/latest-run`, { key: `latest-run-${projectId}` })
+  : { data: ref<LatestRunInfo>(null), refresh: async () => {} };
 useRunStream(refreshLatestRun);
 
 const latestRunId = computed(() => latestRunInfo.value?.id ?? testRun.value?.project?.latestRunId ?? null);
