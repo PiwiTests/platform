@@ -933,3 +933,144 @@ export async function getProjectFlakyTests(db: DrizzleDB, projectId: number, run
     };
   });
 }
+
+// ─── getProjectsOverview ─────────────────────────────────────────────────────
+
+const FAILING_STATUSES = ['failed', 'timedout', 'interrupted'];
+
+function deriveTendency(runs: { status: string; flakyTests: number }[]): 'passing' | 'flaky' | 'failing' | 'unknown' {
+  if (runs.length < 2) return 'unknown';
+  const latest = runs[runs.length - 1]!;
+  if (FAILING_STATUSES.includes(latest.status)) return 'failing';
+  const w = runs.slice(-5);
+  const hasFlaky = w.some((r) => (r.flakyTests ?? 0) > 0);
+  const anyFailed = w.some((r) => FAILING_STATUSES.includes(r.status));
+  const anyPassed = w.some((r) => r.status === 'passed');
+  if (hasFlaky || (anyFailed && anyPassed)) return 'flaky';
+  if (w.every((r) => r.status === 'passed')) return 'passing';
+  return 'unknown';
+}
+
+export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = 'all') {
+  let allProjects: any[] = await db.select().from(projects).orderBy(desc(projects.updatedAt));
+
+  if (scope !== 'all') {
+    if (scope.size === 0) return [];
+    allProjects = allProjects.filter((p: any) => scope.has(p.id));
+  }
+  if (allProjects.length === 0) return [];
+
+  const projectIds: number[] = allProjects.map((p: any) => p.id);
+
+  // Tags per project (batched)
+  const tagRows: any[] = await db
+    .select({ projectId: projectTags.projectId, tag: tags })
+    .from(projectTags)
+    .innerJoin(tags, eq(projectTags.tagId, tags.id))
+    .where(inArray(projectTags.projectId, projectIds));
+
+  const tagsByProjectId = new Map<number, any[]>();
+  for (const r of tagRows) {
+    const list = tagsByProjectId.get(r.projectId) ?? [];
+    list.push(r.tag);
+    tagsByProjectId.set(r.projectId, list);
+  }
+
+  // Total full run counts per project
+  const fullRunStats: any[] = await db
+    .select({
+      projectId: testRuns.projectId,
+      totalFullRuns: sql<number>`COUNT(*)`,
+    })
+    .from(testRuns)
+    .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1)))
+    .groupBy(testRuns.projectId);
+
+  const totalFullRunsByProjectId = new Map<number, number>();
+  for (const r of fullRunStats) {
+    totalFullRunsByProjectId.set(r.projectId, Number(r.totalFullRuns));
+  }
+
+  // Last 20 full runs per project using a CTE with window function
+  let recentFullRuns: any[] = [];
+  if (projectIds.length > 0) {
+    const rankedCte = db.$with('ranked_runs').as(
+      db
+        .select({
+          id: testRuns.id,
+          projectId: testRuns.projectId,
+          status: testRuns.status,
+          passedTests: testRuns.passedTests,
+          failedTests: testRuns.failedTests,
+          flakyTests: testRuns.flakyTests,
+          totalTests: testRuns.totalTests,
+          startTime: testRuns.startTime,
+          duration: testRuns.duration,
+          rn: sql<number>`ROW_NUMBER() OVER (PARTITION BY ${testRuns.projectId} ORDER BY ${testRuns.startTime} DESC)`.as(
+            'rn',
+          ),
+        })
+        .from(testRuns)
+        .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1))),
+    );
+
+    recentFullRuns = await db
+      .with(rankedCte)
+      .select({
+        id: rankedCte.id,
+        projectId: rankedCte.projectId,
+        status: rankedCte.status,
+        passedTests: rankedCte.passedTests,
+        failedTests: rankedCte.failedTests,
+        flakyTests: rankedCte.flakyTests,
+        totalTests: rankedCte.totalTests,
+        startTime: rankedCte.startTime,
+        duration: rankedCte.duration,
+      })
+      .from(rankedCte)
+      .where(lte(rankedCte.rn, 20))
+      .orderBy(rankedCte.projectId, rankedCte.startTime);
+  }
+
+  // Group runs by projectId (each list is oldest → newest)
+  const runsByProjectId = new Map<number, any[]>();
+  for (const run of recentFullRuns) {
+    const list = runsByProjectId.get(run.projectId) ?? [];
+    list.push(run);
+    runsByProjectId.set(run.projectId, list);
+  }
+
+  return allProjects.map((project: any) => {
+    const runs = runsByProjectId.get(project.id) ?? [];
+    const latest = runs.length > 0 ? runs[runs.length - 1] : null;
+    return {
+      id: project.id,
+      name: project.name,
+      label: project.label ?? null,
+      tags: tagsByProjectId.get(project.id) ?? [],
+      totalFullRuns: totalFullRunsByProjectId.get(project.id) ?? 0,
+      latestFullRun: latest
+        ? {
+            id: latest.id,
+            status: latest.status,
+            startTime: latest.startTime,
+            duration: latest.duration ?? null,
+            passedTests: latest.passedTests ?? 0,
+            failedTests: latest.failedTests ?? 0,
+            flakyTests: latest.flakyTests ?? 0,
+            totalTests: latest.totalTests ?? 0,
+          }
+        : null,
+      recentRuns: runs.map((r: any) => ({
+        id: r.id,
+        status: r.status,
+        passedTests: r.passedTests ?? 0,
+        failedTests: r.failedTests ?? 0,
+        flakyTests: r.flakyTests ?? 0,
+        totalTests: r.totalTests ?? 0,
+        startTime: r.startTime,
+      })),
+      tendency: deriveTendency(runs),
+    };
+  });
+}

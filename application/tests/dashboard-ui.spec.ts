@@ -37,10 +37,9 @@ test.describe('Dashboard UI Tests', () => {
     // Check page title
     await expect(page).toHaveTitle(/Piwi Dashboard/);
 
-    // Check for statistics cards
-    await expect(page.getByText('Total projects')).toBeVisible();
-    await expect(page.getByText('Total test runs')).toBeVisible();
-    await expect(page.getByText('Active projects')).toBeVisible();
+    // Check for stat strip
+    await expect(page.getByText('failing now')).toBeVisible();
+    await expect(page.getByText('runs today')).toBeVisible();
 
     // Check for projects section
     await expect(page.getByText('Project health')).toBeVisible();
@@ -153,19 +152,19 @@ test.describe('Dashboard UI Tests', () => {
     await page.goto('/');
 
     // The dashboard should still load without errors
-    await expect(page.getByText('Total projects')).toBeVisible();
+    await expect(page.getByText('Project health')).toBeVisible();
   });
 
   test('should be responsive', async ({ page }) => {
     // Test desktop view
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto('/');
-    await expect(page.getByText('Total projects')).toBeVisible();
+    await expect(page.getByText('Project health')).toBeVisible();
 
     // Test mobile view
     await page.setViewportSize({ width: 375, height: 667 });
     await page.goto('/');
-    await expect(page.getByText('Total projects')).toBeVisible();
+    await expect(page.getByText('Project health')).toBeVisible();
   });
 
   test('should refresh data when clicking refresh button', async ({ page }) => {

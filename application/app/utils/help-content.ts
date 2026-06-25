@@ -25,14 +25,19 @@ export const HELP_TOPICS = {
     text: 'Tests that pass and fail without code changes. This counts how many were detected across your projects recently.',
     doc: 'flaky-tests#flaky-test-detection',
   },
-  'home.pass-rate-trend': {
-    title: 'Pass-rate trend',
-    text: 'Share of tests passing per run over time. A downward slope flags a regression building up across recent runs.',
+  'home.trend-bars': {
+    title: 'Run history bars',
+    text: 'One bar per full run (up to 20), oldest left → newest right. Green = pass, red = fail, amber = passed with flaky tests, gray = skipped/unknown. Click a bar to open that run.',
+    doc: 'ui-overview#home-page',
+  },
+  'home.tendency': {
+    title: 'Tendency',
+    text: 'Derived from the last 5 full runs. Failing = latest run failed; flaky = pass/fail mixed or flaky tests seen in the window; passing = all recent runs green.',
     doc: 'ui-overview#home-page',
   },
   'home.project-health': {
     title: 'Project health',
-    text: 'Each project at a glance — latest pass rate and recent activity — so you can spot the one that needs attention.',
+    text: 'Every project at a glance — run history bars and a tendency badge so you can immediately see which project needs attention. Only full runs count.',
     doc: 'ui-overview#home-page',
   },
   'home.get-started': {
