@@ -12,7 +12,7 @@
     // redirects the browser to the SPA entry point so Vue Router can render the
     // correct page. For all other paths it falls back to the documentation root.
     ;(function () {
-      const demoBase = '/piwi-dashboard/demo'
+      const demoBase = '/demo'
       const path = window.location.pathname
 
       if (path === demoBase || path.startsWith(demoBase + '/')) {
@@ -20,7 +20,7 @@
         sessionStorage.setItem('spa:redirect', relativePath + window.location.search + window.location.hash)
         window.location.replace(demoBase + '/')
       } else {
-        window.location.replace('/piwi-dashboard/')
+        window.location.replace('/')
       }
     })()
   </script>
