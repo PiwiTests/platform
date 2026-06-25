@@ -749,6 +749,7 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
           status: req.status,
           duration: req.duration ?? null,
           resource_type: req.resourceType ?? null,
+          content_type: req.contentType ?? (req.resourceType === 'document' ? 'text/html' : 'application/json'),
           server_logs: req.serverLogs ?? null,
         });
       }

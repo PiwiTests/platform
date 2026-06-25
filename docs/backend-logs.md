@@ -15,8 +15,10 @@ The mechanism is straightforward: the backend integration adds a `X-Piwi-Logs` r
 
 When backend logs are captured, they appear in:
 
-- **Test case detail → Traces & Console tab** — server log entries are shown alongside failed network requests and console errors under the "Signals" panel
+- **Test case detail → Traces & Console tab** — the "Network & backend logs" panel lists each captured request (method, status, response time, content type, and timestamp). Requests that returned server-side logs show an inline warning/error count and expand to reveal **every log entry attached to that exact request** — level, category, message, timestamp, and a collapsible stack trace. Requests are sorted so failures and those carrying error logs surface first, and a filter lets you narrow to "Failed" or "With logs".
 - **AI diagnosis context** — warnings and errors are included automatically when diagnosing a failure cluster, giving the AI visibility into what went wrong on the server side
+
+Because the logs are stored per request (rather than as one flat list), you can immediately tell *which* HTTP call produced a given warning or error — the response and its server-side cause sit side by side.
 
 ## Available integrations
 

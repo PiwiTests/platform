@@ -250,6 +250,7 @@ export async function getTestRunCase(
     status: nr.status,
     duration: nr.duration,
     resourceType: nr.resourceType,
+    contentType: nr.contentType,
     serverLogs: nr.serverLogs,
   }));
 

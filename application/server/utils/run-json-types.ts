@@ -33,6 +33,8 @@ export interface NetworkRequestEntry {
   status: number;
   duration?: number;
   resourceType?: string;
+  contentType?: string;
+  startTime?: number;
   serverLogs?: ServerLogEntry[];
 }
 
