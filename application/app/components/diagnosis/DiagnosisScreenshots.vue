@@ -1,0 +1,160 @@
+<script setup lang="ts">
+import type { DiagnoseImage } from '~/composables/useClusterDiagnosis';
+
+interface AffectedCase {
+  recentTestRunsCaseId: number;
+  title: string;
+}
+
+interface ScreenshotItem {
+  src: string;
+  data: string;
+  mediaType: string;
+  name: string;
+  selected: boolean;
+}
+
+const props = defineProps<{
+  affectedTestCases: AffectedCase[];
+}>();
+
+const emit = defineEmits<{
+  (e: 'update:images', images: DiagnoseImage[]): void;
+}>();
+
+const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+const MAX_SCREENSHOTS = 8;
+
+function isImage(path: string, contentType?: string | null): boolean {
+  const ext = '.' + (path.toLowerCase().split('.').pop() || '');
+  return IMAGE_EXTS.has(ext) || (!!contentType && IMAGE_TYPES.has(contentType.toLowerCase()));
+}
+
+async function blobToBase64(blob: Blob): Promise<{ data: string; mediaType: string }> {
+  const mediaType = (blob.type || 'image/png').split(';')[0]!.trim();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const part = (reader.result as string).split(',')[1];
+      if (part != null) resolve({ data: part, mediaType });
+      else reject(new Error('Failed to read blob'));
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+const screenshots = ref<ScreenshotItem[]>([]);
+const loading = ref(false);
+
+async function loadScreenshots() {
+  if (!props.affectedTestCases.length) return;
+  loading.value = true;
+  screenshots.value = [];
+  const results: ScreenshotItem[] = [];
+
+  for (const tc of props.affectedTestCases) {
+    if (results.length >= MAX_SCREENSHOTS) break;
+    try {
+      const detail = await $fetch<{
+        attachments: Array<{ path: string; contentType: string | null; name: string | null }>;
+      }>(`/api/test-run-cases/${tc.recentTestRunsCaseId}`);
+      for (const att of detail.attachments ?? []) {
+        if (!isImage(att.path, att.contentType)) continue;
+        if (results.length >= MAX_SCREENSHOTS) break;
+        const url = `/api/files/${getFileApiPath(att.path)}`;
+        try {
+          const res = await fetch(url);
+          if (!res.ok) continue;
+          const blob = await res.blob();
+          const { data, mediaType } = await blobToBase64(blob);
+          results.push({
+            src: `data:${mediaType};base64,${data}`,
+            data,
+            mediaType,
+            name: att.name || att.path.split('/').pop() || 'screenshot',
+            selected: true,
+          });
+        } catch {
+          // skip images that fail to fetch
+        }
+      }
+    } catch {
+      // skip cases that fail to fetch
+    }
+  }
+
+  screenshots.value = results;
+  loading.value = false;
+  emitSelected();
+}
+
+function emitSelected() {
+  emit(
+    'update:images',
+    screenshots.value.filter((s) => s.selected).map(({ name, mediaType, data }) => ({ name, mediaType, data })),
+  );
+}
+
+function toggle(i: number) {
+  screenshots.value[i]!.selected = !screenshots.value[i]!.selected;
+  emitSelected();
+}
+
+function selectAll() {
+  screenshots.value.forEach((s) => (s.selected = true));
+  emitSelected();
+}
+
+function deselectAll() {
+  screenshots.value.forEach((s) => (s.selected = false));
+  emitSelected();
+}
+
+const selectedCount = computed(() => screenshots.value.filter((s) => s.selected).length);
+
+onMounted(loadScreenshots);
+</script>
+
+<template>
+  <div v-if="loading" class="flex items-center gap-1.5 text-xs text-gray-400 py-1">
+    <UIcon name="i-lucide-loader-2" class="size-3 animate-spin" />
+    Loading screenshots from test evidence&hellip;
+  </div>
+  <div v-else-if="screenshots.length" class="space-y-1.5">
+    <div class="flex items-center justify-between">
+      <span class="text-xs font-medium text-gray-500">
+        Test screenshots
+        <span class="text-gray-400 font-normal"
+          >({{ selectedCount }}/{{ screenshots.length }} will be sent to AI)</span
+        >
+      </span>
+      <div class="flex gap-0.5">
+        <UButton size="xs" color="neutral" variant="ghost" @click="selectAll">All</UButton>
+        <UButton size="xs" color="neutral" variant="ghost" @click="deselectAll">None</UButton>
+      </div>
+    </div>
+    <div class="grid grid-cols-4 gap-1.5">
+      <div
+        v-for="(img, i) in screenshots"
+        :key="i"
+        class="relative cursor-pointer rounded overflow-hidden border-2 transition-all"
+        :class="img.selected ? 'border-primary' : 'border-default opacity-50'"
+        @click="toggle(i)"
+      >
+        <img :src="img.src" :alt="img.name" class="w-full h-14 object-cover object-top" />
+        <div class="absolute top-0.5 right-0.5">
+          <UIcon
+            :name="img.selected ? 'i-lucide-check-circle-2' : 'i-lucide-circle'"
+            class="size-3.5 drop-shadow"
+            :class="img.selected ? 'text-primary' : 'text-gray-300'"
+          />
+        </div>
+        <p class="absolute bottom-0 inset-x-0 px-1 py-0.5 text-[9px] text-white bg-black/50 truncate">
+          {{ img.name }}
+        </p>
+      </div>
+    </div>
+  </div>
+</template>
