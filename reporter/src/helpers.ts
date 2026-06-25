@@ -190,7 +190,7 @@ export function createGlobalSetup(
     const opts = resolveOptions((options ?? {}) as Record<string, any>);
     const logger = new Logger(opts.verbose ?? false);
 
-    if (!opts.serverUrl) {
+    if (opts.enabled === false || !opts.serverUrl) {
       logger.info('Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');
       if (userSetup) return userSetup(config);
       return;
