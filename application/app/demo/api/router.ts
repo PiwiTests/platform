@@ -6,6 +6,15 @@
  * RegExp patterns – the same routes the Nuxt server exposes.
  */
 
+import { eq } from 'drizzle-orm';
+import { users } from '~~/server/database/schema.sqlite';
+import { Role } from '~~/shared/types';
+import {
+  getUserAssignments,
+  setUserAssignments,
+  getProjectMembers,
+  setProjectMembers,
+} from '~~/shared/handlers/project-assignments';
 import { getDemoDb } from '../db.client';
 import {
   listProjects,
@@ -51,6 +60,7 @@ import {
   deleteUserRecord,
   listUserApiKeys,
   deleteUserApiKeyRecord,
+  updateUserRecord,
 } from '~~/shared/handlers/users';
 import { searchProjectsTestRunsCases } from '~~/shared/handlers/search';
 import {
@@ -76,10 +86,37 @@ import { apiDeleteTestRun } from './test-runs';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
+type ProjectScope = 'all' | Set<number>;
+
+/** Per-request context derived from the "act as" demo identity. */
+interface DemoCtx {
+  /** Project scope for the acting user (mirrors server getProjectScope). */
+  scope: ProjectScope;
+  /** The acting user's id, or null when unknown. */
+  actingUserId: number | null;
+}
+
 interface RouteEntry {
   method: HttpMethod;
   pattern: RegExp;
-  handler: (matches: RegExpMatchArray, body?: unknown, query?: URLSearchParams) => Promise<unknown>;
+  handler: (matches: RegExpMatchArray, body?: unknown, query?: URLSearchParams, ctx?: DemoCtx) => Promise<unknown>;
+}
+
+/**
+ * Resolve the acting user's project scope, mirroring the server's
+ * `getProjectScope`: admins (and unknown users) see everything; otherwise the
+ * scope is derived from the user's project assignments (affectations).
+ */
+async function resolveDemoScope(actingUserId: number | null): Promise<ProjectScope> {
+  if (!actingUserId) return 'all';
+  const db = await getDemoDb();
+  const rows = await db.select({ role: users.role }).from(users).where(eq(users.id, actingUserId));
+  const user = rows[0];
+  if (!user || (user.role as Role) === Role.ADMINISTRATOR) return 'all';
+
+  const { global, projectIds } = await getUserAssignments(db, actingUserId);
+  if (global) return 'all';
+  return new Set(projectIds);
 }
 
 const routes: RouteEntry[] = [
@@ -87,9 +124,13 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/projects\/overview$/,
-    handler: async () => getProjectsOverview(await getDemoDb()),
+    handler: async (_, __, ___, ctx) => getProjectsOverview(await getDemoDb(), ctx?.scope),
   },
-  { method: 'GET', pattern: /^\/api\/projects$/, handler: async () => listProjects(await getDemoDb()) },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects$/,
+    handler: async (_, __, ___, ctx) => listProjects(await getDemoDb(), ctx?.scope),
+  },
   {
     method: 'POST',
     pattern: /^\/api\/projects$/,
@@ -101,7 +142,7 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/projects\/menu$/,
-    handler: async () => getProjectMenu(await getDemoDb()),
+    handler: async (_, __, ___, ctx) => getProjectMenu(await getDemoDb(), ctx?.scope),
   },
   { method: 'GET', pattern: /^\/api\/projects\/(\d+)$/, handler: async (m) => getProject(await getDemoDb(), +m[1]!) },
   {
@@ -185,7 +226,11 @@ const routes: RouteEntry[] = [
   },
 
   // Test runs
-  { method: 'GET', pattern: /^\/api\/test-runs\/recent$/, handler: async () => getRecentTestRuns(await getDemoDb()) },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/recent$/,
+    handler: async (_, __, ___, ctx) => getRecentTestRuns(await getDemoDb(), ctx?.scope),
+  },
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)$/, handler: async (m) => getTestRun(await getDemoDb(), +m[1]!) },
   {
     method: 'PATCH',
@@ -365,7 +410,11 @@ const routes: RouteEntry[] = [
   { method: 'DELETE', pattern: /^\/api\/tags\/(\d+)$/, handler: async (m) => deleteTag(await getDemoDb(), +m[1]!) },
 
   // Users
-  { method: 'GET', pattern: /^\/api\/users$/, handler: async () => listUsers(await getDemoDb()) },
+  {
+    method: 'GET',
+    pattern: /^\/api\/users$/,
+    handler: async () => ({ ...(await listUsers(await getDemoDb())), authEnabled: true }),
+  },
   {
     method: 'POST',
     pattern: /^\/api\/users$/,
@@ -398,6 +447,52 @@ const routes: RouteEntry[] = [
     method: 'DELETE',
     pattern: /^\/api\/users\/(\d+)\/api-keys\/(\d+)$/,
     handler: async (m) => deleteUserApiKeyRecord(await getDemoDb(), +m[1]!, +m[2]!),
+  },
+
+  // Project affectations — per user
+  {
+    method: 'GET',
+    pattern: /^\/api\/users\/(\d+)\/projects$/,
+    handler: async (m) => {
+      const db = await getDemoDb();
+      const id = +m[1]!;
+      const rows = await db.select({ role: users.role }).from(users).where(eq(users.id, id));
+      const user = rows[0];
+      if (!user) throw new Error('User not found');
+      // Administrators always have all access.
+      if ((user.role as Role) === Role.ADMINISTRATOR) return { global: true, projectIds: [] };
+      return getUserAssignments(db, id);
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/users\/(\d+)\/projects$/,
+    handler: async (m, body, _, ctx) => {
+      const b = body as { global: boolean; projectIds: number[] };
+      await setUserAssignments(
+        await getDemoDb(),
+        +m[1]!,
+        { global: b.global, projectIds: b.projectIds ?? [] },
+        ctx?.actingUserId ?? undefined,
+      );
+      return { success: true };
+    },
+  },
+
+  // Project affectations — per project (members)
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/members$/,
+    handler: async (m) => ({ users: await getProjectMembers(await getDemoDb(), +m[1]!) }),
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/projects\/(\d+)\/members$/,
+    handler: async (m, body, _, ctx) => {
+      const b = body as { userIds: number[] };
+      await setProjectMembers(await getDemoDb(), +m[1]!, b.userIds ?? [], ctx?.actingUserId ?? undefined);
+      return { success: true };
+    },
   },
 
   // Entity links
@@ -434,7 +529,7 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/search$/,
-    handler: async (_, __, q) => searchProjectsTestRunsCases(await getDemoDb(), q?.get('q') || ''),
+    handler: async (_, __, q, ctx) => searchProjectsTestRunsCases(await getDemoDb(), q?.get('q') || '', ctx?.scope),
   },
 
   // Admin
@@ -450,7 +545,20 @@ const routes: RouteEntry[] = [
 // provide stubs for the non-demo code paths in case auth is enabled alongside demo.
 const UNAUTHENTICATED = Promise.resolve({ authenticated: false, user: null });
 routes.push(
-  { method: 'GET', pattern: /^\/api\/auth\/me$/, handler: () => UNAUTHENTICATED },
+  {
+    method: 'GET',
+    pattern: /^\/api\/auth\/me$/,
+    handler: async (_, __, ___, ctx) => {
+      if (!ctx?.actingUserId) return { authenticated: false, user: null };
+      const db = await getDemoDb();
+      const rows = await db
+        .select({ id: users.id, username: users.username, role: users.role, name: users.name })
+        .from(users)
+        .where(eq(users.id, ctx.actingUserId));
+      const user = rows[0];
+      return user ? { authenticated: true, user } : { authenticated: false, user: null };
+    },
+  },
   { method: 'GET', pattern: /^\/api\/auth\/session$/, handler: () => UNAUTHENTICATED },
   {
     method: 'POST',
@@ -465,7 +573,14 @@ routes.push(
   { method: 'POST', pattern: /^\/api\/auth\/send-verify-email$/, handler: () => Promise.resolve({ success: true }) },
   { method: 'GET', pattern: /^\/api\/auth\/verify-email$/, handler: () => Promise.resolve({ success: true }) },
   { method: 'POST', pattern: /^\/api\/users\/(\d+)\/invite$/, handler: () => Promise.resolve({ success: true }) },
-  { method: 'PATCH', pattern: /^\/api\/users\/(\d+)$/, handler: () => Promise.resolve({ success: true }) },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/users\/(\d+)$/,
+    handler: async (m, body) => {
+      const b = (body ?? {}) as { name?: string | null; email?: string | null; role?: string };
+      return updateUserRecord(await getDemoDb(), +m[1]!, b);
+    },
+  },
 );
 
 // SMTP / email — demo has no email capability; return read-only "not configured" status
@@ -630,6 +745,7 @@ export async function handleDemoRequest(
   method: HttpMethod = 'GET',
   body?: unknown,
   queryString?: string,
+  actingUserId: number | null = null,
 ): Promise<unknown> {
   const query = queryString ? new URLSearchParams(queryString) : undefined;
 
@@ -637,7 +753,8 @@ export async function handleDemoRequest(
     if (route.method !== method) continue;
     const m = path.match(route.pattern);
     if (m) {
-      return route.handler(m, body, query);
+      const ctx: DemoCtx = { scope: await resolveDemoScope(actingUserId), actingUserId };
+      return route.handler(m, body, query, ctx);
     }
   }
 

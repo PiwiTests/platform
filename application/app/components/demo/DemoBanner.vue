@@ -29,6 +29,7 @@ if (config.public.demoMode) {
           <a href="https://github.com/piwitests/platform" target="_blank" class="underline">Deploy your own instance</a>
           for live data.
         </span>
+        <DemoUserSwitcher />
         <DemoSimulator />
       </div>
     </div>

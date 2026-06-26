@@ -1,27 +1,56 @@
 import type { AuthUser, AuthState } from '~~/types/api';
 import { Role } from '~~/shared/types';
+import { DEMO_USERS, DEFAULT_DEMO_USER_ID, DEMO_USER_STORAGE_KEY, findDemoUser } from '~/demo/demo-users';
 
 export { type AuthUser, type AuthState };
+
+/** Build the auth state for a demo identity id (used by the "act as" switcher). */
+function demoStateFor(id: number): AuthState {
+  const u = findDemoUser(id);
+  return {
+    authenticated: true,
+    user: { id: u.id, username: u.username, role: u.role, name: u.name },
+  };
+}
+
+function readSelectedDemoUserId(): number {
+  if (!import.meta.client) return DEFAULT_DEMO_USER_ID;
+  const stored = Number(localStorage.getItem(DEMO_USER_STORAGE_KEY));
+  return DEMO_USERS.some((u) => u.id === stored) ? stored : DEFAULT_DEMO_USER_ID;
+}
 
 export const useAuth = () => {
   const config = useRuntimeConfig();
 
-  const demoUser: AuthState = {
-    authenticated: true,
-    user: { id: 0, username: 'demo', role: Role.ADMINISTRATOR, name: 'Demo User' },
-  };
-
   const authState = useState<AuthState>('auth', () => {
     if (config.public.demoMode) {
-      return demoUser;
+      return demoStateFor(readSelectedDemoUserId());
     }
     return { authenticated: false, user: null };
   });
 
+  // Demo: the list of identities the "act as" switcher can pick from, and the
+  // currently selected one.
+  const demoUsers = DEMO_USERS;
+  const currentDemoUserId = computed(() => authState.value.user?.id ?? DEFAULT_DEMO_USER_ID);
+
+  /**
+   * Switch the active demo identity.  Persists the choice and reloads so every
+   * `useFetch`/SW-scoped request re-runs under the new identity (project
+   * affectations are applied server-side in the demo service worker).
+   */
+  const setDemoUser = (id: number) => {
+    if (!config.public.demoMode || !import.meta.client) return;
+    localStorage.setItem(DEMO_USER_STORAGE_KEY, String(id));
+    authState.value = demoStateFor(id);
+    window.location.reload();
+  };
+
   const fetchUser = async (): Promise<AuthState> => {
     if (config.public.demoMode) {
-      authState.value = demoUser;
-      return demoUser;
+      const state = demoStateFor(readSelectedDemoUserId());
+      authState.value = state;
+      return state;
     }
     try {
       // During SSR, $fetch doesn't forward the browser's cookie header automatically.
@@ -85,5 +114,9 @@ export const useAuth = () => {
     isAdmin,
     isReporter,
     canEdit,
+    // Demo "act as" switcher
+    demoUsers,
+    currentDemoUserId,
+    setDemoUser,
   };
 };

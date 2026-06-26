@@ -1,0 +1,42 @@
+[
+  {
+    "id": 1,
+    "username": "demo-admin",
+    "name": "Avery (Admin)",
+    "email": "avery@piwi.demo",
+    "role": "administrator",
+    "assignment": { "global": true, "projectIds": [] }
+  },
+  {
+    "id": 2,
+    "username": "ci-reporter",
+    "name": "Robin (CI Reporter)",
+    "email": "robin@piwi.demo",
+    "role": "reporter",
+    "assignment": { "global": true, "projectIds": [] }
+  },
+  {
+    "id": 3,
+    "username": "sam-checkout",
+    "name": "Sam (Checkout team)",
+    "email": "sam@piwi.demo",
+    "role": "user",
+    "assignment": { "global": false, "projectIds": [1] }
+  },
+  {
+    "id": 4,
+    "username": "priya-api",
+    "name": "Priya (API & UI team)",
+    "email": "priya@piwi.demo",
+    "role": "user",
+    "assignment": { "global": false, "projectIds": [2, 3] }
+  },
+  {
+    "id": 5,
+    "username": "noah-newcomer",
+    "name": "Noah (No projects yet)",
+    "email": "noah@piwi.demo",
+    "role": "user",
+    "assignment": { "global": false, "projectIds": [] }
+  }
+]

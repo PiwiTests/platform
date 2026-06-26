@@ -147,8 +147,9 @@ const items = computed<DropdownMenuItem[][]>(() => {
     ],
   ];
 
-  // Add logout button if authenticated
-  if (config.public.authEnabled && authState.value.authenticated) {
+  // Add logout button if authenticated (demo identities are switched via the
+  // banner's "Acting as" picker, so there is no real session to log out of).
+  if (config.public.authEnabled && authState.value.authenticated && !config.public.demoMode) {
     baseItems.push([
       {
         label: 'Logout',

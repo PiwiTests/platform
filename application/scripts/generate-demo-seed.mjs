@@ -25,6 +25,9 @@ import { createHash } from 'crypto';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTPUT = join(__dirname, '../public/demo/seed.sql');
 
+// Canonical demo identities — shared with the runtime app (app/demo/demo-users.ts).
+const DEMO_USERS = JSON.parse(readFileSync(join(__dirname, '../app/demo/demo-users.json'), 'utf-8'));
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function ts(isoDate) {
@@ -1141,6 +1144,48 @@ const ENTITY_LINKS = [
   },
 ];
 
+// ── Users & project assignments (affectations) ─────────────────────────────
+// Seed the canonical demo identities so the project affectation feature is
+// usable in the demo (the "act as" switcher in the banner picks one of these).
+const USERS = DEMO_USERS.map((u) => ({
+  id: u.id,
+  username: u.username,
+  password: '', // demo identities are switched client-side, never logged in
+  role: u.role,
+  name: u.name,
+  email: u.email,
+  email_verified: 1,
+  created_at: ts('2025-02-01'),
+  updated_at: ts('2025-02-01'),
+}));
+
+const PROJECT_ASSIGNMENTS = [];
+let assignmentId = 1;
+const assignmentCreatedAt = new Date('2025-02-10').getTime(); // timestamp_ms column
+for (const u of DEMO_USERS) {
+  // Administrators have implicit access to all projects — no assignment rows.
+  if (u.role === 'administrator') continue;
+  if (u.assignment.global) {
+    PROJECT_ASSIGNMENTS.push({
+      id: assignmentId++,
+      user_id: u.id,
+      project_id: null,
+      created_by: null,
+      created_at: assignmentCreatedAt,
+    });
+  } else {
+    for (const projectId of u.assignment.projectIds) {
+      PROJECT_ASSIGNMENTS.push({
+        id: assignmentId++,
+        user_id: u.id,
+        project_id: projectId,
+        created_by: null,
+        created_at: assignmentCreatedAt,
+      });
+    }
+  }
+}
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
@@ -1158,6 +1203,12 @@ const lines = [
   '',
   '-- Projects',
   insert('projects', PROJECTS),
+  '',
+  '-- Users (demo identities for the "act as" switcher)',
+  insert('users', USERS),
+  '',
+  '-- Project assignments (affectations)',
+  insert('project_assignments', PROJECT_ASSIGNMENTS),
   '',
   '-- Project-tag associations',
   insert('project_tags', PROJECT_TAGS),
@@ -1214,6 +1265,8 @@ console.log(`✅  Demo seed written to ${OUTPUT}`);
 console.log(`✅  Version file written to ${VERSION_OUTPUT}`);
 console.log(`   Hash       : ${hash}`);
 console.log(`   Projects   : ${PROJECTS.length}`);
+console.log(`   Users      : ${USERS.length}`);
+console.log(`   Assignments: ${PROJECT_ASSIGNMENTS.length}`);
 console.log(`   Tags       : ${TAGS.length}`);
 console.log(`   Suites     : ${TEST_SUITES.length}`);
 console.log(`   TestCases  : ${TEST_CASES.length}`);
