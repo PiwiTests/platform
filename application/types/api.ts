@@ -172,6 +172,7 @@ export interface ProjectOverviewRun {
   flakyTests: number;
   totalTests: number;
   startTime: string | Date;
+  environment?: string | null;
 }
 
 /**
@@ -343,6 +344,7 @@ export interface TestRunForChart {
   avgTestDuration?: number | null;
   p90TestDuration?: number | null;
   isFullRun?: boolean;
+  environment?: string | null;
 }
 
 // ============================================================================
