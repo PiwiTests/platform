@@ -18,7 +18,7 @@ const filters = useCookie<HomeFilterState>('piwi-home-filters', {
   encode: (v) => JSON.stringify(v),
   decode: (v) => {
     try {
-      return JSON.parse(v) as HomeFilterState;
+      return v ? (JSON.parse(v) as HomeFilterState) : { environments: [], fullRunsOnly: true };
     } catch {
       return { environments: [], fullRunsOnly: true };
     }
