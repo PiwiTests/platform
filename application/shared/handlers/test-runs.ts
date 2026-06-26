@@ -205,6 +205,8 @@ const RECENT_FIELDS = {
   avgTestDuration: testRuns.avgTestDuration,
   p90TestDuration: testRuns.p90TestDuration,
   playwrightVersion: testRuns.playwrightVersion,
+  isFullRun: testRuns.isFullRun,
+  environment: testRuns.environment,
 };
 
 export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'all') {

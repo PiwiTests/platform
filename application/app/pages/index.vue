@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useLocalStorage } from '@vueuse/core';
+import type { HomeFilterState } from '~/components/home/HomeFilters.vue';
 import type { ProjectOverview, TestRunForChart } from '~~/types/api';
 
 useHead({ title: 'Piwi Dashboard' });
@@ -10,10 +12,57 @@ const { data: recentTestRuns, refresh: refreshRecentRuns } = await useFetch<Test
 
 useRunStream(() => Promise.all([refreshOverview(), refreshRecentRuns()]));
 
+// ── Filters (persisted to localStorage) ──────────────────────────────────────
+
+const filters = useLocalStorage<HomeFilterState>('piwi-home-filters', {
+  environments: [],
+  fullRunsOnly: true,
+});
+
+const availableEnvironments = computed(() => {
+  const envSet = new Set<string>();
+  for (const run of recentTestRuns.value ?? []) {
+    if (run.environment) envSet.add(run.environment);
+  }
+  for (const project of overview.value ?? []) {
+    for (const run of project.recentRuns) {
+      if (run.environment) envSet.add(run.environment);
+    }
+  }
+  return [...envSet].sort();
+});
+
+// ── Filtered data ─────────────────────────────────────────────────────────────
+
+function matchesEnv(env: string | null | undefined): boolean {
+  if (filters.value.environments.length === 0) return true;
+  return !!env && filters.value.environments.includes(env);
+}
+
+const filteredRecentRuns = computed(() => {
+  let runs = recentTestRuns.value ?? [];
+  if (filters.value.fullRunsOnly) runs = runs.filter((r) => r.isFullRun);
+  if (filters.value.environments.length > 0) runs = runs.filter((r) => matchesEnv(r.environment));
+  return runs;
+});
+
+const filteredOverview = computed(() => {
+  let projects = overview.value ?? [];
+  if (filters.value.environments.length > 0) {
+    projects = projects
+      .map((p) => ({
+        ...p,
+        recentRuns: p.recentRuns.filter((r) => matchesEnv(r.environment)),
+      }))
+      .filter((p) => p.recentRuns.length > 0);
+  }
+  return projects;
+});
+
 // ── Stat strip ────────────────────────────────────────────────────────────────
 
 const overviewStats = computed(() => {
-  const projects = overview.value ?? [];
+  const projects = filteredOverview.value;
   const totalProjects = projects.length;
   const failingNow = projects.filter((p) => p.tendency === 'failing').length;
   const flakyNow = projects.filter((p) => p.tendency === 'flaky').length;
@@ -29,9 +78,7 @@ const overviewStats = computed(() => {
   const avgPassRate = totalTests > 0 ? Math.round((totalPassed / totalTests) * 100) : null;
 
   const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-  const runs24h = projects.reduce((sum, p) => {
-    return sum + p.recentRuns.filter((r) => new Date(r.startTime).getTime() > oneDayAgo).length;
-  }, 0);
+  const runs24h = filteredRecentRuns.value.filter((r) => new Date(r.startTime).getTime() > oneDayAgo).length;
 
   return { totalProjects, failingNow, flakyNow, avgPassRate, runs24h };
 });
@@ -43,11 +90,8 @@ const ACTIVITY_PREVIEW_LIMIT = 6;
 
 const activityExpanded = ref(false);
 
-const today = new Date();
-today.setHours(0, 0, 0, 0);
-
 const allActivity = computed(() => {
-  const runs = [...(recentTestRuns.value ?? [])];
+  const runs = [...filteredRecentRuns.value];
   // Running runs first, then by start time desc
   return runs.sort((a, b) => {
     const aR = RUNNING_STATUSES.has(a.status) ? 0 : 1;
@@ -63,7 +107,7 @@ const visibleActivity = computed(() =>
 
 const hasMoreActivity = computed(() => allActivity.value.length > ACTIVITY_PREVIEW_LIMIT);
 
-const hasActivity = computed(() => (recentTestRuns.value?.length ?? 0) > 0);
+const hasActivity = computed(() => filteredRecentRuns.value.length > 0);
 const hasProjects = computed(() => (overview.value?.length ?? 0) > 0);
 
 // ── Pass rate helper (for activity list) ─────────────────────────────────────
@@ -128,6 +172,9 @@ const featureHighlights = [
           <UDashboardSidebarCollapse />
           <UBreadcrumb :items="[{ label: 'Home', icon: 'i-lucide-house', to: '/' }]" />
         </template>
+        <template v-if="hasProjects" #trailing>
+          <HomeFilters v-model="filters" :available-environments="availableEnvironments" />
+        </template>
       </UDashboardNavbar>
     </template>
 
@@ -186,7 +233,7 @@ const featureHighlights = [
         <!-- Per-project trend table + Recent activity side by side on wide screens -->
         <div v-if="hasProjects || hasActivity" class="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
           <div class="xl:col-span-2">
-            <ProjectTrendTable v-if="hasProjects" :projects="overview ?? []" />
+            <ProjectTrendTable v-if="hasProjects" :projects="filteredOverview" />
           </div>
 
           <!-- Recent activity -->
@@ -232,6 +279,15 @@ const featureHighlights = [
               </NuxtLink>
             </div>
           </SectionCard>
+        </div>
+
+        <!-- Empty state when projects exist but all filtered out -->
+        <div
+          v-if="hasProjects && !hasActivity && filteredOverview.length === 0"
+          class="text-center py-12 text-gray-500 dark:text-gray-400"
+        >
+          <UIcon name="i-lucide-filter-x" class="size-8 mx-auto mb-2 opacity-40" />
+          <p>No runs match the current filters.</p>
         </div>
 
         <!-- Empty state: feature highlights + setup wizard -->

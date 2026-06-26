@@ -1006,6 +1006,7 @@ export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = '
           totalTests: testRuns.totalTests,
           startTime: testRuns.startTime,
           duration: testRuns.duration,
+          environment: testRuns.environment,
           rn: sql<number>`ROW_NUMBER() OVER (PARTITION BY ${testRuns.projectId} ORDER BY ${testRuns.startTime} DESC)`.as(
             'rn',
           ),
@@ -1026,6 +1027,7 @@ export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = '
         totalTests: rankedCte.totalTests,
         startTime: rankedCte.startTime,
         duration: rankedCte.duration,
+        environment: rankedCte.environment,
       })
       .from(rankedCte)
       .where(lte(rankedCte.rn, 20))
@@ -1069,6 +1071,7 @@ export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = '
         flakyTests: r.flakyTests ?? 0,
         totalTests: r.totalTests ?? 0,
         startTime: r.startTime,
+        environment: r.environment ?? null,
       })),
       tendency: deriveTendency(runs),
     };
