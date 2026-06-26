@@ -93,20 +93,6 @@ const failureCluster = computed(() => {
 
 const activeTab = ref('steps');
 
-const { summaryColSpanClass, blockColSpanClass } = useDetailGrid(() => {
-  let count = 0;
-  if (scmInfo.value) count++;
-  if (ciInfo.value || testCase.value?.testRun?.environment) count++;
-  if (testCase.value?.browser) count++;
-  if (
-    (traceData.value?.length ?? 0) > 0 ||
-    ((testCase.value as { attachments?: { length: number } } | null)?.attachments?.length ?? 0) > 0
-  )
-    count++;
-  count++; // Links card is always visible
-  return count;
-});
-
 const tabItems = computed(() => [
   { label: `Steps (${steps.value.length})`, icon: 'i-lucide-list-checks', value: 'steps', slot: 'steps' },
   { label: 'Traces & Console', icon: 'i-lucide-terminal', value: 'traces', slot: 'traces' },
@@ -325,8 +311,6 @@ function copyFailure() {
             :environment="environment"
             :steps-count="steps.length"
             :historical-timing="historicalTiming"
-            :summary-col-span-class="summaryColSpanClass"
-            :block-col-span-class="blockColSpanClass"
             :traces="traceData ?? []"
             :attachments="(testCase as any)?.attachments ?? []"
             :stable-links="(testCase as any)?.stableLinks ?? null"
