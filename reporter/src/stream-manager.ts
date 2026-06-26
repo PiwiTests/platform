@@ -24,6 +24,16 @@ export class StreamManager {
   private retryCount = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly maxRetryDelay = 30000;
+  /**
+   * Idle heartbeat: while the run is open but no events are flowing (e.g. a single
+   * long test, or `beforeAll` setup), a periodic ping keeps the server's activity
+   * timestamp fresh so the stale-run reaper can tell a live run from a crashed one.
+   * The interval must stay well below the server's stale timeout.
+   */
+  private heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatStopped = false;
+  private lastActivityAt = 0;
+  private readonly heartbeatInterval = 15000;
   /** Tracks cases whose files have already been uploaded live, so `uploadRemaining` can skip them. */
   private readonly uploadedCaseFiles = new WeakSet<CollectedTestCase>();
 
@@ -179,6 +189,8 @@ export class StreamManager {
         this._token = response.streamToken;
         this._enabled = true;
         this.logger.info(`Streaming enabled. Run ID: ${response.runId}`);
+        this.lastActivityAt = Date.now();
+        this.scheduleHeartbeat();
 
         if (this.pendingBeginEvents.length > 0) {
           this.pendingEvents = [...this.pendingBeginEvents, ...this.pendingEvents];
@@ -230,6 +242,7 @@ export class StreamManager {
       .then(
         () => {
           this.retryCount = 0;
+          this.lastActivityAt = Date.now();
           return true;
         },
         () => {
@@ -260,8 +273,48 @@ export class StreamManager {
     }, delay);
   }
 
+  // Schedule the next idle heartbeat. Self-rescheduling; cleared by stopHeartbeat.
+  private scheduleHeartbeat(): void {
+    if (this.heartbeatStopped || this.heartbeatTimer) return;
+    this.heartbeatTimer = setTimeout(() => {
+      this.heartbeatTimer = null;
+      void this.sendHeartbeat();
+    }, this.heartbeatInterval);
+  }
+
+  // Ping the server only when the run has actually been idle. Real event traffic
+  // already bumps the server's activity timestamp, so a recent flush (or pending
+  // events about to flush) makes the ping redundant — skip it and reschedule.
+  private async sendHeartbeat(): Promise<void> {
+    if (this.heartbeatStopped || !this._enabled || !this._runId || !this._token) return;
+
+    const idleFor = Date.now() - this.lastActivityAt;
+    if (idleFor < this.heartbeatInterval || this.pendingEvents.length > 0) {
+      this.scheduleHeartbeat();
+      return;
+    }
+
+    try {
+      await this.httpClient.postJSON(`/api/test-runs/${this._runId}/heartbeat`, { streamToken: this._token }, this._auth);
+      this.lastActivityAt = Date.now();
+    } catch (error: any) {
+      this.logger.debug(`Heartbeat failed: ${error.message}`);
+    }
+    this.scheduleHeartbeat();
+  }
+
+  /** Stop the idle heartbeat permanently (called when the run is wrapping up). */
+  private stopHeartbeat(): void {
+    this.heartbeatStopped = true;
+    if (this.heartbeatTimer) {
+      clearTimeout(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
   /** Drain all pending and buffered events before the run finishes. Retries up to 10 times with exponential back-off. */
   async drain(): Promise<void> {
+    this.stopHeartbeat();
     if (!this._enabled) {
       this.pendingEvents = [];
       this.flushPromises = [];

@@ -3,8 +3,13 @@ import { testRuns } from '../database/schema';
 import { eq, and, lt, or, isNull } from 'drizzle-orm';
 import { runEventBus } from '../utils/run-events';
 
-const STALE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour without activity → mark interrupted
-const CHECK_INTERVAL_MS = 5 * 60 * 1000; // check every 5 minutes
+// A live reporter sends a heartbeat (~every 15s) during idle gaps, so an active
+// run's `updatedAt` never goes quiet for long. This timeout must stay comfortably
+// above the heartbeat interval to tolerate transient network blips and the long
+// idle gaps of pre-heartbeat reporters (a single slow test with no events). If a
+// run is reaped early, the next event or heartbeat revives it (see revive-run.ts).
+const STALE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes without activity → mark interrupted
+const CHECK_INTERVAL_MS = 30 * 1000; // check every 30 seconds
 
 async function cleanupStaleRuns() {
   try {
@@ -27,24 +32,34 @@ async function cleanupStaleRuns() {
           ),
         ),
       )
-      .returning({ id: testRuns.id });
+      .returning({
+        id: testRuns.id,
+        duration: testRuns.duration,
+        totalTests: testRuns.totalTests,
+        passedTests: testRuns.passedTests,
+        failedTests: testRuns.failedTests,
+        skippedTests: testRuns.skippedTests,
+        didNotRunTests: testRuns.didNotRunTests,
+      });
 
     if (staleRuns.length > 0) {
       console.log(
         `[StaleRunCleanup] Marked ${staleRuns.length} stale run(s) as interrupted: ${staleRuns.map((r) => r.id).join(', ')}`,
       );
-      // Signal SSE subscribers so their connections close, then free event bus memory
+      // Signal SSE subscribers so their connections close, then free event bus memory.
+      // Echo the run's real accumulated counts so live viewers keep the partial
+      // results already streamed instead of snapping back to zeros.
       for (const run of staleRuns) {
         runEventBus.publish(run.id, {
           type: 'run-finished',
           data: {
             status: 'interrupted',
-            duration: null,
-            totalTests: 0,
-            passedTests: 0,
-            failedTests: 0,
-            skippedTests: 0,
-            didNotRunTests: 0,
+            duration: run.duration,
+            totalTests: run.totalTests,
+            passedTests: run.passedTests,
+            failedTests: run.failedTests,
+            skippedTests: run.skippedTests,
+            didNotRunTests: run.didNotRunTests,
           },
         });
         runEventBus.cleanup(run.id);

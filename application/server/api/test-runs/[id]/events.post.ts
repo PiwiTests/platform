@@ -4,7 +4,7 @@ import { eq, sql } from 'drizzle-orm';
 import { runEventBus } from '../../../utils/run-events';
 import { parseLocation } from '../../../utils/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../../utils/persist-run-cases';
-import { validateAndReviveRun } from '../../../utils/revive-run';
+import { authorizeStreamToken } from '../../../utils/stream-auth';
 import type { StreamEventPayload } from '../../../../shared/types';
 import { Role } from '../../../../shared/types';
 import { countFailedFromTally } from '../../../../shared/utils/test-counts';
@@ -66,34 +66,7 @@ export default eventHandler(async (event) => {
 
   const db = await getDatabase();
 
-  // Fast path: skip the DB SELECT when the run is cached in memory.
-  // Falls back to a full DB lookup for cache misses (e.g. after server restart
-  // or for interrupted-run revival) and populates the cache on success.
-  let projectId: number;
-  const cachedState = runEventBus.getRunState(id);
-
-  if (cachedState) {
-    const valid = cachedState.streamToken === body.streamToken || cachedState.shardTokens?.has(body.streamToken);
-    if (!valid) {
-      throw createError({ statusCode: 403, message: 'Invalid stream token' });
-    }
-    projectId = cachedState.projectId;
-  } else {
-    const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id));
-    const testRun = testRunResults[0];
-
-    if (!testRun) {
-      throw createError({ statusCode: 404, message: 'Test run not found' });
-    }
-
-    const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
-    const shardTokens = isSharded ? readShardTokensFromMeta(testRun.metadata) : undefined;
-    const isShardToken = shardTokens ? (token: string) => shardTokens.has(token) : undefined;
-    await validateAndReviveRun(db, id, testRun, body.streamToken, isShardToken);
-    projectId = testRun.projectId;
-    // Warm the cache so subsequent batches skip this SELECT
-    runEventBus.cacheRunState(id, { streamToken: body.streamToken as string, projectId, shardTokens });
-  }
+  const { projectId } = await authorizeStreamToken(db, id, body.streamToken);
 
   // Process test cases (supports single or batch)
   const testCaseEvents = Array.isArray(body.testCases) ? body.testCases : [body.testCase];
