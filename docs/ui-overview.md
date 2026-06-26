@@ -185,6 +185,18 @@ The [live demo](https://piwitests.github.io/demo/) includes a **Simulate a test 
 
 Each simulation creates a real run in the in-browser database: initialization status, live per-test updates, worker timeline, failure groups, regression context, and history-based comparisons all behave exactly as they would against a real server.
 
+## Demo user switcher (act as)
+
+The demo runs with authentication conceptually **enabled** so the role-based and project-affectation features are fully explorable. Use the **Acting as** picker in the demo banner to switch between several pre-seeded identities:
+
+- **Avery (Admin)** — full access to every project; sees the user management and project members screens
+- **Robin (CI Reporter)** — global access; can submit/triage but not manage users
+- **Sam (Checkout team)** — a `user` scoped to a single project
+- **Priya (API & UI team)** — a `user` scoped to two projects
+- **Noah (No projects yet)** — a `user` with no affectations (sees an empty dashboard until assigned)
+
+Switching identity reloads the dashboard under the new user, so the project list, sidebar menu, dashboard overview, recent runs, and search all reflect that user's **project affectations**. Acting as the admin, you can change affectations live — from **Settings → User management → Project access** (per user) or a project's **Members** tab (per project) — then switch to that user to see the effect. All of this happens entirely in your browser.
+
 ## Responsive design
 
 The dashboard is fully responsive:

@@ -170,6 +170,10 @@ To create additional users:
 2. Click **Add user**
 3. Set username, password, role, and optional display name
 
+Each non-admin user's **project access (affectations)** is managed from the **Project access** action on this page (per user), or from a project's **Members** tab (per project). A user can be granted global access (all projects) or scoped to specific ones.
+
+> **Try it in the demo:** the [live demo](https://piwitests.github.io/demo/) ships with several pre-seeded identities. Use the **Acting as** picker in the demo banner to switch between them and watch how each user's project affectations change what they can see. See [UI overview → Demo user switcher](./ui-overview.md#demo-user-switcher-act-as).
+
 ## API authentication
 
 When authentication is enabled:

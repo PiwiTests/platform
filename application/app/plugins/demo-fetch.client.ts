@@ -1,4 +1,5 @@
 import { configureDemoDb } from '~/demo/db.client';
+import { DEFAULT_DEMO_USER_ID, DEMO_USER_STORAGE_KEY } from '~/demo/demo-users';
 
 /**
  * Demo-mode fetch plugin.
@@ -68,6 +69,19 @@ export default defineNuxtPlugin(() => {
     return request;
   }
 
+  // Tag every demo API call with the currently selected "act as" identity so
+  // the service worker can apply that user's project affectations (scope).
+  function withDemoUser(options: unknown): unknown {
+    const id = localStorage.getItem(DEMO_USER_STORAGE_KEY) || String(DEFAULT_DEMO_USER_ID);
+    const o = (options ?? {}) as { headers?: unknown };
+    if (o.headers instanceof Headers) {
+      o.headers.set('x-demo-user-id', id);
+    } else {
+      o.headers = { ...((o.headers as Record<string, string>) || {}), 'x-demo-user-id': id };
+    }
+    return o;
+  }
+
   let initCalled = false;
 
   // Helper: mark the demo as ready on the first resolved API call, regardless
@@ -83,7 +97,7 @@ export default defineNuxtPlugin(() => {
   globalThis.$fetch = async (request: unknown, options?: unknown) => {
     await swReady;
     try {
-      return await originalFetch(rewritePath(request), options);
+      return await originalFetch(rewritePath(request), withDemoUser(options));
     } finally {
       markReady();
     }
@@ -102,7 +116,7 @@ export default defineNuxtPlugin(() => {
     globalThis.$fetch.raw = async (request: unknown, options?: unknown) => {
       await swReady;
       try {
-        return await originalRaw(rewritePath(request), options);
+        return await originalRaw(rewritePath(request), withDemoUser(options));
       } finally {
         markReady();
       }

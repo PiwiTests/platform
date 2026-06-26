@@ -58,6 +58,10 @@ self.addEventListener('fetch', (event) => {
   const queryString = url.search ? url.search.slice(1) : undefined;
   const method = event.request.method.toUpperCase() as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
+  // The "act as" demo identity (used to apply that user's project affectations).
+  const demoUserIdHeader = event.request.headers.get('x-demo-user-id');
+  const actingUserId = demoUserIdHeader ? Number(demoUserIdHeader) || null : null;
+
   event.respondWith(
     (async () => {
       let body: unknown;
@@ -71,7 +75,7 @@ self.addEventListener('fetch', (event) => {
 
       let result: unknown;
       try {
-        result = await handleDemoRequest(apiPath, method, body, queryString);
+        result = await handleDemoRequest(apiPath, method, body, queryString, actingUserId);
       } catch (e) {
         console.error('[Demo SW] handler error', e);
         return new Response(JSON.stringify({ statusCode: 500, message: 'Internal server error' }), {

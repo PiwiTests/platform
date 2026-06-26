@@ -104,7 +104,9 @@ export default defineNuxtConfig({
     },
     public: {
       siteUrl: process.env.PIWI_SITE_URL || '',
-      authEnabled: process.env.PIWI_AUTH_ENABLED === 'true',
+      // Auth is always "on" in the demo so role-based UI (admin-only controls,
+      // project affectation, members) engages for the selected "act as" user.
+      authEnabled: process.env.PIWI_AUTH_ENABLED === 'true' || isDemo,
       demoMode: process.env.PIWI_DEMO_MODE === 'true',
       demoDataVersion,
       oauthProviders: [
