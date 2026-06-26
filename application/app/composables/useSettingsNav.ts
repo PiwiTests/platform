@@ -14,9 +14,13 @@ import { SETTINGS_PAGES, type SettingsPageId } from '~/utils/settings-metadata';
  */
 export function useSettingsNav(envManaged?: MaybeRefOrGetter<Record<SettingsPageId, boolean>>) {
   const { isAdmin } = useAuth();
+  const config = useRuntimeConfig();
+  // When auth is disabled, every visitor is a virtual administrator — show all
+  // pages (mirrors the per-page `isAdmin` fallback in users.vue/tags.vue).
+  const canSeeAdmin = computed(() => !config.public.authEnabled || isAdmin.value);
 
   const items = computed<NavigationMenuItem[]>(() => {
-    const admin = isAdmin.value;
+    const admin = canSeeAdmin.value;
     const managedMap = envManaged ? toValue(envManaged) : undefined;
     return SETTINGS_PAGES.filter((page) => !page.roles || admin).map((page) => {
       const managed = managedMap?.[page.id] ?? false;
