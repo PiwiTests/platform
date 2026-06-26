@@ -6,6 +6,7 @@ import { gunzip } from 'zlib';
 import { promisify } from 'util';
 import { parseZip, buildZip } from '../../utils/trace-zip';
 import { Role } from '../../../shared/types';
+import sharp from 'sharp';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
@@ -95,10 +96,13 @@ async function reconstructTraceZip(
   }
 }
 
+const COMPRESSIBLE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+
 export default eventHandler(async (event) => {
   const path = getRouterParam(event, 'path');
   const query = getQuery(event);
   const overrideContentType = typeof query.contentType === 'string' ? query.contentType : null;
+  const wantCompressed = query.compress === '1';
 
   // Extract project ID from path for access control
   const pathStr = path || '';
@@ -245,6 +249,20 @@ export default eventHandler(async (event) => {
     }
 
     const contentType = resolveContentType(ext);
+
+    // Compress image on demand: resize to max 1280px, output as WebP
+    if (wantCompressed && COMPRESSIBLE_IMAGE_TYPES.has(contentType)) {
+      try {
+        const compressed = await sharp(fileContent).resize(1280, 1280, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 90 }).toBuffer();
+        setResponseHeader(event, 'Content-Type', 'image/webp');
+        setResponseHeader(event, 'Content-Length', compressed.length);
+        applyInlineDisposition('image/webp');
+        return compressed;
+      } catch {
+        // Fall through to serve original if sharp fails
+      }
+    }
+
     setResponseHeader(event, 'Content-Type', contentType);
     setResponseHeader(event, 'Content-Length', fileContent.length);
     applyInlineDisposition(contentType);

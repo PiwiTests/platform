@@ -21,7 +21,6 @@ import { writeFileSync, mkdirSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
-import { deflateSync } from 'zlib';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTPUT = join(__dirname, '../public/demo/seed.sql');
@@ -760,169 +759,36 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
 }
 
 // ── Demo screenshots ───────────────────────────────────────────────────────
-// Generate small PNG images for demo attachments and add file records.
+// Real screenshot PNGs live in public/demo/screenshots/ (committed to repo).
+// They are captured by scripts/take-demo-screenshots.mjs — see AGENTS.md
+// for the full procedure.
+// The attachment records below wire those files to test-run-cases in the seed.
 
-function pngChunk(type, data) {
-  const len = Buffer.alloc(4);
-  len.writeUInt32BE(data.length);
-  const t = Buffer.from(type, 'ascii');
-  const crcData = Buffer.concat([t, data]);
-  let crc = 0xffffffff;
-  for (let i = 0; i < crcData.length; i++) {
-    crc ^= crcData[i];
-    for (let j = 0; j < 8; j++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
-  }
-  crc = (crc ^ 0xffffffff) >>> 0;
-  const c = Buffer.alloc(4);
-  c.writeUInt32BE(crc);
-  return Buffer.concat([len, t, data, c]);
-}
-
-function createPng(width, height, pixels) {
-  const raw = Buffer.alloc(width * height * 4 + height);
-  for (let y = 0; y < height; y++) {
-    raw[y * (width * 4 + 1)] = 0;
-    for (let x = 0; x < width; x++) {
-      const [r, g, b, a] = pixels[y * width + x] || [0, 0, 0, 255];
-      const off = y * (width * 4 + 1) + 1 + x * 4;
-      raw[off] = r;
-      raw[off + 1] = g;
-      raw[off + 2] = b;
-      raw[off + 3] = a;
-    }
-  }
-  const compressed = deflateSync(raw);
-  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8;
-  ihdr[9] = 6;
-  ihdr[10] = 0;
-  ihdr[11] = 0;
-  ihdr[12] = 0;
-  return Buffer.concat([sig, pngChunk('IHDR', ihdr), pngChunk('IDAT', compressed), pngChunk('IEND', Buffer.alloc(0))]);
-}
-
-function gradientPixels(w, h, r1, g1, b1, r2, g2, b2, accentFn) {
-  const px = [];
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const t = y / h;
-      const r = Math.round(r1 + (r2 - r1) * t);
-      const g = Math.round(g1 + (g2 - g1) * t);
-      const bl = Math.round(b1 + (b2 - b1) * t);
-      const accent = accentFn ? accentFn(x, y, w, h) : null;
-      if (accent) px.push(accent);
-      else px.push([Math.min(255, r), Math.min(255, g), Math.min(255, bl), 255]);
-    }
-  }
-  return px;
-}
-
-const SCREENSHOT_DEFS = [
-  {
-    name: 'checkout-form-filled',
-    label: 'screenshot',
-    render: () =>
-      gradientPixels(320, 200, 240, 248, 255, 230, 240, 250, (x, y) => {
-        if (y > 80 && y < 120 && x > 30 && x < 290) return [255, 255, 255, 255];
-        if (y > 140 && y < 170 && x > 80 && x < 240) return [59, 130, 246, 255];
-        if (y > 40 && y < 70 && x > 30 && x < 290) return [255, 255, 255, 255];
-        return null;
-      }),
-  },
-  {
-    name: 'checkout-order-confirmed',
-    label: 'screenshot',
-    render: () =>
-      gradientPixels(320, 200, 240, 255, 240, 255, 255, 255, (x, y, w) => {
-        const cx = w / 2;
-        const dist = Math.sqrt((x - cx) ** 2 + (y - 60) ** 2);
-        if (dist < 20) return [34, 197, 94, 255];
-        if (dist < 15) return [255, 255, 255, 255];
-        if (y > 100 && y < 150 && x > 40 && x < 280) return [255, 255, 255, 255];
-        return null;
-      }),
-  },
-  {
-    name: 'checkout-payment-form',
-    label: 'screenshot',
-    render: () =>
-      gradientPixels(320, 200, 245, 245, 250, 240, 240, 245, (x, y) => {
-        if (y > 50 && y < 90 && x > 30 && x < 290) return [255, 255, 255, 255];
-        if (y > 60 && y < 78 && x > 40 && x < 80) return [255, 200, 50, 255];
-        if (y > 140 && y < 170 && x > 80 && x < 240) return [59, 130, 246, 255];
-        return null;
-      }),
-  },
-  {
-    name: 'checkout-error',
-    label: 'screenshot',
-    render: () =>
-      gradientPixels(320, 200, 255, 255, 255, 250, 250, 252, (x, y) => {
-        if (y > 30 && y < 65 && x > 30 && x < 290) return [254, 242, 242, 255];
-        if (y > 38 && y < 55 && x > 50 && x < 270) return [220, 38, 38, 255];
-        if (y > 140 && y < 170 && x > 80 && x < 240) return [59, 130, 246, 255];
-        return null;
-      }),
-  },
-  {
-    name: 'login-form',
-    label: 'screenshot',
-    render: () =>
-      gradientPixels(320, 200, 240, 248, 255, 235, 245, 250, (x, y) => {
-        const inEmail = y > 55 && y < 72 && x > 50 && x < 270;
-        const inPass = y > 82 && y < 99 && x > 50 && x < 270;
-        if (inEmail || inPass) return [255, 255, 255, 255];
-        if (y > 120 && y < 150 && x > 80 && x < 240) return [59, 130, 246, 255];
-        return null;
-      }),
-  },
-  {
-    name: 'cart-summary',
-    label: 'screenshot',
-    render: () =>
-      gradientPixels(320, 200, 250, 250, 252, 245, 245, 248, (x, y) => {
-        if ((y > 20 && y < 55) || (y > 60 && y < 95)) {
-          if (x > 30 && x < 290) return [255, 255, 255, 255];
-        }
-        if (y > 110 && y < 130 && x > 30 && x < 290) return [240, 240, 245, 255];
-        if (y > 155 && y < 180 && x > 80 && x < 240) return [34, 197, 94, 255];
-        return null;
-      }),
-  },
+const SCREENSHOT_NAMES = [
+  'checkout-form-filled',
+  'checkout-order-confirmed',
+  'checkout-payment-form',
+  'checkout-error',
+  'login-form',
+  'cart-summary',
 ];
 
-// Generate and save screenshot PNG files
-const SCREENSHOTS_DIR = join(__dirname, '../public/demo/screenshots');
-mkdirSync(SCREENSHOTS_DIR, { recursive: true });
 const ATTACHMENTS = [];
 let attachmentId = reportId;
 
-for (let idx = 0; idx < SCREENSHOT_DEFS.length; idx++) {
-  const def = SCREENSHOT_DEFS[idx];
-  const pixels = def.render();
-  const pngData = createPng(320, 200, pixels);
-  const filename = `${def.name}.png`;
-  writeFileSync(join(SCREENSHOTS_DIR, filename), pngData);
-  console.log(`  📸 Generated demo screenshot: ${filename} (${pngData.length} bytes)`);
-
-  // Attach screenshots to selected TRCs in project 1 (e2e-checkout)
-  // We pick TRCs from the most recent runs of project 1 (run IDs 1-4)
-  // TRC IDs are sequential and project 1 has 12 cases per run
-  // Run 1 → TRCs 1-12, Run 2 → TRCs 13-24, Run 3 → TRCs 25-36, etc.
-  const trcId = 1 + idx; // First TRC of each of the first 6 runs
-  // First 6 TRCs belong to run 1 of project 1
+for (let idx = 0; idx < SCREENSHOT_NAMES.length; idx++) {
+  const name = SCREENSHOT_NAMES[idx];
+  const filename = `${name}.png`;
+  const trcId = 1 + idx;
   ATTACHMENTS.push({
     id: attachmentId++,
     test_runs_case_id: trcId,
     test_run_id: 1,
     type: 'attachment',
-    subtype: def.label,
+    subtype: 'screenshot',
     label: 'image/png',
     path: `demo/screenshots/${filename}`,
-    size: pngData.length,
+    size: 0,
     created_at: ts('2025-04-25T08:30:00'),
   });
 }

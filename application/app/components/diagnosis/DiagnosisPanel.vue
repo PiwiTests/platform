@@ -1,10 +1,18 @@
 <script setup lang="ts">
 import type { FailureDiagnosis } from '~~/server/database/schema';
 import { extractCitedSectionIds } from '#shared/diagnosis-sections';
+import type { DiagnoseImage } from '~/composables/useClusterDiagnosis';
 
 const props = defineProps<{
   clusterId?: number;
   lastSeenRunId?: number;
+  affectedTestCases?: Array<{
+    testCaseId: number;
+    title: string;
+    filePath: string;
+    runCount: number;
+    recentTestRunsCaseId: number;
+  }>;
 }>();
 
 const {
@@ -35,6 +43,12 @@ const {
 
 const additionalContext = ref('');
 const fileInputRef = ref<HTMLInputElement | null>(null);
+const testCaseImages = ref<DiagnoseImage[]>([]);
+
+const allImages = computed<DiagnoseImage[]>(() => [
+  ...testCaseImages.value,
+  ...(attachedImages.value.length ? attachments.imagesPayload() : []),
+]);
 
 const showAiContext = ref(false);
 const showAdditionalContext = ref(false);
@@ -77,7 +91,7 @@ async function diagnose(force = false) {
   await runDiagnosis({
     force,
     additionalContext: buildPromptContext() || undefined,
-    images: attachedImages.value.length ? attachments.imagesPayload() : undefined,
+    images: allImages.value.length ? allImages.value : undefined,
   });
 }
 
@@ -102,7 +116,7 @@ function isStale(d: FailureDiagnosis) {
           </span>
         </div>
         <div class="flex items-center gap-1.5">
-          <DiagnosisExportMenu :context-text="contextText" :diagnosis="diagnosis" />
+          <DiagnosisExportMenu :context-text="contextText" :diagnosis="diagnosis" :screenshots="allImages" />
           <UButton
             :icon="showAiContext ? 'i-lucide-eye-off' : 'i-lucide-eye'"
             size="xs"
@@ -218,7 +232,7 @@ function isStale(d: FailureDiagnosis) {
         </div>
       </div>
 
-      <!-- Attached images -->
+      <!-- Attached images (manually dragged/uploaded) -->
       <div v-if="attachedImages.length" class="flex flex-wrap gap-2">
         <div v-for="(img, i) in attachedImages" :key="i" class="relative group">
           <img :src="img.preview" :alt="img.name" class="h-16 w-16 object-cover rounded-lg border border-default" />
@@ -232,6 +246,13 @@ function isStale(d: FailureDiagnosis) {
           <p class="text-xs text-gray-500 text-center mt-0.5 w-16 truncate">{{ img.name }}</p>
         </div>
       </div>
+
+      <!-- Screenshots from test evidence (auto-loaded) -->
+      <DiagnosisScreenshots
+        v-if="affectedTestCases?.length"
+        :affected-test-cases="affectedTestCases"
+        @update:images="testCaseImages = $event"
+      />
 
       <!-- Diagnose button -->
       <div v-if="!diagnosis || diagnosis.status === 'failed' || isStale(diagnosis)" class="pt-1">

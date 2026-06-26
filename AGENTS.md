@@ -443,6 +443,43 @@ When implementing or extending sharding support:
 - **Backend logs** are documented in `docs/backend-logs.md`
 - **Suite hierarchy (describe blocks)** and **test annotations** are documented in `docs/reporter.md` and `docs/api.md`
 
+### Replacing demo screenshots (in-app attachment thumbnails)
+
+Demo screenshots live in `application/public/demo/screenshots/*.png` and are committed to the repo. They appear as attachment thumbnails on cluster detail pages. To replace them with fresh real-app captures:
+
+1. **Start a plain dev server** (no `PIWI_DEMO_MODE`) on a free port:
+   ```bash
+   cd application
+   NUXT_IGNORE_LOCK=1 npx nuxt dev --port 3002
+   ```
+   Auth is disabled by default — no login needed.
+
+2. **Seed the dev DB** from the demo SQL (stop the server first to avoid a DB lock, or use a separate terminal while the server is running if it's not writing):
+   ```bash
+   node scripts/seed-dev-from-demo.mjs
+   ```
+   This reads `public/demo/seed.sql` and runs `INSERT OR IGNORE` into `.data/piwi.db`. It is idempotent.
+
+3. **Restart the dev server** (it may have a stale DB on first boot):
+   ```bash
+   NUXT_IGNORE_LOCK=1 npx nuxt dev --port 3002
+   ```
+
+4. **Capture screenshots** with Playwright:
+   ```bash
+   node scripts/take-demo-screenshots.mjs
+   ```
+   This writes `public/demo/screenshots/*.png` directly. The script targets `localhost:3002` and uses the Chromium at `/opt/pw-browsers/chromium`.
+
+5. **Commit the new PNGs** — they are committed to the repo so the demo SPA can serve them.
+
+**Important caveats:**
+- **Do not use `PIWI_DEMO_MODE=true`** for screenshot capture. The demo service worker does not install reliably in headless Chromium (cloud environment), so `#__nuxt` stays blank — you'll get empty pages.
+- **Run IDs ≥ 21** have test cases. Runs #1–20 have 0 cases (the seed's `INSERT INTO __new_test_runs_cases` statements target a migration-only table that doesn't exist in the dev schema).
+- **Cluster IDs with data**: #3, #4, #5, #7, #8. Use `/failure-clusters/4` for cluster detail.
+- **Project #2** is the one with failure clusters (`/projects/2?tab=failure-clusters`).
+- Playwright must be loaded via `require('/home/user/platform/node_modules/playwright/index.js')` from `createRequire(import.meta.url)` — ESM `import` from outside the workspace fails.
+
 ### Regenerating dashboard screenshots (light/dark split)
 
 Marketing screenshots in `docs/public/screenshots/*.png` (used by `README.md` and `docs/index.md`) are **1280×720**. The hero shots use a diagonal **light-top-left / dark-bottom-right** split. Reproduce one with the `playwright-cli` skill against the **live demo** (it already has seed data — no local server needed):

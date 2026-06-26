@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import type { FailureDiagnosis } from '~~/server/database/schema';
+import type { DiagnoseImage } from '~/composables/useClusterDiagnosis';
 
 const props = defineProps<{
   contextText: string | null;
   diagnosis: FailureDiagnosis | null;
+  screenshots?: DiagnoseImage[];
   clusterSignature?: string;
   clusterUrl?: string;
   clusterOccurrences?: number;
@@ -60,7 +62,11 @@ function copyInvestigationSummary() {
 
 function copyContextMarkdown() {
   if (!props.contextText) return;
-  const text = '```\n' + props.contextText + '\n```';
+  const screenshotsMd =
+    props.screenshots?.length
+      ? `## Screenshots\n\n${props.screenshots.map((img) => `![${img.name}](data:${img.mediaType};base64,${img.data})`).join('\n\n')}\n\n`
+      : '';
+  const text = screenshotsMd + '```\n' + props.contextText + '\n```';
   copy(text, { toast: 'AI context (Markdown) copied' });
   exportOpen.value = false;
 }
@@ -146,11 +152,28 @@ function markdownToHtml(md: string): string {
   return out.join('\n');
 }
 
+function buildScreenshotsHtml(): string {
+  if (!props.screenshots?.length) return '';
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const figures = props.screenshots
+    .map(
+      (img) =>
+        `<figure style="display:inline-block;margin:4px 4px 8px;text-align:center">` +
+        `<img src="data:${esc(img.mediaType)};base64,${img.data}" alt="${esc(img.name)}" ` +
+        `style="max-width:320px;max-height:220px;border-radius:6px;border:1px solid #e4e4e7;display:block" />` +
+        `<figcaption style="font-size:0.7em;color:#71717a;margin-top:3px">${esc(img.name)}</figcaption>` +
+        `</figure>`,
+    )
+    .join('');
+  return `<section><h2>Screenshots</h2><div style="display:flex;flex-wrap:wrap;gap:4px">${figures}</div></section>`;
+}
+
 function copyContextHtml() {
   if (!props.contextText) return;
   const plain = props.contextText;
   const body = markdownToHtml(plain);
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI Diagnosis Context</title><style>body{font-family:system-ui,sans-serif;max-width:800px;margin:2em auto;padding:0 1em;line-height:1.6}h2{color:#1a1a2e;margin-top:1.5em}h3{color:#16213e;margin-top:1.2em}pre{background:#f4f4f5;padding:1em;border-radius:6px;overflow-x:auto;font-size:0.9em}code{font-family:ui-monospace,monospace}blockquote{border-left:3px solid #d4d4d8;padding-left:1em;color:#52525b;margin:1em 0}li{margin:0.25em 0}</style></head><body>${body}</body></html>`;
+  const screenshotsSection = buildScreenshotsHtml();
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI Diagnosis Context</title><style>body{font-family:system-ui,sans-serif;max-width:900px;margin:2em auto;padding:0 1em;line-height:1.6}h2{color:#1a1a2e;margin-top:1.5em}h3{color:#16213e;margin-top:1.2em}pre{background:#f4f4f5;padding:1em;border-radius:6px;overflow-x:auto;font-size:0.9em}code{font-family:ui-monospace,monospace}blockquote{border-left:3px solid #d4d4d8;padding-left:1em;color:#52525b;margin:1em 0}li{margin:0.25em 0}figure{margin:0}section+section{border-top:1px solid #e4e4e7;padding-top:1em}</style></head><body>${screenshotsSection}<section>${body}</section></body></html>`;
   try {
     navigator.clipboard.write([
       new ClipboardItem({
