@@ -204,3 +204,77 @@ describe('StreamManager batching & drain', () => {
     expect(seen.some((e: any) => e.title === 'buffered-1'), `seen: ${JSON.stringify(seen)}`).toBeTruthy();
   });
 });
+
+describe('StreamManager idle heartbeat', () => {
+  beforeEach(cleanup);
+  afterEach(cleanup);
+
+  function makeEnabledManager(postJSON: (url: string, body: any) => Promise<any>): StreamManager {
+    const http = {
+      postJSON,
+      async resolveAuth() {
+        return null;
+      },
+    };
+    const sm = new StreamManager(
+      http as any,
+      new StreamBuffer(projectName),
+      new CrashRecovery(projectName),
+      {} as any,
+      new FileHandler(),
+      makeOptions(),
+    );
+    (sm as any)._enabled = true;
+    (sm as any)._runId = 1;
+    (sm as any)._token = 'tok';
+    (sm as any).heartbeatInterval = 20;
+    return sm;
+  }
+
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  it('pings the heartbeat endpoint after an idle gap', async () => {
+    const calls: string[] = [];
+    const sm = makeEnabledManager(async (url) => {
+      calls.push(url);
+      return {};
+    });
+    (sm as any).lastActivityAt = Date.now() - 1000; // already idle
+    (sm as any).scheduleHeartbeat();
+    await wait(70);
+    (sm as any).stopHeartbeat();
+    expect(calls.some((u) => u.includes('/heartbeat'))).toBe(true);
+  });
+
+  it('skips the heartbeat when activity arrives before it fires', async () => {
+    const calls: string[] = [];
+    const sm = makeEnabledManager(async (url) => {
+      calls.push(url);
+      return {};
+    });
+    (sm as any).heartbeatInterval = 30;
+    (sm as any).lastActivityAt = Date.now();
+    (sm as any).scheduleHeartbeat();
+    // Activity lands before the timer fires → idle gap resets, ping is redundant.
+    setTimeout(() => {
+      (sm as any).lastActivityAt = Date.now();
+    }, 20);
+    await wait(45);
+    (sm as any).stopHeartbeat();
+    expect(calls.length).toBe(0);
+  });
+
+  it('drain stops the heartbeat', async () => {
+    const calls: string[] = [];
+    const sm = makeEnabledManager(async (url) => {
+      calls.push(url);
+      return {};
+    });
+    (sm as any).lastActivityAt = Date.now() - 1000;
+    (sm as any).scheduleHeartbeat();
+    await sm.drain();
+    const afterDrain = calls.length;
+    await wait(70);
+    expect(calls.length, 'no heartbeats fire after drain').toBe(afterDrain);
+  });
+});

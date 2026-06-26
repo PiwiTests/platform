@@ -272,6 +272,28 @@ Stream test case results as they complete. Supports single or batch submission.
 
 ---
 
+### POST `/api/test-runs/[id]/heartbeat`
+
+Liveness ping for an active streaming run. The reporter sends this automatically during idle gaps (when no test events are flowing — e.g. a single long-running test or `beforeAll` setup) so the server can distinguish a still-running run from a crashed one. It bumps the run's activity timestamp; the stale-run reaper marks runs with no recent activity as `interrupted`. No configuration is required.
+
+**Request body**
+
+```json
+{
+  "streamToken": "abc123..."
+}
+```
+
+**Response**
+
+```json
+{
+  "success": true
+}
+```
+
+---
+
 ### POST `/api/test-runs/[id]/case-files`
 
 Upload one test case's trace and attachments while the run is still streaming, so files are viewable in the dashboard as soon as the test finishes. The test case must already have been sent to `/events` — the files are linked to that row.
