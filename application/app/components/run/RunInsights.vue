@@ -7,6 +7,7 @@ const props = defineProps<{
 }>();
 
 interface RunInsightsData {
+  hasBaseline: boolean;
   newRegressions: Array<{ testRunsCaseId: number; title: string; filePath: string; duration: number | null }>;
   recurrences: Array<{ testRunsCaseId: number; title: string; filePath: string; duration: number | null }>;
   recovered: Array<{ testRunsCaseId: number; title: string; filePath: string; duration: number | null }>;
@@ -37,13 +38,13 @@ const data = ref<RunInsightsData | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
 
+const isRunActive = computed(
+  () =>
+    props.runStatus === 'running' || props.runStatus === 'initialising' || props.runStatus === 'finalizing',
+);
+
 async function load() {
-  if (
-    !props.testRunId ||
-    props.runStatus === 'running' ||
-    props.runStatus === 'initialising' ||
-    props.runStatus === 'finalizing'
-  ) {
+  if (!props.testRunId || isRunActive.value) {
     data.value = null;
     return;
   }
@@ -69,6 +70,23 @@ watch(
   },
 );
 
+const hasAnyInsights = computed(() => {
+  if (!data.value) return false;
+  const d = data.value;
+  return (
+    d.newRegressions.length > 0 ||
+    d.recurrences.length > 0 ||
+    d.recovered.length > 0 ||
+    d.newFlaky.length > 0 ||
+    d.flakyOnRetry.length > 0 ||
+    d.mostRegressed.length > 0 ||
+    d.mostImproved.length > 0 ||
+    d.slowestTests.length > 0 ||
+    d.workerImbalance.length > 1 ||
+    d.clusterNew.length > 0
+  );
+});
+
 function formatMs(ms: number | null | undefined): string {
   if (ms == null) return '—';
   if (ms < 1000) return `${ms}ms`;
@@ -85,8 +103,34 @@ function formatMs(ms: number | null | undefined): string {
 
   <LoadingState v-else-if="loading" padded />
 
+  <div v-else-if="isRunActive" class="p-4">
+    <EmptyState icon="i-lucide-loader-circle" text="Run in progress">
+      <p class="text-sm text-muted max-w-sm text-center">
+        Insights are computed once the run finishes. Switch back here when the run completes.
+      </p>
+    </EmptyState>
+  </div>
+
   <div v-else-if="!data" class="p-4">
-    <EmptyState text="All clear" />
+    <EmptyState text="No insights yet" />
+  </div>
+
+  <div v-else-if="!data.hasBaseline" class="p-4">
+    <EmptyState icon="i-lucide-git-compare-arrows" text="No baseline run found">
+      <p class="text-sm text-muted max-w-sm text-center">
+        Insights compare this run against the most recent passing run in the same project. No previous passing run
+        exists yet — once you have at least two completed runs, comparisons will appear here automatically.
+      </p>
+    </EmptyState>
+  </div>
+
+  <div v-else-if="!hasAnyInsights" class="p-4">
+    <EmptyState icon="i-lucide-check-circle" text="Everything looks consistent">
+      <p class="text-sm text-muted max-w-sm text-center">
+        No regressions, performance changes, or newly flaky tests detected compared to the baseline run. Insights
+        appear when something changes — keep running your tests to build history.
+      </p>
+    </EmptyState>
   </div>
 
   <div v-else class="space-y-6 p-4">
