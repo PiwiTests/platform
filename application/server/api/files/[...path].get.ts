@@ -253,7 +253,10 @@ export default eventHandler(async (event) => {
     // Compress image on demand: resize to max 1280px, output as WebP
     if (wantCompressed && COMPRESSIBLE_IMAGE_TYPES.has(contentType)) {
       try {
-        const compressed = await sharp(fileContent).resize(1280, 1280, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 90 }).toBuffer();
+        const compressed = await sharp(fileContent)
+          .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 90 })
+          .toBuffer();
         setResponseHeader(event, 'Content-Type', 'image/webp');
         setResponseHeader(event, 'Content-Length', compressed.length);
         applyInlineDisposition('image/webp');

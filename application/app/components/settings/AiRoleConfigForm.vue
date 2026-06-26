@@ -7,6 +7,8 @@
  */
 import type { AiModelRole } from '~~/types/api';
 import type { HelpTopicKey } from '~/utils/help-content';
+import { helpEnvVars } from '~/utils/help-content';
+import type { PiwiEnvVarName } from '~~/shared/piwi-env-vars';
 
 export interface RoleForm {
   enabled: boolean;
@@ -30,7 +32,7 @@ interface RoleMeta {
   modelPlaceholderOpenai: string;
 }
 
-defineProps<{
+const props = defineProps<{
   meta: RoleMeta;
   hasApiKey: boolean;
   reuseOptions: Array<{ label: string; value: string }>;
@@ -49,6 +51,10 @@ const reuseModel = computed<string>({
   get: () => model.value.reuse ?? 'own',
   set: (v) => (model.value.reuse = v === 'own' ? null : (v as AiModelRole)),
 });
+
+// Env vars backing this role's provider/key/baseUrl (resolved from the help
+// topic), shown as lock badges when the form is env-managed.
+const roleEnvVars = computed<PiwiEnvVarName[]>(() => helpEnvVars(props.meta.help));
 </script>
 
 <template>
@@ -74,6 +80,12 @@ const reuseModel = computed<string>({
 
       <template v-if="!model.reuse">
         <UFormField label="Provider">
+          <template #label>
+            <span class="inline-flex items-center gap-1">
+              Provider
+              <EnvManagedBadge v-if="disabled" :env-vars="roleEnvVars" />
+            </span>
+          </template>
           <USelect
             v-model="model.provider"
             :items="providerOptions"
@@ -106,6 +118,12 @@ const reuseModel = computed<string>({
               : 'Required for Anthropic; optional for local OpenAI-compatible servers'
           "
         >
+          <template #label>
+            <span class="inline-flex items-center gap-1">
+              API key
+              <EnvManagedBadge v-if="disabled" :env-vars="roleEnvVars" />
+            </span>
+          </template>
           <UInput
             v-model="model.apiKey"
             type="password"
@@ -120,6 +138,12 @@ const reuseModel = computed<string>({
           label="Base URL"
           description="Required, e.g. http://localhost:11434/v1"
         >
+          <template #label>
+            <span class="inline-flex items-center gap-1">
+              Base URL
+              <EnvManagedBadge v-if="disabled" :env-vars="roleEnvVars" />
+            </span>
+          </template>
           <UInput v-model="model.baseUrl" placeholder="http://localhost:11434/v1" :disabled="disabled" class="w-full" />
         </UFormField>
       </template>

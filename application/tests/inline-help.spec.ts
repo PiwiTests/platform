@@ -65,4 +65,30 @@ test.describe('Inline help (HelpHint)', () => {
     const learnMore = page.getByRole('link', { name: /Learn more/ });
     await expect(learnMore).toHaveAttribute('href', `${DOCS_BASE_URL}/flaky-tests#performance`);
   });
+
+  test('settings AI provider hint lists the backing PIWI_AI_* env vars', async ({ page }) => {
+    await page.goto('/settings/ai');
+
+    await openHint(page, 'Help: AI provider');
+
+    // The env vars that override the diagnosis provider are surfaced in the
+    // popover (the system-admin affordance), each as a copyable code element.
+    await expect(page.getByText('Environment variables:')).toBeVisible();
+    await expect(page.locator('code', { hasText: 'PIWI_AI_PROVIDER' })).toBeVisible();
+    await expect(page.locator('code', { hasText: 'PIWI_AI_API_KEY' })).toBeVisible();
+
+    // A "Configuration reference" link points at the canonical docs page.
+    const configLink = page.getByRole('link', { name: /Configuration reference/ });
+    await expect(configLink).toHaveAttribute('href', `${DOCS_BASE_URL}/configuration`);
+    await expect(configLink).toHaveAttribute('target', '_blank');
+  });
+
+  test('settings wasted-time hint names PIWI_WASTED_WAIT_PATTERNS', async ({ page }) => {
+    await page.goto('/settings/wasted-time');
+
+    await openHint(page, 'Help: Wasted-time patterns');
+
+    await expect(page.getByText('Environment variable:')).toBeVisible();
+    await expect(page.locator('code', { hasText: 'PIWI_WASTED_WAIT_PATTERNS' })).toBeVisible();
+  });
 });

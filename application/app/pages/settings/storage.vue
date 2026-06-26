@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import type { AdminStats } from '~~/types/api';
+import { envVarsByCategory, getEnvVarMeta } from '~~/shared/piwi-env-vars';
 
 const toast = useToast();
 
 const { data: stats, refresh, pending } = await useFetch<AdminStats>('/api/admin/stats');
+
+// Storage-backend env vars, driven by the shared registry (single source of
+// truth). Excludes test-only vars (they are not runtime settings).
+const storageEnvVars = envVarsByCategory('storage').map((name) => ({
+  name,
+  ...getEnvVarMeta(name),
+}));
 
 const periodOptions = [
   { label: '7 days', value: 7 },
@@ -49,15 +57,30 @@ async function handleCleanup() {
 
 <template>
   <div class="space-y-6">
-    <!-- Stats Overview -->
-    <UPageCard variant="subtle">
-      <template #header>
-        <h2 class="font-semibold text-base inline-flex items-center gap-1">
-          Storage statistics
-          <HelpHint topic="settings.storage-stats" />
-        </h2>
-      </template>
+    <!-- Storage backend (env-only reference) -->
+    <SectionCard icon="i-lucide-server" title="Storage backend" help="settings.storage-backend">
+      <template #subtitle> Configured through environment variables. The active backend is shown read-only. </template>
 
+      <div class="space-y-3">
+        <div class="flex items-center gap-2 text-sm text-muted">
+          <UIcon name="i-lucide-info" class="size-4" />
+          Storage backend selection (local disk or S3) and its credentials are set via the environment. Each variable
+          below is shown read-only — hover the lock to see what it controls.
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+          <template v-for="v in storageEnvVars" :key="v.name">
+            <div class="text-muted">{{ v.name.replace('PIWI_S3_', 'S3 ').replace('PIWI_STORAGE_', 'Storage ') }}</div>
+            <div class="flex items-center gap-2 font-mono">
+              <code class="text-xs">{{ v.name }}</code>
+              <EnvManagedBadge :env-vars="[v.name]" />
+            </div>
+          </template>
+        </div>
+      </div>
+    </SectionCard>
+
+    <!-- Stats Overview -->
+    <SectionCard icon="i-lucide-database" title="Storage statistics" help="settings.storage-stats">
       <div v-if="pending" class="flex items-center gap-2 py-4 text-muted">
         <UIcon name="i-lucide-loader-2" class="animate-spin" />
         Loading…
@@ -118,17 +141,10 @@ async function handleCleanup() {
           @click="refresh()"
         />
       </template>
-    </UPageCard>
+    </SectionCard>
 
     <!-- Cleanup Section -->
-    <UPageCard variant="subtle">
-      <template #header>
-        <h2 class="font-semibold text-base inline-flex items-center gap-1">
-          Cleanup old test runs
-          <HelpHint topic="settings.cleanup" />
-        </h2>
-      </template>
-
+    <SectionCard icon="i-lucide-trash-2" title="Cleanup old test runs" help="settings.cleanup">
       <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
         <UFormField label="Delete runs older than" name="period">
           <USelect v-model="selectedPeriod" :items="periodOptions" />
@@ -144,7 +160,7 @@ async function handleCleanup() {
           @click="isConfirmOpen = true"
         />
       </div>
-    </UPageCard>
+    </SectionCard>
   </div>
 
   <!-- Confirm Dialog -->

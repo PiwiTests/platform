@@ -368,120 +368,119 @@ async function handleInviteUser(user: UserDetails) {
 </script>
 
 <template>
-  <UDashboardPanel grow>
-    <template #header>
-      <UDashboardNavbar title="User management">
-        <template #right>
-          <UButton v-if="isAdmin" label="Add user" icon="i-lucide-user-plus" @click="isAddUserModalOpen = true" />
+  <div class="space-y-6">
+    <!-- Info message when auth is disabled -->
+    <UAlert
+      v-if="!authEnabled"
+      icon="i-lucide-info"
+      color="primary"
+      variant="subtle"
+      title="Authentication is disabled"
+      description="Authentication is currently disabled. You can manage users here, but they will only be used when authentication is enabled via the PIWI_AUTH_ENABLED environment variable."
+    />
+
+    <!-- Users table -->
+    <SectionCard v-if="users.length > 0" title="Users" :count="users.length" help="settings.users">
+      <template #actions>
+        <UButton
+          v-if="isAdmin"
+          label="Add user"
+          icon="i-lucide-user-plus"
+          size="sm"
+          @click="isAddUserModalOpen = true"
+        />
+      </template>
+
+      <UTable :data="users" :columns="columns">
+        <template #username-cell="{ row }">
+          {{ row.original.username }}
         </template>
-      </UDashboardNavbar>
-    </template>
 
-    <template #body>
-      <!-- Info message when auth is disabled -->
-      <UAlert
-        v-if="!authEnabled"
-        icon="i-lucide-info"
-        color="primary"
-        variant="subtle"
-        title="Authentication is disabled"
-        description="Authentication is currently disabled. You can manage users here, but they will only be used when authentication is enabled via the PIWI_AUTH_ENABLED environment variable."
-        class="mb-4"
-      />
+        <template #name-cell="{ row }">
+          <span class="text-muted">{{ row.original.name || '-' }}</span>
+        </template>
 
-      <!-- Users table -->
-      <SectionCard v-if="users.length > 0" title="Users" :count="users.length" help="settings.users">
-        <UTable :data="users" :columns="columns">
-          <template #username-cell="{ row }">
-            {{ row.original.username }}
-          </template>
+        <template #email-cell="{ row }">
+          <span v-if="row.original.email" class="flex items-center gap-1 text-sm">
+            {{ row.original.email }}
+            <UIcon
+              v-if="row.original.emailVerified"
+              name="i-lucide-circle-check-big"
+              class="size-3.5 text-success-500"
+              title="Email verified"
+            />
+          </span>
+          <span v-else class="text-muted">—</span>
+        </template>
 
-          <template #name-cell="{ row }">
-            <span class="text-muted">{{ row.original.name || '-' }}</span>
-          </template>
+        <template #role-cell="{ row }">
+          <UBadge :color="getRoleBadgeColor(row.original.role)" variant="subtle">
+            {{ row.original.role }}
+          </UBadge>
+        </template>
 
-          <template #email-cell="{ row }">
-            <span v-if="row.original.email" class="flex items-center gap-1 text-sm">
-              {{ row.original.email }}
-              <UIcon
-                v-if="row.original.emailVerified"
-                name="i-lucide-circle-check-big"
-                class="size-3.5 text-success-500"
-                title="Email verified"
-              />
-            </span>
-            <span v-else class="text-muted">—</span>
-          </template>
+        <template #createdAt-cell="{ row }">
+          <span class="text-sm text-muted">
+            {{ prettyDateFormat(row.original.createdAt, { dateOnly: true }) }}
+          </span>
+        </template>
 
-          <template #role-cell="{ row }">
-            <UBadge :color="getRoleBadgeColor(row.original.role)" variant="subtle">
-              {{ row.original.role }}
-            </UBadge>
-          </template>
-
-          <template #createdAt-cell="{ row }">
-            <span class="text-sm text-muted">
-              {{ prettyDateFormat(row.original.createdAt, { dateOnly: true }) }}
-            </span>
-          </template>
-
-          <template #actions-cell="{ row }">
-            <div class="flex items-center gap-1 justify-end">
-              <UButton
-                v-if="isAdmin && row.original.email && !row.original.oauthProvider"
-                icon="i-lucide-send"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                title="Send invite email"
-                :loading="invitingUserId === row.original.id"
-                @click="handleInviteUser(row.original)"
-              />
-              <UButton
-                v-if="isAdmin && row.original.role !== 'administrator'"
-                icon="i-lucide-folder-lock"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                title="Project access"
-                @click="openProjectAccessModal(row.original)"
-              />
-              <UButton
-                v-if="canManageApiKeys(row.original)"
-                icon="i-lucide-key"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                title="Manage API keys"
-                @click="openApiKeysModal(row.original)"
-              />
-              <UButton
-                v-if="isAdmin"
-                icon="i-lucide-trash-2"
-                color="error"
-                variant="ghost"
-                size="sm"
-                title="Delete user"
-                @click="handleDeleteUser(row.original)"
-              />
-            </div>
-          </template>
-        </UTable>
-      </SectionCard>
-
-      <!-- Empty state -->
-      <UCard v-else>
-        <div class="text-center py-12">
-          <div class="flex justify-center mb-4">
-            <UIcon name="i-lucide-users" class="text-4xl text-muted" />
+        <template #actions-cell="{ row }">
+          <div class="flex items-center gap-1 justify-end">
+            <UButton
+              v-if="isAdmin && row.original.email && !row.original.oauthProvider"
+              icon="i-lucide-send"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              title="Send invite email"
+              :loading="invitingUserId === row.original.id"
+              @click="handleInviteUser(row.original)"
+            />
+            <UButton
+              v-if="isAdmin && row.original.role !== 'administrator'"
+              icon="i-lucide-folder-lock"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              title="Project access"
+              @click="openProjectAccessModal(row.original)"
+            />
+            <UButton
+              v-if="canManageApiKeys(row.original)"
+              icon="i-lucide-key"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              title="Manage API keys"
+              @click="openApiKeysModal(row.original)"
+            />
+            <UButton
+              v-if="isAdmin"
+              icon="i-lucide-trash-2"
+              color="error"
+              variant="ghost"
+              size="sm"
+              title="Delete user"
+              @click="handleDeleteUser(row.original)"
+            />
           </div>
-          <h3 class="text-lg font-semibold mb-2">No users yet</h3>
-          <p class="text-muted mb-4">Create your first user to get started with authentication</p>
-          <UButton v-if="isAdmin" label="Add user" icon="i-lucide-user-plus" @click="isAddUserModalOpen = true" />
+        </template>
+      </UTable>
+    </SectionCard>
+
+    <!-- Empty state -->
+    <SectionCard v-else title="Users" :count="0">
+      <div class="text-center py-12">
+        <div class="flex justify-center mb-4">
+          <UIcon name="i-lucide-users" class="text-4xl text-muted" />
         </div>
-      </UCard>
-    </template>
-  </UDashboardPanel>
+        <h3 class="text-lg font-semibold mb-2">No users yet</h3>
+        <p class="text-muted mb-4">Create your first user to get started with authentication</p>
+        <UButton v-if="isAdmin" label="Add user" icon="i-lucide-user-plus" @click="isAddUserModalOpen = true" />
+      </div>
+    </SectionCard>
+  </div>
 
   <!-- Add User Modal -->
   <ClientOnly>

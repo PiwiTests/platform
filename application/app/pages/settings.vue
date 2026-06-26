@@ -3,8 +3,11 @@ import type { NavigationMenuItem } from '@nuxt/ui';
 
 useHead({ title: 'Settings — Piwi Dashboard' });
 
-const links = [
-  [...useSettingsNav()],
+const { envManaged } = useSettingsEnvState();
+const navItems = useSettingsNav(envManaged);
+
+const links = computed<NavigationMenuItem[][]>(() => [
+  navItems.value,
   [
     {
       label: 'Documentation',
@@ -13,7 +16,7 @@ const links = [
       target: '_blank',
     },
   ],
-] satisfies NavigationMenuItem[][];
+]);
 </script>
 
 <template>

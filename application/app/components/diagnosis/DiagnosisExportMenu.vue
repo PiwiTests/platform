@@ -62,10 +62,9 @@ function copyInvestigationSummary() {
 
 function copyContextMarkdown() {
   if (!props.contextText) return;
-  const screenshotsMd =
-    props.screenshots?.length
-      ? `## Screenshots\n\n${props.screenshots.map((img) => `![${img.name}](data:${img.mediaType};base64,${img.data})`).join('\n\n')}\n\n`
-      : '';
+  const screenshotsMd = props.screenshots?.length
+    ? `## Screenshots\n\n${props.screenshots.map((img) => `![${img.name}](data:${img.mediaType};base64,${img.data})`).join('\n\n')}\n\n`
+    : '';
   const text = screenshotsMd + '```\n' + props.contextText + '\n```';
   copy(text, { toast: 'AI context (Markdown) copied' });
   exportOpen.value = false;

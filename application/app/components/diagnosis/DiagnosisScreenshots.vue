@@ -142,9 +142,7 @@ onMounted(loadScreenshots);
     <div class="flex items-center justify-between">
       <span class="text-xs font-medium text-gray-500">
         Test screenshots
-        <span class="text-gray-400 font-normal"
-          >({{ selectedCount }}/{{ screenshots.length }} will be sent to AI)</span
-        >
+        <span class="text-gray-400 font-normal">({{ selectedCount }}/{{ screenshots.length }} will be sent to AI)</span>
       </span>
       <div class="flex gap-0.5">
         <UButton size="xs" color="neutral" variant="ghost" @click="selectAll">All</UButton>
@@ -170,17 +168,29 @@ onMounted(loadScreenshots);
           </div>
         </div>
         <div class="px-1 py-0.5 bg-elevated space-y-0.5">
-          <p class="text-[9px] text-gray-700 dark:text-gray-300 truncate font-medium leading-tight" :title="img.caseTitle">
+          <p
+            class="text-[9px] text-gray-700 dark:text-gray-300 truncate font-medium leading-tight"
+            :title="img.caseTitle"
+          >
             {{ img.caseTitle }}
           </p>
           <div class="flex items-center gap-1 flex-wrap">
             <span
               class="text-[8px] px-1 rounded leading-tight font-medium"
-              :class="img.status === 'passed' ? 'bg-success/15 text-success' : img.status === 'failed' ? 'bg-error/15 text-error' : 'bg-neutral/15 text-gray-500'"
-            >{{ img.status }}</span>
+              :class="
+                img.status === 'passed'
+                  ? 'bg-success/15 text-success'
+                  : img.status === 'failed'
+                    ? 'bg-error/15 text-error'
+                    : 'bg-neutral/15 text-gray-500'
+              "
+              >{{ img.status }}</span
+            >
             <span v-if="img.retries > 0" class="text-[8px] text-gray-400 leading-tight">retry {{ img.retries }}</span>
             <span v-if="img.browser" class="text-[8px] text-gray-400 leading-tight truncate">{{ img.browser }}</span>
-            <span v-if="img.startTime" class="text-[8px] text-gray-400 leading-tight ml-auto">{{ formatRelativeTime(img.startTime) }}</span>
+            <span v-if="img.startTime" class="text-[8px] text-gray-400 leading-tight ml-auto">{{
+              formatRelativeTime(img.startTime)
+            }}</span>
           </div>
         </div>
       </div>

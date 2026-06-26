@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { pageEnvVars, getSettingsPage } from '~/utils/settings-metadata';
+
 interface WastedSettings {
   patterns: string[];
   envManaged: boolean;
@@ -19,6 +21,7 @@ watchEffect(() => {
 });
 
 const envManaged = computed(() => settings.value?.envManaged ?? false);
+const envVars = pageEnvVars(getSettingsPage('wasted-time'));
 
 function parseText(value: string): string[] {
   return value
@@ -67,30 +70,21 @@ async function resetToDefaults() {
 
 <template>
   <div class="space-y-6">
-    <UPageCard variant="subtle">
-      <template #header>
-        <h2 class="font-semibold text-base inline-flex items-center gap-1">Wasted-time patterns</h2>
+    <EnvManagedAlert v-if="envManaged" :env-vars="envVars" />
+
+    <SectionCard icon="i-lucide-hourglass" title="Wasted-time patterns" help="settings.wasted-time">
+      <template #subtitle>
+        Define which wait steps count as <strong>wasted time</strong>. A wait is wasted when any pattern below matches
+        its step title or its source location. Patterns are case-insensitive and support <code>*</code> and
+        <code>?</code> wildcards. Wasted time is recomputed when runs are viewed, so changes apply to existing runs
+        immediately.
       </template>
 
       <div class="space-y-4">
-        <p class="text-sm text-gray-500 dark:text-gray-400">
-          Define which wait steps count as <strong>wasted time</strong>. A wait is wasted when any pattern below matches
-          its step title (e.g. <code>Wait for timeout*</code>) or its source location (e.g.
-          <code>*node_modules*</code>). Patterns are case-insensitive and support <code>*</code> and <code>?</code>
-          wildcards. Wasted time is recomputed when runs are viewed, so changes apply to existing runs immediately.
-        </p>
-
-        <UAlert
-          v-if="envManaged"
-          icon="i-lucide-lock"
-          color="neutral"
-          variant="subtle"
-          title="Managed by environment variable"
-          description="These patterns are set via PIWI_WASTED_WAIT_PATTERNS and cannot be edited here."
-        />
-
-        <UFormField
+        <SettingsField
           label="Patterns"
+          help="settings.wasted-time"
+          :env-managed="envManaged"
           description="One glob pattern per line. An empty list means no wait is counted as wasted."
         >
           <UTextarea
@@ -100,25 +94,29 @@ async function resetToDefaults() {
             class="w-full font-mono"
             placeholder="Wait for timeout*&#10;*waitForTimeout*"
           />
-        </UFormField>
+        </SettingsField>
 
         <p class="text-xs text-gray-400">
           Default:
           <code>{{ settings?.defaults.join(', ') }}</code>
           — counts explicit <code>waitForTimeout</code> sleeps only. Use <code>*</code> to count every wait.
         </p>
+      </div>
 
-        <div v-if="!envManaged" class="flex items-center gap-2">
-          <UButton :loading="saving" label="Save" @click="save" />
+      <template #footer>
+        <div class="flex items-center gap-2 justify-end">
           <UButton
             variant="ghost"
             color="neutral"
-            :disabled="saving"
+            :disabled="saving || envManaged"
             label="Reset to defaults"
             @click="resetToDefaults"
           />
+          <UButton color="primary" :loading="saving" :disabled="envManaged" icon="i-lucide-save" @click="save">
+            Save
+          </UButton>
         </div>
-      </div>
-    </UPageCard>
+      </template>
+    </SectionCard>
   </div>
 </template>

@@ -26,14 +26,21 @@ const db = createClient({ url: `file:${dbPath}` });
 
 const statements = sql
   .split(';')
-  .map(s => s.trim())
-  .filter(s => s.startsWith('INSERT INTO'));
+  .map((s) => s.trim())
+  .filter((s) => s.startsWith('INSERT INTO'));
 
 console.log(`Seeding ${statements.length} INSERT statements into ${dbPath}...`);
-let ok = 0, skip = 0;
+let ok = 0,
+  skip = 0;
 for (const stmt of statements) {
   // Use OR IGNORE to be idempotent
   const idempotent = stmt.replace(/^INSERT INTO/, 'INSERT OR IGNORE INTO');
-  await db.execute(idempotent).then(() => ok++).catch(e => { skip++; console.error(' skip:', e.message); });
+  await db
+    .execute(idempotent)
+    .then(() => ok++)
+    .catch((e) => {
+      skip++;
+      console.error(' skip:', e.message);
+    });
 }
 console.log(`Done. ${ok} inserted, ${skip} skipped.`);
