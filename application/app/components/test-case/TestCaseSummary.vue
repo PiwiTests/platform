@@ -24,7 +24,7 @@ interface HistoricalTiming {
   pct: number;
 }
 
-defineProps<{
+const props = defineProps<{
   testCase: TestCaseResult | null;
   scmInfo: ScmInfo | null;
   ciInfo: CiInfo | null;
@@ -32,8 +32,6 @@ defineProps<{
   environment: string | null | undefined;
   stepsCount: number;
   historicalTiming: HistoricalTiming | null;
-  summaryColSpanClass: string;
-  blockColSpanClass: string;
   traces?: TraceInfo[];
   attachments?: AttachmentInfo[];
   stableLinks?: EntityLinkInfo[] | null;
@@ -42,6 +40,16 @@ defineProps<{
 defineEmits<{
   refresh: [];
 }>();
+
+const { summaryColSpanClass, blockColSpanClass } = useDetailGrid(() => {
+  let count = 0;
+  if (props.scmInfo) count++;
+  if (props.ciInfo || props.environment) count++;
+  if (props.browser) count++;
+  if ((props.traces?.length ?? 0) > 0 || (props.attachments?.length ?? 0) > 0) count++;
+  count++; // Links card always visible
+  return count;
+});
 
 const origin = computed(() => {
   if (import.meta.client) {
