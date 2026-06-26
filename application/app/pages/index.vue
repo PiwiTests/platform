@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useLocalStorage } from '@vueuse/core';
 import type { HomeFilterState } from '~/components/home/HomeFilters.vue';
 import type { ProjectOverview, TestRunForChart } from '~~/types/api';
 
@@ -12,11 +11,18 @@ const { data: recentTestRuns, refresh: refreshRecentRuns } = await useFetch<Test
 
 useRunStream(() => Promise.all([refreshOverview(), refreshRecentRuns()]));
 
-// ── Filters (persisted to localStorage) ──────────────────────────────────────
+// ── Filters (persisted to cookie, SSR-safe — no hydration flicker) ───────────
 
-const filters = useLocalStorage<HomeFilterState>('piwi-home-filters', {
-  environments: [],
-  fullRunsOnly: true,
+const filters = useCookie<HomeFilterState>('piwi-home-filters', {
+  default: () => ({ environments: [], fullRunsOnly: true }),
+  encode: (v) => JSON.stringify(v),
+  decode: (v) => {
+    try {
+      return JSON.parse(v) as HomeFilterState;
+    } catch {
+      return { environments: [], fullRunsOnly: true };
+    }
+  },
 });
 
 const availableEnvironments = computed(() => {
