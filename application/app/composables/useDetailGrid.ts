@@ -6,11 +6,11 @@ export function useDetailGrid(blockCount: () => number) {
   // 1 block        → summary=9 (75%), block=3
   // 2 blocks       → summary=6 (50%), each block=3
   // 3 blocks       → summary=6 (50%), each block=2 → 6+2+2+2 = 12
-  // 4 blocks       → summary=6 row-span-2, each block=3 → 2×2 grid beside summary
+  // 4 blocks       → summary=4, each block=2 → 4+2+2+2+2 = 12 (single row)
   const summaryColSpanClass = computed(() => {
     const c = metadataBlockCount.value;
     if (c === 0 || c >= 5) return 'lg:col-span-12';
-    if (c === 4) return 'lg:col-span-6 lg:row-span-2';
+    if (c === 4) return 'lg:col-span-4';
     if (c === 1) return 'lg:col-span-9';
     if (c === 2) return 'lg:col-span-6';
     return 'lg:col-span-6';
@@ -19,7 +19,7 @@ export function useDetailGrid(blockCount: () => number) {
   const blockColSpanClass = computed(() => {
     const c = metadataBlockCount.value;
     if (c === 0) return '';
-    if (c === 3) return 'lg:col-span-2';
+    if (c === 3 || c === 4) return 'lg:col-span-2';
     return 'lg:col-span-3';
   });
 
