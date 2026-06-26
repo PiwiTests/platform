@@ -46,6 +46,19 @@ export const useAuth = () => {
     window.location.reload();
   };
 
+  /**
+   * Whether the active demo identity has access to a project (its affectations).
+   * Mirrors the server's project-scope rules: admins and globally-assigned users
+   * see everything; others only their assigned projects. Always true outside the
+   * demo (real access control is enforced server-side there).
+   */
+  const canAccessDemoProject = (projectId: number): boolean => {
+    if (!config.public.demoMode) return true;
+    const u = findDemoUser(currentDemoUserId.value);
+    if (u.role === Role.ADMINISTRATOR || u.assignment.global) return true;
+    return u.assignment.projectIds.includes(projectId);
+  };
+
   const fetchUser = async (): Promise<AuthState> => {
     if (config.public.demoMode) {
       const state = demoStateFor(readSelectedDemoUserId());
@@ -118,5 +131,6 @@ export const useAuth = () => {
     demoUsers,
     currentDemoUserId,
     setDemoUser,
+    canAccessDemoProject,
   };
 };

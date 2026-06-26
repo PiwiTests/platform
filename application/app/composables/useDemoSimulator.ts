@@ -2,6 +2,7 @@ import { reactive } from 'vue';
 import {
   DEMO_SCENARIOS,
   DEMO_SIMULATOR_INSTANCE_ID,
+  DEMO_PROJECT_ID,
   runSimulation,
   type DemoScenario,
   type SimulationController,
@@ -40,6 +41,7 @@ let staleRunsCancelled = false;
 
 export function useDemoSimulator() {
   const toast = useToast();
+  const { canAccessDemoProject } = useAuth();
 
   /**
    * Cancel runs orphaned by a page reload mid-simulation (their reporter
@@ -60,6 +62,20 @@ export function useDemoSimulator() {
 
   async function start(scenario: DemoScenario): Promise<void> {
     if (state.status !== 'idle') return;
+
+    // Simulated runs land in the demo's e2e-checkout project. If the active
+    // "act as" identity isn't assigned to it, refuse rather than dropping the
+    // visitor into a project they shouldn't see — and explain why.
+    if (!canAccessDemoProject(DEMO_PROJECT_ID)) {
+      toast.add({
+        title: 'No access to this project',
+        description:
+          'Simulated runs target the “e2e-checkout” project, which the current user isn’t assigned to. Switch to a user with access (e.g. the admin) to run a simulation.',
+        color: 'warning',
+        icon: 'i-lucide-lock',
+      });
+      return;
+    }
 
     state.status = 'running';
     state.scenario = scenario;

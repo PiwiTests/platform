@@ -21,6 +21,14 @@ export const DEMO_SIMULATOR_INSTANCE_ID = 'demo-simulator';
 /** Project from the demo seed (scripts/generate-demo-seed.mjs) */
 const DEMO_PROJECT_NAME = 'e2e-checkout';
 
+/**
+ * Id of {@link DEMO_PROJECT_NAME} in the demo seed — the project every scenario
+ * targets. Used to gate the simulator on the acting demo user's project access
+ * (affectations). Must match the `e2e-checkout` row id in
+ * scripts/generate-demo-seed.mjs.
+ */
+export const DEMO_PROJECT_ID = 1;
+
 // ── Simulated data types ───────────────────────────────────────────────────
 
 interface SimStep {
