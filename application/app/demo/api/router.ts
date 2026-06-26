@@ -54,6 +54,7 @@ import {
   getFailureGroups,
   computeRegressionContextForRun,
 } from '~~/shared/handlers/test-runs';
+import { computeRunInsights } from '~~/shared/handlers/run-insights';
 import {
   listUsers,
   createUserRecord,
@@ -264,6 +265,13 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/test-runs\/(\d+)\/regression-context$/,
     handler: async (m) => computeRegressionContextForRun(await getDemoDb(), +m[1]!),
+  },
+
+  // Run insights
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/insights$/,
+    handler: async (m) => computeRunInsights(await getDemoDb(), +m[1]!),
   },
 
   // Failure clusters

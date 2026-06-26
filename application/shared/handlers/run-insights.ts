@@ -19,6 +19,7 @@ interface PerfChangeEntry {
 }
 
 interface RunInsightsResult {
+  hasBaseline: boolean;
   newRegressions: TestCaseEntry[];
   recurrences: TestCaseEntry[];
   recovered: TestCaseEntry[];
@@ -80,6 +81,7 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
 
   const baselineRun = baselineResults[0];
   const empty = {
+    hasBaseline: false,
     newRegressions: [],
     recurrences: [],
     recovered: [],
@@ -198,6 +200,7 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
     .limit(20);
 
   return {
+    hasBaseline: true,
     newRegressions,
     recurrences,
     recovered,
