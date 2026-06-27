@@ -18,7 +18,7 @@ import { CONTEXT_LIMIT_FIELDS, DEFAULT_CONTEXT_LIMITS } from '#shared/ai-context
 
 /** GET /api/ai/status */
 export async function apiGetAiStatus() {
-  return { configured: false };
+  return { configured: true, provider: 'demo', model: 'demo', autoDiagnose: false, source: 'demo' };
 }
 
 /** POST /api/failure-clusters/:id/diagnose — not supported in demo */

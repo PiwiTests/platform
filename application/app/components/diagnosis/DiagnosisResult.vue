@@ -24,7 +24,10 @@ function isRunningStale(d: FailureDiagnosis) {
 }
 
 const feedbackSaving = ref(false);
+const feedbackNoteSaving = ref(false);
+const showNoteEditor = ref(false);
 const localFeedback = ref<string | null>(null);
+const localFeedbackNote = ref<string | undefined>(undefined);
 
 watch(
   () => props.diagnosis?.feedback,
@@ -34,20 +37,45 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => props.diagnosis?.feedbackNote,
+  (v) => {
+    localFeedbackNote.value = v ?? undefined;
+  },
+  { immediate: true },
+);
+
 async function setFeedback(value: 'up' | 'down') {
   if (!props.diagnosis) return;
   const newValue = localFeedback.value === value ? null : value;
   localFeedback.value = newValue;
+  if (!newValue) showNoteEditor.value = false;
   feedbackSaving.value = true;
   try {
     await $fetch(`/api/failure-diagnoses/${props.diagnosis.id}/feedback`, {
       method: 'PATCH',
-      body: { feedback: newValue },
+      body: { feedback: newValue, feedbackNote: localFeedbackNote.value || null },
     });
   } catch {
     localFeedback.value = props.diagnosis.feedback ?? null;
   } finally {
     feedbackSaving.value = false;
+  }
+}
+
+async function saveFeedbackNote() {
+  if (!props.diagnosis) return;
+  feedbackNoteSaving.value = true;
+  try {
+    await $fetch(`/api/failure-diagnoses/${props.diagnosis.id}/feedback`, {
+      method: 'PATCH',
+      body: { feedback: localFeedback.value, feedbackNote: localFeedbackNote.value || null },
+    });
+    showNoteEditor.value = false;
+  } catch {
+    /* ignore */
+  } finally {
+    feedbackNoteSaving.value = false;
   }
 }
 
@@ -547,26 +575,49 @@ const pipeline = computed<Array<{ role: string; model: string }>>(() => {
         </li>
       </ul>
 
-      <div class="flex items-center justify-between pt-1 border-t border-default">
-        <div class="flex items-center gap-2">
-          <UButton
-            :icon="localFeedback === 'up' ? 'i-lucide-thumbs-up' : 'i-lucide-thumbs-up'"
-            :color="localFeedback === 'up' ? 'success' : 'neutral'"
-            variant="ghost"
-            size="xs"
-            :loading="feedbackSaving"
-            @click="setFeedback('up')"
-          />
-          <UButton
-            :icon="localFeedback === 'down' ? 'i-lucide-thumbs-down' : 'i-lucide-thumbs-down'"
-            :color="localFeedback === 'down' ? 'error' : 'neutral'"
-            variant="ghost"
-            size="xs"
-            :loading="feedbackSaving"
-            @click="setFeedback('down')"
-          />
+      <div class="flex items-start justify-between gap-3 pt-1 border-t border-default">
+        <div class="flex items-start gap-2">
+          <div class="flex items-center gap-1 shrink-0 pt-0.5">
+            <UButton
+              :icon="localFeedback === 'up' ? 'i-lucide-thumbs-up' : 'i-lucide-thumbs-up'"
+              :color="localFeedback === 'up' ? 'success' : 'neutral'"
+              variant="ghost"
+              size="xs"
+              :loading="feedbackSaving"
+              @click="setFeedback('up')"
+            />
+            <UButton
+              :icon="localFeedback === 'down' ? 'i-lucide-thumbs-down' : 'i-lucide-thumbs-down'"
+              :color="localFeedback === 'down' ? 'error' : 'neutral'"
+              variant="ghost"
+              size="xs"
+              :loading="feedbackSaving"
+              @click="setFeedback('down')"
+            />
+            <button
+              v-if="localFeedback"
+              class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 ml-1 transition-colors"
+              @click="showNoteEditor = !showNoteEditor"
+            >
+              <UIcon :name="showNoteEditor ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'" class="size-3" />
+              {{ localFeedbackNote ? 'Edit note' : 'Note' }}
+            </button>
+          </div>
+          <div v-if="showNoteEditor" class="flex items-start gap-1.5">
+            <UTextarea
+              v-model="localFeedbackNote"
+              size="xs"
+              placeholder="Add a note about this feedback…"
+              class="max-w-64"
+              :ui="{ base: 'text-xs' }"
+              :rows="2"
+            />
+            <UButton size="xs" color="primary" variant="solid" :loading="feedbackNoteSaving" @click="saveFeedbackNote">
+              Save
+            </UButton>
+          </div>
         </div>
-        <div class="flex items-center gap-1.5 text-xs text-gray-400">
+        <div class="flex items-center gap-1.5 text-xs text-gray-400 shrink-0 pt-0.5">
           <UBadge
             v-if="pipeline.length > 1"
             color="neutral"

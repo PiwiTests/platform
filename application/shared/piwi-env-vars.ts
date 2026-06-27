@@ -34,6 +34,7 @@ export type PiwiEnvVarCategory =
   | 'ai-limits'
   | 'clustering'
   | 'smtp'
+  | 'testing'
   | 'wasted-time'
   | 'demo'
   | 'build'
@@ -276,6 +277,20 @@ export const PIWI_ENV_VARS = {
   PIWI_AI_SLOW_REQUEST_MS: {
     description: 'Network request duration (ms) threshold for flagging as slow.',
     category: 'ai-limits',
+  },
+  PIWI_AI_MAX_TRACE_ACTIONS: {
+    description: 'Max actions extracted from trace ZIP for failing-action context (0 disables).',
+    category: 'ai-limits',
+  },
+  PIWI_AI_TRACE_DOM_CHARS: {
+    description: 'Max characters for the trace-derived DOM/ARIA excerpt in failing-action context.',
+    category: 'ai-limits',
+  },
+
+  PIWI_TEST_LOGS_DISABLED: {
+    description:
+      'Disable X-Piwi-Logs response header emission (default: auto-disabled in production, enabled in development).',
+    category: 'testing',
   },
 
   // ── Failure clustering ───────────────────────────────────────────────────

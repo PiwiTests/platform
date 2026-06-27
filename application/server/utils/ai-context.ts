@@ -27,6 +27,7 @@ import type {
 } from './run-json-types';
 import { resolveContextLimits } from './ai-context-limits';
 import type { ContextLimits } from '#shared/ai-context-limits';
+import { getTraceFailingActionSection } from './trace-parser';
 import type {
   BuildContextOptions,
   DiagnosisScope,
@@ -583,6 +584,27 @@ async function tracePointersSection(db: DbClient, rep: RepresentativeRow): Promi
   if (traceFiles.length === 0) return null;
   const lines = traceFiles.map((f) => `- ${f.label || 'Trace'}: /api/files/${f.path}`);
   return `## Trace Files\n${lines.join('\n')}`;
+}
+
+/** Parse the Playwright trace ZIP for the failing action context (B1). */
+async function failingActionSection(
+  db: DbClient,
+  rep: RepresentativeRow,
+  limits: ContextLimits,
+): Promise<string | null> {
+  if (limits.maxTraceActions <= 0) return null;
+
+  const traceFiles = await db
+    .select({ path: files.path })
+    .from(files)
+    .where(and(eq(files.testRunsCaseId, rep.id), eq(files.type, 'trace')))
+    .limit(1);
+
+  if (traceFiles.length === 0) return null;
+  const blobPath = traceFiles[0]!.path;
+  if (!blobPath) return null;
+
+  return getTraceFailingActionSection(db, blobPath, limits);
 }
 
 function formatFileSize(n: number | null): string {
@@ -1664,6 +1686,9 @@ export async function buildDiagnosisContext(
 
       // D12: Trace pointers
       push(section('tracePointers', 'Trace Files', await tracePointersSection(db, rep)));
+
+      // B1: Failing action from trace parsing
+      push(section('failingAction', 'Failing Action (from Trace)', await failingActionSection(db, rep, limits)));
 
       // Attachments & artifacts (video, HAR, custom files) — pointers only
       push(section('artifacts', 'Attachments & Artifacts', await artifactsSection(db, rep)));

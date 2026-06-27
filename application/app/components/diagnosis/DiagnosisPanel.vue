@@ -24,6 +24,8 @@ const {
   tokenEstimate,
   contextLoading,
   coverage,
+  baseCommit,
+  selectedCommitShas,
   refreshContext,
   runDiagnosis,
 } = useOrProvideClusterDiagnosis(props.clusterId);
@@ -104,6 +106,19 @@ watch(streamResult, (val) => {
   }
 });
 
+/** Pre-fill additional context and selected commits from a stored diagnosis. */
+watch(
+  () => diagnosis.value?.details,
+  (det) => {
+    if (!det) return;
+    const d = det as Record<string, unknown>;
+    if (typeof d.additionalContext === 'string' && d.additionalContext.trim() && !additionalContext.value) {
+      additionalContext.value = d.additionalContext;
+    }
+  },
+  { immediate: true },
+);
+
 /** Assisted iteration: pre-fill the additional-context box and open it. */
 function onPrefillContext(text: string) {
   additionalContext.value = additionalContext.value ? `${additionalContext.value}\n\n${text}` : text;
@@ -122,6 +137,8 @@ async function diagnose(force = false) {
   await startStream({
     force,
     additionalContext: buildPromptContext() || undefined,
+    baseCommit: baseCommit.value.trim() || undefined,
+    selectedCommitShas: selectedCommitShas.value.length ? [...selectedCommitShas.value] : undefined,
     images: allImages.value.length ? allImages.value : undefined,
   });
 }

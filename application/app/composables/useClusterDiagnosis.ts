@@ -33,6 +33,7 @@ export interface ClusterDiagnosisStore {
   baseCommit: Ref<string>;
   savedBaseCommit: Ref<string>;
   selectedCommitShas: Ref<string[]>;
+  autoSelectedCommits: Ref<string[]>;
   baseCommitIsPinned: ComputedRef<boolean>;
 
   // Shared context (single fetch, used by both panels)
@@ -58,6 +59,7 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
   const baseCommit = ref('');
   const savedBaseCommit = ref('');
   const selectedCommitShas = ref<string[]>([]);
+  const autoSelectedCommits = ref<string[]>([]);
   const baseCommitIsPinned = computed(() => !!savedBaseCommit.value);
 
   const contextText = ref<string | null>(null);
@@ -212,6 +214,14 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
         savedBaseCommit.value = res.manualBaseCommit;
         baseCommit.value = res.manualBaseCommit;
       }
+      // Pre-fill selected commits and auto-selected commits from stored diagnosis
+      const det = res.diagnosis?.details as Record<string, unknown> | null;
+      if (det?.selectedCommitShas && Array.isArray(det.selectedCommitShas)) {
+        selectedCommitShas.value = det.selectedCommitShas as string[];
+      }
+      if (det?.autoSelectedCommits && Array.isArray(det.autoSelectedCommits)) {
+        autoSelectedCommits.value = det.autoSelectedCommits as string[];
+      }
     } catch {
       /* ignore */
     }
@@ -230,6 +240,7 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
     baseCommit,
     savedBaseCommit,
     selectedCommitShas,
+    autoSelectedCommits,
     baseCommitIsPinned,
     contextText,
     contextSections,

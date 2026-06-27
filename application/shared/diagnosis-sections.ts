@@ -41,6 +41,7 @@ export const DIAGNOSIS_SECTIONS: DiagnosisSectionMeta[] = [
   { id: 'nearestAriaNames', label: 'Nearest matching ARIA names from snapshot', short: 'Nearest ARIA' },
   { id: 'alreadyGreen', label: 'Baseline freshness / already-green check', short: 'Already green' },
   { id: 'topSuspectedCommit', label: 'Top suspected commit', short: 'Top commit' },
+  { id: 'failingAction', label: 'Failing action from trace parsing', short: 'Trace' },
 ];
 
 const SECTION_IDS = new Set(DIAGNOSIS_SECTIONS.map((s) => s.id));

@@ -43,8 +43,12 @@ const als = new AsyncLocalStorage<PiwiTestLogEntry[]>();
 // The consola reporter is process-global — register it only once.
 let reporterAdded = false;
 
+const TEST_LOGS_DISABLED =
+  process.env.PIWI_TEST_LOGS_DISABLED === 'true' ||
+  (process.env.NODE_ENV === 'production' && process.env.PIWI_TEST_LOGS_DISABLED !== 'false');
+
 export default defineNitroPlugin((nitroApp) => {
-  if (process.env.NODE_ENV === 'production') return;
+  if (TEST_LOGS_DISABLED) return;
 
   if (!reporterAdded) {
     reporterAdded = true;

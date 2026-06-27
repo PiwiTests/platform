@@ -23,6 +23,10 @@ export interface ContextLimits {
   ariaSnapshotChars: number;
   /** Max characters of the test source snippet. */
   testSourceChars: number;
+  /** When > 0, parse the Playwright trace ZIP to extract failing action context. */
+  maxTraceActions: number;
+  /** Max characters for trace-derived DOM/ARIA excerpt. */
+  traceDomChars: number;
   /** Max backend server log entries (from X-Piwi-Logs header) included. */
   serverLogEntries: number;
   /** Max characters per backend server log entry. */
@@ -38,21 +42,23 @@ export interface ContextLimits {
 }
 
 export const DEFAULT_CONTEXT_LIMITS: ContextLimits = {
-  sampleErrorChars: 3000,
-  scmPatchBudget: 4000,
-  affectedTests: 15,
-  steps: 30,
-  consoleEntries: 15,
-  consoleEntryChars: 400,
-  networkRequests: 15,
-  ariaSnapshotChars: 6000,
-  testSourceChars: 3000,
-  serverLogEntries: 30,
-  serverLogEntryChars: 400,
-  maxImages: 3,
-  maxPassedPeers: 10,
-  maxConsoleWindow: 30,
+  sampleErrorChars: 10000,
+  scmPatchBudget: 15000,
+  affectedTests: 30,
+  steps: 50,
+  consoleEntries: 30,
+  consoleEntryChars: 1000,
+  networkRequests: 25,
+  ariaSnapshotChars: 12000,
+  testSourceChars: 8000,
+  serverLogEntries: 50,
+  serverLogEntryChars: 1000,
+  maxImages: 5,
+  maxPassedPeers: 20,
+  maxConsoleWindow: 50,
   slowRequestMs: 1500,
+  maxTraceActions: 10,
+  traceDomChars: 6000,
 };
 
 export interface ContextLimitField {
@@ -186,6 +192,22 @@ export const CONTEXT_LIMIT_FIELDS: ContextLimitField[] = [
     description: 'Network request duration threshold for flagging as slow.',
     min: 100,
     max: 30000,
+  },
+  {
+    key: 'maxTraceActions',
+    label: 'Trace actions',
+    envVar: 'PIWI_AI_MAX_TRACE_ACTIONS',
+    description: 'Max actions extracted from trace ZIP for failing-action context (0 disables).',
+    min: 0,
+    max: 50,
+  },
+  {
+    key: 'traceDomChars',
+    label: 'Trace DOM excerpt characters',
+    envVar: 'PIWI_AI_TRACE_DOM_CHARS',
+    description: 'Max characters for the trace-derived DOM/ARIA excerpt in failing-action context.',
+    min: 0,
+    max: 20000,
   },
 ];
 

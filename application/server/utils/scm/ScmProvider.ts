@@ -27,7 +27,7 @@ export interface ScmChanges {
 }
 
 export const MAX_SCM_FILES = 30;
-export const MAX_PATCH_PER_FILE = 1500;
+export const MAX_PATCH_PER_FILE = 100_000;
 export const MAX_RAW_DIFF_BYTES = 200_000;
 export const FETCH_TIMEOUT_MS = 10_000;
 

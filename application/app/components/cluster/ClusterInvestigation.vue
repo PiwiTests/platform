@@ -3,6 +3,7 @@ const {
   clusterId,
   baseCommit,
   selectedCommitShas,
+  autoSelectedCommits,
   baseCommitIsPinned,
   coverage,
   scmChanges,
@@ -148,6 +149,7 @@ const scmStatus = computed(() => {
     v-model:open="commitBrowserOpen"
     :cluster-id="clusterId"
     :initial-selected="selectedCommitShas"
+    :auto-selected-shas="autoSelectedCommits"
     @confirm="selectedCommitShas = $event"
   />
 </template>
