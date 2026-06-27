@@ -61,6 +61,12 @@ jobs:
         env:
           PIWI_DEMO_MODE: 'true'
 
+      - name: Generate OpenAPI spec
+        working-directory: ./application
+        run: npm run app:gen:spec
+        env:
+          PIWI_DEMO_MODE: 'true'
+
       - name: Generate static demo site
         working-directory: ./application
         run: npm run app:generate:demo
