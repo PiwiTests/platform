@@ -302,6 +302,10 @@ export const HELP_TOPICS = {
     text: 'Which evidence sections were present, truncated or absent for this diagnosis — the same map the model sees. Absent or trimmed evidence lowers confidence; the quote icon marks sections the diagnosis cited.',
     doc: 'ai-diagnosis#context-limits-and-token-cost',
   },
+  'cluster.recent-runs': {
+    title: 'Recent runs',
+    text: 'The most recent test runs where this cluster appeared. Use the Extract button to unlink test cases that were incorrectly grouped.',
+  },
 
   // ── Notifications / subscribe ─────────────────────────────────────────
   'notifications.subscribe': {
