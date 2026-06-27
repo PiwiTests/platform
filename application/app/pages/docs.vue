@@ -9,21 +9,30 @@ useHead({
 });
 
 onMounted(async () => {
-  const { createScalarApiReference } =
-    await import('https://cdn.jsdelivr.net/npm/@scalar/api-reference@latest/dist/browser/standalone.js');
-  createScalarApiReference(
-    {
-      url: specUrl,
-      darkMode: true,
-      showSidebar: true,
-      metaData: {
-        title: 'Piwi Dashboard API',
-        description:
-          'REST API for storing and querying Playwright test results, traces, failure diagnoses, and project statistics.',
-      },
-    },
-    container.value!,
-  );
+  const script = document.createElement('script');
+  script.src = 'https://cdn.jsdelivr.net/npm/@scalar/api-reference';
+  script.async = true;
+  script.onload = () => {
+    const S = (window as unknown as Record<string, unknown>).Scalar as
+      | { createApiReference: (config: Record<string, unknown>, element: HTMLElement) => void }
+      | undefined;
+    if (S?.createApiReference && container.value) {
+      S.createApiReference(
+        {
+          url: specUrl,
+          darkMode: true,
+          showSidebar: true,
+          metaData: {
+            title: 'Piwi Dashboard API',
+            description:
+              'REST API for storing and querying Playwright test results, traces, failure diagnoses, and project statistics.',
+          },
+        },
+        container.value,
+      );
+    }
+  };
+  document.head.appendChild(script);
 });
 </script>
 
@@ -40,5 +49,8 @@ onMounted(async () => {
 .scalar-container {
   height: 100vh;
   width: 100%;
+}
+.scalar-container :deep(.scalar-app) {
+  min-height: 100vh;
 }
 </style>
