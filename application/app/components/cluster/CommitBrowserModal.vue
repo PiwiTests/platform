@@ -6,7 +6,11 @@ const props = defineProps<{
   open: boolean;
   clusterId: number;
   initialSelected?: string[];
+  /** Commits that were auto-selected by the system (from relevance scoring). Shown with an indicator. */
+  autoSelectedShas?: string[];
 }>();
+
+const autoSelectedSet = computed(() => new Set(props.autoSelectedShas ?? []));
 
 const emit = defineEmits<{
   'update:open': [boolean];
@@ -223,6 +227,9 @@ function confirm() {
                   <template v-if="c.date">
                     <span class="shrink-0">· {{ formatRelativeTime(c.date) }}</span>
                   </template>
+                  <UBadge v-if="autoSelectedSet.has(c.sha)" size="xs" color="info" variant="soft" class="shrink-0">
+                    auto
+                  </UBadge>
                 </p>
               </div>
             </button>

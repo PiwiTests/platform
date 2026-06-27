@@ -49,7 +49,8 @@ export type SectionId =
   | 'artifacts'
   | 'nearestAriaNames'
   | 'alreadyGreen'
-  | 'topSuspectedCommit';
+  | 'topSuspectedCommit'
+  | 'failingAction';
 
 export interface ContextSection {
   id: SectionId;
