@@ -46,7 +46,10 @@ export type SectionId =
   | 'priorDiagnosis'
   | 'passedPeers'
   | 'tracePointers'
-  | 'artifacts';
+  | 'artifacts'
+  | 'nearestAriaNames'
+  | 'alreadyGreen'
+  | 'topSuspectedCommit';
 
 export interface ContextSection {
   id: SectionId;

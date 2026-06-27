@@ -910,6 +910,10 @@ export interface DiagnosisContextCoverage {
     patchesOmitted: boolean;
     patchesTruncated: boolean;
   } | null;
+  /** True when the last passing run is newer than the cluster's lastSeen — test may already be fixed. */
+  alreadyGreen?: boolean;
+  /** Sections where data is not applicable (with reason), keyed by section id. Absent in coverage means "no data". */
+  notApplicable?: Record<string, string>;
 }
 
 /**

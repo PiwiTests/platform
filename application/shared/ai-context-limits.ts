@@ -45,7 +45,7 @@ export const DEFAULT_CONTEXT_LIMITS: ContextLimits = {
   consoleEntries: 15,
   consoleEntryChars: 400,
   networkRequests: 15,
-  ariaSnapshotChars: 4000,
+  ariaSnapshotChars: 6000,
   testSourceChars: 3000,
   serverLogEntries: 30,
   serverLogEntryChars: 400,

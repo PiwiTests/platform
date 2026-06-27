@@ -393,13 +393,19 @@ function compareVitals(fail: WebVitals | null, pass: WebVitals | null): string[]
 
 /**
  * Compare the failing execution to the same test's recent passing runs:
- * duration vs baseline, web-vitals deltas, console-error delta, and how far the
- * run got (steps executed). All from data already stored — no extra collection.
+ * duration vs baseline, web-vitals deltas, console-error delta, how far the
+ * run got (steps executed), and whether the last pass is newer than the
+ * cluster's last seen (already-green reconciliation).
+ * All from data already stored — no extra collection.
  */
-async function baselineComparisonSection(db: DbClient, rep: RepresentativeRow): Promise<string | null> {
-  if (rep.testCaseId == null) return null;
+async function baselineComparisonSection(
+  db: DbClient,
+  rep: RepresentativeRow,
+  clusterLastSeenRunId?: number,
+): Promise<{ section: string | null; alreadyGreen: boolean }> {
+  if (rep.testCaseId == null) return { section: null, alreadyGreen: false };
 
-  const passing = await db
+  const passings = await db
     .select({
       duration: testRunsCases.duration,
       webVitals: testRunsCases.webVitals,
@@ -414,15 +420,28 @@ async function baselineComparisonSection(db: DbClient, rep: RepresentativeRow): 
     .orderBy(desc(testRuns.startTime))
     .limit(20);
 
-  if (passing.length === 0) return null;
+  if (passings.length === 0) return { section: null, alreadyGreen: false };
 
-  const last = passing[0]!;
+  const last = passings[0]!;
   const lines: string[] = [];
 
-  const when = last.startTime instanceof Date ? relativeDays(last.startTime) : null;
-  lines.push(`- Last passed: run #${last.runId}${when ? ` (${when})` : ''}`);
+  // Check if the last passing run is NEWER than the cluster's lastSeen run
+  let alreadyGreen = false;
+  if (clusterLastSeenRunId != null && last.runId > clusterLastSeenRunId) {
+    alreadyGreen = true;
+    const when = last.startTime instanceof Date ? relativeDays(last.startTime) : null;
+    lines.push(
+      `⚠️ This test has PASSED on a newer commit (run #${last.runId} > failing #${clusterLastSeenRunId}). The cluster may already be resolved; diagnose the historical failure, or re-triage as fixed.`,
+    );
+    if (when) lines.push(`- Last passing run: #${last.runId} (${when})`);
+  }
 
-  const stats = durationStats(passing.map((p) => p.duration));
+  const when = last.startTime instanceof Date ? relativeDays(last.startTime) : null;
+  if (!alreadyGreen) {
+    lines.push(`- Last passed: run #${last.runId}${when ? ` (${when})` : ''}`);
+  }
+
+  const stats = durationStats(passings.map((p) => p.duration));
   if (stats && rep.duration != null) {
     const ratio = stats.avg > 0 ? rep.duration / stats.avg : 0;
     const ratioStr = ratio >= 1.5 ? ` — ${ratio.toFixed(1)}× the passing average` : '';
@@ -443,8 +462,11 @@ async function baselineComparisonSection(db: DbClient, rep: RepresentativeRow): 
     lines.push(`- Steps executed: ${failSteps} (stopped early) vs ${passSteps} when passing`);
   }
 
-  if (lines.length === 0) return null;
-  return `## Compared to Last Pass\nSame test, failing execution vs its recent passing runs:\n${lines.join('\n')}`;
+  if (lines.length === 0) return { section: null, alreadyGreen };
+  return {
+    section: `## Compared to Last Pass\nSame test, failing execution vs its recent passing runs:\n${lines.join('\n')}`,
+    alreadyGreen,
+  };
 }
 
 /**
@@ -494,9 +516,41 @@ async function retryProgressionSection(db: DbClient, rep: RepresentativeRow): Pr
 }
 
 /** Tests in the same file that passed in the representative execution's run (D5). */
-async function passedPeersSection(db: DbClient, rep: RepresentativeRow, limits: ContextLimits): Promise<string | null> {
+async function passedPeersSection(
+  db: DbClient,
+  rep: RepresentativeRow,
+  limits: ContextLimits,
+): Promise<{ section: string | null; notApplicableReason: string | null }> {
   const testFilePath = rep.testFilePath;
-  if (!testFilePath) return null;
+  if (!testFilePath) return { section: null, notApplicableReason: null };
+
+  // Detect serial mode — check if any test in the same file was skipped
+  const suiteInfo = rep.testSuitePath as string | null;
+  const serialMode = suiteInfo?.includes('serial') ?? false;
+
+  if (serialMode) {
+    // Check if peers exist but were skipped (serial mode — one failure skips the rest)
+    const skippedPeers = await db
+      .select({ id: testRunsCases.id })
+      .from(testRunsCases)
+      .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+      .where(
+        and(
+          eq(testRunsCases.testRunId, rep.testRunId),
+          eq(testRunsCases.status, 'skipped'),
+          eq(testCases.filePath, testFilePath),
+        ),
+      )
+      .limit(1);
+
+    if (skippedPeers.length > 0) {
+      return {
+        section: null,
+        notApplicableReason: 'peers skipped (serial mode) — not a signal',
+      };
+    }
+  }
+
   const peers = await db
     .select({ title: testCases.title })
     .from(testRunsCases)
@@ -510,10 +564,13 @@ async function passedPeersSection(db: DbClient, rep: RepresentativeRow, limits: 
     )
     .limit(limits.maxPassedPeers + 1);
 
-  if (peers.length === 0) return null;
+  if (peers.length === 0) return { section: null, notApplicableReason: null };
   const shown = peers.slice(0, limits.maxPassedPeers);
   const extra = peers.length > limits.maxPassedPeers ? `\n…and ${peers.length - limits.maxPassedPeers} more` : '';
-  return `## Passed Peers\n${shown.map((t) => `- ${t.title}`).join('\n')}${extra}`;
+  return {
+    section: `## Passed Peers\n${shown.map((t) => `- ${t.title}`).join('\n')}${extra}`,
+    notApplicableReason: null,
+  };
 }
 
 /** Trace file URLs for the representative execution (D12). */
@@ -713,6 +770,282 @@ async function priorDiagnosisSection(db: DbClient, cluster: FailureCluster): Pro
   return lines.join('\n');
 }
 
+// ── Content-aware ARIA snapshot truncation ───────────────────────────────────
+
+interface AriaBlock {
+  startLine: number;
+  endLine: number;
+  role: string;
+  name: string;
+  charCount: number;
+  isContent: boolean;
+}
+
+/**
+ * Content-aware ARIA snapshot truncation: prioritizes the content region
+ * (`main`, else the largest non-nav `document`/`region` subtree) and
+ * gives repetitive landmarks (`navigation`/`list` with many siblings) a
+ * small fixed budget, collapsing the remainder. Always keeps at least the
+ * role headers of dropped regions so the model knows they existed.
+ */
+function selectAriaForBudget(snapshot: string, budget: number): string {
+  if (snapshot.length <= budget) return snapshot;
+
+  const lines = snapshot.split('\n');
+
+  // Identify top-level blocks (lines starting with `- ` at indent 0)
+  const blocks: AriaBlock[] = [];
+  let blockStart = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    const trimmed = line.trimStart();
+    const indent = line.length - trimmed.length;
+    if (indent === 0 && trimmed.startsWith('- ')) {
+      if (blockStart >= 0) {
+        blocks.push(extractBlock(lines, blockStart, i - 1));
+      }
+      blockStart = i;
+    }
+  }
+  if (blockStart >= 0) {
+    blocks.push(extractBlock(lines, blockStart, lines.length - 1));
+  }
+
+  if (blocks.length === 0) {
+    return snapshot.slice(0, budget);
+  }
+
+  // Classify blocks
+  for (const block of blocks) {
+    const firstLine = lines[block.startLine] ?? '';
+    const roleMatch = firstLine.match(/\[role=(\w+)\]/) || firstLine.match(/^-\s*(\w+)(?=\s|["])/);
+    block.role = roleMatch ? (roleMatch[1] ?? '').toLowerCase() : '';
+    block.charCount = lines.slice(block.startLine, block.endLine + 1).join('\n').length;
+    block.isContent = block.role === 'main' || (block.role === 'region' && !block.role.includes('nav'));
+  }
+
+  // Find content block and nav/list blocks
+  const contentBlock = blocks.find((b) => b.isContent) || blocks.reduce((a, b) => (a.charCount >= b.charCount ? a : b));
+  const navBlocks = blocks.filter((b) => b.role === 'navigation' || b.role === 'list');
+
+  // Budget allocation: content gets 70%, nav gets a shared 20%, rest 10%
+  const contentBudget = Math.floor(budget * 0.7);
+  const navBudget = Math.floor(budget * 0.2);
+  const otherBudget = budget - contentBudget - navBudget;
+
+  const resultLines: string[] = [];
+  let remaining = budget;
+
+  for (const block of blocks) {
+    const blockText = lines.slice(block.startLine, block.endLine + 1).join('\n');
+    let lineBudget: number;
+
+    if (block === contentBlock) {
+      lineBudget = contentBudget;
+    } else if (navBlocks.includes(block)) {
+      lineBudget = Math.floor(navBudget / navBlocks.length);
+    } else {
+      lineBudget = Math.floor(otherBudget / (blocks.length - 1 - navBlocks.length) || otherBudget);
+    }
+
+    if (blockText.length <= lineBudget) {
+      resultLines.push(blockText);
+      remaining -= blockText.length;
+    } else {
+      // Collapse the block: keep header + collapse long sibling runs
+      const collapsed = collapseAriaBlock(lines, block, Math.max(lineBudget, 80));
+      resultLines.push(collapsed);
+      remaining -= collapsed.length;
+    }
+  }
+
+  const result = resultLines.join('\n');
+  return result.length <= budget ? result : result.slice(0, budget) + '\n[truncated]';
+}
+
+function extractBlock(lines: string[], start: number, end: number): AriaBlock {
+  const firstLine = lines[start] ?? '';
+  const nameMatch = firstLine.match(/"([^"]+)"/);
+  return {
+    startLine: start,
+    endLine: end,
+    role: '',
+    name: nameMatch ? (nameMatch[1] ?? '') : '',
+    charCount: 0,
+    isContent: false,
+  };
+}
+
+/**
+ * Collapse an ARIA block: keep the header line, then condense long sibling
+ * runs (listitems, links) to first K + elision marker.
+ */
+function collapseAriaBlock(lines: string[], block: AriaBlock, budget: number): string {
+  const headerLine = lines[block.startLine] ?? '';
+  const childLines = lines.slice(block.startLine + 1, block.endLine + 1);
+
+  // Count sibling groups by indentation
+  const indentCounts = new Map<number, number>();
+  let prevIndent = -1;
+  let sameIndentCount = 0;
+  let maxIndent = 0;
+  for (const l of childLines) {
+    const trimmed = l.trimStart();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const indent = l.length - trimmed.length;
+    if (indent > maxIndent) maxIndent = indent;
+    if (indent === prevIndent) {
+      sameIndentCount++;
+    } else {
+      if (sameIndentCount > 5) {
+        indentCounts.set(prevIndent, Math.max(indentCounts.get(prevIndent) ?? 0, sameIndentCount));
+      }
+      sameIndentCount = 1;
+      prevIndent = indent;
+    }
+  }
+  if (sameIndentCount > 5) {
+    indentCounts.set(prevIndent, Math.max(indentCounts.get(prevIndent) ?? 0, sameIndentCount));
+  }
+
+  // Collapse: keep header + first few items per deep indent level, elide rest
+  const collapsed: string[] = [headerLine];
+  const seenPerIndent = new Map<number, number>();
+  const keptLines: string[] = [];
+
+  // Determine the deepest indent level with many siblings
+  const problemIndent = maxIndent;
+
+  for (const l of childLines) {
+    const trimmed = l.trimStart();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const indent = l.length - trimmed.length;
+
+    if (indent === problemIndent && (indentCounts.get(indent) ?? 0) > 5) {
+      const seen = seenPerIndent.get(indent) ?? 0;
+      if (seen >= 3) {
+        // Skip this line; we'll add one elision marker
+        continue;
+      }
+      seenPerIndent.set(indent, seen + 1);
+      keptLines.push(l);
+    } else {
+      keptLines.push(l);
+    }
+  }
+
+  collapsed.push(...keptLines);
+
+  // If we collapsed any, add elision
+  const totalAtProblemIndent = childLines.filter((l) => {
+    const t = l.trimStart();
+    return l.length - l.trimStart().length === problemIndent && t && !t.startsWith('#');
+  }).length;
+  const keptAtProblemIndent = keptLines.filter((l) => l.length - l.trimStart().length === problemIndent).length;
+  if (keptAtProblemIndent < totalAtProblemIndent) {
+    collapsed.push(
+      `  ${'  '.repeat(problemIndent > 0 ? Math.floor(problemIndent / 2) : 0)}- … (${totalAtProblemIndent - keptAtProblemIndent} more items elided)`,
+    );
+  }
+
+  let result = collapsed.join('\n');
+  if (result.length > budget) {
+    result = result.slice(0, budget) + '\n[truncated]';
+  }
+  return result;
+}
+
+/** Parse a `getByRole`-style locator from an error message. */
+function parseLocatorFromError(
+  error: string,
+): { role?: string; name?: string; exact?: boolean; method?: string } | null {
+  // Match: getByRole('heading', { name: 'Users', exact: true })
+  const roleMatch = error.match(/getByRole\(\s*'(\w+)'\s*(?:,\s*\{[^}]*name:\s*'([^']*)'([^}]*)\})?\s*\)/);
+  if (roleMatch) {
+    const exact = roleMatch[3]?.includes('exact: true') || false;
+    return { role: roleMatch[1], name: roleMatch[2], exact, method: 'getByRole' };
+  }
+  // Match: getByText('some text')
+  const textMatch = error.match(/getBy(Text|Label|Placeholder|Title|AltText)\(\s*['"]([^'"]+)['"]\s*\)/);
+  if (textMatch) {
+    return { method: textMatch[1]!, name: textMatch[2], exact: false };
+  }
+  return null;
+}
+
+/** Parse ARIA snapshot YAML lines into {role, name} pairs. */
+function parseAriaEntries(snapshot: string): Array<{ role: string; name: string }> {
+  const entries: Array<{ role: string; name: string }> = [];
+  for (const line of snapshot.split('\n')) {
+    const roleMatch = line.match(/\[role=(\w+)\]/);
+    if (!roleMatch) continue;
+    const nameMatch = line.match(/"([^"]+)"/);
+    entries.push({ role: (roleMatch[1] ?? '').toLowerCase(), name: nameMatch ? (nameMatch[1] ?? '') : '' });
+  }
+  return entries;
+}
+
+/** Simple token-overlap similarity between two strings (0–1). */
+function tokenSimilarity(a: string, b: string): number {
+  const aTokens = new Set(a.toLowerCase().split(/\s+/));
+  const bTokens = b.toLowerCase().split(/\s+/);
+  if (aTokens.size === 0 && bTokens.length === 0) return 1;
+  let overlap = 0;
+  for (const t of bTokens) if (aTokens.has(t)) overlap++;
+  return overlap / Math.max(aTokens.size, bTokens.length);
+}
+
+/**
+ * Nearest accessible-name hint for locator failures.
+ * When the failing error contains a role/name locator, parse the stored ARIA
+ * snapshot and surface the closest candidates.
+ */
+function nearestAriaNamesSection(rep: RepresentativeRow): string | null {
+  if (!rep.error && !rep.ariaSnapshot) return null;
+  const error = rep.error?.trim() || '';
+  const snapshot = rep.ariaSnapshot?.trim() || '';
+  if (!error || !snapshot) return null;
+
+  const locator = parseLocatorFromError(error);
+  if (!locator) return null;
+
+  const entries = parseAriaEntries(snapshot);
+  if (entries.length === 0) return null;
+
+  // Filter entries matching the locator's role
+  const sameRole = locator.role ? entries.filter((e) => e.role === locator.role) : entries;
+
+  if (sameRole.length === 0 || !locator.name) return null;
+
+  // Score by token similarity
+  const scored = sameRole.map((e) => ({
+    ...e,
+    score: tokenSimilarity(locator.name!, e.name),
+  }));
+  scored.sort((a, b) => b.score - a.score);
+
+  const top = scored.slice(0, 5).filter((e) => e.score > 0 || e.name);
+  if (top.length === 0) return null;
+
+  const lines: string[] = ['### Nearest matching elements (from ARIA)'];
+  lines.push(
+    `Requested: ${locator.method}('${locator.role ?? ''}', name="${locator.name}"${locator.exact ? ', exact: true' : ''})`,
+  );
+  for (const e of top) {
+    const note =
+      e.score >= 1
+        ? ''
+        : e.score > 0.3
+          ? ` — close match (score: ${e.score.toFixed(2)})`
+          : ` — partial match (score: ${e.score.toFixed(2)})`;
+    const exactHint = locator.exact && e.name !== locator.name ? ' — exact:false would match' : '';
+    lines.push(`Present:   ${e.role} "${e.name}"${exactHint}${note}`);
+  }
+
+  return lines.join('\n');
+}
+
 /** Header + error/source/steps/console/network/web-vitals/ARIA sub-sections from one execution. */
 function representativeExecutionSections(
   rep: RepresentativeRow,
@@ -842,11 +1175,11 @@ function representativeExecutionSections(
     if (lines.length > 0) out.push(`### Web Vitals\n${lines.join('\n')}`);
   }
 
-  // ARIA snapshot
+  // ARIA snapshot (content-aware truncation)
   if (rep.ariaSnapshot) {
-    const truncated = rep.ariaSnapshot.slice(0, limits.ariaSnapshotChars);
+    const truncated = selectAriaForBudget(rep.ariaSnapshot, limits.ariaSnapshotChars);
     out.push(
-      `### ARIA Snapshot (page state at failure)\n\`\`\`yaml\n${truncated}${rep.ariaSnapshot.length > limits.ariaSnapshotChars ? '\n[truncated]' : ''}\n\`\`\``,
+      `### ARIA Snapshot (page state at failure)\n\`\`\`yaml\n${truncated}${truncated.length < rep.ariaSnapshot.length ? '\n[truncated]' : ''}\n\`\`\``,
     );
   }
 
@@ -871,6 +1204,78 @@ async function retryBehaviorSection(db: DbClient, cluster: FailureCluster): Prom
 }
 
 /**
+ * Score a changed file by relevance to the failing test.
+ * Higher score = more likely to be the cause.
+ */
+function scoreChangedFile(filename: string, testFilePath?: string | null, ariaSnapshot?: string | null): number {
+  let score = 0;
+
+  // +++ file path matches the failing test's route (derive from test file path)
+  if (testFilePath) {
+    // Direct match: the changed file IS the test file
+    if (filename === testFilePath) score += 3;
+    // Try to derive the page route from the test file path
+    // e.g. tests/user-management.spec.ts → app/pages/settings/users.vue
+    const testFileLower = testFilePath.toLowerCase().replace(/\\/g, '/');
+    const filenameLower = filename.toLowerCase().replace(/\\/g, '/');
+    // Check if filename contains parts of the test file name
+    const baseName = testFileLower.replace(/^.*[/\\]/, '').replace(/\.(spec|test)\.\w+$/, '');
+    if (filenameLower.includes(baseName)) score += 2;
+  }
+
+  // ++ file is a component under app/components/
+  if (filename.startsWith('app/components/') || filename.includes('/components/')) {
+    score += 2;
+  }
+
+  // ++ file name tokens match role/text from the ARIA snapshot
+  if (ariaSnapshot && filename.includes('/')) {
+    const baseName = filename.split('/').pop()?.toLowerCase() ?? '';
+    const ariaLower = ariaSnapshot.toLowerCase();
+    // Component name like "SectionCard" → check if it appears in the snapshot
+    const componentName = baseName
+      .replace(/\.\w+$/, '')
+      .replace(/([A-Z])/g, ' $1')
+      .trim()
+      .toLowerCase();
+    if (componentName && ariaLower.includes(componentName)) score += 2;
+  }
+
+  // + file is under app/ (source code vs config/test/docs)
+  if (filename.startsWith('app/')) {
+    score += 1;
+  }
+
+  return score;
+}
+
+interface ScoredFile {
+  file: ChangedFile;
+  score: number;
+}
+
+function scoreFilesByRelevance(
+  files: ChangedFile[],
+  testFilePath?: string | null,
+  ariaSnapshot?: string | null,
+): ScoredFile[] {
+  return files
+    .map((f) => ({ file: f, score: scoreChangedFile(f.filename, testFilePath, ariaSnapshot) }))
+    .sort((a, b) => b.score - a.score);
+}
+
+function getTopSuspectedCommit(
+  scored: ScoredFile[],
+  commits: Array<{ sha: string; message: string }>,
+): { sha: string; message: string } | null {
+  if (scored.length === 0 || commits.length === 0 || !scored[0]) return null;
+  const topFile = scored[0];
+  if (topFile?.score === 0) return null;
+  // Return the most recent commit (last in the range, first in the array)
+  return commits[0] ?? null;
+}
+
+/**
  * "What changed since last green run" + the actual SCM diff (or a manual-baseline
  * diff when there is no last green run). Tracks SCM coverage for the UI status line.
  */
@@ -879,7 +1284,16 @@ async function scmInvestigationSections(
   cluster: FailureCluster,
   opts: BuildContextOptions,
   limits: ContextLimits,
-): Promise<{ sections: string[]; coverage: ScmCoverage | null; scmChanges: ScmChanges | null }> {
+  /** The failing test's file path, used for relevance scoring. */
+  testFilePath?: string | null,
+  /** The failing test's ARIA snapshot, used for relevance scoring. */
+  ariaSnapshot?: string | null,
+): Promise<{
+  sections: string[];
+  coverage: ScmCoverage | null;
+  scmChanges: ScmChanges | null;
+  topSuspectedCommit: string | null;
+}> {
   const sections: string[] = [];
   const scmCov: ScmCoverage = {
     hasLastGreen: false,
@@ -907,7 +1321,7 @@ async function scmInvestigationSections(
     .from(testRuns)
     .where(eq(testRuns.id, cluster.lastSeenRunId));
 
-  if (!lastSeenRunRows[0]) return { sections, coverage: null, scmChanges: null };
+  if (!lastSeenRunRows[0]) return { sections, coverage: null, scmChanges: null, topSuspectedCommit: null };
 
   try {
     const regression = await computeRegressionContext(db, lastSeenRunRows[0]);
@@ -946,6 +1360,9 @@ async function scmInvestigationSections(
           if (baseCommitOverride) scmCov.baseCommitUsed = baseCommitOverride;
           const changes = provider ? await provider.fetchChanges(fromSha, regression.commitRange.toSha) : null;
           if (changes && (changes.commits.length > 0 || changes.files.length > 0)) {
+            // Score and sort files by relevance, then render with budget
+            const scored = scoreFilesByRelevance(changes.files, testFilePath, ariaSnapshot);
+            changes.files = scored.map((s) => s.file);
             scmChanges = changes;
             scmCov.filesCount = changes.files.length;
             scmCov.commitsCount = changes.commits.length;
@@ -958,6 +1375,14 @@ async function scmInvestigationSections(
             scmCov.patchedFilesCount = rendered.patchedFilesCount;
             scmCov.patchesTruncated = rendered.patchesTruncated;
             sections.push(rendered.text);
+
+            // Surface top suspected commit
+            const topCommit = getTopSuspectedCommit(scored, changes.commits);
+            if (topCommit) {
+              sections.push(
+                `### Top Suspected Change\nMost relevant change in range: \`${topCommit.sha.slice(0, 7)}\` (${topCommit.message})`,
+              );
+            }
           }
         } catch {
           // silently skip if SCM fetch fails
@@ -992,6 +1417,9 @@ async function scmInvestigationSections(
           const provider = await createScmProvider(repositoryUrl, db, cluster.projectId);
           const changes = provider ? await provider.fetchChanges(baseCommitOverride, currentCommit) : null;
           if (changes && (changes.commits.length > 0 || changes.files.length > 0)) {
+            // Score and sort files by relevance
+            const scored = scoreFilesByRelevance(changes.files, testFilePath, null);
+            changes.files = scored.map((s) => s.file);
             scmChanges = changes;
             scmCov.filesCount = changes.files.length;
             scmCov.commitsCount = changes.commits.length;
@@ -1004,6 +1432,13 @@ async function scmInvestigationSections(
             scmCov.patchedFilesCount = rendered.patchedFilesCount;
             scmCov.patchesTruncated = rendered.patchesTruncated;
             sections.push(rendered.text);
+
+            const topCommit = getTopSuspectedCommit(scored, changes.commits);
+            if (topCommit) {
+              sections.push(
+                `### Top Suspected Change\nMost relevant change in range: \`${topCommit.sha.slice(0, 7)}\` (${topCommit.message})`,
+              );
+            }
           }
         } catch {
           // silently skip
@@ -1021,7 +1456,7 @@ async function scmInvestigationSections(
     // omit section if regression context fails
   }
 
-  return { sections, coverage: scmReached ? scmCov : null, scmChanges };
+  return { sections, coverage: scmReached ? scmCov : null, scmChanges, topSuspectedCommit: null };
 }
 
 /** Diffs for commits the user explicitly picked, sharing one patch budget. */
@@ -1080,9 +1515,14 @@ export async function buildClusterDiagnosisContext(
   db: DbClient,
   cluster: FailureCluster,
   opts?: BuildContextOptions,
-): Promise<{ text: string; coverage: DiagnosisContextCoverage; scmChanges: ScmChanges | null }> {
+): Promise<{
+  text: string;
+  coverage: DiagnosisContextCoverage;
+  scmChanges: ScmChanges | null;
+  images?: AiAttachedImage[];
+}> {
   const result = await buildDiagnosisContext(db, { kind: 'cluster', clusterId: cluster.id, ...opts });
-  return { text: result.text, coverage: result.coverage, scmChanges: result.scmChanges };
+  return { text: result.text, coverage: result.coverage, scmChanges: result.scmChanges, images: result.images };
 }
 
 // ── Scope-aware diagnosis context builder ────────────────────────────────────
@@ -1189,11 +1629,26 @@ export async function buildDiagnosisContext(
       const logsSub = repSections.find((s) => s.startsWith('### Backend Server Logs'));
       if (logsSub) push(section('serverLogs', 'Backend Server Logs', logsSub));
 
-      // D5: Passed peers
-      push(section('passedPeers', 'Passed Peers', await passedPeersSection(db, rep, limits)));
+      // Passed peers (with serial-mode detection)
+      const peersResult = await passedPeersSection(db, rep, limits);
+      if (peersResult.notApplicableReason) {
+        coverage = {
+          ...coverage,
+          notApplicable: { ...coverage.notApplicable, passedPeers: peersResult.notApplicableReason },
+        };
+      } else {
+        push(section('passedPeers', 'Passed Peers', peersResult.section));
+      }
 
-      // Compared to last pass (duration/vitals/console/steps deltas)
-      push(section('baselineComparison', 'Compared to Last Pass', await baselineComparisonSection(db, rep)));
+      // Nearest accessible-name hint for locator failures
+      push(section('nearestAriaNames', 'Nearest Matching ARIA Names', nearestAriaNamesSection(rep)));
+
+      // Compared to last pass (duration/vitals/console/steps deltas) + already-green check
+      const baselineResult = await baselineComparisonSection(db, rep, cluster.lastSeenRunId);
+      push(section('baselineComparison', 'Compared to Last Pass', baselineResult.section));
+      if (baselineResult.alreadyGreen) {
+        coverage = { ...coverage, alreadyGreen: true };
+      }
 
       // Retry progression (per-attempt error evolution)
       push(section('retryProgression', 'Retry Progression', await retryProgressionSection(db, rep)));
@@ -1229,10 +1684,14 @@ export async function buildDiagnosisContext(
 
       // SCM investigation (network fetch) — skippable for the lean research pass
       if (!opts.skipScm) {
-        const scm = await scmInvestigationSections(db, cluster, opts, limits);
+        const scm = await scmInvestigationSections(db, cluster, opts, limits, rep.testFilePath, rep.ariaSnapshot);
         for (const s of scm.sections) {
           if (s.startsWith('## What Changed')) {
             push(section('scmInvestigation', 'SCM Investigation', s));
+          }
+          // Top suspected commit section
+          if (s.startsWith('### Top Suspected Change')) {
+            push(section('topSuspectedCommit', 'Top Suspected Commit', s));
           }
         }
         coverage = { scm: scm.coverage };

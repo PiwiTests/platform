@@ -23,6 +23,7 @@ const {
   contextSections,
   tokenEstimate,
   contextLoading,
+  coverage,
   refreshContext,
   runDiagnosis,
 } = useOrProvideClusterDiagnosis(props.clusterId);
@@ -206,6 +207,7 @@ function showResult() {
       :loading="contextLoading"
       :focus-section="focusSection"
       :cited-sections="citedSections"
+      :not-applicable-sections="coverage?.notApplicable"
       @update:open="
         showAiContext = $event;
         if (!$event) focusSection = null;
