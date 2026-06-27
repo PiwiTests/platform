@@ -12,7 +12,7 @@
  */
 
 import { eq } from 'drizzle-orm';
-import { failureDiagnoses } from '../../../server/database/schema';
+import { failureDiagnoses, failureDiagnosisVersions } from '../../../server/database/schema';
 import { getDemoDb } from '../db.client';
 import { CONTEXT_LIMIT_FIELDS, DEFAULT_CONTEXT_LIMITS } from '#shared/ai-context-limits';
 
@@ -46,37 +46,73 @@ const FAKE_THINKING_CHUNKS = [
  * POST /api/failure-clusters/:id/diagnose/stream
  *
  * Returns a simulated SSE stream with realistic thinking tokens, then a final
- * structured result. The first time a cluster is diagnosed in demo mode, the
- * result is persisted to the demo DB so subsequent GET /diagnosis returns it.
+ * structured result. The diagnosis is persisted to the demo DB so subsequent
+ * GET /diagnosis returns the result.
+ *
+ * Supports `?force=true` via the query (third argument) to re-diagnose.
  */
-export async function apiStreamDiagnoseCluster(_clusterId: number, _body?: Record<string, unknown>): Promise<Response> {
+export async function apiStreamDiagnoseCluster(
+  _clusterId: number,
+  _body?: Record<string, unknown>,
+  query?: URLSearchParams,
+): Promise<Response> {
   const clusterId = _clusterId;
+  const force = query?.get('force') === 'true';
 
-  // If there's already a completed diagnosis in the DB, return it immediately
   const db = await getDemoDb();
-  const existing = await db.select().from(failureDiagnoses).where(eq(failureDiagnoses.clusterId, clusterId)).limit(1);
 
-  if (existing[0]?.status === 'completed') {
-    const encoder = new TextEncoder();
-    const data = JSON.stringify(existing[0]);
-    return new Response(
-      new ReadableStream({
-        start(controller) {
-          controller.enqueue(encoder.encode(`event: result\ndata: ${data}\n\n`));
-          controller.close();
+  // Force mode: snapshot existing diagnosis so it's not lost, then re-run
+  if (force) {
+    const existing = await db.select().from(failureDiagnoses).where(eq(failureDiagnoses.clusterId, clusterId)).limit(1);
+    if (existing[0]) {
+      await db.insert(failureDiagnosisVersions).values({
+        diagnosisId: existing[0].id,
+        clusterId: existing[0].clusterId,
+        scope: existing[0].scope,
+        status: existing[0].status,
+        provider: existing[0].provider,
+        model: existing[0].model,
+        category: existing[0].category,
+        confidence: existing[0].confidence,
+        summary: existing[0].summary,
+        rootCause: existing[0].rootCause,
+        details: existing[0].details as Record<string, unknown> | null,
+        error: existing[0].error,
+        inputTokens: existing[0].inputTokens,
+        outputTokens: existing[0].outputTokens,
+        durationMs: existing[0].durationMs,
+        createdAt: new Date(),
+      });
+      await db.delete(failureDiagnoses).where(eq(failureDiagnoses.id, existing[0].id));
+    }
+  }
+
+  // If there's already a completed diagnosis (and not force-refreshed), return it immediately
+  if (!force) {
+    const existing = await db.select().from(failureDiagnoses).where(eq(failureDiagnoses.clusterId, clusterId)).limit(1);
+    if (existing[0]?.status === 'completed') {
+      const encoder = new TextEncoder();
+      const data = JSON.stringify(existing[0]);
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(`event: result\ndata: ${data}\n\n`));
+            controller.close();
+          },
+        }),
+        {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+          },
         },
-      }),
-      {
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
-        },
-      },
-    );
+      );
+    }
   }
 
   // Simulated diagnosis result that matches the demo seed data shape
+  const now = new Date();
   const diagnosisResult = {
     id: Date.now(),
     clusterId,
@@ -134,25 +170,46 @@ export async function apiStreamDiagnoseCluster(_clusterId: number, _body?: Recor
     inputTokens: 0,
     outputTokens: 0,
     durationMs: 100,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
   };
+
+  // Persist the diagnosis to the demo DB so it survives page reloads
+  const [saved] = await db
+    .insert(failureDiagnoses)
+    .values({
+      clusterId,
+      status: 'completed',
+      provider: 'demo',
+      model: 'demo-simulated',
+      category: diagnosisResult.category,
+      confidence: diagnosisResult.confidence,
+      summary: diagnosisResult.summary,
+      rootCause: diagnosisResult.rootCause,
+      details: diagnosisResult.details,
+      error: null,
+      inputTokens: 0,
+      outputTokens: 0,
+      durationMs: 100,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+
+  // Use the saved DB row id for the result sent over the stream
+  const finalResult = { ...diagnosisResult, id: saved!.id };
 
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        // Emit thinking chunks with delays
         for (const chunk of FAKE_THINKING_CHUNKS) {
           controller.enqueue(encoder.encode(`event: thinking\ndata: ${JSON.stringify({ text: chunk })}\n\n`));
-          // Simulate variable thinking speed — shorter chunks pass faster
           const delay = Math.max(200, Math.min(800, chunk.length * 3));
           await new Promise((r) => setTimeout(r, delay));
         }
-
-        // Emit the final structured result
-        controller.enqueue(encoder.encode(`event: result\ndata: ${JSON.stringify(diagnosisResult)}\n\n`));
+        controller.enqueue(encoder.encode(`event: result\ndata: ${JSON.stringify(finalResult)}\n\n`));
         controller.close();
       } catch {
         try {

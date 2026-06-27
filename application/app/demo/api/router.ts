@@ -330,7 +330,12 @@ const routes: RouteEntry[] = [
   {
     method: 'POST',
     pattern: /^\/api\/failure-clusters\/(\d+)\/diagnose\/stream$/,
-    handler: (m, body) => apiStreamDiagnoseCluster(+m[1]!, body as Record<string, unknown> | undefined),
+    handler: (m, body, query) =>
+      apiStreamDiagnoseCluster(
+        +m[1]!,
+        body as Record<string, unknown> | undefined,
+        query as URLSearchParams | undefined,
+      ),
   },
   {
     method: 'POST',

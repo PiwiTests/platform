@@ -156,19 +156,18 @@ const links = computed(() => {
       open.value = false;
     },
   });
-  if (!isDemo) {
-    bottomLinks.unshift({
-      label: 'API Docs',
-      icon: 'i-lucide-book-open',
-      to: '/docs',
-      // `/docs` is served by Nitro (Scalar UI), not a Nuxt page — force a full
-      // page navigation so the client router doesn't intercept it and 404.
-      external: true,
-      onSelect: () => {
-        open.value = false;
-      },
-    });
-  }
+  bottomLinks.unshift({
+    label: 'API Docs',
+    icon: 'i-lucide-book-open',
+    to: '/docs',
+    // In non-demo mode, `/docs` is served by Nitro (Scalar UI), not a Nuxt page —
+    // force a full page navigation so the client router doesn't intercept it.
+    // In demo mode, `/docs` is a Nuxt page that renders Scalar client-side.
+    external: !isDemo,
+    onSelect: () => {
+      open.value = false;
+    },
+  });
   return [
     [
       {

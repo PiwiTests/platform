@@ -257,7 +257,7 @@ const windsurfSnippet = computed(() =>
                 variant="outline"
                 title="Open API docs"
                 to="/docs"
-                external
+                :external="!isDemo"
               >
                 REST API docs
               </UButton>
