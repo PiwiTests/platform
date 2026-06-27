@@ -284,10 +284,10 @@ export default defineNuxtConfig({
         ).options.handlers;
         const paths: Record<string, unknown> = {};
         for (const h of handlers) {
-          if (!h.route || h.route.startsWith('/_')) continue;
+          if (!h.route || !h.meta?.openAPI) continue;
           const route = h.route.replace(/:(\w+)/g, '{$1}').replace(/\*\*.*$/, '{path}');
           const method = (h.method || 'get').toLowerCase();
-          const openAPI = h.meta?.openAPI ? { ...h.meta.openAPI } : {};
+          const openAPI = { ...h.meta.openAPI };
           delete (openAPI as Record<string, unknown>).$global;
           paths[route] ??= {};
           Object.assign(paths[route] as Record<string, unknown>, {
