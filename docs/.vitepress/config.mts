@@ -15,7 +15,7 @@ export default defineConfig({
       { text: 'Home', link: '/' },
       { text: 'Getting started', link: '/getting-started' },
       { text: 'Reporter', link: '/reporter' },
-      { text: 'API reference', link: '/api' },
+      { text: 'API docs', link: 'https://piwitests.github.io/demo/docs' },
       { text: 'Demo', link: 'https://piwitests.github.io/demo/' },
     ],
 
@@ -43,7 +43,7 @@ export default defineConfig({
       {
         text: 'Integrate',
         items: [
-          { text: 'API reference', link: '/api' },
+          { text: 'API docs (interactive)', link: 'https://piwitests.github.io/demo/docs' },
           { text: 'MCP server', link: '/mcp' },
           { text: 'Backend logs', link: '/backend-logs' },
         ],
