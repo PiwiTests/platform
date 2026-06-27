@@ -461,9 +461,19 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (!row) return null;
     const baseCommit = params.baseCommit as string | undefined;
     const ctx = await buildDiagnosisContext(db, { kind: 'cluster', clusterId: id, baseCommit });
+    const screenshots = ctx.images?.length
+      ? ctx.images.map((img) => ({
+          name: img.name,
+          mediaType: img.mediaType,
+          dataLength: img.data.length,
+          tool: 'get_case_screenshots',
+          note: 'Call get_case_screenshots with the testRunsCaseId to view the full image.',
+        }))
+      : null;
     return dropNulls({
       clusterId: id,
       text: ctx.text,
+      screenshots,
       sections: ctx.sections.map((s) => ({
         id: s.id,
         title: s.title,
@@ -479,6 +489,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             provider: ctx.coverage.scm.provider || null,
             commitsCount: ctx.coverage.scm.commitsCount || null,
             filesCount: ctx.coverage.scm.filesCount || null,
+            alreadyGreen: ctx.coverage.alreadyGreen || null,
           })
         : null,
     });
@@ -553,14 +564,25 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const baseCommit = params.baseCommit as string | undefined;
     const selectedCommitShas = params.selectedCommitShas as string[] | undefined;
 
-    const { text, coverage } = await buildClusterDiagnosisContext(db, clusterRow, {
+    const { text, coverage, images } = await buildClusterDiagnosisContext(db, clusterRow, {
       baseCommit,
       selectedCommitShas,
     });
 
+    const ctx = text;
+    let context = ctx;
+
+    // Promote screenshots: if images are included, add a note at the end
+    if (images?.length) {
+      context +=
+        '\n\n## Screenshots\nDecisive for "what rendered" at time of failure. ' +
+        'Call get_case_screenshots with the testRunsCaseId to view each:\n' +
+        images.map((img) => `- ${img.name} (${img.mediaType}, ~${(img.data.length / 1024).toFixed(0)} KB)`).join('\n');
+    }
+
     return dropNulls({
       clusterId: id,
-      context: text,
+      context,
       coverage: coverage?.scm
         ? dropNulls({
             hasLastGreen: coverage.scm.hasLastGreen,
@@ -571,6 +593,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             patchedFilesCount: coverage.scm.patchedFilesCount || null,
             patchesOmitted: coverage.scm.patchesOmitted || null,
             baseCommitUsed: coverage.scm.baseCommitUsed || null,
+            alreadyGreen: coverage.alreadyGreen || null,
           })
         : null,
     });

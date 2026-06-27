@@ -19,9 +19,11 @@ const props = defineProps<{
   focusSection?: string | null;
   /** Section ids the diagnosis cited — marked in the coverage map. */
   citedSections?: string[];
+  /** Sections where data is not applicable (with reason), keyed by section id. */
+  notApplicableSections?: Record<string, string>;
 }>();
 
-type CoverageState = 'present' | 'truncated' | 'absent';
+type CoverageState = 'present' | 'truncated' | 'absent' | 'notApplicable';
 
 const presentById = computed(() => {
   const m = new Map<string, ContextSection>();
@@ -29,11 +31,22 @@ const presentById = computed(() => {
   return m;
 });
 
+const notApplicableSet = computed(() => new Set(Object.keys(props.notApplicableSections ?? {})));
+
 const citedSet = computed(() => new Set(props.citedSections ?? []));
 
-/** Present/truncated/absent (+cited) state for every known section. */
+/** Present/truncated/absent/notApplicable (+cited) state for every known section. */
 const coverage = computed(() =>
   DIAGNOSIS_SECTIONS.map((meta) => {
+    if (notApplicableSet.value.has(meta.id)) {
+      return {
+        id: meta.id,
+        short: meta.short,
+        label: meta.label,
+        state: 'notApplicable' as CoverageState,
+        cited: citedSet.value.has(meta.id),
+      };
+    }
     const s = presentById.value.get(meta.id);
     const state: CoverageState = !s ? 'absent' : s.truncated ? 'truncated' : 'present';
     return { id: meta.id, short: meta.short, label: meta.label, state, cited: citedSet.value.has(meta.id) };
@@ -41,7 +54,7 @@ const coverage = computed(() =>
 );
 
 const coverageCounts = computed(() => {
-  const c = { present: 0, truncated: 0, absent: 0 };
+  const c = { present: 0, truncated: 0, absent: 0, notApplicable: 0 };
   for (const s of coverage.value) c[s.state]++;
   return c;
 });
@@ -50,9 +63,14 @@ const dotClass: Record<CoverageState, string> = {
   present: 'bg-emerald-500',
   truncated: 'bg-amber-500',
   absent: 'bg-gray-300 dark:bg-gray-600',
+  notApplicable: 'bg-purple-400',
 };
 
-function coverageTitle(c: { label: string; state: CoverageState; cited: boolean }): string {
+function coverageTitle(c: { id: string; label: string; state: CoverageState; cited: boolean }): string {
+  if (c.state === 'notApplicable') {
+    const reason = props.notApplicableSections?.[c.id];
+    return `${c.label}: not applicable${reason ? ` — ${reason}` : ''}`;
+  }
   return `${c.label}: ${c.state}${c.cited ? ' · cited by the diagnosis' : ''}`;
 }
 
@@ -169,7 +187,9 @@ function sectionHeading(s: ContextSection): string {
           </p>
           <p class="text-xs text-gray-400">
             {{ coverageCounts.present }} present · {{ coverageCounts.truncated }} truncated ·
-            {{ coverageCounts.absent }} absent
+            {{ coverageCounts.absent }} absent{{
+              coverageCounts.notApplicable ? ` · ${coverageCounts.notApplicable} n/a` : ''
+            }}
           </p>
         </div>
         <div class="flex flex-wrap gap-1.5">
@@ -180,6 +200,7 @@ function sectionHeading(s: ContextSection): string {
             :class="[
               c.cited ? 'border-primary text-primary' : 'border-default',
               c.state === 'absent' ? 'text-gray-400 opacity-70' : '',
+              c.state === 'notApplicable' ? 'text-purple-500 border-purple-300 dark:border-purple-700' : '',
             ]"
             :title="coverageTitle(c)"
           >

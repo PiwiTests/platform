@@ -38,6 +38,9 @@ export const DIAGNOSIS_SECTIONS: DiagnosisSectionMeta[] = [
   { id: 'priorDiagnosis', label: 'Prior diagnosis & triage', short: 'Prior' },
   { id: 'tracePointers', label: 'Trace files', short: 'Traces' },
   { id: 'artifacts', label: 'Attachments & artifacts (video, HAR)', short: 'Artifacts' },
+  { id: 'nearestAriaNames', label: 'Nearest matching ARIA names from snapshot', short: 'Nearest ARIA' },
+  { id: 'alreadyGreen', label: 'Baseline freshness / already-green check', short: 'Already green' },
+  { id: 'topSuspectedCommit', label: 'Top suspected commit', short: 'Top commit' },
 ];
 
 const SECTION_IDS = new Set(DIAGNOSIS_SECTIONS.map((s) => s.id));
