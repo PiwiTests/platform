@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { FailureDiagnosis } from '~~/server/database/schema';
 import type { DiagnoseImage } from '~/composables/useClusterDiagnosis';
+import { stripAnsi } from '~~/shared/error-fingerprint';
 
 const props = defineProps<{
   contextText: string | null;
@@ -188,24 +189,6 @@ function copyContextHtml() {
   exportOpen.value = false;
 }
 
-function copyAsCurl() {
-  const text = props.contextText ?? '';
-  const systemHint = 'You are a test failure analyst. Analyze the following context and provide a diagnosis.';
-  const body = JSON.stringify({
-    model: 'claude-opus-4-8',
-    max_tokens: 8192,
-    system: systemHint,
-    messages: [{ role: 'user', content: text }],
-  });
-  const curl = `curl -X POST https://api.anthropic.com/v1/messages \\
-  -H "Content-Type: application/json" \\
-  -H "x-api-key: $PIWI_AI_API_KEY" \\
-  -H "anthropic-version: 2023-06-01" \\
-  -d '${body}'`;
-  copy(curl, { toast: 'cURL command copied' });
-  exportOpen.value = false;
-}
-
 function copyDiagnosisOnly() {
   if (!props.diagnosis || props.diagnosis.status !== 'completed') return;
 
@@ -249,11 +232,6 @@ function copySuggestedPatch() {
     copy(patch, { toast: 'Suggested patch copied' });
   }
   exportOpen.value = false;
-}
-
-function stripAnsi(s: string): string {
-  // eslint-disable-next-line no-control-regex
-  return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
 }
 </script>
 
@@ -316,19 +294,6 @@ function stripAnsi(s: string): string {
           @click="copyContextHtml"
         >
           Full context (HTML)
-        </UButton>
-
-        <UButton
-          v-if="contextText"
-          block
-          size="sm"
-          color="neutral"
-          variant="ghost"
-          class="justify-start"
-          icon="i-lucide-terminal"
-          @click="copyAsCurl"
-        >
-          As cURL
         </UButton>
 
         <USeparator class="my-1" />

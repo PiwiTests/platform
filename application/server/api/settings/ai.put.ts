@@ -4,7 +4,7 @@ import { Role } from '../../../shared/types';
 import { getAppSetting, setAppSetting, deleteAppSetting } from '../../utils/app-settings';
 import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
 import { AI_ROLES, storedRoles, readAiSettings, type RawStoredAi, type RawStoredRole } from '../../utils/ai-settings';
-import type { AiModelRole, AiProvider } from '~~/types/api';
+import type { AiModelRole, AiProvider, SaveAiSettingsBody } from '~~/types/api';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 
@@ -20,27 +20,13 @@ defineRouteMeta({
 
 const VALID_PROVIDERS: AiProvider[] = ['anthropic', 'openai'];
 
-/** A role config as submitted by the client (apiKey is plaintext or omitted). */
-interface RoleInput {
-  provider?: string | null;
-  model?: string | null;
-  baseUrl?: string | null;
-  apiKey?: string | null;
-  reuse?: AiModelRole | null;
-}
-
 export default eventHandler(async (event) => {
   await requireAuth(event, REQUIRED_ROLES);
 
   const runtimeConfig = useRuntimeConfig();
   const envAi = runtimeConfig.ai as { provider?: string } | undefined;
 
-  const body = (await readBody(event)) as {
-    roles?: Partial<Record<AiModelRole, RoleInput | null>> | null;
-    autoDiagnose?: boolean;
-    customInstructions?: string | null;
-    scmToken?: string | null;
-  };
+  const body = (await readBody(event)) as SaveAiSettingsBody;
 
   const db = await getDatabase();
 
@@ -60,21 +46,42 @@ export default eventHandler(async (event) => {
   // Only touch the provider config when the request actually carries it.
   const touchesAi = 'roles' in body || 'autoDiagnose' in body;
   if (touchesAi) {
+    const existing = (await getAppSetting<RawStoredAi>(db, 'ai')) ?? {};
+    const existingRoles = storedRoles(existing);
+    const input = body.roles ?? {};
+
+    // When env-managed, only model fields may be overridden.
     if (envAi?.provider) {
-      throw createError({
-        statusCode: 409,
-        message: 'AI configuration is managed by environment variables and cannot be changed via the API',
-      });
+      if (body.roles === null) {
+        // Allow clearing stored model overrides while keeping env config.
+        await deleteAppSetting(db, 'ai');
+        return readAiSettings(db);
+      }
+
+      const out: Partial<Record<AiModelRole, RawStoredRole>> = {};
+      for (const role of AI_ROLES) {
+        if (!(role in input)) {
+          // Untouched role — preserve any existing override.
+          const enc = existingRoles[role];
+          if (enc && (enc.model || enc.reuse)) out[role] = { ...enc };
+          continue;
+        }
+        const cfg = input[role];
+        if (cfg == null) continue;
+        const model = cfg.model?.trim() || undefined;
+        const outRole: RawStoredRole = {};
+        if (cfg.reuse) outRole.reuse = cfg.reuse;
+        if (model) outRole.model = model;
+        if (outRole.reuse || outRole.model) out[role] = outRole;
+      }
+      await setAppSetting(db, 'ai', { roles: out });
+      return readAiSettings(db);
     }
 
     if (body.roles === null) {
       await deleteAppSetting(db, 'ai');
       return readAiSettings(db);
     }
-
-    const existing = (await getAppSetting<RawStoredAi>(db, 'ai')) ?? {};
-    const existingRoles = storedRoles(existing);
-    const input = body.roles ?? {};
 
     const resolveKey = (provided: string | null | undefined, existingEnc?: string): string | undefined => {
       if (provided === undefined) return existingEnc; // preserve

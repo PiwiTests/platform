@@ -79,8 +79,12 @@ test.describe('Inline help (HelpHint)', () => {
     // The env vars that override the diagnosis provider are surfaced in the
     // popover (the system-admin affordance), each as a copyable code element.
     await expect(page.getByText('Environment variables:')).toBeVisible();
-    await expect(page.locator('code', { hasText: 'PIWI_AI_PROVIDER' })).toBeVisible();
-    await expect(page.locator('code', { hasText: 'PIWI_AI_API_KEY' })).toBeVisible();
+    await expect(
+      page.getByRole('dialog', { name: 'Help: AI provider' }).locator('code', { hasText: 'PIWI_AI_PROVIDER' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('dialog', { name: 'Help: AI provider' }).locator('code', { hasText: 'PIWI_AI_API_KEY' }),
+    ).toBeVisible();
 
     // A "Configuration reference" link points at the canonical docs page.
     const configLink = page.getByRole('link', { name: /Configuration reference/ });

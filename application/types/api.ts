@@ -946,6 +946,21 @@ export interface ScmChanges {
 export type AiProvider = 'anthropic' | 'openai';
 
 /**
+ * Model metadata returned by the provider's models endpoint.
+ * Shared between the server models endpoint and frontend model picker UI.
+ */
+export interface ModelInfo {
+  id: string;
+  label?: string;
+  ownedBy?: string;
+  contextLength?: number;
+  maxTokens?: number;
+  description?: string;
+  pricing?: { prompt?: string; completion?: string };
+  modalities?: string[];
+}
+
+/**
  * The distinct model "slots" Piwi can call. Each role has its own complete
  * provider configuration (or reuses another role's credentials):
  * - `diagnosis`  — the main model that writes the final diagnosis (required root)
@@ -1022,6 +1037,31 @@ export interface AiSettings {
   hasScmToken: boolean;
   envManaged: boolean;
   customInstructions: string | null;
+}
+
+// ============================================================================
+// AI Settings request body types
+// ============================================================================
+
+/**
+ * One role config as submitted by the client (apiKey is plaintext or omitted).
+ */
+export interface AiRoleConfigInput {
+  provider?: string | null;
+  model?: string | null;
+  baseUrl?: string | null;
+  apiKey?: string | null;
+  reuse?: AiModelRole | null;
+}
+
+/**
+ * Request body for PUT /api/settings/ai
+ */
+export interface SaveAiSettingsBody {
+  roles?: Partial<Record<AiModelRole, AiRoleConfigInput | null>> | null;
+  autoDiagnose?: boolean;
+  customInstructions?: string | null;
+  scmToken?: string | null;
 }
 
 // ============================================================================

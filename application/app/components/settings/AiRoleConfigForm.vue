@@ -5,7 +5,7 @@
  * ids, so the three cards never collide. State is the shared reactive role form,
  * bound via v-model.
  */
-import type { AiModelRole } from '~~/types/api';
+import type { AiModelRole, ModelInfo } from '~~/types/api';
 import type { HelpTopicKey } from '~/utils/help-content';
 import { helpEnvVars } from '~/utils/help-content';
 import type { PiwiEnvVarName } from '~~/shared/piwi-env-vars';
@@ -39,9 +39,13 @@ const props = defineProps<{
   providerOptions: Array<{ label: string; value: string }>;
   presetOptions: Array<{ label: string; value: string }>;
   disabled: boolean;
+  envManaged: boolean;
+  models: ModelInfo[];
+  loadingModels: boolean;
+  providerResolved: string;
 }>();
 
-const emit = defineEmits<{ applyPreset: [label: string] }>();
+const emit = defineEmits<{ applyPreset: [label: string]; loadModels: [] }>();
 
 const model = defineModel<RoleForm>({ required: true });
 
@@ -70,12 +74,17 @@ const roleEnvVars = computed<PiwiEnvVarName[]>(() => helpEnvVars(props.meta.help
           <p class="text-sm text-gray-500">{{ meta.blurb }}</p>
         </div>
       </div>
-      <USwitch v-if="meta.optional" v-model="model.enabled" :disabled="disabled" :aria-label="meta.enableLabel" />
+      <USwitch
+        v-if="meta.optional"
+        v-model="model.enabled"
+        :disabled="disabled && !envManaged"
+        :aria-label="meta.enableLabel"
+      />
     </div>
 
     <template v-if="!meta.optional || model.enabled">
       <UFormField v-if="meta.reuseTargets.length" label="Provider source">
-        <USelect v-model="reuseModel" :items="reuseOptions" :disabled="disabled" class="w-full" />
+        <USelect v-model="reuseModel" :items="reuseOptions" :disabled="disabled && !envManaged" class="w-full" />
       </UFormField>
 
       <template v-if="!model.reuse">
@@ -153,11 +162,16 @@ const roleEnvVars = computed<PiwiEnvVarName[]>(() => helpEnvVars(props.meta.help
         label="Model"
         :description="model.reuse ? 'Leave empty to use the reused role\'s model' : undefined"
       >
-        <UInput
+        <ModelFieldInput
           v-model="model.model"
-          :placeholder="model.provider === 'anthropic' ? meta.modelPlaceholderAnthropic : meta.modelPlaceholderOpenai"
-          :disabled="disabled"
-          class="w-full"
+          :provider="model.provider"
+          :provider-resolved="providerResolved"
+          :reuse="!!model.reuse"
+          :models="models"
+          :loading-models="loadingModels"
+          :placeholder-anthropic="meta.modelPlaceholderAnthropic"
+          :placeholder-openai="meta.modelPlaceholderOpenai"
+          @load-models="emit('loadModels')"
         />
       </UFormField>
     </template>

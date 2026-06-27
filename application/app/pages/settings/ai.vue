@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AiSettings, AiModelRole } from '~~/types/api';
+import type { AiSettings, AiModelRole, ModelInfo, AiRoleConfigInput, SaveAiSettingsBody } from '~~/types/api';
 import type { RoleForm } from '~/components/settings/AiRoleConfigForm.vue';
 import { CONTEXT_LIMIT_FIELDS } from '#shared/ai-context-limits';
 import type { ContextLimits, ContextLimitField } from '#shared/ai-context-limits';
@@ -29,7 +29,44 @@ const scmToken = ref<string>('');
 const saving = ref(false);
 const savingInstructions = ref(false);
 const savingScmToken = ref(false);
+
 const testing = ref(false);
+
+const modelsRecord = reactive<Record<RoleKey, ModelInfo[]>>({
+  diagnosis: [],
+  research: [],
+  embedding: [],
+});
+const loadingModels = reactive<Record<RoleKey, boolean>>({
+  diagnosis: false,
+  research: false,
+  embedding: false,
+});
+
+function resolvedProvider(role: RoleKey): string {
+  const r = roles[role];
+  if (r.reuse) return roles[r.reuse]?.provider || '';
+  return r.provider;
+}
+
+async function loadModels(role: RoleKey) {
+  const r = roles[role];
+  const provider = resolvedProvider(role);
+  const source = r.reuse ? roles[r.reuse] : r;
+  const apiKey = source.apiKey || undefined;
+  loadingModels[role] = true;
+  try {
+    const res = await $fetch<{ models: ModelInfo[] }>('/api/settings/ai/models', {
+      method: 'POST',
+      body: { provider, baseUrl: source.baseUrl || undefined, apiKey },
+    });
+    modelsRecord[role] = res.models;
+  } catch {
+    modelsRecord[role] = [];
+  } finally {
+    loadingModels[role] = false;
+  }
+}
 
 const ROLE_META = [
   {
@@ -144,11 +181,11 @@ function applyPreset(role: RoleKey, label: string) {
 }
 
 // ── Save ─────────────────────────────────────────────────────────────────────
-function roleBody(role: RoleKey): Record<string, unknown> | null {
+function roleBody(role: RoleKey): AiRoleConfigInput | null {
   const r = roles[role];
   if (!r.enabled) return null;
   if (r.reuse) return { reuse: r.reuse, model: r.model || undefined };
-  const body: Record<string, unknown> = {
+  const body: AiRoleConfigInput = {
     provider: r.provider,
     model: r.model || undefined,
     baseUrl: r.baseUrl || undefined,
@@ -160,8 +197,9 @@ function roleBody(role: RoleKey): Record<string, unknown> | null {
 async function save() {
   saving.value = true;
   try {
-    // Diagnosis disabled → clear the whole AI configuration.
-    if (!roles.diagnosis.enabled || !roles.diagnosis.provider) {
+    // When env-managed, never send roles: null (would clear overrides).
+    // When diagnosis is disabled or missing provider in non-env mode, clear the config.
+    if (!envManaged && (!roles.diagnosis.enabled || !roles.diagnosis.provider)) {
       await $fetch('/api/settings/ai', { method: 'PUT', body: { roles: null, autoDiagnose: autoDiagnose.value } });
     } else {
       await $fetch('/api/settings/ai', {
@@ -308,7 +346,12 @@ function resetLimits() {
           :provider-options="providerOptions"
           :preset-options="presetOptions"
           :disabled="envManaged"
+          :env-managed="envManaged"
+          :provider-resolved="resolvedProvider(meta.key)"
+          :models="modelsRecord[meta.key]"
+          :loading-models="loadingModels[meta.key]"
           @apply-preset="(label: string) => applyPreset(meta.key, label)"
+          @load-models="loadModels(meta.key)"
         />
 
         <SettingsField label="Auto-diagnose" help="settings.auto-diagnose" :env-managed="envManaged">
@@ -334,9 +377,7 @@ function resetLimits() {
           >
             Test diagnosis connection
           </UButton>
-          <UButton color="primary" :loading="saving" :disabled="envManaged" icon="i-lucide-save" @click="save">
-            Save
-          </UButton>
+          <UButton color="primary" :loading="saving" icon="i-lucide-save" @click="save"> Save </UButton>
         </div>
       </template>
     </SectionCard>
