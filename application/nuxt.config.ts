@@ -272,17 +272,13 @@ export default defineNuxtConfig({
           console.warn('[Build] WARNING: public/demo/seed.sql not found. Run `npm run seed:demo` before building.');
         }
 
-        // Generate _openapi.json from handler metadata so the demo SPA can
-        // serve it as a static file for the in-app Scalar API reference page.
+        // Generate _openapi.json from Nitro handler metadata.
+        // Written directly to the output public dir so it's available as a
+        // static file for the in-app Scalar API reference page at /docs.
         const handlers = (
           nitro as unknown as {
             options: {
-              handlers: {
-                route?: string;
-                method?: string;
-                handler?: string;
-                meta?: { openAPI?: Record<string, unknown> };
-              }[];
+              handlers: { route?: string; method?: string; meta?: { openAPI?: Record<string, unknown> } }[];
             };
           }
         ).options.handlers;
@@ -293,35 +289,32 @@ export default defineNuxtConfig({
           const method = (h.method || 'get').toLowerCase();
           const openAPI = h.meta?.openAPI ? { ...h.meta.openAPI } : {};
           delete (openAPI as Record<string, unknown>).$global;
-          const item = {
+          paths[route] ??= {};
+          Object.assign(paths[route] as Record<string, unknown>, {
             [method]: {
               tags: route.startsWith('/api/') ? ['API Routes'] : ['App Routes'],
-              parameters: [] as unknown[],
+              parameters: [],
               responses: { 200: { description: 'OK' } },
               ...openAPI,
             },
-          };
-          if (!paths[route]) {
-            paths[route] = item;
-          } else {
-            Object.assign(paths[route] as Record<string, unknown>, item);
-          }
+          });
         }
-        const openApiMeta = (nitro as unknown as { options: { openAPI?: { meta?: Record<string, unknown> } } }).options
-          .openAPI?.meta;
+        const oaMeta = (nitro as unknown as { options: { openAPI?: { meta?: Record<string, unknown> } } }).options
+          .openAPI?.meta as Record<string, string> | undefined;
         const spec = {
           openapi: '3.1.0',
           info: {
-            title: (openApiMeta as Record<string, string | undefined> | undefined)?.title || 'Piwi Dashboard API',
-            version: (openApiMeta as Record<string, string | undefined> | undefined)?.version || '1.0.0',
-            description: (openApiMeta as Record<string, string | undefined> | undefined)?.description || '',
+            title: oaMeta?.title || 'Piwi Dashboard API',
+            version: oaMeta?.version || '1.0.0',
+            description: oaMeta?.description || '',
           },
-          servers: [{ url: '/', description: 'Demo server', variables: {} }],
           paths,
         };
-        const specPath = resolve(__dirname, 'public/_openapi.json');
+        const outDir = (nitro as unknown as { options: { output: { publicDir: string } } }).options.output.publicDir;
+        const specPath = resolve(outDir, '_openapi.json');
+        mkdirSync(dirname(specPath), { recursive: true });
         writeFileSync(specPath, JSON.stringify(spec, null, 2), 'utf-8');
-        console.log(`[Build] Generated OpenAPI spec (${Object.keys(paths).length} paths)`);
+        console.log(`[Build] Generated OpenAPI spec at ${specPath} (${Object.keys(paths).length} paths)`);
       }
     },
   },
