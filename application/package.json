@@ -14,6 +14,7 @@
     "app:format": "oxfmt --config oxfmt.config.ts --write \".\"",
     "app:format:check": "oxfmt --config oxfmt.config.ts --check \".\"",
     "app:typecheck": "nuxt typecheck",
+    "app:gen:spec": "node scripts/generate-openapi-spec.mjs",
     "test": "vitest run && playwright test",
     "app:test": "playwright test",
     "app:test:unit": "vitest run",

@@ -67,6 +67,12 @@ jobs:
         env:
           PIWI_DEMO_MODE: 'true'
 
+      - name: Extract OpenAPI spec from built server
+        working-directory: ./application
+        run: npm run app:gen:spec
+        env:
+          PIWI_DEMO_MODE: 'true'
+
       # ── Combine into a single deploy directory ────────────────────────────
       - name: Copy demo into docs output at /demo/
         run: cp -r application/.output/public docs/.vitepress/dist/demo
