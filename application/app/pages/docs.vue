@@ -14,22 +14,19 @@ onMounted(async () => {
   script.async = true;
   script.onload = () => {
     const S = (window as unknown as Record<string, unknown>).Scalar as
-      | { createApiReference: (config: Record<string, unknown>, element: HTMLElement) => void }
+      | { createApiReference: (element: HTMLElement, config: Record<string, unknown>) => void }
       | undefined;
     if (S?.createApiReference && container.value) {
-      S.createApiReference(
-        {
-          url: specUrl,
-          darkMode: true,
-          showSidebar: true,
-          metaData: {
-            title: 'Piwi Dashboard API',
-            description:
-              'REST API for storing and querying Playwright test results, traces, failure diagnoses, and project statistics.',
-          },
+      S.createApiReference(container.value, {
+        url: specUrl,
+        darkMode: true,
+        showSidebar: true,
+        metaData: {
+          title: 'Piwi Dashboard API',
+          description:
+            'REST API for storing and querying Playwright test results, traces, failure diagnoses, and project statistics.',
         },
-        container.value,
-      );
+      });
     }
   };
   document.head.appendChild(script);
