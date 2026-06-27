@@ -42,6 +42,15 @@ Configure a provider via **Settings → AI**, or with environment variables (env
 
 `GET /api/ai/status` reports whether AI is configured (without ever exposing the key); the UI uses it to show or hide AI actions.
 
+### Streaming diagnosis
+
+Instead of waiting for a synchronous response, the diagnosis can be **streamed** via SSE (Server-Sent Events) — the model's reasoning tokens appear in the UI as they arrive:
+
+- **`POST /api/failure-clusters/[id]/diagnose/stream`** — same request body as the synchronous endpoint, but the response is a `text/event-stream` with `event: thinking` chunks containing incremental text, then a final `event: result` with the complete diagnosis.
+- The client uses `fetch()` with `POST` (not `EventSource`) so it can send request body params (additional context, images, base commit, etc.). The response body is read as a `ReadableStream` and parsed for SSE messages.
+- See the [API reference](./api#post-apifailure-clustersiddiagnosestream) for the exact protocol.
+- In the UI, the live thinking panel shows the accumulating text with a stage indicator and auto-scroll. When the stream completes, the panel transitions to the full result card.
+
 ### Model roles
 
 Piwi calls models in up to three distinct roles, each with its own complete provider configuration (or a **reuse** pointer to inherit another role's provider and credentials):

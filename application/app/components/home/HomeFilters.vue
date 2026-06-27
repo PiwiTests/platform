@@ -23,9 +23,7 @@ const fullRunsOnly = computed({
   set: (val) => emit('update:modelValue', { ...props.modelValue, fullRunsOnly: val }),
 });
 
-const hasActiveFilters = computed(
-  () => props.modelValue.environments.length > 0 || !props.modelValue.fullRunsOnly,
-);
+const hasActiveFilters = computed(() => props.modelValue.environments.length > 0 || !props.modelValue.fullRunsOnly);
 
 function clearFilters() {
   emit('update:modelValue', { environments: [], fullRunsOnly: true });
@@ -46,7 +44,11 @@ function clearFilters() {
     >
       <template #default="{ modelValue: selected }">
         <div class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-server" class="size-3.5 shrink-0" :class="(selected as string[]).length ? 'text-primary' : 'text-gray-400'" />
+          <UIcon
+            name="i-lucide-server"
+            class="size-3.5 shrink-0"
+            :class="(selected as string[]).length ? 'text-primary' : 'text-gray-400'"
+          />
           <span v-if="!(selected as string[]).length" class="text-gray-500">All environments</span>
           <span v-else-if="(selected as string[]).length === 1">{{ (selected as string[])[0] }}</span>
           <span v-else>{{ (selected as string[]).length }} environments</span>
@@ -55,20 +57,15 @@ function clearFilters() {
     </USelectMenu>
 
     <!-- Full runs only toggle -->
-    <label class="flex items-center gap-1.5 cursor-pointer select-none text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors">
+    <label
+      class="flex items-center gap-1.5 cursor-pointer select-none text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+    >
       <UCheckbox v-model="fullRunsOnly" size="sm" />
       Full runs only
     </label>
 
     <!-- Clear filters -->
-    <UButton
-      v-if="hasActiveFilters"
-      variant="ghost"
-      size="sm"
-      color="neutral"
-      icon="i-lucide-x"
-      @click="clearFilters"
-    >
+    <UButton v-if="hasActiveFilters" variant="ghost" size="sm" color="neutral" icon="i-lucide-x" @click="clearFilters">
       Reset
     </UButton>
   </div>

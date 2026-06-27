@@ -39,8 +39,7 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 
 const isRunActive = computed(
-  () =>
-    props.runStatus === 'running' || props.runStatus === 'initialising' || props.runStatus === 'finalizing',
+  () => props.runStatus === 'running' || props.runStatus === 'initialising' || props.runStatus === 'finalizing',
 );
 
 async function load() {
@@ -127,8 +126,8 @@ function formatMs(ms: number | null | undefined): string {
   <div v-else-if="!hasAnyInsights" class="p-4">
     <EmptyState icon="i-lucide-check-circle" text="Everything looks consistent">
       <p class="text-sm text-muted max-w-sm text-center">
-        No regressions, performance changes, or newly flaky tests detected compared to the baseline run. Insights
-        appear when something changes — keep running your tests to build history.
+        No regressions, performance changes, or newly flaky tests detected compared to the baseline run. Insights appear
+        when something changes — keep running your tests to build history.
       </p>
     </EmptyState>
   </div>

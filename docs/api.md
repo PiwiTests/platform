@@ -1295,3 +1295,63 @@ Run (or re-run) AI diagnosis for a failure cluster. The call is **synchronous** 
 | 404 | Cluster not found |
 | 409 | A fresh diagnosis is already running for this cluster — poll `GET …/diagnosis` instead |
 | 503 | AI is not configured — set up a provider first |
+
+---
+
+### POST `/api/failure-clusters/[id]/diagnose/stream`
+
+**Streaming variant** of the diagnosis endpoint. Instead of returning the result synchronously, the server sends a **Server-Sent Events (SSE)** stream with real-time thinking tokens and the final structured result.
+
+The client fetches this endpoint with `POST` + `fetch()` + `ReadableStream` reader (not `EventSource`, since a GET-only EventSource cannot send a request body).
+
+**Query parameters**
+
+| Parameter | Description |
+|-----------|-------------|
+| `force=true` | Force re-diagnosis even if a completed result already exists |
+
+**Request body** (same as the synchronous variant)
+
+```json
+{
+  "additionalContext": "optional free-form hints from the user",
+  "baseCommit": "abc123def",
+  "selectedCommitShas": ["def789abc", "ghi012def"]
+}
+```
+
+**SSE event types**
+
+| Event | Data shape | When |
+|-------|------------|------|
+| `thinking` | `{ text: string }` | Incremental model reasoning tokens — may arrive in multiple events |
+| `result` | `FailureDiagnosis` (same shape as `POST /diagnose` response) | Final structured diagnosis — sent once, then the stream closes |
+| `error` | `{ message: string }` | Error occurred — partial thinking text may have been sent before this event |
+
+**Example client consumption**
+
+```typescript
+const response = await fetch(url, { method: 'POST', body: JSON.stringify(body) });
+const reader = response.body!.getReader();
+const decoder = new TextDecoder();
+let buffer = '';
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  buffer += decoder.decode(value, { stream: true });
+  for (const msg of buffer.split('\n\n')) {
+    // Parse event + data lines, process 'thinking' / 'result' / 'error' events
+  }
+}
+```
+
+**Responses**
+
+| Status | Meaning |
+|--------|---------|
+| 200 | SSE stream starts — read `event:` lines from the body |
+| 400 | Invalid cluster ID |
+| 404 | Cluster not found |
+| 409 | A fresh diagnosis is already running — poll `GET …/diagnosis` or wait |
+| 503 | AI is not configured |

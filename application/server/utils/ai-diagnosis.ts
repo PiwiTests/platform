@@ -1,16 +1,10 @@
 import { eq, and } from 'drizzle-orm';
-import {
-  failureDiagnoses,
-  failureDiagnosisVersions,
-  failureClusters,
-  projects,
-  testRunsCases,
-} from '../database/schema';
+import { failureDiagnoses, failureDiagnosisVersions, failureClusters, projects } from '../database/schema';
 import type { FailureDiagnosis, FailureCluster } from '../database/schema';
 import { DIAGNOSIS_JSON_SCHEMA, parseDiagnosisJson } from '#shared/ai-diagnosis';
 import type { AiConfig } from '~~/types/api';
-import { callAiProvider, resolveAiConfig } from './ai-provider';
-import type { AiAttachedImage } from './ai-provider';
+import { callAiProvider, resolveAiConfig, streamAiProvider } from './ai-provider';
+import type { AiAttachedImage, StreamChunk, StreamResult } from './ai-provider';
 import { buildDiagnosisContext } from './ai-context';
 import { buildDiagnosisSystemPrompt } from './ai-system-prompt';
 import { reconcileNewClusters } from './cluster-reconcile';
@@ -141,7 +135,6 @@ export async function runClusterDiagnosis(
 
   // Upsert to 'running' state (SELECT-then-INSERT/UPDATE to avoid unique-index dependency)
   const runningFields = runningDiagnosisFields(config);
-  const scope = isExecutionScope ? ('execution' as const) : ('cluster' as const);
 
   if (isExecutionScope) {
     const [existing] = await db
@@ -359,6 +352,256 @@ async function snapshotDiagnosis(db: DbClient, diagnosisId: number): Promise<voi
     createdAt: new Date(),
   };
   await db.insert(failureDiagnosisVersions).values(fields);
+}
+
+/**
+ * Streaming variant of runClusterDiagnosis. Streams the diagnosis stage's
+ * thinking tokens via onChunk, then saves the final result to DB and returns it.
+ * The research stage remains synchronous (too short to benefit from streaming).
+ *
+ * onChunk is called with text chunks as they arrive. When the full result is
+ * saved, onChunk receives a `'done'` chunk with the final FailureDiagnosis.
+ * On error, onChunk receives an `'error'` chunk.
+ */
+export async function streamClusterDiagnosis(
+  db: DbClient,
+  cluster: FailureCluster,
+  config: AiConfig,
+  opts: {
+    additionalContext?: string;
+    images?: AiAttachedImage[];
+    baseCommit?: string;
+    selectedCommitShas?: string[];
+    testRunsCaseId?: number;
+    onChunk?: (chunk: StreamChunk) => void;
+  } = {},
+): Promise<FailureDiagnosis> {
+  if (running.has(cluster.id)) {
+    throw Object.assign(new Error('Diagnosis already running for this cluster'), { statusCode: 409 });
+  }
+
+  running.add(cluster.id);
+
+  const isExecutionScope = Boolean(opts.testRunsCaseId);
+
+  // Load custom instructions
+  const [globalInstructionsRow, projectRows] = await Promise.all([
+    getAppSetting<{ value?: string }>(db, 'ai_instructions'),
+    db
+      .select({ diagnosisInstructions: projects.diagnosisInstructions })
+      .from(projects)
+      .where(eq(projects.id, cluster.projectId))
+      .limit(1),
+  ]);
+  const systemPrompt = buildDiagnosisSystemPrompt({
+    globalInstructions: globalInstructionsRow?.value?.trim() || null,
+    projectInstructions: projectRows[0]?.diagnosisInstructions?.trim() || null,
+  });
+
+  // Upsert to 'running' state
+  const runningFields = runningDiagnosisFields(config);
+
+  if (isExecutionScope) {
+    const [existing] = await db
+      .select({ id: failureDiagnoses.id })
+      .from(failureDiagnoses)
+      .where(and(eq(failureDiagnoses.testRunsCaseId, opts.testRunsCaseId!), eq(failureDiagnoses.scope, 'execution')))
+      .limit(1);
+    if (existing) {
+      await snapshotDiagnosis(db, existing.id);
+      await db.update(failureDiagnoses).set(runningFields).where(eq(failureDiagnoses.id, existing.id));
+    } else {
+      await db.insert(failureDiagnoses).values({
+        clusterId: cluster.id,
+        scope: 'execution',
+        testRunsCaseId: opts.testRunsCaseId!,
+        createdAt: new Date(),
+        ...runningFields,
+      });
+    }
+  } else {
+    const [existing] = await db
+      .select({ id: failureDiagnoses.id })
+      .from(failureDiagnoses)
+      .where(and(eq(failureDiagnoses.clusterId, cluster.id), eq(failureDiagnoses.scope, 'cluster')))
+      .limit(1);
+    if (existing) {
+      await snapshotDiagnosis(db, existing.id);
+      await db.update(failureDiagnoses).set(runningFields).where(eq(failureDiagnoses.id, existing.id));
+    } else {
+      await db.insert(failureDiagnoses).values({
+        clusterId: cluster.id,
+        scope: 'cluster',
+        createdAt: new Date(),
+        ...runningFields,
+      });
+    }
+  }
+
+  const t0 = Date.now();
+
+  try {
+    const buildCtx = (skipScm: boolean) =>
+      isExecutionScope
+        ? buildDiagnosisContext(db, {
+            kind: 'execution',
+            clusterId: cluster.id,
+            testRunsCaseId: opts.testRunsCaseId!,
+            baseCommit: opts?.baseCommit,
+            selectedCommitShas: opts?.selectedCommitShas,
+            skipScm,
+          })
+        : buildDiagnosisContext(db, {
+            kind: 'cluster',
+            clusterId: cluster.id,
+            baseCommit: opts?.baseCommit,
+            selectedCommitShas: opts?.selectedCommitShas,
+            skipScm,
+          });
+
+    type PipelineStage = { role: string; model: string; inputTokens: number | null; outputTokens: number | null };
+    const pipeline: PipelineStage[] = [];
+
+    // Research stage (synchronous, not streamed)
+    const researchConfig = config.roles.research;
+    const useResearch =
+      researchConfig != null &&
+      !(
+        researchConfig.provider === config.provider &&
+        researchConfig.model === config.model &&
+        (researchConfig.baseUrl ?? null) === (config.baseUrl ?? null)
+      );
+
+    const manualScm = Boolean(opts?.baseCommit || opts?.selectedCommitShas?.length);
+
+    let ctx = await buildCtx(useResearch);
+    let researchBlock = '';
+    if (useResearch) {
+      try {
+        const research = await callAiProvider(researchConfig!, {
+          system: RESEARCH_SYSTEM_PROMPT,
+          user: buildResearchProjection(ctx),
+          jsonSchema: RESEARCH_JSON_SCHEMA,
+          maxTokens: 2048,
+        });
+        pipeline.push({
+          role: 'research',
+          model: research.model,
+          inputTokens: research.inputTokens,
+          outputTokens: research.outputTokens,
+        });
+        const parsed = parseResearchJson(research.text);
+        researchBlock = formatResearchBlock(parsed);
+        if (researchWantsScm(parsed) || manualScm) {
+          ctx = await buildCtx(false);
+        }
+      } catch (e) {
+        console.error('[ai-diagnosis] research stage failed, falling back to single-stage:', e);
+        ctx = await buildCtx(false);
+      }
+    }
+
+    const extra = opts?.additionalContext?.trim();
+    const baseContent = extra ? `${ctx.text}\n\n## Additional Context Provided by User\n${extra}` : ctx.text;
+    const userContent = researchBlock ? `${baseContent}\n\n${researchBlock}` : baseContent;
+    const allImages = [...(ctx.images ?? []), ...(opts?.images ?? [])];
+    const images = allImages.length > 0 ? allImages : undefined;
+
+    // Stream the diagnosis stage
+    let accumulatedText = '';
+    let streamModel = config.model;
+    let streamInputTokens: number | null = null;
+    let streamOutputTokens: number | null = null;
+
+    for await (const chunk of streamAiProvider(config, {
+      system: systemPrompt,
+      user: userContent,
+      jsonSchema: DIAGNOSIS_JSON_SCHEMA,
+      images,
+    })) {
+      if (chunk.type === 'text') {
+        accumulatedText += chunk.data as string;
+        if (opts.onChunk) opts.onChunk(chunk);
+      } else if (chunk.type === 'done') {
+        const result = chunk.data as StreamResult;
+        streamModel = result.model;
+        streamInputTokens = result.inputTokens;
+        streamOutputTokens = result.outputTokens;
+      } else if (chunk.type === 'error') {
+        throw new Error(chunk.data as string);
+      }
+    }
+
+    pipeline.push({
+      role: 'diagnosis',
+      model: streamModel,
+      inputTokens: streamInputTokens,
+      outputTokens: streamOutputTokens,
+    });
+
+    const diagnosis = parseDiagnosisJson(accumulatedText);
+
+    const sumTokens = (k: 'inputTokens' | 'outputTokens') => pipeline.reduce((acc, s) => acc + (s[k] ?? 0), 0) || null;
+
+    const whereClause = isExecutionScope
+      ? and(eq(failureDiagnoses.testRunsCaseId, opts.testRunsCaseId!), eq(failureDiagnoses.scope, 'execution'))
+      : and(eq(failureDiagnoses.clusterId, cluster.id), eq(failureDiagnoses.scope, 'cluster'));
+
+    const updated = await db
+      .update(failureDiagnoses)
+      .set({
+        status: 'completed',
+        model: streamModel,
+        category: diagnosis.category,
+        confidence: diagnosis.confidence,
+        summary: diagnosis.summary,
+        rootCause: diagnosis.rootCause,
+        details: {
+          evidence: diagnosis.evidence,
+          suggestedFix: diagnosis.suggestedFix,
+          preventionTips: diagnosis.preventionTips,
+          confidenceScore: diagnosis.confidenceScore,
+          severity: diagnosis.severity,
+          affectedArea: diagnosis.affectedArea,
+          hypotheses: diagnosis.hypotheses,
+          investigationSteps: diagnosis.investigationSteps,
+          ...(pipeline.length > 1 ? { pipeline } : {}),
+        },
+        error: null,
+        inputTokens: sumTokens('inputTokens'),
+        outputTokens: sumTokens('outputTokens'),
+        durationMs: Date.now() - t0,
+        updatedAt: new Date(),
+      })
+      .where(whereClause)
+      .returning();
+
+    const finalDiagnosis = updated[0]!;
+    if (opts.onChunk) opts.onChunk({ type: 'done', data: finalDiagnosis });
+    return finalDiagnosis;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const whereClause = isExecutionScope
+      ? and(eq(failureDiagnoses.testRunsCaseId, opts.testRunsCaseId!), eq(failureDiagnoses.scope, 'execution'))
+      : and(eq(failureDiagnoses.clusterId, cluster.id), eq(failureDiagnoses.scope, 'cluster'));
+
+    const failed = await db
+      .update(failureDiagnoses)
+      .set({
+        status: 'failed',
+        error: message.slice(0, 500),
+        durationMs: Date.now() - t0,
+        updatedAt: new Date(),
+      })
+      .where(whereClause)
+      .returning();
+
+    const result = failed[0]!;
+    if (opts.onChunk) opts.onChunk({ type: 'error', data: message });
+    return result;
+  } finally {
+    running.delete(cluster.id);
+  }
 }
 
 export async function autoDiagnoseRun(db: DbClient, projectId: number, runId: number): Promise<void> {
