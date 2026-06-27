@@ -101,6 +101,11 @@ self.addEventListener('fetch', (event) => {
         });
       }
 
+      // Pass through Response objects directly (SSE streams, etc.)
+      if (result instanceof Response) {
+        return result;
+      }
+
       return new Response(JSON.stringify(result), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },

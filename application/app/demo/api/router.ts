@@ -76,6 +76,7 @@ import { apiGetDemoFile } from './files';
 import {
   apiGetAiStatus,
   apiDiagnoseCluster,
+  apiStreamDiagnoseCluster,
   apiGetAiSettings,
   apiPutAiSettings,
   apiTestAiSettings,
@@ -325,6 +326,11 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/failure-clusters\/(\d+)\/diagnose$/,
     handler: (m) => apiDiagnoseCluster(+m[1]!),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/diagnose\/stream$/,
+    handler: (m, body) => apiStreamDiagnoseCluster(+m[1]!, body as Record<string, unknown> | undefined),
   },
   {
     method: 'POST',
