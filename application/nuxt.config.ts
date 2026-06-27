@@ -1,5 +1,5 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
-import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -271,6 +271,57 @@ export default defineNuxtConfig({
         if (!existsSync(seedSrc)) {
           console.warn('[Build] WARNING: public/demo/seed.sql not found. Run `npm run seed:demo` before building.');
         }
+
+        // Generate _openapi.json from handler metadata so the demo SPA can
+        // serve it as a static file for the in-app Scalar API reference page.
+        const handlers = (
+          nitro as unknown as {
+            options: {
+              handlers: {
+                route?: string;
+                method?: string;
+                handler?: string;
+                meta?: { openAPI?: Record<string, unknown> };
+              }[];
+            };
+          }
+        ).options.handlers;
+        const paths: Record<string, unknown> = {};
+        for (const h of handlers) {
+          if (!h.route || h.route.startsWith('/_')) continue;
+          const route = h.route.replace(/:(\w+)/g, '{$1}').replace(/\*\*.*$/, '{path}');
+          const method = (h.method || 'get').toLowerCase();
+          const openAPI = h.meta?.openAPI ? { ...h.meta.openAPI } : {};
+          delete (openAPI as Record<string, unknown>).$global;
+          const item = {
+            [method]: {
+              tags: route.startsWith('/api/') ? ['API Routes'] : ['App Routes'],
+              parameters: [] as unknown[],
+              responses: { 200: { description: 'OK' } },
+              ...openAPI,
+            },
+          };
+          if (!paths[route]) {
+            paths[route] = item;
+          } else {
+            Object.assign(paths[route] as Record<string, unknown>, item);
+          }
+        }
+        const openApiMeta = (nitro as unknown as { options: { openAPI?: { meta?: Record<string, unknown> } } }).options
+          .openAPI?.meta;
+        const spec = {
+          openapi: '3.1.0',
+          info: {
+            title: (openApiMeta as Record<string, string | undefined> | undefined)?.title || 'Piwi Dashboard API',
+            version: (openApiMeta as Record<string, string | undefined> | undefined)?.version || '1.0.0',
+            description: (openApiMeta as Record<string, string | undefined> | undefined)?.description || '',
+          },
+          servers: [{ url: '/', description: 'Demo server', variables: {} }],
+          paths,
+        };
+        const specPath = resolve(__dirname, 'public/_openapi.json');
+        writeFileSync(specPath, JSON.stringify(spec, null, 2), 'utf-8');
+        console.log(`[Build] Generated OpenAPI spec (${Object.keys(paths).length} paths)`);
       }
     },
   },

@@ -532,7 +532,7 @@ When adding features with database columns, API response fields, or UI-visible c
 3. **`app/demo/simulator.ts`** — emit any new streaming event fields in simulated runs
 4. **`docs/`** — update the relevant documentation file
 
-The OpenAPI spec (`public/_openapi.json`) is regenerated when API endpoint metadata changes. Run `cd application && npm run app:gen:spec` (starts a temporary dev server and dumps the spec to `public/_openapi.json`). The file is gitignored; CI generates it before the demo build.
+The OpenAPI spec (`public/_openapi.json`) is auto-generated during the demo build from Nitro handler metadata (`nuxt.config.ts` `nitro:build:public-assets` hook) — no manual regeneration needed.
 
 Always regenerate the seed SQL after changes: `cd application && npm run app:seed:demo`
 
