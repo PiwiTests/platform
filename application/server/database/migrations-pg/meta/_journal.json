@@ -162,6 +162,13 @@
       "when": 1782248097598,
       "tag": "0022_puzzling_shooting_star",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1782578655201,
+      "tag": "0023_minor_loners",
+      "breakpoints": true
     }
   ]
 }

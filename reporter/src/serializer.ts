@@ -65,6 +65,7 @@ export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
     suitePath: rest.suitePath ?? null,
     suiteConfig: rest.suiteConfig ?? null,
     testAnnotations: rest.testAnnotations ?? null,
+    locatorSnapshots: rest.locatorSnapshots || null,
   };
 }
 

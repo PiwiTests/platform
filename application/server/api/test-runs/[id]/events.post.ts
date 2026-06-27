@@ -186,6 +186,7 @@ export default eventHandler(async (event) => {
     shardIndex: tc.shardIndex ?? null,
     startedAt: tc.startedAt ?? null,
     browser: tc.browser ?? null,
+    locatorSnapshots: (tc as any).locatorSnapshots ?? null,
   }));
 
   const insertedRunCases = await persistRunCases(db, projectId, id, cases);

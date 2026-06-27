@@ -1,3 +1,5 @@
+import type { LocatorSnapshot } from './locator-healing.types';
+
 // ── Shard info ─────────────────────────────────────────────────────────────────
 
 export interface ShardInfo {
@@ -99,6 +101,8 @@ export interface TestCasePayload {
   suitePath?: string[] | null;
   suiteConfig?: SuiteConfigEntry[] | null;
   testAnnotations?: TestAnnotation[] | null;
+  /** Per-element locator snapshots with ranked alternatives (transient — not stored as a column). */
+  locatorSnapshots?: LocatorSnapshot[] | null;
 }
 
 // ── Test run counters ─────────────────────────────────────────────────────────
@@ -191,6 +195,7 @@ export interface StreamEventPayload {
   suitePath?: string[] | null;
   suiteConfig?: SuiteConfigEntry[] | null;
   testAnnotations?: TestAnnotation[] | null;
+  locatorSnapshots?: LocatorSnapshot[] | null;
 }
 
 // ── Finish payload ────────────────────────────────────────────────────────────

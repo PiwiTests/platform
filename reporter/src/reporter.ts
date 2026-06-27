@@ -199,8 +199,9 @@ export class PiwiDashboardReporter {
 
   /** Playwright reporter hook: called when a step (including hook/fixture) ends */
   onStepEnd(test: TestCase | undefined, _result: TestResult | undefined, step: any): void {
-    if (!this.enabled || !this.streamManager?.enabled) return;
     const cat = step.category;
+    if (cat === 'pw:api') return; // not surfaced as stream events; locator locations are captured in the fixture
+    if (!this.enabled || !this.streamManager?.enabled) return;
     if (cat !== 'hook' && cat !== 'fixture') return;
 
     const workerIndex = workerIndexOf(_result);
@@ -276,6 +277,18 @@ export class PiwiDashboardReporter {
 
     if (this.options.collectPerformanceMetrics && result.attachments) {
       this.fileHandler.parsePerformanceAttachments(testCase, result.attachments);
+
+      // Locator snapshots arrive pre-stamped with their call-site `location`
+      // (captured in the fixture at action call time). No index correlation
+      // with pw:api steps — that was unreliable across workers/concurrent calls.
+      const locatorAttachment = result.attachments.find((a: any) => a.name === 'piwi-dashboard-locators');
+      if (locatorAttachment?.body) {
+        try {
+          testCase.locatorSnapshots = JSON.parse((locatorAttachment.body as Buffer).toString());
+        } catch {
+          /* ignore parse errors */
+        }
+      }
     }
 
     switch (status) {

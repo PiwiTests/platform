@@ -162,6 +162,7 @@ describe('toWireTestCase', () => {
       'duration',
       'error',
       'location',
+      'locatorSnapshots',
       'networkRequests',
       'retries',
       'shardIndex',

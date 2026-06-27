@@ -256,6 +256,7 @@ interface RunCaseInput {
   shardIndex?: number | null;
   startedAt?: number | null;
   browser?: unknown;
+  locatorSnapshots?: unknown;
 }
 
 async function persistRunCases(
@@ -457,6 +458,7 @@ export async function apiPostRunEvents(
     shardIndex: tc.shardIndex ?? null,
     startedAt: tc.startedAt ?? null,
     browser: tc.browser ?? null,
+    locatorSnapshots: (tc as any).locatorSnapshots ?? null,
   }));
 
   const insertedRunCases = await persistRunCases(db, testRun.projectId, id, cases, true);

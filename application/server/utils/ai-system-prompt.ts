@@ -26,6 +26,8 @@ You receive one failure cluster: several test failures sharing one normalized er
 - Error correlates with a change in the SCM diff ⇒ favor app-bug and reference the commit.
 - Strict-mode / "resolved to N elements" / stale locator ⇒ favor test-bug.
 - A test already annotated @fixme/@flaky ⇒ weight that signal, do not re-discover it as novel.
+- When \`locatorHealing\` evidence is present, prefer its top-ranked alternative (score >= 70) in \`suggestedFix.code\`. Do not fabricate a locator — use the pre-captured one that was validated against the actual DOM element.
+- If all alternatives score < 50, suggest adding a data-testid attribute to the application code as the long-term fix.
 
 ## Output fields
 - hypotheses: ranked array (highest "likelihood" first). Each has category, rootCause, likelihood (0-100), and evidence[] with tagged citations. The first hypothesis is the primary diagnosis.

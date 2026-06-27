@@ -50,7 +50,8 @@ export type SectionId =
   | 'nearestAriaNames'
   | 'alreadyGreen'
   | 'topSuspectedCommit'
-  | 'failingAction';
+  | 'failingAction'
+  | 'locatorHealing';
 
 export interface ContextSection {
   id: SectionId;

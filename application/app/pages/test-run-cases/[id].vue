@@ -321,6 +321,12 @@ function copyFailure() {
         <template #tab-error>
           <TestCaseErrorCard v-if="testCase?.error" :cluster="failureCluster" />
 
+          <TestCaseLocatorHealing
+            v-if="testCase?.error && testCase.testRun?.id"
+            :run-id="testCase.testRun.id"
+            :test-runs-case-id="Number(testCaseId)"
+          />
+
           <SectionCard v-if="testCase?.error" icon="i-lucide-bug" icon-class="text-red-500" title="Error">
             <template #actions>
               <UTooltip :text="failureCopied ? 'Copied!' : 'Copy failure'">

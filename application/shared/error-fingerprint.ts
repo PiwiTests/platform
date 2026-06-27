@@ -140,7 +140,7 @@ function maskSelector(selector: string): string {
  * paren-depth counter so nested forms like getByRole('row', { name: '…' })
  * are captured whole.
  */
-function extractSelector(text: string): string | null {
+export function extractSelector(text: string): string | null {
   const match = SELECTOR_FN_RE.exec(text);
   if (!match) return null;
   const start = match.index;
@@ -161,7 +161,7 @@ function extractSelector(text: string): string | null {
 }
 
 /** First stack frame outside node_modules and Node internals, file path only. */
-function extractTopFrameFile(text: string): string | null {
+export function extractTopFrameFile(text: string): string | null {
   const frameRe = /^\s+at (?:.*? \()?([^()\s][^()]*?):\d+:\d+\)?\s*$/gm;
   let m: RegExpExecArray | null;
   while ((m = frameRe.exec(text)) !== null) {

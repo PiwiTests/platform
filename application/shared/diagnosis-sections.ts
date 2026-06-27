@@ -42,6 +42,7 @@ export const DIAGNOSIS_SECTIONS: DiagnosisSectionMeta[] = [
   { id: 'alreadyGreen', label: 'Baseline freshness / already-green check', short: 'Already green' },
   { id: 'topSuspectedCommit', label: 'Top suspected commit', short: 'Top commit' },
   { id: 'failingAction', label: 'Failing action from trace parsing', short: 'Trace' },
+  { id: 'locatorHealing', label: 'Alternative locators from prior success', short: 'Alt locators' },
 ];
 
 const SECTION_IDS = new Set(DIAGNOSIS_SECTIONS.map((s) => s.id));
