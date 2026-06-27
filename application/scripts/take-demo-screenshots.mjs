@@ -31,7 +31,9 @@ const OUT_DIR = join(__dirname, '../public/demo/screenshots');
 async function goto(page, path, waitFor = 'nav, h1, h2, [class*="UCard"], table, tbody tr') {
   await page.goto(`${BASE_URL}${path}`, { waitUntil: 'networkidle', timeout: 25000 }).catch(() => {});
   if (waitFor) {
-    try { await page.waitForSelector(waitFor, { timeout: 10000 }); } catch { }
+    try {
+      await page.waitForSelector(waitFor, { timeout: 10000 });
+    } catch {}
   }
   await page.waitForTimeout(2000);
 }
@@ -92,4 +94,7 @@ async function main() {
   console.log('All done! Screenshots written to public/demo/screenshots/');
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

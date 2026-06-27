@@ -7,8 +7,12 @@
  *
  * Copy rules: 1–2 sentences, sentence case, American English. The `doc` field
  * is a docs page + optional `#anchor` passed through `docsUrl()`; omit it when
- * no docs section exists yet (text-only hint).
+ * no docs section exists yet (text-only hint). The `envVars` field lists the
+ * `PIWI_*` environment variable(s) that override the setting; it is typed as
+ * `PiwiEnvVarName[]` so a typo is a compile error (see `shared/piwi-env-vars`).
  */
+import type { PiwiEnvVarName } from '~~/shared/piwi-env-vars';
+
 export interface HelpTopic {
   /** Optional bold heading shown at the top of the popover. */
   title?: string;
@@ -16,6 +20,13 @@ export interface HelpTopic {
   text: string;
   /** Docs page + optional `#anchor` (passed to `docsUrl()`); omit if none. */
   doc?: string;
+  /**
+   * `PIWI_*` environment variable(s) that override this setting (env always
+   * wins; the UI shows the field read-only when set). Listed in the popover so a
+   * system admin knows which env var backs this setting. Omit for settings that
+   * are not env-overridable (DB-only, informational, etc.).
+   */
+  envVars?: PiwiEnvVarName[];
 }
 
 export const HELP_TOPICS = {
@@ -300,6 +311,10 @@ export const HELP_TOPICS = {
   },
 
   // ── Settings ──────────────────────────────────────────────────────────
+  'settings.general': {
+    title: 'General settings',
+    text: 'Central place for account, users, AI diagnosis, notifications, storage and tags. Settings that can be overridden by environment variables show a lock badge naming the variable.',
+  },
   'settings.storage-stats': {
     title: 'Storage statistics',
     text: 'How much disk your reports, traces and attachments use, broken down so you can see what to clean up.',
@@ -319,6 +334,15 @@ export const HELP_TOPICS = {
     title: 'SMTP status',
     text: 'Outbound email (resets, invites, notifications) is configured through environment variables and shown here read-only.',
     doc: 'notifications#smtp-configuration',
+    envVars: [
+      'PIWI_SMTP_HOST',
+      'PIWI_SMTP_PORT',
+      'PIWI_SMTP_USER',
+      'PIWI_SMTP_PASS',
+      'PIWI_SMTP_FROM',
+      'PIWI_SMTP_FROM_NAME',
+      'PIWI_SMTP_SECURE',
+    ],
   },
   'notifications.channels': {
     title: 'Channels',
@@ -334,6 +358,7 @@ export const HELP_TOPICS = {
     title: 'AI provider',
     text: 'Choose the model provider and key used for failure diagnosis. The key is stored encrypted and never returned by the API.',
     doc: 'ai-diagnosis#enabling-ai-diagnosis',
+    envVars: ['PIWI_AI_PROVIDER', 'PIWI_AI_MODEL', 'PIWI_AI_API_KEY', 'PIWI_AI_BASE_URL'],
   },
   'settings.ai-instructions': {
     title: 'Global analysis instructions',
@@ -344,11 +369,34 @@ export const HELP_TOPICS = {
     title: 'Research model',
     text: 'An optional cheaper/faster model that pre-analyzes the failure (on a lean view) before the main model writes the final diagnosis. It can use its own provider, and the costly SCM diff is only fetched when it flags a likely regression.',
     doc: 'ai-diagnosis#enabling-ai-diagnosis',
+    envVars: [
+      'PIWI_AI_RESEARCH_PROVIDER',
+      'PIWI_AI_RESEARCH_MODEL',
+      'PIWI_AI_RESEARCH_BASE_URL',
+      'PIWI_AI_RESEARCH_API_KEY',
+    ],
   },
   'settings.ai-limits': {
     title: 'Diagnosis context limits',
-    text: 'Caps on how much evidence (and how many tokens) go into each diagnosis. Higher limits give the model more to work with but cost more.',
+    text: 'Caps on how much evidence (and how many tokens) go into each diagnosis. Higher limits give the model more to work with but cost more. Each field can be pinned individually by its env var.',
     doc: 'ai-diagnosis#context-limits-and-token-cost',
+    envVars: [
+      'PIWI_AI_MAX_SAMPLE_ERROR_CHARS',
+      'PIWI_AI_MAX_SCM_PATCH_BUDGET',
+      'PIWI_AI_MAX_AFFECTED_TESTS',
+      'PIWI_AI_MAX_STEPS',
+      'PIWI_AI_MAX_CONSOLE_ENTRIES',
+      'PIWI_AI_MAX_CONSOLE_ENTRY_CHARS',
+      'PIWI_AI_MAX_NETWORK_REQUESTS',
+      'PIWI_AI_MAX_ARIA_SNAPSHOT_CHARS',
+      'PIWI_AI_MAX_TEST_SOURCE_CHARS',
+      'PIWI_AI_MAX_SERVER_LOG_ENTRIES',
+      'PIWI_AI_MAX_SERVER_LOG_ENTRY_CHARS',
+      'PIWI_AI_MAX_IMAGES',
+      'PIWI_AI_MAX_PASSED_PEERS',
+      'PIWI_AI_MAX_CONSOLE_WINDOW',
+      'PIWI_AI_SLOW_REQUEST_MS',
+    ],
   },
   'settings.users': {
     title: 'Users & roles',
@@ -362,6 +410,82 @@ export const HELP_TOPICS = {
   },
   'settings.tags': {
     text: 'Reusable labels you can attach to projects for grouping and filtering across the dashboard.',
+  },
+  'settings.wasted-time': {
+    title: 'Wasted-time patterns',
+    text: 'Define which wait steps count as wasted time. A wait is wasted when any pattern matches its step title or source location. Patterns are case-insensitive and support * and ? wildcards. Changes apply to existing runs immediately.',
+    doc: 'flaky-tests#performance',
+    envVars: ['PIWI_WASTED_WAIT_PATTERNS'],
+  },
+  'settings.auto-diagnose': {
+    title: 'Auto-diagnose',
+    text: 'Automatically diagnose new failure clusters when a run finishes — one LLM call per new cluster, max 3 per run. Requires the diagnosis model to be configured.',
+    doc: 'ai-diagnosis#enabling-ai-diagnosis',
+    envVars: ['PIWI_AI_AUTO_DIAGNOSE'],
+  },
+  'settings.embedding-model': {
+    title: 'Embedding model',
+    text: 'Embeds failures so semantically-similar errors group together (used by failure clustering). Can reuse another role’s provider or configure its own.',
+    doc: 'ai-diagnosis#enabling-ai-diagnosis',
+    envVars: [
+      'PIWI_AI_EMBEDDING_PROVIDER',
+      'PIWI_AI_EMBEDDING_MODEL',
+      'PIWI_AI_EMBEDDING_BASE_URL',
+      'PIWI_AI_EMBEDDING_API_KEY',
+    ],
+  },
+  'settings.privacy': {
+    title: 'Privacy notice',
+    text: 'What data is sent to the configured LLM provider when diagnosing a failure, and how secrets are stored. API keys are encrypted at rest; env vars keep them out of the DB entirely.',
+    doc: 'ai-diagnosis#what-a-diagnosis-contains',
+  },
+  'settings.storage-backend': {
+    title: 'Storage backend',
+    text: 'Where test artifacts (HTML reports, traces, attachments) are stored — local disk or S3. Configured entirely through environment variables; shown here read-only.',
+    doc: 'storage#storage-architecture',
+    envVars: [
+      'PIWI_STORAGE_TYPE',
+      'PIWI_STORAGE_PATH',
+      'PIWI_S3_BUCKET',
+      'PIWI_S3_REGION',
+      'PIWI_S3_ACCESS_KEY_ID',
+      'PIWI_S3_SECRET_ACCESS_KEY',
+      'PIWI_S3_ENDPOINT',
+      'PIWI_S3_FORCE_PATH_STYLE',
+    ],
+  },
+  'settings.auth-toggle': {
+    title: 'Authentication',
+    text: 'Role-based access control and API keys. Off by default — when disabled, every endpoint behaves as a single virtual administrator.',
+    doc: 'authentication',
+    envVars: ['PIWI_AUTH_ENABLED', 'PIWI_AUTH_SECRET'],
+  },
+  'account.display-name': {
+    title: 'Display name',
+    text: 'A friendly name shown alongside your account. Optional, and visible only within the dashboard.',
+  },
+  'account.connected-accounts': {
+    title: 'Connected accounts',
+    text: 'Sign in with an OAuth provider (Google or GitHub). Providers are configured by an operator through environment variables; one provider can be linked per account.',
+    doc: 'authentication#oauth-sign-in',
+    envVars: [
+      'PIWI_OAUTH_GOOGLE_CLIENT_ID',
+      'PIWI_OAUTH_GOOGLE_CLIENT_SECRET',
+      'PIWI_OAUTH_GITHUB_CLIENT_ID',
+      'PIWI_OAUTH_GITHUB_CLIENT_SECRET',
+      'PIWI_OAUTH_ALLOWED_DOMAINS',
+      'PIWI_OAUTH_GITHUB_ALLOWED_ORGS',
+    ],
+  },
+  'account.password': {
+    title: 'Password',
+    text: 'Change the password you sign in with. OAuth-only accounts manage their password through their provider.',
+    doc: 'authentication#user-management',
+  },
+  'notifications.test-email': {
+    title: 'Send test email',
+    text: 'Send a test message through the configured SMTP server to verify delivery. Uses the environment-configured SMTP connection.',
+    doc: 'notifications#smtp-configuration',
   },
 
   // ── MCP ───────────────────────────────────────────────────────────────
@@ -389,3 +513,14 @@ export const HELP_TOPICS = {
 } as const satisfies Record<string, HelpTopic>;
 
 export type HelpTopicKey = keyof typeof HELP_TOPICS;
+
+/**
+ * Env var(s) attached to a help topic (typed as `PiwiEnvVarName[]`). Returns an
+ * empty array when the topic has none. Use this instead of indexing
+ * `HELP_TOPICS[key].envVars` directly — the `as const` registry narrows each
+ * entry to its literal shape, so direct indexing errors on entries that omit
+ * `envVars`; this helper widens through `HelpTopic`.
+ */
+export function helpEnvVars(key: HelpTopicKey): PiwiEnvVarName[] {
+  return (HELP_TOPICS[key] as HelpTopic).envVars ?? [];
+}

@@ -1,10 +1,22 @@
 <script setup lang="ts">
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
 import type { NotificationEvent } from '#shared/notification-events';
+import type { PiwiEnvVarName } from '~~/shared/piwi-env-vars';
 
 const toast = useToast();
 const config = useRuntimeConfig();
 const authEnabled = computed(() => config.public.authEnabled);
+
+// SMTP env vars (read-only display) — from the shared registry via the help topic.
+const smtpEnvVars: PiwiEnvVarName[] = [
+  'PIWI_SMTP_HOST',
+  'PIWI_SMTP_PORT',
+  'PIWI_SMTP_USER',
+  'PIWI_SMTP_PASS',
+  'PIWI_SMTP_FROM',
+  'PIWI_SMTP_FROM_NAME',
+  'PIWI_SMTP_SECURE',
+];
 
 // ── SMTP status ────────────────────────────────────────────────────────────────
 interface SmtpStatus {
@@ -208,6 +220,9 @@ function eventLabel(e: string) {
     <!-- SMTP status (read-only, admin only) -->
     <SectionCard icon="i-lucide-mail" title="SMTP email delivery" help="settings.smtp">
       <template #subtitle> Configure SMTP via environment variables. The connection cannot be changed here. </template>
+      <template #actions>
+        <EnvManagedBadge v-if="smtp?.configured" :env-vars="smtpEnvVars" size="md" />
+      </template>
 
       <div class="space-y-3">
         <div v-if="smtp?.configured" class="flex items-center gap-2 text-sm text-success-600 dark:text-success-400">
@@ -245,7 +260,8 @@ PIWI_SMTP_FROM_NAME=Piwi Dashboard"
       </div>
 
       <template v-if="smtp?.configured" #footer>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 w-full">
+          <HelpHint topic="notifications.test-email" />
           <UInput v-model="testEmailTo" type="email" placeholder="Send test to email address…" class="flex-1" />
           <UButton
             color="neutral"

@@ -30,8 +30,21 @@ async function resetDemo() {
 </script>
 
 <template>
-  <UPageCard v-if="isDemoMode" variant="subtle">
-    <div class="flex max-sm:flex-col justify-between items-start gap-4">
+  <SectionCard icon="i-lucide-settings" title="General settings" help="settings.general">
+    <template #actions>
+      <UButton
+        v-if="isDemoMode"
+        color="error"
+        variant="soft"
+        icon="i-lucide-refresh-cw"
+        :loading="isResetting"
+        @click="resetDemo"
+      >
+        Reset demo
+      </UButton>
+    </template>
+
+    <div v-if="isDemoMode" class="flex max-sm:flex-col justify-between items-start gap-4">
       <div>
         <p class="font-medium text-sm">Reset demo data</p>
         <p class="text-sm text-muted">
@@ -39,19 +52,17 @@ async function resetDemo() {
           will be lost.
         </p>
       </div>
-      <UButton color="error" variant="soft" icon="i-lucide-refresh-cw" :loading="isResetting" @click="resetDemo">
-        Reset demo
-      </UButton>
     </div>
-  </UPageCard>
 
-  <UPageCard v-else variant="subtle">
-    <div class="text-sm text-muted">
-      <p class="font-medium text-default">General settings</p>
-      <p class="mt-1">
+    <div v-else class="text-sm text-muted">
+      <p>
         Appearance and theme are in the top bar. Use the sidebar to manage your account, users, AI diagnosis,
         notifications, storage, and tags.
       </p>
+      <p class="mt-2">
+        Settings that can be overridden by <code class="font-mono text-xs">PIWI_*</code> environment variables show a
+        lock badge with the variable name — hover the help icon on any card to see which env var backs a setting.
+      </p>
     </div>
-  </UPageCard>
+  </SectionCard>
 </template>

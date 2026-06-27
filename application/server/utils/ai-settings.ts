@@ -117,6 +117,32 @@ export async function readAiSettings(db: DbClient): Promise<AiSettings> {
   if (envManaged) {
     roleMap = rolesFromLegacy(envAi as Parameters<typeof rolesFromLegacy>[0]);
     autoDiagnose = String(envAi!.autoDiagnose) === 'true';
+
+    // Merge any DB-stored overrides on top of env config.
+    const stored = await getAppSetting<RawStoredAi>(db, 'ai');
+    if (stored?.roles) {
+      for (const role of AI_ROLES) {
+        const override = stored.roles[role];
+        if (!override) continue;
+        if (roleMap[role]) {
+          // Role exists from env vars — override model.
+          roleMap[role] = { ...roleMap[role]!, ...override };
+        } else if (override.reuse) {
+          // Role doesn't exist in env vars but has a stored reuse — inherit from reused role.
+          const base = roleMap[override.reuse];
+          if (base) {
+            roleMap[role] = {
+              provider: base.provider,
+              model: override.model || base.model,
+              baseUrl: base.baseUrl,
+            };
+          }
+        } else if (override.model) {
+          // Standalone model override without reuse — set as-is.
+          roleMap[role] = override;
+        }
+      }
+    }
   } else {
     const stored = await getAppSetting<RawStoredAi>(db, 'ai');
     roleMap = storedRoles(stored);

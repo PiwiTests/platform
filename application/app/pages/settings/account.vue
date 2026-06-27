@@ -198,11 +198,18 @@ const authEnabled = computed(() => config.public.authEnabled);
       icon="i-lucide-lock-open"
       title="Authentication disabled"
       description="Enable PIWI_AUTH_ENABLED=true to manage your account."
-    />
+    >
+      <template #description>
+        <span class="inline-flex items-center gap-1.5">
+          Enable <code class="font-mono text-xs">PIWI_AUTH_ENABLED=true</code> to manage your account.
+          <HelpHint topic="settings.auth-toggle" />
+        </span>
+      </template>
+    </UAlert>
 
     <template v-else-if="me?.user">
       <!-- Display name section -->
-      <SectionCard icon="i-lucide-user" title="Display name">
+      <SectionCard icon="i-lucide-user" title="Display name" help="account.display-name">
         <UFormField label="Display name" name="name">
           <UInput v-model="nameField" placeholder="Your display name (optional)" class="w-full" />
         </UFormField>
@@ -265,7 +272,12 @@ const authEnabled = computed(() => config.public.authEnabled);
       </SectionCard>
 
       <!-- Connected accounts section -->
-      <SectionCard v-if="oauthProviders.length > 0" icon="i-lucide-link" title="Connected accounts">
+      <SectionCard
+        v-if="oauthProviders.length > 0"
+        icon="i-lucide-link"
+        title="Connected accounts"
+        help="account.connected-accounts"
+      >
         <div class="space-y-3">
           <div
             v-for="p in oauthProviders"
@@ -311,7 +323,7 @@ const authEnabled = computed(() => config.public.authEnabled);
       </SectionCard>
 
       <!-- Change password section -->
-      <SectionCard v-if="!isOAuthOnly" icon="i-lucide-lock" title="Change password">
+      <SectionCard v-if="!isOAuthOnly" icon="i-lucide-lock" title="Change password" help="account.password">
         <div class="space-y-4">
           <UFormField label="Current password" name="currentPassword">
             <UInput

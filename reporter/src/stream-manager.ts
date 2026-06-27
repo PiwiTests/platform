@@ -295,7 +295,11 @@ export class StreamManager {
     }
 
     try {
-      await this.httpClient.postJSON(`/api/test-runs/${this._runId}/heartbeat`, { streamToken: this._token }, this._auth);
+      await this.httpClient.postJSON(
+        `/api/test-runs/${this._runId}/heartbeat`,
+        { streamToken: this._token },
+        this._auth,
+      );
       this.lastActivityAt = Date.now();
     } catch (error: any) {
       this.logger.debug(`Heartbeat failed: ${error.message}`);

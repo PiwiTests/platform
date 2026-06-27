@@ -9,6 +9,10 @@ Piwi is configured entirely through environment variables. It runs with **zero c
 
 Variables can go in `application/.env` (see `application/.env.example`) or be passed to the container/process. Where a value can also be set in the Settings UI, **the environment variable always wins** and the UI shows that field read-only.
 
+::: tip Settings UI tooltips
+In the dashboard, every overridable setting shows a help icon next to its label. Hover it to see which `PIWI_*` env var backs the field, a one-line description, and a link back to this page. Fields that are currently pinned by the environment show a lock badge with the variable name, and the Settings nav marks env-managed pages with a lock icon. The full list of variables and their descriptions is maintained as a typed registry in `application/shared/piwi-env-vars.ts`.
+:::
+
 ## General
 
 | Variable | Default | Description |
@@ -82,6 +86,14 @@ When unset, configure the patterns from **Settings → Wasted time** (administra
 | `PIWI_AI_MODEL` | `claude-opus-4-8` (Anthropic) | Model name. |
 | `PIWI_AI_BASE_URL` | — | Base URL for OpenAI-compatible providers (e.g. Ollama). |
 | `PIWI_AI_AUTO_DIAGNOSE` | `false` | `true` to auto-diagnose new clusters on run finish. |
+| `PIWI_AI_RESEARCH_PROVIDER` | — | Provider for the optional research (pre-analysis) stage. Falls back to `PIWI_AI_PROVIDER`. |
+| `PIWI_AI_RESEARCH_MODEL` | — | Cheaper/faster model for the research stage. Empty disables the two-stage pipeline. |
+| `PIWI_AI_RESEARCH_BASE_URL` | — | Base URL for the research-stage provider. Falls back to `PIWI_AI_BASE_URL`. |
+| `PIWI_AI_RESEARCH_API_KEY` | — | API key for the research-stage provider. Falls back to `PIWI_AI_API_KEY`. |
+| `PIWI_AI_EMBEDDING_PROVIDER` | — | Provider for embeddings (semantic clustering). Falls back to `PIWI_AI_PROVIDER`. |
+| `PIWI_AI_EMBEDDING_MODEL` | — | Embedding model name (e.g. `text-embedding-3-small`). |
+| `PIWI_AI_EMBEDDING_BASE_URL` | — | Base URL for the embedding provider. Falls back to `PIWI_AI_BASE_URL`. |
+| `PIWI_AI_EMBEDDING_API_KEY` | — | API key for the embedding provider. Falls back to `PIWI_AI_API_KEY`. |
 
 The `PIWI_AI_MAX_*` and `PIWI_AI_SLOW_REQUEST_MS` context-limit variables are documented in [AI diagnosis → Context limits](./ai-diagnosis#context-limits-and-token-cost).
 
@@ -100,6 +112,17 @@ Required for email notifications and account flows (verification, password reset
 | `PIWI_SMTP_SECURE` | `false` | `true` for port 465 (implicit TLS). |
 
 See [Notifications](./notifications) for channels and subscriptions.
+
+## Failure clustering
+
+Tunes the similarity thresholds used when grouping failures into clusters by their error fingerprint (and optional embeddings).
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PIWI_CLUSTER_SIMILARITY_THRESHOLD` | `0.92` | Cosine similarity (0–1) above which two failure embeddings merge into one cluster. |
+| `PIWI_CLUSTER_SUGGEST_THRESHOLD` | `0.80` | Similarity at which a failure is suggested (not auto-merged) as related to a cluster. Capped at the merge threshold. |
+
+See [AI diagnosis → Failure clustering](./ai-diagnosis#failure-clustering).
 
 ## Build-time
 

@@ -13,7 +13,10 @@ import { DOCS_BASE_URL } from '../shared/docs';
  * assuming the page is hydrated.
  */
 async function openHint(page: Page, name: string) {
-  const trigger = page.getByRole('button', { name });
+  // Some help topics are shared by a card header and a field label (e.g. the
+  // AI provider and wasted-time topics), so the same accessible name resolves to
+  // several buttons. Target the first visible one — the card header hint.
+  const trigger = page.getByRole('button', { name }).first();
   await trigger.waitFor({ state: 'visible', timeout: 15000 });
   await expect(async () => {
     await trigger.click();
@@ -64,5 +67,39 @@ test.describe('Inline help (HelpHint)', () => {
     await expect(page.getByText('Duration trends for the suite')).toBeVisible();
     const learnMore = page.getByRole('link', { name: /Learn more/ });
     await expect(learnMore).toHaveAttribute('href', `${DOCS_BASE_URL}/flaky-tests#performance`);
+  });
+
+  test('settings AI provider hint lists the backing PIWI_AI_* env vars', async ({ page }) => {
+    await page.goto('/settings/ai');
+
+    // The "AI provider" topic is used by both the "Model providers" card header
+    // and the per-role forms; target the first one (the card header).
+    await openHint(page, 'Help: AI provider');
+
+    // The env vars that override the diagnosis provider are surfaced in the
+    // popover (the system-admin affordance), each as a copyable code element.
+    await expect(page.getByText('Environment variables:')).toBeVisible();
+    await expect(
+      page.getByRole('dialog', { name: 'Help: AI provider' }).locator('code', { hasText: 'PIWI_AI_PROVIDER' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('dialog', { name: 'Help: AI provider' }).locator('code', { hasText: 'PIWI_AI_API_KEY' }),
+    ).toBeVisible();
+
+    // A "Configuration reference" link points at the canonical docs page.
+    const configLink = page.getByRole('link', { name: /Configuration reference/ });
+    await expect(configLink).toHaveAttribute('href', `${DOCS_BASE_URL}/configuration`);
+    await expect(configLink).toHaveAttribute('target', '_blank');
+  });
+
+  test('settings wasted-time hint names PIWI_WASTED_WAIT_PATTERNS', async ({ page }) => {
+    await page.goto('/settings/wasted-time');
+
+    // The "Wasted-time patterns" topic is used by both the card header and the
+    // Patterns field label; target the first one (the card header).
+    await openHint(page, 'Help: Wasted-time patterns');
+
+    await expect(page.getByText('Environment variable:')).toBeVisible();
+    await expect(page.locator('code', { hasText: 'PIWI_WASTED_WAIT_PATTERNS' })).toBeVisible();
   });
 });

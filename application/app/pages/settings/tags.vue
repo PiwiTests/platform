@@ -151,75 +151,69 @@ async function handleDeleteTag() {
 </script>
 
 <template>
-  <UDashboardPanel grow>
-    <template #header>
-      <UDashboardNavbar title="Tag management">
-        <template #right>
-          <UButton v-if="isAdmin" label="Add tag" icon="i-lucide-tag" @click="isAddTagModalOpen = true" />
+  <div class="space-y-6">
+    <!-- Tags table -->
+    <SectionCard v-if="allTags.length > 0" title="Tags" :count="allTags.length" help="settings.tags">
+      <template #actions>
+        <UButton v-if="isAdmin" label="Add tag" icon="i-lucide-tag" size="sm" @click="isAddTagModalOpen = true" />
+      </template>
+
+      <UTable :data="allTags" :columns="columns">
+        <template #text-cell="{ row }">
+          <TagBadge :text="row.original.text" :color="row.original.color" />
         </template>
-      </UDashboardNavbar>
-    </template>
 
-    <template #body>
-      <!-- Tags table -->
-      <SectionCard v-if="allTags.length > 0" title="Tags" :count="allTags.length" help="settings.tags">
-        <UTable :data="allTags" :columns="columns">
-          <template #text-cell="{ row }">
-            <TagBadge :text="row.original.text" :color="row.original.color" />
-          </template>
-
-          <template #color-cell="{ row }">
-            <div class="flex items-center gap-2">
-              <span
-                class="inline-block w-4 h-4 rounded-full border border-black/10"
-                :style="{ backgroundColor: row.original.color }"
-              />
-              <span class="text-sm font-mono text-muted">{{ row.original.color }}</span>
-            </div>
-          </template>
-
-          <template #createdAt-cell="{ row }">
-            <span class="text-sm text-muted">
-              {{ prettyDateFormat(row.original.createdAt, { dateOnly: true }) }}
-            </span>
-          </template>
-
-          <template #actions-cell="{ row }">
-            <div class="flex gap-1 justify-end">
-              <UButton
-                v-if="isAdmin"
-                icon="i-lucide-pencil"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                @click="openEditTag(row.original)"
-              />
-              <UButton
-                v-if="isAdmin"
-                icon="i-lucide-trash-2"
-                color="error"
-                variant="ghost"
-                size="sm"
-                @click="confirmDeleteTag(row.original)"
-              />
-            </div>
-          </template>
-        </UTable>
-      </SectionCard>
-
-      <!-- Empty state -->
-      <UCard v-else>
-        <div class="text-center py-12">
-          <div class="flex justify-center mb-4">
-            <UIcon name="i-lucide-tags" class="text-4xl text-muted" />
+        <template #color-cell="{ row }">
+          <div class="flex items-center gap-2">
+            <span
+              class="inline-block w-4 h-4 rounded-full border border-black/10"
+              :style="{ backgroundColor: row.original.color }"
+            />
+            <span class="text-sm font-mono text-muted">{{ row.original.color }}</span>
           </div>
-          <h3 class="text-lg font-semibold mb-2">No tags yet</h3>
-          <p class="text-muted mb-4">Create tags to categorize and filter your projects</p>
-          <UButton v-if="isAdmin" label="Add tag" icon="i-lucide-tag" @click="isAddTagModalOpen = true" />
+        </template>
+
+        <template #createdAt-cell="{ row }">
+          <span class="text-sm text-muted">
+            {{ prettyDateFormat(row.original.createdAt, { dateOnly: true }) }}
+          </span>
+        </template>
+
+        <template #actions-cell="{ row }">
+          <div class="flex gap-1 justify-end">
+            <UButton
+              v-if="isAdmin"
+              icon="i-lucide-pencil"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              @click="openEditTag(row.original)"
+            />
+            <UButton
+              v-if="isAdmin"
+              icon="i-lucide-trash-2"
+              color="error"
+              variant="ghost"
+              size="sm"
+              @click="confirmDeleteTag(row.original)"
+            />
+          </div>
+        </template>
+      </UTable>
+    </SectionCard>
+
+    <!-- Empty state -->
+    <SectionCard v-else title="Tags" :count="0">
+      <div class="text-center py-12">
+        <div class="flex justify-center mb-4">
+          <UIcon name="i-lucide-tags" class="text-4xl text-muted" />
         </div>
-      </UCard>
-    </template>
-  </UDashboardPanel>
+        <h3 class="text-lg font-semibold mb-2">No tags yet</h3>
+        <p class="text-muted mb-4">Create tags to categorize and filter your projects</p>
+        <UButton v-if="isAdmin" label="Add tag" icon="i-lucide-tag" @click="isAddTagModalOpen = true" />
+      </div>
+    </SectionCard>
+  </div>
 
   <!-- Add Tag Modal -->
   <ClientOnly>

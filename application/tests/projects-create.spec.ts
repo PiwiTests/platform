@@ -162,7 +162,7 @@ test.describe.serial('Tag Management UI Tests', () => {
     await page.goto('/settings/tags');
     await waitForHydration(page);
 
-    await expect(page.getByRole('heading', { name: 'Tag management' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Tags \(\d+\) Help/ })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add tag' }).first()).toBeVisible();
   });
 

@@ -9,6 +9,7 @@ const colorMode = useColorMode();
 const appConfig = useAppConfig();
 const config = useRuntimeConfig();
 const { authState, logout } = useAuth();
+const settingsNav = useSettingsNav();
 
 const colors = [
   'red',
@@ -51,7 +52,9 @@ const items = computed<DropdownMenuItem[][]>(() => {
   const configurationMenuItems: DropdownMenuItem[] = [];
 
   if (!config.public.authEnabled || (authState.value.authenticated && authState.value.user?.role === 'administrator')) {
-    configurationMenuItems.push(...useSettingsNav());
+    // Nav items are reused as dropdown items (both are link items); the cast
+    // bridges the slightly different `type` union between the two Nuxt UI types.
+    configurationMenuItems.push(...(settingsNav.value as unknown as DropdownMenuItem[]));
   }
 
   const baseItems: DropdownMenuItem[][] = [

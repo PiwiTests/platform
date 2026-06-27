@@ -17,8 +17,8 @@ test.describe.serial('User Management Page Tests', () => {
     await page.goto('/settings/users');
     await waitForHydration(page);
 
-    // Check page title
-    await expect(page.getByRole('heading', { name: 'User management' })).toBeVisible();
+    // Check page title (rendered by the first SectionCard, not a per-page navbar)
+    await expect(page.getByRole('heading', { name: /Users \(\d+\) Help/ })).toBeVisible();
 
     // Check that Add User button is visible
     await expect(page.getByRole('button', { name: 'Add user' }).first()).toBeVisible();
