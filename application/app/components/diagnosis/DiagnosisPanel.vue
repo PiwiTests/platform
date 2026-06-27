@@ -2,6 +2,7 @@
 import type { FailureDiagnosis } from '~~/server/database/schema';
 import { extractCitedSectionIds } from '#shared/diagnosis-sections';
 import type { DiagnoseImage } from '~/composables/useClusterDiagnosis';
+import { formatRelativeTime } from '~/utils';
 
 const props = defineProps<{
   clusterId?: number;
@@ -27,6 +28,17 @@ const {
 } = useOrProvideClusterDiagnosis(props.clusterId);
 const { aiStatus } = useAiStatus();
 const toast = useToast();
+
+const {
+  thinkingText: streamThinkingText,
+  stage: streamStage,
+  status: streamStatus,
+  result: streamResult,
+  error: streamError,
+  startStream,
+  cancel: cancelStream,
+  reset: resetStream,
+} = useStreamingDiagnosis(computed(() => props.clusterId ?? 0));
 
 const attachments = useAttachments();
 const {
@@ -54,6 +66,8 @@ const showAiContext = ref(false);
 const showAdditionalContext = ref(false);
 const focusSection = ref<string | null>(null);
 
+const thinkingContainer = ref<HTMLElement | null>(null);
+
 /** Open the AI context modal focused on a section (from an evidence citation). */
 function onViewSection(sectionId: string) {
   focusSection.value = sectionId;
@@ -73,6 +87,22 @@ const citedSections = computed<string[]>(() => {
   return extractCitedSectionIds(texts);
 });
 
+/** Auto-scroll the thinking container as new tokens arrive. */
+watch(streamThinkingText, () => {
+  nextTick(() => {
+    if (thinkingContainer.value) {
+      thinkingContainer.value.scrollTop = thinkingContainer.value.scrollHeight;
+    }
+  });
+});
+
+/** When streaming completes with a result, update the shared diagnosis store. */
+watch(streamResult, (val) => {
+  if (val) {
+    diagnosis.value = val;
+  }
+});
+
 /** Assisted iteration: pre-fill the additional-context box and open it. */
 function onPrefillContext(text: string) {
   additionalContext.value = additionalContext.value ? `${additionalContext.value}\n\n${text}` : text;
@@ -88,6 +118,14 @@ function buildPromptContext() {
 }
 
 async function diagnose(force = false) {
+  await startStream({
+    force,
+    additionalContext: buildPromptContext() || undefined,
+    images: allImages.value.length ? allImages.value : undefined,
+  });
+}
+
+async function diagnoseFallback(force = false) {
   await runDiagnosis({
     force,
     additionalContext: buildPromptContext() || undefined,
@@ -95,8 +133,26 @@ async function diagnose(force = false) {
   });
 }
 
+function markDiagnosisFailed() {
+  diagnosis.value = null;
+}
+
 function isStale(d: FailureDiagnosis) {
   return d.status === 'running' && Date.now() - new Date(d.updatedAt).getTime() > 5 * 60 * 1000;
+}
+
+function isStreaming() {
+  return streamStatus.value === 'streaming';
+}
+
+function showDiagnoseButton() {
+  return !isStreaming() && (!diagnosis.value || diagnosis.value.status === 'failed' || isStale(diagnosis.value));
+}
+
+function showResult() {
+  return (
+    !isStreaming() && diagnosis.value && (diagnosis.value.status === 'completed' || diagnosis.value.status === 'failed')
+  );
 }
 </script>
 
@@ -255,7 +311,7 @@ function isStale(d: FailureDiagnosis) {
       />
 
       <!-- Diagnose button -->
-      <div v-if="!diagnosis || diagnosis.status === 'failed' || isStale(diagnosis)" class="pt-1">
+      <div v-if="showDiagnoseButton()" class="pt-1">
         <UButton
           icon="i-lucide-sparkles"
           size="sm"
@@ -268,32 +324,98 @@ function isStale(d: FailureDiagnosis) {
         </UButton>
       </div>
 
-      <!-- Loading skeleton while a diagnosis runs -->
-      <div
-        v-if="diagnosis?.status === 'running' && !isStale(diagnosis)"
-        class="space-y-3 rounded-lg border border-default p-4 bg-elevated/30"
-      >
-        <div class="flex items-center gap-2 text-sm text-gray-500">
-          <UIcon name="i-lucide-loader-2" class="size-4 animate-spin text-primary" />
-          <span>Analyzing failure cluster\u2026</span>
-        </div>
-        <div class="flex items-center gap-3">
-          <div class="size-12 rounded-full bg-elevated animate-pulse shrink-0" />
-          <div class="flex-1 space-y-2">
-            <div class="h-3 w-1/3 rounded bg-elevated animate-pulse" />
-            <div class="h-3 w-3/4 rounded bg-elevated animate-pulse" />
+      <!-- Live thinking panel while streaming -->
+      <div v-if="isStreaming()" class="rounded-lg border border-default overflow-hidden">
+        <!-- Stage header -->
+        <div class="flex items-center justify-between gap-2 px-3 py-2 bg-elevated/30 border-b border-default">
+          <div class="flex items-center gap-2 text-sm text-gray-500">
+            <UIcon name="i-lucide-loader-2" class="size-4 animate-spin text-primary" />
+            <span>Analyzing failure cluster</span>
+            <span v-if="streamStage" class="inline-flex items-center gap-1 text-xs text-gray-400">
+              <UIcon name="i-lucide-workflow" class="size-3" />
+              {{ streamStage === 'research' ? 'Researching patterns' : 'Diagnosing root cause' }}
+            </span>
           </div>
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-x"
+            title="Cancel diagnosis"
+            @click="cancelStream"
+          />
         </div>
-        <div class="space-y-2">
-          <div class="h-3 w-full rounded bg-elevated animate-pulse" />
-          <div class="h-3 w-5/6 rounded bg-elevated animate-pulse" />
-          <div class="h-3 w-2/3 rounded bg-elevated animate-pulse" />
+
+        <!-- Thinking tokens container -->
+        <div
+          ref="thinkingContainer"
+          class="max-h-64 overflow-y-auto p-3 text-xs font-mono leading-relaxed whitespace-pre-wrap break-words text-gray-600 dark:text-gray-400 bg-elevated/10"
+        >
+          <template v-if="streamThinkingText">
+            {{ streamThinkingText }}
+            <span class="inline-block w-2 h-4 bg-primary/60 animate-pulse ml-0.5 align-text-bottom" />
+          </template>
+          <template v-else>
+            <span class="text-gray-400 italic">Waiting for model response\u2026</span>
+          </template>
+        </div>
+
+        <!-- Token counter footer -->
+        <div class="px-3 py-1.5 border-t border-default text-xs text-gray-400 flex items-center gap-2">
+          <UIcon name="i-lucide-file-text" class="size-3" />
+          <span>{{ streamThinkingText.length.toLocaleString() }} characters received</span>
         </div>
       </div>
 
+      <!-- Stuck diagnosis: running from DB but not actively streaming (server crashed mid-stream) -->
+      <div
+        v-if="diagnosis?.status === 'running' && !isStale(diagnosis) && !isStreaming()"
+        class="rounded-lg border border-warning/40 bg-warning/5 p-3 space-y-2"
+      >
+        <div class="flex items-center gap-2 text-sm">
+          <UIcon name="i-lucide-alert-triangle" class="size-4 text-warning shrink-0" />
+          <span class="font-medium text-warning-700 dark:text-warning-400">Diagnosis was interrupted</span>
+        </div>
+        <p class="text-xs text-gray-500">
+          A previous diagnosis started but never completed — the server may have restarted. You can restart it below.
+        </p>
+        <div class="flex items-center gap-2 pt-1">
+          <UButton
+            icon="i-lucide-refresh-cw"
+            size="xs"
+            color="warning"
+            variant="solid"
+            :loading="posting"
+            @click="diagnose(true)"
+          >
+            Restart diagnosis
+          </UButton>
+          <UButton size="xs" color="neutral" variant="ghost" :loading="posting" @click="markDiagnosisFailed">
+            Dismiss
+          </UButton>
+        </div>
+        <p class="text-xs text-gray-400">Started {{ formatRelativeTime(diagnosis.updatedAt) }}</p>
+      </div>
+
+      <!-- Streaming error banner -->
+      <UAlert
+        v-if="streamError"
+        color="error"
+        icon="i-lucide-alert-circle"
+        title="Streaming diagnosis failed"
+        :description="streamError"
+        class="mt-2"
+      >
+        <template #actions>
+          <UButton size="xs" color="neutral" variant="outline" @click="diagnoseFallback(true)">
+            Retry (fallback)
+          </UButton>
+        </template>
+      </UAlert>
+
       <!-- Diagnosis result -->
       <DiagnosisResult
-        v-else
+        v-if="showResult()"
         :diagnosis="diagnosis"
         :last-seen-run-id="lastSeenRunId"
         @view-section="onViewSection"
