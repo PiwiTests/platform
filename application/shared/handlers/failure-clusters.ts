@@ -135,7 +135,25 @@ export async function getClusterCommitDiff(_db: DrizzleDB, _clusterId: number) {
 }
 
 export async function getClusterContext(_db: DrizzleDB, _clusterId: number) {
-  return { context: '', coverage: {} };
+  return {
+    text: 'Demo mode — no real AI context is generated. Configure a real AI provider to see the full diagnosis context with evidence sections.',
+    sections: [],
+    tokenEstimate: 0,
+    coverage: {
+      scm: {
+        hasLastGreen: false,
+        hasCommitRange: false,
+        baseCommitUsed: null,
+        provider: null,
+        commitsCount: 0,
+        filesCount: 0,
+        patchedFilesCount: 0,
+        patchesOmitted: false,
+        patchesTruncated: false,
+      },
+    },
+    scmChanges: null,
+  };
 }
 
 export async function extractClusterCases(

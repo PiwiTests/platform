@@ -243,6 +243,7 @@ Nuxt file-based routing:
 | `npm run app:seed:demo` | Regenerate demo seed data |
 | `npm run app:generate:demo` | Build demo SPA |
 | `npm run app:check:demo` | Verify demo routes |
+| `npm run app:gen:spec` | Generate `public/_openapi.json` from the dev server |
 | `node scripts/db-query.mjs "<sql>"` | Query the local SQLite DB directly |
 
 **DB query examples** (run from `application/`):
@@ -525,13 +526,15 @@ Marketing screenshots in `docs/public/screenshots/*.png` (used by `README.md` an
 
 ## Demo Data Requirements
 
-When adding features with database columns, API response fields, or UI-visible changes, the demo data must be updated in four places:
+When adding features with database columns, API response fields, or UI-visible changes, the demo data must be updated in five places:
 1. **`scripts/generate-demo-seed.mjs`** — seed the new columns in the generated SQL
 2. **`app/demo/api/`** — mirror any new server API response fields in the demo API handlers
 3. **`app/demo/simulator.ts`** — emit any new streaming event fields in simulated runs
 4. **`docs/`** — update the relevant documentation file
+5. **`public/_openapi.json`** — regenerate the OpenAPI spec when API endpoint metadata changes
 
 Always regenerate the seed SQL after changes: `cd application && npm run app:seed:demo`
+Regenerate the OpenAPI spec: `cd application && npm run app:gen:spec` (requires a dev server on port 3099)
 
 ## Troubleshooting
 - DB locked? Stop other processes accessing `.data/piwi.db`
