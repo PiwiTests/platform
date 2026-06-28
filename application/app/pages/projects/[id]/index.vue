@@ -732,9 +732,13 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
                 </template>
                 <template #id-cell="{ row }">
                   <div class="flex items-center gap-2">
-                    <NuxtLink :to="`/test-runs/${row.original.id}`" class="text-primary hover:underline font-medium">
+                    <a
+                      :href="`/test-runs/${row.original.id}`"
+                      class="text-primary hover:underline font-medium"
+                      @click.prevent="navigateTo(`/test-runs/${row.original.id}`)"
+                    >
                       Run #{{ row.original.id }}
-                    </NuxtLink>
+                    </a>
                     <span v-if="row.original.label" class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-32">
                       {{ row.original.label }}
                     </span>
@@ -1060,13 +1064,14 @@ const comparisonColumns: TableColumn<ComparisonRow>[] = [
 
                 <template #title-cell="{ row }">
                   <div class="min-w-0 space-y-0.5">
-                    <NuxtLink
-                      :to="`/test-cases/${row.original.id}`"
+                    <a
+                      :href="`/test-cases/${row.original.id}`"
                       class="font-medium text-primary hover:underline truncate block"
                       :title="row.original.title"
+                      @click.prevent="navigateTo(`/test-cases/${row.original.id}`)"
                     >
                       {{ row.original.title }}
-                    </NuxtLink>
+                    </a>
                     <div class="flex items-center gap-1 text-xs text-gray-400">
                       <UIcon name="i-lucide-file-code" class="size-3 shrink-0" />
                       <span class="font-mono truncate">{{ row.original.filePath }}</span>

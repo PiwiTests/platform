@@ -15,7 +15,11 @@ import {
   locatorSignature,
   recommendLocatorFix,
 } from '../../shared/locator-healing';
-import { elementMatchAlternatives, parseAriaCandidates, type ElementFingerprint } from '../../shared/locator-fingerprint';
+import {
+  elementMatchAlternatives,
+  parseAriaCandidates,
+  type ElementFingerprint,
+} from '../../shared/locator-fingerprint';
 import type { RankedLocator, LocatorSnapshot, LocatorFixRecommendation } from '../../shared/locator-healing.types';
 import type { DrizzleDB } from '../../shared/handlers/db';
 

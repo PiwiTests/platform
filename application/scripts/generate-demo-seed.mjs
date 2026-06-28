@@ -1205,14 +1205,24 @@ function locatorSig(method, strings) {
 // Shared alternative lists — each sorted descending by stability score.
 const ALT_CHECKOUT_PAY = [
   { locator: "getByTestId('checkout-pay')", method: 'getByTestId', args: { testId: 'checkout-pay' }, score: 100 },
-  { locator: "getByRole('button', { name: 'Pay now' })", method: 'getByRole', args: { role: 'button', name: 'Pay now' }, score: 90 },
+  {
+    locator: "getByRole('button', { name: 'Pay now' })",
+    method: 'getByRole',
+    args: { role: 'button', name: 'Pay now' },
+    score: 90,
+  },
   { locator: "getByText('Pay now')", method: 'getByText', args: { text: 'Pay now' }, score: 75 },
   { locator: "locator('#checkout-pay')", method: 'locator', args: { selector: '#checkout-pay' }, score: 65 },
 ];
 
 const ALT_ADD_TO_CART = [
   { locator: "getByTestId('add-to-cart-btn')", method: 'getByTestId', args: { testId: 'add-to-cart-btn' }, score: 100 },
-  { locator: "getByRole('button', { name: 'Add to cart' })", method: 'getByRole', args: { role: 'button', name: 'Add to cart' }, score: 90 },
+  {
+    locator: "getByRole('button', { name: 'Add to cart' })",
+    method: 'getByRole',
+    args: { role: 'button', name: 'Add to cart' },
+    score: 90,
+  },
   { locator: "getByText('Add to cart')", method: 'getByText', args: { text: 'Add to cart' }, score: 75 },
   { locator: "locator('#add-to-cart-btn')", method: 'locator', args: { selector: '#add-to-cart-btn' }, score: 65 },
 ];
@@ -1220,14 +1230,24 @@ const ALT_ADD_TO_CART = [
 const ALT_CHECKOUT_EMAIL = [
   { locator: "getByTestId('email-input')", method: 'getByTestId', args: { testId: 'email-input' }, score: 100 },
   { locator: "getByLabel('Email address')", method: 'getByLabel', args: { label: 'Email address' }, score: 85 },
-  { locator: "getByPlaceholder('your@email.com')", method: 'getByPlaceholder', args: { placeholder: 'your@email.com' }, score: 80 },
+  {
+    locator: "getByPlaceholder('your@email.com')",
+    method: 'getByPlaceholder',
+    args: { placeholder: 'your@email.com' },
+    score: 80,
+  },
   { locator: "locator('#checkout-email')", method: 'locator', args: { selector: '#checkout-email' }, score: 65 },
 ];
 
 const ALT_CARD_NUMBER = [
   { locator: "getByTestId('card-number')", method: 'getByTestId', args: { testId: 'card-number' }, score: 100 },
   { locator: "getByLabel('Card number')", method: 'getByLabel', args: { label: 'Card number' }, score: 85 },
-  { locator: "getByPlaceholder('1234 5678 9012 3456')", method: 'getByPlaceholder', args: { placeholder: '1234 5678 9012 3456' }, score: 80 },
+  {
+    locator: "getByPlaceholder('1234 5678 9012 3456')",
+    method: 'getByPlaceholder',
+    args: { placeholder: '1234 5678 9012 3456' },
+    score: 80,
+  },
   { locator: "locator('#card-number')", method: 'locator', args: { selector: '#card-number' }, score: 65 },
 ];
 
@@ -1239,14 +1259,29 @@ const ALT_CARD_EXPIRY = [
 
 const ALT_PAYPAL_BTN = [
   { locator: "getByTestId('paypal-btn')", method: 'getByTestId', args: { testId: 'paypal-btn' }, score: 100 },
-  { locator: "getByRole('button', { name: 'Continue with PayPal' })", method: 'getByRole', args: { role: 'button', name: 'Continue with PayPal' }, score: 90 },
-  { locator: "getByText('Continue with PayPal')", method: 'getByText', args: { text: 'Continue with PayPal' }, score: 75 },
+  {
+    locator: "getByRole('button', { name: 'Continue with PayPal' })",
+    method: 'getByRole',
+    args: { role: 'button', name: 'Continue with PayPal' },
+    score: 90,
+  },
+  {
+    locator: "getByText('Continue with PayPal')",
+    method: 'getByText',
+    args: { text: 'Continue with PayPal' },
+    score: 75,
+  },
   { locator: "locator('.paypal-button')", method: 'locator', args: { selector: '.paypal-button' }, score: 30 },
 ];
 
 const ALT_CART_REMOVE = [
   { locator: "getByTestId('remove-item-btn')", method: 'getByTestId', args: { testId: 'remove-item-btn' }, score: 100 },
-  { locator: "getByRole('button', { name: 'Remove' })", method: 'getByRole', args: { role: 'button', name: 'Remove' }, score: 90 },
+  {
+    locator: "getByRole('button', { name: 'Remove' })",
+    method: 'getByRole',
+    args: { role: 'button', name: 'Remove' },
+    score: 90,
+  },
   { locator: "getByText('Remove')", method: 'getByText', args: { text: 'Remove' }, score: 75 },
   { locator: "locator('.cart-item-remove')", method: 'locator', args: { selector: '.cart-item-remove' }, score: 30 },
 ];
@@ -1254,20 +1289,40 @@ const ALT_CART_REMOVE = [
 const ALT_FULL_NAME = [
   { locator: "getByTestId('fullname-input')", method: 'getByTestId', args: { testId: 'fullname-input' }, score: 100 },
   { locator: "getByLabel('Full name')", method: 'getByLabel', args: { label: 'Full name' }, score: 85 },
-  { locator: "getByPlaceholder('John Smith')", method: 'getByPlaceholder', args: { placeholder: 'John Smith' }, score: 80 },
+  {
+    locator: "getByPlaceholder('John Smith')",
+    method: 'getByPlaceholder',
+    args: { placeholder: 'John Smith' },
+    score: 80,
+  },
   { locator: "locator('#full-name')", method: 'locator', args: { selector: '#full-name' }, score: 65 },
 ];
 
 const ALT_STREET_ADDR = [
   { locator: "getByTestId('street-address')", method: 'getByTestId', args: { testId: 'street-address' }, score: 100 },
   { locator: "getByLabel('Street address')", method: 'getByLabel', args: { label: 'Street address' }, score: 85 },
-  { locator: "getByPlaceholder('123 Main St')", method: 'getByPlaceholder', args: { placeholder: '123 Main St' }, score: 80 },
+  {
+    locator: "getByPlaceholder('123 Main St')",
+    method: 'getByPlaceholder',
+    args: { placeholder: '123 Main St' },
+    score: 80,
+  },
   { locator: "locator('#street-address')", method: 'locator', args: { selector: '#street-address' }, score: 65 },
 ];
 
 const ALT_SAVE_ADDRESS = [
-  { locator: "getByTestId('save-address-btn')", method: 'getByTestId', args: { testId: 'save-address-btn' }, score: 100 },
-  { locator: "getByRole('button', { name: 'Save address' })", method: 'getByRole', args: { role: 'button', name: 'Save address' }, score: 90 },
+  {
+    locator: "getByTestId('save-address-btn')",
+    method: 'getByTestId',
+    args: { testId: 'save-address-btn' },
+    score: 100,
+  },
+  {
+    locator: "getByRole('button', { name: 'Save address' })",
+    method: 'getByRole',
+    args: { role: 'button', name: 'Save address' },
+    score: 90,
+  },
   { locator: "getByText('Save address')", method: 'getByText', args: { text: 'Save address' }, score: 75 },
 ];
 
@@ -1275,7 +1330,12 @@ const ALT_SAVE_ADDRESS = [
 // resolving to 3 elements. Alternatives narrow the selector to a specific button.
 const ALT_BUTTON_STRICT = [
   { locator: "getByTestId('primary-btn')", method: 'getByTestId', args: { testId: 'primary-btn' }, score: 100 },
-  { locator: "getByRole('button', { name: 'Submit' })", method: 'getByRole', args: { role: 'button', name: 'Submit' }, score: 90 },
+  {
+    locator: "getByRole('button', { name: 'Submit' })",
+    method: 'getByRole',
+    args: { role: 'button', name: 'Submit' },
+    score: 90,
+  },
   { locator: "getByText('Submit')", method: 'getByText', args: { text: 'Submit' }, score: 75 },
   { locator: "locator('.btn-primary')", method: 'locator', args: { selector: '.btn-primary' }, score: 30 },
 ];
@@ -1285,7 +1345,7 @@ const LOCATOR_SNAPSHOTS = [
   // ── Cluster #1: checkout Pay button (test_case_ids 1 & 2) ─────────────────
   // L1 exact-location match: the error text's synthetic stack frame is
   // "at tests/checkout/checkout.spec.ts:42:18", so these rows are found immediately.
-  ...([1, 2].map((testCaseId) => ({
+  ...[1, 2].map((testCaseId) => ({
     id: lsId++,
     test_case_id: testCaseId,
     location: 'tests/checkout/checkout.spec.ts:42:18',
@@ -1303,7 +1363,7 @@ const LOCATOR_SNAPSHOTS = [
     alternatives: ALT_CHECKOUT_PAY,
     last_seen_run_id: null,
     last_seen_at: ts('2025-05-20') * 1000,
-  }))),
+  })),
 
   // ── Additional captures from the credit-card checkout flow (test_case_id 1) ─
   // Shows that the reporter captures every locator action in a passing run,
