@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { normalizeAndHashArgs, locatorSignature, locatorSignatureFromExpression } from '../../shared/locator-healing';
+import { extractLeafSelector } from '../../shared/error-fingerprint';
 
 describe('normalizeAndHashArgs', () => {
   test('produces identical hashes for args differing only in `exact`', async () => {
@@ -112,5 +113,45 @@ describe('locator signature round-trip (capture vs lookup)', () => {
     expect(await cap('getByRole', ['button', { name: 'Submit' }])).not.toBe(
       await look("getByRole('link', { name: 'Submit' })"),
     );
+  });
+});
+
+/**
+ * Chained locators: the capture side records a chain's innermost
+ * locator-creating call, so the lookup must extract that same leaf from the
+ * error (not the outermost call). extractLeafSelector + the signature must agree.
+ */
+describe('chained locator leaf matching', () => {
+  const chainError = (chain: string) =>
+    `TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for ${chain}\n    at tests/checkout.spec.ts:42:5`;
+
+  test('extracts the innermost call from a chain', () => {
+    expect(
+      extractLeafSelector(chainError("getByRole('row', { name: 'Acme' }).getByRole('button', { name: 'Delete' })")),
+    ).toBe("getByRole('button', { name: 'Delete' })");
+  });
+
+  test('returns the whole expression for a non-chained locator', () => {
+    expect(extractLeafSelector(chainError("getByTestId('submit')"))).toBe("getByTestId('submit')");
+  });
+
+  test('ignores trailing positional chains (.first/.nth)', () => {
+    expect(extractLeafSelector(chainError("getByRole('row').getByRole('button').first()"))).toBe("getByRole('button')");
+  });
+
+  test('ignores a locator nested inside filter({ has })', () => {
+    expect(extractLeafSelector(chainError("getByRole('button').filter({ has: getByText('x') })"))).toBe(
+      "getByRole('button')",
+    );
+  });
+
+  test('leaf signature round-trips against the captured leaf', async () => {
+    // Capture stored the chain leaf: getByRole('button', { name: 'Delete' }).
+    const captured = await locatorSignature('getByRole', ['button', { name: 'Delete' }]);
+    const leaf = extractLeafSelector(
+      chainError("getByRole('row', { name: 'Acme' }).getByRole('button', { name: 'Delete' })"),
+    );
+    expect(leaf).not.toBeNull();
+    expect(await locatorSignatureFromExpression(leaf!)).toBe(captured);
   });
 });

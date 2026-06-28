@@ -7,7 +7,7 @@
  */
 import { and, eq, notInArray, sql } from 'drizzle-orm';
 import { locatorSnapshots, testRunsCases, type LocatorSnapshotRow } from '../database/schema';
-import { extractSelector, extractTopFrameFile } from '../../shared/error-fingerprint';
+import { extractLeafSelector, extractTopFrameFile } from '../../shared/error-fingerprint';
 import {
   locatorSignatureFromExpression,
   locatorExpressionMethod,
@@ -268,8 +268,10 @@ export async function getLocatorHealing(db: DrizzleDB, testRunsCaseId: number): 
   const error = row.error;
   const testCaseId = row.testCaseId;
 
-  // Parse the failing locator from the error (for display + signature lookup)
-  const selector = extractSelector(error);
+  // Parse the failing locator from the error (for display + signature lookup).
+  // Use the chain leaf — the innermost call identifies the resolved element and
+  // is what the capture side recorded, so chained locators match too.
+  const selector = extractLeafSelector(error);
   const parsedLocator = selector ? parseLocatorExpression(selector) : null;
   const failingLocator = parsedLocator ? { method: parsedLocator.method, args: parsedLocator.args } : null;
   const location = extractErrorLocation(error);
