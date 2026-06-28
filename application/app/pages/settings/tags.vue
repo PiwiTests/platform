@@ -203,7 +203,7 @@ async function handleDeleteTag() {
     </SectionCard>
 
     <!-- Empty state -->
-    <SectionCard v-else title="Tags" :count="0">
+    <SectionCard v-else title="Tags" :count="0" help="settings.tags">
       <div class="text-center py-12">
         <div class="flex justify-center mb-4">
           <UIcon name="i-lucide-tags" class="text-4xl text-muted" />

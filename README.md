@@ -15,7 +15,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@piwitests/reporter"><img src="https://img.shields.io/npm/v/@piwitests/reporter?logo=npm&labelColor=020420&color=CB3837" alt="npm"></a>
-  <a href="https://hub.docker.com/r/piwitests/dashboard"><img src="https://img.shields.io/docker/v/piwitests/dashboard?logo=docker&labelColor=020420&color=2496ED" alt="Docker"></a>
+  <a href="https://hub.docker.com/r/phenx/piwi-dashboard"><img src="https://img.shields.io/docker/v/phenx/piwi-dashboard?logo=docker&labelColor=020420&color=2496ED" alt="Docker"></a>
 </p>
 
 <picture>
@@ -44,12 +44,12 @@ Native Playwright HTML reports are great for local debugging — but they're eph
 
 ```bash
 # Linux / macOS
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/piwitests/dashboard:latest
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data phenx/piwi-dashboard:latest
 ```
 
 ```powershell
 # Windows (PowerShell)
-docker run -p 3000:3000 -v ${PWD}/.data:/app/.data ghcr.io/piwitests/dashboard:latest
+docker run -p 3000:3000 -v ${PWD}/.data:/app/.data phenx/piwi-dashboard:latest
 ```
 
 Visit `http://localhost:3000`.

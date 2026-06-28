@@ -211,6 +211,10 @@ export default defineNuxtConfig({
     },
     experimental: {
       openAPI: true,
+      // Inline all dependencies into the built output — no external node_modules
+      // needed at runtime. Only native modules (sharp, libsql) stay external.
+      // @ts-expect-error — noExternals is a valid Nitro option but not yet typed
+      noExternals: true,
       // Windows-only workaround to avoid Nitro build issues caused by ESM/CJS externals
       // resolution on Windows. Enabling legacyExternals here keeps dependency resolution
       // compatible with older behavior and prevents intermittent build timeouts / failures

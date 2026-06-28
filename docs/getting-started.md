@@ -31,13 +31,13 @@ The fastest way to get started is with the pre-built container image:
 ::: code-group
 
 ```bash [Linux / macOS]
-docker pull ghcr.io/piwitests/dashboard:latest
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/piwitests/dashboard:latest
+docker pull phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data phenx/piwi-dashboard:latest
 ```
 
 ```powershell [Windows (PowerShell)]
-docker pull ghcr.io/piwitests/dashboard:latest
-docker run -p 3000:3000 -v ${PWD}/.data:/app/.data ghcr.io/piwitests/dashboard:latest
+docker pull phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v ${PWD}/.data:/app/.data phenx/piwi-dashboard:latest
 ```
 
 :::
