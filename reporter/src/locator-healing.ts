@@ -664,19 +664,47 @@ export function suggestLocatorsFromAria(
 export function captureCallerLocation(): string | null {
   const stack = new Error().stack ?? '';
   const lines = stack.split('\n');
+  // The capture machinery's own frames sit at the top of the stack: this module
+  // (locator-healing) then the single fixtures-proxy frame that called it. Skip
+  // exactly those, so the first remaining frame is the real test call site. A
+  // USER file named `fixtures.*` further down the stack must be kept, so the
+  // fixtures-proxy frame is only skipped when it directly follows this module.
+  let prevWasCaptureModule = false;
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i]!.trim();
     if (!line.startsWith('at')) continue;
     const m = line.match(/^at\s+(?:(.+?)\s+\()?(.+?):(\d+):(\d+)\)?$/);
-    if (!m) continue;
+    if (!m) {
+      prevWasCaptureModule = false;
+      continue;
+    }
     let file = m[2]!;
-    if (!file || file.startsWith('node:')) continue;
+    if (!file || file.startsWith('node:')) {
+      prevWasCaptureModule = false;
+      continue;
+    }
     file = file.replace(/^file:\/\/\/?/, '');
     // Must look like a source file (has an extension).
-    if (!/\.[a-z]+$/i.test(file)) continue;
-    // Skip framework frames: this module, the fixtures proxy, and deps.
-    if (/[\\/](?:locator-healing|fixtures)\.[a-z]+$/i.test(file)) continue;
-    if (/[\\/]node_modules[\\/]/.test(file)) continue;
+    if (!/\.[a-z]+$/i.test(file)) {
+      prevWasCaptureModule = false;
+      continue;
+    }
+    // This module — always an internal frame; remember it so the immediately
+    // following fixtures-proxy frame can be skipped too.
+    if (/[\\/]locator-healing\.[a-z]+$/i.test(file)) {
+      prevWasCaptureModule = true;
+      continue;
+    }
+    // The fixtures proxy that called us — skip only when it directly follows
+    // this module, so a user's own `fixtures.*` deeper down is not dropped.
+    if (prevWasCaptureModule && /[\\/]fixtures\.[a-z]+$/i.test(file)) {
+      prevWasCaptureModule = false;
+      continue;
+    }
+    if (/[\\/]node_modules[\\/]/.test(file)) {
+      prevWasCaptureModule = false;
+      continue;
+    }
     let rel = file;
     try {
       rel = path.relative(process.cwd(), file);

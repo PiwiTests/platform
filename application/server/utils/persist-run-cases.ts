@@ -199,7 +199,11 @@ export async function persistRunCases(
   const pendingClusters = new Map<string, PendingCluster>();
   // Locator snapshots to upsert, grouped by resolved test case id; the shared
   // helper handles row building, upsert, and stale-location purge after insert.
-  const perCaseLocators: Array<{ caseId: number; snapshots: LocatorSnapshot[] | null | undefined }> = [];
+  const perCaseLocators: Array<{
+    caseId: number;
+    snapshots: LocatorSnapshot[] | null | undefined;
+    purge?: boolean;
+  }> = [];
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
@@ -231,7 +235,10 @@ export async function persistRunCases(
     if (caseId === undefined) continue;
 
     // Collect locator snapshots; upserted in one batch after the case insert.
-    if (c.locatorSnapshots?.length) perCaseLocators.push({ caseId, snapshots: c.locatorSnapshots });
+    // Only a passed case may purge stale locations — a failed run can stop
+    // before reaching later locators (see upsertLocatorSnapshots).
+    if (c.locatorSnapshots?.length)
+      perCaseLocators.push({ caseId, snapshots: c.locatorSnapshots, purge: c.status === 'passed' });
 
     if (fingerprint) {
       const pending = pendingClusters.get(fingerprint.fingerprint);

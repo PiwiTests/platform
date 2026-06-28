@@ -305,7 +305,11 @@ async function persistRunCases(
   }> = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
   const pendingClusters = new Map<string, PendingCluster>();
-  const perCaseLocators: Array<{ caseId: number; snapshots: LocatorSnapshot[] | null | undefined }> = [];
+  const perCaseLocators: Array<{
+    caseId: number;
+    snapshots: LocatorSnapshot[] | null | undefined;
+    purge?: boolean;
+  }> = [];
 
   for (const c of cases) {
     const cacheKey = `${c.filePath}::${c.title}`;
@@ -345,8 +349,12 @@ async function persistRunCases(
     }
     rowFingerprints.push(fingerprint);
 
-    if (c.locatorSnapshots)
-      perCaseLocators.push({ caseId: shared.id, snapshots: c.locatorSnapshots as LocatorSnapshot[] | null });
+    if (Array.isArray(c.locatorSnapshots) && c.locatorSnapshots.length)
+      perCaseLocators.push({
+        caseId: shared.id,
+        snapshots: c.locatorSnapshots as LocatorSnapshot[],
+        purge: c.status === 'passed',
+      });
 
     runCasesRows.push({
       testRunId,
