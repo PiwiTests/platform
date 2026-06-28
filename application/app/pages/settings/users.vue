@@ -470,7 +470,7 @@ async function handleInviteUser(user: UserDetails) {
     </SectionCard>
 
     <!-- Empty state -->
-    <SectionCard v-else title="Users" :count="0">
+    <SectionCard v-else title="Users" :count="0" help="settings.users">
       <div class="text-center py-12">
         <div class="flex justify-center mb-4">
           <UIcon name="i-lucide-users" class="text-4xl text-muted" />

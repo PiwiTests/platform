@@ -12,13 +12,13 @@ lang: en-US
 ::: code-group
 
 ```bash [Linux / macOS]
-docker pull ghcr.io/piwitests/dashboard:latest
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/piwitests/dashboard:latest
+docker pull phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data phenx/piwi-dashboard:latest
 ```
 
 ```powershell [Windows (PowerShell)]
-docker pull ghcr.io/piwitests/dashboard:latest
-docker run -p 3000:3000 -v ${PWD}/.data:/app/.data ghcr.io/piwitests/dashboard:latest
+docker pull phenx/piwi-dashboard:latest
+docker run -p 3000:3000 -v ${PWD}/.data:/app/.data phenx/piwi-dashboard:latest
 ```
 
 :::
@@ -40,16 +40,16 @@ The dashboard will be available at `http://localhost:3000`.
 |----------|-------|
 | Base image | `node:24-alpine` |
 | Build type | Multistage (builder + production stages) |
-| Image size | ~200 MB |
+| Image size | ~400 MB |
 | Platforms | `linux/amd64`, `linux/arm64` |
-| Registry | `ghcr.io/piwitests/dashboard` |
+| Registry | `phenx/piwi-dashboard` |
 
 ### Volumes
 
 Mount a volume to persist data:
 
 ```bash
-docker run -p 3000:3000 -v /path/to/data:/app/.data ghcr.io/piwitests/dashboard:latest
+docker run -p 3000:3000 -v /path/to/data:/app/.data phenx/piwi-dashboard:latest
 ```
 
 > On Windows, use a host path like `C:\piwi\data` (PowerShell) in place of `/path/to/data`.
@@ -98,7 +98,7 @@ Create a `docker-compose.yml`:
 ```yaml
 services:
   piwi-dashboard:
-    image: ghcr.io/piwitests/dashboard:latest
+    image: phenx/piwi-dashboard:latest
     ports:
       - "3000:3000"
     volumes:
@@ -131,7 +131,7 @@ services:
     restart: unless-stopped
 
   piwi-dashboard:
-    image: ghcr.io/piwitests/dashboard:latest
+    image: phenx/piwi-dashboard:latest
     ports:
       - "3000:3000"
     volumes:
@@ -174,7 +174,7 @@ spec:
     spec:
       containers:
       - name: piwi-dashboard
-        image: ghcr.io/piwitests/dashboard:latest
+        image: phenx/piwi-dashboard:latest
         ports:
         - containerPort: 3000
         volumeMounts:
@@ -227,7 +227,7 @@ On **Linux hosts**, the bind-mounted directory must be writable by the container
 ```bash
 mkdir -p .data
 chmod 777 .data
-docker run -p 3000:3000 -v $(pwd)/.data:/app/.data ghcr.io/piwitests/dashboard:latest
+docker run -p 3000:3000 -v $(pwd)/.data:/app/.data phenx/piwi-dashboard:latest
 ```
 
 > On Windows and macOS, Docker Desktop manages volume permissions automatically — no `chmod` is needed. Just run the container with `-v ${PWD}/.data:/app/.data` (PowerShell).
@@ -243,11 +243,11 @@ Map to a different host port:
 ::: code-group
 
 ```bash [Linux / macOS]
-docker run -p 8080:3000 -v $(pwd)/.data:/app/.data ghcr.io/piwitests/dashboard:latest
+docker run -p 8080:3000 -v $(pwd)/.data:/app/.data phenx/piwi-dashboard:latest
 ```
 
 ```powershell [Windows (PowerShell)]
-docker run -p 8080:3000 -v ${PWD}/.data:/app/.data ghcr.io/piwitests/dashboard:latest
+docker run -p 8080:3000 -v ${PWD}/.data:/app/.data phenx/piwi-dashboard:latest
 ```
 
 :::

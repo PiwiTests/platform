@@ -4,6 +4,8 @@
 # Build outputs
 **/.nuxt
 application/.output
+**/.turbo
+reporter/dist
 
 # Local data
 **/.data
@@ -11,10 +13,12 @@ application/.output
 # Environment & secrets
 **/.env
 **/.env.*
+.npmrc
 
 # Git, IDE
 .git
 .gitignore
+.gitattributes
 .idea
 .vscode
 **/.DS_Store
@@ -26,16 +30,31 @@ application/.output
 Dockerfile
 .dockerignore
 docker-compose.yml
+docker-compose*.yml
 
 # CI/CD
 .github
 
 # Docs
 docs/
-*.md
+**/*.md
 
 # Tests (not needed for Docker build)
 application/tests/
+**/test/
+**/tests/
+**/__tests__/
+**/__snapshots__/
+**/coverage/
+**/.nyc_output
 
-# Reporter source (not built or used at application runtime)
+# Reporter (not needed for Docker build)
 reporter/src/
+reporter/dist/
+
+# Source maps & declarations (dev artifacts)
+**/*.map
+**/*.tsbuildinfo
+
+# Plans & local working docs
+plans/
