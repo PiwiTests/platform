@@ -16,7 +16,7 @@ docker run -d \
   --name piwi-dashboard \
   -p 3000:3000 \
   -v $(pwd)/.data:/app/.data \
-  ghcr.io/piwitests/dashboard:latest
+  phenx/piwi-dashboard:latest
 ```
 
 ```powershell
@@ -25,7 +25,7 @@ docker run -d `
   --name piwi-dashboard `
   -p 3000:3000 `
   -v ${PWD}/.data:/app/.data `
-  ghcr.io/piwitests/dashboard:latest
+  phenx/piwi-dashboard:latest
 ```
 
 Open `http://localhost:3000`. The SQLite database and file storage are created automatically inside `.data/`.
@@ -38,8 +38,8 @@ Open `http://localhost:3000`. The SQLite database and file storage are created a
 |------------|------------------------------------|
 | Base image | `node:24-alpine`                   |
 | Platforms  | `linux/amd64`, `linux/arm64`       |
-| Image size | ~200 MB                            |
-| Registry   | `ghcr.io/piwitests/dashboard`     |
+| Image size | ~400 MB                            |
+| Registry   | `phenx/piwi-dashboard`     |
 | Run as     | Non-root (`nodejs`, UID/GID 1001)  |
 
 ### Available tags
@@ -58,7 +58,7 @@ Open `http://localhost:3000`. The SQLite database and file storage are created a
 Mount a host directory at `/app/.data` to persist all data between container restarts:
 
 ```bash
-docker run -d -p 3000:3000 -v /your/data/path:/app/.data ghcr.io/piwitests/dashboard:latest
+docker run -d -p 3000:3000 -v /your/data/path:/app/.data phenx/piwi-dashboard:latest
 ```
 
 > On Windows (PowerShell), use a host path like `C:\piwi\data` in place of `/your/data/path`.
@@ -136,7 +136,7 @@ These can also be configured through the Settings UI at runtime.
 ```yaml
 services:
   piwi-dashboard:
-    image: ghcr.io/piwitests/dashboard:latest
+    image: phenx/piwi-dashboard:latest
     ports:
       - "3000:3000"
     volumes:
@@ -149,7 +149,7 @@ services:
 ```yaml
 services:
   piwi-dashboard:
-    image: ghcr.io/piwitests/dashboard:latest
+    image: phenx/piwi-dashboard:latest
     ports:
       - "3000:3000"
     volumes:
@@ -176,7 +176,7 @@ services:
     restart: unless-stopped
 
   piwi-dashboard:
-    image: ghcr.io/piwitests/dashboard:latest
+    image: phenx/piwi-dashboard:latest
     ports:
       - "3000:3000"
     environment:
@@ -212,7 +212,7 @@ services:
     restart: unless-stopped
 
   piwi-dashboard:
-    image: ghcr.io/piwitests/dashboard:latest
+    image: phenx/piwi-dashboard:latest
     ports:
       - "3000:3000"
     volumes:
@@ -329,7 +329,7 @@ Generate an API key in **Settings → Users → API keys**, store it as a CI sec
 Pull the latest image and recreate the container:
 
 ```bash
-docker pull ghcr.io/piwitests/dashboard:latest
+docker pull phenx/piwi-dashboard:latest
 docker compose up -d --pull always
 ```
 
@@ -354,12 +354,12 @@ mkdir -p .data && chown 1001:1001 .data
 
 ```bash
 # Linux / macOS
-docker run -p 8080:3000 -v $(pwd)/.data:/app/.data ghcr.io/piwitests/dashboard:latest
+docker run -p 8080:3000 -v $(pwd)/.data:/app/.data phenx/piwi-dashboard:latest
 ```
 
 ```powershell
 # Windows (PowerShell)
-docker run -p 8080:3000 -v ${PWD}/.data:/app/.data ghcr.io/piwitests/dashboard:latest
+docker run -p 8080:3000 -v ${PWD}/.data:/app/.data phenx/piwi-dashboard:latest
 ```
 
 **SQLite locked / concurrent write errors** — SQLite supports only one writer at a time. For multi-instance or high-concurrency deployments, switch to PostgreSQL by setting `PIWI_DATABASE_URL`.
