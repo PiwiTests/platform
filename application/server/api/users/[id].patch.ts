@@ -4,7 +4,7 @@ import { requireAuth } from '../../utils/auth';
 import { Role } from '../../../shared/types';
 import { z } from 'zod';
 
-const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
+const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
 defineRouteMeta({
   openAPI: {
@@ -13,6 +13,7 @@ defineRouteMeta({
     description:
       "Updates a user's name, email, or role. Admins can update any user; non-admins can only update their own name and email.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    'x-required-roles': REQUIRED_ROLES,
   },
 });
 
