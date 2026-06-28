@@ -136,7 +136,7 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_cluster',
     description:
-      'Get full details for a failure cluster including all affected test cases and a compact diagnosis summary. Use get_cluster_diagnosis for the full diagnosis text, or get_cluster_context for the raw AI evidence.',
+      'Get full details for a failure cluster including all affected test cases, a compact diagnosis summary, and locator healing suggestions for up to 5 affected cases. Each healing entry includes the failing locator, the recommended fix, and the number of alternatives available. Use get_cluster_diagnosis for the full diagnosis text, or get_cluster_context for the raw AI evidence.',
     inputSchema: {
       type: 'object',
       properties: {

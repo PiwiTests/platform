@@ -114,16 +114,16 @@ const windsurfSnippet = computed(() =>
 
         <!-- What it is -->
         <SectionCard icon="i-lucide-bot" title="What it provides" help="mcp.tools">
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div class="flex flex-col gap-1.5">
             <div
               v-for="t in tools"
               :key="t.name"
-              class="flex items-start gap-2 p-2 rounded-md bg-elevated/50 border border-default"
+              class="flex items-start gap-3 px-3 py-2.5 rounded-md bg-elevated/50 border border-default hover:bg-elevated transition-colors"
             >
-              <UIcon name="i-lucide-wrench" class="size-3.5 mt-0.5 shrink-0 text-primary" />
-              <div>
-                <p class="text-xs font-mono font-semibold text-foreground">{{ t.name }}</p>
-                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t.description }}</p>
+              <UIcon name="i-lucide-wrench" class="size-4 mt-0.5 shrink-0 text-primary" />
+              <div class="min-w-0">
+                <p class="text-sm font-mono font-semibold text-foreground">{{ t.name }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ t.description }}</p>
               </div>
             </div>
           </div>

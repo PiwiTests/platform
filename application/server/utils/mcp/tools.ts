@@ -10,6 +10,7 @@ import { MCP_TOOL_DEFS } from '#shared/mcp-tools';
 import type { McpToolDef, McpToolName } from '#shared/mcp-tools';
 import type { RunMetadata, BrowserConfig } from '../run-json-types';
 import { getStorage } from '../../storage';
+import { getLocatorHealing } from '../locator-healing';
 
 type DbClient = Awaited<ReturnType<typeof import('../../database').getDatabase>>;
 
@@ -387,6 +388,53 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const id = Number(params.id);
     const cluster = await getFailureCluster(db, id);
     if (!cluster) return null;
+
+    // Fetch locator healing for up to 5 affected cases so AI coding agents can
+    // suggest fixes without visiting the dashboard. Quietly skip cases with no
+    // caseId (no error/run data) or where healing returns nothing.
+    const topCases = (cluster.affectedTestCases ?? []).slice(0, 5);
+    const healingResults = await Promise.all(
+      topCases.map(async (t: any) => {
+        const caseId = t.recentTestRunsCaseId;
+        if (!caseId) return null;
+        try {
+          const h = await getLocatorHealing(db, caseId);
+          if (h.source === 'none') return null;
+          return {
+            testCaseId: t.testCaseId,
+            title: t.title,
+            caseId,
+            source: h.source,
+            failingLocator: h.failingLocator,
+            recommendation: h.recommendation
+              ? dropNulls({
+                  recommended: h.recommendation.recommended
+                    ? dropNulls({
+                        locator: h.recommendation.recommended.locator,
+                        method: h.recommendation.recommended.method,
+                        score: h.recommendation.recommended.score,
+                      })
+                    : null,
+                  durable: h.recommendation.durable
+                    ? dropNulls({
+                        locator: h.recommendation.durable.locator,
+                        method: h.recommendation.durable.method,
+                        score: h.recommendation.durable.score,
+                      })
+                    : null,
+                  preservesConvention: h.recommendation.preservesConvention || null,
+                  hasDurableAlternative: h.recommendation.hasDurableAlternative || null,
+                  suggestAddTestId: h.recommendation.suggestAddTestId || null,
+                })
+              : null,
+            alternativesCount: (h.fromPriorSuccess?.length ?? 0) + (h.fromElementMatch?.length ?? 0),
+          };
+        } catch {
+          return null; // skip failed lookups silently
+        }
+      }),
+    );
+
     return dropNulls({
       id: cluster.id,
       signature: cluster.signature,
@@ -419,6 +467,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           caseId: t.recentTestRunsCaseId,
         }),
       ),
+      locatorHealing:
+        healingResults.filter((h: any) => h != null).length > 0 ? healingResults.filter((h: any) => h != null) : null,
     });
   },
 
