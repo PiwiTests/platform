@@ -20,6 +20,13 @@ interface PerfChangeEntry {
 
 interface RunInsightsResult {
   hasBaseline: boolean;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  passRate: number;
+  baselinePassRate: number;
+  passRateDelta: number;
+  avgDurationDelta: number | null;
   newRegressions: TestCaseEntry[];
   recurrences: TestCaseEntry[];
   recovered: TestCaseEntry[];
@@ -28,6 +35,7 @@ interface RunInsightsResult {
   mostImproved: PerfChangeEntry[];
   mostRegressed: PerfChangeEntry[];
   workerImbalance: Array<{ workerIndex: number; count: number }>;
+  workerImbalanceWarning: string | null;
   flakyOnRetry: Array<{ testRunsCaseId: number; title: string; filePath: string; retries: number }>;
   clusterNew: Array<{ clusterId: number; signature: string }>;
 }
@@ -65,10 +73,11 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.testRunId, runId));
 
-  // Find baseline: same-branch passing run, fallback to any passing run
+  // Find baseline: passing full run before this one
   const baselineConditions = [
     eq(testRuns.projectId, run.projectId),
     eq(testRuns.status, 'passed'),
+    eq(testRuns.isFullRun, 1),
     sql`${testRuns.startTime} < ${run.startTime}`,
   ];
 
@@ -82,6 +91,13 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
   const baselineRun = baselineResults[0];
   const empty = {
     hasBaseline: false,
+    totalTests: 0,
+    passedTests: 0,
+    failedTests: 0,
+    passRate: 0,
+    baselinePassRate: 0,
+    passRateDelta: 0,
+    avgDurationDelta: null,
     newRegressions: [],
     recurrences: [],
     recovered: [],
@@ -90,6 +106,7 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
     mostImproved: [],
     mostRegressed: [],
     workerImbalance: [],
+    workerImbalanceWarning: null,
     flakyOnRetry: [],
     clusterNew: [],
   };
@@ -168,6 +185,23 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
     }
   }
 
+  // Summary stats
+  const totalTests = currentCases.length;
+  const passedTests = currentCases.filter((c: any) => c.status === 'passed').length;
+  const failedTests = currentCases.filter((c: any) => FAIL_STATUSES.has(c.status)).length;
+  const passRate = totalTests > 0 ? Math.round((passedTests / totalTests) * 100) : 0;
+
+  const baselineTotal = baselineCases.length;
+  const baselinePassed = baselineCases.filter((bc: any) => bc.status === 'passed').length;
+  const baselinePassRate = baselineTotal > 0 ? Math.round((baselinePassed / baselineTotal) * 100) : 0;
+  const passRateDelta = passRate - baselinePassRate;
+
+  // Average duration change across all comparable passing tests
+  const avgDurationDelta =
+    perfChanges.length > 0
+      ? Math.round(perfChanges.reduce((sum, c) => sum + c.pctChange, 0) / perfChanges.length)
+      : null;
+
   // Slowest tests (top 5 by duration in current run)
   const slowestTests = [...currentCases]
     .filter((c) => c.duration != null)
@@ -175,11 +209,14 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
     .slice(0, 5)
     .map((c) => ({ testRunsCaseId: c.id, title: c.title, filePath: c.filePath, duration: c.duration }));
 
+  // Filter out zero-change entries so no test appears in both lists with 0%
+  const nonZeroChanges = perfChanges.filter((c) => c.pctChange !== 0);
+
   // Most improved (top 5 by negative pctChange)
-  const mostImproved = [...perfChanges].sort((a, b) => a.pctChange - b.pctChange).slice(0, 5);
+  const mostImproved = [...nonZeroChanges].sort((a, b) => a.pctChange - b.pctChange).slice(0, 5);
 
   // Most regressed (top 5 by positive pctChange)
-  const mostRegressed = [...perfChanges].sort((a, b) => b.pctChange - a.pctChange).slice(0, 5);
+  const mostRegressed = [...nonZeroChanges].sort((a, b) => b.pctChange - a.pctChange).slice(0, 5);
 
   // Worker imbalance
   const workerCounts = new Map<number, number>();
@@ -192,6 +229,20 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
     .map(([workerIndex, count]) => ({ workerIndex, count }))
     .sort((a, b) => a.workerIndex - b.workerIndex);
 
+  // Worker imbalance warning
+  let workerImbalanceWarning: string | null = null;
+  if (workerCounts.size > 1) {
+    const counts = [...workerCounts.values()];
+    const maxCount = Math.max(...counts);
+    const minCount = Math.min(...counts);
+    if (minCount > 0 && maxCount >= minCount * 1.5) {
+      const maxWorker = [...workerCounts.entries()].find(([, c]) => c === maxCount)?.[0];
+      const minWorker = [...workerCounts.entries()].find(([, c]) => c === minCount)?.[0];
+      const ratio = Math.round((maxCount / minCount) * 10) / 10;
+      workerImbalanceWarning = `Worker W${maxWorker} ran ${ratio}\u00d7 more tests than worker W${minWorker}`;
+    }
+  }
+
   // New clusters (firstSeenRunId === runId)
   const clusterRows: any[] = await db
     .select({ id: failureClusters.id, signature: failureClusters.signature })
@@ -201,6 +252,13 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
 
   return {
     hasBaseline: true,
+    totalTests,
+    passedTests,
+    failedTests,
+    passRate,
+    baselinePassRate,
+    passRateDelta,
+    avgDurationDelta,
     newRegressions,
     recurrences,
     recovered,
@@ -209,6 +267,7 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
     mostImproved,
     mostRegressed,
     workerImbalance,
+    workerImbalanceWarning,
     flakyOnRetry,
     clusterNew: clusterRows.map((c: any) => ({ clusterId: c.id, signature: c.signature })),
   };
