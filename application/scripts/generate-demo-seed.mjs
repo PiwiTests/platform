@@ -315,7 +315,7 @@ for (const [pid, cases] of ALL_CASE_DEFS) {
 const CLUSTER_DEFS = [
   {
     projectId: 1,
-    errorText: 'TimeoutError: locator.click: Timeout 30000ms exceeded.\n    at tests/checkout/checkout.spec.ts:42',
+    errorText: `TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Pay' })\n    at tests/checkout/checkout.spec.ts:42:18`,
     caseIndices: [0, 1],
   },
   { projectId: 1, errorText: 'expect(received).toBe(expected)\n\nExpected: 3\nReceived: 0', caseIndices: [2] },
@@ -1186,6 +1186,51 @@ for (const u of DEMO_USERS) {
   }
 }
 
+// ── Locator healing snapshots ───────────────────────────────────────────────
+// Seeded for cluster #1's checkout cases so the "Alternative locators" panel
+// shows pre-captured suggestions for the failing
+// getByRole('button', { name: 'Pay' }) at tests/checkout/checkout.spec.ts:42:18.
+// The location matches the synthetic stack frame in the cluster error, so the
+// server's exact-location lookup resolves these rows.
+function locatorSig(method, strings) {
+  return createHash('sha256')
+    .update(`${method} ${JSON.stringify(strings)}`, 'utf-8')
+    .digest('hex');
+}
+
+const CHECKOUT_PAY_ALTERNATIVES = [
+  { locator: "getByTestId('checkout-pay')", method: 'getByTestId', args: { testId: 'checkout-pay' }, score: 100 },
+  {
+    locator: "getByRole('button', { name: 'Pay now' })",
+    method: 'getByRole',
+    args: { role: 'button', name: 'Pay now' },
+    score: 90,
+  },
+  { locator: "getByText('Pay now')", method: 'getByText', args: { text: 'Pay now' }, score: 75 },
+  { locator: "locator('#checkout-pay')", method: 'locator', args: { selector: '#checkout-pay' }, score: 65 },
+];
+
+let lsId = 1;
+const LOCATOR_SNAPSHOTS = [1, 2].map((testCaseId) => ({
+  id: lsId++,
+  test_case_id: testCaseId,
+  location: 'tests/checkout/checkout.spec.ts:42:18',
+  used_method: 'getByRole',
+  used_args: ['button', { name: 'Pay' }],
+  used_args_fp: locatorSig('getByRole', ['button', 'Pay']),
+  element_tag: 'button',
+  element_attrs: {
+    id: 'checkout-pay',
+    'data-testid': 'checkout-pay',
+    accessibleName: 'Pay now',
+    center: { x: 640, y: 820 },
+  },
+  element_text: 'Pay now',
+  alternatives: CHECKOUT_PAY_ALTERNATIVES,
+  last_seen_run_id: null,
+  last_seen_at: ts('2025-05-20') * 1000,
+}));
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
@@ -1242,6 +1287,9 @@ const lines = [
   '',
   '-- Network requests (child table, references test_runs_cases)',
   insert('network_requests', NETWORK_REQUESTS),
+  '',
+  '-- Locator healing snapshots (references test_cases)',
+  insert('locator_snapshots', LOCATOR_SNAPSHOTS),
   '',
   'COMMIT;',
 ];

@@ -15,6 +15,8 @@ import { publishDemoGlobalEvent, publishDemoRunEvent } from '../run-events';
 import { projects, testRuns, testCases, testRunsCases, networkRequests } from '~~/server/database/schema.sqlite';
 import { parseLocation } from '~~/server/utils/parse-location';
 import { buildNetworkRequestItems, buildNetworkRequestInsertValues } from '~~/server/utils/network-request-helpers';
+import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
+import type { LocatorSnapshot } from '~~/shared/locator-healing.types';
 import { sanitizeMetadata, sanitizeWebVitals, sanitizeConsoleLogs } from '~~/server/utils/sanitize';
 import { computeErrorFingerprint, type ErrorFingerprint } from '~~/shared/error-fingerprint';
 import { durationStats } from '~~/shared/utils/stats';
@@ -303,6 +305,7 @@ async function persistRunCases(
   }> = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
   const pendingClusters = new Map<string, PendingCluster>();
+  const perCaseLocators: Array<{ caseId: number; snapshots: LocatorSnapshot[] | null | undefined }> = [];
 
   for (const c of cases) {
     const cacheKey = `${c.filePath}::${c.title}`;
@@ -341,6 +344,9 @@ async function persistRunCases(
       }
     }
     rowFingerprints.push(fingerprint);
+
+    if (c.locatorSnapshots)
+      perCaseLocators.push({ caseId: shared.id, snapshots: c.locatorSnapshots as LocatorSnapshot[] | null });
 
     runCasesRows.push({
       testRunId,
@@ -382,6 +388,8 @@ async function persistRunCases(
   if (nrValues.length > 0) {
     await db.insert(networkRequests).values(nrValues);
   }
+
+  await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
 
   return insertedCases;
 }

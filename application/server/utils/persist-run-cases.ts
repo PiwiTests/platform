@@ -1,5 +1,5 @@
-import { testCases, testRunsCases, testSuites, networkRequests, locatorSnapshots } from '../database/schema';
-import { eq, and, sql, notInArray } from 'drizzle-orm';
+import { testCases, testRunsCases, testSuites, networkRequests } from '../database/schema';
+import { eq } from 'drizzle-orm';
 import { buildNetworkRequestItems, buildNetworkRequestInsertValues } from './network-request-helpers';
 import { sanitizeWebVitals, sanitizeConsoleLogs } from './sanitize';
 import { computeErrorFingerprint, type ErrorFingerprint } from '../../shared/error-fingerprint';
@@ -7,7 +7,7 @@ import { testCaseCache } from './test-case-cache';
 import { testSuiteCache } from './test-suite-cache';
 import { SUITE_PATH_SEP, joinSuitePath } from '../../shared/utils/suites';
 import { getOrCreateFailureClusters, type PendingCluster } from '~~/shared/handlers/failure-cluster-ops';
-import { locatorSignature } from '../../shared/locator-healing';
+import { upsertLocatorSnapshots } from './locator-healing';
 import type { LocatorSnapshot } from '../../shared/locator-healing.types';
 import type { getDatabase } from '../database';
 
@@ -197,11 +197,9 @@ export async function persistRunCases(
   }> = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
   const pendingClusters = new Map<string, PendingCluster>();
-  const locatorRows: Array<typeof locatorSnapshots.$inferInsert> = [];
-  // caseId → every location seen this run (including failed actions with no
-  // element). Used to purge only locations no longer exercised while preserving
-  // prior-success rows for locations that failed this run (no fresh element).
-  const caseSeenLocations = new Map<number, Set<string>>();
+  // Locator snapshots to upsert, grouped by resolved test case id; the shared
+  // helper handles row building, upsert, and stale-location purge after insert.
+  const perCaseLocators: Array<{ caseId: number; snapshots: LocatorSnapshot[] | null | undefined }> = [];
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
@@ -232,44 +230,8 @@ export async function persistRunCases(
 
     if (caseId === undefined) continue;
 
-    // --- Collect locator snapshots for batch upsert ---
-    if (c.locatorSnapshots?.length) {
-      // Record every location seen this run — including failed actions whose
-      // placeholder has a location but no element — so the purge below keeps
-      // their prior-success rows instead of deleting them.
-      const seen = caseSeenLocations.get(caseId) ?? new Set<string>();
-      for (const snap of c.locatorSnapshots) {
-        if (snap.location) seen.add(snap.location);
-      }
-      if (seen.size > 0) caseSeenLocations.set(caseId, seen);
-
-      const fpHashes = await Promise.all(
-        c.locatorSnapshots
-          .filter((snap) => snap.element && snap.location)
-          .map((snap) => locatorSignature(snap.used!.method, snap.used!.args)),
-      );
-      let idx = 0;
-      for (const snap of c.locatorSnapshots) {
-        if (!snap.element || !snap.location) continue;
-        locatorRows.push({
-          testCaseId: caseId,
-          location: snap.location,
-          usedMethod: snap.used.method,
-          usedArgs: JSON.stringify(snap.used.args),
-          usedArgsFp: fpHashes[idx++]!,
-          elementTag: snap.element.tagName,
-          elementAttrs: JSON.stringify({
-            ...snap.element.attributes,
-            accessibleName: snap.element.accessibleName,
-            center: snap.element.center,
-          }),
-          elementText: snap.element.textContent,
-          alternatives: JSON.stringify(snap.alternatives.slice(0, 10)),
-          lastSeenRunId: testRunId,
-          lastSeenAt: new Date(),
-        });
-      }
-    }
+    // Collect locator snapshots; upserted in one batch after the case insert.
+    if (c.locatorSnapshots?.length) perCaseLocators.push({ caseId, snapshots: c.locatorSnapshots });
 
     if (fingerprint) {
       const pending = pendingClusters.get(fingerprint.fingerprint);
@@ -330,36 +292,7 @@ export async function persistRunCases(
     await db.insert(networkRequests).values(nrValues);
   }
 
-  // Batch upsert locator snapshots — single query instead of N individual ones
-  if (locatorRows.length > 0) {
-    await db
-      .insert(locatorSnapshots)
-      .values(locatorRows)
-      .onConflictDoUpdate({
-        target: [locatorSnapshots.testCaseId, locatorSnapshots.location],
-        set: {
-          usedMethod: sql`excluded.used_method`,
-          usedArgs: sql`excluded.used_args`,
-          usedArgsFp: sql`excluded.used_args_fp`,
-          elementTag: sql`excluded.element_tag`,
-          elementAttrs: sql`excluded.element_attrs`,
-          elementText: sql`excluded.element_text`,
-          alternatives: sql`excluded.alternatives`,
-          lastSeenRunId: sql`excluded.last_seen_run_id`,
-          lastSeenAt: sql`excluded.last_seen_at`,
-        },
-      });
-  }
-
-  // Purge locator rows for test cases seen this batch whose locations were not
-  // exercised this run. Locations that failed (placeholder with a location but
-  // no element) are in the seen set, so their prior-success rows are preserved
-  // for the healing lookup — only genuinely un-visited locations are dropped.
-  for (const [caseId, locs] of caseSeenLocations) {
-    await db
-      .delete(locatorSnapshots)
-      .where(and(eq(locatorSnapshots.testCaseId, caseId), notInArray(locatorSnapshots.location, [...locs])));
-  }
+  await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
 
   return insertedCases;
 }

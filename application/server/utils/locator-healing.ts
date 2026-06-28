@@ -5,14 +5,16 @@
  * with fallback to fuzzy matching by locator fingerprint and ARIA snapshot
  * generation when no prior snapshot exists.
  */
-import { eq } from 'drizzle-orm';
+import { and, eq, notInArray, sql } from 'drizzle-orm';
 import { locatorSnapshots, testRunsCases, type LocatorSnapshotRow } from '../database/schema';
 import { extractSelector, extractTopFrameFile } from '../../shared/error-fingerprint';
-import { locatorSignatureFromExpression, locatorExpressionMethod } from '../../shared/locator-healing';
-import type { RankedLocator } from '../../shared/locator-healing.types';
-import type { getDatabase } from '../database';
-
-type DB = Awaited<ReturnType<typeof getDatabase>>;
+import {
+  locatorSignatureFromExpression,
+  locatorExpressionMethod,
+  locatorSignature,
+} from '../../shared/locator-healing';
+import type { RankedLocator, LocatorSnapshot } from '../../shared/locator-healing.types';
+import type { DrizzleDB } from '../../shared/handlers/db';
 
 export interface LocatorHealingResult {
   failingLocator: { method: string; args: Record<string, unknown> } | null;
@@ -242,7 +244,7 @@ function generateFromAriaSnapshot(ariaSnapshot: string | null): RankedLocator[] 
  *    but cannot tell apart repeated identical locators.
  * 3. ARIA fallback — generated from the current run's ARIA snapshot.
  */
-export async function getLocatorHealing(db: DB, testRunsCaseId: number): Promise<LocatorHealingResult> {
+export async function getLocatorHealing(db: DrizzleDB, testRunsCaseId: number): Promise<LocatorHealingResult> {
   // Load the failing row
   const rows = await db
     .select({
@@ -336,5 +338,84 @@ function parseAlternativesColumn(row: LocatorSnapshotRow): RankedLocator[] | nul
     return JSON.parse(row.alternatives) as RankedLocator[];
   } catch {
     return null;
+  }
+}
+
+/**
+ * Upsert locator snapshots for a batch of test cases, then purge rows for
+ * locations no longer exercised. Shared by the server ingest path
+ * (persist-run-cases) and the demo ingest mirror so the storage logic lives in
+ * one place.
+ *
+ * Every location seen this run is preserved — including failed actions whose
+ * placeholder carries a location but no element — so a locator that failed this
+ * run keeps its prior-success row for the healing lookup. Only locations absent
+ * from the payload (removed from the test) are purged.
+ */
+export async function upsertLocatorSnapshots(
+  db: DrizzleDB,
+  perCase: Array<{ caseId: number; snapshots: LocatorSnapshot[] | null | undefined }>,
+  runId: number,
+): Promise<void> {
+  const rows: Array<typeof locatorSnapshots.$inferInsert> = [];
+  const seenByCase = new Map<number, Set<string>>();
+
+  for (const { caseId, snapshots } of perCase) {
+    if (!snapshots?.length) continue;
+
+    const seen = seenByCase.get(caseId) ?? new Set<string>();
+    for (const snap of snapshots) {
+      if (snap.location) seen.add(snap.location);
+    }
+    if (seen.size > 0) seenByCase.set(caseId, seen);
+
+    const captured = snapshots.filter((s) => s.element && s.location);
+    const fps = await Promise.all(captured.map((s) => locatorSignature(s.used.method, s.used.args)));
+    captured.forEach((snap, idx) => {
+      rows.push({
+        testCaseId: caseId,
+        location: snap.location!,
+        usedMethod: snap.used.method,
+        usedArgs: JSON.stringify(snap.used.args),
+        usedArgsFp: fps[idx]!,
+        elementTag: snap.element!.tagName,
+        elementAttrs: JSON.stringify({
+          ...snap.element!.attributes,
+          accessibleName: snap.element!.accessibleName,
+          center: snap.element!.center,
+        }),
+        elementText: snap.element!.textContent,
+        alternatives: JSON.stringify(snap.alternatives.slice(0, 10)),
+        lastSeenRunId: runId,
+        lastSeenAt: new Date(),
+      });
+    });
+  }
+
+  if (rows.length > 0) {
+    await db
+      .insert(locatorSnapshots)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: [locatorSnapshots.testCaseId, locatorSnapshots.location],
+        set: {
+          usedMethod: sql`excluded.used_method`,
+          usedArgs: sql`excluded.used_args`,
+          usedArgsFp: sql`excluded.used_args_fp`,
+          elementTag: sql`excluded.element_tag`,
+          elementAttrs: sql`excluded.element_attrs`,
+          elementText: sql`excluded.element_text`,
+          alternatives: sql`excluded.alternatives`,
+          lastSeenRunId: sql`excluded.last_seen_run_id`,
+          lastSeenAt: sql`excluded.last_seen_at`,
+        },
+      });
+  }
+
+  // Purge locations no longer exercised (locator removed/moved in the test).
+  for (const [caseId, locs] of seenByCase) {
+    await db
+      .delete(locatorSnapshots)
+      .where(and(eq(locatorSnapshots.testCaseId, caseId), notInArray(locatorSnapshots.location, [...locs])));
   }
 }
