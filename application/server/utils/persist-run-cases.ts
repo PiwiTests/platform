@@ -7,7 +7,7 @@ import { testCaseCache } from './test-case-cache';
 import { testSuiteCache } from './test-suite-cache';
 import { SUITE_PATH_SEP, joinSuitePath } from '../../shared/utils/suites';
 import { getOrCreateFailureClusters, type PendingCluster } from '~~/shared/handlers/failure-cluster-ops';
-import { normalizeAndHashArgs } from '../../shared/locator-healing';
+import { locatorSignature } from '../../shared/locator-healing';
 import type { LocatorSnapshot } from '../../shared/locator-healing.types';
 import type { getDatabase } from '../database';
 
@@ -246,7 +246,7 @@ export async function persistRunCases(
       const fpHashes = await Promise.all(
         c.locatorSnapshots
           .filter((snap) => snap.element && snap.location)
-          .map((snap) => normalizeAndHashArgs(snap.used!.args)),
+          .map((snap) => locatorSignature(snap.used!.method, snap.used!.args)),
       );
       let idx = 0;
       for (const snap of c.locatorSnapshots) {

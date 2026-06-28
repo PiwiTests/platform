@@ -5,10 +5,10 @@
  * with fallback to fuzzy matching by locator fingerprint and ARIA snapshot
  * generation when no prior snapshot exists.
  */
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { locatorSnapshots, testRunsCases, type LocatorSnapshotRow } from '../database/schema';
 import { extractSelector, extractTopFrameFile } from '../../shared/error-fingerprint';
-import { normalizeAndHashArgs } from '../../shared/locator-healing';
+import { locatorSignatureFromExpression, locatorExpressionMethod } from '../../shared/locator-healing';
 import type { RankedLocator } from '../../shared/locator-healing.types';
 import type { getDatabase } from '../database';
 
@@ -59,11 +59,7 @@ function parseLocatorExpression(expr: string): {
 
     if (ch === '{') {
       const end = findMatchingBrace(inner, i);
-      try {
-        args.push(JSON.parse(inner.slice(i, end + 1)));
-      } catch {
-        args.push(inner.slice(i, end + 1));
-      }
+      args.push(parseOptionsObject(inner.slice(i, end + 1)));
       i = end + 1;
       continue;
     }
@@ -85,6 +81,30 @@ function findMatchingQuote(s: string, start: number): number {
     if (s[i] === quote) return i;
   }
   return s.length - 1;
+}
+
+/**
+ * Parse a Playwright option object as printed in error text, e.g.
+ * `{ name: 'Submit', exact: true }`. This is NOT JSON — keys are unquoted and
+ * strings use single quotes — so `JSON.parse` would throw. Values are read
+ * loosely (string / boolean / number / regex) for display only; matching uses
+ * the locator signature, not these parsed args.
+ */
+function parseOptionsObject(src: string): Record<string, unknown> {
+  const obj: Record<string, unknown> = {};
+  const re = /(\w+)\s*:\s*('(?:\\.|[^'])*'|"(?:\\.|[^"])*"|true|false|-?\d+(?:\.\d+)?|\/(?:\\.|[^/])*\/[a-z]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) !== null) {
+    const key = m[1]!;
+    const raw = m[2]!;
+    if (raw === 'true') obj[key] = true;
+    else if (raw === 'false') obj[key] = false;
+    else if (/^-?\d/.test(raw)) obj[key] = Number(raw);
+    else if (raw.startsWith('/'))
+      obj[key] = raw; // regex — keep as text for display
+    else obj[key] = raw.slice(1, -1).replace(/\\(.)/g, '$1'); // unquote + unescape
+  }
+  return obj;
 }
 
 function findMatchingBrace(s: string, start: number): number {
@@ -213,13 +233,14 @@ function generateFromAriaSnapshot(ariaSnapshot: string | null): RankedLocator[] 
 }
 
 /**
- * Query the locator_snapshots table for alternatives to a failing locator.
+ * Find alternatives for a failing locator. Loads every snapshot for the test
+ * case once (indexed by test_case_id) and resolves the best match in memory:
  *
- * Lookup ladder:
- * 1. Exact: `WHERE test_case_id = ? AND location = ?` — fast indexed match
- * 2. Fingerprint: `WHERE test_case_id = ? AND used_method = ? AND used_args_fp = ?`
- *    — survives line shifts
- * 3. ARIA fallback: generate from current run's ARIA snapshot
+ * 1. Call-site location — exact `file:line:col`, then `file:line` (tolerates a
+ *    column drift). Disambiguates repeated identical locators by where they run.
+ * 2. Locator signature — method + ordered string literals; survives line shifts
+ *    but cannot tell apart repeated identical locators.
+ * 3. ARIA fallback — generated from the current run's ARIA snapshot.
  */
 export async function getLocatorHealing(db: DB, testRunsCaseId: number): Promise<LocatorHealingResult> {
   // Load the failing row
@@ -245,55 +266,46 @@ export async function getLocatorHealing(db: DB, testRunsCaseId: number): Promise
   const error = row.error;
   const testCaseId = row.testCaseId;
 
-  // Parse the failing locator from the error
+  // Parse the failing locator from the error (for display + signature lookup)
   const selector = extractSelector(error);
   const parsedLocator = selector ? parseLocatorExpression(selector) : null;
+  const failingLocator = parsedLocator ? { method: parsedLocator.method, args: parsedLocator.args } : null;
   const location = extractErrorLocation(error);
 
-  // Ladder 1: Exact location match
-  if (location && testCaseId) {
-    const snapRows = await db
-      .select()
-      .from(locatorSnapshots)
-      .where(and(eq(locatorSnapshots.testCaseId, testCaseId), eq(locatorSnapshots.location, location)));
+  // Load every snapshot for this test case once (indexed by test_case_id). A
+  // case has only a handful of locators, so matching in memory is cheaper than
+  // several round-trips and keeps the ladder logic in one place.
+  const snaps = testCaseId
+    ? await db.select().from(locatorSnapshots).where(eq(locatorSnapshots.testCaseId, testCaseId))
+    : [];
 
-    if (snapRows.length > 0) {
-      const alternatives = parseAlternativesColumn(snapRows[0]!);
+  // Ladder 1: call-site location. Prefer an exact file:line:col match, then
+  // fall back to file:line so a column drift between the runtime capture and
+  // the error location still resolves. This is what disambiguates repeated
+  // identical locators (e.g. two "Delete" buttons on different rows).
+  if (location && snaps.length > 0) {
+    const hit = snaps.find((s) => s.location === location) ?? snaps.find((s) => sameFileLine(s.location, location));
+    if (hit) {
       return {
-        failingLocator: parsedLocator ? { method: parsedLocator.method, args: parsedLocator.args } : null,
-        fromPriorSuccess: alternatives,
+        failingLocator,
+        fromPriorSuccess: parseAlternativesColumn(hit),
         fromAriaSnapshot: null,
         source: 'prior-run',
       };
     }
   }
 
-  // Ladder 2: Fingerprint match (survives line shifts)
-  if (parsedLocator && testCaseId) {
-    const argsFp = await normalizeAndHashArgs(Object.values(parsedLocator.args));
-
-    const snapRows = await db
-      .select()
-      .from(locatorSnapshots)
-      .where(
-        and(
-          eq(locatorSnapshots.testCaseId, testCaseId),
-          eq(locatorSnapshots.usedMethod, parsedLocator.method),
-          eq(locatorSnapshots.usedArgsFp, argsFp),
-        ),
-      );
-
-    if (snapRows.length > 0) {
-      // If multiple matches (same locator used at different positions),
-      // return the first one — spatial disambiguation would need the
-      // failing test's sibling locator positions.
-      const alternatives = parseAlternativesColumn(snapRows[0]!);
+  // Ladder 2: locator signature (method + ordered string literals) — survives
+  // line shifts. Cannot tell apart repeated identical locators; returns the
+  // first match.
+  if (selector && snaps.length > 0) {
+    const sig = await locatorSignatureFromExpression(selector);
+    const method = locatorExpressionMethod(selector);
+    const hit = snaps.find((s) => s.usedArgsFp === sig && (!method || s.usedMethod === method));
+    if (hit) {
       return {
-        failingLocator: {
-          method: parsedLocator.method,
-          args: parsedLocator.args,
-        },
-        fromPriorSuccess: alternatives,
+        failingLocator,
+        fromPriorSuccess: parseAlternativesColumn(hit),
         fromAriaSnapshot: null,
         source: 'fingerprint',
       };
@@ -303,20 +315,20 @@ export async function getLocatorHealing(db: DB, testRunsCaseId: number): Promise
   // Ladder 3: ARIA snapshot fallback
   const ariaAlts = generateFromAriaSnapshot(row.ariaSnapshot ?? null);
   if (ariaAlts) {
-    return {
-      failingLocator: parsedLocator ? { method: parsedLocator.method, args: parsedLocator.args } : null,
-      fromPriorSuccess: null,
-      fromAriaSnapshot: ariaAlts,
-      source: 'aria-snapshot',
-    };
+    return { failingLocator, fromPriorSuccess: null, fromAriaSnapshot: ariaAlts, source: 'aria-snapshot' };
   }
 
-  return {
-    failingLocator: parsedLocator ? { method: parsedLocator.method, args: parsedLocator.args } : null,
-    fromPriorSuccess: null,
-    fromAriaSnapshot: null,
-    source: 'none',
-  };
+  return { failingLocator, fromPriorSuccess: null, fromAriaSnapshot: null, source: 'none' };
+}
+
+/** Compare two `file:line:col` locations ignoring the trailing column. */
+function sameFileLine(a: string | null, b: string | null): boolean {
+  if (!a || !b) return false;
+  return stripColumn(a) === stripColumn(b);
+}
+
+function stripColumn(loc: string): string {
+  return loc.replace(/:\d+$/, '');
 }
 
 function parseAlternativesColumn(row: LocatorSnapshotRow): RankedLocator[] | null {
