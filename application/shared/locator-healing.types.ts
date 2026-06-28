@@ -16,6 +16,25 @@ export interface RankedLocator {
   score: number;
 }
 
+/**
+ * The single recommended fix, chosen from the stability-ranked alternatives so
+ * it keeps the developer's original locator style where that style is stable
+ * enough — a minimal, idiomatic edit. The full ranked menu stays available; this
+ * just picks the one fix to surface as the "Top recommendation".
+ */
+export interface LocatorFixRecommendation {
+  /** The recommended fix. Null only when there are no alternatives at all. */
+  recommended: RankedLocator | null;
+  /** The most stable alternative overall — surfaced so a sturdier (but different) choice stays visible. */
+  durable: RankedLocator | null;
+  /** True when `recommended` keeps the failing locator's method family (same style). */
+  preservesConvention: boolean;
+  /** True when `durable` is a different, sturdier option than `recommended`. */
+  hasDurableAlternative: boolean;
+  /** True when nothing cleared the stability floor — advise adding a `data-testid` to the app. */
+  suggestAddTestId: boolean;
+}
+
 /** Raw element attributes captured after a successful action. */
 export interface ElementAttributes {
   tagName: string;

@@ -1087,7 +1087,7 @@ async function locatorHealingSection(
   if (!rep.error) return { section: null, coverage: null };
 
   const healing = await getLocatorHealing(db, rep.id);
-  const alternatives = healing.fromPriorSuccess ?? healing.fromAriaSnapshot ?? [];
+  const alternatives = healing.fromElementMatch ?? healing.fromPriorSuccess ?? healing.fromAriaSnapshot ?? [];
 
   if (alternatives.length === 0) {
     // No alternatives — only report coverage when we actually recognized a
@@ -1108,10 +1108,38 @@ async function locatorHealingSection(
   const sourceLabel =
     healing.source === 'prior-run'
       ? 'captured against the real DOM in a prior passing run'
-      : healing.source === 'fingerprint'
-        ? 'matched by locator fingerprint from a prior passing run'
-        : 'derived from the current ARIA snapshot';
+      : healing.source === 'element-match'
+        ? "the locator's element appears renamed/moved — these are fresh locators for its current identity on the failing page"
+        : healing.source === 'fingerprint'
+          ? 'matched by locator fingerprint from a prior passing run'
+          : 'derived from the current ARIA snapshot';
   lines.push(`Source: ${healing.source} (${sourceLabel})`);
+
+  // Surface the single convention-preserving recommendation so the model picks
+  // the same minimal, idiomatic fix the dashboard highlights — not just the
+  // highest-stability locator regardless of the developer's original style.
+  const rec = healing.recommendation;
+  if (rec?.recommended) {
+    const style = rec.preservesConvention
+      ? 'keeps the original locator style — a minimal, idiomatic edit'
+      : 'the most stable available (the original style had no stable alternative)';
+    lines.push('');
+    lines.push(
+      `Recommended fix (use in suggestedFix.code): \`${rec.recommended.locator}\` (score ${rec.recommended.score}) — ${style}.`,
+    );
+    if (rec.hasDurableAlternative && rec.durable) {
+      lines.push(
+        `Sturdier alternative if a different locator style is acceptable: \`${rec.durable.locator}\` (score ${rec.durable.score}).`,
+      );
+    }
+    if (rec.suggestAddTestId) {
+      lines.push(
+        'All alternatives score below 50 — recommend adding a stable data-testid attribute to this element in the application as the durable fix.',
+      );
+    }
+    lines.push('');
+  }
+
   lines.push('Top alternatives, ranked by stability score:');
   for (const alt of alternatives.slice(0, 5)) {
     lines.push(`- \`${alt.locator}\` (score ${alt.score})`);

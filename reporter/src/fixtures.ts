@@ -6,12 +6,14 @@ import {
   approximateAccessibleName,
   captureCallerLocation,
   resolveAriaRole,
+  suggestLocatorsFromAria,
   LOCATOR_METHODS,
   CHAIN_METHODS,
   ACTION_METHODS,
   LOCATOR_CREATING_CHAINS,
   CAPTURED_ATTRIBUTES,
   type LocatorSnapshot,
+  type FailedLocatorInfo,
 } from './locator-healing.js';
 
 /**
@@ -34,6 +36,9 @@ export const dashboardFixtures: Fixtures = {
     const captureLocators = process.env.PIWI_CAPTURE_LOCATORS !== 'false';
     const capturedLocators: LocatorSnapshot[] = [];
     const capturePromises: Promise<void>[] = [];
+    // Locator actions that threw — used at teardown to suggest a fresh locator
+    // from the current page when the element appears renamed/moved.
+    const failedLocators: FailedLocatorInfo[] = [];
 
     // Chain methods that take args and define a new locator scope (not just narrow).
     // Origin method/args update to the chain call, e.g. .locator('.item') → locator('.item').
@@ -78,10 +83,16 @@ export const dashboardFixtures: Fixtures = {
               alternatives: [],
             });
 
-            // The placeholder is already pushed; if the action throws, the
-            // placeholder (with location, no element) stays and the error
-            // propagates naturally — no catch needed.
-            const result = await original.apply(target, callArgs);
+            // The placeholder is already pushed. If the action throws, record
+            // the failed locator (so teardown can suggest a fresh one for the
+            // element's current identity) and re-throw so the test still fails.
+            let result: unknown;
+            try {
+              result = await original.apply(target, callArgs);
+            } catch (err) {
+              failedLocators.push({ method: originMethod, args: originArgs });
+              throw err;
+            }
 
             // Fire-and-forget: capture element data without blocking the test.
             // evaluate() can hang when page navigates (element detaches), so
@@ -268,6 +279,24 @@ export const dashboardFixtures: Fixtures = {
             contentType: 'text/plain',
             body: snapshot,
           });
+
+          // Suggest a fresh locator for the failed action from the current page.
+          // When the element was renamed/moved, the pre-captured alternatives
+          // describe the old element, so this points at where it went now — as a
+          // Playwright annotation (shown in the report + trace) and an attachment
+          // (shown in the trace viewer). It does NOT change the locator.
+          const failed = failedLocators[failedLocators.length - 1];
+          const suggestion = failed ? suggestLocatorsFromAria(failed, snapshot) : null;
+          if (suggestion) {
+            testInfo.annotations.push({
+              type: 'piwi-locator-suggestion',
+              description: `${suggestion.failing} matched nothing on the failing page — the element may have been renamed or moved. Suggested: ${suggestion.suggestions.join('  |  ')}`,
+            });
+            await testInfo.attach('piwi-dashboard-locator-suggestion', {
+              contentType: 'application/json',
+              body: Buffer.from(JSON.stringify(suggestion)),
+            });
+          }
         }
       } catch {
         /* ignore */

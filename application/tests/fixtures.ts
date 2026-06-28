@@ -20,12 +20,14 @@ import {
   approximateAccessibleName,
   captureCallerLocation,
   resolveAriaRole,
+  suggestLocatorsFromAria,
   LOCATOR_METHODS,
   CHAIN_METHODS,
   ACTION_METHODS,
   LOCATOR_CREATING_CHAINS,
   CAPTURED_ATTRIBUTES,
   type LocatorSnapshot,
+  type FailedLocatorInfo,
 } from '../../reporter/dist/locator-healing.js';
 
 type NetworkRequest = {
@@ -141,6 +143,7 @@ export const test = base.extend<{ page: Page }>({
     const captureLocators = process.env.PIWI_CAPTURE_LOCATORS !== 'false';
     const capturedLocators: LocatorSnapshot[] = [];
     const capturePromises: Promise<void>[] = [];
+    const failedLocators: FailedLocatorInfo[] = [];
 
     // Method-surface constants are imported from the reporter so this fixture
     // stays in lockstep with the reporter's proxy (LOCATOR_METHODS, CHAIN_METHODS,
@@ -183,10 +186,16 @@ export const test = base.extend<{ page: Page }>({
               alternatives: [],
             });
 
-            // The placeholder is already pushed; if the action throws, the
-            // placeholder (with location, no element) stays and the error
-            // propagates naturally — no catch needed.
-            const result = await original.apply(target, callArgs);
+            // The placeholder is already pushed. If the action throws, record
+            // the failed locator (so teardown can suggest a fresh one for the
+            // element's current identity) and re-throw so the test still fails.
+            let result: unknown;
+            try {
+              result = await original.apply(target, callArgs);
+            } catch (err) {
+              failedLocators.push({ method: originMethod, args: originArgs });
+              throw err;
+            }
 
             const resolveAttrs = (async () => {
               try {
@@ -315,6 +324,22 @@ export const test = base.extend<{ page: Page }>({
             contentType: 'text/plain',
             body: snapshot,
           });
+
+          // Suggest a fresh locator for the failed action from the current page
+          // (matches reporter/src/fixtures.ts). Annotation shows in the report +
+          // trace; attachment shows in the trace viewer. Does not change the locator.
+          const failed = failedLocators[failedLocators.length - 1];
+          const suggestion = failed ? suggestLocatorsFromAria(failed, snapshot) : null;
+          if (suggestion) {
+            testInfo.annotations.push({
+              type: 'piwi-locator-suggestion',
+              description: `${suggestion.failing} matched nothing on the failing page — the element may have been renamed or moved. Suggested: ${suggestion.suggestions.join('  |  ')}`,
+            });
+            await testInfo.attach('piwi-dashboard-locator-suggestion', {
+              contentType: 'application/json',
+              body: Buffer.from(JSON.stringify(suggestion)),
+            });
+          }
         }
       }
     } catch {

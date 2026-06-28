@@ -5,23 +5,21 @@
  * note. Used on both the cluster detail page and the test-case detail page.
  */
 
+import { recommendLocatorFix } from '~~/shared/locator-healing';
+import type { RankedLocator, LocatorFixRecommendation } from '~~/shared/locator-healing.types';
+
 const props = defineProps<{
   runId: number;
   testRunsCaseId: number;
 }>();
 
-interface RankedLocator {
-  locator: string;
-  method: string;
-  args: Record<string, unknown>;
-  score: number;
-}
-
 interface LocatorHealingResult {
   failingLocator: { method: string; args: Record<string, unknown> } | null;
   fromPriorSuccess: RankedLocator[] | null;
+  fromElementMatch: RankedLocator[] | null;
   fromAriaSnapshot: RankedLocator[] | null;
-  source: 'prior-run' | 'fingerprint' | 'aria-snapshot' | 'none';
+  source: 'prior-run' | 'element-match' | 'fingerprint' | 'aria-snapshot' | 'none';
+  recommendation: LocatorFixRecommendation | null;
 }
 
 const {
@@ -37,26 +35,60 @@ const hasData = computed(
   () =>
     !!healing.value &&
     healing.value.source !== 'none' &&
-    !!(healing.value.fromPriorSuccess?.length || healing.value.fromAriaSnapshot?.length),
+    !!(
+      healing.value.fromElementMatch?.length ||
+      healing.value.fromPriorSuccess?.length ||
+      healing.value.fromAriaSnapshot?.length
+    ),
 );
 
 const alternatives = computed<RankedLocator[]>(() => {
   if (!healing.value) return [];
-  return healing.value.fromPriorSuccess ?? healing.value.fromAriaSnapshot ?? [];
+  return healing.value.fromElementMatch ?? healing.value.fromPriorSuccess ?? healing.value.fromAriaSnapshot ?? [];
 });
 
-const isPrior = computed(() => healing.value?.source === 'prior-run' || healing.value?.source === 'fingerprint');
+// The single recommended fix — convention-preserving where possible. Computed
+// server-side; fall back to the shared picker for payloads that lack it.
+const recommendation = computed<LocatorFixRecommendation | null>(() => {
+  if (healing.value?.recommendation) return healing.value.recommendation;
+  if (!alternatives.value.length) return null;
+  return recommendLocatorFix(healing.value?.failingLocator?.method, alternatives.value);
+});
+
+const recommendationNote = computed(() => {
+  const r = recommendation.value;
+  if (!r?.recommended) return '';
+  if (r.preservesConvention) return 'Keeps your original locator style — minimal, idiomatic edit';
+  if (r.suggestAddTestId) return 'Most stable available, but still fragile';
+  return 'Most stable available — a sturdier style than the original';
+});
 
 const sourceNote = computed(() => {
   switch (healing.value?.source) {
     case 'prior-run':
       return 'Pre-captured from the last passing run — highest confidence';
+    case 'element-match':
+      return 'The element looks renamed or moved — these are fresh locators for its current identity on the failing page';
     case 'fingerprint':
       return 'Matched by locator signature (line numbers shifted)';
     case 'aria-snapshot':
       return 'Generated from the failure-time ARIA snapshot — limited, no HTML attributes';
     default:
       return '';
+  }
+});
+
+// Subtitle color: green for pre-captured (high confidence), primary for a
+// fresh current-page match, amber for the limited ARIA-only fallback.
+const sourceClass = computed(() => {
+  switch (healing.value?.source) {
+    case 'prior-run':
+    case 'fingerprint':
+      return 'text-success-600 dark:text-success-400';
+    case 'element-match':
+      return 'text-primary-600 dark:text-primary-400';
+    default:
+      return 'text-warning-600 dark:text-warning-400';
   }
 });
 
@@ -117,7 +149,7 @@ function locatorNote(method: string, score: number): string {
     help="locator-healing"
   >
     <template #subtitle>
-      <span :class="isPrior ? 'text-success-600 dark:text-success-400' : 'text-warning-600 dark:text-warning-400'">
+      <span :class="sourceClass">
         {{ sourceNote }}
       </span>
     </template>
@@ -165,26 +197,62 @@ function locatorNote(method: string, score: number): string {
       </div>
     </div>
 
-    <!-- Top recommendation highlight -->
+    <!-- Recommended fix — keeps the original locator style where it's stable enough -->
     <div
-      v-if="alternatives.length > 0"
+      v-if="recommendation?.recommended"
       class="rounded-lg border border-primary/40 bg-primary/5 p-3 mt-3 flex items-center gap-3"
     >
       <UIcon name="i-lucide-star" class="size-5 text-primary shrink-0" />
       <div class="flex-1 min-w-0">
-        <p class="text-xs font-medium text-primary">Top recommendation (score: {{ alternatives[0]!.score }})</p>
-        <code class="text-sm font-mono block truncate mt-0.5">{{ alternatives[0]!.locator }}</code>
+        <p class="text-xs font-medium text-primary">Recommended fix (score: {{ recommendation.recommended.score }})</p>
+        <code class="text-sm font-mono block truncate mt-0.5">{{ recommendation.recommended.locator }}</code>
+        <p v-if="recommendationNote" class="text-xs text-gray-500 mt-0.5">{{ recommendationNote }}</p>
       </div>
       <UButton
         size="sm"
         color="primary"
         variant="solid"
         :trailing-icon="copiedKey === 'top' ? 'i-lucide-check' : 'i-lucide-copy'"
-        @click="copyLocator(alternatives[0]!.locator, 'top')"
+        @click="copyLocator(recommendation.recommended.locator, 'top')"
       >
         Copy
       </UButton>
     </div>
+
+    <!-- Sturdier option — surfaced when the recommended fix keeps the original (less stable) style -->
+    <div
+      v-if="recommendation?.hasDurableAlternative && recommendation.durable"
+      class="rounded-lg border border-default bg-elevated p-3 mt-2 flex items-center gap-3"
+    >
+      <UIcon name="i-lucide-shield-check" class="size-5 text-success shrink-0" />
+      <div class="flex-1 min-w-0">
+        <p class="text-xs font-medium text-success-600 dark:text-success-400">
+          Most stable option (score: {{ recommendation.durable.score }})
+        </p>
+        <code class="text-sm font-mono block truncate mt-0.5">{{ recommendation.durable.locator }}</code>
+        <p class="text-xs text-gray-500 mt-0.5">Sturdier, but changes the locator style</p>
+      </div>
+      <UButton
+        size="sm"
+        color="neutral"
+        variant="outline"
+        :trailing-icon="copiedKey === 'durable' ? 'i-lucide-check' : 'i-lucide-copy'"
+        @click="copyLocator(recommendation.durable.locator, 'durable')"
+      >
+        Copy
+      </UButton>
+    </div>
+
+    <!-- Nothing stable enough — recommend adding a data-testid to the app -->
+    <UAlert
+      v-if="recommendation?.suggestAddTestId"
+      class="mt-3"
+      color="warning"
+      icon="i-lucide-info"
+      variant="subtle"
+      title="All alternatives are fragile"
+      description="Every captured locator scores below 50. Add a stable data-testid attribute to this element in the app for a durable fix."
+    />
 
     <!-- ARIA-snapshot fallback hint -->
     <UAlert

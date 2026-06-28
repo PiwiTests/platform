@@ -473,6 +473,178 @@ export function approximateAccessibleName(attrs: ElementAttributes): string | nu
   return null;
 }
 
+// ── Runtime locator suggestion (the "element changed" case) ──────────────────
+
+/** A failed locator action, used to suggest a fresh locator from the live page. */
+export interface FailedLocatorInfo {
+  method: string;
+  args: unknown[];
+}
+
+export interface LocatorSuggestion {
+  /** The failed locator rendered as source, e.g. `getByText('Go to page')`. */
+  failing: string;
+  /** Fresh locator suggestions for the element's current identity, best first. */
+  suggestions: string[];
+}
+
+/** Name-based locator methods — the only ones whose target can be re-found by accessible name. */
+const NAME_BASED_METHODS = new Set([
+  'getByText',
+  'getByRole',
+  'getByLabel',
+  'getByPlaceholder',
+  'getByTitle',
+  'getByAltText',
+]);
+
+const escAttr = (s: string): string => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+/** Parse `ariaSnapshot()` lines into role/name pairs (mirrors the server-side matcher). */
+function parseAriaRoleName(ariaSnapshot: string): Array<{ role: string; name: string | null }> {
+  const out: Array<{ role: string; name: string | null }> = [];
+  for (const line of ariaSnapshot.split('\n')) {
+    const m = line.match(/^\s*-\s+([a-z]+)(?:\s+"((?:[^"\\]|\\.)*)")?/i);
+    if (!m) continue;
+    const role = m[1]!;
+    const name = m[2] != null ? m[2].replace(/\\(.)/g, '$1') : null;
+    if (!name && (role === 'generic' || role === 'group' || role === 'list' || role === 'paragraph')) continue;
+    out.push({ role, name });
+  }
+  return out;
+}
+
+/** Token-set (Dice) similarity, 0-1, case- and punctuation-insensitive. */
+function nameSimilarity(a: string | null, b: string | null): number {
+  const tok = (s: string | null): Set<string> =>
+    new Set(
+      (s ?? '')
+        .toLowerCase()
+        .split(/[^a-z0-9]+/i)
+        .filter(Boolean),
+    );
+  const sa = tok(a);
+  const sb = tok(b);
+  if (sa.size === 0 && sb.size === 0) return 1;
+  if (sa.size === 0 || sb.size === 0) return 0;
+  let common = 0;
+  for (const t of sa) if (sb.has(t)) common++;
+  return (2 * common) / (sa.size + sb.size);
+}
+
+const SUGG_TEXT_ROLES = new Set([
+  'button',
+  'link',
+  'heading',
+  'menuitem',
+  'tab',
+  'option',
+  'cell',
+  'columnheader',
+  'rowheader',
+  'gridcell',
+  'treeitem',
+  'listitem',
+  'checkbox',
+  'radio',
+  'switch',
+]);
+const SUGG_FIELD_ROLES = new Set(['textbox', 'combobox', 'searchbox', 'spinbutton', 'slider']);
+
+/** Extract the role (for getByRole) and the targeted accessible name from a failed locator's args. */
+function failedNameAndRole(failed: FailedLocatorInfo): { role: string | null; name: string | null } {
+  if (failed.method === 'getByRole') {
+    const role = typeof failed.args[0] === 'string' ? (failed.args[0] as string) : null;
+    const opts = failed.args[1] as Record<string, unknown> | undefined;
+    const name = opts && typeof opts.name === 'string' ? (opts.name as string) : null;
+    return { role, name };
+  }
+  const first = failed.args.find((a) => typeof a === 'string');
+  return { role: null, name: typeof first === 'string' ? (first as string) : null };
+}
+
+/** Render the failed locator back to source for the annotation message. */
+function renderFailing(failed: FailedLocatorInfo): string {
+  const { role, name } = failedNameAndRole(failed);
+  if (failed.method === 'getByRole') {
+    return name
+      ? `getByRole('${escAttr(role ?? '')}', { name: '${escAttr(name)}' })`
+      : `getByRole('${escAttr(role ?? '')}')`;
+  }
+  return `${failed.method}('${escAttr(name ?? '')}')`;
+}
+
+/** Build fresh locator suggestions for a matched candidate, with the failed method's style first. */
+function freshSuggestions(candidate: { role: string; name: string }, failedMethod: string): string[] {
+  const out: string[] = [];
+  const role = candidate.role;
+  const name = candidate.name;
+  const push = (s: string) => {
+    if (!out.includes(s)) out.push(s);
+  };
+
+  const roleLoc = `getByRole('${escAttr(role)}', { name: '${escAttr(name)}' })`;
+  const textLoc = `getByText('${escAttr(name)}')`;
+  const labelLoc = `getByLabel('${escAttr(name)}')`;
+
+  // Same-style first: a broken getByText is re-suggested as getByText where viable.
+  if (failedMethod === 'getByText' && SUGG_TEXT_ROLES.has(role)) push(textLoc);
+  if (failedMethod === 'getByLabel' && SUGG_FIELD_ROLES.has(role)) push(labelLoc);
+
+  push(roleLoc);
+  if (SUGG_TEXT_ROLES.has(role)) push(textLoc);
+  else if (SUGG_FIELD_ROLES.has(role)) push(labelLoc);
+
+  return out;
+}
+
+/**
+ * Best-effort runtime suggestion for a locator that matched nothing: find the
+ * element on the *current* page that the failed locator most likely targeted
+ * (by accessible name similarity, restricted to the failed role when given) and
+ * return fresh locators for it.
+ *
+ * Unlike the server lookup this has no pre-captured fingerprint — only the
+ * failed locator + the live page — so it's a hint, not a guarantee. Returns null
+ * for non-name-based locators (testid/CSS), when the targeted name is still
+ * present (so the failure wasn't a rename), or when no candidate is confident.
+ */
+export function suggestLocatorsFromAria(
+  failed: FailedLocatorInfo,
+  ariaSnapshot: string | null,
+): LocatorSuggestion | null {
+  if (!ariaSnapshot || !NAME_BASED_METHODS.has(failed.method)) return null;
+
+  const { role, name } = failedNameAndRole(failed);
+  if (!name) return null;
+
+  const candidates = parseAriaRoleName(ariaSnapshot);
+  if (candidates.length === 0) return null;
+
+  const sameRole = role ? candidates.filter((c) => c.role === role) : [];
+  const pool = sameRole.length > 0 ? sameRole : candidates;
+
+  // The targeted name is still on the page → not a rename, nothing to suggest.
+  if (pool.some((c) => nameSimilarity(c.name, name) >= 0.8)) return null;
+
+  let best: { role: string; name: string | null } | null = null;
+  let bestScore = -1;
+  for (const c of pool) {
+    const s = nameSimilarity(c.name, name);
+    if (s > bestScore) {
+      bestScore = s;
+      best = c;
+    }
+  }
+  if (!best || !best.name) return null;
+  if (bestScore < 0.2 && pool.length !== 1) return null;
+
+  const suggestions = freshSuggestions({ role: best.role, name: best.name }, failed.method);
+  if (suggestions.length === 0) return null;
+
+  return { failing: renderFailing(failed), suggestions };
+}
+
 // ── Call-site capture ────────────────────────────────────────────────────────
 
 /**
