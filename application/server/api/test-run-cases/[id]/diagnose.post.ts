@@ -1,5 +1,5 @@
 import { getDatabase } from '../../../database';
-import { testRunsCases, testRuns, failureClusters, failureDiagnoses } from '../../../database/schema';
+import { testRunsCases, failureClusters, failureDiagnoses } from '../../../database/schema';
 import { eq, and } from 'drizzle-orm';
 import { requireProjectAccess, resolveTestRunCaseProjectId } from '../../../utils/project-access';
 import { Role } from '../../../../shared/types';

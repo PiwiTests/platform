@@ -8,7 +8,7 @@ import {
   failureDiagnoses,
   failureClusters,
 } from '../database/schema';
-import type { FailureCluster, FailureDiagnosis } from '../database/schema';
+import type { FailureCluster } from '../database/schema';
 import type { DiagnosisContextCoverage } from '~~/types/api';
 import { stripAnsi } from '#shared/error-fingerprint';
 import { DIAGNOSIS_SECTIONS } from '#shared/diagnosis-sections';
@@ -681,11 +681,7 @@ async function resolveScreenshots(
 }
 
 /** Recurrence pattern + flakiness analysis for the cluster (D2/D3). */
-async function recurrenceFlakinessSection(
-  db: DbClient,
-  cluster: FailureCluster,
-  limits: ContextLimits,
-): Promise<string | null> {
+async function recurrenceFlakinessSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
   const recentRuns = await db
     .select({
       runId: testRunsCases.testRunId,
@@ -1759,7 +1755,7 @@ export async function buildDiagnosisContext(
       push(section('retryProgression', 'Retry Progression', await retryProgressionSection(db, rep)));
 
       // D2/D3: Recurrence & flakiness
-      const flakinessText = await recurrenceFlakinessSection(db, cluster, limits);
+      const flakinessText = await recurrenceFlakinessSection(db, cluster);
       push(section('recurrenceFlakiness', 'Recurrence & Flakiness', flakinessText));
 
       if (flakinessText) {

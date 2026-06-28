@@ -8,7 +8,7 @@
  * Usage: node scripts/generate-openapi-spec.mjs
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,7 +22,7 @@ let mod;
 try {
   mod = await import(serverPath);
 } catch (e) {
-  console.error(`[gen-spec] Failed to import server bundle at ${serverPath}`);
+  console.error(`[gen-spec] Failed to import server bundle at ${serverPath}`, e);
   console.error(`[gen-spec] Make sure 'npm run app:generate:demo' has been run first.`);
   process.exit(1);
 }
