@@ -19,6 +19,7 @@ import {
   extractAccessibleName,
   approximateAccessibleName,
   captureCallerLocation,
+  resolveAriaRole,
   LOCATOR_METHODS,
   CHAIN_METHODS,
   ACTION_METHODS,
@@ -137,6 +138,7 @@ async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
 export const test = base.extend<{ page: Page }>({
   page: async ({ page }, use, testInfo) => {
     // ── Locator interaction capture (dogfooding: matches reporter/src/fixtures.ts) ──
+    const captureLocators = process.env.PIWI_CAPTURE_LOCATORS !== 'false';
     const capturedLocators: LocatorSnapshot[] = [];
     const capturePromises: Promise<void>[] = [];
 
@@ -212,7 +214,20 @@ export const test = base.extend<{ page: Page }>({
                   new Promise<null>((_, reject) => setTimeout(() => reject(new Error('locator capture timeout')), 500)),
                 ])) as any;
 
-                const aria = (await target.ariaSnapshot({ ref: true }).catch(() => null)) as string | null;
+                // Only pay for the ARIA snapshot when the accessible name will
+                // be used (role-based or form-field alternatives).
+                const role = resolveAriaRole({
+                  tagName: attrs.tagName,
+                  attributes: attrs.attributes,
+                  textContent: attrs.textContent,
+                  accessibleName: null,
+                  center: attrs.center,
+                });
+                const isFormField = ['input', 'select', 'textarea'].includes(attrs.tagName);
+                const aria =
+                  role || isFormField
+                    ? ((await target.ariaSnapshot({ ref: true }).catch(() => null)) as string | null)
+                    : null;
 
                 const accessibleName =
                   extractAccessibleName(aria) ||
@@ -254,9 +269,11 @@ export const test = base.extend<{ page: Page }>({
       });
     }
 
-    for (const method of LOCATOR_METHODS) {
-      const original = (page as any)[method].bind(page);
-      (page as any)[method] = (...args: unknown[]) => wrapLocator(original(...args), method, args);
+    if (captureLocators) {
+      for (const method of LOCATOR_METHODS) {
+        const original = (page as any)[method].bind(page);
+        (page as any)[method] = (...args: unknown[]) => wrapLocator(original(...args), method, args);
+      }
     }
 
     // ── Existing event listeners ──────────────────────────────────────────

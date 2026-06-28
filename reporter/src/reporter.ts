@@ -305,7 +305,10 @@ export class PiwiDashboardReporter {
       // Locator snapshots arrive pre-stamped with their call-site `location`
       // (captured in the fixture at action call time). No index correlation
       // with pw:api steps — that was unreliable across workers/concurrent calls.
-      const locatorAttachment = result.attachments.find((a: any) => a.name === 'piwi-dashboard-locators');
+      const locatorAttachment =
+        this.options.captureLocators !== false
+          ? result.attachments.find((a: any) => a.name === 'piwi-dashboard-locators')
+          : undefined;
       if (locatorAttachment?.body) {
         try {
           testCase.locatorSnapshots = JSON.parse((locatorAttachment.body as Buffer).toString());
