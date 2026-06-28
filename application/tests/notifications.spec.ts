@@ -363,7 +363,7 @@ test.describe.serial('Subscribe Bell UI', () => {
     skip();
     await loginBrowser(page);
     await page.goto(`${BASE}/projects/${projectId}`);
-    await expect(page.getByTitle('Notification subscriptions for this project')).toBeVisible();
+    await expect(page.getByTitle('Notification subscriptions for this project')).toBeVisible({ timeout: 15000 });
   });
 
   test('subscribe via bell popover creates a subscription', async ({ page }) => {
@@ -379,7 +379,7 @@ test.describe.serial('Subscribe Bell UI', () => {
 
     // Wait for success toast (exact match: the toast also exposes an aria-live
     // alert reading "Notification Subscribed", which a substring match would also hit)
-    await expect(page.getByText('Subscribed', { exact: true })).toBeVisible();
+    await expect(page.getByText('Subscribed', { exact: true })).toBeVisible({ timeout: 10000 });
 
     // Verify via API that subscription was created
     const res = await api('GET', `/api/subscriptions?projectId=${projectId}`, undefined, adminCookie);

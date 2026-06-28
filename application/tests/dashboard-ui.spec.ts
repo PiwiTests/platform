@@ -57,6 +57,7 @@ test.describe('Dashboard UI Tests', () => {
 
   test('should navigate to project details page', async ({ page }) => {
     await page.goto('/projects');
+    await waitForHydration(page);
 
     // Click on a project - scope to page content to avoid sidebar duplicate
     await page.getByRole('link', { name: PROJECT.UI_TEST }).first().click();
@@ -72,6 +73,7 @@ test.describe('Dashboard UI Tests', () => {
 
   test('should navigate to test run details page', async ({ page }) => {
     await page.goto('/projects');
+    await waitForHydration(page);
 
     // Click on a project - scope to page content to avoid sidebar duplicate
     await page.getByRole('link', { name: PROJECT.UI_TEST }).first().click();
@@ -92,6 +94,7 @@ test.describe('Dashboard UI Tests', () => {
 
   test('should switch between tabs on test run detail page', async ({ page }) => {
     await page.goto('/projects');
+    await waitForHydration(page);
     await page.getByRole('link', { name: PROJECT.UI_TEST }).first().click();
     await page.waitForURL(/\/projects\/\d+/);
     await waitForHydration(page);
