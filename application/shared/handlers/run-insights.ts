@@ -175,11 +175,14 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
     .slice(0, 5)
     .map((c) => ({ testRunsCaseId: c.id, title: c.title, filePath: c.filePath, duration: c.duration }));
 
+  // Filter out zero-change entries so no test appears in both lists with 0%
+  const nonZeroChanges = perfChanges.filter((c) => c.pctChange !== 0);
+
   // Most improved (top 5 by negative pctChange)
-  const mostImproved = [...perfChanges].sort((a, b) => a.pctChange - b.pctChange).slice(0, 5);
+  const mostImproved = [...nonZeroChanges].sort((a, b) => a.pctChange - b.pctChange).slice(0, 5);
 
   // Most regressed (top 5 by positive pctChange)
-  const mostRegressed = [...perfChanges].sort((a, b) => b.pctChange - a.pctChange).slice(0, 5);
+  const mostRegressed = [...nonZeroChanges].sort((a, b) => b.pctChange - a.pctChange).slice(0, 5);
 
   // Worker imbalance
   const workerCounts = new Map<number, number>();
