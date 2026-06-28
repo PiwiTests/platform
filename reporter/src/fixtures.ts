@@ -5,6 +5,7 @@ import {
   extractAccessibleName,
   approximateAccessibleName,
   captureCallerLocation,
+  resolveAriaRole,
   LOCATOR_METHODS,
   CHAIN_METHODS,
   ACTION_METHODS,
@@ -27,6 +28,10 @@ export const dashboardFixtures: Fixtures = {
     const pendingHandlers: Promise<void>[] = [];
 
     // ── Locator interaction capture ──────────────────────────────────────
+    // Opt-out: skipped when PIWI_CAPTURE_LOCATORS=false (set automatically when
+    // the reporter's collectPerformanceMetrics / captureLocators is disabled),
+    // so the per-action DOM read + ARIA snapshot cost is never paid when unused.
+    const captureLocators = process.env.PIWI_CAPTURE_LOCATORS !== 'false';
     const capturedLocators: LocatorSnapshot[] = [];
     const capturePromises: Promise<void>[] = [];
 
@@ -107,7 +112,24 @@ export const dashboardFixtures: Fixtures = {
                   new Promise<null>((_, reject) => setTimeout(() => reject(new Error('locator capture timeout')), 500)),
                 ])) as any;
 
-                const aria = (await target.ariaSnapshot({ ref: true }).catch(() => null)) as string | null;
+                // The browser-computed accessible name only feeds role-based and
+                // form-field alternatives, so only pay for the extra ARIA
+                // snapshot when the element actually has a role or is a field.
+                const role = resolveAriaRole({
+                  tagName: attrs.tagName,
+                  attributes: attrs.attributes,
+                  textContent: attrs.textContent,
+                  accessibleName: null,
+                  center: attrs.center,
+                });
+                const isFormField = ['input', 'select', 'textarea'].includes(attrs.tagName);
+                // Bound with a timeout: without it, ariaSnapshot waits up to the
+                // test timeout when the page is mid-navigation, which hangs the
+                // fixture teardown that drains these capture promises.
+                const aria =
+                  role || isFormField
+                    ? ((await target.ariaSnapshot({ ref: true, timeout: 500 }).catch(() => null)) as string | null)
+                    : null;
 
                 const accessibleName =
                   extractAccessibleName(aria) ||
@@ -149,9 +171,11 @@ export const dashboardFixtures: Fixtures = {
       });
     }
 
-    for (const method of LOCATOR_METHODS) {
-      const original = (page as any)[method].bind(page);
-      (page as any)[method] = (...args: unknown[]) => wrapLocator(original(...args), method, args);
+    if (captureLocators) {
+      for (const method of LOCATOR_METHODS) {
+        const original = (page as any)[method].bind(page);
+        (page as any)[method] = (...args: unknown[]) => wrapLocator(original(...args), method, args);
+      }
     }
 
     // ── Existing event listeners ──────────────────────────────────────────
@@ -224,7 +248,10 @@ export const dashboardFixtures: Fixtures = {
     await Promise.allSettled(pendingHandlers);
 
     // ── Attach locator snapshots ──────────────────────────────────────────
-    await Promise.allSettled(capturePromises);
+    // Cap the drain so a stuck capture (e.g. a navigation in flight) can never
+    // hang teardown past the test timeout; per-action evaluate/ariaSnapshot are
+    // already bounded, this is a backstop.
+    await Promise.race([Promise.allSettled(capturePromises), new Promise((resolve) => setTimeout(resolve, 2000))]);
 
     if (capturedLocators.length > 0) {
       await testInfo.attach('piwi-dashboard-locators', {

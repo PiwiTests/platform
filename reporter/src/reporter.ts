@@ -25,6 +25,30 @@ import { Logger } from './logger.js';
 import type { CollectedTestCase, StreamEvent, SetupStep, FilterDetails } from './types.js';
 
 /**
+ * Build the stored error text for a test result.
+ *
+ * Playwright's `error.message` carries the failure message and call log but no
+ * stack frames — those live on `error.stack`/`error.location`. The server's
+ * locator-healing lookup needs the failing call site to find the pre-captured
+ * snapshot for that locator, so when the message has no `at …` frame we append
+ * a synthetic one from `error.location`, relativized to the cwd so it matches
+ * the format the fixture records at capture time. The frame is appended after
+ * the message, where `extractMessageHead` already trims it off before
+ * fingerprinting — so failure clustering is unaffected.
+ */
+function buildErrorText(result: TestResult): string | null {
+  const err = result.error;
+  if (!err) return null;
+  let text = err.message ?? '';
+  const loc = err.location;
+  if (loc?.file && !/\n\s+at\s/.test(text)) {
+    const rel = path.relative(process.cwd(), loc.file).split(path.sep).join('/');
+    text += `\n    at ${rel}:${loc.line}:${loc.column}`;
+  }
+  return text;
+}
+
+/**
  * Piwi Dashboard Playwright reporter.
  *
  * Collects test results, metadata, performance metrics and trace files, then
@@ -250,7 +274,7 @@ export class PiwiDashboardReporter {
       location: `${relativeFilePath}:${test.location.line}:${test.location.column}`,
       status,
       duration: result.duration,
-      error: result.error ? result.error.message : null,
+      error: buildErrorText(result),
       retries: result.retry,
       workerIndex: workerIndexOf(result),
       shardIndex: this.shardInfo?.current ?? null,
@@ -281,7 +305,10 @@ export class PiwiDashboardReporter {
       // Locator snapshots arrive pre-stamped with their call-site `location`
       // (captured in the fixture at action call time). No index correlation
       // with pw:api steps — that was unreliable across workers/concurrent calls.
-      const locatorAttachment = result.attachments.find((a: any) => a.name === 'piwi-dashboard-locators');
+      const locatorAttachment =
+        this.options.captureLocators !== false
+          ? result.attachments.find((a: any) => a.name === 'piwi-dashboard-locators')
+          : undefined;
       if (locatorAttachment?.body) {
         try {
           testCase.locatorSnapshots = JSON.parse((locatorAttachment.body as Buffer).toString());

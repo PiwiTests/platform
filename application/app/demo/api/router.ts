@@ -16,6 +16,7 @@ import {
   setProjectMembers,
 } from '~~/shared/handlers/project-assignments';
 import { getDemoDb } from '../db.client';
+import { getLocatorHealing } from '~~/server/utils/locator-healing';
 import {
   listProjects,
   getProject,
@@ -409,6 +410,11 @@ const routes: RouteEntry[] = [
     handler: () => {
       throw new Error('AI diagnosis not available in demo mode');
     },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/cases\/(\d+)\/locator-healing$/,
+    handler: async (m) => getLocatorHealing(await getDemoDb(), +m[2]!),
   },
 
   // Tags

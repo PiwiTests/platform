@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * Cluster-level locator healing panel. Fetches locator alternatives for the
- * representative failing locator in the cluster. Shown in the cluster detail
- * evidence section (left column).
+ * Ranked alternative locators for a failing locator. Fetches healing data for a
+ * test-run case and renders the ranked list, top recommendation, and source
+ * note. Used on both the cluster detail page and the test-case detail page.
  */
 
 const props = defineProps<{
@@ -35,35 +35,63 @@ const {
 
 const hasData = computed(
   () =>
-    healing.value &&
+    !!healing.value &&
     healing.value.source !== 'none' &&
-    (healing.value.fromPriorSuccess?.length || healing.value.fromAriaSnapshot?.length),
+    !!(healing.value.fromPriorSuccess?.length || healing.value.fromAriaSnapshot?.length),
 );
 
-const alternatives = computed(() => {
+const alternatives = computed<RankedLocator[]>(() => {
   if (!healing.value) return [];
   return healing.value.fromPriorSuccess ?? healing.value.fromAriaSnapshot ?? [];
 });
+
+const isPrior = computed(() => healing.value?.source === 'prior-run' || healing.value?.source === 'fingerprint');
 
 const sourceNote = computed(() => {
   switch (healing.value?.source) {
     case 'prior-run':
       return 'Pre-captured from the last passing run — highest confidence';
     case 'fingerprint':
-      return 'Matched by locator fingerprint (line numbers shifted)';
+      return 'Matched by locator signature (line numbers shifted)';
     case 'aria-snapshot':
-      return 'Generated from failure-time ARIA snapshot — limited, no HTML attributes';
+      return 'Generated from the failure-time ARIA snapshot — limited, no HTML attributes';
     default:
       return '';
   }
 });
 
-const { copy, copied } = useCopy();
+const failingLocatorText = computed(() => {
+  const f = healing.value?.failingLocator;
+  return f ? `${f.method}(${JSON.stringify(f.args)})` : '';
+});
+
+const { copy } = useCopy();
+// Track which row was last copied so only that button shows the check icon —
+// useCopy's `copied` is a single shared ref and would flip every button at once.
+const copiedKey = ref<string | null>(null);
+let copiedTimer: ReturnType<typeof setTimeout> | null = null;
+function copyLocator(text: string, key: string) {
+  copy(text, { toast: 'Locator copied' });
+  copiedKey.value = key;
+  if (copiedTimer) clearTimeout(copiedTimer);
+  copiedTimer = setTimeout(() => {
+    copiedKey.value = null;
+  }, 2000);
+}
+onBeforeUnmount(() => {
+  if (copiedTimer) clearTimeout(copiedTimer);
+});
 
 function scoreColor(score: number): 'success' | 'warning' | 'error' {
   if (score >= 80) return 'success';
   if (score >= 50) return 'warning';
   return 'error';
+}
+
+function scoreBgClass(score: number): string {
+  if (score >= 80) return 'bg-success/10';
+  if (score >= 50) return 'bg-warning/10';
+  return 'bg-error/10';
 }
 
 function locatorNote(method: string, score: number): string {
@@ -78,12 +106,6 @@ function locatorNote(method: string, score: number): string {
   if (method === 'locator') return 'CSS class — may be fragile';
   return '';
 }
-
-function scoreBgClass(score: number): string {
-  if (score >= 80) return 'bg-success/10';
-  if (score >= 50) return 'bg-warning/10';
-  return 'bg-error/10';
-}
 </script>
 
 <template>
@@ -95,13 +117,7 @@ function scoreBgClass(score: number): string {
     help="locator-healing"
   >
     <template #subtitle>
-      <span
-        v-if="healing?.source === 'prior-run' || healing?.source === 'fingerprint'"
-        class="text-success-600 dark:text-success-400"
-      >
-        {{ sourceNote }}
-      </span>
-      <span v-else class="text-warning-600 dark:text-warning-400">
+      <span :class="isPrior ? 'text-success-600 dark:text-success-400' : 'text-warning-600 dark:text-warning-400'">
         {{ sourceNote }}
       </span>
     </template>
@@ -112,9 +128,15 @@ function scoreBgClass(score: number): string {
       class="flex items-center gap-2 bg-elevated rounded p-2 mb-3 border border-red-200 dark:border-red-800"
     >
       <UIcon name="i-lucide-x-circle" class="size-4 text-red-500 shrink-0" />
-      <code class="text-xs font-mono text-red-600 dark:text-red-400 flex-1 truncate">
-        {{ healing.failingLocator.method }}({{ JSON.stringify(healing.failingLocator.args) }})
-      </code>
+      <code class="text-xs font-mono text-red-600 dark:text-red-400 flex-1 truncate">{{ failingLocatorText }}</code>
+      <UButton
+        size="xs"
+        variant="ghost"
+        color="neutral"
+        :icon="copiedKey === 'failing' ? 'i-lucide-check' : 'i-lucide-copy'"
+        :title="copiedKey === 'failing' ? 'Copied!' : 'Copy'"
+        @click="copyLocator(failingLocatorText, 'failing')"
+      />
     </div>
 
     <!-- Ranked alternatives -->
@@ -136,9 +158,9 @@ function scoreBgClass(score: number): string {
           size="xs"
           variant="outline"
           color="neutral"
-          :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
-          :title="copied ? 'Copied!' : 'Copy'"
-          @click="copy(alt.locator, { toast: 'Locator copied' })"
+          :icon="copiedKey === `alt-${i}` ? 'i-lucide-check' : 'i-lucide-copy'"
+          :title="copiedKey === `alt-${i}` ? 'Copied!' : 'Copy'"
+          @click="copyLocator(alt.locator, `alt-${i}`)"
         />
       </div>
     </div>
@@ -157,12 +179,22 @@ function scoreBgClass(score: number): string {
         size="sm"
         color="primary"
         variant="solid"
-        trailing-icon="i-lucide-copy"
-        @click="copy(alternatives[0]!.locator, { toast: 'Copied!' })"
+        :trailing-icon="copiedKey === 'top' ? 'i-lucide-check' : 'i-lucide-copy'"
+        @click="copyLocator(alternatives[0]!.locator, 'top')"
       >
         Copy
       </UButton>
     </div>
+
+    <!-- ARIA-snapshot fallback hint -->
+    <UAlert
+      v-if="healing?.source === 'aria-snapshot'"
+      class="mt-3"
+      color="info"
+      icon="i-lucide-info"
+      variant="subtle"
+      description="No HTML attributes were available. Enable Piwi fixture capture for full alternatives including data-testid and CSS selectors."
+    />
   </SectionCard>
 
   <!-- No data -->
@@ -176,7 +208,8 @@ function scoreBgClass(score: number): string {
     <UAlert
       color="neutral"
       icon="i-lucide-info"
-      description="No pre-captured alternatives — enable Piwi dashboard fixtures to capture element attributes at test time. Alternatives will appear after the next passing run."
+      variant="subtle"
+      description="No pre-captured alternatives — this locator has never passed in a previous run. Enable Piwi dashboard fixtures to capture element attributes at test time."
     />
   </SectionCard>
 </template>

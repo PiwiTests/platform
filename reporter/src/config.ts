@@ -29,6 +29,14 @@ export interface PiwiDashboardOptions extends PlaywrightTestConfig {
   collectCiInfo?: boolean;
   /** Collect step timings, network requests and web vitals. Defaults to `true`. */
   collectPerformanceMetrics?: boolean;
+  /**
+   * Capture per-action locator snapshots that power failure-time healing
+   * suggestions. Adds a small per-action cost (one DOM read, sometimes an ARIA
+   * snapshot) in the test worker. Defaults to `true`; automatically disabled
+   * when `collectPerformanceMetrics` is `false` (the reporter discards the data
+   * in that case anyway). Can also be forced off with `PIWI_CAPTURE_LOCATORS=false`.
+   */
+  captureLocators?: boolean;
   /** Enable live streaming of results (falls back to batch if unsupported). Defaults to `true`. */
   streaming?: boolean;
   /** Number of test results to batch before sending during streaming. Defaults to `5`. */
@@ -69,6 +77,7 @@ const DEFAULTS: PiwiDashboardOptions = {
   collectScmInfo: true,
   collectCiInfo: true,
   collectPerformanceMetrics: true,
+  captureLocators: true,
   streaming: true,
   streamingBatchSize: 5,
   streamingBatchDelay: 2000,
@@ -100,6 +109,7 @@ export const PIWI_ENV_KEYS = {
   liveFileUploads: 'PIWI_LIVE_FILE_UPLOADS',
   uploadTraces: 'PIWI_UPLOAD_TRACES',
   uploadReport: 'PIWI_UPLOAD_REPORT',
+  captureLocators: 'PIWI_CAPTURE_LOCATORS',
 } as const;
 
 function readBool(val: string | undefined): boolean | undefined {
@@ -149,6 +159,8 @@ export function resolveOptions(raw: Record<string, any>): PiwiDashboardOptions {
     mergedRaw.uploadTraces = readBool(env[PIWI_ENV_KEYS.uploadTraces]);
   if (mergedRaw.uploadReport === undefined && env[PIWI_ENV_KEYS.uploadReport] !== undefined)
     mergedRaw.uploadReport = readBool(env[PIWI_ENV_KEYS.uploadReport]);
+  if (mergedRaw.captureLocators === undefined && env[PIWI_ENV_KEYS.captureLocators] !== undefined)
+    mergedRaw.captureLocators = readBool(env[PIWI_ENV_KEYS.captureLocators]);
 
   const opts: PiwiDashboardOptions = { ...DEFAULTS, ...mergedRaw };
 
@@ -175,4 +187,10 @@ export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   if (options.environment) env[PIWI_ENV_KEYS.environment] = options.environment;
   if (options.label) env[PIWI_ENV_KEYS.label] = options.label;
   if (options.runLabel) env[PIWI_ENV_KEYS.runLabel] = options.runLabel;
+  // Locator capture is part of performance-metric collection; switch it off in
+  // the worker when either flag is disabled so the fixture skips the per-action
+  // cost. Only an explicit `true` overrides the unset (default-on) state.
+  if (options.captureLocators === false || options.collectPerformanceMetrics === false)
+    env[PIWI_ENV_KEYS.captureLocators] = 'false';
+  else if (options.captureLocators === true) env[PIWI_ENV_KEYS.captureLocators] = 'true';
 }
