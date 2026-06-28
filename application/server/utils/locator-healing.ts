@@ -2,8 +2,9 @@
  * Server-side locator healing — lookup alternatives for failing locators.
  *
  * Queries the normalized `locator_snapshots` table by test_case_id + location,
- * with fallback to fuzzy matching by locator fingerprint and ARIA snapshot
- * generation when no prior snapshot exists.
+ * with fallback to element-fingerprint matching against the current page (the
+ * "element changed" case), fuzzy matching by locator signature, and ARIA
+ * snapshot generation when no prior snapshot exists.
  */
 import { and, eq, notInArray, sql } from 'drizzle-orm';
 import { locatorSnapshots, testRunsCases, type LocatorSnapshotRow } from '../database/schema';
@@ -14,14 +15,20 @@ import {
   locatorSignature,
   recommendLocatorFix,
 } from '../../shared/locator-healing';
+import { elementMatchAlternatives, type ElementFingerprint } from '../../shared/locator-fingerprint';
 import type { RankedLocator, LocatorSnapshot, LocatorFixRecommendation } from '../../shared/locator-healing.types';
 import type { DrizzleDB } from '../../shared/handlers/db';
 
 export interface LocatorHealingResult {
   failingLocator: { method: string; args: Record<string, unknown> } | null;
   fromPriorSuccess: RankedLocator[] | null;
+  /**
+   * Fresh locators generated from the element's *current* identity, when the
+   * pre-captured locator no longer matches the live page (renamed/moved element).
+   */
+  fromElementMatch: RankedLocator[] | null;
   fromAriaSnapshot: RankedLocator[] | null;
-  source: 'prior-run' | 'fingerprint' | 'aria-snapshot' | 'none';
+  source: 'prior-run' | 'element-match' | 'fingerprint' | 'aria-snapshot' | 'none';
   /**
    * The single recommended fix — convention-preserving where possible — chosen
    * from the active alternative list. Null when no alternatives are available.
@@ -242,23 +249,61 @@ function generateFromAriaSnapshot(ariaSnapshot: string | null): RankedLocator[] 
 
 /**
  * Assemble a result, computing the convention-preserving recommendation over
- * whichever alternative list is active (prior-success preferred over ARIA). Kept
- * in one place so every return path picks the recommendation the same way.
+ * whichever alternative list is active. Element-match (fresh, current-page)
+ * wins over prior-success (pre-captured), which wins over the ARIA fallback.
+ * Kept in one place so every return path picks the recommendation the same way.
  */
 function buildHealingResult(
   failingLocator: LocatorHealingResult['failingLocator'],
   fromPriorSuccess: RankedLocator[] | null,
   fromAriaSnapshot: RankedLocator[] | null,
   source: LocatorHealingResult['source'],
+  fromElementMatch: RankedLocator[] | null = null,
 ): LocatorHealingResult {
-  const alternatives = fromPriorSuccess ?? fromAriaSnapshot ?? [];
+  const alternatives = fromElementMatch ?? fromPriorSuccess ?? fromAriaSnapshot ?? [];
   return {
     failingLocator,
     fromPriorSuccess,
+    fromElementMatch,
     fromAriaSnapshot,
     source,
     recommendation: alternatives.length ? recommendLocatorFix(failingLocator?.method, alternatives) : null,
   };
+}
+
+/**
+ * The identity of the element a stored snapshot describes — its resolved ARIA
+ * role and accessible name. The role/name were resolved against the real DOM at
+ * capture time and baked into the stored `getByRole` alternative, so we read
+ * them back from there instead of re-deriving a role server-side.
+ */
+function fingerprintFromSnapshot(priorAlts: RankedLocator[] | null, row: LocatorSnapshotRow): ElementFingerprint {
+  const roleAlt = priorAlts?.find((a) => a.method === 'getByRole');
+  const role = typeof roleAlt?.args?.role === 'string' ? roleAlt.args.role : null;
+  const name = typeof roleAlt?.args?.name === 'string' ? roleAlt.args.name : (row.elementText ?? null);
+  return { role, name };
+}
+
+/**
+ * Given a stored snapshot found by location/signature, decide whether the
+ * element still exists on the current page. If it was renamed/moved/replaced,
+ * return fresh locators generated from the element it became (`element-match`);
+ * otherwise the pre-captured alternatives still describe it (`prior-run` /
+ * `fingerprint`).
+ */
+function resolveStoredHit(
+  failingLocator: LocatorHealingResult['failingLocator'],
+  hit: LocatorSnapshotRow,
+  ariaSnapshot: string | null,
+  priorSource: 'prior-run' | 'fingerprint',
+): LocatorHealingResult {
+  const priorAlts = parseAlternativesColumn(hit);
+  const fingerprint = fingerprintFromSnapshot(priorAlts, hit);
+  const fresh = elementMatchAlternatives(fingerprint, ariaSnapshot);
+  if (fresh) {
+    return buildHealingResult(failingLocator, null, null, 'element-match', fresh);
+  }
+  return buildHealingResult(failingLocator, priorAlts, null, priorSource);
 }
 
 /**
@@ -312,7 +357,7 @@ export async function getLocatorHealing(db: DrizzleDB, testRunsCaseId: number): 
   if (location && snaps.length > 0) {
     const hit = snaps.find((s) => s.location === location) ?? snaps.find((s) => sameFileLine(s.location, location));
     if (hit) {
-      return buildHealingResult(failingLocator, parseAlternativesColumn(hit), null, 'prior-run');
+      return resolveStoredHit(failingLocator, hit, row.ariaSnapshot ?? null, 'prior-run');
     }
   }
 
@@ -324,7 +369,7 @@ export async function getLocatorHealing(db: DrizzleDB, testRunsCaseId: number): 
     const method = locatorExpressionMethod(selector);
     const hit = snaps.find((s) => s.usedArgsFp === sig && (!method || s.usedMethod === method));
     if (hit) {
-      return buildHealingResult(failingLocator, parseAlternativesColumn(hit), null, 'fingerprint');
+      return resolveStoredHit(failingLocator, hit, row.ariaSnapshot ?? null, 'fingerprint');
     }
   }
 

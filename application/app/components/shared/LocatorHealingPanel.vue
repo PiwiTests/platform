@@ -16,8 +16,9 @@ const props = defineProps<{
 interface LocatorHealingResult {
   failingLocator: { method: string; args: Record<string, unknown> } | null;
   fromPriorSuccess: RankedLocator[] | null;
+  fromElementMatch: RankedLocator[] | null;
   fromAriaSnapshot: RankedLocator[] | null;
-  source: 'prior-run' | 'fingerprint' | 'aria-snapshot' | 'none';
+  source: 'prior-run' | 'element-match' | 'fingerprint' | 'aria-snapshot' | 'none';
   recommendation: LocatorFixRecommendation | null;
 }
 
@@ -34,12 +35,16 @@ const hasData = computed(
   () =>
     !!healing.value &&
     healing.value.source !== 'none' &&
-    !!(healing.value.fromPriorSuccess?.length || healing.value.fromAriaSnapshot?.length),
+    !!(
+      healing.value.fromElementMatch?.length ||
+      healing.value.fromPriorSuccess?.length ||
+      healing.value.fromAriaSnapshot?.length
+    ),
 );
 
 const alternatives = computed<RankedLocator[]>(() => {
   if (!healing.value) return [];
-  return healing.value.fromPriorSuccess ?? healing.value.fromAriaSnapshot ?? [];
+  return healing.value.fromElementMatch ?? healing.value.fromPriorSuccess ?? healing.value.fromAriaSnapshot ?? [];
 });
 
 // The single recommended fix — convention-preserving where possible. Computed
@@ -58,18 +63,32 @@ const recommendationNote = computed(() => {
   return 'Most stable available — a sturdier style than the original';
 });
 
-const isPrior = computed(() => healing.value?.source === 'prior-run' || healing.value?.source === 'fingerprint');
-
 const sourceNote = computed(() => {
   switch (healing.value?.source) {
     case 'prior-run':
       return 'Pre-captured from the last passing run — highest confidence';
+    case 'element-match':
+      return 'The element looks renamed or moved — these are fresh locators for its current identity on the failing page';
     case 'fingerprint':
       return 'Matched by locator signature (line numbers shifted)';
     case 'aria-snapshot':
       return 'Generated from the failure-time ARIA snapshot — limited, no HTML attributes';
     default:
       return '';
+  }
+});
+
+// Subtitle color: green for pre-captured (high confidence), primary for a
+// fresh current-page match, amber for the limited ARIA-only fallback.
+const sourceClass = computed(() => {
+  switch (healing.value?.source) {
+    case 'prior-run':
+    case 'fingerprint':
+      return 'text-success-600 dark:text-success-400';
+    case 'element-match':
+      return 'text-primary-600 dark:text-primary-400';
+    default:
+      return 'text-warning-600 dark:text-warning-400';
   }
 });
 
@@ -130,7 +149,7 @@ function locatorNote(method: string, score: number): string {
     help="locator-healing"
   >
     <template #subtitle>
-      <span :class="isPrior ? 'text-success-600 dark:text-success-400' : 'text-warning-600 dark:text-warning-400'">
+      <span :class="sourceClass">
         {{ sourceNote }}
       </span>
     </template>

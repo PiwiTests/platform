@@ -6,6 +6,7 @@ import {
   extractAccessibleName,
   approximateAccessibleName,
   resolveAriaRole,
+  suggestLocatorsFromAria,
   type ElementAttributes,
 } from '../src/locator-healing.js';
 
@@ -422,5 +423,49 @@ describe('approximateAccessibleName', () => {
   it('returns null when nothing is available', () => {
     const attrs = makeAttrs();
     expect(approximateAccessibleName(attrs)).toBe(null);
+  });
+});
+
+describe('suggestLocatorsFromAria', () => {
+  // Canonical case: the button text changed from "Go to page" to "Open page"
+  // but the test still says getByText('Go to page').
+  const renamedAria = ['- navigation', '  - button "Open page"', '- contentinfo'].join('\n');
+
+  it('suggests a fresh same-style locator for a renamed element', () => {
+    const s = suggestLocatorsFromAria({ method: 'getByText', args: ['Go to page'] }, renamedAria);
+    expect(s).not.toBeNull();
+    expect(s!.failing).toBe("getByText('Go to page')");
+    // Same family (getByText) first, then the role-based option.
+    expect(s!.suggestions[0]).toBe("getByText('Open page')");
+    expect(s!.suggestions).toContain("getByRole('button', { name: 'Open page' })");
+  });
+
+  it('matches within the failed role for getByRole', () => {
+    const s = suggestLocatorsFromAria({ method: 'getByRole', args: ['button', { name: 'Go to page' }] }, renamedAria);
+    expect(s!.suggestions[0]).toBe("getByRole('button', { name: 'Open page' })");
+  });
+
+  it('returns null when the targeted name is still present (not a rename)', () => {
+    expect(suggestLocatorsFromAria({ method: 'getByText', args: ['Open page'] }, renamedAria)).toBeNull();
+  });
+
+  it('returns null for non-name-based locators (testid / CSS)', () => {
+    expect(suggestLocatorsFromAria({ method: 'getByTestId', args: ['go'] }, renamedAria)).toBeNull();
+    expect(suggestLocatorsFromAria({ method: 'locator', args: ['.btn'] }, renamedAria)).toBeNull();
+  });
+
+  it('returns null without an ARIA snapshot', () => {
+    expect(suggestLocatorsFromAria({ method: 'getByText', args: ['Go to page'] }, null)).toBeNull();
+  });
+
+  it('does not guess among ambiguous same-role candidates with no overlap', () => {
+    const aria = ['- button "Save"', '- button "Cancel"'].join('\n');
+    expect(suggestLocatorsFromAria({ method: 'getByRole', args: ['button', { name: 'Delete' }] }, aria)).toBeNull();
+  });
+
+  it('suggests getByLabel for a renamed form field', () => {
+    const aria = '- textbox "Email address"';
+    const s = suggestLocatorsFromAria({ method: 'getByLabel', args: ['Email'] }, aria);
+    expect(s!.suggestions[0]).toBe("getByLabel('Email address')");
   });
 });

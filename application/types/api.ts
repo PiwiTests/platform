@@ -915,7 +915,7 @@ export interface DiagnosisContextCoverage {
   alreadyGreen?: boolean;
   /** Locator healing alternatives for the failing locator. null when not a locator failure or no snapshot data. */
   locatorHealing?: {
-    source: 'prior-run' | 'fingerprint' | 'aria-snapshot' | 'none';
+    source: 'prior-run' | 'element-match' | 'fingerprint' | 'aria-snapshot' | 'none';
     alternativesCount: number;
   } | null;
   /** Sections where data is not applicable (with reason), keyed by section id. Absent in coverage means "no data". */

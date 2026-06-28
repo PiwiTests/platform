@@ -1087,7 +1087,7 @@ async function locatorHealingSection(
   if (!rep.error) return { section: null, coverage: null };
 
   const healing = await getLocatorHealing(db, rep.id);
-  const alternatives = healing.fromPriorSuccess ?? healing.fromAriaSnapshot ?? [];
+  const alternatives = healing.fromElementMatch ?? healing.fromPriorSuccess ?? healing.fromAriaSnapshot ?? [];
 
   if (alternatives.length === 0) {
     // No alternatives — only report coverage when we actually recognized a
@@ -1108,9 +1108,11 @@ async function locatorHealingSection(
   const sourceLabel =
     healing.source === 'prior-run'
       ? 'captured against the real DOM in a prior passing run'
-      : healing.source === 'fingerprint'
-        ? 'matched by locator fingerprint from a prior passing run'
-        : 'derived from the current ARIA snapshot';
+      : healing.source === 'element-match'
+        ? "the locator's element appears renamed/moved — these are fresh locators for its current identity on the failing page"
+        : healing.source === 'fingerprint'
+          ? 'matched by locator fingerprint from a prior passing run'
+          : 'derived from the current ARIA snapshot';
   lines.push(`Source: ${healing.source} (${sourceLabel})`);
 
   // Surface the single convention-preserving recommendation so the model picks
