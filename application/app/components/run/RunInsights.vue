@@ -8,6 +8,13 @@ const props = defineProps<{
 
 interface RunInsightsData {
   hasBaseline: boolean;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  passRate: number;
+  baselinePassRate: number;
+  passRateDelta: number;
+  avgDurationDelta: number | null;
   newRegressions: Array<{ testRunsCaseId: number; title: string; filePath: string; duration: number | null }>;
   recurrences: Array<{ testRunsCaseId: number; title: string; filePath: string; duration: number | null }>;
   recovered: Array<{ testRunsCaseId: number; title: string; filePath: string; duration: number | null }>;
@@ -30,9 +37,31 @@ interface RunInsightsData {
     pctChange: number;
   }>;
   workerImbalance: Array<{ workerIndex: number; count: number }>;
+  workerImbalanceWarning: string | null;
   flakyOnRetry: Array<{ testRunsCaseId: number; title: string; filePath: string; retries: number }>;
   clusterNew: Array<{ clusterId: number; signature: string }>;
 }
+
+const passRateDeltaColor = computed(() => {
+  if (!data.value) return '';
+  const delta = data.value.passRateDelta;
+  if (delta > 0) return 'text-green-600';
+  if (delta < 0) return 'text-red-600';
+  return 'text-muted';
+});
+
+const passRateDeltaArrow = computed(() => {
+  if (!data.value) return '';
+  const delta = data.value.passRateDelta;
+  if (delta > 0) return 'i-lucide-trending-up';
+  if (delta < 0) return 'i-lucide-trending-down';
+  return 'i-lucide-minus';
+});
+
+const avgDurationColorClass = computed(() => {
+  if (data.value?.avgDurationDelta == null) return '';
+  return data.value.avgDurationDelta > 0 ? 'text-red-600' : 'text-green-600';
+});
 
 const data = ref<RunInsightsData | null>(null);
 const loading = ref(false);
@@ -123,21 +152,50 @@ function formatMs(ms: number | null | undefined): string {
     </EmptyState>
   </div>
 
-  <div v-else-if="!hasAnyInsights" class="p-4">
-    <EmptyState icon="i-lucide-check-circle" text="Everything looks consistent">
-      <p class="text-sm text-muted max-w-sm text-center">
-        No regressions, performance changes, or newly flaky tests detected compared to the baseline run. Insights appear
-        when something changes — keep running your tests to build history.
-      </p>
-    </EmptyState>
-  </div>
-
   <div v-else class="space-y-6 p-4">
     <div class="flex items-center gap-1.5 text-sm text-muted">
       <UIcon name="i-lucide-sparkles" class="size-4 shrink-0 text-primary/70" />
       <span>Automatic highlights from this run</span>
       <HelpHint topic="run.insights" />
     </div>
+
+    <!-- Summary card -->
+    <SectionCard icon="i-lucide-bar-chart-3" icon-class="text-blue-500" title="Run summary">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="space-y-1">
+          <p class="text-xs text-muted">Pass rate</p>
+          <p class="text-xl font-semibold">{{ data.passRate }}%</p>
+          <div class="flex items-center gap-1 text-xs" :class="passRateDeltaColor">
+            <UIcon :name="passRateDeltaArrow" class="size-3.5" />
+            <span v-if="data.passRateDelta !== 0"
+              >{{ data.passRateDelta > 0 ? '+' : '' }}{{ data.passRateDelta }}pp vs baseline</span
+            >
+            <span v-else>Same as baseline</span>
+          </div>
+        </div>
+        <div class="space-y-1">
+          <p class="text-xs text-muted">Avg duration</p>
+          <p v-if="data.avgDurationDelta !== null" class="text-xl font-semibold" :class="avgDurationColorClass">
+            {{ data.avgDurationDelta > 0 ? '+' : '' }}{{ data.avgDurationDelta }}%
+          </p>
+          <p v-else class="text-xl font-semibold text-muted">—</p>
+          <p class="text-xs text-muted">vs baseline (passing tests)</p>
+        </div>
+        <div class="space-y-1">
+          <p class="text-xs text-muted">Changes</p>
+          <div class="space-y-0.5 text-sm">
+            <p v-if="data.newRegressions.length > 0" class="text-red-500">
+              +{{ data.newRegressions.length }} regressed
+            </p>
+            <p v-if="data.recovered.length > 0" class="text-green-600">+{{ data.recovered.length }} fixed</p>
+            <p v-if="data.newFlaky.length > 0" class="text-purple-500">+{{ data.newFlaky.length }} flaky</p>
+            <p v-if="!data.newRegressions.length && !data.recovered.length && !data.newFlaky.length" class="text-muted">
+              No status changes
+            </p>
+          </div>
+        </div>
+      </div>
+    </SectionCard>
 
     <!-- New regressions -->
     <SectionCard
@@ -319,6 +377,10 @@ function formatMs(ms: number | null | undefined): string {
       icon-class="text-gray-500"
       title="Worker distribution"
     >
+      <div v-if="data.workerImbalanceWarning" class="flex items-center gap-1.5 text-xs text-amber-600 mb-3">
+        <UIcon name="i-lucide-alert-triangle" class="size-3.5 shrink-0" />
+        <span>{{ data.workerImbalanceWarning }}</span>
+      </div>
       <div class="flex items-end gap-2 h-20">
         <div v-for="w in data.workerImbalance" :key="w.workerIndex" class="flex-1 flex flex-col items-center gap-1">
           <span class="text-xs text-gray-500">{{ w.count }}</span>
