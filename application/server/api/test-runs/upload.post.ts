@@ -507,6 +507,7 @@ export default eventHandler(async (event) => {
         workerIndex: testCase.workerIndex as number | null | undefined,
         shardIndex: testCase.shardIndex as number | null | undefined,
         startedAt: testCase.startedAt as number | null | undefined,
+        locatorSnapshots: (testCase as any).locatorSnapshots ?? null,
       };
     });
 

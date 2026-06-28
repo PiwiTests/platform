@@ -15,6 +15,8 @@ import { publishDemoGlobalEvent, publishDemoRunEvent } from '../run-events';
 import { projects, testRuns, testCases, testRunsCases, networkRequests } from '~~/server/database/schema.sqlite';
 import { parseLocation } from '~~/server/utils/parse-location';
 import { buildNetworkRequestItems, buildNetworkRequestInsertValues } from '~~/server/utils/network-request-helpers';
+import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
+import type { LocatorSnapshot } from '~~/shared/locator-healing.types';
 import { sanitizeMetadata, sanitizeWebVitals, sanitizeConsoleLogs } from '~~/server/utils/sanitize';
 import { computeErrorFingerprint, type ErrorFingerprint } from '~~/shared/error-fingerprint';
 import { durationStats } from '~~/shared/utils/stats';
@@ -256,6 +258,7 @@ interface RunCaseInput {
   shardIndex?: number | null;
   startedAt?: number | null;
   browser?: unknown;
+  locatorSnapshots?: unknown;
 }
 
 async function persistRunCases(
@@ -302,6 +305,11 @@ async function persistRunCases(
   }> = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
   const pendingClusters = new Map<string, PendingCluster>();
+  const perCaseLocators: Array<{
+    caseId: number;
+    snapshots: LocatorSnapshot[] | null | undefined;
+    purge?: boolean;
+  }> = [];
 
   for (const c of cases) {
     const cacheKey = `${c.filePath}::${c.title}`;
@@ -340,6 +348,13 @@ async function persistRunCases(
       }
     }
     rowFingerprints.push(fingerprint);
+
+    if (Array.isArray(c.locatorSnapshots) && c.locatorSnapshots.length)
+      perCaseLocators.push({
+        caseId: shared.id,
+        snapshots: c.locatorSnapshots as LocatorSnapshot[],
+        purge: c.status === 'passed',
+      });
 
     runCasesRows.push({
       testRunId,
@@ -381,6 +396,8 @@ async function persistRunCases(
   if (nrValues.length > 0) {
     await db.insert(networkRequests).values(nrValues);
   }
+
+  await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
 
   return insertedCases;
 }
@@ -457,6 +474,7 @@ export async function apiPostRunEvents(
     shardIndex: tc.shardIndex ?? null,
     startedAt: tc.startedAt ?? null,
     browser: tc.browser ?? null,
+    locatorSnapshots: (tc as any).locatorSnapshots ?? null,
   }));
 
   const insertedRunCases = await persistRunCases(db, testRun.projectId, id, cases, true);

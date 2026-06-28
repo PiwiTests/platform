@@ -165,6 +165,7 @@ export default eventHandler(async (event) => {
             shardIndex: testCase.shardIndex ?? null,
             startedAt: testCase.startedAt ?? null,
             browser: testCase.browser ?? null,
+            locatorSnapshots: testCase.locatorSnapshots ?? null,
           };
         });
         await persistRunCases(db, project.id, existingRun.id, cases);
@@ -281,6 +282,7 @@ export default eventHandler(async (event) => {
         suitePath?: string[] | null;
         suiteConfig?: unknown;
         testAnnotations?: unknown;
+        locatorSnapshots?: unknown;
       }) => {
         const { filePath, line, column } = testCase.location
           ? parseLocation(testCase.location)
@@ -312,6 +314,7 @@ export default eventHandler(async (event) => {
           shardIndex: testCase.shardIndex ?? null,
           startedAt: testCase.startedAt ?? null,
           browser: testCase.browser ?? null,
+          locatorSnapshots: testCase.locatorSnapshots ?? null,
         };
       },
     );

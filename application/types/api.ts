@@ -913,6 +913,11 @@ export interface DiagnosisContextCoverage {
   } | null;
   /** True when the last passing run is newer than the cluster's lastSeen — test may already be fixed. */
   alreadyGreen?: boolean;
+  /** Locator healing alternatives for the failing locator. null when not a locator failure or no snapshot data. */
+  locatorHealing?: {
+    source: 'prior-run' | 'element-match' | 'fingerprint' | 'aria-snapshot' | 'none';
+    alternativesCount: number;
+  } | null;
   /** Sections where data is not applicable (with reason), keyed by section id. Absent in coverage means "no data". */
   notApplicable?: Record<string, string>;
 }

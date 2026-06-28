@@ -7,6 +7,8 @@ import { testCaseCache } from './test-case-cache';
 import { testSuiteCache } from './test-suite-cache';
 import { SUITE_PATH_SEP, joinSuitePath } from '../../shared/utils/suites';
 import { getOrCreateFailureClusters, type PendingCluster } from '~~/shared/handlers/failure-cluster-ops';
+import { upsertLocatorSnapshots } from './locator-healing';
+import type { LocatorSnapshot } from '../../shared/locator-healing.types';
 import type { getDatabase } from '../database';
 
 type DB = Awaited<ReturnType<typeof getDatabase>>;
@@ -42,6 +44,8 @@ export interface RunCaseInput {
   shardIndex?: number | null;
   startedAt?: number | null;
   browser?: unknown;
+  /** Per-element locator snapshots to upsert into locator_snapshots (transient). */
+  locatorSnapshots?: LocatorSnapshot[] | null;
 }
 
 function resolveBrowserName(browser: unknown): string | null {
@@ -193,6 +197,13 @@ export async function persistRunCases(
   }> = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
   const pendingClusters = new Map<string, PendingCluster>();
+  // Locator snapshots to upsert, grouped by resolved test case id; the shared
+  // helper handles row building, upsert, and stale-location purge after insert.
+  const perCaseLocators: Array<{
+    caseId: number;
+    snapshots: LocatorSnapshot[] | null | undefined;
+    purge?: boolean;
+  }> = [];
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
@@ -222,6 +233,12 @@ export async function persistRunCases(
     }
 
     if (caseId === undefined) continue;
+
+    // Collect locator snapshots; upserted in one batch after the case insert.
+    // Only a passed case may purge stale locations — a failed run can stop
+    // before reaching later locators (see upsertLocatorSnapshots).
+    if (c.locatorSnapshots?.length)
+      perCaseLocators.push({ caseId, snapshots: c.locatorSnapshots, purge: c.status === 'passed' });
 
     if (fingerprint) {
       const pending = pendingClusters.get(fingerprint.fingerprint);
@@ -281,6 +298,8 @@ export async function persistRunCases(
   if (nrValues.length > 0) {
     await db.insert(networkRequests).values(nrValues);
   }
+
+  await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
 
   return insertedCases;
 }

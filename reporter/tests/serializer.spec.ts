@@ -162,6 +162,7 @@ describe('toWireTestCase', () => {
       'duration',
       'error',
       'location',
+      'locatorSnapshots',
       'networkRequests',
       'retries',
       'shardIndex',
@@ -228,6 +229,7 @@ describe('serializeRun', () => {
       'skippedTests',
       'startTime',
       'status',
+      'timedOutTests',
       'totalTests',
     ]);
   });

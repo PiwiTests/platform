@@ -7,7 +7,10 @@ import type { ProjectWithStats, TagInfo, TagsResponse } from '~~/types/api';
 useHead({ title: 'Projects — Piwi Dashboard' });
 
 // Share the projects data already fetched by the layout (same key → single HTTP request, single SSE subscription)
-const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/projects', { key: 'projects' });
+const { data: projects, refresh } = await useFetch<ProjectWithStats[]>('/api/projects', {
+  key: 'projects',
+  default: () => [],
+});
 const { data: tagsData, refresh: refreshTags } = await useFetch<TagsResponse>('/api/tags');
 const toast = useToast();
 

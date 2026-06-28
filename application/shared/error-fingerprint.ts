@@ -140,7 +140,7 @@ function maskSelector(selector: string): string {
  * paren-depth counter so nested forms like getByRole('row', { name: '…' })
  * are captured whole.
  */
-function extractSelector(text: string): string | null {
+export function extractSelector(text: string): string | null {
   const match = SELECTOR_FN_RE.exec(text);
   if (!match) return null;
   const start = match.index;
@@ -160,8 +160,85 @@ function extractSelector(text: string): string | null {
   return text.slice(start, start + 80);
 }
 
+/**
+ * Locator-creating methods whose innermost call identifies the resolved element.
+ * Mirrors the reporter's `LOCATOR_CREATING_CHAINS` (`frameLocator` excluded — the
+ * capture proxy does not wrap frame locators).
+ */
+const LEAF_SELECTOR_METHODS = [
+  'getByRole',
+  'getByTestId',
+  'getByText',
+  'getByLabel',
+  'getByPlaceholder',
+  'getByAltText',
+  'getByTitle',
+  'locator',
+];
+
+/**
+ * Extract the leaf (innermost) locator call from a chained locator in the error,
+ * e.g. `getByRole('row', { name: 'Acme' }).getByRole('button', { name: 'Delete' })`
+ * → `getByRole('button', { name: 'Delete' })`.
+ *
+ * The capture side records a chain's innermost locator-creating call, so the
+ * healing signature lookup must compare against the same leaf rather than the
+ * outermost call `extractSelector` returns. For a non-chained locator the leaf
+ * is the whole expression, so this matches `extractSelector`.
+ *
+ * Only top-level (depth-0) calls of the chain count — a locator nested inside
+ * another call's args (e.g. `filter({ has: getByText('…') })`) sits at depth > 0
+ * and is skipped, matching the capture side which advances the origin only
+ * through top-level chain links.
+ */
+export function extractLeafSelector(text: string): string | null {
+  const first = SELECTOR_FN_RE.exec(text);
+  if (!first) return null;
+
+  // Bound to the chain's own line; the Call log prints it on one line and the
+  // appended stack frame is a separate line.
+  const nl = text.indexOf('\n', first.index);
+  const region = text.slice(first.index, nl === -1 ? undefined : nl);
+
+  let depth = 0;
+  let leafStart = -1;
+  for (let i = 0; i < region.length; i++) {
+    const ch = region[i];
+    if (ch === '(') {
+      depth++;
+      continue;
+    }
+    if (ch === ')') {
+      if (depth > 0) depth--;
+      continue;
+    }
+    if (depth !== 0) continue;
+    const prev = region[i - 1];
+    if (prev && /\w/.test(prev)) continue; // require a word boundary before the method
+    for (const method of LEAF_SELECTOR_METHODS) {
+      if (region.startsWith(method, i) && region[i + method.length] === '(') {
+        leafStart = i;
+        break;
+      }
+    }
+  }
+  if (leafStart === -1) return null;
+
+  depth = 0;
+  for (let i = leafStart; i < region.length; i++) {
+    const ch = region[i];
+    if (ch === '(') {
+      depth++;
+    } else if (ch === ')') {
+      depth--;
+      if (depth === 0) return region.slice(leafStart, i + 1);
+    }
+  }
+  return region.slice(leafStart, leafStart + 80);
+}
+
 /** First stack frame outside node_modules and Node internals, file path only. */
-function extractTopFrameFile(text: string): string | null {
+export function extractTopFrameFile(text: string): string | null {
   const frameRe = /^\s+at (?:.*? \()?([^()\s][^()]*?):\d+:\d+\)?\s*$/gm;
   let m: RegExpExecArray | null;
   while ((m = frameRe.exec(text)) !== null) {

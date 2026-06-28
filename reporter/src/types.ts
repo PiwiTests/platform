@@ -137,6 +137,8 @@ export interface CollectedTestCase {
   consoleLogs?: unknown;
   /** Parsed from `piwi-dashboard-aria-snapshot` attachment. */
   ariaSnapshot?: string;
+  /** Parsed from `piwi-dashboard-locators` attachment. */
+  locatorSnapshots?: import('./locator-healing.js').LocatorSnapshot[];
 }
 
 /**
@@ -172,6 +174,8 @@ export interface WireTestCase {
   /** Step-event discriminant (only for `step-begin`/`step-end` events). */
   stepCategory?: string | null;
   parentTitle?: string | null;
+  /** Per-element locator snapshots with ranked alternatives (transient — not stored per-run). */
+  locatorSnapshots?: unknown;
 }
 
 // ── Stream events (discriminated union) ──────────────────────────────────────
@@ -211,6 +215,7 @@ export interface CompleteStreamEvent {
   consoleLogs?: unknown;
   ariaSnapshot?: unknown;
   testSource?: string | null;
+  locatorSnapshots?: unknown;
 }
 
 export interface StepBeginStreamEvent {

@@ -358,6 +358,35 @@ export const testRunsCases = sqliteTable(
   }),
 );
 
+// Locator snapshots table — one row per locator call site, upserted each run.
+// Stores the latest element state and pre-computed alternative locators so
+// that when a locator breaks, ranked replacements are immediately available.
+export const locatorSnapshots = sqliteTable(
+  'locator_snapshots',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    location: text('location').notNull(),
+    usedMethod: text('used_method').notNull(),
+    usedArgs: text('used_args').notNull(),
+    usedArgsFp: text('used_args_fp').notNull(),
+    elementTag: text('element_tag'),
+    elementAttrs: text('element_attrs').notNull(),
+    elementText: text('element_text'),
+    alternatives: text('alternatives').notNull(),
+    lastSeenRunId: integer('last_seen_run_id').references(() => testRuns.id, {
+      onDelete: 'set null',
+    }),
+    lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (table) => ({
+    uniqueLocation: uniqueIndex('idx_locator_snapshots_location').on(table.testCaseId, table.location),
+    fingerprintIdx: index('idx_locator_snapshots_fp').on(table.testCaseId, table.usedMethod, table.usedArgsFp),
+  }),
+);
+
 // Network requests table - normalized child table of test_runs_cases
 // Stores one row per filtered network request (API/document types only).
 // Normalized URLs enable endpoint-grouped stats without parsing JSON.
@@ -748,3 +777,5 @@ export type EntityLink = typeof entityLinks.$inferSelect;
 export type NewEntityLink = typeof entityLinks.$inferInsert;
 export type NetworkRequest = typeof networkRequests.$inferSelect;
 export type NewNetworkRequest = typeof networkRequests.$inferInsert;
+export type LocatorSnapshotRow = typeof locatorSnapshots.$inferSelect;
+export type NewLocatorSnapshotRow = typeof locatorSnapshots.$inferInsert;

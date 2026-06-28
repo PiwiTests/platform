@@ -514,6 +514,13 @@ export const HELP_TOPICS = {
     title: 'Entity links',
     text: 'Links to external systems (Jira, GitHub, etc.) attached to this item. The provider is detected automatically from the URL.',
   },
+
+  // ── Locator healing ────────────────────────────────────────────────────
+  'locator-healing': {
+    title: 'Alternative locators',
+    text: 'When a locator breaks after a UI change, Piwi suggests pre-captured alternatives from the last passing run. Each alternative is ranked by stability score — prefer data-testid (100) over CSS classes (10–40).',
+    doc: 'reporter#locator-healing',
+  },
 } as const satisfies Record<string, HelpTopic>;
 
 export type HelpTopicKey = keyof typeof HELP_TOPICS;

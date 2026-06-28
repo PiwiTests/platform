@@ -362,6 +362,33 @@ export const testRunsCases = pgTable(
   }),
 );
 
+// Locator snapshots table — one row per locator call site, upserted each run.
+export const locatorSnapshots = pgTable(
+  'locator_snapshots',
+  {
+    id: serial('id').primaryKey(),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    location: text('location').notNull(),
+    usedMethod: text('used_method').notNull(),
+    usedArgs: text('used_args').notNull(),
+    usedArgsFp: text('used_args_fp').notNull(),
+    elementTag: text('element_tag'),
+    elementAttrs: text('element_attrs').notNull(),
+    elementText: text('element_text'),
+    alternatives: text('alternatives').notNull(),
+    lastSeenRunId: integer('last_seen_run_id').references(() => testRuns.id, {
+      onDelete: 'set null',
+    }),
+    lastSeenAt: timestamp('last_seen_at', { mode: 'date' }).notNull(),
+  },
+  (table) => ({
+    uniqueLocation: uniqueIndex('idx_locator_snapshots_location').on(table.testCaseId, table.location),
+    fingerprintIdx: index('idx_locator_snapshots_fp').on(table.testCaseId, table.usedMethod, table.usedArgsFp),
+  }),
+);
+
 // Network requests table - normalized child table of test_runs_cases
 export const networkRequests = pgTable(
   'network_requests',
@@ -737,3 +764,5 @@ export type EntityLink = typeof entityLinks.$inferSelect;
 export type NewEntityLink = typeof entityLinks.$inferInsert;
 export type NetworkRequest = typeof networkRequests.$inferSelect;
 export type NewNetworkRequest = typeof networkRequests.$inferInsert;
+export type LocatorSnapshotRow = typeof locatorSnapshots.$inferSelect;
+export type NewLocatorSnapshotRow = typeof locatorSnapshots.$inferInsert;
