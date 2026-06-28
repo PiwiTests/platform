@@ -12,8 +12,9 @@ import {
   locatorSignatureFromExpression,
   locatorExpressionMethod,
   locatorSignature,
+  recommendLocatorFix,
 } from '../../shared/locator-healing';
-import type { RankedLocator, LocatorSnapshot } from '../../shared/locator-healing.types';
+import type { RankedLocator, LocatorSnapshot, LocatorFixRecommendation } from '../../shared/locator-healing.types';
 import type { DrizzleDB } from '../../shared/handlers/db';
 
 export interface LocatorHealingResult {
@@ -21,6 +22,11 @@ export interface LocatorHealingResult {
   fromPriorSuccess: RankedLocator[] | null;
   fromAriaSnapshot: RankedLocator[] | null;
   source: 'prior-run' | 'fingerprint' | 'aria-snapshot' | 'none';
+  /**
+   * The single recommended fix — convention-preserving where possible — chosen
+   * from the active alternative list. Null when no alternatives are available.
+   */
+  recommendation: LocatorFixRecommendation | null;
 }
 
 /**
@@ -235,6 +241,27 @@ function generateFromAriaSnapshot(ariaSnapshot: string | null): RankedLocator[] 
 }
 
 /**
+ * Assemble a result, computing the convention-preserving recommendation over
+ * whichever alternative list is active (prior-success preferred over ARIA). Kept
+ * in one place so every return path picks the recommendation the same way.
+ */
+function buildHealingResult(
+  failingLocator: LocatorHealingResult['failingLocator'],
+  fromPriorSuccess: RankedLocator[] | null,
+  fromAriaSnapshot: RankedLocator[] | null,
+  source: LocatorHealingResult['source'],
+): LocatorHealingResult {
+  const alternatives = fromPriorSuccess ?? fromAriaSnapshot ?? [];
+  return {
+    failingLocator,
+    fromPriorSuccess,
+    fromAriaSnapshot,
+    source,
+    recommendation: alternatives.length ? recommendLocatorFix(failingLocator?.method, alternatives) : null,
+  };
+}
+
+/**
  * Find alternatives for a failing locator. Loads every snapshot for the test
  * case once (indexed by test_case_id) and resolves the best match in memory:
  *
@@ -257,12 +284,7 @@ export async function getLocatorHealing(db: DrizzleDB, testRunsCaseId: number): 
 
   const row = rows[0];
   if (!row?.error) {
-    return {
-      failingLocator: null,
-      fromPriorSuccess: null,
-      fromAriaSnapshot: null,
-      source: 'none',
-    };
+    return buildHealingResult(null, null, null, 'none');
   }
 
   const error = row.error;
@@ -290,12 +312,7 @@ export async function getLocatorHealing(db: DrizzleDB, testRunsCaseId: number): 
   if (location && snaps.length > 0) {
     const hit = snaps.find((s) => s.location === location) ?? snaps.find((s) => sameFileLine(s.location, location));
     if (hit) {
-      return {
-        failingLocator,
-        fromPriorSuccess: parseAlternativesColumn(hit),
-        fromAriaSnapshot: null,
-        source: 'prior-run',
-      };
+      return buildHealingResult(failingLocator, parseAlternativesColumn(hit), null, 'prior-run');
     }
   }
 
@@ -307,22 +324,17 @@ export async function getLocatorHealing(db: DrizzleDB, testRunsCaseId: number): 
     const method = locatorExpressionMethod(selector);
     const hit = snaps.find((s) => s.usedArgsFp === sig && (!method || s.usedMethod === method));
     if (hit) {
-      return {
-        failingLocator,
-        fromPriorSuccess: parseAlternativesColumn(hit),
-        fromAriaSnapshot: null,
-        source: 'fingerprint',
-      };
+      return buildHealingResult(failingLocator, parseAlternativesColumn(hit), null, 'fingerprint');
     }
   }
 
   // Ladder 3: ARIA snapshot fallback
   const ariaAlts = generateFromAriaSnapshot(row.ariaSnapshot ?? null);
   if (ariaAlts) {
-    return { failingLocator, fromPriorSuccess: null, fromAriaSnapshot: ariaAlts, source: 'aria-snapshot' };
+    return buildHealingResult(failingLocator, null, ariaAlts, 'aria-snapshot');
   }
 
-  return { failingLocator, fromPriorSuccess: null, fromAriaSnapshot: null, source: 'none' };
+  return buildHealingResult(failingLocator, null, null, 'none');
 }
 
 /** Compare two `file:line:col` locations ignoring the trailing column. */

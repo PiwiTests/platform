@@ -1,5 +1,12 @@
 import { describe, test, expect } from 'vitest';
-import { normalizeAndHashArgs, locatorSignature, locatorSignatureFromExpression } from '../../shared/locator-healing';
+import {
+  normalizeAndHashArgs,
+  locatorSignature,
+  locatorSignatureFromExpression,
+  recommendLocatorFix,
+  CONVENTION_STABILITY_FLOOR,
+} from '../../shared/locator-healing';
+import type { RankedLocator } from '../../shared/locator-healing.types';
 import { extractLeafSelector } from '../../shared/error-fingerprint';
 
 describe('normalizeAndHashArgs', () => {
@@ -153,5 +160,100 @@ describe('chained locator leaf matching', () => {
     );
     expect(leaf).not.toBeNull();
     expect(await locatorSignatureFromExpression(leaf!)).toBe(captured);
+  });
+});
+
+/**
+ * Convention-preserving fix selection. The full menu stays ranked by raw
+ * stability, but the single recommended fix keeps the developer's original
+ * locator style where that style clears the stability floor — otherwise it
+ * escalates to the most stable alternative, and flags adding a data-testid when
+ * nothing is stable enough.
+ */
+describe('recommendLocatorFix (convention-preserving)', () => {
+  const alt = (method: string, score: number, locator = `${method}:${score}`): RankedLocator => ({
+    locator,
+    method,
+    args: {},
+    score,
+  });
+
+  test('keeps the same method even when a higher-stability option exists', () => {
+    const rec = recommendLocatorFix('getByText', [alt('getByTestId', 100), alt('getByText', 75)]);
+    expect(rec.recommended?.method).toBe('getByText');
+    expect(rec.preservesConvention).toBe(true);
+    expect(rec.durable?.method).toBe('getByTestId');
+    expect(rec.hasDurableAlternative).toBe(true);
+    expect(rec.suggestAddTestId).toBe(false);
+  });
+
+  test('keeps the same family when the exact method is gone (getByPlaceholder → getByLabel)', () => {
+    const rec = recommendLocatorFix('getByPlaceholder', [alt('getByTestId', 100), alt('getByLabel', 85)]);
+    expect(rec.recommended?.method).toBe('getByLabel');
+    expect(rec.preservesConvention).toBe(true);
+  });
+
+  test('treats getByText/getByTitle/getByAltText as one visible-text family', () => {
+    const rec = recommendLocatorFix('getByTitle', [alt('getByTestId', 100), alt('getByText', 75)]);
+    expect(rec.recommended?.method).toBe('getByText');
+    expect(rec.preservesConvention).toBe(true);
+  });
+
+  test('picks the most stable option within the original family', () => {
+    const rec = recommendLocatorFix('getByRole', [alt('getByTestId', 100), alt('getByRole', 90), alt('getByRole', 85)]);
+    expect(rec.recommended?.score).toBe(90);
+    expect(rec.preservesConvention).toBe(true);
+    expect(rec.hasDurableAlternative).toBe(true);
+  });
+
+  test('rejects a same-family pick below the stability floor and escalates', () => {
+    const rec = recommendLocatorFix('locator', [alt('getByTestId', 100), alt('locator', 10, '.btn-abc123')]);
+    expect(rec.recommended?.method).toBe('getByTestId');
+    expect(rec.preservesConvention).toBe(false);
+    expect(rec.hasDurableAlternative).toBe(false); // recommended === durable
+    expect(rec.suggestAddTestId).toBe(false);
+  });
+
+  test('escalates to the most stable when no same-family alternative exists', () => {
+    const rec = recommendLocatorFix('getByText', [alt('getByTestId', 100), alt('getByRole', 90)]);
+    expect(rec.recommended?.method).toBe('getByTestId');
+    expect(rec.preservesConvention).toBe(false);
+  });
+
+  test('flags adding a data-testid when nothing clears the floor', () => {
+    const rec = recommendLocatorFix('getByText', [alt('locator', 40, '.x'), alt('locator', 25, '.y')]);
+    expect(rec.suggestAddTestId).toBe(true);
+    expect(rec.recommended?.locator).toBe('.x'); // most stable, still fragile
+    expect(rec.preservesConvention).toBe(false);
+    expect(rec.hasDurableAlternative).toBe(false);
+  });
+
+  test('recommended equals durable when the same method is already the most stable', () => {
+    const rec = recommendLocatorFix('getByTestId', [alt('getByTestId', 100), alt('getByText', 75)]);
+    expect(rec.recommended?.method).toBe('getByTestId');
+    expect(rec.preservesConvention).toBe(true);
+    expect(rec.hasDurableAlternative).toBe(false);
+  });
+
+  test('falls back to the most stable when the failing method is unknown', () => {
+    const rec = recommendLocatorFix(null, [alt('getByTestId', 100), alt('getByText', 75)]);
+    expect(rec.recommended?.method).toBe('getByTestId');
+    expect(rec.preservesConvention).toBe(false);
+  });
+
+  test('returns nulls for an empty alternative list', () => {
+    const rec = recommendLocatorFix('getByRole', []);
+    expect(rec.recommended).toBeNull();
+    expect(rec.durable).toBeNull();
+    expect(rec.preservesConvention).toBe(false);
+    expect(rec.hasDurableAlternative).toBe(false);
+    expect(rec.suggestAddTestId).toBe(false);
+  });
+
+  test('keeps a same-method pick at exactly the stability floor', () => {
+    expect(CONVENTION_STABILITY_FLOOR).toBe(50);
+    const rec = recommendLocatorFix('getByText', [alt('getByTestId', 100), alt('getByText', 50)]);
+    expect(rec.recommended?.method).toBe('getByText');
+    expect(rec.preservesConvention).toBe(true);
   });
 });
