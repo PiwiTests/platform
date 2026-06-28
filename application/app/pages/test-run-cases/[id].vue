@@ -321,7 +321,7 @@ function copyFailure() {
         <template #tab-error>
           <TestCaseErrorCard v-if="testCase?.error" :cluster="failureCluster" />
 
-          <TestCaseLocatorHealing
+          <LocatorHealingPanel
             v-if="testCase?.error && testCase.testRun?.id"
             :run-id="testCase.testRun.id"
             :test-runs-case-id="Number(testCaseId)"

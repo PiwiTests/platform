@@ -179,7 +179,7 @@ const breadcrumbItems = computed(() => [
             </SectionCard>
 
             <!-- Locator healing: alternative suggestions for the failing locator -->
-            <ClusterLocatorHealing
+            <LocatorHealingPanel
               v-if="cluster.affectedTestCases?.length && cluster.affectedTestCases[0]?.recentTestRunsCaseId"
               :run-id="cluster.lastSeenRunId"
               :test-runs-case-id="cluster.affectedTestCases[0].recentTestRunsCaseId"
