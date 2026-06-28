@@ -102,6 +102,7 @@ Shows everything about a single test execution:
 - **HTML report** — direct link to the specific test in the full HTML report (with screenshots, video, and interactive trace viewer)
 - **Traces** — attached trace files with "View trace" buttons that open them in the Playwright trace viewer (trace.playwright.dev), plus download buttons; while the parent run is still in progress, traces and attachments appear live as soon as each test uploads them
 - **Error details** — full error message with copy button and expandable view for long errors; if the test belongs to a failure cluster, a context row shows how many other tests in the same run share the same root cause
+- **Alternative locators** — when the failure is a broken locator, ranked replacement locators with stability scores and a highlighted recommended fix (see [locator healing](./reporter#locator-healing)); shown only when prior-run or ARIA-snapshot data is available
 - **Performance hints** — actionable suggestions for slow navigations, flaky tests, slow assertions, and long step sequences
 - **Steps** — execution steps with category badges and individual timing
 - **Web Vitals** — TTFB, FCP, DOMContentLoaded, etc. with color-coded thresholds (green/amber/red)
@@ -152,7 +153,7 @@ Configure LLM-based failure analysis:
 
 Each failure cluster has a dedicated page (`/failure-clusters/:id`) with three tabs:
 
-- **Overview** — signature, error type, selector, occurrence count, first/last seen runs, sample raw error, and list of affected test cases with their latest run status
+- **Overview** — signature, error type, selector, occurrence count, first/last seen runs, sample raw error, list of affected test cases with their latest run status, and — for broken-locator failures — an **Alternative locators** panel with ranked replacements and a recommended fix (see [locator healing](./reporter#locator-healing))
 - **Triage** — set cluster status (open / resolved / ignored) and write an internal triage note
 - **AI diagnosis** — run an LLM diagnosis of the cluster with full control over the context sent to the LLM:
   - **Baseline commit picker** — select the commit to compare against so the diagnosis includes the relevant SCM diff; pin a commit to persist it for all future diagnoses of this cluster

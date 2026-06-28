@@ -56,6 +56,7 @@ export default defineConfig({
 | `collectScmInfo`            | boolean  | `true`                    | Auto-collect git commit, branch, author                                                     |
 | `collectCiInfo`             | boolean  | `true`                    | Auto-collect CI environment info                                                            |
 | `collectPerformanceMetrics` | boolean  | `true`                    | Collect step timings, network requests and web vitals                                       |
+| `captureLocators`           | boolean  | `true`                    | Capture per-action element snapshots that power [locator healing](#locator-healing). Auto-disabled when `collectPerformanceMetrics` is `false` |
 | `username`                  | string   | —                         | Username for dashboard login (use `apiKey` instead when possible)                           |
 | `password`                  | string   | —                         | Password for dashboard login (used with `username`)                                         |
 | `apiKey`                    | string   | —                         | API key for authentication (preferred over `username`/`password` for CI)                    |
@@ -82,6 +83,7 @@ Every option above can also be set via a `PIWI_*` environment variable. Env vars
 | `PIWI_LIVE_FILE_UPLOADS`        | `liveFileUploads`       | `true`/`false`  |
 | `PIWI_UPLOAD_TRACES`            | `uploadTraces`          | `true`/`false`  |
 | `PIWI_UPLOAD_REPORT`            | `uploadReport`          | `true`/`false`  |
+| `PIWI_CAPTURE_LOCATORS`         | `captureLocators`       | `true`/`false`  |
 | `PIWI_VERBOSE`                  | `verbose`               | `true`/`false`  |
 
 `wrapConfig` forwards the same `PIWI_*` vars into the isolated `global-setup` process so the run registration step shares the reporter's server/auth config.
@@ -281,8 +283,28 @@ import { test, expect } from '@piwitests/reporter/fixtures'
 - **Network requests** — method, URL, status code, duration, resource type. Aggregated on the dashboard into a *Slow API endpoints* table grouped by `METHOD + normalized route` (e.g. `/api/users/:id`).
 - **Browser Web Vitals** — TTFB, DOM Interactive, DOMContentLoaded, Load Complete, First Paint, First Contentful Paint — displayed with color-coded thresholds.
 - **ARIA snapshot** — Captured automatically on failed/timed-out tests via `page.locator(':root').ariaSnapshot()`. Included in both the debug prompt (`/test-cases/:id`) and the cluster AI diagnosis context.
+- **Locator snapshots** — For each acted-on element (click, fill, etc.) the fixtures record the element's attributes and a ranked list of alternative locators, stamped with the call site. These power [locator healing](#locator-healing) when a locator later breaks. Gated by `captureLocators` (default on).
 
-All three are only collected when `collectPerformanceMetrics` is `true` (the default). If the ARIA snapshot does not appear in the dashboard, the most likely cause is that your test files do not import `test` from the package's fixtures subpath (see options A/B above).
+These are only collected when `collectPerformanceMetrics` is `true` (the default). If the ARIA snapshot does not appear in the dashboard, the most likely cause is that your test files do not import `test` from the package's fixtures subpath (see options A/B above).
+
+## Locator healing
+
+When a locator stops matching — a button was renamed, an element moved, a hashed class changed — Piwi suggests concrete, ranked replacements instead of leaving you to guess.
+
+While tests run, the fixtures wrap Playwright's locator methods (`getByRole`, `getByTestId`, `locator`, …) and, after each successful action, record the target element's attributes plus a list of alternative locators ranked by a stability score (`data-testid` = 100, role + accessible name ≈ 90, semantic CSS ≈ 35–40, hash-suffixed ≈ 10). One row per call site is upserted into the `locator_snapshots` table, so the latest known-good snapshot for every locator is always available.
+
+When a locator later fails, the server resolves replacements through a ladder, most-trustworthy first:
+
+1. **Prior run** — the exact call site (`file:line:col`) had a passing snapshot; its pre-captured alternatives are reused.
+2. **Element match** — the old element appears renamed or moved (its identity is gone from the failing page's ARIA snapshot), so *fresh* locators are generated for the element it most likely became.
+3. **Fingerprint** — the call site shifted lines, but a locator-signature match finds the prior snapshot anyway.
+4. **ARIA fallback** — no prior snapshot exists; limited suggestions are derived from the failure-time ARIA snapshot (no HTML attributes).
+
+The result is shown as an **Alternative locators** panel on the test-case and failure-cluster pages, and folded into the AI diagnosis context so the model recommends a grounded fix (see [AI diagnosis](./ai-diagnosis#locator-healing)). A single **recommended fix** is highlighted — it keeps your original locator *style* where that style is stable enough (a minimal, idiomatic edit), and escalates to the sturdiest alternative (or advises adding a `data-testid`) only when the original style has nothing stable to fall back on.
+
+Capture adds a small per-action cost (one DOM read, sometimes an extra ARIA snapshot) in the test worker. Turn it off with `captureLocators: false` or `PIWI_CAPTURE_LOCATORS=false`; it is also disabled automatically whenever `collectPerformanceMetrics` is `false`.
+
+> Healing is read-only — it never rewrites your test. It surfaces the replacement so you can apply it yourself.
 
 ## Automatic metadata collection
 
