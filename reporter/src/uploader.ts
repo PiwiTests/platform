@@ -22,6 +22,7 @@ export interface RunPayload {
   totalTests: number;
   passedTests: number;
   failedTests: number;
+  timedOutTests?: number;
   skippedTests: number;
   /** Tests that never executed (cut short by `maxFailures` or a serial-group failure) */
   didNotRunTests?: number;

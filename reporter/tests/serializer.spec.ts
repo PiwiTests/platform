@@ -229,6 +229,7 @@ describe('serializeRun', () => {
       'skippedTests',
       'startTime',
       'status',
+      'timedOutTests',
       'totalTests',
     ]);
   });
