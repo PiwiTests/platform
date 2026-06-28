@@ -1187,49 +1187,406 @@ for (const u of DEMO_USERS) {
 }
 
 // ── Locator healing snapshots ───────────────────────────────────────────────
-// Seeded for cluster #1's checkout cases so the "Alternative locators" panel
-// shows pre-captured suggestions for the failing
-// getByRole('button', { name: 'Pay' }) at tests/checkout/checkout.spec.ts:42:18.
-// The location matches the synthetic stack frame in the cluster error, so the
-// server's exact-location lookup resolves these rows.
+// One row per (test_case_id, location) — the same schema as the live server.
+// The healing lookup ladder:
+//   L1: exact file:line:col match → used for cluster #1 (checkout Pay button).
+//   L2: locator signature (method + string literals) → used for cluster #6
+//       (button strict-mode violation: getByRole('button') with no name filter).
+// The extra rows for passing interactions (add-to-cart, email, card, address)
+// show what the reporter captures from a full test run — they don't directly
+// serve the healing panel for these particular demo failures but make the data
+// realistic when browsing individual test-case detail pages.
 function locatorSig(method, strings) {
   return createHash('sha256')
     .update(`${method} ${JSON.stringify(strings)}`, 'utf-8')
     .digest('hex');
 }
 
-const CHECKOUT_PAY_ALTERNATIVES = [
+// Shared alternative lists — each sorted descending by stability score.
+const ALT_CHECKOUT_PAY = [
   { locator: "getByTestId('checkout-pay')", method: 'getByTestId', args: { testId: 'checkout-pay' }, score: 100 },
-  {
-    locator: "getByRole('button', { name: 'Pay now' })",
-    method: 'getByRole',
-    args: { role: 'button', name: 'Pay now' },
-    score: 90,
-  },
+  { locator: "getByRole('button', { name: 'Pay now' })", method: 'getByRole', args: { role: 'button', name: 'Pay now' }, score: 90 },
   { locator: "getByText('Pay now')", method: 'getByText', args: { text: 'Pay now' }, score: 75 },
   { locator: "locator('#checkout-pay')", method: 'locator', args: { selector: '#checkout-pay' }, score: 65 },
 ];
 
+const ALT_ADD_TO_CART = [
+  { locator: "getByTestId('add-to-cart-btn')", method: 'getByTestId', args: { testId: 'add-to-cart-btn' }, score: 100 },
+  { locator: "getByRole('button', { name: 'Add to cart' })", method: 'getByRole', args: { role: 'button', name: 'Add to cart' }, score: 90 },
+  { locator: "getByText('Add to cart')", method: 'getByText', args: { text: 'Add to cart' }, score: 75 },
+  { locator: "locator('#add-to-cart-btn')", method: 'locator', args: { selector: '#add-to-cart-btn' }, score: 65 },
+];
+
+const ALT_CHECKOUT_EMAIL = [
+  { locator: "getByTestId('email-input')", method: 'getByTestId', args: { testId: 'email-input' }, score: 100 },
+  { locator: "getByLabel('Email address')", method: 'getByLabel', args: { label: 'Email address' }, score: 85 },
+  { locator: "getByPlaceholder('your@email.com')", method: 'getByPlaceholder', args: { placeholder: 'your@email.com' }, score: 80 },
+  { locator: "locator('#checkout-email')", method: 'locator', args: { selector: '#checkout-email' }, score: 65 },
+];
+
+const ALT_CARD_NUMBER = [
+  { locator: "getByTestId('card-number')", method: 'getByTestId', args: { testId: 'card-number' }, score: 100 },
+  { locator: "getByLabel('Card number')", method: 'getByLabel', args: { label: 'Card number' }, score: 85 },
+  { locator: "getByPlaceholder('1234 5678 9012 3456')", method: 'getByPlaceholder', args: { placeholder: '1234 5678 9012 3456' }, score: 80 },
+  { locator: "locator('#card-number')", method: 'locator', args: { selector: '#card-number' }, score: 65 },
+];
+
+const ALT_CARD_EXPIRY = [
+  { locator: "getByTestId('card-expiry')", method: 'getByTestId', args: { testId: 'card-expiry' }, score: 100 },
+  { locator: "getByLabel('Expiry date')", method: 'getByLabel', args: { label: 'Expiry date' }, score: 85 },
+  { locator: "getByPlaceholder('MM / YY')", method: 'getByPlaceholder', args: { placeholder: 'MM / YY' }, score: 80 },
+];
+
+const ALT_PAYPAL_BTN = [
+  { locator: "getByTestId('paypal-btn')", method: 'getByTestId', args: { testId: 'paypal-btn' }, score: 100 },
+  { locator: "getByRole('button', { name: 'Continue with PayPal' })", method: 'getByRole', args: { role: 'button', name: 'Continue with PayPal' }, score: 90 },
+  { locator: "getByText('Continue with PayPal')", method: 'getByText', args: { text: 'Continue with PayPal' }, score: 75 },
+  { locator: "locator('.paypal-button')", method: 'locator', args: { selector: '.paypal-button' }, score: 30 },
+];
+
+const ALT_CART_REMOVE = [
+  { locator: "getByTestId('remove-item-btn')", method: 'getByTestId', args: { testId: 'remove-item-btn' }, score: 100 },
+  { locator: "getByRole('button', { name: 'Remove' })", method: 'getByRole', args: { role: 'button', name: 'Remove' }, score: 90 },
+  { locator: "getByText('Remove')", method: 'getByText', args: { text: 'Remove' }, score: 75 },
+  { locator: "locator('.cart-item-remove')", method: 'locator', args: { selector: '.cart-item-remove' }, score: 30 },
+];
+
+const ALT_FULL_NAME = [
+  { locator: "getByTestId('fullname-input')", method: 'getByTestId', args: { testId: 'fullname-input' }, score: 100 },
+  { locator: "getByLabel('Full name')", method: 'getByLabel', args: { label: 'Full name' }, score: 85 },
+  { locator: "getByPlaceholder('John Smith')", method: 'getByPlaceholder', args: { placeholder: 'John Smith' }, score: 80 },
+  { locator: "locator('#full-name')", method: 'locator', args: { selector: '#full-name' }, score: 65 },
+];
+
+const ALT_STREET_ADDR = [
+  { locator: "getByTestId('street-address')", method: 'getByTestId', args: { testId: 'street-address' }, score: 100 },
+  { locator: "getByLabel('Street address')", method: 'getByLabel', args: { label: 'Street address' }, score: 85 },
+  { locator: "getByPlaceholder('123 Main St')", method: 'getByPlaceholder', args: { placeholder: '123 Main St' }, score: 80 },
+  { locator: "locator('#street-address')", method: 'locator', args: { selector: '#street-address' }, score: 65 },
+];
+
+const ALT_SAVE_ADDRESS = [
+  { locator: "getByTestId('save-address-btn')", method: 'getByTestId', args: { testId: 'save-address-btn' }, score: 100 },
+  { locator: "getByRole('button', { name: 'Save address' })", method: 'getByRole', args: { role: 'button', name: 'Save address' }, score: 90 },
+  { locator: "getByText('Save address')", method: 'getByText', args: { text: 'Save address' }, score: 75 },
+];
+
+// Button strict-mode: the test called getByRole('button') without a name filter,
+// resolving to 3 elements. Alternatives narrow the selector to a specific button.
+const ALT_BUTTON_STRICT = [
+  { locator: "getByTestId('primary-btn')", method: 'getByTestId', args: { testId: 'primary-btn' }, score: 100 },
+  { locator: "getByRole('button', { name: 'Submit' })", method: 'getByRole', args: { role: 'button', name: 'Submit' }, score: 90 },
+  { locator: "getByText('Submit')", method: 'getByText', args: { text: 'Submit' }, score: 75 },
+  { locator: "locator('.btn-primary')", method: 'locator', args: { selector: '.btn-primary' }, score: 30 },
+];
+
 let lsId = 1;
-const LOCATOR_SNAPSHOTS = [1, 2].map((testCaseId) => ({
-  id: lsId++,
-  test_case_id: testCaseId,
-  location: 'tests/checkout/checkout.spec.ts:42:18',
-  used_method: 'getByRole',
-  used_args: ['button', { name: 'Pay' }],
-  used_args_fp: locatorSig('getByRole', ['button', 'Pay']),
-  element_tag: 'button',
-  element_attrs: {
-    id: 'checkout-pay',
-    'data-testid': 'checkout-pay',
-    accessibleName: 'Pay now',
-    center: { x: 640, y: 820 },
+const LOCATOR_SNAPSHOTS = [
+  // ── Cluster #1: checkout Pay button (test_case_ids 1 & 2) ─────────────────
+  // L1 exact-location match: the error text's synthetic stack frame is
+  // "at tests/checkout/checkout.spec.ts:42:18", so these rows are found immediately.
+  ...([1, 2].map((testCaseId) => ({
+    id: lsId++,
+    test_case_id: testCaseId,
+    location: 'tests/checkout/checkout.spec.ts:42:18',
+    used_method: 'getByRole',
+    used_args: ['button', { name: 'Pay' }],
+    used_args_fp: locatorSig('getByRole', ['button', 'Pay']),
+    element_tag: 'button',
+    element_attrs: {
+      id: 'checkout-pay',
+      'data-testid': 'checkout-pay',
+      accessibleName: 'Pay now',
+      center: { x: 640, y: 820 },
+    },
+    element_text: 'Pay now',
+    alternatives: ALT_CHECKOUT_PAY,
+    last_seen_run_id: null,
+    last_seen_at: ts('2025-05-20') * 1000,
+  }))),
+
+  // ── Additional captures from the credit-card checkout flow (test_case_id 1) ─
+  // Shows that the reporter captures every locator action in a passing run,
+  // not just the one that later fails — these populate the test-case detail page.
+  {
+    id: lsId++,
+    test_case_id: 1,
+    location: 'tests/checkout/checkout.spec.ts:15:14',
+    used_method: 'getByRole',
+    used_args: ['button', { name: 'Add to cart' }],
+    used_args_fp: locatorSig('getByRole', ['button', 'Add to cart']),
+    element_tag: 'button',
+    element_attrs: {
+      id: 'add-to-cart-btn',
+      'data-testid': 'add-to-cart-btn',
+      class: 'btn btn-primary add-to-cart',
+      accessibleName: 'Add to cart',
+      center: { x: 580, y: 440 },
+    },
+    element_text: 'Add to cart',
+    alternatives: ALT_ADD_TO_CART,
+    last_seen_run_id: null,
+    last_seen_at: ts('2025-05-20') * 1000,
   },
-  element_text: 'Pay now',
-  alternatives: CHECKOUT_PAY_ALTERNATIVES,
-  last_seen_run_id: null,
-  last_seen_at: ts('2025-05-20') * 1000,
-}));
+  {
+    id: lsId++,
+    test_case_id: 1,
+    location: 'tests/checkout/checkout.spec.ts:23:10',
+    used_method: 'getByLabel',
+    used_args: ['Email address'],
+    used_args_fp: locatorSig('getByLabel', ['Email address']),
+    element_tag: 'input',
+    element_attrs: {
+      type: 'email',
+      id: 'checkout-email',
+      'data-testid': 'email-input',
+      placeholder: 'your@email.com',
+      autocomplete: 'email',
+      center: { x: 640, y: 540 },
+    },
+    element_text: '',
+    alternatives: ALT_CHECKOUT_EMAIL,
+    last_seen_run_id: null,
+    last_seen_at: ts('2025-05-20') * 1000,
+  },
+  {
+    id: lsId++,
+    test_case_id: 1,
+    location: 'tests/checkout/checkout.spec.ts:28:10',
+    used_method: 'getByLabel',
+    used_args: ['Card number'],
+    used_args_fp: locatorSig('getByLabel', ['Card number']),
+    element_tag: 'input',
+    element_attrs: {
+      type: 'text',
+      id: 'card-number',
+      'data-testid': 'card-number',
+      placeholder: '1234 5678 9012 3456',
+      autocomplete: 'cc-number',
+      center: { x: 640, y: 620 },
+    },
+    element_text: '',
+    alternatives: ALT_CARD_NUMBER,
+    last_seen_run_id: null,
+    last_seen_at: ts('2025-05-20') * 1000,
+  },
+  {
+    id: lsId++,
+    test_case_id: 1,
+    location: 'tests/checkout/checkout.spec.ts:31:10',
+    used_method: 'getByPlaceholder',
+    used_args: ['MM / YY'],
+    used_args_fp: locatorSig('getByPlaceholder', ['MM / YY']),
+    element_tag: 'input',
+    element_attrs: {
+      type: 'text',
+      id: 'card-expiry',
+      'data-testid': 'card-expiry',
+      placeholder: 'MM / YY',
+      autocomplete: 'cc-exp',
+      center: { x: 480, y: 660 },
+    },
+    element_text: '',
+    alternatives: ALT_CARD_EXPIRY,
+    last_seen_run_id: null,
+    last_seen_at: ts('2025-05-20') * 1000,
+  },
+
+  // ── Additional captures from the PayPal checkout flow (test_case_id 2) ─────
+  {
+    id: lsId++,
+    test_case_id: 2,
+    location: 'tests/checkout/checkout.spec.ts:15:14',
+    used_method: 'getByRole',
+    used_args: ['button', { name: 'Add to cart' }],
+    used_args_fp: locatorSig('getByRole', ['button', 'Add to cart']),
+    element_tag: 'button',
+    element_attrs: {
+      id: 'add-to-cart-btn',
+      'data-testid': 'add-to-cart-btn',
+      class: 'btn btn-primary add-to-cart',
+      accessibleName: 'Add to cart',
+      center: { x: 580, y: 440 },
+    },
+    element_text: 'Add to cart',
+    alternatives: ALT_ADD_TO_CART,
+    last_seen_run_id: null,
+    last_seen_at: ts('2025-05-20') * 1000,
+  },
+  {
+    id: lsId++,
+    test_case_id: 2,
+    location: 'tests/checkout/checkout.spec.ts:23:10',
+    used_method: 'getByLabel',
+    used_args: ['Email address'],
+    used_args_fp: locatorSig('getByLabel', ['Email address']),
+    element_tag: 'input',
+    element_attrs: {
+      type: 'email',
+      id: 'checkout-email',
+      'data-testid': 'email-input',
+      placeholder: 'your@email.com',
+      autocomplete: 'email',
+      center: { x: 640, y: 540 },
+    },
+    element_text: '',
+    alternatives: ALT_CHECKOUT_EMAIL,
+    last_seen_run_id: null,
+    last_seen_at: ts('2025-05-20') * 1000,
+  },
+  {
+    id: lsId++,
+    test_case_id: 2,
+    location: 'tests/checkout/checkout.spec.ts:36:14',
+    used_method: 'getByRole',
+    used_args: ['button', { name: 'Continue with PayPal' }],
+    used_args_fp: locatorSig('getByRole', ['button', 'Continue with PayPal']),
+    element_tag: 'button',
+    element_attrs: {
+      'data-testid': 'paypal-btn',
+      class: 'paypal-button btn',
+      accessibleName: 'Continue with PayPal',
+      center: { x: 640, y: 740 },
+    },
+    element_text: 'Continue with PayPal',
+    alternatives: ALT_PAYPAL_BTN,
+    last_seen_run_id: null,
+    last_seen_at: ts('2025-05-20') * 1000,
+  },
+
+  // ── Cart add-to-cart (test_case_id 6 — should add item to cart) ──────────
+  {
+    id: lsId++,
+    test_case_id: 6,
+    location: 'tests/checkout/cart.spec.ts:12:14',
+    used_method: 'getByRole',
+    used_args: ['button', { name: 'Add to cart' }],
+    used_args_fp: locatorSig('getByRole', ['button', 'Add to cart']),
+    element_tag: 'button',
+    element_attrs: {
+      id: 'add-to-cart-btn',
+      'data-testid': 'add-to-cart-btn',
+      class: 'btn btn-primary add-to-cart',
+      accessibleName: 'Add to cart',
+      center: { x: 580, y: 390 },
+    },
+    element_text: 'Add to cart',
+    alternatives: ALT_ADD_TO_CART,
+    last_seen_run_id: null,
+    last_seen_at: ts('2025-05-18') * 1000,
+  },
+
+  // ── Cart remove (test_case_id 7 — should remove item from cart) ──────────
+  {
+    id: lsId++,
+    test_case_id: 7,
+    location: 'tests/checkout/cart.spec.ts:22:14',
+    used_method: 'getByRole',
+    used_args: ['button', { name: 'Remove' }],
+    used_args_fp: locatorSig('getByRole', ['button', 'Remove']),
+    element_tag: 'button',
+    element_attrs: {
+      'data-testid': 'remove-item-btn',
+      class: 'btn-icon cart-item-remove',
+      'aria-label': 'Remove item',
+      accessibleName: 'Remove',
+      center: { x: 980, y: 320 },
+    },
+    element_text: 'Remove',
+    alternatives: ALT_CART_REMOVE,
+    last_seen_run_id: null,
+    last_seen_at: ts('2025-05-18') * 1000,
+  },
+
+  // ── Shipping address form (test_case_id 11 — should fill and save shipping address) ─
+  {
+    id: lsId++,
+    test_case_id: 11,
+    location: 'tests/checkout/address.spec.ts:15:10',
+    used_method: 'getByLabel',
+    used_args: ['Full name'],
+    used_args_fp: locatorSig('getByLabel', ['Full name']),
+    element_tag: 'input',
+    element_attrs: {
+      type: 'text',
+      id: 'full-name',
+      'data-testid': 'fullname-input',
+      placeholder: 'John Smith',
+      autocomplete: 'name',
+      center: { x: 640, y: 280 },
+    },
+    element_text: '',
+    alternatives: ALT_FULL_NAME,
+    last_seen_run_id: null,
+    last_seen_at: ts('2025-05-17') * 1000,
+  },
+  {
+    id: lsId++,
+    test_case_id: 11,
+    location: 'tests/checkout/address.spec.ts:17:10',
+    used_method: 'getByLabel',
+    used_args: ['Street address'],
+    used_args_fp: locatorSig('getByLabel', ['Street address']),
+    element_tag: 'input',
+    element_attrs: {
+      type: 'text',
+      id: 'street-address',
+      'data-testid': 'street-address',
+      placeholder: '123 Main St',
+      autocomplete: 'street-address',
+      center: { x: 640, y: 340 },
+    },
+    element_text: '',
+    alternatives: ALT_STREET_ADDR,
+    last_seen_run_id: null,
+    last_seen_at: ts('2025-05-17') * 1000,
+  },
+  {
+    id: lsId++,
+    test_case_id: 11,
+    location: 'tests/checkout/address.spec.ts:22:14',
+    used_method: 'getByRole',
+    used_args: ['button', { name: 'Save address' }],
+    used_args_fp: locatorSig('getByRole', ['button', 'Save address']),
+    element_tag: 'button',
+    element_attrs: {
+      'data-testid': 'save-address-btn',
+      class: 'btn btn-primary',
+      accessibleName: 'Save address',
+      center: { x: 640, y: 540 },
+    },
+    element_text: 'Save address',
+    alternatives: ALT_SAVE_ADDRESS,
+    last_seen_run_id: null,
+    last_seen_at: ts('2025-05-17') * 1000,
+  },
+
+  // ── Cluster #6: button strict-mode violation (test_case_id 27) ────────────
+  // The error text: "getByRole('button') resolved to 3 elements at tests/ui/button.spec.ts:55"
+  // extractErrorLocation returns null (frame has no :col), so L1 misses.
+  // extractLeafSelector returns "getByRole('button')" → L2 signature matches
+  // this row (used_args_fp = locatorSig('getByRole', ['button'])).
+  // The alternatives show more specific locators to fix the strict-mode violation.
+  {
+    id: lsId++,
+    test_case_id: 27,
+    location: 'tests/ui/button.spec.ts:12:14',
+    used_method: 'getByRole',
+    used_args: ['button'],
+    used_args_fp: locatorSig('getByRole', ['button']),
+    element_tag: 'button',
+    element_attrs: {
+      'data-testid': 'primary-btn',
+      class: 'btn btn-primary',
+      accessibleName: 'Submit',
+      center: { x: 320, y: 280 },
+    },
+    element_text: 'Submit',
+    alternatives: ALT_BUTTON_STRICT,
+    last_seen_run_id: null,
+    last_seen_at: ts('2025-05-16') * 1000,
+  },
+];
 
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
@@ -1325,3 +1682,4 @@ console.log(`   Reports    : ${REPORTS.length}`);
 console.log(`   Clusters   : ${FAILURE_CLUSTERS.length}`);
 console.log(`   Diagnoses  : ${FAILURE_DIAGNOSES.length}`);
 console.log(`   Links      : ${ENTITY_LINKS.length}`);
+console.log(`   LocatorSnap: ${LOCATOR_SNAPSHOTS.length}`);
