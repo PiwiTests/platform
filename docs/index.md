@@ -49,7 +49,7 @@ features:
     details: Local file storage by default, or S3-compatible storage (AWS S3, MinIO, DigitalOcean Spaces, Cloudflare R2).
   - icon: 🐳
     title: Docker support
-    details: Pre-built multi-platform container images (~200 MB) available on GitHub Container Registry.
+    details: Pre-built multi-platform container images (~400 MB) available on Docker Hub.
 ---
 
 <div class="screenshots">
