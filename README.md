@@ -32,6 +32,7 @@ Native Playwright HTML reports are great for local debugging — but they're eph
 - ⚡ **Live streaming** — watch runs in real time as CI executes; no polling, no waiting.
 - 🔗 **Failure clustering** — failures sharing a root cause are auto-grouped by error fingerprint.
 - 🤖 **AI diagnosis** — LLM analysis of a failure cluster, grounded in your actual SCM diff.
+- 🩹 **Locator healing** — when a locator breaks, ranked replacement locators captured from prior passing runs, with a recommended fix.
 - 📈 **Performance & flaky tracking** — P90 duration trends, slowest tests, composite flakiness scores.
 - 🔌 **Built for automation** — drop-in reporter, REST API, OpenAPI docs, and an MCP server for AI agents.
 - ☁️ **Zero lock-in** — self-hosted with Docker; your data in SQLite/PostgreSQL and local/S3 storage.

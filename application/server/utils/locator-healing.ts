@@ -15,7 +15,7 @@ import {
   locatorSignature,
   recommendLocatorFix,
 } from '../../shared/locator-healing';
-import { elementMatchAlternatives, type ElementFingerprint } from '../../shared/locator-fingerprint';
+import { elementMatchAlternatives, parseAriaCandidates, type ElementFingerprint } from '../../shared/locator-fingerprint';
 import type { RankedLocator, LocatorSnapshot, LocatorFixRecommendation } from '../../shared/locator-healing.types';
 import type { DrizzleDB } from '../../shared/handlers/db';
 
@@ -213,33 +213,28 @@ function generateFromAriaSnapshot(ariaSnapshot: string | null): RankedLocator[] 
     }
   };
 
-  const lines = ariaSnapshot.split('\n');
+  const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
-  for (const line of lines) {
-    // Parse "  - button \"Submit order\" [ref=e12]"
-    const m = line.match(/- (\w+)(?:\s+"([^"]*)")?/);
-    if (!m) continue;
-    const role = m[1]!;
-    const name = m[2] || null;
+  // Reuse the shared ARIA parser so escaped quotes in accessible names are
+  // unescaped consistently (the previous inline regex dropped them) and the
+  // structural-wrapper filtering stays in one place.
+  for (const { role, name } of parseAriaCandidates(ariaSnapshot)) {
+    if (!name) continue;
 
-    if (name) {
-      const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    add({
+      locator: `getByRole('${role}', { name: '${esc(name)}' })`,
+      method: 'getByRole',
+      args: { role, name },
+      score: 40,
+    });
 
+    if (['textbox', 'combobox', 'searchbox'].includes(role)) {
       add({
-        locator: `getByRole('${role}', { name: '${esc(name)}' })`,
-        method: 'getByRole',
-        args: { role, name },
-        score: 40,
+        locator: `getByLabel('${esc(name)}')`,
+        method: 'getByLabel',
+        args: { label: name },
+        score: 35,
       });
-
-      if (['textbox', 'combobox', 'searchbox'].includes(role)) {
-        add({
-          locator: `getByLabel('${esc(name)}')`,
-          method: 'getByLabel',
-          args: { label: name },
-          score: 35,
-        });
-      }
     }
   }
 
@@ -408,30 +403,43 @@ function parseAlternativesColumn(row: LocatorSnapshotRow): RankedLocator[] | nul
  *
  * Every location seen this run is preserved — including failed actions whose
  * placeholder carries a location but no element — so a locator that failed this
- * run keeps its prior-success row for the healing lookup. Only locations absent
- * from the payload (removed from the test) are purged.
+ * run keeps its prior-success row for the healing lookup.
+ *
+ * Stale-location purge is gated on each case's `purge` flag (set when its run
+ * completed, i.e. passed): a failed/timed-out run can stop before later locators
+ * execute, and those unreached locations must NOT be mistaken for "removed from
+ * the test" and deleted. Rows are also deduped by (caseId, location) before the
+ * upsert — the same call site acted on twice (a loop, or a page-object method
+ * called more than once) captures one location repeatedly, and a single
+ * multi-row `ON CONFLICT DO UPDATE` that targets the same key twice is rejected
+ * by PostgreSQL ("cannot affect row a second time"); the latest capture wins.
  */
 export async function upsertLocatorSnapshots(
   db: DrizzleDB,
-  perCase: Array<{ caseId: number; snapshots: LocatorSnapshot[] | null | undefined }>,
+  perCase: Array<{ caseId: number; snapshots: LocatorSnapshot[] | null | undefined; purge?: boolean }>,
   runId: number,
 ): Promise<void> {
-  const rows: Array<typeof locatorSnapshots.$inferInsert> = [];
+  // Keyed by `${caseId} ${location}` so a repeated call site yields one row.
+  const rowByKey = new Map<string, typeof locatorSnapshots.$inferInsert>();
   const seenByCase = new Map<number, Set<string>>();
+  // Cases whose run completed (passed) — only these may purge stale locations.
+  const purgeableCases = new Set<number>();
 
-  for (const { caseId, snapshots } of perCase) {
-    if (!snapshots?.length) continue;
+  for (const { caseId, snapshots, purge } of perCase) {
+    // Tolerate a malformed/non-array payload field without failing run ingest.
+    if (!Array.isArray(snapshots) || snapshots.length === 0) continue;
 
     const seen = seenByCase.get(caseId) ?? new Set<string>();
     for (const snap of snapshots) {
       if (snap.location) seen.add(snap.location);
     }
     if (seen.size > 0) seenByCase.set(caseId, seen);
+    if (purge) purgeableCases.add(caseId);
 
     const captured = snapshots.filter((s) => s.element && s.location);
     const fps = await Promise.all(captured.map((s) => locatorSignature(s.used.method, s.used.args)));
     captured.forEach((snap, idx) => {
-      rows.push({
+      rowByKey.set(`${caseId} ${snap.location}`, {
         testCaseId: caseId,
         location: snap.location!,
         usedMethod: snap.used.method,
@@ -451,6 +459,7 @@ export async function upsertLocatorSnapshots(
     });
   }
 
+  const rows = [...rowByKey.values()];
   if (rows.length > 0) {
     await db
       .insert(locatorSnapshots)
@@ -471,8 +480,11 @@ export async function upsertLocatorSnapshots(
       });
   }
 
-  // Purge locations no longer exercised (locator removed/moved in the test).
+  // Purge locations no longer exercised (locator removed/moved in the test) —
+  // only for cases whose run completed, so a run that failed before reaching a
+  // locator doesn't delete that locator's still-valid prior-success row.
   for (const [caseId, locs] of seenByCase) {
+    if (!purgeableCases.has(caseId)) continue;
     await db
       .delete(locatorSnapshots)
       .where(and(eq(locatorSnapshots.testCaseId, caseId), notInArray(locatorSnapshots.location, [...locs])));

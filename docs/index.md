@@ -38,6 +38,9 @@ features:
   - icon: 🔬
     title: Browser Web Vitals
     details: Capture TTFB, DOMContentLoaded, FCP and more via the Performance API, displayed with color-coded thresholds.
+  - icon: 🩹
+    title: Locator healing
+    details: When a locator breaks, get ranked replacement locators captured from prior passing runs — with a convention-preserving recommended fix and a data-testid nudge when nothing is stable.
   - icon: 🔌
     title: Playwright reporter
     details: Drop-in custom reporter that automatically uploads results, HTML reports, and trace files after each run.

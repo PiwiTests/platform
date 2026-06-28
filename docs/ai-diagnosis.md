@@ -107,6 +107,12 @@ The real power is feeding the model the code that changed. On a cluster page you
 - **Browse and cherry-pick commits** — add the full diff of specific commits to the context for targeted analysis.
 - **Preview the exact context** that will be sent before running (`GET /api/failure-clusters/[id]/context`), so there are no surprises about what leaves your server.
 
+## Locator healing
+
+When the failure is a broken locator, the context includes an **Alternative Locators** section: ranked replacement locators sourced from a prior passing run (highest confidence — captured against the real DOM), from a fresh match of the renamed/moved element on the failing page, or from the failure-time ARIA snapshot. The section also names a single **recommended fix** — convention-preserving where the original locator style is stable enough — which the model is instructed to use verbatim in `suggestedFix.code` rather than fabricating a locator. When nothing scores as stable, it advises adding a `data-testid` to the application as the durable fix.
+
+This evidence is generated automatically from the [locator snapshots](./reporter#locator-healing) the reporter captures while tests run; no configuration is required beyond the default-on `captureLocators` reporter option. The same data drives the standalone **Alternative locators** panel on the test-case and cluster pages.
+
 ## Custom instructions
 
 Tailor the analysis to your stack with **global** instructions (Settings → AI) and **per-project** instructions. Use them to describe your architecture, common false positives, or house style for fixes.
