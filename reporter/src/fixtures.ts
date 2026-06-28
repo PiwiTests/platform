@@ -123,9 +123,12 @@ export const dashboardFixtures: Fixtures = {
                   center: attrs.center,
                 });
                 const isFormField = ['input', 'select', 'textarea'].includes(attrs.tagName);
+                // Bound with a timeout: without it, ariaSnapshot waits up to the
+                // test timeout when the page is mid-navigation, which hangs the
+                // fixture teardown that drains these capture promises.
                 const aria =
                   role || isFormField
-                    ? ((await target.ariaSnapshot({ ref: true }).catch(() => null)) as string | null)
+                    ? ((await target.ariaSnapshot({ ref: true, timeout: 500 }).catch(() => null)) as string | null)
                     : null;
 
                 const accessibleName =
@@ -245,7 +248,10 @@ export const dashboardFixtures: Fixtures = {
     await Promise.allSettled(pendingHandlers);
 
     // ── Attach locator snapshots ──────────────────────────────────────────
-    await Promise.allSettled(capturePromises);
+    // Cap the drain so a stuck capture (e.g. a navigation in flight) can never
+    // hang teardown past the test timeout; per-action evaluate/ariaSnapshot are
+    // already bounded, this is a backstop.
+    await Promise.race([Promise.allSettled(capturePromises), new Promise((resolve) => setTimeout(resolve, 2000))]);
 
     if (capturedLocators.length > 0) {
       await testInfo.attach('piwi-dashboard-locators', {
