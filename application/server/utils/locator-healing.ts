@@ -6,7 +6,7 @@
  * "element changed" case), fuzzy matching by locator signature, and ARIA
  * snapshot generation when no prior snapshot exists.
  */
-import { and, eq, notInArray, sql } from 'drizzle-orm';
+import { and, eq, notInArray, sql, inArray } from 'drizzle-orm';
 import { locatorSnapshots, testRunsCases, type LocatorSnapshotRow } from '../database/schema';
 import { extractLeafSelector, extractTopFrameFile } from '../../shared/error-fingerprint';
 import {
@@ -379,6 +379,90 @@ export async function getLocatorHealing(db: DrizzleDB, testRunsCaseId: number): 
   }
 
   return buildHealingResult(failingLocator, null, null, 'none');
+}
+
+/**
+ * Batch variant: fetch locator healing for multiple test-run-case IDs in
+ * two queries instead of N * 2. Used by the MCP `get_cluster` tool to avoid
+ * N+1 overhead when attaching healing to affected cases.
+ */
+export async function getLocatorHealingBatch(
+  db: DrizzleDB,
+  testRunsCaseIds: number[],
+): Promise<Map<number, LocatorHealingResult>> {
+  const results = new Map<number, LocatorHealingResult>();
+  if (testRunsCaseIds.length === 0) return results;
+
+  // 1. Load all failing rows in one query
+  const caseRows = await db
+    .select({
+      id: testRunsCases.id,
+      error: testRunsCases.error,
+      testCaseId: testRunsCases.testCaseId,
+      ariaSnapshot: testRunsCases.ariaSnapshot,
+    })
+    .from(testRunsCases)
+    .where(inArray(testRunsCases.id, testRunsCaseIds));
+
+  // 2. Collect unique test case IDs and load all snapshots in one query
+  const tcIds = [...new Set(caseRows.map((r) => r.testCaseId).filter(Boolean))];
+  const allSnaps =
+    tcIds.length > 0 ? await db.select().from(locatorSnapshots).where(inArray(locatorSnapshots.testCaseId, tcIds)) : [];
+
+  // Bucket snapshots by testCaseId for fast lookup
+  const snapsByTc = new Map<number, LocatorSnapshotRow[]>();
+  for (const s of allSnaps) {
+    const arr = snapsByTc.get(s.testCaseId);
+    if (arr) arr.push(s);
+    else snapsByTc.set(s.testCaseId, [s]);
+  }
+
+  // 3. Run the matching ladder for each case
+  for (const row of caseRows) {
+    if (!row.error) {
+      results.set(row.id, buildHealingResult(null, null, null, 'none'));
+      continue;
+    }
+
+    const error = row.error;
+    const snaps = snapsByTc.get(row.testCaseId) ?? [];
+
+    const selector = extractLeafSelector(error);
+    const parsedLocator = selector ? parseLocatorExpression(selector) : null;
+    const failingLocator = parsedLocator ? { method: parsedLocator.method, args: parsedLocator.args } : null;
+    const location = extractErrorLocation(error);
+
+    // Ladder 1: location
+    if (location && snaps.length > 0) {
+      const hit = snaps.find((s) => s.location === location) ?? snaps.find((s) => sameFileLine(s.location, location));
+      if (hit) {
+        results.set(row.id, resolveStoredHit(failingLocator, hit, row.ariaSnapshot ?? null, 'prior-run'));
+        continue;
+      }
+    }
+
+    // Ladder 2: signature
+    if (selector && snaps.length > 0) {
+      const sig = await locatorSignatureFromExpression(selector);
+      const method = locatorExpressionMethod(selector);
+      const hit = snaps.find((s) => s.usedArgsFp === sig && (!method || s.usedMethod === method));
+      if (hit) {
+        results.set(row.id, resolveStoredHit(failingLocator, hit, row.ariaSnapshot ?? null, 'fingerprint'));
+        continue;
+      }
+    }
+
+    // Ladder 3: ARIA fallback
+    const ariaAlts = generateFromAriaSnapshot(row.ariaSnapshot ?? null);
+    if (ariaAlts) {
+      results.set(row.id, buildHealingResult(failingLocator, null, ariaAlts, 'aria-snapshot'));
+      continue;
+    }
+
+    results.set(row.id, buildHealingResult(failingLocator, null, null, 'none'));
+  }
+
+  return results;
 }
 
 /** Compare two `file:line:col` locations ignoring the trailing column. */

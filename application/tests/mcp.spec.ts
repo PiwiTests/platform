@@ -72,11 +72,16 @@ test.describe.serial('MCP server', () => {
   test('tools/list — returns all tools', async ({ request }) => {
     const body = await mcp(request, 'tools/list');
     const tools: { name: string }[] = body.result.tools;
-    expect(tools.length).toBe(14);
+    expect(tools.length).toBe(18);
     const names = tools.map((t) => t.name);
     expect(names).toContain('list_projects');
     expect(names).toContain('get_run');
     expect(names).toContain('get_cluster_context');
+    expect(names).toContain('search_test_cases');
+    expect(names).toContain('get_test_run_case');
+    expect(names).toContain('list_recent_activity');
+    expect(names).toContain('get_repo_commits');
+    expect(names).toContain('get_repo_diff');
     // Every tool has a description and inputSchema
     for (const t of tools) {
       expect(t).toHaveProperty('description');

@@ -187,6 +187,7 @@ Nuxt file-based routing:
 - **Never duplicate logic between server and demo code.** Both `server/` and `app/demo/api/` mirror each other (same DB schema, same persist logic). Any new utility function that would otherwise need to live in both places must be extracted into a shared module — either in `server/utils/` (demo imports via `~~/server/utils/...`) or `shared/` — and imported by both. Exceptions only when the implementation fundamentally differs (e.g., error handling, auth).
 - **Capture global change requests**: when I ask you to apply a change across multiple files (e.g., "update all X to Y"), add a new instruction rule to `AGENTS.md` documenting that pattern so future edits follow the same convention
 - **Never embed plan/spec references in code**: comments must never reference plan IDs (A1, A2, B3, etc.), plan file names, or plan document titles. Code comments should describe what the code does, not where the requirement came from. When implementing a plan, strip all plan-track metadata before writing any code.
+- **Never write "before/after" comparative comments**: comments must never describe what the code used to look like or how it changed (e.g., "was X, now Y", "replaced A with B", "better than the old approach"). Comments describe the current state only — the why and what, not the history. Git handles history.
 - **Share types between server and shared on new computed sections**: when adding a computed evidence section (not a DB field) to the diagnosis context, the SectionId union in `ai-context.types.ts`, the `DIAGNOSIS_SECTIONS` array in `diagnosis-sections.ts`, and any new fields in `DiagnosisContextCoverage` in `types/api.ts` must all be updated in a single batch before implementing the section builder.
 - **Cross-platform shell commands**: any shell command shown to the user (docs, README/`*.md`, in-app `CodeBlock` snippets) must be cross-platform, or provide both a Linux/macOS and a Windows (PowerShell) version. Concretely: prefer portable single commands when one exists — use `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` instead of `openssl rand -hex 32` for secrets, `npm`/`npx`/`docker`/`git` which behave the same everywhere, and avoid bash `\` line continuation (write the command on one line). When no single portable form exists, show two versions: in VitePress docs (`docs/*.md`) use `::: code-group` with ```bash [Linux / macOS] + ```powershell [Windows (PowerShell)] tabs; in GitHub-rendered `*.md` use two consecutive labeled fenced blocks (a `# Linux / macOS` bash block and a `# Windows (PowerShell)` powershell block). Mappings: `$(pwd)` → `${PWD}`; inline `VAR=val cmd` → `$env:VAR='val'; cmd` (or set it in `application/.env`); `rm -rf X` → `Remove-Item -Recurse -Force X`; `\` continuation → backtick `` ` `` in PowerShell. Linux-only Docker host operations (`chmod`/`chown` on bind mounts) need no PowerShell form — just note they apply to Linux hosts (Docker Desktop handles permissions on Windows/macOS). `curl` examples: convert first-touch ones (submit, auth setup/login) to a PowerShell `Invoke-RestMethod` tab (build the body as a hashtable piped through `ConvertTo-Json`); other `curl` examples may stay bash-only as long as the in-app [API docs](/docs) include a "Windows users: use Git Bash/WSL or Invoke-RestMethod" tip at the top. `.env` file contents (`PIWI_*=...`) are not shell commands — leave them as-is.
 - **Flaky root cause classification**: Add new categories to `classifyFlakyRootCause()` in `server/utils/flaky-classify.ts`. Keyword arrays at the top of the file. New column `flaky_root_cause` on `test_cases` table. Include `rootCause` field in `FlakyTest` response type (`types/api.ts`). `FlakyTestsList.vue` renders it via `TagBadge` with root-cause color mapping.
@@ -563,6 +564,41 @@ The app can be built as a fully client-side SPA (no server needed) by setting `P
 4. **Staleness detection**: The build injects `demoDataVersion` (the SHA-256 hash from `seed.version.json`) into `runtimeConfig.public`. At runtime, the layout compares it against the version stored in IndexedDB and shows a "New demo data available" button in the sidebar footer. Clicking it wipes IndexedDB and reloads the page.
 5. The service worker (`app/service-worker/demo-sw.ts`) handles API fetches via `app/demo/api/router.ts`. Both SW and main thread share `app/demo/db.client.ts` for DB initialization.
 6. **Run simulator**: the demo banner hosts a "Simulate a test run" menu (`DemoSimulator.vue` + `useDemoSimulator`) that replays the reporter streaming protocol (setup → begin → events → finish) through `$fetch` against in-browser endpoint ports (`app/demo/api/reporter.ts`). Scenarios live in `app/demo/simulator.ts` and target the seeded `e2e-checkout` project so history/cluster features light up. Live updates flow over a BroadcastChannel (`app/demo/run-events.ts`) instead of SSE: `useRunStream` and the test-run detail page subscribe to it in demo mode.
+
+## MCP Tool Conventions (MUST follow)
+
+MCP tools (`server/utils/mcp/tools.ts`) return JSON consumed by AI coding agents. Consistency across tools saves the agent from guessing.
+
+### Field naming
+
+| Field name | Meaning | Usage |
+|-----------|---------|-------|
+| `id` | The primary key of the **main entity** being returned (run ID, cluster ID, project ID) | Use only for the top-level entity |
+| `testCaseId` | Stable test case identity (`testCases.id`) | Use everywhere for referencing a test case |
+| `executionId` | Per-run execution record (`testRunsCases.id`) | Use for per-run case references (was `caseId` in some tools) |
+| `testRunsCaseId` | Same as `executionId` — internal naming | Use in `affectedTestCases` and `locatorHealing` entries |
+| `filePath` | Source file path from `testCases.filePath` | Always `filePath`, never `file` |
+| `startedAt` | ISO 8601 timestamp of when something started | Always `startedAt`, never `start` or `runStart` |
+| `runId` | Foreign key to `testRuns.id` | Use for run references in sub-entities |
+
+### Response shape
+
+- List tools (`list_runs`, `list_failed_cases`, `list_clusters`, `list_flaky_tests`, `get_test_case.recentExecutions`) return `{ items: T[], nextCursor: string | null }`.
+- Paginated sub-lists inside detail tools (`get_project.runs`) also use `{ items, nextCursor }`.
+- `dropNulls()` strips `null`, `''` (empty string), and `[]` (empty array) from every object before serialization.
+- All error text is truncated to **400 characters** via `trunc(msg, 400)`.
+
+### Shared types
+
+- Tool definitions live in `shared/mcp-tools.ts` — `MCP_TOOL_DEFS` array + `McpToolName` union.
+- `PaginatedResponse<T>` is defined there too (`{ items: T[]; nextCursor: string | null }`).
+- Handler behavior lives in `server/utils/mcp/tools.ts`; the route in `server/routes/mcp.post.ts`.
+
+### Validation
+
+- Use `numericParam(raw, name)` for every numeric param — throws on `NaN`.
+- Use `clampPageSize(raw)` — returns 1–50, default 10.
+- Use `paginatedItems(items, pageSize, getCursor)` to wrap a `pageSize + 1` fetch into `{ items, nextCursor }`.
 
 ## Important Notes
 - DB auto-initialized on first API call
