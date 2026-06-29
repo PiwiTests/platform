@@ -12,7 +12,34 @@ npm install --save-dev @piwitests/reporter
 
 ## Quick start
 
-Add the reporter to your `playwright.config.ts`:
+`wrapConfig` is the recommended setup. It injects the reporter **and** a global
+setup step (so the run shows up as "initialising" while your `globalSetup` runs),
+and forwards your options to that setup:
+
+```typescript
+import { defineConfig } from '@playwright/test'
+import { wrapConfig } from '@piwitests/reporter'
+
+export default wrapConfig(
+  defineConfig({
+    use: {
+      trace: 'retain-on-failure',
+    },
+  }),
+  {
+    serverUrl: 'http://localhost:3000',
+    projectName: 'my-project',
+  },
+)
+```
+
+Run your tests — results are uploaded automatically:
+
+```bash
+npx playwright test
+```
+
+Prefer to wire it up by hand? Add the reporter to the `reporter` array instead:
 
 ```typescript
 import { defineConfig } from '@playwright/test'
@@ -29,12 +56,6 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
 })
-```
-
-Run your tests — results are uploaded automatically:
-
-```bash
-npx playwright test
 ```
 
 ## Configuration Options
@@ -109,16 +130,20 @@ To capture network request timing and browser Web Vitals, use the provided fixtu
 ```typescript
 // tests/fixtures.ts
 import { test as base, expect } from '@playwright/test'
-import { dashboardFixtures } from '@piwitests/reporter/fixtures'
+import { dashboardFixtures } from '@piwitests/reporter'
 
 export const test = base.extend(dashboardFixtures)
 export { expect }
 ```
 
-Or as a drop-in replacement:
+Or extend the base `test` in one line with `extendDashboardFixtures`:
 
 ```typescript
-import { test, expect } from '@piwitests/reporter/fixtures'
+import { test as base } from '@playwright/test'
+import { extendDashboardFixtures } from '@piwitests/reporter'
+
+export const test = extendDashboardFixtures(base)
+export { expect } from '@playwright/test'
 ```
 
 ### What gets captured
@@ -192,21 +217,7 @@ npm run reporter:dev     # watch mode — auto-recompile on changes
 
 ### Source layout
 
-| File                       | Responsibility                              |
-|----------------------------|---------------------------------------------|
-| `src/reporter.ts`          | Orchestrator — Playwright hooks + fallback  |
-| `src/config.ts`            | Options interface + defaults                |
-| `src/http-client.ts`       | HTTP transport layer                        |
-| `src/uploader.ts`          | Upload strategies (JSON, multipart)         |
-| `src/stream-buffer.ts`     | Persistent JSONL buffer                     |
-| `src/crash-recovery.ts`    | Recovery data management                    |
-| `src/file-handler.ts`      | Report/trace/attachment file operations     |
-| `src/metadata-collector.ts`| CI, SCM, Playwright config metadata         |
-| `src/step-analyzer.ts`     | Step categorization + performance analysis  |
-| `src/helpers.ts`           | Pure utility functions                      |
-| `src/compression.ts`       | Directory gzip archiver                     |
-| `src/fixtures.ts`          | Playwright fixtures                         |
-| `src/index.ts`             | Package entry point                         |
+The package keeps its **public API** (`src/index.ts`, `src/fixtures.ts`, `src/public/`) separate from internal plumbing (`src/internal/<domain>/`) and the type model (`src/types/`). See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full map — the public/internal split, the collect-and-submit data flow, the fallback ladder, and the conventions.
 
 The `package.json` `exports` field maps the main entry and `./fixtures` to their `dist/` counterparts.
 
@@ -220,7 +231,7 @@ The `package.json` `exports` field maps the main entry and `./fixtures` to their
 
 ### Network/Web Vitals not appearing
 
-- Import `test` from `@piwitests/reporter/fixtures` (or extend with `dashboardFixtures`)
+- Extend your `test` with `dashboardFixtures` / `extendDashboardFixtures` from `@piwitests/reporter`
 - Verify `collectPerformanceMetrics` is not set to `false`
 - Ensure tests navigate to at least one page (`await page.goto(...)`)
 

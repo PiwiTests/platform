@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { wrapConfig } from '../src/config-wrapper.js';
+import { wrapConfig } from '../src/public/config-wrapper.js';
 
 describe('wrapConfig', () => {
   it('preserves other config properties', () => {

@@ -145,11 +145,11 @@ test.describe('Metadata Tests', () => {
     expect(data.success).toBe(true);
   });
 
-  test('reporter config.d.ts should include metadata options', async () => {
+  test('reporter options.d.ts should include metadata options', async () => {
     const { readFileSync, existsSync } = await import('fs');
     const { join } = await import('path');
 
-    const typeDefsPath = join(process.cwd(), '..', 'reporter', 'dist', 'config.d.ts');
+    const typeDefsPath = join(process.cwd(), '..', 'reporter', 'dist', 'public', 'options.d.ts');
     expect(existsSync(typeDefsPath)).toBe(true);
 
     const typeDefs = readFileSync(typeDefsPath, 'utf-8');

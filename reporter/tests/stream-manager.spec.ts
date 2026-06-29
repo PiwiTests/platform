@@ -1,12 +1,12 @@
 import { describe, it, beforeEach, afterEach, expect } from 'vitest';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-import { StreamManager } from '../src/stream-manager.js';
-import { StreamBuffer } from '../src/stream-buffer.js';
-import { CrashRecovery } from '../src/crash-recovery.js';
-import { FileHandler } from '../src/file-handler.js';
-import type { PiwiDashboardOptions } from '../src/config.js';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import { StreamManager } from '../src/internal/streaming/stream-manager.js';
+import { StreamBuffer } from '../src/internal/streaming/stream-buffer.js';
+import { CrashRecovery } from '../src/internal/streaming/crash-recovery.js';
+import { FileHandler } from '../src/internal/files/file-handler.js';
+import type { PiwiDashboardOptions } from '../src/public/options.js';
 
 const projectName = 'piwi-stream-test-' + process.pid;
 

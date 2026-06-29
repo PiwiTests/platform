@@ -1,13 +1,15 @@
 ﻿import type { FullResult } from '@playwright/test/reporter';
-import type { PiwiDashboardOptions, ShardInfo } from './config.js';
-import { HttpClient } from './http-client.js';
-import { Uploader, type RunPayload, type ReportOptions } from './uploader.js';
-import { CrashRecovery } from './crash-recovery.js';
-import { StreamManager } from './stream-manager.js';
-import { Logger } from './logger.js';
-import { computePerformanceSummary } from './step-analyzer.js';
+import type { PiwiDashboardOptions, ShardInfo } from '../../public/options.js';
+import { errorMessage } from '../support/errors.js';
+import type { HttpClient } from '../transport/http-client.js';
+import { HttpError } from '../transport/http-client.js';
+import type { Uploader, RunPayload, ReportOptions } from './uploader.js';
+import type { CrashRecovery } from '../streaming/crash-recovery.js';
+import type { StreamManager } from '../streaming/stream-manager.js';
+import { Logger } from '../support/logger.js';
+import { computePerformanceSummary } from '../collect/step-analyzer.js';
 import { resolveOverallStatus, serializeRun } from './serializer.js';
-import type { CollectedTestCase, SetupStep, FilterDetails } from './types.js';
+import type { CollectedTestCase, SetupStep, FilterDetails } from '../../types.js';
 
 /**
  * Snapshot of everything the reporter has collected by `onEnd`, handed off to
@@ -89,8 +91,8 @@ export class RunSubmitter {
     let auth: string | null;
     try {
       auth = sm?.auth ?? (await this.httpClient.resolveAuth(run.options));
-    } catch (error: any) {
-      this.logger.error(`Authentication failed: ${error.message}`);
+    } catch (error) {
+      this.logger.error(`Authentication failed: ${errorMessage(error)}`);
       throw error;
     }
 
@@ -195,13 +197,13 @@ export class RunSubmitter {
             run.startTime,
             auth,
           );
-        } catch (error: any) {
-          this.logger.warn(`Failed to upload reports for streaming run: ${error.message}`);
+        } catch (error) {
+          this.logger.warn(`Failed to upload reports for streaming run: ${errorMessage(error)}`);
         }
       }
       return true;
-    } catch (error: any) {
-      this.logger.warn(`Failed to finalize streaming run: ${error.message}`);
+    } catch (error) {
+      this.logger.warn(`Failed to finalize streaming run: ${errorMessage(error)}`);
       this.logger.info('Falling back to batch upload...');
       return false;
     }
@@ -221,9 +223,9 @@ export class RunSubmitter {
       );
       this.recovery.clear();
       return true;
-    } catch (error: any) {
-      if (error.message?.includes('401') && !auth) throw error;
-      this.logger.warn(`Failed to upload with files: ${error.message}`);
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 401 && !auth) throw error;
+      this.logger.warn(`Failed to upload with files: ${errorMessage(error)}`);
       this.logger.info('Falling back to JSON upload...');
       return false;
     }
@@ -239,14 +241,14 @@ export class RunSubmitter {
     try {
       await this.uploader.uploadJSON(payload, auth);
       this.recovery.clear();
-    } catch (error: any) {
+    } catch (error) {
       // If the server returned 401 and no auth was configured, this is a
       // configuration error — throw so the caller knows it's fatal.
-      if (error.message?.includes('401') && !auth) throw error;
-      this.logger.error(`All upload methods failed: ${error.message}`);
+      if (error instanceof HttpError && error.status === 401 && !auth) throw error;
+      this.logger.error(`All upload methods failed: ${errorMessage(error)}`);
       // Save the wire-serialized form so the recovery file matches the
       // original submit payload (no raw attachments / internal fields).
-      this.recovery.save(serializeRun(payload, { includeTestCases: true }) as Record<string, any>);
+      this.recovery.save(serializeRun(payload, { includeTestCases: true }));
     }
   }
 }

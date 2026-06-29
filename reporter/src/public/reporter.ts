@@ -1,52 +1,29 @@
-import * as path from 'path';
+import * as path from 'node:path';
 import type { FullConfig, Suite, TestCase, TestResult, FullResult } from '@playwright/test/reporter';
-import { resolveOptions, type PiwiDashboardOptions, type ShardInfo } from './config.js';
-import { HttpClient } from './http-client.js';
-import { Uploader } from './uploader.js';
-import { StreamBuffer } from './stream-buffer.js';
-import { CrashRecovery } from './crash-recovery.js';
-import { FileHandler } from './file-handler.js';
-import { MetadataCollector } from './metadata-collector.js';
-import { StreamManager } from './stream-manager.js';
-import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from './step-analyzer.js';
-import {
-  computeInstanceId,
-  readSourceSnippet,
-  createGlobalSetup,
-  detectCiRunLabel,
-  workerIndexOf,
-  detectCliFileFilters,
-} from './helpers.js';
+import { resolveOptions } from '../internal/config/env.js';
+import type { PiwiDashboardOptions, ShardInfo } from './options.js';
+import { HttpClient } from '../internal/transport/http-client.js';
+import { Uploader } from '../internal/submit/uploader.js';
+import { StreamBuffer } from '../internal/streaming/stream-buffer.js';
+import { CrashRecovery } from '../internal/streaming/crash-recovery.js';
+import { FileHandler } from '../internal/files/file-handler.js';
+import { ATTACHMENT_NAMES } from '../internal/capture/attachments.js';
+import { MetadataCollector } from '../internal/collect/metadata-collector.js';
+import { StreamManager } from '../internal/streaming/stream-manager.js';
+import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '../internal/collect/step-analyzer.js';
+import { computeInstanceId } from '../internal/support/instance-id.js';
+import { readSourceSnippet } from '../internal/support/source-snippet.js';
+import { detectCiRunLabel } from '../internal/support/ci.js';
+import { workerIndexOf } from '../internal/support/worker-index.js';
+import { detectCliFileFilters } from '../internal/support/cli-filters.js';
+import { createGlobalSetup } from './global-setup.js';
 import { wrapConfig } from './config-wrapper.js';
-import { toWireTestCase } from './serializer.js';
-import { mergeAnnotations, classifyStatus } from './skip-classify.js';
-import { RunSubmitter } from './run-submitter.js';
-import { Logger } from './logger.js';
-import type { CollectedTestCase, StreamEvent, SetupStep, FilterDetails } from './types.js';
-
-/**
- * Build the stored error text for a test result.
- *
- * Playwright's `error.message` carries the failure message and call log but no
- * stack frames — those live on `error.stack`/`error.location`. The server's
- * locator-healing lookup needs the failing call site to find the pre-captured
- * snapshot for that locator, so when the message has no `at …` frame we append
- * a synthetic one from `error.location`, relativized to the cwd so it matches
- * the format the fixture records at capture time. The frame is appended after
- * the message, where `extractMessageHead` already trims it off before
- * fingerprinting — so failure clustering is unaffected.
- */
-function buildErrorText(result: TestResult): string | null {
-  const err = result.error;
-  if (!err) return null;
-  let text = err.message ?? '';
-  const loc = err.location;
-  if (loc?.file && !/\n\s+at\s/.test(text)) {
-    const rel = path.relative(process.cwd(), loc.file).split(path.sep).join('/');
-    text += `\n    at ${rel}:${loc.line}:${loc.column}`;
-  }
-  return text;
-}
+import { toWireTestCase } from '../internal/submit/serializer.js';
+import { mergeAnnotations, classifyStatus } from '../internal/collect/skip-classify.js';
+import { buildErrorText } from '../internal/collect/error-text.js';
+import { RunSubmitter } from '../internal/submit/run-submitter.js';
+import { Logger } from '../internal/support/logger.js';
+import type { CollectedTestCase, StreamEvent, SetupStep, FilterDetails } from '../types.js';
 
 /**
  * Piwi Dashboard Playwright reporter.
@@ -307,7 +284,7 @@ export class PiwiDashboardReporter {
       // with pw:api steps — that was unreliable across workers/concurrent calls.
       const locatorAttachment =
         this.options.captureLocators !== false
-          ? result.attachments.find((a: any) => a.name === 'piwi-dashboard-locators')
+          ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.locators)
           : undefined;
       if (locatorAttachment?.body) {
         try {

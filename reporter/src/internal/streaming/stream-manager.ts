@@ -1,13 +1,16 @@
-import * as fs from 'fs';
-import type { PiwiDashboardOptions, ShardInfo } from './config.js';
-import { HttpClient } from './http-client.js';
-import { StreamBuffer } from './stream-buffer.js';
-import { CrashRecovery } from './crash-recovery.js';
-import { Uploader } from './uploader.js';
-import { FileHandler } from './file-handler.js';
-import { Logger } from './logger.js';
-import { createLimiter, readSetupInfo } from './helpers.js';
-import type { CollectedTestCase, StreamEvent, FilterDetails } from './types.js';
+import * as fs from 'node:fs';
+import { errorMessage } from '../support/errors.js';
+import type { PiwiDashboardOptions, ShardInfo } from '../../public/options.js';
+import type { HttpClient } from '../transport/http-client.js';
+import { HttpError } from '../transport/http-client.js';
+import type { StreamBuffer } from './stream-buffer.js';
+import type { CrashRecovery } from './crash-recovery.js';
+import type { Uploader } from '../submit/uploader.js';
+import type { FileHandler } from '../files/file-handler.js';
+import { Logger } from '../support/logger.js';
+import { createLimiter } from '../support/limiter.js';
+import { readSetupInfo } from '../support/setup-file.js';
+import type { CollectedTestCase, StreamEvent, FilterDetails } from '../../types.js';
 
 /**
  * Manages the streaming protocol: queues events (begin / complete), flushes
@@ -139,10 +142,10 @@ export class StreamManager {
             },
             this._auth,
           );
-        } catch (beginError: any) {
+        } catch (error) {
           // Stale setupInfo — the run was cancelled (e.g. by crash recovery submit).
           // Fall back to creating a fresh run instead of silently disabling streaming.
-          if (!beginError.message?.includes('409')) throw beginError;
+          if (!(error instanceof HttpError && error.status === 409)) throw error;
           this.logger.debug(`Setup info expired, creating fresh run...`);
           response = await this.httpClient.postJSON(
             '/api/test-runs/start',
@@ -198,8 +201,8 @@ export class StreamManager {
           this.flush();
         }
       }
-    } catch (error: any) {
-      this.logger.debug(`Streaming not available: ${error.message}. Will use batch mode.`);
+    } catch (error) {
+      this.logger.debug(`Streaming not available: ${errorMessage(error)}. Will use batch mode.`);
       this._enabled = false;
     }
   }
@@ -301,8 +304,8 @@ export class StreamManager {
         this._auth,
       );
       this.lastActivityAt = Date.now();
-    } catch (error: any) {
-      this.logger.debug(`Heartbeat failed: ${error.message}`);
+    } catch (error) {
+      this.logger.debug(`Heartbeat failed: ${errorMessage(error)}`);
     }
     this.scheduleHeartbeat();
   }
@@ -390,10 +393,10 @@ export class StreamManager {
           );
           this.uploadedCaseFiles.add(tc);
           return;
-        } catch (error: any) {
-          const retryable = error.message?.includes('404');
+        } catch (error) {
+          const retryable = error instanceof HttpError && error.status === 404;
           if (!retryable || attempt === delays.length - 1) {
-            this.logger.debug(`Live file upload failed for "${tc.title}": ${error.message}`);
+            this.logger.debug(`Live file upload failed for "${tc.title}": ${errorMessage(error)}`);
             return; // The end-of-run pass retries cases that failed here
           }
         }
@@ -423,8 +426,8 @@ export class StreamManager {
           this._auth,
         );
         if (uploaded) this.uploadedCaseFiles.add(tc);
-      } catch (error: any) {
-        this.logger.warn(`Failed to upload files for "${tc.title}": ${error.message}`);
+      } catch (error) {
+        this.logger.warn(`Failed to upload files for "${tc.title}": ${errorMessage(error)}`);
       }
     }
   }

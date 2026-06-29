@@ -1,3 +1,3 @@
-import { createGlobalSetup } from './helpers.js';
+import { createGlobalSetup } from './public/global-setup.js';
 
 export default createGlobalSetup();

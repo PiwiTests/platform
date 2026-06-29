@@ -255,7 +255,7 @@ To automatically capture network request timing and browser Web Vitals, use the 
 ```typescript
 // tests/fixtures.ts
 import { test as base, expect } from '@playwright/test'
-import { dashboardFixtures } from '@piwitests/reporter/fixtures'
+import { dashboardFixtures } from '@piwitests/reporter'
 
 export const test = base.extend(dashboardFixtures)
 export { expect }
@@ -272,10 +272,14 @@ test('homepage loads', async ({ page }) => {
 })
 ```
 
-**Option B – drop-in replacement:**
+**Option B – one-line extend with `extendDashboardFixtures`:**
 
 ```typescript
-import { test, expect } from '@piwitests/reporter/fixtures'
+import { test as base } from '@playwright/test'
+import { extendDashboardFixtures } from '@piwitests/reporter'
+
+export const test = extendDashboardFixtures(base)
+export { expect } from '@playwright/test'
 ```
 
 ### What gets captured
@@ -416,7 +420,7 @@ export default defineConfig({
 
 ### Network/Web Vitals not appearing
 
-- Import `test` from `@piwitests/reporter/fixtures` (or extend with `dashboardFixtures`)
+- Extend your `test` with `dashboardFixtures` / `extendDashboardFixtures` from `@piwitests/reporter`
 - Verify `collectPerformanceMetrics` is not set to `false`
 - Ensure tests navigate to at least one page (`await page.goto(...)`)
 
@@ -479,33 +483,15 @@ npm run reporter:build   # compile TypeScript from src/ to dist/
 npm run reporter:dev     # watch mode — auto-recompile on changes
 ```
 
-This produces one `.js` + one `.d.ts` file per `.ts` source in `src/` (currently 21 modules).
+This produces one `.js` + one `.d.ts` per `.ts` source, mirroring the `src/` folder structure under `dist/`.
 
-The compiled output is what Playwright loads at runtime. The `package.json` `exports` field maps `@piwitests/reporter/fixtures` directly to `dist/fixtures.js`.
+The compiled output is what Playwright loads at runtime. The package has a single entry point (`@piwitests/reporter`) — the reporter, the config helpers, and the capture fixtures are all imported from it.
 
 ### Source layout
 
-| File                        | Purpose                                                                                                  |
-|-----------------------------|----------------------------------------------------------------------------------------------------------|
-| `src/index.ts`              | Entry point — re-exports the class with `createGlobalSetup` attached                                     |
-| `src/reporter.ts`           | `PiwiDashboardReporter` — Playwright hooks + running counters; hands the collected run to `RunSubmitter` |
-| `src/run-submitter.ts`      | `RunSubmitter` — the three-tier submit/fallback ladder (streaming → multipart → JSON → recovery)         |
-| `src/config.ts`             | `PiwiDashboardOptions` interface, `resolveOptions()` defaults merger, and the centralized `PIWI_*` env map |
-| `src/config-wrapper.ts`     | `wrapConfig` — injects the reporter + global setup into a Playwright config                              |
-| `src/helpers.ts`            | Utilities: `getSetupFilePath`, `computeInstanceId`, `workerIndexOf`, `createGlobalSetup`                 |
-| `src/http-client.ts`        | `HttpClient` class — one `request()` core (login, postJSON, postFormData) with socket timeout            |
-| `src/uploader.ts`           | `Uploader` class — upload strategies (JSON, multipart, streaming files)                                  |
-| `src/serializer.ts`         | Pure serializers: `toWireTestCase`, `serializeRun`, `resolveOverallStatus`                               |
-| `src/types.ts`              | Reporter-local domain model (`CollectedTestCase`, `WireTestCase`, `StreamEvent` union)                   |
-| `src/logger.ts`             | `Logger` — owns the `[Piwi Dashboard]` prefix and the verbose gate                                        |
-| `src/stream-manager.ts`     | `StreamManager` class — event batching, retry/backoff, live file uploads                                 |
-| `src/stream-buffer.ts`      | `StreamBuffer` class — persistent JSONL event buffer with staleness cleanup                              |
-| `src/crash-recovery.ts`     | `CrashRecovery` class — save/load/retry recovery data after total failure                                |
-| `src/file-handler.ts`       | `FileHandler` class — report directory detection, trace/attachment file ops, single-case trace hashing  |
-| `src/metadata-collector.ts` | `MetadataCollector` class — CI, SCM, browser config, and suite-hierarchy (describe) metadata             |
-| `src/step-analyzer.ts`      | Pure functions — step categorization, flattening, performance summary                                    |
-| `src/compression.ts`        | Directory gzip archiver                                                                                  |
-| `src/fixtures.ts`           | Playwright fixtures for network/web-vitals/console capture                                               |
+The package separates its **public API** (`src/index.ts`, `src/fixtures.ts`, and `src/public/`) from internal plumbing (`src/internal/<domain>/` — `submit`, `transport`, `streaming`, `collect`, `files`, `capture`, `config`, `support`) and the type model (`src/types/`, where `wire.ts` is the server contract and `collected.ts` the in-process model).
+
+See **`reporter/ARCHITECTURE.md`** in the repository for the full map: the public/internal split, the two-process collect-and-submit data flow, the fallback ladder, and the package conventions.
 
 ### Shared types
 

@@ -1,5 +1,5 @@
 import { describe, it, beforeEach, afterEach, expect } from 'vitest';
-import { resolveOptions } from '../src/config.js';
+import { resolveOptions } from '../src/internal/config/env.js';
 
 const PIWI_KEYS = [
   'PIWI_DASHBOARD_URL',

@@ -44,7 +44,7 @@ export default PiwiDashboard.wrapConfig(
 
 const fixturesExtendCode = `// tests/fixtures.ts
 import { test as base, expect } from '@playwright/test'
-import { dashboardFixtures } from '@piwitests/reporter/fixtures'
+import { dashboardFixtures } from '@piwitests/reporter'
 
 export const test = base.extend(dashboardFixtures)
 export { expect }`;
@@ -58,7 +58,12 @@ test('homepage loads', async ({ page }) => {
   // are captured automatically and appear in the dashboard
 })`;
 
-const fixturesDropInCode = `import { test, expect } from '@piwitests/reporter/fixtures'`;
+const fixturesDropInCode = `// tests/fixtures.ts
+import { test as base } from '@playwright/test'
+import { extendDashboardFixtures } from '@piwitests/reporter'
+
+export const test = extendDashboardFixtures(base)
+export { expect } from '@playwright/test'`;
 
 const steps = computed(() => [
   {
@@ -194,7 +199,7 @@ const goFurtherOpen = ref(false);
             <CodeBlock :code="fixturesUseCode" lang="typescript" class="mb-4" />
 
             <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-2">
-              Option B — drop-in replacement
+              Option B — one-line extend
             </p>
             <CodeBlock :code="fixturesDropInCode" lang="typescript" />
           </div>

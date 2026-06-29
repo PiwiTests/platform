@@ -1,18 +1,14 @@
 import { describe, it, beforeEach, afterEach, expect } from 'vitest';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-import {
-  hashForProject,
-  getSetupFilePath,
-  computeInstanceId,
-  detectCiRunLabel,
-  readSourceSnippet,
-  createLimiter,
-  readSetupInfo,
-  workerIndexOf,
-  detectCliFileFilters,
-} from '../src/helpers.js';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import { hashForProject, computeInstanceId } from '../src/internal/support/instance-id.js';
+import { getSetupFilePath, readSetupInfo } from '../src/internal/support/setup-file.js';
+import { detectCiRunLabel } from '../src/internal/support/ci.js';
+import { readSourceSnippet } from '../src/internal/support/source-snippet.js';
+import { createLimiter } from '../src/internal/support/limiter.js';
+import { workerIndexOf } from '../src/internal/support/worker-index.js';
+import { detectCliFileFilters } from '../src/internal/support/cli-filters.js';
 
 const CI_KEYS = [
   'GITHUB_ACTIONS',

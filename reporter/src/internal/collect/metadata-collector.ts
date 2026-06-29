@@ -1,7 +1,8 @@
-import { execSync } from 'child_process';
+import { execSync } from 'node:child_process';
+import { errorMessage } from '../support/errors.js';
 import type { FullConfig, Suite, TestCase } from '@playwright/test/reporter';
-import { Logger } from './logger.js';
-import type { SuiteConfigEntry } from './types.js';
+import { Logger } from '../support/logger.js';
+import type { SuiteConfigEntry } from '../../types.js';
 
 /**
  * Collects CI/CD environment metadata, SCM (git) information, and Playwright
@@ -12,11 +13,7 @@ import type { SuiteConfigEntry } from './types.js';
  * breaks when Playwright renames those internals is guarded behind one class.
  */
 export class MetadataCollector {
-  private readonly logger: Logger;
-
-  constructor(logger: Logger = new Logger()) {
-    this.logger = logger;
-  }
+  constructor(private readonly logger: Logger = new Logger()) {}
 
   /** Collect all available metadata from the environment, config, and suite */
   collect(config: FullConfig, suite: Suite, options: any): Record<string, unknown> {
@@ -46,7 +43,7 @@ export class MetadataCollector {
       const all = suite.allTests();
       if (all.length > 0) {
         const first = all[0];
-        if (first?.parent?.project) {
+        if (first?.parent) {
           const proj = (first.parent as any).project();
           if (proj?.metadata) metadata.playwrightProject = proj.metadata;
         }
@@ -143,14 +140,16 @@ export class MetadataCollector {
       } catch {
         /* optional */
       }
-    } catch (error: any) {
-      this.logger.debug(`Git info not available: ${error.message}`);
+    } catch (error) {
+      this.logger.debug(`Git info not available: ${errorMessage(error)}`);
     }
     return Object.keys(scm).length > 0 ? scm : undefined;
   }
 
-  private collectCiInfo(): Record<string, string | boolean> | undefined {
-    const ci: Record<string, string | boolean> = {};
+  private collectCiInfo(): Record<string, string | boolean | undefined> | undefined {
+    // Env vars are `string | undefined`; undefined values are dropped on JSON
+    // serialization, so collecting them directly preserves the prior behavior.
+    const ci: Record<string, string | boolean | undefined> = {};
     const env = process.env;
 
     if (env.JENKINS_URL) {

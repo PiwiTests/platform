@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MetadataCollector } from '../src/metadata-collector.js';
+import { MetadataCollector } from '../src/internal/collect/metadata-collector.js';
 
 /** Build a fake describe suite chain: root → parent → child (the test's parent). */
 function fakeSuiteChain(opts: { parallelMode?: string; annotations?: any[]; titles?: string[] } = {}): any {

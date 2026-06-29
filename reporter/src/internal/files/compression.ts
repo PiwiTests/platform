@@ -1,7 +1,7 @@
-import fs from 'fs';
-import path from 'path';
-import zlib from 'zlib';
-import { promisify } from 'util';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as zlib from 'node:zlib';
+import { promisify } from 'node:util';
 
 const gzipAsync = promisify(zlib.gzip);
 

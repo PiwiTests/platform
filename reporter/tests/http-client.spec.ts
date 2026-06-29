@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import * as http from 'http';
-import { HttpClient } from '../src/http-client.js';
-import { Logger } from '../src/logger.js';
+import * as http from 'node:http';
+import { HttpClient } from '../src/internal/transport/http-client.js';
+import { Logger } from '../src/internal/support/logger.js';
 
 interface RecordedReq {
   method: string;

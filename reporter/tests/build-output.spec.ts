@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 const dist = (...segments: string[]) => join(import.meta.dirname, '..', 'dist', ...segments);
 
@@ -14,8 +14,8 @@ describe('Build output', () => {
     expect(pkg.peerDependencies['@playwright/test']).toBeTruthy();
   });
 
-  it('config.d.ts should define PiwiDashboardOptions with all fields', () => {
-    const content = readFileSync(dist('config.d.ts'), 'utf-8');
+  it('public/options.d.ts should define PiwiDashboardOptions with all fields', () => {
+    const content = readFileSync(dist('public', 'options.d.ts'), 'utf-8');
     expect(content).toContain('PiwiDashboardOptions');
     expect(content).toContain('serverUrl');
     expect(content).toContain('projectName');
@@ -31,25 +31,34 @@ describe('Build output', () => {
     expect(content).toContain('collectPerformanceMetrics');
   });
 
-  it('fixtures.js should exist and export dashboardFixtures', () => {
-    expect(existsSync(dist('fixtures.js'))).toBe(true);
-    const source = readFileSync(dist('fixtures.js'), 'utf-8');
+  it('index.js re-exports the capture fixtures (single entry, no subpath)', () => {
+    const source = readFileSync(dist('index.js'), 'utf-8');
     expect(source).toContain('dashboardFixtures');
-    expect(source).toContain('exports.dashboardFixtures');
-    expect(source).toContain('page.on');
-    expect(source).toContain('requestfinished');
-    expect(source).toContain('piwi-dashboard-network');
-    expect(source).toContain('piwi-dashboard-web-vitals');
+    expect(source).toContain('extendDashboardFixtures');
   });
 
-  it('fixtures.d.ts should export dashboardFixtures type', () => {
-    const content = readFileSync(dist('fixtures.d.ts'), 'utf-8');
-    expect(content).toContain('dashboardFixtures');
+  it('capture-fixtures.js should contain the capture implementation', () => {
+    const source = readFileSync(dist('internal', 'capture', 'capture-fixtures.js'), 'utf-8');
+    expect(source).toContain('dashboardFixtures');
+    expect(source).toContain('page.on');
+    expect(source).toContain('requestfinished');
+    // Attachment names live in attachments.ts; capture-fixtures.js references them.
+    expect(source).toContain('ATTACHMENT_NAMES');
+  });
+
+  it('attachments.js should define the dashboard attachment names', () => {
+    expect(existsSync(dist('internal', 'capture', 'attachments.js'))).toBe(true);
+    const source = readFileSync(dist('internal', 'capture', 'attachments.js'), 'utf-8');
+    expect(source).toContain('piwi-locators');
+    expect(source).toContain('piwi-network');
+    expect(source).toContain('piwi-web-vitals');
+    expect(source).toContain('piwi-console');
+    expect(source).toContain('piwi-aria-snapshot');
   });
 
   it('step-analyzer.js should export step metrics functions', () => {
-    expect(existsSync(dist('step-analyzer.js'))).toBe(true);
-    const source = readFileSync(dist('step-analyzer.js'), 'utf-8');
+    expect(existsSync(dist('internal', 'collect', 'step-analyzer.js'))).toBe(true);
+    const source = readFileSync(dist('internal', 'collect', 'step-analyzer.js'), 'utf-8');
     expect(source).toContain('collectStepMetrics');
     expect(source).toContain('computePerformanceSummary');
     expect(source).toContain('flattenSteps');
@@ -57,16 +66,16 @@ describe('Build output', () => {
   });
 
   it('metadata-collector.js should have MetadataCollector class', () => {
-    expect(existsSync(dist('metadata-collector.js'))).toBe(true);
-    const source = readFileSync(dist('metadata-collector.js'), 'utf-8');
+    expect(existsSync(dist('internal', 'collect', 'metadata-collector.js'))).toBe(true);
+    const source = readFileSync(dist('internal', 'collect', 'metadata-collector.js'), 'utf-8');
     expect(source).toContain('class MetadataCollector');
     expect(source).toContain('collectScmInfo');
     expect(source).toContain('collectCiInfo');
   });
 
   it('http-client.js should have HttpClient class with HTTP helpers', () => {
-    expect(existsSync(dist('http-client.js'))).toBe(true);
-    const source = readFileSync(dist('http-client.js'), 'utf-8');
+    expect(existsSync(dist('internal', 'transport', 'http-client.js'))).toBe(true);
+    const source = readFileSync(dist('internal', 'transport', 'http-client.js'), 'utf-8');
     expect(source).toContain('class HttpClient');
     expect(source).toContain('postJSON');
     expect(source).toContain('postFormData');
@@ -74,8 +83,8 @@ describe('Build output', () => {
   });
 
   it('file-handler.js should export file discovery functions', () => {
-    expect(existsSync(dist('file-handler.js'))).toBe(true);
-    const source = readFileSync(dist('file-handler.js'), 'utf-8');
+    expect(existsSync(dist('internal', 'files', 'file-handler.js'))).toBe(true);
+    const source = readFileSync(dist('internal', 'files', 'file-handler.js'), 'utf-8');
     expect(source).toContain('findHTMLReportDirectory');
     expect(source).toContain('findReportDirectory');
     expect(source).toContain('compressReportDirectory');
