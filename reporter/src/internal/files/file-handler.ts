@@ -1,10 +1,11 @@
-import fs from 'fs';
-import path from 'path';
-import crypto from 'crypto';
+import * as fs from 'node:fs';
+import { errorMessage } from '../support/errors.js';
+import * as path from 'node:path';
+import * as crypto from 'node:crypto';
 import { compressDirectory } from './compression.js';
-import { Logger } from './logger.js';
-import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES } from './attachments.js';
-import type { CollectedTestCase, RawAttachment, TraceHashInfo } from './types.js';
+import { Logger } from '../support/logger.js';
+import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES } from '../capture/attachments.js';
+import type { CollectedTestCase, RawAttachment, TraceHashInfo } from '../../types.js';
 
 /**
  * File-system helpers for discovering report directories, trace files, and
@@ -12,11 +13,7 @@ import type { CollectedTestCase, RawAttachment, TraceHashInfo } from './types.js
  * trace-file hashes for deduplication.
  */
 export class FileHandler {
-  private readonly logger: Logger;
-
-  constructor(logger: Logger = new Logger()) {
-    this.logger = logger;
-  }
+  constructor(private readonly logger: Logger = new Logger()) {}
 
   /** Locate a Playwright HTML report directory containing `index.html`. Optionally override the search path. */
   findHTMLReportDirectory(customDir?: string): string | null {
@@ -45,8 +42,8 @@ export class FileHandler {
   async compressReportDirectory(reportDir: string): Promise<Buffer | null> {
     try {
       return (await compressDirectory(reportDir)) || null;
-    } catch (error: any) {
-      this.logger.warn(`Failed to compress report directory ${reportDir}: ${error.message}`);
+    } catch (error) {
+      this.logger.warn(`Failed to compress report directory ${reportDir}: ${errorMessage(error)}`);
       return null;
     }
   }

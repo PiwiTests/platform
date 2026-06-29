@@ -1,8 +1,8 @@
 import { describe, it, beforeEach, afterEach, expect } from 'vitest';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-import { PiwiDashboardReporter } from '../src/reporter.js';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import {
   startServer,
   jsonRes,

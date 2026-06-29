@@ -1,5 +1,5 @@
 ﻿import type { FullResult } from '@playwright/test/reporter';
-import type { CollectedTestCase, WireTestCase } from './types.js';
+import type { CollectedTestCase, WireTestCase } from '../../types.js';
 import type { RunPayload } from './uploader.js';
 
 /**

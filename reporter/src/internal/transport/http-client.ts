@@ -1,10 +1,26 @@
-import https from 'https';
-import http from 'http';
-import { URL } from 'url';
+import * as https from 'node:https';
+import * as http from 'node:http';
+import { URL } from 'node:url';
 import FormData from 'form-data';
-import { Logger } from './logger.js';
+import { Logger } from '../support/logger.js';
 
 export { FormData };
+
+/**
+ * An HTTP response with a non-2xx status. Carries the numeric `status` so
+ * callers can branch on a specific code (401, 404, 409, 422, …) via
+ * `error instanceof HttpError && error.status === …` instead of sniffing the
+ * message string.
+ */
+export class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string = `Request failed with status ${status}`,
+  ) {
+    super(message);
+    this.name = 'HttpError';
+  }
+}
 
 /** Response from the unified `request()` core. */
 interface HttpResponse {
@@ -33,21 +49,17 @@ interface HttpRequestOptions {
  * the single `form-data` runtime dependency — no HTTP client library.
  */
 export class HttpClient {
-  private readonly serverUrl: string;
-  private readonly logger: Logger;
-  private readonly timeout: number;
-
   /**
    * @param serverUrl Base URL of the Piwi Dashboard server (e.g. `http://localhost:3000`).
    * @param logger    Prefixed logger for verbose diagnostics.
    * @param timeout   Socket inactivity timeout in ms (default 30s). A hung
    *                  server now fails fast instead of stalling the reporter.
    */
-  constructor(serverUrl: string, logger: Logger = new Logger(), timeout = 30000) {
-    this.serverUrl = serverUrl;
-    this.logger = logger;
-    this.timeout = timeout;
-  }
+  constructor(
+    private readonly serverUrl: string,
+    private readonly logger: Logger = new Logger(),
+    private readonly timeout = 30000,
+  ) {}
 
   /**
    * Resolve an auth credential: prefer `apiKey`, fall back to `username`/`password` login,
@@ -78,7 +90,7 @@ export class HttpClient {
     });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Login response: ${res.text}`);
-      throw new Error(`Login failed with status ${res.status}`);
+      throw new HttpError(res.status, `Login failed with status ${res.status}`);
     }
     const setCookie = res.headers['set-cookie'];
     if (!setCookie || setCookie.length === 0) {
@@ -102,7 +114,7 @@ export class HttpClient {
     });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
-      throw new Error(`Request failed with status ${res.status}`);
+      throw new HttpError(res.status);
     }
     try {
       return JSON.parse(res.text);
@@ -116,7 +128,7 @@ export class HttpClient {
     const headers = form.getHeaders() as Record<string, string>;
     const res = await this.request('POST', pathname, { headers, form, auth });
     if (res.status < 200 || res.status >= 300) {
-      throw new Error(`Request failed with status ${res.status}: ${res.text}`);
+      throw new HttpError(res.status, `Request failed with status ${res.status}: ${res.text}`);
     }
     try {
       return JSON.parse(res.text);
@@ -168,7 +180,7 @@ export class HttpClient {
     });
   }
 
-  private applyAuth(headers: Record<string, any>, auth?: string | null): void {
+  private applyAuth(headers: Record<string, string | number>, auth?: string | null): void {
     if (!auth) return;
     if (auth.startsWith('pd_')) {
       headers['Authorization'] = `Bearer ${auth}`;

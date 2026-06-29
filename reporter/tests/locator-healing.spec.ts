@@ -8,7 +8,7 @@ import {
   resolveAriaRole,
   suggestLocatorsFromAria,
   type ElementAttributes,
-} from '../src/locator-healing.js';
+} from '../src/internal/capture/locator-healing.js';
 
 function makeAttrs(overrides: Partial<ElementAttributes & { attrs: Record<string, string | null> }> = {}) {
   const a = overrides.attrs ?? {};

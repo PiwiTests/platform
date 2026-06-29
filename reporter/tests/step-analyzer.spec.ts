@@ -7,7 +7,7 @@ import {
   computePerformanceSummary,
   extractTestStepEvents,
   extractWaitEvents,
-} from '../src/step-analyzer.js';
+} from '../src/internal/collect/step-analyzer.js';
 
 describe('categorizeStep', () => {
   it('returns "other" for empty title', () => {

@@ -141,8 +141,8 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
       <UIcon name="i-lucide-wifi-off" class="size-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
       <p>
         No network request data. Add the
-        <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded font-mono">@piwitests/reporter/fixtures</code>
-        to your Playwright config.
+        <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded font-mono">@piwitests/reporter</code>
+        fixtures to your test setup.
       </p>
     </div>
   </div>

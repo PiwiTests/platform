@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Logger } from '../src/logger.js';
+import { Logger } from '../src/internal/support/logger.js';
 
 function captureConsole(): { stdout: string[]; stderr: string[]; restore: () => void } {
   const stdout: string[] = [];

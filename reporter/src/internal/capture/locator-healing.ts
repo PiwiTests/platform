@@ -1,4 +1,4 @@
-import * as path from 'path';
+import * as path from 'node:path';
 
 /**
  * Reporter-local locator healing — pure functions for alternative generation,

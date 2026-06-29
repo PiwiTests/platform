@@ -1,4 +1,4 @@
-import type { TestAnnotation } from './types.js';
+import type { TestAnnotation } from '../../types.js';
 
 /** Minimal structural shape for the annotation carriers (avoids importing Playwright types). */
 interface AnnotationCarrier {

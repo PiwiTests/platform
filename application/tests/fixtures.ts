@@ -2,7 +2,7 @@
  * Shared test fixtures for the Piwi Dashboard test suite.
  *
  * Extends the base Playwright `test` with dashboard fixtures that mirror the
- * behavior of `@piwitests/reporter/fixtures` — automatically
+ * behavior of `@piwitests/reporter` fixtures — automatically
  * capturing network request timing, browser performance (Web Vitals),
  * ARIA snapshots, and locator interaction data for every page interaction
  * so they appear in the dashboard.
@@ -28,8 +28,8 @@ import {
   CAPTURED_ATTRIBUTES,
   type LocatorSnapshot,
   type FailedLocatorInfo,
-} from '../../reporter/dist/locator-healing.js';
-import { ATTACHMENT_NAMES, LOCATOR_SUGGESTION_ANNOTATION } from '../../reporter/dist/attachments.js';
+} from '../../reporter/dist/internal/capture/locator-healing.js';
+import { ATTACHMENT_NAMES, LOCATOR_SUGGESTION_ANNOTATION } from '../../reporter/dist/internal/capture/attachments.js';
 
 type NetworkRequest = {
   method: string;

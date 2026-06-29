@@ -1,4 +1,4 @@
-﻿import * as http from 'http';
+﻿import * as http from 'node:http';
 
 export interface RecordedReq {
   method: string;

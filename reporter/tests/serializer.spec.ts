@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { resolveOverallStatus, toWireTestCase, serializeRun } from '../src/serializer.js';
-import type { RunPayload } from '../src/uploader.js';
+import { resolveOverallStatus, toWireTestCase, serializeRun } from '../src/internal/submit/serializer.js';
+import type { RunPayload } from '../src/internal/submit/uploader.js';
 import type { CollectedTestCase } from '../src/types.js';
 
 describe('resolveOverallStatus', () => {

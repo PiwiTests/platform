@@ -74,7 +74,7 @@ Make sure your test files import `test` from the Piwi Dashboard fixtures (or ext
 ```typescript
 // tests/fixtures.ts
 import { test as base, expect } from '@playwright/test'
-import { dashboardFixtures } from '@piwitests/reporter/fixtures'
+import { dashboardFixtures } from '@piwitests/reporter'
 
 export const test = base.extend(dashboardFixtures)
 export { expect }

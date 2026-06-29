@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/reporter",
-  "version": "0.1.1",
+  "version": "0.5.0",
   "description": "Playwright reporter for sending test results to Piwi Dashboard",
   "url": "https://github.com/PiwiTests/platform",
   "homepage": "https://piwitests.github.io",
@@ -19,11 +19,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.js"
-    },
-    "./fixtures": {
-      "types": "./dist/fixtures.d.ts",
-      "import": "./dist/fixtures.js",
-      "require": "./dist/fixtures.js"
     }
   },
   "keywords": [

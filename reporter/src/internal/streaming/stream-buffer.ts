@@ -1,15 +1,15 @@
-import * as path from 'path';
-import * as os from 'os';
-import * as fs from 'fs';
-import { hashForProject } from './helpers.js';
-import type { StreamEvent } from './types.js';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import * as fs from 'node:fs';
+import { hashForProject } from '../support/instance-id.js';
+import type { StreamEvent } from '../../types.js';
 
 /**
  * Persistent JSONL buffer on disk.  Events are appended to a temp file so they
  * survive a crash and can be replayed when the reporter restarts.
  */
 export class StreamBuffer {
-  private filePath: string;
+  private readonly filePath: string;
 
   constructor(projectName: string) {
     this.filePath = path.join(os.tmpdir(), `piwi-dashboard-stream-${hashForProject(projectName)}.jsonl`);

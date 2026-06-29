@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mergeAnnotations, classifyStatus } from '../src/skip-classify.js';
+import { mergeAnnotations, classifyStatus } from '../src/internal/collect/skip-classify.js';
 
 describe('mergeAnnotations', () => {
   it('merges test- and result-level annotations, deduped', () => {

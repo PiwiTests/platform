@@ -1,5 +1,6 @@
 import type { PlaywrightTestConfig } from '@playwright/test';
-import { applyOptionsToEnv, type PiwiDashboardOptions } from './config.js';
+import { applyOptionsToEnv } from '../internal/config/env.js';
+import type { PiwiDashboardOptions } from './options.js';
 
 const PIWI_MODULE = '@piwitests/reporter';
 
@@ -25,9 +26,9 @@ function injectReporter(
 
 function resolveSetupModule(): string {
   try {
-    return require.resolve('./global-setup-module.js');
+    return require.resolve('../global-setup-module.js');
   } catch {
-    return require.resolve('./global-setup-module.ts');
+    return require.resolve('../global-setup-module.ts');
   }
 }
 

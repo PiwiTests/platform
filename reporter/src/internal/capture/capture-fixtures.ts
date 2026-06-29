@@ -1,4 +1,4 @@
-import { gunzipSync } from 'zlib';
+import { gunzipSync } from 'node:zlib';
 import type {
   Browser,
   BrowserContext,
@@ -166,9 +166,9 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
         let result: unknown;
         try {
           result = await fn.apply(target, callArgs);
-        } catch (err) {
+        } catch (error) {
           sink.failedLocators.push({ method: originMethod, args: originArgs });
-          throw err;
+          throw error;
         }
 
         // Fire-and-forget: capture element data without blocking the test.
@@ -545,7 +545,7 @@ export const dashboardFixtures: Fixtures = {
  * @example
  * ```ts
  * import { test as base } from '@playwright/test';
- * import { extendDashboardFixtures } from '@piwitests/reporter/fixtures';
+ * import { extendDashboardFixtures } from '@piwitests/reporter';
  *
  * export const test = extendDashboardFixtures(base);
  * ```

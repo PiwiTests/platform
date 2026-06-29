@@ -1,11 +1,12 @@
-import fs from 'fs';
-import path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import FormData from 'form-data';
-import { HttpClient } from './http-client.js';
-import { FileHandler } from './file-handler.js';
-import { Logger } from './logger.js';
+import type { HttpClient } from '../transport/http-client.js';
+import { HttpError } from '../transport/http-client.js';
+import type { FileHandler } from '../files/file-handler.js';
+import { Logger } from '../support/logger.js';
 import { serializeRun, toWireTestCase } from './serializer.js';
-import type { CollectedTestCase, TraceHashInfo, FilterDetails } from './types.js';
+import type { CollectedTestCase, TraceHashInfo, FilterDetails } from '../../types.js';
 
 /** Payload for a batch test-run submission */
 export interface RunPayload {
@@ -70,9 +71,9 @@ export class Uploader {
    * @param logger      Prefixed logger.
    */
   constructor(
-    private httpClient: HttpClient,
-    private fileHandler: FileHandler,
-    private logger: Logger,
+    private readonly httpClient: HttpClient,
+    private readonly fileHandler: FileHandler,
+    private readonly logger: Logger = new Logger(),
   ) {}
 
   /** Submit test results as a plain JSON payload (no file attachments) */
@@ -212,9 +213,9 @@ export class Uploader {
     const includeTraceFile = !traceInfo || !missingHashes || missingHashes.has(traceInfo.hash);
     try {
       await this.httpClient.postFormData(`/api/test-runs/${runId}/case-files`, buildForm(includeTraceFile), auth);
-    } catch (error: any) {
+    } catch (error) {
       // 422: the server doesn't have the blob after all — resend with the file
-      if (traceInfo && !includeTraceFile && error.message?.includes('422')) {
+      if (traceInfo && !includeTraceFile && error instanceof HttpError && error.status === 422) {
         await this.httpClient.postFormData(`/api/test-runs/${runId}/case-files`, buildForm(true), auth);
       } else {
         throw error;

@@ -18,4 +18,4 @@ export const ATTACHMENT_NAMES = {
 export const INTERNAL_ATTACHMENT_NAMES: ReadonlySet<string> = new Set(Object.values(ATTACHMENT_NAMES));
 
 /** Annotation type that surfaces a locator-healing suggestion in the report/trace. */
-export const LOCATOR_SUGGESTION_ANNOTATION = 'piwi-locator-suggestion';
+export const LOCATOR_SUGGESTION_ANNOTATION = ATTACHMENT_NAMES.locatorSuggestion;
