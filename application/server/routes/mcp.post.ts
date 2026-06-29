@@ -5,6 +5,7 @@ import { ok, rpcErr, RPC, MCP_PROTOCOL_VERSION, MCP_SERVER_INFO } from '../utils
 import type { JsonRpcRequest } from '../utils/mcp/protocol';
 
 const TOOL_MAP = new Map(MCP_TOOLS.map((t) => [t.name, t]));
+const MAX_BODY_BYTES = 1_048_576; // 1 MB — reject oversized batches early
 
 // ── MCP Streamable HTTP endpoint ─────────────────────────────────────────────
 //
@@ -28,6 +29,16 @@ export default eventHandler(async (event) => {
 
   // Authenticate using the same API-key / session mechanism as the REST API.
   await requireAuth(event);
+
+  const contentLength = Number(event.headers.get('content-length') ?? 0);
+  if (contentLength > MAX_BODY_BYTES) {
+    setResponseStatus(event, 413);
+    return {
+      jsonrpc: '2.0',
+      id: null,
+      error: { code: RPC.INVALID_REQUEST, message: 'Request body too large (max 1 MB)' },
+    };
+  }
 
   const body = await readBody<JsonRpcRequest | JsonRpcRequest[]>(event);
   const requests = Array.isArray(body) ? body : [body];
