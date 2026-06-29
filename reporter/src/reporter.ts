@@ -6,6 +6,7 @@ import { Uploader } from './uploader.js';
 import { StreamBuffer } from './stream-buffer.js';
 import { CrashRecovery } from './crash-recovery.js';
 import { FileHandler } from './file-handler.js';
+import { ATTACHMENT_NAMES } from './attachments.js';
 import { MetadataCollector } from './metadata-collector.js';
 import { StreamManager } from './stream-manager.js';
 import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from './step-analyzer.js';
@@ -307,7 +308,7 @@ export class PiwiDashboardReporter {
       // with pw:api steps — that was unreliable across workers/concurrent calls.
       const locatorAttachment =
         this.options.captureLocators !== false
-          ? result.attachments.find((a: any) => a.name === 'piwi-dashboard-locators')
+          ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.locators)
           : undefined;
       if (locatorAttachment?.body) {
         try {

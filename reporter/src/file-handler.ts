@@ -3,6 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { compressDirectory } from './compression.js';
 import { Logger } from './logger.js';
+import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES } from './attachments.js';
 import type { CollectedTestCase, RawAttachment, TraceHashInfo } from './types.js';
 
 /**
@@ -61,7 +62,7 @@ export class FileHandler {
     return Array.from(set);
   }
 
-  /** Return all non-trace, non-internal attachments from a test case. Skips `trace` and `piwi-dashboard-*` attachments. */
+  /** Return all non-trace, non-internal attachments from a test case. Skips `trace` and `piwi-*` attachments. */
   findAllAttachments(
     testCase: CollectedTestCase,
   ): Array<{ name: string; path: string; contentType: string; originalName: string }> {
@@ -69,7 +70,7 @@ export class FileHandler {
     if (testCase.attachments) {
       for (const a of testCase.attachments) {
         if (a.name === 'trace') continue;
-        if (a.name?.startsWith('piwi-dashboard-')) continue;
+        if (a.name && INTERNAL_ATTACHMENT_NAMES.has(a.name)) continue;
         if (a.path && fs.existsSync(a.path)) {
           result.push({
             name: a.name || 'attachment',
@@ -93,11 +94,11 @@ export class FileHandler {
     };
   }
 
-  /** Parse Piwi-internal attachment bodies (`piwi-dashboard-network`, `-web-vitals`, `-console`, `-aria-snapshot`) into structured fields on the test case */
+  /** Parse Piwi-internal attachment bodies (`piwi-network`, `piwi-web-vitals`, `piwi-console`, `piwi-aria-snapshot`) into structured fields on the test case */
   parsePerformanceAttachments(testCase: CollectedTestCase, attachments: RawAttachment[]): void {
     const find = (name: string) => attachments.find((a) => a.name === name);
 
-    const net = find('piwi-dashboard-network');
+    const net = find(ATTACHMENT_NAMES.network);
     if (net?.body) {
       try {
         testCase.networkRequests = JSON.parse((net.body as Buffer).toString());
@@ -106,7 +107,7 @@ export class FileHandler {
       }
     }
 
-    const vitals = find('piwi-dashboard-web-vitals');
+    const vitals = find(ATTACHMENT_NAMES.webVitals);
     if (vitals?.body) {
       try {
         testCase.webVitals = JSON.parse((vitals.body as Buffer).toString());
@@ -115,7 +116,7 @@ export class FileHandler {
       }
     }
 
-    const consoleLog = find('piwi-dashboard-console');
+    const consoleLog = find(ATTACHMENT_NAMES.console);
     if (consoleLog?.body) {
       try {
         testCase.consoleLogs = JSON.parse((consoleLog.body as Buffer).toString());
@@ -124,7 +125,7 @@ export class FileHandler {
       }
     }
 
-    const aria = find('piwi-dashboard-aria-snapshot');
+    const aria = find(ATTACHMENT_NAMES.ariaSnapshot);
     if (aria?.body) testCase.ariaSnapshot = (aria.body as Buffer).toString();
   }
 

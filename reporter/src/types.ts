@@ -129,15 +129,15 @@ export interface CollectedTestCase {
   /** Step metrics from `collectStepMetrics`. Consumed by the run summary + `toWireTestCase`. */
   performanceMetrics?: CollectedPerformanceMetrics;
   stepEvents?: TestStepEvent[];
-  /** Parsed from `piwi-dashboard-network` attachments by `FileHandler`. */
+  /** Parsed from `piwi-network` attachments by `FileHandler`. */
   networkRequests?: unknown;
-  /** Parsed from `piwi-dashboard-web-vitals` attachments. */
+  /** Parsed from `piwi-web-vitals` attachments. */
   webVitals?: unknown;
-  /** Parsed from `piwi-dashboard-console` attachments. */
+  /** Parsed from `piwi-console` attachments. */
   consoleLogs?: unknown;
-  /** Parsed from `piwi-dashboard-aria-snapshot` attachment. */
+  /** Parsed from `piwi-aria-snapshot` attachment. */
   ariaSnapshot?: string;
-  /** Parsed from `piwi-dashboard-locators` attachment. */
+  /** Parsed from `piwi-locators` attachment. */
   locatorSnapshots?: import('./locator-healing.js').LocatorSnapshot[];
 }
 

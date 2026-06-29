@@ -38,13 +38,23 @@ describe('Build output', () => {
     expect(source).toContain('exports.dashboardFixtures');
     expect(source).toContain('page.on');
     expect(source).toContain('requestfinished');
-    expect(source).toContain('piwi-dashboard-network');
-    expect(source).toContain('piwi-dashboard-web-vitals');
+    // Attachment names live in attachments.ts now; fixtures.js references them.
+    expect(source).toContain('ATTACHMENT_NAMES');
   });
 
   it('fixtures.d.ts should export dashboardFixtures type', () => {
     const content = readFileSync(dist('fixtures.d.ts'), 'utf-8');
     expect(content).toContain('dashboardFixtures');
+  });
+
+  it('attachments.js should define the dashboard attachment names', () => {
+    expect(existsSync(dist('attachments.js'))).toBe(true);
+    const source = readFileSync(dist('attachments.js'), 'utf-8');
+    expect(source).toContain('piwi-locators');
+    expect(source).toContain('piwi-network');
+    expect(source).toContain('piwi-web-vitals');
+    expect(source).toContain('piwi-console');
+    expect(source).toContain('piwi-aria-snapshot');
   });
 
   it('step-analyzer.js should export step metrics functions', () => {

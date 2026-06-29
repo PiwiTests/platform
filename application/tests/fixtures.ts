@@ -29,6 +29,7 @@ import {
   type LocatorSnapshot,
   type FailedLocatorInfo,
 } from '../../reporter/dist/locator-healing.js';
+import { ATTACHMENT_NAMES, LOCATOR_SUGGESTION_ANNOTATION } from '../../reporter/dist/attachments.js';
 
 type NetworkRequest = {
   method: string;
@@ -90,7 +91,7 @@ async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
     await Promise.allSettled(pendingHandlers);
 
     if (networkRequests.length > 0) {
-      await testInfo.attach('piwi-dashboard-network', {
+      await testInfo.attach(ATTACHMENT_NAMES.network, {
         contentType: 'application/json',
         body: Buffer.from(JSON.stringify(networkRequests)),
       });
@@ -126,7 +127,7 @@ async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
       });
 
       if (webVitals) {
-        await testInfo.attach('piwi-dashboard-web-vitals', {
+        await testInfo.attach(ATTACHMENT_NAMES.webVitals, {
           contentType: 'application/json',
           body: Buffer.from(JSON.stringify(webVitals)),
         });
@@ -298,7 +299,7 @@ export const test = base.extend<{ page: Page }>({
     // already bounded, this is a backstop.
     await Promise.race([Promise.allSettled(capturePromises), new Promise((resolve) => setTimeout(resolve, 2000))]);
     if (capturedLocators.length > 0) {
-      await testInfo.attach('piwi-dashboard-locators', {
+      await testInfo.attach(ATTACHMENT_NAMES.locators, {
         contentType: 'application/json',
         body: Buffer.from(JSON.stringify(capturedLocators)),
       });
@@ -320,7 +321,7 @@ export const test = base.extend<{ page: Page }>({
       if (testInfo.status !== 'passed' && testInfo.status !== 'skipped') {
         const snapshot = await page.locator(':root').ariaSnapshot();
         if (snapshot) {
-          await testInfo.attach('piwi-dashboard-aria-snapshot', {
+          await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshot, {
             contentType: 'text/plain',
             body: snapshot,
           });
@@ -332,10 +333,10 @@ export const test = base.extend<{ page: Page }>({
           const suggestion = failed ? suggestLocatorsFromAria(failed, snapshot) : null;
           if (suggestion) {
             testInfo.annotations.push({
-              type: 'piwi-locator-suggestion',
+              type: LOCATOR_SUGGESTION_ANNOTATION,
               description: `${suggestion.failing} matched nothing on the failing page — the element may have been renamed or moved. Suggested: ${suggestion.suggestions.join('  |  ')}`,
             });
-            await testInfo.attach('piwi-dashboard-locator-suggestion', {
+            await testInfo.attach(ATTACHMENT_NAMES.locatorSuggestion, {
               contentType: 'application/json',
               body: Buffer.from(JSON.stringify(suggestion)),
             });
