@@ -234,8 +234,8 @@ test.describe('Environment API Tests', () => {
     expect(testRun.environment).toBe('staging');
   });
 
-  test('reporter config.d.ts should include environment option', async () => {
-    const typeDefsPath = join(process.cwd(), '..', 'reporter', 'dist', 'config.d.ts');
+  test('reporter options.d.ts should include environment option', async () => {
+    const typeDefsPath = join(process.cwd(), '..', 'reporter', 'dist', 'public', 'options.d.ts');
     const typeDefs = readFileSync(typeDefsPath, 'utf-8');
 
     expect(typeDefs).toContain('environment');
