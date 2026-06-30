@@ -304,14 +304,18 @@ export default defineNuxtConfig({
           });
         }
         const oaMeta = (nitro as unknown as { options: { openAPI?: { meta?: Record<string, unknown> } } }).options
-          .openAPI?.meta as Record<string, string> | undefined;
-        const spec = {
+          .openAPI?.meta as Record<string, unknown> | undefined;
+        const { title, version, description, components, security, ...restMeta } = oaMeta ?? {};
+        const spec: Record<string, unknown> = {
           openapi: '3.1.0',
           info: {
-            title: oaMeta?.title || 'Piwi Dashboard API',
-            version: oaMeta?.version || '1.0.0',
-            description: oaMeta?.description || '',
+            title: (title as string) || 'Piwi Dashboard API',
+            version: (version as string) || '1.0.0',
+            description: (description as string) || '',
+            ...restMeta,
           },
+          ...(components ? { components } : {}),
+          ...(security ? { security } : {}),
           paths,
         };
         const outDir = (nitro as unknown as { options: { output: { publicDir: string } } }).options.output.publicDir;
