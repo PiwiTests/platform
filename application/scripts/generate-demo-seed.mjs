@@ -288,8 +288,10 @@ const ALL_CASE_DEFS = [
 ];
 
 const caseIdsByProject = {};
+const caseFilesByProject = {};
 for (const [pid, cases] of ALL_CASE_DEFS) {
   caseIdsByProject[pid] = [];
+  caseFilesByProject[pid] = [];
   const now = ts('2025-03-01');
   for (const [fp, title] of cases) {
     const suiteId = suiteLookup[pid]?.[fp] ?? null;
@@ -306,6 +308,7 @@ for (const [pid, cases] of ALL_CASE_DEFS) {
       updated_at: now,
     });
     caseIdsByProject[pid].push(tcId);
+    caseFilesByProject[pid].push(fp);
     tcId++;
   }
 }
@@ -436,6 +439,51 @@ const STEPS_TEMPLATES = [
     { title: 'Check database state', duration: 200, category: 'assertion' },
   ],
 ];
+
+// Parallel-worker model for seeded runs: tests are pulled round-robin across a
+// fixed pool of workers and run back-to-back per worker (matching the demo
+// simulator), so the Workers timeline shows dense rows instead of large gaps.
+const SEED_WORKER_COUNT = 4;
+const SEED_WORKER_GAP_MS = 200;
+
+/**
+ * Build realistic `step_events` for a seeded case: before/after hooks, the
+ * context/page fixtures, framework-injected waits, and — for wait-heavy cases —
+ * an explicit `Wait for timeout` sleep that counts as wasted time under the
+ * default wasted-wait patterns. Segment offsets are emitted as absolute epoch ms
+ * anchored to the case's start so the timeline can place each segment. Returns
+ * the events plus the total wasted ms (sum of the explicit timeout sleeps).
+ */
+function buildSeedStepEvents(caseStartMs, caseDuration, location, waitHeavy) {
+  const events = [];
+  let offset = 0;
+  const seg = (title, category, duration, status, loc = null) => {
+    events.push({ title, category, startedAt: caseStartMs + offset, duration, status, location: loc });
+    offset += duration;
+  };
+  // Each framework segment is a fraction of the test duration, clamped so it
+  // stays visible without overflowing short tests.
+  const frac = (f, min, max) => Math.max(min, Math.min(max, Math.round(caseDuration * f)));
+
+  seg('Before Hooks', 'hook', frac(0.06, 60, 200), 'passed');
+  seg('fixture: context', 'fixture', frac(0.04, 40, 120), 'passed');
+  seg('fixture: page', 'fixture', frac(0.03, 30, 90), 'passed');
+  // Framework-injected navigation wait — not wasted.
+  seg('Wait for load state', 'wait', frac(0.1, 80, 600), 'passed');
+
+  let wastedMs = 0;
+  if (waitHeavy) {
+    // Explicit author sleep — wasted under DEFAULT_WASTED_WAIT_PATTERNS.
+    const timeoutDur = frac(0.18, 400, 2500);
+    seg('Wait for timeout', 'wait', timeoutDur, 'wasted', location);
+    wastedMs += timeoutDur;
+  }
+  // Wait for selector — framework-injected, not wasted.
+  seg('Wait for selector', 'wait', frac(0.06, 40, 500), 'passed');
+  seg('After Hooks', 'hook', frac(0.05, 50, 160), 'passed');
+
+  return { stepEvents: events, wastedMs };
+}
 
 const SERVER_LOGS_OK = [
   { timestamp: 1714000000000, level: 'info', category: 'http', message: 'GET /products — 200 OK (85ms)' },
@@ -637,6 +685,11 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
     const netTemplate = NETWORK_TEMPLATES[i % NETWORK_TEMPLATES.length];
     const lookup = clusterLookup[projectId] || {};
 
+    // Per-worker virtual clock (ms since run start). Tests run back-to-back on
+    // their assigned worker, so timeline rows are dense rather than gappy.
+    const runStartMs = startTime * 1000;
+    const workerCursorMs = new Array(SEED_WORKER_COUNT).fill(0);
+
     for (let j = 0; j < caseIds.length; j++) {
       const caseId = caseIds[j];
       const isFailedCase = failedTests > 0 && j < failedTests;
@@ -646,6 +699,9 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
       const caseStatus = isFailedCase ? 'failed' : isDidNotRunCase ? 'didnotrun' : 'passed';
       const caseDurationVariance = (Math.random() - 0.5) * 0.3 * avgTestDuration;
       const caseDuration = isDidNotRunCase ? 0 : Math.max(500, Math.round(avgTestDuration + caseDurationVariance));
+
+      const workerIndex = j % SEED_WORKER_COUNT;
+      const caseStartMs = runStartMs + workerCursorMs[workerIndex];
 
       // Determine cluster and error text for this case
       const clusterId = isFailedCase ? lookup[j] || null : null;
@@ -690,6 +746,15 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
         testAnnotations = [{ type: 'smoke' }];
       }
 
+      // Timeline step events: every executed case shows hooks/fixtures/waits;
+      // ~1/3 of long-enough cases also carry an explicit wasted `Wait for timeout`.
+      // Did-not-run cases never executed, so they have no step events.
+      const caseFile = caseFilesByProject[projectId][j];
+      const waitHeavy = !isDidNotRunCase && caseDuration >= 1500 && j % 3 === 0;
+      const { stepEvents, wastedMs } = isDidNotRunCase
+        ? { stepEvents: null, wastedMs: 0 }
+        : buildSeedStepEvents(caseStartMs, caseDuration, `${caseFile}:${10 + j * 8}:5`, waitHeavy);
+
       const trcIdVal = trcId++;
       const trc = {
         id: trcIdVal,
@@ -707,7 +772,8 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
         browser,
         test_annotations: testAnnotations,
         steps,
-        wasted_time_ms: Math.random() < 0.3 ? Math.round(500 + Math.random() * 3000) : 0,
+        step_events: stepEvents,
+        wasted_time_ms: wastedMs,
         slowest_step: slowestStep.title,
         slowest_step_duration: slowestStep.duration,
         web_vitals: {
@@ -728,17 +794,20 @@ for (const [pid, cfg] of Object.entries(PROJECT_CONFIGS)) {
               {
                 type: 'error',
                 text: error ? error.split('\n')[0] : 'Unknown error',
-                timestamp: (startTime + Math.floor((j * caseDuration) / 1000)) * 1000,
+                timestamp: caseStartMs,
                 location: null,
               },
             ]
           : null,
         aria_snapshot: null,
-        worker_index: j % 4,
-        started_at: (startTime + Math.floor((j * caseDuration) / 1000)) * 1000,
-        created_at: startTime + Math.floor((j * caseDuration) / 1000),
+        worker_index: workerIndex,
+        started_at: caseStartMs,
+        created_at: Math.floor(caseStartMs / 1000),
       };
       TEST_RUNS_CASES.push(trc);
+
+      // Advance this worker's clock so the next test it picks up runs after it.
+      workerCursorMs[workerIndex] += caseDuration + SEED_WORKER_GAP_MS;
 
       for (const req of netWithLogs) {
         NETWORK_REQUESTS.push({
@@ -1724,7 +1793,7 @@ const VERSION_OUTPUT = join(__dirname, '../public/demo/seed.version.json');
 
 mkdirSync(join(__dirname, '../public/demo'), { recursive: true });
 writeFileSync(OUTPUT, content, 'utf-8');
-writeFileSync(VERSION_OUTPUT, JSON.stringify(versionInfo, null, 2), 'utf-8');
+writeFileSync(VERSION_OUTPUT, JSON.stringify(versionInfo, null, 2) + '\n', 'utf-8');
 
 console.log(`✅  Demo seed written to ${OUTPUT}`);
 console.log(`✅  Version file written to ${VERSION_OUTPUT}`);
