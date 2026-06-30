@@ -111,10 +111,10 @@ test.describe.serial('MCP server', () => {
 
   test('tools/call list_runs — filters by projectId', async ({ request }) => {
     const body = await mcp(request, 'tools/call', { name: 'list_runs', arguments: { projectId } });
-    const runs = JSON.parse(body.result.content[0].text);
-    expect(Array.isArray(runs)).toBe(true);
-    expect(runs.length).toBeGreaterThan(0);
-    expect(runs[0].status).toBe('failed');
+    const result = JSON.parse(body.result.content[0].text);
+    expect(Array.isArray(result.items)).toBe(true);
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items[0].status).toBe('failed');
   });
 
   test('tools/call get_run — returns summary and failed cases', async ({ request }) => {
@@ -147,21 +147,21 @@ test.describe.serial('MCP server', () => {
       name: 'list_failed_cases',
       arguments: { projectId, runId },
     });
-    const cases = JSON.parse(body.result.content[0].text);
-    expect(Array.isArray(cases)).toBe(true);
-    expect(cases.length).toBe(2);
-    expect(cases[0]).toHaveProperty('title');
-    expect(cases[0]).toHaveProperty('error');
+    const result = JSON.parse(body.result.content[0].text);
+    expect(Array.isArray(result.items)).toBe(true);
+    expect(result.items.length).toBe(2);
+    expect(result.items[0]).toHaveProperty('title');
+    expect(result.items[0]).toHaveProperty('error');
   });
 
   test('tools/call list_clusters — returns cluster list', async ({ request }) => {
     const body = await mcp(request, 'tools/call', { name: 'list_clusters', arguments: { projectId } });
-    const clusters = JSON.parse(body.result.content[0].text);
-    expect(Array.isArray(clusters)).toBe(true);
+    const result = JSON.parse(body.result.content[0].text);
+    expect(Array.isArray(result.items)).toBe(true);
     // Two similar errors should be grouped into at least one cluster
-    expect(clusters.length).toBeGreaterThan(0);
-    expect(clusters[0]).toHaveProperty('id');
-    expect(clusters[0]).toHaveProperty('status');
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items[0]).toHaveProperty('id');
+    expect(result.items[0]).toHaveProperty('status');
   });
 
   test('tools/call with unknown tool — returns method error', async ({ request }) => {
@@ -187,6 +187,6 @@ test.describe.serial('MCP server', () => {
     const ping = body.find((r: any) => r.id === 1);
     const list = body.find((r: any) => r.id === 2);
     expect(ping.result).toEqual({});
-    expect(list.result.tools.length).toBe(14);
+    expect(list.result.tools.length).toBe(18);
   });
 });
