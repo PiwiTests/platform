@@ -5,7 +5,7 @@ layout: home
 hero:
   name: "Piwi Dashboard"
   text: "Self-hosted Playwright observability"
-  tagline: "A permanent home for your test results — live streaming, failure clustering, AI diagnosis, cross-run analytics, and team triage. No external services required."
+  tagline: "Live dashboards, failure clustering, and flaky-test tracking for your whole team. Nothing vanishes when CI finishes — no SaaS, no lock-in."
   image: /logo-wide.svg
 
   actions:
@@ -59,6 +59,11 @@ features:
 
 ## See it in action
 
+<div class="demo-video">
+  <video src="/demo-live-run.mp4" autoplay loop muted playsinline controls poster="/screenshots/demo-live-run-poster.png"></video>
+  <p class="screenshot-caption">Live streaming — a run updating in real time as tests complete. No polling, no waiting on CI to finish.</p>
+</div>
+
 <div class="screenshot-grid">
   <div class="screenshot-item screenshot-featured">
     <img src="/screenshots/home.png" alt="Dashboard overview — stats and test results trend chart" />
@@ -96,6 +101,15 @@ features:
 
 </div>
 
+<div class="cta-footer">
+  <h2>Stop losing your test history.</h2>
+  <p>Self-hosted in one Docker command — your data, your infrastructure, nothing vanishes when CI finishes.</p>
+  <div class="cta-footer-actions">
+    <a class="cta-btn cta-btn-brand" href="/getting-started">Get started</a>
+    <a class="cta-btn cta-btn-alt" href="https://github.com/piwitests/platform">View on GitHub</a>
+  </div>
+</div>
+
 <style>
 .screenshots {
   max-width: 1152px;
@@ -120,6 +134,19 @@ features:
   grid-column: 1 / -1;
 }
 
+.demo-video {
+  margin-bottom: 40px;
+}
+
+.demo-video video {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--vp-c-divider);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+  display: block;
+  background: #000;
+}
+
 .screenshot-item img {
   width: 100%;
   border-radius: 12px;
@@ -133,6 +160,63 @@ features:
   font-size: 0.875rem;
   color: var(--vp-c-text-2);
   text-align: center;
+}
+
+.cta-footer {
+  max-width: 1152px;
+  margin: 0 auto 64px;
+  padding: 56px 24px;
+  text-align: center;
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.cta-footer h2 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.cta-footer p {
+  color: var(--vp-c-text-2);
+  font-size: 1rem;
+  margin-bottom: 28px;
+}
+
+.cta-footer-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.vp-doc .cta-btn {
+  display: inline-block;
+  border-radius: 20px;
+  padding: 10px 24px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  text-decoration: none;
+  transition: border-color 0.25s, color 0.25s, background-color 0.25s;
+}
+
+.cta-btn-brand {
+  background-color: var(--vp-button-brand-bg);
+  color: var(--vp-button-brand-text);
+}
+
+.cta-btn-brand:hover {
+  background-color: var(--vp-button-brand-hover-bg);
+}
+
+.cta-btn-alt {
+  background-color: var(--vp-button-alt-bg);
+  color: var(--vp-button-alt-text);
+  border-color: var(--vp-button-alt-border);
+}
+
+.cta-btn-alt:hover {
+  background-color: var(--vp-button-alt-hover-bg);
 }
 
 @media (max-width: 768px) {
