@@ -16,13 +16,13 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/@piwitests/reporter"><img src="https://img.shields.io/npm/v/@piwitests/reporter?logo=npm&labelColor=020420&color=CB3837" alt="npm"></a>
   <a href="https://hub.docker.com/r/phenx/piwi-dashboard"><img src="https://img.shields.io/docker/v/phenx/piwi-dashboard?logo=docker&labelColor=020420&color=2496ED" alt="Docker"></a>
+  <a href="https://github.com/piwitests/platform/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/piwitests/platform/ci.yml?branch=main&logo=githubactions&logoColor=white&labelColor=020420&label=CI" alt="CI status"></a>
+  <a href="https://github.com/piwitests/platform/stargazers"><img src="https://img.shields.io/github/stars/piwitests/platform?logo=github&labelColor=020420&color=f59e0b" alt="GitHub stars"></a>
 </p>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/public/screenshots/home-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/public/screenshots/home-light.png">
-  <img alt="Dashboard home — project health, tendency, and recent activity" src="docs/public/screenshots/home-light.png">
-</picture>
+<video src="docs/public/demo-live-run.mp4" controls autoplay loop muted playsinline poster="docs/public/screenshots/demo-live-run-poster.png">
+  Your browser doesn't support embedded video — <a href="docs/public/demo-live-run.mp4">download the clip</a>.
+</video>
 
 ## Why Piwi?
 
@@ -31,11 +31,11 @@ Native Playwright HTML reports are great for local debugging — but they're eph
 - 🗄️ **Permanent history** — every run, trace, and report stored and browsable across time.
 - ⚡ **Live streaming** — watch runs in real time as CI executes; no polling, no waiting.
 - 🔗 **Failure clustering** — failures sharing a root cause are auto-grouped by error fingerprint.
-- 🤖 **AI diagnosis** — LLM analysis of a failure cluster, grounded in your actual SCM diff.
-- 🩹 **Locator healing** — when a locator breaks, ranked replacement locators captured from prior passing runs, with a recommended fix.
 - 📈 **Performance & flaky tracking** — P90 duration trends, slowest tests, composite flakiness scores.
-- 🔌 **Built for automation** — drop-in reporter, REST API, OpenAPI docs, and an MCP server for AI agents.
+- 🩹 **Locator healing** — when a locator breaks, ranked replacement locators captured from prior passing runs, with a recommended fix.
+- 🔌 **Built for automation** — drop-in reporter, REST API, OpenAPI docs, and an MCP server for agent integrations.
 - ☁️ **Zero lock-in** — self-hosted with Docker; your data in SQLite/PostgreSQL and local/S3 storage.
+- 🤖 **AI-assisted diagnosis** *(optional)* — LLM analysis of a failure cluster, grounded in your actual SCM diff, to speed up triage.
 
 👉 **[Explore the live demo](https://piwitests.github.io/demo/)** — no install required.
 
