@@ -1,5 +1,5 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -154,7 +154,11 @@ export default defineNuxtConfig({
     // at runtime, and every prerender request returns 500. Using memory avoids the
     // Windows file-URL resolution issue entirely (and is equivalent for a single build
     // run since the prerender cache is discarded after each generate anyway).
-    prerender: isDemo ? { failOnError: false } : undefined,
+    // Pre-render /_openapi.json so it ships as a static file in the demo.
+    // Nitro's built-in OpenAPI handler reads compiled route metadata (from
+    // defineRouteMeta transforms) and writes the full spec to
+    // .output/public/_openapi.json, which the /docs page fetches at runtime.
+    prerender: isDemo ? { failOnError: false, routes: ['/_openapi.json'] } : undefined,
     storage: isDemo ? { 'internal:nuxt:prerender': { driver: 'memory' } } : undefined,
     publicAssets: [
       {
@@ -275,54 +279,6 @@ export default defineNuxtConfig({
         if (!existsSync(seedSrc)) {
           console.warn('[Build] WARNING: public/demo/seed.sql not found. Run `npm run seed:demo` before building.');
         }
-
-        // Generate _openapi.json from Nitro handler metadata.
-        // Written directly to the output public dir so it's available as a
-        // static file for the in-app Scalar API reference page at /docs.
-        const handlers = (
-          nitro as unknown as {
-            options: {
-              handlers: { route?: string; method?: string; meta?: { openAPI?: Record<string, unknown> } }[];
-            };
-          }
-        ).options.handlers;
-        const paths: Record<string, unknown> = {};
-        for (const h of handlers) {
-          if (!h.route || !h.meta?.openAPI) continue;
-          const route = h.route.replace(/:(\w+)/g, '{$1}').replace(/\*\*.*$/, '{path}');
-          const method = (h.method || 'get').toLowerCase();
-          const openAPI = { ...h.meta.openAPI };
-          delete (openAPI as Record<string, unknown>).$global;
-          paths[route] ??= {};
-          Object.assign(paths[route] as Record<string, unknown>, {
-            [method]: {
-              tags: route.startsWith('/api/') ? ['API Routes'] : ['App Routes'],
-              parameters: [],
-              responses: { 200: { description: 'OK' } },
-              ...openAPI,
-            },
-          });
-        }
-        const oaMeta = (nitro as unknown as { options: { openAPI?: { meta?: Record<string, unknown> } } }).options
-          .openAPI?.meta as Record<string, unknown> | undefined;
-        const { title, version, description, components, security, ...restMeta } = oaMeta ?? {};
-        const spec: Record<string, unknown> = {
-          openapi: '3.1.0',
-          info: {
-            title: (title as string) || 'Piwi Dashboard API',
-            version: (version as string) || '1.0.0',
-            description: (description as string) || '',
-            ...restMeta,
-          },
-          ...(components ? { components } : {}),
-          ...(security ? { security } : {}),
-          paths,
-        };
-        const outDir = (nitro as unknown as { options: { output: { publicDir: string } } }).options.output.publicDir;
-        const specPath = resolve(outDir, '_openapi.json');
-        mkdirSync(dirname(specPath), { recursive: true });
-        writeFileSync(specPath, JSON.stringify(spec, null, 2), 'utf-8');
-        console.log(`[Build] Generated OpenAPI spec at ${specPath} (${Object.keys(paths).length} paths)`);
       }
     },
   },
