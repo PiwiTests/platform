@@ -45,6 +45,16 @@ const testCount = computed(() => timelineData.value.filter((d) => !d.isHook && !
 const hookCount = computed(() => timelineData.value.filter((d) => d.isHook).length);
 const waitCount = computed(() => timelineData.value.filter((d) => d.isWait).length);
 
+// Which span types are shown — toggled from the header dropdown.
+const spanTypes = ref({ tests: true, hooks: true, waits: true });
+const visibleItems = computed(() =>
+  timelineData.value.filter((item) => {
+    if (item.isWait) return spanTypes.value.waits;
+    if (item.isHook) return spanTypes.value.hooks;
+    return spanTypes.value.tests;
+  }),
+);
+
 // Tooltip state — driven by hover events from the bars.
 const hoveredItem = ref<TimelineItem | null>(null);
 const tooltipPos = ref({ x: 0, y: 0 });
@@ -66,6 +76,7 @@ function onBarLeave() {
 <template>
   <div v-if="timelineData.length > 0" class="relative select-none">
     <TimelineHeader
+      v-model:span-types="spanTypes"
       :worker-count="workerRows.length"
       :shard-total="shardTotal"
       :test-count="testCount"
@@ -111,7 +122,7 @@ function onBarLeave() {
         />
 
         <TimelineBar
-          v-for="item in timelineData"
+          v-for="item in visibleItems"
           :key="item.id"
           :item="item"
           :x="getBarX(item)"
