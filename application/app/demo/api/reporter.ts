@@ -14,6 +14,7 @@ import { getDemoDb } from '../db.client';
 import { publishDemoGlobalEvent, publishDemoRunEvent } from '../run-events';
 import { projects, testRuns, testCases, testRunsCases, networkRequests } from '~~/server/database/schema.sqlite';
 import { parseLocation } from '~~/server/utils/parse-location';
+import { mapCompleteEventToRunCase } from '~~/server/utils/map-complete-event';
 import { buildNetworkRequestItems, buildNetworkRequestInsertValues } from '~~/server/utils/network-request-helpers';
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
 import type { LocatorSnapshot } from '~~/shared/locator-healing.types';
@@ -454,28 +455,10 @@ export async function apiPostRunEvents(
     return { ...tc, filePath, line, column };
   });
 
-  const cases: RunCaseInput[] = parsedEvents.map((tc) => ({
-    filePath: tc.filePath,
-    title: tc.title,
-    status: tc.status as string,
-    duration: tc.duration,
-    error: tc.error,
-    retries: tc.retries,
-    line: tc.line,
-    column: tc.column,
-    steps: tc.steps,
-    slowestStep: tc.slowestStep,
-    slowestStepDuration: tc.slowestStepDuration,
-    networkRequests: tc.networkRequests,
-    webVitals: tc.webVitals,
-    consoleLogs: tc.consoleLogs,
-    ariaSnapshot: tc.ariaSnapshot as string | null | undefined,
-    workerIndex: tc.workerIndex ?? null,
-    shardIndex: tc.shardIndex ?? null,
-    startedAt: tc.startedAt ?? null,
-    browser: tc.browser ?? null,
-    locatorSnapshots: (tc as any).locatorSnapshots ?? null,
-  }));
+  // Use the shared wire-field → RunCaseInput mapping so demo-mode ingest cannot
+  // drift from the live server ingest (a prior drift here dropped stepEvents,
+  // which made timeline wasted-time bars disappear after a reload).
+  const cases: RunCaseInput[] = parsedEvents.map((tc) => mapCompleteEventToRunCase(tc));
 
   const insertedRunCases = await persistRunCases(db, testRun.projectId, id, cases, true);
 

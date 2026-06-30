@@ -4,6 +4,7 @@ import { eq, sql } from 'drizzle-orm';
 import { runEventBus } from '../../../utils/run-events';
 import { parseLocation } from '../../../utils/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../../utils/persist-run-cases';
+import { mapCompleteEventToRunCase } from '../../../utils/map-complete-event';
 import { authorizeStreamToken } from '../../../utils/stream-auth';
 import type { StreamEventPayload } from '../../../../shared/types';
 import { Role } from '../../../../shared/types';
@@ -154,40 +155,7 @@ export default eventHandler(async (event) => {
     return { ...tc, filePath, line, column };
   });
 
-  const cases: RunCaseInput[] = parsedEvents.map((tc) => ({
-    filePath: tc.filePath,
-    suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
-    suiteConfig:
-      (
-        tc as {
-          suiteConfig?: Array<{ mode: string; annotations: Array<{ type: string; description?: string }> }> | null;
-        }
-      ).suiteConfig ?? null,
-    testAnnotations:
-      (tc as { testAnnotations?: Array<{ type: string; description?: string }> | null }).testAnnotations ?? null,
-    title: tc.title,
-    status: tc.status as string,
-    duration: tc.duration,
-    error: tc.error,
-    retries: tc.retries,
-    line: tc.line,
-    column: tc.column,
-    steps: tc.steps,
-    stepEvents: (tc as { stepEvents?: unknown }).stepEvents ?? null,
-    slowestStep: tc.slowestStep,
-    slowestStepDuration: tc.slowestStepDuration,
-    wastedTimeMs: tc.wastedTimeMs,
-    networkRequests: tc.networkRequests,
-    webVitals: tc.webVitals,
-    consoleLogs: tc.consoleLogs,
-    ariaSnapshot: tc.ariaSnapshot as string | null | undefined,
-    testSource: (tc as { testSource?: string | null }).testSource ?? null,
-    workerIndex: tc.workerIndex ?? null,
-    shardIndex: tc.shardIndex ?? null,
-    startedAt: tc.startedAt ?? null,
-    browser: tc.browser ?? null,
-    locatorSnapshots: (tc as any).locatorSnapshots ?? null,
-  }));
+  const cases: RunCaseInput[] = parsedEvents.map((tc) => mapCompleteEventToRunCase(tc));
 
   const insertedRunCases = await persistRunCases(db, projectId, id, cases);
 
