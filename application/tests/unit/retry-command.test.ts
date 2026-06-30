@@ -65,6 +65,25 @@ test('dedupe same file:line', () => {
   expect(cmd.match(/tests\/foo\.spec\.ts:10/g)?.length).toBe(1);
 });
 
+test('normalizes Windows backslash paths to forward slashes', () => {
+  // Runs captured on Windows store backslash-separated paths; Playwright's CLI
+  // file filter only matches forward-slash paths, so the command must convert them.
+  const winCases = [
+    { filePath: 'tests\\case-files-live.spec.ts', title: 'win test', line: 393, projectName: 'chromium' },
+  ];
+  expect(buildRetryCommand(winCases)).toBe(
+    'npx playwright test "tests/case-files-live.spec.ts:393" --project="chromium"',
+  );
+  expect(buildRetryCommand(winCases, { mode: 'file' })).toContain('"tests/case-files-live.spec.ts"');
+  expect(buildRetryCommand(winCases)).not.toContain('\\');
+});
+
+test('quotes paths containing spaces', () => {
+  const spaced = [{ filePath: 'tests/my dir/foo.spec.ts', title: 'spaced', line: 12, projectName: 'chromium' }];
+  expect(buildRetryCommand(spaced)).toContain('"tests/my dir/foo.spec.ts:12"');
+  expect(buildRetryCommand(spaced, { mode: 'file' })).toContain('"tests/my dir/foo.spec.ts"');
+});
+
 test('no project name', () => {
   const noProject = [{ filePath: 'tests/bar.spec.ts', title: 'bar test', line: 5, projectName: null }];
   const cmd = buildRetryCommand(noProject);

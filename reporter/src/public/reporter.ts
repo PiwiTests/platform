@@ -26,6 +26,16 @@ import { Logger } from '../internal/support/logger.js';
 import type { CollectedTestCase, StreamEvent, SetupStep, FilterDetails } from '../types.js';
 
 /**
+ * Relative `file:line:column` location string for a test, normalized to POSIX
+ * path separators so Playwright's CLI file filter (and the dashboard's copyable
+ * retry command) match on every platform — `path.relative` yields backslashes on Windows.
+ */
+function testLocation(test: TestCase): string {
+  const relativeFilePath = path.relative(process.cwd(), test.location.file).split(path.sep).join('/');
+  return `${relativeFilePath}:${test.location.line}:${test.location.column}`;
+}
+
+/**
  * Piwi Dashboard Playwright reporter.
  *
  * Collects test results, metadata, performance metrics and trace files, then
@@ -159,12 +169,11 @@ export class PiwiDashboardReporter {
 
   /** Playwright reporter hook: called when an individual test begins */
   onTestBegin(test: TestCase, result: TestResult): void {
-    const relativeFilePath = path.relative(process.cwd(), test.location.file);
     const { suitePath, suiteConfig } = this.metadataCollector.getSuiteInfo(test);
     const beginEvent: CollectedTestCase = {
       type: 'begin',
       title: test.title,
-      location: `${relativeFilePath}:${test.location.line}:${test.location.column}`,
+      location: testLocation(test),
       workerIndex: workerIndexOf(result),
       shardIndex: this.shardInfo?.current ?? null,
       browser: this.metadataCollector.getBrowserConfig(test) || undefined,
@@ -238,7 +247,6 @@ export class PiwiDashboardReporter {
   /** Playwright reporter hook: called when an individual test finishes */
   onTestEnd(test: TestCase, result: TestResult): void {
     this.totalTests++;
-    const relativeFilePath = path.relative(process.cwd(), test.location.file);
 
     this.reportedTestIds.add(test.id);
 
@@ -248,7 +256,7 @@ export class PiwiDashboardReporter {
     const testCase: CollectedTestCase = {
       type: 'complete',
       title: test.title,
-      location: `${relativeFilePath}:${test.location.line}:${test.location.column}`,
+      location: testLocation(test),
       status,
       duration: result.duration,
       error: buildErrorText(result),
@@ -332,12 +340,11 @@ export class PiwiDashboardReporter {
     for (const test of this.plannedTests) {
       if (this.reportedTestIds.has(test.id)) continue;
 
-      const relativeFilePath = path.relative(process.cwd(), test.location.file);
       const { suitePath, suiteConfig } = this.metadataCollector.getSuiteInfo(test);
       const testCase: CollectedTestCase = {
         type: 'complete',
         title: test.title,
-        location: `${relativeFilePath}:${test.location.line}:${test.location.column}`,
+        location: testLocation(test),
         status: 'didnotrun',
         duration: 0,
         error: null,

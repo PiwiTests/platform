@@ -17,6 +17,13 @@ function escapeShellArg(arg: string): string {
   return '"' + arg.replace(/"/g, '\\"') + '"';
 }
 
+// Playwright's CLI file filter is matched as a regex against forward-slash paths,
+// so a Windows-captured backslash path (e.g. "tests\foo.spec.ts:10") never matches.
+// Normalize to POSIX separators, which Playwright accepts on every platform.
+function toPosixPath(filePath: string): string {
+  return filePath.replace(/\\/g, '/');
+}
+
 function groupByProject(cases: RetryCase[]): Map<string, RetryCase[]> {
   const groups = new Map<string, RetryCase[]>();
   for (const c of cases) {
@@ -54,7 +61,7 @@ export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode;
 
     if (mode === 'file') {
       const files = dedupeFiles(projectCases);
-      const args = files.map((f) => escapeShellArg(f)).join(' ');
+      const args = files.map((f) => escapeShellArg(toPosixPath(f))).join(' ');
       cmd = `${baseCmd} ${args}`;
     } else if (mode === 'file-line') {
       const seen = new Set<string>();
@@ -66,8 +73,8 @@ export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode;
           return true;
         })
         .map((c) => {
-          if (c.line) return escapeShellArg(`${c.filePath}:${c.line}`);
-          return escapeShellArg(c.filePath);
+          if (c.line) return escapeShellArg(`${toPosixPath(c.filePath)}:${c.line}`);
+          return escapeShellArg(toPosixPath(c.filePath));
         })
         .join(' ');
       cmd = `${baseCmd} ${args}`;
@@ -94,7 +101,7 @@ export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode;
       return buildRetryCommand(cases, { ...opts, mode: 'file' });
     }
     const files = dedupeFilePaths(cases);
-    const args = files.join(' ');
+    const args = files.map((f) => escapeShellArg(toPosixPath(f))).join(' ');
     let cmd = `${baseCmd} ${args}`;
     if (cmd.length > MAX_CMD_LENGTH) {
       cmd = cmd.slice(0, MAX_CMD_LENGTH - 3) + '...';
