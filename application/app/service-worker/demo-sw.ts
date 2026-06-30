@@ -77,8 +77,13 @@ self.addEventListener('fetch', (event) => {
       try {
         result = await handleDemoRequest(apiPath, method, body, queryString, actingUserId);
       } catch (e) {
-        console.error('[Demo SW] handler error', e);
-        return new Response(JSON.stringify({ statusCode: 500, message: 'Internal server error' }), {
+        // Surface the real error message in the response body (instead of a
+        // generic "Internal server error") so it shows up in the app's own
+        // error UI and the page console — service worker console.error calls
+        // are easy to miss since they live under a separate DevTools context.
+        const message = e instanceof Error ? e.message : String(e);
+        console.error('[Demo SW] handler error for', apiPath, e);
+        return new Response(JSON.stringify({ statusCode: 500, message: `Internal server error: ${message}` }), {
           status: 500,
           headers: { 'Content-Type': 'application/json' },
         });
