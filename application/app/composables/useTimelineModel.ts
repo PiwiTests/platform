@@ -14,6 +14,8 @@ export interface TimelineItem {
   rowIndex: number;
   isHook: boolean;
   isWait: boolean;
+  /** Suite-level setup step (beforeAll/afterAll), rendered with a `[Setup]` prefix. */
+  isSetup?: boolean;
   category?: string;
   parentTitle?: string | null;
 }
@@ -199,6 +201,7 @@ export function useTimelineModel(props: TimelineModelInput): {
             rowIndex: ri,
             isHook: true,
             isWait: false,
+            isSetup: true,
             category: step.category,
             parentTitle: null,
           });
@@ -279,6 +282,7 @@ export function useTimelineModel(props: TimelineModelInput): {
             rowIndex: ri,
             isHook: true,
             isWait: false,
+            isSetup: true,
             category: step.category,
             parentTitle: null,
           });

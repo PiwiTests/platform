@@ -96,6 +96,39 @@ describe('useTimelineModel', () => {
     expect(workerRows.value).toHaveLength(0);
   });
 
+  test('flags suite setup steps and keeps the fixture category distinct', () => {
+    const { timelineData } = model(
+      [
+        {
+          id: 1,
+          title: 'A',
+          status: 'passed',
+          workerIndex: 0,
+          startedAt: 1000,
+          duration: 300,
+          stepEvents: [
+            { title: 'Before Hooks', category: 'hook', startedAt: 1000, duration: 40, status: 'passed' },
+            { title: 'fixture: page', category: 'fixture', startedAt: 1040, duration: 30, status: 'passed' },
+          ],
+        },
+      ],
+      {
+        setupSteps: [
+          { title: 'beforeAll', category: 'hook', workerIndex: 0, startedAt: 1000, duration: 50, status: 'passed' },
+        ] as unknown as TimelineModelInput['setupSteps'],
+      },
+    );
+
+    const items = timelineData.value;
+    const setup = items.find((d) => d.isSetup);
+    expect(setup?.title).toContain('[Setup]');
+    const fixture = items.find((d) => d.category === 'fixture');
+    expect(fixture?.isHook).toBe(true);
+    expect(fixture?.isSetup).toBeFalsy();
+    const hook = items.find((d) => d.category === 'hook' && !d.isSetup);
+    expect(hook?.title).toBe('Before Hooks');
+  });
+
   test('honors a custom wasted-wait pattern', () => {
     const { timelineData } = model(
       [

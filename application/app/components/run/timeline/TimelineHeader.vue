@@ -1,24 +1,25 @@
 <script setup lang="ts">
-const props = defineProps<{
+interface SpanTypeItem {
+  key: string;
+  label: string;
+  checked: boolean;
+}
+
+defineProps<{
   workerCount: number;
   shardTotal?: number | null;
   testCount: number;
   hookCount: number;
   waitCount: number;
+  /** Span-type toggles to offer (only the kinds present in the run). */
+  spanTypes: SpanTypeItem[];
   live?: boolean;
 }>();
 
-defineEmits<{ reset: [] }>();
-
-type SpanTypes = { tests: boolean; hooks: boolean; waits: boolean };
-const spanTypes = defineModel<SpanTypes>('spanTypes', { required: true });
-
-function setType(key: keyof SpanTypes, value: boolean) {
-  spanTypes.value = { ...spanTypes.value, [key]: value };
-}
-
-// Only worth a filter when there's more than one span type to toggle.
-const canFilter = computed(() => props.hookCount > 0 || props.waitCount > 0);
+defineEmits<{
+  reset: [];
+  toggleSpan: [key: string, visible: boolean];
+}>();
 </script>
 
 <template>
@@ -36,7 +37,7 @@ const canFilter = computed(() => props.hookCount > 0 || props.waitCount > 0);
       <HelpHint topic="run.timeline" />
     </span>
     <div class="flex items-center gap-1">
-      <UPopover v-if="canFilter" :content="{ align: 'end' }">
+      <UPopover v-if="spanTypes.length > 1" :content="{ align: 'end' }">
         <UButton
           size="xs"
           color="neutral"
@@ -48,23 +49,13 @@ const canFilter = computed(() => props.hookCount > 0 || props.waitCount > 0);
           Span types
         </UButton>
         <template #content>
-          <div class="p-2 flex flex-col gap-2 min-w-44">
+          <div class="p-2 flex flex-col gap-2 min-w-56">
             <UCheckbox
-              :model-value="spanTypes.tests"
-              label="Tests"
-              @update:model-value="setType('tests', $event === true)"
-            />
-            <UCheckbox
-              v-if="hookCount > 0"
-              :model-value="spanTypes.hooks"
-              label="Hooks & fixtures"
-              @update:model-value="setType('hooks', $event === true)"
-            />
-            <UCheckbox
-              v-if="waitCount > 0"
-              :model-value="spanTypes.waits"
-              label="Wasted waits"
-              @update:model-value="setType('waits', $event === true)"
+              v-for="span in spanTypes"
+              :key="span.key"
+              :model-value="span.checked"
+              :label="span.label"
+              @update:model-value="$emit('toggleSpan', span.key, $event === true)"
             />
           </div>
         </template>

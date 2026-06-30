@@ -45,15 +45,41 @@ const testCount = computed(() => timelineData.value.filter((d) => !d.isHook && !
 const hookCount = computed(() => timelineData.value.filter((d) => d.isHook).length);
 const waitCount = computed(() => timelineData.value.filter((d) => d.isWait).length);
 
-// Which span types are shown — toggled from the header dropdown.
-const spanTypes = ref({ tests: true, hooks: true, waits: true });
-const visibleItems = computed(() =>
-  timelineData.value.filter((item) => {
-    if (item.isWait) return spanTypes.value.waits;
-    if (item.isHook) return spanTypes.value.hooks;
-    return spanTypes.value.tests;
-  }),
-);
+// Span types the timeline can draw, toggled from the header dropdown. Only the
+// kinds actually present in the run are offered.
+type SpanKind = 'test' | 'setup' | 'hook' | 'fixture' | 'wait';
+const SPAN_KIND_ORDER: SpanKind[] = ['test', 'setup', 'hook', 'fixture', 'wait'];
+const SPAN_KIND_LABELS: Record<SpanKind, string> = {
+  test: 'Tests',
+  setup: 'Setup (beforeAll/afterAll)',
+  hook: 'Hooks',
+  fixture: 'Fixtures',
+  wait: 'Wasted waits',
+};
+
+function spanKind(item: TimelineItem): SpanKind {
+  if (item.isWait) return 'wait';
+  if (item.isSetup) return 'setup';
+  if (item.isHook) return item.category === 'fixture' ? 'fixture' : 'hook';
+  return 'test';
+}
+
+// Stores only the kinds explicitly hidden; everything defaults to visible.
+const hiddenKinds = ref<Partial<Record<SpanKind, boolean>>>({});
+const visibleItems = computed(() => timelineData.value.filter((item) => !hiddenKinds.value[spanKind(item)]));
+
+const spanTypeItems = computed(() => {
+  const present = new Set(timelineData.value.map(spanKind));
+  return SPAN_KIND_ORDER.filter((k) => present.has(k)).map((k) => ({
+    key: k,
+    label: SPAN_KIND_LABELS[k],
+    checked: !hiddenKinds.value[k],
+  }));
+});
+
+function toggleSpanKind(key: string, visible: boolean) {
+  hiddenKinds.value = { ...hiddenKinds.value, [key]: !visible };
+}
 
 // Tooltip state — driven by hover events from the bars.
 const hoveredItem = ref<TimelineItem | null>(null);
@@ -76,13 +102,14 @@ function onBarLeave() {
 <template>
   <div v-if="timelineData.length > 0" class="relative select-none">
     <TimelineHeader
-      v-model:span-types="spanTypes"
       :worker-count="workerRows.length"
       :shard-total="shardTotal"
       :test-count="testCount"
       :hook-count="hookCount"
       :wait-count="waitCount"
+      :span-types="spanTypeItems"
       :live="live"
+      @toggle-span="toggleSpanKind"
       @reset="resetView"
     />
 
