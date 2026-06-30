@@ -81,6 +81,7 @@ async function load() {
   try {
     data.value = await $fetch<RunInsightsData>(`/api/test-runs/${props.testRunId}/insights`);
   } catch (e: any) {
+    console.error('[RunInsights] failed to load', e);
     error.value = e?.data?.message || e?.message || 'Failed to load insights';
   } finally {
     loading.value = false;

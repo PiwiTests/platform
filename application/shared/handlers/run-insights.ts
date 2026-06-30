@@ -1,4 +1,4 @@
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, lt } from 'drizzle-orm';
 import { testRuns, testRunsCases, testCases, failureClusters } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 
@@ -78,7 +78,7 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
     eq(testRuns.projectId, run.projectId),
     eq(testRuns.status, 'passed'),
     eq(testRuns.isFullRun, 1),
-    sql`${testRuns.startTime} < ${run.startTime}`,
+    lt(testRuns.startTime, run.startTime),
   ];
 
   const baselineResults: any[] = await db
