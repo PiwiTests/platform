@@ -171,6 +171,11 @@ export default defineNuxtConfig({
       },
     ],
     openAPI: {
+      // Nitro only registers the /_openapi.json (and scalar/swagger UI) handlers in
+      // production builds when `production` is set — by default they're dev-only.
+      // 'prerender' makes `nuxt generate` (demo, ssr:false, no live server at runtime)
+      // bake the spec into a static file; 'runtime' serves it live from the real SSR server.
+      production: isDemo ? 'prerender' : 'runtime',
       meta: {
         title: 'Piwi Dashboard API',
         description:
@@ -199,17 +204,11 @@ export default defineNuxtConfig({
         // Override with `security: []` on auth endpoints (login, oauth, ai/status).
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
       } as any,
+      // The Scalar UI is served by our own app/pages/docs.vue (fetches /_openapi.json
+      // directly), which also covers the static demo where no live server exists.
+      // Disabling Nitro's built-in routes here avoids them colliding with that page.
       ui: {
-        scalar: {
-          route: '/docs',
-          darkMode: true,
-          showSidebar: true,
-          metaData: {
-            title: 'Piwi Dashboard API',
-            description:
-              'REST API for storing and querying Playwright test results, traces, failure diagnoses, and project statistics.',
-          },
-        },
+        scalar: false,
         swagger: false,
       },
     },
