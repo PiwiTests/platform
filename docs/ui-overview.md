@@ -54,7 +54,7 @@ The complete history for one project, organized into tabs:
 - **Test cases** — every unique test with pass rate, result breakdown, average duration, and last-run date.
 - **Compare** — side-by-side delta between two runs (new failures, recovered, duration changes).
 - **Spec health** — a heatmap grouping test cases by spec file and coloring each by pass rate, so an unhealthy area of the suite jumps out. See [Spec health heatmap](./flaky-tests#spec-health-heatmap).
-- **Members** *(admins, when auth is enabled)* — grant or scope project access per user. See [Authentication](./authentication#user-management).
+- **Members** *(admins, when auth is enabled)* — grant or scope project access per user. See [Project access](./authentication#project-access).
 
 Project **edit** (`/projects/:id/edit`) sets the label, description, tags, per-project SCM token, and **AI diagnosis instructions** (project-specific context combined with the global instructions for every diagnosis).
 
@@ -112,7 +112,7 @@ The [live demo](https://piwitests.github.io/demo/) runs entirely in your browser
 
 **Simulate a test run** — the demo banner replays the exact streaming protocol a Piwi reporter speaks during a real run, so you can watch one arrive live. Scenarios: a passing run, a run with failures (joining a known cluster plus a brand-new one), flaky retries, a performance regression, an interrupted run, and a cross-browser run. Each creates a real run in the in-browser database, so worker timeline, failure groups, and history comparisons all behave exactly as they would against a server.
 
-**Acting as** — the demo runs with authentication conceptually enabled. Switch between pre-seeded identities (an admin, a CI reporter, and several project-scoped users) to see how [project access](./authentication#user-management) changes what each user sees. Acting as the admin, you can change affectations live and then switch users to see the effect.
+**Acting as** — the demo runs with authentication conceptually enabled. Switch between pre-seeded identities (an admin, a CI reporter, and several project-scoped users) to see how [project access](./authentication#project-access) changes what each user sees. Acting as the admin, you can change affectations live and then switch users to see the effect.
 
 ## Responsive & dark mode
 

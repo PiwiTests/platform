@@ -262,8 +262,8 @@ node scripts/db-query.mjs "SELECT id, name FROM projects" --json
 | `npm run reporter:format`| Format source code with oxfmt |
 | `npm run reporter:test`  | Run unit tests with Vitest |
 | `npm run reporter:test:watch` | Watch mode — re-run tests on changes |
-| `npm run lint`           | Lint with oxlint               |
-| `npm run lint:fix`       | Lint with auto-fix             |
+| `npm run reporter:lint`     | Lint with oxlint               |
+| `npm run reporter:lint:fix` | Lint with auto-fix             |
 
 ## Making Changes
 
@@ -558,7 +558,7 @@ curl -X POST http://localhost:3000/api/test-runs/submit \
 The app can be built as a fully client-side SPA (no server needed) by setting `PIWI_DEMO_MODE=true`. The demo build:
 
 1. **`npm run app:seed:demo`** — Generates `public/demo/seed.sql` (SQLite dump with 4 projects, 43 test cases, 61 test runs, 698 test-run-case rows, 8 failure clusters) and `public/demo/seed.version.json` (SHA-256 hash of the SQL content + timestamp). **`public/demo/seed.sql` is NOT committed** — it is gitignored and regenerated on demand (and in CI, `docs.yml` runs `app:seed:demo` before the demo build), so don't commit or stage it. Only `seed.version.json` is tracked. After editing `scripts/generate-demo-seed.mjs`, re-run `npm run app:seed:demo` and commit the generator + the updated `seed.version.json` (the regenerated `seed.sql` stays local).
-2. **`npm run generate:demo`** — Builds the SPA with `ssr: false` and PWA service worker that intercepts `/api/` calls, serving them from in-browser sql.js (WASM SQLite) via Drizzle ORM.
+2. **`npm run app:generate:demo`** — Builds the SPA with `ssr: false` and PWA service worker that intercepts `/api/` calls, serving them from in-browser sql.js (WASM SQLite) via Drizzle ORM.
 3. The SQLite database is persisted in IndexedDB across page loads and re-seeded only when no persisted data exists.
 4. **Staleness detection**: The build injects `demoDataVersion` (the SHA-256 hash from `seed.version.json`) into `runtimeConfig.public`. At runtime, the layout compares it against the version stored in IndexedDB and shows a "New demo data available" button in the sidebar footer. Clicking it wipes IndexedDB and reloads the page.
 5. The service worker (`app/service-worker/demo-sw.ts`) handles API fetches via `app/demo/api/router.ts`. Both SW and main thread share `app/demo/db.client.ts` for DB initialization.
