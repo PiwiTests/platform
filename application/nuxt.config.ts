@@ -234,7 +234,23 @@ export default defineNuxtConfig({
 
   vite: {
     optimizeDeps: {
-      include: ['drizzle-orm/sqlite-core', 'drizzle-orm/sqlite-proxy'],
+      include: [
+        '@unovis/ts',
+        '@unovis/vue',
+        'date-fns',
+        'drizzle-orm/sqlite-core',
+        'drizzle-orm/sqlite-proxy',
+        'highlight.js/lib/core',
+        'highlight.js/lib/languages/bash',
+        'highlight.js/lib/languages/css',
+        'highlight.js/lib/languages/diff',
+        'highlight.js/lib/languages/javascript',
+        'highlight.js/lib/languages/json',
+        'highlight.js/lib/languages/python',
+        'highlight.js/lib/languages/typescript',
+        'highlight.js/lib/languages/xml',
+        'zod',
+      ],
 
       // sql.js bundles a WASM binary and must not be pre-bundled by Vite;
       // excluding it ensures the WASM file is loaded at runtime via locateFile.
