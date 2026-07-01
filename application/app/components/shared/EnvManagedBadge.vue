@@ -8,8 +8,8 @@
  * Pass `envVars` to name the variable(s); omit them only when the field is
  * read-only for a non-env reason (rare — prefer naming the var).
  */
-import type { PiwiEnvVarName } from '~~/shared/piwi-env-vars';
-import { getEnvVarMeta } from '~~/shared/piwi-env-vars';
+import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
+import { getEnvVarMeta } from '#shared/piwi-env-vars';
 
 const props = withDefaults(
   defineProps<{

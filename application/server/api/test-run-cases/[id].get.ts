@@ -1,7 +1,6 @@
-import { getDatabase } from '../../database';
-import { getTestRunCase } from '~~/shared/handlers/test-cases';
-import { Role } from '../../../shared/types';
-import { requireProjectAccess, resolveTestRunCaseProjectId } from '../../utils/project-access';
+import { getTestRunCase } from '#shared/handlers/test-cases';
+import { Role } from '#shared/types';
+import { requireResolvedProjectAccess, requireRouteId, resolveTestRunCaseProjectId } from '../../utils/project-access';
 import { resolveWastedPatterns } from '../../utils/wasted-settings';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
@@ -18,21 +17,8 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-
-  if (!id) {
-    throw createError({
-      statusCode: 400,
-      message: 'Invalid test run case ID',
-    });
-  }
-
-  const db = await getDatabase();
-
-  const projectId = await resolveTestRunCaseProjectId(db, id);
-  if (!projectId) throw createError({ statusCode: 404, message: 'Test run case not found' });
-
-  await requireProjectAccess(event, projectId);
+  const id = requireRouteId(event, 'id', 'test run case ID');
+  const { db } = await requireResolvedProjectAccess(event, id, resolveTestRunCaseProjectId, 'Test run case');
 
   const wastedPatterns = await resolveWastedPatterns(db);
   const result = (await getTestRunCase(db, id, wastedPatterns)) as any;

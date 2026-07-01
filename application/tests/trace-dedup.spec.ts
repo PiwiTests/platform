@@ -1,6 +1,6 @@
 import { test, expect, type APIRequestContext } from './fixtures';
 import { createHash } from 'crypto';
-import { PROJECT } from '../shared/test-project-names';
+import { PROJECT } from '#shared/test-project-names';
 import { buildZip, parseZip } from '../server/utils/trace-zip';
 
 function sha256(data: Buffer): string {

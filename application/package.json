@@ -2,6 +2,9 @@
   "name": "@piwitests/dashboard",
   "private": true,
   "type": "module",
+  "imports": {
+    "#shared/*": "./shared/*.ts"
+  },
   "scripts": {
     "app:generate": "nuxt generate",
     "app:generate:demo": "cross-env PIWI_DEMO_MODE=true nuxt generate",

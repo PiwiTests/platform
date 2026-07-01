@@ -5,7 +5,7 @@
  */
 
 import { getDemoDb } from '../db.client';
-import { getAdminStats } from '~~/shared/handlers/admin';
+import { getAdminStats } from '#shared/handlers/admin';
 
 /** GET /api/admin/stats */
 export async function apiGetAdminStats() {

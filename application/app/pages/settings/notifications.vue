@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
 import type { NotificationEvent } from '#shared/notification-events';
-import type { PiwiEnvVarName } from '~~/shared/piwi-env-vars';
+import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 
 const toast = useToast();
 const config = useRuntimeConfig();

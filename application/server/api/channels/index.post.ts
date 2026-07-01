@@ -2,7 +2,7 @@ import { getDatabase } from '../../database';
 import { notificationChannels } from '../../database/schema';
 import { requireAuth, isAuthEnabled } from '../../utils/auth';
 import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { z } from 'zod';
 
 const REQUIRED_ROLES: Role[] = [];

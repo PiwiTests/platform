@@ -6,7 +6,7 @@
  * `HelpHint` and anywhere a standalone doc link is wanted, so the whole app
  * links to docs one way.
  */
-import { docsUrl } from '~~/shared/docs';
+import { docsUrl } from '#shared/docs';
 
 const props = defineProps<{
   /** Docs page + optional `#anchor`, passed through `docsUrl()`. */

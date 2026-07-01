@@ -5,9 +5,9 @@ import {
   locatorSignatureFromExpression,
   recommendLocatorFix,
   CONVENTION_STABILITY_FLOOR,
-} from '../../shared/locator-healing';
-import type { RankedLocator } from '../../shared/locator-healing.types';
-import { extractLeafSelector } from '../../shared/error-fingerprint';
+} from '#shared/locator-healing';
+import type { RankedLocator } from '#shared/locator-healing.types';
+import { extractLeafSelector } from '#shared/error-fingerprint';
 
 describe('normalizeAndHashArgs', () => {
   test('produces identical hashes for args differing only in `exact`', async () => {

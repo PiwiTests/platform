@@ -13,8 +13,9 @@ type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>;
 
 const MAX_NAME_PER_RUN = 20; // cost guard
 
-const NAMING_SYSTEM_PROMPT =
-  'You name software-test failure clusters. For each cluster, write a concise, human-readable title (≤ 8 words) capturing the failing behavior or root cause — not a generic restatement of the stack trace. No trailing punctuation. Reply strictly as JSON.';
+const NAMING_SYSTEM_PROMPT = `You name software-test failure clusters. For each cluster, write a concise,
+human-readable title (≤ 8 words) capturing the failing behavior or root cause — not a generic restatement of the
+stack trace. No trailing punctuation. Reply strictly as JSON.`;
 
 const NAMING_JSON_SCHEMA = {
   type: 'object',

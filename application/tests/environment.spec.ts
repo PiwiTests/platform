@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { PROJECT } from '../shared/test-project-names';
+import { PROJECT } from '#shared/test-project-names';
 
 test.describe('Environment API Tests', () => {
   const envValues = ['production', 'staging', 'development', 'integration'];

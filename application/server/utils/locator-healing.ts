@@ -8,20 +8,16 @@
  */
 import { and, eq, notInArray, sql, inArray } from 'drizzle-orm';
 import { locatorSnapshots, testRunsCases, type LocatorSnapshotRow } from '../database/schema';
-import { extractLeafSelector, extractTopFrameFile } from '../../shared/error-fingerprint';
+import { extractLeafSelector, extractTopFrameFile } from '#shared/error-fingerprint';
 import {
   locatorSignatureFromExpression,
   locatorExpressionMethod,
   locatorSignature,
   recommendLocatorFix,
-} from '../../shared/locator-healing';
-import {
-  elementMatchAlternatives,
-  parseAriaCandidates,
-  type ElementFingerprint,
-} from '../../shared/locator-fingerprint';
-import type { RankedLocator, LocatorSnapshot, LocatorFixRecommendation } from '../../shared/locator-healing.types';
-import type { DrizzleDB } from '../../shared/handlers/db';
+} from '#shared/locator-healing';
+import { elementMatchAlternatives, parseAriaCandidates, type ElementFingerprint } from '#shared/locator-fingerprint';
+import type { RankedLocator, LocatorSnapshot, LocatorFixRecommendation } from '#shared/locator-healing.types';
+import type { DrizzleDB } from '#shared/handlers/db';
 
 export interface LocatorHealingResult {
   failingLocator: { method: string; args: Record<string, unknown> } | null;

@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { getDatabase } from '../../../../database';
-import { createUserApiKeyRecord } from '~~/shared/handlers/users';
+import { createUserApiKeyRecord } from '#shared/handlers/users';
 import { requireAuth, generateApiKey } from '../../../../utils/auth';
-import { Role } from '../../../../../shared/types';
+import { Role } from '#shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 

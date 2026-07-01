@@ -15,6 +15,7 @@ export default defineConfig({
       '@@': rootDir,
       '~': appDir,
       '@': appDir,
+      '#shared': `${rootDir}/shared`,
     },
   },
 });

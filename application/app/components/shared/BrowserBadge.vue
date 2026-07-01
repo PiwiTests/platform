@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { BrowserConfig } from '~~/shared/types';
+import type { BrowserConfig } from '#shared/types';
 
 const props = defineProps<{
   browser: BrowserConfig | null | undefined;

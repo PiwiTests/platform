@@ -1,4 +1,4 @@
-import { Role } from '~~/shared/types';
+import { Role } from '#shared/types';
 
 export default defineNuxtRouteMiddleware(async (to) => {
   // Skip auth check for login page

@@ -15,8 +15,8 @@
 
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { failureClusters } from '../database/schema';
-import { mergeFailureClusters } from '~~/shared/handlers/failure-cluster-ops';
-import { recordMergeSuggestion } from '~~/shared/handlers/cluster-merge-suggestions';
+import { mergeFailureClusters } from '#shared/handlers/failure-cluster-ops';
+import { recordMergeSuggestion } from '#shared/handlers/cluster-merge-suggestions';
 import { embedTexts } from './ai-embeddings';
 import { cosineSimilarity, parseEmbedding } from './cluster-similarity';
 import { adjudicateClusterPair } from './cluster-adjudicate';

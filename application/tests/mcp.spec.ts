@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { PROJECT } from '../shared/test-project-names';
+import { PROJECT } from '#shared/test-project-names';
 
 function rpc(method: string, params?: Record<string, unknown>, id = 1) {
   return { jsonrpc: '2.0', id, method, params: params ?? {} };

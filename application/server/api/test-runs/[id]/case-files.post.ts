@@ -6,8 +6,8 @@ import { parseLocation } from '../../../utils/parse-location';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { upsertTraceBlob, findTraceBlob } from '../../../utils/trace-blobs';
 import { getStorage } from '../../../storage';
-import { joinSuitePath } from '../../../../shared/utils/suites';
-import { Role } from '../../../../shared/types';
+import { joinSuitePath } from '#shared/utils/suites';
+import { Role } from '#shared/types';
 
 const REQUIRED_ROLES: Role[] = [];
 

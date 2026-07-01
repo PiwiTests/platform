@@ -1,5 +1,5 @@
-import { detectProvider, extractKey } from '../../../shared/link-detect';
-import type { LinkProvider } from '../../../shared/link-detect';
+import { detectProvider, extractKey } from '#shared/link-detect';
+import type { LinkProvider } from '#shared/link-detect';
 import { getAppSetting } from '../app-settings';
 import { decryptSecret, getEncryptionKey } from '../crypto';
 import { UnfurlProvider, type UnfurlResult } from './UnfurlProvider';

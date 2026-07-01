@@ -1,9 +1,9 @@
 import { getDatabase } from '../../../database';
 import { projects, users } from '../../../database/schema';
 import { eq, inArray } from 'drizzle-orm';
-import { requireProjectAccess } from '../../../utils/project-access';
-import { Role } from '../../../../shared/types';
-import { setProjectMembers } from '~~/shared/handlers/project-assignments';
+import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
+import { Role } from '#shared/types';
+import { setProjectMembers } from '#shared/handlers/project-assignments';
 import { z } from 'zod';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
@@ -24,8 +24,7 @@ const schema = z.object({
 });
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw createError({ statusCode: 400, message: 'Invalid project ID' });
+  const id = requireRouteId(event, 'id', 'project ID');
 
   const currentUser = await requireProjectAccess(event, id, REQUIRED_ROLES);
 

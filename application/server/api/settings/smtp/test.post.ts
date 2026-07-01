@@ -1,6 +1,6 @@
 import { requireAuth } from '../../../utils/auth';
 import { isEmailConfigured, sendEmail, renderTestEmail } from '../../../utils/email';
-import { Role } from '../../../../shared/types';
+import { Role } from '#shared/types';
 import { z } from 'zod';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];

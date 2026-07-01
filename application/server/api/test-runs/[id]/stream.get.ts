@@ -1,10 +1,9 @@
-import { getDatabase } from '../../../database';
 import { testRuns, testCases, testRunsCases } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
 import { runEventBus } from '../../../utils/run-events';
 import { createSSEEndpoint } from '../../../utils/sse';
-import { Role } from '../../../../shared/types';
-import { requireProjectAccess, resolveRunProjectId } from '../../../utils/project-access';
+import { Role } from '#shared/types';
+import { requireResolvedProjectAccess, requireRouteId, resolveRunProjectId } from '../../../utils/project-access';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
@@ -20,21 +19,8 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-
-  if (!id) {
-    throw createError({
-      statusCode: 400,
-      message: 'Invalid test run ID',
-    });
-  }
-
-  const db = await getDatabase();
-
-  const projectId = await resolveRunProjectId(db, id);
-  if (!projectId) throw createError({ statusCode: 404, message: 'Test run not found' });
-
-  await requireProjectAccess(event, projectId);
+  const id = requireRouteId(event, 'id', 'test run ID');
+  const { db } = await requireResolvedProjectAccess(event, id, resolveRunProjectId, 'Test run');
 
   // Verify the run exists
   const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id));

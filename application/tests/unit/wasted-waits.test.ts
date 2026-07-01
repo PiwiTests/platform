@@ -4,8 +4,8 @@ import {
   parseWastedWaitPatterns,
   isWastedWait,
   computeWastedMs,
-} from '../../shared/utils/wasted-waits';
-import type { TestStepEvent } from '../../shared/types';
+} from '#shared/utils/wasted-waits';
+import type { TestStepEvent } from '#shared/types';
 
 const wait = (title: string, location: string | null = null): { title: string; location: string | null } => ({
   title,

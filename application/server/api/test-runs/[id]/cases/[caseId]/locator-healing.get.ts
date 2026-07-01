@@ -1,7 +1,10 @@
-import { getDatabase } from '../../../../../database';
 import { getLocatorHealing } from '../../../../../utils/locator-healing';
-import { Role } from '../../../../../../shared/types';
-import { requireProjectAccess, resolveTestRunCaseProjectId } from '../../../../../utils/project-access';
+import { Role } from '#shared/types';
+import {
+  requireResolvedProjectAccess,
+  requireRouteId,
+  resolveTestRunCaseProjectId,
+} from '../../../../../utils/project-access';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
@@ -20,26 +23,14 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  const runId = parseInt(getRouterParam(event, 'id') || '0');
-  const caseId = parseInt(getRouterParam(event, 'caseId') || '0');
-
-  if (!runId || !caseId) {
-    throw createError({
-      statusCode: 400,
-      message: 'Invalid runId or caseId',
-    });
-  }
-
-  const db = await getDatabase();
+  requireRouteId(event, 'id', 'runId');
+  const caseId = requireRouteId(event, 'caseId', 'caseId');
 
   // Authorize by the case's own project — the data is read by caseId, so a
   // runId from an accessible project must not gate access to a case from
   // another project. The cluster page may pass a caseId whose run differs from
   // the path's runId, so we deliberately do not require caseId ∈ runId.
-  const projectId = await resolveTestRunCaseProjectId(db, caseId);
-  if (!projectId) throw createError({ statusCode: 404, message: 'Test run case not found' });
-
-  await requireProjectAccess(event, projectId);
+  const { db } = await requireResolvedProjectAccess(event, caseId, resolveTestRunCaseProjectId, 'Test run case');
 
   const result = await getLocatorHealing(db, caseId);
 

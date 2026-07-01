@@ -1,7 +1,6 @@
-import { getDatabase } from '../../../database';
-import { requireProjectAccess } from '../../../utils/project-access';
-import { Role } from '../../../../shared/types';
-import { rejectMergeSuggestion, getSuggestionProjectId } from '~~/shared/handlers/cluster-merge-suggestions';
+import { requireResolvedProjectAccess, requireRouteId } from '../../../utils/project-access';
+import { Role } from '#shared/types';
+import { rejectMergeSuggestion, getSuggestionProjectId } from '#shared/handlers/cluster-merge-suggestions';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
 
@@ -17,14 +16,8 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw createError({ statusCode: 400, message: 'Invalid suggestion ID' });
-
-  const db = await getDatabase();
-  const projectId = await getSuggestionProjectId(db, id);
-  if (!projectId) throw createError({ statusCode: 404, message: 'Suggestion not found' });
-
-  await requireProjectAccess(event, projectId, REQUIRED_ROLES);
+  const id = requireRouteId(event, 'id', 'suggestion ID');
+  const { db } = await requireResolvedProjectAccess(event, id, getSuggestionProjectId, 'Suggestion', REQUIRED_ROLES);
 
   const ok = await rejectMergeSuggestion(db, id);
   if (!ok) throw createError({ statusCode: 409, message: 'Suggestion is not pending' });

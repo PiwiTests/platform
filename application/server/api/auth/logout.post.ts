@@ -1,4 +1,4 @@
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { clearUserSession, isAuthEnabled } from '../../utils/auth';
 
 const REQUIRED_ROLES: Role[] = [];

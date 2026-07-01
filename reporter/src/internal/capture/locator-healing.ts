@@ -514,7 +514,12 @@ function parseAriaRoleName(ariaSnapshot: string): Array<{ role: string; name: st
   return out;
 }
 
-/** Token-set (Dice) similarity, 0-1, case- and punctuation-insensitive. */
+/**
+ * Token-set (Dice) similarity, 0-1, case- and punctuation-insensitive.
+ * Duplicated from `textSimilarity` in application/shared/locator-fingerprint.ts —
+ * this package publishes standalone to npm and can't import monorepo-relative
+ * shared/ code, so keep the two implementations in sync by hand.
+ */
 function nameSimilarity(a: string | null, b: string | null): number {
   const tok = (s: string | null): Set<string> =>
     new Set(

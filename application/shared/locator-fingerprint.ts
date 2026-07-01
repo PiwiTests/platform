@@ -96,6 +96,10 @@ export function parseAriaCandidates(ariaSnapshot: string | null | undefined): Ar
  * Token-set (Dice) similarity between two short labels, 0-1. Case- and
  * punctuation-insensitive, so "Go to page" vs "Open page" share the "page"
  * token. Two empty strings score 1; one empty scores 0.
+ *
+ * Duplicated as `nameSimilarity` in reporter/src/internal/capture/locator-healing.ts —
+ * the reporter is a standalone published package (tsconfig rootDir: "src") and can't
+ * import from application/shared, so keep the two implementations in sync by hand.
  */
 export function textSimilarity(a: string | null | undefined, b: string | null | undefined): number {
   const tok = (s: string | null | undefined): Set<string> =>

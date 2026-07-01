@@ -4,7 +4,7 @@ import { notificationChannels, users } from '../../../database/schema';
 import { requireAuth, isAuthEnabled } from '../../../utils/auth';
 import { decryptSecret, getEncryptionKey } from '../../../utils/crypto';
 import { sendEmail, renderTestEmail, isEmailConfigured } from '../../../utils/email';
-import { Role } from '../../../../shared/types';
+import { Role } from '#shared/types';
 
 const REQUIRED_ROLES: Role[] = [];
 

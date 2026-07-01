@@ -2,13 +2,13 @@ import { testCases, testRunsCases, testSuites, networkRequests } from '../databa
 import { eq } from 'drizzle-orm';
 import { buildNetworkRequestItems, buildNetworkRequestInsertValues } from './network-request-helpers';
 import { sanitizeWebVitals, sanitizeConsoleLogs } from './sanitize';
-import { computeErrorFingerprint, type ErrorFingerprint } from '../../shared/error-fingerprint';
+import { computeErrorFingerprint, type ErrorFingerprint } from '#shared/error-fingerprint';
 import { testCaseCache } from './test-case-cache';
 import { testSuiteCache } from './test-suite-cache';
-import { SUITE_PATH_SEP, joinSuitePath } from '../../shared/utils/suites';
-import { getOrCreateFailureClusters, type PendingCluster } from '~~/shared/handlers/failure-cluster-ops';
+import { SUITE_PATH_SEP, joinSuitePath } from '#shared/utils/suites';
+import { getOrCreateFailureClusters, type PendingCluster } from '#shared/handlers/failure-cluster-ops';
 import { upsertLocatorSnapshots } from './locator-healing';
-import type { LocatorSnapshot } from '../../shared/locator-healing.types';
+import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import type { getDatabase } from '../database';
 
 type DB = Awaited<ReturnType<typeof getDatabase>>;

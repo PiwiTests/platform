@@ -6,7 +6,7 @@ import {
   matchRenamedElement,
   freshLocatorsFromCandidate,
   elementMatchAlternatives,
-} from '../../shared/locator-fingerprint';
+} from '#shared/locator-fingerprint';
 
 describe('parseAriaCandidates', () => {
   test('parses role + name lines', () => {

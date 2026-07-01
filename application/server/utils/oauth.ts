@@ -2,7 +2,7 @@ import type { H3Event } from 'h3';
 import { getDatabase } from '../database';
 import { users } from '../database/schema';
 import { eq, and } from 'drizzle-orm';
-import { Role } from '../../shared/types';
+import { Role } from '#shared/types';
 import { setUserSession, isAuthEnabled, getCurrentUser } from './auth';
 import type { SessionData } from './auth';
 import type { User } from '../database/schema';

@@ -1,8 +1,8 @@
 import { getDatabase } from '../../database';
 import { subscriptions, notificationChannels } from '../../database/schema';
 import { requireAuth, isAuthEnabled } from '../../utils/auth';
-import { NOTIFICATION_EVENTS } from '../../../shared/notification-events';
-import { Role } from '../../../shared/types';
+import { NOTIFICATION_EVENTS } from '#shared/notification-events';
+import { Role } from '#shared/types';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 

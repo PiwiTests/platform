@@ -3,7 +3,7 @@ import { LocalStorageAdapter } from '../server/storage/local';
 import { getStorage, resetStorage } from '../server/storage';
 import { existsSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
-import { PROJECT } from '../shared/test-project-names';
+import { PROJECT } from '#shared/test-project-names';
 
 test.describe('Storage Abstraction Tests', () => {
   // Use a unique directory per test to avoid conflicts when running in parallel

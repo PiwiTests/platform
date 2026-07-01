@@ -1,6 +1,6 @@
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
-import { Role } from '../../../../shared/types';
+import { Role } from '#shared/types';
 import { getAppSetting, setAppSetting } from '../../../utils/app-settings';
 import {
   resolveContextLimits,

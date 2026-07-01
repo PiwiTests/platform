@@ -1,9 +1,9 @@
 import { getDatabase } from '../../database';
 import { z } from 'zod';
-import { requireProjectAccess } from '../../utils/project-access';
-import { updateProject } from '~~/shared/handlers/projects';
+import { requireProjectAccess, requireRouteId } from '../../utils/project-access';
+import { updateProject } from '#shared/handlers/projects';
 import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 
@@ -27,14 +27,7 @@ const updateProjectSchema = z.object({
 });
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-
-  if (!id) {
-    throw createError({
-      statusCode: 400,
-      message: 'Invalid project ID',
-    });
-  }
+  const id = requireRouteId(event, 'id', 'project ID');
 
   // Require administrator role for updating projects
   await requireProjectAccess(event, id, REQUIRED_ROLES);

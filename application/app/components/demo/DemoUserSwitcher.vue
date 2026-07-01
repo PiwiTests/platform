@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui';
-import { Role } from '~~/shared/types';
+import { Role } from '#shared/types';
 
 const { demoUsers, currentDemoUserId, setDemoUser } = useAuth();
 

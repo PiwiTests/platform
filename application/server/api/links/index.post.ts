@@ -2,9 +2,9 @@ import { requireAuth } from '../../utils/auth';
 import { getDatabase } from '../../database';
 import { entityLinks } from '../../database/schema';
 import { eq } from 'drizzle-orm';
-import { createLink } from '~~/shared/handlers/links';
+import { createLink } from '#shared/handlers/links';
 import { z } from 'zod';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { unfurlUrl } from '../../utils/unfurl';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];

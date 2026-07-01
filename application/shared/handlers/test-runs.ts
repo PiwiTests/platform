@@ -1,4 +1,4 @@
-import { eq, sql, desc, and, isNotNull, inArray, or, notInArray } from 'drizzle-orm';
+import { eq, sql, desc, and, isNotNull, inArray, or, notInArray, count } from 'drizzle-orm';
 import {
   testRuns,
   testCases,
@@ -18,6 +18,7 @@ import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-w
 import type { TestStepEvent } from '../types';
 
 import type { DrizzleDB } from './db';
+import { normalizeGitUrl } from '../../server/utils/regression-context';
 
 type ProjectScope = 'all' | Set<number>;
 
@@ -51,7 +52,7 @@ export async function getTestRun(
 
   const storageStatsResult = await db
     .select({
-      totalFiles: sql<number>`count(*)`,
+      totalFiles: count(),
       totalSize: sql<number>`coalesce(sum(${files.size}), 0)`,
       testCaseFilesSize: sql<number>`coalesce(sum(case when ${files.type} != 'report' then ${files.size} else 0 end), 0)`,
       testCaseFilesCount: sql<number>`count(case when ${files.type} != 'report' then 1 end)`,
@@ -570,23 +571,6 @@ interface MetaDiffEntry {
   label: string;
   before: string | null;
   after: string | null;
-}
-
-function normalizeGitUrl(remoteUrl: string | null | undefined): string | null {
-  if (!remoteUrl) return null;
-  let url = remoteUrl.trim();
-  if (url.startsWith('git@')) {
-    url = url.replace(/^git@([^:]+):/, 'https://$1/');
-  }
-  url = url.replace(/\.git$/, '');
-  try {
-    const parsed = new URL(url);
-    parsed.username = '';
-    parsed.password = '';
-    return parsed.toString().replace(/\/$/, '');
-  } catch {
-    return url;
-  }
 }
 
 function buildCompareUrl(repositoryUrl: string, fromSha: string, toSha: string): string | null {

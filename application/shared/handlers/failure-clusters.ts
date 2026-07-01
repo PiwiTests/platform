@@ -9,6 +9,7 @@
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 
 import type { DrizzleDB } from './db';
+import { recomputeClusterOccurrences } from './failure-cluster-ops';
 
 const VALID_STATUSES = ['open', 'resolved', 'ignored'];
 
@@ -187,21 +188,14 @@ export async function extractClusterCases(
     .set({ failureClusterId: null })
     .where(and(eq(testRunsCases.failureClusterId, clusterId), inArray(testRunsCases.testCaseId, testCaseIds)));
 
-  const [countRow] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(testRunsCases)
-    .where(eq(testRunsCases.failureClusterId, clusterId));
+  const remainingOccurrences = await recomputeClusterOccurrences(db, clusterId);
 
-  const remainingOccurrences = Number(countRow?.count ?? 0);
-
-  const updateFields: Record<string, unknown> = {
-    occurrences: remainingOccurrences,
-    updatedAt: new Date(),
-  };
   if (triageNote !== undefined) {
-    updateFields.triageNote = triageNote;
+    await db
+      .update(failureClusters)
+      .set({ triageNote, updatedAt: new Date() })
+      .where(eq(failureClusters.id, clusterId));
   }
-  await db.update(failureClusters).set(updateFields).where(eq(failureClusters.id, clusterId));
 
   return { success: true, extractedCount: testCaseIds.length, remainingOccurrences };
 }

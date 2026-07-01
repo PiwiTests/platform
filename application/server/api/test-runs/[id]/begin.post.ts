@@ -6,7 +6,7 @@ import { cancelInstanceRuns } from '../../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { runEventBus } from '../../../utils/run-events';
 import { persistShardToken } from '../../../utils/shard-tokens';
-import { Role } from '../../../../shared/types';
+import { Role } from '#shared/types';
 
 const REQUIRED_ROLES: Role[] = [];
 

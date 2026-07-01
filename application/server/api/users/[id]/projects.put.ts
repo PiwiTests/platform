@@ -2,8 +2,8 @@ import { getDatabase } from '../../../database';
 import { users, projects } from '../../../database/schema';
 import { eq, inArray } from 'drizzle-orm';
 import { requireAuth } from '../../../utils/auth';
-import { Role } from '../../../../shared/types';
-import { setUserAssignments } from '~~/shared/handlers/project-assignments';
+import { Role } from '#shared/types';
+import { setUserAssignments } from '#shared/handlers/project-assignments';
 import { z } from 'zod';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];

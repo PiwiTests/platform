@@ -7,7 +7,7 @@
  * Always links to the configuration reference so a system admin can jump to the
  * canonical env-var documentation.
  */
-import type { PiwiEnvVarName } from '~~/shared/piwi-env-vars';
+import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 
 const props = withDefaults(
   defineProps<{

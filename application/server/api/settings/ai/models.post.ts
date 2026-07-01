@@ -1,5 +1,5 @@
 import { requireAuth } from '../../../utils/auth';
-import { Role } from '../../../../shared/types';
+import { Role } from '#shared/types';
 import type { ModelInfo } from '~~/types/api';
 
 /** Convert per-token pricing string to per-million-tokens, keeping larger values as-is. */

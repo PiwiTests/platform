@@ -1,12 +1,5 @@
 import type { LocatorSnapshot } from './locator-healing.types';
 
-// ── Shard info ─────────────────────────────────────────────────────────────────
-
-export interface ShardInfo {
-  current: number;
-  total: number;
-}
-
 // ── Test status types ──────────────────────────────────────────────────────────
 // These mirror the values stored in the test_runs.status column and the
 // Playwright result.status values.

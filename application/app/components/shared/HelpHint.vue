@@ -10,8 +10,8 @@
  * reserve `i-lucide-info` for informational/empty-state callouts.
  */
 import { HELP_TOPICS, type HelpTopic, type HelpTopicKey } from '~/utils/help-content';
-import type { PiwiEnvVarName } from '~~/shared/piwi-env-vars';
-import { getEnvVarMeta } from '~~/shared/piwi-env-vars';
+import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
+import { getEnvVarMeta } from '#shared/piwi-env-vars';
 
 const props = defineProps<{
   /** Resolve copy from the registry… */

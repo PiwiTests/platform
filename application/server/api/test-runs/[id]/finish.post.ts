@@ -8,8 +8,8 @@ import { autoDiagnoseRun } from '../../../utils/ai-diagnosis';
 import { readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/shard-tokens';
 import { emitRunNotifications } from '../../../utils/notifications/run-notifications';
 import { computeRegressionSignals } from '../../../utils/compute-regression-signals';
-import { Role } from '../../../../shared/types';
-import { sumFailedAndTimedOut } from '../../../../shared/utils/test-counts';
+import { Role } from '#shared/types';
+import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 
 const REQUIRED_ROLES: Role[] = [];
 

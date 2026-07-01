@@ -1,5 +1,5 @@
 import { getAppSetting } from './app-settings';
-import { DEFAULT_WASTED_WAIT_PATTERNS, parseWastedWaitPatterns } from '../../shared/utils/wasted-waits';
+import { DEFAULT_WASTED_WAIT_PATTERNS, parseWastedWaitPatterns } from '#shared/utils/wasted-waits';
 
 type DbClient = Awaited<ReturnType<typeof import('../database').getDatabase>>;
 

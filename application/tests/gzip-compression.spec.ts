@@ -3,7 +3,7 @@ import { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync } from 
 import { join } from 'path';
 import { gzip } from 'zlib';
 import { promisify } from 'util';
-import { PROJECT } from '../shared/test-project-names';
+import { PROJECT } from '#shared/test-project-names';
 
 const gzipAsync = promisify(gzip);
 

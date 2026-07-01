@@ -1,6 +1,6 @@
 import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { getAppSetting, setAppSetting, deleteAppSetting } from '../../utils/app-settings';
 import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
 import { AI_ROLES, storedRoles, readAiSettings, type RawStoredAi, type RawStoredRole } from '../../utils/ai-settings';

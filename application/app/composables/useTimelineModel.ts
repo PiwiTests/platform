@@ -1,6 +1,6 @@
 import { computed, type ComputedRef } from 'vue';
 import type { TestCaseResult, TestStepEvent } from '~~/types/api';
-import { isWastedWait, DEFAULT_WASTED_WAIT_PATTERNS } from '~~/shared/utils/wasted-waits';
+import { isWastedWait, DEFAULT_WASTED_WAIT_PATTERNS } from '#shared/utils/wasted-waits';
 
 /** A single drawable element on the timeline: a test bar, hook/fixture, or wait. */
 export interface TimelineItem {

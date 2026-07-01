@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AdminStats } from '~~/types/api';
-import { envVarsByCategory, getEnvVarMeta } from '~~/shared/piwi-env-vars';
+import { envVarsByCategory, getEnvVarMeta } from '#shared/piwi-env-vars';
 
 const toast = useToast();
 

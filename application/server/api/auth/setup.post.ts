@@ -1,4 +1,4 @@
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { createUser, isAuthEnabled } from '../../utils/auth';
 import { getDatabase } from '../../database';
 import { users } from '../../database/schema';

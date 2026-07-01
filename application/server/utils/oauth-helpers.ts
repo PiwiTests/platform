@@ -5,7 +5,7 @@
 // security-relevant decisions to these functions.
 
 import { randomBytes, createHash } from 'node:crypto';
-import { Role } from '../../shared/types';
+import { Role } from '#shared/types';
 
 // ---------------------------------------------------------------------------
 // PKCE (RFC 7636)

@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import type { User } from '../database/schema';
 import { scrypt, randomBytes, timingSafeEqual, createHash } from 'node:crypto';
 import { promisify } from 'node:util';
-import { Role } from '../../shared/types';
+import { Role } from '#shared/types';
 
 const scryptAsync = promisify(scrypt);
 

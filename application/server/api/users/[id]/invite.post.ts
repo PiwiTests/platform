@@ -4,7 +4,7 @@ import { users } from '../../../database/schema';
 import { requireAuth } from '../../../utils/auth';
 import { mintAccountToken } from '../../../utils/account-tokens';
 import { isEmailConfigured, sendEmail, renderInviteEmail } from '../../../utils/email';
-import { Role } from '../../../../shared/types';
+import { Role } from '#shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 

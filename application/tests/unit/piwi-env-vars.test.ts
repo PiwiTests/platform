@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { PIWI_ENV_VARS, type PiwiEnvVarName } from '../../shared/piwi-env-vars';
+import { PIWI_ENV_VARS, type PiwiEnvVarName } from '#shared/piwi-env-vars';
 
 const ROOT = resolve(__dirname, '../..');
 

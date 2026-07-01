@@ -14,7 +14,7 @@
  * scoped to two projects, and a user with no access yet.
  */
 import demoUsersData from './demo-users.json';
-import { Role } from '~~/shared/types';
+import { Role } from '#shared/types';
 
 export interface DemoUser {
   id: number;

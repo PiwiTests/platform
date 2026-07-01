@@ -1,6 +1,6 @@
 import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { readAiSettings } from '../../utils/ai-settings';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];

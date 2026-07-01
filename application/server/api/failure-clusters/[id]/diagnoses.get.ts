@@ -1,8 +1,7 @@
-import { getDatabase } from '../../../database';
 import { failureDiagnosisVersions } from '../../../database/schema';
 import { eq, desc } from 'drizzle-orm';
-import { Role } from '../../../../shared/types';
-import { requireProjectAccess, resolveClusterProjectId } from '../../../utils/project-access';
+import { Role } from '#shared/types';
+import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../../utils/project-access';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
@@ -17,15 +16,8 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  const clusterId = parseInt(getRouterParam(event, 'id') || '0');
-  if (!clusterId) throw createError({ statusCode: 400, message: 'Invalid cluster ID' });
-
-  const db = await getDatabase();
-
-  const projectId = await resolveClusterProjectId(db, clusterId);
-  if (!projectId) throw createError({ statusCode: 404, message: 'Failure cluster not found' });
-
-  await requireProjectAccess(event, projectId);
+  const clusterId = requireRouteId(event, 'id', 'cluster ID');
+  const { db } = await requireResolvedProjectAccess(event, clusterId, resolveClusterProjectId, 'Failure cluster');
 
   const versions = await db
     .select()

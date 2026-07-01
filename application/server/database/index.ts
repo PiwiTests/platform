@@ -3,8 +3,8 @@
 // TypeScript uses the SQLite types as the canonical reference throughout.
 import { drizzle as sqliteDrizzle } from 'drizzle-orm/libsql/sqlite3';
 import * as sqliteSchema from './schema.sqlite';
-import { backfillProjectAssignments } from '~~/shared/handlers/project-assignments';
-import { reclusterFailureFingerprints } from '~~/shared/handlers/failure-cluster-recluster';
+import { backfillProjectAssignments } from '#shared/handlers/project-assignments';
+import { reclusterFailureFingerprints } from '#shared/handlers/failure-cluster-recluster';
 import { existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';

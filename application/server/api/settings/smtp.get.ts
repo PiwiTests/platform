@@ -1,6 +1,6 @@
 import { requireAuth } from '../../utils/auth';
 import { getSmtpConfig } from '../../utils/email';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 

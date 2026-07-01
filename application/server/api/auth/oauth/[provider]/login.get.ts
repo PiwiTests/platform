@@ -1,4 +1,4 @@
-import { Role } from '../../../../../shared/types';
+import { Role } from '#shared/types';
 import { isAuthEnabled, getCurrentUser } from '../../../../utils/auth';
 import { initiateOAuth } from '../../../../utils/oauth';
 

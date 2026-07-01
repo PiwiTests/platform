@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { EntityLinkInfo } from '~~/types/api';
-import { getProviderIcon } from '~~/shared/link-detect';
+import { getProviderIcon } from '#shared/link-detect';
 
 const props = defineProps<{
   link: EntityLinkInfo;

@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures';
 import { waitForHydration } from './utils';
-import { PROJECT } from '../shared/test-project-names';
+import { PROJECT } from '#shared/test-project-names';
 
 test.describe.serial('Run Comparison', () => {
   let projectId: number;
