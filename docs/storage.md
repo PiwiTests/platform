@@ -119,11 +119,11 @@ To customize the path, set the variable in `application/.env` (recommended, cros
 ::: code-group
 
 ```bash [Linux / macOS]
-PIWI_DATABASE_PATH=/custom/path/database.db npm run dev
+PIWI_DATABASE_PATH=/custom/path/database.db npm run app:dev
 ```
 
 ```powershell [Windows (PowerShell)]
-$env:PIWI_DATABASE_PATH = '/custom/path/database.db'; npm run dev
+$env:PIWI_DATABASE_PATH = '/custom/path/database.db'; npm run app:dev
 ```
 
 :::
@@ -135,11 +135,11 @@ Set the `PIWI_DATABASE_URL` environment variable to switch to PostgreSQL (in `ap
 ::: code-group
 
 ```bash [Linux / macOS]
-PIWI_DATABASE_URL=postgresql://user:password@localhost:5432/piwi_dashboard npm run dev
+PIWI_DATABASE_URL=postgresql://user:password@localhost:5432/piwi_dashboard npm run app:dev
 ```
 
 ```powershell [Windows (PowerShell)]
-$env:PIWI_DATABASE_URL = 'postgresql://user:password@localhost:5432/piwi_dashboard'; npm run dev
+$env:PIWI_DATABASE_URL = 'postgresql://user:password@localhost:5432/piwi_dashboard'; npm run app:dev
 ```
 
 :::
@@ -157,11 +157,11 @@ Then start the dashboard:
 ::: code-group
 
 ```bash [Linux / macOS]
-PIWI_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/piwi_dashboard npm run dev
+PIWI_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/piwi_dashboard npm run app:dev
 ```
 
 ```powershell [Windows (PowerShell)]
-$env:PIWI_DATABASE_URL = 'postgresql://postgres:postgres@localhost:5432/piwi_dashboard'; npm run dev
+$env:PIWI_DATABASE_URL = 'postgresql://postgres:postgres@localhost:5432/piwi_dashboard'; npm run app:dev
 ```
 
 :::
@@ -204,7 +204,7 @@ If you modify the database schema:
 npm run db:generate
 
 # 3. Restart the application — migrations apply automatically on startup
-npm run dev
+npm run app:dev
 ```
 
 ::: warning

@@ -11,9 +11,11 @@ The dashboard supports optional user authentication with role-based access contr
 
 | Role | Description |
 |------|-------------|
-| **Administrator** | Full access to all features including editing projects, managing users, and deleting runs |
-| **Reporter** | Can only call submission API endpoints (`/api/test-runs/submit` and `/api/test-runs/upload`) |
-| **User** | Read-only access to all dashboard pages and data |
+| **Administrator** | Full access to every project and feature — editing projects, managing users, and deleting runs. Never restricted by project access. |
+| **Reporter** | Submits results (`/api/test-runs/submit`, `/api/test-runs/upload`) and can triage, but only for the **projects it's assigned to**. |
+| **User** | Read-only access to the **projects it's assigned to**. |
+
+Administrators always see everything. **Reporter** and **User** accounts are additionally scoped by [project access](#project-access) — they only see and act on the projects assigned to them.
 
 ## Enabling authentication
 
@@ -170,9 +172,33 @@ To create additional users:
 2. Click **Add user**
 3. Set username, password, role, and optional display name
 
-Each non-admin user's **project access (affectations)** is managed from the **Project access** action on this page (per user), or from a project's **Members** tab (per project). A user can be granted global access (all projects) or scoped to specific ones.
+## Project access
 
-> **Try it in the demo:** the [live demo](https://piwitests.github.io/demo/) ships with several pre-seeded identities. Use the **Acting as** picker in the demo banner to switch between them and watch how each user's project affectations change what they can see. See [UI overview → Demo user switcher](./ui-overview.md#demo-user-switcher-act-as).
+Administrators see every project. **Reporter** and **User** accounts see only the projects they are **assigned** to — so you can give each team its own slice of the dashboard.
+
+An assignment is one of two kinds:
+
+- **Global** — access to *all* projects, including ones created later. Good for a shared CI reporter or a team lead.
+- **Per-project** — access to a specific set of projects only.
+
+What scoping affects for a non-admin user:
+
+- The project list, sidebar menu, home dashboard, recent runs, and search only include assigned projects.
+- Runs, test cases, and clusters that belong to an unassigned project return **403**.
+- A reporter can submit results to an assigned project. Creating a **new** project on first submission requires **global** access — a per-project reporter can't invent projects.
+
+> **Default is no access.** A freshly created Reporter/User has no assignments and sees an empty dashboard until you grant some. (When authentication is first enabled, existing accounts are automatically backfilled with global access so nothing breaks on upgrade.)
+
+### Managing assignments
+
+Assignments are administrator-only and can be edited from either direction:
+
+- **Per user** — **Settings → Users → Project access** (the action next to a user). Choose global access or tick specific projects.
+- **Per project** — a project's **Members** tab (`/projects/:id`, admins only). Add or remove users for that one project.
+
+Both edit the same underlying assignments, so use whichever is more convenient.
+
+> **Try it in the demo:** the [live demo](https://piwitests.github.io/demo/) ships with several pre-seeded identities — an admin, a global CI reporter, and users scoped to one or two projects (plus one with none). Use the **Acting as** picker in the demo banner to switch between them and watch the project list, sidebar, and search change to match each user's access. Acting as the admin, change the assignments live and switch back to see the effect. See [UI overview → Live demo](./ui-overview.md#live-demo).
 
 ## API authentication
 

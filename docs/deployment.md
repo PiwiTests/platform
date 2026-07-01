@@ -203,8 +203,8 @@ spec:
 ```bash
 cd application
 npm install
-npm run build
-npm run preview  # preview the production build locally
+npm run app:build
+npm run app:preview  # preview the production build locally
 ```
 
 ## Security
