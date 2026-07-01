@@ -51,17 +51,19 @@ See [Deployment](./deployment) for detailed Docker, Docker Compose, PostgreSQL, 
 ```bash
 # Clone the repository
 git clone https://github.com/piwitests/platform.git
-cd piwi-dashboard/application
+cd platform/application
 
 # Install dependencies
 npm install
 
 # Start the development server
-npm run dev
+npm run app:dev
 ```
 
 The dashboard will be available at `http://localhost:3000`.  
 The SQLite database is automatically created on the first API call.
+
+> The repository is an npm-workspaces monorepo, so the application scripts are prefixed `app:` (e.g. `app:dev`, `app:build`). Run them from the `application/` directory.
 
 ## Submitting your first test result
 
@@ -170,12 +172,13 @@ After submitting results, the dashboard provides:
 |------|---------|
 | **Home** (`/`) | Overview stats, test trend chart, and quick access to recent projects |
 | **Projects** (`/projects`) | Searchable table of all projects with status, duration, and tag filters |
-| **Project detail** (`/projects/:id`) | Run history for a single project with breakdown charts |
-| **Performance** (`/projects/:id/performance`) | Duration trends, slowest tests ranking, side-by-side run comparison |
-| **Test run** (`/test-runs/:id`) | Individual test cases with status, errors, traces, failure groups, and reports |
+| **Project detail** (`/projects/:id`) | Run history for a project, with tabs for failure clusters, flaky tests, performance, spec health, and run comparison |
+| **Test run** (`/test-runs/:id`) | Individual test cases with status, errors, traces, insights, failure groups, worker timeline, and reports |
 | **Test case** (`/test-cases/:id`) | Detailed view of a single test including steps, web vitals, and network data |
 | **API Docs** (`/docs`) | Interactive API reference with endpoint documentation, schemas, and try-it console (auto-generated) |
-| **Settings** (`/settings`) | User management, storage stats, tag management, and cleanup tools |
+| **Settings** (`/settings`) | Account, users, storage, tags, wasted-time patterns, AI diagnosis, and notifications |
+
+See the [UI overview](./ui-overview) for a full map of every page and tab.
 
 ## Development commands
 
@@ -183,16 +186,18 @@ Run these from the `application/` directory:
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start development server with hot reload |
-| `npm run build` | Build for production |
-| `npm run preview` | Preview the production build locally |
-| `npm run typecheck` | TypeScript type checking |
-| `npm run lint` | Run ESLint |
-| `npm test` | Run Playwright functional tests |
+| `npm run app:dev` | Start development server with hot reload |
+| `npm run app:build` | Build for production |
+| `npm run app:preview` | Preview the production build locally |
+| `npm run app:typecheck` | TypeScript type checking |
+| `npm run app:lint` | Run oxlint (`app:lint:fix` to auto-fix) |
+| `npm run app:test:unit` | Run unit tests (Vitest) |
+| `npm run app:test` | Run Playwright end-to-end tests |
+| `npm test` | Run both unit and end-to-end tests |
 | `npm run db:generate` | Generate SQLite migration from schema changes |
 | `npm run db:generate:pg` | Generate PostgreSQL migration from schema changes |
 | `npm run db:studio` | Open Drizzle Studio to browse the SQLite database |
 | `npm run db:studio:pg` | Open Drizzle Studio to browse the PostgreSQL database |
-| `npm run seed:demo` | Regenerate demo seed data for the live demo |
+| `npm run app:seed:demo` | Regenerate demo seed data for the live demo |
 
-> **Migration workflow:** edit `server/database/schema.ts` → run `npm run db:generate` (SQLite) or `npm run db:generate:pg` (PostgreSQL) → review the generated `.sql` file → restart the app. Never create migration files or edit `meta/_journal.json` by hand — the Drizzle migrator depends on the journal to track which migrations have been applied, and manual entries cause it to silently skip the migration.
+> **Migration workflow:** edit `server/database/schema.sqlite.ts` (and `schema.pg.ts` for the PostgreSQL equivalent — `schema.ts` is just a dialect-selecting re-export, don't edit it) → run `npm run db:generate` (SQLite) or `npm run db:generate:pg` (PostgreSQL) → review the generated `.sql` file → restart the app. Never create migration files or edit `meta/_journal.json` by hand — the Drizzle migrator depends on the journal to track which migrations have been applied, and manual entries cause it to silently skip the migration.
