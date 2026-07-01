@@ -15,21 +15,45 @@ The MCP server is served from the same Nitro process as the dashboard. There is 
 
 ## What it provides
 
-The server exposes 11 read-only tools that cover the full diagnostic workflow:
+The server exposes 18 read-only tools that cover the full diagnostic workflow, from browsing projects to inspecting the exact evidence behind a failure.
+
+**Projects & activity**
 
 | Tool | Description |
 |------|-------------|
 | `list_projects` | All projects with run stats and latest run status |
 | `get_project` | Project details and recent test runs |
+| `list_recent_activity` | Most recent runs across *all* projects — a cross-project CI feed (no project ID needed) |
+
+**Runs & test cases**
+
+| Tool | Description |
+|------|-------------|
 | `list_runs` | Filter runs by project, branch, or status |
 | `get_run` | Run summary and test cases filtered by status |
 | `list_failed_cases` | Failed/timed-out cases across runs for a project |
 | `list_flaky_tests` | Flaky test analysis with flakiness scores and retry patterns |
+| `search_test_cases` | Find a test case by title or file path within a project |
 | `get_test_case` | Test case stats and recent execution history |
+| `get_test_run_case` | One execution record with full (untruncated) error, steps, console, network, web vitals, and ARIA snapshot |
+| `get_test_case_context` | Execution-scoped AI evidence for a single failure (steps, console, network, SCM diff) |
+| `get_case_screenshots` | Screenshots for an execution — metadata by default, or base64 image data on request |
+
+**Failure clusters**
+
+| Tool | Description |
+|------|-------------|
 | `list_clusters` | Failure clusters grouped by error fingerprint |
 | `get_cluster` | Cluster detail with affected tests and diagnosis summary |
 | `get_cluster_diagnosis` | Full AI diagnosis: root cause, evidence, suggested fix |
-| `get_cluster_context` | Raw AI evidence context (errors, steps, console logs, SCM diff) — the same data the built-in diagnosis AI receives |
+| `get_cluster_context` | Full AI evidence context (errors, steps, console logs, SCM diff) — the same data the built-in diagnosis AI receives |
+
+**Source control** *(requires an SCM token — per-project or global)*
+
+| Tool | Description |
+|------|-------------|
+| `get_repo_commits` | Recent commits for a project's repository (SHA, message, author, date) |
+| `get_repo_diff` | Changed files with patches for a single commit — inspect what a suspect commit changed |
 
 All tools return **token-optimized** compact JSON: null fields are omitted, errors are truncated, and large blobs (browser configs, metadata) are flattened to short strings.
 

@@ -36,7 +36,7 @@ reporter/               — Custom Playwright reporter package (TypeScript → c
 ```bash
 cd application
 npm install
-npm run dev          # http://localhost:3000
+npm run app:dev      # http://localhost:3000
 ```
 
 SQLite database auto-initializes on first API call.
@@ -538,12 +538,12 @@ Always regenerate the seed SQL after changes: `cd application && npm run app:see
 
 ## Troubleshooting
 - DB locked? Stop other processes accessing `.data/piwi.db`
-- Port 3000 in use? Use `PORT=3001 npm run dev` (Linux/macOS) or `$env:PORT=3001; npm run dev` (Windows PowerShell)
+- Port 3000 in use? Use `PORT=3001 npm run app:dev` (Linux/macOS) or `$env:PORT=3001; npm run app:dev` (Windows PowerShell)
 - Tests failing? Ensure no dev server on port 3000 (tests start their own)
 - Reporter not found? `npm link` in `reporter/` then in target project
 - Migration not applying? If a migration file or `_journal.json` was created by hand (not via `npm run db:generate`), the Drizzle migrator may silently skip it — delete the hand-written migration, revert the journal entry, run `npm run db:generate` (or `db:generate:pg` for PostgreSQL), and manually run `ALTER TABLE ... ADD COLUMN` on the existing database if needed.
 - Command appears frozen / no output? It probably launched an interactive pager. Use `git --no-pager <cmd>` for `diff`/`log`/`show`, and avoid commands that open an editor or wait for input (non-interactive shells hang on them).
-- **Don't start the dev server interactively** — `npm run dev` / `nuxt dev` runs as a foreground process and blocks all subsequent commands. The tests handle server startup automatically via `webServer` in `playwright.config.ts`. If you need to start the server manually, do it as a background PowerShell job or use `Start-Process`. Starting it directly in a bash tool call will leave you stuck until the tool times out.
+- **Don't start the dev server interactively** — `npm run app:dev` / `nuxt dev` runs as a foreground process and blocks all subsequent commands. The tests handle server startup automatically via `webServer` in `playwright.config.ts`. If you need to start the server manually, do it as a background PowerShell job or use `Start-Process`. Starting it directly in a bash tool call will leave you stuck until the tool times out.
 
 ## Testing API
 
