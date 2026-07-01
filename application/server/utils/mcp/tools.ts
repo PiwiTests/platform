@@ -1,13 +1,19 @@
 import { eq, and, desc, or, lt, like } from 'drizzle-orm';
-import { listProjects, getProjectFlakyTests } from '~~/shared/handlers/projects';
-import { getTestRun } from '~~/shared/handlers/test-runs';
-import { getTestCase } from '~~/shared/handlers/test-cases';
-import { getFailureCluster, getClusterDiagnosis } from '~~/shared/handlers/failure-clusters';
+import { listProjects, getProjectFlakyTests } from '#shared/handlers/projects';
+import { getTestRun } from '#shared/handlers/test-runs';
+import { getTestCase } from '#shared/handlers/test-cases';
+import { getFailureCluster, getClusterDiagnosis } from '#shared/handlers/failure-clusters';
 import { projects, testRuns, testRunsCases, testCases, failureClusters, files } from '../../database/schema';
 import { buildDiagnosisContext, buildClusterDiagnosisContext } from '../ai-context';
 import { stripAnsi } from '#shared/error-fingerprint';
 import { MCP_TOOL_DEFS } from '#shared/mcp-tools';
-import type { McpToolDef, McpToolName, McpFlakyTestItem, McpAffectedTestCase } from '#shared/mcp-tools';
+import type {
+  McpToolDef,
+  McpToolName,
+  McpFlakyTestItem,
+  McpAffectedTestCase,
+  PaginatedResponse,
+} from '#shared/mcp-tools';
 import type { RunMetadata, BrowserConfig } from '../run-json-types';
 import { getStorage } from '../../storage';
 import { getLocatorHealingBatch } from '../locator-healing';
@@ -57,7 +63,7 @@ function compactBrowser(browser: unknown): string | null {
  * When the caller asks for page N+1 of an unchanged list, the cursor lands at
  * the exact boundary — no skip, no duplicate, no gap.
  */
-function paginatedItems<T>(items: T[], pageSize: number, getCursor: (item: T) => string | null) {
+function paginatedItems<T>(items: T[], pageSize: number, getCursor: (item: T) => string | null): PaginatedResponse<T> {
   const hasMore = items.length > pageSize;
   if (hasMore) items = items.slice(0, pageSize);
   return {

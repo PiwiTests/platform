@@ -1,8 +1,8 @@
-import { requireProjectAccess } from '../../../utils/project-access';
+import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
 import { getDatabase } from '../../../database';
 import { testCases, testRunsCases, testRuns } from '../../../database/schema';
 import { eq, and, desc } from 'drizzle-orm';
-import { Role } from '../../../../shared/types';
+import { Role } from '#shared/types';
 import { classifyFlakyRootCause, type FlakyRootCause } from '../../../utils/flaky-classify';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
@@ -30,8 +30,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  const projectId = parseInt(getRouterParam(event, 'id') || '0');
-  if (!projectId) throw createError({ statusCode: 400, message: 'Invalid project ID' });
+  const projectId = requireRouteId(event, 'id', 'project ID');
 
   await requireProjectAccess(event, projectId, REQUIRED_ROLES);
 

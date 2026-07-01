@@ -1,7 +1,7 @@
 import { isAuthEnabled } from '../auth';
 import { matchAndEnqueue } from './match';
 import { sweepOutbox } from './dispatch';
-import type { NotificationEvent, NotificationPayload } from '../../../shared/notification-events';
+import type { NotificationEvent, NotificationPayload } from '#shared/notification-events';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
 
 /**

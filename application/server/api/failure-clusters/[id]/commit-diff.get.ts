@@ -1,10 +1,9 @@
-import { getDatabase } from '../../../database';
 import { failureClusters, testRuns } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
 import { normalizeGitUrl } from '../../../utils/regression-context';
 import { createScmProvider } from '../../../utils/scm';
-import { Role } from '../../../../shared/types';
-import { requireProjectAccess, resolveClusterProjectId } from '../../../utils/project-access';
+import { Role } from '#shared/types';
+import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../../utils/project-access';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 
@@ -19,14 +18,8 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw createError({ statusCode: 400, message: 'Invalid cluster ID' });
-
-  const db = await getDatabase();
-  const projectId = await resolveClusterProjectId(db, id);
-  if (!projectId) throw createError({ statusCode: 404, message: 'Failure cluster not found' });
-
-  await requireProjectAccess(event, projectId);
+  const id = requireRouteId(event, 'id', 'cluster ID');
+  const { db } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 
   const sha = getQuery(event).sha as string | undefined;
   if (!sha) throw createError({ statusCode: 400, message: 'Missing sha query parameter' });

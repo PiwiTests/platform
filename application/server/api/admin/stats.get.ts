@@ -1,7 +1,7 @@
 import { getDatabase } from '../../database';
-import { getAdminStats } from '~~/shared/handlers/admin';
+import { getAdminStats } from '#shared/handlers/admin';
 import { requireAuth } from '../../utils/auth';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { getStorage } from '../../storage';
 import { getDirectorySize } from '../../utils/filesize';
 import { resolve } from 'path';

@@ -2,7 +2,7 @@ import { eq, and, or, isNull } from 'drizzle-orm';
 import { getDatabase } from '../../database';
 import { subscriptions, notificationChannels } from '../../database/schema';
 import { requireAuth, isAuthEnabled } from '../../utils/auth';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 
 const REQUIRED_ROLES: Role[] = [];
 

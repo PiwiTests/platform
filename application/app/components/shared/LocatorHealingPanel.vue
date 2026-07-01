@@ -5,8 +5,8 @@
  * note. Used on both the cluster detail page and the test-case detail page.
  */
 
-import { recommendLocatorFix } from '~~/shared/locator-healing';
-import type { RankedLocator, LocatorFixRecommendation } from '~~/shared/locator-healing.types';
+import { recommendLocatorFix } from '#shared/locator-healing';
+import type { RankedLocator, LocatorFixRecommendation } from '#shared/locator-healing.types';
 
 const props = defineProps<{
   runId: number;

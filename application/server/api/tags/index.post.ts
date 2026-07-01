@@ -1,8 +1,8 @@
 import { getDatabase } from '../../database';
-import { createTag } from '~~/shared/handlers/tags';
+import { createTag } from '#shared/handlers/tags';
 import { z } from 'zod';
 import { requireAuth } from '../../utils/auth';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 

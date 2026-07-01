@@ -8,13 +8,13 @@
 
 import { eq } from 'drizzle-orm';
 import { users } from '~~/server/database/schema.sqlite';
-import { Role } from '~~/shared/types';
+import { Role } from '#shared/types';
 import {
   getUserAssignments,
   setUserAssignments,
   getProjectMembers,
   setProjectMembers,
-} from '~~/shared/handlers/project-assignments';
+} from '#shared/handlers/project-assignments';
 import { getDemoDb } from '../db.client';
 import { getLocatorHealing } from '~~/server/utils/locator-healing';
 import {
@@ -30,9 +30,9 @@ import {
   deleteProjectData,
   getProjectFlakyTests,
   getProjectsOverview,
-} from '~~/shared/handlers/projects';
-import { listTags, createTag, updateTag, deleteTag } from '~~/shared/handlers/tags';
-import { getTestCase, getTestRunCase, getTestCaseHistory, getTestRunCaseTraces } from '~~/shared/handlers/test-cases';
+} from '#shared/handlers/projects';
+import { listTags, createTag, updateTag, deleteTag } from '#shared/handlers/tags';
+import { getTestCase, getTestRunCase, getTestCaseHistory, getTestRunCaseTraces } from '#shared/handlers/test-cases';
 import {
   getFailureCluster,
   patchClusterStatus,
@@ -43,9 +43,9 @@ import {
   getClusterBranches,
   extractClusterCases,
   getClusterDiagnosis,
-} from '~~/shared/handlers/failure-clusters';
-import { listMergeSuggestions } from '~~/shared/handlers/cluster-merge-suggestions';
-import { listLinks, createLink, patchLink, deleteLink, refreshLinkMeta } from '~~/shared/handlers/links';
+} from '#shared/handlers/failure-clusters';
+import { listMergeSuggestions } from '#shared/handlers/cluster-merge-suggestions';
+import { listLinks, createLink, patchLink, deleteLink, refreshLinkMeta } from '#shared/handlers/links';
 import {
   getTestRun,
   getRecentTestRuns,
@@ -54,8 +54,8 @@ import {
   getNetworkRequests,
   getFailureGroups,
   computeRegressionContextForRun,
-} from '~~/shared/handlers/test-runs';
-import { computeRunInsights } from '~~/shared/handlers/run-insights';
+} from '#shared/handlers/test-runs';
+import { computeRunInsights } from '#shared/handlers/run-insights';
 import {
   listUsers,
   createUserRecord,
@@ -63,8 +63,8 @@ import {
   listUserApiKeys,
   deleteUserApiKeyRecord,
   updateUserRecord,
-} from '~~/shared/handlers/users';
-import { searchProjectsTestRunsCases } from '~~/shared/handlers/search';
+} from '#shared/handlers/users';
+import { searchProjectsTestRunsCases } from '#shared/handlers/search';
 import {
   apiSetupTestRun,
   apiBeginTestRun,

@@ -6,7 +6,7 @@ import { waitForHydration as nuxtWaitForHydration } from '@nuxt/test-utils/e2e';
 // `window.useNuxtApp?.().isHydrating === false` — the official Nuxt API.
 export async function waitForHydration(page: Page) {
   await page.waitForLoadState('load');
-  await nuxtWaitForHydration(page, undefined, 'hydration').catch(() => {});
+  await nuxtWaitForHydration(page, undefined as unknown as string, 'hydration').catch(() => {});
 }
 
 /**

@@ -1,6 +1,5 @@
-import { getDatabase } from '../../../database';
-import { computeRunInsights } from '~~/shared/handlers/run-insights';
-import { requireProjectAccess, resolveRunProjectId } from '../../../utils/project-access';
+import { computeRunInsights } from '#shared/handlers/run-insights';
+import { requireResolvedProjectAccess, requireRouteId, resolveRunProjectId } from '../../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
@@ -13,15 +12,8 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  const runId = parseInt(getRouterParam(event, 'id') || '0');
-  if (!runId) throw createError({ statusCode: 400, message: 'Invalid run ID' });
-
-  const db = await getDatabase();
-
-  const projectId = await resolveRunProjectId(db, runId);
-  if (!projectId) throw createError({ statusCode: 404, message: 'Run not found' });
-
-  await requireProjectAccess(event, projectId);
+  const runId = requireRouteId(event, 'id', 'run ID');
+  const { db } = await requireResolvedProjectAccess(event, runId, resolveRunProjectId, 'Run');
 
   try {
     return await computeRunInsights(db, runId);

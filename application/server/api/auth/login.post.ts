@@ -1,4 +1,4 @@
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { verifyUser, setUserSession, isAuthEnabled } from '../../utils/auth';
 import { z } from 'zod';
 

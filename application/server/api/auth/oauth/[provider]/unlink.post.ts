@@ -1,4 +1,4 @@
-import { Role } from '../../../../../shared/types';
+import { Role } from '#shared/types';
 import { requireAuth } from '../../../../utils/auth';
 import { unlinkProvider } from '../../../../utils/oauth';
 

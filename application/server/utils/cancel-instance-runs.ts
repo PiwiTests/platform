@@ -1,5 +1,5 @@
 import { runEventBus } from './run-events';
-import { cancelInstanceRuns as sharedCancelInstanceRuns } from '~~/shared/handlers/failure-cluster-ops';
+import { cancelInstanceRuns as sharedCancelInstanceRuns } from '#shared/handlers/failure-cluster-ops';
 import type { getDatabase } from '../database';
 
 type DB = Awaited<ReturnType<typeof getDatabase>>;

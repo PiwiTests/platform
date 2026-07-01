@@ -2,7 +2,7 @@ import { getDatabase } from '../../database';
 import { projects } from '../../database/schema';
 import { eq } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { checkExistingBlobs } from '../../utils/trace-blobs';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];

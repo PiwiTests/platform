@@ -1,8 +1,8 @@
 import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { resolveWastedSettings } from '../../utils/wasted-settings';
-import { DEFAULT_WASTED_WAIT_PATTERNS } from '../../../shared/utils/wasted-waits';
+import { DEFAULT_WASTED_WAIT_PATTERNS } from '#shared/utils/wasted-waits';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 

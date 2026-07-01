@@ -9,32 +9,42 @@ import {
   failureClusters,
   failureDiagnoses,
 } from '../../server/database/schema';
-import { desc, eq, sql, and, inArray, gte, lte, isNotNull } from 'drizzle-orm';
+import { desc, eq, sql, and, inArray, gte, lte, isNotNull, count } from 'drizzle-orm';
 import type { BrowserConfig } from '../types';
 
 import type { DrizzleDB } from './db';
+import { getDatabase } from '../../server/database';
+import { getStorage } from '../../server/storage';
+import { testCaseCache } from '../../server/utils/test-case-cache';
 
 type ProjectScope = 'all' | Set<number>;
 
 // ─── listProjects ────────────────────────────────────────────────
 
-export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
+async function getProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
   let allProjects: any[] = await db.select().from(projects).orderBy(desc(projects.updatedAt));
 
   if (scope !== 'all') {
-    if (scope.size === 0) return [];
+    if (scope.size === 0) return { projects: [], ids: [] };
     allProjects = allProjects.filter((p: any) => scope.has(p.id));
   }
 
-  if (allProjects.length === 0) return [];
+  if (allProjects.length === 0) return { projects: [], ids: [] };
 
-  const projectIds: number[] = allProjects.map((p: any) => p.id);
+  return {
+    projects: allProjects,
+    ids: allProjects.map((p: any) => p.id),
+  };
+}
+
+export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
+  const { ids: projectIds, projects: allProjects } = await getProjects(db, scope);
 
   // 1. Run counts + latest run per project (single GROUP BY query instead of loading all rows)
   const runStats: any[] = await db
     .select({
       projectId: testRuns.projectId,
-      count: sql<number>`COUNT(*)`,
+      count: count(),
       latestRunId: sql<number>`MAX(id)`,
       latestStartTime: sql<Date>`MAX(start_time)`,
     })
@@ -61,7 +71,7 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
   const caseCounts: any[] = await db
     .select({
       projectId: testCases.projectId,
-      count: sql<number>`COUNT(*)`,
+      count: count(),
     })
     .from(testCases)
     .where(inArray(testCases.projectId, projectIds))
@@ -343,6 +353,26 @@ export async function deleteProjectData(db: DrizzleDB, projectId: number) {
   await db.delete(projects).where(eq(projects.id, projectId));
 }
 
+/**
+ * Permanently delete a project and all its associated data.
+ *
+ * Deletes storage first (entire project-{id}/ directory), then clears DB rows
+ * in FK order. Tables with onDelete: cascade (projectTags, failureClusters,
+ * failureDiagnoses, traceBlobs, traceResources) are handled automatically when
+ * the project row is removed.
+ */
+export async function deleteProject(projectId: number): Promise<void> {
+  const db = await getDatabase();
+  const storage = getStorage();
+
+  // Delete all project files in one shot — covers reports, blobs, trace-resources
+  await storage.deleteDirectory(`project-${projectId}`);
+
+  await deleteProjectData(db, projectId);
+
+  testCaseCache.invalidate(projectId);
+}
+
 // ─── getProjectMenu ──────────────────────────────────────────────
 
 export async function getProjectMenu(
@@ -411,7 +441,7 @@ export async function getProjectPerformance(
   runs.reverse();
 
   // Extract SCM info from metadata for each run
-  const trendData = runs.map((run: any) => {
+  return runs.map((run: any) => {
     const metadata = run.metadata as Record<string, unknown> | null;
     const scm = metadata?.scm as Record<string, unknown> | undefined;
 
@@ -428,8 +458,6 @@ export async function getProjectPerformance(
       isFullRun: run.isFullRun === 1,
     };
   });
-
-  return trendData;
 }
 
 // ─── getProjectTestCases ─────────────────────────────────────────
@@ -537,7 +565,7 @@ export async function getProjectSlowTests(db: DrizzleDB, projectId: number, runs
   }
 
   // Compute stats and sort by average duration desc (slowest first)
-  const slowTests = Array.from(testCaseMap.values())
+  return Array.from(testCaseMap.values())
     .map(
       (entry: {
         id: number;
@@ -587,8 +615,6 @@ export async function getProjectSlowTests(db: DrizzleDB, projectId: number, runs
     )
     .sort((a, b) => b.avgDuration - a.avgDuration)
     .slice(0, 20);
-
-  return slowTests;
 }
 
 // ─── getProjectFailureClusters ───────────────────────────────────
@@ -952,15 +978,7 @@ function deriveTendency(runs: { status: string; flakyTests: number }[]): 'passin
 }
 
 export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = 'all') {
-  let allProjects: any[] = await db.select().from(projects).orderBy(desc(projects.updatedAt));
-
-  if (scope !== 'all') {
-    if (scope.size === 0) return [];
-    allProjects = allProjects.filter((p: any) => scope.has(p.id));
-  }
-  if (allProjects.length === 0) return [];
-
-  const projectIds: number[] = allProjects.map((p: any) => p.id);
+  const { ids: projectIds, projects: allProjects } = await getProjects(db, scope);
 
   // Tags per project (batched)
   const tagRows: any[] = await db
@@ -980,7 +998,7 @@ export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = '
   const fullRunStats: any[] = await db
     .select({
       projectId: testRuns.projectId,
-      totalFullRuns: sql<number>`COUNT(*)`,
+      totalFullRuns: count(),
     })
     .from(testRuns)
     .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1)))

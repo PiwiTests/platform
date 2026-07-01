@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { PROJECT } from '../shared/test-project-names';
+import { PROJECT } from '#shared/test-project-names';
 import { buildZip, parseZip } from '../server/utils/trace-zip';
 
 /**

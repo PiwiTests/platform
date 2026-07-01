@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures';
 import { waitForHydration, retryPost } from './utils';
-import { PROJECT } from '../shared/test-project-names';
+import { PROJECT } from '#shared/test-project-names';
 
 test.describe('Dashboard UI Tests', () => {
   test.setTimeout(90000);

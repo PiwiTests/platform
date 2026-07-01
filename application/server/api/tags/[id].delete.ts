@@ -1,7 +1,7 @@
 import { getDatabase } from '../../database';
-import { deleteTag } from '~~/shared/handlers/tags';
+import { deleteTag } from '#shared/handlers/tags';
 import { requireAuth } from '../../utils/auth';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 

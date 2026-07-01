@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { PROJECT } from '../shared/test-project-names';
+import { PROJECT } from '#shared/test-project-names';
 
 test.describe.serial('Sharding API Tests', () => {
   const INSTANCE_ID = 'sharding-test-instance-e2e';

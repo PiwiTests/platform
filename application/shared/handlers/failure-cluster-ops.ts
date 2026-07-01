@@ -3,7 +3,7 @@
  * and demo reporter implementations.
  */
 
-import { eq, ne, and, or, inArray, sql, isNull } from 'drizzle-orm';
+import { eq, ne, and, or, inArray, sql, isNull, count } from 'drizzle-orm';
 import {
   testRuns,
   testRunsCases,
@@ -214,6 +214,24 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
   }
 
   await db.delete(failureClusters).where(eq(failureClusters.id, victimId));
+}
+
+/**
+ * Recompute a cluster's occurrence counter from the test-run-cases still
+ * linked to it. Must run after the case rows have actually been deleted or
+ * unlinked (not before), otherwise the count still includes rows that are
+ * about to disappear.
+ */
+export async function recomputeClusterOccurrences(db: DrizzleDB, clusterId: number): Promise<number> {
+  const [row] = await db
+    .select({ count: count() })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.failureClusterId, clusterId));
+  const occurrences = Number(row?.count ?? 0);
+
+  await db.update(failureClusters).set({ occurrences, updatedAt: new Date() }).where(eq(failureClusters.id, clusterId));
+
+  return occurrences;
 }
 
 /**

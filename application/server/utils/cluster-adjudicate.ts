@@ -7,8 +7,9 @@
 import { callAiProvider } from './ai-provider';
 import type { ResolvedAiRole } from '~~/types/api';
 
-const ADJUDICATION_SYSTEM_PROMPT =
-  'You are triaging automated software-test failures. Given two failure clusters, decide whether they share the SAME underlying root cause (and should be merged into one) or are genuinely different problems. Be conservative: only answer merge=true when the evidence clearly points to one cause. Reply strictly as JSON.';
+const ADJUDICATION_SYSTEM_PROMPT = `You are triaging automated software-test failures. Given two failure clusters,
+decide whether they share the SAME underlying root cause (and should be merged into one) or are genuinely different
+problems. Be conservative: only answer merge=true when the evidence clearly points to one cause. Reply strictly as JSON.`;
 
 const ADJUDICATION_JSON_SCHEMA = {
   type: 'object',

@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { PROJECT } from '../shared/test-project-names';
+import { PROJECT } from '#shared/test-project-names';
 
 test.describe.serial('API Server Tests', () => {
   test('should submit test results via JSON API', async ({ request }) => {

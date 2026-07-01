@@ -1,4 +1,4 @@
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { getDatabase } from '../../database';
 import { resolveAiConfig } from '../../utils/ai-provider';
 

@@ -1,7 +1,7 @@
 import { getDatabase } from '../../database';
-import { listUsers } from '~~/shared/handlers/users';
+import { listUsers } from '#shared/handlers/users';
 import { isAuthEnabled, requireAuth } from '../../utils/auth';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 

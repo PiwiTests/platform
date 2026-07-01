@@ -1,8 +1,11 @@
-import { getDatabase } from '../../../database';
 import { testRunsCases, failureClusters, failureDiagnoses } from '../../../database/schema';
 import { eq, and } from 'drizzle-orm';
-import { requireProjectAccess, resolveTestRunCaseProjectId } from '../../../utils/project-access';
-import { Role } from '../../../../shared/types';
+import {
+  requireResolvedProjectAccess,
+  requireRouteId,
+  resolveTestRunCaseProjectId,
+} from '../../../utils/project-access';
+import { Role } from '#shared/types';
 import { resolveAiConfig } from '../../../utils/ai-provider';
 import type { AiAttachedImage } from '../../../utils/ai-provider';
 import { runClusterDiagnosis, isDiagnosisRunning, isDiagnosisStale } from '../../../utils/ai-diagnosis';
@@ -21,15 +24,14 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw createError({ statusCode: 400, message: 'Invalid test run case ID' });
-
-  const db = await getDatabase();
-
-  const projectId = await resolveTestRunCaseProjectId(db, id);
-  if (!projectId) throw createError({ statusCode: 404, message: 'Test run case not found' });
-
-  await requireProjectAccess(event, projectId, REQUIRED_ROLES);
+  const id = requireRouteId(event, 'id', 'test run case ID');
+  const { db, projectId } = await requireResolvedProjectAccess(
+    event,
+    id,
+    resolveTestRunCaseProjectId,
+    'Test run case',
+    REQUIRED_ROLES,
+  );
 
   const force = getQuery(event).force === 'true';
   const body = (await readBody(event).catch(() => null)) as {

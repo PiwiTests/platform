@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import FormData from 'form-data';
-import { PROJECT } from '../shared/test-project-names';
+import { PROJECT } from '#shared/test-project-names';
 
 test.describe('File Upload API Tests', () => {
   const tempDir = join(process.cwd(), '.test-temp');

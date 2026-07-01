@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from '../../database';
-import { createUserRecord } from '~~/shared/handlers/users';
-import { Role } from '../../../shared/types';
+import { createUserRecord } from '#shared/handlers/users';
+import { Role } from '#shared/types';
 import { hashPassword, requireAuth } from '../../utils/auth';
 import { z } from 'zod';
 

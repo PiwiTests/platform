@@ -4,7 +4,7 @@ import type { RoleForm } from '~/components/settings/AiRoleConfigForm.vue';
 import { CONTEXT_LIMIT_FIELDS } from '#shared/ai-context-limits';
 import type { ContextLimits, ContextLimitField } from '#shared/ai-context-limits';
 import { pageEnvVars, getSettingsPage } from '~/utils/settings-metadata';
-import type { PiwiEnvVarName } from '~~/shared/piwi-env-vars';
+import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 
 const toast = useToast();
 

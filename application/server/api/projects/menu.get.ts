@@ -1,8 +1,8 @@
 import { requireAuth } from '../../utils/auth';
 import { getProjectScope } from '../../utils/project-access';
 import { getDatabase } from '../../database';
-import { getProjectMenu } from '~~/shared/handlers/projects';
-import { Role } from '../../../shared/types';
+import { getProjectMenu } from '#shared/handlers/projects';
+import { Role } from '#shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 

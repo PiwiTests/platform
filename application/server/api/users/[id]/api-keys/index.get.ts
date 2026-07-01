@@ -1,7 +1,7 @@
 import { getDatabase } from '../../../../database';
-import { listUserApiKeys } from '~~/shared/handlers/users';
+import { listUserApiKeys } from '#shared/handlers/users';
 import { requireAuth } from '../../../../utils/auth';
-import { Role } from '../../../../../shared/types';
+import { Role } from '#shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 

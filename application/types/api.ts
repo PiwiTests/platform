@@ -3,17 +3,7 @@
  * These types are used by both the server API and the app frontend
  */
 
-import type { Role, FilterDetails } from '../shared/types';
-
-// Re-export database types that are used in API responses
-export type {
-  Project as DbProject,
-  TestRun as DbTestRun,
-  TestCase as DbTestCase,
-  TestRunsCase as DbTestRunsCase,
-  User as DbUser,
-  Tag as DbTag,
-} from '../server/database/schema';
+import type { Role, FilterDetails } from '#shared/types';
 
 // ============================================================================
 // Metadata types
@@ -66,21 +56,6 @@ export interface ReportInfo {
   label: string;
   path: string;
   size?: number | null;
-}
-
-/**
- * File stored in the unified files table
- */
-export interface FileInfo {
-  id: number;
-  testRunId?: number | null;
-  testRunsCaseId?: number | null;
-  type: string;
-  subtype?: string | null;
-  label?: string | null;
-  path: string;
-  size?: number | null;
-  createdAt: Date;
 }
 
 // ============================================================================
@@ -727,47 +702,6 @@ export interface AdminStats {
 }
 
 // ============================================================================
-// Request body types
-// ============================================================================
-
-/**
- * Test run submission body for POST /api/test-runs/submit
- */
-export interface TestRunSubmitBody {
-  projectName: string;
-  projectDescription?: string;
-  status: string;
-  startTime: string;
-  duration?: number;
-  totalTests: number;
-  passedTests: number;
-  failedTests: number;
-  skippedTests: number;
-  didNotRunTests: number;
-  flakyTests?: number;
-  environment?: string;
-  label?: string | null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  metadata?: any;
-  testCases?: Array<{
-    title: string;
-    filePath: string;
-    status: string;
-    duration?: number;
-    error?: string;
-    retries?: number;
-    line?: number;
-    column?: number;
-    steps?: PerformanceStep[];
-    slowestStep?: string;
-    slowestStepDuration?: number;
-    networkRequests?: NetworkRequest[];
-    webVitals?: WebVitals;
-    workerIndex?: number;
-  }>;
-}
-
-// ============================================================================
 // Performance API response types
 // ============================================================================
 
@@ -1099,38 +1033,6 @@ export interface EntityLinkInfo {
   createdBy?: number | null;
   createdAt: Date;
   updatedAt: Date;
-}
-
-/**
- * Request body for POST /api/links
- */
-export interface CreateLinkBody {
-  entityType: 'test_run' | 'test_runs_case' | 'test_case';
-  entityId: number;
-  url: string;
-  title?: string | null;
-}
-
-/**
- * Request body for PATCH /api/links/[id]
- */
-export interface UpdateLinkBody {
-  url?: string;
-  title?: string | null;
-}
-
-/**
- * Links API response (list)
- */
-export interface LinksResponse {
-  links: EntityLinkInfo[];
-}
-
-/**
- * Single link API response
- */
-export interface LinkResponse {
-  link: EntityLinkInfo;
 }
 
 // ============================================================================

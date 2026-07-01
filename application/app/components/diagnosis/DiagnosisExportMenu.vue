@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FailureDiagnosis } from '~~/server/database/schema';
 import type { DiagnoseImage } from '~/composables/useClusterDiagnosis';
-import { stripAnsi } from '~~/shared/error-fingerprint';
+import { stripAnsi } from '#shared/error-fingerprint';
 
 const props = defineProps<{
   contextText: string | null;

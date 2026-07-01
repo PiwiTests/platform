@@ -1,7 +1,7 @@
 import { requireAuth } from '../utils/auth';
 import { runEventBus } from '../utils/run-events';
 import { createSSEEndpoint } from '../utils/sse';
-import { Role } from '../../shared/types';
+import { Role } from '#shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];
 

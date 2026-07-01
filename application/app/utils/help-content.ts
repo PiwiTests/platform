@@ -11,7 +11,7 @@
  * `PIWI_*` environment variable(s) that override the setting; it is typed as
  * `PiwiEnvVarName[]` so a typo is a compile error (see `shared/piwi-env-vars`).
  */
-import type { PiwiEnvVarName } from '~~/shared/piwi-env-vars';
+import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 
 export interface HelpTopic {
   /** Optional bold heading shown at the top of the popover. */

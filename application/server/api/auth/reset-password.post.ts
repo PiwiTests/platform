@@ -4,7 +4,7 @@ import { users } from '../../database/schema';
 import { validateAccountToken, consumeAccountToken } from '../../utils/account-tokens';
 import { hashPassword } from '../../utils/auth';
 import { clearUserSession } from '../../utils/auth';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { z } from 'zod';
 
 const REQUIRED_ROLES: Role[] = [];

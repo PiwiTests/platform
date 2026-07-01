@@ -1,8 +1,7 @@
-import { getDatabase } from '../../../database';
 import { failureClusters, failureDiagnoses, testRunsCases } from '../../../database/schema';
 import { eq, and } from 'drizzle-orm';
-import { requireProjectAccess, resolveClusterProjectId } from '../../../utils/project-access';
-import { Role } from '../../../../shared/types';
+import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../../utils/project-access';
+import { Role } from '#shared/types';
 import { resolveAiConfig } from '../../../utils/ai-provider';
 import type { AiAttachedImage } from '../../../utils/ai-provider';
 import { runClusterDiagnosis, isDiagnosisRunning, isDiagnosisStale } from '../../../utils/ai-diagnosis';
@@ -21,14 +20,8 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw createError({ statusCode: 400, message: 'Invalid cluster ID' });
-
-  const db = await getDatabase();
-  const projectId = await resolveClusterProjectId(db, id);
-  if (!projectId) throw createError({ statusCode: 404, message: 'Failure cluster not found' });
-
-  await requireProjectAccess(event, projectId);
+  const id = requireRouteId(event, 'id', 'cluster ID');
+  const { db } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 
   const force = getQuery(event).force === 'true';
   const body = (await readBody(event).catch(() => null)) as {

@@ -1,6 +1,6 @@
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
-import { Role } from '../../../../shared/types';
+import { Role } from '#shared/types';
 import { resolveContextLimits, envManagedLimitKeys } from '../../../utils/ai-context-limits';
 import { CONTEXT_LIMIT_FIELDS, DEFAULT_CONTEXT_LIMITS } from '#shared/ai-context-limits';
 

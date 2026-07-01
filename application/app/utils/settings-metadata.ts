@@ -14,8 +14,8 @@
  * (which pages are env-managed), and the settings pages themselves (page-level
  * env-var lists for banners + tooltips).
  */
-import { Role } from '~~/shared/types';
-import type { PiwiEnvVarName } from '~~/shared/piwi-env-vars';
+import { Role } from '#shared/types';
+import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 import { helpEnvVars, type HelpTopicKey } from './help-content';
 
 export type SettingsPageId = 'account' | 'users' | 'notifications' | 'tags' | 'storage' | 'wasted-time' | 'ai';

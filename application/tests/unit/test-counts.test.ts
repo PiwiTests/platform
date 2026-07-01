@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { countFailedFromTally, sumFailedAndTimedOut } from '../../shared/utils/test-counts';
+import { countFailedFromTally, sumFailedAndTimedOut } from '#shared/utils/test-counts';
 
 describe('countFailedFromTally', () => {
   test('sums failed, timedOut (camelCase), and timedout (lowercase)', () => {

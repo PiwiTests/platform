@@ -5,7 +5,7 @@ import { getStorage } from '../../storage';
 import { gunzip } from 'zlib';
 import { promisify } from 'util';
 import { parseZip, buildZip } from '../../utils/trace-zip';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import sharp from 'sharp';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];

@@ -1,6 +1,6 @@
 import { test, expect, type APIRequestContext } from './fixtures';
-import { PROJECT } from '../shared/test-project-names';
-import { computeErrorFingerprint, extractErrorSignature } from '../shared/error-fingerprint';
+import { PROJECT } from '#shared/test-project-names';
+import { computeErrorFingerprint, extractErrorSignature } from '#shared/error-fingerprint';
 
 // ── Fingerprint util ───────────────────────────────────────────────────────
 

@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { getDatabase } from '../../../database';
 import { testRuns } from '../../../database/schema';
 import { authorizeStreamToken } from '../../../utils/stream-auth';
-import { Role } from '../../../../shared/types';
+import { Role } from '#shared/types';
 
 const REQUIRED_ROLES: Role[] = [];
 

@@ -3,7 +3,7 @@ import { getDatabase } from '../../database';
 import { projects, testRuns } from '../../database/schema';
 import { eq, and } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runEventBus } from '../../utils/run-events';
 import { persistShardToken } from '../../utils/shard-tokens';

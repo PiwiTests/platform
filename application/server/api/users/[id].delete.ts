@@ -1,9 +1,9 @@
 import { getDatabase } from '../../database';
 import { users } from '../../database/schema';
 import { eq } from 'drizzle-orm';
-import { deleteUserRecord } from '~~/shared/handlers/users';
+import { deleteUserRecord } from '#shared/handlers/users';
 import { requireAuth, isAuthEnabled } from '../../utils/auth';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 

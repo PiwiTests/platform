@@ -2,9 +2,9 @@ import { getDatabase } from '../../database';
 import { projects, tags, projectTags } from '../../database/schema';
 import { eq, inArray, like } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
-import { Role } from '../../../shared/types';
-import { deleteProject } from '../../utils/delete-project';
-import { TEST_PROJECT_NAMES } from '../../../shared/test-project-names';
+import { Role } from '#shared/types';
+import { TEST_PROJECT_NAMES } from '#shared/test-project-names';
+import { deleteProject } from '#shared/handlers/projects';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 

@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { PROJECT } from '../shared/test-project-names';
+import { PROJECT } from '#shared/test-project-names';
 
 test.describe('Metadata Tests', () => {
   const baseUrl = process.env.PIWI_BASE_URL || 'http://localhost:3000';

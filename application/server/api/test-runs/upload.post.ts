@@ -6,7 +6,7 @@ import { upsertTraceBlob, findTraceBlob } from '../../utils/trace-blobs';
 import { join } from 'path';
 import { decompressDirectory } from '../../utils/compression';
 import { requireAuth } from '../../utils/auth';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { getStorage } from '../../storage';
 import { uploadDirectory } from '../../utils/storage-helpers';
 import { tmpdir } from 'os';
@@ -18,7 +18,7 @@ import { runEventBus } from '../../utils/run-events';
 import { autoDiagnoseRun } from '../../utils/ai-diagnosis';
 import { computeRegressionSignals } from '../../utils/compute-regression-signals';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
-import { sumFailedAndTimedOut } from '../../../shared/utils/test-counts';
+import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
 

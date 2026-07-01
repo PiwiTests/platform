@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { TestCaseResult, TraceInfo, AttachmentInfo } from '~~/types/api';
 import type { EntityLinkInfo } from '~~/types/api';
-import type { BrowserConfig } from '~~/shared/types';
+import type { BrowserConfig } from '#shared/types';
 
 interface ScmInfo {
   commit?: string;

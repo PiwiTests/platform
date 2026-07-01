@@ -64,7 +64,7 @@ export function extractCitedSectionIds(texts: Array<string | null | undefined>):
   const found = new Set<string>();
   for (const t of texts) {
     if (!t) continue;
-    for (const m of String(t).matchAll(/\[([a-zA-Z][a-zA-Z0-9]*)\]/g)) {
+    for (const m of String(t).matchAll(/\[([a-zA-Z][a-zA-Z0-9]*)]/g)) {
       if (SECTION_IDS.has(m[1]!)) found.add(m[1]!);
     }
   }

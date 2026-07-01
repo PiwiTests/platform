@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { detectProvider, extractKey } from '../shared/link-detect';
-import type { LinkProvider } from '../shared/link-detect';
+import { detectProvider, extractKey } from '#shared/link-detect';
+import type { LinkProvider } from '#shared/link-detect';
 
 // ============================================================================
 // Provider detection tests

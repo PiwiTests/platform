@@ -1,4 +1,4 @@
-import type { LocatorSnapshot } from '../../shared/locator-healing.types';
+import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import type { RunCaseInput } from './persist-run-cases';
 
 /**

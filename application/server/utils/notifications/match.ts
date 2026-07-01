@@ -1,6 +1,6 @@
 import { and, eq, or, isNull } from 'drizzle-orm';
 import { subscriptions, notificationChannels, notificationDeliveries } from '../../database/schema';
-import type { NotificationEvent, NotificationPayload, RunFinishedPayload } from '../../../shared/notification-events';
+import type { NotificationEvent, NotificationPayload, RunFinishedPayload } from '#shared/notification-events';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
 
 interface SubscriptionFilters {

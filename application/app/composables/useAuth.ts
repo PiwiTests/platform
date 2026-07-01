@@ -1,5 +1,5 @@
 import type { AuthUser, AuthState } from '~~/types/api';
-import { Role } from '~~/shared/types';
+import { Role } from '#shared/types';
 import { DEMO_USERS, DEFAULT_DEMO_USER_ID, DEMO_USER_STORAGE_KEY, findDemoUser } from '~/demo/demo-users';
 
 export { type AuthUser, type AuthState };

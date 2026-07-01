@@ -1,4 +1,4 @@
-import type { LinkProvider } from '../../../shared/link-detect';
+import type { LinkProvider } from '#shared/link-detect';
 
 export interface UnfurlResult {
   title: string | null;

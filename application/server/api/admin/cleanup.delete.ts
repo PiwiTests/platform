@@ -1,9 +1,10 @@
 import { getDatabase } from '../../database';
-import { testRuns, testRunsCases, files, failureClusters } from '../../database/schema';
-import { lt, inArray, eq, sql, and } from 'drizzle-orm';
+import { testRuns, testRunsCases, files } from '../../database/schema';
+import { lt, inArray, sql } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { deleteFileRow } from '../../utils/delete-run-files';
+import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR];
 
@@ -67,21 +68,7 @@ export default eventHandler(async (event) => {
     .where(inArray(testRunsCases.testRunId, runIds));
 
   const caseIds = runsCases.map((c) => c.id);
-
-  // Recompute cluster occurrence counters before deleting
   const affectedClusterIds = [...new Set(runsCases.filter((c) => c.failureClusterId).map((c) => c.failureClusterId!))];
-  if (affectedClusterIds.length > 0) {
-    for (const clusterId of affectedClusterIds) {
-      const remaining = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(testRunsCases)
-        .where(and(eq(testRunsCases.failureClusterId, clusterId), eq(testRunsCases.status, 'failed')));
-      await db
-        .update(failureClusters)
-        .set({ occurrences: remaining[0]?.count ?? 0, updatedAt: new Date() })
-        .where(eq(failureClusters.id, clusterId));
-    }
-  }
 
   // Delete files linked to cases (traces) from storage and DB
   if (caseIds.length > 0) {
@@ -104,6 +91,11 @@ export default eventHandler(async (event) => {
 
   // Delete the test runs (cascade handles child rows)
   await db.delete(testRuns).where(inArray(testRuns.id, runIds));
+
+  // Recompute cluster occurrence counters now that the cases are gone
+  for (const clusterId of affectedClusterIds) {
+    await recomputeClusterOccurrences(db, clusterId);
+  }
 
   // Reclaim free space
   await db.run(sql`PRAGMA incremental_vacuum`);

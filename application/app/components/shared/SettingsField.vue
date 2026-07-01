@@ -11,7 +11,7 @@
  */
 import type { HelpTopicKey } from '~/utils/help-content';
 import { helpEnvVars } from '~/utils/help-content';
-import type { PiwiEnvVarName } from '~~/shared/piwi-env-vars';
+import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 
 const props = withDefaults(
   defineProps<{

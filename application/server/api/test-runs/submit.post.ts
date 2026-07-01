@@ -3,7 +3,7 @@ import { getDatabase } from '../../database';
 import { projects, testRuns } from '../../database/schema';
 import { eq, and, or } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { parseLocation } from '../../utils/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
 import { sanitizeMetadata } from '../../utils/sanitize';
@@ -12,7 +12,7 @@ import { autoDiagnoseRun } from '../../utils/ai-diagnosis';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { emitRunNotifications } from '../../utils/notifications/run-notifications';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
-import { sumFailedAndTimedOut } from '../../../shared/utils/test-counts';
+import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER];
 

@@ -1,6 +1,6 @@
 import { test, expect, type Page } from './fixtures';
-import { PROJECT } from '../shared/test-project-names';
-import { DOCS_BASE_URL } from '../shared/docs';
+import { PROJECT } from '#shared/test-project-names';
+import { DOCS_BASE_URL } from '#shared/docs';
 
 /**
  * Verifies the inline-help affordance (`HelpHint`): the trigger is an

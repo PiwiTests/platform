@@ -1,4 +1,4 @@
-import { filterAndCapNetworkRequests } from '../../shared/utils/filter-network-requests';
+import { filterAndCapNetworkRequests } from '#shared/utils/filter-network-requests';
 
 /**
  * URL and network data sanitization helpers.

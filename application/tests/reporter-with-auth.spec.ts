@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import { spawn } from 'child_process';
 import { join, resolve } from 'path';
 import { existsSync, rmSync } from 'fs';
-import { PROJECT } from '../shared/test-project-names';
+import { PROJECT } from '#shared/test-project-names';
 
 function safeRmSync(path: string, options?: Parameters<typeof rmSync>[1]) {
   try {

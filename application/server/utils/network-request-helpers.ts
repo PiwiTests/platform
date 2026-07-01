@@ -1,5 +1,5 @@
 import { sanitizeNetworkRequests, sanitizeUrl } from './sanitize';
-import { normalizeRoute } from '../../shared/utils/route';
+import { normalizeRoute } from '#shared/utils/route';
 
 /**
  * Build pre-insert rows for the normalized network_requests child table.

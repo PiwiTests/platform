@@ -7,8 +7,8 @@ import type {
   NotificationPayload,
   RunFinishedPayload,
   ClusterNewPayload,
-} from '../../../shared/notification-events';
-import { renderEventSubject } from '../../../shared/notification-events';
+} from '#shared/notification-events';
+import { renderEventSubject } from '#shared/notification-events';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
 
 const MAX_ATTEMPTS = 5;

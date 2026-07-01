@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext } from './fixtures';
-import { PROJECT } from '../shared/test-project-names';
+import { PROJECT } from '#shared/test-project-names';
 
 type RegressionCtx = {
   hasGreen: boolean;

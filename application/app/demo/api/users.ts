@@ -6,7 +6,7 @@
  */
 
 import { getDemoDb } from '../db.client';
-import { createUserApiKeyRecord } from '~~/shared/handlers/users';
+import { createUserApiKeyRecord } from '#shared/handlers/users';
 
 /** POST /api/users/:id/api-keys */
 export async function apiCreateUserApiKey(userId: number, body: { name: string }) {

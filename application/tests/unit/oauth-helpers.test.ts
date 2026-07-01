@@ -17,7 +17,7 @@ import {
   type OAuthUserRow,
   type OAuthProfile,
 } from '../../server/utils/oauth-helpers';
-import { Role } from '../../shared/types';
+import { Role } from '#shared/types';
 
 // Convenience builders -------------------------------------------------------
 

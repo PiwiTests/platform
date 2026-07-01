@@ -4,7 +4,7 @@ import { users } from '../../database/schema';
 import { mintAccountToken } from '../../utils/account-tokens';
 import { isEmailConfigured, sendEmail, renderPasswordResetEmail } from '../../utils/email';
 import { checkRateLimit } from '../../utils/rate-limit';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { z } from 'zod';
 
 const REQUIRED_ROLES: Role[] = [];

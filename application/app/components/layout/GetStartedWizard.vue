@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { docsUrl } from '~~/shared/docs';
+import { docsUrl } from '#shared/docs';
 
 // Reflect the actual dashboard URL so the generated config snippet is correct
 const serverUrl = ref('http://localhost:3000');

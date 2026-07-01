@@ -19,7 +19,7 @@ Piwi test results dashboard built with **Nuxt 4**, Nuxt UI dashboard template. S
 
 ```
 application/            — Nuxt 4 dashboard app
-application/shared/     — Shared types, constants & utilities
+application/shared/     — Shared types, constants & utilities (import via `#shared/...`, not relative paths or `~~/shared/...`)
 application/tests/      — Functional tests (Playwright)
 plans/                  — Design docs, audit plans & roadmap (see below)
 reporter/               — Custom Playwright reporter package (TypeScript → compiled JS)
@@ -46,7 +46,7 @@ SQLite database auto-initializes on first API call.
 ### Shared types (`application/shared/types.ts`)
 - `TestCasePayload`, `StreamEventPayload`, `TestRunFinishPayload` — API payload shapes
 - `TestRunStatus`, `TestCaseStatus` — status type unions
-- Server endpoints import directly from `../../../shared/types`
+- Server endpoints import directly from `#shared/types`
 - Reporter uses structural typing (no direct import) to avoid leaking paths into `.d.ts`
 
 ### Database
@@ -324,7 +324,7 @@ All endpoints MUST call `requireAuth(event)` or `requireAuth(event, [roles])` at
 ### Implementing Auth on a New Endpoint
 
 ```typescript
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { requireAuth } from '../../utils/auth';
 
 export default eventHandler(async (event) => {
@@ -357,7 +357,7 @@ Key implementation details:
 - **Schema**: `project_assignments` table in both `schema.sqlite.ts` and `schema.pg.ts` with `userId` (FK users, cascade), `projectId` (nullable FK projects, cascade = global), `createdBy`, `createdAt`.
 - **Authorization**: `server/utils/project-access.ts` — `getProjectScope(db, user)` returns `'all' | Set<number>`. `requireProjectAccess(event, projectId, roles?)` combines role + scope check. Admin/auth-off short-circuits to `'all'`.
 - **List filtering**: Pass `scope` to shared handlers (`listProjects(db, scope)`, `getProjectMenu(db, scope)`, `getRecentTestRuns(db, scope)`, `searchProjectsTestRunsCases(db, q, scope)`). Empty set → `[]` immediate return.
-- **Route verification**: Use `requireProjectAccess(event, projectId)` (or `resolveRunProjectId`/`resolveCaseProjectId`/`resolveClusterProjectId` + `requireProjectAccess`) in scoped endpoints instead of plain `requireAuth`.
+- **Route verification**: For endpoints where the route `:id` IS the project id, parse it with `requireRouteId(event, 'id', label)` then call `requireProjectAccess(event, id, roles?)` directly. For endpoints scoped by a child entity (a cluster, run, case, test-run-case, or diagnosis id), use `requireResolvedProjectAccess(event, id, resolveXProjectId, notFoundLabel, roles?)` — it resolves the entity's project via one of the `resolveRunProjectId`/`resolveCaseProjectId`/`resolveClusterProjectId`/`resolveTestRunCaseProjectId`/`resolveDiagnosisProjectId` resolvers, 404s if the entity doesn't exist, then calls `requireProjectAccess`, returning `{ db, projectId, user }` so callers don't need a second `getDatabase()`. Both helpers live in `server/utils/project-access.ts` alongside the primitives they compose. Use plain `requireAuth` only for endpoints with no project scoping.
 - **Write endpoints** (`submit`, `upload`, `start`, `setup`): Existing project → `scopeAllows(scope, projectId)`. New project creation → only if `scope === 'all'`.
 - **Management API**: `GET/PUT /api/users/[id]/projects` (per-user) and `GET/PUT /api/projects/[id]/members` (per-project), both admin-only.
 - **Backfill**: Runs idempotently after DB migrations in `server/database/index.ts`. Gives all existing `USER`/`REPORTER` rows a global `projectId = null` assignment.
@@ -380,7 +380,7 @@ Key implementation details:
   - **E2E/integration tests** (need server or browser): Create `.spec.ts` in `application/tests/` → run `npm run app:test`
   - `npm test` runs both (Vitest first, then Playwright).
   - If the test creates a project, **add its name to `shared/test-project-names.ts`** (alphabetically sorted) so the global setup cleanup deletes it before the next run. Tests must use static project names, not `Date.now()` suffixes.
-  - Use `PROJECT.YOUR_KEY` from `../shared/test-project-names` in test code instead of raw string literals. This ensures every project name is tracked in one place.
+  - Use `PROJECT.YOUR_KEY` from `#shared/test-project-names` in test code instead of raw string literals. This ensures every project name is tracked in one place.
 - **Reporter**: Edit `.ts` files in `reporter/src/` → `npm run reporter:build` (from `reporter/`) → test with `npm link`
 - **Shared types** (`application/shared/types.ts`): Wire contract between reporter and server. Server imports directly; reporter uses structural typing (do NOT add `import type` from shared in reporter method signatures — it leaks the monorepo path into published `.d.ts` files)
 - **Entity links** (`shared/link-detect.ts`): Pure utility for detecting external URL provider (Jira, GitHub, etc.) and extracting keys. Uses domain regex matching, no dependencies. Provider enum includes `jira`, `github-issue`, `github-pr`, `gitlab-issue`, `gitlab-mr`, `bitbucket`, `confluence`, `slack`, `linear`, `notion`, `generic`.

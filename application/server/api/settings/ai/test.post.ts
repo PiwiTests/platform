@@ -1,6 +1,6 @@
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
-import { Role } from '../../../../shared/types';
+import { Role } from '#shared/types';
 import { resolveAiConfig, callAiProvider } from '../../../utils/ai-provider';
 import { getAppSetting } from '../../../utils/app-settings';
 import type { AiProvider, ResolvedAiRole } from '~~/types/api';

@@ -1,7 +1,7 @@
 import { getDatabase } from '../../database';
-import { updateUserRecord } from '~~/shared/handlers/users';
+import { updateUserRecord } from '#shared/handlers/users';
 import { requireAuth } from '../../utils/auth';
-import { Role } from '../../../shared/types';
+import { Role } from '#shared/types';
 import { z } from 'zod';
 
 const REQUIRED_ROLES: Role[] = [Role.ADMINISTRATOR, Role.REPORTER, Role.USER];

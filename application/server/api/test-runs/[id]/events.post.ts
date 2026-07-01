@@ -6,9 +6,9 @@ import { parseLocation } from '../../../utils/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../../utils/persist-run-cases';
 import { mapCompleteEventToRunCase } from '../../../utils/map-complete-event';
 import { authorizeStreamToken } from '../../../utils/stream-auth';
-import type { StreamEventPayload } from '../../../../shared/types';
-import { Role } from '../../../../shared/types';
-import { countFailedFromTally } from '../../../../shared/utils/test-counts';
+import type { StreamEventPayload } from '#shared/types';
+import { Role } from '#shared/types';
+import { countFailedFromTally } from '#shared/utils/test-counts';
 
 const REQUIRED_ROLES: Role[] = [];
 
