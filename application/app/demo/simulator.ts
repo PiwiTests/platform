@@ -922,7 +922,12 @@ async function runSingleSimulation(
     method: 'POST',
     body: {
       setupToken: setup.setupToken,
-      totalTests: tests.length,
+      // Matches the real reporter (stream-manager.ts), which always sends 0
+      // here — `totalTests` is built up from `events.post`/`reporter.ts` as
+      // each test completes, then finalized by `finish`. Sending the real
+      // count upfront would double it, since those insert counts land on
+      // top of an already-correct total instead of starting from zero.
+      totalTests: 0,
       metadata,
       playwrightVersion: '1.51.0',
       shardIndex: shardOverride?.shardIndex,
