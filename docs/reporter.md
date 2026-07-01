@@ -306,6 +306,11 @@ When a locator later fails, the server resolves replacements through a ladder, m
 
 The result is shown as an **Alternative locators** panel on the test-case and failure-cluster pages, and folded into the AI diagnosis context so the model recommends a grounded fix (see [AI diagnosis](./ai-diagnosis#locator-healing)). A single **recommended fix** is highlighted — it keeps your original locator *style* where that style is stable enough (a minimal, idiomatic edit), and escalates to the sturdiest alternative (or advises adding a `data-testid`) only when the original style has nothing stable to fall back on.
 
+<figure>
+  <img src="/screenshots/locator-healing.png" alt="Alternative locators panel showing ranked replacement locators with stability scores and a recommended fix">
+  <figcaption>The Alternative locators panel — replacements ranked by stability score (data-testid ≈ 100, role + name ≈ 90), with a recommended fix and a copy button for each.</figcaption>
+</figure>
+
 Capture adds a small per-action cost (one DOM read, sometimes an extra ARIA snapshot) in the test worker. Turn it off with `captureLocators: false` or `PIWI_CAPTURE_LOCATORS=false`; it is also disabled automatically whenever `collectPerformanceMetrics` is `false`.
 
 > Healing is read-only — it never rewrites your test. It surfaces the replacement so you can apply it yourself.

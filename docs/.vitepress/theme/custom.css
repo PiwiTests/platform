@@ -1,0 +1,20 @@
+/* Screenshot figures embedded in documentation content pages.
+   Scoped to <figure> so the home page's own screenshot grid is untouched. */
+.vp-doc figure {
+  margin: 1.75rem 0;
+  text-align: center;
+}
+
+.vp-doc figure img {
+  display: block;
+  margin: 0 auto;
+  border-radius: 10px;
+  border: 1px solid var(--vp-c-divider);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.vp-doc figure figcaption {
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--vp-c-text-2);
+}

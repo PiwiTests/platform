@@ -16,6 +16,11 @@ Failed test cases that share the same **error fingerprint** are grouped into a c
 - The run detail page shows each failure group with **flaky** and **worker-correlation** heuristics, so you can tell "the app is broken" from "worker 3 is misbehaving."
 - Every cluster has its own **detail page** with the affected tests, triage tools (status + notes), and the AI diagnosis panel.
 
+<figure>
+  <img src="/screenshots/failure-clusters.png" alt="Failure clusters tab grouping failures by normalized error signature">
+  <figcaption>The Failure clusters tab — failures sharing an error fingerprint collapse into one row, with error type, occurrence count, and triage status.</figcaption>
+</figure>
+
 Clustering is always on and requires no configuration. When the normalization algorithm is improved, existing clusters are migrated in place (re-fingerprinted from a stored sample error), so triage status, notes, and diagnoses survive the change. AI diagnosis is opt-in.
 
 ### Semantic merging (optional)
@@ -99,6 +104,11 @@ A diagnosis is grounded in your actual run — it is not a generic "ask AI" butt
 - **Evidence** — the signals the model relied on
 - **Suggested fix** and **prevention tips**
 
+<figure>
+  <img src="/screenshots/ai-diagnosis.png" alt="Failure cluster page with the AI diagnosis result alongside the error and alternative locators">
+  <figcaption>A cluster page — the AI diagnosis (category, confidence, root cause, evidence, and a suggested fix) sits beside the actual error and the ranked alternative locators it was grounded in.</figcaption>
+</figure>
+
 ## SCM-grounded context
 
 The real power is feeding the model the code that changed. On a cluster page you can:
@@ -110,6 +120,11 @@ The real power is feeding the model the code that changed. On a cluster page you
 ## Locator healing
 
 When the failure is a broken locator, the context includes an **Alternative Locators** section: ranked replacement locators sourced from a prior passing run (highest confidence — captured against the real DOM), from a fresh match of the renamed/moved element on the failing page, or from the failure-time ARIA snapshot. The section also names a single **recommended fix** — convention-preserving where the original locator style is stable enough — which the model is instructed to use verbatim in `suggestedFix.code` rather than fabricating a locator. When nothing scores as stable, it advises adding a `data-testid` to the application as the durable fix.
+
+<figure>
+  <img src="/screenshots/locator-healing.png" alt="Alternative locators panel with ranked replacement locators and a recommended fix">
+  <figcaption>The Alternative locators panel — the broken locator, ranked replacements scored for stability, and a single recommended fix that preserves your locator style.</figcaption>
+</figure>
 
 This evidence is generated automatically from the [locator snapshots](./reporter#locator-healing) the reporter captures while tests run; no configuration is required beyond the default-on `captureLocators` reporter option. The same data drives the standalone **Alternative locators** panel on the test-case and cluster pages.
 

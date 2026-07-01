@@ -19,6 +19,11 @@ Notifications are gated on authentication — they activate only when [`PIWI_AUT
 
 Manage both from **Settings → Notifications**, and subscribe to a single project with the **bell** on the project page.
 
+<figure>
+  <img src="/screenshots/notifications.png" alt="Settings → Notifications page showing SMTP status and the authentication requirement">
+  <figcaption>Settings → Notifications — SMTP delivery status (configured via environment variables) and a reminder that channels and subscriptions need authentication enabled.</figcaption>
+</figure>
+
 ## Events
 
 | Event | Fires when |

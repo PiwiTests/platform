@@ -17,6 +17,11 @@ A test is flaky when its result isn't deterministic. Piwi computes a **composite
 
 Each project has a dedicated **Flaky tests** tab with a **configurable lookback window** so you can focus on recent behavior or a longer baseline.
 
+<figure>
+  <img src="/screenshots/flaky-detection.png" alt="Flaky tests tab listing tests with composite score, failure rate, retry passes, and flip counts">
+  <figcaption>The Flaky tests tab — each intermittent test scored by retry passes, status flips, and failure rate, ranked by impact and filterable by root-cause category.</figcaption>
+</figure>
+
 ### Root-cause classification
 
 Every flaky test is automatically tagged with one of five categories, using keyword and distribution heuristics over its errors, steps, and browser spread:
@@ -55,6 +60,11 @@ The **Insights** tab on a run compares it against its last passing baseline and 
 - **Worker imbalance** — uneven load across workers
 - **New failure clusters**
 
+<figure>
+  <img src="/screenshots/run-insights.png" alt="Run Insights tab showing pass-rate delta, new regressions, and new flaky tests versus the baseline">
+  <figcaption>The Insights tab on a run — pass-rate and duration deltas versus the last passing baseline, with new regressions and newly flaky tests called out.</figcaption>
+</figure>
+
 ## Regression signals
 
 Individual test cases in a run carry at-a-glance badges:
@@ -71,6 +81,11 @@ Toggle filters on the run's test-case list to show only new regressions or new f
 - **Run comparison** — a side-by-side delta of two runs with improved / regressed / unchanged summaries.
 - **Network analysis** — slow API calls grouped by method and normalized route (e.g. `/api/users/:id`).
 - **Browser Web Vitals** — TTFB, DOMContentLoaded, FCP and more, with color-coded thresholds.
+
+<figure>
+  <img src="/screenshots/performance-trends.png" alt="Performance tab showing the duration trend chart and slowest-tests table">
+  <figcaption>The Performance tab — average and P90 duration trends over time, followed by a ranked table of the slowest tests.</figcaption>
+</figure>
 
 ## Spec health heatmap
 

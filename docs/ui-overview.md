@@ -80,6 +80,11 @@ Everything about a single test execution: a **status card** (id, title, copyable
 
 Also here: full **error details** with cluster context; **alternative locators** when a locator broke, with ranked replacements and a recommended fix (see [locator healing](./reporter#locator-healing)); **performance hints**; execution **steps**; **Web Vitals** with color-coded thresholds; **network requests** with inline backend server logs (see [Backend logs](./backend-logs)); and a **history** chart of this test's status and duration over time.
 
+<figure>
+  <img src="/screenshots/test-case-detail.png" alt="Test case detail page with summary stats, duration trend, status history, and recent executions">
+  <figcaption>The test case detail page — pass rate and duration stats, a duration trend, a status-history strip, and every recent execution of this one test.</figcaption>
+</figure>
+
 ## Failure cluster detail
 
 Each cluster (`/failure-clusters/:id`) has three tabs — **Overview** (signature, affected tests, and an alternative-locators panel for broken locators), **Triage** (set status open/resolved/ignored and write a note), and **AI diagnosis** (run an SCM-grounded LLM analysis with a baseline-commit picker and commit browser). Full detail: [AI diagnosis & clustering](./ai-diagnosis).
