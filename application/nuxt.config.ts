@@ -161,6 +161,10 @@ export default defineNuxtConfig({
     // HTML pages can be hydrated with fixture data embedded during prerender,
     // avoiding extra network round-trips in the SPA.
     payloadExtraction: isDemo,
+    // When a prefetched <NuxtLink> target declares preload hints via useHead,
+    // forward them (downgraded to rel="prefetch") into the current document so
+    // the next navigation's critical assets are already warm.
+    prefetchPreloadTags: true,
   },
 
   compatibilityDate: '2025-02-23',
