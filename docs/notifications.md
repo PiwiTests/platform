@@ -59,7 +59,7 @@ Piwi posts to Slack through an [incoming webhook](https://api.slack.com/messagin
 The destination channel is baked into the webhook, so to alert several Slack channels create one webhook — and one Piwi channel — per destination.
 
 ::: warning
-A webhook URL is a credential: anyone holding it can post to your Slack channel. Piwi stores it as-is and the channels API returns it to whoever can see the channel — its owner, administrators, and (for a channel marked **global**) any signed-in user. To revoke one, delete the webhook in Slack, then delete the channel in Piwi.
+A webhook URL is a credential — anyone holding it can post to your Slack channel. Piwi never returns it once saved (the channels API redacts it, so you cannot re-read it from the dashboard), but it is stored unencrypted in the database, so treat database and backup access accordingly. To rotate or revoke, delete the webhook in Slack, then delete the channel in Piwi and create both again.
 :::
 
 Run failures arrive with up to three failing tests, each linking straight to the test case in the dashboard, and `cluster.new` messages link to the cluster. Set `PIWI_SITE_URL` so those links point at your instance instead of `localhost`.
