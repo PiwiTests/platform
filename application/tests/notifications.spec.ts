@@ -11,6 +11,7 @@
  */
 
 import { test, expect } from './fixtures';
+import { DOCS_BASE_URL } from '#shared/docs';
 
 // All tests share a single auth-enabled server — must run serially.
 test.describe.configure({ mode: 'serial' });
@@ -441,5 +442,26 @@ test.describe.serial('Subscribe Bell UI', () => {
     await page.goto(`${BASE}/settings/notifications`);
     await expect(page.getByText('Notification channels')).toBeVisible();
     await expect(page.getByText('My subscriptions')).toBeVisible();
+  });
+
+  test('slack channel type links to the Slack setup docs', async ({ page }) => {
+    skip();
+    await loginBrowser(page);
+    await page.goto(`${BASE}/settings/notifications`);
+
+    // Same hydration caveat as the bell: retry the click until the form opens.
+    const form = page.getByRole('heading', { name: 'New channel' });
+    await expect(async () => {
+      if (!(await form.isVisible())) await page.getByRole('button', { name: 'Add channel' }).click();
+      await expect(form).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 20000, intervals: [250] });
+
+    // Switching the type to Slack reveals the webhook URL field and its help link.
+    await page.getByLabel('Type', { exact: true }).click();
+    await page.getByRole('option', { name: 'Slack webhook' }).click();
+
+    const howTo = page.getByRole('link', { name: /How to create a Slack incoming webhook/ });
+    await expect(howTo).toHaveAttribute('href', `${DOCS_BASE_URL}/notifications#slack`);
+    await expect(howTo).toHaveAttribute('target', '_blank');
   });
 });

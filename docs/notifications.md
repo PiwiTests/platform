@@ -47,7 +47,22 @@ Requires SMTP to be configured (see below). Sends to a destination address.
 
 ### Slack
 
-Create an [incoming webhook](https://api.slack.com/messaging/webhooks) in Slack and paste its URL. Messages are posted to the webhook's channel.
+Piwi posts to Slack through an [incoming webhook](https://api.slack.com/messaging/webhooks) — a URL Slack gives you that is bound to one channel. Nothing is installed on the Slack side beyond the app that owns the webhook, and Piwi never reads from Slack.
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) and **Create New App → From scratch**. Name it (e.g. `Piwi`) and pick your workspace. Reuse an existing app if you already have one.
+2. Open **Incoming Webhooks** in the sidebar and turn **Activate Incoming Webhooks** on.
+3. Click **Add New Webhook to Workspace**, choose the channel the alerts should land in, and **Allow**. Slack needs an admin to approve the app in workspaces that restrict app installation.
+4. Copy the generated URL — it looks like `https://hooks.slack.com/services/T…/B…/…`.
+5. In Piwi, go to **Settings → Notifications → Notification channels → Add channel**, pick type **Slack webhook**, paste the URL and save.
+6. Press the **send** button on the new channel to post a test message, then subscribe it to the events you care about.
+
+The destination channel is baked into the webhook, so to alert several Slack channels create one webhook — and one Piwi channel — per destination.
+
+::: warning
+A webhook URL is a credential: anyone holding it can post to your Slack channel. Piwi stores it as-is and the channels API returns it to whoever can see the channel — its owner, administrators, and (for a channel marked **global**) any signed-in user. To revoke one, delete the webhook in Slack, then delete the channel in Piwi.
+:::
+
+Run failures arrive with up to three failing tests, each linking straight to the test case in the dashboard, and `cluster.new` messages link to the cluster. Set `PIWI_SITE_URL` so those links point at your instance instead of `localhost`.
 
 ### Webhook
 

@@ -304,8 +304,16 @@ PIWI_SMTP_FROM_NAME=Piwi Dashboard"
           <UFormField v-if="newChannel.type === 'email'" label="Email address">
             <UInput v-model="newChannel.address" type="email" placeholder="you@example.com" class="w-full" />
           </UFormField>
-          <UFormField v-else-if="newChannel.type === 'slack'" label="Slack webhook URL">
+          <UFormField v-else-if="newChannel.type === 'slack'">
+            <template #label>
+              <span class="inline-flex items-center gap-1">
+                Slack webhook URL <HelpHint topic="notifications.slack-webhook" />
+              </span>
+            </template>
             <UInput v-model="newChannel.webhookUrl" placeholder="https://hooks.slack.com/…" class="w-full" />
+            <template #help>
+              <DocLink to="notifications#slack">How to create a Slack incoming webhook</DocLink>
+            </template>
           </UFormField>
           <template v-else-if="newChannel.type === 'webhook'">
             <UFormField label="Endpoint URL">

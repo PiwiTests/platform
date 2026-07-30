@@ -464,6 +464,11 @@ export const HELP_TOPICS = {
     text: 'Destinations an alert can go to — email, Slack or webhook. Create a channel, then subscribe events to it.',
     doc: 'notifications#channels',
   },
+  'notifications.slack-webhook': {
+    title: 'Slack webhook URL',
+    text: 'Slack posts to the channel its incoming webhook is bound to, so one webhook = one Slack channel. Create the webhook in Slack, paste the URL here, then send a test. The docs walk through the Slack side step by step.',
+    doc: 'notifications#slack',
+  },
   'notifications.subscriptions': {
     title: 'Subscriptions',
     text: 'Which events (run failed, new cluster, etc.) notify which channel, optionally scoped to one project and filtered.',
