@@ -1105,6 +1105,9 @@ export async function getProjectFailureClusters(db: DrizzleDB, projectId: number
       fixCommit: failureClusters.fixCommit,
       timeToResolutionMs: failureClusters.timeToResolutionMs,
       fixVerification: failureClusters.fixVerification,
+      assignee: failureClusters.assignee,
+      snoozedUntil: failureClusters.snoozedUntil,
+      snoozeMode: failureClusters.snoozeMode,
     })
     .from(failureClusters)
     .where(and(...whereClauses))

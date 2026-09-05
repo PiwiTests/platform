@@ -428,6 +428,13 @@
       "when": 1788591409951,
       "tag": "0060_flowery_white_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "6",
+      "when": 1788612781015,
+      "tag": "0061_perpetual_nekra",
+      "breakpoints": true
     }
   ]
 }

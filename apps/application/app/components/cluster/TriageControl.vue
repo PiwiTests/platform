@@ -11,6 +11,7 @@
  * read-only text.
  */
 import type { FailureClusterDetail } from '~~/types/api';
+import { isCurrentlySnoozed, isSnoozedBack, type SnoozeOption } from '#shared/inbox-queues';
 
 const props = defineProps<{
   cluster: FailureClusterDetail;
@@ -118,6 +119,39 @@ const reconcile = computed<{ label: string; to: string } | null>(() => {
   if (v === 'regressed' && status.value === 'resolved') return { label: 'Reopen', to: 'open' };
   return null;
 });
+
+// ── Snooze ──────────────────────────────────────────────────────────────────
+// Snooze hides a cluster from every inbox queue without touching its status.
+const snoozing = ref(false);
+const snoozed = computed(() => isCurrentlySnoozed(props.cluster));
+const snoozedBack = computed(() => isSnoozedBack(props.cluster));
+const snoozeLabel = computed(() => {
+  if (props.cluster.snoozeMode === 'until-recurs') return 'Snoozed until it recurs';
+  const until = props.cluster.snoozedUntil;
+  return until ? `Snoozed until ${prettyDateFormat(until)}` : 'Snoozed';
+});
+
+const SNOOZE_ITEMS = [
+  [
+    { label: '1 day', onSelect: () => void snooze('1-day') },
+    { label: '1 week', onSelect: () => void snooze('1-week') },
+    { label: 'Until it recurs', onSelect: () => void snooze('until-recurs') },
+  ],
+];
+
+async function snooze(option: SnoozeOption | null) {
+  if (!props.canWrite || snoozing.value) return;
+  snoozing.value = true;
+  try {
+    await $fetch(`/api/failure-clusters/${props.cluster.id}/snooze`, { method: 'PATCH', body: { snooze: option } });
+    toast.add({ title: option ? 'Cluster snoozed' : 'Cluster unsnoozed', color: 'success' });
+    emit('saved');
+  } catch {
+    toast.add({ title: 'Could not update the snooze', color: 'error' });
+  } finally {
+    snoozing.value = false;
+  }
+}
 </script>
 
 <template>
@@ -208,6 +242,46 @@ const reconcile = computed<{ label: string; to: string } | null>(() => {
       >
         {{ reconcile.label }}
       </UButton>
+    </div>
+
+    <!-- Snooze -->
+    <div class="flex items-center gap-2 text-xs">
+      <template v-if="snoozed">
+        <UBadge color="info" variant="subtle" size="sm" class="gap-1 shrink-0">
+          <UIcon name="i-lucide-alarm-clock" class="size-3" />
+          {{ snoozeLabel }}
+        </UBadge>
+        <HelpHint topic="cluster.snooze" />
+        <UButton
+          v-if="canWrite"
+          size="xs"
+          color="neutral"
+          variant="soft"
+          icon="i-lucide-alarm-clock-off"
+          :loading="snoozing"
+          @click="snooze(null)"
+        >
+          Unsnooze
+        </UButton>
+      </template>
+      <template v-else>
+        <UBadge v-if="snoozedBack" color="info" variant="subtle" size="sm" class="gap-1 shrink-0">
+          <UIcon name="i-lucide-alarm-clock" class="size-3" />
+          Snoozed, back
+        </UBadge>
+        <UDropdownMenu v-if="canWrite" :items="SNOOZE_ITEMS">
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-clock"
+            trailing-icon="i-lucide-chevron-down"
+            :loading="snoozing"
+          >
+            Snooze
+          </UButton>
+        </UDropdownMenu>
+      </template>
     </div>
   </div>
 </template>

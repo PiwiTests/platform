@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { describeCluster } from '#shared/describe-cluster';
 import { getProviderIcon } from '#shared/link-detect';
+import { isCurrentlySnoozed } from '#shared/inbox-queues';
 import type { TableColumn } from '@nuxt/ui';
 import type { ProjectFailureCluster } from '~~/types/api';
 
@@ -42,6 +43,7 @@ const nameOf = (cluster: ProjectFailureCluster) => describeCluster(cluster);
 const signatureOf = (cluster: ProjectFailureCluster) =>
   cluster.signature && cluster.signature !== nameOf(cluster) ? cluster.signature : null;
 const resolutionOf = (cluster: ProjectFailureCluster) => fixVerificationBadge(cluster.fixVerification);
+const isSnoozed = (cluster: ProjectFailureCluster) => isCurrentlySnoozed(cluster);
 
 // ── Bulk status ─────────────────────────────────────────────────────────────
 // Multi-select the clusters and set them all to one status at once, so a
@@ -263,6 +265,10 @@ const columns = computed<TableColumn<ProjectFailureCluster>[]>(() => [
           <div class="flex flex-col items-start gap-1">
             <UBadge :color="clusterStatusColor(row.original.status)" variant="subtle" size="sm">
               {{ formatTriageStatus(row.original.status) }}
+            </UBadge>
+            <UBadge v-if="isSnoozed(row.original)" color="info" variant="subtle" size="sm" class="gap-1">
+              <UIcon name="i-lucide-alarm-clock" class="size-3" />
+              Snoozed
             </UBadge>
             <UTooltip v-if="resolutionOf(row.original)" :text="resolutionOf(row.original)!.hint">
               <UBadge :color="resolutionOf(row.original)!.color" variant="subtle" size="sm" class="gap-1">

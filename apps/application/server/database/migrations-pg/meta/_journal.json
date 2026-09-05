@@ -435,6 +435,13 @@
       "when": 1788591415215,
       "tag": "0061_special_queen_noir",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1788612782020,
+      "tag": "0062_silky_mulholland_black",
+      "breakpoints": true
     }
   ]
 }

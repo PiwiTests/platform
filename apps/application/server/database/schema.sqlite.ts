@@ -217,6 +217,13 @@ export const failureClusters = sqliteTable(
     fixVerification: text('fix_verification'), // 'stopped-failing' | 'diagnosis-verified' | 'regressed'
     lastRerunDispatch: text('last_rerun_dispatch', { mode: 'json' }), // ClusterRerunDispatch — most recent "Re-run in CI" dispatch
     bisectResult: text('bisect_result', { mode: 'json' }), // BisectedCommit — first bad commit the desktop bisect found (sha, subject, author, date)
+    // Inbox triage — orthogonal to `status`. A snooze hides a cluster from every
+    // inbox queue until the deadline passes (or, in "until-recurs" mode, until a
+    // new run adds an occurrence); `assignee` is the person a triager assigned it
+    // to, taking precedence over the owner derived from the test's annotation.
+    snoozedUntil: integer('snoozed_until', { mode: 'timestamp' }), // hidden from queues until this instant; null when not snoozed
+    snoozeMode: text('snooze_mode'), // 'until' (wake at snoozedUntil) | 'until-recurs' (wake at snoozedUntil OR a new occurrence)
+    assignee: text('assignee'), // person this cluster is assigned to (name or email); overrides the derived owner
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),

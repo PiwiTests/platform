@@ -113,6 +113,7 @@ export default defineConfig({
         items: [
           { text: 'UI overview', link: '/ui-overview' },
           { text: 'Failure evidence', link: '/evidence' },
+          { text: 'Failure clusters & the inbox', link: '/failure-clusters' },
           { text: 'AI diagnosis & clustering', link: '/ai-diagnosis' },
           { text: 'Flaky tests', link: '/flaky-tests' },
           { text: 'Analytics', link: '/analytics' },

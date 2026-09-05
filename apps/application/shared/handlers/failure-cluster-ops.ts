@@ -13,6 +13,7 @@ import {
   failureDiagnosisVersions,
 } from '../../server/database/schema';
 import { preferExemplar } from '../prefer-exemplar';
+import { wakeOnRecurrence } from '../inbox-queues';
 import type { DrizzleDB } from './db';
 
 /** Per-fingerprint accumulator for the batch being persisted. */
@@ -48,13 +49,21 @@ export async function getOrCreateFailureClusters(
   // to this occurrence when it is a better one. The fingerprint and the frozen
   // fingerprintSample are deliberately left untouched, so refreshing the display
   // can never destabilize re-fingerprinting.
-  const bumpExisting = (clusterId: number, p: PendingCluster, currentSampleError: string | null) =>
+  const bumpExisting = (
+    clusterId: number,
+    p: PendingCluster,
+    currentSampleError: string | null,
+    snooze?: { snoozedUntil: Date | null; snoozeMode: string | null },
+  ) =>
     db
       .update(failureClusters)
       .set({
         lastSeenRunId: testRunId,
         occurrences: sql`${failureClusters.occurrences} + ${p.count}`,
         updatedAt: new Date(),
+        // A fresh occurrence wakes an "until it recurs" snooze — the cluster
+        // returns to the inbox (its "snoozed, back" marker is the surviving mode).
+        ...(snooze ? (wakeOnRecurrence(snooze) ?? {}) : {}),
         ...(preferExemplar(currentSampleError ?? '', p.sampleError)
           ? {
               sampleError: p.sampleError,
@@ -76,6 +85,8 @@ export async function getOrCreateFailureClusters(
       id: failureClusters.id,
       fingerprint: failureClusters.fingerprint,
       sampleError: failureClusters.sampleError,
+      snoozedUntil: failureClusters.snoozedUntil,
+      snoozeMode: failureClusters.snoozeMode,
     })
     .from(failureClusters)
     .where(and(eq(failureClusters.projectId, projectId), inArray(failureClusters.fingerprint, [...pending.keys()])));
@@ -85,7 +96,10 @@ export async function getOrCreateFailureClusters(
       const p = pending.get(cluster.fingerprint);
       if (!p) return;
       ids.set(cluster.fingerprint, cluster.id);
-      await bumpExisting(cluster.id, p, cluster.sampleError);
+      await bumpExisting(cluster.id, p, cluster.sampleError, {
+        snoozedUntil: cluster.snoozedUntil,
+        snoozeMode: cluster.snoozeMode,
+      });
     }),
   );
 
@@ -98,6 +112,8 @@ export async function getOrCreateFailureClusters(
         fingerprint: failureClusterAliases.fingerprint,
         clusterId: failureClusterAliases.clusterId,
         sampleError: failureClusters.sampleError,
+        snoozedUntil: failureClusters.snoozedUntil,
+        snoozeMode: failureClusters.snoozeMode,
       })
       .from(failureClusterAliases)
       .innerJoin(failureClusters, eq(failureClusters.id, failureClusterAliases.clusterId))
@@ -109,7 +125,7 @@ export async function getOrCreateFailureClusters(
         const p = pending.get(a.fingerprint);
         if (!p || ids.has(a.fingerprint)) return;
         ids.set(a.fingerprint, a.clusterId);
-        await bumpExisting(a.clusterId, p, a.sampleError);
+        await bumpExisting(a.clusterId, p, a.sampleError, { snoozedUntil: a.snoozedUntil, snoozeMode: a.snoozeMode });
       }),
     );
   }
@@ -144,12 +160,20 @@ export async function getOrCreateFailureClusters(
       }
 
       const winner = await db
-        .select({ id: failureClusters.id, sampleError: failureClusters.sampleError })
+        .select({
+          id: failureClusters.id,
+          sampleError: failureClusters.sampleError,
+          snoozedUntil: failureClusters.snoozedUntil,
+          snoozeMode: failureClusters.snoozeMode,
+        })
         .from(failureClusters)
         .where(and(eq(failureClusters.projectId, projectId), eq(failureClusters.fingerprint, fingerprint)));
       if (winner[0]) {
         ids.set(fingerprint, winner[0].id);
-        await bumpExisting(winner[0].id, p, winner[0].sampleError);
+        await bumpExisting(winner[0].id, p, winner[0].sampleError, {
+          snoozedUntil: winner[0].snoozedUntil,
+          snoozeMode: winner[0].snoozeMode,
+        });
       }
     }),
   );

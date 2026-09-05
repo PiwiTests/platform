@@ -24,7 +24,9 @@ import {
   getClusterDiagnosis,
   patchClusterStatus,
   patchClusterBaseCommit,
+  getOpenFailureClusters,
 } from '#shared/handlers/failure-clusters';
+import { clusterInQueue, isInboxQueue } from '#shared/inbox-queues';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { searchProjectsTestRunsCases } from '#shared/handlers/search';
 import { listTags } from '#shared/handlers/tags';
@@ -1595,6 +1597,34 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (ctx.scope !== 'all' && ctx.scope.size === 0) return { items: [], nextCursor: null };
     const pageSize = clampPageSize(params.pageSize);
     const cursor = numericCursor(params.cursor);
+
+    // Queue filter: reuse the inbox source (open, non-snoozed, enriched) and the
+    // same pure predicates the dashboard queues use, then page in memory by id on
+    // the same axis as the emitted cursor.
+    const queue = params.queue as string | undefined;
+    if (queue && isInboxQueue(queue) && queue !== 'all') {
+      const user = { name: ctx.user?.name ?? null, email: ctx.user?.email ?? null };
+      const enriched = await getOpenFailureClusters(db, ctx.scope, 200);
+      const mappedQueue = enriched
+        .filter((c) => clusterInQueue(c, queue, { user, lastVisitMs: null }))
+        .filter((c) => (cursor ? c.id < cursor : true))
+        .sort((a, b) => b.occurrences - a.occurrences || b.id - a.id)
+        .map((c) =>
+          dropNulls({
+            id: c.id,
+            projectId: c.projectId,
+            signature: c.signature,
+            title: c.title || null,
+            errorType: c.errorType || null,
+            status: c.status,
+            occurrences: c.occurrences,
+            lastSeenRunId: c.lastSeenRunId,
+            sampleError: trunc(c.sampleError, 300),
+          }),
+        );
+      return paginatedItems(mappedQueue, pageSize, (c: any) => String(c.id));
+    }
+
     const statusFilter = (params.status as string) || 'open';
 
     const conditions = [eq(failureClusters.status, statusFilter)];

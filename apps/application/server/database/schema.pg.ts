@@ -257,6 +257,13 @@ export const failureClusters = pgTable(
     fixVerification: text('fix_verification'), // 'stopped-failing' | 'diagnosis-verified' | 'regressed'
     lastRerunDispatch: jsonb('last_rerun_dispatch'), // ClusterRerunDispatch — most recent "Re-run in CI" dispatch
     bisectResult: jsonb('bisect_result'), // BisectedCommit — first bad commit the desktop bisect found (sha, subject, author, date)
+    // Inbox triage — orthogonal to `status`. A snooze hides a cluster from every
+    // inbox queue until the deadline passes (or, in "until-recurs" mode, until a
+    // new run adds an occurrence); `assignee` is the person a triager assigned it
+    // to, taking precedence over the owner derived from the test's annotation.
+    snoozedUntil: timestamp('snoozed_until', { mode: 'date' }), // hidden from queues until this instant; null when not snoozed
+    snoozeMode: text('snooze_mode'), // 'until' (wake at snoozedUntil) | 'until-recurs' (wake at snoozedUntil OR a new occurrence)
+    assignee: text('assignee'), // person this cluster is assigned to (name or email); overrides the derived owner
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
