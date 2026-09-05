@@ -16,6 +16,27 @@ function fence(body: string, lang = ''): string {
   return `\`\`\`${lang}\n${trimmed}\n\`\`\``;
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "12 Jul 2026" in UTC — deterministic, no locale/timezone drift. */
+function fixedBeforeDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/** "open 2 days" — a coarse duration for how long the earlier cluster stayed open. */
+function openDuration(ms: number | null): string | null {
+  if (ms == null) return null;
+  const days = Math.round(ms / 86_400_000);
+  if (days >= 2) return `open ${days} days`;
+  const hours = Math.round(ms / 3_600_000);
+  if (hours >= 1) return `open ${hours} hour${hours === 1 ? '' : 's'}`;
+  const mins = Math.max(1, Math.round(ms / 60_000));
+  return `open ${mins} min`;
+}
+
 function patchValidationLine(plan: NonNullable<FixPlan['diagnosis']>): string | null {
   const v = plan.patchValidation;
   if (!v) return null;
@@ -34,7 +55,7 @@ function patchValidationLine(plan: NonNullable<FixPlan['diagnosis']>): string | 
  * appended as a footer when supplied.
  */
 export function fixPlanToMarkdown(plan: FixPlan, opts: { url?: string } = {}): string {
-  const { cluster, diagnosis, edits, failingTests, ownership, verify } = plan;
+  const { cluster, diagnosis, edits, failingTests, ownership, verify, fixedBefore } = plan;
   const lines: string[] = [];
 
   const title = cluster.title || cluster.signature;
@@ -63,6 +84,32 @@ export function fixPlanToMarkdown(plan: FixPlan, opts: { url?: string } = {}): s
       if (validation) lines.push(`**Patch validation:** ${validation}`, '');
       lines.push(fence(diagnosis.patch, 'diff'), '');
     }
+  }
+
+  // Fixed before — resolved clusters this one resembles, and how each was fixed.
+  if (fixedBefore.length) {
+    lines.push('## Fixed before', '');
+    for (const m of fixedBefore) {
+      const when = fixedBeforeDate(m.resolvedAt);
+      const commit = m.fixCommit
+        ? m.fixCommitUrl
+          ? `[\`${m.fixCommitShort}\`](${m.fixCommitUrl})`
+          : `\`${m.fixCommitShort}\``
+        : null;
+      const head = [
+        `**#${m.clusterId} ${m.title}**`,
+        when ? `resolved ${when}` : null,
+        commit ? `in ${commit}` : null,
+        openDuration(m.openMs),
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      lines.push(`- ${head} — _${m.reason}_`);
+      if (m.diagnosisTitle) lines.push(`  - Diagnosis: ${m.diagnosisTitle}`);
+      if (m.triageNote) lines.push(`  - Triage note: ${m.triageNote.replace(/\s+/g, ' ').trim()}`);
+      if (m.owner) lines.push(`  - Owner: ${m.owner}`);
+    }
+    lines.push('');
   }
 
   // Locator edits

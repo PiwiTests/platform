@@ -30,6 +30,7 @@ import {
 import { getDemoDb } from '../db.client';
 import { getLocatorHealing, saveLocatorPick } from '~~/server/utils/locator-healing';
 import { buildFixPlan } from '~~/server/utils/fix-plan';
+import { findFixedBefore } from '~~/server/utils/cluster-memory';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
 import { contextStalenessHash } from '#shared/diagnosis-staleness';
 import { getEnvironmentDiff } from '~~/server/utils/environment-diff';
@@ -1184,6 +1185,19 @@ const routes: RouteEntry[] = [
       const format = (q as URLSearchParams | undefined)?.get('format');
       if (format === 'markdown' && plan) return fixPlanToMarkdown(plan);
       return plan;
+    },
+  },
+
+  // Fixed before — resolved clusters this one resembles, read straight from the
+  // in-browser DB by the same scorer the server uses.
+  {
+    method: 'GET',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/fixed-before$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const db = await getDemoDb();
+      const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, +m[1]!));
+      return { items: cluster ? await findFixedBefore(db, cluster) : [] };
     },
   },
 

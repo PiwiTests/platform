@@ -63,6 +63,7 @@ export const PROJECT = {
   AI_STEPS: 'ai-steps-coverage-test',
   EXTRACT_CASES: 'extract-cases-test',
   FAILURE_CLUSTERS: 'failure-clusters-test',
+  FIXED_BEFORE: 'fixed-before-test',
   FIX_PLAN: 'fix-plan-test',
   FIX_VERIFICATION: 'fix-verification-test',
   FLAKY_BOARD: 'flaky-board-test',

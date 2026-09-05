@@ -49,6 +49,7 @@ export type SectionId =
   | 'scmInvestigation'
   | 'selectedCommits'
   | 'priorDiagnosis'
+  | 'previouslyFixed'
   | 'passedPeers'
   | 'tracePointers'
   | 'artifacts'

@@ -70,6 +70,9 @@ function parsePatchesByFile(rawDiff: string): Map<string, string> {
 
 export class BitbucketProvider extends ScmProvider {
   readonly provider = 'bitbucket' as const;
+  get webUrl(): string {
+    return `https://bitbucket.org/${this.workspace}/${this.repoSlug}`;
+  }
   private readonly base: string;
 
   constructor(

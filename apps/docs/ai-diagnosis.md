@@ -332,6 +332,25 @@ work for you: **Reproduce here** runs the recipe against the linked folder in a 
 is never touched — and **Find the breaking commit here** drives the whole bisect step by step, with live progress and a
 stop that stops, then records the first bad commit on the cluster so it shows here and in the fix plan afterwards.
 
+### Fixed before
+
+An open cluster often is not new — the same failure, or one close to it, was fixed weeks ago. The fix plan looks back
+over the project's **resolved** clusters (resolved, or with a verified fix that held) and, when one resembles the open
+cluster closely enough, shows it in a **Fixed before** section on the Fix card — on the cluster page and on the failing
+execution's page, and in the `?format=markdown` export and the `get_fix_plan` MCP tool.
+
+A match is scored deterministically first — the same fingerprint family (error kind, masked message, masked locator),
+the same failing locator, the same spec file or test — and then, when an [embedding model](#model-roles) is configured,
+by semantic similarity of the stored cluster vectors. The top three matches are shown, each with **when** it was
+resolved, the **commit** that fixed it (linked when the repository host is known), **how long** it stayed open, the
+triage note, the owner, the earlier diagnosis and its thumbs feedback, and one short reason it matched ("same error and
+locator", "same spec, similar message (0.91)"). Nothing matches → the section renders nothing, no empty-state noise.
+
+**Apply the same triage** copies the earlier cluster's triage note onto the open one, prefixed `Same as cluster #N:` so
+the history reads as an intentional reuse. It never changes the open cluster's status — a new cluster is never marked
+resolved just because an old one was. The same top match is fed to the AI diagnosis as a *Previously fixed similar
+failure* clue, so the model can reuse a known fix rather than re-derive it.
+
 ## Diagnosis history
 
 Every re-diagnose snapshots the previous result before overwriting it, so a cluster keeps up to 50 prior versions. The

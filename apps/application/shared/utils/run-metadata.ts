@@ -4,6 +4,8 @@
  * server-side regression-context builder so the diff stays identical on both.
  */
 
+import { compareUrl } from '#shared/scm-urls';
+
 /** One field that changed between two runs, for the "what changed" summary. */
 export interface MetaDiffEntry {
   key: string;
@@ -32,21 +34,7 @@ interface RunMetadataLike {
 
 /** Build a provider-specific "compare two commits" URL, or null when the host is unknown. */
 export function buildCompareUrl(repositoryUrl: string, fromSha: string, toSha: string): string | null {
-  try {
-    const { hostname } = new URL(repositoryUrl);
-    if (hostname === 'github.com' || hostname.endsWith('.github.com')) {
-      return `${repositoryUrl}/compare/${fromSha}...${toSha}`;
-    }
-    if (hostname === 'gitlab.com' || hostname.includes('gitlab')) {
-      return `${repositoryUrl}/-/compare/${fromSha}...${toSha}`;
-    }
-    if (hostname === 'bitbucket.org') {
-      return `${repositoryUrl}/branches/compare/${toSha}..${fromSha}#diff`;
-    }
-  } catch {
-    // ignore
-  }
-  return null;
+  return compareUrl(repositoryUrl, fromSha, toSha);
 }
 
 /**

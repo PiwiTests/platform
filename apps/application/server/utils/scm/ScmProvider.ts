@@ -5,6 +5,7 @@ import {
   type CompiledCodeowners,
 } from '@piwitests/core/codeowners';
 import type { CiRerunSettings } from '#shared/ci-rerun';
+import { commitUrl, compareUrl, fileUrl, type ScmProviderName } from '#shared/scm-urls';
 
 export interface ChangedFile {
   filename: string;
@@ -104,7 +105,9 @@ export interface CreatePullRequestInput {
 }
 
 export abstract class ScmProvider {
-  abstract readonly provider: 'github' | 'gitlab' | 'bitbucket';
+  abstract readonly provider: ScmProviderName;
+  /** Canonical web URL of the repository (no trailing slash), for building links. */
+  abstract readonly webUrl: string;
   protected readonly token: string | null;
   /**
    * Namespaces module-level cache keys by the token in use so a token-less
@@ -122,6 +125,25 @@ export abstract class ScmProvider {
     const h: Record<string, string> = { 'User-Agent': 'piwi-dashboard' };
     if (this.token) h['Authorization'] = `Bearer ${this.token}`;
     return h;
+  }
+
+  // ── Web links ──────────────────────────────────────────────────────────────
+  // Built from this provider's own `webUrl` through the shared `#shared/scm-urls`
+  // module, so server code that holds a provider never hand-writes a URL.
+
+  /** URL for viewing one commit. */
+  commitUrl(sha: string): string | null {
+    return commitUrl(this.webUrl, sha);
+  }
+
+  /** URL comparing two commits. */
+  compareUrl(fromSha: string, toSha: string): string | null {
+    return compareUrl(this.webUrl, fromSha, toSha);
+  }
+
+  /** URL for a file at a ref, optionally anchored to a line. */
+  fileUrl(ref: string, path: string, line?: number | null): string | null {
+    return fileUrl(this.webUrl, ref, path, line);
   }
 
   abstract listBranches(limit?: number): Promise<string[]>;

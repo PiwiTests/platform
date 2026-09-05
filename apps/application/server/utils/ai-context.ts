@@ -45,6 +45,7 @@ import { getTraceDomSnapshot } from './dom-snapshot';
 import { renderAppStateMarkdown, type PageStateLike } from '#shared/page-state';
 import { getLastPassPageState, getFailureClues } from '#shared/handlers/test-cases';
 import { getLocatorHealing } from './locator-healing';
+import { findFixedBefore } from './cluster-memory';
 import { healingNotApplicableMarkdown } from '#shared/locator-resolution';
 import { getEnvironmentDiff } from './environment-diff';
 import { renderEnvironmentDiffMarkdown } from '#shared/environment-diff';
@@ -107,6 +108,7 @@ const CLUSTER_ONLY_SECTIONS = new Set<SectionId>([
   'selectedCommits',
   'topSuspectedCommit',
   'priorDiagnosis',
+  'previouslyFixed',
 ]);
 
 /**
@@ -153,6 +155,7 @@ const SECTION_ORDER: SectionId[] = [
   'topSuspectedCommit',
   'selectedCommits',
   'priorDiagnosis',
+  'previouslyFixed',
   'runContext',
   'testAnnotations',
   'tracePointers',
@@ -1186,6 +1189,33 @@ async function priorDiagnosisSection(db: DbClient, cluster: FailureCluster): Pro
   lines.push('> The user is re-diagnosing. Either reaffirm this assessment with new evidence or revise it.');
 
   return lines.join('\n');
+}
+
+/**
+ * The single closest resolved cluster this one resembles, with the resolving
+ * commit and the note — so the model can say "this was fixed before by …"
+ * instead of re-deriving a known fix. Capped tight; the top match is the signal.
+ */
+async function previouslyFixedSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
+  const matches = await findFixedBefore(db, cluster).catch(() => []);
+  const top = matches[0];
+  if (!top) return null;
+
+  const lines: string[] = ['## Previously Fixed Similar Failure'];
+  lines.push(
+    `A resolved cluster closely resembles this one (${top.reason}). Consider whether the same fix applies before proposing a new one.`,
+  );
+  const where = [
+    `cluster #${top.clusterId} "${top.title}"`,
+    top.fixCommitShort ? `fixed in ${top.fixCommitShort}` : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
+  lines.push(`- ${where}`);
+  if (top.diagnosisTitle) lines.push(`- Prior diagnosis: ${top.diagnosisTitle}`);
+  if (top.triageNote) lines.push(`- Triage note: ${top.triageNote.replace(/\s+/g, ' ').trim()}`);
+
+  return lines.join('\n').slice(0, 600);
 }
 
 // ── Content-aware ARIA snapshot truncation ───────────────────────────────────
@@ -2809,6 +2839,9 @@ export async function buildDiagnosisContext(
   // D10: Prior diagnosis + triage note (cluster-scoped)
   if (cluster) {
     push(section('priorDiagnosis', 'Prior Assessment', await priorDiagnosisSection(db, cluster)));
+    // A previously fixed similar failure — the resolved cluster this one most
+    // resembles, so the model can reuse a known fix rather than re-derive it.
+    push(section('previouslyFixed', 'Previously Fixed Similar Failure', await previouslyFixedSection(db, cluster)));
   }
 
   // Build absent-section reasons for sections where we know *why* data is

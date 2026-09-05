@@ -5,20 +5,12 @@ import { eq } from 'drizzle-orm';
 import { GitHubProvider } from './GitHubProvider';
 import { GitLabProvider } from './GitLabProvider';
 import { BitbucketProvider } from './BitbucketProvider';
+import { detectScmHost, type ScmProviderName } from '#shared/scm-urls';
 import type { DbClient } from '../../database';
 
 /** Returns the SCM provider name for a repository URL, or null if unsupported. */
-export function detectScmProvider(repositoryUrl: string | null | undefined): 'github' | 'gitlab' | 'bitbucket' | null {
-  if (!repositoryUrl) return null;
-  try {
-    const { hostname } = new URL(repositoryUrl);
-    if (hostname === 'github.com' || hostname.endsWith('.github.com')) return 'github';
-    if (hostname === 'gitlab.com' || hostname.includes('gitlab')) return 'gitlab';
-    if (hostname === 'bitbucket.org') return 'bitbucket';
-  } catch {
-    /* ignore */
-  }
-  return null;
+export function detectScmProvider(repositoryUrl: string | null | undefined): ScmProviderName | null {
+  return detectScmHost(repositoryUrl);
 }
 
 /** Instantiate the correct provider for the given URL with a pre-loaded token. */

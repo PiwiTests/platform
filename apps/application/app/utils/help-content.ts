@@ -321,6 +321,11 @@ export const HELP_TOPICS = {
     text: 'Everything needed to repair this cluster in one place — the AI diagnosis and its validated patch, the recommended locator fix, the command that verifies the fix, and the whole plan as Markdown. Copy it for a ticket, or let an agent fetch the same plan via the get_fix_plan MCP tool.',
     doc: 'ai-diagnosis#fix-plans',
   },
+  'cluster.fixed-before': {
+    title: 'Fixed before',
+    text: 'Resolved failures that resemble this one — matched on the same error and locator, the same spec or test, and (when embeddings are configured) semantic similarity. Each shows when it was fixed, the resolving commit, how long it stayed open and the triage note, so you can reuse an earlier resolution. "Apply the same triage" copies that note onto this cluster; it never marks a new cluster resolved because an old one was.',
+    doc: 'ai-diagnosis#fix-plans',
+  },
   'cluster.evidence': {
     title: 'Test evidence',
     text: 'The concrete artifacts behind this cluster — screenshots, signals and traces from affected tests — gathered for review and AI diagnosis.',

@@ -31,6 +31,39 @@ export interface FixPlanEdit {
   executionId: number;
 }
 
+/**
+ * One resolved cluster the open one resembles, with how it was fixed. Surfaced
+ * as the "Fixed before" section so the same triage can be reused.
+ */
+export interface FixedBeforeMatch {
+  clusterId: number;
+  /** The earlier cluster's title, falling back to its signature. */
+  title: string;
+  /** Its triage status (a resolved-like one — 'resolved', or a verified fix). */
+  status: string;
+  /** When the fix landed (fix verification), ISO — null when never recorded. */
+  resolvedAt: string | null;
+  /** How long it stayed open before the fix, ms — null when unknown. */
+  openMs: number | null;
+  /** The commit that turned it green, when fix verification recorded one. */
+  fixCommit: string | null;
+  fixCommitShort: string | null;
+  /** Provider commit URL for `fixCommit`, when the repository host is known. */
+  fixCommitUrl: string | null;
+  /** The earlier cluster's triage note (what a human wrote about the fix). */
+  triageNote: string | null;
+  /** Effective owner of the earlier cluster's tests (`piwi:owner` annotation). */
+  owner: string | null;
+  /** One-line summary of the earlier cluster's diagnosis, when it had one. */
+  diagnosisTitle: string | null;
+  /** Whether that diagnosis was marked helpful/unhelpful. */
+  diagnosisFeedback: 'up' | 'down' | null;
+  /** Why it matched, in one short phrase ("same error and locator"). */
+  reason: string;
+  /** Match score, 0–1. */
+  score: number;
+}
+
 export interface FixPlan {
   cluster: {
     id: number;
@@ -70,4 +103,6 @@ export interface FixPlan {
   bisectedCommit: BisectedCommit | null;
   /** Everything the desktop shell needs to reproduce and bisect this locally (desktop UI only). */
   reproduceDesktop: ReproduceDesktopContext;
+  /** Resolved clusters this one resembles, and how each was fixed. Empty when none match. */
+  fixedBefore: FixedBeforeMatch[];
 }

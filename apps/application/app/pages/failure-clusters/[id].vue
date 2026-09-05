@@ -4,7 +4,7 @@ import { caseHeadline, type FailureVerdict } from '#shared/failure-verdict';
 import { parsePlaywrightError } from '#shared/error-parse';
 import type { FailureCluesResult } from '#shared/handlers/test-cases';
 import type { FailureClusterDetail, TraceInfo } from '~~/types/api';
-import type { FixPlan } from '#shared/fix-plan.types';
+import type { FixPlan, FixedBeforeMatch as FixedBeforeMatchType } from '#shared/fix-plan.types';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
 import type { FixSectionKey } from '~/components/shared/FixCard.vue';
 import { renderAnsi } from '~/utils';
@@ -270,14 +270,44 @@ const hasLocatorPanel = computed(() =>
 );
 const showVerify = computed(() => Boolean(fixPlan.value?.verify?.command));
 const showReproduce = computed(() => Boolean(fixPlan.value?.reproduce?.steps?.length));
+const fixedBefore = computed(() => fixPlan.value?.fixedBefore ?? []);
 const fixSections = computed<FixSectionKey[]>(() => {
   const s: FixSectionKey[] = ['diagnosis'];
+  if (fixedBefore.value.length) s.push('fixed-before');
   if (hasLocatorPanel.value) s.push('locator-fix');
   if (showVerify.value) s.push('verify');
   if (showReproduce.value) s.push('reproduce');
   if (fixPlan.value) s.push('fix-plan');
   return s;
 });
+
+// ── Apply the same triage ─────────────────────────────────────────────────────
+// One click copies an earlier resolved cluster's triage note onto this one,
+// prefixed so the history reads as an intentional reuse. The status is left as
+// it is — a new cluster is never marked resolved because an old one was.
+const applyingId = ref<number | null>(null);
+const applyToast = useToast();
+async function applyTriage(match: FixedBeforeMatchType) {
+  if (!cluster.value || applyingId.value != null) return;
+  applyingId.value = match.clusterId;
+  const excerpt = (match.triageNote ?? match.diagnosisTitle ?? match.reason).replace(/\s+/g, ' ').trim().slice(0, 280);
+  const prefix = `Same as cluster #${match.clusterId}: `;
+  const existing = cluster.value.triageNote?.trim();
+  const line = `${prefix}${excerpt}`;
+  const triageNote = existing ? `${existing}\n${line}` : line;
+  try {
+    await $fetch(`/api/failure-clusters/${clusterId}/status`, {
+      method: 'PATCH',
+      body: { status: cluster.value.status, triageNote },
+    });
+    applyToast.add({ title: `Applied triage from cluster #${match.clusterId}`, color: 'success' });
+    refresh();
+  } catch {
+    applyToast.add({ title: 'Could not apply the triage', color: 'error' });
+  } finally {
+    applyingId.value = null;
+  }
+}
 
 // The diagnosis panel exposes its context/prompt actions for the page's More menu.
 const diagnosisPanel = ref<{ openContext: () => void; copyPrompt: () => void; openHistory: () => void } | null>(null);
@@ -619,6 +649,19 @@ const breadcrumbItems = computed(() => [
                   :affected-test-cases="cluster.affectedTestCases ?? []"
                 />
               </div>
+            </template>
+
+            <!-- Fixed before — resolved clusters this one resembles, and how each was fixed -->
+            <template v-if="fixedBefore.length" #fixed-before-label>
+              <span class="inline-flex items-center gap-1">Fixed before <HelpHint topic="cluster.fixed-before" /></span>
+            </template>
+            <template v-if="fixedBefore.length" #fixed-before>
+              <FixedBeforeMatches
+                :matches="fixedBefore"
+                :can-write="canWrite"
+                :applying-id="applyingId"
+                @apply="applyTriage"
+              />
             </template>
 
             <!-- Locator fix — the recommendation, its provenance and alternatives, once -->

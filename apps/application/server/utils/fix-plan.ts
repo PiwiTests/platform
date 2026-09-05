@@ -19,6 +19,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { failureClusters, failureDiagnoses, testCases, testRunsCases } from '../database/schema';
 import { getLocatorHealingBatch } from './locator-healing';
+import { findFixedBefore } from './cluster-memory';
 import { validatePatch, type PatchValidation } from '#shared/patch';
 import { parseCallsiteLocation } from '#shared/callsite-location';
 import { buildRetryCommand } from '#shared/retry-command';
@@ -164,6 +165,10 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
     clusterId: cluster.id,
   });
 
+  // Resolved clusters this one resembles, and how each was fixed — best-effort,
+  // never a reason the plan fails to build.
+  const fixedBefore = await findFixedBefore(db, cluster).catch(() => []);
+
   return {
     cluster: {
       id: cluster.id,
@@ -187,5 +192,6 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
     bisect,
     bisectedCommit: desktop.bisectedCommit,
     reproduceDesktop: desktop,
+    fixedBefore,
   };
 }

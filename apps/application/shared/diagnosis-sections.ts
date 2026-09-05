@@ -46,6 +46,7 @@ export const DIAGNOSIS_SECTIONS: DiagnosisSectionMeta[] = [
   { id: 'scmInvestigation', label: 'SCM diff since last green', short: 'SCM diff' },
   { id: 'selectedCommits', label: 'Manually selected commits', short: 'Commits' },
   { id: 'priorDiagnosis', label: 'Prior diagnosis & triage', short: 'Prior' },
+  { id: 'previouslyFixed', label: 'Previously fixed similar failure', short: 'Fixed before' },
   { id: 'tracePointers', label: 'Trace files', short: 'Traces' },
   { id: 'artifacts', label: 'Attachments & artifacts (video, HAR)', short: 'Artifacts' },
   { id: 'nearestAriaNames', label: 'Nearest matching ARIA names from snapshot', short: 'Nearest ARIA' },

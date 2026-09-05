@@ -10,6 +10,7 @@ import { EVIDENCE_SECTION_TAB } from '~/utils/evidence-sections';
 import type { FixSectionKey } from '~/components/shared/FixCard.vue';
 import type { BlockedCaseRef } from '~~/types/api';
 import type { ReproRecipe, BisectResult, ReproduceDesktopContext } from '#shared/reproduce';
+import type { FixedBeforeMatch } from '#shared/fix-plan.types';
 
 const route = useRoute();
 const testCaseId = route.params.id;
@@ -151,6 +152,44 @@ const { data: rerunInfo, refresh: refreshRerun } = await useAsyncData<RerunInfo 
   },
   { default: (): RerunInfo | null => null, watch: [() => failureCluster.value?.id] },
 );
+// "Fixed before" for the cluster this failure belongs to.
+const { data: fixedBeforeData, refresh: refreshFixedBefore } = await useAsyncData<FixedBeforeMatch[]>(
+  `test-run-case-fixed-before-${testCaseId}`,
+  () => {
+    const id = failureCluster.value?.id;
+    return id
+      ? $fetch<{ items: FixedBeforeMatch[] }>(`/api/failure-clusters/${id}/fixed-before`).then((r) => r.items)
+      : Promise.resolve([]);
+  },
+  { default: (): FixedBeforeMatch[] => [], watch: [() => failureCluster.value?.id] },
+);
+const fixedBefore = computed(() => fixedBeforeData.value ?? []);
+
+const applyingId = ref<number | null>(null);
+const applyToast = useToast();
+async function applyTriage(match: FixedBeforeMatch) {
+  const clusterId = failureCluster.value?.id;
+  const currentStatus = failureCluster.value?.status;
+  if (!clusterId || !currentStatus || applyingId.value != null) return;
+  applyingId.value = match.clusterId;
+  const excerpt = (match.triageNote ?? match.diagnosisTitle ?? match.reason).replace(/\s+/g, ' ').trim().slice(0, 280);
+  const line = `Same as cluster #${match.clusterId}: ${excerpt}`;
+  const existing = (failureCluster.value as { triageNote?: string | null } | null)?.triageNote?.trim();
+  const triageNote = existing ? `${existing}\n${line}` : line;
+  try {
+    await $fetch(`/api/failure-clusters/${clusterId}/status`, {
+      method: 'PATCH',
+      body: { status: currentStatus, triageNote },
+    });
+    applyToast.add({ title: `Applied triage from cluster #${match.clusterId}`, color: 'success' });
+    await Promise.all([refresh(), refreshFixedBefore()]);
+  } catch {
+    applyToast.add({ title: 'Could not apply the triage', color: 'error' });
+  } finally {
+    applyingId.value = null;
+  }
+}
+
 const rerunToast = useToast();
 const rerunning = ref(false);
 async function triggerRerun() {
@@ -196,6 +235,7 @@ const fixSections = computed<FixSectionKey[]>(() => {
   if (isLocatorFailure.value) s.push('locator-fix');
   if (failureCluster.value) s.push('fix-plan');
   s.push('diagnosis');
+  if (fixedBefore.value.length) s.push('fixed-before');
   if (showVerify.value) s.push('verify');
   if (showReproduce.value) s.push('reproduce');
   if (blockedTests.value.length) s.push('blocked');
@@ -809,6 +849,19 @@ provide(clusterSectionLocatorKey, {
                 </UButton>
               </div>
               <DiagnosisPanel v-else scope="execution" :execution-id="Number(testCaseId)" />
+            </template>
+
+            <!-- Fixed before — resolved clusters this one resembles, and how each was fixed -->
+            <template v-if="fixedBefore.length" #fixed-before-label>
+              <span class="inline-flex items-center gap-1">Fixed before <HelpHint topic="cluster.fixed-before" /></span>
+            </template>
+            <template v-if="fixedBefore.length" #fixed-before>
+              <FixedBeforeMatches
+                :matches="fixedBefore"
+                :can-write="canWrite"
+                :applying-id="applyingId"
+                @apply="applyTriage"
+              />
             </template>
 
             <!-- Re-run in CI, or run locally in the desktop shell -->

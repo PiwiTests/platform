@@ -31,6 +31,9 @@ const commitAuthorCache = new TtlCache<ScmCommitAuthor | null>(30 * 60 * 1000);
 
 export class GitHubProvider extends ScmProvider {
   readonly provider = 'github' as const;
+  get webUrl(): string {
+    return `https://github.com/${this.repoPath}`;
+  }
 
   constructor(
     private readonly repoPath: string,

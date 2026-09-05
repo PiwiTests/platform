@@ -63,6 +63,7 @@ function makePlan(overrides: Partial<FixPlan> = {}): FixPlan {
       repositoryUrl: 'https://github.com/acme/web',
       bisectedCommit: null,
     },
+    fixedBefore: [],
     ...overrides,
   };
 }
@@ -162,5 +163,37 @@ describe('fixPlanToMarkdown', () => {
     expect(md).toContain('## Owner');
     expect(md).toContain('@checkout-team (codeowners)');
     expect(md).toContain('[Open this cluster in Piwi](https://piwi.example/failure-clusters/7)');
+  });
+
+  it('renders a "Fixed before" section with the resolving commit and reason', () => {
+    const md = fixPlanToMarkdown(
+      makePlan({
+        fixedBefore: [
+          {
+            clusterId: 3,
+            title: 'Pay button never enables',
+            status: 'resolved',
+            resolvedAt: '2026-07-12T09:00:00.000Z',
+            openMs: 2 * 86_400_000,
+            fixCommit: 'abc1234def',
+            fixCommitShort: 'abc1234',
+            fixCommitUrl: 'https://github.com/acme/app/commit/abc1234def',
+            triageNote: 'Waited for the network idle before asserting.',
+            owner: '@checkout-team',
+            diagnosisTitle: 'The pay button stays disabled until the cart request resolves.',
+            diagnosisFeedback: 'up',
+            reason: 'same error and locator',
+            score: 0.8,
+          },
+        ],
+      }),
+    );
+    expect(md).toContain('## Fixed before');
+    expect(md).toContain('#3 Pay button never enables');
+    expect(md).toContain('resolved 12 Jul 2026');
+    expect(md).toContain('[`abc1234`](https://github.com/acme/app/commit/abc1234def)');
+    expect(md).toContain('open 2 days');
+    expect(md).toContain('_same error and locator_');
+    expect(md).toContain('Waited for the network idle before asserting.');
   });
 });

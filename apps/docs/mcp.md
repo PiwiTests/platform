@@ -70,7 +70,7 @@ The server exposes 45 tools — mostly read-only, plus a few write/triage tools 
 | `list_clusters` | Failure clusters grouped by error fingerprint |
 | `list_open_clusters` | Open clusters across *all* projects, ranked by occurrences — a triage queue |
 | `get_cluster` | Cluster detail with affected tests and diagnosis summary |
-| `get_fix_plan` | **One-call fix plan** for a cluster: diagnosis with its validated patch, ranked locator replacements with the file and line to edit, failing tests, owning team, the command that verifies the fix, a `reproduce` recipe (checkout, pinned install and the exact test command, in bash and PowerShell), and a generated `bisect` script between the last green and the failing commit |
+| `get_fix_plan` | **One-call fix plan** for a cluster: diagnosis with its validated patch, ranked locator replacements with the file and line to edit, failing tests, owning team, the command that verifies the fix, a `reproduce` recipe (checkout, pinned install and the exact test command, in bash and PowerShell), a generated `bisect` script between the last green and the failing commit, and `fixedBefore` — the resolved clusters this one resembles, each with the resolving commit, how long it stayed open, the triage note and why it matched |
 | `get_cluster_diagnosis` | Full AI diagnosis: root cause, evidence, suggested fix |
 | `get_cluster_context` | Full AI evidence context (errors, steps, console logs, SCM diff) — the same data the built-in diagnosis AI receives |
 

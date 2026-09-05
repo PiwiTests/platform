@@ -43,6 +43,9 @@ function countDiffLines(diff: string): { additions: number; deletions: number } 
 
 export class GitLabProvider extends ScmProvider {
   readonly provider = 'gitlab' as const;
+  get webUrl(): string {
+    return `https://${this.hostname}/${this.repoPath}`;
+  }
 
   constructor(
     private readonly hostname: string,
