@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Piwi Picker",
   "short_name": "Piwi Picker",
-  "version": "0.26.1",
+  "version": "0.27.0",
   "description": "Ranked, stable Playwright locators for any element on the page — scored the same way Piwi's dashboard scores them.",
   "browser_specific_settings": {
     "gecko": {
