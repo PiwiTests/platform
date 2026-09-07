@@ -171,7 +171,7 @@ const snoozeItems = computed(() => [
     <span class="size-2 rounded-full shrink-0" :class="dotClass" aria-hidden="true" />
 
     <!-- The sentence as prose, run references linked. -->
-    <span class="min-w-0 text-toned">
+    <span data-shot="cluster-state-sentence" class="min-w-0 text-toned">
       <template v-for="(part, i) in state.parts" :key="i">
         <NuxtLink
           v-if="part.kind === 'run' && part.href"

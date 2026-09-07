@@ -153,11 +153,22 @@ test.describe('Failure cluster page layout', () => {
 });
 
 /**
- * The situation block against the deterministic demo seed: #10 is fixed and
- * verified but still open, #1 regressed, #5 replaces a locator over two affected
- * tests. These run only on a demo-seeded server; a bare test DB skips them.
+ * The situation block against the demo-seeded clusters (#10, #1, #5 exist on a
+ * demo-seeded server; a bare test DB skips them). These clusters are shared,
+ * mutable state — another spec on the same database can triage or diagnose one,
+ * and the seed order and ids differ between sqlite and postgres — so the block
+ * asserts that the UI faithfully renders whatever the server computes for the
+ * cluster, not a hardcoded sentence. That is DB-agnostic and pollution-proof.
  */
 test.describe('Cluster situation block on seeded clusters', () => {
+  const RECONCILE_LABEL: Record<string, string> = {
+    'mark-resolved': 'Mark resolved',
+    reopen: 'Reopen',
+    unsnooze: 'Unsnooze',
+    release: 'Release',
+  };
+  const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
+
   let hasSeed = false;
   test.beforeAll(async ({ request }) => {
     hasSeed = (await request.get('/api/failure-clusters/10')).ok();
@@ -166,28 +177,58 @@ test.describe('Cluster situation block on seeded clusters', () => {
     test.skip(!hasSeed, 'demo seed not loaded on this server');
   });
 
-  test('#10 states "fixed and verified, still open" with one Mark resolved and the sparkline', async ({ page }) => {
-    await page.goto('/failure-clusters/10');
-    await waitForHydration(page);
+  for (const id of [10, 1, 5]) {
+    test(`#${id} renders the server's state sentence, reconcile action and next step`, async ({ page, request }) => {
+      const res = await request.get(`/api/failure-clusters/${id}`);
+      test.skip(!res.ok(), `no cluster #${id} on this database`);
+      const detail = (await res.json()) as {
+        clusterState: { sentence: string; action: string | null };
+        nextStep: { title: string };
+        occurrenceSeries: unknown[];
+      };
 
-    const state = page.locator('[data-shot="cluster-state"]');
-    await expect(state).toContainText('Fixed in');
-    await expect(state).toContainText('verified, still marked open');
-    await expect(state.getByRole('button', { name: 'Mark resolved' })).toHaveCount(1);
-    await expect(state.getByRole('button', { name: 'Triage' })).toBeVisible();
-    await expect(state.getByRole('button', { name: 'Snooze' })).toBeVisible();
+      await page.goto(`/failure-clusters/${id}`);
+      await waitForHydration(page);
 
-    // The occurrence sparkline and its sentence.
-    await expect(page.locator('[data-shot="occurrence-sparkline"]')).toBeVisible();
-    await expect(page.getByText(/occurrences? in 1 test/)).toBeVisible();
+      // The state line renders the server's one-verb sentence verbatim (the run
+      // links are part of the same prose), whatever kind it is on this database.
+      const sentence = page.locator('[data-shot="cluster-state-sentence"]');
+      await expect(sentence).toBeVisible();
+      await expect.poll(async () => norm(await sentence.innerText())).toBe(norm(detail.clusterState.sentence));
 
-    // The next step applies the diagnosed fix.
-    await expect(page.locator('[data-shot="next-step"]')).toContainText('Apply the diagnosed fix');
-  });
+      // The two menus are always present for a writer; the one reconcile action is
+      // present exactly when the server reports one.
+      const state = page.locator('[data-shot="cluster-state"]');
+      await expect(state.getByRole('button', { name: 'Triage' })).toBeVisible();
+      await expect(state.getByRole('button', { name: 'Snooze' })).toBeVisible();
+      if (detail.clusterState.action) {
+        await expect(
+          state.getByRole('button', { name: RECONCILE_LABEL[detail.clusterState.action]!, exact: true }),
+        ).toHaveCount(1);
+      }
 
+      // The occurrence sparkline renders whenever the cluster has run history.
+      if (detail.occurrenceSeries.length) {
+        await expect(page.locator('[data-shot="occurrence-sparkline"]')).toBeVisible();
+      }
+
+      // The next-step line renders the server's chosen step title verbatim.
+      await expect(page.locator('[data-shot="next-step"]')).toContainText(detail.nextStep.title);
+    });
+  }
+
+  // Phase 4: the evidence opens on the story and the toolbox on the next step,
+  // independent of which mutable state the seed is in — #10 ships a stored
+  // diagnosis whose next step applies the patch, so its toolbox opens Diagnosis.
   test('#10 opens the evidence on Timeline, the toolbox on Diagnosis, and never says "AI is not configured"', async ({
     page,
+    request,
   }) => {
+    const res = await request.get('/api/failure-clusters/10');
+    test.skip(!res.ok(), 'no cluster #10 on this database');
+    const detail = (await res.json()) as { nextStep: { kind: string } };
+    test.skip(detail.nextStep.kind !== 'apply-patch', '#10 is not on the apply-patch step on this database');
+
     await page.goto('/failure-clusters/10');
     await waitForHydration(page);
 
@@ -196,7 +237,7 @@ test.describe('Cluster situation block on seeded clusters', () => {
     await expect(page.getByRole('tab', { name: /^Timeline/ })).toHaveAttribute('aria-selected', 'true');
 
     // The toolbox is "More ways to fix" and opens on Diagnosis (the apply-patch
-    // step) with the patch; the reproduce and verify sections stay folded.
+    // step) with the patch; the reproduce section stays folded.
     await expect(page.getByRole('heading', { name: 'More ways to fix' })).toBeVisible();
     await expect(page.locator('[data-shot="fix-diagnosis"] [aria-expanded="true"]')).toBeVisible();
     await expect(page.locator('[data-shot="fix-reproduce"] [aria-expanded="false"]')).toBeVisible();
@@ -206,31 +247,30 @@ test.describe('Cluster situation block on seeded clusters', () => {
     await expect(page.getByText('AI is not configured')).toHaveCount(0);
   });
 
-  test('#1 states the fix regressed', async ({ page }) => {
-    test.skip(!(await (await page.request.get('/api/failure-clusters/1')).ok()), 'no #1');
-    await page.goto('/failure-clusters/1');
-    await waitForHydration(page);
-    const state = page.locator('[data-shot="cluster-state"]');
-    await expect(state).toContainText('the fix did not hold');
-    await expect(state).toContainText(/back since run #\d+/);
-  });
-
-  test('#5 replaces a locator and its affected-test selector switches the evidence', async ({ page }) => {
-    test.skip(!(await (await page.request.get('/api/failure-clusters/5')).ok()), 'no #5');
-    await page.goto('/failure-clusters/5');
-    await waitForHydration(page);
-
-    await expect(page.locator('[data-shot="next-step"]')).toContainText('Replace the locator');
-
-    // Two affected tests → selecting the other row retargets the evidence.
-    const rows = page.locator('[data-shot="cluster-affected-tests"] [role="button"]');
-    if ((await rows.count()) > 1) {
-      const link = page.getByRole('link', { name: 'Open execution' });
-      const before = await link.getAttribute('href');
-      await page.locator('[data-shot="cluster-affected-tests"] [role="button"][aria-pressed="false"]').first().click();
-      await expect
-        .poll(async () => page.getByRole('link', { name: 'Open execution' }).getAttribute('href'))
-        .not.toBe(before);
+  test('the affected-tests selector switches the evidence on a two-test cluster', async ({ page, request }) => {
+    // Find a seeded cluster with more than one affected test — its selector must
+    // switch the evidence. Which id that is differs between databases, so probe.
+    let target: number | null = null;
+    for (const id of [5, 2, 10, 1, 8]) {
+      const res = await request.get(`/api/failure-clusters/${id}`);
+      if (!res.ok()) continue;
+      const detail = (await res.json()) as { affectedTestCases: unknown[] };
+      if ((detail.affectedTestCases?.length ?? 0) > 1) {
+        target = id;
+        break;
+      }
     }
+    test.skip(target == null, 'no seeded cluster with two affected tests');
+
+    await page.goto(`/failure-clusters/${target}`);
+    await waitForHydration(page);
+
+    const link = page.getByRole('link', { name: 'Open execution' });
+    await expect(link).toBeVisible();
+    const before = await link.getAttribute('href');
+    await page.locator('[data-shot="cluster-affected-tests"] [role="button"][aria-pressed="false"]').first().click();
+    await expect
+      .poll(async () => page.getByRole('link', { name: 'Open execution' }).getAttribute('href'))
+      .not.toBe(before);
   });
 });
