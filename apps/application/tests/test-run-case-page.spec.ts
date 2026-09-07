@@ -147,9 +147,11 @@ test.describe('Test-run-case page', () => {
     await expect(page.locator('[data-shot="situation"]')).toHaveCount(0);
     await expect(page.locator('[data-shot="next-step"]')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Fix', exact: true })).toHaveCount(0);
-    // A passing execution shows the steps table without the failure axis or its controls.
+    // A passing execution shows the steps table without the failure axis or its
+    // controls. The tab is the heading now — the block no longer repeats "Steps".
     await expect(page.getByRole('button', { name: 'Around the failure' })).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: /^Steps/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^Steps/ })).toHaveCount(0);
+    await expect(page.locator('table').first()).toBeVisible();
   });
 
   test('the retry command is in the More menu, not an always-on header button', async ({ page }) => {
@@ -165,8 +167,11 @@ test.describe('Test-run-case page', () => {
   test('the Performance tab opens and shows its Web Vitals block', async ({ page }) => {
     await page.goto(`/test-run-cases/${failedCaseId}`);
     await waitForHydration(page);
-    await page.getByRole('tab', { name: /^Performance/ }).click();
-    await expect(page.getByRole('heading', { name: 'Browser performance (Web Vitals)' })).toBeVisible();
+    const performanceTab = page.getByRole('tab', { name: /^Performance/ });
+    await performanceTab.click();
+    // The tab is the heading now; the block no longer repeats "Browser performance".
+    await expect(performanceTab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByText(/Web Vitals/i).first()).toBeVisible();
   });
 
   test('GET /api/test-run-cases/:id/timeline places the steps and marks the failure', async ({ request }) => {
@@ -194,7 +199,8 @@ test.describe('Test-run-case page', () => {
 
     await page.getByRole('tab', { name: /^Timeline/ }).click();
 
-    await expect(page.getByRole('heading', { name: 'Failure timeline' })).toBeVisible();
+    // The tab is the heading now — the block no longer repeats "Failure timeline".
+    await expect(page.getByRole('heading', { name: 'Failure timeline' })).toHaveCount(0);
     // Both window controls drive the axis and the table together.
     await expect(page.getByRole('button', { name: 'Around the failure' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Whole test' })).toBeVisible();
@@ -310,22 +316,54 @@ test.describe('Situation block on seeded cases', () => {
     await expect(page.getByText('New regression')).toHaveCount(1);
   });
 
-  test('#587 proposes replacing the locator', async ({ page }) => {
+  test('#37 opens the evidence on the Timeline and the toolbox on Diagnosis', async ({ page }) => {
+    await page.goto('/test-run-cases/37');
+    await waitForHydration(page);
+
+    // The story cites network, console and ARIA; the Timeline places them, so it
+    // is the default tab rather than the single tab the leading clue cites.
+    await expect(page.getByRole('tab', { name: /^Timeline/ })).toHaveAttribute('aria-selected', 'true');
+
+    // The toolbox is "More ways to fix" and opens on the next step's section —
+    // the diagnosed-fix step opens Diagnosis; the others are folded to one line.
+    await expect(page.getByRole('heading', { name: 'More ways to fix' })).toBeVisible();
+    await expect(page.locator('[data-shot="fix-diagnosis"] [aria-expanded="true"]')).toBeVisible();
+    await expect(page.locator('[data-shot="fix-reproduce"] [aria-expanded="false"]')).toBeVisible();
+  });
+
+  test('#37 folds the raw page structure behind a disclosure on the Screen tab', async ({ page }) => {
+    await page.goto('/test-run-cases/37');
+    await waitForHydration(page);
+    await page.getByRole('tab', { name: /^Screen/ }).click();
+    // The ARIA tree and the DOM are folded away under Page structure, not open.
+    const disclosure = page.getByRole('button', { name: /Page structure/ });
+    await expect(disclosure).toBeVisible();
+    await disclosure.click();
+    // Opening it renders the failure-time page — an iframe, never escaped XML.
+    await expect(page.locator('iframe[title="Failure-time page"]')).toBeVisible();
+  });
+
+  test('#587 proposes replacing the locator and opens the Locator fix section', async ({ page }) => {
     test.skip(!(await (await page.request.get('/api/test-run-cases/587')).ok()), 'no #587');
     await page.goto('/test-run-cases/587');
     await waitForHydration(page);
     const next = page.locator('[data-shot="next-step"]');
     await expect(next).toContainText('Replace the locator');
     await expect(next.getByRole('button', { name: 'Copy patch' })).toBeVisible();
+    await expect(page.locator('[data-shot="fix-locator-fix"] [aria-expanded="true"]')).toBeVisible();
   });
 
-  test('#682 proposes reproducing locally', async ({ page }) => {
+  test('#682 proposes reproducing locally and opens the Reproduce section, run line first', async ({ page }) => {
     test.skip(!(await (await page.request.get('/api/test-run-cases/682')).ok()), 'no #682');
     await page.goto('/test-run-cases/682');
     await waitForHydration(page);
     const next = page.locator('[data-shot="next-step"]');
     await expect(next).toContainText('Reproduce locally');
     await expect(next.getByRole('button', { name: 'Copy recipe' })).toBeVisible();
+    // The Reproduce section opens with the page; the run line leads, the full
+    // recipe folds behind "Show the full recipe".
+    await expect(page.locator('[data-shot="fix-reproduce"] [aria-expanded="true"]')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Show the full recipe/ })).toBeVisible();
   });
 
   test('#13 leads with the most-likely explanation', async ({ page }) => {

@@ -185,6 +185,27 @@ test.describe('Cluster situation block on seeded clusters', () => {
     await expect(page.locator('[data-shot="next-step"]')).toContainText('Apply the diagnosed fix');
   });
 
+  test('#10 opens the evidence on Timeline, the toolbox on Diagnosis, and never says "AI is not configured"', async ({
+    page,
+  }) => {
+    await page.goto('/failure-clusters/10');
+    await waitForHydration(page);
+
+    // Rule 6: the diagnosis leads and its clue is weak, so the Timeline — which
+    // places two or more items — is the default tab, not State.
+    await expect(page.getByRole('tab', { name: /^Timeline/ })).toHaveAttribute('aria-selected', 'true');
+
+    // The toolbox is "More ways to fix" and opens on Diagnosis (the apply-patch
+    // step) with the patch; the reproduce and verify sections stay folded.
+    await expect(page.getByRole('heading', { name: 'More ways to fix' })).toBeVisible();
+    await expect(page.locator('[data-shot="fix-diagnosis"] [aria-expanded="true"]')).toBeVisible();
+    await expect(page.locator('[data-shot="fix-reproduce"] [aria-expanded="false"]')).toBeVisible();
+
+    // A stored result renders under no provider, so the "AI is not configured"
+    // line never appears — the diagnosis header offers Re-diagnose instead.
+    await expect(page.getByText('AI is not configured')).toHaveCount(0);
+  });
+
   test('#1 states the fix regressed', async ({ page }) => {
     test.skip(!(await (await page.request.get('/api/failure-clusters/1')).ok()), 'no #1');
     await page.goto('/failure-clusters/1');
