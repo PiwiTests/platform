@@ -184,9 +184,9 @@ A diagnosis is grounded in your actual run — it is not a generic "ask AI" butt
 
 ## Diagnosing one execution
 
-The [failure cluster](./ui-overview#failure-cluster-detail) page diagnoses a *group* of failures that share a fingerprint. When you are looking at a single failing execution, the [test case detail](./evidence#one-execution-diagnosis-first) page's Fix card has a **Diagnosis** section that diagnoses *just that execution* — the same panel the cluster page uses, on the same model and structured result, scoped to the one run in front of you. This is handy when a failure hasn't clustered yet, or when you want a diagnosis grounded in this specific execution's evidence rather than the cluster aggregate.
+The [failure cluster](./ui-overview#failure-cluster-detail) page diagnoses a *group* of failures that share a fingerprint. When you are looking at a single failing execution, the [test case detail](./evidence#one-execution-diagnosis-first) page's **More ways to fix** toolbox has a **Diagnosis** section that diagnoses *just that execution* — the same panel and model, scoped to the one run in front of you. This is handy when a failure hasn't clustered yet, or when you want a diagnosis grounded in this execution's evidence rather than the cluster aggregate.
 
-A stored diagnosis stays on screen **whether or not a provider is configured** — removing the key never hides a result you already have. With no provider the section shows one line, *AI is not configured · Configure · Copy prompt*, where **Copy prompt** copies the exact request the model would receive (error, steps — each with its target and, for a `test.step`, a **Parameters** line of its curated params — console, network, ARIA snapshot, source — plus, when a trace was uploaded, the full call stack with embedded source and the trace's complete network activity — all trimmed to the [context limits](#context-limits-and-token-cost)) so you can paste it into your own AI tool.
+A stored diagnosis stays on screen **whether or not a provider is configured** — removing the key never hides a result you already have; with no provider the header offers **Re-diagnose (configure AI)**. The *AI is not configured · Configure · Copy prompt* line shows **only when there is no result**, where **Copy prompt** copies the exact request the model would receive (error, steps — each with its target and, for a `test.step`, a **Parameters** line of its curated params — console, network, ARIA snapshot, source — plus, when a trace was uploaded, the full call stack with embedded source and the trace's complete network activity — all trimmed to the [context limits](#context-limits-and-token-cost)) so you can paste it into your own AI tool.
 
 With a provider configured, **Diagnose with AI** runs the diagnosis inline and renders the result (category, confidence, root cause, evidence, suggested fix) right in the section; cited evidence links jump to the matching section on the page, and a **coverage strip** maps which evidence sections are present, truncated or absent. The result is stored per execution, so it survives a reload, and you can add free-text context or re-diagnose. Execution-scoped and cluster-scoped diagnoses are independent — running one never overwrites the other.
 
@@ -264,7 +264,7 @@ This evidence is generated from the locator snapshots recorded by the [capture f
 
 Everything above is assembled into an actionable **fix plan** — the diagnosis and its validated patch, the ranked
 locator replacement with the exact file and line, the failing tests, the owning team, and the command that verifies the
-work — reachable on the cluster's Fix card, as Markdown (`?format=markdown`), or through the `get_fix_plan` [MCP
+work — reachable in the cluster's **More ways to fix** toolbox, as Markdown (`?format=markdown`), or through the `get_fix_plan` [MCP
 tool](/features/mcp). It also hands back a local **reproduce** recipe and a generated **`git bisect`**, and surfaces clusters
 you've **fixed before**. The full story — including the reproduce/bisect recipes and the desktop app's one-click
 reproduction — is on [Fix plans, reproduce & bisect](./fix-plans).
