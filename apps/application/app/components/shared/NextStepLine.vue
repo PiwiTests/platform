@@ -1,12 +1,14 @@
 <script setup lang="ts">
 /**
  * "Next" — the one step the page recommends, from `computeNextStep`: the title in
- * bold, the reason in muted text, the primary action as a button, up to two
- * secondary actions inline, and — for the steps where a code change is the work —
- * a trailing "then [Copy retry command]". Each action button emits its id and
+ * bold, the reason in muted text, the primary action as a button, one secondary
+ * action inline (the rest in a small overflow menu, so the first screen keeps
+ * its control budget), and — for the steps where a code change is the work — a
+ * trailing "then [Copy retry command]". Each action button emits its id and
  * payload; the page turns that into the real behaviour, so this component stays
  * presentation-only and reusable across the execution and cluster pages.
  */
+import type { DropdownMenuItem } from '@nuxt/ui';
 import type { NextStep, NextStepKind } from '#shared/next-step';
 
 const props = defineProps<{
@@ -21,7 +23,14 @@ const emit = defineEmits<{ action: [action: string, payload?: Record<string, unk
 const RETRY_KINDS: NextStepKind[] = ['replace-locator', 'apply-patch', 'follow-diagnosis'];
 const showRetry = computed(() => Boolean(props.retryCommand) && RETRY_KINDS.includes(props.nextStep.kind));
 
-const secondary = computed(() => props.nextStep.secondary.slice(0, 2));
+// One secondary inline; the rest fold into a small overflow menu.
+const inlineSecondary = computed(() => props.nextStep.secondary[0] ?? null);
+const overflowSecondary = computed<DropdownMenuItem[]>(() =>
+  props.nextStep.secondary.slice(1).map((a) => ({
+    label: a.label,
+    onSelect: () => emit('action', a.action, a.payload),
+  })),
+);
 
 const { copy: copyRetryCmd, copied: retryCopied } = useCopy();
 </script>
@@ -45,15 +54,23 @@ const { copy: copyRetryCmd, copied: retryCopied } = useCopy();
         {{ nextStep.primary.label }}
       </UButton>
       <UButton
-        v-for="a in secondary"
-        :key="a.action"
+        v-if="inlineSecondary"
         size="xs"
         color="neutral"
         variant="outline"
-        @click="emit('action', a.action, a.payload)"
+        @click="emit('action', inlineSecondary.action, inlineSecondary.payload)"
       >
-        {{ a.label }}
+        {{ inlineSecondary.label }}
       </UButton>
+      <UDropdownMenu v-if="overflowSecondary.length" :items="overflowSecondary">
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-ellipsis"
+          aria-label="More next-step actions"
+        />
+      </UDropdownMenu>
       <template v-if="showRetry">
         <span class="text-xs text-muted">then</span>
         <UButton

@@ -25,12 +25,14 @@ const cardComponent = computed(() =>
 const cardBind = computed(() =>
   props.plain
     ? {}
-    : {
-        icon: 'i-lucide-database',
-        title: 'App state at test end',
-        help: 'page-state',
-        ...(props.embedded ? { embedded: true } : props.storageKey ? { storageKey: props.storageKey } : {}),
-      },
+    : props.embedded
+      ? { embedded: true, title: '' }
+      : {
+          icon: 'i-lucide-database',
+          title: 'App state at test end',
+          help: 'page-state',
+          ...(props.storageKey ? { storageKey: props.storageKey } : {}),
+        },
 );
 
 const cookieFlags = (c: PageState['cookies'][number]) =>

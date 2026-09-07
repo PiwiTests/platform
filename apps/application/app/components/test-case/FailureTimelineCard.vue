@@ -427,10 +427,10 @@ function onViewTrace() {
   <SectionCard
     v-if="steps.length > 0 || (data && placedCount >= 2)"
     :embedded="embedded"
-    :icon="showAxis ? 'i-lucide-activity' : 'i-lucide-list-checks'"
-    :title="showAxis ? 'Failure timeline' : 'Steps'"
-    :count="showAxis ? null : steps.length || null"
-    help="case.timeline"
+    :icon="embedded ? undefined : showAxis ? 'i-lucide-activity' : 'i-lucide-list-checks'"
+    :title="embedded ? '' : showAxis ? 'Failure timeline' : 'Steps'"
+    :count="embedded ? null : showAxis ? null : steps.length || null"
+    :help="embedded ? undefined : 'case.timeline'"
   >
     <template v-if="showAxis" #actions>
       <ChartLegend :items="legendItems" class="mr-1" />
@@ -955,15 +955,6 @@ function onViewTrace() {
         </TableScroller>
       </template>
       <EmptyState v-else icon="i-lucide-list-checks" text="No steps recorded for this execution" />
-
-      <!-- What is not (yet) placed -->
-      <p v-if="showAxis" class="text-xs text-gray-400 dark:text-gray-500">
-        Not placed on this axis yet: Web Vitals and screenshots (no capture time is recorded for them)<template
-          v-if="data?.unplaced.length"
-          >, and {{ data.unplaced.length }} captured {{ data.unplaced.length === 1 ? 'item' : 'items' }} with no usable
-          timestamp</template
-        >.
-      </p>
     </div>
 
     <Teleport to="body">

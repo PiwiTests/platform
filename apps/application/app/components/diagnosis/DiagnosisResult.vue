@@ -423,7 +423,6 @@ const cachedTokens = computed<number>(() => pipeline.value.reduce((acc, s) => ac
               >
                 {{ diagnosis.confidence }} confidence
               </UBadge>
-              <HelpHint v-if="diagnosis.confidence" topic="cluster.confidence" />
               <UBadge
                 v-if="details?.severity"
                 :color="severityColors[details.severity] || 'neutral'"
@@ -514,7 +513,6 @@ const cachedTokens = computed<number>(() => pipeline.value.reduce((acc, s) => ac
             <UIcon :name="showAlternates ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5" />
             Other hypotheses considered ({{ alternateHypotheses.length }})
           </button>
-          <HelpHint topic="cluster.hypotheses" />
         </div>
         <div v-if="showAlternates" class="space-y-1.5">
           <div

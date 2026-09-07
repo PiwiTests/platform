@@ -63,9 +63,9 @@ defineProps<{
       v-if="webVitals"
       id="webvitals-card"
       :embedded="embedded"
-      icon="i-lucide-gauge"
-      title="Browser performance (Web Vitals)"
-      help="case.web-vitals"
+      :icon="embedded ? undefined : 'i-lucide-gauge'"
+      :title="embedded ? '' : 'Browser performance (Web Vitals)'"
+      :help="embedded ? undefined : 'case.web-vitals'"
     >
       <div class="space-y-4">
         <StatTileGrid v-if="webVitals.navigation" min-tile-width="10rem">
@@ -200,9 +200,9 @@ defineProps<{
     <SectionCard
       v-else
       :embedded="embedded"
-      icon="i-lucide-gauge"
-      title="Browser performance (Web Vitals)"
-      help="case.web-vitals"
+      :icon="embedded ? undefined : 'i-lucide-gauge'"
+      :title="embedded ? '' : 'Browser performance (Web Vitals)'"
+      :help="embedded ? undefined : 'case.web-vitals'"
     >
       <EvidenceEmptyState :state="state" doc="/capture-fixtures" compact />
     </SectionCard>

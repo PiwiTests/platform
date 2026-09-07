@@ -7,7 +7,7 @@ import type { FailureVerdict, FailureWhy } from '#shared/failure-verdict';
 import type { FailureCluesResult } from '#shared/handlers/test-cases';
 import { clusterSectionLocatorKey } from '~/composables/useClusterSectionLocator';
 import { EVIDENCE_SECTION_TAB } from '~/utils/evidence-sections';
-import type { FixSectionKey } from '~/components/shared/FixCard.vue';
+import type { FixSectionKey } from '~/components/shared/Toolbox.vue';
 import type { BlockedCaseRef } from '~~/types/api';
 import type { ReproRecipe, BisectResult, ReproduceDesktopContext } from '#shared/reproduce';
 import type { FixedBeforeMatch, FixPlan } from '#shared/fix-plan.types';
@@ -45,6 +45,18 @@ const story = computed(() => cluesData.value?.story ?? null);
 const cluesFailureAt = computed(() => cluesData.value?.failureAt ?? null);
 const topClue = computed(() => clues.value[0] ?? null);
 const topClueSection = computed(() => topClue.value?.citations?.[0]?.section ?? null);
+
+// The evidence opens on the story: the first member clue's cited section and the
+// story's strength (or the top clue's, when no combination matched) tell the tab
+// strip which view leads.
+const defaultHint = computed<{ section: string | null; strength: 'strong' | 'medium' | 'weak' | null }>(() => {
+  const s = story.value;
+  if (s) {
+    const first = clues.value.find((c) => c.id === s.clueIds[0]) ?? topClue.value;
+    return { section: first?.citations?.[0]?.section ?? null, strength: s.strength };
+  }
+  return { section: topClueSection.value, strength: topClue.value?.strength ?? null };
+});
 
 const { data: traceData, refresh: refreshTraces } = await useFetch(`/api/test-run-cases/${testCaseId}/traces`, {
   transform: (r: { items: TraceInfo[] }) => r.items,
@@ -296,6 +308,29 @@ const fixSections = computed<FixSectionKey[]>(() => {
 
 // The Fix card covers a failing execution (something to fix) or one that blocked others.
 const showFix = computed(() => Boolean(verdict.value) || blockedTests.value.length > 0);
+
+// ── Folded one-line summaries for the toolbox sections ───────────────────────
+const { aiStatus } = useAiStatus();
+const diagnosisSummary = computed(() => {
+  const d = failureCluster.value?.diagnosis;
+  if (d?.status === 'completed' && (clusterDiagnosis.value || d.category)) {
+    const title = clusterDiagnosis.value?.summary ?? d.category ?? 'Diagnosed';
+    return d.confidence ? `${title} · ${d.confidence} confidence` : title;
+  }
+  return aiStatus.value?.configured === false ? 'AI is not configured' : 'Not diagnosed yet';
+});
+const reproduceSummary = computed(() => {
+  const steps = reproduceData.value?.reproduce?.steps?.length ?? 0;
+  const bisect = reproduceData.value?.bisect?.available ? 'bisect available' : 'bisect not available';
+  return `${steps} commands · Linux/macOS or Windows · ${bisect}`;
+});
+const verifySummary = computed(() => {
+  const cmd = retryCommand.value ?? '';
+  const g = cmd.match(/-g\s+(".*?"|'.*?'|\S+)/)?.[1];
+  const parts = [g ? `-g ${g}` : 'Re-run the failing test'];
+  if (rerunInfo.value?.available) parts.push('Re-run in CI');
+  return parts.join(' · ');
+});
 
 const historicalTiming = computed(() => {
   if (!historyData.value || historyData.value.length < 2 || !testCase.value?.duration) return null;
@@ -578,7 +613,7 @@ function revealRawError() {
 const pageSections: Record<string, () => void> = {
   sampleError: revealRawError,
   executionError: revealRawError,
-  locatorHealing: () => scrollToEl(fixCardEl.value),
+  locatorHealing: () => scrollToFixSection('locator-fix'),
 };
 provide(clusterSectionLocatorKey, {
   // Answered from static maps so a citation renders as a button at SSR time too,
@@ -596,10 +631,14 @@ provide(clusterSectionLocatorKey, {
 // rather than issuing new requests. Page-specific targets are callbacks.
 const triageToast = useToast();
 
-/** Scroll to a Fix-card section by its `data-shot`, falling back to the card. */
+/** Open a toolbox section and scroll to it (its body is otherwise folded away). */
+const toolbox = ref<{ openSection: (k: string) => void } | null>(null);
 function scrollToFixSection(key: 'diagnosis' | 'reproduce' | 'locator-fix') {
-  const el = import.meta.client ? document.querySelector<HTMLElement>(`[data-shot="fix-${key}"]`) : null;
-  scrollToEl(el ?? fixCardEl.value);
+  toolbox.value?.openSection(key);
+  nextTick(() => {
+    const el = import.meta.client ? document.querySelector<HTMLElement>(`[data-shot="fix-${key}"]`) : null;
+    scrollToEl(el ?? fixCardEl.value);
+  });
 }
 
 async function setClusterStatus(status: 'open' | 'resolved') {
@@ -1040,13 +1079,32 @@ const { handle: handleNextStepAction } = useNextStepActions({
             :test-case="testCase"
             :traces="(traceData as TraceInfo[]) ?? []"
             :has-trace="hasTrace"
-            :default-section="topClueSection"
+            :default-hint="defaultHint"
+            help="case.evidence"
           />
         </div>
 
-        <!-- ── What to do ─────────────────────────────────────────────── -->
+        <!-- ── More ways to fix ───────────────────────────────────────── -->
         <div ref="fixCardEl" class="scroll-mt-4">
-          <FixCard v-if="showFix" :sections="fixSections" help="case.fix">
+          <Toolbox
+            v-if="showFix"
+            ref="toolbox"
+            :sections="fixSections"
+            :next-step-kind="nextStep?.kind ?? null"
+            help="fix.toolbox"
+          >
+            <template #diagnosis-summary>{{ diagnosisSummary }}</template>
+            <template #locator-fix-summary>Ranked replacement locators from the failing page</template>
+            <template #verify-summary>{{ verifySummary }}</template>
+            <template #reproduce-summary>{{ reproduceSummary }}</template>
+            <template #fixed-before-summary
+              >{{ fixedBefore.length }} similar resolved cluster{{ fixedBefore.length === 1 ? '' : 's' }}</template
+            >
+            <template #blocked-summary
+              >{{ blockedTests.length }} test{{ blockedTests.length === 1 ? '' : 's' }}</template
+            >
+            <template #fix-plan-summary>The cluster's full fix plan — diagnosis, edits and verify command</template>
+
             <!-- Ranked replacement locators for a broken locator -->
             <template #locator-fix>
               <LocatorHealingPanel
@@ -1110,9 +1168,6 @@ const { handle: handleNextStepAction } = useNextStepActions({
             </template>
 
             <!-- Fixed before — resolved clusters this one resembles, and how each was fixed -->
-            <template v-if="fixedBefore.length" #fixed-before-label>
-              <span class="inline-flex items-center gap-1">Fixed before <HelpHint topic="cluster.fixed-before" /></span>
-            </template>
             <template v-if="fixedBefore.length" #fixed-before>
               <FixedBeforeMatches
                 :matches="fixedBefore"
@@ -1151,9 +1206,6 @@ const { handle: handleNextStepAction } = useNextStepActions({
             </template>
 
             <!-- Reproduce locally, then bisect the regression -->
-            <template v-if="showReproduce" #reproduce-label>
-              <span class="inline-flex items-center gap-1">Reproduce <HelpHint topic="fix.reproduce" /></span>
-            </template>
             <template v-if="showReproduce" #reproduce>
               <ReproduceSection
                 :reproduce="reproduceData!.reproduce"
@@ -1164,7 +1216,6 @@ const { handle: handleNextStepAction } = useNextStepActions({
             </template>
 
             <!-- The downstream tests this failure blocked from running -->
-            <template #blocked-label>Blocked by this failure ({{ blockedTests.length }})</template>
             <template #blocked>
               <ul class="space-y-1 text-sm">
                 <li v-for="t in blockedTests" :key="t.id" class="flex items-center gap-2 min-w-0">
@@ -1175,7 +1226,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
                 </li>
               </ul>
             </template>
-          </FixCard>
+          </Toolbox>
         </div>
 
         <!-- ── History ────────────────────────────────────────────────── -->

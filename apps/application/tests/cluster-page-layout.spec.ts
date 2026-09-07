@@ -217,6 +217,36 @@ test.describe('Cluster situation block on seeded clusters', () => {
     });
   }
 
+  // Phase 4: the evidence opens on the story and the toolbox on the next step,
+  // independent of which mutable state the seed is in — #10 ships a stored
+  // diagnosis whose next step applies the patch, so its toolbox opens Diagnosis.
+  test('#10 opens the evidence on Timeline, the toolbox on Diagnosis, and never says "AI is not configured"', async ({
+    page,
+    request,
+  }) => {
+    const res = await request.get('/api/failure-clusters/10');
+    test.skip(!res.ok(), 'no cluster #10 on this database');
+    const detail = (await res.json()) as { nextStep: { kind: string } };
+    test.skip(detail.nextStep.kind !== 'apply-patch', '#10 is not on the apply-patch step on this database');
+
+    await page.goto('/failure-clusters/10');
+    await waitForHydration(page);
+
+    // Rule 6: the diagnosis leads and its clue is weak, so the Timeline — which
+    // places two or more items — is the default tab, not State.
+    await expect(page.getByRole('tab', { name: /^Timeline/ })).toHaveAttribute('aria-selected', 'true');
+
+    // The toolbox is "More ways to fix" and opens on Diagnosis (the apply-patch
+    // step) with the patch; the reproduce section stays folded.
+    await expect(page.getByRole('heading', { name: 'More ways to fix' })).toBeVisible();
+    await expect(page.locator('[data-shot="fix-diagnosis"] [aria-expanded="true"]')).toBeVisible();
+    await expect(page.locator('[data-shot="fix-reproduce"] [aria-expanded="false"]')).toBeVisible();
+
+    // A stored result renders under no provider, so the "AI is not configured"
+    // line never appears — the diagnosis header offers Re-diagnose instead.
+    await expect(page.getByText('AI is not configured')).toHaveCount(0);
+  });
+
   test('the affected-tests selector switches the evidence on a two-test cluster', async ({ page, request }) => {
     // Find a seeded cluster with more than one affected test — its selector must
     // switch the evidence. Which id that is differs between databases, so probe.

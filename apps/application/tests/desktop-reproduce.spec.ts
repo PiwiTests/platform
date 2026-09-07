@@ -115,6 +115,16 @@ function section(page: Page) {
   return page.locator('[data-shot="fix-reproduce-body"]');
 }
 
+// The Reproduce section lives in the folded "More ways to fix" toolbox; open it
+// (it opens on the page only when the next step is to reproduce) before driving
+// the recipe. Idempotent — a no-op when the body is already showing.
+async function openReproduce(page: Page) {
+  const body = section(page);
+  if (await body.isVisible()) return;
+  await page.getByRole('button', { name: /^Reproduce and bisect/ }).click();
+  await expect(body).toBeVisible();
+}
+
 test.describe('Desktop reproduce & bisect', () => {
   let executionId: number;
 
@@ -185,6 +195,7 @@ test.describe('Desktop reproduce & bisect', () => {
   test('without the bridge the section shows only the copyable recipe', async ({ page }) => {
     await page.goto(`/test-run-cases/${executionId}`);
     await waitForHydration(page);
+    await openReproduce(page);
     await expect(section(page)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reproduce here' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Find the breaking commit here' })).toHaveCount(0);
@@ -194,6 +205,7 @@ test.describe('Desktop reproduce & bisect', () => {
     await installFakeBridge(page);
     await page.goto(`/test-run-cases/${executionId}`);
     await waitForHydration(page);
+    await openReproduce(page);
 
     await page.getByRole('button', { name: 'Reproduce here' }).click();
     await expect(tray(page)).toBeVisible();
@@ -219,6 +231,7 @@ test.describe('Desktop reproduce & bisect', () => {
     await installFakeBridge(page);
     await page.goto(`/test-run-cases/${executionId}`);
     await waitForHydration(page);
+    await openReproduce(page);
 
     await page.getByRole('button', { name: 'Reproduce here' }).click();
     await page.evaluate(() => window.__piwiRepro.phase('install'));
@@ -231,6 +244,7 @@ test.describe('Desktop reproduce & bisect', () => {
     await installFakeBridge(page);
     await page.goto(`/test-run-cases/${executionId}`);
     await waitForHydration(page);
+    await openReproduce(page);
 
     await page.getByRole('button', { name: 'Find the breaking commit here' }).click();
     await expect(tray(page)).toBeVisible();
@@ -251,6 +265,7 @@ test.describe('Desktop reproduce & bisect', () => {
     await installFakeBridge(page);
     await page.goto(`/test-run-cases/${executionId}`);
     await waitForHydration(page);
+    await openReproduce(page);
 
     await page.getByRole('button', { name: 'Find the breaking commit here' }).click();
     await page.evaluate(() => window.__piwiRepro.phase('bisect'));
@@ -282,6 +297,7 @@ test.describe('Desktop reproduce & bisect', () => {
     await installFakeBridge(page, { webServer: false });
     await page.goto(`/test-run-cases/${executionId}`);
     await waitForHydration(page);
+    await openReproduce(page);
 
     await expect(section(page).getByText(/only exercises test-side changes/)).toBeVisible();
     await section(page).getByRole('button', { name: 'Set a start command…' }).click();
@@ -300,6 +316,7 @@ test.describe('Desktop reproduce & bisect', () => {
     await installFakeBridge(page, { webServer: true });
     await page.goto(`/test-run-cases/${executionId}`);
     await waitForHydration(page);
+    await openReproduce(page);
     await expect(section(page).getByText(/starts the app at each commit/)).toBeVisible();
   });
 });

@@ -238,6 +238,16 @@ export const HELP_TOPICS = {
     text: 'Everything to do about this failure in one place — the locator fix for a broken locator, a pointer to the cluster’s fix plan, the diagnosis, how to verify a fix, and the tests this failure blocked. Each part shows only when it applies.',
     doc: 'features/fix-plans',
   },
+  'case.evidence': {
+    title: 'Evidence',
+    text: 'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the screenshot and video with the visual and page diffs, the test source, the network requests, the console output, the app state at the end, and the browser performance. The tab opens on the view the story points at; the raw page structure — the accessibility tree and the failure-time DOM — folds behind Page structure at the bottom of the Screen tab. An empty tab says whether the evidence was never captured, captured with nothing to show, or does not apply.',
+    doc: 'features/evidence#one-execution-diagnosis-first',
+  },
+  'fix.toolbox': {
+    title: 'More ways to fix',
+    text: 'Every other way to fix, verify or reproduce this failure, each folded to one line: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan as Markdown (the same plan get_fix_plan returns to an AI agent via the MCP server). The section the next step points at opens with the page; open the others as you need them.',
+    doc: 'features/fix-plans',
+  },
   'fix.reproduce': {
     title: 'Reproduce',
     text: 'A copy-paste recipe that reproduces the failure locally — check out the failing commit, install the run’s Playwright version and browser, and run exactly the failing test — plus a generated git bisect between the last green and the failing commit to find what broke it. Both come in Linux/macOS and Windows forms. The bisect needs a last-green commit and an SCM connection; without them it says so. In the desktop app, Reproduce here and Find the breaking commit here run the recipe and drive the bisect for you in a throwaway git worktree, without touching your checkout.',

@@ -203,11 +203,12 @@ const SCENES = [
   // ── Docs illustrations (committed) ────────────────────────────────────────
   {
     name: 'locator-healing',
-    description: 'Locator fix: ranked replacements and a recommended fix inside the Fix card',
+    description: 'Locator fix: ranked replacements and a recommended fix in the toolbox',
     tags: ['docs'],
     out: 'docs',
     // Execution 533 is a strict-mode locator-resolution failure with pre-captured
-    // alternatives, so the Fix card renders the Locator fix section in full.
+    // alternatives; its next step is "replace the locator", so the toolbox opens
+    // the Locator fix section with the panel in full.
     route: '/test-run-cases/533',
     viewport: { width: 1280, height: 1300 },
     of: '[data-shot="alternative-locators"]',

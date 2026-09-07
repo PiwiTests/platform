@@ -102,3 +102,44 @@ export function stripBaseTag(html: string): string {
 export function buildPickerDocument(html: string, config: SnapshotPickerConfig): string {
   return stripBaseTag(html) + snapshotPickerScriptTag(config);
 }
+
+/**
+ * A read-only rendering of the same snapshot: the styled page as the picker
+ * shows it, but with no picking overlay. The appended script only makes the
+ * document inert (no navigation, no submits, no text selection getting in the
+ * reader's way) and reports its content height over `postMessage` so the host
+ * can size the sandboxed iframe exactly as the picker does. Runs in the same
+ * hardened `sandbox="allow-scripts"` (opaque-origin) frame — the message shape
+ * matches the picker's `piwiContentHeight`.
+ */
+function readonlySnapshotScript(): void {
+  const post = (): void => {
+    const doc = document.documentElement;
+    const height = Math.max(doc.scrollHeight, doc.offsetHeight, document.body?.scrollHeight ?? 0);
+    parent.postMessage({ type: 'piwiContentHeight', height }, '*');
+  };
+  // Neutralize anything that would navigate or mutate away from the snapshot.
+  document.addEventListener(
+    'click',
+    (event) => {
+      const anchor = (event.target as Element | null)?.closest?.('a,button,[type=submit]');
+      if (anchor) event.preventDefault();
+    },
+    true,
+  );
+  document.addEventListener('submit', (event) => event.preventDefault(), true);
+  if (document.readyState === 'complete' || document.readyState === 'interactive') post();
+  else document.addEventListener('DOMContentLoaded', post);
+  addEventListener('load', post);
+  try {
+    new ResizeObserver(() => post()).observe(document.documentElement);
+  } catch {
+    /* ResizeObserver may be unavailable — the load handler still reports once. */
+  }
+}
+
+/** Build the read-only blob HTML: the snapshot with `<base>` stripped, plus the inert-and-measure script. */
+export function buildReadonlyDocument(html: string): string {
+  const src = escScriptClose(String(readonlySnapshotScript));
+  return stripBaseTag(html) + `<script>(${src})();</script>`;
+}

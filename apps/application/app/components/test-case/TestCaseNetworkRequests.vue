@@ -287,10 +287,10 @@ function rowAccent(r: DecoratedRequest): string {
     :is="cardComponent"
     ref="card"
     v-bind="cardBind"
-    icon="i-lucide-network"
-    title="Network requests"
-    :count="view === 'trace' ? traceCount : totals.total"
-    help="case.network"
+    :icon="embedded ? undefined : 'i-lucide-network'"
+    :title="embedded ? '' : 'Network requests'"
+    :count="embedded ? null : view === 'trace' ? traceCount : totals.total"
+    :help="embedded ? undefined : 'case.network'"
   >
     <template v-if="storageKey" #folded>{{ peek }}</template>
     <template #actions>
