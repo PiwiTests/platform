@@ -308,6 +308,17 @@ defineExpose({
         >
           History ({{ versionCount }})
         </UButton>
+        <!-- A stored result under no provider: configuring AI is the way to redo it. -->
+        <UButton
+          v-if="showResult() && !aiStatus?.configured"
+          to="/settings/ai"
+          icon="i-lucide-sparkles"
+          size="xs"
+          color="neutral"
+          variant="outline"
+        >
+          Re-diagnose (configure AI)
+        </UButton>
         <template v-if="!contextInMenu && aiStatus?.configured">
           <CopyAiPromptButton :context-endpoint="contextEndpoint" />
           <UButton
@@ -599,8 +610,12 @@ defineExpose({
       @prefill-context="onPrefillContext"
     />
 
-    <!-- AI not configured: one line, the only placeholder. -->
-    <div v-if="!aiStatus?.configured" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
+    <!-- AI not configured: one line, and only when there is no result to show.
+         Under a stored result the header carries "Re-diagnose (configure AI)". -->
+    <div
+      v-if="!aiStatus?.configured && !showResult()"
+      class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted"
+    >
       <span class="inline-flex items-center gap-1">
         <UIcon name="i-lucide-sparkles" class="size-3.5 shrink-0" />
         AI is not configured

@@ -29,6 +29,13 @@ const props = defineProps<{
 const recipeBash = computed(() => reproScript(props.reproduce, 'bash'));
 const recipePowershell = computed(() => reproScript(props.reproduce, 'powershell'));
 
+// The one command a reader most wants — the exact test invocation — leads; the
+// full checkout/install/bisect recipe folds behind a disclosure.
+const runStep = computed(
+  () => props.reproduce.steps.find((s) => /run the failing test/i.test(s.step)) ?? props.reproduce.steps.at(-1) ?? null,
+);
+const showFull = ref(false);
+
 const toast = useToast();
 const store = useDesktopLocalRuns();
 
@@ -163,17 +170,38 @@ async function saveStartCommand() {
 <template>
   <div class="space-y-3" data-shot="fix-reproduce-body">
     <div class="space-y-1.5">
-      <p class="text-xs text-muted">
-        Reproduce the failure on your machine — check out the failing commit, install the run's Playwright version and
-        browser, then run exactly the failing test.
-      </p>
-      <PlatformCodeBlock :bash="recipeBash" :powershell="recipePowershell" storage-key="piwi-repro-shell" />
-      <div v-if="reproduce.env.length" class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
-        <span v-for="e in reproduce.env" :key="e.label">
-          <span class="font-medium">{{ e.label }}:</span> <span class="font-mono">{{ e.value }}</span>
-        </span>
+      <!-- The run line first — the exact test invocation. -->
+      <PlatformCodeBlock
+        v-if="runStep"
+        :bash="runStep.bash"
+        :powershell="runStep.powershell"
+        storage-key="piwi-repro-shell"
+      />
+
+      <!-- The full recipe (checkout, install, pin, browser) folds behind here. -->
+      <UButton
+        size="xs"
+        color="neutral"
+        variant="link"
+        class="px-0"
+        :icon="showFull ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+        @click="showFull = !showFull"
+      >
+        {{ showFull ? 'Hide the full recipe' : 'Show the full recipe' }}
+      </UButton>
+      <div v-if="showFull" class="space-y-1.5">
+        <p class="text-xs text-muted">
+          Reproduce the failure on your machine — check out the failing commit, install the run's Playwright version and
+          browser, then run exactly the failing test.
+        </p>
+        <PlatformCodeBlock :bash="recipeBash" :powershell="recipePowershell" storage-key="piwi-repro-shell" />
+        <div v-if="reproduce.env.length" class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
+          <span v-for="e in reproduce.env" :key="e.label">
+            <span class="font-medium">{{ e.label }}:</span> <span class="font-mono">{{ e.value }}</span>
+          </span>
+        </div>
+        <p v-for="note in reproduce.notes" :key="note" class="text-xs text-dimmed">{{ note }}</p>
       </div>
-      <p v-for="note in reproduce.notes" :key="note" class="text-xs text-dimmed">{{ note }}</p>
 
       <!-- Desktop: run the recipe for real, in a throwaway worktree. -->
       <ClientOnly>
@@ -206,7 +234,7 @@ async function saveStartCommand() {
       </ClientOnly>
     </div>
 
-    <div class="space-y-1.5">
+    <div v-if="showFull" class="space-y-1.5">
       <div class="flex items-center gap-1.5">
         <UIcon name="i-lucide-git-branch" class="size-3.5 shrink-0 text-muted" />
         <h4 class="text-xs font-medium uppercase tracking-wide text-muted">Find the breaking commit</h4>

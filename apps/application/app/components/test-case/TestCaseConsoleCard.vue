@@ -85,10 +85,10 @@ function consoleTypeIcon(type: string): string {
     v-if="entries.length > 0"
     ref="card"
     v-bind="cardBind"
-    icon="i-lucide-terminal"
-    title="Console output"
-    :count="entries.length"
-    help="case.console"
+    :icon="embedded ? undefined : 'i-lucide-terminal'"
+    :title="embedded ? '' : 'Console output'"
+    :count="embedded ? null : entries.length"
+    :help="embedded ? undefined : 'case.console'"
   >
     <template v-if="derivedFromTrace" #actions><TraceDerivedChip /></template>
     <template v-if="storageKey" #folded>{{ peek }}</template>

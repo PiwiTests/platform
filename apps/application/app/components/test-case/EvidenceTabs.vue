@@ -20,8 +20,13 @@ const props = defineProps<{
   /** Traces for this execution (fetched at page level). */
   traces: TraceInfo[];
   hasTrace: boolean;
-  /** The evidence section the strongest clue cites — picks the default tab. */
-  defaultSection?: string | null;
+  /**
+   * The story's leading clue and its strength — picks the default tab. The
+   * section is the citation of the story's first member clue (or the top clue
+   * when no story matched); the strength is the story's (or the top clue's). A
+   * strong or medium hint opens its tab; a weak one never picks.
+   */
+  defaultHint?: { section: string | null; strength: 'strong' | 'medium' | 'weak' | null };
   /** Inline-help topic for the card header. */
   help?: HelpTopicKey;
 }>();
@@ -155,10 +160,32 @@ const tabs = computed<TabDef[]>(() => [
 function computeDefault(): TabValue {
   // A passing execution has no failure to lead with — open on the Timeline.
   if (!hasError.value) return 'timeline';
-  const cited = props.defaultSection ? EVIDENCE_SECTION_TAB[props.defaultSection] : undefined;
-  if (cited) return cited;
-  const placeable = steps.value.length >= 2 || networkRequests.value.length >= 1;
-  return placeable ? 'timeline' : 'screen';
+
+  // The Timeline is the best "what happened" view when it can place two or more
+  // of the items a story chains — steps, network requests, console entries — so
+  // a story that plays out over time (a blocked element waiting on a request the
+  // console warned about) opens there, where all three read against one clock,
+  // rather than on the single tab its leading clue happens to cite.
+  const placeable = steps.value.length + networkRequests.value.length + consoleLogs.value.length >= 2;
+
+  // The story's tab — only when the hint is strong or medium (a weak hint never
+  // picks) and the tab is not State (State is never a default). A hint whose
+  // evidence lives on the timeline (network / console / a moment on screen)
+  // defers to a rich Timeline; only an off-timeline focus (the test source, the
+  // performance panel) pre-empts it.
+  const hint = props.defaultHint;
+  if (hint?.section && (hint.strength === 'strong' || hint.strength === 'medium')) {
+    const cited = EVIDENCE_SECTION_TAB[hint.section];
+    if (cited && cited !== 'state') {
+      const offTimeline = cited === 'source' || cited === 'performance';
+      if (offTimeline || !placeable) return cited;
+    }
+  }
+
+  if (placeable) return 'timeline';
+  // Else Screen when a screenshot or video exists; else Source.
+  if (screenHasData.value) return 'screen';
+  return 'source';
 }
 
 const activeTab = ref<TabValue>(computeDefault());
@@ -181,8 +208,9 @@ const envDiffWrap = ref<HTMLElement | null>(null);
 const screenEvidenceWrap = ref<HTMLElement | null>(null);
 const visualDiffWrap = ref<HTMLElement | null>(null);
 const pageDiffWrap = ref<HTMLElement | null>(null);
-const domSnapshotWrap = ref<HTMLElement | null>(null);
-const ariaWrap = ref<HTMLElement | null>(null);
+// The ARIA tree and the DOM snapshot now share the Page structure disclosure;
+// a citation for either reveals and scrolls to it.
+const pageStructureWrap = ref<HTMLElement | null>(null);
 const performanceWrap = ref<HTMLElement | null>(null);
 const WRAP_REF: Record<string, Ref<HTMLElement | null>> = {
   timeline: timelineWrap,
@@ -194,8 +222,7 @@ const WRAP_REF: Record<string, Ref<HTMLElement | null>> = {
   screenEvidence: screenEvidenceWrap,
   visualDiff: visualDiffWrap,
   pageDiff: pageDiffWrap,
-  domSnapshot: domSnapshotWrap,
-  aria: ariaWrap,
+  pageStructure: pageStructureWrap,
   performance: performanceWrap,
 };
 const SECTION_WRAP: Record<string, keyof typeof WRAP_REF> = {
@@ -214,8 +241,8 @@ const SECTION_WRAP: Record<string, keyof typeof WRAP_REF> = {
   environmentDiff: 'envDiff',
   visualDiff: 'visualDiff',
   pageDiff: 'pageDiff',
-  domSnapshot: 'domSnapshot',
-  ariaSnapshot: 'aria',
+  domSnapshot: 'pageStructure',
+  ariaSnapshot: 'pageStructure',
   screenshots: 'screenEvidence',
   tracePointers: 'screenEvidence',
   artifacts: 'screenEvidence',
@@ -223,6 +250,7 @@ const SECTION_WRAP: Record<string, keyof typeof WRAP_REF> = {
 };
 
 const networkComp = ref<{ showTraceMode?: () => void } | null>(null);
+const pageStructure = ref<{ reveal?: () => void } | null>(null);
 
 function canLocate(sectionId: string): boolean {
   return sectionId in EVIDENCE_SECTION_TAB;
@@ -236,6 +264,8 @@ function revealSection(sectionId: string): boolean {
   if (sectionId === 'pageDiff') screenView.value = 'pagediff';
   nextTick(() => {
     if (sectionId === 'traceNetwork') networkComp.value?.showTraceMode?.();
+    // The ARIA tree and the DOM live inside the folded Page structure disclosure.
+    if (sectionId === 'ariaSnapshot' || sectionId === 'domSnapshot') pageStructure.value?.reveal?.();
     const wrapKey = SECTION_WRAP[sectionId];
     if (wrapKey) WRAP_REF[wrapKey]?.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
@@ -350,17 +380,19 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           <div ref="visualDiffWrap" class="scroll-mt-4">
             <VisualDiffCard v-if="runId" embedded :run-id="runId" :test-runs-case-id="testRunsCaseId" />
           </div>
-          <div ref="ariaWrap" class="scroll-mt-4">
-            <SectionCard embedded icon="i-lucide-scan-text" title="ARIA snapshot" help="case.aria">
-              <template v-if="ariaDerived" #actions><TraceDerivedChip /></template>
-              <div v-if="ariaSnapshot" class="max-h-96 overflow-y-auto">
-                <MarkdownPreview :text="'```yaml\n' + ariaSnapshot + '\n```'" />
-              </div>
-              <EvidenceEmptyState v-else :state="ariaState" doc="/capture-fixtures" compact />
-            </SectionCard>
-          </div>
-          <div ref="domSnapshotWrap" class="scroll-mt-4">
-            <DomSnapshotCard v-if="runId" embedded :run-id="runId" :test-runs-case-id="testRunsCaseId" />
+          <!-- The raw page structure — the ARIA tree and the failure-time DOM,
+               the DOM rendered as the page, not as escaped XML — folded away
+               behind one disclosure so the screenshot leads the tab. -->
+          <div ref="pageStructureWrap" class="scroll-mt-4">
+            <PageStructureDisclosure
+              v-if="runId"
+              ref="pageStructure"
+              :run-id="runId"
+              :test-runs-case-id="testRunsCaseId"
+              :tree="ariaSnapshot"
+              :tree-state="ariaState"
+              :tree-derived="ariaDerived"
+            />
           </div>
         </div>
 
@@ -408,7 +440,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           :has-trace="hasTrace"
           :derived-from-trace="networkDerived"
         />
-        <SectionCard v-else embedded icon="i-lucide-arrow-left-right" title="Network requests" help="case.network">
+        <SectionCard v-else embedded title="">
           <EvidenceEmptyState :state="networkState" compact />
         </SectionCard>
       </div>
@@ -421,7 +453,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           :entries="consoleLogs"
           :derived-from-trace="consoleDerived"
         />
-        <SectionCard v-else embedded icon="i-lucide-terminal" title="Console output" help="case.console">
+        <SectionCard v-else embedded title="">
           <EvidenceEmptyState :state="consoleState" compact />
         </SectionCard>
       </div>
@@ -430,7 +462,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
       <div v-else-if="activeTab === 'state'" class="space-y-4">
         <div ref="pageStateWrap" class="scroll-mt-4">
           <PageStateCard v-if="pageState" embedded :page-state="pageState" />
-          <SectionCard v-else embedded icon="i-lucide-database" title="App state at test end" help="page-state">
+          <SectionCard v-else embedded title="">
             <EvidenceEmptyState :state="appStateState" compact />
           </SectionCard>
         </div>

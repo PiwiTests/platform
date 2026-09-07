@@ -6,7 +6,7 @@ import type { FailureCluesResult } from '#shared/handlers/test-cases';
 import type { FailureClusterDetail, TraceInfo } from '~~/types/api';
 import type { FixPlan, FixedBeforeMatch as FixedBeforeMatchType } from '#shared/fix-plan.types';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
-import type { FixSectionKey } from '~/components/shared/FixCard.vue';
+import type { FixSectionKey } from '~/components/shared/Toolbox.vue';
 import { renderAnsi } from '~/utils';
 import { stripAnsi } from '~/utils/text-format';
 import { buildRetryCommand } from '~/utils/retry-command';
@@ -104,6 +104,16 @@ const story = computed(() => cluesData.value?.story ?? null);
 const cluesFailureAt = computed(() => cluesData.value?.failureAt ?? null);
 const topClue = computed(() => clues.value[0] ?? null);
 const topClueSection = computed(() => topClue.value?.citations?.[0]?.section ?? null);
+// The evidence opens on the story: the first member clue's cited section and the
+// story's strength (or the top clue's, when no combination matched).
+const defaultHint = computed<{ section: string | null; strength: 'strong' | 'medium' | 'weak' | null }>(() => {
+  const s = story.value;
+  if (s) {
+    const first = clues.value.find((c) => c.id === s.clueIds[0]) ?? topClue.value;
+    return { section: first?.citations?.[0]?.section ?? null, strength: s.strength };
+  }
+  return { section: topClueSection.value, strength: topClue.value?.strength ?? null };
+});
 const hasTrace = computed(() => (execTraces.value?.length ?? 0) > 0);
 const selectedRunId = computed(() => (execution.value as { testRun?: { id?: number } } | null)?.testRun?.id ?? null);
 
@@ -320,6 +330,28 @@ const fixSections = computed<FixSectionKey[]>(() => {
   return s;
 });
 
+// ── Folded one-line summaries for the toolbox sections ───────────────────────
+const diagnosisSummary = computed(() => {
+  const d = cluster.value?.diagnosis;
+  if (d?.status === 'completed' && (d.summary || d.category)) {
+    const title = d.summary ?? d.category ?? 'Diagnosed';
+    return d.confidence ? `${title} · ${d.confidence} confidence` : title;
+  }
+  return aiStatus.value?.configured === false ? 'AI is not configured' : 'Not diagnosed yet';
+});
+const reproduceSummary = computed(() => {
+  const steps = fixPlan.value?.reproduce?.steps?.length ?? 0;
+  const bisect = fixPlan.value?.bisect?.available ? 'bisect available' : 'bisect not available';
+  return `${steps} commands · Linux/macOS or Windows · ${bisect}`;
+});
+const verifySummary = computed(() => {
+  const cmd = fixPlan.value?.verify?.command ?? '';
+  const g = cmd.match(/-g\s+(".*?"|'.*?'|\S+)/)?.[1];
+  const parts = [g ? `-g ${g}` : 'The verify command'];
+  if (rerunInfo.value?.available) parts.push('Re-run in CI');
+  return parts.join(' · ');
+});
+
 // ── Apply the same triage ─────────────────────────────────────────────────────
 // One click copies an earlier resolved cluster's triage note onto this one,
 // prefixed so the history reads as an intentional reuse. The status is left as
@@ -426,7 +458,7 @@ function scrollToEl(el: HTMLElement | null) {
 }
 
 const pageSections: Record<string, () => void> = {
-  fixPlan: () => scrollToEl(fixCardEl.value),
+  fixPlan: () => openFixPlan(),
   sampleError: revealRawError,
   executionError: revealRawError,
   scmInvestigation: () => scmEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
@@ -449,10 +481,17 @@ provide(clusterSectionLocatorKey, {
 const nextStepToast = useToast();
 const { quarantineOne } = useQuarantine(() => cluster.value?.project?.id ?? null);
 
-/** Scroll to a Fix-card section by its `data-shot`, falling back to the card. */
-function scrollToFixSection(key: 'diagnosis' | 'reproduce' | 'locator-fix') {
-  const el = import.meta.client ? document.querySelector<HTMLElement>(`[data-shot="fix-${key}"]`) : null;
-  scrollToEl(el ?? fixCardEl.value);
+/** Open a toolbox section and scroll to it (its body is otherwise folded away). */
+const toolbox = ref<{ openSection: (k: string) => void } | null>(null);
+function scrollToFixSection(key: 'diagnosis' | 'reproduce' | 'locator-fix' | 'fix-plan') {
+  toolbox.value?.openSection(key);
+  nextTick(() => {
+    const el = import.meta.client ? document.querySelector<HTMLElement>(`[data-shot="fix-${key}"]`) : null;
+    scrollToEl(el ?? fixCardEl.value);
+  });
+}
+function openFixPlan() {
+  scrollToFixSection('fix-plan');
 }
 
 async function setClusterStatus(status: 'open' | 'resolved') {
@@ -497,9 +536,9 @@ const { handle: handleNextStepAction } = useNextStepActions({
   },
 });
 
-// Deep link from the execution page's "Open fix plan" — scroll to the Fix card.
+// Deep link from the execution page's "Open fix plan" — open the fix-plan section.
 onMounted(() => {
-  if (route.hash === '#fix-plan') nextTick(() => scrollToEl(fixCardEl.value));
+  if (route.hash === '#fix-plan') nextTick(() => openFixPlan());
 });
 
 // Breadcrumbs
@@ -741,14 +780,23 @@ const breadcrumbItems = computed(() => [
             :test-case="execution"
             :traces="execTraces ?? []"
             :has-trace="hasTrace"
-            :default-section="topClueSection"
-            help="cluster.evidence"
+            :default-hint="defaultHint"
+            help="case.evidence"
           />
         </div>
 
-        <!-- ── Fix: diagnosis, locator fix, verify, fix plan ──────────── -->
+        <!-- ── More ways to fix ───────────────────────────────────────── -->
         <div ref="fixCardEl" class="scroll-mt-4">
-          <FixCard :sections="fixSections" help="cluster.fix-plan">
+          <Toolbox ref="toolbox" :sections="fixSections" :next-step-kind="nextStep?.kind ?? null" help="fix.toolbox">
+            <template #diagnosis-summary>{{ diagnosisSummary }}</template>
+            <template #locator-fix-summary>Ranked replacement locators from the failing page</template>
+            <template #verify-summary>{{ verifySummary }}</template>
+            <template #reproduce-summary>{{ reproduceSummary }}</template>
+            <template #fixed-before-summary
+              >{{ fixedBefore.length }} similar resolved cluster{{ fixedBefore.length === 1 ? '' : 's' }}</template
+            >
+            <template #fix-plan-summary>Copy as Markdown · the same plan an agent gets from get_fix_plan</template>
+
             <!-- Diagnosis — the unified panel; result shows with or without a provider -->
             <template #diagnosis>
               <div data-shot="cluster-diagnosis">
@@ -767,9 +815,6 @@ const breadcrumbItems = computed(() => [
             </template>
 
             <!-- Fixed before — resolved clusters this one resembles, and how each was fixed -->
-            <template v-if="fixedBefore.length" #fixed-before-label>
-              <span class="inline-flex items-center gap-1">Fixed before <HelpHint topic="cluster.fixed-before" /></span>
-            </template>
             <template v-if="fixedBefore.length" #fixed-before>
               <FixedBeforeMatches
                 :matches="fixedBefore"
@@ -812,9 +857,6 @@ const breadcrumbItems = computed(() => [
             </template>
 
             <!-- Reproduce — the local recipe and a generated git bisect -->
-            <template v-if="showReproduce" #reproduce-label>
-              <span class="inline-flex items-center gap-1">Reproduce <HelpHint topic="fix.reproduce" /></span>
-            </template>
             <template v-if="fixPlan && showReproduce" #reproduce>
               <ReproduceSection
                 :reproduce="fixPlan.reproduce"
@@ -845,7 +887,7 @@ const breadcrumbItems = computed(() => [
                 <NuxtLink to="/mcp" class="text-primary hover:underline">MCP server</NuxtLink>.
               </p>
             </template>
-          </FixCard>
+          </Toolbox>
         </div>
       </div>
 
