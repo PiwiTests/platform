@@ -234,7 +234,7 @@ async function saveStartCommand() {
       </ClientOnly>
     </div>
 
-    <div v-if="showFull" class="space-y-1.5">
+    <div class="space-y-1.5">
       <div class="flex items-center gap-1.5">
         <UIcon name="i-lucide-git-branch" class="size-3.5 shrink-0 text-muted" />
         <h4 class="text-xs font-medium uppercase tracking-wide text-muted">Find the breaking commit</h4>
