@@ -1478,6 +1478,8 @@ export interface ResolvedAiRole {
   apiKey: string;
   model: string;
   baseUrl: string | null;
+  /** OpenAI-compat only: sampling temperature. Omitted from the request when null (provider default applies) — reasoning models (o1/o3/GPT-5-class) reject any explicit value. */
+  temperature: number | null;
 }
 
 /**
@@ -1493,6 +1495,7 @@ export interface AiConfig {
   apiKey: string;
   model: string;
   baseUrl: string | null;
+  temperature: number | null;
   autoDiagnose: boolean;
   source: 'env' | 'settings';
   /** Per-role resolved configs. `diagnosis` is always present; others are null when unconfigured. */
@@ -1524,6 +1527,8 @@ export interface AiRoleSettings {
   baseUrl: string | null;
   reuse: AiModelRole | null;
   hasApiKey: boolean;
+  /** OpenAI-compat only: sampling temperature override, or null for the provider default. */
+  temperature: number | null;
 }
 
 /**
@@ -1555,6 +1560,8 @@ export interface AiRoleConfigInput {
   baseUrl?: string | null;
   apiKey?: string | null;
   reuse?: AiModelRole | null;
+  /** OpenAI-compat only: sampling temperature override, or null/omitted for the provider default. */
+  temperature?: number | null;
 }
 
 /**

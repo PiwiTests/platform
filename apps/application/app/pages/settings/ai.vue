@@ -14,7 +14,7 @@ const { data: settings, refresh } = await useFetch<AiSettings>('/api/settings/ai
 type RoleKey = AiModelRole;
 
 function blankRole(): RoleForm {
-  return { enabled: false, reuse: null, provider: '', model: '', baseUrl: '', apiKey: '' };
+  return { enabled: false, reuse: null, provider: '', model: '', baseUrl: '', apiKey: '', temperature: '' };
 }
 
 const roles = reactive<Record<RoleKey, RoleForm>>({
@@ -165,6 +165,7 @@ watch(
       form.model = r?.model ?? '';
       form.baseUrl = r?.baseUrl ?? '';
       form.apiKey = '';
+      form.temperature = r?.temperature != null ? String(r.temperature) : '';
     }
     autoDiagnose.value = val.autoDiagnose;
     customInstructions.value = val.customInstructions || '';
@@ -202,14 +203,28 @@ function applyPreset(role: RoleKey, label: string) {
 }
 
 // ── Save ─────────────────────────────────────────────────────────────────────
+// Parse the free-text temperature field; blank means "provider default".
+// Range (0-2) is enforced server-side too — this only guards obviously bad input.
+function parseRoleTemperature(role: RoleKey, raw: string): number | undefined {
+  const trimmed = raw.trim();
+  if (trimmed === '') return undefined;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n < 0 || n > 2) {
+    throw new Error(`Role "${role}": temperature must be a number between 0 and 2`);
+  }
+  return n;
+}
+
 function roleBody(role: RoleKey): AiRoleConfigInput | null {
   const r = roles[role];
   if (!r.enabled) return null;
-  if (r.reuse) return { reuse: r.reuse, model: r.model || undefined };
+  const temperature = parseRoleTemperature(role, r.temperature);
+  if (r.reuse) return { reuse: r.reuse, model: r.model || undefined, temperature };
   const body: AiRoleConfigInput = {
     provider: r.provider,
     model: r.model || undefined,
     baseUrl: r.baseUrl || undefined,
+    temperature,
   };
   if (r.apiKey !== '') body.apiKey = r.apiKey;
   return body;
@@ -287,6 +302,8 @@ async function testRole(role: RoleKey) {
         apiKey: src.apiKey || undefined,
         model: r.model || (r.reuse ? src.model : '') || undefined,
         baseUrl: src.baseUrl || undefined,
+        // Temperature is per-role (not inherited via reuse), so read it off `r`, not `src`.
+        temperature: parseRoleTemperature(role, r.temperature),
       },
     });
     if (res.success)

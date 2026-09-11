@@ -17,6 +17,8 @@ export interface RoleForm {
   model: string;
   baseUrl: string;
   apiKey: string;
+  /** OpenAI-compat only: sampling temperature override, kept as a string like the other inputs. Empty means "provider default". */
+  temperature: string;
 }
 
 interface RoleMeta {
@@ -155,6 +157,29 @@ const roleEnvVars = computed<PiwiEnvVarName[]>(() => helpEnvVars(props.meta.help
             </span>
           </template>
           <UInput v-model="model.baseUrl" placeholder="http://localhost:11434/v1" :disabled="disabled" class="w-full" />
+        </UFormField>
+
+        <UFormField
+          v-if="model.provider === 'openai'"
+          label="Temperature"
+          description="Leave blank to use the model's default. Reasoning models (o1, o3, GPT-5-class) reject any explicit value and must be left blank."
+        >
+          <template #label>
+            <span class="inline-flex items-center gap-1">
+              Temperature
+              <EnvManagedBadge v-if="disabled" :env-vars="roleEnvVars" />
+            </span>
+          </template>
+          <UInput
+            v-model="model.temperature"
+            type="number"
+            step="0.1"
+            min="0"
+            max="2"
+            placeholder="Default"
+            :disabled="disabled"
+            class="w-full"
+          />
         </UFormField>
       </template>
 

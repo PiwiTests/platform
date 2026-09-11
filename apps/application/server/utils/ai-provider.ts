@@ -17,6 +17,8 @@ interface StoredRole {
   apiKey?: string; // encrypted at rest
   /** When set, inherit provider/apiKey/baseUrl from the named role (model may still differ). */
   reuse?: AiModelRole | null;
+  /** OpenAI-compat only: sampling temperature override. Not inherited via `reuse` — it's a call-time tuning knob, not a credential. */
+  temperature?: number;
 }
 
 /** Stored shape of the `ai` app-setting. New installs use `roles`; older installs use the flat fields. */
@@ -37,6 +39,13 @@ interface StoredAi {
 /** What a role is used for: embeddings need an OpenAI-compatible endpoint (Anthropic has no embeddings API). */
 type RoleKind = 'chat' | 'embedding';
 
+/** Parse a `PIWI_AI_*_TEMPERATURE` env var (string) into a finite number, or null when unset/invalid. */
+function parseTemperature(raw?: string): number | null {
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
 function isValidRole(role: ResolvedAiRole, kind: RoleKind): boolean {
   if (kind === 'embedding') return role.provider === 'openai' && Boolean(role.baseUrl && role.model);
   if (role.provider === 'anthropic') return Boolean(role.apiKey);
@@ -51,10 +60,17 @@ function makeRole(
   model?: string | null,
   baseUrl?: string | null,
   kind: RoleKind = 'chat',
+  temperature?: number | null,
 ): ResolvedAiRole | null {
   const p = (provider || '') as AiProvider;
   if (p !== 'anthropic' && p !== 'openai') return null;
-  const role: ResolvedAiRole = { provider: p, apiKey: apiKey || '', model: model || '', baseUrl: baseUrl || null };
+  const role: ResolvedAiRole = {
+    provider: p,
+    apiKey: apiKey || '',
+    model: model || '',
+    baseUrl: baseUrl || null,
+    temperature: temperature ?? null,
+  };
   return isValidRole(role, kind) ? role : null;
 }
 
@@ -71,9 +87,9 @@ function resolveStoredRoles(roles: Partial<Record<AiModelRole, StoredRole>>): Ai
     if (!cfg) continue;
     if (cfg.reuse && out[cfg.reuse]) {
       const base = out[cfg.reuse]!;
-      out[role] = makeRole(base.provider, base.apiKey, cfg.model || base.model, base.baseUrl, kind);
+      out[role] = makeRole(base.provider, base.apiKey, cfg.model || base.model, base.baseUrl, kind, cfg.temperature);
     } else {
-      out[role] = makeRole(cfg.provider, decrypt(cfg.apiKey), cfg.model, cfg.baseUrl, kind);
+      out[role] = makeRole(cfg.provider, decrypt(cfg.apiKey), cfg.model, cfg.baseUrl, kind, cfg.temperature);
     }
   }
 
@@ -97,6 +113,7 @@ function assembleConfig(
     apiKey: diagnosis.apiKey,
     model: diagnosis.model,
     baseUrl: diagnosis.baseUrl,
+    temperature: diagnosis.temperature,
     autoDiagnose,
     source,
     roles: { diagnosis, research, embedding },
@@ -112,10 +129,12 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
         model?: string;
         baseUrl?: string;
         autoDiagnose?: boolean | string;
+        temperature?: string;
         researchModel?: string;
         researchProvider?: string;
         researchBaseUrl?: string;
         researchApiKey?: string;
+        researchTemperature?: string;
         embeddingProvider?: string;
         embeddingModel?: string;
         embeddingBaseUrl?: string;
@@ -124,7 +143,14 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
     | undefined;
 
   if (envAi?.provider) {
-    const diagnosis = makeRole(envAi.provider, envAi.apiKey, envAi.model, envAi.baseUrl);
+    const diagnosis = makeRole(
+      envAi.provider,
+      envAi.apiKey,
+      envAi.model,
+      envAi.baseUrl,
+      'chat',
+      parseTemperature(envAi.temperature),
+    );
     // Research defaults its provider/baseUrl/key to the diagnosis role when not overridden.
     const research = envAi.researchModel
       ? makeRole(
@@ -132,6 +158,8 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
           envAi.researchApiKey || envAi.apiKey,
           envAi.researchModel,
           envAi.researchBaseUrl || envAi.baseUrl,
+          'chat',
+          parseTemperature(envAi.researchTemperature),
         )
       : null;
     // Embedding defaults its provider/key/baseUrl to the main role when not
@@ -398,7 +426,7 @@ function openAiUserContent(opts: AiCallOptions, attempt: OpenAiAttempt): string 
 }
 
 /** Which rungs of the OpenAI-compatibility ladder this request body still uses. */
-interface OpenAiAttempt {
+export interface OpenAiAttempt {
   /** Enforce the JSON schema with `response_format: json_schema` rather than `json_object`. */
   strictFormat: boolean;
   /** Send `opts.images` as `image_url` parts. */
@@ -412,8 +440,16 @@ interface OpenAiAttempt {
  * `response_format: json_schema` where the server supports it; callers step down
  * to the older `json_object` mode on HTTP 400. The schema also stays inlined in
  * the system prompt so servers that ignore response_format still see it.
+ *
+ * `temperature` is omitted entirely unless explicitly configured — reasoning
+ * models (o1/o3/GPT-5-class) reject any explicit value other than their
+ * default (1), so leaving it unset is the only value that works everywhere.
  */
-function buildOpenAiBody(config: ResolvedAiRole, opts: AiCallOptions, attempt: OpenAiAttempt): Record<string, unknown> {
+export function buildOpenAiBody(
+  config: ResolvedAiRole,
+  opts: AiCallOptions,
+  attempt: OpenAiAttempt,
+): Record<string, unknown> {
   const systemContent = opts.jsonSchema
     ? `${opts.system}\n\nRespond ONLY with a JSON object matching this schema:\n${JSON.stringify(opts.jsonSchema)}`
     : opts.system;
@@ -427,7 +463,7 @@ function buildOpenAiBody(config: ResolvedAiRole, opts: AiCallOptions, attempt: O
   return {
     model: config.model,
     [attempt.completionTokenParameter]: opts.maxTokens ?? 8192,
-    temperature: 0,
+    ...(config.temperature != null ? { temperature: config.temperature } : {}),
     ...(responseFormat ? { response_format: responseFormat } : {}),
     messages: [
       { role: 'system', content: systemContent },

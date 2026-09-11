@@ -17,6 +17,15 @@ defineRouteMeta({
 
 const VALID_PROVIDERS: AiProvider[] = ['anthropic', 'openai'];
 
+/** Parse and range-check a role's temperature override (OpenAI's documented 0-2 range). */
+function parseTemperature(role: AiModelRole, value: number | null | undefined): number | undefined {
+  if (value == null) return undefined;
+  if (!Number.isFinite(value) || value < 0 || value > 2) {
+    throw apiError({ statusCode: 400, message: `Role "${role}": temperature must be a number between 0 and 2` });
+  }
+  return value;
+}
+
 export default eventHandler(async (event) => {
   await requireAuth(event);
 
@@ -66,10 +75,12 @@ export default eventHandler(async (event) => {
         const cfg = input[role];
         if (cfg == null) continue;
         const model = cfg.model?.trim() || undefined;
+        const temperature = parseTemperature(role, cfg.temperature);
         const outRole: RawStoredRole = {};
         if (cfg.reuse) outRole.reuse = cfg.reuse;
         if (model) outRole.model = model;
-        if (outRole.reuse || outRole.model) out[role] = outRole;
+        if (temperature !== undefined) outRole.temperature = temperature;
+        if (outRole.reuse || outRole.model || outRole.temperature !== undefined) out[role] = outRole;
       }
       await setAppSetting(db, 'ai', { roles: out });
       return readAiSettings(db);
@@ -96,9 +107,15 @@ export default eventHandler(async (event) => {
       const cfg = input[role];
       if (cfg == null) continue; // explicit removal
 
+      const temperature = parseTemperature(role, cfg.temperature);
+
       if (cfg.reuse) {
         if (cfg.reuse === role) throw apiError({ statusCode: 400, message: `Role "${role}" cannot reuse itself` });
-        out[role] = { reuse: cfg.reuse, model: cfg.model?.trim() || '' };
+        out[role] = {
+          reuse: cfg.reuse,
+          model: cfg.model?.trim() || '',
+          ...(temperature !== undefined ? { temperature } : {}),
+        };
         continue;
       }
 
@@ -115,7 +132,13 @@ export default eventHandler(async (event) => {
         });
       }
       const apiKey = resolveKey(cfg.apiKey, existingRoles[role]?.apiKey);
-      out[role] = { provider, model, baseUrl, ...(apiKey ? { apiKey } : {}) };
+      out[role] = {
+        provider,
+        model,
+        baseUrl,
+        ...(apiKey ? { apiKey } : {}),
+        ...(temperature !== undefined ? { temperature } : {}),
+      };
     }
 
     // The diagnosis role is the required root and cannot reuse another role.
