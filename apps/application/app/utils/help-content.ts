@@ -395,7 +395,7 @@ export const HELP_TOPICS = {
     title: 'AI provider',
     text: 'Configure the model providers behind the three AI roles — diagnosis, research and embedding. Each role has its own provider config, or reuses another role’s provider and credentials. Keys are stored encrypted and never returned by the API.',
     doc: 'features/ai-diagnosis#enabling-ai-diagnosis',
-    envVars: ['PIWI_AI_PROVIDER', 'PIWI_AI_MODEL', 'PIWI_AI_API_KEY', 'PIWI_AI_BASE_URL'],
+    envVars: ['PIWI_AI_PROVIDER', 'PIWI_AI_MODEL', 'PIWI_AI_API_KEY', 'PIWI_AI_BASE_URL', 'PIWI_AI_TEMPERATURE'],
   },
   'settings.ai-instructions': {
     title: 'Global analysis instructions',
@@ -411,6 +411,7 @@ export const HELP_TOPICS = {
       'PIWI_AI_RESEARCH_MODEL',
       'PIWI_AI_RESEARCH_BASE_URL',
       'PIWI_AI_RESEARCH_API_KEY',
+      'PIWI_AI_RESEARCH_TEMPERATURE',
     ],
   },
   'settings.ai-limits': {

@@ -21,6 +21,8 @@ export interface RawStoredRole {
   baseUrl?: string;
   apiKey?: string;
   reuse?: AiModelRole | null;
+  /** OpenAI-compat only: sampling temperature override. */
+  temperature?: number;
 }
 
 /** Stored shape of the `ai` app-setting (new `roles` shape or legacy flat fields). */
@@ -44,18 +46,31 @@ export function rolesFromLegacy(flat: {
   apiKey?: string;
   model?: string;
   baseUrl?: string;
+  temperature?: string;
   researchModel?: string;
   researchProvider?: string;
   researchBaseUrl?: string;
   researchApiKey?: string;
+  researchTemperature?: string;
   embeddingProvider?: string;
   embeddingModel?: string;
   embeddingBaseUrl?: string;
   embeddingApiKey?: string;
 }): Partial<Record<AiModelRole, RawStoredRole>> {
   const roles: Partial<Record<AiModelRole, RawStoredRole>> = {};
+  const parseTemp = (raw?: string): number | undefined => {
+    if (!raw) return undefined;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : undefined;
+  };
   if (flat.provider) {
-    roles.diagnosis = { provider: flat.provider, model: flat.model, baseUrl: flat.baseUrl, apiKey: flat.apiKey };
+    roles.diagnosis = {
+      provider: flat.provider,
+      model: flat.model,
+      baseUrl: flat.baseUrl,
+      apiKey: flat.apiKey,
+      temperature: parseTemp(flat.temperature),
+    };
   }
   if (flat.researchModel) {
     roles.research = flat.researchProvider
@@ -64,8 +79,9 @@ export function rolesFromLegacy(flat: {
           model: flat.researchModel,
           baseUrl: flat.researchBaseUrl,
           apiKey: flat.researchApiKey || flat.apiKey,
+          temperature: parseTemp(flat.researchTemperature),
         }
-      : { reuse: 'diagnosis', model: flat.researchModel };
+      : { reuse: 'diagnosis', model: flat.researchModel, temperature: parseTemp(flat.researchTemperature) };
   }
   if (flat.embeddingModel) {
     // Provider/baseUrl/key default to the main role's (mirrors resolveAiConfig).
@@ -95,6 +111,7 @@ export function toRoleSettings(raw?: RawStoredRole | null): AiRoleSettings | nul
     baseUrl: raw.baseUrl || null,
     reuse: raw.reuse ?? null,
     hasApiKey: Boolean(raw.apiKey),
+    temperature: raw.temperature ?? null,
   };
 }
 

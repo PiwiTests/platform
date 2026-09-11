@@ -480,6 +480,17 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AI_PROVIDER: '*' },
     requiredWhen: { PIWI_AI_PROVIDER: 'openai' },
   },
+  PIWI_AI_TEMPERATURE: {
+    description: 'Sampling temperature override for the diagnosis model (OpenAI-compatible only), range 0-2.',
+    category: 'ai',
+    type: 'number',
+    min: 0,
+    max: 2,
+    since: '0.27.0',
+    relevantWhen: { PIWI_AI_PROVIDER: 'openai' },
+    notes:
+      'Omitted from requests when unset (provider default applies). Reasoning models (o1, o3, GPT-5-class) reject any explicit value — leave this unset for them.',
+  },
   PIWI_AI_AUTO_DIAGNOSE: {
     description: 'Set to "true" to auto-diagnose new failure clusters when a run finishes.',
     category: 'ai',
@@ -520,6 +531,17 @@ export const PIWI_ENV_VARS = {
     category: 'ai',
     secret: true,
     relevantWhen: { PIWI_AI_RESEARCH_MODEL: '*' },
+  },
+  PIWI_AI_RESEARCH_TEMPERATURE: {
+    description: 'Sampling temperature override for the research model (OpenAI-compatible only), range 0-2.',
+    category: 'ai',
+    type: 'number',
+    min: 0,
+    max: 2,
+    since: '0.27.0',
+    relevantWhen: { PIWI_AI_RESEARCH_MODEL: '*' },
+    notes:
+      'Omitted from requests when unset (provider default applies). Reasoning models (o1, o3, GPT-5-class) reject any explicit value — leave this unset for them.',
   },
 
   // ── AI — embedding model ─────────────────────────────────────────────────
