@@ -18,6 +18,7 @@ import { detectCiRunLabel } from '../internal/support/ci.js';
 import { workerIndexOf } from '../internal/support/worker-index.js';
 import { detectCliFileFilters } from '../internal/support/cli-filters.js';
 import { readSelectionStamp } from '../internal/support/selection-env.js';
+import { isListMode } from '../internal/support/run-mode.js';
 import { createGlobalSetup } from './global-setup.js';
 import { wrapConfig } from './config-wrapper.js';
 import { toWireTestCase } from '../internal/submit/serializer.js';
@@ -82,6 +83,12 @@ export class PiwiDashboardReporter {
   private shardInfo: ShardInfo | null = null;
   private metadata: Record<string, any> = {};
   private enabled: boolean;
+  /**
+   * True under `playwright test --list`, where Playwright still constructs this
+   * reporter and fires `onBegin`/`onEnd` but runs no tests. Registering and
+   * finalizing a run would create an empty phantom run and upload an empty report.
+   */
+  private readonly listMode: boolean;
   /** True when the server URL and API key came from the desktop app, not from config. */
   private viaDesktopApp: boolean;
   private isFullRun = true;
@@ -105,6 +112,7 @@ export class PiwiDashboardReporter {
   constructor(rawOptions: Record<string, any> = {}) {
     this.options = resolveOptions(rawOptions);
     this.enabled = this.options.enabled !== false && !!this.options.serverUrl;
+    this.listMode = isListMode();
     this.viaDesktopApp = usedDesktopDiscovery();
     this.runLabel = this.options.runLabel || detectCiRunLabel();
     this.instanceId = computeInstanceId(this.options.projectName!, this.runLabel);
@@ -145,6 +153,10 @@ export class PiwiDashboardReporter {
 
   /** Playwright reporter hook: called once at the start of the test run */
   onBegin(config: FullConfig, suite: Suite): void {
+    if (this.listMode) {
+      this.logger.debug('List mode (--list) detected — no run registered or report uploaded.');
+      return;
+    }
     if (!this.enabled) {
       this.logger.info('Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');
       return;
@@ -498,7 +510,7 @@ export class PiwiDashboardReporter {
 
   /** Playwright reporter hook: called when the full test run finishes */
   async onEnd(result: FullResult): Promise<void> {
-    if (!this.enabled) return;
+    if (this.listMode || !this.enabled) return;
 
     // Tests Playwright never reported were cut off by a run-level condition —
     // the global timeout, the failure budget, or an interruption.
