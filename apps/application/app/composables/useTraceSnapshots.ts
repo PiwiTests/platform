@@ -27,6 +27,7 @@ export function useTraceSnapshots(testRunsCaseId: MaybeRefOrGetter<number>) {
   const hasAria = computed(() => response.value?.status === 'ok' && response.value.hasAria);
   const steps = computed(() => (response.value?.status === 'ok' ? response.value.steps : []));
   const failingStep = computed(() => steps.value.find((s) => s.callId === response.value?.failingCallId) ?? null);
+  const failingAriaText = computed(() => response.value?.failingAriaText ?? null);
 
-  return { data: response, pending, error, snapshotUrl, hasScreen, hasAria, steps, failingStep };
+  return { data: response, pending, error, snapshotUrl, hasScreen, hasAria, steps, failingStep, failingAriaText };
 }
