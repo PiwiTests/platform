@@ -25,7 +25,7 @@ PIWI_STORAGE_PATH=/custom/path/to/storage
 
 ## S3-compatible storage
 
-Any S3-compatible service can be used: AWS S3, MinIO, DigitalOcean Spaces, Cloudflare R2, and others.
+Any S3-compatible service can be used: AWS S3, RustFS, DigitalOcean Spaces, Cloudflare R2, and others.
 
 ```bash
 PIWI_STORAGE_TYPE=s3
@@ -58,18 +58,22 @@ Minimum required IAM permissions:
 }
 ```
 
-### MinIO
+### RustFS
+
+[RustFS](https://rustfs.com) is an open-source (Apache-2.0), S3-compatible object store you can self-host — a common replacement for MinIO.
 
 ```bash
 PIWI_STORAGE_TYPE=s3
 PIWI_S3_ENDPOINT=http://localhost:9000
 PIWI_S3_BUCKET=piwi-dashboard
 PIWI_S3_REGION=us-east-1
-PIWI_S3_ACCESS_KEY_ID=minioadmin
-PIWI_S3_SECRET_ACCESS_KEY=minioadmin
+PIWI_S3_ACCESS_KEY_ID=your-access-key
+PIWI_S3_SECRET_ACCESS_KEY=your-secret-key
 ```
 
-Path-style URLs are enabled automatically when `PIWI_S3_ENDPOINT` is set (as required by MinIO and most self-hosted S3-compatible services). Set `PIWI_S3_FORCE_PATH_STYLE=false` to override this behavior.
+Set `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY` on the RustFS server to match the credentials above — don't expose the default `rustfsadmin` account to a networked deployment.
+
+Path-style URLs are enabled automatically when `PIWI_S3_ENDPOINT` is set (as required by RustFS and most self-hosted S3-compatible services). Set `PIWI_S3_FORCE_PATH_STYLE=false` to override this behavior.
 
 ### DigitalOcean Spaces
 
