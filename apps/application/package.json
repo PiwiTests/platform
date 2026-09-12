@@ -56,6 +56,7 @@
     "@nuxt/ui": "^4.10.0",
     "@vite-pwa/nuxt": "^1.1.1",
     "@vueuse/nuxt": "^14.1.0",
+    "busboy": "^1.6.0",
     "date-fns": "^4.1.0",
     "drizzle-orm": "^0.45.0",
     "fflate": "^0.8.2",
@@ -74,6 +75,7 @@
   "devDependencies": {
     "@iconify-json/simple-icons": "^1.2.93",
     "@playwright/test": "^1.63.0",
+    "@types/busboy": "^1.5.4",
     "@types/nodemailer": "^8.0.1",
     "@types/sql.js": "^1.4.11",
     "cross-env": "^10.1.0",

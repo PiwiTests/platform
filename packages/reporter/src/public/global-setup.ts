@@ -9,7 +9,7 @@ import { computeInstanceId } from '../internal/support/instance-id.js';
 import { detectCiRunLabel } from '../internal/support/ci.js';
 import { getSetupFilePath } from '../internal/support/setup-file.js';
 import { ariaSampleIdentity, clearAriaSampleFile, writeAriaSampleFile } from '../internal/support/aria-sampling.js';
-import { isUiMode } from '../internal/support/run-mode.js';
+import { isUiMode, isListMode } from '../internal/support/run-mode.js';
 
 /**
  * Create a Playwright `globalSetup` function that registers a test run on the
@@ -63,6 +63,15 @@ export function createGlobalSetup(
     // userSetup so the user's own setup keeps working under the UI.
     if (isUiMode()) {
       logger.debug('UI mode detected — skipping run registration.');
+      if (userSetup) return userSetup(config);
+      return;
+    }
+
+    // `playwright test --list` runs globalSetup but executes no tests, so
+    // registering here would leave an empty phantom run on the dashboard. Skip
+    // registration but still chain userSetup so the user's own setup keeps working.
+    if (isListMode()) {
+      logger.debug('List mode detected — skipping run registration.');
       if (userSetup) return userSetup(config);
       return;
     }

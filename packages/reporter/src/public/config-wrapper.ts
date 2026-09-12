@@ -148,8 +148,10 @@ function resolveSetupModule(): string {
  *
  * The `globalSetup` field is set to a `string` (or `string[]` if the user
  * already has a global setup) referencing the Piwi global setup module,
- * which registers the run on the server. The original setup path(s) are
- * preserved and executed first.
+ * which registers the run on the server. Piwi's module is chained first so the
+ * run registers before the user's own setup, appearing as "initializing" on the
+ * dashboard while that setup runs; the original setup path(s) are preserved and
+ * executed after it.
  *
  * Playwright options required in `globalSetup` are forwarded via `PIWI_*`
  * environment variables (see `applyOptionsToEnv` in `config.ts` for the
@@ -169,12 +171,13 @@ function resolveSetupModule(): string {
 export function wrapConfig<T extends PlaywrightTestConfig>(config: T, piwiOptions?: PiwiDashboardOptions): T {
   if (piwiOptions) applyOptionsToEnv(piwiOptions);
 
-  const globalSetupModules: string[] = [];
+  // Piwi's module runs first so the run is registered before the user's own
+  // globalSetup, showing as "initializing" on the dashboard while that setup runs.
+  const globalSetupModules: string[] = [resolveSetupModule()];
   if (config.globalSetup) {
     const orig = Array.isArray(config.globalSetup) ? config.globalSetup : [config.globalSetup];
     globalSetupModules.push(...orig);
   }
-  globalSetupModules.push(resolveSetupModule());
 
   // Forward Piwi's CI-gate options into Playwright's own config so the run
   // exits non-zero locally, with no server round-trip (Playwright 1.52+).

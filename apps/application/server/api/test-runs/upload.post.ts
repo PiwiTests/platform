@@ -324,26 +324,24 @@ export default eventHandler(async (event) => {
     }
   }
 
-  // Store all reports and collect their metadata
+  // Store all reports and collect their metadata. Reports are processed one at a
+  // time — each `.gz` report is inflated fully into memory before being written
+  // to disk, so decompressing them in parallel would stack every report's peak
+  // at once. Each report buffer is dropped from the map as soon as it's stored.
   const storedReports: { type: string; label: string; path: string; size: number }[] = [];
 
-  const reportResults = await Promise.all(
-    [...reportFiles.entries()].map(async ([type, report]) => {
-      try {
-        console.log(`[Upload] Storing ${type} report: ${report.filename}`);
-        const { path: storedPath, size } = await storeReport(type, report);
-        const label = getReportLabel(type, report.label);
-        console.log(`[Upload] Stored ${type} report at ${storedPath} (${size} bytes)`);
-        return { type, label, path: storedPath, size };
-      } catch (error) {
-        console.error(`[Upload] Failed to store ${type} report: ${error}`);
-        return null;
-      }
-    }),
-  );
-
-  for (const r of reportResults) {
-    if (r) storedReports.push(r);
+  for (const [type, report] of [...reportFiles.entries()]) {
+    try {
+      console.log(`[Upload] Storing ${type} report: ${report.filename}`);
+      const { path: storedPath, size } = await storeReport(type, report);
+      const label = getReportLabel(type, report.label);
+      console.log(`[Upload] Stored ${type} report at ${storedPath} (${size} bytes)`);
+      storedReports.push({ type, label, path: storedPath, size });
+    } catch (error) {
+      console.error(`[Upload] Failed to store ${type} report: ${error}`);
+    } finally {
+      reportFiles.delete(type);
+    }
   }
 
   // Create or retrieve the test run
@@ -591,6 +589,10 @@ export default eventHandler(async (event) => {
           tracedCaseIds.push(testRunsCaseId);
         } catch (error) {
           console.error(`[Upload] Failed to store trace for case #${testRunsCaseId}: ${error}`);
+        } finally {
+          // Drop the (large) trace buffer once stored so peak memory holds one
+          // trace at a time rather than every uploaded trace at once.
+          traceFiles.delete(index);
         }
       }
     }

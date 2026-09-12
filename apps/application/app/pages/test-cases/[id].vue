@@ -75,7 +75,7 @@ const passRateClass = computed(() => {
               ...(testCase?.project?.id
                 ? [
                     {
-                      label: testCase.project.name || 'Project',
+                      label: testCase.project.label || testCase.project.name || 'Project',
                       to: `/projects/${testCase.project.id}`,
                     },
                   ]
@@ -105,7 +105,7 @@ const passRateClass = computed(() => {
               class="text-sm text-gray-500"
             />
             <UBadge v-if="testCase?.project" color="neutral" variant="soft" size="xs" class="font-mono">
-              {{ testCase.project.name }}
+              {{ testCase.project.label ?? testCase.project.name }}
             </UBadge>
 
             <TestMetaBadges

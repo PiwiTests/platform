@@ -9,7 +9,7 @@ import { and, eq } from 'drizzle-orm';
 import { files } from '../database/schema';
 import { getStorage } from '../storage';
 import { ariaJsonToText } from '#shared/aria-json';
-import { parseZip, type ZipEntry } from './trace-zip';
+import { parseZip, parseZipDirectory, decompressEntry, type ZipEntry } from './trace-zip';
 import { parseTraceTexts, traceFileRank, type ParsedTraceData } from './trace-events';
 import {
   buildActionCallsites,
@@ -152,11 +152,45 @@ export interface TraceEvidenceStreams {
  * Load a stored trace and return just its event stream and network snapshots —
  * the two inputs the fallback derivation reads to recover console entries and
  * the request list when the capture fixtures were absent.
+ *
+ * Only the `.trace` and `.network` entries are inflated; decompressing the
+ * blob's inline screenshots and aria snapshots (which this derivation never
+ * reads) would hold every image in memory at once during ingestion.
  */
 export async function loadTraceEvidenceStreams(blobPath: string): Promise<TraceEvidenceStreams | null> {
-  const bundle = await loadTraceBundle(blobPath);
-  if (!bundle) return null;
-  return { parsed: bundle.parsed, network: bundle.network };
+  const storage = getStorage();
+  let data: Buffer;
+  let metas: ReturnType<typeof parseZipDirectory>;
+  try {
+    data = await storage.readFile(blobPath);
+    metas = parseZipDirectory(data);
+  } catch {
+    return null;
+  }
+
+  const traceTexts: string[] = [];
+  for (const meta of metas
+    .filter((m) => m.name.endsWith('.trace'))
+    .sort((a, b) => traceFileRank(a.name) - traceFileRank(b.name))) {
+    try {
+      traceTexts.push((await decompressEntry(data, meta)).toString('utf8'));
+    } catch {
+      // Skip a corrupt entry rather than fail the whole derivation.
+    }
+  }
+
+  const networkTexts: string[] = [];
+  for (const meta of metas.filter((m) => m.name.endsWith('.network'))) {
+    try {
+      networkTexts.push((await decompressEntry(data, meta)).toString('utf8'));
+    } catch {
+      // Skip a corrupt entry.
+    }
+  }
+
+  const parsed = traceTexts.length > 0 ? parseTraceTexts(traceTexts) : null;
+  const network = networkTexts.length > 0 ? parseNetworkTexts(networkTexts) : [];
+  return { parsed, network };
 }
 
 /** Full call stack of the failing action, with embedded source when the trace carries it. */

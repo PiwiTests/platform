@@ -216,6 +216,29 @@ describe('createGlobalSetup', () => {
     }
   });
 
+  it('does not register when Playwright runs in list mode (still chains userSetup)', async () => {
+    const { server, url, requests } = await startServer((_req, res) =>
+      jsonRes(res, 200, { runId: 1, setupToken: 't' }),
+    );
+    const savedArgv = process.argv;
+    process.argv = ['node', 'playwright', 'test', '--list'];
+    try {
+      let userSetupCalled = false;
+      const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'global-setup-list-mode' }, async () => {
+        userSetupCalled = true;
+        return 'chained-result';
+      });
+      const result = await setupFn({ reporter: [PIWI_REPORTER_ENTRY] });
+      expect(requests).toHaveLength(0);
+      expect(userSetupCalled).toBe(true);
+      expect(result).toBe('chained-result');
+      expect(readSetupInfo('global-setup-list-mode')).toBeNull();
+    } finally {
+      process.argv = savedArgv;
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
   it('extracts serverUrl/projectName from an inline reporter entry when no options are passed', async () => {
     const { server, url, requests } = await startServer((_req, res) =>
       jsonRes(res, 200, { runId: 7, setupToken: 'ttt' }),

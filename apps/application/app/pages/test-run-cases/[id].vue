@@ -528,7 +528,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               ...(testCase?.testRun?.project?.id
                 ? [
                     {
-                      label: testCase.testRun.project.name || 'Project',
+                      label: testCase.testRun.project.label || testCase.testRun.project.name || 'Project',
                       to: `/projects/${testCase.testRun.project.id}`,
                     },
                   ]
