@@ -14,6 +14,16 @@ const inflateRawAsync = promisify(inflateRaw);
  */
 const MAX_ENTRY_BYTES = 512 * 1024 * 1024; // 512 MiB
 
+/**
+ * Upper bound on the total size of a ZIP produced by {@link buildZip}. The
+ * output length is the sum of every entry's decompressed data, so a corrupt or
+ * hostile archive whose entries expand to gigabytes would drive a single
+ * unbounded allocation and OOM-kill the process. 1 GiB comfortably exceeds any
+ * real trace (event streams plus a fully reconstructed resource pool) while
+ * turning a bogus total into a thrown error the caller can recover from.
+ */
+const MAX_ZIP_BYTES = 1024 * 1024 * 1024; // 1 GiB
+
 export interface ZipEntry {
   name: string;
   data: Buffer;
@@ -89,6 +99,7 @@ export function parseZipDirectory(data: Buffer): ZipEntryMeta[] {
 
   const entryCount = data.readUInt16LE(eocdOffset + 10);
   const cdOffset = data.readUInt32LE(eocdOffset + 16);
+  if (cdOffset > data.length) throw new Error('Invalid central directory offset');
 
   const metas: ZipEntryMeta[] = [];
   let pos = cdOffset;
@@ -162,69 +173,92 @@ export async function parseZip(data: Buffer): Promise<ZipEntry[]> {
  * This is appropriate for trace event entries which are small text-based files.
  */
 export function buildZip(entries: ZipEntry[]): Buffer {
-  const localParts: Buffer[] = [];
-  const cdParts: Buffer[] = [];
-  let offset = 0;
+  const nameBuffers = entries.map((entry) => Buffer.from(entry.name, 'utf8'));
 
-  for (const entry of entries) {
-    const nameBytes = Buffer.from(entry.name, 'utf8');
-    const size = entry.data.length;
-    const crc = crc32(entry.data);
-
-    // Local file header (30 bytes + filename)
-    const local = Buffer.alloc(30 + nameBytes.length);
-    local.writeUInt32LE(0x04034b50, 0); // signature
-    local.writeUInt16LE(20, 4); // version needed (2.0)
-    local.writeUInt16LE(0, 6); // flags
-    local.writeUInt16LE(0, 8); // method: stored
-    local.writeUInt16LE(0, 10); // mod time
-    local.writeUInt16LE(0, 12); // mod date
-    local.writeUInt32LE(crc, 14); // crc-32
-    local.writeUInt32LE(size, 18); // compressed size
-    local.writeUInt32LE(size, 22); // uncompressed size
-    local.writeUInt16LE(nameBytes.length, 26); // filename length
-    local.writeUInt16LE(0, 28); // extra field length
-    nameBytes.copy(local, 30);
-
-    // Central directory file header (46 bytes + filename)
-    const cd = Buffer.alloc(46 + nameBytes.length);
-    cd.writeUInt32LE(0x02014b50, 0); // signature
-    cd.writeUInt16LE(20, 4); // version made by
-    cd.writeUInt16LE(20, 6); // version needed
-    cd.writeUInt16LE(0, 8); // flags
-    cd.writeUInt16LE(0, 10); // method: stored
-    cd.writeUInt16LE(0, 12); // mod time
-    cd.writeUInt16LE(0, 14); // mod date
-    cd.writeUInt32LE(crc, 16); // crc-32
-    cd.writeUInt32LE(size, 20); // compressed size
-    cd.writeUInt32LE(size, 24); // uncompressed size
-    cd.writeUInt16LE(nameBytes.length, 28); // filename length
-    cd.writeUInt16LE(0, 30); // extra field length
-    cd.writeUInt16LE(0, 32); // file comment length
-    cd.writeUInt16LE(0, 34); // disk number start
-    cd.writeUInt16LE(0, 36); // internal file attributes
-    cd.writeUInt32LE(0, 38); // external file attributes
-    cd.writeUInt32LE(offset, 42); // relative offset of local header
-    nameBytes.copy(cd, 46);
-
-    localParts.push(local, entry.data);
-    cdParts.push(cd);
-    offset += 30 + nameBytes.length + size;
+  // Size the output in one pass, validating each entry against the cap first, so
+  // a length derived from decompressed data that is negative, non-integer or
+  // beyond the cap fails here rather than driving an unbounded allocation.
+  let total = 22; // EOCD
+  for (let i = 0; i < entries.length; i++) {
+    const size = entries[i]!.data.length;
+    if (!Number.isSafeInteger(size) || size < 0) {
+      throw new Error(`Invalid entry size for "${entries[i]!.name}"`);
+    }
+    total += 30 + nameBuffers[i]!.length + size + 46 + nameBuffers[i]!.length;
+    if (total > MAX_ZIP_BYTES) throw new Error(`ZIP exceeds ${MAX_ZIP_BYTES} bytes`);
   }
 
-  const cdBuf = Buffer.concat(cdParts);
-  const entryCount16 = Math.min(entries.length, 0xffff);
-  const eocd = Buffer.alloc(22);
-  eocd.writeUInt32LE(0x06054b50, 0); // signature
-  eocd.writeUInt16LE(0, 4); // disk number
-  eocd.writeUInt16LE(0, 6); // disk with central directory
-  eocd.writeUInt16LE(entryCount16, 8); // entries on this disk
-  eocd.writeUInt16LE(entryCount16, 10); // total entries
-  eocd.writeUInt32LE(cdBuf.length, 12); // central directory size
-  eocd.writeUInt32LE(offset, 16); // central directory offset
-  eocd.writeUInt16LE(0, 20); // comment length
+  const out = Buffer.allocUnsafe(total);
+  const localOffsets: number[] = [];
+  const crcs: number[] = [];
+  let pos = 0;
 
-  return Buffer.concat([...localParts, cdBuf, eocd]);
+  // Local file headers (30 bytes + filename) followed by the stored data.
+  for (let i = 0; i < entries.length; i++) {
+    const nameBytes = nameBuffers[i]!;
+    const data = entries[i]!.data;
+    const size = data.length;
+    const crc = crc32(data);
+    crcs.push(crc);
+    localOffsets.push(pos);
+
+    out.writeUInt32LE(0x04034b50, pos); // signature
+    out.writeUInt16LE(20, pos + 4); // version needed (2.0)
+    out.writeUInt16LE(0, pos + 6); // flags
+    out.writeUInt16LE(0, pos + 8); // method: stored
+    out.writeUInt16LE(0, pos + 10); // mod time
+    out.writeUInt16LE(0, pos + 12); // mod date
+    out.writeUInt32LE(crc, pos + 14); // crc-32
+    out.writeUInt32LE(size, pos + 18); // compressed size
+    out.writeUInt32LE(size, pos + 22); // uncompressed size
+    out.writeUInt16LE(nameBytes.length, pos + 26); // filename length
+    out.writeUInt16LE(0, pos + 28); // extra field length
+    nameBytes.copy(out, pos + 30);
+    pos += 30 + nameBytes.length;
+    data.copy(out, pos);
+    pos += size;
+  }
+
+  // Central directory file headers (46 bytes + filename).
+  const cdStart = pos;
+  for (let i = 0; i < entries.length; i++) {
+    const nameBytes = nameBuffers[i]!;
+    const size = entries[i]!.data.length;
+
+    out.writeUInt32LE(0x02014b50, pos); // signature
+    out.writeUInt16LE(20, pos + 4); // version made by
+    out.writeUInt16LE(20, pos + 6); // version needed
+    out.writeUInt16LE(0, pos + 8); // flags
+    out.writeUInt16LE(0, pos + 10); // method: stored
+    out.writeUInt16LE(0, pos + 12); // mod time
+    out.writeUInt16LE(0, pos + 14); // mod date
+    out.writeUInt32LE(crcs[i]!, pos + 16); // crc-32
+    out.writeUInt32LE(size, pos + 20); // compressed size
+    out.writeUInt32LE(size, pos + 24); // uncompressed size
+    out.writeUInt16LE(nameBytes.length, pos + 28); // filename length
+    out.writeUInt16LE(0, pos + 30); // extra field length
+    out.writeUInt16LE(0, pos + 32); // file comment length
+    out.writeUInt16LE(0, pos + 34); // disk number start
+    out.writeUInt16LE(0, pos + 36); // internal file attributes
+    out.writeUInt32LE(0, pos + 38); // external file attributes
+    out.writeUInt32LE(localOffsets[i]!, pos + 42); // relative offset of local header
+    nameBytes.copy(out, pos + 46);
+    pos += 46 + nameBytes.length;
+  }
+  const cdSize = pos - cdStart;
+
+  // End of central directory record (22 bytes).
+  const entryCount16 = Math.min(entries.length, 0xffff);
+  out.writeUInt32LE(0x06054b50, pos); // signature
+  out.writeUInt16LE(0, pos + 4); // disk number
+  out.writeUInt16LE(0, pos + 6); // disk with central directory
+  out.writeUInt16LE(entryCount16, pos + 8); // entries on this disk
+  out.writeUInt16LE(entryCount16, pos + 10); // total entries
+  out.writeUInt32LE(cdSize, pos + 12); // central directory size
+  out.writeUInt32LE(cdStart, pos + 16); // central directory offset
+  out.writeUInt16LE(0, pos + 20); // comment length
+
+  return out;
 }
 
 /**

@@ -103,7 +103,7 @@ export async function upsertTraceBlob(
       }
 
       // 4. Decompress event entries for the slim ZIP (these are small text-based files)
-      const eventEntries: ZipEntry[] = [];
+      let eventEntries: ZipEntry[] = [];
       for (const meta of eventMetas) {
         try {
           eventEntries.push({ name: meta.name, data: await decompressEntry(data, meta) });
@@ -116,6 +116,9 @@ export async function upsertTraceBlob(
       const resourceNames = names;
 
       const slimZip = buildZip(eventEntries);
+      // Release the decompressed event buffers now that they're fused into the
+      // slim ZIP, so the manifest write and blob write below don't hold both.
+      eventEntries = [];
       const manifestJson = Buffer.from(JSON.stringify({ resources: resourceNames }), 'utf8');
 
       dataToStore = slimZip;
