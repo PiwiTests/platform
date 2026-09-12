@@ -40,7 +40,8 @@
  */
 
 import { createRequire } from 'module';
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
+import { createHash } from 'node:crypto';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -63,6 +64,83 @@ const OUT_TARGETS = {
 };
 
 const DEFAULT_VIEWPORT = { width: 1280, height: 860 };
+
+/**
+ * A real Playwright 1.63 trace recorded with `snapshots: { dom, aria, screen }`,
+ * ingested by the failing-step-evidence scene so the timeline can show the page
+ * captured at the failing step. The seeded demo traces predate 1.63, so this
+ * feature can only be driven from a genuine snapshot-bearing trace.
+ */
+const TRACE_SNAPSHOT_FIXTURE = join(APP_DIR, 'tests', 'fixtures', 'trace-aria-screen-1.63.zip');
+const TRACE_SNAPSHOT_CASE = {
+  title: 'checkout — cancel is gone after paying',
+  location: 'tests/checkout.spec.ts:12:3',
+  retries: 0,
+};
+
+/**
+ * Start a run, push one failing case with a marked failing step, and upload the
+ * 1.63 trace fixture for it. Returns its executionId. Retries the pushes while
+ * the dev server compiles the API routes on first hit.
+ */
+async function ingestTraceSnapshotCase(request, base) {
+  const trace = readFileSync(TRACE_SNAPSHOT_FIXTURE);
+  const traceHash = createHash('sha256').update(trace).digest('hex');
+
+  const post = async (path, options) => {
+    let last;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 3000));
+      try {
+        const res = await request.post(`${base}${path}`, options);
+        if (res.ok()) return res;
+        last = new Error(`${path} → ${res.status()}`);
+      } catch (error) {
+        last = error;
+      }
+    }
+    throw last ?? new Error(`could not POST ${path}`);
+  };
+
+  const started = await (
+    await post('/api/test-runs/start', {
+      data: { projectName: 'trace-snapshots', startTime: new Date().toISOString() },
+    })
+  ).json();
+  const { runId, streamToken } = started;
+
+  await post(`/api/test-runs/${runId}/events`, {
+    data: {
+      streamToken,
+      testCases: [
+        {
+          type: 'complete',
+          ...TRACE_SNAPSHOT_CASE,
+          status: 'failed',
+          duration: 2000,
+          error:
+            "TimeoutError: locator.click: Timeout 1500ms exceeded.\n  - waiting for getByRole('button', { name: 'Cancel' })",
+          steps: [
+            { title: 'Navigate to "data:text/html"', category: 'navigation', duration: 40, startTime: 0 },
+            { title: 'Fill "a@b.test"', category: 'input', duration: 20, startTime: 50 },
+            { title: 'Click "Pay now"', category: 'click', duration: 30, startTime: 80 },
+            { title: 'Click "Cancel"', category: 'click', duration: 1500, startTime: 120, failed: true },
+          ],
+        },
+      ],
+    },
+  });
+
+  const upload = await post(`/api/test-runs/${runId}/case-files`, {
+    multipart: {
+      streamToken,
+      testCase: JSON.stringify(TRACE_SNAPSHOT_CASE),
+      trace_hash: traceHash,
+      trace: { name: 'trace.zip', mimeType: 'application/zip', buffer: trace },
+    },
+  });
+  return (await upload.json()).executionId;
+}
 
 /** Surfaces a scene can be captured against. */
 const MODES = ['web', 'desktop'];
@@ -561,6 +639,52 @@ const SCENES = [
       const toggle = page.getByRole('tablist', { name: 'Screen view' }).getByRole('tab', { name: 'Page diff' });
       await toggle.waitFor({ state: 'visible', timeout: 30_000 });
       await toggle.click();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'failing-step-evidence',
+    description: "Timeline tab: the failing step's before/at-failure screenshot and ARIA tree, tied to the step",
+    viewport: { width: 1280, height: 1600 },
+    of: 'table',
+    pad: 12,
+    async prepare({ request, base }) {
+      this.executionId = await ingestTraceSnapshotCase(request, base);
+    },
+    async run({ page, goto, settle, shoot }) {
+      await goto(`/test-run-cases/${this.executionId}`);
+      await page
+        .getByRole('tablist', { name: 'Evidence sections' })
+        .getByRole('tab', { name: 'Timeline', exact: true })
+        .click();
+      // Unfold the accessibility tree so the capture shows both the screenshot
+      // and the ARIA the failing step carries.
+      const aria = page.getByRole('button', { name: 'Accessibility tree at the failure' }).first();
+      await aria.waitFor({ state: 'visible', timeout: 30_000 });
+      await aria.click();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'failing-step-evidence-mobile',
+    description: "Failing step's page snapshot on the timeline at phone width",
+    viewport: { width: 390, height: 1800 },
+    of: '[data-shot="failing-step-evidence"]',
+    pad: 12,
+    async prepare({ request, base }) {
+      this.executionId = await ingestTraceSnapshotCase(request, base);
+    },
+    async run({ page, goto, settle, shoot }) {
+      await goto(`/test-run-cases/${this.executionId}`);
+      await page
+        .getByRole('tablist', { name: 'Evidence sections' })
+        .getByRole('tab', { name: 'Timeline', exact: true })
+        .click();
+      const aria = page.getByRole('button', { name: 'Accessibility tree at the failure' }).first();
+      await aria.waitFor({ state: 'visible', timeout: 30_000 });
+      await aria.click();
       await settle();
       await shoot();
     },
