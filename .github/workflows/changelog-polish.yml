@@ -76,7 +76,7 @@ jobs:
         # v1 is the GitHub Models interface (models: read + github.token,
         # models.github.ai endpoint). Later majors drive the Copilot CLI
         # instead, which needs the CLI on the runner and a Copilot token.
-        uses: actions/ai-inference@v1
+        uses: actions/ai-inference@v3
         continue-on-error: true
         with:
           model: openai/gpt-4o                 # swappable: any GitHub Models catalog id
