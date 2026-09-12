@@ -139,6 +139,18 @@ export interface PiwiDashboardOptions {
   streamingBatchSize?: number;
   /** Max delay (ms) before flushing pending events during streaming. Defaults to `2000`. */
   streamingBatchDelay?: number;
+  /**
+   * Byte budget for the in-memory stream buffer (the queue of events waiting to
+   * reach the dashboard, and the crash-recovery file it writes if delivery
+   * fails). When the server is unreachable or a huge suite outruns delivery, the
+   * queue is capped here instead of growing without bound: the lowest-value
+   * events are shed first — live step progress, then per-test `begin` markers,
+   * and only as a last resort test results (the final counts and the end-of-run
+   * batch submit stay complete regardless). Defaults to `104857600` (100 MB).
+   * Set to `0` to disable the cap (unbounded, the pre-`0.28` behavior). Can also
+   * be set with `PIWI_MAX_STREAM_BUFFER_BYTES`.
+   */
+  maxStreamBufferBytes?: number;
 
   // ── CI gate ────────────────────────────────────────────────────────────────
   /**
