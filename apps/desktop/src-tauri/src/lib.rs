@@ -25,6 +25,7 @@ use std::time::{Duration, Instant};
 use serde_json::json;
 use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::async_runtime::Receiver;
 use tauri::{AppHandle, Emitter as _, Manager, RunEvent, WindowEvent};
 
 use tauri_plugin_autostart::MacosLauncher;
@@ -32,7 +33,7 @@ use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_dialog::{DialogExt as _, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_notification::NotificationExt as _;
 use tauri_plugin_opener::OpenerExt as _;
-use tauri_plugin_shell::process::CommandChild;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt as _;
 use tauri_plugin_store::StoreExt as _;
 
@@ -49,6 +50,12 @@ use worktree::{desktop_bisect_here, desktop_reproduce_here};
 pub(crate) const STORE_FILE: &str = "settings.json";
 const RUN_BG_KEY: &str = "runInBackground";
 const READY_TIMEOUT_SECS: u64 = 60;
+/// Backoff before each auto-restart of a crashed server, capped at the last value.
+const RESTART_BACKOFFS_SECS: [u64; 4] = [1, 2, 4, 8];
+/// Stop auto-restarting once the server has crashed this many times inside
+/// `RESTART_WINDOW_SECS` — a tight crash-loop is a real fault, not a transient one.
+const MAX_RESTARTS_IN_WINDOW: u32 = 5;
+const RESTART_WINDOW_SECS: u64 = 60;
 /// Preferred loopback port — stable so the reporter can target it; falls back to
 /// a free port if it's already in use (see `pick_port`).
 const PREFERRED_PORT: u16 = 3000;
@@ -61,6 +68,11 @@ pub(crate) const DISCOVERY_FILE: &str = "desktop.json";
 /// Holds the running Node sidecar so it can be stopped cleanly on quit.
 #[derive(Default)]
 struct ServerProcess(Mutex<Option<CommandChild>>);
+
+/// Set true when the app is intentionally shutting down, so the server
+/// supervisor treats the deliberate `kill()` on quit as expected and does not
+/// restart the server it is about to stop.
+struct ShuttingDown(Arc<AtomicBool>);
 
 /// Shared "keep serving after the window closes" flag (tray toggle + close handler).
 struct RunInBackground(Arc<AtomicBool>);
@@ -266,6 +278,142 @@ fn append_log(path: &std::path::Path, line: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(f, "{line}");
     }
+}
+
+/// Everything needed to (re)spawn the bundled Node server on the *same* loopback
+/// port and desktop token, so a restart reconnects the already-loaded window
+/// transparently — no re-navigation, and the reporter's discovery file stays valid.
+struct ServerConfig {
+    server_entry: PathBuf,
+    db_path: PathBuf,
+    storage_dir: PathBuf,
+    secret: String,
+    token: String,
+    port: u16,
+    log_path: PathBuf,
+}
+
+/// Spawn the bundled Node sidecar running the Nitro server. Returns its event
+/// stream and child handle, or `None` when the sidecar is missing or the spawn
+/// fails (both logged to the server log; the readiness probe then times out).
+fn spawn_server_process(app: &AppHandle, cfg: &ServerConfig) -> Option<(Receiver<CommandEvent>, CommandChild)> {
+    let cmd = match app.shell().sidecar("node") {
+        Ok(cmd) => cmd,
+        Err(e) => {
+            append_log(&cfg.log_path, &format!("sidecar 'node' not found: {e}"));
+            return None;
+        }
+    };
+    let cmd = cmd
+        .args([node_path(&cfg.server_entry)])
+        .env("NODE_ENV", "production")
+        .env("NITRO_HOST", "127.0.0.1")
+        .env("NITRO_PORT", cfg.port.to_string())
+        .env("PIWI_DATABASE_PATH", node_path(&cfg.db_path))
+        .env("PIWI_STORAGE_PATH", node_path(&cfg.storage_dir))
+        .env("PIWI_SECRET_KEY", cfg.secret.clone())
+        .env("PIWI_DESKTOP_TOKEN", cfg.token.clone())
+        // Tell the bundled Nuxt app it is running in the desktop shell so it hides
+        // account/user management (single-user, auth off) and surfaces the local
+        // connection details (data location, reporter token, MCP endpoint).
+        .env("NUXT_PUBLIC_DESKTOP", "true");
+
+    match cmd.spawn() {
+        Ok(pair) => Some(pair),
+        Err(e) => {
+            append_log(&cfg.log_path, &format!("failed to spawn server: {e}"));
+            None
+        }
+    }
+}
+
+/// Own the sidecar for the life of the app: tee its output to the log and, when
+/// it exits without a deliberate quit (an OOM crash, say), restart it on the same
+/// port and token with a capped backoff so the window is never left pointed at a
+/// dead port. A tight crash-loop (`MAX_RESTARTS_IN_WINDOW` inside
+/// `RESTART_WINDOW_SECS`) stops the loop rather than hammering. Runs on its own
+/// thread and keeps `ServerProcess` pointing at the live child.
+fn supervise_server(
+    app: AppHandle,
+    cfg: ServerConfig,
+    initial: (Receiver<CommandEvent>, CommandChild),
+    shutting_down: Arc<AtomicBool>,
+) {
+    let (mut rx, child) = initial;
+    app.state::<ServerProcess>().0.lock().unwrap().replace(child);
+
+    std::thread::spawn(move || {
+        let mut restarts: u32 = 0;
+        let mut window_start = Instant::now();
+
+        loop {
+            // Drain the sidecar's output (no console in a release build) until it
+            // exits or the channel closes.
+            while let Some(event) = rx.blocking_recv() {
+                match event {
+                    CommandEvent::Stdout(line) => append_log(
+                        &cfg.log_path,
+                        &format!("[server] {}", String::from_utf8_lossy(&line).trim_end()),
+                    ),
+                    CommandEvent::Stderr(line) => append_log(
+                        &cfg.log_path,
+                        &format!("[server:err] {}", String::from_utf8_lossy(&line).trim_end()),
+                    ),
+                    CommandEvent::Error(err) => append_log(&cfg.log_path, &format!("[server:proc] {err}")),
+                    CommandEvent::Terminated(payload) => {
+                        append_log(
+                            &cfg.log_path,
+                            &format!("[server] exited: code={:?} signal={:?}", payload.code, payload.signal),
+                        );
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+
+            // A deliberate quit killed the server — do not resurrect it.
+            if shutting_down.load(Ordering::SeqCst) {
+                break;
+            }
+
+            // A server that stayed up past the window has recovered; forget older
+            // crashes so a much later, isolated crash still gets the full budget.
+            if window_start.elapsed() > Duration::from_secs(RESTART_WINDOW_SECS) {
+                restarts = 0;
+                window_start = Instant::now();
+            }
+            if restarts >= MAX_RESTARTS_IN_WINDOW {
+                append_log(
+                    &cfg.log_path,
+                    "[server] crashed repeatedly — stopping auto-restart; relaunch the app or check the logs.",
+                );
+                let _ = app.emit("server-status", "crashed");
+                break;
+            }
+
+            let backoff = RESTART_BACKOFFS_SECS[(restarts as usize).min(RESTART_BACKOFFS_SECS.len() - 1)];
+            restarts += 1;
+            append_log(&cfg.log_path, &format!("[server] restarting in {backoff}s (attempt {restarts})"));
+            let _ = app.emit("server-status", "restarting");
+            std::thread::sleep(Duration::from_secs(backoff));
+
+            if shutting_down.load(Ordering::SeqCst) {
+                break;
+            }
+
+            match spawn_server_process(&app, &cfg) {
+                Some((new_rx, new_child)) => {
+                    app.state::<ServerProcess>().0.lock().unwrap().replace(new_child);
+                    rx = new_rx;
+                    let _ = app.emit("server-status", "ready");
+                }
+                None => {
+                    let _ = app.emit("server-status", "crashed");
+                    break;
+                }
+            }
+        }
+    });
 }
 
 // ── Desktop service settings, exposed to the in-app Settings UI over IPC ───────
@@ -685,6 +833,11 @@ pub fn run() {
             let run_bg = Arc::new(AtomicBool::new(run_bg_initial));
             app.manage(RunInBackground(run_bg.clone()));
 
+            // Flipped on a deliberate quit so the server supervisor tells an
+            // intentional shutdown apart from a crash worth restarting.
+            let shutting_down = Arc::new(AtomicBool::new(false));
+            app.manage(ShuttingDown(shutting_down.clone()));
+
             // --- resolve the bundled server entry (shipped unpacked via resources) ---
             // Tauri may place the resource at <res>/resources/app-server (preserving
             // the config-relative path) or <res>/app-server — accept either.
@@ -717,60 +870,22 @@ pub fn run() {
                 ),
             );
 
-            // --- spawn the Node sidecar running the Nitro server ---
-            // Best-effort: a spawn failure is logged and surfaces as a readiness
-            // timeout (the splash shows an error) instead of a silent panic.
-            match app.shell().sidecar("node") {
-                Err(e) => append_log(&log_path, &format!("sidecar 'node' not found: {e}")),
-                Ok(cmd) => {
-                    let cmd = cmd
-                        .args([node_path(&server_entry)])
-                        .env("NODE_ENV", "production")
-                        .env("NITRO_HOST", "127.0.0.1")
-                        .env("NITRO_PORT", port.to_string())
-                        .env("PIWI_DATABASE_PATH", node_path(&db_path))
-                        .env("PIWI_STORAGE_PATH", node_path(&storage_dir))
-                        .env("PIWI_SECRET_KEY", secret)
-                        .env("PIWI_DESKTOP_TOKEN", token.clone())
-                        // Tell the bundled Nuxt app it is running in the desktop
-                        // shell so it hides account/user management (single-user,
-                        // auth off) and surfaces the local connection details
-                        // (data location, reporter token, MCP endpoint).
-                        .env("NUXT_PUBLIC_DESKTOP", "true");
-
-                    match cmd.spawn() {
-                        Err(e) => append_log(&log_path, &format!("failed to spawn server: {e}")),
-                        Ok((mut rx, child)) => {
-                            app.state::<ServerProcess>().0.lock().unwrap().replace(child);
-
-                            // Tee the sidecar's output to the log file (no console in release).
-                            let drain_log = log_path.clone();
-                            tauri::async_runtime::spawn(async move {
-                                use tauri_plugin_shell::process::CommandEvent;
-                                while let Some(event) = rx.recv().await {
-                                    match event {
-                                        CommandEvent::Stdout(line) => append_log(
-                                            &drain_log,
-                                            &format!("[server] {}", String::from_utf8_lossy(&line).trim_end()),
-                                        ),
-                                        CommandEvent::Stderr(line) => append_log(
-                                            &drain_log,
-                                            &format!("[server:err] {}", String::from_utf8_lossy(&line).trim_end()),
-                                        ),
-                                        CommandEvent::Error(err) => {
-                                            append_log(&drain_log, &format!("[server:proc] {err}"))
-                                        }
-                                        CommandEvent::Terminated(p) => append_log(
-                                            &drain_log,
-                                            &format!("[server] exited: code={:?} signal={:?}", p.code, p.signal),
-                                        ),
-                                        _ => {}
-                                    }
-                                }
-                            });
-                        }
-                    }
-                }
+            // --- spawn and supervise the Node sidecar running the Nitro server ---
+            // A spawn failure is logged and surfaces as a readiness timeout (the
+            // splash shows an error) instead of a silent panic. Once running, the
+            // supervisor restarts the server if it exits unexpectedly (e.g. an OOM
+            // crash) so the window is never left pointed at a dead port.
+            let server_config = ServerConfig {
+                server_entry: server_entry.clone(),
+                db_path: db_path.clone(),
+                storage_dir: storage_dir.clone(),
+                secret,
+                token: token.clone(),
+                port,
+                log_path: log_path.clone(),
+            };
+            if let Some(initial) = spawn_server_process(app.handle(), &server_config) {
+                supervise_server(app.handle().clone(), server_config, initial, shutting_down.clone());
             }
 
             // --- when the server is ready, navigate the window to it ---
@@ -941,6 +1056,11 @@ pub fn run() {
         .expect("error while building the Piwi Dashboard app")
         .run(|app_handle, event| match event {
             RunEvent::ExitRequested { .. } => {
+                // Tell the supervisor this stop is deliberate so it doesn't restart
+                // the server we are about to kill.
+                if let Some(flag) = app_handle.try_state::<ShuttingDown>() {
+                    flag.0.store(true, Ordering::SeqCst);
+                }
                 // Best-effort: stop the bundled server so no orphan process lingers.
                 if let Some(child) = app_handle.state::<ServerProcess>().0.lock().unwrap().take() {
                     let _ = child.kill();
