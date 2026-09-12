@@ -157,7 +157,7 @@ describe('StreamManager batching & drain', () => {
       makeOptions(),
     );
     (sm as any)._enabled = false;
-    (sm as any).pendingEvents = [{ type: 'complete', title: 'x' }];
+    (sm as any).pendingEvents.enqueue({ type: 'complete', title: 'x' });
     await sm.drain();
     expect(calls.length).toBe(0);
   });
@@ -276,5 +276,73 @@ describe('StreamManager idle heartbeat', () => {
     const afterDrain = calls.length;
     await wait(70);
     expect(calls.length, 'no heartbeats fire after drain').toBe(afterDrain);
+  });
+});
+
+describe('StreamManager buffer bounding', () => {
+  beforeEach(cleanup);
+  afterEach(cleanup);
+
+  function makeManager(overrides: Partial<PiwiDashboardOptions>): StreamManager {
+    const http = {
+      async postJSON() {
+        return {};
+      },
+      async resolveAuth() {
+        return null;
+      },
+    };
+    // Huge batch size + delay so nothing flushes mid-test: events pile up in the
+    // in-memory queue, which is exactly where the byte bound must hold.
+    const options = makeOptions({ streamingBatchSize: 1_000_000, streamingBatchDelay: 3_600_000, ...overrides });
+    const sm = new StreamManager(
+      http as any,
+      new StreamBuffer(projectName),
+      new CrashRecovery(projectName),
+      {} as any,
+      new FileHandler(),
+      options,
+    );
+    (sm as any)._enabled = true;
+    (sm as any)._runId = 1;
+    (sm as any)._token = 'tok';
+    return sm;
+  }
+
+  function clearTimers(sm: StreamManager): void {
+    const t = (sm as any).flushTimer;
+    if (t) clearTimeout(t);
+  }
+
+  it('caps the in-memory buffer instead of growing without bound', () => {
+    const sm = makeManager({ maxStreamBufferBytes: 50_000 });
+    for (let i = 0; i < 5000; i++) {
+      sm.queueEvent({ type: 'step-end', title: `s${i}`, pad: 'x'.repeat(100) } as any);
+    }
+    const q = (sm as any).pendingEvents;
+    expect(q.bytes).toBeLessThanOrEqual(50_000);
+    expect(q.droppedCount).toBeGreaterThan(0);
+    expect(sm.bufferLostResults).toBe(false); // only step events were shed
+    clearTimers(sm);
+  });
+
+  it('flags lost results when result events must be shed to stay in budget', () => {
+    const sm = makeManager({ maxStreamBufferBytes: 1_000 });
+    for (let i = 0; i < 20; i++) {
+      sm.queueEvent({ type: 'complete', title: `c${i}`, pad: 'x'.repeat(2000) } as any);
+    }
+    expect(sm.bufferLostResults).toBe(true);
+    const q = (sm as any).pendingEvents;
+    expect(q.droppedByType.complete).toBeGreaterThan(0);
+    clearTimers(sm);
+  });
+
+  it('drain never throws and clears the buffer even when over budget', async () => {
+    const sm = makeManager({ maxStreamBufferBytes: 1_000, streamingBatchSize: 1_000_000 });
+    for (let i = 0; i < 20; i++) {
+      sm.queueEvent({ type: 'complete', title: `c${i}`, pad: 'x'.repeat(2000) } as any);
+    }
+    await expect(sm.drain()).resolves.toBeUndefined();
+    expect((sm as any).pendingEvents.isEmpty).toBe(true);
   });
 });

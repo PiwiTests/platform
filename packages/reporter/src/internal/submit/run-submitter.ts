@@ -120,7 +120,11 @@ export class RunSubmitter {
 
     let outcome: SubmitOutcome = { done: false, output: null };
 
-    if (sm?.enabled && sm?.runId != null) {
+    // When buffer pressure forced test-result events out of the live stream, the
+    // server is missing that detail; finalizing with `/finish` would lock it in.
+    // Fall through to the batch upload, which re-sends the full run from the
+    // reporter's own in-memory collection, so the dropped detail is recovered.
+    if (sm?.enabled && sm?.runId != null && !sm.bufferLostResults) {
       outcome = await this.tryFinishStreaming(run, overallStatus, duration, auth);
     }
 

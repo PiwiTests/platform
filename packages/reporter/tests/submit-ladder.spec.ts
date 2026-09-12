@@ -300,6 +300,61 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     expect(fs.existsSync(recoveryFilePath(projectName)), 'recovery file is cleared after the retry').toBe(false);
   });
 
+  it('buffer overflow drops results → skips /finish and re-sends the full run via /submit', async () => {
+    let finishHit = false;
+    let submitBody: any;
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/start') {
+        jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+      } else if (req.url === '/api/test-runs/1/events') {
+        jsonRes(res, 200, {});
+      } else if (req.url === '/api/test-runs/1/finish') {
+        finishHit = true;
+        jsonRes(res, 200, {});
+      } else if (req.url === '/api/test-runs/submit') {
+        submitBody = JSON.parse(req.body);
+        jsonRes(res, 200, { runId: 1, projectId: 2 });
+      } else if (req.url === '/api/auth/me') {
+        jsonRes(res, 200, {});
+      } else {
+        textRes(res, 404, 'nope');
+      }
+    });
+
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: true,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      // Huge batch settings so events accumulate in the buffer (no mid-run
+      // flush), and a tiny budget so per-test results are evicted.
+      streamingBatchSize: 100000,
+      streamingBatchDelay: 60000,
+      maxStreamBufferBytes: 1000,
+    });
+
+    // Each complete event carries a big error string, blowing past the budget.
+    const bigError = new Error('x'.repeat(3000));
+    const suite = fakeSuite();
+    const tests = ['t1', 't2', 't3', 't4'].map((t) => fakeTestCase({ title: t, parent: suite }));
+    suite.allTests = () => tests;
+    reporter.onBegin(fakeConfig(), suite);
+    for (const test of tests) {
+      reporter.onTestBegin(test, fakeResult({ workerIndex: 0 }));
+      reporter.onTestEnd(test, fakeResult({ status: 'failed', duration: 5, workerIndex: 0, error: bigError }));
+    }
+    await reporter.onEnd({ status: 'failed' } as any);
+
+    const urls = urlsHit(server).filter((u) => u !== '/api/auth/me');
+    // /finish must be skipped because live results were dropped under pressure…
+    expect(finishHit, `urls: ${urls.join(', ')}`).toBe(false);
+    // …and the full run must still reach the server via the batch /submit.
+    expect(submitBody, `urls: ${urls.join(', ')}`).toBeTruthy();
+    expect(submitBody.testCases.length).toBe(4);
+  });
+
   it('401 with no auth propagates (does not fall back) and saves a recovery copy', async () => {
     server = await startServer((req, res) => {
       if (req.url === '/api/test-runs/submit') {
