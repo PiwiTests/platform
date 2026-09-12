@@ -84,6 +84,9 @@ describe('getTraceSnapshotsFromBlob', () => {
     // The failing action's dialog button flips to disabled between before and after.
     expect(res.pageDiff?.summary.changed).toBe(1);
     expect(res.pageDiff?.hunks[0]).toMatchObject({ role: 'button', name: 'Confirm' });
+
+    // The failing step's aria tree (after phase preferred) — the page at the failure.
+    expect(res.failingAriaText).toBe(['- dialog "Pay"', '  - button "Confirm" [disabled]'].join('\n'));
   });
 
   test('reports no-trace for a missing blob and no-snapshots when nothing was recorded', async () => {
@@ -180,6 +183,9 @@ describe('getTraceSnapshotsFromBlob — assertion failure (mutation on a prior s
 
     // Cancel removed and Pay disabled between the loaded page and the failure.
     expect(res.pageDiff?.summary).toMatchObject({ removed: 1, changed: 1 });
+
+    // The marked step's after-phase aria is the failing-step page structure.
+    expect(res.failingAriaText).toBe(['- dialog "Pay"', '  - button "Pay now" [disabled]'].join('\n'));
   });
 });
 

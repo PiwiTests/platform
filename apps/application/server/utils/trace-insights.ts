@@ -604,7 +604,31 @@ export function buildTraceSnapshots(
     hasAria,
     hasScreen,
     pageDiff: pageDiffToFailure(parsed, failingCallId, readAriaText),
+    failingAriaText: failingActionAriaText(parsed, failingCallId, readAriaText),
   };
+}
+
+/** Longest failing-step aria tree kept in the response; a larger one is capped. */
+const FAILING_ARIA_MAX_CHARS = 20_000;
+
+/**
+ * The accessibility tree of the page *at the failing step*, as ARIA text — the
+ * failing action's after-phase snapshot when it recorded one, else its
+ * before-phase. This is the page state the timeline surfaces on the step that
+ * raised the error. Null when the failing step recorded no aria snapshot.
+ */
+function failingActionAriaText(
+  parsed: ParsedTraceData,
+  failingCallId: string | null,
+  readAriaText: (file: string) => string | null,
+): string | null {
+  if (!failingCallId) return null;
+  const action = parsed.actions.find((a) => a.callId === failingCallId);
+  const file = action?.ariaSnapshotAfter ?? action?.ariaSnapshotBefore;
+  if (!file) return null;
+  const text = readAriaText(file);
+  if (text == null) return null;
+  return text.length > FAILING_ARIA_MAX_CHARS ? `${text.slice(0, FAILING_ARIA_MAX_CHARS)}\n# … (truncated)` : text;
 }
 
 /**

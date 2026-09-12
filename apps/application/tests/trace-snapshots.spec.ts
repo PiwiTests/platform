@@ -116,4 +116,24 @@ test.describe('Trace aria/screen snapshots', () => {
 
     await expect(page.getByRole('region', { name: 'Filmstrip of the page before each step' })).toBeVisible();
   });
+
+  test("the Timeline tab attaches the failing step's screenshot and ARIA to the failing step", async ({ page }) => {
+    await page.goto(`/test-run-cases/${executionId}`);
+    await waitForHydration(page);
+
+    await page
+      .getByRole('tablist', { name: 'Evidence sections' })
+      .getByRole('tab', { name: 'Timeline', exact: true })
+      .click();
+
+    // The page captured at the failing step sits inline on that step. The table
+    // is the desktop layout; the phone card copy carries the same text.
+    await expect(page.locator('table').getByText('Page at the failing step')).toBeVisible();
+
+    // Its accessibility tree unfolds on demand (a role query resolves the visible
+    // desktop toggle, not the display:none phone copy).
+    const ariaToggle = page.getByRole('button', { name: 'Accessibility tree at the failure' });
+    await expect(ariaToggle).toBeVisible();
+    await ariaToggle.click();
+  });
 });

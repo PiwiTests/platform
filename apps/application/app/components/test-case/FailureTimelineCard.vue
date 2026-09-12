@@ -767,6 +767,12 @@ function onViewTrace() {
                   />
                 </div>
               </div>
+              <FailingStepSnapshot
+                v-if="row.failed"
+                data-shot="failing-step-evidence"
+                :test-runs-case-id="testRunsCaseId"
+                class="mt-2.5"
+              />
             </div>
 
             <!-- An interleaved network / console / backend row -->
@@ -826,95 +832,104 @@ function onViewTrace() {
             <tbody>
               <template v-for="row in mergedRows" :key="row.kind === 'step' ? `s-${row.index}` : row.item.id">
                 <!-- A step row -->
-                <tr
-                  v-if="row.kind === 'step'"
-                  class="[&>td]:border-b [&>td]:border-default [&>td]:px-3 [&>td]:py-2 [&>td]:align-top"
-                  :class="row.failed ? 'bg-red-50 dark:bg-red-950/30' : ''"
-                >
-                  <td v-if="showAxis" class="tabular-nums text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
-                    {{ row.item ? formatRel(row.item.at) : '' }}
-                  </td>
-                  <td>
-                    <span
-                      v-if="status === 'didnotrun'"
-                      class="inline-flex items-center justify-center size-5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 text-xs leading-none"
-                      title="Not run"
-                      >–</span
-                    >
-                    <span
-                      v-else-if="row.failed"
-                      class="inline-flex items-center justify-center size-5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs leading-none"
-                      title="Step failed"
-                      >✗</span
-                    >
-                    <span
-                      v-else
-                      class="inline-flex items-center justify-center size-5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-xs leading-none"
-                      title="Step passed"
-                      >✓</span
-                    >
-                  </td>
-                  <td>
-                    <UBadge :color="stepCategoryColor[row.step.category] || 'neutral'" variant="soft" size="xs">
-                      {{ row.step.category }}
-                    </UBadge>
-                  </td>
-                  <td>
-                    <div class="flex items-center gap-2">
-                      <span :class="row.failed ? 'text-red-600 dark:text-red-400 font-medium' : ''">
-                        <StepLabel :step="row.step" />
-                      </span>
-                      <UBadge
-                        v-if="row.index === slowestStepIndex"
-                        color="warning"
-                        variant="subtle"
-                        size="xs"
-                        class="shrink-0"
-                        title="Slowest step in this test"
+                <template v-if="row.kind === 'step'">
+                  <tr
+                    class="[&>td]:border-b [&>td]:border-default [&>td]:px-3 [&>td]:py-2 [&>td]:align-top"
+                    :class="row.failed ? 'bg-red-50 dark:bg-red-950/30' : ''"
+                  >
+                    <td v-if="showAxis" class="tabular-nums text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                      {{ row.item ? formatRel(row.item.at) : '' }}
+                    </td>
+                    <td>
+                      <span
+                        v-if="status === 'didnotrun'"
+                        class="inline-flex items-center justify-center size-5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 text-xs leading-none"
+                        title="Not run"
+                        >–</span
                       >
-                        slowest
+                      <span
+                        v-else-if="row.failed"
+                        class="inline-flex items-center justify-center size-5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs leading-none"
+                        title="Step failed"
+                        >✗</span
+                      >
+                      <span
+                        v-else
+                        class="inline-flex items-center justify-center size-5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-xs leading-none"
+                        title="Step passed"
+                        >✓</span
+                      >
+                    </td>
+                    <td>
+                      <UBadge :color="stepCategoryColor[row.step.category] || 'neutral'" variant="soft" size="xs">
+                        {{ row.step.category }}
                       </UBadge>
-                    </div>
-                    <StepParamsDisclosure :params="row.step.params" class="mt-1" />
-                    <ErrorText
-                      v-if="row.failed && row.step.error?.message"
-                      mode="block"
-                      :text="row.step.error.message"
-                      class="mt-1"
-                    />
-                    <OpenInIdeLink
-                      v-if="row.step.location"
-                      :location="row.step.location"
-                      :project-key="projectKey ?? undefined"
-                      :project-name="projectName ?? undefined"
-                      class="text-xs text-gray-400 dark:text-gray-500 mt-0.5"
-                    />
-                  </td>
-                  <td>
-                    <div class="min-w-[6rem]">
-                      <div class="flex items-center justify-between gap-2">
-                        <DurationValue
-                          :ms="row.step.duration"
-                          :class="`text-sm ${stepDurationTextClass(row.step.duration)}`"
-                          unit-class="opacity-60"
-                        />
-                        <span
-                          v-if="stepPctOfTest(row.step.duration)"
-                          class="text-xs tabular-nums text-gray-400 dark:text-gray-500"
-                        >
-                          {{ stepPctOfTest(row.step.duration) }}
+                    </td>
+                    <td>
+                      <div class="flex items-center gap-2">
+                        <span :class="row.failed ? 'text-red-600 dark:text-red-400 font-medium' : ''">
+                          <StepLabel :step="row.step" />
                         </span>
+                        <UBadge
+                          v-if="row.index === slowestStepIndex"
+                          color="warning"
+                          variant="subtle"
+                          size="xs"
+                          class="shrink-0"
+                          title="Slowest step in this test"
+                        >
+                          slowest
+                        </UBadge>
                       </div>
-                      <div class="relative mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                      <StepParamsDisclosure :params="row.step.params" class="mt-1" />
+                      <ErrorText
+                        v-if="row.failed && row.step.error?.message"
+                        mode="block"
+                        :text="row.step.error.message"
+                        class="mt-1"
+                      />
+                      <OpenInIdeLink
+                        v-if="row.step.location"
+                        :location="row.step.location"
+                        :project-key="projectKey ?? undefined"
+                        :project-name="projectName ?? undefined"
+                        class="text-xs text-gray-400 dark:text-gray-500 mt-0.5"
+                      />
+                    </td>
+                    <td>
+                      <div class="min-w-[6rem]">
+                        <div class="flex items-center justify-between gap-2">
+                          <DurationValue
+                            :ms="row.step.duration"
+                            :class="`text-sm ${stepDurationTextClass(row.step.duration)}`"
+                            unit-class="opacity-60"
+                          />
+                          <span
+                            v-if="stepPctOfTest(row.step.duration)"
+                            class="text-xs tabular-nums text-gray-400 dark:text-gray-500"
+                          >
+                            {{ stepPctOfTest(row.step.duration) }}
+                          </span>
+                        </div>
                         <div
-                          class="absolute inset-y-0 rounded-full"
-                          :class="stepBarColorClass(row.step.duration)"
-                          :style="stepBarStyle(row.step)"
-                        />
+                          class="relative mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"
+                        >
+                          <div
+                            class="absolute inset-y-0 rounded-full"
+                            :class="stepBarColorClass(row.step.duration)"
+                            :style="stepBarStyle(row.step)"
+                          />
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                </tr>
+                    </td>
+                  </tr>
+                  <!-- The page at the failing step: screenshot + ARIA, tied to the step. -->
+                  <tr v-if="row.failed">
+                    <td :colspan="showAxis ? 5 : 4" class="border-b border-default px-3 pb-3 pt-0">
+                      <FailingStepSnapshot :test-runs-case-id="testRunsCaseId" />
+                    </td>
+                  </tr>
+                </template>
 
                 <!-- An interleaved network / console / backend row -->
                 <tr

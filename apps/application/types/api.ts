@@ -700,6 +700,12 @@ export interface TraceSnapshotsResponse {
    * Null when either phase's aria snapshot is missing.
    */
   pageDiff?: { summary: PageDiffSummary; hunks: PageDiffHunk[] } | null;
+  /**
+   * The accessibility tree at the failing step, as ARIA text (the failing
+   * action's after-phase snapshot, else its before-phase). Surfaced on the
+   * failing step in the timeline. Null when the failing step recorded no aria.
+   */
+  failingAriaText?: string | null;
 }
 
 /**
