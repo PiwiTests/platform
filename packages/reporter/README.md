@@ -38,6 +38,8 @@ export default wrapConfig(defineConfig({}), {
 
 Run `npx playwright test` — results are uploaded automatically.
 
+> Piwi rebuilds the run from the data it collects, so you don't also need Playwright's built-in `html` reporter — running it alongside Piwi just repeats the end-of-run report generation. Keep it only if you want Playwright's standalone report uploaded too.
+
 **Recommended: enable the capture fixtures.** One small file unlocks the dashboard's richest features:
 
 ```typescript

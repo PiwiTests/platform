@@ -63,6 +63,10 @@ The `use` block is Playwright's, not Piwi's: `trace`, `screenshot` and `video` d
 
 When you install via [`wrapConfig`](#installing-via-wrapconfig) (what `init` does), the reporter fills in `screenshot: 'only-on-failure'` and `trace: 'retain-on-failure'` for you whenever the top-level `use` leaves them unset — the trace alone gives the dashboard the DOM snapshot, full call stack, full network with bodies and the visual diff without the capture fixtures. On Playwright 1.63 or later the trace default also turns on the per-action **aria tree** (`snapshots: { dom: true, aria: true }`), which feeds the [Screen tab and the page diff](/features/evidence#aria-and-screen-snapshots) at negligible size. The `screen` snapshot kind — a PNG before and after every action, the trace's biggest cost — stays opt-in; set it yourself with `trace: { mode: 'retain-on-failure', snapshots: { dom: true, aria: true, screen: true } }`. Any value you set yourself (including `'off'`) is kept, per-project `use` blocks are never touched, and the reporter logs one line at the start of the run naming what it defaulted. Opt out with `defaultCapture: false` or `PIWI_DEFAULT_CAPTURE=false` to let Playwright's own defaults stand.
 
+::: tip You don't also need Playwright's `html` reporter
+Piwi rebuilds the run — history, errors, evidence, traces and live streaming — from the data this reporter collects, so the dashboard is complete without Playwright's built-in `html` reporter. Running `html` alongside Piwi only repeats end-of-run work: it regenerates its own static report each run and, run locally, opens a browser on failure by default. Drop it (or set `open: 'never'`) to skip that. If you still want Playwright's standalone report, keep it enabled and Piwi uploads it with the run ([`uploadReport`](#configuration-options)).
+:::
+
 ## Installing via wrapConfig
 
 `wrapConfig` wraps your whole Playwright config in one call: it injects the reporter, chains Piwi's [global setup](#global-setup-phase), and defaults the failure-evidence capture options. It is what `npx @piwitests/reporter init` writes for you.
@@ -558,7 +562,7 @@ Uploaded traces open in the dashboard's **built-in, self-hosted trace viewer** �
 
 ### Reporter not uploading files
 
-- Make sure an HTML reporter is configured: `['html', { outputFolder: 'playwright-report' }]`
+- Playwright's own HTML report uploads only when its `html` reporter is configured (`['html', { outputFolder: 'playwright-report' }]`) — but the dashboard reconstructs the run without it, and traces and screenshots upload either way
 - Make sure traces are enabled: `use: { trace: 'retain-on-failure' }`
 - Make sure screenshots are enabled: `use: { screenshot: 'only-on-failure' }` — Playwright's default is `'off'`, so an unset option means no screenshot to upload
 - Check the dashboard server is running and accessible at `serverUrl`
