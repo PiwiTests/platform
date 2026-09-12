@@ -194,7 +194,11 @@ async function fetchCurrentSeedVersion(base: string): Promise<string | null> {
  * IndexedDB, and record the build version it was seeded from.
  */
 async function seedFreshDatabase(SQL: SqlJsStatic, base: string, version: string | null): Promise<void> {
-  const resp = await fetch(`${base}/demo/seed.sql`);
+  // Fetched with `cache: 'no-cache'` so the SQL matches the freshly-deployed
+  // seed the version marker was compared against — a reseed triggered by a new
+  // marker must not pull a stale HTTP-cached dump, or it would record the new
+  // version against old data and never reseed again.
+  const resp = await fetch(`${base}/demo/seed.sql`, { cache: 'no-cache' });
   if (!resp.ok) {
     throw new Error(`[Demo] Failed to load seed.sql: ${resp.status} ${resp.statusText}`);
   }

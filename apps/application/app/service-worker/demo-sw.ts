@@ -91,7 +91,12 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       (async () => {
         try {
-          const shell = await fetch(APP_SHELL_URL, { credentials: 'same-origin' });
+          // Revalidate the shell on every navigation. GitHub Pages serves
+          // index.html with a short max-age and allows no cache-control
+          // override, so `no-cache` forces a conditional request (304 when
+          // unchanged) that always resolves to the current deploy's shell and
+          // the content-hashed bundles it references.
+          const shell = await fetch(APP_SHELL_URL, { credentials: 'same-origin', cache: 'no-cache' });
           if (shell.ok) return shell;
         } catch {
           // Offline or fetch failure — fall back to the original request below.
