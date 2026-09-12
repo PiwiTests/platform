@@ -105,17 +105,18 @@ The screenshots in **failure evidence** come from Playwright's `screenshot: 'onl
 
 When an execution has an uploaded trace, two evidence blocks go deeper — no configuration beyond recording traces (`trace: 'retain-on-failure'` or `'on-first-retry'` in your Playwright config):
 
-- **Test source → Full stack** — the complete call stack of the failing action from the trace's stacks index, every frame with its real source read from the trace's embedded files (recorded by default with the Playwright test runner), the failing line highlighted, dependency frames folded, and Open-in-IDE links on each in-project frame. A toggle switches back to the reporter-captured frames.
-- **Network → Full trace** — every request the page made (documents, scripts, images — not just fetch/XHR), on a waterfall with the failing action's time window shaded. Click a request for timing phases, request/response headers, and a capped body preview (JSON pretty-printed, images inline). Sensitive header values (`Authorization`, `Cookie`, …) are masked server-side and never leave the dashboard, and token-shaped strings in URLs and bodies are masked too.
+- **Test source → Full stack** — the complete call stack of the failing action from the trace's stacks index, every frame with its real source read from the trace's embedded files, the failing line highlighted, dependency frames folded, and Open-in-IDE links on each in-project frame. A toggle switches back to the reporter-captured frames.
+- **Network → Full trace** — every request the page made (documents, scripts, images — not just fetch/XHR), on a waterfall with the failing action's time window shaded. Click a request for timing phases, request/response headers, and a capped body preview (JSON pretty-printed, images inline). Sensitive header values (`Authorization`, `Cookie`, …) and token-shaped strings in URLs and bodies are masked server-side.
 
-Executions without a trace keep the reporter-captured baseline — the blocks simply hint at what a trace would add. Traces recorded without embedded sources still show the full frame list.
+Executions without a trace keep the reporter-captured baseline. Traces recorded without embedded sources still show the full frame list.
 
 ### Aria and screen snapshots
 
 A Playwright 1.63 trace can record the page's **aria tree** and a **screenshot** before and after every action (`trace: { snapshots: { dom, aria, screen } }`; [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) turns `aria` on by default, `screen` stays [opt-in](/operate/storage#trace-snapshots)). When it did, two more views appear:
 
 - **Screen tab › Before the failing action** — the page as the failing action saw it, before and at the failure, beside the failure screenshot.
-- **Timeline tab › the filmstrip** — a thumbnail of the page *before each step*, in order, the failing step marked. It turns the step list into a visual scrub of how the page looked on the way to the failure, and needs only `screen`.
+- **Timeline tab › the filmstrip** — a thumbnail of the page *before each step*, in order, the failing step marked; a visual scrub of the page on the way to the failure. Needs only `screen`.
+- **Timeline tab › the failing step** — the before and at-failure screenshots and the failure's accessibility tree, inline on the failing step, so the page at the faulty step reads without leaving the timeline.
 
 The [in-execution page diff](#page-diff) reads the same aria snapshots. All three states use the three-state empty copy (*not captured — enable trace snapshots*, with the `/setup` link) when the trace predates 1.63 or was recorded without the kind.
 
