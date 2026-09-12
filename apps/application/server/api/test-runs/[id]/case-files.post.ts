@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { getDatabase } from '../../../database';
 import { testRuns, testCases, testRunsCases, files } from '../../../database/schema';
 import { eq, and, desc } from 'drizzle-orm';
@@ -10,6 +11,9 @@ import { deriveTraceEvidence } from '../../../utils/trace-fallback-evidence';
 import { getStorage } from '../../../storage';
 import { joinSuitePath } from '#shared/utils/suites';
 import { sanitizeFilename } from '../../../utils/sanitize-filename';
+import { streamMultipart } from '../../../utils/multipart-stream';
+import { resolveMaxUploadBytes } from '../../../utils/upload-limits';
+import { formatBytes } from '#shared/utils/format-bytes';
 
 defineRouteMeta({
   openAPI: {
@@ -49,62 +53,63 @@ export default eventHandler(async (event) => {
     });
   }
 
-  const formData = await readMultipartFormData(event);
-
-  if (!formData) {
-    throw apiError({
-      statusCode: 400,
-      message: 'No form data provided',
-    });
+  const maxUploadBytes = resolveMaxUploadBytes();
+  const contentLength = parseInt(getRequestHeader(event, 'content-length') ?? '0', 10);
+  if (contentLength > maxUploadBytes) {
+    throw apiError({ statusCode: 413, message: `Upload too large (max ${formatBytes(maxUploadBytes)})` });
   }
 
-  let streamToken: string | undefined;
-  let caseInfo: { title?: string; location?: string; retries?: number; suitePath?: string[] | null } | undefined;
-  let traceFile: { filename: string; data: Buffer } | undefined;
-  let traceHash: string | undefined;
-  let attachmentMeta: { name: string; contentType: string; originalName: string }[] = [];
-  const attachmentFiles: { originalName: string; data: Buffer }[] = [];
+  // Stream the request to temp files so a large trace never sits in the heap for
+  // the whole transfer; the file parts are read back one at a time below and the
+  // temp directory is removed in the `finally`.
+  const multipart = await streamMultipart(event, { maxTotalBytes: maxUploadBytes });
+  try {
+    return await handleCaseFiles(id, multipart);
+  } finally {
+    await multipart.cleanup();
+  }
+});
 
-  for (const part of formData) {
-    if (part.name === 'streamToken') {
-      streamToken = part.data.toString('utf-8');
-    } else if (part.name === 'testCase') {
-      try {
-        caseInfo = JSON.parse(part.data.toString('utf-8'));
-      } catch {
-        throw apiError({
-          statusCode: 400,
-          message: 'Invalid JSON in testCase field',
-        });
-      }
-    } else if (part.name === 'trace' && part.filename) {
-      traceFile = {
-        filename: sanitizeFilename(part.filename),
-        data: part.data,
-      };
-    } else if (part.name === 'trace_hash') {
-      const hash = part.data.toString('utf-8');
-      if (/^[0-9a-f]{64}$/i.test(hash)) traceHash = hash.toLowerCase();
-    } else if (part.name === 'attach_meta') {
-      try {
-        const parsed = JSON.parse(part.data.toString('utf-8'));
-        if (Array.isArray(parsed)) {
-          attachmentMeta = parsed.map((a: Record<string, unknown>) => ({
-            name: String(a.name || 'attachment'),
-            contentType: String(a.contentType || 'application/octet-stream'),
-            originalName: String(a.originalName || 'attachment'),
-          }));
-        }
-      } catch {
-        // Metadata is optional; ignore parse errors
-      }
-    } else if (part.name === 'attach_file' && part.filename) {
-      attachmentFiles.push({
-        originalName: sanitizeFilename(part.filename),
-        data: part.data,
-      });
+async function handleCaseFiles(
+  id: number,
+  multipart: Awaited<ReturnType<typeof streamMultipart>>,
+): Promise<{ success: boolean; executionId: number; traces: number; attachments: number }> {
+  const { fields } = multipart;
+
+  const streamToken = fields.get('streamToken');
+  let caseInfo: { title?: string; location?: string; retries?: number; suitePath?: string[] | null } | undefined;
+  const rawCase = fields.get('testCase');
+  if (rawCase !== undefined) {
+    try {
+      caseInfo = JSON.parse(rawCase);
+    } catch {
+      throw apiError({ statusCode: 400, message: 'Invalid JSON in testCase field' });
     }
   }
+
+  const rawHash = fields.get('trace_hash');
+  const traceHash = rawHash && /^[0-9a-f]{64}$/i.test(rawHash) ? rawHash.toLowerCase() : undefined;
+
+  let attachmentMeta: { name: string; contentType: string; originalName: string }[] = [];
+  const rawAttachMeta = fields.get('attach_meta');
+  if (rawAttachMeta !== undefined) {
+    try {
+      const parsed = JSON.parse(rawAttachMeta);
+      if (Array.isArray(parsed)) {
+        attachmentMeta = parsed.map((a: Record<string, unknown>) => ({
+          name: String(a.name || 'attachment'),
+          contentType: String(a.contentType || 'application/octet-stream'),
+          originalName: String(a.originalName || 'attachment'),
+        }));
+      }
+    } catch {
+      // Metadata is optional; ignore parse errors
+    }
+  }
+
+  // The trace part (at most one) and the attachment parts, streamed to temp files.
+  const traceStreamed = multipart.files.find((f) => f.field === 'trace');
+  const attachmentStreamed = multipart.files.filter((f) => f.field === 'attach_file');
 
   if (!streamToken) {
     throw apiError({
@@ -198,18 +203,20 @@ export default eventHandler(async (event) => {
   let storedAttachments = 0;
 
   // --- Trace ---
-  if ((traceFile || traceHash) && !hasTrace) {
+  if ((traceStreamed || traceHash) && !hasTrace) {
     try {
       let storagePath: string;
       let blobId: number | null = null;
       let size: number | null = null;
 
-      if (traceHash && traceFile) {
-        const blob = await upsertTraceBlob(testRun.projectId, traceHash, traceFile.data);
+      if (traceHash && traceStreamed) {
+        // Read the streamed trace into memory only now, for the one call that
+        // parses it; the buffer is released as soon as the blob is stored.
+        const blob = await upsertTraceBlob(testRun.projectId, traceHash, await readFile(traceStreamed.path));
         storagePath = blob.path;
         blobId = blob.id;
         size = blob.size;
-      } else if (traceHash && !traceFile) {
+      } else if (traceHash && !traceStreamed) {
         // Reporter said this blob already exists on the server — look it up
         const blob = await findTraceBlob(testRun.projectId, traceHash);
         if (!blob) {
@@ -224,9 +231,9 @@ export default eventHandler(async (event) => {
       } else {
         // No hash metadata — store at the run-specific location
         await storage.mkdir(testRunPath);
-        storagePath = `${testRunPath}/${runCase.id}-${traceFile!.filename}`;
-        await storage.writeFile(storagePath, traceFile!.data);
-        size = traceFile!.data.length;
+        storagePath = `${testRunPath}/${runCase.id}-${sanitizeFilename(traceStreamed!.filename)}`;
+        await storage.writeFile(storagePath, await readFile(traceStreamed!.path));
+        size = traceStreamed!.size;
       }
 
       const normalizedPath = storagePath.replace(/\\/g, '/');
@@ -250,19 +257,20 @@ export default eventHandler(async (event) => {
   }
 
   // --- Attachments ---
-  if (attachmentMeta.length > 0 && attachmentFiles.length > 0) {
+  if (attachmentMeta.length > 0 && attachmentStreamed.length > 0) {
     const attachmentDir = `${testRunPath}/${runCase.id}`;
     await storage.mkdir(attachmentDir);
 
-    for (let fi = 0; fi < Math.min(attachmentMeta.length, attachmentFiles.length); fi++) {
+    for (let fi = 0; fi < Math.min(attachmentMeta.length, attachmentStreamed.length); fi++) {
       const meta = attachmentMeta[fi]!;
-      const fileEntry = attachmentFiles[fi]!;
-      const storagePath = `${attachmentDir}/${fileEntry.originalName}`.replace(/\\/g, '/');
+      const fileEntry = attachmentStreamed[fi]!;
+      const originalName = sanitizeFilename(fileEntry.filename);
+      const storagePath = `${attachmentDir}/${originalName}`.replace(/\\/g, '/');
 
       if (existingPaths.has(storagePath)) continue;
 
       try {
-        await storage.writeFile(storagePath, fileEntry.data);
+        await storage.writeFile(storagePath, await readFile(fileEntry.path));
         await db.insert(files).values({
           testRunsCaseId: runCase.id,
           testRunId: id,
@@ -270,7 +278,7 @@ export default eventHandler(async (event) => {
           subtype: meta.name,
           label: meta.contentType,
           path: storagePath,
-          size: fileEntry.data.length,
+          size: fileEntry.size,
         });
         existingPaths.add(storagePath);
         storedAttachments++;
@@ -315,4 +323,4 @@ export default eventHandler(async (event) => {
     traces: storedTraces,
     attachments: storedAttachments,
   };
-});
+}
