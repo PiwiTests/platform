@@ -47,21 +47,21 @@ describe('wrapConfig', () => {
     expect((config.globalSetup as string).includes('global-setup-module')).toBeTruthy();
   });
 
-  it('keeps original globalSetup string and appends piwi module', () => {
+  it('keeps original globalSetup string and prepends piwi module', () => {
     const config = wrapConfig({ globalSetup: './tests/globalSetup' });
     expect(Array.isArray(config.globalSetup)).toBeTruthy();
     expect((config.globalSetup as string[]).length).toBe(2);
-    expect((config.globalSetup as string[])[0]).toBe('./tests/globalSetup');
-    expect((config.globalSetup as string[])[1].includes('global-setup-module')).toBeTruthy();
+    expect((config.globalSetup as string[])[0].includes('global-setup-module')).toBeTruthy();
+    expect((config.globalSetup as string[])[1]).toBe('./tests/globalSetup');
   });
 
-  it('keeps original globalSetup array and appends piwi module', () => {
+  it('keeps original globalSetup array and prepends piwi module', () => {
     const config = wrapConfig({ globalSetup: ['./tests/cleanup', './tests/bootstrap'] });
     expect(Array.isArray(config.globalSetup)).toBeTruthy();
     expect((config.globalSetup as string[]).length).toBe(3);
-    expect((config.globalSetup as string[])[0]).toBe('./tests/cleanup');
-    expect((config.globalSetup as string[])[1]).toBe('./tests/bootstrap');
-    expect((config.globalSetup as string[])[2].includes('global-setup-module')).toBeTruthy();
+    expect((config.globalSetup as string[])[0].includes('global-setup-module')).toBeTruthy();
+    expect((config.globalSetup as string[])[1]).toBe('./tests/cleanup');
+    expect((config.globalSetup as string[])[2]).toBe('./tests/bootstrap');
   });
 
   it('injects piwi reporter when no reporter is set', () => {
