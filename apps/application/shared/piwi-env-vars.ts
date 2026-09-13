@@ -32,6 +32,12 @@
  * ingestion vars here but are owned by the reporter, not this registry.
  */
 
+import {
+  DEFAULT_INTEGRATIONS_SYNC_MINUTES,
+  MIN_INTEGRATIONS_SYNC_MINUTES,
+  MAX_INTEGRATIONS_SYNC_MINUTES,
+} from '#shared/integrations/sync-config';
+
 export type PiwiEnvVarCategory =
   | 'general'
   | 'database'
@@ -1077,6 +1083,16 @@ export const PIWI_ENV_VARS = {
     since: '0.29.0',
     relevantWhen: { PIWI_JIRA_BASE_URL: '*' },
     requiredWhen: { PIWI_JIRA_BASE_URL: '*' },
+  },
+  PIWI_INTEGRATIONS_SYNC_MINUTES: {
+    description: 'How often, in minutes, Piwi reads ticket statuses back from the tracker.',
+    category: 'integrations',
+    type: 'number',
+    default: String(DEFAULT_INTEGRATIONS_SYNC_MINUTES),
+    min: MIN_INTEGRATIONS_SYNC_MINUTES,
+    max: MAX_INTEGRATIONS_SYNC_MINUTES,
+    since: '0.29.0',
+    docs: 'operate/integrations#status-sync',
   },
 
   // ── Wasted-time analysis ─────────────────────────────────────────────────

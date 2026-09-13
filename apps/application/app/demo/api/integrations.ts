@@ -29,6 +29,7 @@ const DEMO_CONNECTION: ConnectionSummary = {
   lastError: null,
   managedBy: 'db',
   hasCredentials: true,
+  hasWebhookToken: false,
   createdAt: DEMO_TIME,
   updatedAt: DEMO_TIME,
 };

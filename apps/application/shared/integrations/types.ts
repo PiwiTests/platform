@@ -24,6 +24,8 @@ export interface ConnectionSummary {
   managedBy: ConnectionManagedBy;
   /** True when the connection has stored credentials, without revealing them. */
   hasCredentials: boolean;
+  /** True when an inbound-webhook token is set (the token itself is never returned). */
+  hasWebhookToken: boolean;
   createdAt: string | null;
   updatedAt: string | null;
 }

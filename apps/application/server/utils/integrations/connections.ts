@@ -18,6 +18,7 @@ import {
   type ProjectIntegration,
 } from '../../database/schema';
 import type { DbClient } from '../../database';
+import { randomBytes } from 'node:crypto';
 import { decryptSecret, encryptSecret, getEncryptionKey } from '../crypto';
 import { JiraClient } from './jira/client';
 import type { IssueTracker, TrackerCredentials } from './types';
@@ -64,9 +65,13 @@ export async function ensureEnvManagedConnections(db: DbClient): Promise<void> {
     return;
   }
 
-  const config = { flavor: jiraFlavor(env.baseUrl) };
   if (existing) {
     if (existing.baseUrl !== env.baseUrl) {
+      // Preserve any admin-set config (e.g. the webhook token) across a base-URL change.
+      const config = {
+        ...((existing.config as Record<string, unknown> | null) ?? {}),
+        flavor: jiraFlavor(env.baseUrl),
+      };
       await db
         .update(integrationConnections)
         .set({ baseUrl: env.baseUrl, config, updatedAt: new Date() })
@@ -79,7 +84,7 @@ export async function ensureEnvManagedConnections(db: DbClient): Promise<void> {
     provider: 'jira',
     name: ENV_JIRA_NAME,
     baseUrl: env.baseUrl,
-    config,
+    config: { flavor: jiraFlavor(env.baseUrl) },
     credentials: null,
     status: 'unverified',
     managedBy: 'env',
@@ -108,18 +113,34 @@ function resolveTrackerCredentials(row: IntegrationConnection): TrackerCredentia
   return null;
 }
 
+/** The connection's config with the webhook token stripped — it is never returned. */
+function publicConfig(row: IntegrationConnection): Record<string, unknown> | null {
+  const config = (row.config as Record<string, unknown> | null) ?? null;
+  if (!config || !('webhookToken' in config)) return config;
+  const { webhookToken: _omit, ...rest } = config;
+  return rest;
+}
+
+/** The stored inbound-webhook token for a connection, or null. */
+export function webhookTokenFor(row: IntegrationConnection): string | null {
+  const config = (row.config as Record<string, unknown> | null) ?? null;
+  const token = config?.webhookToken;
+  return typeof token === 'string' && token.length > 0 ? token : null;
+}
+
 function toSummary(row: IntegrationConnection): ConnectionSummary {
   return {
     id: row.id,
     provider: row.provider as IntegrationProviderName,
     name: row.name,
     baseUrl: row.baseUrl,
-    config: (row.config as Record<string, unknown> | null) ?? null,
+    config: publicConfig(row),
     status: row.status as ConnectionSummary['status'],
     lastCheckedAt: row.lastCheckedAt ? new Date(row.lastCheckedAt).toISOString() : null,
     lastError: row.lastError ?? null,
     managedBy: row.managedBy as ConnectionSummary['managedBy'],
     hasCredentials: hasStoredCredentials(row),
+    hasWebhookToken: webhookTokenFor(row) != null,
     createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : null,
     updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : null,
   };
@@ -233,6 +254,41 @@ export async function listTrackerConnections(db: DbClient): Promise<TrackerSumma
   return rows
     .filter((r) => TRACKER_PROVIDERS.has(r.provider as IntegrationProviderName) && hasStoredCredentials(r))
     .map((r) => ({ id: r.id, provider: r.provider as IntegrationProviderName, name: r.name }));
+}
+
+/**
+ * Generate (or rotate) the inbound-webhook token for a connection and store it
+ * in `config.webhookToken`. Returns the token so the caller can show it once; it
+ * is never returned by any read endpoint afterward.
+ */
+export async function setWebhookToken(db: DbClient, id: number): Promise<string | null> {
+  const row = await getConnectionRow(db, id);
+  if (!row) return null;
+  const token = randomBytes(24).toString('base64url');
+  const config = { ...((row.config as Record<string, unknown> | null) ?? {}), webhookToken: token };
+  await db
+    .update(integrationConnections)
+    .set({ config, updatedAt: new Date() })
+    .where(eq(integrationConnections.id, id));
+  return token;
+}
+
+/** Clear a connection's inbound-webhook token, turning the webhook off. */
+export async function clearWebhookToken(db: DbClient, id: number): Promise<void> {
+  const row = await getConnectionRow(db, id);
+  if (!row) return;
+  const { webhookToken: _omit, ...rest } = (row.config as Record<string, unknown> | null) ?? {};
+  await db
+    .update(integrationConnections)
+    .set({ config: rest, updatedAt: new Date() })
+    .where(eq(integrationConnections.id, id));
+}
+
+/** The connection whose stored webhook token matches, or null (constant work per row). */
+export async function connectionByWebhookToken(db: DbClient, token: string): Promise<IntegrationConnection | null> {
+  if (!token) return null;
+  const rows = await db.select().from(integrationConnections);
+  return rows.find((r) => webhookTokenFor(r) === token) ?? null;
 }
 
 /** The per-project binding for a connection, or the first binding, or null. */
