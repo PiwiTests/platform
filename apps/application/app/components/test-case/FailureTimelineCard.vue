@@ -18,7 +18,7 @@
  * against the same anchor.
  */
 import type { FailureTimeline, TimelineItem, TimelineLane } from '#shared/failure-timeline';
-import type { PerformanceStep } from '~~/types/api';
+import type { AttachmentInfo, PerformanceStep } from '~~/types/api';
 import { useClusterSectionLocator } from '~/composables/useClusterSectionLocator';
 import SectionCard from '../shared/SectionCard.vue';
 import ChartTooltip from '../shared/ChartTooltip.vue';
@@ -42,6 +42,10 @@ const props = defineProps<{
   /** Piwi project id/name — passed to the open-in-IDE links for call sites. */
   projectKey?: string | number | null;
   projectName?: string | null;
+  /** The execution's attachments — a failure screenshot binds to the failing step for pre-1.63 traces. */
+  attachments?: AttachmentInfo[] | null;
+  /** The execution's recovered failure-time ARIA tree — shown on the failing step when the trace has no per-action aria. */
+  ariaSnapshot?: string | null;
   /** Drop the card frame and padding — render a plain heading row over the body. */
   embedded?: boolean;
 }>();
@@ -771,6 +775,8 @@ function onViewTrace() {
                 v-if="row.failed"
                 data-shot="failing-step-evidence"
                 :test-runs-case-id="testRunsCaseId"
+                :attachments="attachments"
+                :aria-snapshot="ariaSnapshot"
                 class="mt-2.5"
               />
             </div>
@@ -926,7 +932,11 @@ function onViewTrace() {
                   <!-- The page at the failing step: screenshot + ARIA, tied to the step. -->
                   <tr v-if="row.failed">
                     <td :colspan="showAxis ? 5 : 4" class="border-b border-default px-3 pb-3 pt-0">
-                      <FailingStepSnapshot :test-runs-case-id="testRunsCaseId" />
+                      <FailingStepSnapshot
+                        :test-runs-case-id="testRunsCaseId"
+                        :attachments="attachments"
+                        :aria-snapshot="ariaSnapshot"
+                      />
                     </td>
                   </tr>
                 </template>

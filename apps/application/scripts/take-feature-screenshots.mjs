@@ -800,6 +800,54 @@ const SCENES = [
     },
   },
   {
+    name: 'failing-step-evidence-fallback',
+    description: "Failing step evidence on a pre-1.63 trace: the run's failure screenshot bound to the failing step",
+    route: '/projects',
+    viewport: { width: 1280, height: 2000 },
+    of: 'table',
+    pad: 12,
+    async run({ page, base, goto, settle, shoot }) {
+      // Find a failed execution whose steps carry a failing step and whose case
+      // has an image attachment — the seeded demo traces predate 1.63, so the
+      // failing step falls back to the run's failure screenshot.
+      const projects = await (await page.request.get(`${base}/api/projects`)).json();
+      const projectList = Array.isArray(projects) ? projects : (projects.items ?? projects.projects ?? []);
+      let execId = null;
+      outer: for (const project of projectList) {
+        const detail = await (await page.request.get(`${base}/api/projects/${project.id}`)).json();
+        for (const run of detail.testRuns ?? []) {
+          const runDetail = await (await page.request.get(`${base}/api/test-runs/${run.id}`)).json();
+          for (const c of runDetail.testCases ?? []) {
+            if (c.status !== 'failed' || !c.executionId) continue;
+            const exec = await (await page.request.get(`${base}/api/test-run-cases/${c.executionId}`)).json();
+            const hasFailedStep = (exec.steps ?? []).some((s) => s && s.failed);
+            const hasImage = (exec.attachments ?? []).some(
+              (a) => (a.contentType ?? '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(a.path ?? ''),
+            );
+            if (hasFailedStep && hasImage) {
+              execId = c.executionId;
+              break outer;
+            }
+          }
+        }
+      }
+      if (!execId)
+        throw new Error('no failed execution with a failing step and an image attachment for the fallback scene');
+      await goto(`/test-run-cases/${execId}`);
+      await page
+        .getByRole('tablist', { name: 'Evidence sections' })
+        .getByRole('tab', { name: 'Timeline', exact: true })
+        .click();
+      await page
+        .locator('table')
+        .getByText('Page at the failing step')
+        .first()
+        .waitFor({ state: 'visible', timeout: 30_000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'setup-companion-tools',
     description: 'Setup page: the companion-tools card below the capability ladder',
     route: '/setup',

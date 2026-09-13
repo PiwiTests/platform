@@ -115,8 +115,8 @@ Executions without a trace keep the reporter-captured baseline. Traces recorded 
 A Playwright 1.63 trace can record the page's **aria tree** and a **screenshot** before and after every action (`trace: { snapshots: { dom, aria, screen } }`; [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) turns `aria` on by default, `screen` stays [opt-in](/operate/storage#trace-snapshots)). When it did, two more views appear:
 
 - **Screen tab › Before the failing action** — the page as the failing action saw it, before and at the failure, beside the failure screenshot.
-- **Timeline tab › the filmstrip** — a thumbnail of the page *before each step*, in order, the failing step marked; a visual scrub of the page on the way to the failure. Needs only `screen`.
-- **Timeline tab › the failing step** — the before and at-failure screenshots and the failure's accessibility tree, inline on the failing step, so the page at the faulty step reads without leaving the timeline.
+- **Timeline tab › the filmstrip** — a thumbnail of the page *before each step*, in order, the failing step marked. Needs only `screen`.
+- **Timeline tab › the failing step** — the before/at-failure screenshots and the failure's accessibility tree, inline on the failing step; without 1.63 snapshots it falls back to the run's failure screenshot and recovered ARIA, so a failing step shows its page on any Playwright version.
 
 The [in-execution page diff](#page-diff) reads the same aria snapshots. All three states use the three-state empty copy (*not captured — enable trace snapshots*, with the `/setup` link) when the trace predates 1.63 or was recorded without the kind.
 
