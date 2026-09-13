@@ -37,6 +37,10 @@ Settled on 2026-09-13 with the maintainer; the open questions below that these a
    waits for step 4.
 4. **Jira only** in the first tracker milestone. GitHub Issues and GitLab Issues follow as provider files on the SCM
    token.
+5. **The ticket is written in the language of its destination.** A `locale` on the project binding (defaulting from
+   the connection, then `en`) drives every sentence Piwi authors in an issue or a comment through a message catalog;
+   the data (titles, errors, locators, paths, commands, patches) is never translated; the AI prose follows a
+   first-class *response language* setting on AI diagnosis. French ships with English. See *Localization*.
 
 ---
 
@@ -458,6 +462,33 @@ Confluence-storage renderer, `create-page` / `update-page` actions, and an entit
   the cluster page offers *A runbook exists: <title>*. Cheap once the connection exists; not in the first cut.
 
 The Confluence page body is the export bundle, so the size budget and the omission notes already exist.
+
+## Localization
+
+Piwi's dashboard is English, and the teams reading the tickets it files are not always. A ticket is a document
+written for a specific audience, so its language is a property of its **destination**, not of the viewer: the Jira
+project belongs to a team, and the binding to that project says which language the team reads. Three kinds of text
+meet in a ticket, and each is handled differently.
+
+| Text | Examples | Handling |
+|---|---|---|
+| What Piwi authors | Section headings (*What happened*, *Most likely*), fact labels (*First seen*, *Affected tests*), policy comments (*Fix landed in run #N*), the footer | A typed message catalog per language (`shared/integrations/messages/<locale>.ts`), selected by the binding's `locale`. Dates, numbers and plurals go through `Intl` with that locale. A completeness test keeps every language at parity with `en` |
+| Data | Test titles, error text, locators, file paths, the verify command, the patch, commit subjects | Never translated — it is the team's own code and Playwright's own output, quoted verbatim |
+| Prose a model wrote | The diagnosis summary and root cause, the AI cluster title | Follows the AI *response language* setting (global, per-project override, `PIWI_AI_LANGUAGE`), injected into every prompt that produces prose a person reads — so the dashboard's diagnosis and the ticket's *Most likely* section agree |
+
+Where the language lives: `integration_connections.config.locale` is the connection's default (a French Atlassian site),
+`project_integrations.locale` overrides it per project, the create modal offers a per-issue *Language* select
+defaulting from the binding, and the `create_issue` MCP tool takes `locale`. `en` and `fr` ship first; another language
+is one catalog file.
+
+**What stays English on purpose.** The deterministic sentences the dashboard computes from the evidence — the
+one-line headline, the story, the clues, the state line — are English templates that quote locators and Playwright
+terms (`shared/failure-verdict.ts`, `shared/failure-clues.ts`, `shared/cluster-state.ts`, about 1,500 lines). They are
+reproduced verbatim in the ticket's *What happened* and *Evidence* sections. Localizing them means localizing the
+dashboard, which is a separate decision (there is no i18n layer in the app today); the option of translating just the
+ticket's copy of them through the configured model exists but is not built. Jira-side names — issue types, priorities,
+statuses, transitions — are whatever the site's administrator named them, in whatever language: Piwi always addresses
+them by id, never by an English name, so a French-configured site works unchanged.
 
 ## Other trackers that fall out
 
