@@ -1,32 +1,41 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { getDatabase } from '../../database';
 import { apiError } from '../../utils/api-error';
+import { requireAuth } from '../../utils/auth';
 import { requireProjectAccess } from '../../utils/project-access';
 import { integrationActions } from '../../database/schema';
+import { Role } from '#shared/types';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Integrations'],
     summary: 'List integration actions',
     description:
-      'The outbox activity for a project — what Piwi wrote to the tracker, with the provider error on failures.',
+      'The outbox activity — what Piwi wrote to the tracker, with the provider error on failures. Filter by `projectId` (any member of that project) or by `connectionId` (administrators, across projects, for the Settings → Integrations activity list).',
     'x-required-roles': ['administrator', 'reporter', 'user'],
   },
 });
 
 export default eventHandler(async (event) => {
   const query = getQuery(event);
+  const connectionId = Number(query.connectionId ?? 0);
   const projectId = Number(query.projectId ?? 0);
-  if (!Number.isInteger(projectId) || projectId <= 0) {
-    throw apiError({ statusCode: 400, message: 'projectId is required' });
+  const status = typeof query.status === 'string' ? query.status : null;
+
+  let scopeWhere;
+  if (Number.isInteger(connectionId) && connectionId > 0) {
+    // The connection-scoped activity list spans projects, so it is admin-only.
+    await requireAuth(event, [Role.ADMINISTRATOR]);
+    scopeWhere = eq(integrationActions.connectionId, connectionId);
+  } else if (Number.isInteger(projectId) && projectId > 0) {
+    await requireProjectAccess(event, projectId);
+    scopeWhere = eq(integrationActions.projectId, projectId);
+  } else {
+    throw apiError({ statusCode: 400, message: 'projectId or connectionId is required' });
   }
-  await requireProjectAccess(event, projectId);
 
   const db = await getDatabase();
-  const status = typeof query.status === 'string' ? query.status : null;
-  const where = status
-    ? and(eq(integrationActions.projectId, projectId), eq(integrationActions.status, status))
-    : eq(integrationActions.projectId, projectId);
+  const where = status ? and(scopeWhere, eq(integrationActions.status, status)) : scopeWhere;
 
   const rows = await db
     .select({

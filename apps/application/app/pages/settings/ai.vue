@@ -36,9 +36,11 @@ const {
 } = useDiagnosisNotification();
 
 const customInstructions = ref<string>('');
+const aiLanguage = ref<string>('');
 const scmToken = ref<string>('');
 const saving = ref(false);
 const savingInstructions = ref(false);
+const savingLanguage = ref(false);
 const savingScmToken = ref(false);
 
 const testingRoles = reactive<Record<RoleKey, boolean>>({
@@ -169,6 +171,7 @@ watch(
     }
     autoDiagnose.value = val.autoDiagnose;
     customInstructions.value = val.customInstructions || '';
+    aiLanguage.value = val.language || '';
   },
   { immediate: true },
 );
@@ -284,6 +287,19 @@ async function saveInstructions() {
     toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' });
   } finally {
     savingInstructions.value = false;
+  }
+}
+
+async function saveLanguage() {
+  savingLanguage.value = true;
+  try {
+    await $fetch('/api/settings/ai', { method: 'PUT', body: { language: aiLanguage.value || null } });
+    await refresh();
+    toast.add({ title: 'Response language saved', color: 'success' });
+  } catch (err) {
+    toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' });
+  } finally {
+    savingLanguage.value = false;
   }
 }
 
@@ -494,6 +510,33 @@ function resetLimits() {
         <div class="flex justify-end">
           <UButton color="primary" :loading="savingInstructions" icon="i-lucide-save" @click="saveInstructions">
             Save instructions
+          </UButton>
+        </div>
+      </template>
+    </SectionCard>
+
+    <SectionCard title="Response language">
+      <template #subtitle>
+        The language the AI writes its prose in — diagnosis, root cause, cluster titles. Code, locators, file paths and
+        error text stay verbatim. Leave blank for English.
+      </template>
+      <EnvManagedAlert v-if="settings?.languageEnvManaged" :env-vars="['PIWI_AI_LANGUAGE']" class="mb-3" />
+      <UInput
+        v-model="aiLanguage"
+        :disabled="settings?.languageEnvManaged"
+        placeholder="e.g. French, Japanese, German"
+        class="w-full max-w-sm"
+      />
+      <template #footer>
+        <div class="flex justify-end">
+          <UButton
+            color="primary"
+            :loading="savingLanguage"
+            :disabled="settings?.languageEnvManaged"
+            icon="i-lucide-save"
+            @click="saveLanguage"
+          >
+            Save language
           </UButton>
         </div>
       </template>

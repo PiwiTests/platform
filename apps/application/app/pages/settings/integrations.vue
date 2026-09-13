@@ -141,6 +141,26 @@ async function testConnection(conn: ConnectionSummary) {
   }
 }
 
+// ── Inbound webhook token ────────────────────────────────────────────────────
+const webhooking = ref<number | null>(null);
+const webhookUrls = reactive<Record<number, string>>({});
+async function generateWebhook(conn: ConnectionSummary) {
+  webhooking.value = conn.id;
+  try {
+    const { url } = await $fetch<{ token: string; url: string }>(
+      `/api/integrations/connections/${conn.id}/webhook-token`,
+      { method: 'POST' },
+    );
+    webhookUrls[conn.id] = url;
+    await refresh();
+    toast.add({ title: 'Webhook enabled', description: 'Copy the URL now — it is shown once.', color: 'success' });
+  } catch (err) {
+    toast.add({ title: 'Could not enable the webhook', description: errorMessage(err), color: 'error' });
+  } finally {
+    webhooking.value = null;
+  }
+}
+
 const deleting = ref<number | null>(null);
 async function removeConnection(conn: ConnectionSummary) {
   deleting.value = conn.id;
@@ -238,7 +258,27 @@ function errorMessage(err: unknown): string {
                   @click="removeConnection(conn)"
                 />
               </template>
+              <UButton
+                v-if="provider.name === 'jira'"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                icon="i-lucide-webhook"
+                :label="conn.hasWebhookToken ? 'Regenerate webhook' : 'Enable webhook'"
+                :loading="webhooking === conn.id"
+                @click="generateWebhook(conn)"
+              />
             </div>
+
+            <!-- The webhook URL, shown once after generating. -->
+            <div v-if="webhookUrls[conn.id]" class="rounded-lg border border-default p-2 space-y-1 text-xs">
+              <p class="text-muted">
+                Register this URL in Jira for <span class="font-medium">issue updated</span> events (shown once):
+              </p>
+              <CodeBlock :code="webhookUrls[conn.id]!" language="text" />
+            </div>
+
+            <IntegrationActivityList :connection-id="conn.id" />
           </li>
         </ul>
 
