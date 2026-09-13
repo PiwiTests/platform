@@ -1,3 +1,4 @@
+import zlib from 'node:zlib';
 import { describe, it, expect } from 'vitest';
 import { buildExport } from '../../shared/export/build';
 import { renderExportHtml } from '../../shared/export/render-html';
@@ -276,6 +277,33 @@ describe('buildExport', () => {
     // A valid PDF begins with the %PDF- signature.
     expect(decoder.decode(built.bytes.subarray(0, 5))).toBe('%PDF-');
     expect(built.bytes.length).toBeGreaterThan(500);
+  });
+
+  // pdf-lib Flate-compresses its content streams; inflate them back to the text
+  // and drawing operators so a test can assert what the page actually paints.
+  const pdfContent = (bytes: Uint8Array): string => {
+    const raw = Buffer.from(bytes).toString('latin1');
+    let content = '';
+    for (const m of raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+      try {
+        content += zlib.inflateSync(Buffer.from(m[1], 'latin1')).toString('latin1') + '\n';
+      } catch {
+        // Not a Flate stream (an embedded image, say) — nothing to read here.
+      }
+    }
+    return content;
+  };
+
+  it('syntax-highlights source blocks with token colors', async () => {
+    const built = await buildExport(
+      bundle({ cases: [exportCase({ detail: { testSource: 'const answer = 42;' } })] }),
+      'pdf',
+      1,
+      { reader, budget },
+    );
+    // 0.486 0.227 0.929 is the keyword purple; a plain monospace block, drawn in
+    // the near-black foreground, never sets it. `const` is a TypeScript keyword.
+    expect(pdfContent(built.bytes)).toContain('0.486 0.227 0.929 rg');
   });
 
   it('lists evidence a PDF cannot carry as omitted', async () => {

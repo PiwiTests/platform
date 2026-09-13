@@ -13,9 +13,14 @@
  * source — so all of it is drawn as data. Standard PDF fonts encode Windows-1252
  * only, so `winAnsiSafe` folds the characters a run can carry but the font
  * cannot into safe equivalents rather than letting the encoder throw.
+ *
+ * Source blocks are syntax-highlighted with the same highlight.js setup the HTML
+ * report uses: it tokenizes server-side just as well, and `highlightToSpans`
+ * turns its markup into a token stream `pdf-lib` can paint as colored runs.
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import { stripAnsi } from '#shared/error-fingerprint';
+import { highlightToSpans, isKnownLanguage, type HighlightSpan } from '#shared/highlight';
 import {
   caseFacts,
   clusterFacts,
@@ -48,7 +53,42 @@ const COLORS = {
   warn: rgb(0.7, 0.32, 0.04),
   info: rgb(0.11, 0.31, 0.83),
   sunken: rgb(0.96, 0.96, 0.97),
+  // Syntax tokens, matching the light `--tok-*` palette of the HTML report.
+  tokKey: rgb(0.486, 0.227, 0.929),
+  tokStr: rgb(0.059, 0.463, 0.431),
+  tokNum: rgb(0.706, 0.325, 0.035),
+  tokFn: rgb(0.114, 0.306, 0.847),
+  tokAttr: rgb(0.635, 0.11, 0.686),
+  tokBuiltin: rgb(0.012, 0.412, 0.631),
 } as const;
+
+/** highlight.js scope → the color that carries it, mirroring the HTML report's CSS. */
+const TOKEN_COLORS: Record<string, Color> = {
+  comment: COLORS.faint,
+  quote: COLORS.faint,
+  keyword: COLORS.tokKey,
+  'selector-tag': COLORS.tokKey,
+  literal: COLORS.tokKey,
+  type: COLORS.tokKey,
+  meta: COLORS.tokKey,
+  string: COLORS.tokStr,
+  regexp: COLORS.tokStr,
+  symbol: COLORS.tokStr,
+  char: COLORS.tokStr,
+  number: COLORS.tokNum,
+  bullet: COLORS.tokNum,
+  title: COLORS.tokFn,
+  section: COLORS.tokFn,
+  name: COLORS.tokFn,
+  attr: COLORS.tokAttr,
+  attribute: COLORS.tokAttr,
+  property: COLORS.tokAttr,
+  variable: COLORS.tokAttr,
+  'template-variable': COLORS.tokAttr,
+  built_in: COLORS.tokBuiltin,
+  addition: COLORS.pass,
+  deletion: COLORS.fail,
+};
 
 const PAGE_WIDTH = 595.28; // A4 portrait
 const PAGE_HEIGHT = 841.89;
@@ -84,8 +124,8 @@ const REPLACEMENTS: Record<string, string> = {
 /**
  * Fold a string to characters a standard PDF font can encode: printable ASCII,
  * Latin-1 and the Windows-1252 punctuation, with common symbols mapped to text
- * and everything else replaced. Control characters are dropped; callers split
- * on newlines before wrapping, so none reach here.
+ * and everything else replaced. Control characters — newlines included — become
+ * a space, so callers split on newlines first to keep line breaks.
  */
 function winAnsiSafe(text: string): string {
   let out = '';
@@ -125,6 +165,44 @@ function httpColor(status: unknown): Color {
   if (n >= 300) return COLORS.info;
   if (n >= 200) return COLORS.pass;
   return COLORS.fg;
+}
+
+/** A run of monospace text sharing one color, the unit a highlighted line draws. */
+interface CodeSegment {
+  text: string;
+  color: Color;
+}
+
+/**
+ * Fold highlighted spans into wrapped, colored lines. Newlines become hard
+ * breaks (so indentation survives) and each visual line is hard-wrapped at
+ * `maxChars` — the mono font is fixed-width, so a character budget is the exact
+ * column count and never splits a glyph mid-color.
+ */
+function layoutHighlighted(spans: HighlightSpan[], maxChars: number): CodeSegment[][] {
+  const lines: CodeSegment[][] = [[]];
+  let col = 0;
+  for (const span of spans) {
+    const color = TOKEN_COLORS[span.scope] ?? COLORS.fg;
+    span.text.split('\n').forEach((part, i) => {
+      if (i > 0) {
+        lines.push([]);
+        col = 0;
+      }
+      let text = winAnsiSafe(part);
+      while (text.length > 0) {
+        if (col >= maxChars) {
+          lines.push([]);
+          col = 0;
+        }
+        const take = text.slice(0, maxChars - col);
+        lines[lines.length - 1]!.push({ text: take, color });
+        col += take.length;
+        text = text.slice(take.length);
+      }
+    });
+  }
+  return lines;
 }
 
 interface TextOptions {
@@ -214,9 +292,7 @@ class PdfBuilder {
   }
 
   wrap(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
-    return winAnsiSafe(text)
-      .split('\n')
-      .flatMap((line) => this.wrapLine(line, font, size, maxWidth));
+    return text.split('\n').flatMap((line) => this.wrapLine(winAnsiSafe(line), font, size, maxWidth));
   }
 
   /** A flowing paragraph; wraps, paginates and returns the cursor below it. */
@@ -332,14 +408,27 @@ class PdfBuilder {
     }
   }
 
-  /** A monospace block on a sunken background, split cleanly across pages. */
-  codeBlock(text: string): void {
+  /**
+   * A monospace block on a sunken background, split cleanly across pages. With a
+   * known `lang` the source is syntax-highlighted into colored runs; without one
+   * (stack traces, raw errors) it is drawn as a single plain run per line.
+   */
+  codeBlock(text: string, lang?: string): void {
     const size = 8;
     const lineGap = size * 0.5;
     const lineHeight = size + lineGap;
     const padX = 6;
     const padY = 5;
-    const lines = this.wrap(stripAnsi(text), this.mono, size, CONTENT_WIDTH - padX * 2);
+    const innerWidth = CONTENT_WIDTH - padX * 2;
+    const clean = stripAnsi(text);
+
+    let lines: CodeSegment[][];
+    if (lang && isKnownLanguage(lang)) {
+      const maxChars = Math.max(1, Math.floor(innerWidth / this.mono.widthOfTextAtSize('M', size)));
+      lines = layoutHighlighted(highlightToSpans(clean, lang).spans, maxChars);
+    } else {
+      lines = this.wrap(clean, this.mono, size, innerWidth).map((line) => [{ text: line, color: COLORS.fg }]);
+    }
     this.space(2);
 
     let index = 0;
@@ -359,7 +448,11 @@ class PdfBuilder {
       });
       let cursor = this.y - padY - size;
       for (const line of chunk) {
-        this.page.drawText(line, { x: MARGIN + padX, y: cursor, size, font: this.mono, color: COLORS.fg });
+        let x = MARGIN + padX;
+        for (const seg of line) {
+          this.page.drawText(seg.text, { x, y: cursor, size, font: this.mono, color: seg.color });
+          x += this.mono.widthOfTextAtSize(seg.text, size);
+        }
         cursor -= lineHeight;
       }
       this.y -= blockHeight;
@@ -466,19 +559,34 @@ class PdfBuilder {
       }
     }
 
+    // A padded, bordered frame on a sunken ground so a screenshot reads as
+    // inset evidence rather than part of the text flow, echoing the HTML report's
+    // bordered `img.shot`. The image is inset by `pad`, so it fits the frame.
+    const pad = 5;
     let { width, height } = image;
-    const scale = Math.min(CONTENT_WIDTH / width, 340 / height, 1);
+    const scale = Math.min((CONTENT_WIDTH - pad * 2) / width, 340 / height, 1);
     width *= scale;
     height *= scale;
-    const pageArea = PAGE_HEIGHT - MARGIN * 2;
+    const pageArea = PAGE_HEIGHT - MARGIN * 2 - pad * 2;
     if (height > pageArea) {
       const shrink = pageArea / height;
       width *= shrink;
       height *= shrink;
     }
-    this.ensure(height + 6);
-    this.y -= height;
-    this.page.drawImage(image, { x: MARGIN, y: this.y, width, height });
+    const frameHeight = height + pad * 2;
+    this.ensure(frameHeight + 6);
+    const top = this.y;
+    this.page.drawRectangle({
+      x: MARGIN,
+      y: top - frameHeight,
+      width: width + pad * 2,
+      height: frameHeight,
+      color: COLORS.sunken,
+      borderColor: COLORS.lineStrong,
+      borderWidth: 0.75,
+    });
+    this.page.drawImage(image, { x: MARGIN + pad, y: top - pad - height, width, height });
+    this.y = top - frameHeight;
     this.space(6);
     return true;
   }
@@ -508,8 +616,8 @@ function renderDiagnosis(b: PdfBuilder, diagnosis: Record<string, unknown> | nul
   if (fix) {
     b.sectionLabel('Suggested fix');
     if (fix.description) b.text(String(fix.description));
-    if (fix.patch) b.codeBlock(String(fix.patch));
-    else if (fix.code) b.codeBlock(String(fix.code));
+    if (fix.patch) b.codeBlock(String(fix.patch), 'diff');
+    else if (fix.code) b.codeBlock(String(fix.code), 'typescript');
   }
 }
 
@@ -594,7 +702,7 @@ async function renderCase(
 
   if (d.testSource) {
     b.sectionLabel('Test source');
-    b.codeBlock(String(d.testSource));
+    b.codeBlock(String(d.testSource), 'typescript');
   }
 
   if (Array.isArray(d.testSourceFrames) && d.testSourceFrames.length) {
@@ -607,7 +715,7 @@ async function renderCase(
 
   if (d.ariaSnapshot) {
     b.sectionLabel('ARIA snapshot');
-    b.codeBlock(String(d.ariaSnapshot));
+    b.codeBlock(String(d.ariaSnapshot), 'yaml');
   }
 }
 
