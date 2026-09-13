@@ -1,114 +1,41 @@
-name: Polish release notes (GitHub Models)
+name: Tidy release notes
+
+# Keep every GitHub release body non-empty and free of duplicate entries. release-please
+# emits one line per commit, so squash and cherry-pick land the same subject several times;
+# this collapses them and merges their commit links. It runs deterministically (no external
+# model), never writes an empty body, and leaves hand-authored notes (the polished
+# `## Highlights` format) untouched.
 
 on:
   release:
     types: [published]
-  # Re-polish any existing release on demand (e.g. an old raw-dump body).
+  # Re-tidy an existing release on demand — also how an already-emptied release is repaired.
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing release tag to (re-)polish, e.g. v0.7.0"
+        description: "Release tag to (re)tidy, e.g. v0.29.0"
         required: true
-      force:
-        description: "Polish even if the body is already marked ai-polished (the previous output becomes the raw input)"
-        type: boolean
-        default: false
 
 permissions:
-  contents: write   # edit the release body
-  models: read      # call GitHub Models inference
+  contents: write # edit the release body
 
 jobs:
-  polish:
+  tidy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - name: Fetch target release body
-        id: target
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Tidy the release body
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
         run: |
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > raw-body.md
-
-      # A release can arrive with an empty body (release-please sometimes
-      # publishes the release before/without notes). The changelog is the
-      # source of truth, so an empty body is backfilled from the version's
-      # CHANGELOG.md section — and written to the release right away, so the
-      # release is never left blank even if the polish below fails.
-      - name: Backfill empty release body from CHANGELOG.md
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.target.outputs.tag }}
-        run: |
-          if [ -s raw-body.md ] && grep -q '[^[:space:]]' raw-body.md; then
-            exit 0
-          fi
-          VERSION="${TAG#v}"
-          awk -v ver="$VERSION" '
-            $0 ~ "^##+ \\[?" ver "\\]?[ (]" { found=1; next }
-            found && /^## / { exit }
-            found { print }
-          ' CHANGELOG.md > raw-body.md
-          if ! grep -q '[^[:space:]]' raw-body.md; then
-            echo "::error::Release body is empty and no CHANGELOG.md section found for ${VERSION}."
-            exit 1
-          fi
-          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file raw-body.md
-
-      # Idempotency: skip if these notes were already polished (re-runs, edited releases).
-      - name: Skip if already polished
-        id: guard
-        env:
-          FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
-        run: |
-          if [ "$FORCE" != "true" ] && grep -q '<!-- ai-polished -->' raw-body.md; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Generate polished notes
-        if: steps.guard.outputs.skip == 'false'
-        id: ai
-        # v1 is the GitHub Models interface (models: read + github.token,
-        # models.github.ai endpoint). Later majors drive the Copilot CLI
-        # instead, which needs the CLI on the runner and a Copilot token.
-        uses: actions/ai-inference@v1
-        continue-on-error: true
-        with:
-          model: openai/gpt-4o                 # swappable: any GitHub Models catalog id
-          system-prompt-file: .github/prompts/changelog-system-prompt.md
-          prompt-file: raw-body.md
-          max-tokens: 1200
-          # token: ${{ github.token }}         # default; shown for clarity
-
-      # The release keeps its raw changelog notes when polish is unavailable —
-      # GitHub Models inference is being retired (410 brownouts), so its
-      # absence is a warning, not a failed run. Wiring actions/ai-inference@v3
-      # to the Copilot CLI (with a COPILOT_GITHUB_TOKEN secret) restores
-      # polished prose.
-      - name: Warn when polish did not run
-        if: steps.guard.outputs.skip == 'false' && steps.ai.outcome != 'success'
-        env:
-          TAG: ${{ steps.target.outputs.tag }}
-        run: |
-          echo "::warning::AI polish unavailable — release notes for ${TAG} keep the raw changelog text. Re-run this workflow (workflow_dispatch with the tag) once a provider is wired up."
-
-      - name: Update the release body
-        if: steps.guard.outputs.skip == 'false' && steps.ai.outcome == 'success'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.target.outputs.tag }}
-          POLISHED: ${{ steps.ai.outputs.response }}
-        run: |
-          {
-            printf '%s\n\n' "$POLISHED"
-            printf '<details><summary>Raw changelog (auto-generated)</summary>\n\n'
-            cat raw-body.md
-            printf '\n\n</details>\n'
-            printf '<!-- ai-polished -->\n'
-          } > notes.md
-          gh release edit "$TAG" --notes-file notes.md
+          # Build the de-duplicated notes from the version's CHANGELOG.md section (falling back
+          # to the current release body), then publish them. `apply` refuses to write an empty
+          # body and skips a release that already carries hand-authored notes.
+          node scripts/release-notes.mjs raw "$TAG" > "$RUNNER_TEMP/body.md"
+          node scripts/release-notes.mjs apply "$TAG" --notes "$RUNNER_TEMP/body.md" --no-changelog
