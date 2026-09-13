@@ -53,6 +53,20 @@ export const en = {
   'link.execution': 'Latest execution',
   'link.run': 'Run',
   'link.share': 'Shareable report',
+  'link.dashboard': 'Open in Piwi',
+
+  // Policy comments (written back to the ticket in its language)
+  'comment.fixLanded': 'Fix landed in run #{run} (commit {commit}, {verification}) — every affected test passed.',
+  'comment.fixLanded.noCommit': 'Fix landed in run #{run} ({verification}) — every affected test passed.',
+  'verification.diagnosisVerified': 'diagnosis-verified',
+  'verification.stoppedFailing': 'stopped failing',
+  'comment.regressed': 'Regressed in run #{run} — the fix did not hold.',
+  'comment.stillFailing': {
+    one: 'Still failing — +{count} occurrence in {runs} runs since the last note, latest run #{latest}.',
+    other: 'Still failing — +{count} occurrences in {runs} runs since the last note, latest run #{latest}.',
+  },
+  'comment.mergedInto': 'This failure was merged into {key} — tracking continues there.',
+  'comment.absorbed': 'Absorbed {key} into this issue — its failures are tracked here now.',
 } satisfies Record<string, MessageValue>;
 
 /** Every message key; `fr.ts` must supply exactly these. */

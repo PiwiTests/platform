@@ -40,4 +40,21 @@ export const fr: Record<MessageKey, MessageValue> = {
   'link.execution': 'Dernière exécution',
   'link.run': 'Série de tests',
   'link.share': 'Rapport partageable',
+  'link.dashboard': 'Ouvrir dans Piwi',
+
+  // Commentaires de politique (réécrits dans le ticket, dans sa langue)
+  'comment.fixLanded':
+    'Correctif appliqué dans la série #{run} (commit {commit}, {verification}) — tous les tests affectés sont passés.',
+  'comment.fixLanded.noCommit':
+    'Correctif appliqué dans la série #{run} ({verification}) — tous les tests affectés sont passés.',
+  'verification.diagnosisVerified': 'diagnostic vérifié',
+  'verification.stoppedFailing': 'a cessé d’échouer',
+  'comment.regressed': 'Régression dans la série #{run} — le correctif n’a pas tenu.',
+  'comment.stillFailing': {
+    one: 'Toujours en échec — +{count} occurrence sur {runs} séries depuis la dernière note, dernière série #{latest}.',
+    other:
+      'Toujours en échec — +{count} occurrences sur {runs} séries depuis la dernière note, dernière série #{latest}.',
+  },
+  'comment.mergedInto': 'Cet échec a été fusionné dans {key} — le suivi se poursuit là-bas.',
+  'comment.absorbed': '{key} a été absorbé dans ce ticket — ses échecs sont suivis ici désormais.',
 };

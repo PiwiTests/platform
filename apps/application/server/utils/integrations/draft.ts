@@ -22,24 +22,14 @@ import type {
 } from '#shared/integrations/types';
 import { buildClusterIssue, buildExecutionIssue, type BuiltClusterIssue } from './documents';
 import { getConnectionRow, getProjectBinding, listTrackerConnections, trackerForRow } from './connections';
+import { bindingRowToResolved } from './binding';
+import { pickOwnerRoute } from '#shared/integrations/binding';
+import { getFailureCluster } from '#shared/handlers/failure-clusters';
 import { findFixedBefore } from '../cluster-memory';
 import { statusColorForCategory } from './types';
 import type { IssueTracker, TrackerIssue } from './types';
 
 export type DraftEntityType = 'failure_cluster' | 'test_runs_case';
-
-const DEFAULT_INCLUDE: IssueIncludeOptions = {
-  includeDiagnosis: true,
-  includePatch: true,
-  includeScreenshot: false,
-  includeShareLink: false,
-};
-
-/** Read the include toggles from a binding row, falling back to the defaults. */
-function includeFromBinding(binding: { include?: unknown } | null): IssueIncludeOptions {
-  const raw = (binding?.include ?? null) as Partial<IssueIncludeOptions> | null;
-  return { ...DEFAULT_INCLUDE, ...(raw ?? {}) };
-}
 
 /** The cluster an entity belongs to (itself for a cluster, its cluster for an execution). */
 async function resolveClusterId(db: DbClient, entityType: DraftEntityType, entityId: number): Promise<number | null> {
@@ -182,10 +172,11 @@ export async function buildIssueDraft(
   if (projectId == null) return null;
 
   const chosenId = opts.connectionId ?? connections[0]!.id;
-  const binding = await getProjectBinding(db, projectId, chosenId);
+  const bindingRow = await getProjectBinding(db, projectId);
+  const resolved = bindingRowToResolved(bindingRow);
   const chosenRow = await getConnectionRow(db, chosenId);
-  const include = { ...includeFromBinding(binding), ...(opts.include ?? {}) };
-  const locale = resolveLocale(binding, chosenRow, opts.locale);
+  const include = { ...resolved.include, ...(opts.include ?? {}) };
+  const locale = resolveLocale(bindingRow, chosenRow, opts.locale);
 
   const built: BuiltClusterIssue | null =
     entityType === 'failure_cluster'
@@ -193,12 +184,19 @@ export async function buildIssueDraft(
       : await buildExecutionIssue(db, entityId, { ...include, locale, siteUrl: opts.siteUrl });
   if (!built) return null;
 
-  const bindingLabels = Array.isArray(binding?.labels) ? (binding!.labels as string[]) : [];
+  // The cluster's effective owner picks the first matching route; its overrides
+  // (project key, assignee, extra labels) fill the draft on top of the binding
+  // defaults, so a team's failures prefill that team's destination.
+  const clusterMeta = await getFailureCluster(db, clusterId).catch(() => null);
+  const route = pickOwnerRoute(resolved.ownerRoutes, clusterMeta?.owner?.name ?? null);
+
   const [cluster] = await db
     .select({ fingerprint: failureClusters.fingerprint })
     .from(failureClusters)
     .where(eq(failureClusters.id, clusterId));
-  const labels = [...new Set([...bindingLabels, ...issueLabels(clusterId, cluster?.fingerprint ?? '')])];
+  const labels = [
+    ...new Set([...resolved.labels, ...(route?.labels ?? []), ...issueLabels(clusterId, cluster?.fingerprint ?? '')]),
+  ];
 
   // Dedupe candidates — a pinned link first, then label/fingerprint search, then fixed-before.
   const tracker = chosenRow ? trackerForRow(chosenRow) : null;
@@ -215,10 +213,10 @@ export async function buildIssueDraft(
     title: built.title,
     connectionId: chosenId,
     connections,
-    projectKey: binding?.projectKey ?? null,
-    issueType: binding?.issueType ?? null,
+    projectKey: route?.projectKey ?? resolved.projectKey,
+    issueType: resolved.issueType,
     labels,
-    assignee: binding?.defaultAssignee ?? null,
+    assignee: route?.assigneeAccountId ?? resolved.defaultAssignee,
     locale,
     include,
     markdown: renderMarkdown(built.document),

@@ -71,6 +71,21 @@ export async function writeCreatedIssueLink(
 }
 
 /**
+ * Merge a patch into a link's `metadata` JSON, preserving the keys it already
+ * carries. The sync task and the still-failing policy keep their bookkeeping
+ * (the tracker's status category and assignee, the last-commented occurrence
+ * count) here.
+ */
+export async function mergeEntityLinkMetadata(db: DbClient, id: number, patch: Record<string, unknown>): Promise<void> {
+  const [row] = await db.select({ metadata: entityLinks.metadata }).from(entityLinks).where(eq(entityLinks.id, id));
+  const current = (row?.metadata as Record<string, unknown> | null) ?? {};
+  await db
+    .update(entityLinks)
+    .set({ metadata: { ...current, ...patch } as never, updatedAt: new Date() })
+    .where(eq(entityLinks.id, id));
+}
+
+/**
  * Refresh an entity link's cached status fields — what the sync milestone calls
  * after reading the tracker back through the connection.
  */

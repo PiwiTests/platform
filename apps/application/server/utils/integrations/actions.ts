@@ -45,6 +45,18 @@ export interface CommentActionPayload {
   document: IssueDocument;
 }
 
+/**
+ * A transition action's snapshot. `transitionId` is resolved at binding time; a
+ * `statusName` lets the action match a transition by its target status against
+ * the actual issue's transitions when the id is unknown (a French-configured
+ * site names them in French, so the match is on the site's own names, by id).
+ */
+export interface TransitionActionPayload {
+  issueKey: string;
+  transitionId?: string | null;
+  statusName?: string | null;
+}
+
 export interface CreateIssueResult {
   key: string;
   url: string;
@@ -160,6 +172,26 @@ async function applyComment(tracker: IssueTracker, action: IntegrationAction): P
   await tracker.addComment(payload.issueKey, payload.document);
 }
 
+/**
+ * Perform one transition. Prefers the configured id; falls back to the
+ * transition whose target status name matches (case-insensitively), read from
+ * the actual issue so the match is on the site's own names. A no-op when the
+ * transition is not available (already there, or renamed away).
+ */
+async function applyTransition(tracker: IssueTracker, action: IntegrationAction): Promise<void> {
+  const payload = action.payload as TransitionActionPayload;
+  const available = await tracker.listTransitions(payload.issueKey);
+  let target = payload.transitionId ? available.find((t) => t.id === payload.transitionId) : undefined;
+  if (!target && payload.statusName) {
+    const wanted = payload.statusName.trim().toLowerCase();
+    target =
+      available.find((t) => (t.toStatus ?? '').trim().toLowerCase() === wanted) ??
+      available.find((t) => t.name.trim().toLowerCase() === wanted);
+  }
+  if (!target) return;
+  await tracker.transition(payload.issueKey, target.id);
+}
+
 export type ActionOutcome =
   | { status: 'done'; result?: unknown }
   | { status: 'skipped'; reason: string }
@@ -190,6 +222,14 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
     }
     if (action.kind === 'comment') {
       await applyComment(tracker, action);
+      await db
+        .update(integrationActions)
+        .set({ status: 'done', error: null, attempts, finishedAt: now })
+        .where(eq(integrationActions.id, action.id));
+      return { status: 'done' };
+    }
+    if (action.kind === 'transition') {
+      await applyTransition(tracker, action);
       await db
         .update(integrationActions)
         .set({ status: 'done', error: null, attempts, finishedAt: now })

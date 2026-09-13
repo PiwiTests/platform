@@ -13,6 +13,10 @@ import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages'
 import type { IssueIncludeOptions } from '#shared/integrations/types';
 import { buildClusterIssue, buildExecutionIssue } from './documents';
 import { enqueueAction, runActionNow, type CreateIssueActionPayload, type CreateIssueResult } from './actions';
+import { readProjectIntegration } from './binding';
+import { pickOwnerRoute } from '#shared/integrations/binding';
+import { createIssueKey } from '#shared/integrations/action-keys';
+import { getFailureCluster } from '#shared/handlers/failure-clusters';
 import type { DraftEntityType } from './draft';
 
 export interface CreateIssueParams {
@@ -80,7 +84,15 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
     .from(failureClusters)
     .where(eq(failureClusters.id, target.clusterId));
   const standardLabels = issueLabels(target.clusterId, cluster?.fingerprint ?? '');
-  const labels = [...new Set([...(params.labels ?? built.labels), ...standardLabels])];
+
+  // The owner route contributes a Jira component the modal never asks for, plus
+  // any labels the route adds; project key and assignee already ride in on the
+  // prefilled request, so the route only fills what the request could not carry.
+  const binding = await readProjectIntegration(db, target.projectId);
+  const clusterMeta = await getFailureCluster(db, target.clusterId).catch(() => null);
+  const route = pickOwnerRoute(binding.ownerRoutes, clusterMeta?.owner?.name ?? null);
+
+  const labels = [...new Set([...(params.labels ?? built.labels), ...(route?.labels ?? []), ...standardLabels])];
 
   const payload: CreateIssueActionPayload = {
     projectKey: params.projectKey,
@@ -89,6 +101,7 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
     document: built.document,
     labels,
     assigneeId: params.assignee ?? null,
+    componentId: route?.componentId ?? null,
     locale,
     // The created known-issue link always attaches to the cluster, so the chip
     // shows on the cluster page and the inbox regardless of the entity clicked.
@@ -96,7 +109,7 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
     linkEntityId: target.clusterId,
   };
 
-  const dedupeKey = `create-issue:${params.entityType}:${params.entityId}:conn${params.connectionId}`;
+  const dedupeKey = createIssueKey(params.entityType, params.entityId, params.connectionId);
   const action = await enqueueAction(db, {
     connectionId: params.connectionId,
     projectId: target.projectId,

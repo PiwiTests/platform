@@ -7,6 +7,7 @@
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { entityLinks } from '../../database/schema';
 import type { DbClient } from '../../database';
+import type { EntityLink } from '../../database/schema';
 
 export interface KnownIssue {
   key: string;
@@ -14,14 +15,23 @@ export interface KnownIssue {
   status: string | null;
 }
 
-/** The cluster's known tracker issue, or null. */
-export async function getClusterKnownIssue(db: DbClient, clusterId: number): Promise<KnownIssue | null> {
+/**
+ * The cluster's tracker link — the newest link with a key that Piwi can write
+ * back through (a Jira link, or any link that carries a `connection_id`). The
+ * full row, for the sync task and the policies that comment and transition.
+ */
+export async function getClusterTrackerLink(db: DbClient, clusterId: number): Promise<EntityLink | null> {
   const links = await db
     .select()
     .from(entityLinks)
     .where(and(eq(entityLinks.failureClusterId, clusterId), isNotNull(entityLinks.key)))
     .orderBy(desc(entityLinks.id));
-  const link = links.find((l) => l.provider === 'jira' || l.connectionId != null);
+  return links.find((l) => l.provider === 'jira' || l.connectionId != null) ?? null;
+}
+
+/** The cluster's known tracker issue, or null. */
+export async function getClusterKnownIssue(db: DbClient, clusterId: number): Promise<KnownIssue | null> {
+  const link = await getClusterTrackerLink(db, clusterId);
   if (!link?.key) return null;
   return { key: link.key, url: link.url, status: link.statusText ?? null };
 }
