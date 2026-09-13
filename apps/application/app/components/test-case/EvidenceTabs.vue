@@ -330,6 +330,8 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           :has-trace="hasTrace"
           :project-key="projectKey"
           :project-name="projectName"
+          :attachments="attachments"
+          :aria-snapshot="ariaSnapshot"
         />
       </div>
 
