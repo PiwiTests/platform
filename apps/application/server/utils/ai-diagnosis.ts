@@ -58,9 +58,17 @@ export function isDiagnosisStale(row: FailureDiagnosis): boolean {
   return Date.now() - row.updatedAt.getTime() > STALE_RUNNING_MS;
 }
 
-/** Default model when none is configured (Anthropic only; OpenAI requires an explicit model). */
+/**
+ * Model label for the in-progress diagnosis record; the completed record stores
+ * the model the provider actually reports back. Anthropic falls back to its
+ * default model, the CLI to a generic label (it resolves its own default), and
+ * OpenAI requires an explicit model so there is nothing to fall back to.
+ */
 function resolveModel(config: AiConfig): string {
-  return config.model || (config.provider === 'anthropic' ? DEFAULT_ANTHROPIC_MODEL : config.model);
+  if (config.model) return config.model;
+  if (config.provider === 'anthropic') return DEFAULT_ANTHROPIC_MODEL;
+  if (config.provider === 'claude-cli') return 'claude';
+  return config.model;
 }
 
 /**

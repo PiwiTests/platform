@@ -947,6 +947,34 @@ const SCENES = [
     },
   },
   {
+    name: 'ai-claude-cli',
+    description: 'Settings → AI: use the local Claude Code CLI as the provider — no API key (desktop shell)',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/ai',
+    viewport: { width: 1000, height: 1100 },
+    of: '[data-shot="ai-model-providers"]',
+    pad: 12,
+    outputs: ['ai-claude-cli.png', 'ai-claude-cli-selected.png'],
+    async run({ page, shoot, settle }) {
+      // The status card sits at the top of the providers section and probes the
+      // real `claude` on this machine (installed + signed-in; no tokens spent).
+      // Wait for that probe to resolve before capturing.
+      await page.getByText('billed to your Claude Code sign-in').first().waitFor();
+      await page.getByText('Checking for the Claude CLI…').waitFor({ state: 'hidden' });
+      await settle();
+      await shoot();
+
+      // Select the CLI as the diagnosis provider to reveal the no-API-key role
+      // form (the provider select carries whatever config is stored).
+      await page.getByRole('combobox').first().click();
+      await page.getByRole('option', { name: 'Claude Code (local)' }).click();
+      await page.getByText('it uses your Claude Code sign-in').first().waitFor();
+      await settle();
+      await shoot('selected');
+    },
+  },
+  {
     name: 'project-from-folder',
     description: 'New-project modal: start from a local folder (desktop shell)',
     tags: ['desktop'],
