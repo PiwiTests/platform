@@ -157,6 +157,13 @@ import {
   createDemoConnection,
   updateDemoConnection,
   testDemoConnection,
+  demoTrackerStatus,
+  demoIssueDraft,
+  demoCreateIssue,
+  demoIntegrationActions,
+  demoConnectionProjects,
+  demoConnectionIssueTypes,
+  demoAssignable,
 } from './integrations';
 import type { ConnectionInput } from '#shared/integrations/types';
 import {
@@ -1687,6 +1694,42 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/test$/,
     handler: async () => testDemoConnection(),
+  },
+  { method: 'GET', pattern: /^\/api\/integrations\/status$/, handler: async () => demoTrackerStatus() },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/issue-draft$/,
+    handler: async (_, __, q) => {
+      const entityType = (q?.get('entityType') ?? '') as 'failure_cluster' | 'test_runs_case';
+      const entityId = Number(q?.get('entityId') ?? 0);
+      const draft = await demoIssueDraft(await getDemoDb(), entityType, entityId);
+      if (!draft) throw demoHttpError(404, 'No tracker connected or entity unavailable');
+      return draft;
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/integrations\/issues$/,
+    handler: async (_, body) => {
+      const b = body as { entityType: 'failure_cluster' | 'test_runs_case'; entityId: number; title?: string };
+      return demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title);
+    },
+  },
+  { method: 'GET', pattern: /^\/api\/integrations\/actions$/, handler: async () => demoIntegrationActions() },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/projects$/,
+    handler: async () => demoConnectionProjects(),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/issue-types$/,
+    handler: async () => demoConnectionIssueTypes(),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/assignable$/,
+    handler: async () => demoAssignable(),
   },
 
   // Search
