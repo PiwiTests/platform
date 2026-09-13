@@ -7,6 +7,7 @@ import type {
   IssueDraft,
 } from '#shared/integrations/types';
 import { renderMarkdown } from '#shared/integrations/render-markdown';
+import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
 import { buildClusterIssue, buildExecutionIssue } from '~~/server/utils/integrations/documents';
 import { entityLinks, testRunsCases } from '~~/server/database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
@@ -115,13 +116,14 @@ export async function demoIssueDraft(
   db: DrizzleDB,
   entityType: 'failure_cluster' | 'test_runs_case',
   entityId: number,
+  locale: IssueLocale = DEFAULT_LOCALE,
 ): Promise<IssueDraft | null> {
   const clusterId = await resolveClusterId(db, entityType, entityId);
   if (clusterId == null) return null;
   const built =
     entityType === 'failure_cluster'
-      ? await buildClusterIssue(db, entityId, {})
-      : await buildExecutionIssue(db, entityId, {});
+      ? await buildClusterIssue(db, entityId, { locale })
+      : await buildExecutionIssue(db, entityId, { locale });
   if (!built) return null;
   return {
     entityType,
@@ -134,6 +136,7 @@ export async function demoIssueDraft(
     issueType: DEMO_ISSUE_TYPE,
     labels: built.labels,
     assignee: null,
+    locale,
     include: { includeDiagnosis: true, includePatch: true, includeScreenshot: false, includeShareLink: false },
     markdown: renderMarkdown(built.document),
     document: built.document,

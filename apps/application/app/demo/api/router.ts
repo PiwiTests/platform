@@ -166,6 +166,7 @@ import {
   demoAssignable,
 } from './integrations';
 import type { ConnectionInput } from '#shared/integrations/types';
+import { toIssueLocale } from '#shared/integrations/messages';
 import {
   getTestRun,
   getRecentTestRuns,
@@ -1702,7 +1703,12 @@ const routes: RouteEntry[] = [
     handler: async (_, __, q) => {
       const entityType = (q?.get('entityType') ?? '') as 'failure_cluster' | 'test_runs_case';
       const entityId = Number(q?.get('entityId') ?? 0);
-      const draft = await demoIssueDraft(await getDemoDb(), entityType, entityId);
+      const draft = await demoIssueDraft(
+        await getDemoDb(),
+        entityType,
+        entityId,
+        toIssueLocale(q?.get('locale')) ?? undefined,
+      );
       if (!draft) throw demoHttpError(404, 'No tracker connected or entity unavailable');
       return draft;
     },
