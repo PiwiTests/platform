@@ -62,6 +62,7 @@ CREATE UNIQUE INDEX "idx_integration_actions_dedupe" ON "integration_actions" US
 CREATE INDEX "idx_integration_actions_project_status" ON "integration_actions" USING btree ("project_id","status");--> statement-breakpoint
 CREATE INDEX "idx_integration_actions_status" ON "integration_actions" USING btree ("status","scheduled_for");--> statement-breakpoint
 CREATE INDEX "idx_integration_actions_connection" ON "integration_actions" USING btree ("connection_id");--> statement-breakpoint
+CREATE INDEX "idx_integration_actions_requested_by" ON "integration_actions" USING btree ("requested_by");--> statement-breakpoint
 CREATE INDEX "idx_integration_connections_provider" ON "integration_connections" USING btree ("provider");--> statement-breakpoint
 CREATE INDEX "idx_project_integrations_project" ON "project_integrations" USING btree ("project_id");--> statement-breakpoint
 CREATE INDEX "idx_project_integrations_connection" ON "project_integrations" USING btree ("connection_id");--> statement-breakpoint

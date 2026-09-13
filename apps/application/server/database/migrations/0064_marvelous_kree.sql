@@ -24,6 +24,7 @@ CREATE UNIQUE INDEX `idx_integration_actions_dedupe` ON `integration_actions` (`
 CREATE INDEX `idx_integration_actions_project_status` ON `integration_actions` (`project_id`,`status`);--> statement-breakpoint
 CREATE INDEX `idx_integration_actions_status` ON `integration_actions` (`status`,`scheduled_for`);--> statement-breakpoint
 CREATE INDEX `idx_integration_actions_connection` ON `integration_actions` (`connection_id`);--> statement-breakpoint
+CREATE INDEX `idx_integration_actions_requested_by` ON `integration_actions` (`requested_by`);--> statement-breakpoint
 CREATE TABLE `integration_connections` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`provider` text NOT NULL,

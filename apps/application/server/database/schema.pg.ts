@@ -1038,6 +1038,7 @@ export const integrationActions = pgTable(
     projectStatusIdx: index('idx_integration_actions_project_status').on(t.projectId, t.status),
     statusScheduledIdx: index('idx_integration_actions_status').on(t.status, t.scheduledFor),
     connectionIdx: index('idx_integration_actions_connection').on(t.connectionId),
+    requestedByIdx: index('idx_integration_actions_requested_by').on(t.requestedBy),
   }),
 );
 

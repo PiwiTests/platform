@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "fd6ac1a3-6e81-45af-8574-632f340ebd36",
+  "id": "8508d155-ba33-4fa9-9db8-ab7895d8d217",
   "prevId": "298e3730-8044-4b1d-a51b-729c3b8ab75f",
   "tables": {
     "account_tokens": {
@@ -1753,6 +1753,11 @@
         "idx_integration_actions_connection": {
           "name": "idx_integration_actions_connection",
           "columns": ["connection_id"],
+          "isUnique": false
+        },
+        "idx_integration_actions_requested_by": {
+          "name": "idx_integration_actions_requested_by",
+          "columns": ["requested_by"],
           "isUnique": false
         }
       },

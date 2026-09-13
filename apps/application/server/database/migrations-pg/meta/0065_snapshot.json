@@ -1,5 +1,5 @@
 {
-  "id": "75d8ceac-d255-4fa1-9f49-778d5e5ceb96",
+  "id": "f097de10-7343-4ec0-97b7-4198c2ad0d80",
   "prevId": "7bb160a1-edc9-4edd-8299-595b9c2b7ac5",
   "version": "7",
   "dialect": "postgresql",
@@ -2033,6 +2033,21 @@
           "columns": [
             {
               "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_integration_actions_requested_by": {
+          "name": "idx_integration_actions_requested_by",
+          "columns": [
+            {
+              "expression": "requested_by",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
