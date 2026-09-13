@@ -5,7 +5,7 @@ failure evolves, routing it to the team that owns the test, and — second — p
 Underneath both sits an **integration layer** (connections, providers, a neutral document model, a durable action
 outbox) so the next tracker or wiki is one provider file, not one more feature.
 
-**Status:** proposal — nothing shipped · **Scope:** Jira Cloud (and the shape that lets Server/Data Center follow),
+**Status:** accepted, in implementation (see *Decisions* below) · **Scope:** Jira Cloud (and the shape that lets Server/Data Center follow),
 Confluence, the shared layer, and the smaller trackers that fall out of it · **Date:** 2026-09-13 · **Builds on:**
 entity links, the notifications outbox, the auto-heal outbox, the SCM provider layer, ownership, fix plans, offline
 export, share links.
@@ -21,6 +21,22 @@ already derives (`piwi:owner`, CODEOWNERS): the checkout team's failures land in
 assigned to whoever they mapped. Confluence gets the same document model pointed at a page — an investigation report,
 a release test report, a weekly digest per team. Everything is off until an administrator connects a system, every
 outbound write is a durable, retried, auditable action, and secrets follow the existing encrypt-at-rest rules.
+
+---
+
+## Decisions
+
+Settled on 2026-09-13 with the maintainer; the open questions below that these answer are marked as such.
+
+1. **Jira Cloud only** in the first cut (REST v3, email + API token, ADF). The connection carries a `flavor` field and
+   the client interface is shaped so Server / Data Center is a second client file later.
+2. **Owner routes live on the project binding.** No Team entity yet; it is promoted once a second consumer wants the
+   same mapping.
+3. **Build rollout steps 1–3** — foundations, create an issue, keep it honest (two-way sync) — before any
+   automatic creation. The binding form carries the auto-create policy fields disabled by default; the trigger code
+   waits for step 4.
+4. **Jira only** in the first tracker milestone. GitHub Issues and GitLab Issues follow as provider files on the SCM
+   token.
 
 ---
 
@@ -552,23 +568,17 @@ Jira the same way; the settings page hides nothing there.
 
 Each with the default the design assumes; a different answer changes the first milestone.
 
-1. **Jira flavor first.** Cloud only, or Cloud and Server/DC in the same first cut? *Default: Cloud, with the
-   `flavor` field and the interface designed so DC is a second client file — DC ships in Tier 2.*
-2. **Teams.** Owner routes on the project binding, or a `teams` entity from the start (members, matchers,
-   per-provider identities) that Jira routing, the notifications owner filter, the *Mine* queue and per-team analytics
-   all read? *Default: routes first, entity when a second consumer wants it.*
-3. **How automatic.** Ship manual creation and sync before any auto-create, or design the auto-create policy into the
-   first binding form (off by default) so the settings surface is stable from day one? *Default: the form carries the
-   policy fields disabled-by-default from the start; the trigger code lands in Tier 3.*
+1. **Jira flavor first** — *settled: Cloud only* (decision 1).
+2. **Teams** — *settled: owner routes on the project binding* (decision 2).
+3. **How automatic** — *settled: manual creation and sync first; the binding form carries the auto-create fields
+   disabled by default, the trigger lands in step 4* (decision 3).
 4. **What the ticket carries by default.** Diagnosis and patch on; screenshot attachment off (Jira attachment
    permissions vary); share link off unless `PIWI_SHARE_LINKS_ENABLED`. Right defaults?
 5. **Where the connection lives.** Env vars for one instance-wide connection *and* DB-managed connections for several,
    or DB only? *Default: both, as every other secret-bearing setting.*
 6. **Private hosts.** Trust administrator-supplied base URLs unconditionally, or require an explicit
    `PIWI_INTEGRATIONS_ALLOW_PRIVATE_HOSTS=true` for RFC 1918 targets? *Default: trust admins; document it.*
-7. **GitHub / GitLab Issues.** Include them in the first tracker milestone since the SCM token already exists (tiny
-   clients, big audience), or Jira alone first? *Default: Jira alone in the first PR; GitHub Issues second, before
-   Confluence.*
+7. **GitHub / GitLab Issues** — *settled: Jira alone first* (decision 4).
 8. **Confluence scope.** Investigation report only, or also the run report and the living digest page? *Default:
    investigation and run report; the digest waits for teams.*
 9. **Assignee mapping.** Search assignable users live in the modal (Jira Cloud may hide emails), remember the pick per
