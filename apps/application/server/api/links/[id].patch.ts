@@ -1,6 +1,7 @@
 import { requireResolvedProjectAccess, resolveLinkProjectId } from '../../utils/project-access';
 import { patchLink } from '#shared/handlers/links';
 import { z } from 'zod';
+import { detectProviderWithConnections } from '../../utils/integrations/link-resolve';
 
 defineRouteMeta({
   openAPI: {
@@ -37,7 +38,7 @@ export default eventHandler(async (event) => {
   }
 
   try {
-    return await patchLink(db, id, validation.data);
+    return await patchLink(db, id, validation.data, (u) => detectProviderWithConnections(db, u));
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to update link';
     const statusCode = message === 'Link not found' ? 404 : 400;

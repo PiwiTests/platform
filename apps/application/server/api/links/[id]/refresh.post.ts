@@ -2,7 +2,8 @@ import { requireResolvedProjectAccess, resolveLinkProjectId } from '../../../uti
 import { entityLinks } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
 import { refreshLinkMeta } from '#shared/handlers/links';
-import { unfurlUrl } from '../../../utils/unfurl';
+import { detectProviderWithConnections } from '../../../utils/integrations/link-resolve';
+import { unfurlLink } from '../../../utils/integrations/link-unfurl';
 
 defineRouteMeta({
   openAPI: {
@@ -24,7 +25,7 @@ export default eventHandler(async (event) => {
 
   let result: { link: any };
   try {
-    result = await refreshLinkMeta(db, id);
+    result = await refreshLinkMeta(db, id, (u) => detectProviderWithConnections(db, u));
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to refresh link';
     const statusCode = message === 'Link not found' ? 404 : 400;
@@ -36,8 +37,9 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 500, message: 'Failed to refresh link' });
   }
 
-  // Unfurl enrichment (server-only) — tries rich provider first, falls back to OpenGraph
-  const { title, statusText, statusColor } = await unfurlUrl(link.url, db);
+  // Unfurl enrichment (server-only) — through the connection when one matched,
+  // otherwise the rich provider / OpenGraph path.
+  const { title, statusText, statusColor } = await unfurlLink(db, link);
 
   await db
     .update(entityLinks)
