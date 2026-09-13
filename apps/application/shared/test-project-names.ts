@@ -84,6 +84,7 @@ export const PROJECT = {
   INLINE_HELP: 'inline-help-test',
   INSIGHTS_BASELINE: 'insights-baseline-test',
   INSIGHTS_SPEC_HEALTH: 'insights-spec-health-test',
+  INTEGRATIONS: 'integrations-test',
   INVALID_KEY: 'invalid-key-test',
   KEYBOARD_NAV: 'keyboard-nav-test',
   LABEL_OVERRIDE: 'label-override-project',

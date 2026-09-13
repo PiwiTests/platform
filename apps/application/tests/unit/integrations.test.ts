@@ -1,0 +1,248 @@
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
+import { fileURLToPath } from 'node:url';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { drizzle } from 'drizzle-orm/libsql';
+import { migrate } from 'drizzle-orm/libsql/migrator';
+import { createClient } from '@libsql/client';
+import * as schema from '../../server/database/schema.sqlite';
+import type { DbClient } from '../../server/database';
+
+delete process.env.PIWI_DATABASE_URL;
+process.env.PIWI_SECRET_KEY = 'unit-test-secret-key-not-for-production';
+
+const { JiraClient } = await import('../../server/utils/integrations/jira/client');
+const {
+  createConnection,
+  listConnections,
+  getConnectionRow,
+  createTracker,
+  defaultTrackerConnection,
+  ensureEnvManagedConnections,
+} = await import('../../server/utils/integrations/connections');
+const { detectProviderWithConnections } = await import('../../server/utils/integrations/link-resolve');
+
+/** A minimal `fetch` Response carrying JSON, or a non-2xx status. */
+function jsonResponse(body: unknown, ok = true, status = 200) {
+  return {
+    ok,
+    status,
+    statusText: ok ? 'OK' : 'Error',
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  } as unknown as Response;
+}
+
+describe('JiraClient', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  const client = new JiraClient({ baseUrl: 'https://acme.atlassian.net/', email: 'me@acme.io', apiToken: 'tok' });
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  test('whoAmI sends Basic auth and maps the account', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ accountId: 'a1', displayName: 'Ada' }));
+    expect(await client.whoAmI()).toEqual({ id: 'a1', displayName: 'Ada' });
+    const call = fetchMock.mock.calls.at(-1)!;
+    expect(call[0]).toBe('https://acme.atlassian.net/rest/api/3/myself');
+    const headers = call[1]?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe(`Basic ${Buffer.from('me@acme.io:tok').toString('base64')}`);
+  });
+
+  test('getIssue maps status category to a color token and the assignee', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        key: 'PROJ-7',
+        fields: {
+          summary: 'Login broken',
+          status: { name: 'In Progress', statusCategory: { key: 'indeterminate' } },
+          assignee: { accountId: 'u2', displayName: 'Bob', emailAddress: 'bob@acme.io' },
+        },
+      }),
+    );
+    expect(await client.getIssue('PROJ-7')).toEqual({
+      key: 'PROJ-7',
+      url: 'https://acme.atlassian.net/browse/PROJ-7',
+      title: 'Login broken',
+      status: 'In Progress',
+      statusCategory: 'indeterminate',
+      statusColor: 'warning',
+      assignee: { id: 'u2', displayName: 'Bob', email: 'bob@acme.io' },
+    });
+  });
+
+  test('getIssue maps new and done categories to info and success', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ key: 'P-1', fields: { status: { name: 'To Do', statusCategory: { key: 'new' } } } }),
+    );
+    expect((await client.getIssue('P-1'))?.statusColor).toBe('info');
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ key: 'P-2', fields: { status: { name: 'Done', statusCategory: { key: 'done' } } } }),
+    );
+    expect((await client.getIssue('P-2'))?.statusColor).toBe('success');
+  });
+
+  test('getIssue returns null on 404', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({}, false, 404));
+    expect(await client.getIssue('NOPE-1')).toBeNull();
+  });
+
+  test('issueUrl trims a trailing slash on the base URL', () => {
+    expect(client.issueUrl('PROJ-3')).toBe('https://acme.atlassian.net/browse/PROJ-3');
+  });
+
+  test('parseIssueUrl recognizes browse and project URLs on the connection host only', () => {
+    expect(client.parseIssueUrl('https://acme.atlassian.net/browse/PROJ-123')).toEqual({ key: 'PROJ-123' });
+    expect(client.parseIssueUrl('https://acme.atlassian.net/browse/proj-9?x=1')).toEqual({ key: 'PROJ-9' });
+    expect(client.parseIssueUrl('https://acme.atlassian.net/jira/software/c/projects/PROJ/issues/PROJ-42')).toEqual({
+      key: 'PROJ-42',
+    });
+    expect(
+      client.parseIssueUrl('https://acme.atlassian.net/jira/software/c/projects/PROJ/boards/1?selectedIssue=PROJ-8'),
+    ).toEqual({ key: 'PROJ-8' });
+    // A different host is not this connection's issue.
+    expect(client.parseIssueUrl('https://other.atlassian.net/browse/PROJ-1')).toBeNull();
+    expect(client.parseIssueUrl('https://acme.atlassian.net/wiki/spaces/DOC/pages/123')).toBeNull();
+  });
+});
+
+describe('connections and link resolution', () => {
+  let db: ReturnType<typeof drizzle<typeof schema>>;
+  let dbc: DbClient;
+  let tmpDir: string;
+  let client: ReturnType<typeof createClient>;
+
+  beforeEach(async () => {
+    delete process.env.PIWI_JIRA_BASE_URL;
+    delete process.env.PIWI_JIRA_EMAIL;
+    delete process.env.PIWI_JIRA_API_TOKEN;
+    tmpDir = mkdtempSync(join(tmpdir(), 'piwi-integrations-'));
+    client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
+    db = drizzle(client, { schema });
+    await migrate(db, {
+      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
+    });
+    dbc = db as unknown as DbClient;
+  });
+
+  afterEach(async () => {
+    await client.close();
+    rmSync(tmpDir, { recursive: true, force: true });
+    delete process.env.PIWI_JIRA_BASE_URL;
+    delete process.env.PIWI_JIRA_EMAIL;
+    delete process.env.PIWI_JIRA_API_TOKEN;
+  });
+
+  test('a DB connection never returns its credentials, only hasCredentials', async () => {
+    const created = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Team Jira',
+      baseUrl: 'https://team.atlassian.net',
+      credentials: { email: 'me@team.io', apiToken: 'secret-token' },
+    });
+    expect(created.hasCredentials).toBe(true);
+    expect('credentials' in created).toBe(false);
+
+    const list = await listConnections(dbc);
+    expect(list).toHaveLength(1);
+    expect(list[0]!.hasCredentials).toBe(true);
+    expect(JSON.stringify(list[0])).not.toContain('secret-token');
+
+    // The stored blob is encrypted, not the plaintext token.
+    const row = await getConnectionRow(dbc, created.id);
+    expect(row?.credentials).toBeTruthy();
+    expect(row?.credentials).not.toContain('secret-token');
+    expect(row?.credentials?.startsWith('v1:')).toBe(true);
+  });
+
+  test('an empty credential map keeps the stored credential (redaction round-trip)', async () => {
+    const created = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Team Jira',
+      baseUrl: 'https://team.atlassian.net',
+      credentials: { email: 'me@team.io', apiToken: 'secret-token' },
+    });
+    const tracker = await createTracker(dbc, created.id);
+    expect(tracker).not.toBeNull();
+    expect(tracker!.provider).toBe('jira');
+  });
+
+  test('env vars create a read-only env-managed connection, removed when unset', async () => {
+    process.env.PIWI_JIRA_BASE_URL = 'https://env.atlassian.net';
+    process.env.PIWI_JIRA_EMAIL = 'env@acme.io';
+    process.env.PIWI_JIRA_API_TOKEN = 'env-token';
+
+    const list = await listConnections(dbc);
+    expect(list).toHaveLength(1);
+    expect(list[0]!.managedBy).toBe('env');
+    expect(list[0]!.hasCredentials).toBe(true);
+    expect(list[0]!.baseUrl).toBe('https://env.atlassian.net');
+
+    // The env-managed connection resolves a tracker from the environment.
+    const tracker = await createTracker(dbc, list[0]!.id);
+    expect(tracker?.provider).toBe('jira');
+
+    // Removing the env vars removes the connection.
+    delete process.env.PIWI_JIRA_BASE_URL;
+    delete process.env.PIWI_JIRA_EMAIL;
+    delete process.env.PIWI_JIRA_API_TOKEN;
+    expect(await listConnections(dbc)).toHaveLength(0);
+  });
+
+  test('defaultTrackerConnection returns the sole tracker, else null', async () => {
+    expect(await defaultTrackerConnection(dbc)).toBeNull();
+    const created = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Only',
+      baseUrl: 'https://only.atlassian.net',
+      credentials: { email: 'a@b.io', apiToken: 't' },
+    });
+    const sole = await defaultTrackerConnection(dbc);
+    expect(sole?.id).toBe(created.id);
+
+    await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Second',
+      baseUrl: 'https://second.atlassian.net',
+      credentials: { email: 'a@b.io', apiToken: 't' },
+    });
+    expect(await defaultTrackerConnection(dbc)).toBeNull();
+  });
+
+  test('detectProviderWithConnections recognizes a self-hosted Jira once connected', async () => {
+    const url = 'https://jira.company.com/browse/XYZ-99';
+
+    // Without a connection, the self-hosted host stays generic.
+    const before = await detectProviderWithConnections(dbc, url);
+    expect(before).toEqual({ provider: 'generic', connectionId: null, key: null });
+
+    const conn = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Self-hosted',
+      baseUrl: 'https://jira.company.com',
+      credentials: { email: 'a@b.io', apiToken: 't' },
+    });
+
+    const after = await detectProviderWithConnections(dbc, url);
+    expect(after).toEqual({ provider: 'jira', connectionId: conn.id, key: 'XYZ-99' });
+  });
+
+  test('ensureEnvManagedConnections updates the base URL in place', async () => {
+    process.env.PIWI_JIRA_BASE_URL = 'https://one.atlassian.net';
+    process.env.PIWI_JIRA_EMAIL = 'env@acme.io';
+    process.env.PIWI_JIRA_API_TOKEN = 'env-token';
+    await ensureEnvManagedConnections(dbc);
+    let list = await listConnections(dbc);
+    expect(list).toHaveLength(1);
+
+    process.env.PIWI_JIRA_BASE_URL = 'https://two.atlassian.net';
+    await ensureEnvManagedConnections(dbc);
+    list = await listConnections(dbc);
+    expect(list).toHaveLength(1);
+    expect(list[0]!.baseUrl).toBe('https://two.atlassian.net');
+  });
+});
