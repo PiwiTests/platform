@@ -88,8 +88,9 @@ const baseConfig = defineConfig({
     /* Base URL to use in actions like `await page.goto('/')`. */
     baseURL: 'http://localhost:3000',
 
-    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
-    trace: 'retain-on-failure',
+    /* Trace on failure, with per-action DOM, ARIA and screenshot snapshots so the
+       evidence timeline can show the page at each step. See https://playwright.dev/docs/trace-viewer */
+    trace: { mode: 'retain-on-failure', snapshots: { dom: true, aria: true, screen: true } },
 
     /* Capture screenshot on first retry for failure diagnostics */
     screenshot: 'only-on-failure',
