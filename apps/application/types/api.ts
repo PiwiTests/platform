@@ -1557,6 +1557,10 @@ export interface AiSettings {
   hasScmToken: boolean;
   envManaged: boolean;
   customInstructions: string | null;
+  /** The AI response language ("French", "Japanese", …); null keeps English prose. */
+  language: string | null;
+  /** True when the language is fixed by `PIWI_AI_LANGUAGE` (rendered locked). */
+  languageEnvManaged: boolean;
 }
 
 // ============================================================================
@@ -1584,6 +1588,8 @@ export interface SaveAiSettingsBody {
   autoDiagnose?: boolean;
   customInstructions?: string | null;
   scmToken?: string | null;
+  /** The instance-wide AI response language; ignored when env-managed. */
+  language?: string | null;
 }
 
 /**

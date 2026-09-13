@@ -27,6 +27,7 @@ const updateProjectSchema = z.object({
   label: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
   diagnosisInstructions: z.string().optional().nullable(),
+  aiLanguage: z.string().max(60).optional().nullable(),
   scmToken: z.string().optional().nullable(),
   defaultBranch: z.string().optional().nullable(),
   ciRerun: ciRerunSchema.optional().nullable(),
@@ -53,7 +54,8 @@ export default eventHandler(async (event) => {
     });
   }
 
-  const { label, description, diagnosisInstructions, scmToken, defaultBranch, ciRerun, tagIds } = validation.data;
+  const { label, description, diagnosisInstructions, aiLanguage, scmToken, defaultBranch, ciRerun, tagIds } =
+    validation.data;
 
   // Encrypt SCM token before persisting; null/empty clears the stored value
   const encryptedScmToken =
@@ -72,6 +74,7 @@ export default eventHandler(async (event) => {
       label,
       description,
       diagnosisInstructions,
+      aiLanguage,
       scmToken: encryptedScmToken,
       defaultBranch: defaultBranch != null ? defaultBranch.trim() || null : defaultBranch,
       ciRerun: resolvedCiRerun,

@@ -304,6 +304,7 @@ export async function updateProject(
     label?: string | null;
     description?: string | null;
     diagnosisInstructions?: string | null;
+    aiLanguage?: string | null;
     scmToken?: string | null;
     defaultBranch?: string | null;
     ciRerun?: unknown;
@@ -313,7 +314,16 @@ export async function updateProject(
   const projectResults: any[] = await db.select().from(projects).where(eq(projects.id, id));
   if (!projectResults[0]) throw new Error('Project not found');
 
-  const { label, description, diagnosisInstructions, scmToken, defaultBranch, ciRerun, tagIds: dataTagIds } = data;
+  const {
+    label,
+    description,
+    diagnosisInstructions,
+    aiLanguage,
+    scmToken,
+    defaultBranch,
+    ciRerun,
+    tagIds: dataTagIds,
+  } = data;
 
   // Update project
   await db
@@ -322,6 +332,7 @@ export async function updateProject(
       label,
       description,
       diagnosisInstructions: diagnosisInstructions ?? undefined,
+      aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
       scmToken: scmToken !== undefined ? scmToken : undefined,
       defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
       ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,

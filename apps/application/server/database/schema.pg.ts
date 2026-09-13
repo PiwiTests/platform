@@ -50,6 +50,7 @@ export const projects = pgTable(
     label: text('label'), // Display label (defaults to name if not set)
     description: text('description'),
     diagnosisInstructions: text('diagnosis_instructions'),
+    aiLanguage: text('ai_language'), // per-project AI response language override (e.g. "French")
     scmToken: text('scm_token'), // Per-project SCM token for GitHub/GitLab/Bitbucket API access
     defaultBranch: text('default_branch'), // Repository default branch; null = resolve from SCM provider, else 'main'
     ciRerun: jsonb('ci_rerun'), // CiRerunSettings — provider-specific "re-run from the dashboard" target (off by default)

@@ -512,6 +512,14 @@ export const PIWI_ENV_VARS = {
     default: 'false',
     relevantWhen: { PIWI_AI_PROVIDER: '*' },
   },
+  PIWI_AI_LANGUAGE: {
+    description:
+      'Language for AI-written prose (diagnosis, root cause, cluster titles), e.g. "French". Unset keeps English. Code, locators, paths and error text stay verbatim.',
+    category: 'ai',
+    example: 'French',
+    since: '0.29.0',
+    docs: 'features/ai-diagnosis#response-language',
+  },
   PIWI_AI_AUTO_DIAGNOSE_MAX: {
     description: 'Max clusters auto-diagnosed per finished run (budget cap; default 3).',
     category: 'ai',

@@ -17,7 +17,8 @@ import { buildDiagnosisContext } from './ai-context';
 import { getFailureClues } from '#shared/handlers/test-cases';
 import { resolveContextLimits } from './ai-context-limits';
 import { downscaleImages } from './ai-images';
-import { buildDiagnosisSystemPrompt } from './ai-system-prompt';
+import { buildDiagnosisSystemPrompt, languageInstruction } from './ai-system-prompt';
+import { readAiLanguage, resolveProjectAiLanguage } from './ai-settings';
 import { reconcileNewClusters } from './cluster-reconcile';
 import { nameNewClusters } from './cluster-naming';
 import { RESEARCH_SYSTEM_PROMPT, RESEARCH_JSON_SCHEMA, parseResearchJson, formatResearchBlock } from './ai-research';
@@ -188,17 +189,20 @@ function diagnosisWhere(cluster: FailureCluster, opts: DiagnosisRunOpts) {
 
 /** Build the combined (global + project) diagnosis system prompt. */
 export async function loadDiagnosisSystemPrompt(db: DbClient, cluster: { projectId: number }): Promise<string> {
-  const [globalInstructionsRow, projectRows] = await Promise.all([
+  const [globalInstructionsRow, projectRows, globalLanguage] = await Promise.all([
     getAppSetting<{ value?: string }>(db, 'ai_instructions'),
     db
-      .select({ diagnosisInstructions: projects.diagnosisInstructions })
+      .select({ diagnosisInstructions: projects.diagnosisInstructions, aiLanguage: projects.aiLanguage })
       .from(projects)
       .where(eq(projects.id, cluster.projectId))
       .limit(1),
+    readAiLanguage(db),
   ]);
   return buildDiagnosisSystemPrompt({
     globalInstructions: globalInstructionsRow?.value?.trim() || null,
     projectInstructions: projectRows[0]?.diagnosisInstructions?.trim() || null,
+    // A per-project language overrides the instance-wide setting.
+    language: projectRows[0]?.aiLanguage?.trim() || globalLanguage,
   });
 }
 
@@ -303,8 +307,9 @@ async function prepareDiagnosisInputs(
   let researchBlock = '';
   if (useResearch) {
     try {
+      const researchLang = languageInstruction(await resolveProjectAiLanguage(db, cluster.projectId));
       const research = await callAiProvider(researchConfig!, {
-        system: RESEARCH_SYSTEM_PROMPT,
+        system: researchLang ? `${RESEARCH_SYSTEM_PROMPT}\n${researchLang}` : RESEARCH_SYSTEM_PROMPT,
         user: buildResearchProjection(ctx),
         jsonSchema: RESEARCH_JSON_SCHEMA,
         maxTokens: 2048,
