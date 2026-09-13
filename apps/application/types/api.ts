@@ -1622,6 +1622,11 @@ export interface EntityLinkInfo {
   statusText?: string | null;
   statusColor?: string | null;
   unfurledAt?: string | Date | null;
+  /** The connection that can read/write this record, when Piwi owns it. */
+  connectionId?: number | null;
+  externalId?: string | null;
+  /** Who put the link there: pinned by a person, created by Piwi, etc. */
+  origin?: string | null;
   createdBy?: number | null;
   createdAt: Date;
   updatedAt: Date;

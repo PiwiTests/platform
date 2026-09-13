@@ -24,6 +24,19 @@ const props = defineProps<{
 const emit = defineEmits<{ saved: [] }>();
 
 const toast = useToast();
+const { hasTracker } = useTrackerStatus();
+
+// The tracker issue this cluster is already known by, if any — a link the
+// dashboard created or a person pinned that carries a key.
+const knownIssue = computed(() =>
+  (props.cluster.links ?? []).find((l) => (l.provider === 'jira' || l.connectionId != null) && l.key),
+);
+
+const issueModalOpen = ref(false);
+function onIssueCreated() {
+  issueModalOpen.value = false;
+  emit('saved');
+}
 
 // The dot colour reads the state at a glance: red still-failing, green fixed,
 // amber quiet or parked, neutral resolved / ignored / snoozed.
@@ -187,7 +200,39 @@ const snoozeItems = computed(() => [
       </template>
     </span>
 
+    <!-- The known issue chip, shown to everyone once the cluster is tracked. -->
+    <span
+      v-if="knownIssue"
+      data-shot="cluster-issue-chip"
+      class="inline-flex items-center shrink-0"
+      :class="canWrite ? '' : 'ml-auto'"
+    >
+      <LinkChip :link="knownIssue" />
+    </span>
+
     <div v-if="canWrite" class="flex items-center gap-1.5 ml-auto shrink-0">
+      <!-- Create issue is the primary action while the cluster has no ticket. -->
+      <UButton
+        v-if="hasTracker && !knownIssue"
+        size="xs"
+        icon="i-simple-icons-jira"
+        data-shot="cluster-create-issue"
+        @click="issueModalOpen = true"
+      >
+        Create issue
+      </UButton>
+      <UButton
+        v-else-if="knownIssue"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        icon="i-simple-icons-jira"
+        :to="knownIssue.url"
+        target="_blank"
+      >
+        Open in Jira
+      </UButton>
+
       <!-- The one reconcile action the state implies. -->
       <UButton
         v-if="state.action && reconcileLabel"
@@ -251,5 +296,13 @@ const snoozeItems = computed(() => [
         </UButton>
       </UDropdownMenu>
     </div>
+
+    <CreateIssueModal
+      v-model:open="issueModalOpen"
+      entity-type="failure_cluster"
+      :entity-id="cluster.id"
+      @created="onIssueCreated"
+      @linked="onIssueCreated"
+    />
   </div>
 </template>

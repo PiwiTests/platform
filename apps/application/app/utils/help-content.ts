@@ -30,6 +30,18 @@ export interface HelpTopic {
 }
 
 export const HELP_TOPICS = {
+  // ── Issue tracking ──────────────────────────────────────────────────────
+  'integrations.create-issue': {
+    title: 'Create issue',
+    text: 'File a Jira issue from this failure, with the fix plan as its body. Piwi links the issue back as the known issue, so the key travels to the inbox, Slack, email and PR comments. Filing twice for the same cluster is a no-op — the modal offers to link an existing issue instead.',
+    doc: 'features/issue-tracking#what-it-does-exactly',
+  },
+  'integrations.known-issue': {
+    title: 'Known issue',
+    text: 'The tracker issue this cluster is tracked by. Its key and status show wherever the cluster appears; the action becomes Open in Jira once it exists.',
+    doc: 'features/issue-tracking#the-key-travels',
+  },
+
   // ── Home ──────────────────────────────────────────────────────────────
   'home.project-health': {
     title: 'Project health',
