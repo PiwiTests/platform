@@ -469,6 +469,11 @@ export const MCP_TOOL_DEFS = [
           description: 'Include the AI diagnosis summary and root cause (default true)',
         },
         includePatch: { type: 'boolean', description: 'Include the suggested patch as a diff (default true)' },
+        locale: {
+          type: 'string',
+          enum: ['en', 'fr'],
+          description: "The ticket's language; defaults from the project/connection binding, else English",
+        },
       },
       required: ['entityType', 'entityId'],
     },

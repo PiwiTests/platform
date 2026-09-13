@@ -9,6 +9,7 @@ import { eq } from 'drizzle-orm';
 import { failureClusters, testRunsCases } from '../../database/schema';
 import type { DbClient } from '../../database';
 import { issueLabels } from '#shared/integrations/build-issue';
+import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
 import type { IssueIncludeOptions } from '#shared/integrations/types';
 import { buildClusterIssue, buildExecutionIssue } from './documents';
 import { enqueueAction, runActionNow, type CreateIssueActionPayload, type CreateIssueResult } from './actions';
@@ -23,6 +24,7 @@ export interface CreateIssueParams {
   title?: string;
   labels?: string[];
   assignee?: string | null;
+  locale?: IssueLocale;
   include?: Partial<IssueIncludeOptions>;
   requestedBy?: number | null;
   siteUrl?: string | null;
@@ -66,10 +68,11 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
   if (!target) return null;
 
   const include = params.include ?? {};
+  const locale = params.locale ?? DEFAULT_LOCALE;
   const built =
     params.entityType === 'failure_cluster'
-      ? await buildClusterIssue(db, params.entityId, { ...include, siteUrl: params.siteUrl })
-      : await buildExecutionIssue(db, params.entityId, { ...include, siteUrl: params.siteUrl });
+      ? await buildClusterIssue(db, params.entityId, { ...include, locale, siteUrl: params.siteUrl })
+      : await buildExecutionIssue(db, params.entityId, { ...include, locale, siteUrl: params.siteUrl });
   if (!built) return null;
 
   const [cluster] = await db
@@ -86,6 +89,7 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
     document: built.document,
     labels,
     assigneeId: params.assignee ?? null,
+    locale,
     // The created known-issue link always attaches to the cluster, so the chip
     // shows on the cluster page and the inbox regardless of the entity clicked.
     linkEntityType: 'failure_cluster',

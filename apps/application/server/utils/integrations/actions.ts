@@ -13,6 +13,7 @@ import { and, eq, lt, lte } from 'drizzle-orm';
 import { integrationActions } from '../../database/schema';
 import type { DbClient } from '../../database';
 import type { IssueDocument } from '#shared/integrations/document';
+import type { IssueLocale } from '#shared/integrations/messages';
 import type { LinkEntityType } from '#shared/handlers/links';
 import type { IntegrationAction } from '../../database/schema';
 import type { IssueTracker } from './types';
@@ -31,6 +32,8 @@ export interface CreateIssueActionPayload {
   assigneeId?: string | null;
   priority?: string | null;
   componentId?: string | null;
+  /** The language the body was rendered in, so a retry stays consistent. */
+  locale?: IssueLocale;
   /** The entity the created known-issue link attaches to — normally the cluster. */
   linkEntityType: LinkEntityType;
   linkEntityId: number;

@@ -25,19 +25,8 @@ import {
   type IssueFacts,
   type LocatorEditFact,
 } from '#shared/integrations/build-issue';
+import { DEFAULT_LOCALE, formatDate } from '#shared/integrations/messages';
 import type { DrizzleDB } from '#shared/handlers/db';
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** "12 Jul 2026, 14:03 UTC" — deterministic, no locale/timezone drift. */
-function fmtDate(value: Date | string | null | undefined): string | null {
-  if (!value) return null;
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  const hh = String(d.getUTCHours()).padStart(2, '0');
-  const mm = String(d.getUTCMinutes()).padStart(2, '0');
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${hh}:${mm} UTC`;
-}
 
 function scmCommit(metadata: unknown): string | null {
   const scm = (metadata as { scm?: { commit?: string | null } } | null)?.scm;
@@ -122,6 +111,7 @@ async function gatherClusterFacts(
         .where(eq(testRuns.id, runId))
     : [];
 
+  const locale = opts.locale ?? DEFAULT_LOCALE;
   const headlineDesc = occurrence?.error ? caseHeadline({ error: occurrence.error, steps: occurrence.steps }) : null;
   const commit = scmCommit(run?.metadata ?? null);
 
@@ -159,8 +149,8 @@ async function gatherClusterFacts(
     title: titleOverride ?? describeCluster(cluster),
     headline: headlineDesc?.headline ?? null,
     errorType: cluster.errorType ?? null,
-    firstSeen: fmtDate(cluster.firstSeenAt),
-    lastSeen: fmtDate(cluster.lastSeenAt),
+    firstSeen: formatDate(locale, cluster.firstSeenAt),
+    lastSeen: formatDate(locale, cluster.lastSeenAt),
     occurrences: cluster.occurrences ?? 0,
     affectedTests,
     branch: run?.branch ?? null,

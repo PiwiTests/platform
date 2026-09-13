@@ -23,6 +23,7 @@ const schema = z.object({
   issueType: z.string().min(1).max(100),
   labels: z.array(z.string()).optional(),
   assignee: z.string().nullable().optional(),
+  locale: z.enum(['en', 'fr']).optional(),
   include: z
     .object({
       includeDiagnosis: z.boolean().optional(),
@@ -55,6 +56,7 @@ export default eventHandler(async (event): Promise<CreateIssueResponse> => {
     issueType: input.issueType,
     labels: input.labels,
     assignee: input.assignee ?? null,
+    locale: input.locale,
     include: input.include,
     requestedBy: user.id || null,
     siteUrl: process.env.PIWI_SITE_URL ?? null,

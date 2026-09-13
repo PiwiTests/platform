@@ -36,6 +36,7 @@ import { resolveLinkEntityProjectId } from '../project-access';
 import { buildIssueDraft, type DraftEntityType } from '../integrations/draft';
 import { createIssue } from '../integrations/create';
 import { getClusterKnownIssue } from '../integrations/known-issue';
+import { toIssueLocale } from '#shared/integrations/messages';
 import { getAdminStats } from '#shared/handlers/admin';
 import { createTestFunction } from '#shared/handlers/test-functions';
 import { createTestFunctionSchema } from '#shared/test-function-schemas';
@@ -1498,8 +1499,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       includePatch: params.includePatch === undefined ? undefined : Boolean(params.includePatch),
     };
     const siteUrl = process.env.PIWI_SITE_URL ?? null;
+    const locale = toIssueLocale(params.locale);
 
-    const draft = await buildIssueDraft(db, entityType, entityId, { include, siteUrl });
+    const draft = await buildIssueDraft(db, entityType, entityId, { include, locale, siteUrl });
     if (!draft) throw new Error('No Jira connection is configured');
 
     // Already tracked: hand back the existing issue rather than filing a second.
@@ -1521,6 +1523,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       issueType: draft.issueType,
       labels: draft.labels,
       assignee: draft.assignee,
+      locale: draft.locale,
       include,
       requestedBy: ctx.user?.id ?? null,
       siteUrl,

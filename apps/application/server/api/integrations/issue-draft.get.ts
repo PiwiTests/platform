@@ -3,6 +3,7 @@ import { apiError } from '../../utils/api-error';
 import { requireProjectAccess, resolveLinkEntityProjectId } from '../../utils/project-access';
 import { buildIssueDraft, type DraftEntityType } from '../../utils/integrations/draft';
 import { Role } from '#shared/types';
+import { toIssueLocale } from '#shared/integrations/messages';
 import type { IssueIncludeOptions } from '#shared/integrations/types';
 
 defineRouteMeta({
@@ -51,6 +52,7 @@ export default eventHandler(async (event) => {
   const draft = await buildIssueDraft(db, entityType, entityId, {
     connectionId: connectionId && Number.isInteger(connectionId) ? connectionId : undefined,
     include: includeOverride,
+    locale: toIssueLocale(query.locale),
     siteUrl: process.env.PIWI_SITE_URL ?? null,
   });
   if (!draft) throw apiError({ statusCode: 404, message: 'No tracker connected or entity unavailable' });

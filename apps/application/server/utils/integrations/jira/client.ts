@@ -196,15 +196,20 @@ export class JiraClient implements IssueTracker {
   }
 
   async createIssue(input: CreateIssueInput): Promise<TrackerIssue> {
+    // Jira-side names (issue type, priority) are localized per site, so address
+    // them by id when we have one; a bare numeric string is an id, else a name.
+    const issuetype = /^\d+$/.test(input.issueType) ? { id: input.issueType } : { name: input.issueType };
     const fields: Record<string, unknown> = {
       project: { key: input.projectKey },
-      issuetype: { name: input.issueType },
+      issuetype,
       summary: input.title,
       description: renderAdf(input.body),
     };
     if (input.labels?.length) fields.labels = input.labels;
     if (input.assigneeId) fields.assignee = { accountId: input.assigneeId };
-    if (input.priority) fields.priority = { name: input.priority };
+    // Only ever send a priority by id — never an English name that a French site
+    // would not match.
+    if (input.priority && /^\d+$/.test(input.priority)) fields.priority = { id: input.priority };
     if (input.componentId) fields.components = [{ id: input.componentId }];
 
     const data = await this.request<{ id?: string; key?: string }>('/rest/api/3/issue', {

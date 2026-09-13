@@ -13,6 +13,7 @@ import { entityLinks, failureClusters, testRunsCases } from '../../database/sche
 import type { DbClient } from '../../database';
 import { renderMarkdown } from '#shared/integrations/render-markdown';
 import { issueLabels } from '#shared/integrations/build-issue';
+import { DEFAULT_LOCALE, toIssueLocale, type IssueLocale } from '#shared/integrations/messages';
 import type {
   ExistingIssueCandidate,
   IssueDraft,
@@ -141,7 +142,22 @@ export function dedupeCandidates(lists: ExistingIssueCandidate[][]): ExistingIss
 export interface DraftOptions {
   connectionId?: number | null;
   include?: Partial<IssueIncludeOptions>;
+  /** A per-issue language override (the modal's Language select); else resolved. */
+  locale?: IssueLocale | null;
   siteUrl?: string | null;
+}
+
+/** Resolution order: binding `locale` → connection `config.locale` → `en`. */
+function resolveLocale(
+  binding: { locale?: string | null } | null,
+  connection: { config?: unknown } | null,
+  override?: IssueLocale | null,
+): IssueLocale {
+  if (override) return override;
+  const fromBinding = toIssueLocale(binding?.locale);
+  if (fromBinding) return fromBinding;
+  const config = (connection?.config ?? null) as { locale?: string } | null;
+  return toIssueLocale(config?.locale) ?? DEFAULT_LOCALE;
 }
 
 /** Build the full draft, or null when no tracker is connected or the entity is gone. */
@@ -167,12 +183,14 @@ export async function buildIssueDraft(
 
   const chosenId = opts.connectionId ?? connections[0]!.id;
   const binding = await getProjectBinding(db, projectId, chosenId);
+  const chosenRow = await getConnectionRow(db, chosenId);
   const include = { ...includeFromBinding(binding), ...(opts.include ?? {}) };
+  const locale = resolveLocale(binding, chosenRow, opts.locale);
 
   const built: BuiltClusterIssue | null =
     entityType === 'failure_cluster'
-      ? await buildClusterIssue(db, entityId, { ...include, siteUrl: opts.siteUrl })
-      : await buildExecutionIssue(db, entityId, { ...include, siteUrl: opts.siteUrl });
+      ? await buildClusterIssue(db, entityId, { ...include, locale, siteUrl: opts.siteUrl })
+      : await buildExecutionIssue(db, entityId, { ...include, locale, siteUrl: opts.siteUrl });
   if (!built) return null;
 
   const bindingLabels = Array.isArray(binding?.labels) ? (binding!.labels as string[]) : [];
@@ -183,7 +201,6 @@ export async function buildIssueDraft(
   const labels = [...new Set([...bindingLabels, ...issueLabels(clusterId, cluster?.fingerprint ?? '')])];
 
   // Dedupe candidates — a pinned link first, then label/fingerprint search, then fixed-before.
-  const chosenRow = await getConnectionRow(db, chosenId);
   const tracker = chosenRow ? trackerForRow(chosenRow) : null;
   const candidates = dedupeCandidates([
     await linkedCandidates(db, clusterId),
@@ -202,6 +219,7 @@ export async function buildIssueDraft(
     issueType: binding?.issueType ?? null,
     labels,
     assignee: binding?.defaultAssignee ?? null,
+    locale,
     include,
     markdown: renderMarkdown(built.document),
     document: built.document,

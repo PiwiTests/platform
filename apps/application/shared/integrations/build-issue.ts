@@ -10,6 +10,7 @@
  * through here, so the two can never drift.
  */
 import { doc, type DocNode, type Inline, type IssueDocument } from './document';
+import { DEFAULT_LOCALE, formatNumber, t, type IssueLocale } from './messages';
 
 /** The include toggles the modal and the per-project policy set. */
 export interface IssueBuildOpts {
@@ -18,9 +19,11 @@ export interface IssueBuildOpts {
   includeScreenshot?: boolean;
   includeShareLink?: boolean;
   siteUrl?: string | null;
+  /** The language the ticket is written in — a property of its destination. */
+  locale?: IssueLocale;
 }
 
-export const DEFAULT_ISSUE_OPTS: Required<Omit<IssueBuildOpts, 'siteUrl'>> = {
+export const DEFAULT_ISSUE_OPTS: Required<Omit<IssueBuildOpts, 'siteUrl' | 'locale'>> = {
   includeDiagnosis: true,
   includePatch: true,
   includeScreenshot: false,
@@ -99,52 +102,60 @@ function code(text: string): Inline {
 /** Assemble the document from gathered facts and the include toggles. */
 export function buildIssueDocument(facts: IssueFacts, opts: IssueBuildOpts = {}): IssueDocument {
   const o = { ...DEFAULT_ISSUE_OPTS, ...opts };
+  const locale = opts.locale ?? DEFAULT_LOCALE;
   const b = doc();
 
-  // What happened
-  b.heading(2, 'What happened');
+  // What happened. The headline is a deterministic English sentence quoting
+  // locators and Playwright terms — data, reproduced verbatim.
+  b.heading(2, t(locale, 'section.whatHappened'));
   if (facts.headline) b.paragraph(facts.headline);
   const factRows: [string, Inline[]][] = [
-    ['Error type', facts.errorType ? [facts.errorType] : []],
-    ['First seen', facts.firstSeen ? [facts.firstSeen] : []],
-    ['Last seen', facts.lastSeen ? [facts.lastSeen] : []],
-    ['Occurrences', [String(facts.occurrences)]],
-    ['Branch', facts.branch ? [code(facts.branch)] : []],
-    ['Environment', facts.environment ? [facts.environment] : []],
-    ['Commit', facts.commit ? [code(facts.commit)] : []],
+    [t(locale, 'fact.errorType'), facts.errorType ? [facts.errorType] : []],
+    [t(locale, 'fact.firstSeen'), facts.firstSeen ? [facts.firstSeen] : []],
+    [t(locale, 'fact.lastSeen'), facts.lastSeen ? [facts.lastSeen] : []],
+    [t(locale, 'fact.occurrences'), [formatNumber(locale, facts.occurrences)]],
+    [t(locale, 'fact.branch'), facts.branch ? [code(facts.branch)] : []],
+    [t(locale, 'fact.environment'), facts.environment ? [facts.environment] : []],
+    [t(locale, 'fact.commit'), facts.commit ? [code(facts.commit)] : []],
   ];
   b.facts(factRows);
   if (facts.affectedTests.length) {
-    b.heading(3, 'Affected tests');
+    b.heading(3, t(locale, 'section.affectedTests', { count: facts.affectedTests.length }));
     b.table(
-      ['Test', 'File', 'Owner'],
-      facts.affectedTests.map((t) => [t.title, t.filePath ?? '', t.owner ?? '']),
+      [t(locale, 'table.test'), t(locale, 'table.file'), t(locale, 'table.owner')],
+      facts.affectedTests.map((test) => [test.title, test.filePath ?? '', test.owner ?? '']),
     );
   }
 
-  // Most likely
+  // Most likely. The diagnosis/root cause are model prose used as stored (their
+  // language is the AI response-language setting); the clue is deterministic.
   const mostLikely: DocNode[] = [];
   if (o.includeDiagnosis && (facts.diagnosisSummary || facts.rootCause)) {
     if (facts.diagnosisSummary) mostLikely.push({ type: 'paragraph', inlines: [facts.diagnosisSummary] });
     if (facts.rootCause)
-      mostLikely.push({ type: 'paragraph', inlines: [{ text: 'Root cause: ', strong: true }, facts.rootCause] });
+      mostLikely.push({
+        type: 'paragraph',
+        inlines: [{ text: `${t(locale, 'label.rootCause')}: `, strong: true }, facts.rootCause],
+      });
   } else if (facts.clue) {
     mostLikely.push({ type: 'paragraph', inlines: [facts.clue] });
   }
   if (mostLikely.length) {
-    b.heading(2, 'Most likely');
+    b.heading(2, t(locale, 'section.mostLikely'));
     for (const n of mostLikely) b.push(n);
   }
 
-  // Evidence
+  // Evidence — the error excerpt and the failing locator, quoted verbatim.
   const hasEvidence = facts.errorExcerpt || facts.failingLocator;
   if (hasEvidence) {
-    b.heading(2, 'Evidence');
+    b.heading(2, t(locale, 'section.evidence'));
     if (facts.errorExcerpt) b.code(facts.errorExcerpt);
-    if (facts.failingLocator) b.paragraph({ text: 'Failing locator: ', strong: true }, code(facts.failingLocator));
+    if (facts.failingLocator)
+      b.paragraph({ text: `${t(locale, 'label.failingLocator')}: `, strong: true }, code(facts.failingLocator));
   }
 
-  // What to do
+  // What to do — the patch, locator edit, verify command and reproduce recipe
+  // are the team's own code and commands, quoted verbatim.
   const whatToDo: DocNode[] = [];
   if (o.includePatch && facts.patch) whatToDo.push({ type: 'code', language: 'diff', text: facts.patch });
   const locatorItems: Inline[][] = facts.locatorEdits
@@ -159,27 +170,27 @@ export function buildIssueDocument(facts: IssueFacts, opts: IssueBuildOpts = {})
   if (locatorItems.length) whatToDo.push({ type: 'bullets', items: locatorItems });
   if (facts.verifyCommand)
     whatToDo.push(
-      { type: 'paragraph', inlines: [{ text: 'Verify:', strong: true }] },
+      { type: 'paragraph', inlines: [{ text: `${t(locale, 'label.verify')}:`, strong: true }] },
       { type: 'code', text: facts.verifyCommand },
     );
   if (facts.reproduceScript)
     whatToDo.push(
-      { type: 'paragraph', inlines: [{ text: 'Reproduce:', strong: true }] },
+      { type: 'paragraph', inlines: [{ text: `${t(locale, 'label.reproduce')}:`, strong: true }] },
       { type: 'code', language: 'bash', text: facts.reproduceScript },
     );
   if (whatToDo.length) {
-    b.heading(2, 'What to do');
+    b.heading(2, t(locale, 'section.whatToDo'));
     for (const n of whatToDo) b.push(n);
   }
 
   // Links
   const linkItems: Inline[][] = [];
-  if (facts.clusterUrl) linkItems.push([{ text: 'Failure cluster', href: facts.clusterUrl }]);
-  if (facts.executionUrl) linkItems.push([{ text: 'Latest execution', href: facts.executionUrl }]);
-  if (facts.runUrl) linkItems.push([{ text: 'Run', href: facts.runUrl }]);
-  if (o.includeShareLink && facts.shareUrl) linkItems.push([{ text: 'Shareable report', href: facts.shareUrl }]);
+  if (facts.clusterUrl) linkItems.push([{ text: t(locale, 'link.cluster'), href: facts.clusterUrl }]);
+  if (facts.executionUrl) linkItems.push([{ text: t(locale, 'link.execution'), href: facts.executionUrl }]);
+  if (facts.runUrl) linkItems.push([{ text: t(locale, 'link.run'), href: facts.runUrl }]);
+  if (o.includeShareLink && facts.shareUrl) linkItems.push([{ text: t(locale, 'link.share'), href: facts.shareUrl }]);
   if (linkItems.length) {
-    b.heading(2, 'Links');
+    b.heading(2, t(locale, 'section.links'));
     b.bullets(linkItems);
   }
 

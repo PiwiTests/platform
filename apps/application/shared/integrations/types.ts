@@ -5,6 +5,7 @@
  */
 import type { IntegrationProviderName } from './registry';
 import type { IssueDocument } from './document';
+import type { IssueLocale } from './messages';
 
 export type ConnectionStatus = 'unverified' | 'ok' | 'failed';
 export type ConnectionManagedBy = 'db' | 'env';
@@ -105,6 +106,8 @@ export interface IssueDraft {
   issueType: string | null;
   labels: string[];
   assignee: string | null;
+  /** The language the ticket is written in — binding, else connection default, else en. */
+  locale: IssueLocale;
   include: IssueIncludeOptions;
   /** Markdown preview of the body — what the modal renders through `MarkdownPreview`. */
   markdown: string;
@@ -123,6 +126,7 @@ export interface CreateIssueRequest {
   issueType: string;
   labels?: string[];
   assignee?: string | null;
+  locale?: IssueLocale;
   include?: Partial<IssueIncludeOptions>;
 }
 
