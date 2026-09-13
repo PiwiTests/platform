@@ -29,10 +29,10 @@ function envJiraCredentials(): { baseUrl: string; email: string; apiToken: strin
   return null;
 }
 
-function jiraFlavor(baseUrl: string): 'cloud' {
+function jiraFlavor(_baseUrl: string): 'cloud' {
   // Cloud is the only supported flavor; the field exists so a later Server /
   // Data Center client selects itself from the connection.
-  return /\.atlassian\.net/i.test(baseUrl) ? 'cloud' : 'cloud';
+  return 'cloud';
 }
 
 /**

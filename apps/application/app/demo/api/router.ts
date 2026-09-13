@@ -152,6 +152,14 @@ import {
   type LinkEntityType,
 } from '#shared/handlers/links';
 import {
+  listDemoConnections,
+  getDemoConnection,
+  createDemoConnection,
+  updateDemoConnection,
+  testDemoConnection,
+} from './integrations';
+import type { ConnectionInput } from '#shared/integrations/types';
+import {
   getTestRun,
   getRecentTestRuns,
   getTestRunSummary,
@@ -1647,6 +1655,38 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/links\/(\d+)\/refresh$/,
     handler: async (m) => refreshLinkMeta(await getDemoDb(), +m[1]!),
+  },
+
+  // Integrations — one canned Jira connection, answered from constants
+  { method: 'GET', pattern: /^\/api\/integrations\/connections$/, handler: async () => listDemoConnections() },
+  {
+    method: 'POST',
+    pattern: /^\/api\/integrations\/connections$/,
+    handler: async (_, body) => createDemoConnection(body as ConnectionInput),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)$/,
+    handler: async (m) => {
+      const found = getDemoConnection(+m[1]!);
+      if (!found) throw demoHttpError(404, 'Connection not found');
+      return found;
+    },
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/integrations\/connections\/(\d+)$/,
+    handler: async (m, body) => updateDemoConnection(+m[1]!, body as Partial<ConnectionInput>),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/integrations\/connections\/(\d+)$/,
+    handler: async () => ({ success: true }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/test$/,
+    handler: async () => testDemoConnection(),
   },
 
   // Search
