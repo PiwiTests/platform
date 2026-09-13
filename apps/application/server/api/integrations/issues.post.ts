@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { getDatabase } from '../../database';
-import { requireProjectAccess, resolveLinkEntityProjectId } from '../../utils/project-access';
+import { requireAuth } from '../../utils/auth';
+import { canAccessProject, resolveLinkEntityProjectId } from '../../utils/project-access';
 import { createIssue } from '../../utils/integrations/create';
 import { Role } from '#shared/types';
 import type { CreateIssueResponse } from '#shared/integrations/types';
@@ -42,10 +43,15 @@ export default eventHandler(async (event): Promise<CreateIssueResponse> => {
   }
   const input = parsed.data;
 
+  // The role gate comes before the entity lookup, so a member outside the
+  // allowed roles learns nothing about which cluster or execution ids exist.
+  const user = await requireAuth(event, [Role.ADMINISTRATOR, Role.REPORTER]);
   const db = await getDatabase();
   const projectId = await resolveLinkEntityProjectId(db, input.entityType, input.entityId);
   if (!projectId) throw apiError({ statusCode: 404, message: 'Entity not found' });
-  const user = await requireProjectAccess(event, projectId, [Role.ADMINISTRATOR, Role.REPORTER]);
+  if (!(await canAccessProject(db, user, projectId))) {
+    throw apiError({ statusCode: 403, message: 'No access to this project' });
+  }
 
   const outcome = await createIssue(db, {
     entityType: input.entityType,

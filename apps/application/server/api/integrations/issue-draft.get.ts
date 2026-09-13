@@ -1,6 +1,7 @@
 import { getDatabase } from '../../database';
 import { apiError } from '../../utils/api-error';
-import { requireProjectAccess, resolveLinkEntityProjectId } from '../../utils/project-access';
+import { requireAuth } from '../../utils/auth';
+import { canAccessProject, resolveLinkEntityProjectId } from '../../utils/project-access';
 import { buildIssueDraft, type DraftEntityType } from '../../utils/integrations/draft';
 import { Role } from '#shared/types';
 import { toIssueLocale } from '#shared/integrations/messages';
@@ -32,10 +33,15 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 400, message: 'entityType and entityId are required' });
   }
 
+  // The role gate comes before the entity lookup, so a member outside the
+  // allowed roles learns nothing about which cluster or execution ids exist.
+  const user = await requireAuth(event, [Role.ADMINISTRATOR, Role.REPORTER]);
   const db = await getDatabase();
   const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
   if (!projectId) throw apiError({ statusCode: 404, message: 'Entity not found' });
-  await requireProjectAccess(event, projectId, [Role.ADMINISTRATOR, Role.REPORTER]);
+  if (!(await canAccessProject(db, user, projectId))) {
+    throw apiError({ statusCode: 403, message: 'No access to this project' });
+  }
 
   const includeOverride: Partial<IssueIncludeOptions> = {};
   const diagnosis = boolQuery(query.includeDiagnosis);
