@@ -62,8 +62,10 @@ function plural(count: number, noun: string): string {
       </div>
     </div>
 
+    <!-- Local (desktop) imports read from disk with no upload phase, so they
+         report no progress — the spinning badge already shows they are running. -->
     <UProgress
-      v-if="entry.state === 'uploading' || entry.state === 'hashing'"
+      v-if="(entry.state === 'uploading' && !entry.path) || entry.state === 'hashing'"
       :model-value="Math.round(entry.progress * 100)"
       size="sm"
     />

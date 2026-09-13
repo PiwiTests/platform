@@ -42,6 +42,12 @@ a whole run's results *and* its attachments in one file.
 Open the project, click **Import** in the page header, then drop the archives on the page (or pick them with **Choose
 files**).
 
+::: tip Desktop app
+In the [desktop app](/features/desktop), **Choose files** opens at the project's linked folder — where Playwright writes
+`blob-report/` — so the reports are one click away, and the archives import straight from disk. Linking a folder to a
+project also offers to import the runs already in its `blob-report/` and `test-results/` folders.
+:::
+
 Before anything uploads, the page checks each archive and tells you where it stands:
 
 | Verdict | Meaning |

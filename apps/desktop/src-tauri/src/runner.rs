@@ -23,6 +23,7 @@ use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt as _;
 use tauri_plugin_store::StoreExt as _;
 
+use crate::inspect::{local_archive, LocalArchive};
 use crate::{node_path, STORE_FILE};
 
 /// Store key holding the `{ project id → link record }` map.
@@ -203,6 +204,40 @@ pub async fn desktop_pick_folder(app: AppHandle) -> Option<String> {
     .await
     .ok()
     .flatten()
+}
+
+/// Native multi-select picker for import archives, filtered to `.zip`. Opens at
+/// `default_path` when it is an existing directory — the linked project folder,
+/// so the import page's picker starts where the reports are. Returns an empty
+/// list when the user cancels.
+#[tauri::command]
+pub async fn desktop_pick_import_files(
+    app: AppHandle,
+    default_path: Option<String>,
+) -> Vec<LocalArchive> {
+    let mut dialog = app
+        .dialog()
+        .file()
+        .add_filter("Playwright archives", &["zip"]);
+    if let Some(dir) = default_path {
+        let path = PathBuf::from(&dir);
+        if path.is_dir() {
+            dialog = dialog.set_directory(path);
+        }
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        dialog
+            .blocking_pick_files()
+            .into_iter()
+            .flatten()
+            .filter_map(|f| f.into_path().ok())
+            // The kind is unknown for a hand-picked file — the server decides
+            // when it opens the archive.
+            .map(|p| local_archive(&p, None))
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[tauri::command]

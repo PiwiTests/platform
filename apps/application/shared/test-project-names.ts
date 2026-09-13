@@ -36,6 +36,7 @@ export const PROJECT = {
   DASHBOARD_PERF: 'dashboard-perf-tracking',
   DEFAULT_PROJECT: 'default-project',
   DELETE_TEST: 'delete-test-project',
+  DESKTOP_IMPORT_PREV: 'desktop-import-prev-test',
   DESKTOP_LOCAL_IMPORT: 'desktop-local-import-test',
   DESKTOP_LOCAL_RUN: 'desktop-local-run-test',
   DESKTOP_REPRODUCE: 'desktop-reproduce-test',

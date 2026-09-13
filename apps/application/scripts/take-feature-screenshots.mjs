@@ -276,6 +276,8 @@ const READY_INSPECTION = {
  *   charts      — wait for chart geometry to render before capturing
  *   link        — desktop mode: mocked linked folder for `desktop_get_project_link` (or null)
  *   inspection  — desktop mode: mocked `desktop_inspect_folder` answer (default READY_INSPECTION)
+ *   importableRuns — desktop mode: archives `desktop_find_importable_runs` reports (default [])
+ *   pickedFiles — desktop mode: archives the native import picker returns (default [])
  */
 const SCENES = [
   // ── Docs illustrations (committed) ────────────────────────────────────────
@@ -875,6 +877,54 @@ const SCENES = [
     },
   },
   {
+    name: 'import-previous-runs',
+    description: 'After linking a folder, offer to import the runs already in it (desktop shell)',
+    tags: ['desktop'],
+    mode: 'desktop',
+    link: null,
+    importableRuns: [
+      {
+        path: `${READY_INSPECTION.path}/blob-report/report-1.zip`,
+        name: 'report-1.zip',
+        size: 2_412_000,
+        kind: 'blob',
+      },
+      {
+        path: `${READY_INSPECTION.path}/blob-report/report-2.zip`,
+        name: 'report-2.zip',
+        size: 1_968_000,
+        kind: 'blob',
+      },
+      {
+        path: `${READY_INSPECTION.path}/test-results/checkout-chromium/trace.zip`,
+        name: 'trace.zip',
+        size: 826_000,
+        kind: 'trace',
+      },
+    ],
+    route: '/projects/2?tab=settings',
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'Choose folder…' }).click();
+      const dialog = page.getByRole('dialog');
+      await dialog.getByRole('heading', { name: 'Import previous runs' }).waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'import-runs-desktop',
+    description: 'Import page: the browse button opens at the linked project folder (desktop shell)',
+    tags: ['desktop'],
+    mode: 'desktop',
+    link: { path: READY_INSPECTION.path, exists: true },
+    route: '/projects/2/import',
+    async run({ page, shoot, settle }) {
+      await page.getByText(`Opens in ${READY_INSPECTION.path}`).waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'notifications-settings',
     description: 'Notifications settings (auth off): SMTP status, channels, subscriptions; plus the project bell',
     route: '/settings/notifications',
@@ -931,6 +981,8 @@ function outDirFor(scene, override) {
 function bridgeScript(scene) {
   const inspection = scene.inspection ?? READY_INSPECTION;
   const link = scene.link ?? null;
+  const importableRuns = scene.importableRuns ?? [];
+  const pickedFiles = scene.pickedFiles ?? [];
   return `
     window.__mockLink = ${JSON.stringify(link)};
     window.__TAURI__ = {
@@ -941,6 +993,10 @@ function bridgeScript(scene) {
               return Promise.resolve(${JSON.stringify(inspection.path)});
             case 'desktop_inspect_folder':
               return Promise.resolve({ ...${JSON.stringify(inspection)}, path: args.path });
+            case 'desktop_find_importable_runs':
+              return Promise.resolve(${JSON.stringify(importableRuns)});
+            case 'desktop_pick_import_files':
+              return Promise.resolve(${JSON.stringify(pickedFiles)});
             case 'desktop_get_project_link':
               return Promise.resolve(window.__mockLink);
             case 'desktop_set_project_link':

@@ -225,6 +225,139 @@ pub fn desktop_inspect_folder(path: String) -> Result<FolderInspection, String> 
     Ok(inspect(&folder))
 }
 
+/// Playwright's default blob-report output folder (the reports the import page
+/// consumes — each `.zip` is a complete run).
+const REPORTS_DIR: &str = "blob-report";
+/// Playwright's default test output folder (`outputDir`), where per-test traces
+/// are written — each `trace.zip` is one execution.
+const RESULTS_DIR: &str = "test-results";
+
+/// Upper bound on how many archives a scan returns, so a checkout with an
+/// enormous results tree cannot produce an unbounded list.
+const MAX_ARCHIVES: usize = 500;
+
+/// How deep the results tree is walked for trace files. Playwright nests one
+/// directory per test under `test-results/`; a few extra levels cover retries
+/// and grouped output without walking an entire repository.
+const MAX_RESULTS_DEPTH: usize = 6;
+
+/// One importable Playwright archive on disk: a blob report or a trace `.zip`.
+#[derive(Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalArchive {
+    /// Absolute path to the `.zip`.
+    pub path: String,
+    /// File name (basename), for display.
+    pub name: String,
+    /// Size in bytes.
+    pub size: u64,
+    /// `"blob"` when found under `blob-report/`, `"trace"` when found under
+    /// `test-results/`; `None` for a file the user picked by hand, whose kind
+    /// the server decides when it opens it.
+    pub kind: Option<&'static str>,
+}
+
+/// Build a `LocalArchive` for a file path, reading its size (0 when unreadable).
+pub fn local_archive(path: &Path, kind: Option<&'static str>) -> LocalArchive {
+    LocalArchive {
+        path: path.to_string_lossy().to_string(),
+        name: path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        size: std::fs::metadata(path).map(|m| m.len()).unwrap_or(0),
+        kind,
+    }
+}
+
+/// Blob reports (`*.zip`) directly inside `blob-report/`, sorted by name.
+fn collect_blob_reports(dir: &Path, out: &mut Vec<LocalArchive>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut found: Vec<PathBuf> = entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .map(|e| e.path())
+        .filter(|p| is_zip(p))
+        .collect();
+    found.sort();
+    for path in found {
+        if out.len() >= MAX_ARCHIVES {
+            return;
+        }
+        out.push(local_archive(&path, Some("blob")));
+    }
+}
+
+/// Trace files (`trace*.zip`) anywhere under `test-results/`, walked to a
+/// bounded depth. Symlinks are not followed, so a cyclic tree cannot loop.
+fn collect_traces(dir: &Path, depth: usize, out: &mut Vec<LocalArchive>) {
+    if depth > MAX_RESULTS_DEPTH || out.len() >= MAX_ARCHIVES {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut files: Vec<PathBuf> = Vec::new();
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        let path = entry.path();
+        if file_type.is_dir() {
+            dirs.push(path);
+        } else if file_type.is_file() && is_trace_zip(&path) {
+            files.push(path);
+        }
+    }
+    files.sort();
+    dirs.sort();
+    for path in files {
+        if out.len() >= MAX_ARCHIVES {
+            return;
+        }
+        out.push(local_archive(&path, Some("trace")));
+    }
+    for path in dirs {
+        collect_traces(&path, depth + 1, out);
+    }
+}
+
+fn is_zip(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"))
+}
+
+/// A Playwright trace file: `trace.zip`, or a numbered `trace-1.zip`.
+fn is_trace_zip(path: &Path) -> bool {
+    is_zip(path)
+        && path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with("trace"))
+}
+
+/// Importable archives left in a checkout by previous Playwright runs: blob
+/// reports under `blob-report/` (whole runs) and trace files under
+/// `test-results/` (single executions). Blob reports come first. A folder that
+/// is gone, or that has neither sub-folder, yields an empty list rather than an
+/// error, so the dashboard can simply skip proposing an import.
+#[tauri::command]
+pub fn desktop_find_importable_runs(path: String) -> Result<Vec<LocalArchive>, String> {
+    let folder = PathBuf::from(&path);
+    if !folder.is_absolute() {
+        return Err("the folder path must be absolute".into());
+    }
+    let mut out = Vec::new();
+    if folder.is_dir() {
+        collect_blob_reports(&folder.join(REPORTS_DIR), &mut out);
+        collect_traces(&folder.join(RESULTS_DIR), 0, &mut out);
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,5 +593,78 @@ mod tests {
         assert_eq!(unscoped("@acme/checkout"), "checkout");
         assert_eq!(unscoped("checkout"), "checkout");
         assert_eq!(unscoped("@malformed"), "@malformed");
+    }
+
+    impl Folder {
+        /// Create (nested) directories under the folder and write a file at the end.
+        fn write_nested(&self, relative: &str, contents: &str) {
+            let path = self.0.join(relative);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).expect("create parents");
+            }
+            std::fs::write(path, contents).expect("write file");
+        }
+    }
+
+    fn scan(folder: &Path) -> Vec<LocalArchive> {
+        let mut out = Vec::new();
+        collect_blob_reports(&folder.join(REPORTS_DIR), &mut out);
+        collect_traces(&folder.join(RESULTS_DIR), 0, &mut out);
+        out
+    }
+
+    #[test]
+    fn a_folder_with_no_report_or_results_folders_has_nothing_to_import() {
+        let folder = Folder::new("no-runs");
+        folder.write("package.json", r#"{ "name": "app" }"#);
+
+        assert_eq!(scan(&folder.0), Vec::new());
+    }
+
+    #[test]
+    fn finds_blob_reports_and_traces_with_blob_reports_first() {
+        let folder = Folder::new("importable");
+        folder.write_nested("blob-report/report-1.zip", "blob one");
+        folder.write_nested("blob-report/report-2.zip", "blob two");
+        folder.write_nested("test-results/checkout-chromium/trace.zip", "trace one");
+        folder.write_nested(
+            "test-results/checkout-chromium-retry1/trace.zip",
+            "trace two",
+        );
+
+        let found = scan(&folder.0);
+
+        let names: Vec<&str> = found.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(
+            names,
+            ["report-1.zip", "report-2.zip", "trace.zip", "trace.zip"]
+        );
+        let kinds: Vec<Option<&str>> = found.iter().map(|a| a.kind).collect();
+        assert_eq!(
+            kinds,
+            [Some("blob"), Some("blob"), Some("trace"), Some("trace")]
+        );
+        // Every path is absolute and carries the file's byte size.
+        assert!(found.iter().all(|a| Path::new(&a.path).is_absolute()));
+        assert!(found.iter().all(|a| a.size > 0));
+    }
+
+    #[test]
+    fn ignores_non_zip_evidence_and_non_trace_zips() {
+        let folder = Folder::new("mixed-results");
+        folder.write_nested("test-results/a-chromium/trace.zip", "trace");
+        folder.write_nested("test-results/a-chromium/test-failed-1.png", "png");
+        folder.write_nested("test-results/a-chromium/video.webm", "webm");
+        folder.write_nested("test-results/a-chromium/attachment.zip", "not a trace");
+
+        let found = scan(&folder.0);
+
+        let names: Vec<&str> = found.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, ["trace.zip"]);
+    }
+
+    #[test]
+    fn the_command_requires_an_absolute_path() {
+        assert!(desktop_find_importable_runs("relative/path".into()).is_err());
     }
 }

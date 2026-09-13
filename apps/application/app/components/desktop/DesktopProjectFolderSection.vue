@@ -7,9 +7,10 @@
  */
 import type { DesktopFolderInspection } from '~/composables/useDesktopFolderInspect';
 
-const props = defineProps<{ projectId: string | number }>();
+const props = defineProps<{ projectId: string | number; projectName?: string | null }>();
 
 const { available, link, busy, pickAndLink, unlink } = useDesktopProjectLink(() => props.projectId);
+const { propose: proposePrevRuns } = useDesktopImportPrevRuns();
 
 const inspection = ref<DesktopFolderInspection | null>(null);
 
@@ -20,6 +21,12 @@ watch(
   },
   { immediate: true },
 );
+
+/** Link (or re-link) the folder, then offer to import the runs already in it. */
+async function chooseAndPropose() {
+  const linked = await pickAndLink();
+  if (linked) void proposePrevRuns(props.projectName, link.value?.path);
+}
 </script>
 
 <template>
@@ -58,7 +65,7 @@ watch(
             variant="soft"
             icon="i-lucide-folder-search"
             :loading="busy"
-            @click="pickAndLink"
+            @click="chooseAndPropose"
           >
             Change
           </UButton>
@@ -77,7 +84,7 @@ watch(
 
     <div v-else class="flex items-center justify-between gap-3">
       <p class="text-sm text-muted">No folder linked on this machine yet.</p>
-      <UButton size="xs" icon="i-lucide-folder-plus" :loading="busy" @click="pickAndLink">Choose folder…</UButton>
+      <UButton size="xs" icon="i-lucide-folder-plus" :loading="busy" @click="chooseAndPropose">Choose folder…</UButton>
     </div>
   </SectionCard>
 </template>

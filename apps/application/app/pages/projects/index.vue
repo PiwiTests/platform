@@ -78,6 +78,7 @@ const creatingProject = ref(false);
 // Desktop shell only: a folder picked to start the project from. Its inspection
 // prefills the name; the folder is linked to the project once created.
 const newProjectFolder = ref<string | null>(null);
+const { propose: proposePrevRuns } = useDesktopImportPrevRuns();
 
 function onFolderDetected(inspection: DesktopFolderInspection) {
   if (inspection.suggestedName) newProject.name = inspection.suggestedName;
@@ -117,6 +118,9 @@ async function handleCreateProject() {
       try {
         await setDesktopProjectLink(created.project.id, folder);
         folderLinked = true;
+        // Offer to backfill history from the runs already in the linked folder;
+        // the proposal survives the navigation to the project page below.
+        void proposePrevRuns(newProject.name?.trim(), folder);
       } catch (error) {
         toast.add({
           title: 'Project created, but the folder could not be linked',

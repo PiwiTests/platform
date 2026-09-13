@@ -37,6 +37,7 @@ const {
   batch,
   loadLimit,
   addFiles,
+  addLocalPaths,
   startImport,
   remove,
   clearFinished,
@@ -46,6 +47,30 @@ onMounted(loadLimit);
 
 const fileInput = ref<HTMLInputElement | null>(null);
 const dragging = ref(false);
+
+// Desktop shell only: the folder linked to this project on this machine, so the
+// native picker can open right where the reports are.
+const { link } = useDesktopProjectLink(() => projectId);
+const isDesktop = ref(false);
+onMounted(() => {
+  isDesktop.value = !!tauriCore();
+});
+const projectFolder = computed(() => (link.value?.exists ? link.value.path : null));
+
+/**
+ * In the desktop shell, browse with the native picker — filtered to `.zip` and
+ * opened at the project's linked folder — and import the chosen files straight
+ * from disk. In a plain browser, fall back to the file input (which cannot be
+ * pointed at a folder).
+ */
+async function onChooseFiles() {
+  if (isDesktop.value) {
+    const picked = await pickDesktopImportFiles(projectFolder.value);
+    if (picked.length) addLocalPaths(picked);
+    return;
+  }
+  fileInput.value?.click();
+}
 
 function onPicked(event: Event) {
   const input = event.target as HTMLInputElement;
@@ -175,8 +200,12 @@ const finishedCount = computed(() => entries.value.filter((e) => ['imported', 'd
                 size="sm"
                 class="mt-2"
                 :disabled="importing"
-                @click="fileInput?.click()"
+                :title="isDesktop && projectFolder ? `Opens in ${projectFolder}` : undefined"
+                @click="onChooseFiles"
               />
+              <p v-if="isDesktop && projectFolder" class="text-xs text-gray-500 mt-2 break-all">
+                Opens in <code>{{ projectFolder }}</code>
+              </p>
               <p v-if="maxBytes" class="text-xs text-gray-500 mt-3">
                 Up to {{ formatBytes(maxBytes) }} per archive. Larger ones are rejected here, before uploading.
               </p>

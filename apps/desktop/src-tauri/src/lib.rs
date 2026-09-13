@@ -37,13 +37,13 @@ use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt as _;
 use tauri_plugin_store::StoreExt as _;
 
-use inspect::desktop_inspect_folder;
+use inspect::{desktop_find_importable_runs, desktop_inspect_folder};
 use mcp_clients::{desktop_mcp_clients, desktop_mcp_connect, desktop_mcp_disconnect, desktop_mcp_reveal};
 use updates::{desktop_check_update, desktop_install_update, desktop_restart_app};
 use runner::{
     desktop_check_local_env, desktop_check_local_specs, desktop_get_project_link,
-    desktop_pick_folder, desktop_run_local_tests, desktop_set_project_link,
-    desktop_set_project_start_command, desktop_stop_local_tests,
+    desktop_pick_folder, desktop_pick_import_files, desktop_run_local_tests,
+    desktop_set_project_link, desktop_set_project_start_command, desktop_stop_local_tests,
 };
 use worktree::{desktop_bisect_here, desktop_reproduce_here};
 
@@ -754,7 +754,9 @@ pub fn run() {
             desktop_notify,
             desktop_save_download,
             desktop_pick_folder,
+            desktop_pick_import_files,
             desktop_inspect_folder,
+            desktop_find_importable_runs,
             desktop_get_project_link,
             desktop_set_project_link,
             desktop_run_local_tests,
