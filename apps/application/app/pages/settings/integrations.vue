@@ -40,9 +40,26 @@ interface FormState {
   name: string;
   baseUrl: string;
   credentials: Record<string, string>;
+  /** The connection's existing non-secret config, preserved across an edit. */
+  config: Record<string, unknown>;
+  /** Default ticket language for issues filed against this connection. */
+  locale: 'en' | 'fr';
 }
-const form = reactive<FormState>({ provider: null, editingId: null, name: '', baseUrl: '', credentials: {} });
+const form = reactive<FormState>({
+  provider: null,
+  editingId: null,
+  name: '',
+  baseUrl: '',
+  credentials: {},
+  config: {},
+  locale: 'en',
+});
 const saving = ref(false);
+
+const LOCALE_ITEMS = [
+  { label: 'English', value: 'en' },
+  { label: 'Français', value: 'fr' },
+];
 
 function providerMeta(provider: IntegrationProviderName) {
   return INTEGRATION_PROVIDER_LIST.find((p) => p.name === provider)!;
@@ -58,6 +75,8 @@ function openCreate(provider: IntegrationProviderName) {
   form.name = '';
   form.baseUrl = '';
   form.credentials = {};
+  form.config = {};
+  form.locale = 'en';
 }
 
 function openEdit(conn: ConnectionSummary) {
@@ -66,6 +85,8 @@ function openEdit(conn: ConnectionSummary) {
   form.name = conn.name;
   form.baseUrl = conn.baseUrl;
   form.credentials = {};
+  form.config = { ...((conn.config as Record<string, unknown> | null) ?? {}) };
+  form.locale = (conn.config as { locale?: string } | null)?.locale === 'fr' ? 'fr' : 'en';
 }
 
 function cancel() {
@@ -79,7 +100,13 @@ async function submit() {
   if (!form.provider) return;
   saving.value = true;
   try {
-    const body = { provider: form.provider, name: form.name, baseUrl: form.baseUrl, credentials: form.credentials };
+    const body = {
+      provider: form.provider,
+      name: form.name,
+      baseUrl: form.baseUrl,
+      credentials: form.credentials,
+      config: { ...form.config, locale: form.locale },
+    };
     if (form.editingId !== null) {
       await $fetch(`/api/integrations/connections/${form.editingId}`, { method: 'PATCH', body });
       toast.add({ title: 'Connection updated', color: 'success' });
@@ -246,6 +273,14 @@ function errorMessage(err: unknown): string {
               :placeholder="isEditing && field.secret ? 'Leave blank to keep the stored value' : field.placeholder"
               class="w-full max-w-md"
             />
+          </UFormField>
+
+          <UFormField
+            v-if="provider.kind === 'tracker'"
+            label="Default language"
+            description="The language issues are written in, unless a project overrides it."
+          >
+            <USelect v-model="form.locale" :items="LOCALE_ITEMS" value-key="value" class="w-full max-w-md" />
           </UFormField>
 
           <div class="flex items-center gap-2">

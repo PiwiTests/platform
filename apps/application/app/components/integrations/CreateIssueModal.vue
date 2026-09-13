@@ -35,6 +35,11 @@ const projectKey = ref<string | undefined>(undefined);
 const issueType = ref<string | undefined>(undefined);
 const labels = ref<string[]>([]);
 const assignee = ref<string | undefined>(undefined);
+const locale = ref<'en' | 'fr'>('en');
+const LOCALE_ITEMS = [
+  { label: 'English', value: 'en' },
+  { label: 'Français', value: 'fr' },
+];
 const include = ref<IssueIncludeOptions>({
   includeDiagnosis: true,
   includePatch: true,
@@ -65,6 +70,7 @@ function applyDraft(d: IssueDraft) {
   issueType.value = d.issueType ?? undefined;
   labels.value = [...d.labels];
   assignee.value = d.assignee ?? undefined;
+  locale.value = d.locale;
   include.value = { ...d.include };
 }
 
@@ -98,6 +104,7 @@ async function refreshPreview() {
     params.set('includePatch', String(include.value.includePatch));
     params.set('includeScreenshot', String(include.value.includeScreenshot));
     params.set('includeShareLink', String(include.value.includeShareLink));
+    params.set('locale', locale.value);
     const d = await $fetch<IssueDraft>(`/api/integrations/issue-draft?${params.toString()}`);
     // Keep the person's field edits; refresh only the derived preview + labels.
     draft.value = { ...draft.value, markdown: d.markdown, document: d.document, existing: d.existing };
@@ -169,6 +176,9 @@ watch(projectKey, () => {
   void loadIssueTypes();
 });
 
+// The language rewrites the whole body, so re-render the preview.
+watch(locale, () => void refreshPreview());
+
 async function create() {
   if (!canCreate.value) return;
   creating.value = true;
@@ -186,6 +196,7 @@ async function create() {
           issueType: issueType.value,
           labels: labels.value,
           assignee: assignee.value,
+          locale: locale.value,
           include: include.value,
         },
       },
@@ -297,7 +308,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             <UFormField label="Issue type">
               <USelectMenu
                 v-model="issueType"
-                :items="issueTypes.map((t) => ({ label: t.name, value: t.name }))"
+                :items="issueTypes.map((t) => ({ label: t.name, value: t.id }))"
                 value-key="value"
                 :placeholder="issueType || 'Select a type'"
                 class="w-full"
@@ -324,9 +335,14 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             />
           </UFormField>
 
-          <UFormField label="Labels">
-            <UInputMenu v-model="labels" multiple create-item class="w-full" :items="labels" />
-          </UFormField>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <UFormField label="Labels">
+              <UInputMenu v-model="labels" multiple create-item class="w-full" :items="labels" />
+            </UFormField>
+            <UFormField label="Language">
+              <USelect v-model="locale" :items="LOCALE_ITEMS" value-key="value" class="w-full" />
+            </UFormField>
+          </div>
 
           <UFormField label="Include">
             <div class="flex flex-wrap gap-4">
