@@ -4,6 +4,7 @@
  * carries the resolved account, not the token that resolved it.
  */
 import type { IntegrationProviderName } from './registry';
+import type { IssueDocument } from './document';
 
 export type ConnectionStatus = 'unverified' | 'ok' | 'failed';
 export type ConnectionManagedBy = 'db' | 'env';
@@ -42,5 +43,94 @@ export interface ConnectionTestResult {
   /** The account the credentials resolved to, when the test succeeded. */
   account?: { id: string; displayName: string };
   /** Provider error text when the test failed. */
+  error?: string;
+}
+
+/** A tracker the UI can file into — what `GET status` returns. */
+export interface TrackerSummary {
+  id: number;
+  provider: IntegrationProviderName;
+  name: string;
+}
+
+/** A tracker project option for the create modal's picker. */
+export interface TrackerProjectOption {
+  id: string;
+  key: string;
+  name: string;
+}
+
+/** An issue-type option for the create modal's picker. */
+export interface TrackerIssueTypeOption {
+  id: string;
+  name: string;
+}
+
+/** An assignable-user option for the create modal's picker. */
+export interface TrackerUserOption {
+  id: string;
+  displayName: string;
+  email?: string | null;
+}
+
+/** An issue that may already track the failure — leads the modal so a person links it. */
+export interface ExistingIssueCandidate {
+  key: string;
+  url: string;
+  title: string | null;
+  statusText: string | null;
+  statusColor: string | null;
+  /** Why it was surfaced: pinned link, matching label/fingerprint, or fixed-before. */
+  reason: 'linked' | 'label' | 'fingerprint' | 'fixed-before';
+}
+
+/** The toggles for what a ticket body carries. */
+export interface IssueIncludeOptions {
+  includeDiagnosis: boolean;
+  includePatch: boolean;
+  includeScreenshot: boolean;
+  includeShareLink: boolean;
+}
+
+/** The prefilled draft `GET issue-draft` returns; the modal edits it and POSTs it back. */
+export interface IssueDraft {
+  entityType: 'failure_cluster' | 'test_runs_case';
+  entityId: number;
+  /** The cluster the created link attaches to (the entity's own cluster). */
+  clusterId: number | null;
+  title: string;
+  connectionId: number | null;
+  connections: TrackerSummary[];
+  projectKey: string | null;
+  issueType: string | null;
+  labels: string[];
+  assignee: string | null;
+  include: IssueIncludeOptions;
+  /** Markdown preview of the body — what the modal renders through `MarkdownPreview`. */
+  markdown: string;
+  /** The neutral document the preview renders, for inspection. */
+  document: IssueDocument;
+  existing: ExistingIssueCandidate[];
+}
+
+/** The body `POST issues` accepts — the draft with a person's edits. */
+export interface CreateIssueRequest {
+  entityType: 'failure_cluster' | 'test_runs_case';
+  entityId: number;
+  connectionId: number;
+  title: string;
+  projectKey: string;
+  issueType: string;
+  labels?: string[];
+  assignee?: string | null;
+  include?: Partial<IssueIncludeOptions>;
+}
+
+/** What `POST issues` returns once the immediate attempt resolves. */
+export interface CreateIssueResponse {
+  actionId: number;
+  status: 'done' | 'pending' | 'failed' | 'skipped';
+  key?: string;
+  url?: string;
   error?: string;
 }

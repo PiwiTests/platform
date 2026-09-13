@@ -314,8 +314,8 @@ export default defineNuxtConfig({
       tasks: true,
     },
     scheduledTasks: {
-      // Run the notification and auto-heal outbox sweepers every minute
-      '* * * * *': ['notifications:sweep', 'heal:sweep'],
+      // Run the notification, auto-heal and integration outbox sweepers every minute
+      '* * * * *': ['notifications:sweep', 'heal:sweep', 'integrations:sweep'],
       // Nightly data retention: run pruning (opt-in), outbox pruning, orphan sweep
       '17 3 * * *': ['retention:sweep'],
     },

@@ -11,6 +11,7 @@ import {
   failureDiagnosisVersions,
   files,
   healActions,
+  integrationActions,
   locatorSnapshots,
   networkRequests,
   notificationDeliveries,
@@ -264,6 +265,22 @@ export async function pruneHealActions(db: DbClient, olderThanDays: number): Pro
   )!;
   const pruned = await countWhere(db, healActions, settled);
   if (pruned > 0) await db.delete(healActions).where(settled);
+  return pruned;
+}
+
+/**
+ * Delete integration actions that finished (done/failed/skipped) before the
+ * cutoff. Pending actions are never touched. The row is only a record of what
+ * Piwi wrote to the tracker; deleting it never touches the issue itself.
+ */
+export async function pruneIntegrationActions(db: DbClient, olderThanDays: number): Promise<number> {
+  const cutoffDate = new Date(Date.now() - olderThanDays * MS_PER_DAY);
+  const settled = and(
+    inArray(integrationActions.status, ['done', 'failed', 'skipped']),
+    lt(integrationActions.finishedAt, cutoffDate),
+  )!;
+  const pruned = await countWhere(db, integrationActions, settled);
+  if (pruned > 0) await db.delete(integrationActions).where(settled);
   return pruned;
 }
 

@@ -4,8 +4,19 @@ import {
   isIntegrationProvider,
   type IntegrationProviderName,
 } from '#shared/integrations/registry';
-import type { ConnectionInput, ConnectionSummary, ConnectionTestResult } from '#shared/integrations/types';
-import { integrationConnections, type IntegrationConnection } from '../../database/schema';
+import type {
+  ConnectionInput,
+  ConnectionSummary,
+  ConnectionTestResult,
+  TrackerSummary,
+} from '#shared/integrations/types';
+import {
+  entityLinks,
+  integrationConnections,
+  projectIntegrations,
+  type IntegrationConnection,
+  type ProjectIntegration,
+} from '../../database/schema';
 import type { DbClient } from '../../database';
 import { decryptSecret, encryptSecret, getEncryptionKey } from '../crypto';
 import { JiraClient } from './jira/client';
@@ -181,6 +192,9 @@ export async function updateConnection(
 export async function deleteConnection(db: DbClient, id: number): Promise<boolean> {
   const row = await getConnectionRow(db, id);
   if (!row) return false;
+  // A deleted connection detaches from the links it enriched, keeping their URLs
+  // (the documented "set null" behavior), then the row goes.
+  await db.update(entityLinks).set({ connectionId: null }).where(eq(entityLinks.connectionId, id));
   await db.delete(integrationConnections).where(eq(integrationConnections.id, id));
   return true;
 }
@@ -210,6 +224,26 @@ export async function defaultTrackerConnection(db: DbClient): Promise<Integratio
   const rows = await db.select().from(integrationConnections);
   const trackers = rows.filter((r) => TRACKER_PROVIDERS.has(r.provider as IntegrationProviderName));
   return trackers.length === 1 ? trackers[0]! : null;
+}
+
+/** Every tracker connection with usable credentials — what drives the UI entry points. */
+export async function listTrackerConnections(db: DbClient): Promise<TrackerSummary[]> {
+  await ensureEnvManagedConnections(db);
+  const rows = await db.select().from(integrationConnections);
+  return rows
+    .filter((r) => TRACKER_PROVIDERS.has(r.provider as IntegrationProviderName) && hasStoredCredentials(r))
+    .map((r) => ({ id: r.id, provider: r.provider as IntegrationProviderName, name: r.name }));
+}
+
+/** The per-project binding for a connection, or the first binding, or null. */
+export async function getProjectBinding(
+  db: DbClient,
+  projectId: number,
+  connectionId?: number | null,
+): Promise<ProjectIntegration | null> {
+  const rows = await db.select().from(projectIntegrations).where(eq(projectIntegrations.projectId, projectId));
+  if (connectionId != null) return rows.find((r) => r.connectionId === connectionId) ?? null;
+  return rows[0] ?? null;
 }
 
 /**
