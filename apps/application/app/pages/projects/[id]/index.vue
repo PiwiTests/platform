@@ -1282,7 +1282,7 @@ const moreMenuItems = computed(() => {
           </SectionCard>
 
           <!-- Desktop shell only: the linked folder is a per-machine setting. -->
-          <DesktopProjectFolderSection :project-id="projectId" />
+          <DesktopProjectFolderSection :project-id="projectId" :project-name="project?.name" />
         </div>
       </div>
     </template>

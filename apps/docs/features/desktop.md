@@ -128,6 +128,14 @@ setup checks, and the **Change**/**Unlink** actions. The project page shows the
 link's status — `ready`, `needs setup`, or `missing` when the folder is gone —
 and jumps there. The link never leaves this machine.
 
+Whenever a folder is linked — creating a project from it, or **Choose folder…** /
+**Change** on an existing one — the app looks for runs already sitting in it
+(`blob-report/` blob reports and `test-results/` traces) and offers to import
+them, so a project you point at an existing checkout starts with its history
+already in place. It reads the archives straight from disk; re-importing later
+does nothing. On the [import page](/guide/importing-runs) itself, the **Choose
+files** picker opens at the linked folder, so the reports are one click away.
+
 ## Running tests from the app
 
 A failing run is one click from a local retry. On a run page (or a single
