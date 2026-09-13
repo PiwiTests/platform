@@ -226,3 +226,8 @@ export function generateDemoWebhookToken(): { token: string; url: string } {
   const token = 'demo-webhook-token';
   return { token, url: `/api/integrations/jira/webhook/${token}` };
 }
+
+/** The demo has no tracker to poll, so a sync sweep refreshes nothing. */
+export function demoSyncTrackerLinks(): { refreshed: number; failed: number; skipped: number } {
+  return { refreshed: 0, failed: 0, skipped: 0 };
+}

@@ -2,7 +2,7 @@
  * Keep the ticket honest: bind a project, file an issue, then drive the two-way
  * sync against a mock Jira Cloud server whose issue status the test controls.
  *
- * Covered: the binding saves; the sync task caches the ticket's status; a fix
+ * Covered: the binding saves; a sync sweep caches the ticket's status; a fix
  * verified by a passing run comments on and transitions the ticket; a ticket
  * moved to Done offers the reconcile (policy off) then auto-resolves the cluster
  * (policy on); a reopened ticket reopens the cluster; the inbound webhook
@@ -181,8 +181,12 @@ test.describe.serial('Integrations — keep the ticket honest', () => {
   let clusterId = 0;
   let projectId = 0;
 
+  // One sweep on demand through the admin endpoint: the same pass the scheduled
+  // task makes, and unlike Nitro's `/_nitro/tasks` route it exists in the
+  // production build CI runs.
   async function runSync(request: import('@playwright/test').APIRequestContext) {
-    await request.post('/_nitro/tasks/integrations:sync');
+    const res = await request.post('/api/integrations/sync');
+    expect(res.ok()).toBe(true);
   }
   async function clusterJson(request: import('@playwright/test').APIRequestContext) {
     return (await (await request.get(`/api/failure-clusters/${clusterId}`)).json()) as {
@@ -263,7 +267,7 @@ test.describe.serial('Integrations — keep the ticket honest', () => {
     expect(b.autoCreate.enabled).toBe(false);
   });
 
-  test('the sync task caches the ticket status', async ({ request }) => {
+  test('a sync sweep caches the ticket status', async ({ request }) => {
     mock.setStatus('In Progress', 'indeterminate');
     await runSync(request);
     const c = await clusterJson(request);
@@ -372,5 +376,11 @@ test.describe.serial('Integrations sync — role checks (auth server, CI only)',
     expect(get.status).toBe(403);
     const put = await authApi('PUT', '/api/projects/1/integrations', { connectionId: 1 }, userCookie);
     expect(put.status).toBe(403);
+  });
+
+  test('a non-admin cannot run a sync sweep', async () => {
+    skip();
+    const res = await authApi('POST', '/api/integrations/sync', undefined, userCookie);
+    expect(res.status).toBe(403);
   });
 });

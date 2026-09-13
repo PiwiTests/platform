@@ -161,6 +161,7 @@ import {
   demoIssueDraft,
   demoCreateIssue,
   demoIntegrationActions,
+  demoSyncTrackerLinks,
   demoConnectionProjects,
   demoConnectionIssueTypes,
   demoAssignable,
@@ -1726,6 +1727,7 @@ const routes: RouteEntry[] = [
     },
   },
   { method: 'GET', pattern: /^\/api\/integrations\/actions$/, handler: async () => demoIntegrationActions() },
+  { method: 'POST', pattern: /^\/api\/integrations\/sync$/, handler: async () => demoSyncTrackerLinks() },
   {
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/projects$/,
