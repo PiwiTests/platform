@@ -78,6 +78,11 @@ Everything else — analytics, notifications, the CI gate, PR feedback, MCP, the
 
 ## Exploring
 
+- **Issue trackers and wikis** — create a Jira issue from a failure cluster, an execution, a flaky test or a run
+  with the evidence and the fix plan already in it; keep its status in sync both ways; route it by the owner Piwi
+  already derives; publish investigation and run reports to Confluence — all on a connection/provider layer that
+  makes the next tracker one provider file. Design record in
+  [proposals/issue-tracker-integrations.md](proposals/issue-tracker-integrations.md).
 - **Branches as entities** — on top of the shipped branch column: a merge-readiness verdict per branch,
   branch-class gate policies, cross-branch fix verification and retention by branch class, plus flakiness and trends
   scoped to the default branch by default. Tier 3 of
