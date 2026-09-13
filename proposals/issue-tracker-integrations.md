@@ -5,7 +5,9 @@ failure evolves, routing it to the team that owns the test, and — second — p
 Underneath both sits an **integration layer** (connections, providers, a neutral document model, a durable action
 outbox) so the next tracker or wiki is one provider file, not one more feature.
 
-**Status:** accepted, in implementation (see *Decisions* below) · **Scope:** Jira Cloud (and the shape that lets Server/Data Center follow),
+**Status:** accepted; rollout steps 1–3 shipped (foundations, create an issue, keep it honest — two-way sync, the
+project binding with policies and owner routes, the optional webhook, the needs-ticket queue, and localization); auto-create
+(step 4) and Confluence (step 5) remain. · **Scope:** Jira Cloud (and the shape that lets Server/Data Center follow),
 Confluence, the shared layer, and the smaller trackers that fall out of it · **Date:** 2026-09-13 · **Builds on:**
 entity links, the notifications outbox, the auto-heal outbox, the SCM provider layer, ownership, fix plans, offline
 export, share links.
@@ -620,17 +622,17 @@ Each with the default the design assumes; a different answer changes the first m
 
 Each step is a separately mergeable pull request that leaves the app green and useful on its own.
 
-1. **Foundations** — `integration_connections` + Settings → Integrations (Jira Cloud connect, test, env-managed),
+1. **Foundations** — ✅ *shipped.* `integration_connections` + Settings → Integrations (Jira Cloud connect, test, env-managed),
    the provider registry and `IssueTracker` interface with the Jira client (`whoAmI`, `getIssue`, `parseIssueUrl`),
    `entity_links` columns, connection-aware detection and refresh, retire the `atlassian` setting. *Outcome: the
    unfurl that has never worked works, self-hosted Jira links are recognized, nothing writes to Jira yet.*
-2. **Create an issue** — the document model with Markdown and ADF renderers, `buildClusterIssue` /
+2. **Create an issue** — ✅ *shipped.* The document model with Markdown and ADF renderers, `buildClusterIssue` /
    `buildExecutionIssue`, the outbox and sweeper, `POST issues` + `issue-draft` with dedupe, the modal on the cluster
    page and the inbox (`c`, bulk), the key on the chip, Slack/email and PR feedback, `create_issue` MCP tool, docs
    page. *Outcome: the headline feature.*
-3. **Keep it honest** — the sync task, the binding form with policies (comment on fix / regression, transition,
-   resolve on close), merge handling, the optional webhook, `needs-ticket` queue. *Outcome: the loop closes both
-   ways.*
+3. **Keep it honest** — ✅ *shipped.* The sync task, the binding form with policies (comment on fix / regression, transition,
+   resolve on close), merge handling, the optional webhook, `needs-ticket` queue, and the response-language setting.
+   *Outcome: the loop closes both ways.*
 4. **Teams and automation** — owner routes, auto-create guards, daily cap; flaky-test and run tickets; the
    `relatedIssue` and annotation resolutions if not already in step 2.
 5. **Confluence** — the wiki interface, the storage renderer, publish investigation and run report, page-in-place

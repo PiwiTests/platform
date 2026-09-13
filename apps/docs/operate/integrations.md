@@ -72,3 +72,28 @@ the fields, and how the key travels back into the inbox, notifications and pull-
 A connection carries a **default language** for the tickets filed against it (a French Atlassian site can default them
 to French); a project binding overrides it, and the create modal offers a per-issue choice — see
 [Language](/features/issue-tracking#language).
+
+## Status sync
+
+A background task reads every tracked issue back through its connection and caches the status, title and assignee, so a
+closed ticket stops showing as open in the dashboard. It runs **every 15 minutes by default**; set
+[`PIWI_INTEGRATIONS_SYNC_MINUTES`](/reference/configuration) (1–1440) to change the cadence. Links on an open cluster
+refresh every sweep; links on a resolved or ignored cluster refresh at most once a day. A connection that fails to
+answer records the error on the connection card and does not stop the sweep.
+
+The two-way **policies** (comment on fix / regression, transition, resolve on close, reopen) are configured per project
+on the binding — see [Keep the ticket honest](/features/issue-tracking#keep-the-ticket-honest).
+
+## Registering the inbound webhook
+
+Polling is the baseline because Atlassian Cloud usually cannot reach a self-hosted Piwi. When it can, a Jira admin can
+register a webhook so a close or reopen reflects immediately instead of within the sync interval:
+
+1. In **Settings → Integrations**, on the Jira connection, choose **Enable webhook**. Piwi generates a per-connection
+   secret and shows the full URL **once** — copy it now.
+2. In Jira, go to **Settings → System → Webhooks → Create a webhook**, paste the URL, and subscribe it to
+   **issue updated** events (optionally scoped by a JQL filter to the bound projects).
+3. Piwi looks the issue up by its id in its links and refreshes just that one, applying the resolve/reopen policies.
+
+The webhook is **public but secret-in-path** and rate-limited, and it can only ever *refresh a link* — it can never
+create or transition anything. Regenerating the token invalidates the old URL; *Disable webhook* clears it.

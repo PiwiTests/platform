@@ -30,23 +30,23 @@ first. Each row is one cluster:
 
 ### Queues
 
-The inbox is split into queues, each with a live count. Pick one to focus; **All open** is the default,
-and the queue is shareable — it lives in the URL as `?queue=`.
+The inbox is split into queues, each with a live count; **All open** is the default, and the queue is shareable in the
+URL as `?queue=`.
 
 | Queue | What it holds |
 |---|---|
 | **All open** | Every open, non-snoozed cluster. |
-| **New** | Clusters first seen — or seen again — since you last opened the inbox (kept per browser, no account needed). |
-| **Mine** | Clusters whose assignee, or whose derived owner, is you. |
-| **Regressions** | Clusters that regressed on the project's default branch and are still failing there. |
-| **Fix didn't hold** | Clusters whose fix landed and then regressed. |
+| **New** | Clusters first seen — or seen again — since you last opened the inbox (kept per browser). |
+| **Mine** | Clusters whose assignee, or derived owner, is you. |
+| **Needs ticket** | Untracked default-branch clusters older than the binding's age (default 2 days) — see [issue tracking](./issue-tracking). |
+| **Regressions** | Clusters that regressed on the default branch and are still failing there. |
+| **Fix didn't hold** | Clusters whose fix landed then regressed. |
 | **Quarantine ready** | Quarantined clusters whose tests have stopped failing — safe to release. |
-| **Merge suggestions** | Clusters that are part of a pending merge suggestion awaiting a decision (see [clustering](./ai-diagnosis#failure-clustering)). |
+| **Merge suggestions** | Clusters in a pending merge suggestion (see [clustering](./ai-diagnosis#failure-clustering)). |
 
 ### Triage from the row or the keyboard
 
-Every row can be triaged in place, and the whole inbox is keyboard-driven. Select a row with the mouse or
-`j` / `k`, then:
+Every row can be triaged in place, and the whole inbox is keyboard-driven. Select a row with the mouse or `j` / `k`:
 
 | Key | Action |
 |---|---|
