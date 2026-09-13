@@ -88,6 +88,7 @@ export const PROJECT = {
   INTEGRATIONS_CREATE_ISSUE: 'integrations-create-issue-test',
   INTEGRATIONS_SYNC: 'integrations-sync-test',
   INVALID_KEY: 'invalid-key-test',
+  JIRA_LIVE: 'jira-live-test',
   KEYBOARD_NAV: 'keyboard-nav-test',
   LABEL_OVERRIDE: 'label-override-project',
   LATEST_RUN_TEST: 'latest-run-test',

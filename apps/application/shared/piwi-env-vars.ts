@@ -1166,6 +1166,12 @@ export const PIWI_ENV_VARS = {
     category: 'test',
     runtimeOnly: true,
   },
+  PIWI_LIVE_JIRA_PROJECT_KEY: {
+    description: 'Jira project key the live Jira E2E files into (with PIWI_JIRA_* credentials).',
+    category: 'test',
+    runtimeOnly: true,
+    since: '0.29.0',
+  },
   PIWI_MAILPIT_SMTP_PORT: {
     description: 'SMTP port the email E2E tests send to (Mailpit).',
     category: 'test',
