@@ -34,7 +34,7 @@ describe('JiraClient write methods', () => {
       body,
       labels: ['piwi'],
       assigneeId: 'acc-1',
-      priority: 'High',
+      priority: '3',
       componentId: 'c9',
     });
     expect(issue).toMatchObject({ id: '10001', key: 'PROJ-1', url: 'https://acme.atlassian.net/browse/PROJ-1' });
@@ -43,11 +43,20 @@ describe('JiraClient write methods', () => {
     expect(url).toBe('https://acme.atlassian.net/rest/api/3/issue');
     const sent = JSON.parse((init as RequestInit).body as string);
     expect(sent.fields.project).toEqual({ key: 'PROJ' });
+    // A non-numeric issue type is sent by name; an id would be sent as { id }.
     expect(sent.fields.issuetype).toEqual({ name: 'Bug' });
     expect(sent.fields.assignee).toEqual({ accountId: 'acc-1' });
-    expect(sent.fields.priority).toEqual({ name: 'High' });
+    // Priority is only ever sent by id, never an English name.
+    expect(sent.fields.priority).toEqual({ id: '3' });
     expect(sent.fields.components).toEqual([{ id: 'c9' }]);
     expect(sent.fields.description.type).toBe('doc');
+  });
+
+  test('a numeric issue type is sent by id, for a localized site', async () => {
+    fetchMock.mockResolvedValueOnce(response({ id: '10002', key: 'PROJ-2' }));
+    await client.createIssue({ projectKey: 'PROJ', issueType: '10001', title: 't', body });
+    const sent = JSON.parse((fetchMock.mock.calls.at(-1)![1] as RequestInit).body as string);
+    expect(sent.fields.issuetype).toEqual({ id: '10001' });
   });
 
   test('addComment posts an ADF body to the comment endpoint', async () => {

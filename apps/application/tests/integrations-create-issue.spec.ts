@@ -21,8 +21,13 @@ function getFreePort(): Promise<number> {
 }
 
 /** A mock Jira Cloud REST v3 server that mints PROJ-<n> keys and remembers them. */
-function startMockJira(port: number): { server: http.Server; created: () => number } {
+function startMockJira(port: number): {
+  server: http.Server;
+  created: () => number;
+  lastCreate: () => { fields?: { description?: unknown } } | null;
+} {
   let counter = 100;
+  let lastCreateBody: { fields?: { description?: unknown } } | null = null;
   const issues = new Map<string, { summary: string }>();
 
   const server = http.createServer((req, res) => {
@@ -51,10 +56,20 @@ function startMockJira(port: number): { server: http.Server; created: () => numb
     if (req.method === 'POST' && url.startsWith('/rest/api/3/search/jql')) return send({ issues: [] });
 
     if (req.method === 'POST' && url === '/rest/api/3/issue') {
-      counter++;
-      const key = `PROJ-${counter}`;
-      issues.set(key, { summary: 'Filed by Piwi' });
-      return send({ id: String(10000 + counter), key }, 201);
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        try {
+          lastCreateBody = JSON.parse(body);
+        } catch {
+          lastCreateBody = null;
+        }
+        counter++;
+        const key = `PROJ-${counter}`;
+        issues.set(key, { summary: 'Filed by Piwi' });
+        send({ id: String(10000 + counter), key }, 201);
+      });
+      return;
     }
 
     const issueMatch = /^\/rest\/api\/3\/issue\/(PROJ-\d+)/.exec(url);
@@ -71,7 +86,16 @@ function startMockJira(port: number): { server: http.Server; created: () => numb
     send({ errorMessages: ['Not found'] }, 404);
   });
   server.listen(port, '127.0.0.1');
-  return { server, created: () => counter - 100 };
+  return { server, created: () => counter - 100, lastCreate: () => lastCreateBody };
+}
+
+/** Recursively collect every ADF text node's string. */
+function adfText(node: unknown): string[] {
+  if (!node || typeof node !== 'object') return [];
+  const n = node as { text?: string; content?: unknown[] };
+  const here = typeof n.text === 'string' ? [n.text] : [];
+  const kids = Array.isArray(n.content) ? n.content.flatMap(adfText) : [];
+  return [...here, ...kids];
 }
 
 interface DraftResponse {
@@ -226,6 +250,56 @@ test.describe.serial('Integrations — create an issue', () => {
     expect(data.key).toBe(createdKey);
     expect(data.existing?.some((e: { key: string }) => e.key === createdKey)).toBe(true);
     expect(mock.created()).toBe(1);
+  });
+
+  test('a French issue renders French ADF headings, data untouched', async ({ request }) => {
+    // A distinct failure → a fresh cluster (the tracked one would dedupe).
+    const submit = await request.post('/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.INTEGRATIONS_CREATE_ISSUE,
+        status: 'failed',
+        startTime: new Date().toISOString(),
+        duration: 1000,
+        totalTests: 1,
+        passedTests: 0,
+        failedTests: 1,
+        skippedTests: 0,
+        testCases: [
+          {
+            title: 'adds to cart',
+            status: 'failed',
+            duration: 400,
+            location: 'cart.spec.ts:9:1',
+            error: "Error: expect(received).toBeVisible()\n  - waiting for getByRole('listitem')",
+          },
+        ],
+      },
+    });
+    const { runId } = await submit.json();
+    const runDetail = await request.get(`/api/test-runs/${runId}`);
+    const cases = (await runDetail.json()).testCases as { failureClusterId?: number }[];
+    const frClusterId = cases.find((c) => c.failureClusterId)!.failureClusterId!;
+
+    const res = await request.post('/api/integrations/issues', {
+      data: {
+        entityType: 'failure_cluster',
+        entityId: frClusterId,
+        connectionId,
+        title: 'Panier en échec',
+        projectKey: 'PROJ',
+        issueType: 'Bug',
+        locale: 'fr',
+      },
+    });
+    expect(res.ok()).toBeTruthy();
+    expect((await res.json()).status).toBe('done');
+
+    const description = mock.lastCreate()?.fields?.description;
+    const texts = adfText(description);
+    expect(texts).toContain("Ce qui s'est passé");
+    expect(texts).toContain('Preuves');
+    // Data (the locator) is quoted verbatim, never translated.
+    expect(texts.join('\n')).toContain("getByRole('listitem')");
   });
 
   test('the integration action was recorded', async ({ request }) => {
