@@ -399,6 +399,18 @@ export async function deleteProjectData(db: DrizzleDB, projectId: number) {
   await db.delete(testCases).where(eq(testCases.projectId, projectId));
   await db.delete(casePayloads).where(eq(casePayloads.projectId, projectId));
 
+  // Entity links pinned to this project's clusters (a known-issue link Piwi
+  // created, or a URL a person pinned) are not covered by the cluster cascade,
+  // so remove them before the cluster rows go.
+  const projectClusterRows = await db
+    .select({ id: failureClusters.id })
+    .from(failureClusters)
+    .where(eq(failureClusters.projectId, projectId));
+  const projectClusterIds = projectClusterRows.map((r: { id: number }) => r.id);
+  if (projectClusterIds.length > 0) {
+    await db.delete(entityLinks).where(inArray(entityLinks.failureClusterId, projectClusterIds));
+  }
+
   // Deleting the project row cascades to: projectTags, failureClusters,
   // failureDiagnoses, traceBlobs, traceResources
   await db.delete(projects).where(eq(projects.id, projectId));
