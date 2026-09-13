@@ -65,6 +65,7 @@ describe('JiraClient', () => {
       }),
     );
     expect(await client.getIssue('PROJ-7')).toEqual({
+      id: null,
       key: 'PROJ-7',
       url: 'https://acme.atlassian.net/browse/PROJ-7',
       title: 'Login broken',
