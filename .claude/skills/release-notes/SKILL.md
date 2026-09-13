@@ -112,11 +112,20 @@ notes** unless you pass `--force`, so it can never blank a release the way the o
 - **Voice:** informative, specific, honest — never promotional (see the positioning rules in the
   root [`AGENTS.md`](../../../AGENTS.md) and `apps/docs/AGENTS.md#voice`).
 
+## The release body and CHANGELOG.md stay in step
+
+`CHANGELOG.md` is the source of truth. The `Tidy release notes` CI job runs
+`release-body <tag>`, which publishes the version's `CHANGELOG.md` section to the GitHub release:
+**polished** when the section carries the `<!-- notes:polished -->` marker (headings promoted back
+to release-body level), **de-duplicated raw** otherwise. So once a version's polished notes are in
+`CHANGELOG.md`, the release body is one dispatch away — no re-typing, and the two never drift.
+
 ## Repairing the already-emptied releases
 
-`v0.26.1`, `v0.27.0`, `v0.28.0`, `v0.29.0` were blanked by the old AI-polish workflow. Two ways to
-restore them:
+`v0.26.1`, `v0.27.0`, `v0.28.0` and `v0.29.0` were blanked by the old AI-polish workflow. Their
+polished notes now live in `CHANGELOG.md`, so restoring each release **body** is one step:
 
-- **Quick, deterministic:** re-run the CI job per tag — Actions → *Tidy release notes* →
-  *Run workflow* → enter the tag. This backfills a de-duplicated raw body from `CHANGELOG.md`.
-- **Polished:** run this skill for each tag to give them the full v0.26.0 treatment.
+- **From CI:** Actions → *Tidy release notes* → *Run workflow* → enter the tag. It reads the
+  polished section from `CHANGELOG.md` and writes it to the release.
+- **Locally:** `node scripts/release-notes.mjs release-body <tag> > body.md` then
+  `node scripts/release-notes.mjs apply <tag> --notes body.md --release-only` (needs `gh`).

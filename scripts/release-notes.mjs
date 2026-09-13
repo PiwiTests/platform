@@ -4,6 +4,9 @@
 //
 // Commands:
 //   raw <tag>                      Print the version's changelog entries, de-duplicated.
+//   release-body <tag>             Print what belongs in the release body: the polished
+//                                  CHANGELOG.md section (headings promoted back up) when it
+//                                  is polished, otherwise the de-duplicated raw entries.
 //   dedupe [file]                  De-duplicate raw entries from a file or stdin.
 //   section <tag>                  Print a version's raw CHANGELOG.md section body.
 //   apply <tag> --notes <file>     Publish notes to the GitHub release and/or CHANGELOG.md.
@@ -22,6 +25,7 @@ const POLISHED_MARKER = '<!-- notes:polished -->';
 
 const usage = `Usage:
   node scripts/release-notes.mjs raw <tag>
+  node scripts/release-notes.mjs release-body <tag>
   node scripts/release-notes.mjs dedupe [file]
   node scripts/release-notes.mjs section <tag>
   node scripts/release-notes.mjs apply <tag> --notes <file> [--no-release] [--no-changelog] [--force] [--dry-run]`;
@@ -153,12 +157,33 @@ function demoteHeadings(text) {
     .join('\n');
 }
 
+// Inverse of demoteHeadings: lift a CHANGELOG section's headings back to release-body level
+// (`###` -> `##`) so the polished notes read the same on the release page as in the file.
+function promoteHeadings(text) {
+  let inFence = false;
+  return text
+    .split('\n')
+    .map((line) => {
+      if (/^\s*```/.test(line)) inFence = !inFence;
+      if (inFence) return line;
+      return line.replace(/^#(#{1,5} )/, '$1');
+    })
+    .join('\n');
+}
+
 function spliceChangelog(version, notes) {
   const text = fs.readFileSync(CHANGELOG, 'utf8');
   const section = findSection(text, version);
   if (!section) throw new Error(`No CHANGELOG.md section found for ${version}.`);
   const body = demoteHeadings(notes.replace(/\s+$/, ''));
-  const next = [section.headerLine, '', body, '', ...section.lines.slice(section.end)];
+  const next = [
+    ...section.lines.slice(0, section.start),
+    section.headerLine,
+    '',
+    body,
+    '',
+    ...section.lines.slice(section.end),
+  ];
   fs.writeFileSync(CHANGELOG, next.join('\n').replace(/\n{3,}$/, '\n'));
 }
 
@@ -184,6 +209,19 @@ function cmdRaw(tag, source) {
   const body = rawSource(tag, source);
   if (isBlank(body)) throw new Error(`No changelog entries found for ${tag}.`);
   process.stdout.write(dedupe(body));
+}
+
+// What CI publishes to a release body. A polished CHANGELOG section (a human ran the
+// release-notes skill) is promoted back to release-body heading levels and used verbatim;
+// an ordinary section is de-duplicated raw.
+function cmdReleaseBody(tag, source) {
+  const body = rawSource(tag, source);
+  if (isBlank(body)) throw new Error(`No changelog entries found for ${tag}.`);
+  if (isPolished(body)) {
+    process.stdout.write(promoteHeadings(body.replace(/^\n+/, '').replace(/\s+$/, '')) + '\n');
+  } else {
+    process.stdout.write(dedupe(body));
+  }
 }
 
 function cmdApply(tag, opts) {
@@ -264,6 +302,10 @@ function main() {
     case 'raw':
       if (!positional[0]) throw new Error('raw needs a tag.\n\n' + usage);
       cmdRaw(positional[0], sourceFlag);
+      break;
+    case 'release-body':
+      if (!positional[0]) throw new Error('release-body needs a tag.\n\n' + usage);
+      cmdReleaseBody(positional[0], sourceFlag);
       break;
     case 'dedupe': {
       const body = positional[0] ? fs.readFileSync(positional[0], 'utf8') : fs.readFileSync(0, 'utf8');

@@ -34,8 +34,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
         run: |
-          # Build the de-duplicated notes from the version's CHANGELOG.md section (falling back
-          # to the current release body), then publish them. `apply` refuses to write an empty
-          # body and skips a release that already carries hand-authored notes.
-          node scripts/release-notes.mjs raw "$TAG" > "$RUNNER_TEMP/body.md"
+          # Build the release body from the version's CHANGELOG.md section (falling back to the
+          # current release body): a polished section is published as-is, an ordinary one is
+          # de-duplicated. `apply` refuses to write an empty body and skips a release that already
+          # carries hand-authored notes.
+          node scripts/release-notes.mjs release-body "$TAG" > "$RUNNER_TEMP/body.md"
           node scripts/release-notes.mjs apply "$TAG" --notes "$RUNNER_TEMP/body.md" --no-changelog
