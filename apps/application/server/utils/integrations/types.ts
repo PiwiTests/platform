@@ -30,6 +30,8 @@ export interface TrackerTransition {
 }
 
 export interface TrackerIssue {
+  /** The tracker's stable id (Jira issue id) — survives a key change on move. */
+  id: string | null;
   key: string;
   url: string;
   title: string | null;

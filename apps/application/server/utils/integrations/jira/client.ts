@@ -1,4 +1,6 @@
 import type { IssueDocument } from '#shared/integrations/document';
+import { renderAdf } from '#shared/integrations/render-adf';
+import { DEFAULT_EXPORT_MAX_INLINE_BYTES } from '#shared/export/limits';
 import type {
   CreateIssueInput,
   IssueTracker,
@@ -32,6 +34,7 @@ interface JiraUser {
 }
 
 interface JiraIssueResponse {
+  id?: string;
   key?: string;
   fields?: {
     summary?: string;
@@ -45,6 +48,8 @@ export class JiraError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** Seconds Jira asked us to wait, carried from a 429 `Retry-After`. */
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = 'JiraError';
@@ -84,6 +89,15 @@ export class JiraClient implements IssueTracker {
       signal: AbortSignal.timeout(JIRA_TIMEOUT_MS),
     });
     if (!response.ok) {
+      if (response.status === 429) {
+        const header = response.headers.get('retry-after');
+        const retryAfter = header != null ? Number(header) : NaN;
+        throw new JiraError(
+          429,
+          'Jira rate limited the request (429)',
+          Number.isFinite(retryAfter) ? retryAfter : undefined,
+        );
+      }
       throw new JiraError(response.status, `Jira request failed (${response.status} ${response.statusText})`);
     }
     if (response.status === 204) return undefined as T;
@@ -99,6 +113,7 @@ export class JiraClient implements IssueTracker {
     const category = toStatusCategory(data.fields?.status?.statusCategory?.key ?? null);
     const assignee = data.fields?.assignee ?? null;
     return {
+      id: data.id ?? null,
       key: data.key ?? key,
       url: this.issueUrl(data.key ?? key),
       title: data.fields?.summary ?? null,
@@ -180,12 +195,70 @@ export class JiraClient implements IssueTracker {
     return (data.issues ?? []).map((issue) => this.toIssue(issue, issue.key ?? ''));
   }
 
-  createIssue(_input: CreateIssueInput): Promise<TrackerIssue> {
-    return Promise.reject(new Error('Creating Jira issues is not available yet'));
+  async createIssue(input: CreateIssueInput): Promise<TrackerIssue> {
+    const fields: Record<string, unknown> = {
+      project: { key: input.projectKey },
+      issuetype: { name: input.issueType },
+      summary: input.title,
+      description: renderAdf(input.body),
+    };
+    if (input.labels?.length) fields.labels = input.labels;
+    if (input.assigneeId) fields.assignee = { accountId: input.assigneeId };
+    if (input.priority) fields.priority = { name: input.priority };
+    if (input.componentId) fields.components = [{ id: input.componentId }];
+
+    const data = await this.request<{ id?: string; key?: string }>('/rest/api/3/issue', {
+      method: 'POST',
+      body: JSON.stringify({ fields }),
+    });
+    const key = data.key ?? '';
+    return {
+      id: data.id ?? null,
+      key,
+      url: this.issueUrl(key),
+      title: input.title,
+      status: null,
+      statusCategory: null,
+      statusColor: null,
+      assignee: null,
+    };
   }
 
-  addComment(_key: string, _body: IssueDocument): Promise<void> {
-    return Promise.reject(new Error('Commenting on Jira issues is not available yet'));
+  async addComment(key: string, body: IssueDocument): Promise<void> {
+    await this.request<void>(`/rest/api/3/issue/${encodeURIComponent(key)}/comment`, {
+      method: 'POST',
+      body: JSON.stringify({ body: renderAdf(body) }),
+    });
+  }
+
+  async attach(key: string, file: { name: string; bytes: Uint8Array; mime: string }): Promise<void> {
+    if (file.bytes.byteLength > DEFAULT_EXPORT_MAX_INLINE_BYTES) {
+      throw new JiraError(413, `attachment '${file.name}' exceeds the ${DEFAULT_EXPORT_MAX_INLINE_BYTES}-byte cap`);
+    }
+    const form = new FormData();
+    form.append('file', new Blob([file.bytes as unknown as BlobPart], { type: file.mime }), file.name);
+    const response = await fetch(`${this.baseUrl}/rest/api/3/issue/${encodeURIComponent(key)}/attachments`, {
+      method: 'POST',
+      headers: {
+        Authorization: this.authHeader(),
+        Accept: 'application/json',
+        'X-Atlassian-Token': 'no-check',
+      },
+      body: form,
+      signal: AbortSignal.timeout(JIRA_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      if (response.status === 429) {
+        const header = response.headers.get('retry-after');
+        const retryAfter = header != null ? Number(header) : NaN;
+        throw new JiraError(
+          429,
+          'Jira rate limited the request (429)',
+          Number.isFinite(retryAfter) ? retryAfter : undefined,
+        );
+      }
+      throw new JiraError(response.status, `Jira attachment failed (${response.status} ${response.statusText})`);
+    }
   }
 
   issueUrl(key: string): string {
