@@ -634,6 +634,34 @@ export const files = sqliteTable(
   }),
 );
 
+// Integration connections table - one row per external system (Jira, Confluence, …)
+// an administrator connected. Global infrastructure, mirroring notification_channels
+// in spirit but never user-scoped. Credentials are AES-256-GCM-encrypted JSON.
+export const integrationConnections = sqliteTable(
+  'integration_connections',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    provider: text('provider').notNull(), // 'jira' | 'confluence' | 'github-issues' | …
+    name: text('name').notNull(),
+    baseUrl: text('base_url').notNull(),
+    config: text('config', { mode: 'json' }), // provider-specific, non-secret (flavor, site id, default space…)
+    credentials: text('credentials'), // AES-256-GCM JSON: { email, apiToken } | { token } | { pat }
+    status: text('status').notNull().default('unverified'), // 'unverified' | 'ok' | 'failed'
+    lastCheckedAt: integer('last_checked_at', { mode: 'timestamp_ms' }),
+    lastError: text('last_error'),
+    managedBy: text('managed_by').notNull().default('db'), // 'db' | 'env'
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    providerIdx: index('idx_integration_connections_provider').on(t.provider),
+  }),
+);
+
 // Entity links table - attach external URLs (Jira, GitHub, etc.) to runs, test-case runs, or test cases
 export const entityLinks = sqliteTable(
   'entity_links',
@@ -660,6 +688,11 @@ export const entityLinks = sqliteTable(
     metadata: text('metadata', { mode: 'json' }), // raw unfurl payload
     unfurledAt: integer('unfurled_at', { mode: 'timestamp_ms' }), // last successful fetch
 
+    // The connection that can read/write this record, and the tracker's stable id.
+    connectionId: integer('connection_id').references(() => integrationConnections.id, { onDelete: 'set null' }),
+    externalId: text('external_id'), // tracker's stable id (Jira issue id, not the key — keys change on move)
+    origin: text('origin').notNull().default('pinned'), // 'pinned' | 'created' | 'annotation' | 'reporter'
+
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
@@ -674,6 +707,7 @@ export const entityLinks = sqliteTable(
     caseIdx: index('idx_entity_links_case').on(t.testCaseId),
     clusterIdx: index('idx_entity_links_cluster').on(t.failureClusterId),
     createdByIdx: index('idx_entity_links_created_by').on(t.createdBy),
+    connectionIdx: index('idx_entity_links_connection').on(t.connectionId),
   }),
 );
 
@@ -911,6 +945,80 @@ export const healActions = sqliteTable(
   }),
 );
 
+// Project integrations table — the per-project binding of a connection: which Jira
+// project a project's tickets land in, the issue type, labels, owner routes, the
+// include toggles and the auto-create policy (disabled by default).
+export const projectIntegrations = sqliteTable(
+  'project_integrations',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    connectionId: integer('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    projectKey: text('project_key'), // Jira project key (tracker binding)
+    issueType: text('issue_type'),
+    labels: text('labels', { mode: 'json' }), // string[]
+    defaultAssignee: text('default_assignee'), // account id / name
+    spaceId: text('space_id'), // Confluence space (wiki binding)
+    parentPageId: text('parent_page_id'), // Confluence parent page
+    include: text('include', { mode: 'json' }), // { includeDiagnosis, includePatch, includeScreenshot, includeShareLink }
+    policies: text('policies', { mode: 'json' }), // { commentOnFix, transitionOnFix, commentOnRegression, resolveOnClose, … }
+    ownerRoutes: text('owner_routes', { mode: 'json' }), // { owner, projectKey?, componentId?, assigneeAccountId?, labels? }[]
+    autoCreate: text('auto_create', { mode: 'json' }), // { enabled, minOccurrences, minRuns, dailyCap, routeUnmatched } — disabled by default
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectIdx: index('idx_project_integrations_project').on(t.projectId),
+    connectionIdx: index('idx_project_integrations_connection').on(t.connectionId),
+    projectConnectionIdx: uniqueIndex('idx_project_integrations_project_connection').on(t.projectId, t.connectionId),
+  }),
+);
+
+// Integration actions outbox — every outbound write to an external system is a
+// durable row, retried with backoff, deduped by a unique key, and listable. The
+// payload is snapshotted at enqueue so a retry is deterministic.
+export const integrationActions = sqliteTable(
+  'integration_actions',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    connectionId: integer('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'create-issue' | 'comment' | 'transition' | 'attach' | 'sync-status' | 'create-page' | 'update-page'
+    entityType: text('entity_type').notNull(), // 'failure_cluster' | 'test_runs_case' | 'test_case' | 'test_run'
+    entityId: integer('entity_id').notNull(),
+    dedupeKey: text('dedupe_key').notNull(),
+    status: text('status').notNull().default('pending'), // 'pending' | 'done' | 'failed' | 'skipped'
+    attempts: integer('attempts').notNull().default(0),
+    scheduledFor: integer('scheduled_for', { mode: 'timestamp_ms' }),
+    error: text('error'),
+    payload: text('payload', { mode: 'json' }).notNull(),
+    result: text('result', { mode: 'json' }), // { key, url } | { commentId } | { pageId, version }
+    requestedBy: integer('requested_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    finishedAt: integer('finished_at', { mode: 'timestamp_ms' }),
+  },
+  (t) => ({
+    dedupeKeyIdx: uniqueIndex('idx_integration_actions_dedupe').on(t.dedupeKey),
+    projectStatusIdx: index('idx_integration_actions_project_status').on(t.projectId, t.status),
+    statusScheduledIdx: index('idx_integration_actions_status').on(t.status, t.scheduledFor),
+    connectionIdx: index('idx_integration_actions_connection').on(t.connectionId),
+  }),
+);
+
 // Project assignments table — user-to-project access (null projectId = global access)
 export const projectAssignments = sqliteTable(
   'project_assignments',
@@ -1112,6 +1220,12 @@ export type ProjectAssignment = typeof projectAssignments.$inferSelect;
 export type NewProjectAssignment = typeof projectAssignments.$inferInsert;
 export type EntityLink = typeof entityLinks.$inferSelect;
 export type NewEntityLink = typeof entityLinks.$inferInsert;
+export type IntegrationConnection = typeof integrationConnections.$inferSelect;
+export type NewIntegrationConnection = typeof integrationConnections.$inferInsert;
+export type ProjectIntegration = typeof projectIntegrations.$inferSelect;
+export type NewProjectIntegration = typeof projectIntegrations.$inferInsert;
+export type IntegrationAction = typeof integrationActions.$inferSelect;
+export type NewIntegrationAction = typeof integrationActions.$inferInsert;
 export type NetworkRequest = typeof networkRequests.$inferSelect;
 export type NewNetworkRequest = typeof networkRequests.$inferInsert;
 export type LocatorSnapshotRow = typeof locatorSnapshots.$inferSelect;
