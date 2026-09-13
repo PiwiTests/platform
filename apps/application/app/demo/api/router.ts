@@ -164,8 +164,12 @@ import {
   demoConnectionProjects,
   demoConnectionIssueTypes,
   demoAssignable,
+  getDemoProjectIntegration,
+  saveDemoProjectIntegration,
+  generateDemoWebhookToken,
 } from './integrations';
 import type { ConnectionInput } from '#shared/integrations/types';
+import type { ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { toIssueLocale } from '#shared/integrations/messages';
 import {
   getTestRun,
@@ -1736,6 +1740,26 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/assignable$/,
     handler: async () => demoAssignable(),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/webhook-token$/,
+    handler: async () => generateDemoWebhookToken(),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/webhook-token$/,
+    handler: async () => ({ success: true }),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/integrations$/,
+    handler: async () => getDemoProjectIntegration(),
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/projects\/(\d+)\/integrations$/,
+    handler: async (body) => saveDemoProjectIntegration((body ?? {}) as Partial<ResolvedProjectIntegration>),
   },
 
   // Search

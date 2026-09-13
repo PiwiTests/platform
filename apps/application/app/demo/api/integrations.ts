@@ -8,6 +8,7 @@ import type {
 } from '#shared/integrations/types';
 import { renderMarkdown } from '#shared/integrations/render-markdown';
 import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
+import { resolveProjectIntegration, type ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { buildClusterIssue, buildExecutionIssue } from '~~/server/utils/integrations/documents';
 import { entityLinks, testRunsCases } from '~~/server/database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
@@ -202,4 +203,26 @@ export function demoConnectionIssueTypes(): { issueTypes: { id: string; name: st
 
 export function demoAssignable(): { users: { id: string; displayName: string }[] } {
   return { users: [{ id: 'demo-account', displayName: 'Demo User' }] };
+}
+
+/** The project binding the demo shows — a canned Jira binding on the demo connection. */
+export function getDemoProjectIntegration(): ResolvedProjectIntegration {
+  return resolveProjectIntegration({
+    connectionId: DEMO_CONNECTION.id,
+    projectKey: DEMO_PROJECT_KEY,
+    issueType: '1',
+    labels: ['piwi'],
+    locale: 'en',
+  });
+}
+
+/** Echo the normalized binding back — the demo has nothing to persist to. */
+export function saveDemoProjectIntegration(body: Partial<ResolvedProjectIntegration>): ResolvedProjectIntegration {
+  return resolveProjectIntegration(body);
+}
+
+/** A fake webhook token so the Settings UI can render the once-shown value. */
+export function generateDemoWebhookToken(): { token: string; url: string } {
+  const token = 'demo-webhook-token';
+  return { token, url: `/api/integrations/jira/webhook/${token}` };
 }
