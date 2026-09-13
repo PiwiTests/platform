@@ -67,6 +67,26 @@ Toggles choose what the body carries — the diagnosis and patch are on by defau
 
 From an AI agent, the [`create_issue` MCP tool](/features/mcp) files the same ticket from the fix plan it just read.
 
+## Language
+
+A ticket is written for a team, so its language is a property of its **destination**, not of the viewer. The language
+resolves in this order:
+
+1. the **project binding**'s language, when one is set;
+2. the **connection**'s default language (Settings → Integrations → *Default language* — a French Atlassian site can
+   default every ticket to French);
+3. **English** otherwise.
+
+The create modal shows a *Language* select (English / Français) defaulting from that, and the `create_issue` MCP tool
+takes a `locale`. **English and French ship today; another language is one catalog file** in
+`shared/integrations/messages/`.
+
+What is translated is only the copy **Piwi authors** — section headings, fact labels, dates and counts (through `Intl`
+for the locale). What is **never** translated is your data (test titles, error text, locators, file paths, the verify
+command, the patch, commit subjects) and the model's prose (the diagnosis summary and root cause follow the AI
+response-language setting, arriving in a later release). Jira's own issue types, priorities and statuses are addressed
+by id, so a French-configured site works unchanged.
+
 ## Limits
 
 - **Jira Cloud only** in this release (REST v3, email + API token). Jira Server / Data Center, GitHub Issues and GitLab
@@ -74,4 +94,7 @@ From an AI agent, the [`create_issue` MCP tool](/features/mcp) files the same ti
 - **Manual creation only.** Automatic filing on `cluster.new` and two-way status sync arrive in later releases; the
   binding form and its policies are not yet exposed.
 - A ticket's body is a **snapshot** at creation time — it does not rewrite itself as the cluster evolves.
+- The deterministic sentences the dashboard computes from the evidence — the one-line headline, the story, the clue,
+  the state line — are **English templates** that quote locators and Playwright terms, so they appear in English even
+  in a French ticket; localizing them means localizing the dashboard, a separate decision.
 - Attachments honor the [export size budget](/features/offline-export); the trace is never attached.

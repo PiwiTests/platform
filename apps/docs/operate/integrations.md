@@ -68,3 +68,7 @@ With a connection in place, a pinned or refreshed Jira link carries:
 Once a connection exists, Piwi can **file the ticket for you** — a Jira issue whose body is the failure's fix plan,
 linked back as the cluster's known issue. See [Issue tracking (Jira)](/features/issue-tracking) for the create flow,
 the fields, and how the key travels back into the inbox, notifications and pull-request comments.
+
+A connection carries a **default language** for the tickets filed against it (a French Atlassian site can default them
+to French); a project binding overrides it, and the create modal offers a per-issue choice — see
+[Language](/features/issue-tracking#language).
