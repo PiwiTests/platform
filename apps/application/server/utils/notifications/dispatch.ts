@@ -20,9 +20,9 @@ import type {
 } from '#shared/notification-events';
 import { renderEventSubject, notificationTargetPath, failureTargetPath } from '#shared/notification-events';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
+import { nextAttempt, OUTBOX_MAX_ATTEMPTS } from '../outbox';
 
-const MAX_ATTEMPTS = 5;
-const BACKOFF_MINUTES = [1, 5, 15, 60, 240]; // progressive backoff
+const MAX_ATTEMPTS = OUTBOX_MAX_ATTEMPTS;
 /** Slack digest messages list at most this many items; the rest are counted. */
 const SLACK_DIGEST_MAX_ITEMS = 20;
 
@@ -85,6 +85,7 @@ async function sendToEmail(to: string, event: NotificationEvent, payload: Notifi
       title: p.title,
       sampleErrorExcerpt: p.sampleErrorExcerpt,
       affectedCases: p.affectedCases,
+      knownIssue: p.knownIssue,
     }));
   } else {
     const subject = renderEventSubject(event, payload);
@@ -138,6 +139,7 @@ async function sendToSlack(config: Record<string, unknown>, event: NotificationE
     parts.push(`\`${slackExcerpt(p.signature)}\``);
     if (p.affectedCases) parts.push(`${p.affectedCases} affected test${p.affectedCases === 1 ? '' : 's'}`);
     if (p.sampleErrorExcerpt) parts.push(`\`\`\`${slackExcerpt(p.sampleErrorExcerpt)}\`\`\``);
+    if (p.knownIssue) parts.push(`Tracked in <${p.knownIssue.url}|${p.knownIssue.key}>`);
     parts.push(`<${base}/failure-clusters/${p.clusterId}|View cluster>`);
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: parts.join('\n') } });
   } else if (event === 'cluster.fixed' || event === 'cluster.regressed') {
@@ -149,6 +151,7 @@ async function sendToSlack(config: Record<string, unknown>, event: NotificationE
     } else if ((p as ClusterRegressedPayload).reopened) {
       parts.push('Triage status set back to open.');
     }
+    if (p.knownIssue) parts.push(`Tracked in <${p.knownIssue.url}|${p.knownIssue.key}>`);
     parts.push(`<${base}/failure-clusters/${p.clusterId}|View cluster>`);
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: parts.join('\n') } });
   }
@@ -247,16 +250,15 @@ async function markSent(db: Db, rows: DeliveryRow[], now: Date) {
 async function markFailed(db: Db, rows: DeliveryRow[], message: string, now: Date) {
   for (const d of rows) {
     const attempts = (d.attempts ?? 0) + 1;
-    const nextBackoffMs = (BACKOFF_MINUTES[Math.min(attempts, BACKOFF_MINUTES.length - 1)] ?? 240) * 60 * 1000;
-    const isFinal = attempts >= MAX_ATTEMPTS;
+    const next = nextAttempt(attempts, now, d.scheduledFor);
 
     await db
       .update(notificationDeliveries)
       .set({
-        status: isFinal ? 'failed' : 'pending',
+        status: next.status,
         attempts,
         error: message,
-        scheduledFor: isFinal ? d.scheduledFor : new Date(now.getTime() + nextBackoffMs),
+        scheduledFor: next.scheduledFor,
       })
       .where(eq(notificationDeliveries.id, d.id));
 

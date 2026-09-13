@@ -25,6 +25,7 @@ const toast = useToast();
 const route = useRoute();
 const router = useRouter();
 const { authState } = useAuth();
+const { hasTracker } = useTrackerStatus();
 
 const PREVIEW_LIMIT = 10;
 
@@ -49,6 +50,7 @@ const QUEUE_META: Record<InboxQueue, { label: string; icon: string }> = {
   all: { label: 'All open', icon: 'i-lucide-inbox' },
   new: { label: 'New', icon: 'i-lucide-sparkles' },
   mine: { label: 'Mine', icon: 'i-lucide-user' },
+  'needs-ticket': { label: 'Needs ticket', icon: 'i-lucide-ticket' },
   regressions: { label: 'Regressions', icon: 'i-lucide-trending-down' },
   'fix-didnt-hold': { label: "Fix didn't hold", icon: 'i-lucide-rotate-ccw' },
   'quarantine-ready': { label: 'Quarantine ready', icon: 'i-lucide-shield-check' },
@@ -334,6 +336,71 @@ function openLink(cluster: OpenFailureCluster): void {
   linkOpenId.value = cluster.id;
 }
 
+// ── Create issue (modal on a row; bulk on the selection) ─────────────────────
+
+const issueModalOpen = ref(false);
+const issueModalClusterId = ref<number | null>(null);
+
+function createIssue(cluster: OpenFailureCluster): void {
+  if (!props.canWrite || !hasTracker.value) return;
+  issueModalClusterId.value = cluster.id;
+  issueModalOpen.value = true;
+}
+
+const bulkCreating = ref(false);
+async function bulkCreateIssues(): Promise<void> {
+  if (!props.canWrite || bulkCreating.value) return;
+  const targets = selectedClusters.value.filter((c) => !c.issueLink);
+  if (targets.length === 0) return;
+  bulkCreating.value = true;
+  let created = 0;
+  try {
+    for (const cluster of targets) {
+      try {
+        const draft = await $fetch<{
+          connectionId: number | null;
+          projectKey: string | null;
+          issueType: string | null;
+          title: string;
+          labels: string[];
+          assignee: string | null;
+        }>(`/api/integrations/issue-draft?entityType=failure_cluster&entityId=${cluster.id}`);
+        if (!draft.connectionId || !draft.projectKey || !draft.issueType) continue;
+        await $fetch('/api/integrations/issues', {
+          method: 'POST',
+          body: {
+            entityType: 'failure_cluster',
+            entityId: cluster.id,
+            connectionId: draft.connectionId,
+            title: draft.title,
+            projectKey: draft.projectKey,
+            issueType: draft.issueType,
+            labels: draft.labels,
+            assignee: draft.assignee,
+          },
+        });
+        created++;
+      } catch {
+        /* one cluster failing never blocks the rest */
+      }
+    }
+    clearSelection();
+    emit('changed');
+    toast.add({
+      title: created > 0 ? `Filed ${created} ${created === 1 ? 'issue' : 'issues'}` : 'No issues filed',
+      description: created < targets.length ? 'Some clusters need a Jira project binding first.' : undefined,
+      color: created > 0 ? 'success' : 'warning',
+    });
+  } finally {
+    bulkCreating.value = false;
+  }
+}
+
+function onIssueCreated(): void {
+  issueModalOpen.value = false;
+  emit('changed');
+}
+
 function snoozeItems(cluster: OpenFailureCluster) {
   return [
     [
@@ -435,6 +502,14 @@ function onKeydown(e: KeyboardEvent): void {
       if (c && props.canWrite) {
         e.preventDefault();
         openLink(c);
+      }
+      break;
+    }
+    case 'c': {
+      const c = sel();
+      if (c && props.canWrite && hasTracker.value && !c.issueLink) {
+        e.preventDefault();
+        createIssue(c);
       }
       break;
     }
@@ -557,6 +632,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
         </UDropdownMenu>
         <UButton size="xs" color="warning" variant="soft" icon="i-lucide-shield" @click="bulkQuarantine">
           Quarantine
+        </UButton>
+        <UButton
+          v-if="hasTracker"
+          size="xs"
+          color="neutral"
+          variant="soft"
+          icon="i-simple-icons-jira"
+          :loading="bulkCreating"
+          @click="bulkCreateIssues"
+        >
+          Create issues
         </UButton>
         <UButton size="xs" color="neutral" variant="ghost" icon="i-lucide-x" @click="clearSelection">Clear</UButton>
       </div>
@@ -763,6 +849,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
             <UButton size="xs" color="neutral" variant="ghost" icon="i-lucide-clock" :title="`Snooze (s)`" />
           </UDropdownMenu>
 
+          <!-- Create issue (only while the cluster has no known issue) -->
+          <UButton
+            v-if="hasTracker && !cluster.issueLink"
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            icon="i-simple-icons-jira"
+            :title="`Create issue (c)`"
+            @click="createIssue(cluster)"
+          />
+
           <!-- Link to issue -->
           <UPopover :open="linkOpenId === cluster.id" @update:open="(v) => (linkOpenId = v ? cluster.id : null)">
             <UButton
@@ -801,7 +898,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       <span class="font-mono">r</span> resolve · <span class="font-mono">i</span> ignore ·
       <span class="font-mono">q</span> quarantine · <span class="font-mono">a</span> assign ·
       <span class="font-mono">s</span> snooze · <span class="font-mono">l</span> link ·
+      <span v-if="hasTracker"><span class="font-mono">c</span> create issue · </span>
       <span class="font-mono">o</span> open
     </p>
+
+    <CreateIssueModal
+      v-if="issueModalClusterId != null"
+      v-model:open="issueModalOpen"
+      entity-type="failure_cluster"
+      :entity-id="issueModalClusterId"
+      @created="onIssueCreated"
+      @linked="onIssueCreated"
+    />
   </SectionCard>
 </template>

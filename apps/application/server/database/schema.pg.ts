@@ -50,6 +50,7 @@ export const projects = pgTable(
     label: text('label'), // Display label (defaults to name if not set)
     description: text('description'),
     diagnosisInstructions: text('diagnosis_instructions'),
+    aiLanguage: text('ai_language'), // per-project AI response language override (e.g. "French")
     scmToken: text('scm_token'), // Per-project SCM token for GitHub/GitLab/Bitbucket API access
     defaultBranch: text('default_branch'), // Repository default branch; null = resolve from SCM provider, else 'main'
     ciRerun: jsonb('ci_rerun'), // CiRerunSettings — provider-specific "re-run from the dashboard" target (off by default)
@@ -662,6 +663,34 @@ export const files = pgTable(
   }),
 );
 
+// Integration connections table - one row per external system (Jira, Confluence, …)
+// an administrator connected. Global infrastructure, mirroring notification_channels
+// in spirit but never user-scoped. Credentials are AES-256-GCM-encrypted JSON.
+export const integrationConnections = pgTable(
+  'integration_connections',
+  {
+    id: serial('id').primaryKey(),
+    provider: text('provider').notNull(), // 'jira' | 'confluence' | 'github-issues' | …
+    name: text('name').notNull(),
+    baseUrl: text('base_url').notNull(),
+    config: jsonb('config'), // provider-specific, non-secret (flavor, site id, default space…)
+    credentials: text('credentials'), // AES-256-GCM JSON: { email, apiToken } | { token } | { pat }
+    status: text('status').notNull().default('unverified'), // 'unverified' | 'ok' | 'failed'
+    lastCheckedAt: timestamp('last_checked_at', { mode: 'date' }),
+    lastError: text('last_error'),
+    managedBy: text('managed_by').notNull().default('db'), // 'db' | 'env'
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    providerIdx: index('idx_integration_connections_provider').on(t.provider),
+  }),
+);
+
 // Entity links table - attach external URLs (Jira, GitHub, etc.) to runs, test-case runs, or test cases
 export const entityLinks = pgTable(
   'entity_links',
@@ -686,6 +715,11 @@ export const entityLinks = pgTable(
     metadata: jsonb('metadata'),
     unfurledAt: timestamp('unfurled_at', { withTimezone: true, mode: 'date' }),
 
+    // The connection that can read/write this record, and the tracker's stable id.
+    connectionId: integer('connection_id').references(() => integrationConnections.id, { onDelete: 'set null' }),
+    externalId: text('external_id'), // tracker's stable id (Jira issue id, not the key — keys change on move)
+    origin: text('origin').notNull().default('pinned'), // 'pinned' | 'created' | 'annotation' | 'reporter'
+
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -696,6 +730,7 @@ export const entityLinks = pgTable(
     caseIdx: index('idx_entity_links_case').on(t.testCaseId),
     clusterIdx: index('idx_entity_links_cluster').on(t.failureClusterId),
     createdByIdx: index('idx_entity_links_created_by').on(t.createdBy),
+    connectionIdx: index('idx_entity_links_connection').on(t.connectionId),
   }),
 );
 
@@ -933,6 +968,82 @@ export const healActions = pgTable(
   }),
 );
 
+// Project integrations table — the per-project binding of a connection: which Jira
+// project a project's tickets land in, the issue type, labels, owner routes, the
+// include toggles and the auto-create policy (disabled by default).
+export const projectIntegrations = pgTable(
+  'project_integrations',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    connectionId: integer('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    projectKey: text('project_key'), // Jira project key (tracker binding)
+    issueType: text('issue_type'),
+    labels: jsonb('labels'), // string[]
+    defaultAssignee: text('default_assignee'), // account id / name
+    spaceId: text('space_id'), // Confluence space (wiki binding)
+    parentPageId: text('parent_page_id'), // Confluence parent page
+    locale: text('locale'), // ticket language for this project ('en' | 'fr'); overrides the connection default
+    include: jsonb('include'), // { includeDiagnosis, includePatch, includeScreenshot, includeShareLink }
+    policies: jsonb('policies'), // { commentOnFix, transitionOnFix, commentOnRegression, resolveOnClose, … }
+    ownerRoutes: jsonb('owner_routes'), // { owner, projectKey?, componentId?, assigneeAccountId?, labels? }[]
+    autoCreate: jsonb('auto_create'), // { enabled, minOccurrences, minRuns, dailyCap, routeUnmatched } — disabled by default
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectIdx: index('idx_project_integrations_project').on(t.projectId),
+    connectionIdx: index('idx_project_integrations_connection').on(t.connectionId),
+    projectConnectionIdx: uniqueIndex('idx_project_integrations_project_connection').on(t.projectId, t.connectionId),
+  }),
+);
+
+// Integration actions outbox — every outbound write to an external system is a
+// durable row, retried with backoff, deduped by a unique key, and listable. The
+// payload is snapshotted at enqueue so a retry is deterministic.
+export const integrationActions = pgTable(
+  'integration_actions',
+  {
+    id: serial('id').primaryKey(),
+    connectionId: integer('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'create-issue' | 'comment' | 'transition' | 'attach' | 'sync-status' | 'create-page' | 'update-page'
+    entityType: text('entity_type').notNull(), // 'failure_cluster' | 'test_runs_case' | 'test_case' | 'test_run'
+    entityId: integer('entity_id').notNull(),
+    dedupeKey: text('dedupe_key').notNull(),
+    status: text('status').notNull().default('pending'), // 'pending' | 'done' | 'failed' | 'skipped'
+    attempts: integer('attempts').notNull().default(0),
+    scheduledFor: timestamp('scheduled_for', { mode: 'date' }),
+    error: text('error'),
+    payload: jsonb('payload').notNull(),
+    result: jsonb('result'), // { key, url } | { commentId } | { pageId, version }
+    requestedBy: integer('requested_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    finishedAt: timestamp('finished_at', { mode: 'date' }),
+  },
+  (t) => ({
+    dedupeKeyIdx: uniqueIndex('idx_integration_actions_dedupe').on(t.dedupeKey),
+    projectStatusIdx: index('idx_integration_actions_project_status').on(t.projectId, t.status),
+    statusScheduledIdx: index('idx_integration_actions_status').on(t.status, t.scheduledFor),
+    connectionIdx: index('idx_integration_actions_connection').on(t.connectionId),
+    requestedByIdx: index('idx_integration_actions_requested_by').on(t.requestedBy),
+  }),
+);
+
 // Project assignments table — user-to-project access (null projectId = global access)
 export const projectAssignments = pgTable(
   'project_assignments',
@@ -1126,6 +1237,12 @@ export type ProjectAssignment = typeof projectAssignments.$inferSelect;
 export type NewProjectAssignment = typeof projectAssignments.$inferInsert;
 export type EntityLink = typeof entityLinks.$inferSelect;
 export type NewEntityLink = typeof entityLinks.$inferInsert;
+export type IntegrationConnection = typeof integrationConnections.$inferSelect;
+export type NewIntegrationConnection = typeof integrationConnections.$inferInsert;
+export type ProjectIntegration = typeof projectIntegrations.$inferSelect;
+export type NewProjectIntegration = typeof projectIntegrations.$inferInsert;
+export type IntegrationAction = typeof integrationActions.$inferSelect;
+export type NewIntegrationAction = typeof integrationActions.$inferInsert;
 export type NetworkRequest = typeof networkRequests.$inferSelect;
 export type NewNetworkRequest = typeof networkRequests.$inferInsert;
 export type LocatorSnapshotRow = typeof locatorSnapshots.$inferSelect;

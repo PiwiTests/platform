@@ -32,6 +32,11 @@ import { computeRunInsights } from '#shared/handlers/run-insights';
 import { searchProjectsTestRunsCases } from '#shared/handlers/search';
 import { listTags } from '#shared/handlers/tags';
 import { listLinks, type LinkEntityType } from '#shared/handlers/links';
+import { resolveLinkEntityProjectId } from '../project-access';
+import { buildIssueDraft, type DraftEntityType } from '../integrations/draft';
+import { createIssue } from '../integrations/create';
+import { getClusterKnownIssue } from '../integrations/known-issue';
+import { toIssueLocale } from '#shared/integrations/messages';
 import { getAdminStats } from '#shared/handlers/admin';
 import { createTestFunction } from '#shared/handlers/test-functions';
 import { createTestFunctionSchema } from '#shared/test-function-schemas';
@@ -723,6 +728,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (!cluster) return null;
     if (cluster.project?.id != null) assertProject(ctx, cluster.project.id);
 
+    const knownIssue = await getClusterKnownIssue(db, id);
+
     // Fetch locator healing for up to 5 affected cases via a single batch
     // query (2 DB round-trips instead of 5×2) so AI coding agents get fix
     // suggestions without visiting the dashboard.
@@ -804,6 +811,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           }),
       ),
       locatorHealing: healingResults.length > 0 ? healingResults : null,
+      issue: knownIssue ? dropNulls({ key: knownIssue.key, url: knownIssue.url, status: knownIssue.status }) : null,
     });
   },
 
@@ -1473,6 +1481,62 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         }),
       ),
     };
+  },
+
+  async create_issue(db, params, ctx) {
+    assertWriteRole(ctx);
+    const entityType = String(params.entityType ?? '') as DraftEntityType;
+    if (entityType !== 'failure_cluster' && entityType !== 'test_runs_case') {
+      throw new Error('entityType must be failure_cluster or test_runs_case');
+    }
+    const entityId = numericParam(params.entityId, 'entityId');
+    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
+    if (projectId == null) return null;
+    assertProject(ctx, projectId);
+
+    const include = {
+      includeDiagnosis: params.includeDiagnosis === undefined ? undefined : Boolean(params.includeDiagnosis),
+      includePatch: params.includePatch === undefined ? undefined : Boolean(params.includePatch),
+    };
+    const siteUrl = process.env.PIWI_SITE_URL ?? null;
+    const locale = toIssueLocale(params.locale);
+
+    const draft = await buildIssueDraft(db, entityType, entityId, { include, locale, siteUrl });
+    if (!draft) throw new Error('No Jira connection is configured');
+
+    // Already tracked: hand back the existing issue rather than filing a second.
+    if (draft.existing.length) {
+      const first = draft.existing[0]!;
+      return dropNulls({ key: first.key, url: first.url, existing: draft.existing });
+    }
+
+    if (!draft.connectionId || !draft.projectKey || !draft.issueType) {
+      throw new Error('Configure a Jira project binding (project key and issue type) before filing issues');
+    }
+
+    const outcome = await createIssue(db, {
+      entityType,
+      entityId,
+      connectionId: draft.connectionId,
+      title: typeof params.title === 'string' ? params.title : draft.title,
+      projectKey: draft.projectKey,
+      issueType: draft.issueType,
+      labels: draft.labels,
+      assignee: draft.assignee,
+      locale: draft.locale,
+      include,
+      requestedBy: ctx.user?.id ?? null,
+      siteUrl,
+    });
+    if (!outcome) return null;
+    if (outcome.status !== 'done') {
+      throw new Error(outcome.error || 'Filing the issue did not complete; it is queued for retry');
+    }
+    return dropNulls({
+      key: outcome.key,
+      url: outcome.url,
+      existing: draft.existing.length ? draft.existing : undefined,
+    });
   },
 
   // ── list_tags ──────────────────────────────────────────────────────────────

@@ -3,11 +3,11 @@ import type { LinkProvider } from '#shared/link-detect';
 import { getAppSetting } from '../app-settings';
 import { decryptSecret, getEncryptionKey } from '../crypto';
 import { scmProviderForUrl } from '../scm';
+import { resolveJiraUnfurlConfig } from '../integrations/connections';
 import { UnfurlProvider, type UnfurlResult } from './UnfurlProvider';
 import { GenericUnfurlProvider } from './GenericUnfurlProvider';
 import { JiraUnfurlProvider } from './JiraUnfurlProvider';
 import type { AtlassianConfig } from './JiraUnfurlProvider';
-import { ConfluenceUnfurlProvider } from './ConfluenceUnfurlProvider';
 import { ScmUnfurlProvider } from './ScmUnfurlProvider';
 import type { DbClient } from '../../database';
 
@@ -73,7 +73,8 @@ export function unfurlProviderForProvider(
     case 'jira':
       return atlassianConfig ? new JiraUnfurlProvider(atlassianConfig) : null;
     case 'confluence':
-      return atlassianConfig ? new ConfluenceUnfurlProvider(atlassianConfig) : null;
+      // Unreachable until a Confluence connection exists; the class stays for then.
+      return null;
     default: {
       if (!SCM_PROVIDERS.has(provider) || !url) return null;
       const repositoryUrl = repositoryUrlFromLink(url, provider);
@@ -88,12 +89,12 @@ export function unfurlProviderForProvider(
 export async function createUnfurlProvider(url: string, db: DbClient): Promise<UnfurlProvider | null> {
   const providerType = detectProvider(url);
 
-  // Atlassian providers need config from DB
-  if (providerType === 'jira' || providerType === 'confluence') {
-    const config = await loadAtlassianConfig(db);
-    if (config) {
-      return unfurlProviderForProvider(providerType, url, config);
-    }
+  // Jira reads its config from the matching connection; Confluence is unreachable.
+  if (providerType === 'jira') {
+    const config = await resolveJiraUnfurlConfig(db, url);
+    return config ? unfurlProviderForProvider(providerType, url, config) : null;
+  }
+  if (providerType === 'confluence') {
     return null;
   }
 
@@ -136,7 +137,7 @@ export async function unfurlUrlWithProvider(
   providerType: LinkProvider,
   db: DbClient,
 ): Promise<UnfurlResult> {
-  const config = await loadAtlassianConfig(db);
+  const config = providerType === 'jira' ? await resolveJiraUnfurlConfig(db, url) : null;
   const token = await loadScmToken(db);
   const provider = unfurlProviderForProvider(providerType, url, config, token);
   if (provider) {
@@ -149,19 +150,6 @@ export async function unfurlUrlWithProvider(
 
   const generic = new GenericUnfurlProvider();
   return generic.unfurl(url, null);
-}
-
-async function loadAtlassianConfig(db: DbClient): Promise<AtlassianConfig | null> {
-  const setting = await getAppSetting<{ value?: string }>(db, 'atlassian');
-  if (!setting?.value) return null;
-  try {
-    const decrypted = decryptSecret(setting.value, getEncryptionKey());
-    const parsed = JSON.parse(decrypted) as AtlassianConfig;
-    if (parsed.baseUrl && parsed.email && parsed.apiToken) return parsed;
-  } catch {
-    /* corrupt setting — ignore */
-  }
-  return null;
 }
 
 async function loadScmToken(db: DbClient): Promise<string | null> {

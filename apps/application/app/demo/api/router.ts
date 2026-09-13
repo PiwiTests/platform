@@ -152,6 +152,27 @@ import {
   type LinkEntityType,
 } from '#shared/handlers/links';
 import {
+  listDemoConnections,
+  getDemoConnection,
+  createDemoConnection,
+  updateDemoConnection,
+  testDemoConnection,
+  demoTrackerStatus,
+  demoIssueDraft,
+  demoCreateIssue,
+  demoIntegrationActions,
+  demoSyncTrackerLinks,
+  demoConnectionProjects,
+  demoConnectionIssueTypes,
+  demoAssignable,
+  getDemoProjectIntegration,
+  saveDemoProjectIntegration,
+  generateDemoWebhookToken,
+} from './integrations';
+import type { ConnectionInput } from '#shared/integrations/types';
+import type { ResolvedProjectIntegration } from '#shared/integrations/binding';
+import { toIssueLocale } from '#shared/integrations/messages';
+import {
   getTestRun,
   getRecentTestRuns,
   getTestRunSummary,
@@ -1647,6 +1668,100 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/links\/(\d+)\/refresh$/,
     handler: async (m) => refreshLinkMeta(await getDemoDb(), +m[1]!),
+  },
+
+  // Integrations — one canned Jira connection, answered from constants
+  { method: 'GET', pattern: /^\/api\/integrations\/connections$/, handler: async () => listDemoConnections() },
+  {
+    method: 'POST',
+    pattern: /^\/api\/integrations\/connections$/,
+    handler: async (_, body) => createDemoConnection(body as ConnectionInput),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)$/,
+    handler: async (m) => {
+      const found = getDemoConnection(+m[1]!);
+      if (!found) throw demoHttpError(404, 'Connection not found');
+      return found;
+    },
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/integrations\/connections\/(\d+)$/,
+    handler: async (m, body) => updateDemoConnection(+m[1]!, body as Partial<ConnectionInput>),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/integrations\/connections\/(\d+)$/,
+    handler: async () => ({ success: true }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/test$/,
+    handler: async () => testDemoConnection(),
+  },
+  { method: 'GET', pattern: /^\/api\/integrations\/status$/, handler: async () => demoTrackerStatus() },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/issue-draft$/,
+    handler: async (_, __, q) => {
+      const entityType = (q?.get('entityType') ?? '') as 'failure_cluster' | 'test_runs_case';
+      const entityId = Number(q?.get('entityId') ?? 0);
+      const draft = await demoIssueDraft(
+        await getDemoDb(),
+        entityType,
+        entityId,
+        toIssueLocale(q?.get('locale')) ?? undefined,
+      );
+      if (!draft) throw demoHttpError(404, 'No tracker connected or entity unavailable');
+      return draft;
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/integrations\/issues$/,
+    handler: async (_, body) => {
+      const b = body as { entityType: 'failure_cluster' | 'test_runs_case'; entityId: number; title?: string };
+      return demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title);
+    },
+  },
+  { method: 'GET', pattern: /^\/api\/integrations\/actions$/, handler: async () => demoIntegrationActions() },
+  { method: 'POST', pattern: /^\/api\/integrations\/sync$/, handler: async () => demoSyncTrackerLinks() },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/projects$/,
+    handler: async () => demoConnectionProjects(),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/issue-types$/,
+    handler: async () => demoConnectionIssueTypes(),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/assignable$/,
+    handler: async () => demoAssignable(),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/webhook-token$/,
+    handler: async () => generateDemoWebhookToken(),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/webhook-token$/,
+    handler: async () => ({ success: true }),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/integrations$/,
+    handler: async () => getDemoProjectIntegration(),
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/projects\/(\d+)\/integrations$/,
+    handler: async (body) => saveDemoProjectIntegration((body ?? {}) as Partial<ResolvedProjectIntegration>),
   },
 
   // Search

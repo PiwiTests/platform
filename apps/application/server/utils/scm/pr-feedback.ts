@@ -18,6 +18,7 @@ import { createScmProvider } from './index';
 import { normalizeGitUrl } from './git-url';
 import { getLocatorHealingBatch } from '../locator-healing';
 import { mapHealActionsByCluster } from '../heal/lookup';
+import { getClusterKnownIssues } from '../integrations/known-issue';
 import { resolveOwners } from './ownership';
 import { resolveDefaultBranch } from './default-branch';
 import { resolveRunBranch } from '../run-branch';
@@ -116,8 +117,13 @@ async function buildFailureEntries(
   // twice. Keyed by cluster — stable across the two runs, where execution ids differ.
   const healByCluster = await mapHealActionsByCluster(db, projectId).catch(() => new Map());
 
+  // The tracker issue each failing cluster is already known by, so the comment
+  // can say "tracked in PROJ-123" per failure.
+  const knownIssues = await getClusterKnownIssues(db, clusterIds).catch(() => new Map());
+
   const toEntry = (row: CaseRow): PrFailureEntry => {
     const heal = row.failureClusterId != null ? healByCluster.get(row.failureClusterId) : undefined;
+    const issue = row.failureClusterId != null ? knownIssues.get(row.failureClusterId) : undefined;
     return {
       title: row.title,
       filePath: row.filePath,
@@ -132,6 +138,7 @@ async function buildFailureEntries(
       tags: Array.isArray(row.tags) ? (row.tags as string[]) : null,
       owner: owners.get(row)?.owner ?? row.owner,
       flakyOnDefaultBranch: defaultBranchFlaky.get(row.testCaseId) ?? null,
+      issue: issue ? { key: issue.key, url: issue.url } : null,
     };
   };
 

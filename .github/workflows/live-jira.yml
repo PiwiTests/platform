@@ -1,0 +1,51 @@
+name: live-jira
+
+# The live Jira E2E writes to a real Atlassian Cloud site, so it never runs on a
+# push or pull request — only on demand. It files a French issue, reads it back,
+# exercises a policy comment and one transition, and deletes every issue it made.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: live-jira
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: ./apps/application
+
+jobs:
+  live-jira:
+    name: Live Jira E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PIWI_JIRA_BASE_URL: ${{ secrets.PIWI_JIRA_BASE_URL }}
+      PIWI_JIRA_EMAIL: ${{ secrets.PIWI_JIRA_EMAIL }}
+      PIWI_JIRA_API_TOKEN: ${{ secrets.PIWI_JIRA_API_TOKEN }}
+      PIWI_LIVE_JIRA_PROJECT_KEY: ${{ secrets.PIWI_LIVE_JIRA_PROJECT_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ./package-lock.json
+
+      - name: Install dependencies
+        working-directory: .
+        run: npm ci --prefer-offline --no-audit --fund=false
+
+      - name: Build reporter
+        working-directory: ./packages/reporter
+        run: npm run reporter:build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps --only-shell
+
+      - name: Run the live Jira E2E
+        run: npm run app:test:jira:live

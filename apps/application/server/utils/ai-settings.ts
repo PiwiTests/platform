@@ -8,11 +8,40 @@
  * …) — `storedRoles()` migrates those on read so nothing breaks.
  */
 
+import { eq } from 'drizzle-orm';
 import { getAppSetting } from './app-settings';
+import { projects } from '../database/schema';
 import type { AiModelRole, AiProvider, AiRoleSettings, AiSettings } from '~~/types/api';
 import type { DbClient } from '../database';
 
 export const AI_ROLES: AiModelRole[] = ['diagnosis', 'research', 'embedding'];
+
+/** The environment-managed AI response language, or null. */
+export function envAiLanguage(): string | null {
+  return process.env.PIWI_AI_LANGUAGE?.trim() || null;
+}
+
+/**
+ * The instance-wide AI response language: the env var when set (env-managed),
+ * else the stored `ai_language` app-setting, else null (today's behavior).
+ */
+export async function readAiLanguage(db: DbClient): Promise<string | null> {
+  const env = envAiLanguage();
+  if (env) return env;
+  const stored = await getAppSetting<{ value?: string }>(db, 'ai_language');
+  return stored?.value?.trim() || null;
+}
+
+/** The effective AI language for a project: its override, else the instance-wide one. */
+export async function resolveProjectAiLanguage(db: DbClient, projectId: number): Promise<string | null> {
+  const [row] = await db
+    .select({ aiLanguage: projects.aiLanguage })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  if (row?.aiLanguage?.trim()) return row.aiLanguage.trim();
+  return readAiLanguage(db);
+}
 
 /** Stored shape of a single role (apiKey encrypted at rest). */
 export interface RawStoredRole {
@@ -121,12 +150,15 @@ export async function readAiSettings(db: DbClient): Promise<AiSettings> {
   const envAi = runtimeConfig.ai as Record<string, string | boolean | undefined> | undefined;
   const envManaged = Boolean(envAi?.provider);
 
-  const [instructions, scmTokenSetting] = await Promise.all([
+  const [instructions, scmTokenSetting, languageSetting] = await Promise.all([
     getAppSetting<{ value?: string }>(db, 'ai_instructions'),
     getAppSetting<{ value?: string }>(db, 'scm_token'),
+    getAppSetting<{ value?: string }>(db, 'ai_language'),
   ]);
   const customInstructions = instructions?.value || null;
   const hasScmToken = Boolean(scmTokenSetting?.value);
+  const languageEnvManaged = envAiLanguage() != null;
+  const language = envAiLanguage() ?? languageSetting?.value?.trim() ?? null;
 
   let roleMap: Partial<Record<AiModelRole, RawStoredRole>>;
   let autoDiagnose: boolean;
@@ -176,5 +208,7 @@ export async function readAiSettings(db: DbClient): Promise<AiSettings> {
     hasScmToken,
     envManaged,
     customInstructions,
+    language,
+    languageEnvManaged,
   };
 }

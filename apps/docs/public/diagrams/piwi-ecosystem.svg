@@ -76,7 +76,7 @@
   <rect x="660" y="190" width="236" height="76" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
   <text x="676" y="214" font-size="13" font-weight="600" fill="#344054">Coding agents</text>
   <text x="676" y="234" font-size="11.5" fill="#475467">Claude Code, Cursor, VS Code…</text>
-  <text x="676" y="252" font-size="11" fill="#667085">MCP: 45 tools, fix plans</text>
+  <text x="676" y="252" font-size="11" fill="#667085">MCP: 46 tools, fix plans</text>
 
   <rect x="660" y="284" width="236" height="76" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
   <text x="676" y="308" font-size="13" font-weight="600" fill="#344054">GitHub · GitLab · Bitbucket</text>

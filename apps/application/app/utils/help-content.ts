@@ -30,6 +30,18 @@ export interface HelpTopic {
 }
 
 export const HELP_TOPICS = {
+  // ── Issue tracking ──────────────────────────────────────────────────────
+  'integrations.create-issue': {
+    title: 'Create issue',
+    text: 'File a Jira issue from this failure, with the fix plan as its body. Piwi links the issue back as the known issue, so the key travels to the inbox, Slack, email and PR comments. Filing twice for the same cluster is a no-op — the modal offers to link an existing issue instead.',
+    doc: 'features/issue-tracking#what-it-does-exactly',
+  },
+  'integrations.known-issue': {
+    title: 'Known issue',
+    text: 'The tracker issue this cluster is tracked by. Its key and status show wherever the cluster appears; the action becomes Open in Jira once it exists.',
+    doc: 'features/issue-tracking#the-key-travels',
+  },
+
   // ── Home ──────────────────────────────────────────────────────────────
   'home.project-health': {
     title: 'Project health',
@@ -473,6 +485,22 @@ export const HELP_TOPICS = {
     text: 'When a locator breaks on the default branch and healing has high-confidence evidence, Piwi opens the fix pull request itself — a deterministic one-line locator edit per broken call site. Off by default, with an explicit per-project allowlist. Needs PIWI_SITE_URL and an SCM token with write access.',
     doc: 'features/auto-heal',
     envVars: ['PIWI_SITE_URL'],
+  },
+  'settings.integrations': {
+    title: 'Integrations',
+    text: 'Connect an issue tracker so pinned links unfurl with a title and status and stay in sync. Jira Cloud connects with an account email and an API token; set the connection once and every project uses it.',
+    doc: 'operate/integrations',
+    envVars: ['PIWI_JIRA_BASE_URL', 'PIWI_JIRA_EMAIL', 'PIWI_JIRA_API_TOKEN'],
+  },
+  'settings.integrations.connection': {
+    title: 'Connect a system',
+    text: 'The base URL is the system’s address (for Jira Cloud, https://your-team.atlassian.net); the credentials authenticate Piwi against it. Test the connection to confirm the account it resolves to. Credentials are encrypted at rest and never shown again.',
+    doc: 'operate/integrations#connecting-jira-cloud',
+  },
+  'settings.integrations.private-host': {
+    title: 'Private hosts',
+    text: 'A connection base URL is administrator-supplied and trusted, so a self-hosted tracker on a private network works. Links a non-administrator pins are still fetched through the SSRF guard.',
+    doc: 'operate/integrations#trusted-base-urls-and-private-hosts',
   },
   'settings.auto-diagnose': {
     title: 'Auto-diagnose',

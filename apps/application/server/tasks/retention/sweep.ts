@@ -3,6 +3,7 @@ import {
   capDiagnosisVersions,
   deleteRunsOlderThan,
   pruneHealActions,
+  pruneIntegrationActions,
   pruneNotificationDeliveries,
   reclaimSpace,
   sweepOrphans,
@@ -53,6 +54,12 @@ export default defineTask({
     if (notificationDays > 0) {
       const pruned = await pruneHealActions(db, notificationDays);
       if (pruned > 0) result.healActionsPruned = pruned;
+    }
+
+    // …and for settled integration actions.
+    if (notificationDays > 0) {
+      const pruned = await pruneIntegrationActions(db, notificationDays);
+      if (pruned > 0) result.integrationActionsPruned = pruned;
     }
 
     const space = await reclaimSpace(db);

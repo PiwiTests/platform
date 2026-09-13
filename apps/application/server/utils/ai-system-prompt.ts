@@ -51,15 +51,30 @@ When you have enough context to determine the exact lines to change, output a st
 - Do not output a patch and a code snippet for the same fix; prefer patch when possible and set code to null.`;
 
 /**
+ * The one instruction appended to every prompt that produces prose a person
+ * reads, when a response language is configured. The data — code, locators, file
+ * paths, error text — is kept verbatim so only the model's own words translate.
+ * Returns an empty string when no language is set (today's behavior).
+ */
+export function languageInstruction(language: string | null | undefined): string {
+  const lang = language?.trim();
+  if (!lang) return '';
+  return `Write every free-text field — summary, root cause, evidence, fix description, titles — in ${lang}; keep code, locators, file paths and error text verbatim.`;
+}
+
+/**
  * Build the full system prompt: base diagnosis prompt + optional global and
- * project-specific instruction blocks.
+ * project-specific instruction blocks, and the response-language instruction.
  */
 export function buildDiagnosisSystemPrompt(opts: {
   globalInstructions?: string | null;
   projectInstructions?: string | null;
+  language?: string | null;
 }): string {
   const parts: string[] = [DIAGNOSIS_SYSTEM_PROMPT];
   if (opts.globalInstructions) parts.push(`## Global Analysis Instructions\n${opts.globalInstructions}`);
   if (opts.projectInstructions) parts.push(`## Project-Specific Context\n${opts.projectInstructions}`);
+  const language = languageInstruction(opts.language);
+  if (language) parts.push(`## Response Language\n${language}`);
   return parts.join('\n\n');
 }

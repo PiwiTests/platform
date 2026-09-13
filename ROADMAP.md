@@ -66,7 +66,7 @@ Everything else — analytics, notifications, the CI gate, PR feedback, MCP, the
 - **Automatic data retention & storage efficiency** — opt-in nightly pruning of old runs (`PIWI_RETENTION_DAYS`), notification-outbox and diagnosis-history housekeeping, ingest size caps, and content-addressed dedup of per-failure evidence payloads.
 - **AI diagnosis, grounded** — failure-cluster analysis fed by your actual SCM diff, with suggested patches validated server-side against your source; optional two-stage (research → final) pipeline; works with Anthropic, OpenAI, or any OpenAI-compatible endpoint including local models.
 - **Locator healing** — element attributes captured on passing runs power ranked replacement locators when a selector breaks.
-- **MCP server** — 45 tools so AI agents can query runs, flaky tests, clusters, diagnoses, traces, and test selections.
+- **MCP server** — 46 tools so AI agents can query runs, flaky tests, clusters, diagnoses, traces, and test selections.
 - **Notifications** — email, Slack, webhook (HMAC-signed), and browser channels with per-project subscriptions and digests.
 - **Sharding & live streaming** — shards merge automatically via CI run detection; runs stream into the dashboard while CI executes.
 - **Ops hardening** — `/api/health` endpoint, Docker `HEALTHCHECK`, committed `docker-compose.yml`, backup & reverse-proxy guides.
@@ -78,6 +78,11 @@ Everything else — analytics, notifications, the CI gate, PR feedback, MCP, the
 
 ## Exploring
 
+- **Issue trackers and wikis** — create a Jira issue from a failure cluster, an execution, a flaky test or a run
+  with the evidence and the fix plan already in it; keep its status in sync both ways; route it by the owner Piwi
+  already derives; publish investigation and run reports to Confluence — all on a connection/provider layer that
+  makes the next tracker one provider file. Design record in
+  [proposals/issue-tracker-integrations.md](proposals/issue-tracker-integrations.md).
 - **Branches as entities** — on top of the shipped branch column: a merge-readiness verdict per branch,
   branch-class gate policies, cross-branch fix verification and retention by branch class, plus flakiness and trends
   scoped to the default branch by default. Tier 3 of

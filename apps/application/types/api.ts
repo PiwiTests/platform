@@ -324,6 +324,12 @@ export interface OpenFailureCluster {
   fixVerification: string | null;
   /** A new regression on the project's default branch in the last-seen run. */
   regressionOnDefault: boolean;
+  /** The last-seen run was on the project's default branch — a needs-ticket candidate must be. */
+  onDefaultBranch: boolean;
+  /** The cluster already carries a tracker issue — excluded from needs-ticket. */
+  hasKnownIssue: boolean;
+  /** Days a cluster may sit untracked on the default branch before needs-ticket lists it. */
+  needsTicketAfterDays: number;
   /** Affected tests currently quarantined, and how many are ready for release. */
   quarantinedCount: number;
   quarantineReadyCount: number;
@@ -1551,6 +1557,10 @@ export interface AiSettings {
   hasScmToken: boolean;
   envManaged: boolean;
   customInstructions: string | null;
+  /** The AI response language ("French", "Japanese", …); null keeps English prose. */
+  language: string | null;
+  /** True when the language is fixed by `PIWI_AI_LANGUAGE` (rendered locked). */
+  languageEnvManaged: boolean;
 }
 
 // ============================================================================
@@ -1578,6 +1588,8 @@ export interface SaveAiSettingsBody {
   autoDiagnose?: boolean;
   customInstructions?: string | null;
   scmToken?: string | null;
+  /** The instance-wide AI response language; ignored when env-managed. */
+  language?: string | null;
 }
 
 /**
@@ -1622,6 +1634,11 @@ export interface EntityLinkInfo {
   statusText?: string | null;
   statusColor?: string | null;
   unfurledAt?: string | Date | null;
+  /** The connection that can read/write this record, when Piwi owns it. */
+  connectionId?: number | null;
+  externalId?: string | null;
+  /** Who put the link there: pinned by a person, created by Piwi, etc. */
+  origin?: string | null;
   createdBy?: number | null;
   createdAt: Date;
   updatedAt: Date;

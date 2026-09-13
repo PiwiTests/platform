@@ -8,10 +8,9 @@ lang: en-US
 <Needs reporter />
 
 A run gives you a list of failures. The same root cause usually breaks several tests, and the same break
-comes back run after run — so a list of failures is really a much shorter list of *problems*, repeated.
-Piwi groups failures by that root cause into **failure clusters**, and the Home page turns those clusters
-into a **failure inbox**: a queue of the problems you still owe a decision, not a wall of red to re-read
-every morning.
+comes back run after run — so a list of failures is really a shorter list of *problems*, repeated.
+Piwi groups failures by that root cause into **failure clusters**, and Home turns those clusters
+into a **failure inbox**: a queue of the problems you still owe a decision.
 
 For how clusters are formed (the error fingerprint) and diagnosed, see
 [AI diagnosis & clustering](./ai-diagnosis#failure-clustering).
@@ -31,23 +30,23 @@ first. Each row is one cluster:
 
 ### Queues
 
-The inbox is split into queues, each with a live count. Pick one to focus; **All open** is the default,
-and the queue is shareable — it lives in the URL as `?queue=`.
+The inbox is split into queues, each with a live count; **All open** is the default, and the queue is shareable in the
+URL as `?queue=`.
 
 | Queue | What it holds |
 |---|---|
 | **All open** | Every open, non-snoozed cluster. |
-| **New** | Clusters first seen — or seen again — since you last opened the inbox (kept per browser, no account needed). |
-| **Mine** | Clusters whose assignee, or whose derived owner, is you. |
-| **Regressions** | Clusters that regressed on the project's default branch and are still failing there. |
-| **Fix didn't hold** | Clusters whose fix landed and then regressed. |
+| **New** | Clusters first seen — or seen again — since you last opened the inbox (kept per browser). |
+| **Mine** | Clusters whose assignee, or derived owner, is you. |
+| **Needs ticket** | Untracked default-branch clusters older than the binding's age (default 2 days) — see [issue tracking](./issue-tracking). |
+| **Regressions** | Clusters that regressed on the default branch and are still failing there. |
+| **Fix didn't hold** | Clusters whose fix landed then regressed. |
 | **Quarantine ready** | Quarantined clusters whose tests have stopped failing — safe to release. |
-| **Merge suggestions** | Clusters that are part of a pending merge suggestion awaiting a decision (see [clustering](./ai-diagnosis#failure-clustering)). |
+| **Merge suggestions** | Clusters in a pending merge suggestion (see [clustering](./ai-diagnosis#failure-clustering)). |
 
 ### Triage from the row or the keyboard
 
-Every row can be triaged in place, and the whole inbox is keyboard-driven. Select a row with the mouse or
-`j` / `k`, then:
+Every row can be triaged in place, and the whole inbox is keyboard-driven. Select a row with the mouse or `j` / `k`:
 
 | Key | Action |
 |---|---|
@@ -58,13 +57,15 @@ Every row can be triaged in place, and the whole inbox is keyboard-driven. Selec
 | `a` | Assign |
 | `s` | Snooze |
 | `l` | Link a known issue |
+| `c` | Create a Jira issue (when a tracker is connected) |
 | `x` | Select the row (`shift`+`j`/`k` extends the selection, `esc` clears it) |
 
-With one or more rows selected, a **bulk bar** applies resolve, ignore, assign, snooze or quarantine to
-all of them at once. Every action is optimistic and undoable for a few seconds — a toast with **Undo**
-reverses it.
+With one or more rows selected, a **bulk bar** applies resolve, ignore, assign, snooze, quarantine or
+*create issues* to all at once. Every action is optimistic and undoable for a few seconds.
 
-The keyboard hints are hidden on touch devices, where the row's action buttons are always visible.
+Linking a known issue (`l`) pins a URL; with an [issue tracker
+connected](/operate/integrations), Jira links unfurl and stay in sync, and you can
+**[file the issue from the failure](/features/issue-tracking)** (`c`).
 
 ## Owners and assignees
 

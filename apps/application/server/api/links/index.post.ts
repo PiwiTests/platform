@@ -4,7 +4,8 @@ import { entityLinks } from '../../database/schema';
 import { eq } from 'drizzle-orm';
 import { createLink } from '#shared/handlers/links';
 import { z } from 'zod';
-import { unfurlUrl } from '../../utils/unfurl';
+import { detectProviderWithConnections } from '../../utils/integrations/link-resolve';
+import { unfurlLink } from '../../utils/integrations/link-unfurl';
 
 defineRouteMeta({
   openAPI: {
@@ -44,7 +45,7 @@ export default eventHandler(async (event) => {
 
   let result: { link: any };
   try {
-    result = await createLink(db, { entityType, entityId, url, title });
+    result = await createLink(db, { entityType, entityId, url, title }, (u) => detectProviderWithConnections(db, u));
   } catch (err) {
     throw apiError({
       statusCode: 404,
@@ -57,8 +58,9 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 500, message: 'Failed to create link' });
   }
 
-  // Best-effort unfurl (server-only enrichment) — tries rich provider first, falls back to OpenGraph
-  const { title: fetchedTitle, statusText, statusColor } = await unfurlUrl(url, db);
+  // Best-effort unfurl (server-only enrichment) — through the connection when the
+  // link matched one, otherwise the rich provider / OpenGraph path.
+  const { title: fetchedTitle, statusText, statusColor } = await unfurlLink(db, inserted);
   if (fetchedTitle || statusText) {
     await db
       .update(entityLinks)

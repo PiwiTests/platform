@@ -304,6 +304,7 @@ export async function updateProject(
     label?: string | null;
     description?: string | null;
     diagnosisInstructions?: string | null;
+    aiLanguage?: string | null;
     scmToken?: string | null;
     defaultBranch?: string | null;
     ciRerun?: unknown;
@@ -313,7 +314,16 @@ export async function updateProject(
   const projectResults: any[] = await db.select().from(projects).where(eq(projects.id, id));
   if (!projectResults[0]) throw new Error('Project not found');
 
-  const { label, description, diagnosisInstructions, scmToken, defaultBranch, ciRerun, tagIds: dataTagIds } = data;
+  const {
+    label,
+    description,
+    diagnosisInstructions,
+    aiLanguage,
+    scmToken,
+    defaultBranch,
+    ciRerun,
+    tagIds: dataTagIds,
+  } = data;
 
   // Update project
   await db
@@ -322,6 +332,7 @@ export async function updateProject(
       label,
       description,
       diagnosisInstructions: diagnosisInstructions ?? undefined,
+      aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
       scmToken: scmToken !== undefined ? scmToken : undefined,
       defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
       ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
@@ -398,6 +409,18 @@ export async function deleteProjectData(db: DrizzleDB, projectId: number) {
 
   await db.delete(testCases).where(eq(testCases.projectId, projectId));
   await db.delete(casePayloads).where(eq(casePayloads.projectId, projectId));
+
+  // Entity links pinned to this project's clusters (a known-issue link Piwi
+  // created, or a URL a person pinned) are not covered by the cluster cascade,
+  // so remove them before the cluster rows go.
+  const projectClusterRows = await db
+    .select({ id: failureClusters.id })
+    .from(failureClusters)
+    .where(eq(failureClusters.projectId, projectId));
+  const projectClusterIds = projectClusterRows.map((r: { id: number }) => r.id);
+  if (projectClusterIds.length > 0) {
+    await db.delete(entityLinks).where(inArray(entityLinks.failureClusterId, projectClusterIds));
+  }
 
   // Deleting the project row cascades to: projectTags, failureClusters,
   // failureDiagnoses, traceBlobs, traceResources

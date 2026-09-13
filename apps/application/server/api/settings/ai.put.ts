@@ -2,7 +2,14 @@ import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
 import { getAppSetting, setAppSetting, deleteAppSetting } from '../../utils/app-settings';
 import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
-import { AI_ROLES, storedRoles, readAiSettings, type RawStoredAi, type RawStoredRole } from '../../utils/ai-settings';
+import {
+  AI_ROLES,
+  storedRoles,
+  readAiSettings,
+  envAiLanguage,
+  type RawStoredAi,
+  type RawStoredRole,
+} from '../../utils/ai-settings';
 import type { AiModelRole, AiProvider, SaveAiSettingsBody } from '~~/types/api';
 
 defineRouteMeta({
@@ -41,6 +48,14 @@ export default eventHandler(async (event) => {
     const trimmed = body.customInstructions?.trim() || null;
     if (trimmed) await setAppSetting(db, 'ai_instructions', { value: trimmed });
     else await deleteAppSetting(db, 'ai_instructions');
+  }
+
+  // The response language is env-managed when PIWI_AI_LANGUAGE is set — ignore a
+  // client attempt to override it then, the way the provider config is locked.
+  if (body.language !== undefined && envAiLanguage() == null) {
+    const trimmed = body.language?.trim() || null;
+    if (trimmed) await setAppSetting(db, 'ai_language', { value: trimmed.slice(0, 60) });
+    else await deleteAppSetting(db, 'ai_language');
   }
 
   if (body.scmToken !== undefined) {

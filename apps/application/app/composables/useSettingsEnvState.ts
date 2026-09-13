@@ -37,6 +37,7 @@ export function useSettingsEnvState() {
     performance: false,
     'pr-feedback': false,
     'auto-heal': false,
+    integrations: false,
     ai: false,
     about: false,
   });
@@ -68,6 +69,15 @@ export function useSettingsEnvState() {
         .then((s) => {
           // SMTP is env-only by design; mark managed when configured.
           envManaged.value.notifications = Boolean(s.envManaged && s.configured);
+        })
+        .catch(() => {}),
+    );
+
+    tasks.push(
+      $fetch<{ connections: { managedBy: string }[] }>('/api/integrations/connections')
+        .then((s) => {
+          // Integrations is env-managed when a connection comes from the environment.
+          envManaged.value.integrations = (s.connections ?? []).some((c) => c.managedBy === 'env');
         })
         .catch(() => {}),
     );

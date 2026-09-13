@@ -12,6 +12,7 @@ export const INBOX_QUEUES = [
   'all',
   'new',
   'mine',
+  'needs-ticket',
   'regressions',
   'fix-didnt-hold',
   'quarantine-ready',
@@ -128,6 +129,28 @@ export interface InboxClusterLike extends SnoozeState {
   regressionOnDefault?: boolean;
   quarantineReadyCount?: number;
   mergeSuggestionPending?: boolean;
+  /** On the project's default branch — a needs-ticket candidate must be. */
+  onDefaultBranch?: boolean;
+  /** Already carries a tracker issue — excluded from needs-ticket. */
+  hasKnownIssue?: boolean;
+  /** Days a cluster may sit open with no ticket before needs-ticket lists it (from the binding). */
+  needsTicketAfterDays?: number;
+}
+
+/** The default age, in days, before an untracked open cluster shows in needs-ticket. */
+export const DEFAULT_NEEDS_TICKET_AFTER_DAYS = 2;
+
+/**
+ * A cluster the team should file a ticket for: open on the default branch, older
+ * than the configured age, with no known issue. Pure so the client, the server
+ * and the tests agree; the age threshold rides on the row from the binding.
+ */
+export function needsTicket(cluster: InboxClusterLike, now: Date = new Date()): boolean {
+  if (cluster.onDefaultBranch !== true || cluster.hasKnownIssue === true) return false;
+  const first = asTime(cluster.firstSeenAt);
+  if (first == null) return false;
+  const days = cluster.needsTicketAfterDays ?? DEFAULT_NEEDS_TICKET_AFTER_DAYS;
+  return now.getTime() - first >= days * DAY_MS;
 }
 
 /** The assignee, or the owner the row falls back to when unassigned. */
@@ -161,7 +184,7 @@ export function isNewSince(cluster: InboxClusterLike, lastVisitMs: number | null
 export function clusterInQueue(
   cluster: InboxClusterLike,
   queue: InboxQueue,
-  ctx: { user?: UserIdentity | null; lastVisitMs?: number | null } = {},
+  ctx: { user?: UserIdentity | null; lastVisitMs?: number | null; now?: Date } = {},
 ): boolean {
   switch (queue) {
     case 'all':
@@ -170,6 +193,8 @@ export function clusterInQueue(
       return isNewSince(cluster, ctx.lastVisitMs ?? null);
     case 'mine':
       return isMine(cluster, ctx.user ?? null);
+    case 'needs-ticket':
+      return needsTicket(cluster, ctx.now ?? new Date());
     case 'regressions':
       return cluster.regressionOnDefault === true;
     case 'fix-didnt-hold':

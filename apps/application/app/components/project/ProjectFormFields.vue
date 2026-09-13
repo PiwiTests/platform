@@ -28,6 +28,7 @@ const name = defineModel<string>('name', { default: '' });
 const label = defineModel<string>('label', { default: '' });
 const description = defineModel<string>('description', { default: '' });
 const diagnosisInstructions = defineModel<string>('diagnosisInstructions', { default: '' });
+const aiLanguage = defineModel<string>('aiLanguage', { default: '' });
 const scmToken = defineModel<string>('scmToken', { default: '' });
 const defaultBranch = defineModel<string>('defaultBranch', { default: '' });
 const tags = defineModel<TagInfo[]>('tags', { default: () => [] });
@@ -86,6 +87,14 @@ const ciRerun = defineModel<CiRerunForm>('ciRerun', {
           :rows="5"
           class="w-full font-mono text-sm"
         />
+      </UFormField>
+
+      <UFormField
+        name="aiLanguage"
+        label="AI response language"
+        description="Overrides Settings → AI for this project. Blank inherits the instance-wide language. Code, locators, paths and error text stay verbatim."
+      >
+        <UInput v-model="aiLanguage" placeholder="e.g. French — blank inherits the global setting" class="w-full" />
       </UFormField>
 
       <UFormField

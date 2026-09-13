@@ -367,6 +367,32 @@ function copyFailure() {
 // ── Link an issue ─────────────────────────────────────────────────────────
 const linksModalOpen = ref(false);
 
+// ── Create issue / link to the cluster's known issue ─────────────────────────
+const toast = useToast();
+const { hasTracker } = useTrackerStatus();
+const knownIssue = computed(() => fixPlanData.value?.issue ?? null);
+const issueModalOpen = ref(false);
+
+async function linkKnownIssue() {
+  const issue = knownIssue.value;
+  if (!issue || !testCase.value) return;
+  try {
+    await $fetch('/api/links', {
+      method: 'POST',
+      body: { entityType: 'test_runs_case', entityId: testCase.value.id, url: issue.url, title: issue.key },
+    });
+    toast.add({ title: `Linked ${issue.key}`, color: 'success' });
+    await refresh();
+  } catch (e) {
+    toast.add({ title: 'Could not link the issue', description: errorMessage(e), color: 'error' });
+  }
+}
+
+function onIssueCreated() {
+  issueModalOpen.value = false;
+  void refresh();
+}
+
 // ── Navbar More menu ────────────────────────────────────────────────────────
 const moreMenuItems = computed(() => {
   const items: { label: string; icon: string; color?: 'warning'; onSelect: () => void }[] = [];
@@ -395,6 +421,17 @@ const moreMenuItems = computed(() => {
             onSelect: toggleQuarantine,
           },
     );
+  }
+  if (canWrite.value && hasTracker.value && failureCluster.value) {
+    if (knownIssue.value) {
+      items.push({
+        label: `Link to ${knownIssue.value.key}`,
+        icon: 'i-simple-icons-jira',
+        onSelect: () => void linkKnownIssue(),
+      });
+    } else {
+      items.push({ label: 'Create issue', icon: 'i-simple-icons-jira', onSelect: () => (issueModalOpen.value = true) });
+    }
   }
   items.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linksModalOpen.value = true) });
   if (testCase.value?.error) items.push({ label: 'Copy failure', icon: 'i-lucide-clipboard', onSelect: copyFailure });
@@ -863,4 +900,13 @@ const { handle: handleNextStepAction } = useNextStepActions({
       />
     </template>
   </UModal>
+
+  <CreateIssueModal
+    v-if="testCase?.id"
+    v-model:open="issueModalOpen"
+    entity-type="test_runs_case"
+    :entity-id="testCase.id"
+    @created="onIssueCreated"
+    @linked="onIssueCreated"
+  />
 </template>

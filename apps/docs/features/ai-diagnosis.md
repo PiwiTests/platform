@@ -71,27 +71,20 @@ long the cluster was open. Three verdicts, because they are not the same claim:
 | **Diagnosis verified** | The commits since the last failing run touched a file the [suggested patch](#what-a-diagnosis-contains) named — the change Piwi pointed at is the change that fixed it. |
 | **Regressed** | A fix was recorded, and the cluster is failing again. A fix that didn't hold is worth knowing about. |
 
-The verdict rides the cluster page's [state line](./failure-clusters#the-state-line), a sentence naming the run the fix
-landed in, the commit, and how long the cluster stayed open. The project's **Failure clusters** tab shows it beside the
-triage status — deliberately as a
-second badge rather than folded into the first, because the two answer different questions: the status is what a person
-declared, the verdict is what the runs showed. A cluster somebody marked *resolved* that is quietly failing again shows
-both, and that disagreement is the point.
+The verdict rides the cluster page's [state line](./failure-clusters#the-state-line) and the **Failure clusters** tab,
+beside the triage status as a second badge — the status is what a person declared, the verdict is what the runs showed,
+and when they disagree (a *resolved* cluster quietly failing again) both show.
 
 Two rules keep the verdict honest:
 
-- **Every affected test must pass**, not just some — a cluster is one root cause, and half of it passing means it isn't
-  fixed. A test that didn't execute hasn't been shown to pass, so it counts against the cluster just as a failure would.
-- **A filtered run can close a cluster** as long as it covered the whole cluster. Re-running exactly the affected tests
-  with `--grep` and seeing them all pass is enough; a run that skipped even one of them is not, whether it was filtered
-  or a full run that happened to miss it.
+- **Every affected test must pass**, not just some — a test that didn't execute hasn't been shown to pass, so it counts
+  against the cluster.
+- **A filtered run can close a cluster** if it covered the whole cluster: `--grep` over exactly the affected tests, all
+  passing, is enough; skipping even one is not.
 
-The verdict moves the triage status only when the evidence is strong enough to stand in for a person: *Diagnosis
-verified* sets an **open** cluster to **resolved**, and *Regressed* sets a **resolved** cluster back to **open**. Each
-transition appends a line to the triage note ("Resolved automatically: diagnosis verified in run #42", "Reopened
-automatically: regressed in run #57"), so the status still reads as something you can audit and override. *Stopped
-failing* alone changes nothing — a flaky test achieves it by accident — and a cluster marked *ignored* is never touched.
-The verdict badge stays separate from the status either way.
+The verdict moves the triage status only when the evidence is strong: *Diagnosis verified* sets an **open** cluster
+**resolved**, *Regressed* sets a **resolved** one back to **open**, each appending an auditable line to the triage note.
+*Stopped failing* alone changes nothing, and an *ignored* cluster is never touched.
 
 Two [notifications](./notifications) follow the verdict: `cluster.fixed` whenever a fix is recorded (its payload says
 which verdict), and `cluster.regressed` when a fix does not hold.
@@ -168,6 +161,15 @@ PIWI_AI_API_KEY=ollama   # any non-empty value for local servers
 ```
 
 Use **Settings → AI → Test** to smoke-test the configured provider.
+
+## Response language
+
+Set a **response language** and every free-text field a person reads — summary, root cause, evidence, fix description and
+AI-generated cluster titles — comes back in that language, while code, locators, paths and error text stay verbatim. Set
+it instance-wide in Settings → AI (or [`PIWI_AI_LANGUAGE`](/reference/configuration), e.g. `French`, which locks the
+field), and override it per project under Project → Settings. This is what makes a French ticket's *Most likely* section
+French — the ticket's copy follows the [destination's language](/features/issue-tracking#language) and the prose follows
+this setting. Unset keeps today's English behavior.
 
 ## What a diagnosis contains
 

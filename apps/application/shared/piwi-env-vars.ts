@@ -32,6 +32,12 @@
  * ingestion vars here but are owned by the reporter, not this registry.
  */
 
+import {
+  DEFAULT_INTEGRATIONS_SYNC_MINUTES,
+  MIN_INTEGRATIONS_SYNC_MINUTES,
+  MAX_INTEGRATIONS_SYNC_MINUTES,
+} from '#shared/integrations/sync-config';
+
 export type PiwiEnvVarCategory =
   | 'general'
   | 'database'
@@ -46,6 +52,7 @@ export type PiwiEnvVarCategory =
   | 'markers'
   | 'clustering'
   | 'smtp'
+  | 'integrations'
   | 'testing'
   | 'wasted-time'
   | 'demo'
@@ -199,28 +206,35 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
       'Required for email notifications and account flows (verification, password reset, invites). Set via environment only.',
     note: 'Email sending activates once `PIWI_SMTP_HOST` and `PIWI_SMTP_FROM` are set; add `PIWI_SMTP_USER`/`PIWI_SMTP_PASS` when the server requires authentication. See [Notifications](/features/notifications) for channels and subscriptions.',
   },
+  integrations: {
+    title: 'Integrations',
+    order: 13,
+    intro:
+      'Connect an issue tracker so pinned links unfurl and stay in sync. Setting `PIWI_JIRA_BASE_URL`, `PIWI_JIRA_EMAIL` and `PIWI_JIRA_API_TOKEN` creates a read-only, environment-managed Jira Cloud connection; otherwise connections are managed from **Settings → Integrations**.',
+    note: 'A connection base URL is administrator-supplied and trusted, so a self-hosted Jira on a private host works. See [Integrations](/operate/integrations).',
+  },
   clustering: {
     title: 'Failure clustering',
-    order: 13,
+    order: 14,
     intro:
       'Tunes the similarity thresholds used when grouping failures into clusters by their error fingerprint (and optional embeddings). Only used when an embedding model is configured.',
     note: 'See [AI diagnosis → Failure clustering](/features/ai-diagnosis#failure-clustering).',
   },
   testing: {
     title: 'Backend logs',
-    order: 14,
+    order: 15,
     intro:
       'Controls the `X-Piwi-Logs` response-header capture that attaches backend logs to test failures. See [Backend logs](/guide/backend-logs).',
   },
   build: {
     title: 'Build-time',
-    order: 15,
+    order: 16,
     intro:
       'These affect how the app is built rather than how a running instance behaves, and are mostly for contributors.',
   },
-  demo: { title: 'Demo', order: 16, mergeInto: 'build' },
-  test: { title: 'Test harness', order: 17, internal: true },
-  desktop: { title: 'Desktop app', order: 18, internal: true },
+  demo: { title: 'Demo', order: 17, mergeInto: 'build' },
+  test: { title: 'Test harness', order: 18, internal: true },
+  desktop: { title: 'Desktop app', order: 19, internal: true },
 };
 
 export const PIWI_ENV_VARS = {
@@ -497,6 +511,14 @@ export const PIWI_ENV_VARS = {
     type: 'boolean',
     default: 'false',
     relevantWhen: { PIWI_AI_PROVIDER: '*' },
+  },
+  PIWI_AI_LANGUAGE: {
+    description:
+      'Language for AI-written prose (diagnosis, root cause, cluster titles), e.g. "French". Unset keeps English. Code, locators, paths and error text stay verbatim.',
+    category: 'ai',
+    example: 'French',
+    since: '0.29.0',
+    docs: 'features/ai-diagnosis#response-language',
   },
   PIWI_AI_AUTO_DIAGNOSE_MAX: {
     description: 'Max clusters auto-diagnosed per finished run (budget cap; default 3).',
@@ -1045,6 +1067,42 @@ export const PIWI_ENV_VARS = {
     notes: 'Defaults to on when the port is 465, off otherwise.',
   },
 
+  // ── Integrations ─────────────────────────────────────────────────────────
+  PIWI_JIRA_BASE_URL: {
+    description: 'Base URL of the Jira Cloud site to connect (e.g. https://your-team.atlassian.net).',
+    category: 'integrations',
+    type: 'url',
+    example: 'https://your-team.atlassian.net',
+    since: '0.29.0',
+    docs: 'operate/integrations#connecting-jira-cloud',
+  },
+  PIWI_JIRA_EMAIL: {
+    description: 'Atlassian account email the API token belongs to.',
+    category: 'integrations',
+    example: 'you@example.com',
+    since: '0.29.0',
+    relevantWhen: { PIWI_JIRA_BASE_URL: '*' },
+    requiredWhen: { PIWI_JIRA_BASE_URL: '*' },
+  },
+  PIWI_JIRA_API_TOKEN: {
+    description: 'Jira Cloud API token (from id.atlassian.com). Never returned by the API.',
+    category: 'integrations',
+    secret: true,
+    since: '0.29.0',
+    relevantWhen: { PIWI_JIRA_BASE_URL: '*' },
+    requiredWhen: { PIWI_JIRA_BASE_URL: '*' },
+  },
+  PIWI_INTEGRATIONS_SYNC_MINUTES: {
+    description: 'How often, in minutes, Piwi reads ticket statuses back from the tracker.',
+    category: 'integrations',
+    type: 'number',
+    default: String(DEFAULT_INTEGRATIONS_SYNC_MINUTES),
+    min: MIN_INTEGRATIONS_SYNC_MINUTES,
+    max: MAX_INTEGRATIONS_SYNC_MINUTES,
+    since: '0.29.0',
+    docs: 'operate/integrations#status-sync',
+  },
+
   // ── Wasted-time analysis ─────────────────────────────────────────────────
   PIWI_WASTED_WAIT_PATTERNS: {
     description:
@@ -1107,6 +1165,12 @@ export const PIWI_ENV_VARS = {
     description: 'Mailpit base URL; when set, the email/notification E2E tests run against it.',
     category: 'test',
     runtimeOnly: true,
+  },
+  PIWI_LIVE_JIRA_PROJECT_KEY: {
+    description: 'Jira project key the live Jira E2E files into (with PIWI_JIRA_* credentials).',
+    category: 'test',
+    runtimeOnly: true,
+    since: '0.29.0',
   },
   PIWI_MAILPIT_SMTP_PORT: {
     description: 'SMTP port the email E2E tests send to (Mailpit).',

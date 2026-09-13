@@ -11,6 +11,7 @@ import {
   failureClusterAliases,
   failureDiagnoses,
   failureDiagnosisVersions,
+  entityLinks,
 } from '../../server/database/schema';
 import { preferExemplar } from '../prefer-exemplar';
 import { wakeOnRecurrence } from '../inbox-queues';
@@ -205,6 +206,14 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
       .update(testRunsCases)
       .set({ failureClusterId: survivorId })
       .where(eq(testRunsCases.failureClusterId, victimId));
+
+    // The survivor inherits the victim's external links, so a ticket Piwi filed
+    // (or a pinned issue) keeps tracking the failure across the merge rather than
+    // being cascade-deleted with the victim cluster.
+    await tx
+      .update(entityLinks)
+      .set({ failureClusterId: survivorId })
+      .where(eq(entityLinks.failureClusterId, victimId));
 
     // Execution-scope diagnoses are keyed by test-run-case and stay meaningful —
     // move them to the survivor. A cluster-scope diagnosis on the victim is

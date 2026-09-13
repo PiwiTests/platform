@@ -19,6 +19,7 @@ import { resolveDefaultBranch } from '../scm/default-branch';
 import { resolveRunBranch } from '../run-branch';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { describeCluster } from '#shared/describe-cluster';
+import { getClusterKnownIssue } from '../integrations/known-issue';
 import type { DbClient } from '../../database';
 
 /**
@@ -157,6 +158,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
         .from(testRunsCases)
         .where(and(eq(testRunsCases.testRunId, runId), eq(testRunsCases.failureClusterId, cluster.id)));
 
+      const knownIssue = (await getClusterKnownIssue(db, cluster.id).catch(() => null)) ?? undefined;
       await emitNotification(db, 'cluster.new', {
         clusterId: cluster.id,
         projectId: runRow.projectId,
@@ -166,6 +168,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
         runId,
         sampleErrorExcerpt: errorExcerpt(cluster.sampleError),
         affectedCases: affected.length,
+        knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
       });
     }
   } catch (e) {

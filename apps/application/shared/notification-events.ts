@@ -77,6 +77,8 @@ export interface ClusterNewPayload {
   runId: number;
   sampleErrorExcerpt?: string;
   affectedCases?: number;
+  /** The tracker issue the cluster is known by, named in the message when set. */
+  knownIssue?: { key: string; url: string };
 }
 
 /**
@@ -197,6 +199,8 @@ export interface ClusterFixedPayload {
   resolved?: boolean;
   /** Author of the fixing commit ({@link commit}), when it could be resolved. */
   fixAuthor?: FixAuthor;
+  /** The tracker issue the cluster is known by, named in the message when set. */
+  knownIssue?: { key: string; url: string };
 }
 
 /** A cluster with a recorded fix that is failing again. */
@@ -214,6 +218,8 @@ export interface ClusterRegressedPayload {
   reopened?: boolean;
   /** Author of the fix that did not hold, when it could be resolved. */
   fixAuthor?: FixAuthor;
+  /** The tracker issue the cluster is known by, named in the message when set. */
+  knownIssue?: { key: string; url: string };
 }
 
 export interface DiagnosisCompletedPayload {

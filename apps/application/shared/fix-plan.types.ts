@@ -105,4 +105,6 @@ export interface FixPlan {
   reproduceDesktop: ReproduceDesktopContext;
   /** Resolved clusters this one resembles, and how each was fixed. Empty when none match. */
   fixedBefore: FixedBeforeMatch[];
+  /** The tracker issue this cluster is known by, when one exists. */
+  issue: { key: string; url: string; status: string | null } | null;
 }

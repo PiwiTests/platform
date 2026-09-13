@@ -563,6 +563,7 @@ const editState = ref({
   label: '',
   description: '',
   diagnosisInstructions: '',
+  aiLanguage: '',
   scmToken: '',
   defaultBranch: '',
   ciRerun: {
@@ -585,6 +586,7 @@ watch(
       label: p.label || '',
       description: p.description || '',
       diagnosisInstructions: (p as { diagnosisInstructions?: string }).diagnosisInstructions || '',
+      aiLanguage: (p as { aiLanguage?: string }).aiLanguage || '',
       scmToken: '',
       defaultBranch: (p as { defaultBranch?: string }).defaultBranch || '',
       ciRerun: {
@@ -612,6 +614,7 @@ async function handleSaveSettings() {
         label: editState.value.label || null,
         description: editState.value.description || null,
         diagnosisInstructions: editState.value.diagnosisInstructions || null,
+        aiLanguage: editState.value.aiLanguage || null,
         scmToken: editState.value.scmToken || null,
         defaultBranch: editState.value.defaultBranch || null,
         ciRerun: editState.value.ciRerun,
@@ -1268,6 +1271,7 @@ const moreMenuItems = computed(() => {
                 v-model:label="editState.label"
                 v-model:description="editState.description"
                 v-model:diagnosisInstructions="editState.diagnosisInstructions"
+                v-model:aiLanguage="editState.aiLanguage"
                 v-model:scmToken="editState.scmToken"
                 v-model:defaultBranch="editState.defaultBranch"
                 v-model:ciRerun="editState.ciRerun"
@@ -1280,6 +1284,9 @@ const moreMenuItems = computed(() => {
               </div>
             </UForm>
           </SectionCard>
+
+          <!-- Issue-tracker binding: how this project's failures reach Jira. -->
+          <ProjectIntegrationSettings v-if="canManage" :project-id="Number(projectId)" />
 
           <!-- Desktop shell only: the linked folder is a per-machine setting. -->
           <DesktopProjectFolderSection :project-id="projectId" :project-name="project?.name" />
