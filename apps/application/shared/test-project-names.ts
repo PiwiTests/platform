@@ -86,6 +86,7 @@ export const PROJECT = {
   INSIGHTS_SPEC_HEALTH: 'insights-spec-health-test',
   INTEGRATIONS: 'integrations-test',
   INTEGRATIONS_CREATE_ISSUE: 'integrations-create-issue-test',
+  INTEGRATIONS_SYNC: 'integrations-sync-test',
   INVALID_KEY: 'invalid-key-test',
   KEYBOARD_NAV: 'keyboard-nav-test',
   LABEL_OVERRIDE: 'label-override-project',
