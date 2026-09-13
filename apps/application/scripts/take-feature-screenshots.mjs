@@ -363,6 +363,31 @@ const SCENES = [
     pad: 12,
   },
   {
+    name: 'project-integration-binding',
+    description: 'Project → Settings → Issue tracker: the binding form with policies and owner routes',
+    tags: ['docs'],
+    out: 'docs',
+    // A db-managed Jira connection makes the binding form appear; its base URL
+    // points at a dead local port so no real Jira is contacted.
+    async prepare({ base, request }) {
+      const list = await (await request.get(`${base}/api/integrations/connections`)).json();
+      if (!list.connections?.some((c) => c.provider === 'jira')) {
+        await request.post(`${base}/api/integrations/connections`, {
+          data: {
+            provider: 'jira',
+            name: 'Jira',
+            baseUrl: 'http://127.0.0.1:9',
+            credentials: { email: 'you@example.com', apiToken: 'screenshot-token' },
+          },
+        });
+      }
+    },
+    route: '/projects/2?tab=settings',
+    viewport: { width: 1280, height: 1600 },
+    of: '[data-shot="project-integration-binding"]',
+    pad: 12,
+  },
+  {
     name: 'locator-healing',
     description: 'Locator fix: ranked replacements and a recommended fix in the toolbox',
     tags: ['docs'],

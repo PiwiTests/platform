@@ -1286,7 +1286,7 @@ const moreMenuItems = computed(() => {
           </SectionCard>
 
           <!-- Issue-tracker binding: how this project's failures reach Jira. -->
-          <ProjectIntegrationSettings v-if="isAdmin" :project-id="Number(projectId)" />
+          <ProjectIntegrationSettings v-if="canManage" :project-id="Number(projectId)" />
 
           <!-- Desktop shell only: the linked folder is a per-machine setting. -->
           <DesktopProjectFolderSection :project-id="projectId" />
