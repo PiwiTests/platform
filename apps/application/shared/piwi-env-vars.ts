@@ -466,10 +466,11 @@ export const PIWI_ENV_VARS = {
 
   // ── AI — diagnosis model ─────────────────────────────────────────────────
   PIWI_AI_PROVIDER: {
-    description: 'AI provider for failure diagnosis: "anthropic" or "openai" (OpenAI-compatible).',
+    description:
+      'AI provider for failure diagnosis: "anthropic", "openai" (OpenAI-compatible), or "claude-cli" (the local Claude Code CLI, desktop app only).',
     category: 'ai',
     type: 'enum',
-    enum: ['anthropic', 'openai'],
+    enum: ['anthropic', 'openai', 'claude-cli'],
   },
   PIWI_AI_API_KEY: {
     description: 'API key for the diagnosis provider. Takes precedence over the DB-stored key.',
@@ -477,10 +478,12 @@ export const PIWI_ENV_VARS = {
     secret: true,
     relevantWhen: { PIWI_AI_PROVIDER: '*' },
     requiredWhen: { PIWI_AI_PROVIDER: 'anthropic' },
-    notes: 'Optional for OpenAI-compatible providers that need no key (e.g. a local model).',
+    notes:
+      'Optional for OpenAI-compatible providers that need no key (e.g. a local model). Unused by "claude-cli" — the CLI carries its own login.',
   },
   PIWI_AI_MODEL: {
-    description: 'Diagnosis model name (default: claude-opus-4-8 for Anthropic).',
+    description:
+      'Diagnosis model name (default: claude-opus-4-8 for Anthropic; for "claude-cli" an alias like "opus"/"sonnet", or empty for the CLI default).',
     category: 'ai',
     example: 'claude-opus-4-8',
     relevantWhen: { PIWI_AI_PROVIDER: '*' },
@@ -534,7 +537,7 @@ export const PIWI_ENV_VARS = {
     description: 'Provider for the optional research (pre-analysis) stage. Falls back to PIWI_AI_PROVIDER.',
     category: 'ai',
     type: 'enum',
-    enum: ['anthropic', 'openai'],
+    enum: ['anthropic', 'openai', 'claude-cli'],
     relevantWhen: { PIWI_AI_RESEARCH_MODEL: '*' },
   },
   PIWI_AI_RESEARCH_MODEL: {
@@ -594,6 +597,15 @@ export const PIWI_ENV_VARS = {
     category: 'ai',
     secret: true,
     relevantWhen: { PIWI_AI_EMBEDDING_MODEL: '*' },
+  },
+
+  // ── AI — local Claude CLI ────────────────────────────────────────────────
+  PIWI_CLAUDE_CLI_PATH: {
+    description:
+      'Absolute path to the `claude` binary for the "claude-cli" provider. Set only when the CLI is not on PATH, or to enable the provider outside the desktop app. Auto-detected otherwise.',
+    category: 'ai',
+    since: '0.30.0',
+    example: '/usr/local/bin/claude',
   },
 
   // ── AI — diagnosis context limits ────────────────────────────────────────

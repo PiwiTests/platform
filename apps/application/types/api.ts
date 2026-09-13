@@ -1457,8 +1457,51 @@ export interface ScmChanges {
   patchesOmitted?: boolean;
 }
 
-/** Supported AI provider identifiers */
-export type AiProvider = 'anthropic' | 'openai';
+/**
+ * Supported AI provider identifiers.
+ * - `anthropic` — the Anthropic API (needs an API key).
+ * - `openai` — any OpenAI-compatible HTTP endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, …).
+ * - `claude-cli` — the locally-installed `claude` CLI (Claude Code). Desktop app only: the
+ *   bundled server shells out to `claude -p --output-format json`, so authentication is the CLI's
+ *   own subscription/OAuth login and no API key is stored.
+ */
+export type AiProvider = 'anthropic' | 'openai' | 'claude-cli';
+
+/**
+ * Health + authentication state of the local `claude` CLI, returned by
+ * GET /api/ai/claude-cli/status. Only meaningful inside the desktop app.
+ */
+export interface ClaudeCliStatus {
+  /** True when the desktop app is running and may shell out to the CLI at all. */
+  desktop: boolean;
+  /** True when the `claude` binary was found and is runnable. */
+  available: boolean;
+  /** Resolved absolute path to the binary, when found. */
+  binaryPath: string | null;
+  /** CLI version string (e.g. "2.1.270"), when detectable. */
+  version: string | null;
+  /** True when `claude auth status` reports a signed-in account. */
+  loggedIn: boolean;
+  /** How the CLI is authenticated: "oauth_token", "api_key", … */
+  authMethod: string | null;
+  /** The API provider the CLI talks to: "firstParty", "bedrock", "vertex". */
+  apiProvider: string | null;
+  /** A human-readable problem when the CLI is missing or misconfigured. */
+  error: string | null;
+  /** Running usage totals since the server started (live, not persisted). */
+  usage: ClaudeCliUsageTotals;
+}
+
+/** In-memory usage tally for CLI calls since the server started. Resets on restart. */
+export interface ClaudeCliUsageTotals {
+  calls: number;
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  /** ISO timestamp the tally started (server start / first call). */
+  since: string | null;
+}
 
 /**
  * Model metadata returned by the provider's models endpoint.

@@ -99,7 +99,7 @@ Configure a provider via **Settings → AI**, or with environment variables (env
 
 | Variable | Description |
 |----------|-------------|
-| `PIWI_AI_PROVIDER` | `anthropic` or `openai` |
+| `PIWI_AI_PROVIDER` | `anthropic`, `openai`, or `claude-cli` |
 | `PIWI_AI_API_KEY` | Provider API key (stored encrypted when set via the UI; never returned by the API) |
 | `PIWI_AI_MODEL` | Model name (default: `claude-opus-4-8` for Anthropic) |
 | `PIWI_AI_BASE_URL` | Base URL for OpenAI-compatible providers (e.g. Ollama, LM Studio, vLLM) |
@@ -159,6 +159,8 @@ PIWI_AI_BASE_URL=http://localhost:11434/v1
 PIWI_AI_MODEL=llama3.1
 PIWI_AI_API_KEY=ollama   # any non-empty value for local servers
 ```
+
+**Claude Code CLI (local, no API key)** — in the [desktop app](/features/desktop), pick **Claude Code (local)**: it runs the local `claude` CLI with your Claude Code sign-in, so **Settings → AI** manages sign-in and shows a live usage tally. Every role but embeddings can use it; `PIWI_CLAUDE_CLI_PATH` overrides the path.
 
 Use **Settings → AI → Test** to smoke-test the configured provider.
 

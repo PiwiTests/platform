@@ -10,6 +10,7 @@ import {
   type RawStoredAi,
   type RawStoredRole,
 } from '../../utils/ai-settings';
+import { claudeCliEnabled } from '../../utils/ai-claude-cli';
 import type { AiModelRole, AiProvider, SaveAiSettingsBody } from '~~/types/api';
 
 defineRouteMeta({
@@ -22,7 +23,7 @@ defineRouteMeta({
   },
 });
 
-const VALID_PROVIDERS: AiProvider[] = ['anthropic', 'openai'];
+const VALID_PROVIDERS: AiProvider[] = ['anthropic', 'openai', 'claude-cli'];
 
 /** Parse and range-check a role's temperature override (OpenAI's documented 0-2 range). */
 function parseTemperature(role: AiModelRole, value: number | null | undefined): number | undefined {
@@ -138,6 +139,14 @@ export default eventHandler(async (event) => {
       if (!VALID_PROVIDERS.includes(provider)) {
         throw apiError({ statusCode: 400, message: `Role "${role}" has an invalid provider` });
       }
+      // The local CLI provider only makes sense where a `claude` binary lives —
+      // the desktop app (or a self-hoster who pinned PIWI_CLAUDE_CLI_PATH).
+      if (provider === 'claude-cli' && !claudeCliEnabled()) {
+        throw apiError({
+          statusCode: 400,
+          message: `Role "${role}": the local Claude CLI is only available in the Piwi desktop app`,
+        });
+      }
       const model = cfg.model?.trim() || '';
       const baseUrl = cfg.baseUrl?.trim() || '';
       if (provider === 'openai' && (!baseUrl || !model)) {
@@ -146,11 +155,12 @@ export default eventHandler(async (event) => {
           message: `Role "${role}": OpenAI-compatible provider requires baseUrl and model`,
         });
       }
-      const apiKey = resolveKey(cfg.apiKey, existingRoles[role]?.apiKey);
+      // claude-cli carries no key or base URL — the CLI owns auth and endpoint.
+      const apiKey = provider === 'claude-cli' ? undefined : resolveKey(cfg.apiKey, existingRoles[role]?.apiKey);
       out[role] = {
         provider,
         model,
-        baseUrl,
+        baseUrl: provider === 'claude-cli' ? '' : baseUrl,
         ...(apiKey ? { apiKey } : {}),
         ...(temperature !== undefined ? { temperature } : {}),
       };

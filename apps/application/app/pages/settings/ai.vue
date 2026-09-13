@@ -126,12 +126,24 @@ const ROLE_META = [
   },
 ] as const;
 
-const providerOptions = [
-  { label: 'Anthropic API', value: 'anthropic' },
-  { label: 'OpenAI-compatible', value: 'openai' },
-];
-// Anthropic has no embeddings API — the embedding role must be OpenAI-compatible.
-const embeddingProviderOptions = providerOptions.filter((p) => p.value !== 'anthropic');
+// The local Claude CLI provider is only offered in the desktop app (or when a
+// stored/env config already selected it, so it stays visible and editable).
+const isDesktop = useIsDesktop();
+const usesClaudeCli = computed(() =>
+  Object.values(settings.value?.roles ?? {}).some((r) => r?.provider === 'claude-cli'),
+);
+const showClaudeCli = computed(() => isDesktop || usesClaudeCli.value);
+
+const providerOptions = computed(() => {
+  const opts = [
+    { label: 'Anthropic API', value: 'anthropic' },
+    { label: 'OpenAI-compatible', value: 'openai' },
+  ];
+  if (showClaudeCli.value) opts.unshift({ label: 'Claude Code (local)', value: 'claude-cli' });
+  return opts;
+});
+// Anthropic and the CLI have no embeddings API — the embedding role must be OpenAI-compatible.
+const embeddingProviderOptions = computed(() => providerOptions.value.filter((p) => p.value === 'openai'));
 
 // Stable per-role reuse options (recomputed only when role-enable state changes),
 // so the child <USelect>'s `items` keep a stable reference and the listbox doesn't
@@ -393,7 +405,9 @@ function resetLimits() {
         re-enter credentials.
       </template>
 
-      <div class="space-y-5">
+      <div class="space-y-5" data-shot="ai-model-providers">
+        <ClaudeCliStatusCard v-if="showClaudeCli" />
+
         <AiRoleConfigForm
           v-for="meta in ROLE_META"
           :key="meta.key"

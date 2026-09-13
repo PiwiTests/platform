@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getAppSetting } from './app-settings';
+import { callClaudeCli, streamClaudeCli } from './ai-claude-cli';
 import { decryptSecret, getEncryptionKey } from './crypto';
 import type { AiProvider, AiConfig, AiModelRole, ResolvedAiRole } from '~~/types/api';
 import type { DbClient } from '../database';
@@ -47,9 +48,12 @@ function parseTemperature(raw?: string): number | null {
 }
 
 function isValidRole(role: ResolvedAiRole, kind: RoleKind): boolean {
+  // Embeddings require an OpenAI-compatible endpoint; the CLI has no embeddings API.
   if (kind === 'embedding') return role.provider === 'openai' && Boolean(role.baseUrl && role.model);
   if (role.provider === 'anthropic') return Boolean(role.apiKey);
   if (role.provider === 'openai') return Boolean(role.baseUrl && role.model);
+  // claude-cli needs no key, base URL or model (the CLI supplies its own default model).
+  if (role.provider === 'claude-cli') return true;
   return false;
 }
 
@@ -63,7 +67,7 @@ function makeRole(
   temperature?: number | null,
 ): ResolvedAiRole | null {
   const p = (provider || '') as AiProvider;
-  if (p !== 'anthropic' && p !== 'openai') return null;
+  if (p !== 'anthropic' && p !== 'openai' && p !== 'claude-cli') return null;
   const role: ResolvedAiRole = {
     provider: p,
     apiKey: apiKey || '',
@@ -294,6 +298,8 @@ export interface AiCallResult {
   cacheCreationInputTokens: number | null;
   /** Tokens served from the provider prompt cache (Anthropic `cache_read_input_tokens`, OpenAI `cached_tokens`). */
   cacheReadInputTokens: number | null;
+  /** Dollar cost the provider reported for the call (the `claude-cli` provider only), else null. */
+  costUsd?: number | null;
 }
 
 export interface StreamChunk {
@@ -307,12 +313,17 @@ export interface StreamResult {
   outputTokens: number | null;
   cacheCreationInputTokens: number | null;
   cacheReadInputTokens: number | null;
+  /** Dollar cost the provider reported for the call (the `claude-cli` provider only), else null. */
+  costUsd?: number | null;
 }
 
 export async function callAiProvider(config: ResolvedAiRole, opts: AiCallOptions): Promise<AiCallResult> {
   try {
     if (config.provider === 'anthropic') {
       return await callAnthropic(config, opts);
+    }
+    if (config.provider === 'claude-cli') {
+      return await callClaudeCli(config, opts);
     }
     return await callOpenAiCompat(config, opts);
   } catch (err) {
@@ -589,6 +600,8 @@ export async function* streamAiProvider(config: ResolvedAiRole, opts: AiCallOpti
   try {
     if (config.provider === 'anthropic') {
       yield* streamAnthropic(config, opts);
+    } else if (config.provider === 'claude-cli') {
+      yield* streamClaudeCli(config, opts);
     } else {
       yield* streamOpenAiCompat(config, opts);
     }
