@@ -280,6 +280,19 @@ const READY_INSPECTION = {
 const SCENES = [
   // ── Docs illustrations (committed) ────────────────────────────────────────
   {
+    name: 'integrations-settings',
+    description: 'Settings → Integrations: the Jira card with a connected system and a test button',
+    tags: ['docs'],
+    out: 'docs',
+    // Run with the server's Jira env vars set (PIWI_JIRA_BASE_URL / PIWI_JIRA_EMAIL
+    // / PIWI_JIRA_API_TOKEN) so the environment-managed Jira connection appears;
+    // no network call is made just to render the page.
+    route: '/settings/integrations',
+    viewport: { width: 1280, height: 1000 },
+    of: '[data-shot="integrations-settings"]',
+    pad: 12,
+  },
+  {
     name: 'locator-healing',
     description: 'Locator fix: ranked replacements and a recommended fix in the toolbox',
     tags: ['docs'],

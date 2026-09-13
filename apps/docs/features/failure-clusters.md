@@ -8,10 +8,9 @@ lang: en-US
 <Needs reporter />
 
 A run gives you a list of failures. The same root cause usually breaks several tests, and the same break
-comes back run after run — so a list of failures is really a much shorter list of *problems*, repeated.
-Piwi groups failures by that root cause into **failure clusters**, and the Home page turns those clusters
-into a **failure inbox**: a queue of the problems you still owe a decision, not a wall of red to re-read
-every morning.
+comes back run after run — so a list of failures is really a shorter list of *problems*, repeated.
+Piwi groups failures by that root cause into **failure clusters**, and Home turns those clusters
+into a **failure inbox**: a queue of the problems you still owe a decision.
 
 For how clusters are formed (the error fingerprint) and diagnosed, see
 [AI diagnosis & clustering](./ai-diagnosis#failure-clustering).
@@ -65,6 +64,9 @@ all of them at once. Every action is optimistic and undoable for a few seconds �
 reverses it.
 
 The keyboard hints are hidden on touch devices, where the row's action buttons are always visible.
+
+Linking a known issue (`l`) pins a URL; with an [issue tracker
+connected](/operate/integrations), Jira links unfurl and stay in sync.
 
 ## Owners and assignees
 

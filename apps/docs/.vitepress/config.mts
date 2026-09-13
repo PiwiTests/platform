@@ -124,6 +124,7 @@ export default defineConfig({
             { text: 'Authentication', link: '/operate/authentication' },
             { text: 'Database', link: '/operate/database' },
             { text: 'Storage configuration', link: '/operate/storage' },
+            { text: 'Integrations', link: '/operate/integrations' },
             { text: 'Backup & restore', link: '/operate/backup-restore' },
             { text: 'Upgrading', link: '/operate/upgrading' },
             { text: 'Configuration reference', link: '/reference/configuration' },

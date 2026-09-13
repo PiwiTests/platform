@@ -474,6 +474,22 @@ export const HELP_TOPICS = {
     doc: 'features/auto-heal',
     envVars: ['PIWI_SITE_URL'],
   },
+  'settings.integrations': {
+    title: 'Integrations',
+    text: 'Connect an issue tracker so pinned links unfurl with a title and status and stay in sync. Jira Cloud connects with an account email and an API token; set the connection once and every project uses it.',
+    doc: 'operate/integrations',
+    envVars: ['PIWI_JIRA_BASE_URL', 'PIWI_JIRA_EMAIL', 'PIWI_JIRA_API_TOKEN'],
+  },
+  'settings.integrations.connection': {
+    title: 'Connect a system',
+    text: 'The base URL is the system’s address (for Jira Cloud, https://your-team.atlassian.net); the credentials authenticate Piwi against it. Test the connection to confirm the account it resolves to. Credentials are encrypted at rest and never shown again.',
+    doc: 'operate/integrations#connecting-jira-cloud',
+  },
+  'settings.integrations.private-host': {
+    title: 'Private hosts',
+    text: 'A connection base URL is administrator-supplied and trusted, so a self-hosted tracker on a private network works. Links a non-administrator pins are still fetched through the SSRF guard.',
+    doc: 'operate/integrations#trusted-base-urls-and-private-hosts',
+  },
   'settings.auto-diagnose': {
     title: 'Auto-diagnose',
     text: 'When a run finishes, up to 3 new failure clusters are diagnosed automatically — each diagnosis is one research call (when a research model is configured) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires the diagnosis model to be configured.',

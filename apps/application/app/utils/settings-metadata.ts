@@ -27,6 +27,7 @@ export type SettingsPageId =
   | 'performance'
   | 'pr-feedback'
   | 'auto-heal'
+  | 'integrations'
   | 'ai'
   | 'about';
 
@@ -128,6 +129,19 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     roles: [Role.ADMINISTRATOR],
     introHelp: 'settings.tags',
     fields: [{ id: 'tags.list', label: 'Tags', help: 'settings.tags' }],
+  },
+  {
+    id: 'integrations',
+    label: 'Integrations',
+    icon: 'i-lucide-plug',
+    to: '/settings/integrations',
+    group: 'instance',
+    roles: [Role.ADMINISTRATOR],
+    introHelp: 'settings.integrations',
+    fields: [
+      { id: 'integrations.connections', label: 'Connections', help: 'settings.integrations' },
+      { id: 'integrations.connection', label: 'Connect a system', help: 'settings.integrations.connection' },
+    ],
   },
   {
     id: 'storage',
