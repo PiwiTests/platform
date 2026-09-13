@@ -22,9 +22,9 @@ import { buildHealPrBody, buildHealPrTitle } from '#shared/heal-pr';
 import type { HealActionPayload, HealActionResult } from '#shared/auto-heal';
 import type { ScmProvider, ScmFileEdit } from '../scm/ScmProvider';
 import type { DbClient } from '../../database';
+import { nextAttempt, OUTBOX_MAX_ATTEMPTS } from '../outbox';
 
-const MAX_ATTEMPTS = 5;
-const BACKOFF_MINUTES = [1, 5, 15, 60, 240];
+const MAX_ATTEMPTS = OUTBOX_MAX_ATTEMPTS;
 
 export type ApplyOutcome = { status: 'opened'; result: HealActionResult } | { status: 'skipped'; reason: string };
 
@@ -182,15 +182,14 @@ export async function sweepHealActions(db: DbClient): Promise<{ opened: number; 
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const isFinal = attempts >= MAX_ATTEMPTS;
-      const backoffMs = (BACKOFF_MINUTES[Math.min(attempts, BACKOFF_MINUTES.length - 1)] ?? 240) * 60 * 1000;
+      const next = nextAttempt(attempts, now, action.scheduledFor);
       await db
         .update(healActions)
         .set({
-          status: isFinal ? 'failed' : 'pending',
+          status: next.status,
           attempts,
           error: message,
-          scheduledFor: isFinal ? action.scheduledFor : new Date(now.getTime() + backoffMs),
+          scheduledFor: next.scheduledFor,
           updatedAt: now,
         })
         .where(eq(healActions.id, action.id));
