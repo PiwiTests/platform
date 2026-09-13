@@ -43,31 +43,25 @@ function link(base: string | null, path: string): string | null {
   return base ? `${base}${path}` : null;
 }
 
-/** Mint a share link for the cluster when the toggle is on and share links are enabled. */
-async function resolveShareUrl(
-  db: DrizzleDB,
-  projectId: number,
-  clusterId: number,
-  opts: IssueBuildOpts,
-): Promise<string | null> {
-  if (!opts.includeShareLink) return null;
+/**
+ * Mints a share token for a cluster, or returns null when share links are off.
+ * The server injects one that reads `server/utils/share-links`; the demo passes
+ * none, so this module never imports `node:crypto` into the worker bundle.
+ */
+export type ShareTokenMinter = (projectId: number, clusterId: number) => Promise<string | null>;
+
+/** The builder options: the pure `IssueBuildOpts` plus the server-side minter. */
+export interface DocumentBuildOpts extends IssueBuildOpts {
+  mintShareToken?: ShareTokenMinter | null;
+}
+
+/** The cluster's share URL when the toggle is on and a minter produced a token. */
+async function resolveShareUrl(projectId: number, clusterId: number, opts: DocumentBuildOpts): Promise<string | null> {
+  if (!opts.includeShareLink || !opts.mintShareToken) return null;
   const base = site(opts);
   if (!base) return null;
-  // Loaded lazily so the module (and the demo bundle) never statically pulls in
-  // `node:crypto`; share links are off by default, so this rarely runs.
-  const { mintShareLink, shareLinksEnabled } = await import('../share-links');
-  if (!shareLinksEnabled()) return null;
-  try {
-    const minted = await mintShareLink(db as never, {
-      projectId,
-      entityKind: 'cluster',
-      entityId: clusterId,
-      createdBy: null,
-    });
-    return `${base}/share/${minted.token}`;
-  } catch {
-    return null;
-  }
+  const token = await opts.mintShareToken(projectId, clusterId);
+  return token ? `${base}/share/${token}` : null;
 }
 
 interface GatheredFacts {
@@ -85,7 +79,7 @@ async function gatherClusterFacts(
   clusterId: number,
   occurrenceExecutionId: number | null,
   titleOverride: string | null,
-  opts: IssueBuildOpts,
+  opts: DocumentBuildOpts,
 ): Promise<GatheredFacts | null> {
   const cluster = await getFailureCluster(db, clusterId);
   if (!cluster) return null;
@@ -141,7 +135,7 @@ async function gatherClusterFacts(
     })?.text ?? null;
 
   const base = site(opts);
-  const shareUrl = await resolveShareUrl(db, cluster.projectId, clusterId, opts);
+  const shareUrl = await resolveShareUrl(cluster.projectId, clusterId, opts);
 
   const facts: IssueFacts = {
     clusterId,
@@ -182,7 +176,7 @@ export interface BuiltClusterIssue extends BuiltIssue {
 export async function buildClusterIssue(
   db: DrizzleDB,
   clusterId: number,
-  opts: IssueBuildOpts = {},
+  opts: DocumentBuildOpts = {},
 ): Promise<BuiltClusterIssue | null> {
   const gathered = await gatherClusterFacts(db, clusterId, null, null, opts);
   if (!gathered) return null;
@@ -197,7 +191,7 @@ export async function buildClusterIssue(
 export async function buildExecutionIssue(
   db: DrizzleDB,
   executionId: number,
-  opts: IssueBuildOpts = {},
+  opts: DocumentBuildOpts = {},
 ): Promise<BuiltClusterIssue | null> {
   const [execution] = await db
     .select({

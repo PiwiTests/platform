@@ -12,6 +12,7 @@ import { issueLabels } from '#shared/integrations/build-issue';
 import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
 import type { IssueIncludeOptions } from '#shared/integrations/types';
 import { buildClusterIssue, buildExecutionIssue } from './documents';
+import { clusterShareTokenMinter } from './share-url';
 import { enqueueAction, runActionNow, type CreateIssueActionPayload, type CreateIssueResult } from './actions';
 import { readProjectIntegration } from './binding';
 import { pickOwnerRoute } from '#shared/integrations/binding';
@@ -75,8 +76,18 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
   const locale = params.locale ?? DEFAULT_LOCALE;
   const built =
     params.entityType === 'failure_cluster'
-      ? await buildClusterIssue(db, params.entityId, { ...include, locale, siteUrl: params.siteUrl })
-      : await buildExecutionIssue(db, params.entityId, { ...include, locale, siteUrl: params.siteUrl });
+      ? await buildClusterIssue(db, params.entityId, {
+          ...include,
+          locale,
+          siteUrl: params.siteUrl,
+          mintShareToken: clusterShareTokenMinter(db),
+        })
+      : await buildExecutionIssue(db, params.entityId, {
+          ...include,
+          locale,
+          siteUrl: params.siteUrl,
+          mintShareToken: clusterShareTokenMinter(db),
+        });
   if (!built) return null;
 
   const [cluster] = await db

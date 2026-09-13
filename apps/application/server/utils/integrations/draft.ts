@@ -21,6 +21,7 @@ import type {
   TrackerSummary,
 } from '#shared/integrations/types';
 import { buildClusterIssue, buildExecutionIssue, type BuiltClusterIssue } from './documents';
+import { clusterShareTokenMinter } from './share-url';
 import { getConnectionRow, getProjectBinding, listTrackerConnections, trackerForRow } from './connections';
 import { bindingRowToResolved } from './binding';
 import { pickOwnerRoute } from '#shared/integrations/binding';
@@ -180,8 +181,18 @@ export async function buildIssueDraft(
 
   const built: BuiltClusterIssue | null =
     entityType === 'failure_cluster'
-      ? await buildClusterIssue(db, entityId, { ...include, locale, siteUrl: opts.siteUrl })
-      : await buildExecutionIssue(db, entityId, { ...include, locale, siteUrl: opts.siteUrl });
+      ? await buildClusterIssue(db, entityId, {
+          ...include,
+          locale,
+          siteUrl: opts.siteUrl,
+          mintShareToken: clusterShareTokenMinter(db),
+        })
+      : await buildExecutionIssue(db, entityId, {
+          ...include,
+          locale,
+          siteUrl: opts.siteUrl,
+          mintShareToken: clusterShareTokenMinter(db),
+        });
   if (!built) return null;
 
   // The cluster's effective owner picks the first matching route; its overrides
