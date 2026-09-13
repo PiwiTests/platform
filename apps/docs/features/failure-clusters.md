@@ -57,16 +57,15 @@ Every row can be triaged in place, and the whole inbox is keyboard-driven. Selec
 | `a` | Assign |
 | `s` | Snooze |
 | `l` | Link a known issue |
+| `c` | Create a Jira issue (when a tracker is connected) |
 | `x` | Select the row (`shift`+`j`/`k` extends the selection, `esc` clears it) |
 
-With one or more rows selected, a **bulk bar** applies resolve, ignore, assign, snooze or quarantine to
-all of them at once. Every action is optimistic and undoable for a few seconds — a toast with **Undo**
-reverses it.
-
-The keyboard hints are hidden on touch devices, where the row's action buttons are always visible.
+With one or more rows selected, a **bulk bar** applies resolve, ignore, assign, snooze, quarantine or
+*create issues* to all at once. Every action is optimistic and undoable for a few seconds.
 
 Linking a known issue (`l`) pins a URL; with an [issue tracker
-connected](/operate/integrations), Jira links unfurl and stay in sync.
+connected](/operate/integrations), Jira links unfurl and stay in sync, and you can
+**[file the issue from the failure](/features/issue-tracking)** (`c`).
 
 ## Owners and assignees
 

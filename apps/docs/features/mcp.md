@@ -17,7 +17,7 @@ The MCP server is served from the same Nitro process as the dashboard. There is 
 
 ## What it provides
 
-The server exposes 45 tools — mostly read-only, plus a few write/triage tools — that cover the full diagnostic workflow, from browsing projects to inspecting the exact evidence behind a failure and closing the loop after a fix.
+The server exposes 46 tools — mostly read-only, plus a few write/triage tools — that cover the full diagnostic workflow, from browsing projects to inspecting the exact evidence behind a failure and closing the loop after a fix.
 
 **Projects & activity**
 
@@ -85,6 +85,7 @@ The server exposes 45 tools — mostly read-only, plus a few write/triage tools 
 | `set_cluster_base_commit` | Pin the baseline commit for a cluster's SCM-diff context |
 | `submit_diagnosis_feedback` | Thumbs up/down on a diagnosis |
 | `create_test_function` | Register a page-object method or helper in a project's [test functions catalog](./test-functions) from source you (the calling agent) read yourself — no AI call happens on the server side, this only validates and persists |
+| `create_issue` | File a Jira issue from a cluster or execution ([issue tracking](/features/issue-tracking)) |
 
 **Source control** *(requires an SCM token — per-project or global)*
 

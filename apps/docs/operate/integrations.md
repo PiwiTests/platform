@@ -63,5 +63,8 @@ With a connection in place, a pinned or refreshed Jira link carries:
 - a **status** badge whose color follows the issue's status category (to-do, in-progress, done);
 - a refresh that reads the ticket back through the connection rather than scraping the page.
 
-Writing to Jira — creating issues from a failure, commenting when a fix lands, syncing status back — builds
-on this connection in later releases.
+## Creating issues from a failure
+
+Once a connection exists, Piwi can **file the ticket for you** — a Jira issue whose body is the failure's fix plan,
+linked back as the cluster's known issue. See [Issue tracking (Jira)](/features/issue-tracking) for the create flow,
+the fields, and how the key travels back into the inbox, notifications and pull-request comments.

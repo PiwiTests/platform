@@ -151,6 +151,7 @@ export default defineConfig({
             { text: 'Analytics', link: '/features/analytics' },
             { text: 'Timeline markers', link: '/features/timeline-markers' },
             { text: 'Notifications & alerts', link: '/features/notifications' },
+            { text: 'Issue tracking (Jira)', link: '/features/issue-tracking' },
             { text: 'Locator healing', link: '/features/locator-healing' },
             { text: 'Auto-heal PRs', link: '/features/auto-heal' },
             { text: 'Offline export', link: '/features/offline-export' },

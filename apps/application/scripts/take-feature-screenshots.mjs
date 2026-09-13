@@ -293,6 +293,76 @@ const SCENES = [
     pad: 12,
   },
   {
+    name: 'create-issue-modal',
+    description: 'Create issue modal on a cluster: title, fields, include toggles and the fix-plan preview',
+    tags: ['docs'],
+    out: 'docs',
+    // A db-managed Jira connection makes the entry points appear; its base URL
+    // points at a dead local port so the dedupe search fails fast (no real Jira).
+    async prepare({ base, request }) {
+      const list = await (await request.get(`${base}/api/integrations/connections`)).json();
+      if (!list.connections?.some((c) => c.provider === 'jira')) {
+        await request.post(`${base}/api/integrations/connections`, {
+          data: {
+            provider: 'jira',
+            name: 'Jira',
+            baseUrl: 'http://127.0.0.1:9',
+            credentials: { email: 'you@example.com', apiToken: 'screenshot-token' },
+          },
+        });
+      }
+    },
+    route: '/failure-clusters/10',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="cluster-create-issue"]').first().click();
+      await page.getByRole('dialog').waitFor();
+      // The preview renders once the draft resolves.
+      await page
+        .getByText('What happened')
+        .first()
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  },
+  {
+    name: 'cluster-issue-chip',
+    description: 'Cluster state line with the known-issue chip and the Open in Jira action',
+    tags: ['docs'],
+    out: 'docs',
+    // Pin a Jira issue to the cluster so its key shows on the state line.
+    async prepare({ base, request }) {
+      const list = await (await request.get(`${base}/api/integrations/connections`)).json();
+      if (!list.connections?.some((c) => c.provider === 'jira')) {
+        await request.post(`${base}/api/integrations/connections`, {
+          data: {
+            provider: 'jira',
+            name: 'Jira',
+            baseUrl: 'http://127.0.0.1:9',
+            credentials: { email: 'you@example.com', apiToken: 'screenshot-token' },
+          },
+        });
+      }
+      const links = await (await request.get(`${base}/api/links?entityType=failure_cluster&entityId=10`)).json();
+      if (!links.links?.some((l) => l.provider === 'jira')) {
+        await request.post(`${base}/api/links`, {
+          data: {
+            entityType: 'failure_cluster',
+            entityId: 10,
+            url: 'http://127.0.0.1:9/browse/PROJ-128',
+            title: 'Checkout button is disabled',
+          },
+        });
+      }
+    },
+    route: '/failure-clusters/10',
+    viewport: { width: 1280, height: 700 },
+    of: '[data-shot="cluster-state"]',
+    pad: 12,
+  },
+  {
     name: 'locator-healing',
     description: 'Locator fix: ranked replacements and a recommended fix in the toolbox',
     tags: ['docs'],
