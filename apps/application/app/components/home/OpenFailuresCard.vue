@@ -50,6 +50,7 @@ const QUEUE_META: Record<InboxQueue, { label: string; icon: string }> = {
   all: { label: 'All open', icon: 'i-lucide-inbox' },
   new: { label: 'New', icon: 'i-lucide-sparkles' },
   mine: { label: 'Mine', icon: 'i-lucide-user' },
+  'needs-ticket': { label: 'Needs ticket', icon: 'i-lucide-ticket' },
   regressions: { label: 'Regressions', icon: 'i-lucide-trending-down' },
   'fix-didnt-hold': { label: "Fix didn't hold", icon: 'i-lucide-rotate-ccw' },
   'quarantine-ready': { label: 'Quarantine ready', icon: 'i-lucide-shield-check' },

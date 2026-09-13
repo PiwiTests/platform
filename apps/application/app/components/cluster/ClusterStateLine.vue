@@ -48,6 +48,7 @@ const DOT: Record<ClusterStateKind, string> = {
   quarantined: 'bg-warning',
   'fix-verified-open': 'bg-success',
   'stopped-failing-open': 'bg-success',
+  'ticket-done': 'bg-success',
   resolved: 'bg-success',
   ignored: 'bg-muted',
   snoozed: 'bg-muted',

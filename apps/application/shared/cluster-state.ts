@@ -18,6 +18,7 @@ export type ClusterStateKind =
   | 'quiet'
   | 'fix-verified-open'
   | 'stopped-failing-open'
+  | 'ticket-done'
   | 'regressed'
   | 'resolved'
   | 'ignored'
@@ -51,6 +52,8 @@ export interface ClusterStateCluster {
   /** How many tests the cluster spans, and how many of them are currently quarantined. */
   affectedTests: number;
   quarantinedTests: number;
+  /** The cluster's known tracker issue, when one is pinned (its status drives the reconcile). */
+  knownIssue?: { key: string; statusCategory?: string | null } | null;
 }
 
 export interface ClusterStateProject {
@@ -117,6 +120,13 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
       t(when ? `Snoozed until ${when} — open underneath.` : 'Snoozed — open underneath.');
     }
     return done('snoozed', 'unsnooze');
+  }
+
+  // The ticket has been closed but the cluster is still open — offer to reconcile
+  // (the resolve-on-close policy does this automatically when it is on).
+  if (cluster.status === 'open' && cluster.knownIssue?.key && cluster.knownIssue.statusCategory === 'done') {
+    t(`${cluster.knownIssue.key} is Done — mark this cluster resolved?`);
+    return done('ticket-done', 'mark-resolved');
   }
 
   // Fix verification: a fix that regressed, held, or stopped the failures. It is

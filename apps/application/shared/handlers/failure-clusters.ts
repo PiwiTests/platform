@@ -7,6 +7,7 @@
   projects,
   entityLinks,
   clusterMergeSuggestions,
+  projectIntegrations,
 } from '../../server/database/schema';
 import { eq, and, desc, sql, inArray, or, isNull, lte } from 'drizzle-orm';
 
@@ -14,7 +15,8 @@ import type { DrizzleDB } from './db';
 import type { OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
 import { recomputeClusterOccurrences } from './failure-cluster-ops';
 import { getQuarantinedCaseIds, listQuarantine, addQuarantine } from './quarantine';
-import { clusterClue, computeSnooze, type SnoozeOption } from '../inbox-queues';
+import { clusterClue, computeSnooze, DEFAULT_NEEDS_TICKET_AFTER_DAYS, type SnoozeOption } from '../inbox-queues';
+import { resolveProjectIntegration } from '#shared/integrations/binding';
 import { parsePlaywrightError } from '#shared/error-parse';
 import { failingStepParams } from '#shared/describe-failure';
 import { computeClusterState, type ClusterState } from '#shared/cluster-state';
@@ -133,6 +135,15 @@ export async function getFailureCluster(
   // Known-issue links pinned to this cluster (Jira / GitHub issue, etc.).
   const links = await db.select().from(entityLinks).where(eq(entityLinks.failureClusterId, clusterId));
 
+  // The newest tracker link's status drives the "ticket is Done — reconcile?"
+  // state line: a link the sync can write back through (Jira, or one with a connection).
+  const reconcileLink = links
+    .filter((l: any) => l.key && (l.provider === 'jira' || l.connectionId != null))
+    .sort((a: any, b: any) => b.id - a.id)[0];
+  const reconcileKnownIssue = reconcileLink?.key
+    ? { key: reconcileLink.key as string, statusCategory: (reconcileLink.metadata as any)?.statusCategory ?? null }
+    : null;
+
   // The cluster's owner from the representative test's `piwi:owner` annotation
   // (the most-affected test wins). The server route layers CODEOWNERS on top when
   // no annotation exists, the same as the execution page's verdict owner.
@@ -182,6 +193,7 @@ export async function getFailureCluster(
       snoozeMode: cluster.snoozeMode ?? null,
       affectedTests: Number(countRow?.affectedTests ?? 0),
       quarantinedTests: quarantinedCount,
+      knownIssue: reconcileKnownIssue,
     },
     { runIdsNewestFirst: projectRuns.map((r) => r.id), now: opts.now },
   );
@@ -589,6 +601,7 @@ export async function getOpenFailureClusters(
         url: entityLinks.url,
         provider: entityLinks.provider,
         key: entityLinks.key,
+        connectionId: entityLinks.connectionId,
       })
       .from(entityLinks)
       .where(inArray(entityLinks.failureClusterId, clusterIds))
@@ -645,10 +658,29 @@ export async function getOpenFailureClusters(
 
   // Newest known-issue link wins (rows come back id-descending).
   const issueByCluster = new Map<number, { url: string; provider: string; key: string | null }>();
+  // A cluster "has a ticket" when a tracker link (Jira, or any link that carries
+  // a connection) has a key — that is what excludes it from the needs-ticket queue.
+  const hasKnownIssueByCluster = new Set<number>();
   for (const row of linkRows as any[]) {
     if (row.clusterId != null && !issueByCluster.has(row.clusterId)) {
       issueByCluster.set(row.clusterId, { url: row.url, provider: row.provider, key: row.key ?? null });
     }
+    if (row.clusterId != null && row.key && (row.provider === 'jira' || row.connectionId != null)) {
+      hasKnownIssueByCluster.add(row.clusterId);
+    }
+  }
+
+  // The needs-ticket age threshold per project, from each binding (default 2 days).
+  const bindingRows = await db
+    .select({ projectId: projectIntegrations.projectId, policies: projectIntegrations.policies })
+    .from(projectIntegrations)
+    .where(inArray(projectIntegrations.projectId, projectIds));
+  const needsTicketDaysByProject = new Map<number, number>();
+  for (const row of bindingRows as any[]) {
+    needsTicketDaysByProject.set(
+      row.projectId,
+      resolveProjectIntegration({ policies: row.policies }).policies.needsTicketAfterDays,
+    );
   }
 
   // The branches each cluster regressed on.
@@ -729,6 +761,9 @@ export async function getOpenFailureClusters(
       topClue: clusterClue(c),
       fixVerification: c.fixVerification ?? null,
       regressionOnDefault,
+      onDefaultBranch: run?.branch === effectiveDefault,
+      hasKnownIssue: hasKnownIssueByCluster.has(c.id),
+      needsTicketAfterDays: needsTicketDaysByProject.get(c.projectId) ?? DEFAULT_NEEDS_TICKET_AFTER_DAYS,
       quarantinedCount,
       quarantineReadyCount,
       mergeSuggestionPending: mergeSuggestionClusterIds.has(c.id),
