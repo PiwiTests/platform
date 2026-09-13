@@ -964,6 +964,7 @@ export const projectIntegrations = sqliteTable(
     defaultAssignee: text('default_assignee'), // account id / name
     spaceId: text('space_id'), // Confluence space (wiki binding)
     parentPageId: text('parent_page_id'), // Confluence parent page
+    locale: text('locale'), // ticket language for this project ('en' | 'fr'); overrides the connection default
     include: text('include', { mode: 'json' }), // { includeDiagnosis, includePatch, includeScreenshot, includeShareLink }
     policies: text('policies', { mode: 'json' }), // { commentOnFix, transitionOnFix, commentOnRegression, resolveOnClose, … }
     ownerRoutes: text('owner_routes', { mode: 'json' }), // { owner, projectKey?, componentId?, assigneeAccountId?, labels? }[]

@@ -986,6 +986,7 @@ export const projectIntegrations = pgTable(
     defaultAssignee: text('default_assignee'), // account id / name
     spaceId: text('space_id'), // Confluence space (wiki binding)
     parentPageId: text('parent_page_id'), // Confluence parent page
+    locale: text('locale'), // ticket language for this project ('en' | 'fr'); overrides the connection default
     include: jsonb('include'), // { includeDiagnosis, includePatch, includeScreenshot, includeShareLink }
     policies: jsonb('policies'), // { commentOnFix, transitionOnFix, commentOnRegression, resolveOnClose, … }
     ownerRoutes: jsonb('owner_routes'), // { owner, projectKey?, componentId?, assigneeAccountId?, labels? }[]
