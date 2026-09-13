@@ -67,6 +67,8 @@ export interface PrFailureEntry {
   /** Set when the failure joined a cluster, so the comment can link the cause. */
   clusterId?: number | null;
   clusterSignature?: string | null;
+  /** The tracker issue the failure's cluster is known by, when one exists. */
+  issue?: { key: string; url: string } | null;
   /** Ranked replacement suggested for the locator that broke, when there is one. */
   suggestedLocator?: string | null;
   /** An auto-heal PR already open for this locator, so the reader isn't sent to fix it twice. */
@@ -181,6 +183,9 @@ function renderFailureList(entries: PrFailureEntry[], runUrl: string): string {
     if (entry.flakyOnDefaultBranch) {
       const pct = Math.round(entry.flakyOnDefaultBranch.flakinessRate * 100);
       line += `\n  🎲 Also flaky on \`${escapeCell(entry.flakyOnDefaultBranch.branch)}\` (~${pct}% of recent runs) — likely not yours.`;
+    }
+    if (entry.issue) {
+      line += `\n  🎫 Tracked in [${escapeCell(entry.issue.key)}](${entry.issue.url}).`;
     }
     return line;
   });

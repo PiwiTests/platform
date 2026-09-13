@@ -170,6 +170,12 @@ export function fixPlanToMarkdown(plan: FixPlan, opts: { url?: string } = {}): s
     lines.push(`Bisected to \`${c.sha.slice(0, 12)}\`${subject}${suffix}.`, '');
   }
 
+  // Links — the tracker issue this cluster is known by, when one exists.
+  if (plan.issue) {
+    const status = plan.issue.status ? ` (${plan.issue.status})` : '';
+    lines.push('## Links', '', `- Tracked in [${plan.issue.key}](${plan.issue.url})${status}`, '');
+  }
+
   if (opts.url) lines.push('---', '', `[Open this cluster in Piwi](${opts.url})`, '');
 
   return (

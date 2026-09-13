@@ -249,11 +249,16 @@ export function renderNewClusterEmail(opts: {
   title?: string | null;
   sampleErrorExcerpt?: string;
   affectedCases?: number;
+  /** The tracker issue the cluster is known by, named when set. */
+  knownIssue?: { key: string; url: string };
 }): {
   html: string;
   text: string;
 } {
   const url = `${siteUrl()}/failure-clusters/${opts.clusterId}`;
+  const tracked = opts.knownIssue
+    ? `<p style="margin:0 0 16px;color:#52525b;font-size:13px;">Tracked in <a href="${opts.knownIssue.url}" style="color:#18181b;font-weight:600;">${escapeHtml(opts.knownIssue.key)}</a></p>`
+    : '';
   const affected =
     opts.affectedCases && opts.affectedCases > 0
       ? `<p style="margin:0 0 16px;color:#52525b;font-size:13px;">${opts.affectedCases} affected test${opts.affectedCases === 1 ? '' : 's'} in this run</p>`
@@ -268,9 +273,10 @@ export function renderNewClusterEmail(opts: {
     <p style="margin:0 0 16px;font-family:monospace;font-size:13px;background:#f4f4f5;padding:12px;border-radius:6px;overflow:auto;">${escapeHtml(opts.signature)}</p>
     ${affected}
     ${excerpt}
+    ${tracked}
     <a href="${url}" style="display:inline-block;background:#18181b;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">View cluster</a>`;
   const { html } = emailLayout(`New failure cluster — ${opts.projectName}`, body);
-  const text = `New failure cluster in ${opts.projectName}${opts.affectedCases ? ` (${opts.affectedCases} affected)` : ''}\n\n${opts.title && opts.title !== opts.signature ? `${opts.title}\n` : ''}${opts.signature}${opts.sampleErrorExcerpt ? `\n\n${opts.sampleErrorExcerpt}` : ''}\n\nView: ${url}`;
+  const text = `New failure cluster in ${opts.projectName}${opts.affectedCases ? ` (${opts.affectedCases} affected)` : ''}\n\n${opts.title && opts.title !== opts.signature ? `${opts.title}\n` : ''}${opts.signature}${opts.sampleErrorExcerpt ? `\n\n${opts.sampleErrorExcerpt}` : ''}${opts.knownIssue ? `\n\nTracked in ${opts.knownIssue.key}: ${opts.knownIssue.url}` : ''}\n\nView: ${url}`;
   return { html, text };
 }
 

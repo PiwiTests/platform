@@ -36,6 +36,7 @@ import { notifyFixAuthor } from './notifications/fix-author';
 import { parseUnifiedDiff, stripAbPrefix } from '#shared/patch';
 import type { FixAuthor, NotificationEvent, NotificationPayload } from '#shared/notification-events';
 import type { RunMetadata } from './run-json-types';
+import { getClusterKnownIssue } from './integrations/known-issue';
 import type { DbClient } from '../database';
 
 const FAIL_STATUSES = ['failed', 'timedOut', 'timedout'];
@@ -232,6 +233,7 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
 
       // The regression reaches the author of the fix that did not hold.
       const fixAuthor = await resolveFixAuthor(db, run.projectId, repositoryUrl, cluster.fixCommit);
+      const knownIssue = (await getClusterKnownIssue(db, cluster.id).catch(() => null)) ?? undefined;
       await emitClusterOutcome(db, 'cluster.regressed', {
         clusterId: cluster.id,
         projectId: run.projectId,
@@ -242,6 +244,7 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
         fixLandedRunId: cluster.fixLandedRunId,
         reopened,
         fixAuthor,
+        knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
       });
     }
   }
@@ -370,6 +373,7 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
 
     // The fix reaches the person whose commit landed it.
     const fixAuthor = await resolveFixAuthor(db, run.projectId, repositoryUrl, currentCommit);
+    const knownIssue = (await getClusterKnownIssue(db, cluster.id).catch(() => null)) ?? undefined;
     await emitClusterOutcome(db, 'cluster.fixed', {
       clusterId: cluster.id,
       projectId: run.projectId,
@@ -383,6 +387,7 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       testCount: clusterCases.size,
       resolved,
       fixAuthor,
+      knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
     });
   }
 

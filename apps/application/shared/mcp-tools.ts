@@ -451,6 +451,29 @@ export const MCP_TOOL_DEFS = [
     },
   },
   {
+    name: 'create_issue',
+    description:
+      "File a Jira issue from a failure cluster or a failing execution, with the fix plan as its body — the same ticket the dashboard's Create issue button produces. The issue is deduped by cluster, so calling twice for the same cluster returns the existing action rather than a second ticket. Returns the issue { key, url } and any `existing` issues that already track the cluster (a pinned link, a matching label, or a fixed-before match) so you can link instead of filing again. Requires a Jira connection and a project binding (project key and issue type). Reporter or administrator access.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entityType: {
+          type: 'string',
+          enum: ['failure_cluster', 'test_runs_case'],
+          description: 'Whether to file for a failure cluster or one failing execution',
+        },
+        entityId: { type: 'number', description: 'The cluster id or the execution (testRunsCaseId)' },
+        title: { type: 'string', description: 'Optional issue title; defaults to the cluster name' },
+        includeDiagnosis: {
+          type: 'boolean',
+          description: 'Include the AI diagnosis summary and root cause (default true)',
+        },
+        includePatch: { type: 'boolean', description: 'Include the suggested patch as a diff (default true)' },
+      },
+      required: ['entityType', 'entityId'],
+    },
+  },
+  {
     name: 'list_tags',
     description: 'List every tag defined on this instance (id, text, color). Tags are instance-wide, not per-project.',
     inputSchema: { type: 'object', properties: {} },
