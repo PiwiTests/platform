@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import type { AiCallOptions, AiCallResult, StreamChunk } from './ai-provider';
 import type { ClaudeCliStatus, ClaudeCliUsageTotals, ResolvedAiRole } from '~~/types/api';
 
@@ -45,63 +45,163 @@ function binaryNames(): string[] {
 /**
  * Directories a GUI-launched desktop app won't have on `PATH` but where the CLI
  * commonly installs. Searched after `PATH` so an explicit install still wins.
+ * This is a fast pre-check; the login-shell lookup below covers version managers
+ * (nvm/fnm/asdf/…) and any other location a user's shell knows about.
  */
 function fallbackDirs(): string[] {
   const home = homedir();
   if (isWindows) {
     const appData = process.env.APPDATA || join(home, 'AppData', 'Roaming');
     const localAppData = process.env.LOCALAPPDATA || join(home, 'AppData', 'Local');
-    return [join(appData, 'npm'), join(localAppData, 'Programs', 'claude'), join(home, '.claude', 'local')];
+    return [
+      join(localAppData, 'Microsoft', 'WinGet', 'Links'), // winget shims
+      join(appData, 'npm'), // npm global
+      join(localAppData, 'Programs', 'claude'),
+      join(home, '.claude', 'local'),
+      join(home, '.claude', 'bin'),
+    ];
   }
-  return [
+  const dirs = [
     join(home, '.claude', 'local'),
+    join(home, '.claude', 'bin'),
     join(home, '.local', 'bin'),
     '/usr/local/bin',
     '/opt/homebrew/bin',
     join(home, '.volta', 'bin'),
     join(home, '.bun', 'bin'),
+    join(home, '.deno', 'bin'),
+    join(home, '.asdf', 'shims'),
     '/usr/bin',
   ];
+  const npmPrefix = process.env.npm_config_prefix || process.env.PREFIX;
+  if (npmPrefix) dirs.push(join(npmPrefix, 'bin'));
+  // Each nvm-managed Node version has its own bin dir.
+  dirs.push(...globNodeVersionBins(join(home, '.nvm', 'versions', 'node')));
+  return dirs;
 }
 
-let cachedBinary: string | null | undefined;
+/** Expand `<root>/<version>/bin` for every installed version under an nvm-style root. */
+function globNodeVersionBins(root: string): string[] {
+  try {
+    return readdirSync(root, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => join(root, e.name, 'bin'));
+  } catch {
+    return [];
+  }
+}
 
-/** Resolve the `claude` binary: explicit override → `PATH` → common install dirs. Cached. */
+// Only a positive resolution is memoized — a "not found" is never cached, so a
+// later Recheck re-resolves after the user installs the CLI or sets the path.
+let cachedBinary: string | undefined;
+// The user's real PATH as reported by their login shell — captured once so a
+// GUI-launched app can both find `claude` and give it a working environment.
+let cachedShellPath: string | null | undefined;
+
+/**
+ * Resolve the `claude` binary synchronously: explicit override → `PATH` →
+ * common install dirs. Returns null (uncached) when not found, so a follow-up
+ * `resolveClaudeBinaryDeep` or Recheck can try the login shell.
+ */
 export function resolveClaudeBinary(): string | null {
-  if (cachedBinary !== undefined) return cachedBinary;
+  if (cachedBinary) return cachedBinary;
 
   const override = process.env.PIWI_CLAUDE_CLI_PATH?.trim();
   if (override) {
-    cachedBinary = existsSync(override) ? override : null;
-    return cachedBinary;
+    if (existsSync(override)) {
+      cachedBinary = override;
+      return override;
+    }
+    return null;
   }
 
   const pathDirs = (process.env.PATH || '').split(delimiter).filter(Boolean);
-  for (const dir of [...pathDirs, ...fallbackDirs()]) {
+  return searchDirs([...pathDirs, ...fallbackDirs()]);
+}
+
+/** Find the first `claude` executable across `dirs`, memoizing a hit. */
+function searchDirs(dirs: string[]): string | null {
+  for (const dir of dirs) {
     for (const name of binaryNames()) {
       const candidate = join(dir, name);
       if (existsSync(candidate)) {
         cachedBinary = candidate;
-        return cachedBinary;
+        return candidate;
       }
     }
   }
-
-  cachedBinary = null;
-  return cachedBinary;
+  return null;
 }
 
-/** Testing/refresh hook: drop the memoized binary and status so the next call re-resolves. */
+/**
+ * Ask the user's login shell for its `PATH` — the reliable way to find a CLI a
+ * GUI-launched app can't see, since the app never sources the shell's rc files.
+ * Captured once (positive or negative) for the process. Not attempted on Windows,
+ * where GUI processes inherit a full `PATH`.
+ */
+async function loginShellPath(): Promise<string | null> {
+  if (isWindows) return null;
+  if (cachedShellPath !== undefined) return cachedShellPath;
+
+  const shell = process.env.SHELL || '/bin/bash';
+  // A login + interactive shell sources both profile and rc files (where PATH is
+  // usually set). stdin is closed immediately, so it cannot hang on input.
+  const res = await runClaude(shell, ['-lic', 'printf %s "$PATH"'], { timeoutMs: PROBE_TIMEOUT_MS });
+  const line =
+    res.code === 0
+      ? res.stdout
+          .split('\n')
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .pop()
+      : '';
+  cachedShellPath = line && line.includes('/') ? line : null;
+  return cachedShellPath;
+}
+
+/**
+ * Resolve the binary, falling back to the login shell's `PATH` when the quick
+ * scan misses (the common desktop case where the app has a bare `PATH`).
+ */
+export async function resolveClaudeBinaryDeep(): Promise<string | null> {
+  const quick = resolveClaudeBinary();
+  if (quick) return quick;
+  if (process.env.PIWI_CLAUDE_CLI_PATH) return null; // an explicit path was set but is missing
+
+  const shellPath = await loginShellPath();
+  if (!shellPath) return null;
+  return searchDirs(shellPath.split(delimiter).filter(Boolean));
+}
+
+/** Testing/refresh hook: drop memoized resolution so the next call re-resolves. */
 export function resetClaudeCliCache(): void {
   cachedBinary = undefined;
+  cachedShellPath = undefined;
   cachedStatus = null;
 }
 
-/** Spawn env with the fallback dirs appended to PATH, so a child `node` is found too. */
+/**
+ * Spawn env with a `PATH` broad enough for the CLI to run: the process PATH, the
+ * login shell's PATH (when captured), the fallback dirs, and the resolved
+ * binary's own dir — deduped. This matters because `claude` may itself need
+ * `node` or other tools the bare GUI PATH lacks.
+ */
 function spawnEnv(): NodeJS.ProcessEnv {
-  const extra = fallbackDirs().join(delimiter);
-  const path = [process.env.PATH || '', extra].filter(Boolean).join(delimiter);
-  return { ...process.env, PATH: path };
+  const parts = [process.env.PATH || '', cachedShellPath || '', fallbackDirs().join(delimiter)];
+  if (cachedBinary) parts.push(dirname(cachedBinary));
+  const seen = new Set<string>();
+  const path = parts
+    .flatMap((p) => p.split(delimiter))
+    .filter((d) => d && !seen.has(d) && seen.add(d))
+    .join(delimiter);
+  const env: NodeJS.ProcessEnv = { ...process.env, PATH: path };
+  // This provider is subscription-first. An ANTHROPIC_API_KEY / auth token in the
+  // app's environment would make the CLI bill to pay-as-you-go API credits and
+  // override the user's Claude Code sign-in — the opposite of "no API key". Drop
+  // them so the CLI uses its own stored login.
+  delete env.ANTHROPIC_API_KEY;
+  delete env.ANTHROPIC_AUTH_TOKEN;
+  return env;
 }
 
 interface SpawnResult {
@@ -216,11 +316,14 @@ async function probeClaudeCli(): Promise<ClaudeCliStatus> {
     return { ...base, error: 'The local Claude CLI is only available in the Piwi desktop app.' };
   }
 
-  const binary = resolveClaudeBinary();
+  const binary = await resolveClaudeBinaryDeep();
   if (!binary) {
+    const override = process.env.PIWI_CLAUDE_CLI_PATH?.trim();
     return {
       ...base,
-      error: 'The `claude` command was not found. Install Claude Code, then re-check.',
+      error: override
+        ? `PIWI_CLAUDE_CLI_PATH is set to "${override}" but no file is there. Point it at the \`claude\` binary.`
+        : 'The `claude` command was not found. Install Claude Code (or set PIWI_CLAUDE_CLI_PATH to its path), then re-check.',
     };
   }
   base.binaryPath = binary;
@@ -466,7 +569,7 @@ export async function* streamClaudeCli(config: ResolvedAiRole, opts: AiCallOptio
 export async function runClaudeLogin(
   onLine: (line: string) => void,
 ): Promise<{ success: boolean; error: string | null }> {
-  const binary = resolveClaudeBinary();
+  const binary = await resolveClaudeBinaryDeep();
   if (!binary) return { success: false, error: 'The `claude` command was not found.' };
 
   const res = await runClaude(binary, ['auth', 'login', '--claudeai'], {
@@ -484,7 +587,7 @@ export async function runClaudeLogin(
 
 /** Sign the CLI out (`claude auth logout`). */
 export async function runClaudeLogout(): Promise<{ success: boolean; error: string | null }> {
-  const binary = resolveClaudeBinary();
+  const binary = await resolveClaudeBinaryDeep();
   if (!binary) return { success: false, error: 'The `claude` command was not found.' };
   const res = await runClaude(binary, ['auth', 'logout'], { timeoutMs: PROBE_TIMEOUT_MS });
   cachedStatus = null;

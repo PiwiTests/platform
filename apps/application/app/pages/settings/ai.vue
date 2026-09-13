@@ -269,7 +269,7 @@ async function save() {
     for (const meta of ROLE_META) roles[meta.key].apiKey = '';
     toast.add({ title: 'Settings saved', color: 'success' });
   } catch (err) {
-    toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' });
+    toast.add({ title: 'Save failed', description: errorMessage(err), color: 'error' });
   } finally {
     saving.value = false;
   }
@@ -283,7 +283,7 @@ async function saveScmToken() {
     scmToken.value = '';
     toast.add({ title: 'SCM token saved', color: 'success' });
   } catch (err) {
-    toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' });
+    toast.add({ title: 'Save failed', description: errorMessage(err), color: 'error' });
   } finally {
     savingScmToken.value = false;
   }
@@ -296,7 +296,7 @@ async function saveInstructions() {
     await refresh();
     toast.add({ title: 'Instructions saved', color: 'success' });
   } catch (err) {
-    toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' });
+    toast.add({ title: 'Save failed', description: errorMessage(err), color: 'error' });
   } finally {
     savingInstructions.value = false;
   }
@@ -309,7 +309,7 @@ async function saveLanguage() {
     await refresh();
     toast.add({ title: 'Response language saved', color: 'success' });
   } catch (err) {
-    toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' });
+    toast.add({ title: 'Save failed', description: errorMessage(err), color: 'error' });
   } finally {
     savingLanguage.value = false;
   }
@@ -338,7 +338,7 @@ async function testRole(role: RoleKey) {
       toast.add({ title: 'Connection successful', description: `Model: ${res.model}`, color: 'success' });
     else toast.add({ title: 'Connection failed', description: res.error || 'Unknown error', color: 'error' });
   } catch (err) {
-    toast.add({ title: 'Connection failed', description: String((err as Error)?.message ?? err), color: 'error' });
+    toast.add({ title: 'Connection failed', description: errorMessage(err), color: 'error' });
   } finally {
     testingRoles[role] = false;
   }
@@ -378,7 +378,7 @@ async function saveLimits() {
   } catch (e) {
     toast.add({
       title: 'Failed to save context limits',
-      description: String((e as Error)?.message ?? e),
+      description: errorMessage(e),
       color: 'error',
     });
   } finally {
