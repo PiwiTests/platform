@@ -111,6 +111,9 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
           stream.resume();
           return;
         }
+        // Reserve this part's arrival slot now; writes flush out of order, so
+        // filling the slot on completion keeps `files` in the order parts arrived.
+        const index = fileWrites.length;
         const tmpPath = join(dir, `${randomBytes(8).toString('hex')}`);
         let truncated = false;
         stream.on('limit', () => {
@@ -124,13 +127,13 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
             if (totalBytes > options.maxTotalBytes) {
               throw apiError({ statusCode: 413, message: 'Upload exceeded the size limit' });
             }
-            files.push({
+            files[index] = {
               field,
               filename: info.filename,
               path: tmpPath,
               size: ws.bytesWritten,
               mimeType: info.mimeType,
-            });
+            };
           }),
         );
       });
