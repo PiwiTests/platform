@@ -149,6 +149,16 @@ The `commitlint` CI check lints **every commit in the PR range**, so one bad mes
 `npx commitlint --from HEAD~<n> --to HEAD` from the repo root, and never bypass the husky `commit-msg` hook with
 `--no-verify`.
 
+### Release notes
+
+release-please generates `CHANGELOG.md` and creates each GitHub release with one raw entry per commit — so squash and
+cherry-pick leave duplicate lines. The `Tidy release notes` workflow (`.github/workflows/changelog-polish.yml`) keeps
+every release body non-empty and duplicate-free deterministically, and never overwrites hand-authored notes. For the
+polished, human-facing format (the [v0.26.0](https://github.com/PiwiTests/platform/releases/tag/v0.26.0) style — a
+narrative intro, `## ✨ Highlights`, thematic features), run the `release-notes` skill
+(`.claude/skills/release-notes/SKILL.md`); both it and the workflow share `scripts/release-notes.mjs` for
+de-duplication and publishing by tag.
+
 ### Cross-platform shell commands
 
 Any command shown to a **user** (docs, `*.md`, in-app `CodeBlock` snippets) must work on Windows too. Prefer a portable
