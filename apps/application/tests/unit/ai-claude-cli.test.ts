@@ -10,6 +10,7 @@ import {
   isDesktopRuntime,
   resetClaudeCliCache,
   resolveClaudeBinary,
+  resolveClaudeBinaryDeep,
   streamClaudeCli,
 } from '../../server/utils/ai-claude-cli';
 import type { ResolvedAiRole } from '../../types/api';
@@ -40,8 +41,9 @@ process.stdin.on('end', () => {
       usage: { input_tokens: 11, output_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 4 },
       modelUsage: { 'claude-sonnet-5': {} } });
   } else {
+    const body = input.trim() === 'ENVCHECK' ? 'API_KEY=' + (process.env.ANTHROPIC_API_KEY || 'unset') : 'ECHO:' + input.trim();
     process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false,
-      result: 'ECHO:' + input.trim(), total_cost_usd: 0.02,
+      result: body, total_cost_usd: 0.02,
       usage: { input_tokens: 5, output_tokens: 7, cache_read_input_tokens: 1, cache_creation_input_tokens: 2 },
       modelUsage: { 'claude-opus-5': {} } }));
   }
@@ -89,6 +91,56 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
     expect(resolveClaudeBinary()).toBeNull();
   });
 
+  // Blank out every source the quick scan reads so it genuinely finds nothing,
+  // then restore them. (The test runner sets npm_config_prefix to the Node
+  // install, whose bin holds the real `claude`.)
+  function withNoQuickScanHit(run: () => void | Promise<void>): () => Promise<void> {
+    return async () => {
+      const saved = {
+        PATH: process.env.PATH,
+        npm_config_prefix: process.env.npm_config_prefix,
+        PREFIX: process.env.PREFIX,
+        SHELL: process.env.SHELL,
+      };
+      try {
+        delete process.env.PIWI_CLAUDE_CLI_PATH;
+        process.env.PATH = '';
+        delete process.env.npm_config_prefix;
+        delete process.env.PREFIX;
+        resetClaudeCliCache();
+        await run();
+      } finally {
+        Object.assign(process.env, saved);
+        delete process.env.STUB_PATH;
+      }
+    };
+  }
+
+  it(
+    'does not cache a not-found result, so a later resolve can recover',
+    withNoQuickScanHit(() => {
+      expect(resolveClaudeBinary()).toBeNull();
+      // The user pins the path; the next resolve must not be stuck on the null.
+      process.env.PIWI_CLAUDE_CLI_PATH = stubPath;
+      expect(resolveClaudeBinary()).toBe(stubPath);
+    }),
+  );
+
+  it(
+    'falls back to the login shell PATH when the quick scan misses',
+    withNoQuickScanHit(async () => {
+      // A POSIX-sh stub that ignores its args and prints STUB_PATH as the shell PATH.
+      const shellStub = join(dir, 'shell');
+      writeFileSync(shellStub, '#!/bin/sh\nprintf %s "$STUB_PATH"\n');
+      chmodSync(shellStub, 0o755);
+      process.env.SHELL = shellStub; // the login shell "knows" where claude is
+      process.env.STUB_PATH = dir;
+
+      expect(resolveClaudeBinary()).toBeNull();
+      expect(await resolveClaudeBinaryDeep()).toBe(stubPath);
+    }),
+  );
+
   it('reports version and signed-in status without spending tokens', async () => {
     const status = await getClaudeCliStatus({ force: true });
     expect(status.available).toBe(true);
@@ -135,6 +187,16 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
     expect(data.model).toBe('claude-sonnet-5');
     expect(data.outputTokens).toBe(2);
     expect(data.costUsd).toBe(0.01);
+  });
+
+  it('does not leak ANTHROPIC_API_KEY to the CLI (keeps subscription billing)', async () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-should-be-stripped';
+    try {
+      const res = await callClaudeCli(role, { system: 'x', user: 'ENVCHECK' });
+      expect(res.text).toBe('API_KEY=unset');
+    } finally {
+      delete process.env.ANTHROPIC_API_KEY;
+    }
   });
 
   it('refuses to generate when the CLI is not signed in', async () => {
