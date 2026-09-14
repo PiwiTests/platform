@@ -101,6 +101,10 @@ const title = computed(() => props.title ?? tc.value?.title ?? '');
 const status = computed(() => props.status ?? tc.value?.status ?? 'unknown');
 const failed = computed(() => isFailedStatus(status.value));
 const href = computed(() => props.href ?? (tc.value ? `/test-run-cases/${tc.value.executionId}` : '#'));
+// A live-streamed row carries a negative placeholder executionId until its
+// run-case row is persisted — render its title as plain text, not a link to
+// some unrelated execution that happens to own the fabricated id.
+const linkable = computed(() => (props.href != null ? true : tc.value ? tc.value.executionId > 0 : true));
 const errorText = computed(() => props.error ?? tc.value?.error ?? null);
 const stepsData = computed(() => props.steps ?? tc.value?.steps ?? null);
 const locationPath = computed(() => props.location ?? tc.value?.location ?? null);
@@ -162,12 +166,14 @@ const clusterLabel = computed(() =>
         <div class="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0">
           <!-- Neutral title: a primary-green title reads as "passed" on a failed row. -->
           <a
+            v-if="linkable"
             :href="href"
             class="text-highlighted hover:text-primary hover:underline font-medium break-words min-w-0"
             :title="title"
             @click.prevent="selectOnClick ? emit('select') : navigateTo(href)"
             >{{ title }}</a
           >
+          <span v-else class="text-highlighted font-medium break-words min-w-0" :title="title">{{ title }}</span>
           <BadgeGroup :badges="badges" :max="badgeMax" />
 
           <div class="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 ml-auto min-w-0 text-xs text-muted">

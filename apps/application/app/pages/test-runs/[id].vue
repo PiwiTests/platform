@@ -133,7 +133,10 @@ function flushPendingEvents() {
         liveTestCases.value = [
           ...liveTestCases.value,
           {
-            executionId: liveTestCases.value.length + 1,
+            // The persisted execution row only exists once the test completes —
+            // a unique negative placeholder keeps the row keyed (and unlinked)
+            // until test-completed delivers the real id.
+            executionId: -(liveTestCases.value.length + 1),
             testCaseId: 0,
             title: d.title,
             filePath: d.filePath,
@@ -162,6 +165,8 @@ function flushPendingEvents() {
         startedAt?: number;
         browser?: { projectName?: string } | null;
         stepCategory?: string | null;
+        executionId?: number | null;
+        testCaseId?: number | null;
       };
       // Ignore hook/fixture step-end events (published as `test-completed`
       // with a `stepCategory`) — they are not test cases. The hook segments
@@ -187,6 +192,10 @@ function flushPendingEvents() {
             workerIndex: d.workerIndex ?? existing.workerIndex,
             startedAt: d.startedAt ? d.startedAt : existing.startedAt,
             browser: d.browser ?? existing.browser,
+            // The real ids replace the placeholder once persistence happens;
+            // a duplicate event without ids keeps whatever the row already has.
+            executionId: d.executionId ?? existing.executionId,
+            testCaseId: d.testCaseId ?? existing.testCaseId,
           };
           liveTestCases.value = copy;
           displayTestCases.value = [...copy];
@@ -196,8 +205,8 @@ function flushPendingEvents() {
         liveTestCases.value = [
           ...liveTestCases.value,
           {
-            executionId: liveTestCases.value.length + 1,
-            testCaseId: 0,
+            executionId: d.executionId ?? -(liveTestCases.value.length + 1),
+            testCaseId: d.testCaseId ?? 0,
             title: d.title,
             filePath: d.filePath,
             suitePath: d.suitePath ?? undefined,

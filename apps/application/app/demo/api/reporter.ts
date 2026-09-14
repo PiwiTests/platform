@@ -559,7 +559,7 @@ export async function persistRunCases(
   testRunId: number,
   cases: RunCaseInput[],
   deduplicate?: boolean,
-): Promise<Array<{ id: number; status: string }>> {
+): Promise<Array<{ id: number; status: string; testCaseId: number; inputIndex: number }>> {
   if (cases.length === 0) return [];
 
   const suiteIdMap = await resolveSuites(db, projectId, cases);
@@ -590,6 +590,9 @@ export async function persistRunCases(
   }
 
   const runCasesRows: Array<typeof testRunsCases.$inferInsert> = [];
+  // Input index of each row in `runCasesRows`, so inserted rows can be mapped
+  // back to the batch entry that produced them after the insert.
+  const rowInputIndices: number[] = [];
   const networkRequestBuilders: NetworkRequestBuilder[] = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
   const pendingClusters = new Map<string, PendingCluster>();
@@ -600,7 +603,8 @@ export async function persistRunCases(
   }> = [];
   const caseMetaSnapshots = new Map<number, CaseMetaSnapshot>();
 
-  for (const c of cases) {
+  for (let i = 0; i < cases.length; i++) {
+    const c = cases[i]!;
     const suitePath = joinSuitePath(c.suitePath);
     const cacheKey = `${c.filePath}::${suitePath}::${c.title}`;
     let shared = existingCaseMap.get(cacheKey);
@@ -703,6 +707,7 @@ export async function persistRunCases(
       didNotRunReason: c.didNotRunReason ?? null,
       blockedBy: c.blockedBy ?? null,
     });
+    rowInputIndices.push(i);
 
     const nrItems = buildNetworkRequestItems(c.networkRequests as Array<Record<string, unknown>> | null | undefined);
     networkRequestBuilders.push({ items: nrItems });
@@ -718,11 +723,32 @@ export async function persistRunCases(
 
   // ON CONFLICT DO NOTHING + the (run, case, retries, browser) unique index keep
   // this idempotent across batch retries and same-test-different-browser rows.
-  const insertedCases = await db
-    .insert(testRunsCases)
-    .values(runCasesRows)
-    .onConflictDoNothing()
-    .returning({ id: testRunsCases.id, status: testRunsCases.status });
+  const insertedCases = await db.insert(testRunsCases).values(runCasesRows).onConflictDoNothing().returning({
+    id: testRunsCases.id,
+    status: testRunsCases.status,
+    testCaseId: testRunsCases.testCaseId,
+    retries: testRunsCases.retries,
+    browserName: testRunsCases.browserName,
+  });
+
+  // The unique (run, case, retries, browser) index makes this tuple unique
+  // within a batch, so each inserted row maps back to exactly one input entry
+  // even when deduplication skipped duplicates in between.
+  const tupleToInputIndex = new Map<string, number>();
+  runCasesRows.forEach((row, k) => {
+    const tuple = `${row.testCaseId}\x00${row.retries ?? 0}\x00${row.browserName ?? ''}`;
+    tupleToInputIndex.set(tuple, rowInputIndices[k]!);
+  });
+
+  const result = insertedCases.map((r) => {
+    const tuple = `${r.testCaseId}\x00${r.retries ?? 0}\x00${r.browserName ?? ''}`;
+    return {
+      id: r.id,
+      status: r.status,
+      testCaseId: r.testCaseId,
+      inputIndex: tupleToInputIndex.get(tuple) ?? -1,
+    };
+  });
 
   const nrValues = buildNetworkRequestInsertValues(networkRequestBuilders, insertedCases, testRunId);
   if (nrValues.length > 0) {
@@ -732,7 +758,7 @@ export async function persistRunCases(
   await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
   await syncTestCaseMetadata(db, caseMetaSnapshots);
 
-  return insertedCases;
+  return result;
 }
 
 /** POST /api/test-runs/:id/events */
@@ -887,7 +913,15 @@ export async function apiPostRunEvents(
 
   const updatedRun = updatedRuns[0] ?? testRun;
 
-  for (const tc of parsedEvents) {
+  // The persisted execution id rides along so the live run page can deep-link
+  // each row to its real case page instead of a fabricated id (mirrors the
+  // server's events handler).
+  const persistedByInputIndex = new Map(
+    insertedRunCases.filter((r) => r.inputIndex >= 0).map((r) => [r.inputIndex, r]),
+  );
+
+  for (const [index, tc] of parsedEvents.entries()) {
+    const persisted = persistedByInputIndex.get(index);
     publishDemoRunEvent(id, {
       type: 'test-completed',
       data: {
@@ -904,6 +938,8 @@ export async function apiPostRunEvents(
         shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
         browser: tc.browser ?? null,
+        executionId: persisted?.id ?? null,
+        testCaseId: persisted?.testCaseId ?? null,
       },
     });
   }

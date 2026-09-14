@@ -151,6 +151,78 @@ test.describe.serial('Streaming API Tests', () => {
 
   // ── /stream (SSE) ───────────────────────────────────────────────────────────
 
+  test('streamed test-completed events carry the persisted execution id', async ({ request, baseURL }) => {
+    // Subscribe before posting so the in-memory bus has a live listener.
+    const controller = new AbortController();
+    const response = await fetch(`${baseURL}/api/test-runs/${runId}/stream`, {
+      signal: controller.signal,
+    });
+    expect(response.ok).toBeTruthy();
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    let streamed: { executionId: number | null; testCaseId: number | null } | null = null;
+
+    try {
+      const postRes = await request.post(`/api/test-runs/${runId}/events`, {
+        data: {
+          streamToken,
+          testCases: [
+            {
+              type: 'complete',
+              title: 'streamed deep-link test',
+              status: 'failed',
+              duration: 300,
+              location: 'tests/streaming.spec.ts:30:3',
+              error: 'Expected true but got false',
+              retries: 0,
+            },
+          ],
+        },
+      });
+      expect(postRes.ok()).toBeTruthy();
+
+      while (streamed === null) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+        for (const chunk of text.split('\n\n')) {
+          const line = chunk.split('\n').find((l) => l.startsWith('data:'));
+          if (!line) continue;
+          let parsed: { type?: string; data?: Record<string, unknown> };
+          try {
+            parsed = JSON.parse(line.slice('data:'.length).trim());
+          } catch {
+            continue;
+          }
+          if (parsed.type === 'test-completed' && parsed.data?.title === 'streamed deep-link test') {
+            streamed = {
+              executionId: typeof parsed.data.executionId === 'number' ? parsed.data.executionId : null,
+              testCaseId: typeof parsed.data.testCaseId === 'number' ? parsed.data.testCaseId : null,
+            };
+          }
+        }
+        // Hard cap so a regression cannot hang the suite
+        if (text.length > 65536) break;
+      }
+    } finally {
+      reader.releaseLock();
+      controller.abort();
+    }
+
+    expect(streamed).not.toBeNull();
+    expect(streamed!.executionId).toBeGreaterThan(0);
+    expect(streamed!.testCaseId).toBeGreaterThan(0);
+
+    // The streamed id is the same execution the run's REST payload reports.
+    const runResponse = await request.get(`/api/test-runs/${runId}`);
+    expect(runResponse.ok()).toBeTruthy();
+    const run = await runResponse.json();
+    const matching = run.testCases.find((tc: { title: string }) => tc.title === 'streamed deep-link test');
+    expect(matching.executionId).toBe(streamed!.executionId);
+  });
+
   test('GET /api/test-runs/:id/stream sends an init event', async ({ baseURL }) => {
     // Use native fetch with AbortController so we can read just the init event
     // without waiting for the infinite SSE stream to close.
