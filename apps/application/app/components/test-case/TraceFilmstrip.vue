@@ -2,8 +2,8 @@
 /**
  * A filmstrip of the page *before* each step, from this run's trace screen
  * snapshots (Playwright 1.63 `snapshots.screen`). One thumbnail per step in
- * order, the failing step marked. Renders nothing when the trace carries no
- * screen snapshots.
+ * order, the failing step marked, each opening full-screen in the shared
+ * lightbox. Renders nothing when the trace carries no screen snapshots.
  */
 import { useTraceSnapshots } from '~/composables/useTraceSnapshots';
 
@@ -15,6 +15,12 @@ const { steps, hasScreen, snapshotUrl } = useTraceSnapshots(() => props.testRuns
 const frames = computed(() =>
   steps.value.filter((s) => s.screen.before).map((s) => ({ ...s, src: snapshotUrl(s.callId, 'screen', 'before') })),
 );
+
+// The same list, shaped for the lightbox (a frame's index addresses it there).
+const lightboxImages = computed(() =>
+  frames.value.map((frame, i) => ({ src: frame.src, name: `Step ${i + 1}: ${frame.title}` })),
+);
+const lightboxIndex = ref<number | null>(null);
 </script>
 
 <template>
@@ -26,12 +32,13 @@ const frames = computed(() =>
     <ol class="flex gap-2 overflow-x-auto pb-1">
       <li v-for="(frame, i) in frames" :key="frame.callId" class="shrink-0">
         <figure class="w-40 space-y-1">
-          <img
+          <ZoomableImage
             :src="frame.src"
             :alt="`Page before step ${i + 1}: ${frame.title}`"
-            loading="lazy"
-            class="h-24 w-40 rounded border object-cover object-top"
-            :class="frame.failed ? 'border-red-500 ring-1 ring-red-500' : 'border-default'"
+            :failed="frame.failed"
+            frame-class="rounded"
+            img-class="h-24 w-full object-cover object-top"
+            @open="lightboxIndex = i"
           />
           <figcaption
             class="truncate text-[11px]"
@@ -43,5 +50,7 @@ const frames = computed(() =>
         </figure>
       </li>
     </ol>
+
+    <ScreenshotLightbox v-model="lightboxIndex" :images="lightboxImages" />
   </section>
 </template>
