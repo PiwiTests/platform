@@ -18,13 +18,13 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@commitlint/cli": "^21.2.1",
+    "@commitlint/cli": "^21.2.2",
     "@commitlint/config-conventional": "^21.2.0",
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.5.1",
     "@vitest/coverage-v8": "^4.1.10",
     "husky": "^9.0.0",
-    "oxfmt": "^0.59.0",
-    "oxlint": "^1.74.0",
+    "oxfmt": "^0.67.0",
+    "oxlint": "^1.82.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   }
