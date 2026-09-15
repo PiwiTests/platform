@@ -175,12 +175,22 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
     const res = await callClaudeCli(role, { system: 'be brief', user: 'ping' });
     expect(res.text).toBe('ECHO:ping');
     expect(res.model).toBe('claude-opus-5');
-    expect(res.inputTokens).toBe(5);
+    // input_tokens (5) + cache_creation (2) + cache_read (1) — the full prompt size.
+    expect(res.inputTokens).toBe(8);
     expect(res.outputTokens).toBe(7);
     expect(res.cacheReadInputTokens).toBe(1);
     expect(res.costUsd).toBe(0.02);
     expect(getUsageTotals().calls).toBe(before + 1);
     expect(getUsageTotals().costUsd).toBeCloseTo(0.02, 5);
+  });
+
+  it('counts cache tokens as input, so Claude Code cached context is not undercounted', async () => {
+    // Claude Code reports almost the entire prompt under cache_creation/cache_read
+    // and only a tiny `input_tokens` delta; the mapped input must be their sum.
+    const before = getUsageTotals().inputTokens;
+    const res = await callClaudeCli(role, { system: 'x', user: 'ping' });
+    expect(res.inputTokens).toBe(8); // 5 + 2 + 1
+    expect(getUsageTotals().inputTokens).toBe(before + 8);
   });
 
   it('streams text deltas then a done chunk with usage', async () => {
@@ -195,8 +205,10 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
     expect(text).toBe('Hello world');
     const done = chunks.find((c) => c.type === 'done');
     expect(done).toBeDefined();
-    const data = done!.data as { model: string; outputTokens: number; costUsd: number };
+    const data = done!.data as { model: string; inputTokens: number; outputTokens: number; costUsd: number };
     expect(data.model).toBe('claude-sonnet-5');
+    // input_tokens (11) + cache_creation (4) + cache_read (3).
+    expect(data.inputTokens).toBe(18);
     expect(data.outputTokens).toBe(2);
     expect(data.costUsd).toBe(0.01);
   });
