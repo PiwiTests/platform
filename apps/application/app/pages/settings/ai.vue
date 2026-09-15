@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { AiSettings, AiModelRole, ModelInfo, AiRoleConfigInput, SaveAiSettingsBody } from '~~/types/api';
-import type { RoleForm } from '~/components/settings/AiRoleConfigForm.vue';
+import type { AiSettings, AiModelRole, ModelInfo } from '~~/types/api';
+import { type RoleForm, buildAiSaveBody, parseRoleTemperature } from '~/utils/ai-settings-form';
 import { CONTEXT_LIMIT_FIELDS } from '#shared/ai-context-limits';
 import type { ContextLimits, ContextLimitField } from '#shared/ai-context-limits';
 import { pageEnvVars, getSettingsPage } from '~/utils/settings-metadata';
@@ -120,6 +120,7 @@ const ROLE_META = [
     optional: true,
     enableLabel: 'Semantic clustering',
     blurb: 'Embeds failures so semantically-similar errors group together (used by failure clustering).',
+    note: 'Embeddings need an OpenAI-compatible endpoint — neither the Anthropic API nor Claude Code (local) has an embeddings API, so those cannot be used here. A local server such as ollama or LM Studio works well for this.',
     reuseTargets: ['diagnosis', 'research'],
     modelPlaceholderAnthropic: '— Anthropic has no embeddings API —',
     modelPlaceholderOpenai: 'e.g. text-embedding-3-small',
@@ -165,6 +166,11 @@ const reuseOptionsByRole = computed<Record<RoleKey, Array<{ label: string; value
 
 const envManaged = computed(() => Boolean(settings.value?.envManaged));
 const aiEnvVars = pageEnvVars(getSettingsPage('ai'));
+
+// The required diagnosis role has no enable toggle — it is "configured" exactly
+// when a provider is selected. Drives the dependent auto-diagnose control (and
+// mirrors the save logic in ai-settings-form).
+const diagnosisConfigured = computed(() => Boolean(roles.diagnosis.provider));
 
 watch(
   settings,
@@ -218,53 +224,15 @@ function applyPreset(role: RoleKey, label: string) {
 }
 
 // ── Save ─────────────────────────────────────────────────────────────────────
-// Parse the free-text temperature field; blank means "provider default".
-// Range (0-2) is enforced server-side too — this only guards obviously bad input.
-function parseRoleTemperature(role: RoleKey, raw: string): number | undefined {
-  const trimmed = raw.trim();
-  if (trimmed === '') return undefined;
-  const n = Number(trimmed);
-  if (!Number.isFinite(n) || n < 0 || n > 2) {
-    throw new Error(`Role "${role}": temperature must be a number between 0 and 2`);
-  }
-  return n;
-}
-
-function roleBody(role: RoleKey): AiRoleConfigInput | null {
-  const r = roles[role];
-  if (!r.enabled) return null;
-  const temperature = parseRoleTemperature(role, r.temperature);
-  if (r.reuse) return { reuse: r.reuse, model: r.model || undefined, temperature };
-  const body: AiRoleConfigInput = {
-    provider: r.provider,
-    model: r.model || undefined,
-    baseUrl: r.baseUrl || undefined,
-    temperature,
-  };
-  if (r.apiKey !== '') body.apiKey = r.apiKey;
-  return body;
-}
-
 async function save() {
   saving.value = true;
   try {
-    // When env-managed, never send roles: null (would clear overrides).
-    // When diagnosis is disabled or missing provider in non-env mode, clear the config.
-    if (!envManaged && (!roles.diagnosis.enabled || !roles.diagnosis.provider)) {
-      await $fetch('/api/settings/ai', { method: 'PUT', body: { roles: null, autoDiagnose: autoDiagnose.value } });
-    } else {
-      await $fetch('/api/settings/ai', {
-        method: 'PUT',
-        body: {
-          roles: {
-            diagnosis: roleBody('diagnosis'),
-            research: roleBody('research'),
-            embedding: roleBody('embedding'),
-          },
-          autoDiagnose: autoDiagnose.value,
-        },
-      });
-    }
+    // buildAiSaveBody decides clear-vs-save: with no diagnosis provider (and not
+    // env-managed) it clears the config; otherwise it sends every configured
+    // role. The diagnosis role is required and has no enable toggle, so it counts
+    // as configured the moment a provider is picked — see the util for details.
+    const body = buildAiSaveBody(roles, { envManaged: envManaged.value, autoDiagnose: autoDiagnose.value });
+    await $fetch('/api/settings/ai', { method: 'PUT', body });
     await refresh();
     for (const meta of ROLE_META) roles[meta.key].apiKey = '';
     toast.add({ title: 'Settings saved', color: 'success' });
@@ -430,7 +398,7 @@ function resetLimits() {
 
         <SettingsField label="Auto-diagnose" help="settings.auto-diagnose" :env-managed="envManaged">
           <div class="flex items-center gap-3">
-            <USwitch v-model="autoDiagnose" :disabled="envManaged || !roles.diagnosis.enabled" />
+            <USwitch v-model="autoDiagnose" :disabled="envManaged || !diagnosisConfigured" />
             <span class="text-sm text-gray-500">
               Automatically diagnose new failure clusters when a run finishes — up to 3 clusters per run (research +
               diagnosis call each), plus one batched call to title new clusters
