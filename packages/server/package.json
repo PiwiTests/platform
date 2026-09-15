@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/server",
-  "version": "0.30.0",
+  "version": "0.30.1",
   "description": "Self-hosted dashboard that keeps and explains your Playwright test results — run with npx @piwitests/server",
   "type": "module",
   "bin": {
