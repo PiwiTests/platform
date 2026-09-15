@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/core",
-  "version": "0.30.2",
+  "version": "0.31.0",
   "description": "Pure cross-cutting logic and wire shapes shared by the Piwi Dashboard app and the Playwright reporter",
   "private": true,
   "type": "module",
