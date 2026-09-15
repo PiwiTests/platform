@@ -9,17 +9,10 @@ import type { AiModelRole, ModelInfo } from '~~/types/api';
 import type { HelpTopicKey } from '~/utils/help-content';
 import { helpEnvVars } from '~/utils/help-content';
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
+import type { RoleForm } from '~/utils/ai-settings-form';
 
-export interface RoleForm {
-  enabled: boolean;
-  reuse: AiModelRole | null;
-  provider: string;
-  model: string;
-  baseUrl: string;
-  apiKey: string;
-  /** OpenAI-compat only: sampling temperature override, kept as a string like the other inputs. Empty means "provider default". */
-  temperature: string;
-}
+// Re-exported for existing importers; the canonical definition lives in the util.
+export type { RoleForm };
 
 interface RoleMeta {
   key: AiModelRole;
@@ -29,6 +22,8 @@ interface RoleMeta {
   optional: boolean;
   enableLabel: string;
   blurb: string;
+  /** Optional standing explanation shown when the role is expanded (e.g. why embeddings are OpenAI-only). */
+  note?: string;
   reuseTargets: readonly AiModelRole[];
   modelPlaceholderAnthropic: string;
   modelPlaceholderOpenai: string;
@@ -86,6 +81,11 @@ const roleEnvVars = computed<PiwiEnvVarName[]>(() => helpEnvVars(props.meta.help
     </div>
 
     <template v-if="!meta.optional || model.enabled">
+      <div v-if="meta.note" class="flex items-start gap-2 rounded-md bg-elevated/50 px-3 py-2 text-sm text-muted">
+        <UIcon name="i-lucide-info" class="size-4 mt-0.5 shrink-0 text-primary" />
+        <span>{{ meta.note }}</span>
+      </div>
+
       <UFormField v-if="meta.reuseTargets.length" label="Provider source">
         <USelect v-model="reuseModel" :items="reuseOptions" :disabled="disabled && !envManaged" class="w-full" />
       </UFormField>
