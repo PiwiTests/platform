@@ -20,6 +20,28 @@ function getFreePort(): Promise<number> {
   });
 }
 
+/**
+ * A per-run tag of fingerprint-safe letters, appended to the seeded error so
+ * every suite attempt lands on a brand-new failure cluster.
+ *
+ * The alphabet deliberately excludes digits and the hex letters a–f: the error
+ * fingerprint (shared/error-fingerprint.ts) masks numbers and hex runs to
+ * `<N>`/`<HASH>`, so a numeric or hex token would normalize away and collide.
+ *
+ * Why it matters: this is a `describe.serial` group, so Playwright re-runs
+ * `beforeAll` when it retries the group. With a fixed error string the retry
+ * reused the same fingerprint cluster and inherited the known-issue link the
+ * previous attempt had filed against it — which made "finds no existing issue
+ * yet" (existing.length grew past 0) and "creating files the issue" (the create
+ * deduped to the stale link, so mock.created() stayed 0) flaky.
+ */
+function uniqueFailureTag(): string {
+  const alphabet = 'ghijklmnopqrstuvwxyz';
+  let tag = '';
+  for (let i = 0; i < 12; i++) tag += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return tag;
+}
+
 /** A mock Jira Cloud REST v3 server that mints PROJ-<n> keys and remembers them. */
 function startMockJira(port: number): {
   server: http.Server;
@@ -114,11 +136,14 @@ test.describe.serial('Integrations — create an issue', () => {
   let connectionId = 0;
   let clusterId = 0;
   let createdKey = '';
+  // Regenerated on every beforeAll run so a serial-group retry gets fresh clusters.
+  let runTag = '';
 
   test.beforeAll(async ({ request }) => {
     const port = await getFreePort();
     mock = startMockJira(port);
     baseUrl = `http://127.0.0.1:${port}`;
+    runTag = uniqueFailureTag();
 
     const created = await request.post('/api/integrations/connections', {
       data: {
@@ -147,7 +172,7 @@ test.describe.serial('Integrations — create an issue', () => {
             status: 'failed',
             duration: 500,
             location: 'checkout.spec.ts:3:1',
-            error: 'TimeoutError: locator.click: Timeout 5000ms exceeded.',
+            error: `TimeoutError: locator.click: Timeout 5000ms exceeded. [${runTag}]`,
           },
         ],
       },
@@ -274,7 +299,7 @@ test.describe.serial('Integrations — create an issue', () => {
             status: 'failed',
             duration: 400,
             location: 'cart.spec.ts:9:1',
-            error: "Error: expect(received).toBeVisible()\n  - waiting for getByRole('listitem')",
+            error: `Error: expect(received).toBeVisible()\n  - waiting for getByRole('listitem') [${runTag}]`,
           },
         ],
       },

@@ -75,6 +75,8 @@ export default eventHandler(async (event) => {
       try {
         const existingCases = await db
           .select({
+            id: testRunsCases.id,
+            testCaseId: testRunsCases.testCaseId,
             title: testCases.title,
             status: testRunsCases.status,
             duration: testRunsCases.duration,
@@ -108,6 +110,8 @@ export default eventHandler(async (event) => {
               browser: tc.browser ?? null,
               didNotRunReason: tc.didNotRunReason ?? null,
               blockedBy: tc.blockedBy ?? null,
+              executionId: tc.id,
+              testCaseId: tc.testCaseId,
             },
             seq: 0, // Catch-up events have seq 0
             timestamp: Date.now(),

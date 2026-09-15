@@ -289,7 +289,10 @@ async function syncTestCaseMetadata(db: DB, incoming: Map<number, CaseMetaSnapsh
  *
  * Shared by the submit, upload and streaming-events endpoints. Returns the
  * inserted junction rows in input order so callers can link attachments (e.g.
- * trace files) by index.
+ * trace files) by index. Each entry also carries the index of the input case
+ * that produced it, so the streaming endpoint can attach the persisted
+ * execution id to the right `test-completed` event even when duplicates were
+ * skipped.
  *
  * Deduplication is enforced by a DB unique index on
  * `(test_run_id, test_case_id, retries, browser)` — the `ON CONFLICT DO NOTHING`
@@ -359,7 +362,7 @@ export async function persistRunCases(
   projectId: number,
   testRunId: number,
   cases: RunCaseInput[],
-): Promise<Array<{ id: number; status: string }>> {
+): Promise<Array<{ id: number; status: string; testCaseId: number; inputIndex: number }>> {
   if (cases.length === 0) return [];
 
   const limits = resolveIngestLimits();
@@ -380,6 +383,9 @@ export async function persistRunCases(
   );
 
   const runCasesRows: Array<typeof testRunsCases.$inferInsert> = [];
+  // Input index of each row in `runCasesRows`, so inserted rows can be mapped
+  // back to the batch entry that produced them after the insert.
+  const rowInputIndices: number[] = [];
   // Capped payload strings per row, deduplicated into case_payloads after the
   // loop; the junction rows store only the payload ids (inline columns stay
   // null on new rows — readers coalesce via inlineCasePayloads).
@@ -510,6 +516,7 @@ export async function persistRunCases(
       didNotRunReason: c.didNotRunReason ?? null,
       blockedBy: c.blockedBy ?? null,
     });
+    rowInputIndices.push(i);
 
     const nrItems = buildNetworkRequestItems(c.networkRequests as Array<Record<string, unknown>> | null | undefined);
     networkRequestBuilders.push({ items: nrItems });
@@ -541,11 +548,32 @@ export async function persistRunCases(
     if (fingerprint) row.failureClusterId = clusterIds.get(fingerprint.fingerprint) ?? null;
   });
 
-  const insertedCases = await db
-    .insert(testRunsCases)
-    .values(runCasesRows)
-    .onConflictDoNothing()
-    .returning({ id: testRunsCases.id, status: testRunsCases.status });
+  const insertedCases = await db.insert(testRunsCases).values(runCasesRows).onConflictDoNothing().returning({
+    id: testRunsCases.id,
+    status: testRunsCases.status,
+    testCaseId: testRunsCases.testCaseId,
+    retries: testRunsCases.retries,
+    browserName: testRunsCases.browserName,
+  });
+
+  // The unique (run, case, retries, browser) index makes this tuple unique
+  // within a batch, so each inserted row maps back to exactly one input entry
+  // even when ON CONFLICT DO NOTHING skipped duplicates in between.
+  const tupleToInputIndex = new Map<string, number>();
+  runCasesRows.forEach((row, k) => {
+    const tuple = `${row.testCaseId}\x00${row.retries ?? 0}\x00${row.browserName ?? ''}`;
+    tupleToInputIndex.set(tuple, rowInputIndices[k]!);
+  });
+
+  const result = insertedCases.map((r) => {
+    const tuple = `${r.testCaseId}\x00${r.retries ?? 0}\x00${r.browserName ?? ''}`;
+    return {
+      id: r.id,
+      status: r.status,
+      testCaseId: r.testCaseId,
+      inputIndex: tupleToInputIndex.get(tuple) ?? -1,
+    };
+  });
 
   const nrValues = buildNetworkRequestInsertValues(networkRequestBuilders, insertedCases, testRunId);
   if (nrValues.length > 0) {
@@ -555,5 +583,5 @@ export async function persistRunCases(
   await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
   await syncTestCaseMetadata(db, caseMetaSnapshots);
 
-  return insertedCases;
+  return result;
 }
