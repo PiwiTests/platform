@@ -25,6 +25,7 @@ import { toWireTestCase } from '../internal/submit/serializer.js';
 import {
   mergeAnnotations,
   classifyStatus,
+  expectedFailureError,
   resolveUnrunReason,
   linkBlockedTests,
 } from '../internal/collect/skip-classify.js';
@@ -357,7 +358,9 @@ export class PiwiDashboardReporter {
       // Effective per-test timeout (reflects project config + describe-level
       // overrides). `0` means unbounded; kept as-is so the dashboard can flag it.
       timeout: test.timeout ?? null,
-      error: buildErrorText(result),
+      // A `test.fail()` test that passed is now `failed` with no recorded error;
+      // Playwright reports the same line, so synthesize it.
+      error: expectedFailureError(result.status, annotations) ?? buildErrorText(result),
       retries: result.retry,
       attempts: attempts.map((a) => ({ ...a })),
       workerIndex: workerIndexOf(result),
