@@ -178,6 +178,7 @@ export function resetClaudeCliCache(): void {
   cachedBinary = undefined;
   cachedShellPath = undefined;
   cachedStatus = null;
+  supportedFlags = undefined;
 }
 
 /**
@@ -401,21 +402,53 @@ interface ClaudeCallOutcome extends AiCallResult {
   costUsd: number | null;
 }
 
+// Some flags are version-gated: `--restricted` (added after 2.1.220) and
+// `--strict-mcp-config` don't exist on older installs and error as "unknown
+// option". Detect what the installed binary accepts from `claude --help` and
+// only pass those; cached for the process, empty on failure (fewest flags).
+let supportedFlags: Set<string> | undefined;
+
+async function getSupportedFlags(binary: string): Promise<Set<string>> {
+  if (supportedFlags) return supportedFlags;
+  const res = await runClaude(binary, ['--help'], { timeoutMs: PROBE_TIMEOUT_MS });
+  const flags = new Set<string>();
+  for (const match of res.stdout.matchAll(/--[a-z][a-z0-9-]+/g)) flags.add(match[0]);
+  supportedFlags = flags;
+  return flags;
+}
+
 /**
- * Base CLI args shared by the JSON and streaming calls. The system prompt fully
- * replaces Claude Code's default (so the model behaves like the API providers'
- * plain assistant); `--restricted` and `--strict-mcp-config` keep it from
- * touching the machine, and the temp cwd keeps project files out of context.
- * The JSON schema is inlined into the system prompt (as the OpenAI path does)
- * since the CLI has no structured-output flag.
+ * CLI args for a generation. The system prompt fully replaces Claude Code's
+ * default (so the model behaves like the API providers' plain assistant); the
+ * temp cwd keeps project files out of context; the JSON schema is inlined into
+ * the system prompt (as the OpenAI path does) since the CLI has no
+ * structured-output flag. Hardening/streaming flags are added only when the
+ * installed CLI advertises them, so older versions don't reject the call.
  */
-function baseArgs(config: ResolvedAiRole, opts: AiCallOptions): string[] {
+async function buildArgs(
+  binary: string,
+  config: ResolvedAiRole,
+  opts: AiCallOptions,
+  stream: boolean,
+): Promise<string[]> {
+  const supported = await getSupportedFlags(binary);
+  const has = (flag: string) => supported.has(flag);
+
   const system = opts.jsonSchema
     ? `${opts.system}\n\nRespond ONLY with a JSON object matching this schema, with no prose and no markdown fences:\n${JSON.stringify(opts.jsonSchema)}`
     : opts.system;
 
-  const args = ['-p', '--system-prompt', system, '--restricted', '--strict-mcp-config'];
+  const args = ['-p', '--output-format', stream ? 'stream-json' : 'json'];
+  if (stream) {
+    // Partial messages give token-by-token deltas; a CLI without the flag still
+    // emits the final result line, which the stream parser falls back to.
+    if (has('--verbose')) args.push('--verbose');
+    if (has('--include-partial-messages')) args.push('--include-partial-messages');
+  }
+  args.push('--system-prompt', system);
   if (config.model) args.push('--model', config.model);
+  if (has('--restricted')) args.push('--restricted');
+  if (has('--strict-mcp-config')) args.push('--strict-mcp-config');
   return args;
 }
 
@@ -448,7 +481,7 @@ async function assertReady(): Promise<string> {
 /** Non-streaming generation. */
 export async function callClaudeCli(config: ResolvedAiRole, opts: AiCallOptions): Promise<AiCallResult> {
   const binary = await assertReady();
-  const args = ['--output-format', 'json', ...baseArgs(config, opts)];
+  const args = await buildArgs(binary, config, opts, false);
 
   const res = await runClaude(binary, args, { input: opts.user, timeoutMs: GENERATION_TIMEOUT_MS });
   if (res.timedOut) throw new Error('The Claude CLI timed out.');
@@ -486,7 +519,7 @@ interface StreamJsonLine {
  */
 export async function* streamClaudeCli(config: ResolvedAiRole, opts: AiCallOptions): AsyncGenerator<StreamChunk> {
   const binary = await assertReady();
-  const args = ['--output-format', 'stream-json', '--include-partial-messages', '--verbose', ...baseArgs(config, opts)];
+  const args = await buildArgs(binary, config, opts, true);
 
   const queue: StreamChunk[] = [];
   let final: StreamJsonLine | null = null;

@@ -23,6 +23,13 @@ const STUB = `#!/usr/bin/env node
 const args = process.argv.slice(2);
 const outFmt = args[args.indexOf('--output-format') + 1];
 if (args.includes('--version')) { process.stdout.write('9.9.9 (stub)\\n'); process.exit(0); }
+if (args.includes('--help')) {
+  // STUB_OLD models a pre-\\u2011--restricted CLI: those flags are absent from --help.
+  const base = ['--print', '--output-format', '--system-prompt', '--model', '--verbose', '--include-partial-messages'];
+  const extra = process.env.STUB_OLD ? [] : ['--restricted', '--strict-mcp-config'];
+  process.stdout.write('Usage: claude [options]\\nOptions:\\n  ' + base.concat(extra).join('\\n  ') + '\\n');
+  process.exit(0);
+}
 if (args[0] === 'auth' && args[1] === 'status') {
   const loggedIn = process.env.STUB_LOGGED_IN !== '0';
   process.stdout.write(JSON.stringify({ loggedIn, authMethod: 'oauth_token', apiProvider: 'firstParty' }));
@@ -41,6 +48,10 @@ process.stdin.on('end', () => {
       usage: { input_tokens: 11, output_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 4 },
       modelUsage: { 'claude-sonnet-5': {} } });
   } else {
+    if (process.env.STUB_OLD && args.includes('--restricted')) {
+      process.stderr.write("error: unknown option '--restricted'\\n");
+      process.exit(1);
+    }
     const body = input.trim() === 'ENVCHECK' ? 'API_KEY=' + (process.env.ANTHROPIC_API_KEY || 'unset') : 'ECHO:' + input.trim();
     process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false,
       result: body, total_cost_usd: 0.02,
@@ -65,6 +76,7 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
     chmodSync(stubPath, 0o755);
     process.env.PIWI_CLAUDE_CLI_PATH = stubPath;
     delete process.env.STUB_LOGGED_IN;
+    delete process.env.STUB_OLD;
     delete process.env.PIWI_DESKTOP_TOKEN;
     delete process.env.NUXT_PUBLIC_DESKTOP;
     resetClaudeCliCache();
@@ -187,6 +199,18 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
     expect(data.model).toBe('claude-sonnet-5');
     expect(data.outputTokens).toBe(2);
     expect(data.costUsd).toBe(0.01);
+  });
+
+  it('omits version-gated flags an older CLI does not advertise (no --restricted)', async () => {
+    // The stub errors on --restricted in this mode; the call must still succeed
+    // because buildArgs only passes flags the CLI's --help lists.
+    process.env.STUB_OLD = '1';
+    try {
+      const res = await callClaudeCli(role, { system: 'x', user: 'ping' });
+      expect(res.text).toBe('ECHO:ping');
+    } finally {
+      delete process.env.STUB_OLD;
+    }
   });
 
   it('does not leak ANTHROPIC_API_KEY to the CLI (keeps subscription billing)', async () => {
