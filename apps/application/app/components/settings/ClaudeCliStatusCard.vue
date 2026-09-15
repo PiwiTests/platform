@@ -171,7 +171,9 @@ async function onSignOut() {
           </div>
         </div>
         <p class="text-xs text-muted mt-2">
-          Cost is what the CLI reports at list rates; a Claude subscription bills it to your plan, not per call.
+          Input tokens count the whole prompt, including Claude Code's cached system context (reused across calls, so it
+          is large but cheap). Cost is what the CLI reports at list rates; a Claude subscription bills it to your plan,
+          not per call.
         </p>
       </div>
     </template>
