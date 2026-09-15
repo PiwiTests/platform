@@ -7,7 +7,8 @@
  * snapshots — it falls back to the run's failure screenshot (the page at the
  * moment it failed, which is this step) and the recovered failure-time ARIA
  * tree, so a failing step still shows its evidence on any Playwright version.
- * Renders nothing when neither a screenshot nor an ARIA tree is available.
+ * Every screenshot opens full-screen in the shared lightbox, matching the Screen
+ * tab. Renders nothing when neither a screenshot nor an ARIA tree is available.
  */
 import type { AttachmentInfo } from '~~/types/api';
 import { isImageFile } from '~/utils/text-format';
@@ -41,53 +42,56 @@ const fallbackShot = computed(() => {
   return image ? fileApiUrl(image.path, image.contentType, config.app?.baseURL) : null;
 });
 
+// The screenshots on show, in reading order — the same list feeds the frames and
+// the lightbox, so a frame's index addresses it in the enlarged view.
+const shots = computed<Array<{ src: string; name: string; failed: boolean }>>(() => {
+  if (hasTraceScreens.value) {
+    const list: Array<{ src: string; name: string; failed: boolean }> = [];
+    if (beforeSrc.value) list.push({ src: beforeSrc.value, name: 'Before the failing action', failed: false });
+    if (afterSrc.value) list.push({ src: afterSrc.value, name: 'At the failure', failed: true });
+    return list;
+  }
+  return fallbackShot.value ? [{ src: fallbackShot.value, name: 'At the failure', failed: true }] : [];
+});
+
 const ariaText = computed(() => failingAriaText.value ?? props.ariaSnapshot ?? null);
-const hasScreenshot = computed(() => hasTraceScreens.value || Boolean(fallbackShot.value));
+const hasScreenshot = computed(() => shots.value.length > 0);
 const hasAria = computed(() => Boolean(ariaText.value));
 const render = computed(() => hasScreenshot.value || hasAria.value);
 
+const lightboxIndex = ref<number | null>(null);
 const ariaOpen = ref(false);
 </script>
 
 <template>
-  <div v-if="render" class="rounded-lg border border-default bg-elevated/40 p-2.5 space-y-2">
-    <p class="text-xs font-medium text-muted">Page at the failing step</p>
+  <div v-if="render" class="space-y-2.5 rounded-lg border border-default bg-elevated/40 p-3">
+    <p class="flex items-center gap-1.5 text-xs font-medium text-muted">
+      <UIcon name="i-lucide-image" class="size-3.5 shrink-0" />
+      Page at the failing step
+    </p>
 
-    <div v-if="hasTraceScreens" class="grid gap-3" :class="beforeSrc && afterSrc ? 'sm:grid-cols-2' : ''">
-      <figure v-if="beforeSrc" class="min-w-0">
-        <figcaption class="mb-1 text-xs text-muted">Before the failing action</figcaption>
-        <img
-          :src="beforeSrc"
-          alt="Page before the failing action"
-          loading="lazy"
-          class="max-h-64 w-full rounded border border-default bg-default object-contain object-top"
-        />
-      </figure>
-      <figure v-if="afterSrc" class="min-w-0">
-        <figcaption class="mb-1 text-xs text-muted">At the failure</figcaption>
-        <img
-          :src="afterSrc"
-          alt="Page at the failure"
-          loading="lazy"
-          class="max-h-64 w-full rounded border border-default bg-default object-contain object-top"
+    <div v-if="hasScreenshot" :class="shots.length > 1 ? 'grid gap-3 sm:grid-cols-2' : ''">
+      <figure v-for="(shot, idx) in shots" :key="shot.src" class="min-w-0 space-y-1">
+        <figcaption class="flex items-center gap-1 text-xs text-muted">
+          <span v-if="shot.failed" class="inline-block size-1.5 shrink-0 rounded-full bg-red-500" aria-hidden="true" />
+          {{ shot.name }}
+        </figcaption>
+        <ZoomableImage
+          inline
+          :src="shot.src"
+          :alt="shot.name"
+          :failed="shot.failed"
+          frame-class="rounded-lg bg-default"
+          img-class="max-h-72 w-auto max-w-full object-contain"
+          @open="lightboxIndex = idx"
         />
       </figure>
     </div>
 
-    <figure v-else-if="fallbackShot" class="min-w-0">
-      <figcaption class="mb-1 text-xs text-muted">At the failure</figcaption>
-      <img
-        :src="fallbackShot"
-        alt="Page at the failure"
-        loading="lazy"
-        class="max-h-64 w-full rounded border border-default bg-default object-contain object-top"
-      />
-    </figure>
-
     <div v-if="hasAria">
       <button
         type="button"
-        class="inline-flex items-center gap-1 text-xs text-muted hover:text-default outline-none focus-visible:outline-2 focus-visible:outline-primary rounded"
+        class="inline-flex items-center gap-1 rounded text-xs text-muted outline-none hover:text-default focus-visible:outline-2 focus-visible:outline-primary"
         :aria-expanded="ariaOpen ? 'true' : 'false'"
         @click="ariaOpen = !ariaOpen"
       >
@@ -98,5 +102,7 @@ const ariaOpen = ref(false);
         <MarkdownPreview :text="'```yaml\n' + ariaText + '\n```'" />
       </div>
     </div>
+
+    <ScreenshotLightbox v-model="lightboxIndex" :images="shots" />
   </div>
 </template>
