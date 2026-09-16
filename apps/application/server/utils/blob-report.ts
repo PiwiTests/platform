@@ -17,7 +17,7 @@
 
 import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '#shared/step-analysis';
 import { dirnamePosix, isAbsolutePosix, joinPosix, normalizePosix, relativePosix } from '#shared/utils/posix-path';
-import { classifyStatus, mergeAnnotations } from '#shared/status-classify';
+import { classifyStatus, expectedFailureError, mergeAnnotations } from '#shared/status-classify';
 import { normalizeTestTags, parseTestMetadata } from '@piwitests/core/test-meta';
 import { joinErrorMessages, appendErrorLocation } from '#shared/error-text';
 import type { TestAnnotation } from '#shared/types';
@@ -405,7 +405,8 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
         { annotations: (test.annotations as TestAnnotation[] | undefined) ?? plan?.annotations },
         { annotations: result.annotations as TestAnnotation[] | undefined },
       );
-      const status = classifyStatus(String(result.status ?? 'failed'), annotations);
+      const rawStatus = String(result.status ?? 'failed');
+      const status = classifyStatus(rawStatus, annotations);
 
       const metrics = collectStepMetrics(acc?.rootSteps ?? []);
       const stepEvents = [
@@ -424,7 +425,9 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
           status,
           duration: typeof result.duration === 'number' ? result.duration : null,
           timeout: typeof test.timeout === 'number' ? test.timeout : (plan?.timeout ?? null),
-          error: buildErrorText(result.errors, resolver),
+          // A `test.fail()` test that passed is now `failed` with no recorded
+          // error; Playwright reports the same line, so synthesize it.
+          error: expectedFailureError(rawStatus, annotations) ?? buildErrorText(result.errors, resolver),
           retries: acc?.retry ?? 0,
           line: plan?.line ?? null,
           column: plan?.column ?? null,
