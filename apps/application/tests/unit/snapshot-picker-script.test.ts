@@ -71,6 +71,18 @@ describe('snapshotPickerScriptTag / buildPickerDocument', () => {
     expect(tag.match(/<\/script>/g)).toHaveLength(1);
   });
 
+  test('wraps init so a startup failure is reported to the host instead of hanging', () => {
+    const tag = snapshotPickerScriptTag({ probedAttrs: [] });
+    // Init runs in a try/catch behind error listeners that post `piwiError` to
+    // the host, so a throw during setup shows an error rather than an endless
+    // "Initializing…" spinner.
+    expect(tag).toContain("type:'piwiError'");
+    expect(tag).toContain('try{');
+    expect(tag).toContain('addEventListener');
+    // The wrapping must not introduce a second closing tag.
+    expect(tag.match(/<\/script>/g)).toHaveLength(1);
+  });
+
   test('the serialized picker swallows page interaction and re-arms the block after a pick', () => {
     const tag = snapshotPickerScriptTag({ probedAttrs: [] });
     // A representative slice of the events a dead snapshot must ignore so a

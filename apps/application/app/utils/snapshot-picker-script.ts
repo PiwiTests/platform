@@ -84,11 +84,25 @@ export function snapshotPickerScriptTag(config: SnapshotPickerConfig): string {
   const probeSrc = escScriptClose(String(probeElementAttrs));
   const extrasSrc = escScriptClose(String(installSnapshotPickerExtras));
   const overlaySrc = escScriptClose(String(installPickerOverlay));
+  // Init runs inside a try/catch and behind error listeners that report any
+  // failure to the host over `postMessage` as `piwiError`. Without this, a throw
+  // during setup (a serialization slip, a missing browser API) leaves the host
+  // stuck on "Initializing picker…" with no clue why; now it shows the error and
+  // — in the desktop shell — logs it. A script that is *CSP-blocked* never runs
+  // at all, so this can't fire for that case: the host's readiness timeout does.
   return (
     `<script>` +
+    `(function(){` +
+    `function __piwiReport(e){try{parent.postMessage({type:'piwiError',` +
+    `message:String((e&&e.message)||e),stack:(e&&e.stack)?String(e.stack):''},'*');}catch(_){}}` +
+    `addEventListener('error',function(e){__piwiReport(e.error||e.message);});` +
+    `addEventListener('unhandledrejection',function(e){__piwiReport(e.reason);});` +
+    `try{` +
     `globalThis.__piwiProbe = (${probeSrc});` +
     `(${extrasSrc})();` +
     `(${overlaySrc})(${JSON.stringify(overlayArg)});` +
+    `}catch(e){__piwiReport(e);}` +
+    `})();` +
     `</script>`
   );
 }

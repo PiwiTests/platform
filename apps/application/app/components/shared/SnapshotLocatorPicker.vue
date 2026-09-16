@@ -122,6 +122,11 @@ type PickerStep = (typeof PICKER_STEP)[keyof typeof PICKER_STEP];
 const step = ref<PickerStep>('pick-element');
 const iframeRef = ref<HTMLIFrameElement | null>(null);
 const iframeReady = ref(false);
+// Set when the picker script fails to start (a thrown init error reported over
+// postMessage, or the readiness timeout below) so the host shows why instead of
+// an endless "Initializing picker…" spinner.
+const pickerError = ref<string | null>(null);
+const isDesktop = useIsDesktop();
 const pickedAttrs = ref<ElementAttributes | null>(null);
 const alternatives = ref<RankedLocator[]>([]);
 
@@ -151,6 +156,41 @@ const renderKey = ref(0);
 function reloadFrame() {
   renderKey.value += 1;
 }
+
+// The picker signals `pickerReady` once its in-iframe script has run. If that
+// never arrives — the script hung, or was blocked before it could run (a CSP
+// block executes no code, so it can't even report an error) — surface a message
+// instead of spinning forever. Armed whenever the frame (re)loads a document,
+// cleared the moment it reports ready.
+const READY_TIMEOUT_MS = 8000;
+let readyTimer: ReturnType<typeof setTimeout> | null = null;
+function clearReadyTimer() {
+  if (readyTimer) {
+    clearTimeout(readyTimer);
+    readyTimer = null;
+  }
+}
+function armReadyTimer() {
+  clearReadyTimer();
+  pickerError.value = null;
+  if (!import.meta.client) return;
+  readyTimer = setTimeout(() => {
+    if (iframeReady.value) return;
+    pickerError.value = isDesktop
+      ? 'The picker did not start. In the desktop app this is usually the Content-Security-Policy blocking the sandboxed snapshot frame — relaunch with --devtools (or PIWI_DEBUG=1) and check the console and logs/server.log to confirm.'
+      : 'The picker did not start. Try reopening it; if it persists, the DOM snapshot may be malformed.';
+  }, READY_TIMEOUT_MS);
+}
+// (Re)load of the srcdoc document — a new snapshot, a source switch, or a
+// re-pick (renderKey bump) — re-arms the timer; a document going away clears it.
+watch([pickerDoc, renderKey], () => {
+  if (pickerDoc.value) armReadyTimer();
+  else clearReadyTimer();
+});
+watch(iframeReady, (ready) => {
+  if (ready) clearReadyTimer();
+});
+onBeforeUnmount(clearReadyTimer);
 
 // ── Viewport-accurate rendering (trace-viewer style) ────────────────────────
 // Size the iframe to the recorded page viewport width and its full content
@@ -243,6 +283,14 @@ function handleMessage(event: MessageEvent) {
     // Pre-highlight the element the failing locator meant to hit, so the user
     // does not have to hunt for it in a full-page snapshot.
     postHighlightHints();
+    return;
+  }
+  if (data?.type === 'piwiError') {
+    // The picker script threw while starting — show why rather than spin
+    // forever. The desktop error bridge also forwards this to logs/server.log.
+    clearReadyTimer();
+    pickerError.value =
+      typeof data.message === 'string' && data.message ? data.message : 'The picker failed to initialize.';
     return;
   }
   if (data?.type === 'piwiContentHeight' && typeof data.height === 'number') {
@@ -396,6 +444,7 @@ function resetPicker() {
   selectedAlt.value = null;
   step.value = 'pick-element';
   iframeReady.value = false;
+  pickerError.value = null;
   searchQuery.value = '';
   searchCount.value = 0;
   searchIndex.value = -1;
@@ -564,9 +613,18 @@ onBeforeUnmount(() => {
           class="relative border border-default rounded-lg overflow-auto"
           :class="[step === 'pick-element' ? 'h-[75vh]' : 'h-80', viewport ? 'bg-gray-100 dark:bg-gray-800' : '']"
         >
+          <!-- Error overlay: the picker script threw or never started -->
+          <div
+            v-if="pickerError"
+            class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white dark:bg-gray-900 z-10 p-6 text-center"
+          >
+            <UIcon name="i-lucide-alert-triangle" class="size-6 text-amber-500" />
+            <p class="text-sm text-gray-600 dark:text-gray-300 max-w-md">{{ pickerError }}</p>
+            <UButton size="xs" variant="outline" color="neutral" @click="resetPicker">Retry</UButton>
+          </div>
           <!-- Loading overlay until the picker script initializes -->
           <div
-            v-if="!iframeReady"
+            v-else-if="!iframeReady"
             class="absolute inset-0 flex items-center justify-center bg-white dark:bg-gray-900 z-10"
           >
             <UIcon name="i-lucide-loader" class="size-5 animate-spin text-gray-400" />
