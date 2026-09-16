@@ -70,9 +70,11 @@ only the root package (and the lockfile's root entries); every other workspace i
 npm awareness of, so a missing lockfile entry leaves that workspace a release behind and makes `npm install` rewrite
 the lockfile on every checkout.
 
-`plans/` holds two tracked-by-hand files: `plans/roadmap.md` (working priorities) and `plans/exploration-findings.md`
-(a log of bugs, tech debt and inconsistencies found while exploring). Both are local-only. Public direction lives in the
-committed [`ROADMAP.md`](ROADMAP.md).
+`plans/` is local-only (gitignored); `plans/README.md` explains the layout: `roadmap.md` (ranked *Build next* table and
+plan tables), `shipped.md` (ledger), `exploration-findings.md` (bugs, tech debt, gaps), `rejected-ideas.md`, and the
+`active/` · `later/` · `research/` · `archive/` plan folders. Public direction lives in the committed
+[`ROADMAP.md`](ROADMAP.md); design records for shipped programs live in [`proposals/`](proposals/) — when work ships
+from a proposal, mirror its status into `plans/` (the `/plan-management` skill does this).
 
 ## Quick start
 
@@ -243,7 +245,7 @@ Voice rules for all of them, and for `apps/docs/`: see [`apps/docs/AGENTS.md`](a
   - **Suggested fix**: recommended action (omit if obvious)
   ```
 
-  Reference notable findings from `plans/roadmap.md` under "Known Issues & Tech Debt" when they affect priorities.
+  Promote notable findings to `plans/roadmap.md` → *Quick fixes* when they affect priorities; move fixed ones to the *Resolved* log with the date.
 
 ## Troubleshooting
 
