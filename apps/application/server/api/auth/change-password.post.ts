@@ -25,7 +25,7 @@ export default eventHandler(async (event) => {
   const body = await readBody(event);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    throw createError({ statusCode: 400, message: 'currentPassword and newPassword (min 8 chars) are required' });
+    throw apiError({ statusCode: 400, message: 'currentPassword and newPassword (min 8 chars) are required' });
   }
 
   const { currentPassword, newPassword } = parsed.data;
@@ -35,12 +35,12 @@ export default eventHandler(async (event) => {
   const user = userRows[0];
 
   if (!user || !user.password) {
-    throw createError({ statusCode: 400, message: 'Cannot change password for OAuth-only accounts' });
+    throw apiError({ statusCode: 400, message: 'Cannot change password for OAuth-only accounts' });
   }
 
   const valid = await verifyPassword(currentPassword, user.password);
   if (!valid) {
-    throw createError({ statusCode: 400, message: 'Current password is incorrect' });
+    throw apiError({ statusCode: 400, message: 'Current password is incorrect' });
   }
 
   const hashed = await hashPassword(newPassword);

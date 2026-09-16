@@ -21,17 +21,19 @@ useHead({ title: 'Analytics - Piwi Dashboard' });
 const { state, scopeQuery } = useAnalyticsScope();
 
 // Project options for the scope bar (slim list, same source as the sidebar menu).
-const { data: availableProjects } = await useFetch<ProjectMenuItem[]>('/api/projects/menu', {
+const { data: availableProjects } = await useFetch('/api/projects/menu', {
   lazy: true,
   server: false,
   default: () => [] as ProjectMenuItem[],
+  transform: (r: { items: ProjectMenuItem[] }) => r.items,
 });
 
 // Environment options for the scope bar (same source as the home filters).
-const { data: recentTestRuns } = await useFetch<TestRunForChart[]>('/api/test-runs/recent', {
+const { data: recentTestRuns } = await useFetch('/api/test-runs/recent', {
   lazy: true,
   server: false,
   default: () => [] as TestRunForChart[],
+  transform: (r: { items: TestRunForChart[] }) => r.items,
 });
 
 const availableEnvironments = computed(() => {
@@ -40,6 +42,14 @@ const availableEnvironments = computed(() => {
     if (run.environment) envSet.add(run.environment);
   }
   return [...envSet].sort();
+});
+
+const availableBranches = computed(() => {
+  const branchSet = new Set<string>();
+  for (const run of recentTestRuns.value ?? []) {
+    if (run.branch) branchSet.add(run.branch);
+  }
+  return [...branchSet].sort();
 });
 
 // "Looks empty when it isn't": if the newest run predates the selected window,
@@ -106,6 +116,7 @@ const bands = computed(() =>
             v-model="state"
             :available-projects="availableProjects"
             :available-environments="availableEnvironments"
+            :available-branches="availableBranches"
           />
         </FilterToolbar>
 

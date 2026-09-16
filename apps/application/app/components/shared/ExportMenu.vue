@@ -1,7 +1,12 @@
 <script setup lang="ts">
 const props = defineProps<{
-  /** API path of the export endpoint, e.g. `/api/failure-clusters/12/export`. */
-  endpoint: string;
+  /**
+   * API path of the offline-report endpoint, e.g. `/api/failure-clusters/12/export`.
+   * Omit it (as on the run page) to offer only the Perfetto trace.
+   */
+  endpoint?: string;
+  /** API path of the Perfetto trace endpoint, e.g. `/api/test-runs/12/perfetto`. */
+  perfettoEndpoint?: string;
   /** Used only for the desktop shell's fallback filename; the server names the file. */
   baseName: string;
 }>();
@@ -24,21 +29,19 @@ function withBase(path: string): string {
   return `${base.value}${path}`;
 }
 
-async function run(format: 'html' | 'zip' | 'json' | 'md') {
+async function run(format: 'html' | 'zip' | 'pdf' | 'json' | 'md') {
   open.value = false;
-  // ZIP is the only binary format; the rest are text the shell can write directly.
+  // ZIP and PDF are the binary formats; the rest are text the shell writes directly.
   await download(withBase(`${props.endpoint}?format=${format}`), `${props.baseName}.${format}`, {
-    binary: format === 'zip',
+    binary: format === 'zip' || format === 'pdf',
   });
 }
 
-/**
- * PDF is the HTML report rendered in a tab and printed, so it opens the page
- * rather than downloading it — the server serves `print=1` inline for this.
- */
-function printReport() {
+/** The Perfetto trace is a JSON file that opens at ui.perfetto.dev. */
+async function runPerfetto() {
   open.value = false;
-  window.open(withBase(`${props.endpoint}?format=html&print=1`), '_blank');
+  if (!props.perfettoEndpoint) return;
+  await download(withBase(props.perfettoEndpoint), `${props.baseName}-perfetto.json`, { binary: false });
 }
 
 /**
@@ -67,98 +70,130 @@ function copyReport() {
 
 <template>
   <UPopover v-model:open="open">
-    <UButton icon="i-lucide-share" size="xs" color="neutral" variant="outline" title="Take this investigation away">
-      Export
+    <UButton
+      icon="i-lucide-share"
+      size="xs"
+      color="neutral"
+      variant="outline"
+      title="Take this investigation away"
+      aria-label="Export"
+    >
+      <span class="hidden xl:inline">Export</span>
     </UButton>
 
     <template #content>
       <div class="w-64 p-1 space-y-0.5">
-        <div class="flex items-center justify-between px-2 pt-1 pb-1">
-          <p class="text-xs font-medium text-gray-500">Download</p>
-          <HelpHint topic="export.offline" />
-        </div>
+        <template v-if="endpoint">
+          <div class="flex items-center justify-between px-2 pt-1 pb-1">
+            <p class="text-xs font-medium text-gray-500">Download</p>
+            <HelpHint topic="export.offline" />
+          </div>
 
-        <UButton
-          block
-          size="sm"
-          color="neutral"
-          variant="ghost"
-          class="justify-start"
-          icon="i-lucide-file-code"
-          title="One self-contained HTML file with screenshots and video embedded"
-          @click="run('html')"
-        >
-          HTML — single file
-        </UButton>
+          <UButton
+            block
+            size="sm"
+            color="neutral"
+            variant="ghost"
+            class="justify-start"
+            icon="i-lucide-file-code"
+            title="One self-contained HTML file with screenshots and video embedded"
+            @click="run('html')"
+          >
+            HTML — single file
+          </UButton>
 
-        <UButton
-          block
-          size="sm"
-          color="neutral"
-          variant="ghost"
-          class="justify-start"
-          icon="i-lucide-file-archive"
-          title="Report plus the raw artifacts, including trace archives and data.json"
-          @click="run('zip')"
-        >
-          ZIP — with all evidence
-        </UButton>
+          <UButton
+            block
+            size="sm"
+            color="neutral"
+            variant="ghost"
+            class="justify-start"
+            icon="i-lucide-file-archive"
+            title="Report plus the raw artifacts, including trace archives and data.json"
+            @click="run('zip')"
+          >
+            ZIP — with all evidence
+          </UButton>
 
-        <UButton
-          block
-          size="sm"
-          color="neutral"
-          variant="ghost"
-          class="justify-start"
-          icon="i-lucide-printer"
-          title="Opens the report with your browser's print dialog, for Save as PDF"
-          @click="printReport"
-        >
-          PDF — via print
-        </UButton>
+          <UButton
+            block
+            size="sm"
+            color="neutral"
+            variant="ghost"
+            class="justify-start"
+            icon="i-lucide-file-down"
+            title="A formatted PDF with screenshots embedded — generated directly, no browser print needed"
+            @click="run('pdf')"
+          >
+            PDF — formatted document
+          </UButton>
 
-        <UButton
-          block
-          size="sm"
-          color="neutral"
-          variant="ghost"
-          class="justify-start"
-          icon="i-lucide-file-text"
-          title="The Markdown report as a file"
-          @click="run('md')"
-        >
-          Markdown
-        </UButton>
+          <UButton
+            block
+            size="sm"
+            color="neutral"
+            variant="ghost"
+            class="justify-start"
+            icon="i-lucide-file-text"
+            title="The Markdown report as a file"
+            @click="run('md')"
+          >
+            Markdown
+          </UButton>
 
-        <UButton
-          block
-          size="sm"
-          color="neutral"
-          variant="ghost"
-          class="justify-start"
-          icon="i-lucide-file-json"
-          title="Everything the report contains, machine-readable"
-          @click="run('json')"
-        >
-          JSON
-        </UButton>
+          <UButton
+            block
+            size="sm"
+            color="neutral"
+            variant="ghost"
+            class="justify-start"
+            icon="i-lucide-file-json"
+            title="Everything the report contains, machine-readable"
+            @click="run('json')"
+          >
+            JSON
+          </UButton>
+        </template>
 
-        <USeparator class="my-1" />
-        <p class="text-xs font-medium text-gray-500 px-2 pt-1 pb-1">Copy to clipboard</p>
+        <template v-if="perfettoEndpoint">
+          <USeparator v-if="endpoint" class="my-1" />
+          <p class="text-xs font-medium text-gray-500 px-2 pt-1 pb-1">Timeline</p>
 
-        <UButton
-          block
-          size="sm"
-          color="neutral"
-          variant="ghost"
-          class="justify-start"
-          icon="i-lucide-clipboard-list"
-          :loading="busy === 'Report'"
-          title="The whole investigation as Markdown, for an issue or a chat"
-          @click="copyReport"
-        >
-          Report (Markdown)
-        </UButton>
+          <UButton
+            block
+            size="sm"
+            color="neutral"
+            variant="ghost"
+            class="justify-start"
+            icon="i-lucide-activity"
+            title="A Trace Event Format file — opens at ui.perfetto.dev or chrome://tracing"
+            @click="runPerfetto"
+          >
+            <span class="flex flex-col items-start text-left leading-tight">
+              Perfetto trace
+              <span class="text-xs text-gray-500">Opens at ui.perfetto.dev</span>
+            </span>
+          </UButton>
+        </template>
+
+        <template v-if="endpoint">
+          <USeparator class="my-1" />
+          <p class="text-xs font-medium text-gray-500 px-2 pt-1 pb-1">Copy to clipboard</p>
+
+          <UButton
+            block
+            size="sm"
+            color="neutral"
+            variant="ghost"
+            class="justify-start"
+            icon="i-lucide-clipboard-list"
+            :loading="busy === 'Report'"
+            title="The whole investigation as Markdown, for an issue or a chat"
+            @click="copyReport"
+          >
+            Report (Markdown)
+          </UButton>
+        </template>
       </div>
     </template>
   </UPopover>

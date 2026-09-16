@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 320" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="flArr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#667085"/>
+    </marker>
+    <marker id="flArrAccent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#4353ff"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="920" height="320" rx="12" fill="#fcfcfd" stroke="#e4e7ec"/>
+  <text x="24" y="36" font-size="16" font-weight="700" fill="#101828">Explaining a failure</text>
+  <text x="24" y="56" font-size="12.5" fill="#475467">Three stages, then the fix. The next green run closes the loop.</text>
+
+  <!-- 1 Evidence -->
+  <rect x="24" y="84" width="182" height="120" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
+  <rect x="24" y="84" width="182" height="30" rx="8" fill="#f2f4f7"/>
+  <rect x="24" y="106" width="182" height="8" fill="#f2f4f7"/>
+  <text x="40" y="104" font-size="13" font-weight="600" fill="#344054">1 · Evidence</text>
+  <text x="40" y="138" font-size="12" fill="#475467">error, trace, console,</text>
+  <text x="40" y="154" font-size="12" fill="#475467">network, DOM, diffs</text>
+  <text x="40" y="188" font-size="11" fill="#667085">captured by the fixtures</text>
+
+  <line x1="206" y1="150" x2="250" y2="150" stroke="#4353ff" stroke-width="1.6" marker-end="url(#flArrAccent)"/>
+  <text x="229" y="140" font-size="11" fill="#4353ff" text-anchor="middle">group</text>
+
+  <!-- 2 Cluster -->
+  <rect x="252" y="84" width="182" height="120" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
+  <rect x="252" y="84" width="182" height="30" rx="8" fill="#f2f4f7"/>
+  <rect x="252" y="106" width="182" height="8" fill="#f2f4f7"/>
+  <text x="268" y="104" font-size="13" font-weight="600" fill="#344054">2 · Cluster</text>
+  <text x="268" y="138" font-size="12" fill="#475467">one fingerprint,</text>
+  <text x="268" y="154" font-size="12" fill="#475467">one root cause</text>
+  <text x="268" y="188" font-size="11" fill="#667085">forty failures, three causes</text>
+
+  <line x1="434" y1="150" x2="478" y2="150" stroke="#4353ff" stroke-width="1.6" marker-end="url(#flArrAccent)"/>
+  <text x="457" y="140" font-size="11" fill="#4353ff" text-anchor="middle">explain</text>
+
+  <!-- 3 Diagnosis -->
+  <rect x="480" y="84" width="182" height="120" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
+  <rect x="480" y="84" width="182" height="30" rx="8" fill="#f2f4f7"/>
+  <rect x="480" y="106" width="182" height="8" fill="#f2f4f7"/>
+  <text x="496" y="104" font-size="13" font-weight="600" fill="#344054">3 · Diagnosis</text>
+  <text x="496" y="138" font-size="12" fill="#475467">grounded in the diff</text>
+  <text x="496" y="154" font-size="12" fill="#475467">since the last green run</text>
+  <text x="496" y="188" font-size="11" fill="#667085">patch checked server-side</text>
+
+  <line x1="662" y1="150" x2="706" y2="150" stroke="#4353ff" stroke-width="1.6" marker-end="url(#flArrAccent)"/>
+  <text x="685" y="140" font-size="11" fill="#4353ff" text-anchor="middle">suggest</text>
+
+  <!-- 4 Fix -->
+  <rect x="708" y="84" width="182" height="120" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
+  <rect x="708" y="84" width="182" height="30" rx="8" fill="#f2f4f7"/>
+  <rect x="708" y="106" width="182" height="8" fill="#f2f4f7"/>
+  <text x="724" y="104" font-size="13" font-weight="600" fill="#344054">4 · Fix</text>
+  <text x="724" y="138" font-size="12" fill="#475467">ranked locator, draft PR,</text>
+  <text x="724" y="154" font-size="12" fill="#475467">fix plan for agents</text>
+  <text x="724" y="188" font-size="11" fill="#667085">you apply and merge</text>
+
+  <!-- Verification loop back -->
+  <path d="M 799 204 L 799 250 L 115 250 L 115 210" fill="none" stroke="#667085" stroke-width="1.4" marker-end="url(#flArr)"/>
+  <text x="457" y="242" font-size="11" fill="#475467" text-anchor="middle">fix verification: recorded when every affected test passes again, with the run and the commit</text>
+
+  <text x="460" y="296" font-size="12" fill="#475467" text-anchor="middle">Nothing is applied or merged automatically: the tool proposes, you decide.</text>
+</svg>

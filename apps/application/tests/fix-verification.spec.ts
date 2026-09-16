@@ -14,6 +14,7 @@ interface Cluster {
   id: number;
   signature: string;
   status: string;
+  triageNote: string | null;
   fixLandedRunId: number | null;
   fixCommit: string | null;
   timeToResolutionMs: number | null;
@@ -62,22 +63,22 @@ async function submitRun(
     },
   });
   expect(res.ok()).toBeTruthy();
-  const body = (await res.json()) as { testRunId: number };
-  return body.testRunId;
+  const body = (await res.json()) as { runId: number };
+  return body.runId;
 }
 
 /** This attempt's clusters only — see `attemptTag`. */
 async function clusters(request: APIRequestContext, projectId: number): Promise<Cluster[]> {
   const res = await request.get(`/api/projects/${projectId}/failure-clusters`);
   expect(res.ok()).toBeTruthy();
-  const body = (await res.json()) as { clusters?: Cluster[] } | Cluster[];
-  const all = Array.isArray(body) ? body : (body.clusters ?? []);
+  const body = (await res.json()) as { items?: Cluster[] };
+  const all = body.items ?? [];
   return all.filter((c) => c.signature.includes(attemptTag));
 }
 
 async function projectIdFor(request: APIRequestContext): Promise<number> {
   const res = await request.get('/api/projects');
-  const list = (await res.json()) as Array<{ id: number; name: string }>;
+  const list = ((await res.json()) as { items: Array<{ id: number; name: string }> }).items;
   const project = list.find((p) => p.name === PROJECT.FIX_VERIFICATION);
   expect(project, 'project should exist after the first submission').toBeTruthy();
   return project!.id;
@@ -123,8 +124,15 @@ test.describe.serial('Fix verification', () => {
     expect(fixed.timeToResolutionMs).toBeGreaterThan(0);
   });
 
-  test('a fix that does not hold is marked regressed', async ({ request }) => {
-    await submitRun(request, [{ title: 'checkout pays', status: 'failed', error: failingError() }], {
+  test('a fix that does not hold is marked regressed and reopens a resolved cluster', async ({ request }) => {
+    // Someone closed the triage on the strength of the recorded fix.
+    const fixed = (await clusters(request, projectId)).find((c) => c.fixLandedRunId != null)!;
+    const patched = await request.patch(`/api/failure-clusters/${fixed.id}/status`, {
+      data: { status: 'resolved', triageNote: 'Closed after the fix landed' },
+    });
+    expect(patched.ok()).toBeTruthy();
+
+    const runId = await submitRun(request, [{ title: 'checkout pays', status: 'failed', error: failingError() }], {
       commit: 'ccccccc1',
     });
 
@@ -132,10 +140,17 @@ test.describe.serial('Fix verification', () => {
       .poll(async () => (await clusters(request, projectId)).find((c) => c.fixVerification === 'regressed')?.id, {
         timeout: 15_000,
       })
-      .toBeTruthy();
+      .toBe(fixed.id);
+
+    // The runs contradicted the person's "resolved", so the status goes back
+    // to open with the reason on record — and the note they wrote survives.
+    const regressed = (await clusters(request, projectId)).find((c) => c.id === fixed.id)!;
+    expect(regressed.status).toBe('open');
+    expect(regressed.triageNote).toContain('Closed after the fix landed');
+    expect(regressed.triageNote).toContain(`Reopened automatically: regressed in run #${runId}`);
   });
 
-  test('a partial run never records a fix', async ({ request }) => {
+  test('a partial run that misses an affected test never records a fix', async ({ request }) => {
     // The cluster is failing again after the regression above. A filtered run
     // that happens to exclude the failing test must not be read as a fix: a
     // test that did not execute has not been shown to pass.
@@ -156,15 +171,17 @@ test.describe.serial('Fix verification', () => {
     const cluster = (await clusters(request, projectId)).find((c) => c.fixVerification === 'regressed')!;
 
     await page.goto(`/failure-clusters/${cluster.id}`);
-    await expect(page.getByText('Regressed').first()).toBeVisible();
-    await expect(page.getByText(/open for /).first()).toBeVisible();
-    await expect(page.getByText(new RegExp(`run #${cluster.fixLandedRunId}`)).first()).toBeVisible();
+    // The state line folds the fix verification into one sentence: the fix came
+    // back, and it did not hold. No standalone "Regressed" badge.
+    const state = page.locator('[data-shot="cluster-state"]');
+    await expect(state).toContainText('the fix did not hold');
+    await expect(state).toContainText(/back since run #\d+/);
   });
 
   test('the project cluster list shows the verdict next to the triage status', async ({ page, request }) => {
     const cluster = (await clusters(request, projectId)).find((c) => c.fixVerification === 'regressed')!;
 
-    await page.goto(`/projects/${projectId}?tab=failure-clusters`);
+    await page.goto(`/projects/${projectId}?tab=failures`);
     // Anchor on the row's own link rather than its text: the signature cell
     // renders the cluster title when it has one, so matching on error text
     // finds nothing the moment a cluster gets named.
@@ -172,6 +189,31 @@ test.describe.serial('Fix verification', () => {
     // Asserted separately so a failure says whether the row or the badge is
     // missing — the table loads client-side, after the page itself is ready.
     await expect(row).toBeVisible({ timeout: 15_000 });
-    await expect(row.getByText('Regressed')).toBeVisible();
+    await expect(row.getByText('Regressed', { exact: true })).toBeVisible();
+  });
+
+  // The natural loop — fix the code, re-run just the broken test, watch it go
+  // green — must close the cluster. A filtered run is trusted exactly when it
+  // covered the whole cluster, which this one does. Runs last so it does not
+  // disturb the regressed-state assertions above.
+  test('a filtered run covering every affected test records the fix', async ({ request }) => {
+    const before = (await clusters(request, projectId)).find((c) => c.fixVerification === 'regressed')!;
+
+    const runId = await submitRun(request, [{ title: 'checkout pays', status: 'passed' }], {
+      commit: 'eeeeeee1',
+      isFullRun: false,
+    });
+
+    await expect
+      .poll(async () => (await clusters(request, projectId)).find((c) => c.id === before.id)?.fixLandedRunId, {
+        timeout: 15_000,
+      })
+      .toBe(runId);
+
+    const fixed = (await clusters(request, projectId)).find((c) => c.id === before.id)!;
+    expect(fixed.fixCommit).toBe('eeeeeee1');
+    // No SCM is reachable in this test, so "stopped failing" is the honest
+    // verdict — but the filtered run was enough to record it.
+    expect(fixed.fixVerification).toBe('stopped-failing');
   });
 });

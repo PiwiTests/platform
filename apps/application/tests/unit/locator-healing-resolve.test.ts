@@ -42,9 +42,18 @@ function snap(o: Partial<LocatorSnapshotRow>): LocatorSnapshotRow {
 const FAILING = "getByRole('button', { name: 'Pay' })";
 
 describe('resolveHealingForCase — ladder', () => {
-  test('no error → source none', async () => {
+  test('no error → source none, not applicable', async () => {
     const r = await resolveHealingForCase({ error: null }, [], null);
     expect(r.source).toBe('none');
+    expect(r.applicable).toBe(false);
+    expect(r.reason).toBe('No locator in the error; nothing to heal.');
+  });
+
+  test('a resolution failure marks the result applicable', async () => {
+    const rows = [snap({ location: 'tests/checkout.spec.ts:42:5' })];
+    const r = await resolveHealingForCase({ error: chainError(FAILING) }, rows, null);
+    expect(r.applicable).toBe(true);
+    expect(r.reason).toBeNull();
   });
 
   test('ladder 1: call-site location match → prior-run, with location + sourceLine stamped', async () => {
@@ -88,6 +97,96 @@ describe('resolveHealingForCase — ladder', () => {
       Promise.resolve(null),
     );
     expect(r.source).toBe('aria-snapshot');
+  });
+});
+
+describe('resolveHealingForCase — resolution gate', () => {
+  const ARIA = '- document:\n  - button "Pay" [ref=e1]\n  - button "Cancel" [ref=e2]';
+
+  test('a locator that resolved (count mismatch) yields no alternatives, no recommendation, no ARIA fallback', async () => {
+    const error = `Error: expect(locator).toHaveCount(expected) failed\n\nCall log:\n  - waiting for getByRole('row')\n  - 9 × locator resolved to 51 elements\n    - unexpected value "51"\n    at tests/admin/users.spec.ts:12:3`;
+    const rows = [snap({ location: 'tests/admin/users.spec.ts:12:3' })];
+    const r = await resolveHealingForCase({ error, ariaSnapshot: ARIA }, rows, null);
+    expect(r.applicable).toBe(false);
+    expect(r.reason).toBe('The locator resolved; this is not a locator problem.');
+    expect(r.source).toBe('none');
+    expect(r.recommendation).toBeNull();
+    expect(r.fromPriorSuccess).toBeNull();
+    expect(r.fromAriaSnapshot).toBeNull();
+    expect(r.edit).toBeUndefined();
+    // The failing locator stays for display.
+    expect(r.failingLocator).toEqual({ method: 'getByRole', args: { role: 'row' } });
+  });
+
+  test('a resolved-then-disabled element is not healed even with a stored snapshot at the call site', async () => {
+    const error = `TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for ${FAILING}\n  - locator resolved to <button disabled>Pay now</button>\n  - element is not enabled\n    at tests/checkout.spec.ts:42:5`;
+    const rows = [snap({ location: 'tests/checkout.spec.ts:42:5' })];
+    const r = await resolveHealingForCase({ error, ariaSnapshot: ARIA }, rows, null);
+    expect(r.applicable).toBe(false);
+    expect(r.recommendation).toBeNull();
+  });
+
+  test('a navigation timeout never reaches the ARIA fallback', async () => {
+    const error = `TimeoutError: page.goto: Timeout 30000ms exceeded.\nCall log:\n  - navigating to "https://shop.example.com/checkout", waiting until "load"\n    at tests/checkout.spec.ts:8:3`;
+    const r = await resolveHealingForCase({ error, ariaSnapshot: ARIA }, [], null);
+    expect(r.applicable).toBe(false);
+    expect(r.reason).toContain('not a locator problem');
+    expect(r.fromAriaSnapshot).toBeNull();
+  });
+
+  test('a strict-mode violation is healed', async () => {
+    const error = `Error: locator.click: Error: strict mode violation: ${FAILING} resolved to 2 elements:\n    1) <button>Pay</button>\n    2) <button>Pay</button>\n    at tests/checkout.spec.ts:42:5`;
+    const rows = [snap({ location: 'tests/checkout.spec.ts:42:5' })];
+    const r = await resolveHealingForCase({ error }, rows, null);
+    expect(r.applicable).toBe(true);
+    expect(r.source).toBe('prior-run');
+  });
+});
+
+describe('resolveHealingForCase — narrowing suggestion', () => {
+  const strictError = `Error: locator.click: Error: strict mode violation: ${FAILING} resolved to 3 elements:\n    1) <button>Pay</button>\n    2) <button>Pay</button>\n    3) <button>Pay</button>\n    at tests/checkout.spec.ts:42:5`;
+  // The aria tree omits hidden nodes, so a single matching entry means one visible match.
+  const oneVisibleAria = '- heading "Checkout"\n- button "Pay"';
+
+  test('suggests .visible() when one match is visible and Playwright is 1.63+', async () => {
+    const r = await resolveHealingForCase(
+      { error: strictError, ariaSnapshot: oneVisibleAria, playwrightVersion: '1.63.0' },
+      [],
+      null,
+    );
+    expect(r.narrowingSuggestion).toEqual({ method: 'visible', matchCount: 3, visibleCount: 1 });
+  });
+
+  test('withheld below Playwright 1.63', async () => {
+    const r = await resolveHealingForCase(
+      { error: strictError, ariaSnapshot: oneVisibleAria, playwrightVersion: '1.61.1' },
+      [],
+      null,
+    );
+    expect(r.narrowingSuggestion ?? null).toBeNull();
+  });
+
+  test('withheld when several matches are visible', async () => {
+    const r = await resolveHealingForCase(
+      {
+        error: strictError,
+        ariaSnapshot: '- button "Pay"\n- button "Pay"',
+        playwrightVersion: '1.63.0',
+      },
+      [],
+      null,
+    );
+    expect(r.narrowingSuggestion ?? null).toBeNull();
+  });
+
+  test('withheld for a non-strict failure', async () => {
+    const timeout = `TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for ${FAILING}\n    at tests/checkout.spec.ts:42:5`;
+    const r = await resolveHealingForCase(
+      { error: timeout, ariaSnapshot: oneVisibleAria, playwrightVersion: '1.63.0' },
+      [],
+      null,
+    );
+    expect(r.narrowingSuggestion ?? null).toBeNull();
   });
 });
 

@@ -36,8 +36,8 @@ async function loadBranches() {
   if (branches.value.length) return;
   branchesLoading.value = true;
   try {
-    const res = await $fetch<{ branches: string[] }>(`/api/failure-clusters/${props.clusterId}/branches`);
-    branches.value = res.branches;
+    const res = await $fetch<{ items: string[] }>(`/api/failure-clusters/${props.clusterId}/branches`);
+    branches.value = res.items;
   } catch {
     // ignore branch load failures
   } finally {
@@ -55,11 +55,11 @@ async function loadCommits() {
     if (baseline) params.baseline = baseline;
     if (selectedBranch.value) params.branch = selectedBranch.value;
     const res = await $fetch<{
-      commits: CommitListItem[];
+      items: CommitListItem[];
       aggregate: { filesChanged: number; linesAdded: number; linesRemoved: number } | null;
       error?: string | null;
     }>(`/api/failure-clusters/${props.clusterId}/commits`, { query: params });
-    commits.value = res.commits;
+    commits.value = res.items;
     aggregateStats.value = res.aggregate;
     apiError.value = res.error ?? null;
     loadedForBaseline.value = baseline;

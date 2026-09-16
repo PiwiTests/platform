@@ -15,7 +15,12 @@ import type { StepResult } from './report.js';
 
 /** The setup skill drives this very command; the rest act on a run's results. */
 export const SETUP_SKILL = 'setup-piwi';
-export const WORKFLOW_SKILLS = ['investigate-failure', 'apply-locator-healing', 'stabilize-flaky-tests'] as const;
+export const WORKFLOW_SKILLS = [
+  'investigate-failure',
+  'apply-locator-healing',
+  'stabilize-flaky-tests',
+  'run-the-right-tests',
+] as const;
 export const ALL_SKILLS = [SETUP_SKILL, ...WORKFLOW_SKILLS] as const;
 
 /** Default destination — the directory Claude Code reads project skills from. */

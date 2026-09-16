@@ -1,12 +1,15 @@
 <script setup lang="ts">
+import { describeCluster } from '#shared/describe-cluster';
 import type { TestCaseHistoryPoint, MarkerInfo, MarkersResponse } from '~~/types/api';
-import type { TableColumn } from '@nuxt/ui';
+import { CASE_STATUS_SERIES, legendOf } from '~/utils/chart';
 
 const route = useRoute();
 const testCaseId = route.params.id;
 
 const { data: testCase, refresh } = await useFetch(`/api/test-cases/${testCaseId}`);
-const { data: historyData } = await useFetch<TestCaseHistoryPoint[]>(`/api/test-cases/${testCaseId}/history`);
+const { data: historyData } = await useFetch(`/api/test-cases/${testCaseId}/history`, {
+  transform: (r: { items: TestCaseHistoryPoint[] }) => r.items,
+});
 
 // Project timeline markers, overlaid on the history chart for context.
 const historyMarkers = ref<MarkerInfo[]>([]);
@@ -15,21 +18,21 @@ watch(
   async (pid) => {
     if (!pid) return;
     try {
-      historyMarkers.value = (await $fetch<MarkersResponse>(`/api/projects/${pid}/markers`)).markers ?? [];
+      historyMarkers.value = (await $fetch<MarkersResponse>(`/api/projects/${pid}/markers`)).items ?? [];
     } catch {
       // markers are optional context
     }
   },
   { immediate: true },
 );
-function goToProjectTimeline() {
+function goToProjectRuns() {
   const pid = testCase.value?.project?.id;
-  if (pid) navigateTo(`/projects/${pid}?tab=timeline`);
+  if (pid) navigateTo(`/projects/${pid}?tab=runs`);
 }
 
 useHead(
   computed(() => ({
-    title: `${testCase.value?.title || `Test case #${testCaseId}`} — Piwi Dashboard`,
+    title: `${testCase.value?.title || `Test #${testCaseId}`} — Piwi Dashboard`,
   })),
 );
 
@@ -49,50 +52,14 @@ const clusterColor = (status: string) => {
   return status === 'open' ? 'error' : status === 'resolved' ? 'success' : 'neutral';
 };
 
-interface ExecutionRow {
-  id: number;
-  status: string;
-  duration: number | null;
-  error: string | null;
-  retries: number | null;
-  workerIndex: number | null;
-  browser: unknown;
-  runId: number;
-  runStatus: string;
-  runLabel: string | null;
-  startTime: string | Date;
-}
-
-const executionColumns: TableColumn<ExecutionRow>[] = [
-  {
-    accessorKey: 'startTime',
-    header: 'Date',
-  },
-  {
-    accessorKey: 'status',
-    header: 'Status',
-  },
-  {
-    accessorKey: 'duration',
-    header: 'Duration',
-  },
-  {
-    accessorKey: 'retries',
-    header: 'Retries',
-  },
-  {
-    accessorKey: 'runId',
-    header: 'Run',
-  },
-  {
-    accessorKey: 'error',
-    header: 'Error',
-  },
-  {
-    id: 'actions',
-    header: 'Actions',
-  },
-];
+const passRateClass = computed(() => {
+  const r = passRate.value ?? 0;
+  return r >= 80
+    ? 'text-green-600 dark:text-green-400'
+    : r >= 50
+      ? 'text-yellow-600 dark:text-yellow-400'
+      : 'text-red-600 dark:text-red-400';
+});
 </script>
 
 <template>
@@ -108,201 +75,144 @@ const executionColumns: TableColumn<ExecutionRow>[] = [
               ...(testCase?.project?.id
                 ? [
                     {
-                      label: testCase.project.name || 'Project',
+                      label: testCase.project.label || testCase.project.name || 'Project',
                       to: `/projects/${testCase.project.id}`,
                     },
                   ]
                 : [{ label: 'Project' }]),
-              { label: testCase?.title || `Test case #${testCaseId}` },
+              { label: testCase?.title || `Test #${testCaseId}` },
             ]"
           />
         </template>
         <template #right>
-          <DesktopRunLocallyButton
-            :project-id="testCase?.project?.id"
-            :project-label="testCase?.project?.label ?? testCase?.project?.name"
-            :cases="reproduceCases"
-            label="Reproduce locally"
-            :preset-options="{ mode: 'grep', repeatEach: 20, trace: true }"
-            class="mr-2"
-          />
           <NavbarActions :actions="[{ label: 'Refresh', icon: 'i-lucide-refresh-cw', onClick: () => refresh() }]" />
         </template>
       </UDashboardNavbar>
     </template>
 
     <template #body>
-      <div class="flex flex-col gap-4 p-4">
-        <!-- Header -->
-        <div class="flex items-start gap-4 flex-wrap">
-          <div class="flex-1 min-w-0">
-            <h1 class="text-xl font-bold truncate">{{ testCase?.title }}</h1>
+      <div class="flex flex-col gap-4 p-4" data-shot="test-case-detail">
+        <!-- Header: title, a single facts line, and the two actions. The title
+             wraps and the actions drop below it on phones. -->
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+          <div class="flex-1 min-w-0 space-y-2">
+            <h1 class="text-xl font-bold break-words">{{ testCase?.title }}</h1>
             <OpenInIdeLink
               v-if="testCase?.filePath"
               :file-path="testCase.filePath"
               :project-key="testCase?.project?.id"
               :project-name="testCase?.project?.name"
-              class="text-sm text-gray-500 mt-0.5"
+              class="text-sm text-gray-500"
             />
-            <div v-if="testCase?.project" class="flex items-center gap-2 mt-2">
-              <UBadge color="neutral" variant="soft" size="xs" class="font-mono">
-                {{ testCase.project.name }}
-              </UBadge>
-              <UBadge v-if="testCase?.flakyRuns > 0" color="warning" variant="soft" size="xs">
-                {{ testCase.flakyRuns }} flaky run{{ testCase.flakyRuns === 1 ? '' : 's' }}
-              </UBadge>
+            <UBadge v-if="testCase?.project" color="neutral" variant="soft" size="xs" class="font-mono">
+              {{ testCase.project.label ?? testCase.project.name }}
+            </UBadge>
+
+            <TestMetaBadges
+              v-if="testCase?.tags?.length || testCase?.locks?.length"
+              :tags="testCase?.tags"
+              :locks="testCase?.locks"
+            />
+
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
+              <span class="tabular-nums">
+                <strong class="text-highlighted">{{ testCase?.totalRuns ?? 0 }}</strong> runs
+              </span>
+              <span aria-hidden class="opacity-40">·</span>
+              <span class="tabular-nums">
+                <strong :class="passRateClass">{{ passRate !== null ? `${passRate}%` : '—' }}</strong> pass
+              </span>
+              <span aria-hidden class="opacity-40">·</span>
+              <span class="tabular-nums">
+                <strong class="text-red-600 dark:text-red-400">{{ testCase?.failedRuns ?? 0 }}</strong> failed
+              </span>
+              <span aria-hidden class="opacity-40">·</span>
+              <span class="inline-flex items-center gap-1">
+                avg <DurationValue :ms="testCase?.avgDuration" class="text-highlighted" />
+              </span>
+              <span aria-hidden class="opacity-40">·</span>
+              <span class="tabular-nums">
+                <strong
+                  :class="(testCase?.flakyRuns ?? 0) > 0 ? 'text-purple-600 dark:text-purple-400' : 'text-highlighted'"
+                >
+                  {{ testCase?.flakyRuns ?? 0 }}
+                </strong>
+                flaky
+              </span>
+              <span aria-hidden class="opacity-40">·</span>
+              <span>last run {{ testCase?.lastRunAt ? formatRelativeTime(testCase.lastRunAt) : '—' }}</span>
             </div>
           </div>
-          <NuxtLink
-            v-if="testCase?.lastExecutionId"
-            :to="`/test-run-cases/${testCase.lastExecutionId}`"
-            class="shrink-0"
-          >
-            <UButton size="sm" variant="outline" trailing-icon="i-lucide-arrow-right"> Latest execution </UButton>
-          </NuxtLink>
-        </div>
 
-        <!-- Stats cards -->
-        <StatTileGrid>
-          <StatTile label="Total runs" :value="testCase?.totalRuns ?? 0" />
-          <StatTile
-            label="Pass rate"
-            :value="passRate !== null ? `${passRate}%` : '—'"
-            :value-class="
-              (passRate ?? 0) >= 80 ? 'text-green-600' : (passRate ?? 0) >= 50 ? 'text-yellow-600' : 'text-red-600'
-            "
-          />
-          <StatTile label="Failed" :value="testCase?.failedRuns ?? 0" value-class="text-red-600" />
-          <StatTile label="Avg duration">
-            <DurationValue :ms="testCase?.avgDuration" />
-          </StatTile>
-          <StatTile
-            label="Flaky"
-            :value="testCase?.flakyRuns ?? 0"
-            :value-class="(testCase?.flakyRuns ?? 0) > 0 ? 'text-purple-600' : ''"
-          >
-            <template #label> Flaky <HelpHint topic="case.flaky-count" /> </template>
-          </StatTile>
-          <StatTile
-            label="Last run"
-            size="sm"
-            :value="testCase?.lastRunAt ? formatRelativeTime(testCase.lastRunAt) : '—'"
-          />
-        </StatTileGrid>
-
-        <!-- Evolution charts -->
-        <div v-if="historyData && historyData.length > 1" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <ChartCard title="Duration trend" icon="i-lucide-trending-up" help="case.history-chart">
-            <TestCaseHistoryChart
-              :data="historyData"
-              :height="200"
-              :markers="historyMarkers"
-              @marker-click="goToProjectTimeline"
+          <div class="flex flex-wrap items-center gap-2 shrink-0">
+            <DesktopRunLocallyButton
+              :project-id="testCase?.project?.id"
+              :project-label="testCase?.project?.label ?? testCase?.project?.name"
+              :cases="reproduceCases"
+              label="Reproduce locally"
+              :preset-options="{ mode: 'grep', repeatEach: 20, trace: true }"
             />
-          </ChartCard>
-
-          <ChartCard title="Status history" icon="i-lucide-check-circle" help="case.sparkline">
-            <div class="flex items-center gap-1 flex-wrap max-h-[200px] overflow-y-auto py-1">
-              <UTooltip
-                v-for="(point, i) in historyData"
-                :key="point.id"
-                :text="`Run #${point.runId}: ${point.status} — ${new Date(point.startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`"
-              >
-                <NuxtLink
-                  :to="`/test-run-cases/${point.id}`"
-                  :class="{
-                    'bg-red-500 hover:bg-red-600': point.status === 'failed' || point.status === 'timedOut',
-                    'bg-green-500 hover:bg-green-600': point.status === 'passed',
-                    'bg-yellow-500 hover:bg-yellow-600': point.status === 'skipped',
-                    'bg-gray-400 hover:bg-gray-500': !['passed', 'failed', 'skipped', 'timedOut'].includes(
-                      point.status,
-                    ),
-                  }"
-                  class="size-3.5 rounded-sm inline-block transition-colors"
-                  :title="`Run #${point.runId}: ${point.status}`"
-                />
-              </UTooltip>
-              <span v-if="historyData.length === 0" class="text-sm text-gray-400">No history yet</span>
-            </div>
-          </ChartCard>
+            <NuxtLink v-if="testCase?.lastExecutionId" :to="`/test-run-cases/${testCase.lastExecutionId}`">
+              <UButton size="sm" variant="outline" trailing-icon="i-lucide-arrow-right">Latest execution</UButton>
+            </NuxtLink>
+          </div>
         </div>
 
-        <div v-else-if="historyData && historyData.length <= 1" class="text-center py-6 text-gray-400">
-          <UIcon name="i-lucide-trending-up" class="size-6 mx-auto mb-1" />
-          <p class="text-sm">Need at least 2 runs to show trends.</p>
-        </div>
+        <!-- Duration trend, with the execution strip as its footer row -->
+        <ChartCard
+          v-if="historyData && historyData.length"
+          title="Duration trend"
+          icon="i-lucide-trending-up"
+          help="case.history-chart"
+          :legend="historyData.length > 1 ? legendOf(CASE_STATUS_SERIES) : undefined"
+        >
+          <TestCaseHistoryChart
+            v-if="historyData.length > 1"
+            :data="historyData"
+            :height="200"
+            :markers="historyMarkers"
+            @marker-click="goToProjectRuns"
+          />
+          <p v-else class="text-center py-4 text-sm text-gray-400">Need at least 2 runs to show a trend.</p>
+
+          <template #footer>
+            <HistoryStrip :history="historyData" compact />
+          </template>
+        </ChartCard>
 
         <!-- Recent executions -->
         <SectionCard
           icon="i-lucide-list-checks"
           :title="`Recent executions (${testCase?.recentExecutions?.length ?? 0})`"
         >
-          <UTable
-            v-if="testCase?.recentExecutions?.length"
-            :data="testCase.recentExecutions"
-            :columns="executionColumns"
-            :ui="{
-              base: 'table-fixed border-separate border-spacing-0',
-              thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
-              tbody: '[&>tr]:last:[&>td]:border-b-0',
-              th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
-              td: 'border-b border-default',
-            }"
-          >
-            <template #startTime-cell="{ row }">
-              <span class="text-xs whitespace-nowrap">
-                <span class="text-gray-500">{{
-                  new Date(row.original.startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                }}</span>
-                <span class="text-gray-400 ml-1">{{
-                  new Date(row.original.startTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-                }}</span>
-              </span>
-            </template>
-            <template #status-cell="{ row }">
-              <UBadge :color="getStatusColor(row.original.status)" variant="subtle" class="capitalize">{{
-                row.original.status
-              }}</UBadge>
-            </template>
-            <template #duration-cell="{ row }">
-              <DurationValue v-if="row.original.duration !== null" :ms="row.original.duration" />
-              <span v-else class="text-gray-400">&mdash;</span>
-            </template>
-            <template #retries-cell="{ row }">
-              {{ row.original.retries && row.original.retries > 0 ? row.original.retries : '' }}
-            </template>
-            <template #runId-cell="{ row }">
-              <NuxtLink :to="`/test-runs/${row.original.runId}`" class="text-primary hover:underline">
-                {{
-                  row.original.runLabel ? `${row.original.runLabel} (#${row.original.runId})` : `#${row.original.runId}`
-                }}
-              </NuxtLink>
-            </template>
-            <template #error-cell="{ row }">
-              <span
-                v-if="row.original.error"
-                class="text-red-600 text-xs truncate max-w-xs block"
-                :title="row.original.error"
-              >
-                {{ row.original.error.length > 80 ? `${row.original.error.substring(0, 80)}…` : row.original.error }}
-              </span>
-            </template>
-            <template #actions-header>
-              <div class="text-right">Actions</div>
-            </template>
-            <template #actions-cell="{ row }">
-              <div class="flex justify-end">
-                <UButton
-                  :to="`/test-run-cases/${row.original.id}`"
-                  size="sm"
-                  variant="outline"
-                  trailing-icon="i-lucide-arrow-right"
+          <div v-if="testCase?.recentExecutions?.length" class="rounded-lg border border-default overflow-hidden">
+            <TestRow
+              v-for="exec in testCase.recentExecutions"
+              :key="exec.id"
+              :href="`/test-run-cases/${exec.id}`"
+              :title="formatRelativeTime(exec.startTime)"
+              :status="exec.status"
+              :error="exec.error"
+              :project-key="testCase?.project?.id"
+              :project-name="testCase?.project?.name"
+            >
+              <template #metrics>
+                <DurationValue v-if="exec.duration !== null" :ms="exec.duration" />
+                <UBadge
+                  v-if="exec.retries && exec.retries > 0"
+                  color="warning"
+                  variant="soft"
+                  size="xs"
+                  :title="`${exec.retries + 1} attempts`"
                 >
-                  View
-                </UButton>
-              </div>
-            </template>
-          </UTable>
+                  {{ exec.retries + 1 }} attempts
+                </UBadge>
+                <NuxtLink :to="`/test-runs/${exec.runId}`" class="text-primary hover:underline shrink-0" @click.stop>
+                  {{ exec.runLabel ? `${exec.runLabel} (#${exec.runId})` : `run #${exec.runId}` }}
+                </NuxtLink>
+              </template>
+            </TestRow>
+          </div>
           <EmptyState v-else icon="i-lucide-inbox" text="No executions yet" />
         </SectionCard>
 
@@ -313,30 +223,22 @@ const executionColumns: TableColumn<ExecutionRow>[] = [
           :title="`Failure clusters (${testCase.failureClusters.length})`"
           help="cluster.concept"
         >
-          <div class="space-y-2">
-            <div
+          <div class="space-y-1">
+            <NuxtLink
               v-for="cluster in testCase.failureClusters"
               :key="cluster.id"
-              class="flex items-center justify-between py-2 px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800"
+              :to="`/failure-clusters/${cluster.id}`"
+              class="flex items-center gap-2 py-2 px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800"
             >
-              <div class="flex items-center gap-2 min-w-0">
-                <UBadge :color="clusterColor(cluster.status)" variant="soft" size="xs" class="capitalize">
-                  {{ cluster.status }}
-                </UBadge>
-                <span class="text-sm truncate">{{ cluster.signature }}</span>
-                <span v-if="cluster.occurrences > 1" class="text-xs text-gray-400 shrink-0">
-                  {{ cluster.occurrences }} occurrences
-                </span>
-              </div>
-              <UButton
-                :to="`/failure-clusters/${cluster.id}`"
-                size="xs"
-                variant="outline"
-                trailing-icon="i-lucide-arrow-right"
-              >
-                View
-              </UButton>
-            </div>
+              <UBadge :color="clusterColor(cluster.status)" variant="soft" size="xs" class="shrink-0">
+                {{ formatTriageStatus(cluster.status) }}
+              </UBadge>
+              <span class="text-sm truncate min-w-0" :title="cluster.signature">{{ describeCluster(cluster) }}</span>
+              <span v-if="cluster.occurrences > 1" class="text-xs text-gray-400 shrink-0">
+                {{ cluster.occurrences }} occurrences
+              </span>
+              <UIcon name="i-lucide-arrow-right" class="size-3.5 text-muted shrink-0 ml-auto" />
+            </NuxtLink>
           </div>
         </SectionCard>
 

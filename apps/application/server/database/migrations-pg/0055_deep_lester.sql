@@ -1,0 +1,1 @@
+ALTER TABLE "network_requests" ADD COLUMN "start_time" bigint;

@@ -8,7 +8,7 @@ test.describe.serial('Tags API Tests', () => {
   test.beforeAll(async ({ request }) => {
     const res = await request.get('/api/tags');
     const data = await res.json();
-    for (const tag of data.tags || []) {
+    for (const tag of data.items || []) {
       if (['api-test-tag', 'api-test-tag-updated', 'duplicate-tag', 'delete-me-tag'].includes(tag.text)) {
         await request.delete(`/api/tags/${tag.id}`);
       }
@@ -19,7 +19,7 @@ test.describe.serial('Tags API Tests', () => {
     const res = await request.get('/api/tags');
     expect(res.ok()).toBeTruthy();
     const data = await res.json();
-    expect(Array.isArray(data.tags)).toBe(true);
+    expect(Array.isArray(data.items)).toBe(true);
   });
 
   test('should create a new tag', async ({ request }) => {
@@ -39,7 +39,7 @@ test.describe.serial('Tags API Tests', () => {
     const res = await request.get('/api/tags');
     expect(res.ok()).toBeTruthy();
     const data = await res.json();
-    const tag = data.tags.find((t: { text: string }) => t.text === 'api-test-tag');
+    const tag = data.items.find((t: { text: string }) => t.text === 'api-test-tag');
     expect(tag).toBeDefined();
     expect(tag.color).toBe('#3b82f6');
   });
@@ -49,7 +49,7 @@ test.describe.serial('Tags API Tests', () => {
       data: { text: 'api-test-tag', color: '#ef4444' },
     });
     expect(res.ok()).toBeFalsy();
-    expect(res.status()).toBe(400);
+    expect(res.status()).toBe(409);
   });
 
   test('should reject missing tag text', async ({ request }) => {
@@ -69,7 +69,7 @@ test.describe.serial('Tags API Tests', () => {
   });
 
   test('should update a tag', async ({ request }) => {
-    const res = await request.put(`/api/tags/${createdTagId}`, {
+    const res = await request.patch(`/api/tags/${createdTagId}`, {
       data: { text: 'api-test-tag-updated', color: '#10b981' },
     });
     expect(res.ok()).toBeTruthy();
@@ -79,7 +79,7 @@ test.describe.serial('Tags API Tests', () => {
   });
 
   test('should return 404 for unknown tag update', async ({ request }) => {
-    const res = await request.put('/api/tags/99999', {
+    const res = await request.patch('/api/tags/99999', {
       data: { text: 'ghost', color: '#000000' },
     });
     expect(res.status()).toBe(404);
@@ -102,7 +102,7 @@ test.describe.serial('Tags API Tests', () => {
     const listRes = await request.get('/api/tags');
     expect(listRes.ok()).toBeTruthy();
     const listData = await listRes.json();
-    const found = listData.tags.find((t: { text: string }) => t.text === deleteTagName);
+    const found = listData.items.find((t: { text: string }) => t.text === deleteTagName);
     expect(found).toBeUndefined();
   });
 
@@ -137,7 +137,7 @@ test.describe.serial('Tags assigned to projects', () => {
     // Clean up existing tags with these names
     const tagsRes = await request.get('/api/tags');
     const tagsData = await tagsRes.json();
-    for (const tag of tagsData.tags || []) {
+    for (const tag of tagsData.items || []) {
       if (['assign-tag-a', 'assign-tag-b'].includes(tag.text)) {
         await request.delete(`/api/tags/${tag.id}`);
       }
@@ -152,19 +152,19 @@ test.describe.serial('Tags assigned to projects', () => {
   });
 
   test('should assign a tag to a project', async ({ request }) => {
-    const res = await request.put(`/api/projects/${projectId}`, {
+    const res = await request.patch(`/api/projects/${projectId}`, {
       data: { tagIds: [tagId] },
     });
     expect(res.ok()).toBeTruthy();
     const data = await res.json();
-    expect(data.tags).toBeDefined();
-    expect(data.tags.some((t: { id: number }) => t.id === tagId)).toBe(true);
+    expect(data.project.tags).toBeDefined();
+    expect(data.project.tags.some((t: { id: number }) => t.id === tagId)).toBe(true);
   });
 
   test('should include tags in project list', async ({ request }) => {
     const res = await request.get('/api/projects');
     expect(res.ok()).toBeTruthy();
-    const projects = await res.json();
+    const { items: projects } = await res.json();
     const project = projects.find((p: { id: number }) => p.id === projectId);
     expect(project).toBeDefined();
     expect(project.tags).toBeDefined();
@@ -180,12 +180,12 @@ test.describe.serial('Tags assigned to projects', () => {
   });
 
   test('should remove all tags from a project', async ({ request }) => {
-    const res = await request.put(`/api/projects/${projectId}`, {
+    const res = await request.patch(`/api/projects/${projectId}`, {
       data: { tagIds: [] },
     });
     expect(res.ok()).toBeTruthy();
     const data = await res.json();
-    expect(data.tags).toHaveLength(0);
+    expect(data.project.tags).toHaveLength(0);
   });
 
   test('should cascade delete tag from project when tag is deleted', async ({ request }) => {
@@ -195,7 +195,7 @@ test.describe.serial('Tags assigned to projects', () => {
     });
     const { tag } = await tagRes.json();
 
-    await request.put(`/api/projects/${projectId}`, {
+    await request.patch(`/api/projects/${projectId}`, {
       data: { tagIds: [tag.id] },
     });
 

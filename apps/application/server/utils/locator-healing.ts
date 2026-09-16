@@ -7,8 +7,9 @@
  * snapshot generation when no prior snapshot exists.
  */
 import { and, eq, ne, notInArray, sql, inArray } from 'drizzle-orm';
-import { locatorSnapshots, testCases, testRunsCases, type LocatorSnapshotRow } from '../database/schema';
+import { locatorSnapshots, testCases, testRuns, testRunsCases, type LocatorSnapshotRow } from '../database/schema';
 import { extractLeafSelector } from '#shared/error-fingerprint';
+import { classifyLocatorResolution } from '#shared/locator-resolution';
 import {
   locatorSignatureFromExpression,
   locatorExpressionMethod,
@@ -16,8 +17,17 @@ import {
   recommendLocatorFix,
   locatorIdentityEquals,
   alternativeUsesName,
+  computeNarrowingSuggestion,
 } from '#shared/locator-healing';
-import { elementMatchOutcome, generateFromAriaSnapshot, type ElementFingerprint } from '#shared/locator-fingerprint';
+import {
+  elementMatchOutcome,
+  generateFromAriaSnapshot,
+  parseAriaCandidates,
+  type ElementFingerprint,
+} from '#shared/locator-fingerprint';
+import { parsePlaywrightError } from '#shared/error-parse';
+import { ariaTextPreferJson } from '#shared/aria-json';
+import { buildHealEdit } from '#shared/heal-edit';
 import { inlineCasePayloads, resolveCasePayloadContents } from './case-payloads';
 import type {
   RankedLocator,
@@ -411,15 +421,21 @@ export async function getLocatorHealing(db: DrizzleDB, testRunsCaseId: number): 
       testCaseId: testRunsCases.testCaseId,
       testRunId: testRunsCases.testRunId,
       ariaSnapshot: testRunsCases.ariaSnapshot,
+      ariaSnapshotJson: testRunsCases.ariaSnapshotJson,
       testSource: testRunsCases.testSource,
       ariaSnapshotPayloadId: testRunsCases.ariaSnapshotPayloadId,
+      ariaSnapshotJsonPayloadId: testRunsCases.ariaSnapshotJsonPayloadId,
       testSourcePayloadId: testRunsCases.testSourcePayloadId,
+      filePath: testCases.filePath,
+      playwrightVersion: testRuns.playwrightVersion,
     })
     .from(testRunsCases)
+    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
     .where(eq(testRunsCases.id, testRunsCaseId));
 
   const row = rows[0] ? await inlineCasePayloads(db, rows[0]) : undefined;
-  if (!row?.error) return buildHealingResult(null, null, null, 'none');
+  if (!row?.error) return notApplicableResult(null, null);
 
   const testCaseId = row.testCaseId;
 
@@ -431,7 +447,15 @@ export async function getLocatorHealing(db: DrizzleDB, testRunsCaseId: number): 
     : [];
 
   return resolveHealingForCase(
-    { error: row.error, ariaSnapshot: row.ariaSnapshot, testSource: row.testSource, failingRunId: row.testRunId },
+    {
+      error: row.error,
+      ariaSnapshot: row.ariaSnapshot,
+      ariaSnapshotJson: row.ariaSnapshotJson,
+      playwrightVersion: row.playwrightVersion,
+      testSource: row.testSource,
+      failingRunId: row.testRunId,
+      filePath: row.filePath,
+    },
     snaps,
     testCaseId ? (sig, method) => findCrossTestSnapshot(db, testCaseId, sig, method) : null,
   );
@@ -441,16 +465,43 @@ export async function getLocatorHealing(db: DrizzleDB, testRunsCaseId: number): 
 export interface HealingCaseInput {
   error: string | null;
   ariaSnapshot?: string | null;
+  /** The failure-time aria tree as JSON (Playwright ≥ 1.63), preferred over the YAML. */
+  ariaSnapshotJson?: string | null;
+  /** The run's stored Playwright version — gates the `.visible()` narrowing suggestion. */
+  playwrightVersion?: string | null;
   testSource?: string | null;
   /** The failing execution's run id — enables healed-run detection. */
   failingRunId?: number | null;
+  /**
+   * The failing test's own source file, used as the edit's file path when the
+   * error carries no stack frame (Piwi-submitted errors often don't). The call
+   * site's line still comes from the source snippet.
+   */
+  filePath?: string | null;
+}
+
+/** An empty result for a failure healing cannot address, with the one-line reason. */
+function notApplicableResult(
+  failingLocator: LocatorHealingResult['failingLocator'],
+  reason: string | null,
+): LocatorHealingResult {
+  return {
+    ...buildHealingResult(failingLocator, null, null, 'none'),
+    applicable: false,
+    reason: reason ?? classifyLocatorResolution(null).reason,
+  };
 }
 
 /**
  * Resolve locator healing for one failing case from its pre-loaded snapshots.
  * The single-case and batch entry points share this one ladder; the DB-touching
  * cross-test lookup is injected as `findCrossTest` (null to skip it) so the core
- * stays directly unit-testable:
+ * stays directly unit-testable.
+ *
+ * The ladder only runs for a resolution failure (`classifyLocatorResolution`):
+ * a locator that resolved and then failed its action or assertion, a navigation
+ * error, or an error naming no locator returns `applicable: false` with a
+ * reason and no alternatives — the ARIA fallback included.
  *
  * 1. Call-site location — exact `file:line:col`, then `file:line` (tolerates a
  *    column drift). Disambiguates repeated identical locators by where they run.
@@ -461,14 +512,43 @@ export interface HealingCaseInput {
  * The failing call site, source line, and any healed-run signal are stamped onto
  * whichever rung wins.
  */
+/** Role + accessible name the failing locator targets, parsed from its source form. */
+function failingRoleName(selector: string | null): { role: string | null; name: string | null } {
+  if (!selector) return { role: null, name: null };
+  const role = /getByRole\(\s*['"`]([^'"`]+)['"`]/.exec(selector)?.[1] ?? null;
+  const name =
+    /\bname:\s*['"`]([^'"`]+)['"`]/.exec(selector)?.[1] ??
+    /getBy(?:Text|Label|Placeholder|AltText|Title)\(\s*['"`]([^'"`]+)['"`]/.exec(selector)?.[1] ??
+    null;
+  return { role, name };
+}
+
+/**
+ * How many nodes in the failure-time aria tree match the failing locator's role
+ * and name. The aria snapshot omits hidden elements, so a match here is a
+ * *visible* match — exactly what `.visible()` keeps. Null when the tree is
+ * absent or the locator names neither a role nor a name to match on.
+ */
+function visibleMatchCountFromAria(
+  aria: string | null,
+  target: { role: string | null; name: string | null },
+): number | null {
+  if (!aria || (!target.role && !target.name)) return null;
+  const candidates = parseAriaCandidates(aria);
+  if (candidates.length === 0) return null;
+  return candidates.filter(
+    (c) => (target.role ? c.role === target.role : true) && (target.name ? c.name === target.name : true),
+  ).length;
+}
+
 export async function resolveHealingForCase(
   input: HealingCaseInput,
   snaps: LocatorSnapshotRow[],
   findCrossTest: ((sig: string, method: string | null) => Promise<LocatorSnapshotRow | null>) | null,
 ): Promise<LocatorHealingResult> {
-  if (!input.error) return buildHealingResult(null, null, null, 'none');
+  if (!input.error) return notApplicableResult(null, null);
   const error = input.error;
-  const aria = input.ariaSnapshot ?? null;
+  const aria = ariaTextPreferJson(input.ariaSnapshotJson, input.ariaSnapshot);
 
   // Parse the failing locator from the error (for display + signature lookup).
   // Use the chain leaf — the innermost call identifies the resolved element and
@@ -476,6 +556,23 @@ export async function resolveHealingForCase(
   const selector = extractLeafSelector(error);
   const parsed = selector ? parseLocatorExpression(selector) : null;
   const failingLocator = parsed ? { method: parsed.method, args: parsed.args } : null;
+
+  const verdict = classifyLocatorResolution(error);
+  if (!verdict.applicable) return notApplicableResult(failingLocator, verdict.reason);
+
+  // A strict-mode violation where the failure-time aria tree (which omits hidden
+  // nodes) carries just one match is the case `.visible()` exists for. Gated on
+  // the run's Playwright being 1.63 or later.
+  const parsedErr = parsePlaywrightError(error);
+  const narrowing =
+    parsedErr.kind === 'strict-mode'
+      ? computeNarrowingSuggestion({
+          playwrightVersion: input.playwrightVersion ?? null,
+          matchCount: parsedErr.resolvedCount,
+          visibleMatchCount: visibleMatchCountFromAria(aria, failingRoleName(selector)),
+        })
+      : null;
+
   const location = extractErrorLocation(error);
   const sourceLine = parseFailingSourceLine(input.testSource, location);
   // Computed up front so healed detection (below) can compare against it in
@@ -484,8 +581,19 @@ export async function resolveHealingForCase(
   const method = selector ? locatorExpressionMethod(selector) : null;
 
   const finish = async (r: LocatorHealingResult): Promise<LocatorHealingResult> => {
+    r.applicable = true;
+    r.reason = null;
+    r.narrowingSuggestion = narrowing;
     r.location = location;
     r.sourceLine = sourceLine;
+    r.edit = buildHealEdit({
+      location,
+      sourceLine,
+      failingMethod: r.failingLocator?.method ?? null,
+      recommendedLocator: r.recommendation?.recommended?.locator ?? null,
+      testSource: input.testSource ?? null,
+      fallbackFilePath: input.filePath ?? null,
+    });
     await stampHealedRun(r, snaps, failingSig, input.failingRunId ?? null);
     return r;
   };
@@ -590,21 +698,30 @@ export async function getLocatorHealingBatch(
       testCaseId: testRunsCases.testCaseId,
       testRunId: testRunsCases.testRunId,
       ariaSnapshot: testRunsCases.ariaSnapshot,
+      ariaSnapshotJson: testRunsCases.ariaSnapshotJson,
       testSource: testRunsCases.testSource,
       ariaSnapshotPayloadId: testRunsCases.ariaSnapshotPayloadId,
+      ariaSnapshotJsonPayloadId: testRunsCases.ariaSnapshotJsonPayloadId,
       testSourcePayloadId: testRunsCases.testSourcePayloadId,
+      filePath: testCases.filePath,
+      playwrightVersion: testRuns.playwrightVersion,
     })
     .from(testRunsCases)
+    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
     .where(inArray(testRunsCases.id, testRunsCaseIds));
 
   const payloadContents = await resolveCasePayloadContents(
     db,
-    rawCaseRows.flatMap((r) => [r.ariaSnapshotPayloadId, r.testSourcePayloadId]),
+    rawCaseRows.flatMap((r) => [r.ariaSnapshotPayloadId, r.ariaSnapshotJsonPayloadId, r.testSourcePayloadId]),
   );
   const caseRows = rawCaseRows.map((r) => ({
     ...r,
     ariaSnapshot:
       (r.ariaSnapshotPayloadId != null ? payloadContents.get(r.ariaSnapshotPayloadId) : undefined) ?? r.ariaSnapshot,
+    ariaSnapshotJson:
+      (r.ariaSnapshotJsonPayloadId != null ? payloadContents.get(r.ariaSnapshotJsonPayloadId) : undefined) ??
+      r.ariaSnapshotJson,
     testSource:
       (r.testSourcePayloadId != null ? payloadContents.get(r.testSourcePayloadId) : undefined) ?? r.testSource,
   }));
@@ -629,7 +746,15 @@ export async function getLocatorHealingBatch(
     results.set(
       row.id,
       await resolveHealingForCase(
-        { error: row.error, ariaSnapshot: row.ariaSnapshot, testSource: row.testSource, failingRunId: row.testRunId },
+        {
+          error: row.error,
+          ariaSnapshot: row.ariaSnapshot,
+          ariaSnapshotJson: row.ariaSnapshotJson,
+          playwrightVersion: row.playwrightVersion,
+          testSource: row.testSource,
+          failingRunId: row.testRunId,
+          filePath: row.filePath,
+        },
         snaps,
         row.testCaseId ? (sig, method) => findCrossTestSnapshot(db, row.testCaseId, sig, method) : null,
       ),

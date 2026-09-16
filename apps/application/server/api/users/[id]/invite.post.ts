@@ -19,15 +19,16 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const admin = await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw createError({ statusCode: 400, message: 'Invalid user ID' });
+  if (!id) throw apiError({ statusCode: 400, message: 'Invalid user ID' });
 
   const db = await getDatabase();
   const userRows = await db.select().from(users).where(eq(users.id, id));
   const user = userRows[0];
-  if (!user) throw createError({ statusCode: 404, message: 'User not found' });
-  if (!user.email) throw createError({ statusCode: 400, message: 'User has no email address' });
+  if (!user) throw apiError({ statusCode: 404, message: 'User not found' });
+  if (!user.email) throw apiError({ statusCode: 400, message: 'User has no email address' });
 
-  if (!isEmailConfigured()) throw createError({ statusCode: 503, message: 'SMTP is not configured' });
+  if (!isEmailConfigured())
+    throw apiError({ statusCode: 503, errorCode: 'SMTP_NOT_CONFIGURED', message: 'SMTP is not configured' });
 
   const token = await mintAccountToken(db, user.id, 'invite');
   const { html, text } = renderInviteEmail(token, admin.name || admin.username);
@@ -39,6 +40,6 @@ export default eventHandler(async (event) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[users/invite] Failed to send invite:', message);
-    throw createError({ statusCode: 500, message: 'Failed to send invite email' });
+    throw apiError({ statusCode: 500, message: 'Failed to send invite email' });
   }
 });

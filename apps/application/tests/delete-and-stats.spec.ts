@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
 
 test.describe.serial('Delete test run API', () => {
-  let testRunId: number;
+  let runId: number;
   let projectId: number;
 
   test.beforeAll(async ({ request }) => {
@@ -35,7 +35,7 @@ test.describe.serial('Delete test run API', () => {
     });
     expect(response.ok()).toBeTruthy();
     const data = await response.json();
-    testRunId = data.testRunId;
+    runId = data.runId;
     projectId = data.projectId;
   });
 
@@ -46,17 +46,17 @@ test.describe.serial('Delete test run API', () => {
 
   test('should delete a test run and its test results', async ({ request }) => {
     // Verify the run exists
-    const beforeResponse = await request.get(`/api/test-runs/${testRunId}`);
+    const beforeResponse = await request.get(`/api/test-runs/${runId}`);
     expect(beforeResponse.ok()).toBeTruthy();
 
     // Delete it
-    const deleteResponse = await request.delete(`/api/test-runs/${testRunId}`);
+    const deleteResponse = await request.delete(`/api/test-runs/${runId}`);
     expect(deleteResponse.ok()).toBeTruthy();
     const deleteData = await deleteResponse.json();
     expect(deleteData.success).toBe(true);
 
     // Verify it's gone
-    const afterResponse = await request.get(`/api/test-runs/${testRunId}`);
+    const afterResponse = await request.get(`/api/test-runs/${runId}`);
     expect(afterResponse.status()).toBe(404);
   });
 
@@ -64,7 +64,7 @@ test.describe.serial('Delete test run API', () => {
     const response = await request.get(`/api/projects/${projectId}`);
     expect(response.ok()).toBeTruthy();
     const project = await response.json();
-    const run = project.testRuns?.find((r: { id: number }) => r.id === testRunId);
+    const run = project.testRuns?.find((r: { id: number }) => r.id === runId);
     expect(run).toBeUndefined();
   });
 });

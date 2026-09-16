@@ -1,0 +1,496 @@
+{
+  "execution": {
+    "id": 781,
+    "testCaseId": 46,
+    "status": "failed",
+    "duration": 5324,
+    "browserName": "Chromium",
+    "startedAt": 1788462176000,
+    "locks": [],
+    "shardIndex": null
+  },
+  "parsedError": {
+    "kind": "assertion-timeout",
+    "errorName": "Error",
+    "subject": null,
+    "action": null,
+    "assertion": "toHaveCount",
+    "negated": false,
+    "locator": "getByRole('row')",
+    "leafLocator": "getByRole('row')",
+    "expected": "26",
+    "received": "51",
+    "timeoutMs": 5000,
+    "url": null,
+    "networkErrorCode": null,
+    "timeoutPhase": null,
+    "lastState": "resolved-count",
+    "resolvedCount": 51,
+    "lastCallLogLine": "unexpected value \"51\"",
+    "lastStateLine": "unexpected value \"51\"",
+    "messageHead": "Error: expect(locator).toHaveCount(expected) failed\nLocator:  getByRole('row')\nExpected: 26\nReceived: 51\nTimeout:  5000ms",
+    "topFrame": "tests/admin/users.spec.ts:7",
+    "isNavigationFailure": false,
+    "isLocatorResolutionFailure": false
+  },
+  "timeline": {
+    "origin": 1788462176000,
+    "end": 1788462181324,
+    "failureAt": 5324,
+    "failedStep": {
+      "index": 13,
+      "label": "Expect \"toBeVisible\" getByText('Saved')",
+      "at": 4825,
+      "duration": 499
+    },
+    "lanes": {
+      "steps": [
+        {
+          "id": "step-0",
+          "lane": "steps",
+          "at": 0,
+          "duration": 1497,
+          "label": "Sign in",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 0
+          },
+          "origin": null,
+          "group": "Sign in",
+          "category": "test.step"
+        },
+        {
+          "id": "step-1",
+          "lane": "steps",
+          "at": 0,
+          "duration": 333,
+          "label": "Fill \"admin@example.com\" getByLabel('Email')",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 1
+          },
+          "origin": null,
+          "group": "Sign in",
+          "subtitle": "getByLabel('Email')",
+          "params": {
+            "locator": "getByLabel('Email')",
+            "value": "admin@example.com"
+          },
+          "category": "input"
+        },
+        {
+          "id": "step-2",
+          "lane": "steps",
+          "at": 333,
+          "duration": 333,
+          "label": "Fill \"********\" getByLabel('Password')",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 2
+          },
+          "origin": null,
+          "group": "Sign in",
+          "subtitle": "getByLabel('Password')",
+          "params": {
+            "locator": "getByLabel('Password')"
+          },
+          "category": "input"
+        },
+        {
+          "id": "step-3",
+          "lane": "steps",
+          "at": 666,
+          "duration": 831,
+          "label": "Click getByRole('button', { name: 'Sign in' })",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 3
+          },
+          "origin": null,
+          "group": "Sign in",
+          "subtitle": "getByRole('button', { name: 'Sign in' })",
+          "params": {
+            "locator": "getByRole('button', { name: 'Sign in' })"
+          },
+          "category": "action"
+        },
+        {
+          "id": "step-4",
+          "lane": "steps",
+          "at": 1497,
+          "duration": 998,
+          "label": "Navigate to section",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 4
+          },
+          "origin": null,
+          "group": "Navigate to section",
+          "category": "test.step"
+        },
+        {
+          "id": "step-5",
+          "lane": "steps",
+          "at": 1497,
+          "duration": 499,
+          "label": "Click getByRole('link', { name: 'Users' })",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 5
+          },
+          "origin": null,
+          "group": "Navigate to section",
+          "subtitle": "getByRole('link', { name: 'Users' })",
+          "params": {
+            "locator": "getByRole('link', { name: 'Users' })"
+          },
+          "category": "action"
+        },
+        {
+          "id": "step-6",
+          "lane": "steps",
+          "at": 1996,
+          "duration": 499,
+          "label": "Wait for load state",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 6
+          },
+          "origin": null,
+          "group": "Navigate to section",
+          "category": "wait"
+        },
+        {
+          "id": "step-7",
+          "lane": "steps",
+          "at": 2495,
+          "duration": 1664,
+          "label": "Perform admin action",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 7
+          },
+          "origin": null,
+          "group": "Perform admin action",
+          "category": "test.step"
+        },
+        {
+          "id": "step-8",
+          "lane": "steps",
+          "at": 2495,
+          "duration": 666,
+          "label": "Click getByRole('row', { name: 'Ada Lovelace' }).getByRole('button', { name: 'Edit' })",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 8
+          },
+          "origin": null,
+          "group": "Perform admin action",
+          "subtitle": "getByRole('row', { name: 'Ada Lovelace' }).getByRole('button', { name: 'Edit' })",
+          "params": {
+            "locator": "getByRole('row', { name: 'Ada Lovelace' })"
+          },
+          "category": "action"
+        },
+        {
+          "id": "step-9",
+          "lane": "steps",
+          "at": 3161,
+          "duration": 499,
+          "label": "Fill \"Editor\" getByLabel('Role')",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 9
+          },
+          "origin": null,
+          "group": "Perform admin action",
+          "subtitle": "getByLabel('Role')",
+          "params": {
+            "locator": "getByLabel('Role')",
+            "value": "Editor"
+          },
+          "category": "input"
+        },
+        {
+          "id": "step-10",
+          "lane": "steps",
+          "at": 3660,
+          "duration": 499,
+          "label": "Click getByRole('button', { name: 'Save' })",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 10
+          },
+          "origin": null,
+          "group": "Perform admin action",
+          "subtitle": "getByRole('button', { name: 'Save' })",
+          "params": {
+            "locator": "getByRole('button', { name: 'Save' })"
+          },
+          "category": "action"
+        },
+        {
+          "id": "step-11",
+          "lane": "steps",
+          "at": 4159,
+          "duration": 1165,
+          "label": "Assert table state",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 11
+          },
+          "origin": null,
+          "group": "Assert table state",
+          "category": "test.step"
+        },
+        {
+          "id": "step-12",
+          "lane": "steps",
+          "at": 4159,
+          "duration": 666,
+          "label": "Expect \"toHaveText\" getByRole('cell', { name: 'Editor' })",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 12
+          },
+          "origin": null,
+          "group": "Assert table state",
+          "subtitle": "getByRole('cell', { name: 'Editor' })",
+          "params": {
+            "locator": "getByRole('cell', { name: 'Editor' })"
+          },
+          "category": "assertion"
+        },
+        {
+          "id": "step-13",
+          "lane": "steps",
+          "at": 4825,
+          "duration": 499,
+          "label": "Expect \"toBeVisible\" getByText('Saved')",
+          "status": "failed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 13
+          },
+          "origin": null,
+          "group": "Assert table state",
+          "subtitle": "getByText('Saved')",
+          "params": {
+            "locator": "getByText('Saved')"
+          },
+          "category": "assertion",
+          "failed": true
+        }
+      ],
+      "console": [],
+      "network": [
+        {
+          "id": "network-0",
+          "lane": "network",
+          "at": 120,
+          "duration": 220,
+          "label": "GET https://admin.example.com/api/metrics?range=30d",
+          "status": "200",
+          "kind": "network",
+          "ref": {
+            "section": "networkRequests",
+            "index": 0
+          }
+        },
+        {
+          "id": "network-1",
+          "lane": "network",
+          "at": 375,
+          "duration": 340,
+          "label": "GET https://admin.example.com/api/users?page=1",
+          "status": "200",
+          "kind": "network",
+          "ref": {
+            "section": "networkRequests",
+            "index": 1
+          }
+        },
+        {
+          "id": "network-2",
+          "lane": "network",
+          "at": 750,
+          "duration": 57,
+          "label": "GET https://admin.example.com/api/orgs/current",
+          "status": "200",
+          "kind": "network",
+          "ref": {
+            "section": "networkRequests",
+            "index": 2
+          }
+        }
+      ],
+      "backend": [],
+      "dialogs": []
+    },
+    "unplaced": [],
+    "estimated": false,
+    "window": {
+      "start": 0,
+      "end": 5324
+    }
+  },
+  "healing": {
+    "failingLocator": {
+      "method": "getByRole",
+      "args": {
+        "role": "row"
+      }
+    },
+    "fromPriorSuccess": null,
+    "fromElementMatch": null,
+    "fromAriaSnapshot": null,
+    "source": "none",
+    "recommendation": null,
+    "capturedAt": null,
+    "applicable": false,
+    "reason": "The locator resolved; this is not a locator problem."
+  },
+  "ariaSnapshot": "- document:\n  - main:\n    - heading \"Users\"\n    - table \"Users\":\n      - row \"Name Email Role\"\n      - row \"Ada Lovelace ada@example.com admin\"",
+  "ariaSnapshotJson": null,
+  "appState": {
+    "url": "https://admin.example.com/dashboard",
+    "hash": null,
+    "historyState": null,
+    "localStorage": [
+      {
+        "key": "sidebar-collapsed",
+        "length": 4
+      },
+      {
+        "key": "table-density",
+        "length": 7
+      }
+    ],
+    "sessionStorage": [
+      {
+        "key": "csrf",
+        "length": 32
+      }
+    ],
+    "cookies": [
+      {
+        "name": "admin_session",
+        "domain": "admin.example.com",
+        "path": "/",
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Strict"
+      }
+    ]
+  },
+  "environmentDiff": {
+    "status": "ok",
+    "baseline": {
+      "runId": 62,
+      "executionId": 701,
+      "startTime": 1788715996000,
+      "environment": "production"
+    },
+    "baselineNote": null,
+    "entries": [
+      {
+        "key": "playwrightVersion",
+        "label": "Playwright version",
+        "failing": "1.51.0",
+        "baseline": "1.52.0"
+      },
+      {
+        "key": "colorScheme",
+        "label": "Color scheme",
+        "failing": "light",
+        "baseline": "dark"
+      }
+    ]
+  },
+  "pageDiff": null,
+  "networkRequests": [
+    {
+      "method": "GET",
+      "url": "https://admin.example.com/api/metrics?range=30d",
+      "status": 200,
+      "duration": 220,
+      "startTime": 1788462176120,
+      "serverLogs": null
+    },
+    {
+      "method": "GET",
+      "url": "https://admin.example.com/api/users?page=1",
+      "status": 200,
+      "duration": 340,
+      "startTime": 1788462176375,
+      "serverLogs": null
+    },
+    {
+      "method": "GET",
+      "url": "https://admin.example.com/api/orgs/current",
+      "status": 200,
+      "duration": 57,
+      "startTime": 1788462176750,
+      "serverLogs": null
+    }
+  ],
+  "consoleLogs": [],
+  "dialogs": null,
+  "browserPeers": [
+    {
+      "browserName": "Chromium",
+      "status": "failed"
+    }
+  ],
+  "workerExecutions": [
+    {
+      "id": 781,
+      "testCaseId": 46,
+      "title": "Users table paginates 25 rows per page",
+      "status": "failed",
+      "startedAt": 1788462176000
+    },
+    {
+      "id": 785,
+      "testCaseId": 50,
+      "title": "exports the monthly report as CSV",
+      "status": "passed",
+      "startedAt": 1788462181524
+    }
+  ],
+  "lockHolders": [],
+  "cluster": {
+    "fixCommit": "demo010",
+    "fixLandedRunId": 62,
+    "fixVerification": "diagnosis-verified"
+  },
+  "timeout": 20000,
+  "slowRequestMs": null
+}

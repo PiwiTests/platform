@@ -2,6 +2,7 @@ import { describe, test, expect, vi } from 'vitest';
 import {
   formatBytes,
   formatDuration,
+  formatLongDuration,
   splitDuration,
   prettyDateFormat,
   formatRelativeTime,
@@ -11,6 +12,8 @@ import {
   isStatusInFlight,
   toTestPriority,
   formatStatusLabel,
+  isFailedStatus,
+  failureFirstCompare,
   testCaseCategoryColor,
   clusterStatusColor,
   clusterErrorTypeColor,
@@ -40,6 +43,29 @@ describe('formatBytes', () => {
     expect(formatBytes(1024)).toBe('1.00 KB');
     expect(formatBytes(1536)).toBe('1.50 KB');
     expect(formatBytes(1048576)).toBe('1.00 MB');
+  });
+});
+
+describe('formatLongDuration', () => {
+  test('returns N/A for nullish input', () => {
+    expect(formatLongDuration(null)).toBe('N/A');
+    expect(formatLongDuration(undefined)).toBe('N/A');
+  });
+
+  test('normalizes a long span into human units instead of raw seconds', () => {
+    // formatDuration renders this as "50400 seconds" — the reason this exists.
+    expect(formatLongDuration(50_400_000)).toBe('14 hours');
+    expect(formatLongDuration(3_600_000)).toBe('1 hour');
+  });
+
+  test('keeps only the two largest units', () => {
+    // 2 days, 3 hours, 4 minutes — the minutes are dropped.
+    expect(formatLongDuration((2 * 24 * 3600 + 3 * 3600 + 4 * 60) * 1000)).toBe('2 days 3 hours');
+  });
+
+  test('floors sub-second spans and signs negatives', () => {
+    expect(formatLongDuration(10)).toBe('less than a second');
+    expect(formatLongDuration(-3_600_000)).toBe('−1 hour');
   });
 });
 
@@ -129,12 +155,41 @@ describe('getStatusColor', () => {
 });
 
 describe('formatStatusLabel', () => {
-  test('normalizes timedOut/timedout to "failed" and didnotrun to "didn\'t run"', () => {
-    expect(formatStatusLabel('timedOut')).toBe('failed');
-    expect(formatStatusLabel('timedout')).toBe('failed');
+  test('renders timedOut/timedout as "timed out" and didnotrun as "didn\'t run"', () => {
+    expect(formatStatusLabel('timedOut')).toBe('timed out');
+    expect(formatStatusLabel('timedout')).toBe('timed out');
     expect(formatStatusLabel('didnotrun')).toBe("didn't run");
     expect(formatStatusLabel('never-run')).toBe('never run');
     expect(formatStatusLabel('passed')).toBe('passed');
+  });
+});
+
+describe('isFailedStatus', () => {
+  test('treats both timeout spellings as failures, like the run counters', () => {
+    expect(isFailedStatus('failed')).toBe(true);
+    expect(isFailedStatus('timedOut')).toBe(true);
+    expect(isFailedStatus('timedout')).toBe(true);
+    expect(isFailedStatus('passed')).toBe(false);
+    expect(isFailedStatus('skipped')).toBe(false);
+    expect(isFailedStatus('didnotrun')).toBe(false);
+    expect(isFailedStatus('running')).toBe(false);
+  });
+});
+
+describe('failureFirstCompare', () => {
+  test('orders failures (including timeouts) before everything else', () => {
+    const order = ['passed', 'failed', 'skipped', 'timedOut', 'passed'].sort(failureFirstCompare);
+    expect(order.slice(0, 2)).toEqual(['failed', 'timedOut']);
+  });
+
+  test('keeps the relative order within each group (stable)', () => {
+    const order = ['passed', 'failed', 'skipped', 'passed', 'failed'].sort(failureFirstCompare);
+    expect(order).toEqual(['failed', 'failed', 'passed', 'skipped', 'passed']);
+  });
+
+  test('is a no-op when nothing failed', () => {
+    const order = ['passed', 'skipped', 'didnotrun'].sort(failureFirstCompare);
+    expect(order).toEqual(['passed', 'skipped', 'didnotrun']);
   });
 });
 
@@ -158,14 +213,14 @@ describe('status icon helpers', () => {
     expect(getStatusTextClass('failed')).toContain('rose');
     expect(getStatusTextClass('didnotrun')).toContain('amber');
     expect(getStatusTextClass('running')).toContain('blue');
-    expect(getStatusTextClass('initialising')).toBe(getStatusTextClass('running'));
+    expect(getStatusTextClass('initializing')).toBe(getStatusTextClass('running'));
     expect(getStatusTextClass('finalizing')).toBe(getStatusTextClass('running'));
     expect(getStatusTextClass('skipped')).toContain('zinc');
   });
 
   test('only the in-flight statuses spin', () => {
     expect(isStatusInFlight('running')).toBe(true);
-    expect(isStatusInFlight('initialising')).toBe(true);
+    expect(isStatusInFlight('initializing')).toBe(true);
     expect(isStatusInFlight('finalizing')).toBe(true);
     expect(isStatusInFlight('passed')).toBe(false);
     expect(isStatusInFlight('timedOut')).toBe(false);
@@ -220,7 +275,7 @@ describe('cluster color helpers', () => {
     });
 
     test('only the corroborated verdict claims the fix was verified', () => {
-      expect(fixVerificationBadge('diagnosis-verified')).toMatchObject({ label: 'Fix verified', color: 'success' });
+      expect(fixVerificationBadge('diagnosis-verified')).toMatchObject({ label: 'Verified', color: 'success' });
       // "Stopped failing" must not read as a verified fix — nothing says which
       // change did it.
       expect(fixVerificationBadge('stopped-failing')).toMatchObject({ label: 'Stopped failing', color: 'info' });

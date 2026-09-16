@@ -5,7 +5,8 @@
  * note. Used on both the cluster detail page and the test-case detail page.
  */
 
-import { recommendLocatorFix } from '#shared/locator-healing';
+import { defineComponent, h } from 'vue';
+import { recommendLocatorFix, locatorExpression } from '#shared/locator-healing';
 import type { RankedLocator, LocatorFixRecommendation, LocatorHealingResult } from '#shared/locator-healing.types';
 import type { AiStepIntent, TraceInfo } from '~~/types/api';
 import SectionCard from './SectionCard.vue';
@@ -18,6 +19,13 @@ const props = defineProps<{
   /** When set, the panel folds to a header with a peek (persisted per user). */
   storageKey?: string;
   /**
+   * Render the panel body without a card wrapper — for embedding inside another
+   * card's section (the Fix card). The provenance note leads, then the
+   * recommendation and the alternatives; the card title, icon and count are
+   * dropped since the host section already labels it.
+   */
+  chrome?: boolean;
+  /**
    * Number of tests this failure affects (cluster context). When > 1, the panel
    * notes that one fix covers them all — a cluster is one masked-locator root
    * cause, so the recommended locator applies across the group.
@@ -29,18 +37,66 @@ const props = defineProps<{
    * shows that prompt next to it — the *intent* behind the broken selector.
    */
   aiIntents?: AiStepIntent[] | null;
+  /** True when a structural page diff is available for this execution — enables the "looks renamed" link to it. */
+  hasPageDiff?: boolean;
 }>();
 
-// Fold on the cluster page (storageKey set); stay a plain card on the test-case page.
-const cardComponent = computed(() => (props.storageKey ? CollapsibleSectionCard : SectionCard));
-const cardBind = computed(() => (props.storageKey ? { storageKey: props.storageKey } : {}));
+// Asks the host to reveal the page diff — the structural proof of a rename.
+const emit = defineEmits<{ 'show-page-diff': [] }>();
+
+// A card-less wrapper for the embedded (Fix card) variant: renders the
+// provenance note first, then the actions, then the body — and swallows the
+// card-only props so they never leak onto the DOM. `data-shot` still falls
+// through to the root so the docs scene keeps its target.
+const BareCard = defineComponent({
+  name: 'LocatorHealingBare',
+  props: {
+    subtitle: { type: String, default: '' },
+    icon: { type: String, default: '' },
+    title: { type: String, default: '' },
+    count: { type: Number, default: null },
+    help: { type: String, default: '' },
+  },
+  setup(bareProps, { slots }) {
+    return () =>
+      h('div', { class: 'space-y-3' }, [
+        // Below `sm` the actions drop to their own full-width row under the
+        // provenance line, so the sentence spans the card width instead of being
+        // squeezed into a one-word-per-line column beside the buttons.
+        slots.subtitle || bareProps.subtitle
+          ? h('div', { class: 'flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between' }, [
+              h('p', { class: 'text-xs min-w-0' }, slots.subtitle ? slots.subtitle() : bareProps.subtitle),
+              slots.actions ? h('div', { class: 'sm:shrink-0' }, slots.actions()) : null,
+            ])
+          : slots.actions
+            ? h('div', { class: 'flex justify-end' }, slots.actions())
+            : null,
+        slots.default ? slots.default() : null,
+      ]);
+  },
+});
+
+// Card-less inside the Fix card; fold on the cluster page (storageKey set);
+// a plain card on the standalone test-case page.
+const cardComponent = computed(() =>
+  props.chrome === false ? BareCard : props.storageKey ? CollapsibleSectionCard : SectionCard,
+);
+const cardBind = computed(() => (props.chrome !== false && props.storageKey ? { storageKey: props.storageKey } : {}));
+
+interface HealActionChip {
+  id: number;
+  status: 'pending' | 'opened' | 'failed' | 'skipped';
+  prNumber: number | null;
+  prUrl: string | null;
+  branch: string;
+}
 
 const {
   data: healing,
   pending,
   error,
-} = useFetch<LocatorHealingResult>(
-  () => `/api/test-runs/${props.runId}/cases/${props.testRunsCaseId}/locator-healing`,
+} = useFetch<LocatorHealingResult & { healAction?: HealActionChip | null }>(
+  () => `/api/test-run-cases/${props.testRunsCaseId}/locator-healing`,
   { lazy: true },
 );
 
@@ -134,15 +190,16 @@ const sourceClass = computed(() => {
   }
 });
 
+/** The failing locator as Playwright source, the same form every alternative renders in. */
 const failingLocatorText = computed(() => {
   const f = healing.value?.failingLocator;
-  return f ? `${f.method}(${JSON.stringify(f.args)})` : '';
+  return f ? locatorExpression(f.method, f.args) : '';
 });
 
 /**
- * Quote/whitespace/bracket-insensitive form so the failing locator (JSON-ish
- * rendering) can be compared against an AI-step intent locator (Playwright
- * source style) — both collapse to `getbyrole(textbox,name:email)`.
+ * Quote/whitespace/bracket-insensitive form so the failing locator can be
+ * compared against an AI-step intent locator regardless of quoting or spacing
+ * — both collapse to `getbyrole(textbox,name:email)`.
  */
 function normalizeLocator(text: string): string {
   return text.toLowerCase().replace(/[\s'"`{}[\]]/g, '');
@@ -159,8 +216,9 @@ const failingIntent = computed<AiStepIntent | null>(() => {
 // snapshots power the trace viewer's own "Pick locator" tool, so a locator
 // can be picked visually even for CI failures nobody watched live.
 const config = useRuntimeConfig();
-const { data: traces } = useFetch<TraceInfo[]>(() => `/api/test-run-cases/${props.testRunsCaseId}/traces`, {
+const { data: traces } = useFetch(() => `/api/test-run-cases/${props.testRunsCaseId}/traces`, {
   lazy: true,
+  transform: (r: { items: TraceInfo[] }) => r.items,
 });
 const pickTraceUrl = computed(() => {
   const trace = traces.value?.[0];
@@ -171,11 +229,20 @@ const pickTraceUrl = computed(() => {
   return getTraceViewerUrl(trace.filePath, config.app?.baseURL, isDemoStaticAsset);
 });
 
+// `target="_blank"` is inert in the desktop shell, so the viewer opens in a new
+// app window there instead; on web the anchor opens a new tab as usual.
+const { isDesktop, openWindow } = useDesktopWindow();
+function onPickFromTrace(event: MouseEvent) {
+  if (!isDesktop || !pickTraceUrl.value) return;
+  event.preventDefault();
+  openWindow(pickTraceUrl.value);
+}
+
 // Interactive DOM snapshot picker
 const pickerOpen = ref(false);
 
 async function refreshHealing() {
-  await refreshNuxtData(`/api/test-runs/${props.runId}/cases/${props.testRunsCaseId}/locator-healing`);
+  await refreshNuxtData(`/api/test-run-cases/${props.testRunsCaseId}/locator-healing`);
 }
 
 const { copy } = useCopy();
@@ -265,21 +332,53 @@ function copyFixPrompt() {
   );
 }
 
+// The server rewrites the failing line and ships it as a git-applyable unified
+// diff; hand it over verbatim so `git apply` (or an agent) can patch the file.
+function copyGitApply() {
+  const diff = healing.value?.edit?.unifiedDiff;
+  if (diff) copyText(diff, 'git-apply', 'Patch copied');
+}
+
 // ── Collapse the long tail of alternatives ───────────────────────────────────
 const ALT_PREVIEW = 3;
 const showAllAlternatives = ref(false);
 const visibleAlternatives = computed<RankedLocator[]>(() =>
   showAllAlternatives.value ? alternatives.value : alternatives.value.slice(0, ALT_PREVIEW),
 );
+
+const narrowing = computed(() => healing.value?.narrowingSuggestion ?? null);
+
+// Forward the fold/scroll so a clue or AI citation to `locatorHealing` can reveal it.
+const cardRef = ref<{ reveal?: () => void } | null>(null);
+// The next-step line drives the panel's own copy/pick logic rather than
+// duplicating it: reveal the panel, then run the same action its buttons do.
+defineExpose({
+  reveal: () => cardRef.value?.reveal?.(),
+  copyPatch: () => copyGitApply(),
+  copyRecommendedLocator: () => {
+    const loc = recommended.value?.locator;
+    if (loc) copyLocator(loc, 'top');
+  },
+  openPicker: () => {
+    cardRef.value?.reveal?.();
+    pickerOpen.value = true;
+  },
+  expandAlternatives: () => {
+    cardRef.value?.reveal?.();
+    showAllAlternatives.value = true;
+  },
+});
 </script>
 
 <template>
   <component
     :is="cardComponent"
     v-if="!pending && !error && hasData"
+    ref="cardRef"
     v-bind="cardBind"
+    data-shot="alternative-locators"
     icon="i-lucide-bandage"
-    title="Alternative locators"
+    title="Locator fix"
     :count="alternatives.length"
     help="locator-healing"
   >
@@ -314,6 +413,7 @@ const visibleAlternatives = computed<RankedLocator[]>(() =>
           variant="outline"
           icon="i-lucide-crosshair"
           title="Open the failure trace in the trace viewer — its Pick locator tool works on the recorded page snapshots"
+          @click="onPickFromTrace"
         >
           Pick from trace
         </UButton>
@@ -334,6 +434,30 @@ const visibleAlternatives = computed<RankedLocator[]>(() =>
         <NuxtLink :to="`/test-runs/${healing.healedInRunId}`" class="underline font-medium">
           see run #{{ healing.healedInRunId }}</NuxtLink
         >.
+      </template>
+    </UAlert>
+
+    <!-- Auto-heal opened (or queued) a PR covering this call site -->
+    <UAlert
+      v-if="healing?.healAction"
+      class="mb-3"
+      :color="healing.healAction.status === 'opened' ? 'primary' : 'neutral'"
+      icon="i-lucide-bandage"
+      variant="subtle"
+      :title="healing.healAction.status === 'opened' ? 'Piwi opened a heal PR' : 'Heal PR queued'"
+    >
+      <template #description>
+        <template v-if="healing.healAction.status === 'opened' && healing.healAction.prUrl">
+          Auto-heal opened
+          <a :href="healing.healAction.prUrl" target="_blank" rel="noopener" class="underline font-medium">
+            PR #{{ healing.healAction.prNumber }}</a
+          >
+          to rewrite this locator.
+        </template>
+        <template v-else>
+          Auto-heal has queued a fix for this locator on branch <code>{{ healing.healAction.branch }}</code
+          >.
+        </template>
       </template>
     </UAlert>
 
@@ -362,7 +486,7 @@ const visibleAlternatives = computed<RankedLocator[]>(() =>
     <div v-if="healing?.failingLocator" class="bg-elevated rounded p-2 mb-3 border border-red-200 dark:border-red-800">
       <div class="flex items-center gap-2">
         <UIcon name="i-lucide-x-circle" class="size-4 text-red-500 shrink-0" />
-        <code class="text-xs font-mono text-red-600 dark:text-red-400 flex-1 truncate">{{ failingLocatorText }}</code>
+        <LocatorCode :locator="failingLocatorText" truncate class="text-xs flex-1 min-w-0" />
         <UButton
           size="xs"
           variant="ghost"
@@ -392,13 +516,30 @@ const visibleAlternatives = computed<RankedLocator[]>(() =>
       icon="i-lucide-alert-triangle"
       variant="subtle"
       title="The element's name looks changed"
-      description="The captured accessible name no longer appears on the failing page, so name-based alternatives (and the failing locator itself) probably no longer match. Prefer the structural options, or the failing-page candidates below."
-    />
+    >
+      <template #description>
+        <p>
+          The captured accessible name no longer appears on the failing page, so name-based alternatives (and the
+          failing locator itself) probably no longer match. Prefer the structural options, or the failing-page
+          candidates below.
+        </p>
+        <UButton
+          v-if="hasPageDiff"
+          class="mt-1.5 -ml-1.5"
+          variant="link"
+          color="warning"
+          size="xs"
+          icon="i-lucide-file-diff"
+          label="See it in the page diff"
+          @click="emit('show-page-diff')"
+        />
+      </template>
+    </UAlert>
 
     <!-- Recommended fix — the hero action, above the full menu. Keeps the
          original locator style where it's stable enough, and offers the exact
          one-line edit for the failing test. -->
-    <div v-if="recommended" class="rounded-lg border border-primary/40 bg-primary/5 p-3 mb-3 space-y-2">
+    <div v-if="recommended" class="rounded-lg border border-primary/40 bg-primary/5 p-3 max-sm:p-2 mb-3 space-y-2">
       <div class="flex items-center gap-2 min-w-0">
         <UIcon name="i-lucide-star" class="size-4 text-primary shrink-0" />
         <p class="text-xs font-medium text-primary shrink-0">Recommended fix</p>
@@ -455,7 +596,39 @@ const visibleAlternatives = computed<RankedLocator[]>(() =>
         >
           Copy fix prompt
         </UButton>
+        <UButton
+          v-if="healing?.edit?.unifiedDiff"
+          size="xs"
+          color="neutral"
+          variant="outline"
+          :icon="copiedKey === 'git-apply' ? 'i-lucide-check' : 'i-lucide-copy'"
+          title="Copy a git apply patch that rewrites the failing locator line"
+          @click="copyGitApply"
+        >
+          Copy patch
+        </UButton>
       </div>
+    </div>
+
+    <!-- Narrowing suggestion — add .visible() when only one match is visible -->
+    <div v-if="narrowing" class="rounded-lg border border-default bg-elevated p-3 mb-3 flex items-center gap-3">
+      <UIcon name="i-lucide-eye" class="size-5 text-primary shrink-0" />
+      <div class="flex-1 min-w-0">
+        <p class="text-xs font-medium text-primary">Or narrow with <code>.visible()</code></p>
+        <p class="text-xs text-gray-500 mt-0.5">
+          The locator matched {{ narrowing.matchCount }} elements but only one is visible — adding
+          <code>.visible()</code> keeps it without changing the locator.
+        </p>
+      </div>
+      <UButton
+        size="sm"
+        color="neutral"
+        variant="outline"
+        :trailing-icon="copiedKey === 'narrowing' ? 'i-lucide-check' : 'i-lucide-copy'"
+        @click="copyLocator('.visible()', 'narrowing')"
+      >
+        Copy
+      </UButton>
     </div>
 
     <!-- Sturdier option — surfaced when the recommended fix keeps the original (less stable) style -->
@@ -535,12 +708,30 @@ const visibleAlternatives = computed<RankedLocator[]>(() =>
     <UAlert v-if="healing?.source === 'aria-snapshot'" class="mt-3" color="info" icon="i-lucide-info" variant="subtle">
       <template #description>
         No HTML attributes were available.
-        <DocLink to="capture-fixtures" no-icon class="text-primary hover:underline"
+        <DocLink to="guide/capture-fixtures" no-icon class="text-primary hover:underline"
           >Enable Piwi fixture capture</DocLink
         >
         for full alternatives including data-testid and CSS selectors.
       </template>
     </UAlert>
+  </component>
+
+  <!-- Healing does not apply: the locator resolved (or the failure is a
+       navigation error, or names no locator). One line, no ranked menu. -->
+  <component
+    :is="cardComponent"
+    v-else-if="chrome !== false && !pending && !error && healing?.applicable === false"
+    v-bind="cardBind"
+    data-shot="alternative-locators"
+    icon="i-lucide-bandage"
+    title="Locator fix"
+    subtitle="Not a locator problem"
+    help="locator-healing"
+  >
+    <template v-if="storageKey" #folded>
+      <span>{{ healing.reason }}</span>
+    </template>
+    <p class="text-sm text-gray-600 dark:text-gray-400">{{ healing.reason }}</p>
   </component>
 
   <!-- No data -->
@@ -549,7 +740,7 @@ const visibleAlternatives = computed<RankedLocator[]>(() =>
     v-else-if="!pending && !error && !hasData"
     v-bind="cardBind"
     icon="i-lucide-bandage"
-    title="Alternative locators"
+    title="Locator fix"
     subtitle="No alternatives available"
     help="locator-healing"
   >
@@ -578,6 +769,7 @@ const visibleAlternatives = computed<RankedLocator[]>(() =>
           variant="outline"
           icon="i-lucide-crosshair"
           title="Open the failure trace in the trace viewer — its Pick locator tool works on the recorded page snapshots"
+          @click="onPickFromTrace"
         >
           Pick from trace
         </UButton>
@@ -586,11 +778,22 @@ const visibleAlternatives = computed<RankedLocator[]>(() =>
     <UAlert color="neutral" icon="i-lucide-info" variant="subtle">
       <template #description>
         No pre-captured alternatives — this locator has never passed in a previous run.
-        <DocLink to="capture-fixtures" no-icon class="text-primary hover:underline"
+        <DocLink to="guide/capture-fixtures" no-icon class="text-primary hover:underline"
           >Enable Piwi dashboard fixtures</DocLink
         >
         to capture element attributes at test time, or use “Pick from snapshot” above to choose a locator by hand on the
-        failure-time page.
+        failure-time page. In local headed runs,
+        <DocLink
+          to="features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs"
+          no-icon
+          class="text-primary hover:underline"
+          >pickLocatorOnFailure</DocLink
+        >
+        opens the same picker on the still-open failing page, and the
+        <DocLink to="features/extension" no-icon class="text-primary hover:underline"
+          >Piwi Picker browser extension</DocLink
+        >
+        picks from any live page without a test run.
       </template>
     </UAlert>
   </component>

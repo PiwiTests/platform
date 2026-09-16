@@ -1,12 +1,12 @@
 # Capture fixtures example
 
-A small, runnable Playwright project wired to [Piwi Dashboard](https://piwitests.github.io) with the **[capture fixtures](https://piwitests.github.io/capture-fixtures)** — the one-file addition that unlocks slow-endpoint analysis, Web Vitals, console capture, failure-time ARIA snapshots, and locator healing.
+A small, runnable Playwright project wired to [Piwi Dashboard](https://piwitests.dev) with the **[capture fixtures](https://piwitests.dev/capture-fixtures)** — the one-file addition that unlocks slow-endpoint analysis, Web Vitals, console capture, failure-time ARIA snapshots, and locator healing.
 
-It tests a tiny [Nitro](https://nitro.build) web app (`app/`, started automatically by Playwright) and exercises **every capture path** the fixtures support — including **[backend logs](https://piwitests.github.io/backend-logs)**: the app is instrumented with [`@piwitests/instrumentation-nitro`](../../integrations/nitro), so server-side warnings and errors ride back to the dashboard on the `X-Piwi-Logs` response header.
+It tests a tiny [Nitro](https://nitro.build) web app (`app/`, started automatically by Playwright) and exercises **every capture path** the fixtures support — including **[backend logs](https://piwitests.dev/backend-logs)**: the app is instrumented with [`@piwitests/instrumentation-nitro`](../../integrations/nitro), so server-side warnings and errors ride back to the dashboard on the `X-Piwi-Logs` response header.
 
 ## Run it
 
-Start a dashboard (see the [getting started guide](https://piwitests.github.io/getting-started)), then:
+Start a dashboard (see the [getting started guide](https://piwitests.dev/getting-started)), then:
 
 ```bash
 npm install

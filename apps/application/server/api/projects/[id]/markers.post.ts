@@ -30,7 +30,7 @@ export default eventHandler(async (event) => {
   const body = await readBody(event);
   const validation = createMarkerSchema.safeParse(body);
   if (!validation.success) {
-    throw createError({ statusCode: 400, message: 'Invalid request body', data: validation.error.issues });
+    throw apiError({ statusCode: 400, message: 'Invalid request body', data: validation.error.issues });
   }
 
   const db = await getDatabase();

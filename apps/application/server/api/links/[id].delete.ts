@@ -14,7 +14,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0');
   if (!id) {
-    throw createError({ statusCode: 400, message: 'Invalid link ID' });
+    throw apiError({ statusCode: 400, message: 'Invalid link ID' });
   }
 
   const { db } = await requireResolvedProjectAccess(event, id, resolveLinkProjectId, 'Link');
@@ -24,6 +24,6 @@ export default eventHandler(async (event) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to delete link';
     const statusCode = message === 'Link not found' ? 404 : 400;
-    throw createError({ statusCode, message });
+    throw apiError({ statusCode, message });
   }
 });

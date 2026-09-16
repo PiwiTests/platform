@@ -28,7 +28,7 @@ const baseRun = {
 
 const baseCase = [{ title: 'test case', status: 'passed', duration: 1000, location: 'tests/t.spec.ts:1:1' }];
 
-// Helper: upload a run and return the testRunId
+// Helper: upload a run and return the runId
 async function upload(
   request: APIRequestContext,
   projectName: string,
@@ -52,15 +52,16 @@ async function upload(
 }
 
 // Helper: get traces for the first test case of a run
-async function getFirstCaseTraces(request: APIRequestContext, testRunId: number) {
-  const runData = await (await request.get(`/api/test-runs/${testRunId}`)).json();
+async function getFirstCaseTraces(request: APIRequestContext, runId: number) {
+  const runData = await (await request.get(`/api/test-runs/${runId}`)).json();
   const tc = runData.testCases?.[0];
   expect(tc).toBeDefined();
   return {
-    traces: (await (await request.get(`/api/test-run-cases/${tc.id}/traces`)).json()) as Array<{
-      id: number;
-      filePath: string;
-    }>,
+    traces: (
+      (await (await request.get(`/api/test-run-cases/${tc.executionId}/traces`)).json()) as {
+        items: Array<{ id: number; filePath: string }>;
+      }
+    ).items,
     testCase: tc,
   };
 }
@@ -142,9 +143,9 @@ test.describe('Trace deduplication — upload', () => {
 
     const uploadRes = await upload(request, PROJECT.TRACE_DEDUP, traceZip, hash);
     expect(uploadRes.ok()).toBe(true);
-    const { testRunId } = await uploadRes.json();
+    const { runId } = await uploadRes.json();
 
-    const { traces } = await getFirstCaseTraces(request, testRunId);
+    const { traces } = await getFirstCaseTraces(request, runId);
     expect(traces).toHaveLength(1);
     // Content-addressed path inside the blobs directory
     expect(traces[0].filePath).toContain('/blobs/');
@@ -158,12 +159,12 @@ test.describe('Trace deduplication — upload', () => {
     // First upload: provide the actual file
     const r1 = await upload(request, PROJECT.TRACE_DEDUP, traceZip, hash);
     expect(r1.ok()).toBe(true);
-    const { testRunId: runId1 } = await r1.json();
+    const { runId: runId1 } = await r1.json();
 
     // Second upload: send hash only — reporter determined blob already exists
     const r2 = await upload(request, PROJECT.TRACE_DEDUP, null, hash);
     expect(r2.ok()).toBe(true);
-    const { testRunId: runId2 } = await r2.json();
+    const { runId: runId2 } = await r2.json();
 
     const { traces: traces1 } = await getFirstCaseTraces(request, runId1);
     const { traces: traces2 } = await getFirstCaseTraces(request, runId2);
@@ -184,8 +185,8 @@ test.describe('Trace deduplication — upload', () => {
     expect(r1.ok()).toBe(true);
     expect(r2.ok()).toBe(true);
 
-    const { traces: t1 } = await getFirstCaseTraces(request, (await r1.json()).testRunId);
-    const { traces: t2 } = await getFirstCaseTraces(request, (await r2.json()).testRunId);
+    const { traces: t1 } = await getFirstCaseTraces(request, (await r1.json()).runId);
+    const { traces: t2 } = await getFirstCaseTraces(request, (await r2.json()).runId);
     expect(t1[0].filePath).toBe(t2[0].filePath);
   });
 
@@ -194,9 +195,9 @@ test.describe('Trace deduplication — upload', () => {
 
     const res = await upload(request, PROJECT.TRACE_DEDUP, traceData, null);
     expect(res.ok()).toBe(true);
-    const { testRunId } = await res.json();
+    const { runId } = await res.json();
 
-    const { traces } = await getFirstCaseTraces(request, testRunId);
+    const { traces } = await getFirstCaseTraces(request, runId);
     expect(traces).toHaveLength(1);
     // Legacy path is stored under the run directory, not the blobs directory
     expect(traces[0].filePath).not.toContain('/blobs/');
@@ -212,9 +213,9 @@ test.describe('Trace deduplication — resource extraction and reconstruction', 
 
     const uploadRes = await upload(request, PROJECT.TRACE_RESOURCES, traceZip, hash);
     expect(uploadRes.ok()).toBe(true);
-    const { testRunId } = await uploadRes.json();
+    const { runId } = await uploadRes.json();
 
-    const { traces } = await getFirstCaseTraces(request, testRunId);
+    const { traces } = await getFirstCaseTraces(request, runId);
     expect(traces).toHaveLength(1);
 
     // Fetch the trace via the file serve endpoint — it should be reconstructed with the resource
@@ -250,15 +251,15 @@ test.describe('Trace deduplication — resource extraction and reconstruction', 
     expect(r1.ok()).toBe(true);
     expect(r2.ok()).toBe(true);
 
-    async function getResourceEntries(testRunId: number) {
-      const { traces } = await getFirstCaseTraces(request, testRunId);
+    async function getResourceEntries(runId: number) {
+      const { traces } = await getFirstCaseTraces(request, runId);
       const fileRes = await request.get(`/api/files/${traces[0].filePath}`);
       expect(fileRes.ok()).toBe(true);
       return await parseZip(Buffer.from(await fileRes.body()));
     }
 
-    const entries1 = await getResourceEntries((await r1.json()).testRunId);
-    const entries2 = await getResourceEntries((await r2.json()).testRunId);
+    const entries1 = await getResourceEntries((await r1.json()).runId);
+    const entries2 = await getResourceEntries((await r2.json()).runId);
 
     // Trace 1 must contain the shared resource
     expect(entries1.find((e) => e.name === `resources/${sharedName}`)).toBeDefined();
@@ -280,8 +281,8 @@ test.describe('Trace deduplication — resource extraction and reconstruction', 
     const hash = sha256(traceZip);
 
     const uploadRes = await upload(request, PROJECT.TRACE_RESOURCES, traceZip, hash);
-    const { testRunId } = await uploadRes.json();
-    const { traces } = await getFirstCaseTraces(request, testRunId);
+    const { runId } = await uploadRes.json();
+    const { traces } = await getFirstCaseTraces(request, runId);
 
     const fileRes = await request.get(`/api/files/${traces[0].filePath}`);
     const entries = await parseZip(Buffer.from(await fileRes.body()));

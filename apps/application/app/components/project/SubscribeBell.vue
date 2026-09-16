@@ -7,7 +7,7 @@ const props = defineProps<{ projectId: number; projectLabel?: string }>();
 const config = useRuntimeConfig();
 const isDemoMode = config.public.demoMode;
 const authEnabled = computed(() => config.public.authEnabled);
-const { authState } = useAuth();
+const { authState, canSeeAdmin } = useAuth();
 const isAuthenticated = computed(() => authState.value.authenticated);
 
 const toast = useToast();
@@ -42,9 +42,10 @@ function toggleCookieEvent(evt: NotificationEvent) {
   cookie?.toggleEvent(props.projectId, evt);
 }
 
-// ── Auth-based subscriptions ─────────────────────────────────────────────────
+// ── Channel subscriptions ────────────────────────────────────────────────────
 interface Subscription {
   id: number;
+  userId?: number | null;
   events: string[];
   mode: string;
   mutedUntil: string | null;
@@ -52,15 +53,17 @@ interface Subscription {
   channel: { id: number; name: string; type: string };
 }
 
-const shouldFetch = isDemoMode || (authEnabled.value && isAuthenticated.value);
+// Channels/subscriptions are reachable in demo mode, without auth (instance-wide
+// rows via the virtual admin), and for signed-in users when auth is on.
+const shouldFetch = isDemoMode || !authEnabled.value || isAuthenticated.value;
 const fetchOpts = isDemoMode ? ({ server: false } as const) : {};
 
-const { data: subsData, refresh: refreshSubs } = await useFetch<{ subscriptions: Subscription[] }>(
+const { data: subsData, refresh: refreshSubs } = await useFetch<{ items: Subscription[] }>(
   `/api/subscriptions?projectId=${props.projectId}`,
   { immediate: shouldFetch, ...fetchOpts },
 );
 
-const subs = computed(() => subsData.value?.subscriptions ?? []);
+const subs = computed(() => subsData.value?.items ?? []);
 const isSubscribed = computed(() => subs.value.length > 0);
 
 // ── Channels ─────────────────────────────────────────────────────────────────
@@ -68,21 +71,34 @@ interface Channel {
   id: number;
   name: string;
   type: string;
+  userId?: number | null;
   config?: Record<string, unknown>;
 }
 
-const { data: channelsData } = await useFetch<{ channels: Channel[] }>('/api/channels', {
+const { data: channelsData } = await useFetch<{ items: Channel[] }>('/api/channels', {
   immediate: shouldFetch,
   ...fetchOpts,
 });
 
-const channels = computed(() => channelsData.value?.channels ?? []);
+const channels = computed(() => channelsData.value?.items ?? []);
 
 // ── New subscription form ─────────────────────────────────────────────────────
 const showForm = ref(false);
 const selectedChannelId = ref<number | undefined>(undefined);
 const selectedEvents = ref<string[]>(['run.failed']);
+const subscribeGlobal = ref(false);
 const subscribing = ref(false);
+
+const selectedChannel = computed(() => channels.value.find((c) => c.id === selectedChannelId.value));
+// Global subscriptions require a global channel (the API enforces the same).
+const canSubscribeGlobal = computed(
+  () => authEnabled.value && canSeeAdmin.value && selectedChannel.value?.userId === null,
+);
+
+/** Whether the viewer can edit/mute/remove this subscription (mirrors the API rules). */
+function canManageSub(sub: Subscription) {
+  return sub.userId === null ? canSeeAdmin.value : true;
+}
 
 // ── Edit subscription ─────────────────────────────────────────────────────────
 const editingSub = ref<Subscription | null>(null);
@@ -125,7 +141,7 @@ const channelItems = computed(() =>
 );
 
 const eventItems = NOTIFICATION_EVENTS.map((e) => ({
-  label: e.replace(/\./g, ' › '),
+  label: e === 'auto_heal.pr_opened' ? 'Auto-heal › PR opened' : e.replace(/\./g, ' › '),
   value: e,
 }));
 
@@ -152,10 +168,12 @@ async function subscribe() {
         projectId: props.projectId,
         events: selectedEvents.value,
         mode: 'realtime',
+        ...(canSubscribeGlobal.value && subscribeGlobal.value ? { global: true } : {}),
       },
     });
     await refreshSubs();
     showForm.value = false;
+    subscribeGlobal.value = false;
     toast.add({ title: 'Subscribed', color: 'success' });
     if (isDemoMode) {
       demoNotifications?.scheduleFor(props.projectId, props.projectLabel || 'this project', selectedEvents.value);
@@ -205,7 +223,9 @@ function channelIcon(type: string) {
 }
 
 const showComponent = computed(() => isDemoMode || (authEnabled.value && isAuthenticated.value) || cookie != null);
-const bellSubscribed = computed(() => (isDemoMode || authEnabled.value ? isSubscribed.value : cookieSubscribed.value));
+const bellSubscribed = computed(() =>
+  isDemoMode || authEnabled.value ? isSubscribed.value : cookieSubscribed.value || isSubscribed.value,
+);
 </script>
 
 <template>
@@ -256,11 +276,11 @@ const bellSubscribed = computed(() => (isDemoMode || authEnabled.value ? isSubsc
         </template>
       </div>
 
-      <!-- Auth-based UI -->
-      <div v-else class="p-3 space-y-3">
+      <!-- Channel subscriptions -->
+      <div v-if="shouldFetch" class="p-3 space-y-3" :class="cookie ? 'border-t border-default' : ''">
         <div class="flex items-center justify-between">
           <span class="font-medium text-sm inline-flex items-center gap-1">
-            Notifications <HelpHint topic="notifications.subscribe" />
+            {{ cookie ? 'Channel subscriptions' : 'Notifications' }} <HelpHint topic="notifications.subscribe" />
           </span>
           <UButton
             v-if="!showForm"
@@ -337,31 +357,36 @@ const bellSubscribed = computed(() => (isDemoMode || authEnabled.value ? isSubsc
               :class="isMuted(sub) ? 'opacity-60' : ''"
             >
               <UIcon :name="channelIcon(sub.channel.type)" class="size-3.5 text-muted shrink-0" />
-              <span class="flex-1 font-medium truncate">{{ sub.channel.name }}</span>
-              <UButton
-                icon="i-lucide-pencil"
-                color="neutral"
-                variant="ghost"
-                size="xs"
-                title="Edit subscription"
-                @click="startEdit(sub)"
-              />
-              <UButton
-                :icon="isMuted(sub) ? 'i-lucide-bell' : 'i-lucide-bell-off'"
-                color="neutral"
-                variant="ghost"
-                size="xs"
-                :title="isMuted(sub) ? 'Unmute' : 'Mute 7 days'"
-                @click="toggleMute(sub)"
-              />
-              <UButton
-                icon="i-lucide-x"
-                color="error"
-                variant="ghost"
-                size="xs"
-                title="Unsubscribe"
-                @click="unsubscribe(sub.id)"
-              />
+              <span class="flex-1 font-medium truncate">
+                {{ sub.channel.name }}
+                <span v-if="sub.userId === null && authEnabled" class="text-primary">(global)</span>
+              </span>
+              <template v-if="canManageSub(sub)">
+                <UButton
+                  icon="i-lucide-pencil"
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  title="Edit subscription"
+                  @click="startEdit(sub)"
+                />
+                <UButton
+                  :icon="isMuted(sub) ? 'i-lucide-bell' : 'i-lucide-bell-off'"
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  :title="isMuted(sub) ? 'Unmute' : 'Mute 7 days'"
+                  @click="toggleMute(sub)"
+                />
+                <UButton
+                  icon="i-lucide-x"
+                  color="error"
+                  variant="ghost"
+                  size="xs"
+                  title="Unsubscribe"
+                  @click="unsubscribe(sub.id)"
+                />
+              </template>
             </div>
           </template>
         </div>
@@ -393,6 +418,14 @@ const bellSubscribed = computed(() => (isDemoMode || authEnabled.value ? isSubsc
               </label>
             </div>
           </UFormField>
+          <label
+            v-if="canSubscribeGlobal"
+            class="flex items-center gap-1.5 text-xs cursor-pointer"
+            title="Deliver to this channel for everyone, not tied to your account"
+          >
+            <input type="checkbox" v-model="subscribeGlobal" class="accent-primary size-3" />
+            Instance-wide (global)
+          </label>
           <div class="flex gap-1.5 justify-end">
             <UButton size="xs" color="neutral" variant="ghost" @click="showForm = false">Cancel</UButton>
             <UButton

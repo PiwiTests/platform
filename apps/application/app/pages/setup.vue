@@ -135,6 +135,8 @@ const activeCount = computed(() => rows.value.filter((r) => r.active).length);
             </li>
           </ul>
         </UCard>
+
+        <CompanionToolsCard />
       </div>
     </template>
   </UDashboardPanel>

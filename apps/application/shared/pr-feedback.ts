@@ -59,17 +59,30 @@ export function resolvePrFeedbackSettings(input?: Partial<PrFeedbackSettings> | 
 export interface PrFailureEntry {
   title: string;
   filePath: string;
-  /** First line of the error, already trimmed for display. */
+  /** The one-line failure headline, plain text; leads the entry when set. */
+  headline?: string | null;
+  /** The error's message head, already trimmed for display. */
   errorExcerpt: string | null;
   executionId: number;
   /** Set when the failure joined a cluster, so the comment can link the cause. */
   clusterId?: number | null;
   clusterSignature?: string | null;
+  /** The tracker issue the failure's cluster is known by, when one exists. */
+  issue?: { key: string; url: string } | null;
   /** Ranked replacement suggested for the locator that broke, when there is one. */
   suggestedLocator?: string | null;
+  /** An auto-heal PR already open for this locator, so the reader isn't sent to fix it twice. */
+  healPrNumber?: number | null;
+  healPrUrl?: string | null;
   /** Tags declared on the test, for routing the reader to an owning team. */
   tags?: string[] | null;
   owner?: string | null;
+  /**
+   * Set when this test is also flaky on the default branch, so the comment can
+   * exonerate a failure the change probably did not cause. `flakinessRate` is
+   * the test's flaky rate over recent default-branch runs (0–1).
+   */
+  flakyOnDefaultBranch?: { branch: string; flakinessRate: number } | null;
 }
 
 export interface PrSummaryInput {
@@ -101,6 +114,10 @@ export interface PrSummaryInput {
   }>;
   /** CI minutes this run spent on waits and failed attempts, when known. */
   wastedMinutes: number | null;
+  /** The named selection this run resolved from, when it came from `piwi run`. */
+  selection?: { key: string; testCount: number } | null;
+  /** Locks held on two shards at once in this run — the guarantee sharding is meant to keep. */
+  splitLocks?: string[] | null;
   /** True when no previous green run existed to compare against. */
   hasBaseline: boolean;
 }
@@ -108,10 +125,17 @@ export interface PrSummaryInput {
 // ── Rendering ────────────────────────────────────────────────────────────────
 
 const MAX_LISTED = 5;
+/** Max characters of an error excerpt quoted in the pull-request comment. */
+export const PR_EXCERPT_MAX = 200;
 
 /** Escape the characters that would break out of a markdown table cell. */
 function escapeCell(text: string): string {
   return text.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim();
+}
+
+/** Escape inline markdown so a headline's locator quotes and underscores render literally. */
+function escapeInline(text: string): string {
+  return escapeCell(text).replace(/([\\`*_[\]<>])/g, '\\$1');
 }
 
 function formatDuration(ms: number | null): string {
@@ -148,8 +172,21 @@ function renderFailureList(entries: PrFailureEntry[], runUrl: string): string {
     if (entry.owner) parts.push(`_owner: ${escapeCell(entry.owner)}_`);
     if (entry.tags?.length) parts.push(entry.tags.map((tag) => `\`@${escapeCell(tag)}\``).join(' '));
     let line = parts.join(' · ');
+    if (entry.headline) line += `\n  **${escapeInline(entry.headline)}**`;
     if (entry.errorExcerpt) line += `\n  \`\`\`\n  ${escapeCell(entry.errorExcerpt)}\n  \`\`\``;
-    if (entry.suggestedLocator) line += `\n  💡 Try \`${escapeCell(entry.suggestedLocator)}\` instead.`;
+    if (entry.healPrNumber) {
+      const pr = entry.healPrUrl ? `[#${entry.healPrNumber}](${entry.healPrUrl})` : `#${entry.healPrNumber}`;
+      line += `\n  🩹 Piwi opened ${pr} to heal this locator.`;
+    } else if (entry.suggestedLocator) {
+      line += `\n  💡 Try \`${escapeCell(entry.suggestedLocator)}\` instead.`;
+    }
+    if (entry.flakyOnDefaultBranch) {
+      const pct = Math.round(entry.flakyOnDefaultBranch.flakinessRate * 100);
+      line += `\n  🎲 Also flaky on \`${escapeCell(entry.flakyOnDefaultBranch.branch)}\` (~${pct}% of recent runs) — likely not yours.`;
+    }
+    if (entry.issue) {
+      line += `\n  🎫 Tracked in [${escapeCell(entry.issue.key)}](${entry.issue.url}).`;
+    }
     return line;
   });
 
@@ -187,6 +224,19 @@ export function buildPrComment(input: PrSummaryInput): string {
     `${formatDuration(input.durationMs)}`,
   ].filter(Boolean);
   sections.push(`${counters.join(' · ')} — [full run](${input.runUrl})`);
+
+  if (input.selection) {
+    const n = input.selection.testCount;
+    sections.push(`🎯 Selection **\`${input.selection.key}\`** — ${n} ${n === 1 ? 'test' : 'tests'}`);
+  }
+
+  if (input.splitLocks && input.splitLocks.length > 0) {
+    const names = input.splitLocks.map((lock) => `\`${escapeCell(lock)}\``).join(', ');
+    const plural = input.splitLocks.length === 1 ? 'Lock' : 'Locks';
+    sections.push(
+      `🔓 ${plural} ${names} held on two shards at once — locks serialize only within one \`playwright test\` process, so sharded runs don't coordinate. Shard with \`piwi run --shard\` (lock-aware) to keep each lock in one shard.`,
+    );
+  }
 
   if (input.newRegressions.length > 0) {
     sections.push(

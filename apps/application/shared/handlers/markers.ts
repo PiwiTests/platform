@@ -36,7 +36,7 @@ export async function createMarker(db: DrizzleDB, projectId: number, data: Marke
       source: 'manual',
     })
     .returning();
-  return { marker: result[0]! };
+  return { success: true, marker: result[0]! };
 }
 
 export async function updateMarker(db: DrizzleDB, id: number, data: Partial<Omit<MarkerInput, 'runId'>>) {
@@ -52,7 +52,7 @@ export async function updateMarker(db: DrizzleDB, id: number, data: Partial<Omit
 
   await db.update(markers).set(updates).where(eq(markers.id, id));
   const updated = await db.select().from(markers).where(eq(markers.id, id));
-  return { marker: updated[0]! };
+  return { success: true, marker: updated[0]! };
 }
 
 export async function deleteMarker(db: DrizzleDB, id: number) {

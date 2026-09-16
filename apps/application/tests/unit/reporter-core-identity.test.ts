@@ -33,6 +33,7 @@ describe('reporter re-exports @piwitests/core (no local re-implementation)', () 
   test('step-analysis helpers are the same references as core', () => {
     expect(reporterSteps.categorizeStep).toBe(coreSteps.categorizeStep);
     expect(reporterSteps.flattenSteps).toBe(coreSteps.flattenSteps);
+    expect(reporterSteps.stepLabel).toBe(coreSteps.stepLabel);
     expect(reporterSteps.collectStepMetrics).toBe(coreSteps.collectStepMetrics);
     expect(reporterSteps.extractTestStepEvents).toBe(coreSteps.extractTestStepEvents);
     expect(reporterSteps.extractWaitEvents).toBe(coreSteps.extractWaitEvents);

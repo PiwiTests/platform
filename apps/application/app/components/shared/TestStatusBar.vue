@@ -29,6 +29,13 @@ const segments = computed(() => {
       displayPct: ((s.count / props.total) * 100).toFixed(1),
     }));
 });
+
+// Names every segment the bar visibly renders, so the announced summary
+// matches what the eyes see (flaky and didn't-run included).
+const accessibleLabel = computed(() => {
+  const parts = segments.value.map((s) => `${s.count} ${s.label.toLowerCase()}`);
+  return `Test results: ${parts.join(', ')}`;
+});
 </script>
 
 <template>
@@ -38,6 +45,11 @@ const segments = computed(() => {
          deuteranopia). -->
     <div
       v-if="total > 0"
+      role="progressbar"
+      :aria-label="accessibleLabel"
+      :aria-valuemin="0"
+      :aria-valuemax="total"
+      :aria-valuenow="props.passed + props.failed + props.skipped + (props.didNotRun ?? 0)"
       class="flex gap-0.5 h-2.5 w-full min-w-30 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700"
     >
       <div

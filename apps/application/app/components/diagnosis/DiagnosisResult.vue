@@ -9,6 +9,18 @@ const props = defineProps<{
   diagnosis: FailureDiagnosis | null;
   /** The cluster's lastSeenRunId — for staleness detection */
   lastSeenRunId?: number;
+  /**
+   * Whether this diagnosis is still stale — computed by the parent (current
+   * context hash differs from the stored one AND the cluster is still failing).
+   */
+  stale?: boolean;
+  /** What changed to make it stale, for the banner wording. */
+  staleReason?: 'occurrences' | 'evidence' | null;
+  /**
+   * Render a historical version: no feedback controls, no staleness banner. The
+   * feedback endpoint keys on the live diagnosis id, not a version.
+   */
+  readOnly?: boolean;
 }>();
 
 const { copy, copied } = useCopy();
@@ -91,11 +103,18 @@ async function saveFeedbackNote() {
 
 const isStale = computed(() => {
   const d = props.diagnosis;
-  if (!d || d.status !== 'completed') return false;
-  const runId = props.lastSeenRunId;
-  if (runId == null) return false;
-  return new Date(d.updatedAt).getTime() < Date.now() - 5 * 60 * 1000;
+  if (props.readOnly || !d || d.status !== 'completed') return false;
+  return props.stale === true;
 });
+
+/** Banner wording — says what changed when the parent could tell. */
+const staleDescription = computed(() =>
+  props.staleReason === 'occurrences'
+    ? 'The cluster has failed again since this diagnosis. Re-run it to account for the new occurrences.'
+    : props.staleReason === 'evidence'
+      ? 'The evidence sent to the model has changed since this diagnosis. Re-run it to diagnose the current failure.'
+      : 'The failure has changed since this diagnosis was made. Consider re-running it.',
+);
 
 function diagnosisMarkdown(): string {
   if (!props.diagnosis || props.diagnosis.status !== 'completed') return '';
@@ -211,84 +230,9 @@ async function copyDiagnosis() {
   }
 }
 
-function copyGitApply() {
-  const d = props.diagnosis;
-  if (!d) return;
-  const patch = (d.details as any)?.suggestedFix?.patch as string | undefined;
-  if (!patch) return;
-  const cmd = `git apply <<'EOF'\n${patch}\nEOF`;
-  copy(cmd, { toast: 'git apply command copied' });
-}
-
-function downloadPatch() {
-  const patch = details.value?.suggestedFix?.patch as string | undefined;
-  if (!patch) return;
-  const body = patch.endsWith('\n') ? patch : patch + '\n';
-  const blob = new Blob([body], { type: 'text/x-patch' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `piwi-diagnosis-${props.diagnosis?.id ?? 'fix'}.patch`;
-  document.body.appendChild(a);
-  a.click();
-  // Defer cleanup so the download isn't cut short mid-flight in some browsers.
-  setTimeout(() => {
-    a.remove();
-    URL.revokeObjectURL(url);
-  }, 1000);
-}
-
 const patchValidation = computed<PatchValidation | null>(() => {
   const v = details.value?.patchValidation;
   return v && typeof v === 'object' ? (v as PatchValidation) : null;
-});
-
-/** Badge describing whether the suggested patch was verified to apply. */
-const patchBadge = computed<{
-  color: 'success' | 'warning' | 'error' | 'neutral';
-  icon: string;
-  label: string;
-  title: string;
-} | null>(() => {
-  const v = patchValidation.value;
-  if (!v) return null;
-  switch (v.status) {
-    case 'applies':
-      return {
-        color: 'success',
-        icon: 'i-lucide-badge-check',
-        label: 'Applies cleanly',
-        title: 'Verified against the real file at the failing commit',
-      };
-    case 'applies-with-offset':
-      return {
-        color: 'warning',
-        icon: 'i-lucide-badge-check',
-        label: 'Applies with offset',
-        title: 'Context matched at a shifted line — apply should still succeed',
-      };
-    case 'stale-file':
-      return {
-        color: 'error',
-        icon: 'i-lucide-badge-alert',
-        label: 'Does not apply',
-        title: v.errors.join('\n') || 'The file changed since — patch context did not match',
-      };
-    case 'invalid':
-      return {
-        color: 'error',
-        icon: 'i-lucide-badge-alert',
-        label: 'Invalid diff',
-        title: v.errors.join('\n') || 'Could not parse the patch as a unified diff',
-      };
-    default:
-      return {
-        color: 'neutral',
-        icon: 'i-lucide-badge-help',
-        label: 'Unverified',
-        title: 'The source file was not in context, so the patch could not be validated',
-      };
-  }
 });
 
 const categoryColors: Record<string, 'error' | 'warning' | 'info' | 'secondary' | 'neutral'> = {
@@ -420,12 +364,12 @@ const cachedTokens = computed<number>(() => pipeline.value.reduce((acc, s) => ac
       color="warning"
       icon="i-lucide-clock"
       title="Diagnosis may be stale"
-      description="New evidence may have appeared since this diagnosis was made. Consider re-running."
+      :description="staleDescription"
     />
 
     <div
       v-if="diagnosis && diagnosis.status === 'completed'"
-      class="space-y-3 rounded-lg border border-default p-4 bg-elevated/30"
+      class="space-y-3 rounded-lg border border-default p-4 max-sm:p-2 bg-elevated/30"
     >
       <!-- Header: confidence gauge + category/severity badges + summary -->
       <div class="flex items-start gap-3">
@@ -479,7 +423,6 @@ const cachedTokens = computed<number>(() => pipeline.value.reduce((acc, s) => ac
               >
                 {{ diagnosis.confidence }} confidence
               </UBadge>
-              <HelpHint v-if="diagnosis.confidence" topic="cluster.confidence" />
               <UBadge
                 v-if="details?.severity"
                 :color="severityColors[details.severity] || 'neutral'"
@@ -548,56 +491,13 @@ const cachedTokens = computed<number>(() => pipeline.value.reduce((acc, s) => ac
           class="text-xs mt-1"
         />
 
-        <div v-if="details.suggestedFix.patch" class="mt-2">
-          <div class="flex items-center justify-between mb-1">
-            <div class="flex items-center gap-1.5">
-              <span class="text-xs text-gray-500 font-mono">patch</span>
-              <UBadge
-                v-if="patchBadge"
-                :color="patchBadge.color"
-                variant="subtle"
-                size="sm"
-                :icon="patchBadge.icon"
-                :title="patchBadge.title"
-              >
-                {{ patchBadge.label }}
-              </UBadge>
-            </div>
-            <div class="flex items-center gap-1">
-              <UButton
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-download"
-                title="Download .patch file"
-                @click="downloadPatch"
-              />
-              <UButton
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-terminal"
-                title="Copy git apply command"
-                @click="copyGitApply"
-              />
-              <UButton
-                :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                title="Copy patch"
-                @click="copy(details.suggestedFix.patch)"
-              />
-            </div>
-          </div>
-          <MarkdownPreview :text="'```diff\n' + details.suggestedFix.patch + '\n```'" />
-          <p
-            v-if="patchValidation && (patchValidation.status === 'stale-file' || patchValidation.status === 'invalid')"
-            class="text-xs text-rose-600 dark:text-rose-400 mt-1"
-          >
-            {{ patchValidation.errors[0] || 'This patch could not be verified against the source.' }}
-          </p>
-        </div>
+        <PatchBlock
+          v-if="details.suggestedFix.patch"
+          class="mt-2"
+          :patch="details.suggestedFix.patch"
+          :validation="patchValidation"
+          :download-name="`piwi-diagnosis-${diagnosis?.id ?? 'fix'}`"
+        />
 
         <div v-else-if="details.suggestedFix.code" class="mt-2">
           <CodeBlock :code="details.suggestedFix.code" />
@@ -613,7 +513,6 @@ const cachedTokens = computed<number>(() => pipeline.value.reduce((acc, s) => ac
             <UIcon :name="showAlternates ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3.5" />
             Other hypotheses considered ({{ alternateHypotheses.length }})
           </button>
-          <HelpHint topic="cluster.hypotheses" />
         </div>
         <div v-if="showAlternates" class="space-y-1.5">
           <div
@@ -703,7 +602,7 @@ const cachedTokens = computed<number>(() => pipeline.value.reduce((acc, s) => ac
       </ul>
 
       <div class="flex items-start justify-between gap-3 pt-1 border-t border-default">
-        <div class="flex items-start gap-2">
+        <div v-if="!readOnly" class="flex items-start gap-2">
           <div class="flex items-center gap-1 shrink-0 pt-0.5">
             <UButton
               :icon="localFeedback === 'up' ? 'i-lucide-thumbs-up' : 'i-lucide-thumbs-up'"

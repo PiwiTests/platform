@@ -57,10 +57,11 @@ watch(
 );
 
 // Fetch projects for sidebar navigation
-const { data: projects, refresh: refreshProjects } = await useFetch<ProjectWithStats[]>('/api/projects', {
+const { data: projects, refresh: refreshProjects } = await useFetch('/api/projects', {
   key: 'projects',
   lazy: true,
   default: () => [] as ProjectWithStats[],
+  transform: (r: { items: ProjectWithStats[] }) => r.items,
 });
 
 useRunStream(refreshProjects);
@@ -102,7 +103,7 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
 
   function buildProjectItem(project: ProjectWithStats): NavigationMenuItem {
     const isActive = currentProjectId.value !== null && currentProjectId.value === project.id;
-    const isRunning = project.latestRun?.status === 'running' || project.latestRun?.status === 'initialising';
+    const isRunning = project.latestRun?.status === 'running' || project.latestRun?.status === 'initializing';
     const status = project.latestRun?.status || 'unknown';
     const statusIcon =
       status === 'passed' ? 'i-lucide-circle-check-big' : status === 'failed' ? 'i-lucide-circle-x' : 'i-lucide-circle';
@@ -244,7 +245,7 @@ const pageSourceUrl = computed(() => {
 function runStatusIcon(status: string) {
   if (status === 'passed') return 'i-lucide-circle-check-big';
   if (status === 'failed') return 'i-lucide-circle-x';
-  if (status === 'running' || status === 'initialising') return 'i-lucide-loader-circle';
+  if (status === 'running' || status === 'initializing') return 'i-lucide-loader-circle';
   return 'i-lucide-circle';
 }
 
@@ -270,24 +271,18 @@ const groups = computed<CommandPaletteGroup[]>(() => {
     },
   ];
 
-  // On a project page, surface its tab panels in the palette. Several of these
-  // (Spec health, Timeline, Flaky tests…) have no standalone route, so this is the
-  // fastest keyboard path to them. An unavailable-for-role tab (e.g. Members) is
-  // omitted; the project page also tolerates an unknown ?tab= by falling back.
+  // On a project page, surface its tab panels in the palette — the fastest
+  // keyboard path to each. The project page tolerates an unknown ?tab= by
+  // falling back to Runs.
   if (currentProjectId.value) {
     const pid = currentProjectId.value;
-    // Same order as the project page's grouped tab strip (Results → Failures →
-    // Health), so the palette and the page agree on where a tab sits.
+    // Same order as the project page's tab strip.
     const projectTabs: [value: string, label: string, icon: string][] = [
-      ['test-runs', 'Test runs', 'i-lucide-play'],
-      ['test-cases', 'Test cases', 'i-lucide-flask-conical'],
-      ['compare', 'Compare', 'i-lucide-git-compare-arrows'],
-      ['failure-clusters', 'Failure clusters', 'i-lucide-layers'],
-      ['flaky-tests', 'Flaky tests', 'i-lucide-shuffle'],
-      ['quarantine', 'Quarantine', 'i-lucide-shield-alert'],
-      ['spec-health', 'Spec health', 'i-lucide-table-2'],
+      ['runs', 'Runs', 'i-lucide-play-circle'],
+      ['tests', 'Tests', 'i-lucide-flask-conical'],
+      ['failures', 'Failures', 'i-lucide-layers'],
       ['performance', 'Performance', 'i-lucide-trending-up'],
-      ['timeline', 'Timeline', 'i-lucide-git-commit-horizontal'],
+      ['settings', 'Settings', 'i-lucide-settings'],
     ];
     staticGroups.unshift({
       id: 'project-tabs',
@@ -342,7 +337,7 @@ const groups = computed<CommandPaletteGroup[]>(() => {
   if (searchResults.value.cases.length > 0) {
     resultGroups.push({
       id: 'search-cases',
-      label: 'Test cases',
+      label: 'Tests',
       ignoreFilter: true,
       items: searchResults.value.cases.map((c) => ({
         id: `case-${c.id}`,
@@ -421,10 +416,19 @@ onMounted(async () => {
       :ui="{ root: 'min-h-full', footer: 'lg:border-t lg:border-default' }"
     >
       <template #header="{ collapsed }">
-        <ProjectsMenu :collapsed="collapsed" />
+        <!-- Desktop shell only: visible back/forward for the chrome-less webview,
+             paired at the top-left corner the way native apps place them. The
+             collapsed rail has no room in the header row, so the pair moves into
+             the rail stack below instead. -->
+        <DesktopNavButtons v-if="!collapsed" />
+        <div class="flex-1 min-w-0">
+          <ProjectsMenu :collapsed="collapsed" />
+        </div>
       </template>
 
       <template #default="{ collapsed }">
+        <DesktopNavButtons v-if="collapsed" collapsed class="self-center" />
+
         <UDashboardSearchButton :collapsed="collapsed" class="bg-transparent ring-default" />
 
         <UNavigationMenu
@@ -457,15 +461,20 @@ onMounted(async () => {
 
     <UDashboardSearch v-model:search-term="searchTerm" :groups="groups" :preserve-group-order="!!searchResults" />
 
-    <!-- Focus target for the skip link; the next Tab lands inside the page panel. -->
-    <span id="main-content" tabindex="-1" class="sr-only">Main content</span>
-    <slot />
+    <!-- The real main landmark the skip link targets. Fills the group's content
+         area so the page panel keeps its full width/height. -->
+    <main id="main-content" tabindex="-1" class="flex-1 min-w-0 flex flex-col outline-none">
+      <slot />
+    </main>
 
     <!-- Global "Open in IDE" settings modal, toggled from file-path choosers and the user menu -->
     <OpenInIdeSettingsModal />
 
     <!-- Desktop shell: import dialog for archives dropped on the window or opened with the app -->
     <DesktopImportModal />
+
+    <!-- Desktop shell: after linking a folder, offer to import the runs already in it -->
+    <DesktopImportPreviousRunsModal />
 
     <!-- Desktop shell: the Local runs tray — local test runs keep streaming here across navigation -->
     <DesktopLocalRunsTray />

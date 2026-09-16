@@ -30,38 +30,69 @@ There is **no `apps/docs/api.md`, and you must not create one.** The auto-genera
 self-contained in-app reference at `/docs` in the running app are the single source of truth for API documentation —
 the in-app page renders the spec with no third-party CDN, so it works offline and air-gapped.
 
-When documenting a feature here, link to `[API docs](/docs)` (self-hosted) or the live demo
-(`https://piwitests.github.io/demo/docs`) rather than inlining endpoint descriptions. Endpoint documentation is
+When documenting a feature here, link to the live demo reference
+(`[API docs](https://piwitests.dev/demo/docs)`) and refer to the self-hosted reference as inline code
+`/docs` rather than inlining endpoint descriptions. Do **not** write a bare `[API docs](/docs)` markdown link:
+`/docs` is a route on the running app, not a page on this docs site, so VitePress's dead-link check fails the
+build. Endpoint documentation is
 authored in the handler's `defineRouteMeta({ openAPI: … })` block — see
 [`../application/AGENTS.md`](../application/AGENTS.md#openapi-annotations).
 
 ## Site structure (MUST follow)
 
-The sidebar in `.vitepress/config.mts` is ordered by the **reader's journey**, not by feature. A new page goes in the
-group matching what the reader is doing, and each page stays single-purpose:
+The sidebar in `.vitepress/config.mts` is ordered by the **reader's journey**, not by feature, and it is the
+**source of truth** for site structure — do not restate its page lists here, they only go stale. A new page goes in
+the group matching what the reader is *doing*, never the group matching the feature it describes:
 
-| Group | Covers | Pages |
-|---|---|---|
-| Start here | what it is, first run, vocabulary | `getting-started`, `concepts`, `comparison` |
-| Sending results | getting data in | `reporter`, `capture-fixtures`, `ci`, `backend-logs` |
-| Reading the results | using the dashboard | `ui-overview`, `ai-diagnosis`, `flaky-tests`, `analytics`, `timeline-markers`, `notifications`, `ide-integration` |
-| Running your instance | operating it | `deployment`, `configuration`, `configuration/generator`, `authentication`, `storage`, `privacy`, `desktop` |
-| Integrate | other tools | in-app API docs (external link), `mcp` |
+| Group | The question the reader is holding |
+|---|---|
+| Start here | "What is this, should I adopt it, and what do these words mean?" |
+| Sending results | "How do I get my results in?" |
+| Reading the results | "I have results — how do I read them?" |
+| Recipes | "I have this specific problem right now." |
+| Running your instance | "I operate the server." |
+| Apps & integrations | "I want to use it from somewhere other than the dashboard." |
 
-Extend an existing page before adding a new one.
+Two consequences worth stating, because both have been got wrong:
+
+- An **install path** is not an operations page. The desktop app is a way of *getting* a dashboard (it appears in
+  `getting-started`'s "pick a path" table), so it sits in Apps & integrations, not Running your instance.
+- A page with **no server dependency at all** — the browser extension — is never an operations page either.
+
+Extend an existing page before adding a new one, and keep every page single-purpose: if a page needs two sentences
+to say what it is for, it is two pages (`storage` + `database` was one of these).
+
+### `recipes/` — the one task-first group
+
+Every other group is organized by feature. `recipes/` is organized by the question a reader arrives
+with ("did I break this, or is it flaky?"), and each page crosses several features to answer one. It
+exists for the long-tail searches that never contain the word "Piwi", so:
+
+- **One question per page**, phrased as the reader would phrase it — that phrasing is the H1.
+- **Feature pages stay the source of truth.** A recipe links to them; it never becomes a second place
+  where the flaky score or the fingerprint algorithm is explained, because that copy will drift.
+- **Always give a route for readers who can't install the thing.** State what a step requires (capture
+  fixtures, an LLM key, a browser extension, a signed-installer-less desktop build) and offer the
+  alternative — dashboard, MCP, REST API, or plain trace evidence. Listing a requirement without an
+  alternative is the failure mode to avoid.
+- Recipes reuse **existing committed screenshots**; add a scene to the feature-screenshot harness only
+  if a recipe genuinely needs a screen no page shows yet.
 
 - **`concepts.md` is the vocabulary source of truth** — project / test run / **test case** (a test's identity across
   time) / **execution** (one attempt, one browser — the `test_runs_cases` row) / failure cluster / fingerprint /
   baseline. Use those words consistently in docs *and* UI copy; link the anchor instead of redefining a term.
 - **`ui-overview.md` is a map, not a manual** — one short paragraph per view plus a link to the page that explains the
-  concept. Feature explanations belong on the feature page.
+  concept. Feature explanations belong on the feature page. It is the page most likely to accrete a manual, because a
+  feature with no home lands here by default: if you catch yourself adding an H3, a screenshot or a table to it, the
+  feature needs its own page instead (`evidence` and `offline-export` were both extracted from it).
 - **Contributor material does not belong on this site.** Build steps, source layout, migration workflow and dev
   commands live in `CONTRIBUTING.md` / `AGENTS.md` / `packages/reporter/ARCHITECTURE.md`. The site is for people *using* Piwi.
 - **Every user-visible reporter option** must appear in `reporter.md`'s options table (and its `PIWI_*` var in the
   table below it) in the same change that adds it to `packages/reporter/src/public/options.ts`.
 - **In-app help links point here.** `apps/application/app/utils/help-content.ts` builds docs URLs from `doc:` string
-  literals that nothing validates — renaming a heading breaks them silently. Grep for the old anchor when you rename
-  one.
+  literals, as do a few components via `<DocLink to="…">`. `apps/application/tests/unit/docs-drift.test.ts` resolves
+  every one of them against the headings on this site, so renaming a heading turns that test red rather than breaking
+  a help link silently — but the fix is still yours: update the literal, or keep the anchor.
 
 ## Writing conventions
 
@@ -88,31 +119,46 @@ and the seven surfaces that must carry it are in the [root guide](../AGENTS.md#d
 
 ## Marketing screenshots
 
-Hero images in `apps/docs/public/screenshots/*.png` are **1280×720**, with a diagonal light-top-left / dark-bottom-right
-split. Capture them against the **live demo** (it already has seed data — no local server needed) using the
-`playwright-cli` skill:
+The **light/dark diagonal split** is a scene option, not a manual procedure: `split: true` captures the scene in both
+themes at the same viewport and scroll position and composites them — light above the top-right → bottom-left seam,
+dark below — so a hero recaptures with one command like any other illustration:
 
-1. **Capture both themes at the same viewport and scroll position** so they align pixel-for-pixel. Resize to
-   `1280 720`, load `https://piwitests.github.io/demo/`, hide the demo banner by injecting
-   `.demo-banner{display:none!important}`, and screenshot. Then switch theme with the `nuxt-color-mode` localStorage
-   key, reload, re-hide the banner, and screenshot again.
-2. **Composite the split.** `playwright-cli` blocks `file://` and `run-code` has no `require`, so serve the two PNGs
-   plus a small overlay page over a throwaway local HTTP server and screenshot the stage element. The overlay stacks
-   both images at 1280×720 and clips the dark one to the bottom-right triangle, with an SVG seam line:
+```bash
+cd apps/application
+npm run app:screens -- home
+```
 
-   ```html
-   <div id="stage" style="position:relative;width:1280px;height:720px">
-     <img src="hero-light.png" style="position:absolute;inset:0;width:1280px;height:720px">
-     <img src="hero-dark.png"  style="position:absolute;inset:0;width:1280px;height:720px;clip-path:polygon(100% 0,100% 100%,0 100%)">
-     <svg width="1280" height="720" style="position:absolute;inset:0;pointer-events:none">
-       <line x1="1280" y1="0" x2="0" y2="720" stroke="rgba(0,0,0,.35)" stroke-width="4"/>
-       <line x1="1280" y1="0" x2="0" y2="720" stroke="rgba(255,255,255,.85)" stroke-width="1.5"/>
-     </svg>
-   </div>
-   ```
+Pair it with `deviceScaleFactor: 2` and `outputWidth` to write a crisp image at the width the page actually gives it:
+the docs gallery's featured tile spans the content column (~1152px), and anything wider is bytes the reader never sees.
 
-3. **Clean up** the temporary PNGs, the overlay page and the server. For a non-split refresh, skip step 2 and use a
-   single capture.
+The gallery images that are still live-demo captures (`projects.png`, `test-run.png`, the failure-cluster set) are
+**1280×720**, taken against `https://piwitests.dev/demo/` with the `playwright-cli` skill and the demo banner
+hidden via `.demo-banner{display:none!important}`. Give them a scene when you next touch one — the harness renders
+icons offline and pins the clock, which the live demo cannot.
 
 Demo *evidence* media (the screenshots, traces and videos shown inside the product) is a different pipeline — see
 [`../application/AGENTS.md`](../application/AGENTS.md#demo-evidence-media-committed-binaries).
+
+**Feature illustrations** (a docs page showing a specific screen, including desktop-only UI the live demo cannot
+render) come from the feature-screenshot harness instead. Every one of them has a scene that writes it, and the scene
+name is the file name, so recapturing takes only the name:
+
+```bash
+cd apps/application
+npm run app:screens -- flaky-detection   # one illustration
+npm run app:screens:docs                 # all of them
+npm run app:screens:check                # every image has a scene, every scene has its image
+```
+
+Add a scene to the script's `SCENES` registry if none fits, tagged `docs` with `out: 'docs'`; target the screen through
+a `data-shot` attribute rather than a DOM path, and leave `mode` at its `web` default unless the illustration is of the
+desktop shell (`mode: 'desktop'` runs it against a desktop-enabled server with the mocked Tauri bridge, no shell build
+needed). Images written this way are committed — keep the scene current so the illustration can be recaptured when the
+UI changes, and run `app:screens:check` after adding or deleting one.
+
+A gallery image with no marketing-specific treatment (no diagonal split) belongs to a scene rather than the live-demo
+pipeline: the harness renders icons from the bundled collection and can be re-run offline, so the image stays
+reproducible as the UI moves.
+
+The hero/gallery images above are **not** produced by the harness; they are listed in its `EXTERNAL_DOCS_IMAGES` set so
+the check knows to leave them alone. `ai-diagnosis.png` stays there too — it needs a configured AI provider.

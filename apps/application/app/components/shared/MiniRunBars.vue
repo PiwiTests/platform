@@ -9,7 +9,7 @@ const props = withDefaults(
 );
 
 function barColorClass(run: { status: string; flakyTests: number }): string {
-  if (['running', 'initialising', 'finalizing'].includes(run.status)) return 'bg-blue-400 dark:bg-blue-500';
+  if (['running', 'initializing', 'finalizing'].includes(run.status)) return 'bg-blue-400 dark:bg-blue-500';
   if (run.flakyTests > 0 && run.status === 'passed') return 'bg-amber-400 dark:bg-amber-400';
   if (run.status === 'passed') return 'bg-green-500';
   if (['failed', 'timedout', 'interrupted'].includes(run.status)) return 'bg-red-500';

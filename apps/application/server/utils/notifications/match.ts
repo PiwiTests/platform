@@ -1,19 +1,14 @@
 import { and, eq, or, isNull } from 'drizzle-orm';
 import { subscriptions, notificationChannels, notificationDeliveries, users } from '../../database/schema';
 import { getProjectScope, scopeAllows, type DrizzleDB } from '../project-access';
-import type { NotificationEvent, NotificationPayload, RunFinishedPayload } from '#shared/notification-events';
+import {
+  buildNotificationDedupeKey,
+  passesSubscriptionFilters,
+  type NotificationEvent,
+  type NotificationPayload,
+  type SubscriptionFilters,
+} from '#shared/notification-events';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
-
-interface SubscriptionFilters {
-  branches?: string[];
-  tags?: string[];
-  statuses?: string[];
-  defaultBranchOnly?: boolean;
-  /** Only deliver when one of these owns a failing test in the run. */
-  owners?: string[];
-  flakinessThreshold?: number;
-  perfRegressionPct?: number;
-}
 
 function parseDigestHHMM(digestAt: string | null | undefined): { hour: number; minute: number } | null {
   if (!digestAt) return null;
@@ -31,38 +26,6 @@ function nextDigestTime(digestAt: string): Date {
   );
   if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
   return next;
-}
-
-function passesFilters(
-  filters: SubscriptionFilters | null | undefined,
-  event: NotificationEvent,
-  payload: NotificationPayload,
-): boolean {
-  if (!filters) return true;
-
-  const runPayload = payload as RunFinishedPayload;
-
-  if (filters.defaultBranchOnly && event.startsWith('run.')) {
-    if (!runPayload.isDefaultBranch) return false;
-  }
-  if (filters.branches?.length && event.startsWith('run.') && runPayload.branch) {
-    if (!filters.branches.includes(runPayload.branch)) return false;
-  }
-  if (filters.statuses?.length && event.startsWith('run.') && runPayload.status) {
-    if (!filters.statuses.includes(runPayload.status)) return false;
-  }
-  if (filters.owners?.length && event.startsWith('run.')) {
-    // No owner on the payload means nothing failed, or ownership could not be
-    // resolved. Either way an owner-scoped subscription has nothing to say.
-    const runOwners = runPayload.owners ?? [];
-    if (!runOwners.some((owner) => filters.owners!.includes(owner))) return false;
-  }
-  if (filters.flakinessThreshold != null && event === 'flakiness.spike') {
-    const rate = runPayload.flakinessRate ?? 0;
-    if (rate < filters.flakinessThreshold) return false;
-  }
-
-  return true;
 }
 
 /**
@@ -102,7 +65,9 @@ export async function matchAndEnqueue(
   };
 
   for (const { sub, channel } of rows) {
-    if (sub.userId == null || !(await subscriberCanAccess(sub.userId))) continue;
+    // Global subscriptions (userId null) are admin-managed and span every
+    // project; per-user subscriptions re-check the subscriber's access.
+    if (sub.userId != null && !(await subscriberCanAccess(sub.userId))) continue;
 
     // Check event is subscribed
     const events = (sub.events as string[] | null) ?? [];
@@ -113,10 +78,9 @@ export async function matchAndEnqueue(
 
     // Check filters
     const filters = sub.filters as SubscriptionFilters | null;
-    if (!passesFilters(filters, event, payload)) continue;
+    if (!passesSubscriptionFilters(filters, event, payload)) continue;
 
-    const runId = (payload as { runId?: number }).runId;
-    const dedupeKey = `${event}:${runId ?? 'x'}:${channel.id}`;
+    const dedupeKey = buildNotificationDedupeKey(event, payload, channel.id);
     const scheduledFor = sub.mode === 'digest' && sub.digestAt ? nextDigestTime(sub.digestAt) : now;
 
     try {

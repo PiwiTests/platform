@@ -1,0 +1,1 @@
+ALTER TABLE "test_runs_cases" ADD COLUMN "evidence_sources" jsonb;

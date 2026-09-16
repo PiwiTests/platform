@@ -22,6 +22,21 @@ export interface RankedLocator {
 }
 
 /**
+ * A suggestion to narrow a strict-mode-ambiguous locator with `.visible()`:
+ * when the failing locator matches several elements but only one of them is
+ * visible, adding `.visible()` resolves the strict-mode violation without
+ * changing the locator itself. Surfaced beside the replacement locators.
+ */
+export interface NarrowingSuggestion {
+  /** The chain modifier to add before the action — `visible` today. */
+  method: 'visible';
+  /** How many elements the failing locator matched (the strict-mode count). */
+  matchCount: number;
+  /** How many of those were visible — always 1 when the suggestion is shown. */
+  visibleCount: number;
+}
+
+/**
  * The single recommended fix, chosen from the stability-ranked alternatives so
  * it keeps the developer's original locator style where that style is stable
  * enough — a minimal, idiomatic edit. The full ranked menu stays available; this
@@ -51,6 +66,8 @@ export interface SelectorCounts {
   classes?: Record<string, number>;
   /** How many elements share this element's role *and* accessible name — what `getByRole(role, { name })` would really match. Absent when unknown (an older capture, or a probe run without the structural pass). */
   roleName?: number;
+  /** Of the `roleName` matches, how many are visible (a laid-out box, or an `offsetParent`) — what `getByRole(role, { name }).visible()` would match. Absent when unknown. */
+  visibleRoleName?: number;
   /** How many role-bearing elements share this element's exact text. Absent when unknown. */
   text?: number;
   /** How many elements share this element's `placeholder` — what `getByPlaceholder` would really match. Absent when unknown. */
@@ -189,11 +206,43 @@ export type LocatorHealingSource =
   | 'none';
 
 /**
+ * A ready-to-apply rewrite of the failing call site's source line, using the
+ * recommended locator. Deterministic string rewrite of a single line — never
+ * model output.
+ */
+export interface LocatorEdit {
+  /** Call-site file path as captured (cwd-relative), when identified. */
+  filePath: string | null;
+  /** 1-based line the rewrite applies to. */
+  line: number;
+  /** The failing source line, unchanged (the `-` side). */
+  oldLine: string;
+  /** The rewritten source line (the `+` side). */
+  newLine: string;
+  /**
+   * A unified diff for the change, or null when no file path was resolved.
+   * Context-bearing (applies with a plain `git apply`) when the captured source
+   * snippet supplied neighboring lines; otherwise context-free, which needs
+   * `git apply --unidiff-zero`.
+   */
+  unifiedDiff: string | null;
+}
+
+/**
  * Result of a healing lookup for one failing test-run case. Single source of
  * truth for the API payload shape — the server handler, MCP tools, AI context
  * and the dashboard panel all import this.
  */
 export interface LocatorHealingResult {
+  /**
+   * Whether a replacement locator can address this failure at all. False when
+   * the locator resolved and the action or assertion failed afterwards, when the
+   * error is a navigation failure, or when the error names no locator — the
+   * alternative lists are then empty and `reason` says why in one sentence.
+   */
+  applicable?: boolean;
+  /** One sentence explaining an `applicable: false` result; null otherwise. */
+  reason?: string | null;
   failingLocator: { method: string; args: Record<string, unknown> } | null;
   fromPriorSuccess: RankedLocator[] | null;
   /**
@@ -208,6 +257,12 @@ export interface LocatorHealingResult {
    * from the active alternative list. Null when no alternatives are available.
    */
   recommendation: LocatorFixRecommendation | null;
+  /**
+   * When the failure is a strict-mode violation and only one of the matches is
+   * visible, a suggestion to add `.visible()` beside the replacement locators.
+   * Gated on the run's stored Playwright being 1.63 or later. Null otherwise.
+   */
+  narrowingSuggestion?: NarrowingSuggestion | null;
   /**
    * When the alternatives come from a stored snapshot (`prior-run` /
    * `fingerprint` / `cross-test`), the time that snapshot was last captured —
@@ -242,4 +297,11 @@ export interface LocatorHealingResult {
    * signature can't be reconstructed to match).
    */
   healedInRunId?: number | null;
+  /**
+   * The recommended fix as a concrete, ready-to-apply edit to the failing source
+   * line — old line, rewritten line, and a git-applyable unified diff. Null when
+   * there is no captured source line, no recommendation, or the rewrite would be
+   * a no-op. Populated only by the server (it needs the parsed call site).
+   */
+  edit?: LocatorEdit | null;
 }

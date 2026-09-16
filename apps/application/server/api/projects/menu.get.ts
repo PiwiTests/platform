@@ -17,5 +17,5 @@ export default eventHandler(async (event) => {
   const user = await requireAuth(event);
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any);
-  return getProjectMenu(db, scope);
+  return { items: await getProjectMenu(db, scope) };
 });

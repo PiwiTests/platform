@@ -1,4 +1,5 @@
 import { failureClusters, failureDiagnoses, testRunsCases } from '../../../../database/schema';
+import { queryFlag } from '../../../../utils/query-params';
 import { eq, and } from 'drizzle-orm';
 import {
   requireResolvedProjectAccess,
@@ -15,7 +16,16 @@ defineRouteMeta({
     summary: 'Run AI diagnosis with streaming response',
     description:
       'Triggers an AI-powered diagnosis for the specified failure cluster and returns the result as a Server-Sent Events stream. Text tokens are pushed as `event: thinking` chunks; the final structured result arrives as `event: result`.',
-    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    parameters: [
+      { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
+      {
+        name: 'force',
+        in: 'query',
+        required: false,
+        schema: { type: 'boolean' },
+        description: 'Re-run the diagnosis even if one already exists (default false).',
+      },
+    ],
     'x-required-roles': ['administrator', 'reporter'],
   },
 });
@@ -30,44 +40,45 @@ export default eventHandler(async (event) => {
     baseCommit?: string;
     selectedCommitShas?: string[];
     scope?: string;
-    testRunsCaseId?: number;
+    executionId?: number;
   } | null;
 
   const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, id));
-  if (!cluster) throw createError({ statusCode: 404, message: 'Failure cluster not found' });
+  if (!cluster) throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
 
   const config = await resolveAiConfig(db);
-  if (!config) throw createError({ statusCode: 503, message: 'AI diagnosis is not configured' });
+  if (!config)
+    throw apiError({ statusCode: 503, errorCode: 'AI_NOT_CONFIGURED', message: 'AI diagnosis is not configured' });
 
-  const isExecutionScope = body?.scope === 'execution' && Boolean(body?.testRunsCaseId);
+  const isExecutionScope = body?.scope === 'execution' && Boolean(body?.executionId);
 
   if (isExecutionScope) {
     const [trc] = await db
       .select({ id: testRunsCases.id })
       .from(testRunsCases)
-      .where(eq(testRunsCases.id, body!.testRunsCaseId!))
+      .where(eq(testRunsCases.id, body!.executionId!))
       .limit(1);
-    if (!trc) throw createError({ statusCode: 404, message: 'Test run case not found' });
+    if (!trc) throw apiError({ statusCode: 404, message: 'Test run case not found' });
   }
 
   if (isDiagnosisRunning(id)) {
-    throw createError({ statusCode: 409, message: 'Diagnosis is already running for this cluster' });
+    throw apiError({ statusCode: 409, message: 'Diagnosis is already running for this cluster' });
   }
 
   // Check for existing completed diagnosis (return as a single-event stream).
   // Not using the Force header — the client controls this by calling the
   // non-streaming diagnose endpoint first then switching to streaming for re-runs.
-  const force = getQuery(event).force === 'true';
+  const force = queryFlag(event, 'force');
   if (!force) {
     const whereClause = isExecutionScope
-      ? and(eq(failureDiagnoses.testRunsCaseId, body!.testRunsCaseId!), eq(failureDiagnoses.scope, 'execution'))
+      ? and(eq(failureDiagnoses.testRunsCaseId, body!.executionId!), eq(failureDiagnoses.scope, 'execution'))
       : and(eq(failureDiagnoses.clusterId, id), eq(failureDiagnoses.scope, 'cluster'));
 
     const existingRows = await db.select().from(failureDiagnoses).where(whereClause).limit(1);
     const existing = existingRows[0];
     if (existing) {
       if (existing.status === 'running' && !isDiagnosisStale(existing)) {
-        throw createError({ statusCode: 409, message: 'Diagnosis is already running' });
+        throw apiError({ statusCode: 409, message: 'Diagnosis is already running' });
       }
       if (existing.status === 'completed') {
         // Return existing result as an immediate SSE stream
@@ -122,7 +133,7 @@ export default eventHandler(async (event) => {
           images: body?.images,
           baseCommit: body?.baseCommit,
           selectedCommitShas: body?.selectedCommitShas,
-          testRunsCaseId: isExecutionScope ? body!.testRunsCaseId : undefined,
+          testRunsCaseId: isExecutionScope ? body!.executionId : undefined,
           onChunk: (chunk) => {
             if (clientDisconnected) return;
             try {

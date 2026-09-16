@@ -30,31 +30,38 @@ export interface HelpTopic {
 }
 
 export const HELP_TOPICS = {
+  // ── Issue tracking ──────────────────────────────────────────────────────
+  'integrations.create-issue': {
+    title: 'Create issue',
+    text: 'File a Jira issue from this failure, with the fix plan as its body. Piwi links the issue back as the known issue, so the key travels to the inbox, Slack, email and PR comments. Filing twice for the same cluster is a no-op — the modal offers to link an existing issue instead.',
+    doc: 'features/issue-tracking#what-it-does-exactly',
+  },
+  'integrations.known-issue': {
+    title: 'Known issue',
+    text: 'The tracker issue this cluster is tracked by. Its key and status show wherever the cluster appears; the action becomes Open in Jira once it exists.',
+    doc: 'features/issue-tracking#the-key-travels',
+  },
+
   // ── Home ──────────────────────────────────────────────────────────────
-  'home.flaky': {
-    title: 'Flaky tests',
-    text: 'Tests that pass and fail without code changes. This counts how many were detected across your projects recently.',
-    doc: 'flaky-tests#flaky-test-detection',
-  },
-  'home.trend-bars': {
-    title: 'Run history bars',
-    text: 'One bar per full run (up to 20), oldest left → newest right. Green = pass, red = fail, amber = passed with flaky tests, gray = skipped/unknown. Click a bar to open that run.',
-    doc: 'ui-overview#home',
-  },
-  'home.tendency': {
-    title: 'Tendency',
-    text: 'Derived from the last 5 full runs. Failing = latest run failed; flaky = pass/fail mixed or flaky tests seen in the window; passing = all recent runs green.',
-    doc: 'ui-overview#home',
-  },
   'home.project-health': {
     title: 'Project health',
     text: 'Every project at a glance — run history bars and a tendency badge so you can immediately see which project needs attention. Only full runs count.',
-    doc: 'ui-overview#home',
+    doc: 'features/ui-overview#home',
   },
   'home.get-started': {
     title: 'Get started',
     text: 'Wire the Piwi reporter into your Playwright config to start sending results here. The wizard generates the snippet for you.',
-    doc: 'getting-started#using-the-piwi-dashboard-reporter',
+    doc: 'guide/getting-started#using-the-piwi-dashboard-reporter',
+  },
+  'home.failure-inbox': {
+    title: 'Failure inbox',
+    text: "A queue of the failures you still owe a decision. Switch queues to focus — new since you last looked, mine, regressions, fixes that didn't hold, quarantines ready to release, merge suggestions. Triage from the row or the keyboard: j / k move, x select, r resolve, i ignore, q quarantine, a assign, s snooze, l link, o open.",
+    doc: 'features/failure-clusters#the-failure-inbox',
+  },
+  'cluster.state': {
+    title: 'Cluster state',
+    text: 'One sentence with one verb for where this cluster stands — still failing, fixed and verified, regressed, resolved, ignored, snoozed or quarantined — with the single action that reconciles it. Triage sets the status, a note and the assignee; Snooze hides it from the inbox without changing the status.',
+    doc: 'features/failure-clusters#the-state-line',
   },
 
   // ── Analytics ─────────────────────────────────────────────────────────
@@ -81,17 +88,17 @@ export const HELP_TOPICS = {
   'analytics.flaky-leaderboard': {
     title: 'Flakiest tests',
     text: 'The worst flaky tests across all projects, using the same scoring as each project’s Flaky tests tab, sorted by wasted-CI impact.',
-    doc: 'flaky-tests#flaky-test-detection',
+    doc: 'features/flaky-tests#flaky-test-detection',
   },
   'analytics.cluster-landscape': {
     title: 'Failure clusters',
     text: 'Open failure clusters across all projects — the biggest and oldest unresolved root causes. Clusters outlive run retention, so this works on long horizons.',
-    doc: 'ai-diagnosis#failure-clustering',
+    doc: 'features/ai-diagnosis#failure-clustering',
   },
   'analytics.regression-velocity': {
     title: 'Regression velocity',
     text: 'How much new breakage each period introduces: tests that passed in a baseline and now fail (regressions), plus tests that turned flaky. Rising bars mean quality debt is accumulating.',
-    doc: 'flaky-tests#regression-signals',
+    doc: 'features/flaky-tests#regression-signals',
   },
   'analytics.browser-matrix': {
     title: 'Browser matrix',
@@ -100,7 +107,7 @@ export const HELP_TOPICS = {
   'analytics.slow-endpoints': {
     title: 'Slow endpoints',
     text: 'Backend calls captured during tests, aggregated across all projects by route: p50/p90 latency, error rate, and how many projects hit each one — a shared endpoint regressing shows up here first.',
-    doc: 'capture-fixtures',
+    doc: 'guide/capture-fixtures',
   },
 
   // ── Projects list ─────────────────────────────────────────────────────
@@ -110,345 +117,272 @@ export const HELP_TOPICS = {
   'projects.table': {
     title: 'Projects',
     text: 'Every project that has reported results, with its latest run, pass rate and activity. Click a row to drill in.',
-    doc: 'ui-overview#projects',
+    doc: 'features/ui-overview#projects',
   },
   'project.import': {
     title: 'Importing past runs',
     text: 'Upload the archives Playwright writes to blob-report/ to backfill runs from before you adopted Piwi. One archive becomes one run, complete with traces and screenshots, and re-uploading the same archive changes nothing. Imports are silent by design — no notifications, AI diagnosis or regression signals, so a backfill never pages the team about months-old failures.',
-    doc: 'importing-runs',
+    doc: 'guide/importing-runs',
     envVars: ['PIWI_IMPORT_MAX_BYTES'],
   },
 
   // ── Project detail ────────────────────────────────────────────────────
-  'project.run-scope': {
-    title: 'Full vs partial runs',
-    text: 'A partial run executed only a subset of the suite (a shard, a retry, or a filtered selection). Trends use full runs so partial results don’t skew the numbers.',
-    doc: 'ui-overview#test-run-detail',
-  },
   'project.runs-trend': {
     title: 'Run trend',
-    text: 'Pass/fail counts per run over time. Hover a point for the exact run; sudden drops mark where things broke.',
-    doc: 'ui-overview#project-detail',
+    text: 'One stacked bar per run — failed anchored at the bottom, passed on top — following the filters above. A growing red base marks where things broke; hover a bar for the counts, click it to open the run.',
+    doc: 'features/ui-overview#project-detail',
   },
   'project.flaky-tests': {
     title: 'Flaky tests',
     text: 'Tests that fail intermittently across runs. Impact estimates wasted CI time; the score (0–100) rates severity and root cause explains why.',
-    doc: 'flaky-tests#flaky-test-detection',
+    doc: 'features/flaky-tests#flaky-test-detection',
   },
   'project.quarantine': {
     title: 'Quarantine',
     text: 'A quarantined test still runs and still reports — it is only excluded from the CI gate’s verdict. Passing runs accumulate as a streak, so a test that recovers is flagged ready to release instead of staying quarantined forever.',
-    doc: 'flaky-tests#quarantine-with-a-way-out',
+    doc: 'features/flaky-tests#quarantine-with-a-way-out',
   },
   'project.performance': {
     title: 'Performance',
     text: 'Duration trends for the suite — average and P90 (the slowest 10% threshold). Use it to catch tests getting steadily slower.',
-    doc: 'flaky-tests#performance',
+    doc: 'features/slow-tests',
   },
   'project.timeline': {
     title: 'Timeline markers',
     text: 'Dated events — deploys, config changes, infra migrations, incidents — overlaid as vertical lines on the trend charts, so you can tell whether a change moved your results or performance. Markers can be scoped to an environment; some are detected automatically when tooling versions change between runs.',
-    doc: 'timeline-markers',
+    doc: 'features/timeline-markers',
     envVars: ['PIWI_AUTO_MARKERS'],
   },
   'project.slowest-tests': {
     title: 'Slowest tests',
     text: 'The tests taking the most time, ranked. Optimizing the top entries shortens your overall run the fastest.',
-    doc: 'flaky-tests#performance',
+    doc: 'features/slow-tests',
   },
-  'project.run-compare': {
-    title: 'Run comparison',
-    text: 'Diff two runs to see which tests changed status or duration between them — handy for confirming a fix or spotting a regression.',
-    doc: 'ui-overview#test-run-detail',
+  'project.slow-endpoints': {
+    title: 'Slow endpoints',
+    text: 'Backend routes exercised during a run, aggregated per route and ranked by time. Needs the Piwi capture fixtures. Pick a run to inspect its endpoint timings.',
+    doc: 'features/slow-tests',
+  },
+  'project.status-line': {
+    title: 'Project status',
+    text: 'The project’s condition at a glance: the latest run and its age, the pass rate over the last 20 runs, and the open clusters, flaky and quarantined counts. Each figure links to the tab that holds it.',
+    doc: 'features/ui-overview#project-detail',
+  },
+  'project.filters': {
+    title: 'Filters',
+    text: 'Environment, branch and full-runs-only scope every list on the page — the runs table, the trend chart, the flaky analysis and performance. The choice is remembered per project.',
+    doc: 'features/ui-overview#project-detail',
   },
   'project.test-cases': {
-    title: 'Test cases',
-    text: 'Every distinct test in the project with its executed-only pass rate, result breakdown and average duration across runs. Search by title or file, filter by status, and switch to a per-spec tree. Cases not run within the selected age window are hidden by default (last 30 days) — pick "All time" to see obsolete ones. Click a test to see its full history.',
-    doc: 'ui-overview#project-detail',
-  },
-  'project.compare': {
-    title: 'Compare runs',
-    text: 'Pick two runs to see a side-by-side summary and a per-test status diff between them.',
-    doc: 'ui-overview#test-run-detail',
-  },
-  'project.spec-health': {
-    title: 'Spec health',
-    text: 'A heatmap grouped by spec file: pass rate, flaky rate and average time per spec, so you can find the riskiest files at a glance.',
-    doc: 'flaky-tests#spec-health-heatmap',
+    title: 'Tests',
+    text: 'Every distinct test in the project with its executed-only pass rate, result breakdown and average duration across runs. Search by title or file, filter by status, tag or lock, and group by spec file to see each file’s health. Tests not run within the selected age window are hidden by default (last 30 days) — pick "All time" to see obsolete ones. Click a test to see its full history.',
+    doc: 'features/ui-overview#project-detail',
   },
   'project.members': {
     title: 'Project access',
     text: 'Who can see this project. Admins always have access; reporters and users see only the projects assigned to them.',
-    doc: 'authentication#user-management',
+    doc: 'operate/authentication#user-management',
   },
   'project.ai-instructions': {
     title: 'AI diagnosis instructions',
     text: 'Extra guidance handed to the AI when diagnosing this project’s failures — e.g. domain terms, known-flaky areas, or where to look first.',
-    doc: 'ai-diagnosis#custom-instructions',
+    doc: 'features/ai-diagnosis#custom-instructions',
   },
   'project.scm-token': {
     title: 'Repository access token',
     text: 'A read-only Git host token lets diagnosis pull the actual commit diffs behind a failure for SCM-grounded analysis. Stored encrypted.',
-    doc: 'ai-diagnosis#scm-grounded-context',
+    doc: 'features/ai-diagnosis#scm-grounded-context',
+  },
+  'project.ci-rerun': {
+    title: 'CI re-run',
+    text: 'Lets a reporter or admin re-run a cluster’s affected tests in CI straight from its page — a workflow_dispatch on GitHub, a pipeline on GitLab, a custom pipeline on Bitbucket — passing the retry arguments through the input/variable you name. Uses the project’s SCM token (which needs write scope) and is off until you fill in your provider’s block.',
+    doc: 'guide/ci#re-run-from-the-dashboard',
+  },
+  'project.local-folder': {
+    title: 'Linked local folder',
+    text: 'The checkout on this machine that produces this project’s runs. Linking it enables running tests from the app and opening files in your IDE. The link is stored on this machine only — never on the server.',
+    doc: 'features/desktop#running-tests-from-the-app',
   },
 
   // ── Test run detail ───────────────────────────────────────────────────
-  'run.summary': {
-    title: 'Run summary',
-    text: 'Headline outcome of this run — overall status, test counts and total duration.',
-    doc: 'ui-overview#test-run-detail',
-  },
   'run.partial': {
     title: 'Partial run',
     text: 'This run covered only part of the suite (a shard, retry or filtered selection), so its totals aren’t a full picture.',
-    doc: 'ui-overview#test-run-detail',
+    doc: 'features/ui-overview#test-run-detail',
   },
   'run.live': {
     title: 'Live run',
     text: 'This run is still streaming results in real time. Results and counts update as each test finishes.',
-    doc: 'reporter#live-streaming',
-  },
-  'run.ci-env': {
-    title: 'CI & environment',
-    text: 'Where this run executed — CI provider, pipeline and machine details — collected automatically by the reporter.',
-    doc: 'reporter#automatic-metadata-collection',
+    doc: 'guide/reporter#live-streaming',
   },
   'run.reports': {
     title: 'Storage & reports',
     text: 'HTML reports, traces and attachments uploaded with this run. A run can carry several reports (e.g. per shard).',
-    doc: 'reporter#multiple-reports',
+    doc: 'guide/reporter#multiple-reports',
   },
   'run.metadata': {
     title: 'Tags, links & custom data',
     text: 'Extra context attached to the run: tags for grouping, links to external issues, and any custom key/value data your reporter sent.',
   },
   'run.test-cases': {
-    title: 'Test cases',
-    text: 'Per-test results for this run. Filter by status, or by the NEW (new regression) and FLAKY signal badges.',
-    doc: 'ui-overview#test-run-detail',
+    title: 'Tests',
+    text: 'Every execution in this run. Group by cluster, file, file and describe block, lock, or none; search title, path and error text; filter by status, browser, lock, new regressions and newly flaky.',
+    doc: 'features/ui-overview#test-run-detail',
   },
-  'run.insights': {
-    title: 'Run insights',
-    text: 'Automatic highlights for this run — newly failing, flaky and slow tests — surfaced so you don’t have to hunt for them.',
-    doc: 'flaky-tests#run-insights',
-  },
-  'run.regression': {
-    title: 'Regression signals',
-    text: 'Tests that newly started failing in this run versus the project baseline — the most likely fallout from the latest change.',
-    doc: 'flaky-tests#regression-signals',
+  'run.changes': {
+    title: 'Changes',
+    text: 'What differs between this run and one baseline. By default that is the last passing run in the same environment — on the same branch, then the branch it forked from (the pull request’s target, else the project’s default branch), then any branch; the line under the selector says which rung applied. Pick a base branch to take the baseline from that branch only, or pick one specific run. The tests that started or stopped failing, the ones that got slower or faster, the commits landed since the baseline, and the environment fields that moved are all read against that one baseline.',
+    doc: 'features/run-changes',
   },
   'run.timeline': {
     title: 'Workers timeline',
-    text: 'When each test ran on each parallel worker. Gaps and long bars reveal poor parallelization or a single slow test stalling a shard.',
-    doc: 'ui-overview#test-run-detail',
+    text: 'When each test ran on each parallel worker. Gaps and long bars reveal poor parallelization or a single slow test stalling a shard. Click a test to expand its steps into a nested waterfall on the same axis — like a span viewer. Turn on Show locks to see when each named lock was held and how much of the run it serialized.',
+    doc: 'features/ui-overview#test-run-detail',
   },
   // ── Single execution (test-run-case) ──────────────────────────────────
-  'case.diagnosis-tab': {
-    title: 'Diagnosis',
-    text: 'Everything you need to understand and fix this failure in one place — the error, a verdict on what kind of failure it is, the captured evidence, and an AI diagnosis.',
-    doc: 'ui-overview#test-case-detail',
-  },
-  'case.verdict': {
-    title: 'Failure verdict',
-    text: 'An at-a-glance read on this failure: whether it newly regressed or is flaky, how many times it retried, and how long the test has been failing.',
-    doc: 'flaky-tests#regression-signals',
+  'case.situation': {
+    title: 'Situation',
+    text: 'One block that answers three questions: what broke (the headline, built from the Playwright error itself), what is most likely behind it (the story that chains the deterministic clues, or the diagnosis when one completed), what is going on (since when, on which commit, in how many other tests, who owns it — one sentence), and what to do next (one action chosen by a policy). Every clue, the raw error and the rest of the facts are one click away.',
+    doc: 'features/evidence#one-execution-diagnosis-first',
   },
   'case.evidence': {
-    title: 'Failure evidence',
-    text: 'What was captured at the moment of failure — screenshots, video and traces — grouped so you can see exactly what the browser saw.',
-    doc: 'ui-overview#trace-viewer',
+    title: 'Evidence',
+    text: 'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the screenshot and video with the visual and page diffs, the test source, the network requests, the console output, the app state at the end, and the browser performance. The tab opens on the view the story points at; the raw page structure — the accessibility tree and the failure-time DOM — folds behind Page structure at the bottom of the Screen tab. An empty tab says whether the evidence was never captured, captured with nothing to show, or does not apply.',
+    doc: 'features/evidence#one-execution-diagnosis-first',
+  },
+  'fix.toolbox': {
+    title: 'More ways to fix',
+    text: 'Every other way to fix, verify or reproduce this failure, each folded to one line: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan as Markdown (the same plan get_fix_plan returns to an AI agent via the MCP server). The section the next step points at opens with the page; open the others as you need them.',
+    doc: 'features/fix-plans',
   },
   'case.test-source': {
     title: 'Test source',
     text: 'The source around the failing line and the callers above it — captured from the failure’s call stack — so you can read where it broke, and the code that led there, without opening your editor. When the execution has a trace, this deepens into the complete call stack with the real source of every frame, read from the trace’s embedded files.',
-    doc: 'ui-overview#trace-powered-deep-views',
+    doc: 'features/evidence#trace-powered-deep-views',
   },
   'export.offline': {
     // Deliberately avoids the word "Export": the hint sits beside a button with
     // that label, and a substring role query would match both.
     title: 'Reading this offline',
-    text: 'Takes this investigation out of the dashboard as a file that needs no network and no Piwi server. HTML is one self-contained page with screenshots and video embedded; ZIP adds the raw artifacts — trace archives, full-size video, logs — plus a machine-readable data.json; PDF is the HTML printed from your browser. Evidence past the size budget is listed in the report as omitted rather than dropped quietly.',
+    text: 'Takes this investigation out of the dashboard as a file that needs no network and no Piwi server. HTML is one self-contained page with screenshots and video embedded; ZIP adds the raw artifacts — trace archives, full-size video, logs — plus a machine-readable data.json; PDF is a formatted document with screenshots embedded, generated directly with no browser print. Evidence past the size budget is listed in the report as omitted rather than dropped quietly.',
+    doc: 'features/offline-export',
     envVars: ['PIWI_EXPORT_MAX_INLINE_BYTES', 'PIWI_EXPORT_MAX_BYTES', 'PIWI_EXPORT_MAX_CASES'],
   },
-  'case.artifacts': {
-    title: 'Artifacts',
-    text: 'Traces, attachments, console output and network requests captured for this execution — the raw material behind the result.',
-    doc: 'ui-overview#trace-viewer',
-  },
-  'case.steps': {
-    title: 'Steps',
-    text: 'Each step Playwright ran, with its duration. A failed step is highlighted with its error, and slow steps are color-coded.',
-    doc: 'ui-overview#test-case-detail',
-  },
-  'case.wasted-time': {
-    title: 'Wasted time',
-    text: 'Time spent in fixed waits (waitForTimeout and matching patterns) that could usually be replaced with a web-first assertion.',
-    doc: 'flaky-tests#performance',
-  },
-  'case.ai': {
-    title: 'AI diagnosis for this execution',
-    text: 'Diagnose just this failing execution, or copy the full evidence context to paste into your own AI assistant.',
-    doc: 'ai-diagnosis#diagnosing-one-execution',
+  'case.timeline': {
+    title: 'Failure timeline',
+    text: 'One time axis that places this execution’s steps, console entries, network requests and backend log entries on the same clock, with a marker at the moment of failure. The default view is the window around the failed step (10s before, 2s after); switch to “Whole test” to see everything. The list below reads it chronologically — click a line to jump to that step, console entry or request. When a run’s reporter recorded no step start times, positions are estimated from durations and the card says so.',
+    doc: 'features/evidence#one-execution-diagnosis-first',
   },
   'case.web-vitals': {
     title: 'Web Vitals',
-    text: 'Core Web Vitals (LCP, CLS, etc.) captured during the test, measuring real loading and responsiveness of the page under test.',
-    doc: 'capture-fixtures',
-  },
-  'case.traces': {
-    title: 'Traces',
-    text: 'Playwright trace files for this execution. "View trace" opens them in the dashboard\'s own trace viewer — the trace stays on your server, it is never sent to a third party.',
-    doc: 'ui-overview#trace-viewer',
+    text: 'Core Web Vitals (LCP, CLS, etc.) captured during the test, measuring real loading and responsiveness of the page under test. When empty, the card says which of three things it means: not captured (add the capture fixtures), captured but nothing recorded, or not applicable (Web Vitals need a Chromium browser).',
+    doc: 'guide/capture-fixtures',
   },
   'case.console': {
     title: 'Console output',
-    text: 'Browser console messages logged while this test ran — often the first clue for a JavaScript error behind a failure.',
-    doc: 'capture-fixtures',
+    text: 'Browser console messages logged while this test ran — often the first clue for a JavaScript error behind a failure. An empty card says which of three things it means: not captured (add the capture fixtures — links to /setup), captured but the page logged nothing, or not applicable. When a trace but no fixtures were present, the entries are recovered from the trace and marked "derived from the trace".',
+    doc: 'guide/capture-fixtures',
   },
   'case.network': {
     title: 'Network requests',
-    text: 'HTTP requests the page made during the test, with timing and status — useful for spotting failed or slow calls. When the execution has a trace, the Full trace view shows every request (all resource types) with headers, timing phases, a waterfall and capped body previews; sensitive header values are masked.',
-    doc: 'ui-overview#trace-powered-deep-views',
+    text: 'HTTP requests the page made during the test, with timing and status — useful for spotting failed or slow calls. When the execution has a trace, the Full trace view shows every request (all resource types) with headers, timing phases, a waterfall and capped body previews; sensitive header values are masked. An empty card distinguishes not captured (add the capture fixtures) from captured-but-nothing-happened; with a trace and no fixtures the list is recovered from the trace and marked "derived from the trace".',
+    doc: 'features/evidence#trace-powered-deep-views',
   },
-  'case.backend-logs': {
-    title: 'Backend server logs',
-    text: 'Server-side warnings and errors captured during the test, correlated with this execution via a Piwi backend integration.',
-    doc: 'backend-logs',
-  },
-  'case.aria': {
-    title: 'ARIA snapshot',
-    text: 'A snapshot of the accessibility tree at the moment of failure — what assistive tech saw, and useful grounding for AI diagnosis.',
-    doc: 'ai-diagnosis#what-a-diagnosis-contains',
+  'case.attempts': {
+    title: 'Attempts',
+    text: 'When a test failed then passed on retry, this compares the failing attempt against the passing one and lists what differed — the error that was there then gone, a request that failed on only one attempt, a console error, a slower step, a duration or page-state change. Each difference links to the evidence it came from. That delta is the flakiness fingerprint, and it feeds the root-cause classifier.',
+    doc: 'features/flaky-tests#flaky-test-detection',
   },
 
   // ── Test case across runs ─────────────────────────────────────────────
-  'case.flaky-count': {
-    title: 'Flaky runs',
-    text: 'How many of this test’s recent executions flipped between pass and fail without a code change.',
-    doc: 'flaky-tests#flaky-test-detection',
-  },
   'case.history-chart': {
     title: 'Duration trend',
     text: 'This test’s duration across recent runs. Rising times or spikes hint at a slowdown or instability.',
-    doc: 'flaky-tests#flaky-test-detection',
-  },
-  'case.sparkline': {
-    title: 'Status history',
-    text: 'Pass/fail outcome of this test over its recent runs, oldest to newest — a quick read on its stability.',
-    doc: 'flaky-tests#flaky-test-detection',
+    doc: 'features/flaky-tests#flaky-test-detection',
   },
 
   // ── Failure clusters ──────────────────────────────────────────────────
   'cluster.concept': {
     title: 'Failure clusters',
     text: 'Failures with the same error fingerprint are grouped into one cluster, so a single root cause shows up once instead of N times.',
-    doc: 'ai-diagnosis#failure-clustering',
+    doc: 'features/ai-diagnosis#failure-clustering',
   },
-  'cluster.new-vs-known': {
-    title: 'New vs known failure',
-    text: 'Whether this failure matches an existing cluster (a known issue) or opened a new one — a fresh signature worth a closer look.',
-    doc: 'ai-diagnosis#failure-clustering',
+  'cluster.owner': {
+    title: 'Owner',
+    text: 'Who answers for this cluster’s tests. Taken from a `piwi:owner` annotation on the test when present, otherwise derived from the repository’s CODEOWNERS for the spec’s file path. The link filters this project’s test cases to that owner.',
   },
-  'cluster.triage': {
-    text: 'Track a cluster’s state: set its status, add triage notes, or extract a subset of failures into a separate cluster.',
-  },
-  'cluster.resolution': {
-    title: 'Resolution',
-    text: 'Recorded when a full run turns this cluster green: when the fix landed, how long the cluster stayed open, and whether the change matched the diagnosed files. If the failure comes back, the cluster is marked as regressed rather than quietly reopened.',
-    doc: 'ai-diagnosis#did-the-fix-work',
-  },
-  'cluster.evidence': {
-    title: 'Test evidence',
-    text: 'The concrete artifacts behind this cluster — screenshots, signals and traces from affected tests — gathered for review and AI diagnosis.',
-    doc: 'ai-diagnosis#what-a-diagnosis-contains',
+  'cluster.known-issue': {
+    title: 'Known issue',
+    text: 'Pin the Jira ticket, GitHub issue or PR that tracks this cluster. The link’s key travels with the cluster wherever it is listed, so a triaged cluster shows what is already being done about it.',
   },
   'cluster.scm': {
     title: 'What changed',
     text: 'Recent commits and diffs around when this failure started, so you can connect the break to the change that caused it.',
-    doc: 'ai-diagnosis#scm-grounded-context',
+    doc: 'features/ai-diagnosis#scm-grounded-context',
   },
   'cluster.baseline': {
     title: 'Baseline commit',
     text: 'The last known-good commit. Diffs are computed from here forward to scope the search for the offending change.',
-    doc: 'ai-diagnosis#scm-grounded-context',
+    doc: 'features/ai-diagnosis#scm-grounded-context',
   },
   'cluster.commit-browser': {
     title: 'Commit browser',
     text: 'Browse the repository’s recent commits and inspect each diff to pick a baseline or find the suspect change.',
-    doc: 'ai-diagnosis#scm-grounded-context',
-  },
-  'cluster.diagnosis': {
-    title: 'AI diagnosis',
-    text: 'Runs the configured AI model over the failure plus its evidence and code changes to propose a root cause and fix.',
-    doc: 'ai-diagnosis#enabling-ai-diagnosis',
+    doc: 'features/ai-diagnosis#scm-grounded-context',
   },
   'cluster.context-input': {
     title: 'Additional context',
     text: 'Extra notes, files or screenshots you add to steer the diagnosis — anything the model can’t infer from the captured evidence.',
-    doc: 'ai-diagnosis#custom-instructions',
+    doc: 'features/ai-diagnosis#custom-instructions',
   },
   'cluster.context-preview': {
     title: 'Context preview',
     text: 'Exactly what will be sent to the AI, including how much was trimmed to fit the token budget. Review it before spending tokens.',
-    doc: 'ai-diagnosis#context-limits-and-token-cost',
+    doc: 'features/ai-diagnosis#context-limits-and-token-cost',
   },
   'cluster.result': {
-    title: 'Diagnosis result',
+    title: 'Diagnosis',
     text: 'The AI’s proposed root cause, fix and confidence. Treat it as a lead to verify, not proof — confirm against the evidence before acting.',
-    doc: 'ai-diagnosis#what-a-diagnosis-contains',
+    doc: 'features/ai-diagnosis#what-a-diagnosis-contains',
   },
   'cluster.ai-setup': {
     title: 'AI not configured',
     text: 'Diagnosis needs an AI provider and API key. Configure one in Settings → AI to enable automatic and on-demand analysis.',
-    doc: 'ai-diagnosis#enabling-ai-diagnosis',
-  },
-  'cluster.confidence': {
-    title: 'Confidence score',
-    text: 'How sure the model is of the top hypothesis (0–100). It is lowered when key evidence is missing or truncated, so treat a low score as “gather more before acting”.',
-    doc: 'ai-diagnosis#what-a-diagnosis-contains',
-  },
-  'cluster.hypotheses': {
-    title: 'Other hypotheses',
-    text: 'Alternative root causes the model weighed, ranked by likelihood. Useful when the evidence is ambiguous and the top pick is not conclusive.',
-    doc: 'ai-diagnosis#what-a-diagnosis-contains',
+    doc: 'features/ai-diagnosis#enabling-ai-diagnosis',
   },
   'cluster.coverage': {
     title: 'Data coverage',
     text: 'Which evidence sections were present, truncated or absent for this diagnosis — the same map the model sees. Absent or trimmed evidence lowers confidence; the quote icon marks sections the diagnosis cited.',
-    doc: 'ai-diagnosis#context-limits-and-token-cost',
+    doc: 'features/ai-diagnosis#context-limits-and-token-cost',
   },
 
   // ── Notifications / subscribe ─────────────────────────────────────────
   'notifications.subscribe': {
     title: 'Project notifications',
     text: 'Get notified about this project’s runs through your channels. Choose which events trigger an alert.',
-    doc: 'notifications#subscriptions',
+    doc: 'features/notifications#subscriptions',
   },
 
   // ── Settings ──────────────────────────────────────────────────────────
-  'settings.general': {
-    title: 'General settings',
-    text: 'Central place for account, users, AI diagnosis, notifications, storage and tags. Settings that can be overridden by environment variables show a lock badge naming the variable.',
-  },
   'settings.storage-stats': {
     title: 'Storage statistics',
     text: 'How much disk your reports, traces and attachments use, broken down so you can see what to clean up.',
-    doc: 'storage#storage-architecture',
+    doc: 'operate/storage#storage-architecture',
   },
   'settings.cleanup': {
     title: 'Cleanup old runs',
     text: 'Delete runs (and their reports, traces and attachments) older than a chosen age to reclaim storage. This cannot be undone.',
-    doc: 'storage#storage-management',
+    doc: 'operate/storage#storage-management',
   },
   'account.email': {
     title: 'Email & verification',
     text: 'Your account email is used for password resets and notifications. Verifying it confirms you own the address.',
-    doc: 'authentication#user-management',
+    doc: 'operate/authentication#user-management',
   },
   'settings.smtp': {
     title: 'SMTP status',
     text: 'Outbound email (resets, invites, notifications) is configured through environment variables and shown here read-only.',
-    doc: 'notifications#smtp-configuration',
+    doc: 'features/notifications#smtp-configuration',
     envVars: [
       'PIWI_SMTP_HOST',
       'PIWI_SMTP_PORT',
@@ -461,40 +395,41 @@ export const HELP_TOPICS = {
   },
   'notifications.channels': {
     title: 'Channels',
-    text: 'Destinations an alert can go to — email, Slack or webhook. Create a channel, then subscribe events to it.',
-    doc: 'notifications#channels',
+    text: 'Destinations an alert can go to — browser, email, Slack or webhook. Create a channel, then subscribe events to it. Administrators can make a channel global (usable by everyone); without authentication every channel is global.',
+    doc: 'features/notifications#channels',
   },
   'notifications.subscriptions': {
     title: 'Subscriptions',
-    text: 'Which events (run failed, new cluster, etc.) notify which channel, optionally scoped to one project and filtered.',
-    doc: 'notifications#subscriptions',
+    text: 'Which events (run failed, new cluster, etc.) notify which channel, optionally scoped to one project and filtered. Global subscriptions deliver instance-wide and are managed by administrators.',
+    doc: 'features/notifications#subscriptions',
   },
   'settings.ai-provider': {
     title: 'AI provider',
     text: 'Configure the model providers behind the three AI roles — diagnosis, research and embedding. Each role has its own provider config, or reuses another role’s provider and credentials. Keys are stored encrypted and never returned by the API.',
-    doc: 'ai-diagnosis#enabling-ai-diagnosis',
-    envVars: ['PIWI_AI_PROVIDER', 'PIWI_AI_MODEL', 'PIWI_AI_API_KEY', 'PIWI_AI_BASE_URL'],
+    doc: 'features/ai-diagnosis#enabling-ai-diagnosis',
+    envVars: ['PIWI_AI_PROVIDER', 'PIWI_AI_MODEL', 'PIWI_AI_API_KEY', 'PIWI_AI_BASE_URL', 'PIWI_AI_TEMPERATURE'],
   },
   'settings.ai-instructions': {
     title: 'Global analysis instructions',
     text: 'Guidance applied to every diagnosis across all projects — house style, terminology, or things to always check. Per-project instructions add to this.',
-    doc: 'ai-diagnosis#custom-instructions',
+    doc: 'features/ai-diagnosis#custom-instructions',
   },
   'settings.ai-research': {
     title: 'Research model',
     text: 'An optional cheaper/faster model that pre-analyzes the failure (on a lean view) before the main model writes the final diagnosis. It can use its own provider, and the costly SCM diff is only fetched when it flags a likely regression. It also handles cluster naming and merge adjudication, so configuring a cheap research model routes those utility calls away from the expensive diagnosis model.',
-    doc: 'ai-diagnosis#enabling-ai-diagnosis',
+    doc: 'features/ai-diagnosis#enabling-ai-diagnosis',
     envVars: [
       'PIWI_AI_RESEARCH_PROVIDER',
       'PIWI_AI_RESEARCH_MODEL',
       'PIWI_AI_RESEARCH_BASE_URL',
       'PIWI_AI_RESEARCH_API_KEY',
+      'PIWI_AI_RESEARCH_TEMPERATURE',
     ],
   },
   'settings.ai-limits': {
     title: 'Diagnosis context limits',
     text: 'Caps on how much evidence (and how many tokens) go into each diagnosis. Higher limits give the model more to work with but cost more. Each field can be pinned individually by its env var.',
-    doc: 'ai-diagnosis#context-limits-and-token-cost',
+    doc: 'features/ai-diagnosis#context-limits-and-token-cost',
     envVars: [
       'PIWI_AI_MAX_SAMPLE_ERROR_CHARS',
       'PIWI_AI_MAX_SCM_PATCH_BUDGET',
@@ -518,12 +453,12 @@ export const HELP_TOPICS = {
   'settings.users': {
     title: 'Users & roles',
     text: 'Manage accounts and their role. Administrators control everything; reporters submit results; users have read-only access.',
-    doc: 'authentication#roles',
+    doc: 'operate/authentication#roles',
   },
   'settings.api-keys': {
     title: 'API keys',
     text: 'Tokens (prefixed pd_) that let the reporter or scripts authenticate without a password. Shown once at creation; revoke anytime.',
-    doc: 'authentication#api-keys',
+    doc: 'operate/authentication#api-keys',
   },
   'settings.tags': {
     text: 'Reusable labels you can attach to projects for grouping and filtering across the dashboard.',
@@ -531,30 +466,56 @@ export const HELP_TOPICS = {
   'settings.wasted-time': {
     title: 'Wasted-time patterns',
     text: 'Define which wait steps count as wasted time. A wait is wasted when any pattern matches its step title or source location. Patterns are case-insensitive and support * and ? wildcards. Changes apply to existing runs immediately.',
-    doc: 'flaky-tests#performance',
+    doc: 'features/slow-tests',
     envVars: ['PIWI_WASTED_WAIT_PATTERNS'],
   },
   'settings.timeout-hygiene': {
     title: 'Timeout hygiene',
     text: 'Thresholds for flagging oversized per-test timeouts and stale test.slow() marks. Opportunities are recomputed at read time, so changes apply to existing runs immediately.',
-    doc: 'flaky-tests#performance',
+    doc: 'features/slow-tests',
   },
   'settings.pr-feedback': {
     title: 'Pull-request feedback',
     text: 'When a run finishes on a branch with an open pull request, Piwi can post a summary comment — new failures separated from pre-existing ones, with suggested locators — and set a commit status. Needs PIWI_SITE_URL and an SCM token with write access.',
-    doc: 'ci#pull-request-feedback',
+    doc: 'guide/ci#pull-request-feedback',
     envVars: ['PIWI_SITE_URL'],
+  },
+  'settings.auto-heal': {
+    title: 'Auto-heal pull requests',
+    text: 'When a locator breaks on the default branch and healing has high-confidence evidence, Piwi opens the fix pull request itself — a deterministic one-line locator edit per broken call site. Off by default, with an explicit per-project allowlist. Needs PIWI_SITE_URL and an SCM token with write access.',
+    doc: 'features/auto-heal',
+    envVars: ['PIWI_SITE_URL'],
+  },
+  'settings.integrations': {
+    title: 'Integrations',
+    text: 'Connect an issue tracker so pinned links unfurl with a title and status and stay in sync. Jira Cloud connects with an account email and an API token; set the connection once and every project uses it.',
+    doc: 'operate/integrations',
+    envVars: ['PIWI_JIRA_BASE_URL', 'PIWI_JIRA_EMAIL', 'PIWI_JIRA_API_TOKEN'],
+  },
+  'settings.integrations.connection': {
+    title: 'Connect a system',
+    text: 'The base URL is the system’s address (for Jira Cloud, https://your-team.atlassian.net); the credentials authenticate Piwi against it. Test the connection to confirm the account it resolves to. Credentials are encrypted at rest and never shown again.',
+    doc: 'operate/integrations#connecting-jira-cloud',
+  },
+  'settings.integrations.private-host': {
+    title: 'Private hosts',
+    text: 'A connection base URL is administrator-supplied and trusted, so a self-hosted tracker on a private network works. Links a non-administrator pins are still fetched through the SSRF guard.',
+    doc: 'operate/integrations#trusted-base-urls-and-private-hosts',
   },
   'settings.auto-diagnose': {
     title: 'Auto-diagnose',
     text: 'When a run finishes, up to 3 new failure clusters are diagnosed automatically — each diagnosis is one research call (when a research model is configured) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires the diagnosis model to be configured.',
-    doc: 'ai-diagnosis#enabling-ai-diagnosis',
+    doc: 'features/ai-diagnosis#enabling-ai-diagnosis',
     envVars: ['PIWI_AI_AUTO_DIAGNOSE'],
+  },
+  'settings.ai-notifications': {
+    title: 'Diagnosis notifications',
+    text: 'Show a browser notification when a diagnosis finishes. This is a per-browser preference stored on this device only — it is not shared with other users or saved on the server, and it needs the browser’s notification permission.',
   },
   'settings.embedding-model': {
     title: 'Embedding model',
     text: 'Embeds failures so semantically-similar errors group together (used by failure clustering). Can reuse another role’s provider or configure its own.',
-    doc: 'ai-diagnosis#enabling-ai-diagnosis',
+    doc: 'features/ai-diagnosis#enabling-ai-diagnosis',
     envVars: [
       'PIWI_AI_EMBEDDING_PROVIDER',
       'PIWI_AI_EMBEDDING_MODEL',
@@ -565,12 +526,12 @@ export const HELP_TOPICS = {
   'settings.privacy': {
     title: 'Privacy notice',
     text: 'What data is sent to the configured LLM provider when diagnosing a failure, and how secrets are stored. API keys are encrypted at rest; env vars keep them out of the DB entirely.',
-    doc: 'ai-diagnosis#what-a-diagnosis-contains',
+    doc: 'features/ai-diagnosis#what-a-diagnosis-contains',
   },
   'settings.storage-backend': {
     title: 'Storage backend',
     text: 'Where test artifacts (HTML reports, traces, attachments) are stored — local disk or S3. Configured entirely through environment variables; shown here read-only.',
-    doc: 'storage#storage-architecture',
+    doc: 'operate/storage#storage-architecture',
     envVars: [
       'PIWI_STORAGE_TYPE',
       'PIWI_STORAGE_PATH',
@@ -585,7 +546,7 @@ export const HELP_TOPICS = {
   'settings.auth-toggle': {
     title: 'Authentication',
     text: 'Role-based access control and API keys. Off by default — when disabled, every endpoint behaves as a single virtual administrator.',
-    doc: 'authentication',
+    doc: 'operate/authentication',
     envVars: ['PIWI_AUTH_ENABLED', 'PIWI_AUTH_SECRET'],
   },
   'account.display-name': {
@@ -595,7 +556,7 @@ export const HELP_TOPICS = {
   'account.connected-accounts': {
     title: 'Connected accounts',
     text: 'Sign in with an OAuth provider (Google or GitHub). Providers are configured by an operator through environment variables; one provider can be linked per account.',
-    doc: 'authentication#oauth-google-github',
+    doc: 'operate/authentication#oauth-google-github',
     envVars: [
       'PIWI_OAUTH_GOOGLE_CLIENT_ID',
       'PIWI_OAUTH_GOOGLE_CLIENT_SECRET',
@@ -608,29 +569,34 @@ export const HELP_TOPICS = {
   'account.password': {
     title: 'Password',
     text: 'Change the password you sign in with. OAuth-only accounts manage their password through their provider.',
-    doc: 'authentication#user-management',
+    doc: 'operate/authentication#user-management',
   },
   'notifications.test-email': {
     title: 'Send test email',
     text: 'Send a test message through the configured SMTP server to verify delivery. Uses the environment-configured SMTP connection.',
-    doc: 'notifications#smtp-configuration',
+    doc: 'features/notifications#smtp-configuration',
   },
 
   // ── MCP ───────────────────────────────────────────────────────────────
   'mcp.tools': {
     title: 'What it provides',
     text: 'The tools this MCP server exposes to AI agents, letting them query your projects, runs and failures directly.',
-    doc: 'mcp#what-it-provides',
+    doc: 'features/mcp#what-it-provides',
   },
   'mcp.auth': {
     title: 'Authentication',
     text: 'How an MCP client authenticates to this server — uses the same API keys as the rest of the dashboard.',
-    doc: 'mcp#authentication',
+    doc: 'features/mcp#authentication',
   },
   'mcp.client-setup': {
     title: 'Client setup',
     text: 'Copy-paste configuration to connect Claude Code, Cursor, VS Code and other MCP clients to this server.',
-    doc: 'mcp#client-setup',
+    doc: 'features/mcp#client-setup',
+  },
+  'mcp.skills': {
+    title: 'Agent skills',
+    text: 'Portable SKILL.md workflow instructions for AI coding agents — investigate a failure, apply a healed locator, stabilize flaky tests. Installed into your test project by the reporter CLI; each one prefers this MCP server and falls back to the dashboard UI.',
+    doc: 'features/mcp#agent-skills',
   },
 
   // ── Shared ────────────────────────────────────────────────────────────
@@ -641,39 +607,39 @@ export const HELP_TOPICS = {
   'ide.open': {
     title: 'Open in IDE',
     text: 'Click a source path to open it in your local editor. Set your local workspace folder (so VS Code gets an absolute path) or a JetBrains project name, then pick a method. Auto probes the JetBrains local server first (the only one it can confirm) before falling back to a vscode:// or jetbrains:// launch. These preferences live in this browser only.',
-    doc: 'ide-integration',
+    doc: 'features/ide-integration',
   },
 
   // ── Locator healing ────────────────────────────────────────────────────
   'locator-healing': {
-    title: 'Alternative locators',
+    title: 'Locator fix',
     text: 'When a locator breaks after a UI change, Piwi suggests pre-captured alternatives from the last passing run — or from another test in the project that uses the same locator. Each alternative is ranked by stability score — prefer data-testid (100) over CSS classes (10–40). The recommended fix shows the exact one-line edit for the failing test, with a "Copy fix prompt" for an AI coding agent. A "Your pick" badge marks a replacement you confirmed on the failing page: "Pick from snapshot" opens the failure-time DOM and lets you click the intended element, and "Pick from trace" opens the failure trace in the trace viewer, whose Pick locator tool works on the recorded page snapshots.',
-    doc: 'reporter#locator-healing',
+    doc: 'features/locator-healing',
   },
 
   // ── Environment diff ────────────────────────────────────────────────────
   'environment-diff': {
     title: 'Environment diff',
-    text: 'Compares this execution’s environment (Playwright version, browser config, locale, viewport, CI provider, …) against the same test’s last passing run on the same browser. Only changed keys are shown — an empty diff rules out environment drift as the cause.',
+    text: 'Compares this execution’s environment (Playwright version, browser config, locale, viewport, CI provider, …) against the same test’s last passing run on the same browser — from the same environment when one exists, then the same branch, then the most recent; the subtitle says when the baseline had to come from another environment. Only changed keys are shown — an empty diff rules out environment drift as the cause.',
   },
 
   // ── Visual diff ──────────────────────────────────────────────────────────
   'visual-diff': {
     title: 'Visual diff',
-    text: 'Pixel-compares the failing screenshot against the same test’s last passing screenshot (same browser). Red pixels in the overlay mark what changed. When the two screenshots have different dimensions the ratio is flagged as unreliable.',
+    text: 'Pixel-compares the failing screenshot against the same test’s last passing screenshot (same browser, preferring the same environment and then the same branch). Red pixels in the overlay mark what changed. When the two screenshots have different dimensions the ratio is flagged as unreliable.',
   },
 
-  // ── DOM snapshot ─────────────────────────────────────────────────────────
-  'dom-snapshot': {
-    title: 'DOM snapshot',
-    text: 'The page’s HTML around the failing action, rendered from the uploaded Playwright trace — nothing extra is captured. Input values, inline handlers and script bodies are removed; token-shaped strings are masked.',
+  // ── Page diff ────────────────────────────────────────────────────────────
+  'case.page-diff': {
+    title: 'Page diff',
+    text: 'Compares the failing page’s ARIA structure against the same test’s last passing (green) sample — same browser, preferring the same environment then branch. Shows what was added, removed, renamed, changed or moved, with unchanged subtrees collapsed and the failing locator’s element highlighted. A green sample is captured about once a day per test, so a baseline appears after the next passing run.',
   },
 
   // ── Page state ───────────────────────────────────────────────────────────
   'page-state': {
     title: 'App state at test end',
     text: 'URL, history state, storage key names + value lengths, and cookie names + flags captured when the test ended. Values are never captured. Disable with the reporter’s capturePageState option.',
-    doc: 'capture-fixtures',
+    doc: 'guide/capture-fixtures',
   },
 } as const satisfies Record<string, HelpTopic>;
 

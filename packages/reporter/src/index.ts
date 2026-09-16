@@ -15,6 +15,7 @@ export { PiwiDashboardReporter };
 // ── Config helpers ───────────────────────────────────────────────────────────
 export { wrapConfig } from './public/config-wrapper.js';
 export { createGlobalSetup } from './public/global-setup.js';
+export { resolveSelection } from './public/selection.js';
 
 // ── Capture fixtures ─────────────────────────────────────────────────────────
 export { piwiFixtures, extendPiwiFixtures } from './internal/capture/capture-fixtures.js';
@@ -26,3 +27,4 @@ export { piwiAiFixtures, extendPiwiAi } from './internal/ai/ai-fixtures.js';
 export type { PiwiFixtures } from './internal/capture/capture-fixtures.js';
 export type { PiwiAi, AiMode, AiOnMiss } from './internal/ai/ai-fixtures.js';
 export type { PiwiDashboardOptions, PlaywrightTestConfig } from './public/options.js';
+export type { ResolveSelectionResult, ResolveSelectionOptions } from './public/selection.js';

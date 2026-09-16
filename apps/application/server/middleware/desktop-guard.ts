@@ -30,5 +30,5 @@ export default defineEventHandler((event) => {
   const presented = getCookie(event, 'piwi_token') || getRequestHeader(event, 'x-piwi-token') || bearer;
   if (presented && timingSafeEqualStr(presented, token)) return;
 
-  throw createError({ statusCode: 401, statusMessage: 'Desktop access token required' });
+  throw apiError({ statusCode: 401, statusMessage: 'Desktop access token required' });
 });

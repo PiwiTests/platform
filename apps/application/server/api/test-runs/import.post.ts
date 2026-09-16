@@ -41,11 +41,11 @@ export default eventHandler(async (event) => {
   const maxUploadBytes = resolveMaxUploadBytes();
   const contentLength = parseInt(getRequestHeader(event, 'content-length') ?? '0', 10);
   if (contentLength > maxUploadBytes) {
-    throw createError({ statusCode: 413, message: `Archive too large (max ${formatBytes(maxUploadBytes)})` });
+    throw apiError({ statusCode: 413, message: `Archive too large (max ${formatBytes(maxUploadBytes)})` });
   }
 
   const formData = await readMultipartFormData(event);
-  if (!formData) throw createError({ statusCode: 400, message: 'No form data provided' });
+  if (!formData) throw apiError({ statusCode: 400, message: 'No form data provided' });
 
   let projectName: string | undefined;
   let environment: string | null = null;
@@ -66,7 +66,7 @@ export default eventHandler(async (event) => {
   }
 
   if (!projectName || !archive) {
-    throw createError({ statusCode: 400, message: 'Missing required fields: projectName, archive' });
+    throw apiError({ statusCode: 400, message: 'Missing required fields: projectName, archive' });
   }
 
   return importArchive({ user, projectName, archive, environment, label, importGroup });

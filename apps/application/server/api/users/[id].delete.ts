@@ -22,7 +22,7 @@ export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'Invalid user ID',
     });
@@ -33,7 +33,7 @@ export default eventHandler(async (event) => {
   // Guard against lockout (only meaningful when authentication is enabled)
   if (isAuthEnabled(event)) {
     if (currentUser.id === id) {
-      throw createError({
+      throw apiError({
         statusCode: 400,
         message: 'You cannot delete your own account',
       });
@@ -42,7 +42,7 @@ export default eventHandler(async (event) => {
     const userResults = await db.select().from(users).where(eq(users.id, id));
     const targetUser = userResults[0];
     if (!targetUser) {
-      throw createError({
+      throw apiError({
         statusCode: 404,
         message: 'User not found',
       });
@@ -51,7 +51,7 @@ export default eventHandler(async (event) => {
     if (targetUser.role === Role.ADMINISTRATOR) {
       const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, Role.ADMINISTRATOR));
       if (admins.length <= 1) {
-        throw createError({
+        throw apiError({
           statusCode: 400,
           message: 'Cannot delete the last administrator',
         });
@@ -64,6 +64,6 @@ export default eventHandler(async (event) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to delete user';
     const statusCode = message === 'User not found' ? 404 : 400;
-    throw createError({ statusCode, message });
+    throw apiError({ statusCode, message });
   }
 });

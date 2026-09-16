@@ -8,6 +8,12 @@ one-origin-at-a-time `optional_host_permissions` grant recording needs — see b
 **connecting to a Piwi instance is opt-in** and adds exactly one thing: matching a
 recording against a project's own function catalog. See "Connected mode" below.
 
+Published on the Chrome Web Store as
+[Piwi Picker](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe)
+(`pakhnokpjboejcghgcmkjlpnogfjihhe`) — that listing is how Chrome *and* Edge users install it.
+Uploads are manual per release; `PUBLISHING.md` has the loop, and the Edge Add-ons and Firefox
+AMO listings that are still outstanding.
+
 ## What it is
 
 - `manifest.json` — MV3 manifest. Standing permissions stay at `activeTab` + `scripting` +
@@ -215,3 +221,6 @@ While iterating, use `npm run extension:dev` instead — it rebuilds on save. Th
 still needs a manual reload on the `chrome://extensions` card to pick up a new build (MV3
 gives no way to trigger that from outside the browser), so the loop is: save → wait for the
 rebuild line → click reload.
+
+Disable the Chrome Web Store copy while a local build is loaded — two installs both claim the
+`Ctrl+Shift+E` command, and only one of them gets it, which reads as "my change didn't apply".

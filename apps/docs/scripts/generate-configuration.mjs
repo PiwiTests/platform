@@ -38,7 +38,24 @@ for (const [category, meta] of Object.entries(PIWI_ENV_CATEGORIES)) {
   mergedInto.set(meta.mergeInto, list);
 }
 
-const cell = (text) => text.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+/**
+ * Renders bare URLs and email addresses from registry text as code spans.
+ * VitePress linkifies bare URLs/emails, which turns placeholder values like
+ * `https://piwi.example.com` into clickable dead links. Text already inside
+ * backticks or a markdown link target (`](url)`) is left untouched.
+ */
+const codeifyBareLinks = (text) =>
+  text
+    .split('`')
+    .map((segment, i) => {
+      if (i % 2 === 1) return segment; // inside an existing code span
+      return segment
+        .replace(/(?<!\]\()(https?:\/\/[^\s|)]+)/g, '`$1`')
+        .replace(/(?<![\w`.@/-])([\w.+-]+@[\w-]+(?:\.[\w-]+)+)/g, '`$1`');
+    })
+    .join('`');
+
+const cell = (text) => codeifyBareLinks(text).replace(/\|/g, '\\|').replace(/\n/g, ' ');
 const anchorId = (name) => name.toLowerCase().replace(/_/g, '-');
 
 function varRow(name) {
@@ -49,7 +66,7 @@ function varRow(name) {
   if (meta.notes) parts.push(meta.notes);
   if (meta.since) parts.push(`*Added in ${meta.since}.*`);
   if (meta.until) parts.push(`*Removed in ${meta.until}.*`);
-  if (meta.docs) parts.push(`See [details](./${meta.docs}).`);
+  if (meta.docs) parts.push(`See [details](/${meta.docs}).`);
   return `| ${variable} | ${cell(def)} | ${cell(parts.join(' '))} |`;
 }
 
@@ -97,6 +114,6 @@ ${internalVars.map((name) => `\`${name}\``).join(', ')} exist only for the funct
 :::
 `;
 
-mkdirSync(join(here, '..'), { recursive: true });
-writeFileSync(join(here, '..', 'configuration.md'), page);
-console.log(`generated apps/docs/configuration.md from ${varNames.length} registry entries (v${appVersion})`);
+mkdirSync(join(here, '..', 'reference'), { recursive: true });
+writeFileSync(join(here, '..', 'reference', 'configuration.md'), page);
+console.log(`generated apps/docs/reference/configuration.md from ${varNames.length} registry entries (v${appVersion})`);

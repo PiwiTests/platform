@@ -14,7 +14,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Submit test case events for a streaming run',
     description:
-      'Submit test case begin and complete events for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates.',
+      'Submit test case begin, complete and step lifecycle events for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers without persistence; suite-level hook events keep the timeline shape.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': [],
     requestBody: {
@@ -41,7 +41,7 @@ export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'Invalid test run ID',
     });
@@ -49,14 +49,14 @@ export default eventHandler(async (event) => {
 
   const contentLength = parseInt(getRequestHeader(event, 'content-length') ?? '0', 10);
   if (contentLength > MAX_EVENT_BATCH_BYTES) {
-    throw createError({ statusCode: 413, message: 'Event batch too large (max 10 MB)' });
+    throw apiError({ statusCode: 413, message: 'Event batch too large (max 10 MB)' });
   }
 
   const body = await readBody(event);
 
   // Validate stream token
   if (!body.streamToken) {
-    throw createError({
+    throw apiError({
       statusCode: 401,
       message: 'Missing stream token',
     });
@@ -96,38 +96,73 @@ export default eventHandler(async (event) => {
     });
   }
 
-  // --- Handle step-begin events (hook/fixture started, no DB persistence) ---
+  // --- Handle step-begin events ---
+  // Test-attached steps stream as `step-begin` so the run page can show what
+  // each worker is doing; suite-level hooks (parentTitle null) keep publishing
+  // as `test-begin` so the timeline's hook shape is unchanged.
   for (const tc of stepBeginEvents) {
-    runEventBus.publish(id, {
-      type: 'test-begin',
-      data: {
-        title: tc.title,
-        filePath: 'hooks',
-        parentTitle: tc.parentTitle ?? null,
-        stepCategory: tc.stepCategory ?? null,
-        location: tc.location,
-        workerIndex: tc.workerIndex ?? null,
-        startedAt: tc.startedAt ?? null,
-      },
-    });
+    if (tc.parentTitle != null) {
+      runEventBus.publish(id, {
+        type: 'step-begin',
+        data: {
+          title: tc.title,
+          subtitle: tc.subtitle ?? null,
+          parentTitle: tc.parentTitle,
+          stepCategory: tc.stepCategory ?? null,
+          location: tc.location,
+          workerIndex: tc.workerIndex ?? null,
+          startedAt: tc.startedAt ?? null,
+        },
+      });
+    } else {
+      runEventBus.publish(id, {
+        type: 'test-begin',
+        data: {
+          title: tc.title,
+          filePath: 'hooks',
+          parentTitle: null,
+          stepCategory: tc.stepCategory ?? null,
+          location: tc.location,
+          workerIndex: tc.workerIndex ?? null,
+          startedAt: tc.startedAt ?? null,
+        },
+      });
+    }
   }
 
-  // --- Handle step-end events (hook/fixture finished, publish via SSE) ---
+  // --- Handle step-end events ---
   for (const tc of stepEndEvents) {
-    runEventBus.publish(id, {
-      type: 'test-completed',
-      data: {
-        title: tc.title,
-        filePath: 'hooks',
-        parentTitle: tc.parentTitle ?? null,
-        stepCategory: tc.stepCategory ?? null,
-        status: tc.status,
-        duration: tc.duration,
-        location: tc.location,
-        workerIndex: tc.workerIndex ?? null,
-        startedAt: tc.startedAt ?? null,
-      },
-    });
+    if (tc.parentTitle != null) {
+      runEventBus.publish(id, {
+        type: 'step-end',
+        data: {
+          title: tc.title,
+          subtitle: tc.subtitle ?? null,
+          parentTitle: tc.parentTitle,
+          stepCategory: tc.stepCategory ?? null,
+          status: tc.status,
+          duration: tc.duration,
+          location: tc.location,
+          workerIndex: tc.workerIndex ?? null,
+          startedAt: tc.startedAt ?? null,
+        },
+      });
+    } else {
+      runEventBus.publish(id, {
+        type: 'test-completed',
+        data: {
+          title: tc.title,
+          filePath: 'hooks',
+          parentTitle: null,
+          stepCategory: tc.stepCategory ?? null,
+          status: tc.status,
+          duration: tc.duration,
+          location: tc.location,
+          workerIndex: tc.workerIndex ?? null,
+          startedAt: tc.startedAt ?? null,
+        },
+      });
+    }
   }
 
   // --- Handle complete events (test finished, persist to DB) ---
@@ -182,8 +217,15 @@ export default eventHandler(async (event) => {
 
   const updatedRun = updatedRuns[0];
 
-  // Publish test-completed events to SSE subscribers
-  for (const tc of parsedEvents) {
+  // Publish test-completed events to SSE subscribers. The persisted execution
+  // id rides along so the live run page can deep-link each row to its real
+  // case page instead of a fabricated id (see persistRunCases' inputIndex).
+  const persistedByInputIndex = new Map(
+    insertedRunCases.filter((r) => r.inputIndex >= 0).map((r) => [r.inputIndex, r]),
+  );
+
+  for (const [index, tc] of parsedEvents.entries()) {
+    const persisted = persistedByInputIndex.get(index);
     runEventBus.publish(id, {
       type: 'test-completed',
       data: {
@@ -200,6 +242,8 @@ export default eventHandler(async (event) => {
         shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
         browser: tc.browser ?? null,
+        executionId: persisted?.id ?? null,
+        testCaseId: persisted?.testCaseId ?? null,
       },
     });
   }

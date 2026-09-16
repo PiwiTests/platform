@@ -7,27 +7,52 @@ import {
   getProjectTestCases,
   getProjectSpecHealth,
 } from '#shared/handlers/projects';
-import { parseTagFilter } from '#shared/utils/tag-filter';
+import { parseLockFilter, parseTagFilter } from '#shared/utils/tag-filter';
+import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { buildFixPlan } from '../fix-plan';
 import { enrichFixPlanOwnership } from '../scm/ownership';
 import { getNetworkRequests, getFailureGroups } from '#shared/handlers/test-runs';
-import { getTestCase, getTestRunCaseTraces, getTestCaseStabilityTrend } from '#shared/handlers/test-cases';
+import {
+  getTestCase,
+  getTestRunCase,
+  getTestRunCaseTraces,
+  getTestCaseStabilityTrend,
+  getFailureClues,
+  type FailureCluesResult,
+} from '#shared/handlers/test-cases';
 import {
   getFailureCluster,
   getClusterDiagnosis,
   patchClusterStatus,
   patchClusterBaseCommit,
+  getOpenFailureClusters,
 } from '#shared/handlers/failure-clusters';
+import { clusterInQueue, isInboxQueue } from '#shared/inbox-queues';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { searchProjectsTestRunsCases } from '#shared/handlers/search';
 import { listTags } from '#shared/handlers/tags';
-import { listLinks } from '#shared/handlers/links';
+import { listLinks, type LinkEntityType } from '#shared/handlers/links';
+import { resolveLinkEntityProjectId } from '../project-access';
+import { buildIssueDraft, type DraftEntityType } from '../integrations/draft';
+import { createIssue } from '../integrations/create';
+import { getClusterKnownIssue } from '../integrations/known-issue';
+import { toIssueLocale } from '#shared/integrations/messages';
 import { getAdminStats } from '#shared/handlers/admin';
 import { createTestFunction } from '#shared/handlers/test-functions';
 import { createTestFunctionSchema } from '#shared/test-function-schemas';
+import { listSelections, getSelection, resolveSelectionDefinition } from '#shared/handlers/selections';
+import { getSelectionSuggestions } from '#shared/handlers/selection-suggestions';
+import { getSelectionAnalytics } from '#shared/handlers/selection-analytics';
+import {
+  validateSelectionDefinition,
+  type ResolvedSelection,
+  type SelectionDefinition,
+  type SelectionFormat,
+} from '#shared/selection';
 import { projects, testRuns, testRunsCases, testCases, failureClusters, failureDiagnoses } from '../../database/schema';
 import { buildDiagnosisContext, buildClusterDiagnosisContext } from '../ai-context';
 import { stripAnsi } from '#shared/error-fingerprint';
+import { caseHeadline } from '#shared/failure-verdict';
 import { MCP_TOOL_DEFS } from '#shared/mcp-tools';
 import type {
   McpToolDef,
@@ -39,6 +64,8 @@ import type {
 import type { RunMetadata, BrowserConfig } from '../run-json-types';
 import { getStorage } from '../../storage';
 import { getLocatorHealingBatch, getLocatorHealing } from '../locator-healing';
+import { getPageDiff } from '../page-diff';
+import { describePageDiff, formatPageDiffSummary } from '#shared/page-diff';
 import { inlineCasePayloads } from '../case-payloads';
 import { selectCaseScreenshots } from '../case-screenshots';
 import { createScmProvider } from '../scm';
@@ -91,6 +118,18 @@ function compactBrowser(browser: unknown): string | null {
   const b = browser as BrowserConfig | null;
   if (!b) return null;
   return [b.projectName, b.browserName].filter(Boolean).join('/') || null;
+}
+
+/** Project the deterministic clues into the compact shape MCP tools return. */
+function compactClues(result: FailureCluesResult) {
+  if (result.clues.length === 0) return null;
+  return result.clues.map((clue) => ({
+    rule: clue.rule,
+    strength: clue.strength,
+    title: clue.title,
+    detail: clue.detail,
+    citations: clue.citations.map((c) => c.section),
+  }));
 }
 
 /**
@@ -183,6 +222,28 @@ export function toContent(data: unknown): { content: Array<{ type: 'text'; text:
   return { content: [{ type: 'text', text: JSON.stringify(data, null, 0) }] };
 }
 
+/** Compact a resolution into the agent-facing shape (bounded test sample). */
+function selectionToMcp(r: ResolvedSelection): unknown {
+  const SAMPLE = 100;
+  return dropNulls({
+    key: r.key,
+    version: r.version,
+    matched: r.estimate.count,
+    estimatedDurationMs: r.estimate.totalDurationMs,
+    command: r.materialization.command || null,
+    warnings: r.warnings.length ? r.warnings.map((w) => w.message) : null,
+    tests: r.tests
+      .slice(0, SAMPLE)
+      .map((t) => dropNulls({ testCaseId: t.testCaseId, title: t.title, filePath: t.filePath, line: t.line })),
+    truncated: r.tests.length > SAMPLE ? r.tests.length - SAMPLE : null,
+  });
+}
+
+function selectionFormatParam(raw: unknown): SelectionFormat {
+  const formats: SelectionFormat[] = ['args', 'grep', 'files', 'json'];
+  return formats.includes(raw as SelectionFormat) ? (raw as SelectionFormat) : 'args';
+}
+
 // ── Tool handlers ────────────────────────────────────────────────────────────
 //
 // Keyed by tool name. The catalog (name/description/inputSchema) lives in
@@ -196,7 +257,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── list_projects ──────────────────────────────────────────────────────────
   async list_projects(db, _params, ctx) {
     const projects = await listProjects(db, ctx.scope);
-    return projects.map((p: any) =>
+    const items = projects.map((p: any) =>
       dropNulls({
         id: p.id,
         name: p.name,
@@ -217,11 +278,12 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           : null,
       }),
     );
+    return { items };
   },
 
   // ── get_project ────────────────────────────────────────────────────────────
   async get_project(db, params, ctx) {
-    const id = numericParam(params.id, 'id');
+    const id = numericParam(params.projectId, 'projectId');
     assertProject(ctx, id);
     const pageSize = clampPageSize(params.pageSize);
     const cursor = params.cursor as string | undefined;
@@ -293,14 +355,10 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
     const conditions = [eq(testRuns.projectId, projectId)];
     if (statusFilter) conditions.push(eq(testRuns.status, statusFilter));
-
-    // Branch lives inside JSON metadata — can't index it efficiently, so the
-    // branch-filter path fetches a larger batch and filters in-memory. The
-    // cursor is applied on the same startTime axis for both paths (in SQL when
-    // possible, else in-memory) so paging always advances.
-    const fetchSize = branchFilter ? (pageSize + 1) * 3 : pageSize + 1;
-
-    if (cursor && !branchFilter) conditions.push(lt(testRuns.startTime, new Date(cursor)));
+    // Branch is a scalar column indexed on (project_id, branch, start_time), so
+    // the filter is a plain equality served by the database — no over-fetch.
+    if (branchFilter) conditions.push(eq(testRuns.branch, branchFilter));
+    if (cursor) conditions.push(lt(testRuns.startTime, new Date(cursor)));
 
     const signRows = await db
       .select({
@@ -321,17 +379,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       .from(testRuns)
       .where(and(...conditions))
       .orderBy(desc(testRuns.startTime))
-      .limit(fetchSize);
+      .limit(pageSize + 1);
 
-    const scopeRows = branchFilter
-      ? signRows.filter((r) => {
-          if (cursor && r.startTime && !(new Date(r.startTime) < new Date(cursor))) return false;
-          const meta = r.metadata as RunMetadata | null;
-          return meta?.scm?.branch === branchFilter;
-        })
-      : signRows;
-
-    const mapped = scopeRows.slice(0, pageSize + 1).map((r) =>
+    const mapped = signRows.map((r) =>
       dropNulls({
         id: r.id,
         status: r.status,
@@ -354,8 +404,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── get_run ────────────────────────────────────────────────────────────────
   async get_run(db, params, ctx) {
-    const runId = numericParam(params.id, 'id');
-    const statusFilter = (params.status_filter as string) || 'failed';
+    const runId = numericParam(params.runId, 'runId');
+    const statusFilter = (params.statusFilter as string) || 'failed';
     const pageSize = clampPageSize(params.pageSize);
     const cursor = numericCursor(params.cursor);
 
@@ -393,7 +443,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (statusFilter === 'flaky') {
       caseConditions.push(and(eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0))!);
     } else if (statusFilter !== 'all') {
-      caseConditions.push(or(eq(testRunsCases.status, 'failed'), eq(testRunsCases.status, 'timedOut'))!);
+      caseConditions.push(inArray(testRunsCases.status, [...FAILED_STATUS_KEYS]));
     }
     if (cursor) caseConditions.push(lt(testRunsCases.id, cursor));
 
@@ -470,10 +520,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const cursor = numericCursor(params.cursor);
     const runId = params.runId ? numericParam(params.runId, 'runId') : undefined;
 
-    const conditions = [
-      eq(testRuns.projectId, projectId),
-      or(eq(testRunsCases.status, 'failed'), eq(testRunsCases.status, 'timedOut'))!,
-    ];
+    const conditions = [eq(testRuns.projectId, projectId), inArray(testRunsCases.status, [...FAILED_STATUS_KEYS])];
     if (runId) conditions.push(eq(testRunsCases.testRunId, runId));
     if (cursor) conditions.push(lt(testRunsCases.id, cursor));
 
@@ -492,6 +539,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         runStatus: testRuns.status,
         runStart: testRuns.startTime,
         rawBrowser: testRunsCases.browser,
+        locks: testRunsCases.locks,
       })
       .from(testRunsCases)
       .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
@@ -509,12 +557,14 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         status: r.status,
         duration: r.duration,
         retries: r.retries || null,
+        headline: caseHeadline(r)?.headline ?? null,
         error: trunc(r.error, 400),
         clusterId: r.clusterId || null,
         runId: r.runId,
         runStatus: r.runStatus,
         startedAt: iso(r.runStart),
         browser: compactBrowser(r.rawBrowser),
+        locks: Array.isArray(r.locks) && r.locks.length ? (r.locks as string[]) : null,
       }),
     );
 
@@ -564,7 +614,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── get_test_case ──────────────────────────────────────────────────────────
   async get_test_case(db, params, ctx) {
-    const id = numericParam(params.id, 'id');
+    const id = numericParam(params.testCaseId, 'testCaseId');
     const pageSize = clampPageSize(params.pageSize);
     const cursor = numericCursor(params.cursor);
 
@@ -609,6 +659,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       id: tc.id,
       title: tc.title,
       filePath: tc.filePath,
+      tags: tc.tags?.length ? tc.tags : null,
+      locks: tc.locks?.length ? tc.locks : null,
       project: tc.project ? { id: tc.project.id, name: tc.project.name } : null,
       stats: dropNulls({
         totalRuns: tc.totalRuns,
@@ -671,10 +723,12 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── get_cluster ────────────────────────────────────────────────────────────
   async get_cluster(db, params, ctx) {
-    const id = numericParam(params.id, 'id');
+    const id = numericParam(params.clusterId, 'clusterId');
     const cluster = await getFailureCluster(db, id);
     if (!cluster) return null;
     if (cluster.project?.id != null) assertProject(ctx, cluster.project.id);
+
+    const knownIssue = await getClusterKnownIssue(db, id);
 
     // Fetch locator healing for up to 5 affected cases via a single batch
     // query (2 DB round-trips instead of 5×2) so AI coding agents get fix
@@ -692,7 +746,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         return {
           testCaseId: t.testCaseId,
           title: t.title,
-          testRunsCaseId: caseId,
+          executionId: caseId,
           source: h.source,
           failingLocator: h.failingLocator,
           recommendation: h.recommendation
@@ -753,10 +807,11 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             title: t.title,
             filePath: t.filePath,
             runCount: t.runCount,
-            testRunsCaseId: t.recentTestRunsCaseId,
+            executionId: t.recentTestRunsCaseId,
           }),
       ),
       locatorHealing: healingResults.length > 0 ? healingResults : null,
+      issue: knownIssue ? dropNulls({ key: knownIssue.key, url: knownIssue.url, status: knownIssue.status }) : null,
     });
   },
 
@@ -767,23 +822,43 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       .select({ projectId: failureClusters.projectId })
       .from(failureClusters)
       .where(eq(failureClusters.id, clusterId));
-    if (!cluster) throw new Error('Cluster not found');
+    if (!cluster) return null;
     assertProject(ctx, cluster.projectId);
 
     const plan = await buildFixPlan(db, clusterId);
-    if (!plan) throw new Error('Cluster not found');
-    return enrichFixPlanOwnership(db, cluster.projectId, plan);
+    if (!plan) return null;
+    const enriched = await enrichFixPlanOwnership(db, cluster.projectId, plan);
+
+    // Additive: the story, the situation sentence and the computed next step,
+    // read on the cluster's latest occurrence through the shared handlers.
+    const clusterDetail = await getFailureCluster(db, clusterId).catch(() => null);
+    const latestId = clusterDetail?.latestTestRunsCaseId ?? null;
+    const [cluesResult, detail] = await Promise.all([
+      latestId ? getFailureClues(db, latestId).catch(() => null) : Promise.resolve(null),
+      latestId ? getTestRunCase(db, latestId).catch(() => null) : Promise.resolve(null),
+    ]);
+    const story = cluesResult?.story ?? null;
+    const situation = (detail as { situation?: { text?: string } | null } | null)?.situation ?? null;
+
+    return {
+      ...(enriched as unknown as Record<string, unknown>),
+      story: story
+        ? dropNulls({ id: story.id, sentence: story.sentence, strength: story.strength, clueIds: story.clueIds })
+        : null,
+      situation: situation?.text || null,
+      nextStep: clusterDetail?.nextStep ?? null,
+    };
   },
 
   // ── get_cluster_diagnosis ──────────────────────────────────────────────────
   async get_cluster_diagnosis(db, params, ctx) {
-    const id = numericParam(params.id, 'id');
+    const id = numericParam(params.clusterId, 'clusterId');
     if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId)) === 'not-found') {
-      return { diagnosis: null };
+      return null;
     }
     const result = await getClusterDiagnosis(db, id);
     const diag = result.diagnosis as any;
-    if (!diag) return { diagnosis: null, manualBaseCommit: result.manualBaseCommit };
+    if (!diag) return null;
 
     const det = diag.details as Record<string, unknown> | null;
     return dropNulls({
@@ -812,7 +887,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── get_test_case_context ─────────────────────────────────────────────────
   async get_test_case_context(db, params, ctx) {
-    const id = numericParam(params.id, 'id');
+    const id = numericParam(params.executionId, 'executionId');
     if ((await checkEntityScope(db, ctx, id, resolveTestRunCaseProjectId)) === 'not-found') return null;
 
     const [trc] = await db
@@ -824,12 +899,12 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
     const built = await buildDiagnosisContext(db, {
       kind: 'execution',
-      testRunsCaseId: id,
+      executionId: id,
       clusterId: trc.failureClusterId ?? undefined,
     });
 
     const base = dropNulls({
-      testRunsCaseId: id,
+      executionId: id,
       text: built.text,
       sections: built.sections.map((s) => ({
         id: s.id,
@@ -868,12 +943,12 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── get_case_screenshots ───────────────────────────────────────────────────
   async get_case_screenshots(db, params, ctx) {
-    const id = numericParam(params.testRunsCaseId, 'testRunsCaseId');
-    if ((await checkEntityScope(db, ctx, id, resolveTestRunCaseProjectId)) === 'not-found') return [];
+    const id = numericParam(params.executionId, 'executionId');
+    if ((await checkEntityScope(db, ctx, id, resolveTestRunCaseProjectId)) === 'not-found') return null;
     const withContent = params.content === true || params.content === 'true';
 
     const screenshotRows = await selectCaseScreenshots(db, id, 3);
-    if (screenshotRows.length === 0) return [];
+    if (screenshotRows.length === 0) return { items: [] };
 
     const storage = getStorage();
     const results: Array<{ name: string; mediaType: string; dataLength: number; data?: string }> = [];
@@ -909,12 +984,12 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         // skip inaccessible files
       }
     }
-    return results;
+    return { items: results };
   },
 
   // ── get_cluster_context ────────────────────────────────────────────────────
   async get_cluster_context(db, params, ctx) {
-    const id = numericParam(params.id, 'id');
+    const id = numericParam(params.clusterId, 'clusterId');
     const [clusterRow] = await db.select().from(failureClusters).where(eq(failureClusters.id, id));
     if (!clusterRow) return null;
     assertProject(ctx, clusterRow.projectId);
@@ -933,7 +1008,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (images?.length) {
       context +=
         '\n\n## Screenshots\nDecisive for "what rendered" at time of failure. ' +
-        'Call get_case_screenshots with the testRunsCaseId to view each:\n' +
+        'Call get_case_screenshots with the executionId to view each:\n' +
         images.map((img) => `- ${img.name} (${img.mediaType}, ~${(img.data.length / 1024).toFixed(0)} KB)`).join('\n');
     }
 
@@ -975,20 +1050,30 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         id: testCases.id,
         title: testCases.title,
         filePath: testCases.filePath,
+        tags: testCases.tags,
+        locks: testCases.locks,
       })
       .from(testCases)
       .where(and(...conditions))
       .orderBy(desc(testCases.id))
       .limit(pageSize + 1);
 
-    const mapped = rows.map((r) => dropNulls({ id: r.id, title: r.title, filePath: r.filePath }));
+    const mapped = rows.map((r) =>
+      dropNulls({
+        id: r.id,
+        title: r.title,
+        filePath: r.filePath,
+        tags: Array.isArray(r.tags) && r.tags.length ? (r.tags as string[]) : null,
+        locks: Array.isArray(r.locks) && r.locks.length ? (r.locks as string[]) : null,
+      }),
+    );
 
     return paginatedItems(mapped, pageSize, (r) => String(r.id!));
   },
 
   // ── get_test_run_case ──────────────────────────────────────────────────────
   async get_test_run_case(db, params, ctx) {
-    const id = numericParam(params.id, 'id');
+    const id = numericParam(params.executionId, 'executionId');
     const [row] = await db.select().from(testRunsCases).where(eq(testRunsCases.id, id));
     if (!row) return null;
     if ((await checkEntityScope(db, ctx, id, resolveTestRunCaseProjectId)) === 'not-found') return null;
@@ -1011,6 +1096,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
     const evidence = want('aria') || want('source') ? await inlineCasePayloads(db, row) : row;
 
+    // Deterministic clues ride alongside the error unless the caller opts out.
+    const clues = want('clues') ? await getFailureClues(db, id).catch(() => null) : null;
+
     return dropNulls({
       executionId: row.id,
       testCaseId: row.testCaseId,
@@ -1019,7 +1107,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       status: row.status,
       duration: row.duration,
       retries: row.retries || null,
+      headline: caseHeadline(row)?.headline ?? null,
       error: row.error, // full, untruncated
+      clues: clues ? compactClues(clues) : null,
       clusterId: row.failureClusterId || null,
       line: row.line || null,
       column: row.column || null,
@@ -1034,6 +1124,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       ariaSnapshot: want('aria') ? trunc(evidence.ariaSnapshot, 8000) : null,
       testSource: want('source') ? evidence.testSource || null : null,
       testAnnotations: row.testAnnotations,
+      locks: Array.isArray(row.locks) && row.locks.length ? (row.locks as string[]) : null,
       startedAt: iso(row.startedAt),
       isNewRegression: row.isNewRegression || null,
       isNewFlaky: row.isNewFlaky || null,
@@ -1151,14 +1242,24 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── get_run_insights ───────────────────────────────────────────────────────
   async get_run_insights(db, params, ctx) {
-    const runId = numericParam(params.id, 'id');
+    const runId = numericParam(params.runId, 'runId');
     if ((await checkEntityScope(db, ctx, runId, resolveRunProjectId)) === 'not-found') return null;
 
-    const r = await computeRunInsights(db, runId);
+    const baseBranch = typeof params.baseBranch === 'string' ? params.baseBranch.trim() || null : null;
+    const r = await computeRunInsights(db, runId, { baseBranch });
     const cap = <T>(a: T[]) => a.slice(0, 15);
     return dropNulls({
       runId,
       hasBaseline: r.hasBaseline,
+      baseline: r.baseline
+        ? {
+            runId: r.baseline.id,
+            branch: r.baseline.branch,
+            environment: r.baseline.environment,
+            note: r.baselineNote,
+          }
+        : null,
+      baseBranches: r.baseBranches,
       totalTests: r.totalTests,
       passedTests: r.passedTests,
       failedTests: r.failedTests,
@@ -1207,7 +1308,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── get_test_stability_trend ───────────────────────────────────────────────
   async get_test_stability_trend(db, params, ctx) {
-    const testCaseId = numericParam(params.id, 'id');
+    const testCaseId = numericParam(params.testCaseId, 'testCaseId');
     if ((await checkEntityScope(db, ctx, testCaseId, resolveCaseProjectId)) === 'not-found') return null;
     const buckets = params.buckets != null ? numericParam(params.buckets, 'buckets') : 20;
     return getTestCaseStabilityTrend(db, testCaseId, buckets);
@@ -1215,7 +1316,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── get_network_requests ───────────────────────────────────────────────────
   async get_network_requests(db, params, ctx) {
-    const runId = numericParam(params.id, 'id');
+    const runId = numericParam(params.runId, 'runId');
     if ((await checkEntityScope(db, ctx, runId, resolveRunProjectId)) === 'not-found') return null;
     const summaries = (await getNetworkRequests(db, runId)) as any[] | null;
     if (!summaries) return null;
@@ -1224,7 +1325,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── get_failure_groups ─────────────────────────────────────────────────────
   async get_failure_groups(db, params, ctx) {
-    const runId = numericParam(params.id, 'id');
+    const runId = numericParam(params.runId, 'runId');
     if ((await checkEntityScope(db, ctx, runId, resolveRunProjectId)) === 'not-found') return null;
     const groups = (await getFailureGroups(db, runId)) as any[];
     return {
@@ -1239,7 +1340,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           cases: Array.isArray(g.cases)
             ? g.cases.slice(0, 10).map((c: any) =>
                 dropNulls({
-                  testRunsCaseId: c.testRunsCaseId ?? c.id,
+                  executionId: c.executionId ?? c.id,
                   testCaseId: c.testCaseId,
                   title: c.title,
                   filePath: c.filePath,
@@ -1253,16 +1354,20 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── get_locator_healing ────────────────────────────────────────────────────
   async get_locator_healing(db, params, ctx) {
-    const id = numericParam(params.testRunsCaseId, 'testRunsCaseId');
+    const id = numericParam(params.executionId, 'executionId');
     if ((await checkEntityScope(db, ctx, id, resolveTestRunCaseProjectId)) === 'not-found') return null;
     const h = await getLocatorHealing(db, id);
-    if (!h || h.source === 'none') return { source: 'none' };
+    if (!h) return null;
+    // Healing does not apply (the locator resolved, a navigation failed, no
+    // locator in the error): say why, so an agent does not rewrite the selector.
+    if (h.applicable === false) return dropNulls({ executionId: id, applicable: false, reason: h.reason });
+    if (h.source === 'none') return null;
     const rankedList = (arr: any[] | null | undefined) =>
       arr && arr.length
         ? arr.slice(0, 8).map((a: any) => dropNulls({ locator: a.locator, method: a.method, score: a.score }))
         : null;
     return dropNulls({
-      testRunsCaseId: id,
+      executionId: id,
       source: h.source,
       capturedAt: h.capturedAt,
       failingLocator: h.failingLocator,
@@ -1270,6 +1375,17 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       // agent can apply the recommended fix without re-deriving either.
       location: h.location ?? null,
       sourceLine: h.sourceLine ? dropNulls({ line: h.sourceLine.line, text: h.sourceLine.text }) : null,
+      // The recommended fix as a ready-to-apply edit: the rewritten line plus a
+      // git-applyable unified diff, so an agent can patch the file directly.
+      edit: h.edit
+        ? dropNulls({
+            filePath: h.edit.filePath,
+            line: h.edit.line,
+            oldLine: h.edit.oldLine,
+            newLine: h.edit.newLine,
+            unifiedDiff: h.edit.unifiedDiff,
+          })
+        : null,
       healedInRunId: h.healedInRunId ?? null,
       recommendation: h.recommendation
         ? dropNulls({
@@ -1324,8 +1440,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── list_case_traces ───────────────────────────────────────────────────────
   async list_case_traces(db, params, ctx) {
-    const id = numericParam(params.testRunsCaseId, 'testRunsCaseId');
-    if ((await checkEntityScope(db, ctx, id, resolveTestRunCaseProjectId)) === 'not-found') return { traces: [] };
+    const id = numericParam(params.executionId, 'executionId');
+    if ((await checkEntityScope(db, ctx, id, resolveTestRunCaseProjectId)) === 'not-found') return null;
     const traces = (await getTestRunCaseTraces(db, id)) as any[];
     return {
       traces: traces.map((t: any) =>
@@ -1337,7 +1453,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── list_links ─────────────────────────────────────────────────────────────
   async list_links(db, params, ctx) {
     const entityType = String(params.entityType ?? '');
-    const entityId = numericParam(params.id, 'id');
+    const entityId = numericParam(params.entityId, 'entityId');
     const resolver =
       entityType === 'test_run'
         ? resolveRunProjectId
@@ -1345,10 +1461,14 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           ? resolveTestRunCaseProjectId
           : entityType === 'test_case'
             ? resolveCaseProjectId
-            : null;
-    if (!resolver) throw new Error('entityType must be test_run, test_runs_case, or test_case');
-    if ((await checkEntityScope(db, ctx, entityId, resolver)) === 'not-found') return { links: [] };
-    const { links } = await listLinks(db, entityType, entityId);
+            : entityType === 'failure_cluster'
+              ? resolveClusterProjectId
+              : null;
+    if (!resolver) {
+      throw new Error('entityType must be test_run, test_runs_case, test_case, or failure_cluster');
+    }
+    if ((await checkEntityScope(db, ctx, entityId, resolver)) === 'not-found') return null;
+    const { links } = await listLinks(db, entityType as LinkEntityType, entityId);
     return {
       links: links.map((l: any) =>
         dropNulls({
@@ -1361,6 +1481,62 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         }),
       ),
     };
+  },
+
+  async create_issue(db, params, ctx) {
+    assertWriteRole(ctx);
+    const entityType = String(params.entityType ?? '') as DraftEntityType;
+    if (entityType !== 'failure_cluster' && entityType !== 'test_runs_case') {
+      throw new Error('entityType must be failure_cluster or test_runs_case');
+    }
+    const entityId = numericParam(params.entityId, 'entityId');
+    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
+    if (projectId == null) return null;
+    assertProject(ctx, projectId);
+
+    const include = {
+      includeDiagnosis: params.includeDiagnosis === undefined ? undefined : Boolean(params.includeDiagnosis),
+      includePatch: params.includePatch === undefined ? undefined : Boolean(params.includePatch),
+    };
+    const siteUrl = process.env.PIWI_SITE_URL ?? null;
+    const locale = toIssueLocale(params.locale);
+
+    const draft = await buildIssueDraft(db, entityType, entityId, { include, locale, siteUrl });
+    if (!draft) throw new Error('No Jira connection is configured');
+
+    // Already tracked: hand back the existing issue rather than filing a second.
+    if (draft.existing.length) {
+      const first = draft.existing[0]!;
+      return dropNulls({ key: first.key, url: first.url, existing: draft.existing });
+    }
+
+    if (!draft.connectionId || !draft.projectKey || !draft.issueType) {
+      throw new Error('Configure a Jira project binding (project key and issue type) before filing issues');
+    }
+
+    const outcome = await createIssue(db, {
+      entityType,
+      entityId,
+      connectionId: draft.connectionId,
+      title: typeof params.title === 'string' ? params.title : draft.title,
+      projectKey: draft.projectKey,
+      issueType: draft.issueType,
+      labels: draft.labels,
+      assignee: draft.assignee,
+      locale: draft.locale,
+      include,
+      requestedBy: ctx.user?.id ?? null,
+      siteUrl,
+    });
+    if (!outcome) return null;
+    if (outcome.status !== 'done') {
+      throw new Error(outcome.error || 'Filing the issue did not complete; it is queued for retry');
+    }
+    return dropNulls({
+      key: outcome.key,
+      url: outcome.url,
+      existing: draft.existing.length ? draft.existing : undefined,
+    });
   },
 
   // ── list_tags ──────────────────────────────────────────────────────────────
@@ -1381,6 +1557,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       offset,
       q: query,
       tags: parseTagFilter(typeof params.tags === 'string' ? params.tags : undefined),
+      locks: parseLockFilter(typeof params.locks === 'string' ? params.locks : undefined),
       owner: typeof params.owner === 'string' && params.owner.trim() ? params.owner.trim() : undefined,
       priority: typeof params.priority === 'string' ? params.priority.trim().toLowerCase() : undefined,
     });
@@ -1398,6 +1575,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           flaky: t.flakyRuns || null,
           lastStatus: t.lastStatus || null,
           tags: t.tags?.length ? t.tags : null,
+          locks: t.locks?.length ? t.locks : null,
           owner: t.owner || null,
           priority: t.priority || null,
           avgDuration: t.avgDuration != null ? Math.round(t.avgDuration) : null,
@@ -1407,11 +1585,159 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     };
   },
 
+  // ── list_selections ─────────────────────────────────────────────────────────
+  async list_selections(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const selections = await listSelections(db, projectId);
+    return {
+      items: selections.map((s) =>
+        dropNulls({
+          key: s.key,
+          name: s.name,
+          description: s.description,
+          version: s.version,
+          builtin: s.builtin || null,
+        }),
+      ),
+    };
+  },
+
+  // ── resolve_selection ───────────────────────────────────────────────────────
+  async resolve_selection(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const key = typeof params.key === 'string' ? params.key.trim() : '';
+    if (!key) throw new Error('key is required');
+    const selection = await getSelection(db, projectId, key);
+    if (!selection) throw new Error(`No selection "${key}" in this project`);
+
+    let definition: SelectionDefinition = selection.definition;
+    const budgetMs = Number(params.budgetMs);
+    if (Number.isFinite(budgetMs) && budgetMs > 0) {
+      definition = { ...definition, budget: { ...definition.budget, maxTotalDurationMs: budgetMs } };
+    }
+    const resolved = await resolveSelectionDefinition(db, projectId, definition, {
+      key: selection.key,
+      version: selection.version,
+      format: selectionFormatParam(params.format),
+    });
+    return selectionToMcp(resolved);
+  },
+
+  // ── preview_selection ───────────────────────────────────────────────────────
+  async preview_selection(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const check = validateSelectionDefinition(params.definition);
+    if (!check.valid) throw new Error(`Invalid definition: ${check.errors.join('; ')}`);
+    const resolved = await resolveSelectionDefinition(db, projectId, params.definition as SelectionDefinition, {
+      format: selectionFormatParam(params.format),
+    });
+    return selectionToMcp(resolved);
+  },
+
+  // ── suggest_selections ──────────────────────────────────────────────────────
+  async suggest_selections(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const budgetMs = Number(params.budgetMs);
+    const suggestions = await getSelectionSuggestions(db, projectId, {
+      budgetMs: Number.isFinite(budgetMs) && budgetMs > 0 ? budgetMs : undefined,
+    });
+    return {
+      tags: suggestions.tags.map((t) =>
+        dropNulls({
+          testCaseId: t.testCaseId,
+          title: t.title,
+          kind: t.kind,
+          tag: t.tag,
+          confidence: Number(t.confidence.toFixed(2)),
+          evidence: t.evidence,
+        }),
+      ),
+      smoke: suggestions.smoke
+        ? dropNulls({
+            budgetMs: suggestions.smoke.budgetMs,
+            totalRoutes: suggestions.smoke.totalRoutes,
+            coveredRoutes: suggestions.smoke.coveredRoutes,
+            testCaseIds: suggestions.smoke.testCaseIds,
+            splitLocks: suggestions.smoke.splitLocks.length ? suggestions.smoke.splitLocks : null,
+            picks: suggestions.smoke.picks.map((p) =>
+              dropNulls({
+                testCaseId: p.testCaseId,
+                title: p.title,
+                newRoutes: p.newRoutes,
+                cumulativeRoutes: p.cumulativeRoutes,
+                cumulativeDurationMs: p.cumulativeDurationMs,
+              }),
+            ),
+          })
+        : null,
+    };
+  },
+
+  // ── analyze_selections ──────────────────────────────────────────────────────
+  async analyze_selections(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const analytics = await getSelectionAnalytics(db, projectId);
+    return {
+      selections: analytics.selections.map((s) =>
+        dropNulls({
+          key: s.key,
+          name: s.name,
+          builtin: s.builtin || null,
+          resolvedCount: s.resolvedCount,
+          quarantinedCount: s.quarantinedCount || null,
+          totalDurationMs: s.totalDurationMs,
+          warnings: s.warnings.length ? s.warnings.map((w) => w.message) : null,
+          lastRun: s.lastRun ? { runId: s.lastRun.runId, recordedCount: s.lastRun.recordedCount } : null,
+          drift: s.drift ? dropNulls({ changed: s.drift.changed, countDelta: s.drift.countDelta || null }) : null,
+        }),
+      ),
+      coverage: {
+        total: analytics.coverage.total,
+        selected: analytics.coverage.selected,
+        unselected: analytics.coverage.unselected,
+        unselectedSample: analytics.coverage.unselectedSample,
+      },
+    };
+  },
+
   // ── list_open_clusters ─────────────────────────────────────────────────────
   async list_open_clusters(db, params, ctx) {
     if (ctx.scope !== 'all' && ctx.scope.size === 0) return { items: [], nextCursor: null };
     const pageSize = clampPageSize(params.pageSize);
     const cursor = numericCursor(params.cursor);
+
+    // Queue filter: reuse the inbox source (open, non-snoozed, enriched) and the
+    // same pure predicates the dashboard queues use, then page in memory by id on
+    // the same axis as the emitted cursor.
+    const queue = params.queue as string | undefined;
+    if (queue && isInboxQueue(queue) && queue !== 'all') {
+      const user = { name: ctx.user?.name ?? null, email: ctx.user?.email ?? null };
+      const enriched = await getOpenFailureClusters(db, ctx.scope, 200);
+      const mappedQueue = enriched
+        .filter((c) => clusterInQueue(c, queue, { user, lastVisitMs: null }))
+        .filter((c) => (cursor ? c.id < cursor : true))
+        .sort((a, b) => b.occurrences - a.occurrences || b.id - a.id)
+        .map((c) =>
+          dropNulls({
+            id: c.id,
+            projectId: c.projectId,
+            signature: c.signature,
+            title: c.title || null,
+            errorType: c.errorType || null,
+            status: c.status,
+            occurrences: c.occurrences,
+            lastSeenRunId: c.lastSeenRunId,
+            sampleError: trunc(c.sampleError, 300),
+          }),
+        );
+      return paginatedItems(mappedQueue, pageSize, (c: any) => String(c.id));
+    }
+
     const statusFilter = (params.status as string) || 'open';
 
     const conditions = [eq(failureClusters.status, statusFilter)];
@@ -1463,7 +1789,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── explain_failure ────────────────────────────────────────────────────────
   async explain_failure(db, params, ctx) {
-    const id = numericParam(params.testRunsCaseId, 'testRunsCaseId');
+    const id = numericParam(params.executionId, 'executionId');
     if ((await checkEntityScope(db, ctx, id, resolveTestRunCaseProjectId)) === 'not-found') return null;
 
     const [row] = await db.select().from(testRunsCases).where(eq(testRunsCases.id, id));
@@ -1474,34 +1800,61 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       .from(testCases)
       .where(eq(testCases.id, row.testCaseId));
 
-    const [healing, screenshotRows, diagContext] = await Promise.all([
+    const [healing, screenshotRows, diagContext, cluesResult, pageDiff, detail] = await Promise.all([
       getLocatorHealing(db, id).catch(() => null),
       selectCaseScreenshots(db, id),
       row.failureClusterId
         ? buildDiagnosisContext(db, {
             kind: 'execution',
-            testRunsCaseId: id,
+            executionId: id,
             clusterId: row.failureClusterId,
             skipScm: true,
           }).catch(() => null)
         : Promise.resolve(null),
+      getFailureClues(db, id).catch(() => null),
+      getPageDiff(db, id).catch(() => null),
+      getTestRunCase(db, id).catch(() => null),
     ]);
 
     const rec = healing && healing.source !== 'none' ? healing.recommendation?.recommended : null;
+    const story = cluesResult?.story ?? null;
+    const nextStep = (detail as { nextStep?: unknown } | null)?.nextStep ?? null;
+    const situation = (detail as { situation?: { text?: string } | null } | null)?.situation ?? null;
 
     return dropNulls({
-      testRunsCaseId: id,
+      executionId: id,
       testCaseId: row.testCaseId,
       title: tc?.title || null,
       filePath: tc?.filePath || null,
       status: row.status,
+      headline: caseHeadline(row)?.headline ?? null,
       error: trunc(row.error, 1500),
+      story: story
+        ? dropNulls({ id: story.id, sentence: story.sentence, strength: story.strength, clueIds: story.clueIds })
+        : null,
+      situation: situation?.text || null,
+      nextStep: nextStep ?? null,
+      clues: cluesResult ? compactClues(cluesResult) : null,
       clusterId: row.failureClusterId || null,
       slowestStep: row.slowestStep || null,
       steps: row.steps,
       consoleLogs: row.consoleLogs,
       ariaSnapshot: trunc(evidence.ariaSnapshot, 3000),
       locatorFix: rec ? dropNulls({ locator: rec.locator, method: rec.method, score: rec.score }) : null,
+      pageDiff:
+        pageDiff?.status === 'ok' && pageDiff.summary
+          ? dropNulls({
+              summary: describePageDiff(pageDiff.summary),
+              changes: formatPageDiffSummary(pageDiff.summary),
+              baselineRunId: pageDiff.baseline?.runId ?? null,
+              locatorChange:
+                pageDiff.hunks?.find((h) => h.matchesLocator)?.type === 'renamed'
+                  ? `the failing locator's ${pageDiff.hunks.find((h) => h.matchesLocator)!.role} was renamed`
+                  : pageDiff.hunks?.some((h) => h.matchesLocator && h.type === 'removed')
+                    ? `the failing locator's node was removed from the page`
+                    : null,
+            })
+          : null,
       screenshotCount: screenshotRows.length || null,
       diagnosisContext: diagContext?.text || null,
       isNewRegression: row.isNewRegression || null,
@@ -1512,7 +1865,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── set_cluster_status ─────────────────────────────────────────────────────
   async set_cluster_status(db, params, ctx) {
     assertWriteRole(ctx);
-    const id = numericParam(params.id, 'id');
+    const id = numericParam(params.clusterId, 'clusterId');
     if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId)) === 'not-found') return null;
     const status = String(params.status ?? '');
     if (!['open', 'resolved', 'ignored'].includes(status)) {
@@ -1527,7 +1880,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── set_cluster_base_commit ────────────────────────────────────────────────
   async set_cluster_base_commit(db, params, ctx) {
     assertWriteRole(ctx);
-    const id = numericParam(params.id, 'id');
+    const id = numericParam(params.clusterId, 'clusterId');
     if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId)) === 'not-found') return null;
     const commit = typeof params.commit === 'string' ? params.commit.trim() : null;
     const result = await patchClusterBaseCommit(db, id, commit);
@@ -1538,7 +1891,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── submit_diagnosis_feedback ──────────────────────────────────────────────
   async submit_diagnosis_feedback(db, params, ctx) {
     assertWriteRole(ctx);
-    const id = numericParam(params.id, 'id');
+    const id = numericParam(params.diagnosisId, 'diagnosisId');
     const feedback = params.feedback == null ? null : String(params.feedback);
     if (feedback !== null && feedback !== 'up' && feedback !== 'down') {
       throw new Error('feedback must be "up", "down", or null');
@@ -1563,7 +1916,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── run_cluster_diagnosis ──────────────────────────────────────────────────
   async run_cluster_diagnosis(db, params, ctx) {
     assertWriteRole(ctx);
-    const id = numericParam(params.id, 'id');
+    const id = numericParam(params.clusterId, 'clusterId');
     if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId)) === 'not-found') return null;
     if (isDiagnosisRunning(id)) throw new Error('Diagnosis is already running for this cluster');
 

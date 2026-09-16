@@ -67,6 +67,10 @@ test.describe.serial('Streaming API Tests', () => {
             location: 'tests/streaming.spec.ts:12:3',
             error: 'Expected true but got false',
             retries: 1,
+            attempts: [
+              { retry: 0, status: 'failed', duration: 500, startedAt: 1700000000000 },
+              { retry: 1, status: 'failed', duration: 800, startedAt: 1700000001000 },
+            ],
           },
         ],
       },
@@ -86,6 +90,19 @@ test.describe.serial('Streaming API Tests', () => {
     expect(run.totalTests).toBe(2);
     expect(run.passedTests).toBe(1);
     expect(run.failedTests).toBe(1);
+  });
+
+  test('POST /api/test-runs/:id/events persists per-attempt outcomes', async ({ request }) => {
+    const runResponse = await request.get(`/api/test-runs/${runId}`);
+    expect(runResponse.ok()).toBeTruthy();
+    const run = await runResponse.json();
+
+    const failing = run.testCases.find((tc: { title: string }) => tc.title === 'streaming test 2');
+    expect(failing).toBeDefined();
+    expect(failing.attempts).toEqual([
+      { retry: 0, status: 'failed', duration: 500, startedAt: 1700000000000 },
+      { retry: 1, status: 'failed', duration: 800, startedAt: 1700000001000 },
+    ]);
   });
 
   test('POST /api/test-runs/:id/events rejects a wrong stream token', async ({ request }) => {
@@ -134,6 +151,78 @@ test.describe.serial('Streaming API Tests', () => {
 
   // ── /stream (SSE) ───────────────────────────────────────────────────────────
 
+  test('streamed test-completed events carry the persisted execution id', async ({ request, baseURL }) => {
+    // Subscribe before posting so the in-memory bus has a live listener.
+    const controller = new AbortController();
+    const response = await fetch(`${baseURL}/api/test-runs/${runId}/stream`, {
+      signal: controller.signal,
+    });
+    expect(response.ok).toBeTruthy();
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    let streamed: { executionId: number | null; testCaseId: number | null } | null = null;
+
+    try {
+      const postRes = await request.post(`/api/test-runs/${runId}/events`, {
+        data: {
+          streamToken,
+          testCases: [
+            {
+              type: 'complete',
+              title: 'streamed deep-link test',
+              status: 'failed',
+              duration: 300,
+              location: 'tests/streaming.spec.ts:30:3',
+              error: 'Expected true but got false',
+              retries: 0,
+            },
+          ],
+        },
+      });
+      expect(postRes.ok()).toBeTruthy();
+
+      while (streamed === null) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+        for (const chunk of text.split('\n\n')) {
+          const line = chunk.split('\n').find((l) => l.startsWith('data:'));
+          if (!line) continue;
+          let parsed: { type?: string; data?: Record<string, unknown> };
+          try {
+            parsed = JSON.parse(line.slice('data:'.length).trim());
+          } catch {
+            continue;
+          }
+          if (parsed.type === 'test-completed' && parsed.data?.title === 'streamed deep-link test') {
+            streamed = {
+              executionId: typeof parsed.data.executionId === 'number' ? parsed.data.executionId : null,
+              testCaseId: typeof parsed.data.testCaseId === 'number' ? parsed.data.testCaseId : null,
+            };
+          }
+        }
+        // Hard cap so a regression cannot hang the suite
+        if (text.length > 65536) break;
+      }
+    } finally {
+      reader.releaseLock();
+      controller.abort();
+    }
+
+    expect(streamed).not.toBeNull();
+    expect(streamed!.executionId).toBeGreaterThan(0);
+    expect(streamed!.testCaseId).toBeGreaterThan(0);
+
+    // The streamed id is the same execution the run's REST payload reports.
+    const runResponse = await request.get(`/api/test-runs/${runId}`);
+    expect(runResponse.ok()).toBeTruthy();
+    const run = await runResponse.json();
+    const matching = run.testCases.find((tc: { title: string }) => tc.title === 'streamed deep-link test');
+    expect(matching.executionId).toBe(streamed!.executionId);
+  });
+
   test('GET /api/test-runs/:id/stream sends an init event', async ({ baseURL }) => {
     // Use native fetch with AbortController so we can read just the init event
     // without waiting for the infinite SSE stream to close.
@@ -173,6 +262,99 @@ test.describe.serial('Streaming API Tests', () => {
     expect(parsed.data.id).toBe(runId);
     expect(parsed.data.status).toBe('running');
     expect(typeof parsed.data.totalTests).toBe('number');
+  });
+
+  test('GET /api/test-runs/:id/stream forwards step events for test-attached steps', async ({ request, baseURL }) => {
+    // Subscribe first — the in-memory bus only delivers to live subscribers.
+    const controller = new AbortController();
+    const response = await fetch(`${baseURL}/api/test-runs/${runId}/stream`, {
+      signal: controller.signal,
+    });
+    expect(response.ok).toBeTruthy();
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    let sawStepBegin = false;
+    let sawStepEnd = false;
+    let sawHookBegin = false;
+    let sawHookEnd = false;
+
+    const postStepEvents = async () => {
+      const res = await request.post(`/api/test-runs/${runId}/events`, {
+        data: {
+          streamToken,
+          testCases: [
+            {
+              type: 'step-begin',
+              title: 'expect(locator).toBeVisible()',
+              location: 'tests/streaming.spec.ts:8:5',
+              stepCategory: 'pw:expect',
+              parentTitle: 'streaming test 1',
+              workerIndex: 0,
+              startedAt: 1700000000000,
+            },
+            {
+              type: 'step-begin',
+              title: 'beforeEach',
+              location: 'tests/streaming.spec.ts:2:3',
+              stepCategory: 'hook',
+              parentTitle: null,
+              workerIndex: 0,
+              startedAt: 1700000000100,
+            },
+            {
+              type: 'step-end',
+              title: 'expect(locator).toBeVisible()',
+              location: 'tests/streaming.spec.ts:8:5',
+              stepCategory: 'pw:expect',
+              status: 'passed',
+              duration: 40,
+              parentTitle: 'streaming test 1',
+              workerIndex: 0,
+              startedAt: 1700000000000,
+            },
+            {
+              type: 'step-end',
+              title: 'beforeEach',
+              location: 'tests/streaming.spec.ts:2:3',
+              stepCategory: 'hook',
+              status: 'passed',
+              duration: 20,
+              parentTitle: null,
+              workerIndex: 0,
+              startedAt: 1700000000100,
+            },
+          ],
+        },
+      });
+      expect(res.ok()).toBeTruthy();
+    };
+
+    try {
+      await postStepEvents();
+      while (!(sawStepBegin && sawStepEnd && sawHookBegin && sawHookEnd)) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+        if (text.includes('"type":"step-begin"') && text.includes('expect(locator).toBeVisible()')) sawStepBegin = true;
+        if (text.includes('"type":"step-end"')) sawStepEnd = true;
+        if (text.includes('"type":"test-begin"') && text.includes('"filePath":"hooks"')) sawHookBegin = true;
+        if (text.includes('"type":"test-completed"') && text.includes('"filePath":"hooks"')) sawHookEnd = true;
+        // Hard cap so a regression cannot hang the suite
+        if (text.length > 65536) break;
+      }
+    } finally {
+      reader.releaseLock();
+      controller.abort();
+    }
+
+    // Test-attached steps stream as step-begin/step-end with their category.
+    expect(sawStepBegin).toBeTruthy();
+    expect(sawStepEnd).toBeTruthy();
+    // Suite-level hooks keep the timeline shape (test-begin/test-completed, filePath 'hooks').
+    expect(sawHookBegin).toBeTruthy();
+    expect(sawHookEnd).toBeTruthy();
   });
 
   // ── /finish ──────────────────────────────────────────────────────────────────
@@ -372,7 +554,7 @@ test.describe.serial('Test Run Summary API Tests', () => {
     });
     expect(response.ok()).toBeTruthy();
     const data = await response.json();
-    runId = data.testRunId;
+    runId = data.runId;
   });
 
   test('GET /api/test-runs/:id/summary returns run metadata without the stream token', async ({ request }) => {

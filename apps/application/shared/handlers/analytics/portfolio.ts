@@ -1,4 +1,4 @@
-import { and, count, eq, inArray } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, lte, or } from 'drizzle-orm';
 import { failureClusters } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
@@ -36,7 +36,14 @@ export async function getAnalyticsPortfolio(
     db
       .select({ projectId: failureClusters.projectId, openCount: count() })
       .from(failureClusters)
-      .where(and(inArray(failureClusters.projectId, projectIds), eq(failureClusters.status, 'open')))
+      // A snoozed cluster is not failing now — leave it out of the open count.
+      .where(
+        and(
+          inArray(failureClusters.projectId, projectIds),
+          eq(failureClusters.status, 'open'),
+          or(isNull(failureClusters.snoozedUntil), lte(failureClusters.snoozedUntil, new Date())),
+        ),
+      )
       .groupBy(failureClusters.projectId) as Promise<any[]>,
   ]);
 

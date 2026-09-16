@@ -48,7 +48,7 @@ test('project ai-steps endpoint aggregates the reporter AI-step usage manifest',
     },
   });
   expect(res.ok()).toBeTruthy();
-  const { projectId, testRunId } = (await res.json()) as { projectId: number; testRunId: number };
+  const { projectId, runId } = (await res.json()) as { projectId: number; runId: number };
   expect(projectId).toBeGreaterThan(0);
 
   const covRes = await request.get(`/api/projects/${projectId}/ai-steps`);
@@ -71,13 +71,13 @@ test('project ai-steps endpoint aggregates the reporter AI-step usage manifest',
 
   // Intent round-trip: submit → sanitize → ai_usage column → case-detail payload,
   // where the healing panel and AI diagnosis read the prompt behind the locator.
-  const runRes = await request.get(`/api/test-runs/${testRunId}`);
+  const runRes = await request.get(`/api/test-runs/${runId}`);
   expect(runRes.ok()).toBeTruthy();
   const run = (await runRes.json()) as { testCases: Array<{ id: number; title: string }> };
   const signIn = run.testCases.find((c) => c.title === 'sign in');
   expect(signIn, 'sign in run case present').toBeTruthy();
 
-  const caseRes = await request.get(`/api/test-run-cases/${signIn!.id}`);
+  const caseRes = await request.get(`/api/test-run-cases/${signIn!.executionId}`);
   expect(caseRes.ok()).toBeTruthy();
   const detail = (await caseRes.json()) as {
     aiUsage?: { entries: string[]; intents?: Array<{ template: string; locator: string; kind: string }> } | null;

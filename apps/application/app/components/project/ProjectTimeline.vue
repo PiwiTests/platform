@@ -104,9 +104,9 @@ async function handleDelete() {
               <UButton icon="i-lucide-trash-2" color="error" variant="ghost" size="xs" @click="confirmDelete(m)" />
             </div>
           </div>
-          <div class="text-sm text-muted">{{ prettyDateFormat(m.occurredAt) }}</div>
+          <div class="text-sm text-muted"><ClientDate :date="m.occurredAt" /></div>
           <div v-if="m.environment" class="text-xs">
-            <UBadge color="neutral" variant="subtle" size="xs">{{ m.environment }}</UBadge>
+            <EnvironmentBadge :name="m.environment" />
           </div>
           <p v-if="m.description" class="text-sm text-muted">{{ m.description }}</p>
         </div>
@@ -116,8 +116,10 @@ async function handleDelete() {
       <UTable :data="rows" :columns="columns" class="hidden md:block">
         <template #occurredAt-cell="{ row }">
           <div class="whitespace-nowrap">
-            <div class="text-sm">{{ prettyDateFormat(row.original.occurredAt) }}</div>
-            <div class="text-xs text-muted">{{ formatRelativeTime(row.original.occurredAt) }}</div>
+            <ClientDate :date="row.original.occurredAt" class="text-sm" />
+            <div class="text-xs text-muted">
+              <ClientOnly>{{ formatRelativeTime(row.original.occurredAt) }}</ClientOnly>
+            </div>
           </div>
         </template>
 
@@ -146,9 +148,7 @@ async function handleDelete() {
         </template>
 
         <template #environment-cell="{ row }">
-          <UBadge v-if="row.original.environment" color="neutral" variant="subtle" size="xs">
-            {{ row.original.environment }}
-          </UBadge>
+          <EnvironmentBadge v-if="row.original.environment" :name="row.original.environment" class="text-xs" />
           <span v-else class="text-xs text-muted">All</span>
         </template>
 

@@ -1,0 +1,22 @@
+# Normalize text files to LF on commit; checkout with native line endings
+* text=auto eol=lf
+
+# Binary files — never normalize or diff
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.sqlite binary
+*.db binary
+*.webm binary
+*.mp4 binary

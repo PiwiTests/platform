@@ -25,7 +25,7 @@ async function cleanupStaleRuns() {
       })
       .where(
         and(
-          or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initialising'), eq(testRuns.status, 'finalizing')),
+          or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing'), eq(testRuns.status, 'finalizing')),
           or(
             lt(testRuns.updatedAt, staleThreshold),
             and(isNull(testRuns.updatedAt), lt(testRuns.createdAt, staleThreshold)),

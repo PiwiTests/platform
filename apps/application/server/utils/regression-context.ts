@@ -1,8 +1,16 @@
-import { eq, and, lt, desc } from 'drizzle-orm';
-import { testRuns, testRunsCases } from '../database/schema';
+import { eq } from 'drizzle-orm';
+import { projects, testRunsCases } from '../database/schema';
 import type { RunMetadata } from './run-json-types';
 import type { DbClient } from '../database';
 import { buildCompareUrl, computeMetadataDiff, type MetaDiffEntry } from '#shared/utils/run-metadata';
+import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
+import { normalizeGitUrl } from './scm/git-url';
+import { resolveRunBranch } from './run-branch';
+import { resolveDefaultBranch } from './scm/default-branch';
+import { FALLBACK_DEFAULT_BRANCH } from './scm/git-url';
+import { selectBaselineRun } from './branch-baseline';
+import { resolveFallbackBranch } from '#shared/handlers/baseline-scope';
+import { describeRunBaseline } from '#shared/run-baseline';
 
 export interface RunForRegression {
   id: number;
@@ -10,6 +18,7 @@ export interface RunForRegression {
   status: string;
   startTime: Date;
   environment: string | null;
+  branch?: string | null;
   metadata: unknown;
 }
 
@@ -21,6 +30,8 @@ export type RegressionContextResult =
       lastGreenRunAt: Date;
       lastGreenCommit: string | null;
       lastGreenBranch: string | null;
+      /** Why this run was the baseline — the sentence the Changes tab shows. */
+      baselineNote: string;
       currentCommit: string | null;
       currentBranch: string | null;
       commitRange: {
@@ -36,42 +47,36 @@ export type RegressionContextResult =
       newFailures: number;
     };
 
-export function normalizeGitUrl(remoteUrl: string | null | undefined): string | null {
-  if (!remoteUrl) return null;
-  let url = remoteUrl.trim();
-  if (url.startsWith('git@')) {
-    url = url.replace(/^git@([^:]+):/, 'https://$1/');
-  }
-  url = url.replace(/\.git$/, '');
-  try {
-    const parsed = new URL(url);
-    parsed.username = '';
-    parsed.password = '';
-    return parsed.toString().replace(/\/$/, '');
-  } catch {
-    return url;
-  }
-}
-
-const FAIL_STATUSES = new Set(['failed', 'timedOut']);
+const FAIL_STATUSES = new Set<string>(FAILED_STATUS_KEYS);
 
 export async function computeRegressionContext(db: DbClient, run: RunForRegression): Promise<RegressionContextResult> {
-  const greenResults = await db
-    .select({
-      id: testRuns.id,
-      startTime: testRuns.startTime,
-      environment: testRuns.environment,
-      metadata: testRuns.metadata,
-    })
-    .from(testRuns)
-    .where(
-      and(eq(testRuns.projectId, run.projectId), eq(testRuns.status, 'passed'), lt(testRuns.startTime, run.startTime)),
-    )
-    .orderBy(desc(testRuns.startTime))
-    .limit(1);
+  // The last green run the run-level ladder picks: the same environment first,
+  // and within it this run's own branch, then the branch it forked from, then
+  // any — so "what changed since last green" is a diff within one line of
+  // history, not across unrelated ones.
+  const branch = run.branch ?? resolveRunBranch(run.metadata);
+  const [project] = await db
+    .select({ id: projects.id, defaultBranch: projects.defaultBranch })
+    .from(projects)
+    .where(eq(projects.id, run.projectId));
+  const defaultBranch = project ? await resolveDefaultBranch(db, project, run.metadata) : FALLBACK_DEFAULT_BRANCH;
+  const fallback = resolveFallbackBranch(run.metadata, defaultBranch);
 
-  const lastGreen = greenResults[0];
-  if (!lastGreen) return { hasGreen: false };
+  const selection = await selectBaselineRun(db, {
+    projectId: run.projectId,
+    before: run.startTime,
+    branch,
+    environment: run.environment ?? null,
+    fallbackBranch: fallback.branch,
+  });
+  if (!selection) return { hasGreen: false };
+  const lastGreen = selection.run;
+  const baselineNote = describeRunBaseline({
+    run: { branch, environment: run.environment ?? null },
+    baseline: { branch: lastGreen.branch ?? null, environment: lastGreen.environment ?? null },
+    match: selection.match,
+    fallback,
+  });
 
   const currMeta = run.metadata as RunMetadata | null;
   const greenMeta = lastGreen.metadata as RunMetadata | null;
@@ -134,6 +139,7 @@ export async function computeRegressionContext(db: DbClient, run: RunForRegressi
     lastGreenRunAt: lastGreen.startTime,
     lastGreenCommit,
     lastGreenBranch: greenMeta?.scm?.branch ?? null,
+    baselineNote,
     currentCommit,
     currentBranch: currMeta?.scm?.branch ?? null,
     commitRange,

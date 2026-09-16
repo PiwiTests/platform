@@ -7,30 +7,57 @@
  */
 import type { AttachmentInfo, TraceInfo } from '~~/types/api';
 import { isImageFile, isVideoFile } from '~/utils/text-format';
+import SectionCard from '../shared/SectionCard.vue';
+import CollapsibleSectionCard from '../shared/CollapsibleSectionCard.vue';
 
 const props = defineProps<{
   attachments: AttachmentInfo[];
   traces: TraceInfo[];
-  storageKey: string;
+  /** When set, the card folds to a header with a peek (persisted per user); without one it is always open. */
+  storageKey?: string;
+  /** Whether the card starts folded on first visit (no stored cookie). */
+  defaultFolded?: boolean;
+  /** Drop the "Failure evidence" frame — render each kind as a plain bare section. */
+  embedded?: boolean;
 }>();
+
+const cardComponent = computed(() => (props.storageKey ? CollapsibleSectionCard : SectionCard));
+const cardBind = computed(() =>
+  props.storageKey ? { storageKey: props.storageKey, defaultFolded: props.defaultFolded } : {},
+);
+
+// Embedded: no "Failure evidence" frame at all — each kind (screenshots, video,
+// traces, attachments) carries its own plain heading in the tab it sits in.
+const wrapperComponent = computed(() => (props.embedded ? 'div' : cardComponent.value));
+const wrapperBind = computed(() =>
+  props.embedded
+    ? {}
+    : { icon: 'i-lucide-camera', title: 'Failure evidence', count: totalCount.value, ...cardBind.value },
+);
 
 const config = useRuntimeConfig();
 
-const screenshotCount = computed(() => props.attachments.filter((a) => isImageFile(a.path, a.contentType)).length);
-const videoCount = computed(() => props.attachments.filter((a) => isVideoFile(a.path, a.contentType)).length);
+// Both lists are optional in practice — a case with no attachments or no traces
+// can arrive with the prop undefined — so read them through null-safe locals to
+// keep the counts numeric (an undefined `.length` turns the total into NaN).
+const attachments = computed(() => (Array.isArray(props.attachments) ? props.attachments : []));
+const traces = computed(() => (Array.isArray(props.traces) ? props.traces : []));
+
+const screenshotCount = computed(() => attachments.value.filter((a) => isImageFile(a.path, a.contentType)).length);
+const videoCount = computed(() => attachments.value.filter((a) => isVideoFile(a.path, a.contentType)).length);
 const otherAttachments = computed(() =>
-  props.attachments.filter((a) => !isImageFile(a.path, a.contentType) && !isVideoFile(a.path, a.contentType)),
+  attachments.value.filter((a) => !isImageFile(a.path, a.contentType) && !isVideoFile(a.path, a.contentType)),
 );
 
 const totalCount = computed(
-  () => screenshotCount.value + videoCount.value + props.traces.length + otherAttachments.value.length,
+  () => screenshotCount.value + videoCount.value + traces.value.length + otherAttachments.value.length,
 );
 
 const peek = computed(() => {
   const parts: string[] = [];
   if (screenshotCount.value) parts.push(`${screenshotCount.value} screenshot${screenshotCount.value === 1 ? '' : 's'}`);
   if (videoCount.value) parts.push(`${videoCount.value} video${videoCount.value === 1 ? '' : 's'}`);
-  if (props.traces.length) parts.push(`${props.traces.length} trace${props.traces.length === 1 ? '' : 's'}`);
+  if (traces.value.length) parts.push(`${traces.value.length} trace${traces.value.length === 1 ? '' : 's'}`);
   if (otherAttachments.value.length) {
     parts.push(`${otherAttachments.value.length} file${otherAttachments.value.length === 1 ? '' : 's'}`);
   }
@@ -45,30 +72,39 @@ function fileName(path: string): string {
   return path.split('/').pop() || path;
 }
 
+// `target="_blank"` is inert in the desktop shell — open the attachment in a new
+// app window (which keeps the access-token cookie so the guarded file route
+// loads) instead. On web the anchor opens a new tab as usual.
+const { isDesktop, openWindow } = useDesktopWindow();
+function onOpenAttachment(event: MouseEvent, url: string) {
+  if (!isDesktop) return;
+  event.preventDefault();
+  openWindow(url);
+}
+
 // Forward reveal so a diagnosis citation can unfold + scroll to this card.
-const card = ref<{ reveal?: () => void } | null>(null);
-defineExpose({ reveal: () => card.value?.reveal?.() });
+const card = ref<{ reveal?: () => void; $el?: HTMLElement } | null>(null);
+defineExpose({
+  reveal: () =>
+    card.value?.reveal
+      ? card.value.reveal()
+      : card.value?.$el?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }),
+});
 </script>
 
 <template>
-  <CollapsibleSectionCard
-    ref="card"
-    :storage-key="storageKey"
-    icon="i-lucide-camera"
-    title="Failure evidence"
-    :count="totalCount"
-    help="case.evidence"
-  >
-    <template #folded>{{ peek }}</template>
+  <component :is="wrapperComponent" ref="card" v-bind="wrapperBind">
+    <template v-if="storageKey && !embedded" #folded>{{ peek }}</template>
 
-    <div class="space-y-3">
-      <TestEvidenceScreenshots :attachments="attachments" />
-      <TestEvidenceVideos :attachments="attachments" />
-      <TestEvidenceTraces :traces="traces" />
+    <div :class="embedded ? 'space-y-4' : 'space-y-3'">
+      <TestEvidenceScreenshots :attachments="attachments" :embedded="embedded" />
+      <TestEvidenceVideos :attachments="attachments" :embedded="embedded" />
+      <TestEvidenceTraces :traces="traces" :embedded="embedded" />
 
       <!-- Non-media attachments -->
       <TestEvidenceSection
         v-if="otherAttachments.length"
+        :embedded="embedded"
         icon="i-lucide-paperclip"
         label="Attachments"
         :count="otherAttachments.length"
@@ -89,6 +125,7 @@ defineExpose({ reveal: () => card.value?.reveal?.() });
               color="neutral"
               variant="soft"
               label="Open"
+              @click="onOpenAttachment($event, fileUrl(att.path, att.contentType))"
             />
           </div>
         </div>
@@ -102,5 +139,5 @@ defineExpose({ reveal: () => card.value?.reveal?.() });
         doc="reporter"
       />
     </div>
-  </CollapsibleSectionCard>
+  </component>
 </template>

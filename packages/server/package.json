@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/server",
-  "version": "0.24.0",
+  "version": "0.32.0",
   "description": "Self-hosted dashboard that keeps and explains your Playwright test results — run with npx @piwitests/server",
   "type": "module",
   "bin": {
@@ -12,7 +12,7 @@
     "README.md"
   ],
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=22.0.0"
   },
   "publishConfig": {
     "access": "public",
@@ -22,7 +22,7 @@
     "type": "git",
     "url": "https://github.com/PiwiTests/platform"
   },
-  "homepage": "https://piwitests.github.io",
+  "homepage": "https://piwitests.dev",
   "bugs": {
     "url": "https://github.com/PiwiTests/platform/issues"
   },

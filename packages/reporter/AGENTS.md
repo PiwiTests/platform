@@ -41,6 +41,8 @@ npm run reporter:typecheck
 npm run reporter:lint       # :fix to auto-fix
 npm run reporter:format     # :check to verify only
 npm run reporter:test       # :watch, :coverage, :integration
+                            # :integration:ai runs the AI-step authoring loop against a stubbed resolver;
+                            # :integration:ai:live drives a real model through a real dashboard (spends tokens)
 npm run reporter:bench      # capture-overhead benchmark; :micro for the Node-side hot path
 ```
 

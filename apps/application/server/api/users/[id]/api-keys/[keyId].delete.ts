@@ -23,12 +23,12 @@ export default eventHandler(async (event) => {
   const keyId = parseInt(getRouterParam(event, 'keyId') || '0');
 
   if (!targetId || !keyId) {
-    throw createError({ statusCode: 400, message: 'Invalid user ID or key ID' });
+    throw apiError({ statusCode: 400, message: 'Invalid user ID or key ID' });
   }
 
   // Non-administrators can only revoke their own keys
   if (currentUser.role !== Role.ADMINISTRATOR && currentUser.id !== targetId) {
-    throw createError({ statusCode: 403, message: 'Insufficient permissions' });
+    throw apiError({ statusCode: 403, message: 'Insufficient permissions' });
   }
 
   try {
@@ -37,6 +37,6 @@ export default eventHandler(async (event) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to delete API key';
     const statusCode = message === 'API key not found' ? 404 : 400;
-    throw createError({ statusCode, message });
+    throw apiError({ statusCode, message });
   }
 });

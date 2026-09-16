@@ -2,7 +2,7 @@
   "name": "piwi-dashboard-docs",
   "private": true,
   "scripts": {
-    "docs:gen": "node scripts/generate-configuration.mjs",
+    "docs:gen": "node scripts/generate-configuration.mjs && node scripts/generate-features.mjs && node scripts/generate-whats-new.mjs",
     "docs:dev": "npm run docs:gen && vitepress dev",
     "docs:build": "npm run docs:gen && vitepress build",
     "docs:preview": "vitepress preview"

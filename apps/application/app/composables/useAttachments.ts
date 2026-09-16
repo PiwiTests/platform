@@ -1,3 +1,4 @@
+import { SUPPORTED_IMAGE_MEDIA_TYPES } from '#shared/file-classify';
 import type { DiagnoseImage } from './useClusterDiagnosis';
 
 /**
@@ -20,7 +21,6 @@ export interface AttachedImage extends DiagnoseImage {
 
 const MAX_TEXT_BYTES = 200 * 1024;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -44,7 +44,7 @@ export function useAttachments() {
 
   async function processFiles(list: FileList | File[]) {
     for (const file of Array.from(list)) {
-      if (SUPPORTED_IMAGE_TYPES.includes(file.type)) {
+      if ((SUPPORTED_IMAGE_MEDIA_TYPES as readonly string[]).includes(file.type)) {
         if (file.size > MAX_IMAGE_BYTES) {
           toast.add({ title: 'Image too large', description: `${file.name} exceeds 5 MB`, color: 'error' });
           continue;

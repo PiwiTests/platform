@@ -1,15 +1,56 @@
 <script setup lang="ts">
-defineProps<{
+/**
+ * Browser console output captured while the test ran. With a `storageKey` the
+ * card folds to its header with a one-line peek (entry count plus the first
+ * entry, ANSI-stripped) and the fold state persists per user; without one it is
+ * a plain always-open card.
+ */
+import { stripAnsi } from '~/utils/text-format';
+import SectionCard from '../shared/SectionCard.vue';
+import CollapsibleSectionCard from '../shared/CollapsibleSectionCard.vue';
+
+const props = defineProps<{
   entries: Array<{
     type: string;
     text: string;
     timestamp?: number;
     location?: string | null;
   }>;
+  /** When set, the card folds to a header with a peek (persisted per user). */
+  storageKey?: string;
+  /** Whether the card starts folded on first visit (no stored cookie). */
+  defaultFolded?: boolean;
+  /** Mark the entries as recovered from the trace (the capture fixtures were absent). */
+  derivedFromTrace?: boolean;
+  /** Drop the card frame and padding — render a plain heading row over the body. */
+  embedded?: boolean;
 }>();
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const expanded = ref(false);
+const cardComponent = computed(() =>
+  props.embedded ? SectionCard : props.storageKey ? CollapsibleSectionCard : SectionCard,
+);
+const cardBind = computed(() =>
+  props.embedded
+    ? { embedded: true }
+    : props.storageKey
+      ? { storageKey: props.storageKey, defaultFolded: props.defaultFolded }
+      : {},
+);
+
+const peek = computed(() => {
+  const n = props.entries.length;
+  const first = props.entries[0];
+  const head = `${n} entr${n === 1 ? 'y' : 'ies'}`;
+  return first ? `${head} · ${first.type}: ${stripAnsi(first.text).trim()}` : head;
+});
+
+// Forward reveal so a jump chip or diagnosis citation can unfold + scroll to this card.
+const card = ref<{ reveal?: () => void; $el?: HTMLElement } | null>(null);
+function reveal() {
+  if (card.value?.reveal) card.value.reveal();
+  else card.value?.$el?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+}
+defineExpose({ reveal });
 
 function consoleTypeColor(type: string): 'error' | 'warning' | 'neutral' {
   switch (type) {
@@ -39,13 +80,18 @@ function consoleTypeIcon(type: string): string {
 </script>
 
 <template>
-  <SectionCard
+  <component
+    :is="cardComponent"
     v-if="entries.length > 0"
-    icon="i-lucide-terminal"
-    title="Console output"
-    :count="entries.length"
-    help="case.console"
+    ref="card"
+    v-bind="cardBind"
+    :icon="embedded ? undefined : 'i-lucide-terminal'"
+    :title="embedded ? '' : 'Console output'"
+    :count="embedded ? null : entries.length"
+    :help="embedded ? undefined : 'case.console'"
   >
+    <template v-if="derivedFromTrace" #actions><TraceDerivedChip /></template>
+    <template v-if="storageKey" #folded>{{ peek }}</template>
     <div class="space-y-1 max-h-80 overflow-y-auto">
       <div
         v-for="(entry, index) in entries"
@@ -76,5 +122,5 @@ function consoleTypeIcon(type: string): string {
         </div>
       </div>
     </div>
-  </SectionCard>
+  </component>
 </template>

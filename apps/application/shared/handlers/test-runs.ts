@@ -13,15 +13,20 @@ import {
   markers,
 } from '../../server/database/schema';
 import { fetchAndFormatSuites, splitSuitePath } from '../utils/suites';
+import { FAILED_STATUS_KEYS } from '../utils/test-counts';
 import { normalizeRoute } from '../utils/route';
 import { percentile } from '../utils/stats';
 import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
-import { buildCompareUrl, computeMetadataDiff } from '../utils/run-metadata';
+import { buildCommitRange, computeMetadataDiff } from '../utils/run-metadata';
 import type { TestStepEvent } from '../types';
 import type { EndpointSummary, DiagnosisCompact } from '../../types/api';
 
 import type { DrizzleDB } from './db';
-import { normalizeGitUrl } from '../../server/utils/regression-context';
+import { normalizeGitUrl } from '../../server/utils/scm/git-url';
+import { selectBaselineRun } from '../../server/utils/branch-baseline';
+import { resolveRunBranch } from '../../server/utils/run-branch';
+import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
+import { describeRunBaseline } from '#shared/run-baseline';
 import { getLocatorHealingBatch } from '../../server/utils/locator-healing';
 
 type ProjectScope = 'all' | Set<number>;
@@ -32,7 +37,11 @@ export async function getProjectLatestRun(db: DrizzleDB, projectId: number) {
     .select({ id: testRuns.id, status: testRuns.status })
     .from(testRuns)
     .where(eq(testRuns.projectId, projectId))
-    .orderBy(desc(testRuns.id))
+    // Rank by start_time (id as a deterministic tiebreaker), not MAX(id), so
+    // "latest" stays correct when rows are ingested out of chronological order —
+    // historical uploads on the server, or the demo seed which inserts runs
+    // newest-first (MAX(id) would be the oldest run). Matches `listProjects`.
+    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
     .limit(1);
   return rows[0] ?? null;
 }
@@ -57,7 +66,9 @@ export async function getTestRun(
     .select({ id: testRuns.id, status: testRuns.status })
     .from(testRuns)
     .where(eq(testRuns.projectId, testRun.projectId))
-    .orderBy(desc(testRuns.id))
+    // Rank by start_time (see getProjectLatestRun) so the "Newer run" pill points
+    // at the chronologically newest run, not MAX(id).
+    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
     .limit(1);
   const latestRunId = latestRunResult[0]?.id ?? null;
   const latestRunStatus = latestRunResult[0]?.status ?? null;
@@ -99,6 +110,7 @@ export async function getTestRun(
       error: testRunsCases.error,
       failureClusterId: testRunsCases.failureClusterId,
       retries: testRunsCases.retries,
+      attempts: testRunsCases.attempts,
       line: testRunsCases.line,
       column: testRunsCases.column,
       slowestStep: testRunsCases.slowestStep,
@@ -114,9 +126,12 @@ export async function getTestRun(
       suitePath: testCases.suitePath,
       testAnnotations: testRunsCases.testAnnotations,
       tags: testRunsCases.tags,
+      locks: testRunsCases.locks,
       testMeta: testRunsCases.testMeta,
       isNewRegression: testRunsCases.isNewRegression,
       isNewFlaky: testRunsCases.isNewFlaky,
+      didNotRunReason: testRunsCases.didNotRunReason,
+      blockedBy: testRunsCases.blockedBy,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
@@ -133,12 +148,14 @@ export async function getTestRun(
   );
 
   const formattedTestCases = runsCases.map((tc: any) => ({
-    id: tc.id,
+    executionId: tc.id,
+    testCaseId: tc.testCaseId,
     title: tc.title,
     filePath: tc.filePath,
     suitePath: splitSuitePath(tc.suitePath),
     testAnnotations: (tc.testAnnotations as any) ?? null,
     tags: (tc.tags as string[] | null) ?? null,
+    locks: (tc.locks as string[] | null) ?? null,
     testMeta: (tc.testMeta as any) ?? null,
     status: tc.status,
     duration: tc.duration,
@@ -146,6 +163,7 @@ export async function getTestRun(
     error: tc.error,
     failureClusterId: tc.failureClusterId,
     retries: tc.retries,
+    attempts: tc.attempts ?? null,
     slowestStep: tc.slowestStep,
     slowestStepDuration: tc.slowestStepDuration,
     // With custom patterns configured, wasted time is recomputed from the
@@ -167,6 +185,8 @@ export async function getTestRun(
     browser: tc.browser,
     isNewRegression: tc.isNewRegression ?? null,
     isNewFlaky: tc.isNewFlaky ?? null,
+    didNotRunReason: (tc.didNotRunReason as string | null) ?? null,
+    blockedBy: (tc.blockedBy as string | null) ?? null,
   }));
 
   const runsCaseIds = runsCases.map((tc: any) => tc.id);
@@ -189,6 +209,12 @@ export async function getTestRun(
 
   const { streamToken: _streamToken, ...testRunPublic } = testRun;
 
+  let projectPublic;
+  if (project) {
+    const { scmToken: _scmToken, ...projectRest } = project;
+    projectPublic = { ...projectRest, latestRunId, latestRunStatus };
+  }
+
   // Nearest timeline marker before this run's start, scoped to the run's
   // environment (or global markers with no environment) — surfaced as context.
   const precedingMarkerCandidates = await db
@@ -200,11 +226,34 @@ export async function getTestRun(
   const precedingMarker =
     precedingMarkerCandidates.find((m) => m.environment == null || m.environment === testRun.environment) ?? null;
 
+  // Distinct endpoints seen by the run — feeds the "Slow endpoints (n)" tab
+  // count from the run payload, so the strip never shows a bare label. Uses
+  // the same method + normalized-route grouping as getNetworkRequests, so the
+  // label counts the table's rows, not the raw request rows.
+  //
+  // `selectDistinct` collapses duplicate (method, url) tuples in the database,
+  // so the rows transferred scale with the number of distinct endpoints, not
+  // with raw request volume. The `normalizeRoute` fallback (for rows the
+  // reporter left without a `normalizedUrl`) still runs in JS, but only over
+  // that already-deduplicated set.
+  const endpointRows = await db
+    .selectDistinct({
+      method: networkRequests.method,
+      normalizedUrl: networkRequests.normalizedUrl,
+      url: networkRequests.url,
+    })
+    .from(networkRequests)
+    .where(eq(networkRequests.testRunId, id));
+  const endpointCount = new Set(
+    endpointRows.map((r) => `${r.method}|${r.normalizedUrl ?? (r.url ? normalizeRoute(r.url) : r.method)}`),
+  ).size;
+
   return {
     ...testRunPublic,
     precedingMarker,
     isFullRun: testRun.isFullRun === 1,
-    project: project ? { ...project, latestRunId, latestRunStatus } : project,
+    project: projectPublic,
+    networkRequestCount: endpointCount,
     reports: reportResults.map((r: any) => ({
       id: r.id,
       type: r.subtype || r.type,
@@ -215,7 +264,7 @@ export async function getTestRun(
     links: linksForRun,
     testCases: formattedTestCases.map((tc: any) => ({
       ...tc,
-      links: caseLinksMap.get(tc.id) ?? [],
+      links: caseLinksMap.get(tc.executionId) ?? [],
     })),
     suites,
     storageStats,
@@ -225,7 +274,7 @@ export async function getTestRun(
 
 // ─── getRecentTestRuns — active + 30 most recent completed ───────────────────
 
-const ACTIVE_STATUSES = ['running', 'initialising', 'finalizing'] as const;
+const ACTIVE_STATUSES = ['running', 'initializing', 'finalizing'] as const;
 
 const RECENT_FIELDS = {
   id: testRuns.id,
@@ -247,6 +296,7 @@ const RECENT_FIELDS = {
   reporterVersion: testRuns.reporterVersion,
   isFullRun: testRuns.isFullRun,
   environment: testRuns.environment,
+  branch: testRuns.branch,
 };
 
 export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'all') {
@@ -325,11 +375,8 @@ export async function patchTestRun(db: DrizzleDB, id: number, label: string | nu
     })
     .where(eq(testRuns.id, id));
 
-  return {
-    success: true,
-    testRunId: id,
-    label: label ?? null,
-  };
+  const [testRun] = await db.select().from(testRuns).where(eq(testRuns.id, id));
+  return { success: true, testRun };
 }
 
 // ─── getNetworkRequests — aggregated network endpoint stats ──────────────────
@@ -345,6 +392,7 @@ export async function getNetworkRequests(db: DrizzleDB, runId: number) {
       url: networkRequests.url,
       status: networkRequests.status,
       duration: networkRequests.duration,
+      startTime: networkRequests.startTime,
       title: testCases.title,
     })
     .from(networkRequests)
@@ -358,13 +406,21 @@ export async function getNetworkRequests(db: DrizzleDB, runId: number) {
       route: r.normalizedUrl ?? (r.url ? normalizeRoute(r.url) : r.method),
       duration: r.duration ?? 0,
       status: r.status,
+      startTime: r.startTime ?? null,
       title: r.title,
     })),
   );
 }
 
 function buildEndpointSummaries(
-  rows: Array<{ method: string; route: string; duration: number; status: number; title: string }>,
+  rows: Array<{
+    method: string;
+    route: string;
+    duration: number;
+    status: number;
+    startTime: number | null;
+    title: string;
+  }>,
 ): EndpointSummary[] {
   const grouped = new Map<
     string,
@@ -373,6 +429,8 @@ function buildEndpointSummaries(
       route: string;
       durations: number[];
       statuses: number[];
+      firstStartTime: number | null;
+      lastStartTime: number | null;
       testCases: Set<string>;
     }
   >();
@@ -385,12 +443,19 @@ function buildEndpointSummaries(
         route: row.route,
         durations: [],
         statuses: [],
+        firstStartTime: null,
+        lastStartTime: null,
         testCases: new Set(),
       });
     }
     const group = grouped.get(key)!;
     group.durations.push(row.duration);
     group.statuses.push(row.status);
+    if (row.startTime != null) {
+      group.firstStartTime =
+        group.firstStartTime == null ? row.startTime : Math.min(group.firstStartTime, row.startTime);
+      group.lastStartTime = group.lastStartTime == null ? row.startTime : Math.max(group.lastStartTime, row.startTime);
+    }
     group.testCases.add(row.title);
   }
 
@@ -409,6 +474,8 @@ function buildEndpointSummaries(
       minDuration: sorted[0] ?? 0,
       p90Duration: percentile(sorted, 90),
       errorRate: group.durations.length > 0 ? Math.round((errorCount / group.durations.length) * 100) : 0,
+      firstStartTime: group.firstStartTime,
+      lastStartTime: group.lastStartTime,
       testCases: Array.from(group.testCases),
     });
   }
@@ -420,7 +487,7 @@ function buildEndpointSummaries(
 // ─── getFailureGroups — clustered failures for a run ─────────────────────────
 
 interface GroupCase {
-  testRunsCaseId: number;
+  executionId: number;
   testCaseId: number;
   title: string;
   filePath: string;
@@ -467,7 +534,7 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
 
   const clusteredRows = await db
     .select({
-      testRunsCaseId: testRunsCases.id,
+      executionId: testRunsCases.id,
       testCaseId: testRunsCases.testCaseId,
       retries: testRunsCases.retries,
       workerIndex: testRunsCases.workerIndex,
@@ -529,12 +596,12 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
     if (existing) {
       if ((row.retries ?? 0) > existing.retries) {
         existing.retries = row.retries ?? 0;
-        existing.testRunsCaseId = row.testRunsCaseId;
+        existing.executionId = row.executionId;
         existing.workerIndex = row.workerIndex;
       }
     } else {
       g.caseById.set(row.testCaseId, {
-        testRunsCaseId: row.testRunsCaseId,
+        executionId: row.executionId,
         testCaseId: row.testCaseId,
         title: row.title,
         filePath: row.filePath,
@@ -584,7 +651,7 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
   const HEALING_GROUP_CAP = 10;
   const reps = result
     .slice(0, HEALING_GROUP_CAP)
-    .map((g) => ({ clusterId: g.clusterId, repId: g.cases[0]?.testRunsCaseId }))
+    .map((g) => ({ clusterId: g.clusterId, repId: g.cases[0]?.executionId }))
     .filter((r): r is { clusterId: number; repId: number } => r.repId != null);
   const healingByCluster = new Map<number, { recommended: string; source: string; healed: boolean }>();
   if (reps.length > 0) {
@@ -595,7 +662,7 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
     for (const { clusterId, repId } of reps) {
       const h = healingMap.get(repId);
       const rec = h?.recommendation?.recommended;
-      if (h && h.source !== 'none' && rec) {
+      if (h && h.applicable !== false && h.source !== 'none' && rec) {
         healingByCluster.set(clusterId, {
           recommended: rec.locator,
           source: h.source,
@@ -614,7 +681,7 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
 
 // ─── computeRegressionContextForRun — regression vs last green run ────────────
 
-const FAIL_STATUSES = new Set(['failed', 'timedOut']);
+const FAIL_STATUSES = new Set<string>(FAILED_STATUS_KEYS);
 
 export async function computeRegressionContextForRun(db: DrizzleDB, runId: number) {
   const runResults = await db
@@ -624,6 +691,7 @@ export async function computeRegressionContextForRun(db: DrizzleDB, runId: numbe
       status: testRuns.status,
       startTime: testRuns.startTime,
       environment: testRuns.environment,
+      branch: testRuns.branch,
       metadata: testRuns.metadata,
     })
     .from(testRuns)
@@ -632,22 +700,25 @@ export async function computeRegressionContextForRun(db: DrizzleDB, runId: numbe
   const run = runResults[0];
   if (!run) return null;
 
-  const greenResults = await db
-    .select({
-      id: testRuns.id,
-      startTime: testRuns.startTime,
-      environment: testRuns.environment,
-      metadata: testRuns.metadata,
-    })
-    .from(testRuns)
-    .where(
-      and(eq(testRuns.projectId, run.projectId), eq(testRuns.status, 'passed'), lt(testRuns.startTime, run.startTime)),
-    )
-    .orderBy(desc(testRuns.startTime))
-    .limit(1);
-
-  const lastGreen = greenResults[0];
-  if (!lastGreen) return { hasGreen: false };
+  // The same ladder the Changes tab walks: the run's environment first, and
+  // within it its own branch, the branch it forked from, then any branch.
+  const branch = run.branch ?? resolveRunBranch(run.metadata);
+  const fallback = resolveFallbackBranch(run.metadata, await readProjectDefaultBranch(db, run.projectId, run.metadata));
+  const selection = await selectBaselineRun(db, {
+    projectId: run.projectId,
+    before: run.startTime,
+    branch,
+    environment: run.environment ?? null,
+    fallbackBranch: fallback.branch,
+  });
+  if (!selection) return { hasGreen: false };
+  const lastGreen = selection.run;
+  const baselineNote = describeRunBaseline({
+    run: { branch, environment: run.environment ?? null },
+    baseline: { branch: lastGreen.branch ?? null, environment: lastGreen.environment ?? null },
+    match: selection.match,
+    fallback,
+  });
 
   const currMeta = run.metadata as any;
   const greenMeta = lastGreen.metadata as any;
@@ -657,19 +728,7 @@ export async function computeRegressionContextForRun(db: DrizzleDB, runId: numbe
 
   const repositoryUrl = normalizeGitUrl(remoteUrl);
 
-  let commitRange = null;
-  if (currentCommit && lastGreenCommit && currentCommit !== lastGreenCommit) {
-    const compareUrl = repositoryUrl ? buildCompareUrl(repositoryUrl, lastGreenCommit, currentCommit) : null;
-    commitRange = {
-      fromSha: lastGreenCommit,
-      toSha: currentCommit,
-      fromShort: lastGreenCommit.slice(0, 7),
-      toShort: currentCommit.slice(0, 7),
-      repositoryUrl,
-      compareUrl,
-      gitCommand: `git log --oneline ${lastGreenCommit}..${currentCommit}`,
-    };
-  }
+  const commitRange = buildCommitRange(repositoryUrl, lastGreenCommit, currentCommit);
 
   const metadataDiff = computeMetadataDiff(greenMeta, currMeta, lastGreen.environment, run.environment);
 
@@ -710,6 +769,7 @@ export async function computeRegressionContextForRun(db: DrizzleDB, runId: numbe
     lastGreenRunAt: lastGreen.startTime,
     lastGreenCommit,
     lastGreenBranch: greenMeta?.scm?.branch ?? null,
+    baselineNote,
     currentCommit,
     currentBranch: currMeta?.scm?.branch ?? null,
     commitRange,

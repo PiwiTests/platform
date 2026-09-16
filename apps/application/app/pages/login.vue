@@ -13,6 +13,13 @@ const state = reactive({
 const loading = ref(false);
 const error = ref('');
 
+// Where to land after signing in: a same-origin path handed over by a link
+// that needed a session first (the reporter's per-failure links), else home.
+function redirectTarget(): string {
+  const target = route.query.redirect;
+  return typeof target === 'string' && target.startsWith('/') && !target.startsWith('//') ? target : '/';
+}
+
 // Fresh instance with auth enabled and zero users: the login form can never
 // succeed, so show a first-admin setup form instead (mirrors the documented
 // `POST /api/auth/setup` curl flow, but reachable from the UI).
@@ -42,6 +49,16 @@ onMounted(async () => {
 async function handleSetup() {
   if (!setupState.username || !setupState.password) {
     setupError.value = 'Please choose a username and password';
+    return;
+  }
+  // Mirror the server's validation rules so their violations read as field
+  // hints instead of a generic "Invalid request body" error.
+  if (setupState.username.length < 3) {
+    setupError.value = 'Username must be at least 3 characters';
+    return;
+  }
+  if (setupState.password.length < 8) {
+    setupError.value = 'Password must be at least 8 characters';
     return;
   }
   if (setupState.password !== setupState.confirmPassword) {
@@ -114,7 +131,7 @@ async function handleLogin() {
       title: 'Login successful',
       color: 'success',
     });
-    router.push('/');
+    router.push(redirectTarget());
   } catch (err: unknown) {
     const errorMessage =
       err && typeof err === 'object' && 'data' in err ? (err.data as { message?: string })?.message : undefined;
@@ -183,7 +200,7 @@ definePageMeta({
           <UInput
             v-model="setupState.password"
             type="password"
-            placeholder="Choose a password"
+            placeholder="Choose a password (min. 8 characters)"
             autocomplete="new-password"
             :disabled="setupLoading"
             class="w-full"

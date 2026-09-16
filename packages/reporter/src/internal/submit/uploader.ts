@@ -87,8 +87,8 @@ export class Uploader {
     );
 
     this.logger.info(`Successfully uploaded test results`);
-    if (response.testRunId) {
-      this.logger.info(`Test Run ID: ${response.testRunId}, Project ID: ${response.projectId}`);
+    if (response.runId) {
+      this.logger.info(`Test Run ID: ${response.runId}, Project ID: ${response.projectId}`);
     }
     return response;
   }
@@ -105,8 +105,8 @@ export class Uploader {
 
     const response = await this.httpClient.postFormData('/api/test-runs/upload', form, auth);
     this.logger.info(`Successfully uploaded test results with files`);
-    if (response.testRunId) {
-      this.logger.info(`Test Run ID: ${response.testRunId}, Project ID: ${response.projectId}`);
+    if (response.runId) {
+      this.logger.info(`Test Run ID: ${response.runId}, Project ID: ${response.projectId}`);
     }
     if (response.reports) {
       for (const r of response.reports) this.logger.info(`${r.label}: ${r.path}`);
@@ -123,7 +123,7 @@ export class Uploader {
     auth: string | null,
   ): Promise<void> {
     const form = new FormData();
-    form.append('testRunId', String(runId));
+    form.append('runId', String(runId));
     form.append('projectName', projectName);
     form.append(
       'testRun',

@@ -62,8 +62,26 @@ function buildMockAiResponse(): AiDiagnosisResult {
 function startMockAiServer(port: number): http.Server {
   const server = http.createServer((req, res) => {
     if (req.method === 'POST' && req.url?.includes('/chat/completions')) {
-      req.on('data', () => {});
+      let body = '';
+      req.on('data', (chunk) => (body += chunk));
       req.on('end', () => {
+        const parsed = JSON.parse(body || '{}') as Record<string, unknown>;
+        if ('max_tokens' in parsed) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: {
+                message:
+                  "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.",
+                type: 'invalid_request_error',
+                param: 'max_tokens',
+                code: 'unsupported_parameter',
+              },
+            }),
+          );
+          return;
+        }
+
         const diagResult = buildMockAiResponse();
         const responseContent = JSON.stringify(diagResult);
         const payload = {
@@ -107,6 +125,22 @@ function startStreamingMockAiServer(port: number): http.Server {
           parsed = JSON.parse(body || '{}');
         } catch {
           /* ignore */
+        }
+
+        if ('max_tokens' in parsed) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: {
+                message:
+                  "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.",
+                type: 'invalid_request_error',
+                param: 'max_tokens',
+                code: 'unsupported_parameter',
+              },
+            }),
+          );
+          return;
         }
 
         const diagResult = buildMockAiResponse();
@@ -156,6 +190,63 @@ function startStreamingMockAiServer(port: number): http.Server {
   return server;
 }
 
+/**
+ * Like `startMockAiServer`, but refuses any request carrying an `image_url`
+ * part the way a text-only OpenAI-compatible model does, so the provider's
+ * drop-the-images retry runs without needing a real model. `imageAttempts`
+ * counts the requests that arrived with images.
+ */
+function startTextOnlyMockAiServer(port: number): { server: http.Server; imageAttempts: () => number } {
+  let imageAttempts = 0;
+  const server = http.createServer((req, res) => {
+    if (!(req.method === 'POST' && req.url?.includes('/chat/completions'))) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not found' }));
+      return;
+    }
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      let messages: Array<{ content?: unknown }> = [];
+      try {
+        messages = (JSON.parse(body || '{}') as { messages?: Array<{ content?: unknown }> }).messages ?? [];
+      } catch {
+        /* ignore */
+      }
+      const hasImage = messages.some(
+        (m) =>
+          Array.isArray(m.content) &&
+          m.content.some((part) => (part as { type?: string } | null)?.type === 'image_url'),
+      );
+
+      if (hasImage) {
+        imageAttempts++;
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'This model does not support image inputs' } }));
+        return;
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          id: 'chatcmpl-test',
+          object: 'chat.completion',
+          choices: [
+            {
+              index: 0,
+              message: { role: 'assistant', content: JSON.stringify(buildMockAiResponse()) },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: { prompt_tokens: 100, completion_tokens: 80, total_tokens: 180 },
+        }),
+      );
+    });
+  });
+  server.listen(port, '127.0.0.1');
+  return { server, imageAttempts: () => imageAttempts };
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function submitRun(request: APIRequestContext, cases: Array<{ status: string; [key: string]: unknown }>) {
@@ -173,7 +264,7 @@ async function submitRun(request: APIRequestContext, cases: Array<{ status: stri
     },
   });
   expect(res.ok()).toBeTruthy();
-  return res.json() as Promise<{ testRunId: number; projectId: number }>;
+  return res.json() as Promise<{ runId: number; projectId: number }>;
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -247,7 +338,7 @@ test.describe.serial('AI diagnosis endpoints', () => {
     // Use a unique error per invocation so retries don't collide with previously-diagnosed clusters
     freshClusterError = `TimeoutError: locator.click: Timeout 30000ms exceeded.\n    at tests/auth.spec.ts:5:3 (${Date.now()})`;
     // Create a test run with a failure cluster
-    const { testRunId } = await submitRun(request, [
+    const { runId } = await submitRun(request, [
       {
         title: 'login test',
         status: 'failed',
@@ -257,7 +348,7 @@ test.describe.serial('AI diagnosis endpoints', () => {
       },
     ]);
 
-    const run = (await (await request.get(`/api/test-runs/${testRunId}`)).json()) as {
+    const run = (await (await request.get(`/api/test-runs/${runId}`)).json()) as {
       testCases: Array<{ status: string; failureClusterId?: number }>;
     };
     const failedCase = run.testCases.find((c) => c.status === 'failed');
@@ -303,6 +394,22 @@ test.describe.serial('AI diagnosis endpoints', () => {
     expect(body.diagnosis!.category).toBe('app-bug');
   });
 
+  test('a completed diagnosis stores a context hash matching the current context, so it is not stale', async ({
+    request,
+  }) => {
+    expect(clusterId).toBeTruthy();
+
+    const diagRes = await request.get(`/api/failure-clusters/${clusterId}/diagnosis`);
+    const { diagnosis } = (await diagRes.json()) as { diagnosis: { contextSha: string | null } | null };
+    expect(diagnosis!.contextSha).toBeTruthy();
+
+    // The context preview exposes the same hash. Equal hashes mean the evidence has
+    // not moved on since the diagnosis — the banner rule says: not stale.
+    const ctxRes = await request.get(`/api/failure-clusters/${clusterId}/context?format=json`);
+    const ctx = (await ctxRes.json()) as { contextSha: string };
+    expect(ctx.contextSha).toBe(diagnosis!.contextSha);
+  });
+
   test('POST /api/failure-clusters/:id/diagnose returns 409 for existing completed (no force)', async ({ request }) => {
     expect(clusterId).toBeTruthy();
 
@@ -324,11 +431,30 @@ test.describe.serial('AI diagnosis endpoints', () => {
     expect(diagnosis.category).toBe('app-bug');
   });
 
+  test('GET /api/failure-clusters/:id/diagnoses returns snapshotted history, full=1 carries details', async ({
+    request,
+  }) => {
+    expect(clusterId).toBeTruthy();
+
+    // The force re-diagnose above snapshotted the prior version.
+    const lightRes = await request.get(`/api/failure-clusters/${clusterId}/diagnoses`);
+    expect(lightRes.ok()).toBeTruthy();
+    const light = (await lightRes.json()) as { items: Array<{ id: number; details?: unknown }> };
+    expect(light.items.length).toBeGreaterThanOrEqual(1);
+    // The light list omits details to stay small.
+    expect(light.items[0]!.details).toBeUndefined();
+
+    const fullRes = await request.get(`/api/failure-clusters/${clusterId}/diagnoses?full=1`);
+    expect(fullRes.ok()).toBeTruthy();
+    const full = (await fullRes.json()) as { items: Array<{ details?: unknown }> };
+    expect(full.items[0]!.details).toBeTruthy();
+  });
+
   test('failure-groups endpoint includes diagnosis compact for clustered groups', async ({ request }) => {
     expect(clusterId).toBeTruthy();
 
     // Submit another run with the same error to trigger the known cluster
-    const { testRunId } = await submitRun(request, [
+    const { runId } = await submitRun(request, [
       {
         title: 'login test',
         status: 'failed',
@@ -338,9 +464,9 @@ test.describe.serial('AI diagnosis endpoints', () => {
       },
     ]);
 
-    const res = await request.get(`/api/test-runs/${testRunId}/failure-groups`);
+    const res = await request.get(`/api/test-runs/${runId}/failure-groups`);
     expect(res.ok()).toBeTruthy();
-    const groups = await res.json();
+    const { items: groups } = await res.json();
     expect(Array.isArray(groups)).toBe(true);
 
     const group = (groups as Array<{ clusterId: number; diagnosis: { status: string; category: string } | null }>).find(
@@ -424,9 +550,9 @@ test.describe.serial('AI diagnosis — unconfigured error cases', () => {
       },
     });
     expect(res.ok()).toBeTruthy();
-    const { testRunId } = await res.json();
+    const { runId } = await res.json();
 
-    const run = (await (await request.get(`/api/test-runs/${testRunId}`)).json()) as {
+    const run = (await (await request.get(`/api/test-runs/${runId}`)).json()) as {
       testCases: Array<{ status: string; failureClusterId?: number }>;
     };
     const failedCase = run.testCases.find((c) => c.status === 'failed');
@@ -473,9 +599,9 @@ test.describe.serial('AI diagnosis — unconfigured error cases', () => {
       },
     });
     expect(res.ok()).toBeTruthy();
-    const { testRunId } = await res.json();
+    const { runId } = await res.json();
 
-    const run = (await (await request.get(`/api/test-runs/${testRunId}`)).json()) as {
+    const run = (await (await request.get(`/api/test-runs/${runId}`)).json()) as {
       testCases: Array<{ status: string; failureClusterId?: number }>;
     };
     const failedCase = run.testCases.find((c) => c.status === 'failed');
@@ -533,7 +659,7 @@ test.describe.serial('AI diagnosis — streaming success path', () => {
     // no selector would otherwise collide with the plain-timeout clusters created
     // earlier in this same file (e.g. `freshClusterError` above).
     const uniqueError = `TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByTestId('stream-success-${Date.now()}')`;
-    const { testRunId } = await submitRun(request, [
+    const { runId } = await submitRun(request, [
       {
         title: 'streaming diagnosis test',
         status: 'failed',
@@ -543,7 +669,7 @@ test.describe.serial('AI diagnosis — streaming success path', () => {
       },
     ]);
 
-    const run = (await (await request.get(`/api/test-runs/${testRunId}`)).json()) as {
+    const run = (await (await request.get(`/api/test-runs/${runId}`)).json()) as {
       testCases: Array<{ status: string; failureClusterId?: number }>;
     };
     const failedCase = run.testCases.find((c) => c.status === 'failed');
@@ -586,6 +712,103 @@ test.describe.serial('AI diagnosis — streaming success path', () => {
     expect(diagnosis.category).toBe('app-bug');
     expect(diagnosis.confidence).toBe('high');
     expect(diagnosis.details.confidenceScore).toBe(88);
+  });
+});
+
+// ── Text-only models (no vision) ─────────────────────────────────────────────
+
+test.describe.serial('AI diagnosis — a model that rejects images', () => {
+  /** A real (1×1) PNG, so the ingested attachment is classified as a screenshot. */
+  const PNG_1X1 = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+
+  let mock: { server: http.Server; imageAttempts: () => number };
+  let mockPort: number;
+  let isEnvManaged = false;
+
+  test.beforeAll(async ({ request }) => {
+    const statusRes = await request.get('/api/ai/status');
+    if (statusRes.ok()) {
+      isEnvManaged = ((await statusRes.json()) as { source?: string }).source === 'env';
+    }
+    mockPort = await getFreePort();
+    mock = startTextOnlyMockAiServer(mockPort);
+  });
+
+  test.beforeEach(async () => {
+    if (isEnvManaged) test.skip();
+  });
+
+  test.afterAll(async ({ request }) => {
+    if (!isEnvManaged) await request.put('/api/settings/ai', { data: { roles: null } });
+    mock.server.close();
+  });
+
+  test('drops the screenshots and still completes the diagnosis', async ({ request }) => {
+    const put = await request.put('/api/settings/ai', {
+      data: {
+        roles: { diagnosis: { provider: 'openai', model: 'text-only', baseUrl: `http://127.0.0.1:${mockPort}/v1` } },
+        autoDiagnose: false,
+      },
+    });
+    expect(put.ok()).toBeTruthy();
+
+    // A screenshot only reaches the context through a live case-file upload, so
+    // this failure is ingested through the streaming API rather than /submit.
+    const start = await request.post('/api/test-runs/start', {
+      data: { projectName: PROJECT.AI_IMAGE_FALLBACK, startTime: new Date().toISOString() },
+    });
+    expect(start.ok()).toBeTruthy();
+    const { runId, streamToken } = (await start.json()) as { runId: number; streamToken: string };
+
+    const testCase = { title: 'checkout completes', location: 'tests/no-vision.spec.ts:7:3', retries: 0 };
+    const uniqueError = `TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByTestId('no-vision-${Date.now()}')`;
+    const events = await request.post(`/api/test-runs/${runId}/events`, {
+      data: {
+        streamToken,
+        testCases: [{ type: 'complete', ...testCase, status: 'failed', duration: 5000, error: uniqueError }],
+      },
+    });
+    expect(events.ok()).toBeTruthy();
+
+    const upload = await request.post(`/api/test-runs/${runId}/case-files`, {
+      multipart: {
+        streamToken,
+        testCase: JSON.stringify(testCase),
+        attach_meta: JSON.stringify([{ name: 'screenshot', contentType: 'image/png', originalName: 'failure.png' }]),
+        attach_file: { name: 'failure.png', mimeType: 'image/png', buffer: PNG_1X1 },
+      },
+    });
+    expect(upload.ok()).toBeTruthy();
+
+    const finish = await request.post(`/api/test-runs/${runId}/finish`, {
+      data: { streamToken, status: 'failed', duration: 5000 },
+    });
+    expect(finish.ok()).toBeTruthy();
+
+    const run = (await (await request.get(`/api/test-runs/${runId}`)).json()) as {
+      testCases: Array<{ status: string; failureClusterId?: number }>;
+    };
+    const clusterId = run.testCases.find((c) => c.status === 'failed')?.failureClusterId;
+    expect(clusterId).toBeTruthy();
+
+    // The screenshot is in the context, so the first provider call carries it.
+    const ctx = (await (await request.get(`/api/failure-clusters/${clusterId}/context?format=json`)).json()) as {
+      imageTokenEstimate: number;
+      sections: Array<{ id: string; markdown: string }>;
+    };
+    expect(ctx.imageTokenEstimate).toBeGreaterThan(0);
+    // The image is titled with the attachment name, not with its content type.
+    expect(ctx.sections.find((s) => s.id === 'screenshots')?.markdown).toContain('![screenshot]');
+
+    const res = await request.post(`/api/failure-clusters/${clusterId}/diagnose`);
+    expect(res.ok()).toBeTruthy();
+    const diagnosis = await res.json();
+    expect(diagnosis.status).toBe('completed');
+    expect(diagnosis.category).toBe('app-bug');
+    expect(mock.imageAttempts()).toBe(1);
   });
 });
 
@@ -724,16 +947,22 @@ test.describe.serial('Cluster reconciliation, suggestions & naming', () => {
       },
     });
     expect(r.ok()).toBeTruthy();
-    return r.json() as Promise<{ testRunId: number; projectId: number }>;
+    return r.json() as Promise<{ runId: number; projectId: number }>;
   }
 
   const err = (selector: string, embvec: string, extra = '') =>
     `TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for ${selector}\nEMBVEC=${embvec}\n${extra}`;
 
   const clustersOf = (request: APIRequestContext, projectId: number) =>
-    request.get(`/api/projects/${projectId}/failure-clusters`).then((r) => r.json()) as Promise<any[]>;
+    request
+      .get(`/api/projects/${projectId}/failure-clusters`)
+      .then((r) => r.json())
+      .then((j) => j.items) as Promise<any[]>;
   const suggestionsOf = (request: APIRequestContext, projectId: number) =>
-    request.get(`/api/projects/${projectId}/cluster-merge-suggestions`).then((r) => r.json()) as Promise<any[]>;
+    request
+      .get(`/api/projects/${projectId}/cluster-merge-suggestions`)
+      .then((r) => r.json())
+      .then((j) => j.items) as Promise<any[]>;
 
   test('auto-merges embedding near-duplicates', async ({ request }) => {
     await configureAi(request, { embedding: true, autoDiagnose: false });
@@ -848,7 +1077,7 @@ test.describe.serial('Cluster reconciliation, suggestions & naming', () => {
 test.describe('Execution-scope diagnosis context', () => {
   test('GET /api/test-run-cases/:id/diagnosis-context builds a non-trivial context', async ({ request }) => {
     const uniqueError = `Error: expect(locator).toBeVisible() failed\n  locator: getByRole('button', { name: 'Pay' }) (${Date.now()})`;
-    const { testRunId } = await submitRun(request, [
+    const { runId } = await submitRun(request, [
       {
         title: 'checkout flow',
         status: 'failed',
@@ -858,16 +1087,16 @@ test.describe('Execution-scope diagnosis context', () => {
       },
     ]);
 
-    const runData = (await (await request.get(`/api/test-runs/${testRunId}`)).json()) as {
-      testCases: Array<{ id: number; status: string }>;
+    const runData = (await (await request.get(`/api/test-runs/${runId}`)).json()) as {
+      testCases: Array<{ executionId: number; status: string }>;
     };
     const failed = runData.testCases.find((c) => c.status === 'failed');
-    expect(failed?.id).toBeTruthy();
+    expect(failed?.executionId).toBeTruthy();
 
-    const res = await request.get(`/api/test-run-cases/${failed!.id}/diagnosis-context?format=json`);
+    const res = await request.get(`/api/test-run-cases/${failed!.executionId}/diagnosis-context?format=json`);
     expect(res.ok()).toBeTruthy();
     const body = (await res.json()) as {
-      scope: { kind: string; testRunsCaseId: number };
+      scope: { kind: string; executionId: number };
       sections: Array<{ id: string; markdown: string }>;
       text: string;
       tokenEstimate: number;
@@ -876,7 +1105,7 @@ test.describe('Execution-scope diagnosis context', () => {
     // Before 0.1 the execution branch returned only a Data Coverage block with
     // every section "absent" — assert we now get real evidence.
     expect(body.scope.kind).toBe('execution');
-    expect(body.scope.testRunsCaseId).toBe(failed!.id);
+    expect(body.scope.executionId).toBe(failed!.executionId);
     expect(body.sections.length).toBeGreaterThanOrEqual(3);
     expect(body.sections.map((s) => s.id)).toContain('representativeExecution');
     // The failing error must reach the context (somewhere), not be dropped.

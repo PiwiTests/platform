@@ -1,4 +1,3 @@
-import { isAuthEnabled } from '../auth';
 import { matchAndEnqueue } from './match';
 import { sweepOutbox } from './dispatch';
 import { runEventBus } from '../run-events';
@@ -11,18 +10,31 @@ import type { LibSQLDatabase } from 'drizzle-orm/libsql';
  * kick the sweeper for realtime deliveries (email/Slack/webhook).
  *
  * The SSE bus publishes regardless of auth — when auth is off, client-side
- * cookie preferences gate which events trigger browser notifications.
- * The outbox path (email/Slack/webhook) requires auth.
+ * cookie preferences gate which events trigger browser notifications. The
+ * outbox path works in both modes: with auth off every channel and
+ * subscription is global (userId null), so no per-user access check applies.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function emitNotification(
   db: LibSQLDatabase<any>,
   event: NotificationEvent,
   payload: NotificationPayload,
+  opts?: {
+    /**
+     * Deliver the browser (SSE) notification to this user even when they have no
+     * matching subscription — per-user targeting for events addressed at one
+     * person, such as the author of a fix. Normal subscription routing is
+     * unaffected: other subscribers still receive the event, and the outbox
+     * (email/Slack/webhook) is untouched by this flag.
+     */
+    targetUserId?: number;
+  },
 ): Promise<void> {
-  runEventBus.publishNotification({ type: event, ...payload });
-
-  if (!isAuthEnabled()) return; // outbox path requires auth for user identity
+  runEventBus.publishNotification({
+    type: event,
+    ...payload,
+    ...(opts?.targetUserId != null ? { targetUserId: opts.targetUserId } : {}),
+  });
 
   try {
     const enqueued = await matchAndEnqueue(db, event, payload);

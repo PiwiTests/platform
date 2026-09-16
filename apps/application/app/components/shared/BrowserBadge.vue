@@ -45,7 +45,9 @@ const tooltipText = computed(() => {
 
 <template>
   <UTooltip v-if="name" :text="tooltipText" :popper="{ placement: 'top' }">
-    <UIcon :name="icon" class="shrink-0 cursor-help" :class="iconSizeClass" :style="{ color: hexColor }" />
+    <span class="shrink-0 cursor-help inline-flex" role="img" :aria-label="name">
+      <UIcon :name="icon" :class="iconSizeClass" :style="{ color: hexColor }" />
+    </span>
   </UTooltip>
   <span v-else class="text-xs text-gray-400 dark:text-gray-500 italic">—</span>
 </template>

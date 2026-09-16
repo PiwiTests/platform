@@ -9,12 +9,12 @@
 export default defineEventHandler((event) => {
   const token = process.env.PIWI_DESKTOP_TOKEN;
   if (!token) {
-    throw createError({ statusCode: 404, statusMessage: 'Not found' });
+    throw apiError({ statusCode: 404, statusMessage: 'Not found' });
   }
 
   const provided = getQuery(event).token;
   if (provided !== token) {
-    throw createError({ statusCode: 403, statusMessage: 'Invalid desktop token' });
+    throw apiError({ statusCode: 403, statusMessage: 'Invalid desktop token' });
   }
 
   setCookie(event, 'piwi_token', token, {

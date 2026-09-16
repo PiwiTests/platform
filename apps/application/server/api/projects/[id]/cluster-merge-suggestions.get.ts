@@ -8,7 +8,16 @@ defineRouteMeta({
     summary: 'List cluster merge suggestions for a project',
     description:
       'Returns pending (or filtered) merge suggestions surfaced by the embedding reconciler / LLM adjudicator, each joined with both clusters’ summaries.',
-    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    parameters: [
+      { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
+      {
+        name: 'status',
+        in: 'query',
+        required: false,
+        schema: { type: 'string', default: 'pending' },
+        description: 'Filter suggestions by status (default "pending").',
+      },
+    ],
     'x-required-roles': ['administrator', 'reporter', 'user'],
   },
 });
@@ -20,5 +29,5 @@ export default eventHandler(async (event) => {
   await requireProjectAccess(event, projectId);
 
   const db = await getDatabase();
-  return listMergeSuggestions(db, projectId, status);
+  return { items: await listMergeSuggestions(db, projectId, status) };
 });

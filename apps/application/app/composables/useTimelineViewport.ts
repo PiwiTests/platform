@@ -18,7 +18,8 @@ interface TimelineViewportOptions {
 
 /** Multiplier applied per wheel notch — multiplicative so zooming feels uniform at every level. */
 const WHEEL_ZOOM_FACTOR = 1.12;
-const MAX_ZOOM = 10;
+/** Deep enough to read individual steps once a test row is expanded. */
+const MAX_ZOOM = 40;
 
 /** Tick spacing aims for roughly this many pixels between axis labels. */
 const TICK_TARGET_PX = 100;
@@ -196,6 +197,22 @@ export function useTimelineViewport(opts: TimelineViewportOptions) {
     applyFitZoom();
   }
 
+  /**
+   * Frame a time range (ms, in the model's coordinate space) so it fills most of
+   * the viewport, clamped to the zoom bounds. Used to jump to a test's own span
+   * when its step waterfall is expanded, since at run-fit zoom the steps are
+   * sub-pixel.
+   */
+  function zoomToRange(startMs: number, endMs: number): void {
+    const cw = containerRef.value?.clientWidth;
+    if (!cw || endMs <= startMs) return;
+    const targetPxPerMs = ((cw - labelWidth) * 0.82) / (endMs - startMs);
+    const newZoom = Math.max(computeFitZoom(), Math.min(MAX_ZOOM, targetPxPerMs / 0.5));
+    zoom.value = newZoom;
+    const centerPx = ((startMs + endMs) / 2) * (0.5 * newZoom) + labelWidth;
+    panX.value = clampPanX(cw / 2 - centerPx);
+  }
+
   let resizeObserver: ResizeObserver | null = null;
   onMounted(() => {
     nextTick(applyFitZoom);
@@ -234,5 +251,6 @@ export function useTimelineViewport(opts: TimelineViewportOptions) {
     onPointerMove,
     onPointerUp,
     resetView,
+    zoomToRange,
   };
 }

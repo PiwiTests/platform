@@ -8,18 +8,31 @@
 import { and, eq, desc } from 'drizzle-orm';
 import { testRuns, testRunsCases } from '../database/schema';
 import { buildEnvironmentSnapshot, computeEnvironmentDiff, type EnvironmentDiffEntry } from '#shared/environment-diff';
+import { baselineEnvironmentNote, rankBaselineCandidates } from '#shared/baseline-order';
+import { resolveRunBranch } from './run-branch';
 import type { BrowserConfig } from '#shared/types';
 import type { DrizzleDB } from '#shared/handlers/db';
+
+/** Passing executions inspected when choosing the baseline. */
+const BASELINE_CANDIDATES = 20;
 
 export interface EnvironmentDiffResult {
   status: 'ok' | 'no-baseline' | 'not-found';
   /** The passing execution the failing one was compared against. */
   baseline?: {
     runId: number;
-    testRunsCaseId: number;
+    executionId: number;
     /** Run start time (epoch ms) — null when the run has no start time. */
     startTime: number | null;
+    /** Environment label of the baseline run. */
+    environment: string | null;
   };
+  /**
+   * Set when no passing execution from the failing run's environment exists and
+   * the baseline came from another one — the environment label is then left
+   * out of `entries`, since the choice, not the app, put it there.
+   */
+  baselineNote?: string | null;
   /** Changed keys only; empty array means "environment identical to last pass". */
   entries?: EnvironmentDiffEntry[];
 }
@@ -29,7 +42,7 @@ interface RunMetadataLens {
   ci?: { provider?: string | null } | null;
 }
 
-function loadExecutionEnvironment(db: DrizzleDB, where: ReturnType<typeof and>) {
+function selectExecutionEnvironment(db: DrizzleDB, where: ReturnType<typeof and>) {
   return db
     .select({
       id: testRunsCases.id,
@@ -44,16 +57,25 @@ function loadExecutionEnvironment(db: DrizzleDB, where: ReturnType<typeof and>) 
       playwrightVersion: testRuns.playwrightVersion,
       reporterVersion: testRuns.reporterVersion,
       startTime: testRuns.startTime,
+      runBranch: testRuns.branch,
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
     .where(where)
-    .orderBy(desc(testRuns.startTime), desc(testRunsCases.id))
+    .orderBy(desc(testRuns.startTime), desc(testRunsCases.id));
+}
+
+function loadExecutionEnvironment(db: DrizzleDB, where: ReturnType<typeof and>) {
+  return selectExecutionEnvironment(db, where)
     .limit(1)
     .then((rows) => rows[0] ?? null);
 }
 
 type ExecutionEnvironmentRow = NonNullable<Awaited<ReturnType<typeof loadExecutionEnvironment>>>;
+
+function scopeOf(row: ExecutionEnvironmentRow) {
+  return { environment: row.runEnvironment ?? null, branch: row.runBranch ?? resolveRunBranch(row.runMetadata) };
+}
 
 function toSnapshot(row: ExecutionEnvironmentRow) {
   const meta = (row.runMetadata as RunMetadataLens | null) ?? null;
@@ -71,8 +93,11 @@ function toSnapshot(row: ExecutionEnvironmentRow) {
 
 /**
  * Diff one execution's environment against the same test's last passing
- * execution (pinned to the same browser when known, so a chromium failure is
- * never compared against a webkit pass).
+ * execution — pinned to the same browser when known (a chromium failure is
+ * never compared against a webkit pass), preferring the same environment, then
+ * the same branch, then the most recent. When the baseline had to come from
+ * another environment, `baselineNote` says so and the environment label is not
+ * reported as a change.
  */
 export async function getEnvironmentDiff(db: DrizzleDB, testRunsCaseId: number): Promise<EnvironmentDiffResult> {
   const failing = await loadExecutionEnvironment(db, and(eq(testRunsCases.id, testRunsCaseId)));
@@ -81,16 +106,28 @@ export async function getEnvironmentDiff(db: DrizzleDB, testRunsCaseId: number):
   const baselineConds = [eq(testRunsCases.testCaseId, failing.testCaseId), eq(testRunsCases.status, 'passed')];
   if (failing.browserName) baselineConds.push(eq(testRunsCases.browserName, failing.browserName));
 
-  const baseline = await loadExecutionEnvironment(db, and(...baselineConds));
+  const candidates = await selectExecutionEnvironment(db, and(...baselineConds)).limit(BASELINE_CANDIDATES);
+  const failingScope = scopeOf(failing);
+  const baseline = rankBaselineCandidates(
+    failingScope,
+    candidates.map((row) => ({ ...scopeOf(row), row })),
+  )[0]?.row;
   if (!baseline) return { status: 'no-baseline' };
+
+  const baselineNote = baselineEnvironmentNote(failingScope, scopeOf(baseline));
+  const entries = computeEnvironmentDiff(toSnapshot(failing), toSnapshot(baseline)).filter(
+    (entry) => !(baselineNote && entry.key === 'environment'),
+  );
 
   return {
     status: 'ok',
     baseline: {
       runId: baseline.runId,
-      testRunsCaseId: baseline.id,
+      executionId: baseline.id,
       startTime: baseline.startTime instanceof Date ? baseline.startTime.getTime() : (baseline.startTime ?? null),
+      environment: baseline.runEnvironment ?? null,
     },
-    entries: computeEnvironmentDiff(toSnapshot(failing), toSnapshot(baseline)),
+    baselineNote,
+    entries,
   };
 }

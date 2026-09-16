@@ -10,11 +10,14 @@
  */
 import type { ParsedTraceData, TraceAction } from './trace-events';
 import { maskSensitiveText } from './dom-snapshot-render';
+import { diffAriaSnapshots } from '#shared/page-diff';
 import type {
   TraceBodyResponse,
   TraceCallStackResponse,
   TraceNetworkEntry,
   TraceNetworkResponse,
+  TraceSnapshotsResponse,
+  TraceSnapshotStep,
   TraceStackFrame,
 } from '../../types/api';
 
@@ -123,17 +126,7 @@ export async function buildTraceCallStack(
   // under that root gets a repo-relative display path and counts as
   // in-project (dependency dirs excepted).
   const known = normalizeSlashes(options.knownTestFilePath ?? '').replace(/^\.\//, '');
-  let root: string | null = null;
-  if (known) {
-    for (const file of stacks.files) {
-      const norm = normalizeSlashes(file);
-      if (norm === known) break; // already relative — nothing to strip
-      if (norm.endsWith(`/${known}`)) {
-        root = norm.slice(0, norm.length - known.length);
-        break;
-      }
-    }
-  }
+  const root = deriveProjectRoot(stacks.files, known);
 
   // Read each distinct file's embedded source once.
   const sourceByFile = new Map<string, string[] | null>();
@@ -148,19 +141,7 @@ export async function buildTraceCallStack(
   for (const [fileIdx, line, column, functionName] of kept) {
     const absPath = stacks.files[fileIdx];
     if (absPath === undefined) continue;
-    const norm = normalizeSlashes(absPath);
-    let display: string;
-    let inProject: boolean;
-    if (root && norm.startsWith(root)) {
-      display = norm.slice(root.length);
-      inProject = !display.includes('node_modules/');
-    } else if (norm === known && known) {
-      display = norm;
-      inProject = true;
-    } else {
-      display = shortenPath(norm);
-      inProject = !norm.includes('node_modules/') && !root;
-    }
+    const { file: display, inProject, absFile } = displayPathOf(absPath, root, known);
 
     const allLines = sourceByFile.get(absPath) ?? null;
     let source: TraceStackFrame['source'] = null;
@@ -172,7 +153,7 @@ export async function buildTraceCallStack(
 
     frames.push({
       file: display,
-      absFile: norm === display ? undefined : norm,
+      absFile,
       line,
       column,
       functionName,
@@ -189,6 +170,84 @@ export async function buildTraceCallStack(
     apiName: action.apiName,
     errorMessage: action.error?.message?.slice(0, 500),
   };
+}
+
+/**
+ * The runner-side project root: the prefix of a stack file path that, stripped,
+ * leaves the reporter's project-relative spec path. Null when the paths are
+ * already relative or the spec file is not among them.
+ */
+function deriveProjectRoot(files: string[], known: string): string | null {
+  if (!known) return null;
+  for (const file of files) {
+    const norm = normalizeSlashes(file);
+    if (norm === known) return null; // already relative — nothing to strip
+    if (norm.endsWith(`/${known}`)) return norm.slice(0, norm.length - known.length);
+  }
+  return null;
+}
+
+/** A stack file's repo-relative display path and whether it counts as in-project. */
+function displayPathOf(
+  absPath: string,
+  root: string | null,
+  known: string,
+): { file: string; inProject: boolean; absFile: string | undefined } {
+  const norm = normalizeSlashes(absPath);
+  let display: string;
+  let inProject: boolean;
+  if (root && norm.startsWith(root)) {
+    display = norm.slice(root.length);
+    inProject = !display.includes('node_modules/');
+  } else if (norm === known && known) {
+    display = norm;
+    inProject = true;
+  } else {
+    display = shortenPath(norm);
+    inProject = !norm.includes('node_modules/') && !root;
+  }
+  return { file: display, inProject, absFile: norm === display ? undefined : norm };
+}
+
+/** One trace action's call site: the innermost in-project frame plus every frame. */
+export interface ActionCallsite {
+  /** `file:line` of the innermost in-project frame — matches the reporter's step location. */
+  location: string;
+  frames: Array<{ file: string; line: number; function: string | null; inProject: boolean }>;
+}
+
+/**
+ * The call stack of every action that has one, as lightweight display frames
+ * (no source windows), for correlating steps with the code that called them on
+ * the failure timeline. Reads only the stacks index already parsed from the
+ * trace — no extra ZIP access. The `location` is the innermost in-project
+ * frame's `file:line`, which is what the reporter records as a step's call site.
+ */
+export function buildActionCallsites(
+  parsed: ParsedTraceData | null,
+  stacks: TraceStacksIndex | null,
+  options: { knownTestFilePath?: string | null } = {},
+): ActionCallsite[] {
+  if (!parsed || !stacks || stacks.byCallId.size === 0) return [];
+  const known = normalizeSlashes(options.knownTestFilePath ?? '').replace(/^\.\//, '');
+  const root = deriveProjectRoot(stacks.files, known);
+
+  const result: ActionCallsite[] = [];
+  for (const action of parsed.actions) {
+    const raw = stacks.byCallId.get(action.callId);
+    if (!raw?.length) continue;
+    const frames: ActionCallsite['frames'] = [];
+    for (const [fileIdx, line, , functionName] of raw) {
+      const absPath = stacks.files[fileIdx];
+      if (absPath === undefined) continue;
+      const { file, inProject } = displayPathOf(absPath, root, known);
+      frames.push({ file, line, function: functionName ?? null, inProject });
+    }
+    if (frames.length === 0) continue;
+    const anchor = frames.find((f) => f.inProject) ?? frames[0]!;
+    result.push({ location: `${anchor.file}:${anchor.line}`, frames });
+  }
+  return result;
 }
 
 /** The failing action's stack, else the nearest preceding action that has one. */
@@ -443,7 +502,7 @@ function nonNegative(value: number | undefined): number | undefined {
   return typeof value === 'number' && value >= 0 ? value : undefined;
 }
 
-function inferResourceType(mimeType: string | undefined): string | undefined {
+export function inferResourceType(mimeType: string | undefined): string | undefined {
   if (!mimeType) return undefined;
   if (mimeType.includes('html')) return 'document';
   if (mimeType.includes('json')) return 'fetch';
@@ -474,6 +533,135 @@ export function matchNetworkBodySha1(
       if (sha1 === requested || sha1.split('.')[0] === requested.split('.')[0]) {
         return { name: sha1, mimeType: carrier?.mimeType };
       }
+    }
+  }
+  return null;
+}
+
+/** Whether an action carries any aria or screen snapshot (either phase). */
+function actionHasSnapshot(a: TraceAction): boolean {
+  return !!(a.ariaSnapshotBefore || a.ariaSnapshotAfter || a.screenshotBefore || a.screenshotAfter);
+}
+
+/** The trace-relative file recorded for one action's snapshot phase, or null. */
+export function resolveSnapshotFile(
+  parsed: ParsedTraceData | null,
+  callId: string,
+  kind: 'aria' | 'screen',
+  phase: 'before' | 'after',
+): string | null {
+  const action = parsed?.actions.find((a) => a.callId === callId);
+  if (!action) return null;
+  if (kind === 'aria') return (phase === 'before' ? action.ariaSnapshotBefore : action.ariaSnapshotAfter) ?? null;
+  return (phase === 'before' ? action.screenshotBefore : action.screenshotAfter) ?? null;
+}
+
+/**
+ * The snapshotted action the failure belongs to: the failing action itself when
+ * it carries a snapshot, otherwise the last snapshotted action (an assertion
+ * failure keys the error to a runner step that carries none, while the page
+ * interactions that led there do). Its callId marks the failing step.
+ */
+function failureSnapshotCallId(parsed: ParsedTraceData): string | null {
+  const snapshotted = parsed.actions.filter(actionHasSnapshot);
+  if (snapshotted.length === 0) return null;
+  const failing = parsed.failingAction;
+  if (failing && snapshotted.some((a) => a.callId === failing.callId)) return failing.callId;
+  return snapshotted[snapshotted.length - 1]!.callId;
+}
+
+/**
+ * Build the per-action aria / screen snapshot inventory and the in-execution
+ * page diff from a parsed trace. `readAriaText` returns the text form of an
+ * `aria/*.json` file (via `ariaJsonToText`). Node-free, so the server and the
+ * demo produce the same answer.
+ */
+export function buildTraceSnapshots(
+  parsed: ParsedTraceData | null,
+  readAriaText: (file: string) => string | null,
+): TraceSnapshotsResponse {
+  if (!parsed) return { status: 'no-trace', steps: [], failingCallId: null, hasAria: false, hasScreen: false };
+
+  const failingCallId = failureSnapshotCallId(parsed);
+  const steps: TraceSnapshotStep[] = parsed.actions.filter(actionHasSnapshot).map((a, i) => ({
+    callId: a.callId,
+    index: i,
+    title: a.apiName || a.method || 'step',
+    failed: a.callId === failingCallId,
+    startTime: a.startTime,
+    aria: { before: !!a.ariaSnapshotBefore, after: !!a.ariaSnapshotAfter },
+    screen: { before: !!a.screenshotBefore, after: !!a.screenshotAfter },
+  }));
+
+  if (steps.length === 0) return { status: 'no-snapshots', steps: [], failingCallId, hasAria: false, hasScreen: false };
+
+  const hasAria = steps.some((s) => s.aria.before || s.aria.after);
+  const hasScreen = steps.some((s) => s.screen.before || s.screen.after);
+  return {
+    status: 'ok',
+    steps,
+    failingCallId,
+    hasAria,
+    hasScreen,
+    pageDiff: pageDiffToFailure(parsed, failingCallId, readAriaText),
+    failingAriaText: failingActionAriaText(parsed, failingCallId, readAriaText),
+  };
+}
+
+/** Longest failing-step aria tree kept in the response; a larger one is capped. */
+const FAILING_ARIA_MAX_CHARS = 20_000;
+
+/**
+ * The accessibility tree of the page *at the failing step*, as ARIA text — the
+ * failing action's after-phase snapshot when it recorded one, else its
+ * before-phase. This is the page state the timeline surfaces on the step that
+ * raised the error. Null when the failing step recorded no aria snapshot.
+ */
+function failingActionAriaText(
+  parsed: ParsedTraceData,
+  failingCallId: string | null,
+  readAriaText: (file: string) => string | null,
+): string | null {
+  if (!failingCallId) return null;
+  const action = parsed.actions.find((a) => a.callId === failingCallId);
+  const file = action?.ariaSnapshotAfter ?? action?.ariaSnapshotBefore;
+  if (!file) return null;
+  const text = readAriaText(file);
+  if (text == null) return null;
+  return text.length > FAILING_ARIA_MAX_CHARS ? `${text.slice(0, FAILING_ARIA_MAX_CHARS)}\n# … (truncated)` : text;
+}
+
+/**
+ * Diff the page *at the failure* against the last preceding page that differs
+ * from it. The failure page is the failing step's latest aria tree; the baseline
+ * walks back through the earlier snapshots so the diff isolates the change that
+ * led to the failure (the button that got disabled, the row that vanished)
+ * rather than every action in between. Null when nothing before it differed.
+ */
+function pageDiffToFailure(
+  parsed: ParsedTraceData,
+  failingCallId: string | null,
+  readAriaText: (file: string) => string | null,
+): TraceSnapshotsResponse['pageDiff'] {
+  // Every aria snapshot in trace order — before then after per action.
+  const timeline: string[] = [];
+  for (const a of parsed.actions) {
+    if (a.ariaSnapshotBefore) timeline.push(a.ariaSnapshotBefore);
+    if (a.ariaSnapshotAfter) timeline.push(a.ariaSnapshotAfter);
+  }
+  if (timeline.length < 2) return null;
+
+  const failing = failingCallId ? parsed.actions.find((a) => a.callId === failingCallId) : null;
+  const failFile = failing?.ariaSnapshotAfter ?? failing?.ariaSnapshotBefore ?? timeline[timeline.length - 1]!;
+  const failIndex = timeline.lastIndexOf(failFile);
+  const afterText = readAriaText(failFile);
+  if (afterText == null) return null;
+
+  for (let i = failIndex - 1; i >= 0; i--) {
+    const beforeText = readAriaText(timeline[i]!);
+    if (beforeText != null && beforeText !== afterText) {
+      const { summary, hunks } = diffAriaSnapshots(beforeText, afterText);
+      return { summary, hunks };
     }
   }
   return null;

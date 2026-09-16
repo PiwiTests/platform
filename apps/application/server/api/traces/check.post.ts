@@ -23,10 +23,10 @@ export default eventHandler(async (event) => {
   const hashes = body?.hashes as unknown[] | undefined;
 
   if (!projectName || typeof projectName !== 'string') {
-    throw createError({ statusCode: 400, message: 'Missing projectName' });
+    throw apiError({ statusCode: 400, message: 'Missing projectName' });
   }
   if (!Array.isArray(hashes)) {
-    throw createError({ statusCode: 400, message: 'hashes must be an array' });
+    throw apiError({ statusCode: 400, message: 'hashes must be an array' });
   }
 
   // Validate: only accept well-formed SHA-256 hex strings

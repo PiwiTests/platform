@@ -1,51 +1,60 @@
 <script setup lang="ts">
 /**
- * Desktop shell only: manage the folder on this machine linked to a project.
- * The link powers "run locally" retries and resolves "Open in IDE" paths
- * without manual workspace-root configuration. Renders nothing without the
- * IPC bridge, so the project page can mount it unconditionally.
+ * Desktop shell only: the folder on this machine linked to this project, shown
+ * on the project page as status — the link powers "run locally" and IDE links.
+ * Managing the link (choose, change, unlink) lives with the rest of the
+ * project settings on the edit page; this card only reports and points there.
+ * Renders nothing without the IPC bridge, so the page mounts it unconditionally.
  */
+import type { DesktopFolderInspection } from '~/composables/useDesktopFolderInspect';
+
 const props = defineProps<{ projectId: string | number }>();
 
-const { available, link, busy, pickAndLink, unlink } = useDesktopProjectLink(() => props.projectId);
+const { available, link } = useDesktopProjectLink(() => props.projectId);
+
+const inspection = ref<DesktopFolderInspection | null>(null);
+
+watch(
+  () => link.value?.path,
+  async (path) => {
+    inspection.value = path && link.value?.exists ? await inspectDesktopFolder(path) : null;
+  },
+  { immediate: true },
+);
+
+const ready = computed(() => isFolderPiwiReady(inspection.value));
 </script>
 
 <template>
-  <SectionCard v-if="available" icon="i-lucide-folder-symlink" title="Local folder">
-    <template #subtitle>
-      Link this project to its checkout on this machine to retry failures from here and open files in your IDE.
-    </template>
-
-    <div v-if="link" class="flex items-center justify-between gap-3">
+  <!-- shrink-0: the project page body is a flex column, which would otherwise squash this card -->
+  <UCard v-if="available" class="shrink-0" :ui="{ body: 'p-3 sm:p-3' }">
+    <div class="flex flex-wrap items-center justify-between gap-3">
       <div class="flex items-center gap-2 min-w-0 text-sm">
         <UIcon
-          :name="link.exists ? 'i-lucide-folder-check' : 'i-lucide-folder-x'"
+          :name="link ? (link.exists ? 'i-lucide-folder-check' : 'i-lucide-folder-x') : 'i-lucide-folder-symlink'"
           class="size-4 shrink-0"
-          :class="link.exists ? 'text-success' : 'text-warning'"
+          :class="link ? (link.exists ? 'text-success' : 'text-warning') : 'text-muted'"
         />
-        <code class="text-xs break-all">{{ link.path }}</code>
-        <UBadge v-if="!link.exists" color="warning" variant="subtle" size="sm">missing</UBadge>
+        <template v-if="link">
+          <code class="text-xs break-all">{{ link.path }}</code>
+          <UBadge v-if="!link.exists" color="warning" variant="subtle" size="sm">missing</UBadge>
+          <UBadge v-else-if="ready" color="success" variant="subtle" size="sm">ready</UBadge>
+          <UBadge v-else-if="inspection" color="warning" variant="subtle" size="sm">needs setup</UBadge>
+        </template>
+        <span v-else class="text-muted">
+          No local folder linked — link this project’s checkout to run tests from here and open files in your IDE.
+        </span>
       </div>
-      <div class="flex items-center gap-1.5 shrink-0">
-        <UButton
-          size="xs"
-          color="neutral"
-          variant="soft"
-          icon="i-lucide-folder-search"
-          :loading="busy"
-          @click="pickAndLink"
-        >
-          Change
-        </UButton>
-        <UButton size="xs" color="neutral" variant="ghost" icon="i-lucide-unlink" :disabled="busy" @click="unlink">
-          Unlink
-        </UButton>
-      </div>
+      <UButton
+        size="xs"
+        color="neutral"
+        variant="soft"
+        :icon="link ? 'i-lucide-settings-2' : 'i-lucide-folder-plus'"
+        :to="`/projects/${projectId}/edit#local-folder`"
+        :title="link ? 'Manage the linked folder in project settings' : 'Link a folder in project settings'"
+      >
+        {{ link ? 'Manage' : 'Link folder' }}
+      </UButton>
     </div>
-
-    <div v-else class="flex items-center justify-between gap-3">
-      <p class="text-sm text-muted">No folder linked yet.</p>
-      <UButton size="xs" icon="i-lucide-folder-plus" :loading="busy" @click="pickAndLink">Choose folder…</UButton>
-    </div>
-  </SectionCard>
+  </UCard>
 </template>

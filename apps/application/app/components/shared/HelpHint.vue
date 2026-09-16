@@ -82,7 +82,7 @@ const contentAttrs = computed(() => ({ side: 'bottom' as const, 'aria-label': ar
       </div>
       <div v-if="doc || envVars?.length" class="mt-2 flex flex-col gap-1">
         <DocLink v-if="doc" :to="doc">Learn more</DocLink>
-        <DocLink v-if="envVars?.length" to="configuration">Configuration reference</DocLink>
+        <DocLink v-if="envVars?.length" to="reference/configuration">Configuration reference</DocLink>
       </div>
     </template>
   </UPopover>

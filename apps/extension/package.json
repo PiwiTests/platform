@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/extension",
-  "version": "0.24.0",
+  "version": "0.32.0",
   "description": "Piwi Picker — a browser extension for ranked, stable Playwright locators, picked from the live page",
   "private": true,
   "type": "module",
@@ -23,7 +23,7 @@
     "@piwitests/picker-dom": "*"
   },
   "devDependencies": {
-    "@playwright/test": "^1.61.1",
+    "@playwright/test": "^1.63.0",
     "@types/chrome": "^0.1.43",
     "archiver": "^7.0.1",
     "vite": "^8.0.16"

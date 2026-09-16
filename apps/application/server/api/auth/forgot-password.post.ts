@@ -3,7 +3,7 @@ import { getDatabase } from '../../database';
 import { users } from '../../database/schema';
 import { mintAccountToken } from '../../utils/account-tokens';
 import { isEmailConfigured, sendEmail, renderPasswordResetEmail } from '../../utils/email';
-import { checkRateLimit } from '../../utils/rate-limit';
+import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../utils/rate-limit';
 import { z } from 'zod';
 
 defineRouteMeta({
@@ -20,9 +20,9 @@ defineRouteMeta({
 const schema = z.object({ email: z.string().email() });
 
 export default eventHandler(async (event) => {
-  const ip = getRequestIP(event) ?? 'unknown';
-  if (!checkRateLimit(`forgot:${ip}`, 5, 15 * 60 * 1000)) {
-    throw createError({ statusCode: 429, message: 'Too many requests. Please wait before trying again.' });
+  const rateKey = `forgot:${rateLimitClientIp(event)}`;
+  if (!checkRateLimit(rateKey, 5, 15 * 60 * 1000)) {
+    throw rateLimitedError(event, [rateKey]);
   }
 
   const body = await readBody(event);

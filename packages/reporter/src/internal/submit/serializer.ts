@@ -6,7 +6,10 @@ import type { RunPayload } from './uploader.js';
  * Resolve the overall Piwi run status from Playwright's `FullResult.status`
  * and the accumulated per-case counters.
  *
- * `passed`/`failed`/`timedout`/`interrupted` map directly; when Playwright
+ * `passed`/`failed`/`timedout`/`interrupted` map directly and are kept
+ * distinct — the dashboard treats all non-`passed` statuses as failing where
+ * it matters, but a timed-out run and an interrupted (cancelled/maxFailures)
+ * run read differently in the run list and the analytics. When Playwright
  * doesn't report a status, the run is `passed` only when no test failed or
  * timed out (and at least one test ran).
  */
@@ -17,8 +20,8 @@ export function resolveOverallStatus(
   const STATUS_MAP: Record<string, string> = {
     passed: 'passed',
     failed: 'failed',
-    timedout: 'failed',
-    interrupted: 'failed',
+    timedout: 'timedout',
+    interrupted: 'interrupted',
   };
   if (result?.status) return STATUS_MAP[result.status] ?? 'failed';
   if (counters.failedTests === 0 && counters.timedOutTests === 0 && counters.totalTests > 0) return 'passed';
@@ -49,6 +52,7 @@ export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
     timeout: rest.timeout ?? null,
     error: rest.error,
     retries: rest.retries,
+    attempts: rest.attempts || null,
     workerIndex: rest.workerIndex ?? null,
     shardIndex: rest.shardIndex ?? null,
     startedAt: rest.startedAt ?? null,
@@ -62,7 +66,9 @@ export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
     pageState: rest.pageState || null,
     aiUsage: rest.aiUsage || null,
     consoleLogs: rest.consoleLogs || null,
+    dialogs: rest.dialogs || null,
     ariaSnapshot: rest.ariaSnapshot || null,
+    ariaSnapshotJson: rest.ariaSnapshotJson || null,
     testSource: rest.testSource || null,
     testSourceFrames: rest.testSourceFrames || null,
     browser: rest.browser || null,
@@ -70,8 +76,11 @@ export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
     suiteConfig: rest.suiteConfig ?? null,
     testAnnotations: rest.testAnnotations ?? null,
     tags: rest.tags ?? null,
+    locks: rest.locks ?? null,
     testMeta: rest.testMeta ?? null,
     locatorSnapshots: rest.locatorSnapshots || null,
+    didNotRunReason: rest.didNotRunReason ?? null,
+    blockedBy: rest.blockedBy ?? null,
   };
 }
 

@@ -1,0 +1,180 @@
+/**
+ * The verdict on one failing execution: the one-line headline plus the facts
+ * the dashboard already stores about it — why it failed (a new regression, a
+ * retry pass, a flaky start, an infrastructure error), since when (the
+ * cluster's first failing run, the commit the run was on), which cluster it
+ * shares with how many other tests in the run, and who owns the test.
+ *
+ * Pure assembly over rows the caller has already loaded, so the server route,
+ * the demo mirror and the MCP tools build the same object.
+ */
+import { describeCluster, type DescribableCluster } from '#shared/describe-cluster';
+import {
+  describeFailureText,
+  failingStepParams,
+  lastStepTitle,
+  type FailureDescription,
+} from '#shared/describe-failure';
+import { parsePlaywrightError, type ParsedErrorKind } from '#shared/error-parse';
+
+export type FailureWhy = 'new-regression' | 'passed-on-retry' | 'new-flaky' | 'infrastructure';
+
+export interface FailureVerdictCommit {
+  sha: string;
+  shortSha: string;
+  author: string | null;
+  message: string | null;
+  branch: string | null;
+}
+
+export interface FailureVerdict extends FailureDescription {
+  kind: ParsedErrorKind;
+  /** The locator the error names, as Playwright code. */
+  locator: string | null;
+  isLocatorResolutionFailure: boolean;
+  why: FailureWhy | null;
+  since: {
+    /** The first run the cluster failed in; this run for an unclustered failure. */
+    firstFailingRunId: number;
+    firstFailingAt: string | Date | null;
+    /** True when this run is the first the failure was seen in. */
+    isFirstFailure: boolean;
+    /** The commit and author the run reported, when the reporter collected SCM metadata. */
+    commit: FailureVerdictCommit | null;
+    /**
+     * The earlier fix that did not hold — set when the execution's cluster
+     * carries a fix verification that later regressed. Null otherwise.
+     */
+    fixedBefore: {
+      commit: string | null;
+      commitShort: string | null;
+      runId: number | null;
+      at: string | Date | null;
+    } | null;
+  };
+  cluster: {
+    id: number;
+    /** The cluster's display name — its AI title when it has one, else the deterministic title. */
+    name: string;
+    /** How many other tests in this run share the cluster. */
+    otherTestsInRun: number;
+  } | null;
+  owner: { name: string; source: 'annotation' | 'codeowners' } | null;
+}
+
+/** The step list shape the headline needs: the failed (or last) step's title and params. */
+type StepLike = { title: string; failed?: boolean | null; params?: Record<string, string | number | boolean> | null };
+
+/**
+ * The headline for a stored execution: the parsed error, with the failed step's
+ * title feeding a test-timeout line and its params backing the locator where
+ * the error text names none. Null when the execution has no error.
+ */
+export function caseHeadline(row: { error?: string | null; steps?: unknown }): FailureDescription | null {
+  const steps = Array.isArray(row.steps) ? (row.steps as StepLike[]) : null;
+  return describeFailureText(row.error, {
+    lastStepTitle: lastStepTitle(steps),
+    stepParams: failingStepParams(steps),
+  });
+}
+
+export interface FailureVerdictInput {
+  error: string | null | undefined;
+  steps?: unknown;
+  status: string;
+  retries?: number | null;
+  /** Stored as 0/1 in SQLite, so numbers are accepted alongside booleans. */
+  isNewRegression?: boolean | number | null;
+  isNewFlaky?: boolean | number | null;
+  runId: number;
+  /** `metadata.scm` of the run, as the reporter recorded it. */
+  scm?: {
+    commit?: string | null;
+    branch?: string | null;
+    author?: string | null;
+    commitMessage?: string | null;
+  } | null;
+  cluster?:
+    | (DescribableCluster & {
+        id: number;
+        firstSeenRunId: number;
+        firstSeenAt?: string | Date | null;
+        sameRunCaseCount: number;
+        /** Fix-verification facts, so a regressed fix surfaces as `since.fixedBefore`. */
+        fixVerification?: string | null;
+        fixCommit?: string | null;
+        fixLandedRunId?: number | null;
+        fixLandedAt?: string | Date | null;
+      })
+    | null;
+  /** The test's `piwi:owner` annotation; CODEOWNERS is layered on by the server route. */
+  owner?: string | null;
+}
+
+/** Cluster error kinds that point at the environment rather than the test or the app. */
+const INFRASTRUCTURE_KINDS = new Set<ParsedErrorKind>(['crash', 'navigation']);
+
+function classifyWhy(input: FailureVerdictInput, kind: ParsedErrorKind): FailureWhy | null {
+  if (input.isNewRegression) return 'new-regression';
+  if (input.status === 'passed' && (input.retries ?? 0) > 0) return 'passed-on-retry';
+  if (input.isNewFlaky) return 'new-flaky';
+  if (
+    INFRASTRUCTURE_KINDS.has(kind) ||
+    input.cluster?.errorType === 'crash' ||
+    input.cluster?.errorType === 'navigation'
+  )
+    return 'infrastructure';
+  return null;
+}
+
+/** Build the verdict for an execution, or null when it carries no error. */
+export function buildFailureVerdict(input: FailureVerdictInput): FailureVerdict | null {
+  if (!input.error || !input.error.trim()) return null;
+  const steps = Array.isArray(input.steps) ? (input.steps as StepLike[]) : null;
+  const parsed = parsePlaywrightError(input.error, { stepParams: failingStepParams(steps) });
+  const description = caseHeadline({ error: input.error, steps: input.steps });
+  if (!description) return null;
+
+  const sha = input.scm?.commit?.trim() || null;
+  const cluster = input.cluster ?? null;
+
+  // A cluster whose recorded fix regressed carries the "fixed once before, the
+  // fix did not hold" fact; it belongs to the situation, not the clue list.
+  const fixSha = cluster?.fixCommit?.trim() || null;
+  const fixedBefore =
+    cluster && cluster.fixVerification === 'regressed' && (fixSha || cluster.fixLandedRunId != null)
+      ? {
+          commit: fixSha,
+          commitShort: fixSha ? fixSha.slice(0, 7) : null,
+          runId: cluster.fixLandedRunId ?? null,
+          at: cluster.fixLandedAt ?? null,
+        }
+      : null;
+
+  return {
+    ...description,
+    kind: parsed.kind,
+    locator: parsed.locator,
+    isLocatorResolutionFailure: parsed.isLocatorResolutionFailure,
+    why: classifyWhy(input, parsed.kind),
+    since: {
+      firstFailingRunId: cluster?.firstSeenRunId ?? input.runId,
+      firstFailingAt: cluster?.firstSeenAt ?? null,
+      isFirstFailure: (cluster?.firstSeenRunId ?? input.runId) === input.runId,
+      commit: sha
+        ? {
+            sha,
+            shortSha: sha.slice(0, 7),
+            author: input.scm?.author?.trim() || null,
+            message: input.scm?.commitMessage?.trim() || null,
+            branch: input.scm?.branch?.trim() || null,
+          }
+        : null,
+      fixedBefore,
+    },
+    cluster: cluster
+      ? { id: cluster.id, name: describeCluster(cluster), otherTestsInRun: Math.max(0, cluster.sameRunCaseCount - 1) }
+      : null,
+    owner: input.owner ? { name: input.owner, source: 'annotation' } : null,
+  };
+}

@@ -13,8 +13,11 @@ import { tmpdir } from 'os';
 import { rm, mkdir, readdir } from 'fs/promises';
 import { parseLocation } from '../../utils/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
+import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
 import { postRunPrFeedbackInBackground } from '../../utils/scm/pr-feedback';
+import { maybeEnqueueHealActionInBackground } from '../../utils/heal/policy';
 import { sanitizeMetadata } from '../../utils/sanitize';
+import { resolveRunBranch } from '../../utils/run-branch';
 import { runEventBus } from '../../utils/run-events';
 import { autoDiagnoseRun } from '../../utils/ai-diagnosis';
 import { computeRegressionSignals } from '../../utils/compute-regression-signals';
@@ -68,13 +71,13 @@ export default eventHandler(async (event) => {
   const maxUploadBytes = resolveMaxUploadBytes();
   const contentLength = parseInt(getRequestHeader(event, 'content-length') ?? '0', 10);
   if (contentLength > maxUploadBytes) {
-    throw createError({ statusCode: 413, message: `Upload too large (max ${formatBytes(maxUploadBytes)})` });
+    throw apiError({ statusCode: 413, message: `Upload too large (max ${formatBytes(maxUploadBytes)})` });
   }
 
   const formData = await readMultipartFormData(event);
 
   if (!formData) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'No form data provided',
     });
@@ -97,7 +100,7 @@ export default eventHandler(async (event) => {
   const attachmentFiles: Map<number, { originalName: string; data: Buffer }[]> = new Map();
 
   for (const part of formData) {
-    if (part.name === 'testRunId') {
+    if (part.name === 'runId') {
       const parsed = parseInt(part.data.toString('utf-8'), 10);
       if (!isNaN(parsed) && parsed > 0) existingTestRunId = parsed;
     } else if (part.name === 'projectName') {
@@ -106,7 +109,7 @@ export default eventHandler(async (event) => {
       try {
         testRunData = JSON.parse(part.data.toString('utf-8'));
       } catch {
-        throw createError({
+        throw apiError({
           statusCode: 400,
           message: 'Invalid JSON in testRun field',
         });
@@ -115,7 +118,7 @@ export default eventHandler(async (event) => {
       try {
         testCasesData = JSON.parse(part.data.toString('utf-8'));
       } catch {
-        throw createError({
+        throw apiError({
           statusCode: 400,
           message: 'Invalid JSON in testCases field',
         });
@@ -195,7 +198,7 @@ export default eventHandler(async (event) => {
 
   // Validate required fields
   if (!projectName || !testRunData) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'Missing required fields: projectName, testRun',
     });
@@ -214,12 +217,12 @@ export default eventHandler(async (event) => {
     const existingRunRows = await db.select().from(testRuns).where(eq(testRuns.id, existingTestRunId));
     const existingRun = existingRunRows[0];
     if (!existingRun) {
-      throw createError({ statusCode: 404, message: 'Existing test run not found' });
+      throw apiError({ statusCode: 404, message: 'Existing test run not found' });
     }
     const projectRows = await db.select().from(projects).where(eq(projects.id, existingRun.projectId));
     project = projectRows[0];
     if (!project || !scopeAllows(scope, project.id)) {
-      throw createError({ statusCode: 403, message: 'No access to this project' });
+      throw apiError({ statusCode: 403, message: 'No access to this project' });
     }
     attachingToExistingRun = true;
     existingRunStatus = existingRun.status;
@@ -232,11 +235,11 @@ export default eventHandler(async (event) => {
 
     if (project) {
       if (!scopeAllows(scope, project.id)) {
-        throw createError({ statusCode: 403, message: 'No access to this project' });
+        throw apiError({ statusCode: 403, message: 'No access to this project' });
       }
     } else {
       if (scope !== 'all') {
-        throw createError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
+        throw apiError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
       }
       const result = await db
         .insert(projects)
@@ -250,7 +253,7 @@ export default eventHandler(async (event) => {
   }
 
   if (!project) {
-    throw createError({
+    throw apiError({
       statusCode: 500,
       message: 'Failed to create or retrieve project',
     });
@@ -321,26 +324,24 @@ export default eventHandler(async (event) => {
     }
   }
 
-  // Store all reports and collect their metadata
+  // Store all reports and collect their metadata. Reports are processed one at a
+  // time — each `.gz` report is inflated fully into memory before being written
+  // to disk, so decompressing them in parallel would stack every report's peak
+  // at once. Each report buffer is dropped from the map as soon as it's stored.
   const storedReports: { type: string; label: string; path: string; size: number }[] = [];
 
-  const reportResults = await Promise.all(
-    [...reportFiles.entries()].map(async ([type, report]) => {
-      try {
-        console.log(`[Upload] Storing ${type} report: ${report.filename}`);
-        const { path: storedPath, size } = await storeReport(type, report);
-        const label = getReportLabel(type, report.label);
-        console.log(`[Upload] Stored ${type} report at ${storedPath} (${size} bytes)`);
-        return { type, label, path: storedPath, size };
-      } catch (error) {
-        console.error(`[Upload] Failed to store ${type} report: ${error}`);
-        return null;
-      }
-    }),
-  );
-
-  for (const r of reportResults) {
-    if (r) storedReports.push(r);
+  for (const [type, report] of [...reportFiles.entries()]) {
+    try {
+      console.log(`[Upload] Storing ${type} report: ${report.filename}`);
+      const { path: storedPath, size } = await storeReport(type, report);
+      const label = getReportLabel(type, report.label);
+      console.log(`[Upload] Stored ${type} report at ${storedPath} (${size} bytes)`);
+      storedReports.push({ type, label, path: storedPath, size });
+    } catch (error) {
+      console.error(`[Upload] Failed to store ${type} report: ${error}`);
+    } finally {
+      reportFiles.delete(type);
+    }
   }
 
   // Create or retrieve the test run
@@ -367,6 +368,7 @@ export default eventHandler(async (event) => {
         skippedTests: (testRunData.skippedTests as number | undefined) || 0,
         didNotRunTests: (testRunData.didNotRunTests as number | undefined) || 0,
         environment: (testRunData.environment as string | null | undefined) || null,
+        branch: resolveRunBranch(testRunData.metadata),
         label: (testRunData.label as string | null | undefined) || null,
         metadata: sanitizeMetadata((testRunData.metadata || null) as Record<string, unknown> | null),
         instanceId: (testRunData.instanceId as string | null | undefined) || null,
@@ -380,7 +382,7 @@ export default eventHandler(async (event) => {
     const resultTestRun = testRunResult[0];
 
     if (!resultTestRun) {
-      throw createError({
+      throw apiError({
         statusCode: 500,
         message: 'Failed to create test run',
       });
@@ -444,6 +446,7 @@ export default eventHandler(async (event) => {
         console.error('[ai-diagnosis] autoDiagnoseRun failed', e),
       );
       postRunPrFeedbackInBackground(db, existingTestRunId!);
+      maybeEnqueueHealActionInBackground(db, existingTestRunId!);
 
       // Cleanup event bus for this run
       runEventBus.cleanup(existingTestRunId!);
@@ -483,12 +486,16 @@ export default eventHandler(async (event) => {
 
       return {
         filePath,
+        suitePath: (testCase.suitePath as string[] | null | undefined) ?? null,
+        suiteConfig: (testCase.suiteConfig as RunCaseInput['suiteConfig']) ?? null,
+        testAnnotations: (testCase.testAnnotations as RunCaseInput['testAnnotations']) ?? null,
         title: testCase.title as string,
         status: testCase.status as string,
         duration: testCase.duration as number | null | undefined,
         timeout: testCase.timeout as number | null | undefined,
         error: testCase.error as string | null | undefined,
         retries: testCase.retries as number | undefined,
+        attempts: testCase.attempts,
         line,
         column,
         steps: testCase.steps,
@@ -501,7 +508,9 @@ export default eventHandler(async (event) => {
         pageState: testCase.pageState,
         aiUsage: testCase.aiUsage,
         consoleLogs: testCase.consoleLogs,
+        dialogs: testCase.dialogs,
         ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
+        ariaSnapshotJson: testCase.ariaSnapshotJson as string | null | undefined,
         testSource: testCase.testSource as string | null | undefined,
         testSourceFrames: testCase.testSourceFrames as unknown,
         browser: testCase.browser as unknown | null | undefined,
@@ -509,8 +518,11 @@ export default eventHandler(async (event) => {
         shardIndex: testCase.shardIndex as number | null | undefined,
         startedAt: testCase.startedAt as number | null | undefined,
         tags: testCase.tags ?? null,
+        locks: testCase.locks ?? null,
         testMeta: testCase.testMeta ?? null,
         locatorSnapshots: (testCase as any).locatorSnapshots ?? null,
+        didNotRunReason: (testCase.didNotRunReason as string | null | undefined) ?? null,
+        blockedBy: (testCase.blockedBy as string | null | undefined) ?? null,
       };
     });
 
@@ -521,6 +533,9 @@ export default eventHandler(async (event) => {
     // determined the blob already exists); those still need a files record pointing at
     // the existing blob path.
     const allTraceIndices = new Set([...traceFiles.keys(), ...traceHashes.keys()]);
+    // Execution rows that got a trace this upload — evidence is derived from
+    // them once all files are stored.
+    const tracedCaseIds: number[] = [];
     if (insertedRunCases.length > 0 && allTraceIndices.size > 0) {
       for (const index of allTraceIndices) {
         if (index < 0 || index >= insertedRunCases.length) continue;
@@ -571,8 +586,13 @@ export default eventHandler(async (event) => {
             size,
             blobId,
           });
+          tracedCaseIds.push(testRunsCaseId);
         } catch (error) {
           console.error(`[Upload] Failed to store trace for case #${testRunsCaseId}: ${error}`);
+        } finally {
+          // Drop the (large) trace buffer once stored so peak memory holds one
+          // trace at a time rather than every uploaded trace at once.
+          traceFiles.delete(index);
         }
       }
     }
@@ -611,6 +631,17 @@ export default eventHandler(async (event) => {
         }
       }
     }
+
+    // With traces and attachments stored, recover the evidence the capture
+    // fixtures would have provided (console, network, ARIA) for any execution
+    // that got a trace but no fixture data. Idempotent and best-effort.
+    for (const tracedCaseId of tracedCaseIds) {
+      try {
+        await deriveTraceEvidence(db, tracedCaseId);
+      } catch (error) {
+        console.error(`[Upload] Failed to derive trace evidence for case #${tracedCaseId}: ${error}`);
+      }
+    }
   }
 
   // Compute and store performance summary (avgTestDuration, p90TestDuration) + flaky count
@@ -642,7 +673,7 @@ export default eventHandler(async (event) => {
 
   return {
     success: true,
-    testRunId: testRun.id,
+    runId: testRun.id,
     projectId: project.id,
     reports: storedReports.map((r) => ({ type: r.type, label: r.label, path: r.path })),
   };

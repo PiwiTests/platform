@@ -13,8 +13,8 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 use tauri::{AppHandle, Emitter as _, Manager as _};
@@ -23,14 +23,15 @@ use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt as _;
 use tauri_plugin_store::StoreExt as _;
 
+use crate::inspect::{local_archive, LocalArchive};
 use crate::{node_path, STORE_FILE};
 
-/// Store key holding the `{ project id → absolute folder path }` map.
+/// Store key holding the `{ project id → link record }` map.
 const PROJECT_LINKS_KEY: &str = "projectLinks";
 
 /// Event channel every local run reports on; the payload carries the run id so
 /// the webview can tell concurrent runs apart.
-const RUN_EVENT: &str = "piwi:local-run";
+pub(crate) const RUN_EVENT: &str = "piwi:local-run";
 
 /// How many ancestors of the linked folder to search for a `node_modules`
 /// containing Playwright — covers monorepos with hoisted installs.
@@ -53,41 +54,139 @@ const ALLOWED_FLAGS: [&str; 12] = [
     "--last-failed",
 ];
 
-/// Running local test processes, keyed by run id so the webview can stop one.
+/// A long-running reproduce/bisect job: its stop flag, the pid of the child
+/// currently spawned (install / browser / test — tree-killed on stop), and how
+/// to tear the throwaway worktree down. The job owns the worktree for its life.
+/// A pid rather than a handle so the same stop path kills a Tauri sidecar child
+/// and a plain `npm`/`git` child alike, together with the process tree each
+/// spawned.
+pub struct Job {
+    pub stop: Arc<AtomicBool>,
+    pub pid: Arc<Mutex<Option<u32>>>,
+    pub cleanup: crate::worktree::Cleanup,
+    pub cleaned: Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// Running local processes, keyed by run id so the webview can stop one. Plain
+/// test runs live in `children`; reproduce/bisect drivers live in `jobs` because
+/// they also own a worktree that must be removed when they stop or the app quits.
 #[derive(Default)]
 pub struct LocalRuns {
     next_id: AtomicU32,
     children: Mutex<HashMap<u32, CommandChild>>,
+    jobs: Mutex<HashMap<u32, Job>>,
 }
 
 impl LocalRuns {
-    /// How many test processes are running. A run is tracked only while it
-    /// lives — it drops out of the map as soon as the process terminates.
+    /// How many local processes are running — plain runs plus reproduce/bisect
+    /// jobs. Each drops out of its map as soon as it finishes.
     pub fn active_count(&self) -> usize {
-        self.children.lock().unwrap().len()
+        self.children.lock().unwrap().len() + self.jobs.lock().unwrap().len()
     }
 
-    /// Kill every process still tracked — called when the app exits so no
-    /// orphaned test run outlives the shell.
+    /// Allocate the next run id.
+    pub(crate) fn allocate_id(&self) -> u32 {
+        self.next_id.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    /// Register a reproduce/bisect job so it can be stopped and cleaned up.
+    pub(crate) fn register_job(&self, id: u32, job: Job) {
+        self.jobs.lock().unwrap().insert(id, job);
+    }
+
+    /// Remove a job from tracking once its driver has finished with it.
+    pub(crate) fn drop_job(&self, id: u32) {
+        self.jobs.lock().unwrap().remove(&id);
+    }
+
+    /// Record (or clear) the pid of the child currently running for a job, so a
+    /// stop or app-quit tree-kills exactly what is live.
+    pub(crate) fn set_job_pid(&self, id: u32, pid: Option<u32>) {
+        if let Some(job) = self.jobs.lock().unwrap().get(&id) {
+            *job.pid.lock().unwrap() = pid;
+        }
+    }
+
+    /// Kill every process still tracked and tear down every worktree — called
+    /// when the app exits so no orphaned test run, browser fleet or worktree
+    /// outlives the shell.
     pub fn kill_all(&self) {
         for (_, child) in self.children.lock().unwrap().drain() {
             let _ = child.kill();
         }
+        for (_, job) in self.jobs.lock().unwrap().drain() {
+            job.stop.store(true, Ordering::SeqCst);
+            if let Some(pid) = *job.pid.lock().unwrap() {
+                crate::worktree::kill_child_tree(pid);
+            }
+            crate::worktree::perform_cleanup(&job.cleanup, &job.cleaned);
+        }
     }
 }
 
-fn read_links(app: &AppHandle) -> HashMap<String, String> {
-    app.store(STORE_FILE)
+/// A project's linked folder plus the optional start command the shell runs
+/// before a reproduce/bisect step when the Playwright config has no `webServer`.
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LinkRecord {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub readiness_url: Option<String>,
+}
+
+/// Links written by older builds stored a bare path string; accept either shape
+/// so upgrading never drops an existing folder link.
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum StoredLink {
+    Path(String),
+    Record(LinkRecord),
+}
+
+impl From<StoredLink> for LinkRecord {
+    fn from(stored: StoredLink) -> Self {
+        match stored {
+            StoredLink::Path(path) => LinkRecord {
+                path,
+                start_command: None,
+                readiness_url: None,
+            },
+            StoredLink::Record(record) => record,
+        }
+    }
+}
+
+pub(crate) fn read_links(app: &AppHandle) -> HashMap<String, LinkRecord> {
+    let raw: HashMap<String, StoredLink> = app
+        .store(STORE_FILE)
         .ok()
         .and_then(|s| s.get(PROJECT_LINKS_KEY))
         .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    raw.into_iter().map(|(k, v)| (k, v.into())).collect()
+}
+
+fn write_links(app: &AppHandle, links: &HashMap<String, LinkRecord>) -> Result<(), String> {
+    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    store.set(PROJECT_LINKS_KEY, json!(links));
+    store.save().map_err(|e| e.to_string())
+}
+
+/// The linked folder for a project, when one is set and still on disk. Used by
+/// the reproduce/bisect drivers to resolve the repository to work against.
+pub(crate) fn linked_folder(app: &AppHandle, project_id: &str) -> Option<LinkRecord> {
+    read_links(app).remove(project_id)
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectLink {
     path: String,
     exists: bool,
+    start_command: Option<String>,
+    readiness_url: Option<String>,
 }
 
 /// Native folder picker. Returns `None` when the user cancels.
@@ -107,15 +206,53 @@ pub async fn desktop_pick_folder(app: AppHandle) -> Option<String> {
     .flatten()
 }
 
+/// Native multi-select picker for import archives, filtered to `.zip`. Opens at
+/// `default_path` when it is an existing directory — the linked project folder,
+/// so the import page's picker starts where the reports are. Returns an empty
+/// list when the user cancels.
+#[tauri::command]
+pub async fn desktop_pick_import_files(
+    app: AppHandle,
+    default_path: Option<String>,
+) -> Vec<LocalArchive> {
+    let mut dialog = app
+        .dialog()
+        .file()
+        .add_filter("Playwright archives", &["zip"]);
+    if let Some(dir) = default_path {
+        let path = PathBuf::from(&dir);
+        if path.is_dir() {
+            dialog = dialog.set_directory(path);
+        }
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        dialog
+            .blocking_pick_files()
+            .into_iter()
+            .flatten()
+            .filter_map(|f| f.into_path().ok())
+            // The kind is unknown for a hand-picked file — the server decides
+            // when it opens the archive.
+            .map(|p| local_archive(&p, None))
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
 #[tauri::command]
 pub fn desktop_get_project_link(app: AppHandle, project_id: String) -> Option<ProjectLink> {
-    read_links(&app).get(&project_id).map(|p| ProjectLink {
-        exists: Path::new(p).is_dir(),
-        path: p.clone(),
+    read_links(&app).get(&project_id).map(|r| ProjectLink {
+        exists: Path::new(&r.path).is_dir(),
+        path: r.path.clone(),
+        start_command: r.start_command.clone(),
+        readiness_url: r.readiness_url.clone(),
     })
 }
 
-/// Set (`path: Some`) or clear (`path: None`) the folder linked to a project.
+/// Set (`path: Some`) or clear (`path: None`) the folder linked to a project. A
+/// re-link to the same folder keeps its start command; a different folder starts
+/// fresh.
 #[tauri::command]
 pub fn desktop_set_project_link(
     app: AppHandle,
@@ -135,15 +272,47 @@ pub fn desktop_set_project_link(
             if !folder.is_dir() {
                 return Err("the folder does not exist".into());
             }
-            links.insert(project_id, p);
+            let previous = links.get(&project_id);
+            let keep = previous.filter(|r| r.path == p);
+            links.insert(
+                project_id,
+                LinkRecord {
+                    path: p,
+                    start_command: keep.and_then(|r| r.start_command.clone()),
+                    readiness_url: keep.and_then(|r| r.readiness_url.clone()),
+                },
+            );
         }
         None => {
             links.remove(&project_id);
         }
     }
-    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
-    store.set(PROJECT_LINKS_KEY, json!(links));
-    store.save().map_err(|e| e.to_string())
+    write_links(&app, &links)
+}
+
+/// Store (or clear) the start command the shell runs before each reproduce/bisect
+/// step when the Playwright config has no `webServer`, and the URL it polls until
+/// the app answers. Requires a linked folder; the command is executed only from
+/// here, never passed in at run time, so the stored text is the single source of
+/// truth for what runs.
+#[tauri::command]
+pub fn desktop_set_project_start_command(
+    app: AppHandle,
+    project_id: String,
+    start_command: Option<String>,
+    readiness_url: Option<String>,
+) -> Result<(), String> {
+    let mut links = read_links(&app);
+    let record = links
+        .get_mut(&project_id)
+        .ok_or("no folder is linked to this project")?;
+    record.start_command = start_command
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    record.readiness_url = readiness_url
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    write_links(&app, &links)
 }
 
 #[derive(serde::Serialize)]
@@ -191,7 +360,7 @@ pub fn desktop_check_local_specs(
 ) -> Result<SpecCheck, String> {
     let folder = read_links(&app)
         .get(&project_id)
-        .map(PathBuf::from)
+        .map(|r| PathBuf::from(&r.path))
         .ok_or("no folder is linked to this project")?;
     if !folder.is_dir() {
         return Err("the linked folder no longer exists — pick it again".into());
@@ -202,10 +371,10 @@ pub fn desktop_check_local_specs(
     })
 }
 
-/// Find the linked folder's own Playwright CLI entry, walking up so a package
-/// inside a monorepo with a hoisted root `node_modules` still resolves.
-fn resolve_playwright_cli(start: &Path) -> Option<PathBuf> {
-    let candidates = ["@playwright/test/cli.js", "playwright/cli.js"];
+/// Resolve a file inside a `node_modules` reachable from `start`, walking up so
+/// a package inside a monorepo with a hoisted root `node_modules` still
+/// resolves. `candidates` are `node_modules`-relative paths tried at each level.
+pub(crate) fn resolve_node_module(start: &Path, candidates: &[&str]) -> Option<PathBuf> {
     let mut dir = Some(start);
     for _ in 0..MAX_NODE_MODULES_WALK {
         let d = dir?;
@@ -218,6 +387,11 @@ fn resolve_playwright_cli(start: &Path) -> Option<PathBuf> {
         dir = d.parent();
     }
     None
+}
+
+/// Find the linked folder's own Playwright CLI entry.
+pub(crate) fn resolve_playwright_cli(start: &Path) -> Option<PathBuf> {
+    resolve_node_module(start, &["@playwright/test/cli.js", "playwright/cli.js"])
 }
 
 #[derive(serde::Serialize)]
@@ -255,12 +429,12 @@ pub fn desktop_check_local_env(
 ) -> Result<LocalEnvCheck, String> {
     let folder = read_links(&app)
         .get(&project_id)
-        .map(PathBuf::from)
+        .map(|r| PathBuf::from(&r.path))
         .ok_or("no folder is linked to this project")?;
     Ok(local_env(&folder))
 }
 
-fn validate_args(args: &[String]) -> Result<(), String> {
+pub(crate) fn validate_args(args: &[String]) -> Result<(), String> {
     for arg in args {
         if arg.contains('\0') {
             return Err("invalid argument".into());
@@ -275,32 +449,96 @@ fn validate_args(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// A `piwi:local-run` event. `kind` selects which of the optional fields carries
+/// the payload: `stdout`/`stderr`/`error` use `line`, `exit` uses `code`, `phase`
+/// uses `phase` (a reproduce/bisect step header), and `bisect` uses `bisect`.
 #[derive(Clone, serde::Serialize)]
-struct RunEventPayload {
-    id: u32,
-    kind: &'static str,
-    line: Option<String>,
-    code: Option<i32>,
+pub(crate) struct RunEventPayload {
+    pub id: u32,
+    pub kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bisect: Option<crate::worktree::BisectEvent>,
 }
 
-/// Run `playwright test <args>` in the folder linked to `project_id`, using the
-/// bundled Node sidecar and the folder's own Playwright package. Returns a run
-/// id; progress arrives as `piwi:local-run` events carrying that id.
+impl RunEventPayload {
+    pub(crate) fn line(id: u32, kind: &'static str, text: String) -> Self {
+        Self {
+            id,
+            kind,
+            line: Some(text),
+            code: None,
+            phase: None,
+            bisect: None,
+        }
+    }
+    pub(crate) fn exit(id: u32, code: Option<i32>) -> Self {
+        Self {
+            id,
+            kind: "exit",
+            line: None,
+            code,
+            phase: None,
+            bisect: None,
+        }
+    }
+    pub(crate) fn phase(id: u32, phase: &str) -> Self {
+        Self {
+            id,
+            kind: "phase",
+            line: None,
+            code: None,
+            phase: Some(phase.to_string()),
+            bisect: None,
+        }
+    }
+    pub(crate) fn bisect(id: u32, event: crate::worktree::BisectEvent) -> Self {
+        Self {
+            id,
+            kind: "bisect",
+            line: None,
+            code: None,
+            phase: None,
+            bisect: Some(event),
+        }
+    }
+}
+
+/// Run `playwright test <args>` for `project_id`, using the bundled Node sidecar
+/// and the run folder's own Playwright package. Returns a run id; progress
+/// arrives as `piwi:local-run` events carrying that id.
+///
+/// The default run folder is the linked checkout. A `cwd` may point the run at a
+/// throwaway worktree instead — the reproduce/bisect drivers use this — but only
+/// one that canonicalizes inside this app's worktrees dir, so the webview can
+/// never redirect a run at an arbitrary folder.
 #[tauri::command]
 pub async fn desktop_run_local_tests(
     app: AppHandle,
     project_id: String,
     args: Vec<String>,
+    cwd: Option<String>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
 
-    let folder = read_links(&app)
-        .get(&project_id)
-        .map(PathBuf::from)
-        .ok_or("no folder is linked to this project")?;
-    if !folder.is_dir() {
-        return Err("the linked folder no longer exists — pick it again".into());
-    }
+    let folder = match cwd {
+        Some(dir) => crate::worktree::validate_worktree_cwd(&app, &dir)?,
+        None => {
+            let f = read_links(&app)
+                .get(&project_id)
+                .map(|r| PathBuf::from(&r.path))
+                .ok_or("no folder is linked to this project")?;
+            if !f.is_dir() {
+                return Err("the linked folder no longer exists — pick it again".into());
+            }
+            f
+        }
+    };
     let cli = resolve_playwright_cli(&folder).ok_or(
         "no Playwright installation found in the linked folder (or its parents) — run your package manager's install first",
     )?;
@@ -321,41 +559,29 @@ pub async fn desktop_run_local_tests(
     let (mut rx, child) = command.spawn().map_err(|e| e.to_string())?;
 
     let state = app.state::<LocalRuns>();
-    let id = state.next_id.fetch_add(1, Ordering::SeqCst) + 1;
+    let id = state.allocate_id();
     state.children.lock().unwrap().insert(id, child);
 
     let emit_app = app.clone();
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {
             let payload = match event {
-                CommandEvent::Stdout(line) => RunEventPayload {
+                CommandEvent::Stdout(line) => RunEventPayload::line(
                     id,
-                    kind: "stdout",
-                    line: Some(String::from_utf8_lossy(&line).trim_end().to_string()),
-                    code: None,
-                },
-                CommandEvent::Stderr(line) => RunEventPayload {
+                    "stdout",
+                    String::from_utf8_lossy(&line).trim_end().to_string(),
+                ),
+                CommandEvent::Stderr(line) => RunEventPayload::line(
                     id,
-                    kind: "stderr",
-                    line: Some(String::from_utf8_lossy(&line).trim_end().to_string()),
-                    code: None,
-                },
-                CommandEvent::Error(err) => RunEventPayload {
-                    id,
-                    kind: "error",
-                    line: Some(err),
-                    code: None,
-                },
+                    "stderr",
+                    String::from_utf8_lossy(&line).trim_end().to_string(),
+                ),
+                CommandEvent::Error(err) => RunEventPayload::line(id, "error", err),
                 CommandEvent::Terminated(status) => {
                     if let Some(runs) = emit_app.try_state::<LocalRuns>() {
                         runs.children.lock().unwrap().remove(&id);
                     }
-                    RunEventPayload {
-                        id,
-                        kind: "exit",
-                        line: None,
-                        code: status.code,
-                    }
+                    RunEventPayload::exit(id, status.code)
                 }
                 _ => continue,
             };
@@ -366,15 +592,22 @@ pub async fn desktop_run_local_tests(
     Ok(id)
 }
 
-/// Stop a running local test process. A run that already exited is a no-op.
+/// Stop a running local process. For a plain test run this kills the process;
+/// for a reproduce/bisect job it raises the job's stop flag and kills the child
+/// currently running (with its process tree — the test may have spawned browsers
+/// or a webServer), and the job's own driver then resets any bisect and removes
+/// the worktree. A run that already exited is a no-op.
 #[tauri::command]
 pub fn desktop_stop_local_tests(app: AppHandle, run_id: u32) -> Result<(), String> {
-    let child = app
-        .state::<LocalRuns>()
-        .children
-        .lock()
-        .unwrap()
-        .remove(&run_id);
+    let state = app.state::<LocalRuns>();
+    if let Some(job) = state.jobs.lock().unwrap().get(&run_id) {
+        job.stop.store(true, Ordering::SeqCst);
+        if let Some(pid) = *job.pid.lock().unwrap() {
+            crate::worktree::kill_child_tree(pid);
+        }
+        return Ok(());
+    }
+    let child = state.children.lock().unwrap().remove(&run_id);
     match child {
         Some(c) => c.kill().map_err(|e| e.to_string()),
         None => Ok(()),

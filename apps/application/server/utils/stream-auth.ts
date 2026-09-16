@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+import { apiError } from './api-error';
 import { testRuns } from '../database/schema';
 import { runEventBus } from './run-events';
 import { validateAndReviveRun } from './revive-run';
@@ -23,14 +24,14 @@ export async function authorizeStreamToken(db: DB, runId: number, streamToken: s
   if (cachedState) {
     const valid =
       timingSafeEqualStr(cachedState.streamToken, streamToken) || (cachedState.shardTokens?.has(streamToken) ?? false);
-    if (!valid) throw createError({ statusCode: 403, message: 'Invalid stream token' });
+    if (!valid) throw apiError({ statusCode: 403, message: 'Invalid stream token' });
     return { projectId: cachedState.projectId };
   }
 
   const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, runId));
   const testRun = testRunResults[0];
 
-  if (!testRun) throw createError({ statusCode: 404, message: 'Test run not found' });
+  if (!testRun) throw apiError({ statusCode: 404, message: 'Test run not found' });
 
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
   const shardTokens = isSharded ? readShardTokensFromMeta(testRun.metadata) : undefined;

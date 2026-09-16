@@ -18,7 +18,7 @@ async function resetImportProjects(playwright: typeof import('@playwright/test')
   try {
     const response = await api.get('/api/projects/menu');
     if (!response.ok()) return;
-    const projects = (await response.json()) as { id: number; name: string }[];
+    const projects = ((await response.json()) as { items: { id: number; name: string }[] }).items;
     for (const project of projects) {
       if (names.includes(project.name)) await api.delete(`/api/projects/${project.id}`);
     }
@@ -148,7 +148,7 @@ test.describe('Blob report import', () => {
     // Recorded relative to the config directory, matching live reporter runs.
     expect(body.filePaths).toEqual(['tests/checkout.spec.ts']);
 
-    const runResponse = await request.get(`/api/test-runs/${body.testRunId}`);
+    const runResponse = await request.get(`/api/test-runs/${body.runId}`);
     expect(runResponse.status()).toBe(200);
     const run = await runResponse.json();
 
@@ -160,7 +160,7 @@ test.describe('Blob report import', () => {
 
     // Evidence recovered from Playwright's own error-context attachment, read
     // back from the execution detail where the dashboard renders it.
-    const caseResponse = await request.get(`/api/test-run-cases/${failing.id}`);
+    const caseResponse = await request.get(`/api/test-run-cases/${failing.executionId}`);
     expect(caseResponse.status()).toBe(200);
     const execution = await caseResponse.json();
     expect(execution.ariaSnapshot).toContain('heading "Checkout"');
@@ -186,7 +186,7 @@ test.describe('Blob report import', () => {
     });
     const checkBody = await check.json();
     expect(checkBody.results[0].status).toBe('duplicate');
-    expect(checkBody.results[0].testRunId).toBe(body.testRunId);
+    expect(checkBody.results[0].runId).toBe(body.runId);
   });
 
   test('rejects something that is not a blob report with a usable message', async ({ request }) => {
@@ -319,7 +319,7 @@ test.describe('Trace file import', () => {
     expect(body.caseTitle).toBe('orders › lists orders');
     expect(body.startTime).toBe(new Date(1_700_000_000_000).toISOString());
 
-    const run = await (await request.get(`/api/test-runs/${body.testRunId}`)).json();
+    const run = await (await request.get(`/api/test-runs/${body.runId}`)).json();
     const execution = run.testCases[0];
     expect(execution.title).toBe('lists orders');
     expect(execution.status).toBe('passed');
@@ -339,8 +339,8 @@ test.describe('Trace file import', () => {
     const third = await (await post(request, PROJECT.IMPORT_TRACE_GROUP, failingRetry, group)).json();
 
     // Every trace lands in the same run, which grows as they arrive.
-    expect(second.testRunId).toBe(first.testRunId);
-    expect(third.testRunId).toBe(first.testRunId);
+    expect(second.runId).toBe(first.runId);
+    expect(third.runId).toBe(first.runId);
     expect(third.totalTests).toBe(3);
     expect(third.passedTests).toBe(1);
     expect(third.failedTests).toBe(2);
@@ -349,7 +349,7 @@ test.describe('Trace file import', () => {
     // The run spans from the earliest trace to the end of the latest.
     expect(third.startTime).toBe(new Date(1_700_000_000_000).toISOString());
 
-    const run = await (await request.get(`/api/test-runs/${first.testRunId}`)).json();
+    const run = await (await request.get(`/api/test-runs/${first.runId}`)).json();
     const attempts = run.testCases
       .filter((c: { title: string }) => c.title === 'opens an order')
       .sort((a: { retries: number }, b: { retries: number }) => a.retries - b.retries);

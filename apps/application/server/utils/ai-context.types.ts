@@ -4,7 +4,7 @@ import type { ScmChanges } from './scm/ScmProvider';
 
 export type DiagnosisScope =
   | { kind: 'cluster'; clusterId: number }
-  | { kind: 'execution'; testRunsCaseId: number; clusterId?: number };
+  | { kind: 'execution'; executionId: number; clusterId?: number };
 
 export interface BuildContextOptions {
   baseCommit?: string;
@@ -28,6 +28,7 @@ export type SectionId =
   | 'browserDistribution'
   | 'representativeExecution'
   | 'executionError'
+  | 'clues'
   | 'runContext'
   | 'testAnnotations'
   | 'testSource'
@@ -48,6 +49,7 @@ export type SectionId =
   | 'scmInvestigation'
   | 'selectedCommits'
   | 'priorDiagnosis'
+  | 'previouslyFixed'
   | 'passedPeers'
   | 'tracePointers'
   | 'artifacts'

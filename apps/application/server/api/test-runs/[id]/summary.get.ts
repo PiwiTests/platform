@@ -18,7 +18,7 @@ export default eventHandler(async (event) => {
 
   const result = await getTestRunSummary(db, id);
   if (!result) {
-    throw createError({ statusCode: 404, message: 'Test run not found' });
+    throw apiError({ statusCode: 404, message: 'Test run not found' });
   }
   return result;
 });

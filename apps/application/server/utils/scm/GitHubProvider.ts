@@ -1,6 +1,24 @@
 import { ScmProvider, truncatePatch, MAX_SCM_FILES, MAX_FILE_BYTES, FETCH_TIMEOUT_MS } from './ScmProvider';
-import type { ScmCommitDetail, ScmChanges, ScmFileContent, ScmPullRequest, ScmCommitStatus } from './ScmProvider';
+import type {
+  ScmCommitDetail,
+  ScmCommitAuthor,
+  ScmChanges,
+  ScmFileContent,
+  ScmEntityRef,
+  ScmEntityState,
+  ScmPullRequest,
+  ScmCommitStatus,
+  ScmFileEdit,
+  CreatePullRequestInput,
+} from './ScmProvider';
 import { TtlCache } from './cache';
+import type { CiRerunSettings } from '#shared/ci-rerun';
+
+/** Turn a non-2xx GitHub response into an Error carrying the API's own message. */
+async function githubError(res: Response, action: string): Promise<Error> {
+  const body = (await res.json().catch(() => ({}))) as { message?: string };
+  return new Error(`GitHub ${action} failed (${res.status}): ${body.message ?? res.statusText}`);
+}
 
 const listBranchesCache = new TtlCache<string[]>(3 * 60 * 1000);
 const listCommitsCache = new TtlCache<ScmCommitDetail[]>(3 * 60 * 1000);
@@ -9,9 +27,15 @@ const fetchCommitDiffCache = new TtlCache<ScmChanges>(10 * 60 * 1000);
 // Content is immutable per SHA, so cache it (incl. negative lookups) for longer.
 const fetchFileCache = new TtlCache<ScmFileContent | null>(30 * 60 * 1000);
 const fetchTreeCache = new TtlCache<string[]>(10 * 60 * 1000);
+const defaultBranchCache = new TtlCache<string | null>(30 * 60 * 1000);
+// Author is immutable per SHA, so cache it (incl. negative lookups) for longer.
+const commitAuthorCache = new TtlCache<ScmCommitAuthor | null>(30 * 60 * 1000);
 
 export class GitHubProvider extends ScmProvider {
   readonly provider = 'github' as const;
+  get webUrl(): string {
+    return `https://github.com/${this.repoPath}`;
+  }
 
   constructor(
     private readonly repoPath: string,
@@ -134,6 +158,83 @@ export class GitHubProvider extends ScmProvider {
     return result;
   }
 
+  async getCommitAuthor(sha: string): Promise<ScmCommitAuthor | null> {
+    if (!sha) return null;
+    const key = `${this.keyPrefix}:author:${this.repoPath}:${sha}`;
+    const hit = commitAuthorCache.get(key);
+    if (hit !== undefined) return hit;
+
+    try {
+      const res = await fetch(`https://api.github.com/repos/${this.repoPath}/commits/${sha}`, {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        commitAuthorCache.set(key, null);
+        return null;
+      }
+      const data = (await res.json()) as { commit?: { author?: { name?: string; email?: string } } };
+      const name = data.commit?.author?.name?.trim() ?? '';
+      const email = data.commit?.author?.email?.trim() ?? '';
+      const result = email ? { name: name || email, email } : null;
+      commitAuthorCache.set(key, result);
+      return result;
+    } catch {
+      return null;
+    }
+  }
+
+  async fetchIssue(number: number): Promise<ScmEntityRef | null> {
+    return this.fetchEntity('issues', number);
+  }
+
+  async fetchPullRequest(number: number): Promise<ScmEntityRef | null> {
+    return this.fetchEntity('pulls', number);
+  }
+
+  private async fetchEntity(endpoint: 'issues' | 'pulls', number: number): Promise<ScmEntityRef | null> {
+    if (!Number.isInteger(number) || number <= 0) return null;
+    try {
+      const res = await fetch(`https://api.github.com/repos/${this.repoPath}/${endpoint}/${number}`, {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as {
+        title?: string;
+        state?: string;
+        merged?: boolean;
+        draft?: boolean;
+        user?: { login?: string };
+        html_url?: string;
+        updated_at?: string;
+      };
+      const state: ScmEntityState =
+        endpoint === 'pulls'
+          ? data.merged
+            ? 'merged'
+            : data.state === 'closed'
+              ? 'closed'
+              : data.draft
+                ? 'draft'
+                : 'open'
+          : data.state === 'closed'
+            ? 'closed'
+            : data.state === 'open'
+              ? 'open'
+              : null;
+      return {
+        title: data.title ?? null,
+        state,
+        author: data.user?.login ?? null,
+        url: data.html_url ?? null,
+        updatedAt: data.updated_at ?? null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async fetchFileAtRef(path: string, ref: string): Promise<ScmFileContent | null> {
     const cleanPath = path.replace(/^\//, '');
     const key = `${this.keyPrefix}:file:${this.repoPath}:${ref}:${cleanPath}`;
@@ -211,6 +312,22 @@ export class GitHubProvider extends ScmProvider {
       return `No commits found on ${branch ? `branch '${branch}'` : 'the default branch'}.`;
     } catch {
       return 'Could not reach the GitHub API. Check your network connection.';
+    }
+  }
+
+  override async getDefaultBranch(): Promise<string | null> {
+    const key = `${this.keyPrefix}:default-branch:${this.repoPath}`;
+    const cached = defaultBranchCache.get(key);
+    if (cached !== undefined) return cached;
+    try {
+      const res = await fetch(`https://api.github.com/repos/${this.repoPath}`, { headers: this.makeHeaders() });
+      if (!res.ok) return null;
+      const body = (await res.json().catch(() => ({}))) as { default_branch?: string };
+      const branch = body.default_branch?.trim() || null;
+      defaultBranchCache.set(key, branch);
+      return branch;
+    } catch {
+      return null;
     }
   }
 
@@ -293,5 +410,117 @@ export class GitHubProvider extends ScmProvider {
     } catch {
       return false;
     }
+  }
+
+  // ── Write capability (auto-heal) ───────────────────────────────────────────
+
+  override async getBranchHead(branch: string): Promise<string | null> {
+    const res = await fetch(`https://api.github.com/repos/${this.repoPath}/git/ref/heads/${branch}`, {
+      headers: this.makeHeaders(),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw await githubError(res, 'read branch');
+    const data = (await res.json()) as { object?: { sha?: string } };
+    return data.object?.sha ?? null;
+  }
+
+  override async createBranch(name: string, fromSha: string): Promise<void> {
+    const res = await fetch(`https://api.github.com/repos/${this.repoPath}/git/refs`, {
+      method: 'POST',
+      headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: `refs/heads/${name}`, sha: fromSha }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) throw await githubError(res, 'create branch');
+  }
+
+  override async commitFiles(branch: string, message: string, files: ScmFileEdit[]): Promise<string> {
+    const headSha = await this.getBranchHead(branch);
+    if (!headSha) throw new Error(`GitHub commit failed: branch ${branch} not found`);
+
+    const commitRes = await fetch(`https://api.github.com/repos/${this.repoPath}/git/commits/${headSha}`, {
+      headers: this.makeHeaders(),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!commitRes.ok) throw await githubError(commitRes, 'read base commit');
+    const baseTree = ((await commitRes.json()) as { tree?: { sha?: string } }).tree?.sha;
+    if (!baseTree) throw new Error('GitHub commit failed: could not resolve the base tree');
+
+    // A tree entry with `content` lets GitHub create the blob inline — one call.
+    const treeRes = await fetch(`https://api.github.com/repos/${this.repoPath}/git/trees`, {
+      method: 'POST',
+      headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        base_tree: baseTree,
+        tree: files.map((f) => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })),
+      }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!treeRes.ok) throw await githubError(treeRes, 'create tree');
+    const treeSha = ((await treeRes.json()) as { sha?: string }).sha;
+    if (!treeSha) throw new Error('GitHub commit failed: tree response had no sha');
+
+    const newCommitRes = await fetch(`https://api.github.com/repos/${this.repoPath}/git/commits`, {
+      method: 'POST',
+      headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, tree: treeSha, parents: [headSha] }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!newCommitRes.ok) throw await githubError(newCommitRes, 'create commit');
+    const newSha = ((await newCommitRes.json()) as { sha?: string }).sha;
+    if (!newSha) throw new Error('GitHub commit failed: commit response had no sha');
+
+    const refRes = await fetch(`https://api.github.com/repos/${this.repoPath}/git/refs/heads/${branch}`, {
+      method: 'PATCH',
+      headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sha: newSha, force: false }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!refRes.ok) throw await githubError(refRes, 'update branch');
+    return newSha;
+  }
+
+  override async createPullRequest(input: CreatePullRequestInput): Promise<ScmPullRequest> {
+    const res = await fetch(`https://api.github.com/repos/${this.repoPath}/pulls`, {
+      method: 'POST',
+      headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: input.title,
+        body: input.body,
+        head: input.head,
+        base: input.base,
+        draft: input.draft,
+      }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) throw await githubError(res, 'open pull request');
+    const pr = (await res.json()) as { number?: number; html_url?: string };
+    if (!pr.number) throw new Error('GitHub pull request response had no number');
+    return { number: pr.number, url: pr.html_url ?? `https://github.com/${this.repoPath}/pull/${pr.number}` };
+  }
+
+  // ── CI re-run ──────────────────────────────────────────────────────────────
+
+  override async dispatchRerun(settings: CiRerunSettings, playwrightArgs: string): Promise<{ url: string }> {
+    const target = settings.github;
+    if (!target) throw new Error('No GitHub workflow configured for CI re-run');
+
+    const res = await fetch(
+      `https://api.github.com/repos/${this.repoPath}/actions/workflows/${encodeURIComponent(target.workflow)}/dispatches`,
+      {
+        method: 'POST',
+        headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref: target.ref, inputs: { [target.inputName]: playwrightArgs } }),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      },
+    );
+    if (!res.ok) throw await githubError(res, 'dispatch workflow');
+
+    // workflow_dispatch answers 204 with no run id, so link to the workflow's
+    // runs page filtered to the branch instead of a specific run.
+    const runs = new URL(`https://github.com/${this.repoPath}/actions/workflows/${target.workflow}`);
+    runs.searchParams.set('query', `branch:${target.ref}`);
+    return { url: runs.toString() };
   }
 }

@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { waitForHydration } from './utils';
 import { PROJECT } from '#shared/test-project-names';
 
 test.describe('Performance UI Tests', () => {
@@ -90,13 +91,13 @@ test.describe('Performance UI Tests', () => {
   test('should show performance tab content', async ({ page }) => {
     await page.goto(`/projects/${projectId}?tab=performance`);
     await expect(page.getByText('Performance trend')).toBeVisible();
-    await expect(page.getByText('Slowest tests')).toBeVisible();
-    await expect(page.getByText('Run comparison')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Slowest tests' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Slow endpoints' })).toBeVisible();
   });
 
   test('should show slowest tests in performance tab', async ({ page }) => {
     await page.goto(`/projects/${projectId}?tab=performance`);
-    await expect(page.getByText('Slowest tests')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: 'Slowest tests' })).toBeVisible({ timeout: 10000 });
     await expect(page.getByText('form submission is slow')).toBeVisible({ timeout: 15000 });
   });
 
@@ -104,11 +105,13 @@ test.describe('Performance UI Tests', () => {
     // Get the test run ID first
     const response = await page.request.get(`/api/projects/${projectId}`);
     const projectData = await response.json();
-    const testRunId = projectData.testRuns[0].id;
+    const runId = projectData.testRuns[0].id;
 
-    await page.goto(`/test-runs/${testRunId}`);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
 
-    // Should show avg and p90 test duration
+    // Avg and P90 test duration live in the header's Details popover.
+    await page.getByRole('button', { name: 'Details' }).click();
     await expect(page.getByText('Avg', { exact: true })).toBeVisible();
     await expect(page.getByText('P90', { exact: true })).toBeVisible();
   });
@@ -117,23 +120,28 @@ test.describe('Performance UI Tests', () => {
     // Get a test case ID with performance data
     const response = await page.request.get(`/api/projects/${projectId}`);
     const projectData = await response.json();
-    const testRunId = projectData.testRuns[0].id;
+    const runId = projectData.testRuns[0].id;
 
-    const runResponse = await page.request.get(`/api/test-runs/${testRunId}`);
+    const runResponse = await page.request.get(`/api/test-runs/${runId}`);
     const runData = await runResponse.json();
     const testCaseWithSteps = runData.testCases.find((tc: { slowestStep: string | null }) => tc.slowestStep !== null);
 
     if (testCaseWithSteps) {
-      await page.goto(`/test-run-cases/${testCaseWithSteps.id}`);
-      await expect(page.getByText('Slowest step')).toBeVisible();
+      await page.goto(`/test-run-cases/${testCaseWithSteps.executionId}`);
+      await waitForHydration(page);
 
-      // Should show steps section
-      await expect(page.getByRole('tab', { name: /Steps/ })).toBeVisible();
+      // The step table lives in the evidence Timeline tab now — the tab is the
+      // heading, so the block no longer repeats "Failure timeline" / "Steps".
+      await page.getByRole('tab', { name: /^Timeline/ }).click();
+      await expect(page.getByRole('table')).toBeVisible();
+      // The slowest step is tagged in the table (the `md`-and-up view; the phone
+      // card list below `md` carries its own copy, hidden at this width).
+      await expect(page.getByRole('table').getByText('slowest')).toBeVisible();
     }
   });
 
   test('should show performance tab in page navigation', async ({ page }) => {
     await page.goto(`/projects/${projectId}`);
-    await expect(page.getByRole('tab', { name: /Performance/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Performance/ })).toBeVisible();
   });
 });

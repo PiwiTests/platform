@@ -1,84 +1,42 @@
-name: Polish release notes (GitHub Models)
+name: Tidy release notes
+
+# Keep every GitHub release body non-empty and free of duplicate entries. release-please
+# emits one line per commit, so squash and cherry-pick land the same subject several times;
+# this collapses them and merges their commit links. It runs deterministically (no external
+# model), never writes an empty body, and leaves hand-authored notes (the polished
+# `## Highlights` format) untouched.
 
 on:
   release:
     types: [published]
-  # Re-polish any existing release on demand (e.g. an old raw-dump body).
+  # Re-tidy an existing release on demand — also how an already-emptied release is repaired.
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing release tag to (re-)polish, e.g. v0.7.0"
+        description: "Release tag to (re)tidy, e.g. v0.29.0"
         required: true
-      force:
-        description: "Polish even if the body is already marked ai-polished (the previous output becomes the raw input)"
-        type: boolean
-        default: false
 
 permissions:
-  contents: write   # edit the release body
-  models: read      # call GitHub Models inference
+  contents: write # edit the release body
 
 jobs:
-  polish:
+  tidy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - name: Fetch target release body
-        id: target
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Tidy the release body
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
         run: |
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > raw-body.md
-
-      # Idempotency: skip if these notes were already polished (re-runs, edited releases).
-      - name: Skip if already polished
-        id: guard
-        env:
-          FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
-        run: |
-          if [ "$FORCE" != "true" ] && grep -q '<!-- ai-polished -->' raw-body.md; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Generate polished notes
-        if: steps.guard.outputs.skip == 'false'
-        id: ai
-        uses: actions/ai-inference@v3
-        continue-on-error: true
-        with:
-          model: openai/gpt-4o                 # swappable: any GitHub Models catalog id
-          system-prompt-file: .github/prompts/changelog-system-prompt.md
-          prompt-file: raw-body.md
-          max-completion-tokens: 1200
-          temperature: 0.2
-          # token: ${{ github.token }}         # default; shown for clarity
-
-      # Surface AI failures instead of silently leaving raw notes on the release.
-      - name: Fail visibly when polish did not run
-        if: steps.guard.outputs.skip == 'false' && steps.ai.outcome != 'success'
-        env:
-          TAG: ${{ steps.target.outputs.tag }}
-        run: |
-          echo "::error::AI polish failed — release notes for ${TAG} were left unpolished. Re-run this workflow (workflow_dispatch with the tag) or edit the release manually."
-          exit 1
-
-      - name: Update the release body
-        if: steps.guard.outputs.skip == 'false' && steps.ai.outcome == 'success'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.target.outputs.tag }}
-          POLISHED: ${{ steps.ai.outputs.response }}
-        run: |
-          {
-            printf '%s\n\n' "$POLISHED"
-            printf '<details><summary>Raw changelog (auto-generated)</summary>\n\n'
-            cat raw-body.md
-            printf '\n\n</details>\n'
-            printf '<!-- ai-polished -->\n'
-          } > notes.md
-          gh release edit "$TAG" --notes-file notes.md
+          # Build the release body from the version's CHANGELOG.md section (falling back to the
+          # current release body): a polished section is published as-is, an ordinary one is
+          # de-duplicated. `apply` refuses to write an empty body and skips a release that already
+          # carries hand-authored notes.
+          node scripts/release-notes.mjs release-body "$TAG" > "$RUNNER_TEMP/body.md"
+          node scripts/release-notes.mjs apply "$TAG" --notes "$RUNNER_TEMP/body.md" --no-changelog

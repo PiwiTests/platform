@@ -2,8 +2,32 @@
  * Shared utilities for locator healing — pure functions that work in both
  * Node.js and browser (Web Crypto) environments.
  */
-import type { RankedLocator, LocatorFixRecommendation } from './locator-healing.types';
+import type { RankedLocator, LocatorFixRecommendation, NarrowingSuggestion } from './locator-healing.types';
 import { sha256Hex } from './utils/hash';
+import { compareVersions } from './piwi-env-vars';
+
+/** Playwright's first release with `locator.visible()`. */
+const VISIBLE_MIN_VERSION = '1.63';
+
+/**
+ * Suggest narrowing a strict-mode-ambiguous locator with `.visible()` when the
+ * run is on Playwright 1.63 or later, the failing locator matched several
+ * elements, and exactly one of them was visible. Null in every other case — a
+ * non-strict failure, an older Playwright, an unknown match count, or more than
+ * one visible match (where `.visible()` would not resolve the ambiguity).
+ */
+export function computeNarrowingSuggestion(input: {
+  playwrightVersion: string | null | undefined;
+  matchCount: number | null | undefined;
+  visibleMatchCount: number | null | undefined;
+}): NarrowingSuggestion | null {
+  const version = input.playwrightVersion;
+  if (!version || compareVersions(version, VISIBLE_MIN_VERSION) < 0) return null;
+  const matchCount = input.matchCount;
+  if (typeof matchCount !== 'number' || matchCount < 2) return null;
+  if (input.visibleMatchCount !== 1) return null;
+  return { method: 'visible', matchCount, visibleCount: 1 };
+}
 
 /**
  * Method family for each locator method. The single recommended fix prefers an
@@ -203,4 +227,53 @@ export async function locatorSignature(method: string, args: unknown[]): Promise
 export async function locatorSignatureFromExpression(expr: string): Promise<string> {
   const method = locatorExpressionMethod(expr) ?? '';
   return sha256Hex(`${method} ${JSON.stringify(locatorExpressionStrings(expr))}`);
+}
+
+/**
+ * The positional first argument of each Playwright locator method, as keyed by
+ * the parsed failing locator (`{ method, args }`); every other arg key is an
+ * option. `getByAltText` shares the `text` key with `getByText`.
+ */
+const LOCATOR_PRIMARY_ARG: Record<string, string> = {
+  getByTestId: 'testId',
+  getByRole: 'role',
+  getByText: 'text',
+  getByLabel: 'label',
+  getByPlaceholder: 'placeholder',
+  getByAltText: 'text',
+  getByTitle: 'title',
+  locator: 'selector',
+  'page.locator': 'selector',
+};
+
+/** A parsed arg value as Playwright source: quoted string, bare literal, or regex text as-is. */
+function locatorArgLiteral(value: unknown): string {
+  if (typeof value === 'string') {
+    if (value.startsWith('/') && /\/[a-z]*$/.test(value) && value.length > 1) return value;
+    return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value == null) return 'undefined';
+  return JSON.stringify(value);
+}
+
+/**
+ * Render a parsed locator back to the Playwright expression a developer would
+ * write, e.g. `{ method: 'getByRole', args: { role: 'row', name: 'Total' } }`
+ * → `getByRole('row', { name: 'Total' })`. The inverse of the server-side
+ * expression parser, so the failing locator reads like every alternative.
+ */
+export function locatorExpression(method: string, args: Record<string, unknown> | null | undefined): string {
+  const a = args ?? {};
+  const parts: string[] = [];
+  if (Array.isArray(a.args) && !(method in LOCATOR_PRIMARY_ARG)) {
+    return `${method}(${a.args.map(locatorArgLiteral).join(', ')})`;
+  }
+  const primary = LOCATOR_PRIMARY_ARG[method];
+  if (primary && a[primary] !== undefined) parts.push(locatorArgLiteral(a[primary]));
+  const options = Object.entries(a).filter(([key, value]) => key !== primary && value !== undefined);
+  if (options.length) {
+    parts.push(`{ ${options.map(([key, value]) => `${key}: ${locatorArgLiteral(value)}`).join(', ')} }`);
+  }
+  return `${method}(${parts.join(', ')})`;
 }

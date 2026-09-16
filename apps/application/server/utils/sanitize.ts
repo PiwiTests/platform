@@ -1,4 +1,5 @@
 import { filterAndCapNetworkRequests } from '#shared/utils/filter-network-requests';
+import { maskTokenLike } from '@piwitests/core/mask';
 import type { IngestLimits } from '#shared/ingest-limits';
 
 /**
@@ -202,6 +203,30 @@ export function sanitizeConsoleLogs(
   });
 }
 
+/** Max characters kept per stored dialog message / default value. */
+const DIALOG_TEXT_CAP = 2000;
+
+/**
+ * Keep only the recognized fields of each recorded dialog, mask token-shaped
+ * strings in the free text, and bound each string. Anything that is not an
+ * array of objects becomes null.
+ */
+export function sanitizeDialogs(dialogs: unknown): Array<Record<string, unknown>> | null {
+  if (!Array.isArray(dialogs)) return null;
+  const out = dialogs
+    .filter((d): d is Record<string, unknown> => !!d && typeof d === 'object')
+    .map((d) => {
+      const entry: Record<string, unknown> = {};
+      if (typeof d.type === 'string') entry.type = d.type.slice(0, 40);
+      if (typeof d.message === 'string') entry.message = maskTokenLike(d.message).slice(0, DIALOG_TEXT_CAP);
+      if (typeof d.defaultValue === 'string' && d.defaultValue)
+        entry.defaultValue = maskTokenLike(d.defaultValue).slice(0, DIALOG_TEXT_CAP);
+      if (typeof d.closedAt === 'number') entry.closedAt = d.closedAt;
+      return entry;
+    });
+  return out.length > 0 ? out : null;
+}
+
 /*
  * Ingest storage caps (see `shared/ingest-limits.ts`): bound the size of the
  * per-execution payloads before they are persisted. Applied by
@@ -232,6 +257,62 @@ export function capErrorText(error: string | null | undefined, maxChars: number)
 export function capArray(value: unknown, max: number): unknown {
   if (!Array.isArray(value) || value.length <= max) return value ?? null;
   return value.slice(0, max);
+}
+
+/**
+ * Re-cap and re-mask a step's curated `params`: keep primitives, JSON-stringify
+ * anything else, mask token-shaped strings, and bound both the key count and
+ * each value's length — the server never trusts the reporter's own caps.
+ */
+function capStepParams(
+  raw: Record<string, unknown>,
+  limits: IngestLimits,
+): Record<string, string | number | boolean> | null {
+  const out: Record<string, string | number | boolean> = {};
+  let count = 0;
+  for (const [key, value] of Object.entries(raw)) {
+    if (count >= limits.stepParamKeys) break;
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      out[key] = value;
+      count++;
+    } else if (typeof value === 'string') {
+      out[key] = maskTokenLike(value).slice(0, limits.stepParamValueChars);
+      count++;
+    } else if (value != null) {
+      try {
+        out[key] = maskTokenLike(JSON.stringify(value)).slice(0, limits.stepParamValueChars);
+        count++;
+      } catch {
+        // Non-serializable (circular) values are dropped.
+      }
+    }
+  }
+  return count > 0 ? out : null;
+}
+
+/**
+ * Cap the stored steps array (count), and re-normalize each step's `subtitle`
+ * and `params` against the ingest limits, masking token-shaped strings. Applied
+ * on ingest so a payload that skipped the reporter is bounded all the same.
+ */
+export function capSteps(value: unknown, limits: IngestLimits): unknown {
+  if (!Array.isArray(value)) return value ?? null;
+  return value.slice(0, limits.steps).map((step) => {
+    if (!step || typeof step !== 'object' || Array.isArray(step)) return step;
+    const s = step as Record<string, unknown>;
+    const out: Record<string, unknown> = { ...s };
+    if (typeof s.subtitle === 'string') {
+      out.subtitle = maskTokenLike(s.subtitle).slice(0, limits.stepParamValueChars);
+    }
+    if (s.params && typeof s.params === 'object' && !Array.isArray(s.params)) {
+      const params = capStepParams(s.params as Record<string, unknown>, limits);
+      if (params) out.params = params;
+      else delete out.params;
+    } else if ('params' in out) {
+      delete out.params;
+    }
+    return out;
+  });
 }
 
 /**

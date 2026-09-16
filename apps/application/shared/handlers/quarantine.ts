@@ -10,7 +10,7 @@
  * what makes the exit possible: consecutive passes accumulate, and once a test
  * has earned its way out the dashboard says so instead of waiting to be asked.
  */
-import { and, asc, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { quarantinedTests, testCases, testRuns, testRunsCases } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 
@@ -66,6 +66,10 @@ export async function getQuarantinedCaseIds(db: DrizzleDB, projectId: number): P
  * Trailing passing streak for each test, counted over executions recorded after
  * the run the test was quarantined at. Ordered newest first and stopped at the
  * first failure, so a single recent flake resets the count — which is the point.
+ *
+ * One query for the whole list: each test's executions since its own quarantine
+ * run are ranked newest-first with a window function, and only the first
+ * `STREAK_SCAN_LIMIT` of each are read back.
  */
 async function computeStreaks(
   db: DrizzleDB,
@@ -74,27 +78,52 @@ async function computeStreaks(
   const streaks = new Map<number, { passes: number; runs: number }>();
   if (entries.length === 0) return streaks;
 
-  for (const entry of entries) {
-    const rows = await db
-      .select({ status: testRunsCases.status, id: testRunsCases.id })
-      .from(testRunsCases)
-      .where(
-        and(
-          eq(testRunsCases.testCaseId, entry.testCaseId),
-          entry.quarantinedAtRunId != null ? gt(testRunsCases.testRunId, entry.quarantinedAtRunId) : sql`1 = 1`,
-        ),
-      )
-      .orderBy(desc(testRunsCases.id))
-      .limit(STREAK_SCAN_LIMIT);
+  const sinceQuarantine = or(
+    ...entries.map((entry) =>
+      and(
+        eq(testRunsCases.testCaseId, entry.testCaseId),
+        entry.quarantinedAtRunId != null ? gt(testRunsCases.testRunId, entry.quarantinedAtRunId) : sql`1 = 1`,
+      ),
+    ),
+  );
 
+  const ranked = db
+    .select({
+      testCaseId: testRunsCases.testCaseId,
+      status: testRunsCases.status,
+      id: testRunsCases.id,
+      newestRank:
+        sql<number>`row_number() over (partition by ${testRunsCases.testCaseId} order by ${testRunsCases.id} desc)`.as(
+          'newest_rank',
+        ),
+    })
+    .from(testRunsCases)
+    .where(sinceQuarantine)
+    .as('ranked');
+
+  const rows = await db
+    .select({ testCaseId: ranked.testCaseId, status: ranked.status, id: ranked.id })
+    .from(ranked)
+    .where(lte(ranked.newestRank, STREAK_SCAN_LIMIT))
+    .orderBy(desc(ranked.id));
+
+  const byCase = new Map<number, Array<{ status: string }>>();
+  for (const row of rows) {
+    const list = byCase.get(row.testCaseId);
+    if (list) list.push(row);
+    else byCase.set(row.testCaseId, [row]);
+  }
+
+  for (const entry of entries) {
+    const executions = byCase.get(entry.testCaseId) ?? [];
     let passes = 0;
-    for (const row of rows) {
+    for (const row of executions) {
       if (row.status === 'passed') passes++;
       else if (FAIL_STATUSES.includes(row.status)) break;
       // Skipped / didnotrun executions prove nothing either way; ignore them
       // rather than counting or breaking the streak.
     }
-    streaks.set(entry.testCaseId, { passes, runs: rows.length });
+    streaks.set(entry.testCaseId, { passes, runs: executions.length });
   }
 
   return streaks;

@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/dashboard",
-  "version": "0.24.0",
+  "version": "0.32.0",
   "private": true,
   "type": "module",
   "imports": {
@@ -14,16 +14,19 @@
     "app:seed:dev": "node scripts/seed-dev-from-demo.mjs",
     "app:build": "nuxt build",
     "app:dev": "nuxt dev",
+    "app:dev:bg": "node scripts/dev-server.mjs",
     "app:preview": "nuxt preview",
     "app:lint": "oxlint --config oxlint.config.ts .",
     "app:lint:fix": "oxlint --config oxlint.config.ts . --fix",
     "app:format": "oxfmt --config oxfmt.config.ts --write \".\"",
     "app:format:check": "oxfmt --config oxfmt.config.ts --check \".\"",
     "app:typecheck": "nuxt typecheck",
-    "test": "vitest run && playwright test",
+    "test": "cross-env NODE_OPTIONS=--expose-gc vitest run && playwright test",
     "app:test": "playwright test",
-    "app:test:unit": "vitest run",
-    "app:test:unit:coverage": "vitest run --coverage",
+    "app:test:ai:live": "playwright test --config=tests/live/playwright.config.ts",
+    "app:test:jira:live": "playwright test --config=tests/live/jira-live.config.ts",
+    "app:test:unit": "cross-env NODE_OPTIONS=--expose-gc vitest run",
+    "app:test:unit:coverage": "cross-env NODE_OPTIONS=--expose-gc vitest run --coverage",
     "app:test:ui": "playwright test --ui",
     "app:test:report": "playwright show-report",
     "db:generate": "drizzle-kit generate",
@@ -36,6 +39,10 @@
     "db:studio:pg": "drizzle-kit studio --config=drizzle.config.pg.ts",
     "app:check:demo": "node scripts/check-demo-routes.mjs",
     "app:check:demo:runtime": "node scripts/check-demo-runtime.mjs",
+    "app:measure": "node scripts/measure-detail-pages.mjs",
+    "app:screens": "node scripts/take-feature-screenshots.mjs",
+    "app:screens:docs": "node scripts/take-feature-screenshots.mjs --tag docs",
+    "app:screens:check": "node scripts/take-feature-screenshots.mjs --check",
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
@@ -48,10 +55,9 @@
     "@nuxt/hints": "^1.0.0-alpha.5",
     "@nuxt/test-utils": "^4.0.2",
     "@nuxt/ui": "^4.10.0",
-    "@unovis/ts": "^1.6.7",
-    "@unovis/vue": "^1.6.7",
     "@vite-pwa/nuxt": "^1.1.1",
     "@vueuse/nuxt": "^14.1.0",
+    "busboy": "^1.6.0",
     "date-fns": "^4.1.0",
     "drizzle-orm": "^0.45.0",
     "fflate": "^0.8.2",
@@ -59,6 +65,7 @@
     "marked": "^17.0.6",
     "nodemailer": "^9.0.3",
     "nuxt": "^4.2.1",
+    "pdf-lib": "^1.17.1",
     "pixelmatch": "^7.2.0",
     "postgres": "^3.4.9",
     "sharp": "^0.35.3",
@@ -67,7 +74,9 @@
     "zod": "^4.1.13"
   },
   "devDependencies": {
-    "@playwright/test": "^1.61.1",
+    "@iconify-json/simple-icons": "^1.2.93",
+    "@playwright/test": "^1.63.0",
+    "@types/busboy": "^1.5.4",
     "@types/nodemailer": "^8.0.1",
     "@types/sql.js": "^1.4.11",
     "cross-env": "^10.1.0",
@@ -80,6 +89,6 @@
     "@libsql/linux-x64-musl": "^0.5.29"
   },
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=22.0.0"
   }
 }

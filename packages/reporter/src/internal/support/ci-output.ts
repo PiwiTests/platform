@@ -1,13 +1,14 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Logger } from './logger.js';
+import type { FailureLink } from './failure-links.js';
 import { errorMessage } from './errors.js';
 
 /**
  * The facts about a just-submitted run that CI pipelines want to consume: the
- * clickable dashboard URL plus the identifiers and status behind it. Produced by
- * the submit ladder once a run lands, and rendered into CI-native channels by
- * `emitRunOutputs`.
+ * clickable dashboard URL plus the identifiers and status behind it, and the
+ * failed tests with their execution links. Produced by the submit ladder once
+ * a run lands, and rendered into CI-native channels by `emitRunOutputs`.
  */
 export interface RunOutput {
   /** Clickable dashboard URL for the run (`<serverUrl>/test-runs/<id>`). */
@@ -22,7 +23,12 @@ export interface RunOutput {
   status: string;
   /** Link back to the CI build/job that produced the run, when detected. */
   ciBuildUrl?: string | null;
+  /** Tests whose final attempt failed, each with its dashboard link. */
+  failures: FailureLink[];
 }
+
+/** The GitHub job summary lists at most this many failed tests; the rest are counted. */
+export const SUMMARY_MAX_FAILURES = 20;
 
 /**
  * Surface the dashboard run URL wherever a CI pipeline can pick it up, so a
@@ -35,8 +41,9 @@ export interface RunOutput {
  *  2. `outputFile` (opt-in): a portable JSON file every CI can read
  *     (`cat piwi-run.json`, Jenkins `readJSON`, etc.).
  *  3. GitHub Actions (auto): step outputs on `$GITHUB_OUTPUT`
- *     (`steps.<id>.outputs.piwi_run_url`), a markdown link on
- *     `$GITHUB_STEP_SUMMARY`, and a `::notice::` workflow annotation.
+ *     (`steps.<id>.outputs.piwi_run_url`), a markdown link plus the failed
+ *     tests with their headlines on `$GITHUB_STEP_SUMMARY`, and a `::notice::`
+ *     workflow annotation.
  *  4. GitLab CI (auto): a dotenv report file (default `piwi.env`) to be wired as
  *     `artifacts:reports:dotenv:` so later jobs inherit `$PIWI_RUN_URL`.
  */
@@ -68,6 +75,8 @@ function writeOutputFile(file: string, output: RunOutput, logger: Logger): void 
           projectName: output.projectName,
           status: output.status,
           ciBuildUrl: output.ciBuildUrl ?? null,
+          failedCount: output.failures.length,
+          failures: output.failures,
         },
         null,
         2,
@@ -79,17 +88,18 @@ function writeOutputFile(file: string, output: RunOutput, logger: Logger): void 
   }
 }
 
-/** GitHub Actions: step outputs, a job-summary link, and a workflow annotation. */
+/** GitHub Actions: step outputs, a job summary with the failed tests, and a workflow annotation. */
 function emitGitHubActions(output: RunOutput, env: NodeJS.ProcessEnv, logger: Logger): void {
   const pairs: Array<[string, string]> = [
     ['piwi_run_url', output.runUrl],
     ['piwi_run_id', String(output.runId)],
     ['piwi_run_status', output.status],
+    ['piwi_failed_count', String(output.failures.length)],
   ];
   if (output.projectId != null) pairs.push(['piwi_project_id', String(output.projectId)]);
 
-  // Values are single-line (URL / id / status), so the plain `key=value` form is
-  // safe — no heredoc delimiter needed.
+  // Values are single-line (URL / id / status / count), so the plain
+  // `key=value` form is safe — no heredoc delimiter needed.
   if (env.GITHUB_OUTPUT) {
     appendFileLines(
       env.GITHUB_OUTPUT,
@@ -101,7 +111,13 @@ function emitGitHubActions(output: RunOutput, env: NodeJS.ProcessEnv, logger: Lo
   if (env.GITHUB_STEP_SUMMARY) {
     appendFileLines(
       env.GITHUB_STEP_SUMMARY,
-      ['### Piwi test run', '', `[View run](${output.runUrl}) — **${output.status}**`, ''],
+      [
+        '### Piwi test run',
+        '',
+        `[View run](${output.runUrl}) — **${output.status}**`,
+        '',
+        ...summaryFailureLines(output),
+      ],
       logger,
       'step summary',
     );
@@ -110,10 +126,32 @@ function emitGitHubActions(output: RunOutput, env: NodeJS.ProcessEnv, logger: Lo
   process.stdout.write(`::notice title=Piwi test run::${output.runUrl}\n`);
 }
 
+/** Markdown list of the failed tests for the job summary, capped at `SUMMARY_MAX_FAILURES`. */
+function summaryFailureLines(output: RunOutput): string[] {
+  if (output.failures.length === 0) return [];
+  const lines = output.failures.slice(0, SUMMARY_MAX_FAILURES).map((f) => {
+    const headline = f.headline ? ` — ${escapeMarkdown(f.headline)}` : '';
+    return `- ❌ [${escapeMarkdown(f.title)}](${f.url})${headline} — \`${f.file}\``;
+  });
+  const hidden = output.failures.length - SUMMARY_MAX_FAILURES;
+  if (hidden > 0) lines.push(`- +${hidden} more`);
+  lines.push('');
+  return lines;
+}
+
+function escapeMarkdown(text: string): string {
+  return text.replace(/[\\`*_[\]]/g, (ch) => `\\${ch}`);
+}
+
 /** GitLab CI: a dotenv report file so later jobs inherit the run URL as a variable. */
 function emitGitLabDotenv(output: RunOutput, env: NodeJS.ProcessEnv, logger: Logger): void {
   const file = env.PIWI_DOTENV_FILE || 'piwi.env';
-  const lines = [`PIWI_RUN_URL=${output.runUrl}`, `PIWI_RUN_ID=${output.runId}`, `PIWI_RUN_STATUS=${output.status}`];
+  const lines = [
+    `PIWI_RUN_URL=${output.runUrl}`,
+    `PIWI_RUN_ID=${output.runId}`,
+    `PIWI_RUN_STATUS=${output.status}`,
+    `PIWI_FAILED_COUNT=${output.failures.length}`,
+  ];
   if (output.projectId != null) lines.push(`PIWI_PROJECT_ID=${output.projectId}`);
   if (output.ciBuildUrl) lines.push(`PIWI_CI_BUILD_URL=${output.ciBuildUrl}`);
   try {

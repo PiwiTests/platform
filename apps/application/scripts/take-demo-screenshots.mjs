@@ -33,7 +33,7 @@ import {
 } from './demo-pages.mjs';
 
 const require = createRequire(import.meta.url);
-const pw = require('/home/user/platform/node_modules/playwright/index.js');
+const pw = require('playwright');
 const chromium = pw.chromium;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

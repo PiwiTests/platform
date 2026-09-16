@@ -12,7 +12,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   if (!isAuthEnabled(event)) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'Authentication is not enabled',
     });

@@ -20,6 +20,17 @@
 export const FAILED_STATUS_KEYS = ['failed', 'timedOut', 'timedout'] as const;
 
 /**
+ * Canonical spelling for a per-case status. The wire may carry Playwright's
+ * camelCase `timedOut`; every stored value uses the lowercase `TestCaseStatus`
+ * form. Rows written by earlier releases can still hold the camelCase form, so
+ * readers keep matching both (`FAILED_STATUS_KEYS`) while writers go through
+ * this.
+ */
+export function normalizeTestCaseStatus(status: string): string {
+  return status === 'timedOut' ? 'timedout' : status;
+}
+
+/**
  * Sum the failed-ish entries from a per-status tally (e.g. the
  * `insertedStatusCounts` record built while persisting streaming events).
  * Returns 0 when the record is empty or has no failed/timed-out entries.

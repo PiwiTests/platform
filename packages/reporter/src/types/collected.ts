@@ -65,6 +65,8 @@ export interface CollectedTestCase {
   timeout?: number | null;
   error?: string | null;
   retries?: number;
+  /** One entry per attempt up to and including this one: `{ retry, status, duration, startedAt }`. */
+  attempts?: Array<{ retry: number; status: string; duration: number; startedAt: number | null }> | null;
   workerIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
@@ -76,6 +78,8 @@ export interface CollectedTestCase {
   testAnnotations?: TestAnnotation[] | null;
   /** Normalized `TestCase.tags`, `@` stripped (see `@piwitests/core/test-meta`). */
   tags?: string[] | null;
+  /** Lock names read from the private `TestCase._locks` (best effort). */
+  locks?: string[] | null;
   /** Ownership metadata parsed from `piwi:` annotations. */
   testMeta?: TestMetadata | null;
   /** Source snippet around the failing line (failed/timedOut only). */
@@ -94,10 +98,18 @@ export interface CollectedTestCase {
   aiUsage?: unknown;
   /** Parsed from `piwi-console` attachments. */
   consoleLogs?: unknown;
+  /** Parsed from `piwi-dialogs` attachment: browser dialogs observed via the close event. */
+  dialogs?: unknown;
   /** Parsed from `piwi-aria-snapshot` attachment. */
   ariaSnapshot?: string;
+  /** Parsed from `piwi-aria-snapshot-json` attachment (Playwright ≥ 1.63). */
+  ariaSnapshotJson?: string;
   /** Parsed from `piwi-locators` attachment. */
   locatorSnapshots?: LocatorSnapshot[];
+  /** Why a `didnotrun` case never executed; unset for tests that ran. */
+  didNotRunReason?: string | null;
+  /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
+  blockedBy?: string | null;
 }
 
 /** Hash + size of a single trace file, used for dedup against the server. */

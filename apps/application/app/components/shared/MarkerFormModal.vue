@@ -79,7 +79,7 @@ async function handleSave() {
 
   try {
     if (props.marker) {
-      await $fetch(`/api/markers/${props.marker.id}`, { method: 'PUT', body });
+      await $fetch(`/api/markers/${props.marker.id}`, { method: 'PATCH', body });
       toast.add({ title: 'Marker updated', color: 'success' });
     } else {
       await $fetch(`/api/projects/${props.projectId}/markers`, { method: 'POST', body });

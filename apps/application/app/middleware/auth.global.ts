@@ -1,8 +1,11 @@
 import { Role } from '#shared/types';
 
+// Pages that must work without a session: signing in, and the account-recovery
+// pages reached from emailed links.
+const PUBLIC_PATHS = ['/login', '/forgot-password', '/reset-password'];
+
 export default defineNuxtRouteMiddleware(async (to) => {
-  // Skip auth check for login page
-  if (to.path === '/login') {
+  if (PUBLIC_PATHS.includes(to.path)) {
     return;
   }
 

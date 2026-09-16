@@ -17,6 +17,6 @@ export default eventHandler(async (event) => {
   const { db } = await requireResolvedProjectAccess(event, id, resolveRunProjectId, 'Test run');
 
   const result = await computeRegressionContextForRun(db, id);
-  if (!result) throw createError({ statusCode: 404, message: 'Test run not found' });
+  if (!result) throw apiError({ statusCode: 404, message: 'Test run not found' });
   return result;
 });

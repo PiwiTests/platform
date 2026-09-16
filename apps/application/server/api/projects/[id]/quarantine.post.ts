@@ -37,7 +37,7 @@ export default eventHandler(async (event) => {
   const body = (await readBody(event)) as { testCaseId?: unknown; reason?: unknown; source?: unknown };
   const testCaseId = Number(body?.testCaseId);
   if (!Number.isFinite(testCaseId) || testCaseId <= 0) {
-    throw createError({ statusCode: 400, message: 'testCaseId is required' });
+    throw apiError({ statusCode: 400, message: 'testCaseId is required' });
   }
 
   const db = await getDatabase();
@@ -50,7 +50,7 @@ export default eventHandler(async (event) => {
     return { success: true, ...result };
   } catch (e: any) {
     if (e?.message === 'Test case not found in this project') {
-      throw createError({ statusCode: 404, message: e.message });
+      throw apiError({ statusCode: 404, message: e.message });
     }
     throw e;
   }

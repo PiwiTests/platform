@@ -24,7 +24,7 @@ export default eventHandler(async (event) => {
   const existing = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, id));
 
   if (!existing[0]) {
-    throw createError({ statusCode: 404, message: 'Project not found' });
+    throw apiError({ statusCode: 404, message: 'Project not found' });
   }
 
   await deleteProject(id);

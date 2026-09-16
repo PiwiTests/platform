@@ -6,11 +6,13 @@ import { requireAuth } from '../../utils/auth';
 import { parseLocation } from '../../utils/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
 import { sanitizeMetadata } from '../../utils/sanitize';
+import { resolveRunBranch } from '../../utils/run-branch';
 import { runEventBus } from '../../utils/run-events';
 import { autoDiagnoseRun } from '../../utils/ai-diagnosis';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { emitRunNotifications } from '../../utils/notifications/run-notifications';
 import { postRunPrFeedbackInBackground } from '../../utils/scm/pr-feedback';
+import { maybeEnqueueHealActionInBackground } from '../../utils/heal/policy';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 
@@ -49,7 +51,7 @@ export default eventHandler(async (event) => {
 
   // Validate required fields
   if (!body.projectName || !body.status || !body.startTime) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'Missing required fields: projectName, status, startTime',
     });
@@ -64,11 +66,11 @@ export default eventHandler(async (event) => {
 
   if (project) {
     if (!scopeAllows(scope, project.id)) {
-      throw createError({ statusCode: 403, message: 'No access to this project' });
+      throw apiError({ statusCode: 403, message: 'No access to this project' });
     }
   } else {
     if (scope !== 'all') {
-      throw createError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
+      throw apiError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
     }
     const result = await db
       .insert(projects)
@@ -81,7 +83,7 @@ export default eventHandler(async (event) => {
   }
 
   if (!project) {
-    throw createError({
+    throw apiError({
       statusCode: 500,
       message: 'Failed to create or retrieve project',
     });
@@ -100,7 +102,7 @@ export default eventHandler(async (event) => {
         and(
           eq(testRuns.projectId, project.id),
           eq(testRuns.instanceId, instanceId),
-          or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initialising')),
+          or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing')),
         ),
       );
 
@@ -145,6 +147,7 @@ export default eventHandler(async (event) => {
             suiteConfig: testCase.suiteConfig ?? null,
             testAnnotations: testCase.testAnnotations ?? null,
             tags: testCase.tags ?? null,
+            locks: testCase.locks ?? null,
             testMeta: testCase.testMeta ?? null,
             title: testCase.title,
             status: testCase.status,
@@ -152,6 +155,7 @@ export default eventHandler(async (event) => {
             timeout: testCase.timeout,
             error: testCase.error,
             retries: testCase.retries,
+            attempts: (testCase as { attempts?: unknown }).attempts ?? null,
             line,
             column,
             steps: testCase.steps,
@@ -164,7 +168,9 @@ export default eventHandler(async (event) => {
             pageState: testCase.pageState,
             aiUsage: testCase.aiUsage,
             consoleLogs: testCase.consoleLogs,
+            dialogs: testCase.dialogs,
             ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
+            ariaSnapshotJson: testCase.ariaSnapshotJson as string | null | undefined,
             testSource: testCase.testSource ?? null,
             testSourceFrames: testCase.testSourceFrames ?? null,
             workerIndex: testCase.workerIndex,
@@ -172,6 +178,8 @@ export default eventHandler(async (event) => {
             startedAt: testCase.startedAt ?? null,
             browser: testCase.browser ?? null,
             locatorSnapshots: testCase.locatorSnapshots ?? null,
+            didNotRunReason: testCase.didNotRunReason ?? null,
+            blockedBy: testCase.blockedBy ?? null,
           };
         });
         await persistRunCases(db, project.id, existingRun.id, cases);
@@ -214,7 +222,7 @@ export default eventHandler(async (event) => {
 
       return {
         success: true,
-        testRunId: existingRun.id,
+        runId: existingRun.id,
         projectId: project.id,
       };
     }
@@ -236,12 +244,14 @@ export default eventHandler(async (event) => {
       skippedTests: body.skippedTests || 0,
       didNotRunTests: body.didNotRunTests || 0,
       environment: body.environment || null,
+      branch: resolveRunBranch(body.metadata),
       label: body.label || null,
       metadata: sanitizeMetadata(body.metadata || null),
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
       reporterVersion: body.reporterVersion || null,
       shardTotal: isSharded ? shardTotal : null,
+      shardIndex: isSharded ? ((body.shardIndex as number | undefined) ?? null) : null,
       shardsFinished: isSharded ? 0 : undefined,
       isFullRun: body.isFullRun !== false ? 1 : 0,
       filterDetails: body.filterDetails ?? null,
@@ -251,7 +261,7 @@ export default eventHandler(async (event) => {
   const testRun = testRunResult[0];
 
   if (!testRun) {
-    throw createError({
+    throw apiError({
       statusCode: 500,
       message: 'Failed to create test run',
     });
@@ -283,7 +293,9 @@ export default eventHandler(async (event) => {
         pageState?: unknown;
         aiUsage?: unknown;
         consoleLogs?: unknown;
+        dialogs?: unknown;
         ariaSnapshot?: unknown;
+        ariaSnapshotJson?: unknown;
         testSource?: string | null;
         testSourceFrames?: unknown;
         startedAt?: number | null;
@@ -294,8 +306,11 @@ export default eventHandler(async (event) => {
         suiteConfig?: unknown;
         testAnnotations?: unknown;
         tags?: unknown;
+        locks?: unknown;
         testMeta?: unknown;
         locatorSnapshots?: unknown;
+        didNotRunReason?: string | null;
+        blockedBy?: string | null;
       }) => {
         const { filePath, line, column } = testCase.location
           ? parseLocation(testCase.location)
@@ -307,6 +322,7 @@ export default eventHandler(async (event) => {
           suiteConfig: testCase.suiteConfig ?? null,
           testAnnotations: testCase.testAnnotations ?? null,
           tags: testCase.tags ?? null,
+          locks: testCase.locks ?? null,
           testMeta: testCase.testMeta ?? null,
           title: testCase.title,
           status: testCase.status,
@@ -314,6 +330,7 @@ export default eventHandler(async (event) => {
           timeout: testCase.timeout,
           error: testCase.error,
           retries: testCase.retries,
+          attempts: (testCase as { attempts?: unknown }).attempts ?? null,
           line,
           column,
           steps: testCase.steps,
@@ -326,7 +343,9 @@ export default eventHandler(async (event) => {
           pageState: testCase.pageState,
           aiUsage: testCase.aiUsage,
           consoleLogs: testCase.consoleLogs,
+          dialogs: testCase.dialogs,
           ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
+          ariaSnapshotJson: testCase.ariaSnapshotJson as string | null | undefined,
           testSource: testCase.testSource ?? null,
           testSourceFrames: testCase.testSourceFrames ?? null,
           workerIndex: testCase.workerIndex,
@@ -334,6 +353,8 @@ export default eventHandler(async (event) => {
           startedAt: testCase.startedAt ?? null,
           browser: testCase.browser ?? null,
           locatorSnapshots: testCase.locatorSnapshots ?? null,
+          didNotRunReason: testCase.didNotRunReason ?? null,
+          blockedBy: testCase.blockedBy ?? null,
         };
       },
     );
@@ -362,10 +383,11 @@ export default eventHandler(async (event) => {
   autoDiagnoseRun(db, project.id, testRun.id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
   emitRunNotifications(db, testRun.id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));
   postRunPrFeedbackInBackground(db, testRun.id);
+  maybeEnqueueHealActionInBackground(db, testRun.id);
 
   return {
     success: true,
-    testRunId: testRun.id,
+    runId: testRun.id,
     projectId: project.id,
   };
 });

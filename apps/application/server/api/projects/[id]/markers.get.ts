@@ -17,5 +17,5 @@ export default eventHandler(async (event) => {
   await requireProjectAccess(event, id);
 
   const db = await getDatabase();
-  return await listProjectMarkers(db, id);
+  return { items: (await listProjectMarkers(db, id)).markers };
 });

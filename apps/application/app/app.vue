@@ -22,7 +22,7 @@ useHead({
 });
 
 const title = 'Piwi Dashboard';
-const description = 'The Piwi Dashboard with statistics and test management.';
+const description = 'Your Playwright results, kept and explained.';
 
 useSeoMeta({
   title,

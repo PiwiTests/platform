@@ -78,6 +78,30 @@ describe('getSetupStatus', () => {
     const active = await activeIds(db);
     expect(active.has('fixtures')).toBe(true);
     expect(active.has('locator-healing')).toBe(false);
+    expect(active.has('backend-logs')).toBe(false);
+  });
+
+  test('a network request carrying server traces activates the backend-logs capability', async () => {
+    await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
+    const [run] = await db
+      .insert(schema.testRuns)
+      .values({ projectId: 1, status: 'passed', startTime: new Date(), duration: 1, totalTests: 1, passedTests: 1 })
+      .returning({ id: schema.testRuns.id });
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'a' });
+    const [runCase] = await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: run!.id, testCaseId: 1, status: 'passed', duration: 1 })
+      .returning({ id: schema.testRunsCases.id });
+    await db.insert(schema.networkRequests).values({
+      testRunsCaseId: runCase!.id,
+      testRunId: run!.id,
+      url: 'https://example.test/api',
+      method: 'GET',
+      status: 200,
+      serverTraces: [{ name: 'db.query', durationMs: 12 }],
+    });
+
+    expect((await activeIds(db)).has('backend-logs')).toBe(true);
   });
 
   test('detection is evidence-based, not config-based: a defined tag activates tags', async () => {

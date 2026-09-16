@@ -15,16 +15,22 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { failureClusters, projects, testCases, testRuns, testRunsCases } from '../../database/schema';
 import { getAppSetting } from '../app-settings';
 import { createScmProvider } from './index';
-import { normalizeGitUrl } from '../regression-context';
+import { normalizeGitUrl } from './git-url';
 import { getLocatorHealingBatch } from '../locator-healing';
+import { mapHealActionsByCluster } from '../heal/lookup';
+import { getClusterKnownIssues } from '../integrations/known-issue';
 import { resolveOwners } from './ownership';
+import { resolveDefaultBranch } from './default-branch';
+import { resolveRunBranch } from '../run-branch';
 import { verifyClusterFixes } from '../fix-verification';
 import { computeRunInsights } from '#shared/handlers/run-insights';
+import { getProjectFlakyTests } from '#shared/handlers/projects';
 import {
   buildCommitStatus,
   buildPrComment,
   DEFAULT_PR_FEEDBACK,
   PR_COMMENT_MARKER,
+  PR_EXCERPT_MAX,
   PR_FEEDBACK_KEY,
   resolvePrFeedbackSettings,
   type PrFailureEntry,
@@ -34,6 +40,10 @@ import {
 import type { VerifiedFix } from '../fix-verification';
 import type { RunMetadata } from '../run-json-types';
 import type { DbClient } from '../../database';
+import type { FilterDetails } from '#shared/types';
+import { errorExcerpt } from '#shared/notification-events';
+import { caseHeadline } from '#shared/failure-verdict';
+import { locksHeldAcrossShards } from '#shared/lock-overlap';
 
 /** Read the resolved settings, falling back to the (disabled) defaults. */
 export async function getPrFeedbackSettings(db: DbClient): Promise<PrFeedbackSettings> {
@@ -43,14 +53,8 @@ export async function getPrFeedbackSettings(db: DbClient): Promise<PrFeedbackSet
 
 const FAIL_STATUSES = ['failed', 'timedOut', 'timedout'];
 
-/** First line of an error, capped so a comment stays readable. */
-function excerpt(error: string | null): string | null {
-  if (!error) return null;
-  const firstLine = error.split('\n').find((line) => line.trim().length > 0);
-  if (!firstLine) return null;
-  const trimmed = firstLine.trim();
-  return trimmed.length > 200 ? `${trimmed.slice(0, 199)}…` : trimmed;
-}
+/** Recent default-branch runs scanned to decide whether a failure is already flaky there. */
+const DEFAULT_BRANCH_FLAKY_RUNS = 50;
 
 /** What the dashboard is reachable at, for the links inside the comment. */
 function resolveSiteUrl(): string | null {
@@ -72,6 +76,9 @@ interface CaseRow {
   filePath: string;
   tags: unknown;
   owner: string | null;
+  locks: unknown;
+  shardIndex: number | null;
+  startedAt: number | null;
 }
 
 /**
@@ -84,6 +91,7 @@ async function buildFailureEntries(
   projectId: number,
   rows: CaseRow[],
   newRegressionIds: Set<number>,
+  defaultBranchFlaky: Map<number, { branch: string; flakinessRate: number }>,
 ): Promise<{ newRegressions: PrFailureEntry[]; preExisting: PrFailureEntry[] }> {
   const clusterIds = [...new Set(rows.map((r) => r.failureClusterId).filter((id): id is number => id != null))];
   const clusterSignatures = new Map<number, string>();
@@ -104,17 +112,35 @@ async function buildFailureEntries(
   // can name the owning team on a suite nobody has annotated.
   const owners = await resolveOwners(db, projectId, rows).catch(() => new Map());
 
-  const toEntry = (row: CaseRow): PrFailureEntry => ({
-    title: row.title,
-    filePath: row.filePath,
-    errorExcerpt: excerpt(row.error),
-    executionId: row.id,
-    clusterId: row.failureClusterId,
-    clusterSignature: row.failureClusterId ? (clusterSignatures.get(row.failureClusterId) ?? null) : null,
-    suggestedLocator: healing.get(row.id)?.recommendation?.recommended?.locator ?? null,
-    tags: Array.isArray(row.tags) ? (row.tags as string[]) : null,
-    owner: owners.get(row)?.owner ?? row.owner,
-  });
+  // A locator that broke here may already have an auto-heal PR open (it broke on
+  // the default branch too); cross-link it rather than sending someone to fix it
+  // twice. Keyed by cluster — stable across the two runs, where execution ids differ.
+  const healByCluster = await mapHealActionsByCluster(db, projectId).catch(() => new Map());
+
+  // The tracker issue each failing cluster is already known by, so the comment
+  // can say "tracked in PROJ-123" per failure.
+  const knownIssues = await getClusterKnownIssues(db, clusterIds).catch(() => new Map());
+
+  const toEntry = (row: CaseRow): PrFailureEntry => {
+    const heal = row.failureClusterId != null ? healByCluster.get(row.failureClusterId) : undefined;
+    const issue = row.failureClusterId != null ? knownIssues.get(row.failureClusterId) : undefined;
+    return {
+      title: row.title,
+      filePath: row.filePath,
+      headline: caseHeadline(row)?.headline ?? null,
+      errorExcerpt: errorExcerpt(row.error, PR_EXCERPT_MAX) ?? null,
+      executionId: row.id,
+      clusterId: row.failureClusterId,
+      clusterSignature: row.failureClusterId ? (clusterSignatures.get(row.failureClusterId) ?? null) : null,
+      suggestedLocator: healing.get(row.id)?.recommendation?.recommended?.locator ?? null,
+      healPrNumber: heal?.prNumber ?? null,
+      healPrUrl: heal?.prUrl ?? null,
+      tags: Array.isArray(row.tags) ? (row.tags as string[]) : null,
+      owner: owners.get(row)?.owner ?? row.owner,
+      flakyOnDefaultBranch: defaultBranchFlaky.get(row.testCaseId) ?? null,
+      issue: issue ? { key: issue.key, url: issue.url } : null,
+    };
+  };
 
   const newRegressions: PrFailureEntry[] = [];
   const preExisting: PrFailureEntry[] = [];
@@ -154,6 +180,9 @@ export async function buildRunPrSummary(
       filePath: testCases.filePath,
       tags: testCases.tags,
       owner: testCases.owner,
+      locks: testRunsCases.locks,
+      shardIndex: testRunsCases.shardIndex,
+      startedAt: testRunsCases.startedAt,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
@@ -165,9 +194,35 @@ export async function buildRunPrSummary(
   // `computeRunInsights` owns the baseline comparison; reuse it rather than
   // re-deriving "new versus pre-existing" with a second, divergent rule.
   const insights = await computeRunInsights(db, runId).catch(() => null);
-  const newRegressionIds = new Set<number>((insights?.newRegressions ?? []).map((entry) => entry.testRunsCaseId));
+  const newRegressionIds = new Set<number>((insights?.newRegressions ?? []).map((entry) => entry.executionId));
 
-  const { newRegressions, preExisting } = await buildFailureEntries(db, run.projectId, failingRows, newRegressionIds);
+  // Flake exoneration: on a feature branch, mark a failure that is already flaky
+  // on the default branch so the reviewer knows it is likely not this change's
+  // doing. Skipped for runs already on the default branch (nothing to compare).
+  const runBranch = run.branch ?? resolveRunBranch(run.metadata);
+  const defaultBranch = await resolveDefaultBranch(db, project, run.metadata);
+  const defaultBranchFlaky = new Map<number, { branch: string; flakinessRate: number }>();
+  if (runBranch && runBranch !== defaultBranch) {
+    const flaky = await getProjectFlakyTests(
+      db,
+      run.projectId,
+      DEFAULT_BRANCH_FLAKY_RUNS,
+      undefined,
+      undefined,
+      defaultBranch,
+    ).catch(() => []);
+    for (const test of flaky) {
+      defaultBranchFlaky.set(test.testCaseId, { branch: defaultBranch, flakinessRate: Math.min(1, test.score / 100) });
+    }
+  }
+
+  const { newRegressions, preExisting } = await buildFailureEntries(
+    db,
+    run.projectId,
+    failingRows,
+    newRegressionIds,
+    defaultBranchFlaky,
+  );
 
   const newClusters = await db
     .select({ id: failureClusters.id, signature: failureClusters.signature })
@@ -221,6 +276,22 @@ export async function buildRunPrSummary(
       timeToResolutionMs: fix.timeToResolutionMs,
     })),
     wastedMinutes: wastedTotalMs > 0 ? wastedTotalMs / 60000 : null,
+    selection: (() => {
+      const stamp = (run.filterDetails as FilterDetails | null)?.selection;
+      return stamp ? { key: stamp.key, testCount: stamp.resolvedCount } : null;
+    })(),
+    splitLocks: (() => {
+      const held = locksHeldAcrossShards(
+        caseRows.map((row) => ({
+          id: row.id,
+          shardIndex: row.shardIndex,
+          startedAt: row.startedAt,
+          duration: row.duration,
+          locks: Array.isArray(row.locks) ? (row.locks as string[]) : [],
+        })),
+      );
+      return held.length ? held : null;
+    })(),
     hasBaseline: insights?.hasBaseline ?? false,
   };
 }

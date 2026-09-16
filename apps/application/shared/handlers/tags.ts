@@ -12,7 +12,7 @@ export async function createTag(db: DrizzleDB, text: string, color: string) {
   const existing = await db.select().from(tags).where(eq(tags.text, text));
   if (existing.length > 0) throw new Error('A tag with this text already exists');
   const result = await db.insert(tags).values({ text, color }).returning();
-  return { tag: result[0]! };
+  return { success: true, tag: result[0]! };
 }
 
 export async function updateTag(db: DrizzleDB, id: number, data: { text?: string; color?: string }) {
@@ -23,7 +23,7 @@ export async function updateTag(db: DrizzleDB, id: number, data: { text?: string
   if (data.color !== undefined) updates.color = data.color;
   await db.update(tags).set(updates).where(eq(tags.id, id));
   const updated = await db.select().from(tags).where(eq(tags.id, id));
-  return { tag: updated[0] };
+  return { success: true, tag: updated[0] };
 }
 
 export async function deleteTag(db: DrizzleDB, id: number) {

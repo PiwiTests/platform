@@ -5,7 +5,7 @@ description: Investigate a failed test run recorded in Piwi Dashboard and propos
 
 # Investigate a Piwi failure
 
-Turn a failed run in [Piwi Dashboard](https://piwitests.github.io) into a grounded diagnosis and a concrete fix. Piwi has already gathered the evidence — the error text, the steps that ran, console output, failing network calls, a suggested locator, and the source diff since the last passing run. Use that instead of guessing.
+Turn a failed run in [Piwi Dashboard](https://piwitests.dev) into a grounded diagnosis and a concrete fix. Piwi has already gathered the evidence — the error text, the steps that ran, console output, failing network calls, a suggested locator, and the source diff since the last passing run. Use that instead of guessing.
 
 ## How you reach Piwi
 

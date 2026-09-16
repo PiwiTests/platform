@@ -7,12 +7,37 @@
 
 import { getDemoDb } from '../db.client';
 import { createUserApiKeyRecord } from '#shared/handlers/users';
+import { demoHttpError } from './http-error';
 
-/** POST /api/users/:id/api-keys */
-export async function apiCreateUserApiKey(userId: number, body: { name: string }) {
+function randomHex(bytes: number): string {
+  const buf = new Uint8Array(bytes);
+  globalThis.crypto.getRandomValues(buf);
+  return [...buf].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** POST /api/users/:id/api-keys — same shape and rules as the server route. */
+export async function apiCreateUserApiKey(userId: number, body: { name?: string; expiresAt?: string | null }) {
   const db = await getDemoDb();
-  const prefix = Math.random().toString(36).slice(2, 10);
-  const hash = Math.random().toString(36).slice(2, 34);
-  await createUserApiKeyRecord(db, userId, { name: body.name, hash, prefix });
-  return { key: `pd_${prefix}_${hash}`, name: body.name, prefix, createdAt: new Date().toISOString() };
+  const name = typeof body.name === 'string' ? body.name : '';
+  if (name.length < 1 || name.length > 100) throw demoHttpError(400, 'name must be between 1 and 100 characters');
+
+  let expiresAt: Date | null = null;
+  if (body.expiresAt) {
+    const parsed = new Date(body.expiresAt);
+    if (Number.isNaN(parsed.getTime())) throw demoHttpError(400, 'expiresAt must be a valid ISO date');
+    expiresAt = parsed;
+  }
+
+  // Real random key material (32 bytes), hashed for storage like the server —
+  // the plaintext is shown once in the response and never stored.
+  const plaintext = `pd_${randomHex(32)}`;
+  const prefix = plaintext.slice(3, 11);
+  const hash = await sha256Hex(plaintext);
+  await createUserApiKeyRecord(db, userId, { name, hash, prefix, expiresAt });
+  return { key: plaintext, prefix, name };
 }

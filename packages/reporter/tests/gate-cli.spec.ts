@@ -95,6 +95,7 @@ describe('parseGateArgs', () => {
         '--max-new-flaky',
         '2',
         '--fail-on-new-cluster',
+        '--fail-on-flaky',
       ],
       EMPTY_ENV,
     );
@@ -103,6 +104,7 @@ describe('parseGateArgs', () => {
       maxNewRegressions: 0,
       maxNewFlaky: 2,
       failOnNewCluster: true,
+      failOnFlaky: true,
     });
   });
 
@@ -110,6 +112,7 @@ describe('parseGateArgs', () => {
     const args = parseGateArgs(['--server-url', 'https://x.example.com', '--run-id', '1'], EMPTY_ENV);
     expect(args.policy.maxFailed).toBeUndefined();
     expect(args.policy.failOnNewCluster).toBe(false);
+    expect(args.policy.failOnFlaky).toBe(false);
   });
 
   it('rejects a negative or non-numeric threshold', () => {

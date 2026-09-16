@@ -5,6 +5,7 @@ import type {
   BrowserContext,
   ConsoleMessage,
   Fixtures,
+  FrameLocator,
   Locator,
   Page,
   PlaywrightTestArgs,
@@ -40,6 +41,7 @@ import {
 import { ATTACHMENT_NAMES, LOCATOR_SUGGESTION_ANNOTATION, USER_PICK_ANNOTATION } from './attachments.js';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import { applyPickToSnapshots, deriveFailedLocator, runLocatorPicker, type UserPickResult } from './pick-on-failure.js';
+import { isDueForAriaSample } from '../support/aria-sampling.js';
 
 // Re-exported: probeElementAttrs now lives in @piwitests/picker-dom (shared
 // with the dashboard's snapshot picker), but the dogfood mirror
@@ -56,6 +58,13 @@ type UseFn<T> = (value: T) => Promise<void>;
 // bound (their args are index-signature-free interfaces) while a non-test
 // argument is still rejected by the `TestType` parameter type.
 type FixtureArgs = { [key: string]: any };
+
+/** The subset of a Playwright `Dialog` the close-event reader touches. */
+interface DialogLike {
+  type?: () => string;
+  message?: () => string;
+  defaultValue?: () => string;
+}
 
 /** Shape returned by the in-page web-vitals probe (see `flushSink`). */
 interface WebVitals {
@@ -148,6 +157,7 @@ export function computeCoreVitals(
 interface CaptureSink {
   networkRequests: Array<Record<string, unknown>>;
   consoleEntries: Array<Record<string, unknown>>;
+  dialogs: Array<Record<string, unknown>>;
   pendingHandlers: Promise<void>[];
   capturedLocators: LocatorSnapshot[];
   capturePromises: Promise<void>[];
@@ -171,6 +181,10 @@ interface CaptureSink {
   stashedWebVitals: WebVitals | null;
   stashedPageState: PageState | null;
   stashedAria: string | null;
+  // The failure-time aria tree as JSON (Playwright ≥ 1.63), stringified. Feeds
+  // the healing, clue and page-diff paths that read a tree; the YAML above feeds
+  // the ARIA card.
+  stashedAriaJson: string | null;
   // The failure-time overlay was already offered once this test — several
   // close wrappers can fire for the same teardown.
   pickOffered: boolean;
@@ -182,6 +196,7 @@ function createSink(): CaptureSink {
   return {
     networkRequests: [],
     consoleEntries: [],
+    dialogs: [],
     pendingHandlers: [],
     capturedLocators: [],
     capturePromises: [],
@@ -192,6 +207,7 @@ function createSink(): CaptureSink {
     stashedWebVitals: null,
     stashedPageState: null,
     stashedAria: null,
+    stashedAriaJson: null,
     pickOffered: false,
     userPick: null,
   };
@@ -489,9 +505,24 @@ async function stashPageState(sink: CaptureSink, closing: { page?: Page; context
   }
 
   const status = sink.testInfo?.status;
-  if (status === 'failed' || status === 'timedOut' || status === 'interrupted') {
-    const aria = await ariaSnapshotBestEffort(page.locator(':root'), 1000);
+  const sampleAria = async (): Promise<void> => {
+    const root = page.locator(':root');
+    const aria = await ariaSnapshotBestEffort(root, 1000);
     if (aria) sink.stashedAria = aria;
+    const ariaJson = await ariaSnapshotJSONBestEffort(root, 1000);
+    if (ariaJson) sink.stashedAriaJson = ariaJson;
+  };
+  if (status === 'failed' || status === 'timedOut' || status === 'interrupted') {
+    await sampleAria();
+  } else if (
+    status === 'passed' &&
+    process.env.PIWI_SAMPLE_ARIA_ON_PASS !== 'false' &&
+    sink.testInfo &&
+    isDueForAriaSample(sink.testInfo)
+  ) {
+    // Sample the green page while it is still open, for the tests the server
+    // flagged as due a fresh snapshot this run.
+    await sampleAria();
   }
 }
 
@@ -549,6 +580,7 @@ const PATCHED_BROWSERS = new WeakSet<Browser>();
 // turned into Sets once here.
 const CHAIN_METHOD_SET = new Set(CHAIN_METHODS);
 const ACTION_METHOD_SET = new Set(ACTION_METHODS);
+const LOCATOR_METHOD_SET = new Set(LOCATOR_METHODS);
 
 /**
  * Everything the in-page probe needs, serialized into the browser on every
@@ -663,6 +695,23 @@ export async function ariaSnapshotBestEffort(target: Locator, timeout?: number):
     } catch {
       return null;
     }
+  }
+}
+
+/**
+ * The aria tree as JSON (Playwright ≥ 1.63's `ariaSnapshotJSON()`), stringified,
+ * or null on any older Playwright or on failure. Feature-detected the same way
+ * as `ariaSnapshotBestEffort`, so an older Playwright without the method simply
+ * yields null and the capture proceeds with the YAML alone.
+ */
+export async function ariaSnapshotJSONBestEffort(target: Locator, timeout?: number): Promise<string | null> {
+  const fn = (target as unknown as { ariaSnapshotJSON?: (opts?: unknown) => Promise<unknown> }).ariaSnapshotJSON;
+  if (typeof fn !== 'function') return null;
+  try {
+    const tree = await fn.call(target, timeout != null ? { timeout } : {});
+    return tree == null ? null : JSON.stringify(tree);
+  } catch {
+    return null;
   }
 }
 
@@ -887,6 +936,28 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
 }
 
 /**
+ * Wrap a frame locator so the locators built through it capture like page-level
+ * ones. Only the locator-building methods are intercepted; the resulting locator
+ * is proxied by `wrapLocator` with the builder call as its origin, so a healing
+ * snapshot records `getByRole(…)` rather than the frame path. Frame locators
+ * carry no action methods of their own, so nothing else is wrapped.
+ */
+function wrapFrameLocator(page: Page, frameLocator: FrameLocator): FrameLocator {
+  return new Proxy(frameLocator, {
+    get(target, prop) {
+      const original = Reflect.get(target, prop) as unknown;
+      if (typeof original !== 'function') return original;
+      const fn = original as (...args: unknown[]) => unknown;
+      if (!LOCATOR_METHOD_SET.has(prop as string)) return original;
+      return (...args: unknown[]): Locator => {
+        if (currentSink) currentSink.lastActivePage = page;
+        return wrapLocator(page, fn.apply(target, args) as Locator, String(prop), args);
+      };
+    },
+  });
+}
+
+/**
  * Instrument a single page: wrap its locator-building methods for healing
  * capture and attach console/network listeners. Idempotent — safe to call on a
  * page already reached through another path (browser patch, `page` fixture).
@@ -935,6 +1006,20 @@ function instrumentPage(page: Page): void {
       };
     }
 
+    // The no-selector `frameLocator()` searches the whole frame subtree and is a
+    // single wrappable entry point. The selector form (`frameLocator('#f')`)
+    // stays unwrapped: it predates the no-selector form and is left as Playwright
+    // returns it.
+    const originalFrameLocator = typeof page.frameLocator === 'function' ? page.frameLocator.bind(page) : null;
+    if (originalFrameLocator) {
+      (page as unknown as Record<string, (...args: unknown[]) => FrameLocator>).frameLocator = (
+        ...args: unknown[]
+      ): FrameLocator => {
+        const frame = (originalFrameLocator as (...a: unknown[]) => FrameLocator)(...args);
+        return args.length === 0 ? wrapFrameLocator(page, frame) : frame;
+      };
+    }
+
     // A document that had no seeded probe says nothing about the next one —
     // the init script runs for every navigation, so give each new document a
     // fresh chance at the fast path.
@@ -957,6 +1042,32 @@ function instrumentPage(page: Page): void {
       });
     }
   });
+
+  // Dialogs are observed through the close event only. A `dialog` listener would
+  // suppress Playwright's automatic dismissal and can hang a test that relied on
+  // it; the close event (Playwright ≥ 1.63) never does, so a page on an older
+  // Playwright — where the event never fires — simply records no dialogs. The
+  // registration is guarded because an unknown event name can throw there.
+  if (typeof page.on === 'function') {
+    try {
+      (page.on as (event: string, handler: (dialog: DialogLike) => void) => void)('dialogclosed', (dialog) => {
+        const sink = currentSink;
+        if (!sink) return;
+        try {
+          sink.dialogs.push({
+            type: typeof dialog.type === 'function' ? dialog.type() : null,
+            message: typeof dialog.message === 'function' ? dialog.message() : null,
+            defaultValue: typeof dialog.defaultValue === 'function' ? dialog.defaultValue() || null : null,
+            closedAt: Date.now(),
+          });
+        } catch {
+          /* a dialog shape the reader does not expect — skip it */
+        }
+      });
+    } catch {
+      /* Playwright predates the dialogclosed event */
+    }
+  }
 
   page.on('requestfinished', (request: Request) => {
     const sink = currentSink;
@@ -1156,6 +1267,15 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
           body: snapshot,
         });
 
+        const snapshotJson =
+          (pageReadable ? await ariaSnapshotJSONBestEffort(page.locator(':root')) : null) ?? sink.stashedAriaJson;
+        if (snapshotJson) {
+          await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshotJson, {
+            contentType: 'application/json',
+            body: snapshotJson,
+          });
+        }
+
         // Suggest a fresh locator for the failed action from the current page.
         // When the element was renamed/moved, the pre-captured alternatives
         // describe the old element, so this points at where it went now — as a
@@ -1171,6 +1291,36 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
           await testInfo.attach(ATTACHMENT_NAMES.locatorSuggestion, {
             contentType: 'application/json',
             body: Buffer.from(JSON.stringify(suggestion)),
+          });
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Sample the ARIA snapshot at the end of a passing test, but only for the
+  // tests the server flagged as due a fresh green sample this run. The same
+  // attachment carries it as a failure snapshot, so ingest and the diff read it
+  // the same way. Rate-limited server-side; a null sample set never samples.
+  if (
+    testInfo.status === 'passed' &&
+    process.env.PIWI_SAMPLE_ARIA_ON_PASS !== 'false' &&
+    isDueForAriaSample(testInfo)
+  ) {
+    try {
+      const snapshot = (pageReadable ? await ariaSnapshotBestEffort(page.locator(':root')) : null) ?? sink.stashedAria;
+      if (snapshot) {
+        await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshot, {
+          contentType: 'text/plain',
+          body: snapshot,
+        });
+        const snapshotJson =
+          (pageReadable ? await ariaSnapshotJSONBestEffort(page.locator(':root')) : null) ?? sink.stashedAriaJson;
+        if (snapshotJson) {
+          await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshotJson, {
+            contentType: 'application/json',
+            body: snapshotJson,
           });
         }
       }
@@ -1213,6 +1363,13 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
     await testInfo.attach(ATTACHMENT_NAMES.console, {
       contentType: 'application/json',
       body: Buffer.from(JSON.stringify(sink.consoleEntries)),
+    });
+  }
+
+  if (sink.dialogs.length > 0) {
+    await testInfo.attach(ATTACHMENT_NAMES.dialogs, {
+      contentType: 'application/json',
+      body: Buffer.from(JSON.stringify(sink.dialogs)),
     });
   }
 

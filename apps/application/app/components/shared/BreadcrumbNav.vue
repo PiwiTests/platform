@@ -1,10 +1,14 @@
 <script setup lang="ts">
 /**
- * Responsive breadcrumb. From `sm` up it renders the standard `UBreadcrumb`
- * (all levels, any custom item slots forwarded). Below `sm`, where a deep
- * path is unreadable, it collapses the ancestor levels into a dropdown and
- * shows only the current page label — tapping the leading chip reveals the
- * full path. Drop-in replacement for `<UBreadcrumb :items>`.
+ * Responsive breadcrumb — the page title of every detail page, so the navbar
+ * never repeats it. From `sm` up it renders the standard `UBreadcrumb` (any
+ * custom item slots forwarded) and takes the room the navbar actions leave:
+ * ancestors keep their natural width (capped) and the current page label
+ * takes the rest, down to a readable floor. Below `2xl` the root keeps just
+ * its icon and the middle levels beyond the nearest two ancestors are hidden,
+ * so a deep path still reads on a laptop next to the actions. Below `sm` the ancestors collapse into a
+ * dropdown and only the current page label shows — tapping the leading chip
+ * reveals the full path. Drop-in replacement for `<UBreadcrumb :items>`.
  */
 import type { BreadcrumbItem, DropdownMenuItem } from '@nuxt/ui';
 
@@ -22,11 +26,40 @@ const ancestorItems = computed<DropdownMenuItem[]>(() =>
 );
 
 const hasAncestors = computed(() => ancestorItems.value.length > 0);
+
+// The ancestors are the path and stay readable: natural width, capped so a
+// long project name ellipsizes (an item with a custom slot sizes itself).
+// The current page label is the title and takes the remaining room, down to
+// a floor, truncating from the end. Below `2xl` the root keeps its icon only
+// and the middle levels hide, together with the separator each one owns.
+// Every level needs `min-w-0` for the truncation to take effect.
+const desktopItems = computed(() => {
+  const count = props.items.length;
+  return props.items.map((item, index) => {
+    if (index === count - 1) return { ...item, class: 'truncate', ui: { ...item.ui, item: 'min-w-40' } };
+    const rootIconOnly = index === 0 && item.icon ? 'max-2xl:sr-only' : '';
+    const hidden = index > 0 && index < count - 3 ? 'max-2xl:hidden' : '';
+    return {
+      ...item,
+      class: item.slot ? undefined : 'max-w-48',
+      ui: {
+        ...item.ui,
+        item: ['shrink-0', hidden].join(' ').trim(),
+        separator: hidden,
+        linkLabel: ['truncate', rootIconOnly].join(' ').trim(),
+      },
+    };
+  });
+});
 </script>
 
 <template>
   <!-- Desktop: full breadcrumb, forwarding any custom per-item slots (e.g. #project). -->
-  <UBreadcrumb :items="items" class="hidden min-w-0 sm:flex">
+  <UBreadcrumb
+    :items="desktopItems"
+    class="hidden min-w-0 flex-1 overflow-hidden sm:flex"
+    :ui="{ root: 'min-w-0', list: 'min-w-0', item: 'min-w-0', link: 'min-w-0', separator: 'shrink-0' }"
+  >
     <template v-for="(_, name) in $slots" #[name]="slotData">
       <slot :name="name" v-bind="slotData ?? {}" />
     </template>

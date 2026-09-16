@@ -1,6 +1,6 @@
 import { failureClusters, testRuns } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
-import { normalizeGitUrl } from '../../../utils/regression-context';
+import { normalizeGitUrl } from '../../../utils/scm/git-url';
 import { createScmProvider } from '../../../utils/scm';
 import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../../utils/project-access';
 
@@ -18,7 +18,7 @@ export default eventHandler(async (event) => {
   const { db } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 
   const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, id));
-  if (!cluster) throw createError({ statusCode: 404, message: 'Failure cluster not found' });
+  if (!cluster) throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
 
   const [run] = await db
     .select({ metadata: testRuns.metadata })
@@ -29,11 +29,11 @@ export default eventHandler(async (event) => {
   const meta = run?.metadata as any;
   const repositoryUrl = normalizeGitUrl(meta?.scm?.remoteUrl ?? null);
 
-  if (!repositoryUrl) return { branches: [] };
+  if (!repositoryUrl) return { items: [] };
 
   const provider = await createScmProvider(repositoryUrl, db, cluster.projectId);
-  if (!provider) return { branches: [] };
+  if (!provider) return { items: [] };
 
   const branches = await provider.listBranches();
-  return { branches };
+  return { items: branches };
 });

@@ -35,6 +35,24 @@ test.describe.serial('MCP server', () => {
             location: 'tests/checkout.spec.ts:10:1',
             error: 'Expected button to be visible',
             retries: 0,
+            steps: [
+              {
+                title: 'Navigate',
+                subtitle: '/checkout',
+                category: 'navigation',
+                duration: 500,
+                params: { url: 'https://shop.example.com/checkout' },
+              },
+              {
+                title: 'Click',
+                subtitle: "getByRole('button', { name: 'Pay' })",
+                category: 'action',
+                duration: 1500,
+                failed: true,
+                error: { message: 'Expected button to be visible' },
+                params: { locator: "getByRole('button', { name: 'Pay' })" },
+              },
+            ],
           },
           {
             title: 'payment fails',
@@ -50,7 +68,7 @@ test.describe.serial('MCP server', () => {
     expect(res.ok()).toBeTruthy();
     const data = await res.json();
     projectId = data.projectId;
-    runId = data.testRunId;
+    runId = data.runId;
   });
 
   test('initialize — returns server info and capabilities', async ({ request }) => {
@@ -73,7 +91,7 @@ test.describe.serial('MCP server', () => {
   test('tools/list — returns all tools', async ({ request }) => {
     const body = await mcp(request, 'tools/list');
     const tools: { name: string }[] = body.result.tools;
-    expect(tools.length).toBe(40);
+    expect(tools.length).toBe(46);
     const names = tools.map((t) => t.name);
     expect(names).toContain('list_projects');
     expect(names).toContain('get_run');
@@ -94,6 +112,8 @@ test.describe.serial('MCP server', () => {
     expect(names).toContain('list_open_clusters');
     expect(names).toContain('get_fix_plan');
     expect(names).toContain('create_test_function');
+    expect(names).toContain('create_issue');
+    expect(names).toContain('analyze_selections');
     // Every tool has a description and inputSchema
     for (const t of tools) {
       expect(t).toHaveProperty('description');
@@ -135,7 +155,7 @@ test.describe.serial('MCP server', () => {
   test('tools/call list_projects — returns project list with stats', async ({ request }) => {
     const body = await mcp(request, 'tools/call', { name: 'list_projects', arguments: {} });
     const text = body.result.content[0].text;
-    const projects = JSON.parse(text);
+    const { items: projects } = JSON.parse(text);
     expect(Array.isArray(projects)).toBe(true);
     const project = projects.find((p: any) => p.name === PROJECT.MCP_TEST);
     expect(project).toBeDefined();
@@ -144,7 +164,7 @@ test.describe.serial('MCP server', () => {
   });
 
   test('tools/call get_project — returns project with runs', async ({ request }) => {
-    const body = await mcp(request, 'tools/call', { name: 'get_project', arguments: { id: projectId } });
+    const body = await mcp(request, 'tools/call', { name: 'get_project', arguments: { projectId } });
     const data = JSON.parse(body.result.content[0].text);
     expect(data.id).toBe(projectId);
     expect(data.name).toBe(PROJECT.MCP_TEST);
@@ -161,7 +181,7 @@ test.describe.serial('MCP server', () => {
   });
 
   test('tools/call get_run — returns summary and failed cases', async ({ request }) => {
-    const body = await mcp(request, 'tools/call', { name: 'get_run', arguments: { id: runId } });
+    const body = await mcp(request, 'tools/call', { name: 'get_run', arguments: { runId } });
     const run = JSON.parse(body.result.content[0].text);
     expect(run.id).toBe(runId);
     expect(run.status).toBe('failed');
@@ -175,10 +195,10 @@ test.describe.serial('MCP server', () => {
     expect(run.cases[0].error).not.toBeNull();
   });
 
-  test('tools/call get_run with status_filter=all — returns all cases', async ({ request }) => {
+  test('tools/call get_run with statusFilter=all — returns all cases', async ({ request }) => {
     const body = await mcp(request, 'tools/call', {
       name: 'get_run',
-      arguments: { id: runId, status_filter: 'all' },
+      arguments: { runId, statusFilter: 'all' },
     });
     const run = JSON.parse(body.result.content[0].text);
     expect(run.total).toBe(3);
@@ -188,14 +208,14 @@ test.describe.serial('MCP server', () => {
   test('tools/call get_run — paginates cases with pageSize', async ({ request }) => {
     const body = await mcp(request, 'tools/call', {
       name: 'get_run',
-      arguments: { id: runId, status_filter: 'all', pageSize: 2 },
+      arguments: { runId, statusFilter: 'all', pageSize: 2 },
     });
     const run = JSON.parse(body.result.content[0].text);
     expect(run.cases.length).toBe(2);
     expect(run.nextCursor).toBeTruthy();
     const page2 = await mcp(request, 'tools/call', {
       name: 'get_run',
-      arguments: { id: runId, status_filter: 'all', pageSize: 2, cursor: run.nextCursor },
+      arguments: { runId, statusFilter: 'all', pageSize: 2, cursor: run.nextCursor },
     });
     const run2 = JSON.parse(page2.result.content[0].text);
     expect(run2.cases.length).toBe(1);
@@ -260,22 +280,70 @@ test.describe.serial('MCP server', () => {
 
   test('tools/call get_test_case_context — returns evidence sections (regression)', async ({ request }) => {
     const run = JSON.parse(
-      (await mcp(request, 'tools/call', { name: 'get_run', arguments: { id: runId, status_filter: 'failed' } })).result
+      (await mcp(request, 'tools/call', { name: 'get_run', arguments: { runId, statusFilter: 'failed' } })).result
         .content[0].text,
     );
     const execId = run.cases[0].executionId;
     const ctx = JSON.parse(
-      (await mcp(request, 'tools/call', { name: 'get_test_case_context', arguments: { id: execId } })).result.content[0]
-        .text,
+      (await mcp(request, 'tools/call', { name: 'get_test_case_context', arguments: { executionId: execId } })).result
+        .content[0].text,
     );
     // Previously execution scope produced an empty coverage stub with 0 sections.
     const hasEvidence = (ctx.sections?.length ?? 0) > 0 || !!ctx.rawExecution;
     expect(hasEvidence).toBe(true);
   });
 
+  test('tools/call get_test_run_case — steps carry their 1.63 subtitle and params', async ({ request }) => {
+    const run = JSON.parse(
+      (await mcp(request, 'tools/call', { name: 'get_run', arguments: { runId, statusFilter: 'failed' } })).result
+        .content[0].text,
+    );
+    const checkout = run.cases.find((c: { title: string }) => c.title === 'checkout fails');
+    expect(checkout).toBeTruthy();
+    const res = JSON.parse(
+      (
+        await mcp(request, 'tools/call', {
+          name: 'get_test_run_case',
+          arguments: { executionId: checkout.executionId, include: ['steps'] },
+        })
+      ).result.content[0].text,
+    );
+    const nav = res.steps.find((s: { title: string }) => s.title === 'Navigate');
+    expect(nav.subtitle).toBe('/checkout');
+    expect(nav.params.url).toBe('https://shop.example.com/checkout');
+    const click = res.steps.find((s: { subtitle?: string }) => s.subtitle === "getByRole('button', { name: 'Pay' })");
+    expect(click.params.locator).toBe("getByRole('button', { name: 'Pay' })");
+  });
+
+  test('tools/call explain_failure — carries situation and nextStep (and story when a combination matches)', async ({
+    request,
+  }) => {
+    const run = JSON.parse(
+      (await mcp(request, 'tools/call', { name: 'get_run', arguments: { runId, statusFilter: 'failed' } })).result
+        .content[0].text,
+    );
+    const execId = run.cases[0].executionId;
+    const res = JSON.parse(
+      (await mcp(request, 'tools/call', { name: 'explain_failure', arguments: { executionId: execId } })).result
+        .content[0].text,
+    );
+    // A failing execution always has a situation sentence and a computed next step.
+    expect(typeof res.situation).toBe('string');
+    expect(res.situation.length).toBeGreaterThan(0);
+    expect(res.nextStep).toBeTruthy();
+    expect(typeof res.nextStep.kind).toBe('string');
+    expect(res.nextStep.primary).toBeTruthy();
+    // `story` is present only when a known clue combination matches; when present
+    // it is one sentence over a set of clue ids.
+    if (res.story) {
+      expect(typeof res.story.sentence).toBe('string');
+      expect(Array.isArray(res.story.clueIds)).toBe(true);
+    }
+  });
+
   test('tools/call get_run_insights — returns baseline comparison shape', async ({ request }) => {
     const insights = JSON.parse(
-      (await mcp(request, 'tools/call', { name: 'get_run_insights', arguments: { id: runId } })).result.content[0].text,
+      (await mcp(request, 'tools/call', { name: 'get_run_insights', arguments: { runId } })).result.content[0].text,
     );
     expect(insights.runId).toBe(runId);
     expect(typeof insights.passRate).toBe('number');
@@ -302,7 +370,7 @@ test.describe.serial('MCP server', () => {
       (
         await mcp(request, 'tools/call', {
           name: 'set_cluster_status',
-          arguments: { id: clusterId, status: 'resolved', triageNote: 'fixed by test' },
+          arguments: { clusterId, status: 'resolved', triageNote: 'fixed by test' },
         })
       ).result.content[0].text,
     );
@@ -344,7 +412,11 @@ test.describe.serial('MCP server', () => {
         steps: [{ action: 'click', target: { testId: 'x' } }],
       },
     });
-    expect(body.error).toBeDefined();
+    // A tool that throws surfaces as an isError tool result the model can read,
+    // not a JSON-RPC protocol error clients render as a transport failure.
+    expect(body.error).toBeUndefined();
+    expect(body.result.isError).toBe(true);
+    expect(body.result.content[0].text).toContain('Error');
   });
 
   test('tools/call with unknown tool — returns method error', async ({ request }) => {
@@ -370,6 +442,6 @@ test.describe.serial('MCP server', () => {
     const ping = body.find((r: any) => r.id === 1);
     const list = body.find((r: any) => r.id === 2);
     expect(ping.result).toEqual({});
-    expect(list.result.tools.length).toBe(40);
+    expect(list.result.tools.length).toBe(46);
   });
 });

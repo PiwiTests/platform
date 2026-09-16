@@ -16,11 +16,11 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const token = getQuery(event).token as string | undefined;
-  if (!token) throw createError({ statusCode: 400, message: 'Missing token' });
+  if (!token) throw apiError({ statusCode: 400, message: 'Missing token' });
 
   const db = await getDatabase();
   const validated = await validateAccountToken(db, token, 'verify');
-  if (!validated) throw createError({ statusCode: 400, message: 'Invalid or expired verification link' });
+  if (!validated) throw apiError({ statusCode: 400, message: 'Invalid or expired verification link' });
 
   await db.update(users).set({ emailVerified: true, updatedAt: new Date() }).where(eq(users.id, validated.userId));
   await consumeAccountToken(db, validated.tokenId);

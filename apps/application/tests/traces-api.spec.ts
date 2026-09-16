@@ -45,25 +45,25 @@ test.describe('Traces API', () => {
 
     expect(uploadResponse.ok()).toBeTruthy();
     const uploadData = await uploadResponse.json();
-    expect(uploadData.testRunId).toBeDefined();
+    expect(uploadData.runId).toBeDefined();
 
     // Get the test run to find the testRunsCase IDs
-    const runResponse = await request.get(`/api/test-runs/${uploadData.testRunId}`);
+    const runResponse = await request.get(`/api/test-runs/${uploadData.runId}`);
     expect(runResponse.ok()).toBeTruthy();
     const runData = await runResponse.json();
 
     const testCaseWithTrace = runData.testCases.find((tc: { title: string }) => tc.title === 'test with trace');
     expect(testCaseWithTrace).toBeDefined();
-    testRunsCaseId = testCaseWithTrace.id;
+    testRunsCaseId = testCaseWithTrace.executionId;
 
     const testCaseWithoutTrace = runData.testCases.find((tc: { title: string }) => tc.title === 'test without trace');
     expect(testCaseWithoutTrace).toBeDefined();
-    noTraceCaseId = testCaseWithoutTrace.id;
+    noTraceCaseId = testCaseWithoutTrace.executionId;
 
     // Fetch traces for the test case that had a trace file
     const tracesResponse = await request.get(`/api/test-run-cases/${testRunsCaseId}/traces`);
     expect(tracesResponse.ok()).toBeTruthy();
-    const traces = await tracesResponse.json();
+    const { items: traces } = await tracesResponse.json();
 
     expect(Array.isArray(traces)).toBe(true);
     expect(traces.length).toBe(1);
@@ -78,7 +78,7 @@ test.describe('Traces API', () => {
 
     const tracesResponse = await request.get(`/api/test-run-cases/${noTraceCaseId}/traces`);
     expect(tracesResponse.ok()).toBeTruthy();
-    const traces = await tracesResponse.json();
+    const { items: traces } = await tracesResponse.json();
 
     expect(Array.isArray(traces)).toBe(true);
     expect(traces.length).toBe(0);

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { NetworkRequest, ServerLogEntry, ServerSpanEntry } from '~~/types/api';
+import SectionCard from '../shared/SectionCard.vue';
+import CollapsibleSectionCard from '../shared/CollapsibleSectionCard.vue';
 
 const props = defineProps<{
   requests: NetworkRequest[];
@@ -7,7 +9,26 @@ const props = defineProps<{
   runId?: number | null;
   testRunsCaseId?: number | null;
   hasTrace?: boolean;
+  /** When set, the card folds to a header with a peek (persisted per user). */
+  storageKey?: string;
+  /** Whether the card starts folded on first visit (no stored cookie). */
+  defaultFolded?: boolean;
+  /** Mark the request list as recovered from the trace (the capture fixtures were absent). */
+  derivedFromTrace?: boolean;
+  /** Drop the card frame and padding — render a plain heading row over the body. */
+  embedded?: boolean;
 }>();
+
+const cardComponent = computed(() =>
+  props.embedded ? SectionCard : props.storageKey ? CollapsibleSectionCard : SectionCard,
+);
+const cardBind = computed(() =>
+  props.embedded
+    ? { embedded: true }
+    : props.storageKey
+      ? { storageKey: props.storageKey, defaultFolded: props.defaultFolded }
+      : {},
+);
 
 type Filter = 'all' | 'failed' | 'logs';
 const filter = ref<Filter>('all');
@@ -55,7 +76,22 @@ const viewItems = computed(() => [
 function showTraceMode() {
   if (props.hasTrace) manualView.value = 'trace';
 }
-defineExpose({ showTraceMode });
+
+// Forward reveal so a jump chip or diagnosis citation can unfold + scroll to this card.
+const card = ref<{ reveal?: () => void; $el?: HTMLElement } | null>(null);
+function reveal() {
+  if (card.value?.reveal) card.value.reveal();
+  else card.value?.$el?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+}
+defineExpose({ showTraceMode, reveal });
+
+/** Folded peek: the captured request count and the first request, or the trace-only hint. */
+const peek = computed(() => {
+  const n = props.requests.length;
+  if (n === 0) return 'Full network activity from the trace';
+  const first = props.requests[0]!;
+  return `${n} request${n === 1 ? '' : 's'} · ${first.method} ${toPath(first.url)} → ${first.status}`;
+});
 
 /** Per-request expansion state (keyed by stable index). */
 const expanded = ref<Set<number>>(new Set());
@@ -221,11 +257,12 @@ const visibleRequests = computed<DecoratedRequest[]>(() => {
   if (filter.value === 'failed') list = list.filter((r) => r.failed);
   else if (filter.value === 'logs') list = list.filter((r) => r.logs.length > 0);
   // Surface the requests that matter most: failures and those carrying backend
-  // logs float to the top; the rest keep their original (chronological) order.
+  // logs float to the top; the rest follow their start time when the capture
+  // recorded one, else their original order.
   return [...list].sort((a, b) => {
     const score = (r: DecoratedRequest) =>
       (r.errorLogCount > 0 ? 3 : 0) + (r.failed ? 2 : 0) + (r.logs.length > 0 ? 1 : 0);
-    return score(b) - score(a) || a._index - b._index;
+    return score(b) - score(a) || (a.startTime ?? 0) - (b.startTime ?? 0) || a._index - b._index;
   });
 });
 
@@ -246,14 +283,19 @@ function rowAccent(r: DecoratedRequest): string {
 </script>
 
 <template>
-  <SectionCard
-    icon="i-lucide-network"
-    title="Network & backend logs"
-    :count="view === 'trace' ? traceCount : totals.total"
-    help="case.network"
+  <component
+    :is="cardComponent"
+    ref="card"
+    v-bind="cardBind"
+    :icon="embedded ? undefined : 'i-lucide-network'"
+    :title="embedded ? '' : 'Network requests'"
+    :count="embedded ? null : view === 'trace' ? traceCount : totals.total"
+    :help="embedded ? undefined : 'case.network'"
   >
+    <template v-if="storageKey" #folded>{{ peek }}</template>
     <template #actions>
       <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <TraceDerivedChip v-if="derivedFromTrace" />
         <template v-if="view === 'captured'">
           <div v-if="totals.errorLogs > 0 || totals.warnLogs > 0" class="flex items-center gap-2 text-xs">
             <span v-if="totals.errorLogs > 0" class="flex items-center gap-1 text-red-600 dark:text-red-400">
@@ -460,7 +502,7 @@ function rowAccent(r: DecoratedRequest): string {
     >
       <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />
       No backend server logs captured — install
-      <DocLink to="backend-logs" no-icon class="underline">a Piwi backend integration</DocLink>
+      <DocLink to="guide/backend-logs" no-icon class="underline">a Piwi backend integration</DocLink>
       to see server-side warnings and errors under each request.
     </p>
 
@@ -469,8 +511,8 @@ function rowAccent(r: DecoratedRequest): string {
       <span>
         Want to go deeper? Record traces (<code>trace: 'retain-on-failure'</code>) to see every request with headers,
         timing and bodies here.
-        <DocLink to="ui-overview#trace-powered-deep-views" no-icon class="underline">Learn more</DocLink>
+        <DocLink to="features/evidence#trace-powered-deep-views" no-icon class="underline">Learn more</DocLink>
       </span>
     </p>
-  </SectionCard>
+  </component>
 </template>

@@ -188,17 +188,30 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
         let levelCount = 0;
         // How many elements a `getByRole(role, { name })` would actually
         // match. Without it, an ambiguous locator scores exactly as well as a
-        // unique one and wins on base score alone.
+        // unique one and wins on base score alone. `visibleRoleName` is the
+        // subset that is laid out — what `.visible()` would keep.
         let roleNameCount = 0;
+        let visibleRoleNameCount = 0;
         for (let i = 0; i < nodes.length; i++) {
           const n = nodes[i];
           if (roleOf(n) !== targetRole) continue;
           if (n === el) index = roleCountAll;
           roleCountAll++;
           if (targetLevel != null && levelOf(n) === targetLevel) levelCount++;
-          if (targetName != null && nameOf(n) === targetName) roleNameCount++;
+          if (targetName != null && nameOf(n) === targetName) {
+            roleNameCount++;
+            const node = n as {
+              offsetParent?: unknown;
+              getBoundingClientRect?: () => { width: number; height: number };
+            };
+            const box = typeof node.getBoundingClientRect === 'function' ? node.getBoundingClientRect() : null;
+            if (node.offsetParent != null || (!!box && box.width > 0 && box.height > 0)) visibleRoleNameCount++;
+          }
         }
-        if (targetName != null) selectorCounts.roleName = roleNameCount;
+        if (targetName != null) {
+          selectorCounts.roleName = roleNameCount;
+          selectorCounts.visibleRoleName = visibleRoleNameCount;
+        }
         if (index !== -1) {
           rolePosition = {
             role: targetRole,

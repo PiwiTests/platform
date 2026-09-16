@@ -1,10 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import {
-  buildLocatorEdit,
-  locatorEditPatch,
-  diffLocatorArgs,
-  buildLocatorFixPrompt,
-} from '../../app/utils/locator-edit';
+import { buildLocatorEdit, locatorEditPatch, diffLocatorArgs, buildLocatorFixPrompt } from '#shared/locator-edit';
 
 describe('buildLocatorEdit', () => {
   test('replaces the failing call in place, preserving the prefix and trailing chain', () => {

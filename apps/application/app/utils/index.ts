@@ -2,8 +2,54 @@ import { h } from 'vue';
 import { UIcon } from '#components';
 import type { Column } from '@tanstack/vue-table';
 import type { CommitListItem } from '~~/types/api';
-import { formatDuration as formatDurationLib, formatDistanceToNow } from 'date-fns';
+import {
+  format as formatDate,
+  formatDistanceToNow,
+  formatDuration as formatDurationLib,
+  intervalToDuration,
+} from 'date-fns';
 import { TEST_PRIORITIES, type TestPriority } from '@piwitests/core/test-meta';
+
+/**
+ * A link that lives inside a sentence keeps the sentence's color and carries a
+ * dotted underline that turns solid on hover — never `text-primary`, which is for
+ * navigation lists and tables. The situation, story, state and what-changed lines
+ * and both failure pages share this one class string.
+ */
+export const SENTENCE_LINK_CLASS = 'underline decoration-dotted underline-offset-2 hover:decoration-solid';
+
+/** The `diagnosis` shape the toolbox's folded summary reads. */
+export interface ToolboxDiagnosisLike {
+  status?: string | null;
+  summary?: string | null;
+  category?: string | null;
+  confidence?: string | null;
+}
+
+/** The Toolbox's one-line Diagnosis summary — the same wording on both failure pages. */
+export function diagnosisSectionSummary(
+  diagnosis: ToolboxDiagnosisLike | null | undefined,
+  aiConfigured: boolean | undefined,
+): string {
+  if (diagnosis?.status === 'completed' && (diagnosis.summary || diagnosis.category)) {
+    const title = diagnosis.summary ?? diagnosis.category ?? 'Diagnosed';
+    return diagnosis.confidence ? `${title} · ${diagnosis.confidence} confidence` : title;
+  }
+  return aiConfigured === false ? 'AI is not configured' : 'Not diagnosed yet';
+}
+
+/** The Toolbox's one-line Reproduce summary. */
+export function reproduceSectionSummary(steps: number, bisectAvailable: boolean): string {
+  return `${steps} commands · Linux/macOS or Windows · ${bisectAvailable ? 'bisect available' : 'bisect not available'}`;
+}
+
+/** The Toolbox's one-line Verify summary — the `-g` grep of the command, then whether CI can re-run. */
+export function verifySectionSummary(command: string, rerunAvailable: boolean, fallbackLabel: string): string {
+  const g = command.match(/-g\s+(".*?"|'.*?'|\S+)/)?.[1];
+  const parts = [g ? `-g ${g}` : fallbackLabel];
+  if (rerunAvailable) parts.push('Re-run in CI');
+  return parts.join(' · ');
+}
 
 /**
  * Narrow a stored priority to the union `TestMetaBadges` takes. The database
@@ -49,9 +95,13 @@ export { formatBytes } from '#shared/utils/format-bytes';
  * works for both `integer(timestamp)` columns (seconds) and raw millisecond
  * fields such as `startedAt`, as well as `Date` objects (e.g. PostgreSQL).
  *
+ * The format is fixed (not locale-dependent): the server renders the same
+ * strings the client hydrates, and the server has no browser locale to match.
+ * Dates read in American English, consistent with the rest of the UI copy.
+ *
  * @param date The value to format.
  * @param options.dateOnly Omit the time component (date only).
- * @returns A locale string, or `'N/A'` for empty/invalid input.
+ * @returns A formatted string, or `'N/A'` for empty/invalid input.
  */
 export function prettyDateFormat(
   date: string | Date | number | null | undefined,
@@ -74,7 +124,7 @@ export function prettyDateFormat(
   }
 
   if (Number.isNaN(d.getTime())) return 'N/A';
-  return options.dateOnly ? d.toLocaleDateString() : d.toLocaleString();
+  return options.dateOnly ? formatDate(d, 'M/d/yyyy') : formatDate(d, 'M/d/yyyy, h:mm:ss a');
 }
 
 export function formatRelativeTime(date: string | Date | number | null | undefined): string {
@@ -90,6 +140,27 @@ export function formatDuration(ms?: number | null) {
   if (rounded === 0) return '0 seconds';
   const sign = ms < 0 ? '−' : '';
   return sign + formatDurationLib({ seconds: rounded / 1000 });
+}
+
+/**
+ * A duration in human units — "14 hours", "2 days 3 hours".
+ *
+ * `formatDuration` hands date-fns a bare `{ seconds }`, which it prints
+ * verbatim: correct for the sub-minute test durations it exists for, but a
+ * cluster open for half a day renders as "50400 seconds". Normalize through
+ * `intervalToDuration` first, and keep only the two largest units so a span
+ * stays readable.
+ */
+export function formatLongDuration(ms?: number | null) {
+  if (ms === null || ms === undefined) return 'N/A';
+  const rounded = Math.round(Math.abs(ms));
+  if (rounded < 1000) return 'less than a second';
+  const duration = intervalToDuration({ start: 0, end: rounded });
+  const units = (['years', 'months', 'days', 'hours', 'minutes', 'seconds'] as const).filter(
+    (u) => (duration[u] ?? 0) > 0,
+  );
+  const sign = ms < 0 ? '−' : '';
+  return sign + formatDurationLib(duration, { format: units.slice(0, 2), delimiter: ' ' });
 }
 
 /**
@@ -157,7 +228,7 @@ export function getStatusColor(status: string) {
       return 'warning';
     case 'cancelled':
       return 'neutral';
-    case 'initialising':
+    case 'initializing':
       return 'info';
     case 'running':
       return 'info';
@@ -187,7 +258,7 @@ export function getStatusIcon(status: string): string {
     case 'didnotrun':
       return 'i-lucide-circle-slash';
     case 'running':
-    case 'initialising':
+    case 'initializing':
     case 'finalizing':
       return 'i-lucide-loader-circle';
     default:
@@ -206,7 +277,7 @@ export function getStatusTextClass(status: string): string {
     case 'didnotrun':
       return 'text-amber-600 dark:text-amber-400';
     case 'running':
-    case 'initialising':
+    case 'initializing':
     case 'finalizing':
       return 'text-blue-600 dark:text-blue-400';
     default:
@@ -217,19 +288,56 @@ export function getStatusTextClass(status: string): string {
 /** Whether a status icon should spin (the run is still in flight). */
 export function isStatusInFlight(status: string): boolean {
   const s = normalizeStatusKey(status);
-  return s === 'running' || s === 'initialising' || s === 'finalizing';
+  return s === 'running' || s === 'initializing' || s === 'finalizing';
 }
 
 /**
- * Human-readable label for a test-case status badge. Normalizes Playwright's
- * `timedOut` to `failed` (as the UI treats timeouts as failures) and renders
- * `didnotrun` as "didn't run".
+ * Human-readable label for a test-case status badge. A timeout reads "timed
+ * out" (it counts as a failure in every tally, but the word stays accurate) and
+ * `didnotrun` renders as "didn't run".
  */
 export function formatStatusLabel(status: string): string {
-  if (status === 'timedOut' || status === 'timedout') return 'failed';
+  if (status === 'timedOut' || status === 'timedout') return 'timed out';
   if (status === 'didnotrun') return "didn't run";
   if (status === 'never-run') return 'never run';
   return status;
+}
+
+/**
+ * Whether a test-case status is a failure for filtering, sorting and display.
+ * Timeouts fold into failures everywhere (the run counters do the same).
+ */
+export function isFailedStatus(status: string): boolean {
+  return status === 'failed' || status === 'timedOut' || status === 'timedout';
+}
+
+/**
+ * Sort comparator that puts failed (and timed-out) cases first, keeping the
+ * relative order within each group (stable sort). Used as the default ordering
+ * of a run's test cases so the landing view answers "why did it fail" first.
+ */
+export function failureFirstCompare(a: string, b: string): number {
+  return Number(isFailedStatus(b)) - Number(isFailedStatus(a));
+}
+
+/**
+ * Short, human-readable label for why a `didnotrun` case never executed. Mirrors
+ * the reporter's `DidNotRunReason` taxonomy; an unknown/absent reason falls back
+ * to the neutral "didn't run".
+ */
+export function formatDidNotRunReason(reason?: string | null): string {
+  switch (reason) {
+    case 'previous-failure':
+      return 'Blocked by an earlier failure';
+    case 'global-timeout':
+      return 'Global timeout reached';
+    case 'max-failures':
+      return 'Max failures reached';
+    case 'interrupted':
+      return 'Run interrupted';
+    default:
+      return "Didn't run";
+  }
 }
 
 /** Badge color for a failure-cluster triage status (open/resolved/ignored). */
@@ -240,6 +348,23 @@ export function clusterStatusColor(status: string | null | undefined): 'success'
     ignored: 'neutral',
   };
   return (status && map[status]) || 'neutral';
+}
+
+/**
+ * Human-readable label for a failure cluster's triage status — the raw enum
+ * (`open`) is a value, not display copy.
+ */
+export function formatTriageStatus(status: string | null | undefined): string {
+  switch (status) {
+    case 'open':
+      return 'Open';
+    case 'resolved':
+      return 'Resolved';
+    case 'ignored':
+      return 'Ignored';
+    default:
+      return status ?? '—';
+  }
 }
 
 /**
@@ -260,7 +385,7 @@ export function fixVerificationBadge(
   switch (verification) {
     case 'diagnosis-verified':
       return {
-        label: 'Fix verified',
+        label: 'Verified',
         color: 'success',
         icon: 'i-lucide-badge-check',
         hint: 'The tests went green and the change touched the files the diagnosis named.',

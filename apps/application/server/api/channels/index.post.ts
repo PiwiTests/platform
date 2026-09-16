@@ -2,6 +2,7 @@ import { getDatabase } from '../../database';
 import { notificationChannels } from '../../database/schema';
 import { requireAuth, isAuthEnabled } from '../../utils/auth';
 import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
+import { sanitizeChannelConfig } from '../../utils/channels';
 import { Role } from '#shared/types';
 import { z } from 'zod';
 
@@ -9,7 +10,8 @@ defineRouteMeta({
   openAPI: {
     tags: ['Notifications'],
     summary: 'Create a notification channel',
-    description: 'Creates a new notification channel. Webhook secrets are encrypted at rest.',
+    description:
+      'Creates a new notification channel. Webhook secrets are encrypted at rest. Administrators can create global channels; with authentication disabled every channel is global.',
     'x-required-roles': [],
   },
 });
@@ -22,21 +24,21 @@ const schema = z.object({
 });
 
 export default eventHandler(async (event) => {
-  if (!isAuthEnabled(event)) {
-    throw createError({ statusCode: 400, message: 'Enable authentication to use notifications' });
-  }
   const user = await requireAuth(event);
   const body = await readBody(event);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    throw createError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
+    throw apiError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
   }
 
-  const { name, type, config, global: isGlobal } = parsed.data;
+  const { name, type, config, global: requestedGlobal } = parsed.data;
 
-  if (isGlobal && user.role !== Role.ADMINISTRATOR) {
-    throw createError({ statusCode: 403, message: 'Only administrators can create global channels' });
+  if (requestedGlobal && user.role !== Role.ADMINISTRATOR) {
+    throw apiError({ statusCode: 403, message: 'Only administrators can create global channels' });
   }
+
+  // Without auth there is no user row to own a channel — everything is global.
+  const isGlobal = requestedGlobal || !isAuthEnabled(event);
 
   // Encrypt webhook secret if present
   let storedConfig: Record<string, unknown> = { ...config };
@@ -56,5 +58,17 @@ export default eventHandler(async (event) => {
     })
     .returning();
 
-  return { success: true, channel: { id: channel?.id, name: channel?.name, type: channel?.type } };
+  return {
+    success: true,
+    channel: {
+      id: channel?.id,
+      name: channel?.name,
+      type: channel?.type,
+      userId: channel?.userId ?? null,
+      verified: Boolean(channel?.verified),
+      createdAt: channel?.createdAt,
+      updatedAt: channel?.updatedAt,
+      config: sanitizeChannelConfig((channel?.config ?? {}) as Record<string, unknown>),
+    },
+  };
 });

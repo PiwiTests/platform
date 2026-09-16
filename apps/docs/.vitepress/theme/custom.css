@@ -18,3 +18,146 @@
   font-size: 0.85rem;
   color: var(--vp-c-text-2);
 }
+
+/* ── Home page ──────────────────────────────────────────────────────────
+   The landing page is built from plain <div> blocks rather than the doc
+   layout, so its sections carry their own width, rhythm and grid here. */
+
+.home-prose,
+.screenshots,
+.next-steps {
+  max-width: 1152px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.home-prose {
+  padding-top: 48px;
+}
+
+.home-prose h2,
+.next-steps h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 20px;
+}
+
+.home-prose p {
+  margin-bottom: 16px;
+  color: var(--vp-c-text-2);
+  line-height: 1.7;
+}
+
+.screenshots {
+  padding-top: 48px;
+  padding-bottom: 48px;
+}
+
+.screenshots h2 {
+  font-size: 2rem;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.screenshot-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.screenshot-featured {
+  grid-column: 1 / -1;
+}
+
+.demo-video {
+  margin-bottom: 40px;
+}
+
+.demo-video video,
+.screenshot-item img {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--vp-c-divider);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+  display: block;
+}
+
+.demo-video video {
+  background: #000;
+}
+
+.screenshot-caption {
+  margin-top: 10px;
+  font-size: 0.875rem;
+  color: var(--vp-c-text-2);
+  text-align: center;
+}
+
+.next-steps {
+  margin-bottom: 64px;
+  padding-top: 40px;
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.next-steps ul {
+  padding-left: 1.25rem;
+}
+
+.next-steps li,
+.next-steps p {
+  margin-bottom: 10px;
+  color: var(--vp-c-text-2);
+  line-height: 1.7;
+}
+
+@media (max-width: 768px) {
+  .screenshot-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Blog ────────────────────────────────────────────────────────────────
+   The blog index (/blog/) lists posts from blog/posts.data.ts. Styles are
+   scoped under .blog-list so they never touch the doc layout used by the
+   posts themselves. */
+.blog-list {
+  margin-top: 2rem;
+}
+
+.blog-list .blog-entry {
+  padding: 1.5rem 0;
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.blog-list .blog-entry:last-of-type {
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+.vp-doc .blog-list .blog-title {
+  margin: 0 0 0.35rem;
+  padding: 0;
+  border: 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.01em;
+}
+
+.blog-list .blog-title a {
+  font-weight: 600;
+}
+
+.blog-list .blog-meta {
+  margin: 0 0 0.6rem;
+  font-size: 0.85rem;
+  color: var(--vp-c-text-2);
+}
+
+.blog-list .blog-excerpt {
+  margin: 0 0 0.6rem;
+  color: var(--vp-c-text-2);
+  line-height: 1.7;
+}
+
+.blog-list .blog-empty {
+  color: var(--vp-c-text-2);
+}

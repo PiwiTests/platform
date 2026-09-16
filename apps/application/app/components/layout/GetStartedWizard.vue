@@ -141,6 +141,15 @@ const steps = computed<Array<WizardStep & { id: number }>>(() => {
 const STEP_COUNT_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six'];
 const stepCountWord = computed(() => STEP_COUNT_WORDS[steps.value.length] ?? String(steps.value.length));
 
+// The one-command setup from the reporter CLI. Not shown on desktop: `init`
+// writes a serverUrl into the project, which would suppress the reporter's
+// automatic desktop-app discovery.
+const initCode = computed(() => {
+  const flags = [`--server-url ${serverUrl.value}`, `--project my-project`];
+  if (authEnabled.value) flags.push(`--api-key <your-api-key>`);
+  return `npx @piwitests/reporter init ${flags.join(' ')}`;
+});
+
 const goFurtherOpen = ref(false);
 </script>
 
@@ -161,6 +170,25 @@ const goFurtherOpen = ref(false);
     </template>
 
     <div>
+      <div
+        v-if="!isDesktop"
+        class="mb-6 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3"
+        data-shot="wizard-fast-path"
+      >
+        <div class="flex items-center gap-2 mb-1">
+          <UIcon name="i-lucide-zap" class="size-4 text-primary shrink-0" />
+          <h3 class="font-medium text-sm">Fast path — one command</h3>
+        </div>
+        <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          From your Playwright project,
+          <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">init</code>
+          installs the reporter, wires your config, creates the capture-fixtures file and drops the agent skills.
+          Idempotent — anything it won't rewrite is reported as a manual step with the exact change to make. Prefer to
+          wire it up by hand? The steps below do the same.
+        </p>
+        <CodeBlock :code="initCode" lang="bash" />
+      </div>
+
       <div v-for="(step, index) in steps" :key="step.id" class="flex gap-4">
         <!-- Step indicator + vertical connector -->
         <div class="flex flex-col items-center shrink-0">
@@ -241,7 +269,7 @@ const goFurtherOpen = ref(false);
               <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">piwiFixtures</code> to
               automatically capture network timing, browser Web Vitals, console errors, ARIA snapshots on failure, and
               the locator snapshots that power locator healing. See the
-              <DocLink to="capture-fixtures" no-icon class="text-primary hover:underline"
+              <DocLink to="guide/capture-fixtures" no-icon class="text-primary hover:underline"
                 >capture fixtures guide</DocLink
               >.
             </p>
@@ -265,7 +293,7 @@ const goFurtherOpen = ref(false);
       <div class="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
         <span
           >Need more options? See the
-          <DocLink to="reporter" no-icon class="text-primary hover:underline">full reporter docs</DocLink>.</span
+          <DocLink to="guide/reporter" no-icon class="text-primary hover:underline">full reporter docs</DocLink>.</span
         >
         <UButton
           :to="docsUrl('demo/')"

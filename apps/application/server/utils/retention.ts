@@ -6,12 +6,16 @@ import type { DbClient } from '../database';
 import {
   casePayloads,
   entityLinks,
+  failureClusters,
   failureDiagnoses,
   failureDiagnosisVersions,
   files,
+  healActions,
+  integrationActions,
   locatorSnapshots,
   networkRequests,
   notificationDeliveries,
+  shareLinks,
   subscriptions,
   testRuns,
   testRunsCases,
@@ -71,6 +75,7 @@ export async function deleteRunsOlderThan(db: DbClient, olderThanDays: number): 
     const refs = await db
       .select({
         aria: testRunsCases.ariaSnapshotPayloadId,
+        ariaJson: testRunsCases.ariaSnapshotJsonPayloadId,
         source: testRunsCases.testSourcePayloadId,
         frames: testRunsCases.testSourceFramesPayloadId,
       })
@@ -78,6 +83,7 @@ export async function deleteRunsOlderThan(db: DbClient, olderThanDays: number): 
       .where(inArray(testRunsCases.id, batch));
     for (const ref of refs) {
       if (ref.aria != null) candidatePayloadIds.add(ref.aria);
+      if (ref.ariaJson != null) candidatePayloadIds.add(ref.ariaJson);
       if (ref.source != null) candidatePayloadIds.add(ref.source);
       if (ref.frames != null) candidatePayloadIds.add(ref.frames);
     }
@@ -157,6 +163,7 @@ export async function deleteRunsOlderThan(db: DbClient, olderThanDays: number): 
  */
 function payloadUnreferenced(): SQL {
   return sql`NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.ariaSnapshotPayloadId} = ${casePayloads.id})
+    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.ariaSnapshotJsonPayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.testSourcePayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.testSourceFramesPayloadId} = ${casePayloads.id})`;
 }
@@ -168,6 +175,7 @@ export interface OrphanSweepResult {
   diagnosisVersions: number;
   notificationDeliveries: number;
   casePayloads: number;
+  shareLinks: number;
 }
 
 async function countWhere(db: DbClient, table: SQLiteTable, where: SQL): Promise<number> {
@@ -195,6 +203,10 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
   // so a concurrent sweep must not reap rows from an in-flight ingest batch.
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
   const orphanedPayloads = and(lt(casePayloads.createdAt, oneHourAgo), payloadUnreferenced())!;
+  // `share_links.entity_id` is polymorphic over two tables and carries no FK,
+  // so a link whose entity was pruned lingers until this sweep removes it.
+  const orphanedShareLinks = sql`(${shareLinks.entityKind} = 'execution' AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.id} = ${shareLinks.entityId}))
+    OR (${shareLinks.entityKind} = 'cluster' AND NOT EXISTS (SELECT 1 FROM ${failureClusters} WHERE ${failureClusters.id} = ${shareLinks.entityId}))`;
 
   const result: OrphanSweepResult = {
     networkRequests: await countWhere(db, networkRequests, orphanedNetworkRequests),
@@ -204,6 +216,7 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
     diagnosisVersions: await countWhere(db, failureDiagnosisVersions, orphanedVersions),
     notificationDeliveries: await countWhere(db, notificationDeliveries, orphanedDeliveries),
     casePayloads: await countWhere(db, casePayloads, orphanedPayloads),
+    shareLinks: await countWhere(db, shareLinks, orphanedShareLinks),
   };
 
   await db.delete(networkRequests).where(orphanedNetworkRequests);
@@ -215,6 +228,7 @@ export async function sweepOrphans(db: DbClient): Promise<OrphanSweepResult> {
   await db.delete(failureDiagnosisVersions).where(orphanedVersions);
   await db.delete(notificationDeliveries).where(orphanedDeliveries);
   await db.delete(casePayloads).where(orphanedPayloads);
+  await db.delete(shareLinks).where(orphanedShareLinks);
 
   return result;
 }
@@ -234,6 +248,39 @@ export async function pruneNotificationDeliveries(db: DbClient, olderThanDays: n
   )!;
   const pruned = await countWhere(db, notificationDeliveries, settled);
   if (pruned > 0) await db.delete(notificationDeliveries).where(settled);
+  return pruned;
+}
+
+/**
+ * Delete auto-heal actions that finished (opened/failed/skipped) before the
+ * cutoff. Pending actions are never touched — they still have work to do. The
+ * DB row is only a record of what Piwi did; deleting it never affects the PR
+ * itself, which lives in the user's repository.
+ */
+export async function pruneHealActions(db: DbClient, olderThanDays: number): Promise<number> {
+  const cutoffDate = new Date(Date.now() - olderThanDays * MS_PER_DAY);
+  const settled = and(
+    inArray(healActions.status, ['opened', 'failed', 'skipped']),
+    lt(healActions.updatedAt, cutoffDate),
+  )!;
+  const pruned = await countWhere(db, healActions, settled);
+  if (pruned > 0) await db.delete(healActions).where(settled);
+  return pruned;
+}
+
+/**
+ * Delete integration actions that finished (done/failed/skipped) before the
+ * cutoff. Pending actions are never touched. The row is only a record of what
+ * Piwi wrote to the tracker; deleting it never touches the issue itself.
+ */
+export async function pruneIntegrationActions(db: DbClient, olderThanDays: number): Promise<number> {
+  const cutoffDate = new Date(Date.now() - olderThanDays * MS_PER_DAY);
+  const settled = and(
+    inArray(integrationActions.status, ['done', 'failed', 'skipped']),
+    lt(integrationActions.finishedAt, cutoffDate),
+  )!;
+  const pruned = await countWhere(db, integrationActions, settled);
+  if (pruned > 0) await db.delete(integrationActions).where(settled);
   return pruned;
 }
 

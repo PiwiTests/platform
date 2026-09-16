@@ -218,17 +218,26 @@ describe('analytics scope parsing', () => {
     expect(parseAnalyticsScope(undefined)).toEqual({
       days: 30,
       projectIds: undefined,
-      environment: null,
+      environments: undefined,
+      branches: undefined,
       fullRunsOnly: true,
     });
     expect(parseAnalyticsScope({ days: '99999' }).days).toBe(3650);
     expect(
-      parseAnalyticsScope(new URLSearchParams('days=7&projects=1,2&environment=staging&fullRunsOnly=false')),
+      parseAnalyticsScope(
+        new URLSearchParams('days=7&projects=1,2&environments=staging,prod&branches=main&fullRunsOnly=false'),
+      ),
     ).toEqual({
       days: 7,
       projectIds: [1, 2],
-      environment: 'staging',
+      environments: ['staging', 'prod'],
+      branches: ['main'],
       fullRunsOnly: false,
+    });
+    // The legacy singular keys still parse, folded into the multi-value form.
+    expect(parseAnalyticsScope({ environment: 'staging', branch: 'main' })).toMatchObject({
+      environments: ['staging'],
+      branches: ['main'],
     });
   });
 });

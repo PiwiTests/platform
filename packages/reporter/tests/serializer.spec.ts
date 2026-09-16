@@ -11,9 +11,9 @@ describe('resolveOverallStatus', () => {
     expect(resolveOverallStatus({ status: 'failed' } as any, counters)).toBe('failed');
   });
 
-  it('maps timedout/interrupted to failed', () => {
-    expect(resolveOverallStatus({ status: 'timedout' } as any, counters)).toBe('failed');
-    expect(resolveOverallStatus({ status: 'interrupted' } as any, counters)).toBe('failed');
+  it('preserves timedout and interrupted as distinct run statuses', () => {
+    expect(resolveOverallStatus({ status: 'timedout' } as any, counters)).toBe('timedout');
+    expect(resolveOverallStatus({ status: 'interrupted' } as any, counters)).toBe('interrupted');
   });
 
   it('falls back to "failed" for unknown status', () => {
@@ -56,6 +56,16 @@ describe('toWireTestCase', () => {
     expect(out.duration).toBe(undefined);
     expect(out.error).toBe(undefined);
     expect(out.retries).toBe(undefined);
+    expect(out.attempts).toBe(null);
+  });
+
+  it('carries per-attempt outcomes through', () => {
+    const attempts = [
+      { retry: 0, status: 'failed', duration: 500, startedAt: 1700000000000 },
+      { retry: 1, status: 'passed', duration: 800, startedAt: 1700000001000 },
+    ];
+    const out = toWireTestCase({ type: 'complete', title: 't', location: 'l', attempts });
+    expect(out.attempts).toEqual(attempts);
   });
 
   it('defaults workerIndex/shardIndex/startedAt/suitePath/suiteConfig/testAnnotations to null via ??', () => {
@@ -158,12 +168,18 @@ describe('toWireTestCase', () => {
     expect(Object.keys(out).sort()).toEqual([
       'aiUsage',
       'ariaSnapshot',
+      'ariaSnapshotJson',
+      'attempts',
+      'blockedBy',
       'browser',
       'consoleLogs',
+      'dialogs',
+      'didNotRunReason',
       'duration',
       'error',
       'location',
       'locatorSnapshots',
+      'locks',
       'networkRequests',
       'pageState',
       'retries',

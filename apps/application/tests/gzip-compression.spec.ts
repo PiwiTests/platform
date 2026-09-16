@@ -156,7 +156,7 @@ test.describe('Gzip Compression Tests', () => {
     expect(response.ok()).toBeTruthy();
     const data = await response.json();
     expect(data.success).toBe(true);
-    expect(data.testRunId).toBeDefined();
+    expect(data.runId).toBeDefined();
     expect(data.projectId).toBeDefined();
     expect(Array.isArray(data.reports)).toBe(true);
     expect(data.reports.length).toBeGreaterThan(0);
@@ -207,6 +207,7 @@ test.describe('Gzip Compression Tests', () => {
 
       const htmlContent = await downloadResponse.text();
       expect(htmlContent).toContain('Playwright Test Report');
+      expect(htmlContent).toContain('localStorage');
     }
   });
 

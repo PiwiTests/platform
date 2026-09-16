@@ -1,6 +1,6 @@
 import { Role } from '#shared/types';
 import { createUser, isAuthEnabled, needsInitialSetup, claimInitialSetup, releaseInitialSetup } from '../../utils/auth';
-import { checkRateLimit } from '../../utils/rate-limit';
+import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../utils/rate-limit';
 import { z } from 'zod';
 
 defineRouteMeta({
@@ -22,19 +22,19 @@ const createAdminSchema = z.object({
 
 export default eventHandler(async (event) => {
   if (!isAuthEnabled(event)) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'Authentication is not enabled',
     });
   }
 
-  const ip = getRequestIP(event) ?? 'unknown';
-  if (!checkRateLimit(`setup:${ip}`, 5, 15 * 60 * 1000)) {
-    throw createError({ statusCode: 429, message: 'Too many requests. Please wait before trying again.' });
+  const rateKey = `setup:${rateLimitClientIp(event)}`;
+  if (!checkRateLimit(rateKey, 5, 15 * 60 * 1000)) {
+    throw rateLimitedError(event, [rateKey]);
   }
 
   if (!(await needsInitialSetup())) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'Users already exist. This endpoint is only for initial setup.',
     });
@@ -44,7 +44,7 @@ export default eventHandler(async (event) => {
   const validation = createAdminSchema.safeParse(body);
 
   if (!validation.success) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'Invalid request body',
       data: validation.error.issues,
@@ -57,7 +57,7 @@ export default eventHandler(async (event) => {
   // pass the needsInitialSetup() check above and each create an administrator.
   // claimInitialSetup() lets exactly one of them proceed; the rest are rejected.
   if (!(await claimInitialSetup())) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'Users already exist. This endpoint is only for initial setup.',
     });

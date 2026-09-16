@@ -14,6 +14,8 @@ const props = defineProps<{
   testRunsCaseId: number;
   /** When set, the card folds to a header with a peek (persisted per user). */
   storageKey?: string;
+  /** Drop the card frame and padding — render a plain heading row over the body. */
+  embedded?: boolean;
 }>();
 
 interface VisualDiffResponse {
@@ -29,11 +31,17 @@ interface VisualDiffResponse {
     baselineRunId: number;
     failingPath: string;
     baselinePath: string;
+    /** Set when the baseline came from another environment than the failing run. */
+    baselineNote?: string | null;
   };
 }
 
-const cardComponent = computed(() => (props.storageKey ? CollapsibleSectionCard : SectionCard));
-const cardBind = computed(() => (props.storageKey ? { storageKey: props.storageKey } : {}));
+const cardComponent = computed(() =>
+  props.embedded ? SectionCard : props.storageKey ? CollapsibleSectionCard : SectionCard,
+);
+const cardBind = computed(() =>
+  props.embedded ? { embedded: true } : props.storageKey ? { storageKey: props.storageKey } : {},
+);
 
 const config = useRuntimeConfig();
 
@@ -41,11 +49,17 @@ const {
   data: result,
   pending,
   error,
-} = useFetch<VisualDiffResponse>(() => `/api/test-runs/${props.runId}/cases/${props.testRunsCaseId}/visual-diff`, {
+} = useFetch<VisualDiffResponse>(() => `/api/test-run-cases/${props.testRunsCaseId}/visual-diff`, {
   lazy: true,
 });
 
 const diff = computed(() => (result.value?.status === 'ok' ? (result.value.diff ?? null) : null));
+
+// The card renders only for a usable diff; the page reads `available` to show
+// its jump chip for exactly the same condition.
+const emit = defineEmits<{ available: [value: boolean] }>();
+const available = computed(() => !pending.value && !error.value && !!diff.value);
+watch(available, (value) => emit('available', value), { immediate: true });
 
 const view = ref<'overlay' | 'side-by-side'>('overlay');
 const viewItems = [
@@ -69,7 +83,7 @@ const ratioColor = computed<'success' | 'warning' | 'error'>(() => {
 const foldedText = computed(() => {
   if (!diff.value) return 'No comparable screenshots';
   if (diff.value.dimensionMismatch) return `${changedPct.value}% changed — dimensions differ, unreliable`;
-  return `${changedPct.value}% of pixels changed vs last pass`;
+  return `${changedPct.value}% of pixels changed vs visual baseline`;
 });
 
 // Lightbox over the three views (failing / baseline / overlay)
@@ -92,7 +106,7 @@ defineExpose({ reveal: () => card.value?.reveal?.() });
 <template>
   <component
     :is="cardComponent"
-    v-if="!pending && !error && diff"
+    v-if="available && diff"
     ref="card"
     v-bind="cardBind"
     icon="i-lucide-images"
@@ -103,7 +117,11 @@ defineExpose({ reveal: () => card.value?.reveal?.() });
       <span>{{ foldedText }}</span>
     </template>
     <template #subtitle>
-      <span>vs last pass in run #{{ diff.baselineRunId }}</span>
+      <span
+        >vs visual baseline (run #{{ diff.baselineRunId }}){{
+          diff.baselineNote ? ` · ${diff.baselineNote}` : ''
+        }}</span
+      >
     </template>
     <template #actions>
       <UBadge :color="ratioColor" variant="subtle" size="sm" class="font-mono tabular-nums">
@@ -167,7 +185,7 @@ defineExpose({ reveal: () => card.value?.reveal?.() });
       </div>
       <div class="rounded overflow-hidden border border-green-200 dark:border-green-900 bg-gray-50 dark:bg-gray-900">
         <p class="px-2 py-1 text-[10px] font-medium text-green-600 dark:text-green-400">
-          Last pass (run #{{ diff.baselineRunId }})
+          Visual baseline (run #{{ diff.baselineRunId }})
         </p>
         <img
           :src="baselineSrc"

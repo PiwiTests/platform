@@ -10,7 +10,10 @@ export const projects = sqliteTable(
     label: text('label'), // Display label (defaults to name if not set)
     description: text('description'),
     diagnosisInstructions: text('diagnosis_instructions'),
+    aiLanguage: text('ai_language'), // per-project AI response language override (e.g. "French")
     scmToken: text('scm_token'), // Per-project SCM token for GitHub/GitLab/Bitbucket API access
+    defaultBranch: text('default_branch'), // Repository default branch; null = resolve from SCM provider, else 'main'
+    ciRerun: text('ci_rerun', { mode: 'json' }), // CiRerunSettings — provider-specific "re-run from the dashboard" target (off by default)
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -31,7 +34,7 @@ export const testRuns = sqliteTable(
     projectId: integer('project_id')
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
-    status: text('status').notNull(), // 'passed', 'failed', 'timedout', 'interrupted', 'running', 'cancelled', 'initialising', 'finalizing'
+    status: text('status').notNull(), // 'passed', 'failed', 'timedout', 'interrupted', 'running', 'cancelled', 'initializing', 'finalizing'
     startTime: integer('start_time', { mode: 'timestamp' }).notNull(),
     duration: integer('duration'), // in milliseconds
     totalTests: integer('total_tests').notNull().default(0),
@@ -43,11 +46,13 @@ export const testRuns = sqliteTable(
     avgTestDuration: integer('avg_test_duration'), // average test case duration in ms
     p90TestDuration: integer('p90_test_duration'), // 90th percentile test duration in ms
     shardTotal: integer('shard_total'), // Total number of shards for sharded runs; null = not sharded
+    shardIndex: integer('shard_index'), // Reporting shard index (1-based) of the shard that created this run; null = not sharded
     shardsFinished: integer('shards_finished').notNull().default(0), // How many shards have finished
     isFullRun: integer('is_full_run').notNull().default(1), // 1 = full suite, 0 = partial/filtered (--grep, file filter, etc.)
     filterDetails: text('filter_details', { mode: 'json' }), // JSON: { grep?, grepInvert? }
 
     environment: text('environment'), // Deployment environment (e.g. 'production', 'staging', 'development')
+    branch: text('branch'), // Scalar SCM branch (logical branch, never 'HEAD') for index efficiency; projects metadata.scm.branch
     metadata: text('metadata', { mode: 'json' }), // Additional metadata as JSON
     setupSteps: text('setup_steps', { mode: 'json' }), // Array of suite-level hook/fixture steps (beforeAll/afterAll) for the timeline
     label: text('label'), // Optional human-readable label (e.g. "v2.3.1 release")
@@ -64,6 +69,11 @@ export const testRuns = sqliteTable(
   (table) => ({
     projectIdIdx: index('idx_test_runs_project_id').on(table.projectId),
     projectStartTimeIdx: index('idx_test_runs_project_start').on(table.projectId, table.startTime),
+    projectBranchStartIdx: index('idx_test_runs_project_branch_start').on(
+      table.projectId,
+      table.branch,
+      table.startTime,
+    ),
     startTimeIdx: index('idx_test_runs_start_time').on(table.startTime),
     statusIdx: index('idx_test_runs_status').on(table.status),
     importHashIdx: uniqueIndex('idx_test_runs_import_hash').on(table.projectId, table.importHash),
@@ -111,6 +121,7 @@ export const testCases = sqliteTable(
     // that reports this test. Per-execution truth lives on test_runs_cases;
     // these denormalized columns let project-wide views filter without a join.
     tags: text('tags', { mode: 'json' }), // string[] — normalized, '@' stripped
+    locks: text('locks', { mode: 'json' }), // string[] — lock names this test most recently declared (best effort)
     owner: text('owner'),
     priority: text('priority'), // 'critical' | 'high' | 'medium' | 'low'
     feature: text('feature'),
@@ -186,7 +197,8 @@ export const failureClusters = sqliteTable(
     signature: text('signature').notNull(), // normalized first error line — human-readable cluster name
     errorType: text('error_type'), // 'timeout', 'assertion', 'strict-mode', 'navigation', 'crash', 'unknown'
     selector: text('selector'), // locator extracted from the error, if any
-    sampleError: text('sample_error'), // one full raw error kept for display
+    sampleError: text('sample_error'), // one raw error kept for display; refreshed to a better exemplar as the cluster recurs
+    fingerprintSample: text('fingerprint_sample'), // immutable raw error captured at creation; re-fingerprinting on a version bump reads this so a display-sample refresh can't move the fingerprint source (null on rows created before this column — recluster falls back to sample_error)
     // Run ids are intentionally NOT foreign keys: runs are deleted independently
     // and clusters must survive them (stale ids are tolerated)
     firstSeenRunId: integer('first_seen_run_id').notNull(),
@@ -205,6 +217,15 @@ export const failureClusters = sqliteTable(
     fixCommit: text('fix_commit'), // commit of that run, when the reporter recorded one
     timeToResolutionMs: integer('time_to_resolution_ms'), // first seen → fix landed
     fixVerification: text('fix_verification'), // 'stopped-failing' | 'diagnosis-verified' | 'regressed'
+    lastRerunDispatch: text('last_rerun_dispatch', { mode: 'json' }), // ClusterRerunDispatch — most recent "Re-run in CI" dispatch
+    bisectResult: text('bisect_result', { mode: 'json' }), // BisectedCommit — first bad commit the desktop bisect found (sha, subject, author, date)
+    // Inbox triage — orthogonal to `status`. A snooze hides a cluster from every
+    // inbox queue until the deadline passes (or, in "until-recurs" mode, until a
+    // new run adds an occurrence); `assignee` is the person a triager assigned it
+    // to, taking precedence over the owner derived from the test's annotation.
+    snoozedUntil: integer('snoozed_until', { mode: 'timestamp' }), // hidden from queues until this instant; null when not snoozed
+    snoozeMode: text('snooze_mode'), // 'until' (wake at snoozedUntil) | 'until-recurs' (wake at snoozedUntil OR a new occurrence)
+    assignee: text('assignee'), // person this cluster is assigned to (name or email); overrides the derived owner
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -350,6 +371,8 @@ export const failureDiagnosisVersions = sqliteTable(
     outputTokens: integer('output_tokens'),
     durationMs: integer('duration_ms'),
     contextSha: text('context_sha'),
+    feedback: text('feedback'), // 'up', 'down' — captured as of the snapshot
+    feedbackNote: text('feedback_note'),
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -404,12 +427,13 @@ export const testRunsCases = sqliteTable(
     testCaseId: integer('test_case_id')
       .notNull()
       .references(() => testCases.id, { onDelete: 'cascade' }),
-    status: text('status').notNull(), // 'passed', 'failed', 'timedout', 'skipped'
+    status: text('status').notNull(), // 'passed', 'failed', 'timedout', 'skipped', 'didnotrun' — canonical lowercase; rows from earlier releases may carry 'timedOut'
     duration: integer('duration'), // in milliseconds
     timeout: integer('timeout'), // Effective per-test timeout in ms (TestCase.timeout); 0 = unbounded, null = unknown/legacy
     error: text('error'),
     failureClusterId: integer('failure_cluster_id').references(() => failureClusters.id), // set for failed rows with an error — groups rows sharing a fingerprint
     retries: integer('retries').default(0),
+    attempts: text('attempts', { mode: 'json' }), // Array of { retry, status, duration, startedAt } — per-attempt outcomes
     line: integer('line'), // line number in file
     column: integer('column'), // column number in file
     steps: text('steps', { mode: 'json' }), // Array of { title, duration, category, location?, startTime? } step objects
@@ -421,25 +445,32 @@ export const testRunsCases = sqliteTable(
     pageState: text('page_state', { mode: 'json' }), // URL/history/storage-keys/cookie-flags at test end (values never captured)
     aiUsage: text('ai_usage', { mode: 'json' }), // { entries: string[], intents?: {template,locator,kind}[] } — replayed AI-step artifacts + their prompts
     consoleLogs: text('console_logs', { mode: 'json' }), // Array of { type, text, timestamp, location } console entries
+    dialogs: text('dialogs', { mode: 'json' }), // Array of { type, message, defaultValue, closedAt } browser dialogs
+    evidenceSources: text('evidence_sources', { mode: 'json' }), // { console?, network?, aria?: 'trace' } — marks evidence recovered from the trace when the capture fixtures were absent
     // Legacy inline payload columns: still readable on old rows, no longer
     // written — new rows store these payloads content-addressed in
     // case_payloads and reference them via the *PayloadId columns below.
     ariaSnapshot: text('aria_snapshot'), // ARIA snapshot of the page (YAML-like string from locator.ariaSnapshot())
+    ariaSnapshotJson: text('aria_snapshot_json'), // ARIA tree as JSON (from locator.ariaSnapshotJSON(), Playwright >= 1.63)
     testSource: text('test_source'), // Source snippet around the failing assertion (sent by reporter)
     testSourceFrames: text('test_source_frames', { mode: 'json' }), // Array<{ file, line, snippet }> — in-project call-stack frames (innermost first)
     ariaSnapshotPayloadId: integer('aria_snapshot_payload_id').references(() => casePayloads.id),
+    ariaSnapshotJsonPayloadId: integer('aria_snapshot_json_payload_id').references(() => casePayloads.id),
     testSourcePayloadId: integer('test_source_payload_id').references(() => casePayloads.id),
     testSourceFramesPayloadId: integer('test_source_frames_payload_id').references(() => casePayloads.id),
     browser: text('browser', { mode: 'json' }), // Playwright project/browser config: { projectName, browserName, channel, viewport }
     browserName: text('browser_name'), // Scalar browser identity (projectName) for index efficiency
     testAnnotations: text('test_annotations', { mode: 'json' }), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
     tags: text('tags', { mode: 'json' }), // string[] — tags this execution declared ('@' stripped)
+    locks: text('locks', { mode: 'json' }), // string[] — lock names this execution held (best effort; none from blob imports)
     testMeta: text('test_meta', { mode: 'json' }), // { owner?, priority?, feature?, link? } from `piwi:` annotations
     workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
     shardIndex: integer('shard_index'), // Shard index (1-based) for sharded runs; null = not sharded
     startedAt: integer('started_at'), // Unix timestamp in ms when the test started (stored/read as a plain number)
     isNewRegression: integer('is_new_regression'), // boolean: passed in baseline, failed in this run
     isNewFlaky: integer('is_new_flaky'), // boolean: no retries in baseline, retry-pass in this run
+    didNotRunReason: text('did_not_run_reason'), // Why a 'didnotrun' case never executed: 'previous-failure' | 'global-timeout' | 'max-failures' | 'interrupted'
+    blockedBy: text('blocked_by'), // For a 'previous-failure' cascade, the location (file:line:col) of the failing test that blocked it
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -461,6 +492,9 @@ export const testRunsCases = sqliteTable(
     ariaPayloadIdx: index('idx_trc_aria_payload')
       .on(table.ariaSnapshotPayloadId)
       .where(sql`aria_snapshot_payload_id IS NOT NULL`),
+    ariaJsonPayloadIdx: index('idx_trc_aria_json_payload')
+      .on(table.ariaSnapshotJsonPayloadId)
+      .where(sql`aria_snapshot_json_payload_id IS NOT NULL`),
     sourcePayloadIdx: index('idx_trc_source_payload')
       .on(table.testSourcePayloadId)
       .where(sql`test_source_payload_id IS NOT NULL`),
@@ -521,6 +555,7 @@ export const networkRequests = sqliteTable(
     normalizedUrl: text('normalized_url'), // Route pattern for grouping (no ids, no query)
     status: integer('status').notNull(),
     duration: integer('duration'), // Response time in ms
+    startTime: integer('start_time'), // Request start, Unix timestamp in ms (null for older captures)
     resourceType: text('resource_type'), // 'fetch', 'xhr', 'document', 'other'
     contentType: text('content_type'), // Response content-type header
     serverLogs: text('server_logs', { mode: 'json' }), // Backend server logs from X-Piwi-Logs header
@@ -600,6 +635,34 @@ export const files = sqliteTable(
   }),
 );
 
+// Integration connections table - one row per external system (Jira, Confluence, …)
+// an administrator connected. Global infrastructure, mirroring notification_channels
+// in spirit but never user-scoped. Credentials are AES-256-GCM-encrypted JSON.
+export const integrationConnections = sqliteTable(
+  'integration_connections',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    provider: text('provider').notNull(), // 'jira' | 'confluence' | 'github-issues' | …
+    name: text('name').notNull(),
+    baseUrl: text('base_url').notNull(),
+    config: text('config', { mode: 'json' }), // provider-specific, non-secret (flavor, site id, default space…)
+    credentials: text('credentials'), // AES-256-GCM JSON: { email, apiToken } | { token } | { pat }
+    status: text('status').notNull().default('unverified'), // 'unverified' | 'ok' | 'failed'
+    lastCheckedAt: integer('last_checked_at', { mode: 'timestamp_ms' }),
+    lastError: text('last_error'),
+    managedBy: text('managed_by').notNull().default('db'), // 'db' | 'env'
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    providerIdx: index('idx_integration_connections_provider').on(t.provider),
+  }),
+);
+
 // Entity links table - attach external URLs (Jira, GitHub, etc.) to runs, test-case runs, or test cases
 export const entityLinks = sqliteTable(
   'entity_links',
@@ -609,6 +672,7 @@ export const entityLinks = sqliteTable(
     testRunId: integer('test_run_id').references(() => testRuns.id, { onDelete: 'cascade' }),
     testRunsCaseId: integer('test_runs_case_id').references(() => testRunsCases.id, { onDelete: 'cascade' }),
     testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'cascade' }),
+    failureClusterId: integer('failure_cluster_id').references(() => failureClusters.id, { onDelete: 'cascade' }),
 
     url: text('url').notNull(),
 
@@ -625,6 +689,11 @@ export const entityLinks = sqliteTable(
     metadata: text('metadata', { mode: 'json' }), // raw unfurl payload
     unfurledAt: integer('unfurled_at', { mode: 'timestamp_ms' }), // last successful fetch
 
+    // The connection that can read/write this record, and the tracker's stable id.
+    connectionId: integer('connection_id').references(() => integrationConnections.id, { onDelete: 'set null' }),
+    externalId: text('external_id'), // tracker's stable id (Jira issue id, not the key — keys change on move)
+    origin: text('origin').notNull().default('pinned'), // 'pinned' | 'created' | 'annotation' | 'reporter'
+
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
@@ -637,7 +706,9 @@ export const entityLinks = sqliteTable(
     runIdx: index('idx_entity_links_run').on(t.testRunId),
     caseRunIdx: index('idx_entity_links_case_run').on(t.testRunsCaseId),
     caseIdx: index('idx_entity_links_case').on(t.testCaseId),
+    clusterIdx: index('idx_entity_links_cluster').on(t.failureClusterId),
     createdByIdx: index('idx_entity_links_created_by').on(t.createdBy),
+    connectionIdx: index('idx_entity_links_connection').on(t.connectionId),
   }),
 );
 
@@ -839,6 +910,118 @@ export const notificationDeliveries = sqliteTable(
   }),
 );
 
+// Auto-heal outbox — one durable row per intended fix PR. Mirrors the
+// notifications outbox: a unique dedupe key is the only idempotency mechanism,
+// attempts + scheduledFor drive progressive backoff, and the payload is
+// snapshotted at enqueue so a retry is deterministic even if the run's SCM
+// metadata later changes.
+export const healActions = sqliteTable(
+  'heal_actions',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    runId: integer('run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    dedupeKey: text('dedupe_key').notNull(),
+    kind: text('kind').notNull().default('open-pr'),
+    status: text('status').notNull().default('pending'), // 'pending' | 'opened' | 'failed' | 'skipped'
+    attempts: integer('attempts').notNull().default(0),
+    payload: text('payload', { mode: 'json' }).notNull(),
+    result: text('result', { mode: 'json' }),
+    error: text('error'),
+    scheduledFor: integer('scheduled_for', { mode: 'timestamp_ms' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    dedupeKeyIdx: uniqueIndex('idx_heal_actions_dedupe').on(t.dedupeKey),
+    projectStatusIdx: index('idx_heal_actions_project_status').on(t.projectId, t.status),
+    statusScheduledIdx: index('idx_heal_actions_status').on(t.status, t.scheduledFor),
+    runIdx: index('idx_heal_actions_run').on(t.runId),
+  }),
+);
+
+// Project integrations table — the per-project binding of a connection: which Jira
+// project a project's tickets land in, the issue type, labels, owner routes, the
+// include toggles and the auto-create policy (disabled by default).
+export const projectIntegrations = sqliteTable(
+  'project_integrations',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    connectionId: integer('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    projectKey: text('project_key'), // Jira project key (tracker binding)
+    issueType: text('issue_type'),
+    labels: text('labels', { mode: 'json' }), // string[]
+    defaultAssignee: text('default_assignee'), // account id / name
+    spaceId: text('space_id'), // Confluence space (wiki binding)
+    parentPageId: text('parent_page_id'), // Confluence parent page
+    locale: text('locale'), // ticket language for this project ('en' | 'fr'); overrides the connection default
+    include: text('include', { mode: 'json' }), // { includeDiagnosis, includePatch, includeScreenshot, includeShareLink }
+    policies: text('policies', { mode: 'json' }), // { commentOnFix, transitionOnFix, commentOnRegression, resolveOnClose, … }
+    ownerRoutes: text('owner_routes', { mode: 'json' }), // { owner, projectKey?, componentId?, assigneeAccountId?, labels? }[]
+    autoCreate: text('auto_create', { mode: 'json' }), // { enabled, minOccurrences, minRuns, dailyCap, routeUnmatched } — disabled by default
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectIdx: index('idx_project_integrations_project').on(t.projectId),
+    connectionIdx: index('idx_project_integrations_connection').on(t.connectionId),
+    projectConnectionIdx: uniqueIndex('idx_project_integrations_project_connection').on(t.projectId, t.connectionId),
+  }),
+);
+
+// Integration actions outbox — every outbound write to an external system is a
+// durable row, retried with backoff, deduped by a unique key, and listable. The
+// payload is snapshotted at enqueue so a retry is deterministic.
+export const integrationActions = sqliteTable(
+  'integration_actions',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    connectionId: integer('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'create-issue' | 'comment' | 'transition' | 'attach' | 'sync-status' | 'create-page' | 'update-page'
+    entityType: text('entity_type').notNull(), // 'failure_cluster' | 'test_runs_case' | 'test_case' | 'test_run'
+    entityId: integer('entity_id').notNull(),
+    dedupeKey: text('dedupe_key').notNull(),
+    status: text('status').notNull().default('pending'), // 'pending' | 'done' | 'failed' | 'skipped'
+    attempts: integer('attempts').notNull().default(0),
+    scheduledFor: integer('scheduled_for', { mode: 'timestamp_ms' }),
+    error: text('error'),
+    payload: text('payload', { mode: 'json' }).notNull(),
+    result: text('result', { mode: 'json' }), // { key, url } | { commentId } | { pageId, version }
+    requestedBy: integer('requested_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    finishedAt: integer('finished_at', { mode: 'timestamp_ms' }),
+  },
+  (t) => ({
+    dedupeKeyIdx: uniqueIndex('idx_integration_actions_dedupe').on(t.dedupeKey),
+    projectStatusIdx: index('idx_integration_actions_project_status').on(t.projectId, t.status),
+    statusScheduledIdx: index('idx_integration_actions_status').on(t.status, t.scheduledFor),
+    connectionIdx: index('idx_integration_actions_connection').on(t.connectionId),
+    requestedByIdx: index('idx_integration_actions_requested_by').on(t.requestedBy),
+  }),
+);
+
 // Project assignments table — user-to-project access (null projectId = global access)
 export const projectAssignments = sqliteTable(
   'project_assignments',
@@ -897,6 +1080,72 @@ export const testFunctions = sqliteTable(
   (table) => ({
     projectIdIdx: index('idx_test_functions_project_id').on(table.projectId),
     uniqueName: uniqueIndex('idx_test_functions_project_module_name').on(table.projectId, table.module, table.name),
+  }),
+);
+
+// Test selections — named, data-driven subsets of a project's tests. The
+// `definition` is declarative JSON (SelectionDefinition in
+// shared/selection/types.ts): rules over catalog facts resolved on demand,
+// never a frozen list, so a saved selection keeps tracking the suite as tests
+// are added, renamed and removed. `version` increments on every definition
+// edit; a run resolved from a selection stamps the version it ran.
+export const testSelections = sqliteTable(
+  'test_selections',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    key: text('key').notNull(), // project-unique slug, e.g. 'smoke'
+    name: text('name').notNull(),
+    description: text('description'),
+    definition: text('definition', { mode: 'json' }).notNull(), // SelectionDefinition
+    version: integer('version').notNull().default(1),
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    projectIdIdx: index('idx_test_selections_project_id').on(table.projectId),
+    createdByIdx: index('idx_test_selections_created_by').on(table.createdBy),
+    keyUnique: uniqueIndex('idx_test_selections_project_key').on(table.projectId, table.key),
+  }),
+);
+
+// Share links — read-only capability tokens for handing one execution or one
+// failure cluster to someone without a dashboard account. The token itself is
+// never stored: only its SHA-256 hash (unguessable 256-bit secrets need no
+// salt, and the plain hash is what makes an indexed equality lookup possible).
+// `entity_id` is polymorphic over test_runs_cases / failure_clusters, so it
+// carries no FK; retention's orphan sweep removes rows whose entity is gone.
+export const shareLinks = sqliteTable(
+  'share_links',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    entityKind: text('entity_kind').notNull(), // 'execution' | 'cluster' (ExportKind)
+    entityId: integer('entity_id').notNull(), // test_runs_cases.id or failure_clusters.id
+    tokenHash: text('token_hash').notNull().unique(), // SHA-256 hash of the full psl_ token
+    tokenPrefix: text('token_prefix').notNull(), // First 8 chars after "psl_" — shown in UI
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    expiresAt: integer('expires_at', { mode: 'timestamp' }), // null = no expiry
+    revokedAt: integer('revoked_at', { mode: 'timestamp' }), // set on revoke; row kept for the audit trail
+    lastViewedAt: integer('last_viewed_at', { mode: 'timestamp' }),
+    viewCount: integer('view_count').notNull().default(0),
+  },
+  (table) => ({
+    projectIdIdx: index('idx_share_links_project_id').on(table.projectId),
+    entityIdx: index('idx_share_links_entity').on(table.entityKind, table.entityId),
+    createdByIdx: index('idx_share_links_created_by').on(table.createdBy),
   }),
 );
 
@@ -962,6 +1211,8 @@ export type Subscription = typeof subscriptions.$inferSelect;
 export type NewSubscription = typeof subscriptions.$inferInsert;
 export type NotificationDelivery = typeof notificationDeliveries.$inferSelect;
 export type NewNotificationDelivery = typeof notificationDeliveries.$inferInsert;
+export type HealActionRow = typeof healActions.$inferSelect;
+export type NewHealActionRow = typeof healActions.$inferInsert;
 export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;
 export type ProjectTag = typeof projectTags.$inferSelect;
@@ -972,9 +1223,19 @@ export type ProjectAssignment = typeof projectAssignments.$inferSelect;
 export type NewProjectAssignment = typeof projectAssignments.$inferInsert;
 export type EntityLink = typeof entityLinks.$inferSelect;
 export type NewEntityLink = typeof entityLinks.$inferInsert;
+export type IntegrationConnection = typeof integrationConnections.$inferSelect;
+export type NewIntegrationConnection = typeof integrationConnections.$inferInsert;
+export type ProjectIntegration = typeof projectIntegrations.$inferSelect;
+export type NewProjectIntegration = typeof projectIntegrations.$inferInsert;
+export type IntegrationAction = typeof integrationActions.$inferSelect;
+export type NewIntegrationAction = typeof integrationActions.$inferInsert;
 export type NetworkRequest = typeof networkRequests.$inferSelect;
 export type NewNetworkRequest = typeof networkRequests.$inferInsert;
 export type LocatorSnapshotRow = typeof locatorSnapshots.$inferSelect;
 export type NewLocatorSnapshotRow = typeof locatorSnapshots.$inferInsert;
 export type TestFunction = typeof testFunctions.$inferSelect;
+export type ShareLink = typeof shareLinks.$inferSelect;
+export type NewShareLink = typeof shareLinks.$inferInsert;
 export type NewTestFunction = typeof testFunctions.$inferInsert;
+export type TestSelection = typeof testSelections.$inferSelect;
+export type NewTestSelection = typeof testSelections.$inferInsert;

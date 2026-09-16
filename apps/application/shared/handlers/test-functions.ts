@@ -70,7 +70,7 @@ export async function createTestFunction(db: DrizzleDB, projectId: number, data:
       confidence: data.confidence ?? 1,
     })
     .returning();
-  return { testFunction: result[0]! };
+  return { success: true, testFunction: result[0]! };
 }
 
 export async function updateTestFunction(db: DrizzleDB, id: number, data: Partial<TestFunctionInput>) {
@@ -93,7 +93,7 @@ export async function updateTestFunction(db: DrizzleDB, id: number, data: Partia
 
   await db.update(testFunctions).set(updates).where(eq(testFunctions.id, id));
   const updated = await db.select().from(testFunctions).where(eq(testFunctions.id, id));
-  return { testFunction: updated[0]! };
+  return { success: true, testFunction: updated[0]! };
 }
 
 export async function deleteTestFunction(db: DrizzleDB, id: number) {

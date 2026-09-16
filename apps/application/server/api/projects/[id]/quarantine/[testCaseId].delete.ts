@@ -8,11 +8,24 @@ defineRouteMeta({
     tags: ['Test Cases'],
     summary: 'Release a test from quarantine',
     description:
-      'Lets a quarantined test block the CI gate again. The quarantine row is kept as history rather than deleted, so how long a test spent quarantined stays answerable.',
+      'Lets a quarantined test block the CI gate again. The quarantine row is kept as history rather than deleted, so how long a test spent quarantined stays answerable. An optional `reason` is read from the request body, like every other mutation.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'testCaseId', in: 'path', required: true, schema: { type: 'integer' } },
     ],
+    requestBody: {
+      required: false,
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              reason: { type: 'string', description: 'Why the test is being released (capped at 500 chars).' },
+            },
+          },
+        },
+      },
+    },
     'x-required-roles': ['administrator', 'reporter'],
   },
 });
@@ -23,10 +36,11 @@ export default eventHandler(async (event) => {
   await requireAuth(event);
   await requireProjectAccess(event, projectId);
 
-  const reason = typeof getQuery(event).reason === 'string' ? String(getQuery(event).reason).slice(0, 500) : null;
+  const body = (await readBody(event).catch(() => null)) as { reason?: unknown } | null;
+  const reason = body && typeof body.reason === 'string' ? body.reason.slice(0, 500) : null;
 
   const db = await getDatabase();
   const result = await releaseQuarantine(db, projectId, testCaseId, reason);
-  if (!result.released) throw createError({ statusCode: 404, message: 'No active quarantine for this test' });
+  if (!result.released) throw apiError({ statusCode: 404, message: 'No active quarantine for this test' });
   return { success: true, ...result };
 });

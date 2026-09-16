@@ -103,7 +103,7 @@ async function handleCleanup() {
           </p>
         </div>
         <div class="space-y-1">
-          <p class="text-sm text-muted">Test cases (unique)</p>
+          <p class="text-sm text-muted">Tests (unique)</p>
           <p class="text-2xl font-semibold">
             {{ stats.totalTestCases }}
           </p>

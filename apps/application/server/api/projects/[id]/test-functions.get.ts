@@ -4,7 +4,7 @@ import { listProjectTestFunctions } from '#shared/handlers/test-functions';
 
 defineRouteMeta({
   openAPI: {
-    tags: ['Test functions'],
+    tags: ['Test Functions'],
     summary: 'List a project’s test function catalog',
     description:
       'Returns the page-object methods and helpers recorded or registered for a project, used to match against a recorded browser-extension session and substitute raw locator steps with calls to the project’s own code.',
@@ -18,5 +18,5 @@ export default eventHandler(async (event) => {
   await requireProjectAccess(event, id);
 
   const db = await getDatabase();
-  return await listProjectTestFunctions(db, id);
+  return { items: (await listProjectTestFunctions(db, id)).testFunctions };
 });

@@ -330,6 +330,153 @@
       "when": 1785584930327,
       "tag": "0046_gorgeous_hercules",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1785829955814,
+      "tag": "0047_boring_harry_osborn",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1785916466268,
+      "tag": "0048_right_gargoyle",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1786091705372,
+      "tag": "0049_plain_preak",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1786178040209,
+      "tag": "0050_shallow_mother_askani",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1786267996178,
+      "tag": "0051_military_drax",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1786697356058,
+      "tag": "0052_clean_patch",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1786697368339,
+      "tag": "0053_backfill_branch",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1786729138121,
+      "tag": "0054_smooth_malice",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1788322664551,
+      "tag": "0055_deep_lester",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1788426041207,
+      "tag": "0056_absurd_vengeance",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1788450741700,
+      "tag": "0057_clean_captain_universe",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1788460817902,
+      "tag": "0058_flowery_shadowcat",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1788465678370,
+      "tag": "0059_broken_clea",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1788542324455,
+      "tag": "0060_remarkable_roxanne_simpson",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1788591415215,
+      "tag": "0061_special_queen_noir",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1788612782020,
+      "tag": "0062_silky_mulholland_black",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1788637371406,
+      "tag": "0063_flippant_shockwave",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1788683266744,
+      "tag": "0064_numerous_star_brand",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1789289436650,
+      "tag": "0065_kind_ink",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1789295865927,
+      "tag": "0066_strong_komodo",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1789302651462,
+      "tag": "0067_dashing_puppet_master",
+      "breakpoints": true
     }
   ]
 }

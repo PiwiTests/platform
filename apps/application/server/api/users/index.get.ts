@@ -16,7 +16,7 @@ export default eventHandler(async (event) => {
 
   const result = await listUsers(await getDatabase());
   return {
-    ...result,
+    items: result.users,
     authEnabled: isAuthEnabled(event),
   };
 });

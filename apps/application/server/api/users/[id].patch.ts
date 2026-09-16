@@ -1,5 +1,5 @@
 import { getDatabase } from '../../database';
-import { updateUserRecord } from '#shared/handlers/users';
+import { updateUserRecord, toPublicUser } from '#shared/handlers/users';
 import { requireAuth, revokeUserSessions } from '../../utils/auth';
 import { Role } from '#shared/types';
 import { z } from 'zod';
@@ -25,38 +25,35 @@ export default eventHandler(async (event) => {
   const currentUser = await requireAuth(event);
 
   const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw createError({ statusCode: 400, message: 'Invalid user ID' });
+  if (!id) throw apiError({ statusCode: 400, message: 'Invalid user ID' });
 
   const isAdmin = currentUser.role === Role.ADMINISTRATOR;
   const isSelf = currentUser.id === id;
 
   if (!isAdmin && !isSelf) {
-    throw createError({ statusCode: 403, message: 'Insufficient permissions' });
+    throw apiError({ statusCode: 403, message: 'Insufficient permissions' });
   }
 
   const body = await readBody(event);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    throw createError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
+    throw apiError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
   }
 
   // Non-admins can only update their own name and email, not role
   if (!isAdmin && parsed.data.role !== undefined) {
-    throw createError({ statusCode: 403, message: 'Only administrators can change roles' });
+    throw apiError({ statusCode: 403, message: 'Only administrators can change roles' });
   }
 
   try {
     const user = await updateUserRecord(await getDatabase(), id, parsed.data);
-    if (!user) throw createError({ statusCode: 404, message: 'User not found' });
+    if (!user) throw apiError({ statusCode: 404, message: 'User not found' });
     // A role change takes effect immediately by revoking the user's sessions.
     if (parsed.data.role !== undefined) {
       await revokeUserSessions(id);
     }
-    return {
-      success: true,
-      user: { id: user.id, username: user.username, role: user.role as Role, name: user.name, email: user.email },
-    };
+    return { success: true, user: toPublicUser(user) };
   } catch (err) {
-    throw createError({ statusCode: 400, message: err instanceof Error ? err.message : 'Failed to update user' });
+    throw apiError({ statusCode: 400, message: err instanceof Error ? err.message : 'Failed to update user' });
   }
 });

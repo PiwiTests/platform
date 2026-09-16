@@ -23,7 +23,11 @@ const {
   data: projects,
   execute: loadProjects,
   status: projectsStatus,
-} = useFetch<ProjectMenuItem[]>('/api/projects/menu', { immediate: false, default: () => [] });
+} = useFetch('/api/projects/menu', {
+  immediate: false,
+  default: () => [] as ProjectMenuItem[],
+  transform: (r: { items: ProjectMenuItem[] }) => r.items,
+});
 
 watch(open, (value) => {
   if (value && projects.value.length === 0) void loadProjects();
@@ -59,19 +63,16 @@ async function importAll() {
       if (current === 'imported' || current === 'duplicate') continue;
       outcomes[path] = { status: 'importing' };
       try {
-        const result = await $fetch<{ status: 'imported' | 'duplicate'; testRunId: number }>(
-          '/api/desktop/import-local',
-          {
-            method: 'POST',
-            body: {
-              path,
-              projectName: projectName.value,
-              label: label.value.trim() || undefined,
-              importGroup: group,
-            },
+        const result = await $fetch<{ status: 'imported' | 'duplicate'; runId: number }>('/api/desktop/import-local', {
+          method: 'POST',
+          body: {
+            path,
+            projectName: projectName.value,
+            label: label.value.trim() || undefined,
+            importGroup: group,
           },
-        );
-        outcomes[path] = { status: result.status, testRunId: result.testRunId };
+        });
+        outcomes[path] = { status: result.status, testRunId: result.runId };
       } catch (error) {
         outcomes[path] = { status: 'error', message: errorMessage(error) };
       }

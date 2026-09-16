@@ -48,7 +48,7 @@ async function submitRun(
     },
   });
   expect(res.ok(), `submit failed: ${res.status()} ${await res.text()}`).toBeTruthy();
-  return ((await res.json()) as { testRunId: number }).testRunId;
+  return ((await res.json()) as { runId: number }).runId;
 }
 
 async function getQuarantine(request: APIRequestContext, projectId: number): Promise<QuarantineResponse> {
@@ -67,7 +67,9 @@ test.describe.serial('Quarantine', () => {
       { title: 'solid login', status: 'passed' },
     ]);
 
-    const projects = (await (await request.get('/api/projects')).json()) as Array<{ id: number; name: string }>;
+    const projects = (
+      (await (await request.get('/api/projects')).json()) as { items: Array<{ id: number; name: string }> }
+    ).items;
     projectId = projects.find((p) => p.name === PROJECT.QUARANTINE)!.id;
 
     const cases = (await (await request.get(`/api/projects/${projectId}/test-cases?maxAgeDays=0`)).json()) as {
@@ -111,6 +113,37 @@ test.describe.serial('Quarantine', () => {
     expect(body.entries).toHaveLength(1);
     // The original reason survives, so the audit trail is not overwritten.
     expect(body.entries[0]!.reason).toBe('times out on CI only');
+  });
+
+  test('the execution and its cluster report the quarantined state to the failure pages', async ({ request }) => {
+    const runId = await submitRun(request, [
+      { title: 'wobbly checkout', status: 'failed', error: 'Error: timeout' },
+      { title: 'solid login', status: 'passed' },
+    ]);
+
+    const run = (await (await request.get(`/api/test-runs/${runId}`)).json()) as {
+      testCases: Array<{ executionId: number; testCaseId: number; failureClusterId: number | null; title: string }>;
+    };
+    const wobbly = run.testCases.find((c) => c.title === 'wobbly checkout')!;
+    const solid = run.testCases.find((c) => c.title === 'solid login')!;
+
+    // The quarantined test's execution says so; a passing sibling does not.
+    const wobblyExec = (await (await request.get(`/api/test-run-cases/${wobbly.executionId}`)).json()) as {
+      quarantined: boolean;
+    };
+    expect(wobblyExec.quarantined).toBe(true);
+    const solidExec = (await (await request.get(`/api/test-run-cases/${solid.executionId}`)).json()) as {
+      quarantined: boolean;
+    };
+    expect(solidExec.quarantined).toBe(false);
+
+    // The cluster carries the quarantined flag through to its affected tests.
+    expect(wobbly.failureClusterId).not.toBeNull();
+    const cluster = (await (await request.get(`/api/failure-clusters/${wobbly.failureClusterId}`)).json()) as {
+      affectedTestCases: Array<{ testCaseId: number; quarantined: boolean }>;
+    };
+    const affected = cluster.affectedTestCases.find((t) => t.testCaseId === flakyCaseId);
+    expect(affected?.quarantined).toBe(true);
   });
 
   test('the gate ignores a quarantined failure but still reports it', async ({ request }) => {
@@ -180,7 +213,11 @@ test.describe.serial('Quarantine', () => {
   });
 
   test('releasing lets the test block the gate again', async ({ request }) => {
-    const res = await request.delete(`/api/projects/${projectId}/quarantine/${flakyCaseId}`);
+    // The optional release reason rides in the request body (not the query
+    // string), like every other mutation.
+    const res = await request.delete(`/api/projects/${projectId}/quarantine/${flakyCaseId}`, {
+      data: { reason: 'stable for two weeks' },
+    });
     expect(res.ok()).toBeTruthy();
 
     const body = await getQuarantine(request, projectId);

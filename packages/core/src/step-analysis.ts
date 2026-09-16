@@ -6,6 +6,12 @@
  * `result.steps` from a live run, and the server rebuilds the same structures
  * from an imported blob report's step events.
  */
+import { maskTokenLike } from './mask';
+
+/** Max param keys kept per step. */
+export const MAX_STEP_PARAM_KEYS = 20;
+/** Max characters kept per stored param value. */
+export const MAX_STEP_PARAM_VALUE_CHARS = 200;
 
 /**
  * Categorise a Playwright step into `navigation`, `action`, `input`,
@@ -16,8 +22,13 @@
  *  - Modern human-readable titles introduced in newer Playwright versions
  *    ("Navigate to \"{url}\"", "Click", "Wait for timeout", "Wait for load state").
  * Hook/fixture/expect steps are detected via Playwright's own `category`.
+ *
+ * `params` is Playwright's curated per-step argument object (the rendered
+ * `locator`, a navigation's `url`, …). When present it is the exact signal for
+ * a step's kind, preferred over parsing a title that newer Playwright reduced
+ * to a bare verb.
  */
-export function categorizeStep(title: string, pwCategory?: string): string {
+export function categorizeStep(title: string, pwCategory?: string, params?: Record<string, unknown>): string {
   if (!title) return 'other';
   if (pwCategory === 'hook' || pwCategory === 'fixture') return pwCategory;
   if (pwCategory === 'expect') return 'assertion';
@@ -33,9 +44,13 @@ export function categorizeStep(title: string, pwCategory?: string): string {
   )
     return 'wait';
 
-  // Navigation — modern "Navigate to ...", "Go back", "Go forward", "Reload"; legacy "page.goto" etc.
+  // A rendered `params.url` is a goto step's exact navigation signal; prefer it
+  // over the title, which recent Playwright reduced to a bare "Navigate".
+  if (typeof params?.url === 'string' && pwCategory !== 'expect') return 'navigation';
+
+  // Navigation — modern "Navigate"/"Navigate to ...", "Go back", "Go forward", "Reload"; legacy "page.goto" etc.
   if (
-    lower.startsWith('navigate to') ||
+    lower.startsWith('navigate') ||
     lower.startsWith('go back') ||
     lower.startsWith('go forward') ||
     lower.startsWith('reload') ||
@@ -95,6 +110,18 @@ export interface FlatStep {
   title: string;
   duration: number;
   category: string;
+  /**
+   * The step's target, carried separately from the title by newer Playwright:
+   * the rendered locator, or a navigation's URL. Composed with the title by
+   * {@link stepLabel}.
+   */
+  subtitle?: string;
+  /**
+   * Curated per-step arguments: the rendered `locator`, a navigation `url`, an
+   * action's `button`/`value`, or a `test.step` author's own values. Primitives
+   * are kept as-is; anything else is JSON-stringified. Capped and masked.
+   */
+  params?: Record<string, string | number | boolean>;
   /** Error message when the step failed (undefined when the step passed). */
   error?: { message: string };
   /** True when the step carried an error — the signal the server needs for inline failure markers. */
@@ -103,6 +130,81 @@ export interface FlatStep {
   location?: string;
   /** Absolute start time in ms; enables per-step timing/waterfall on the case detail page. */
   startTime?: number;
+}
+
+/**
+ * A step's display label: the title followed by its subtitle when the subtitle
+ * carries a target not already spelled out in the title. The one place the
+ * 1.61 (`Click getByRole(…)`) and newer (`Click` + subtitle) title shapes
+ * converge, so every consumer labels a step the same way on both.
+ */
+export function stepLabel(step: { title?: unknown; subtitle?: unknown }): string {
+  const title = typeof step.title === 'string' ? step.title : '';
+  const subtitle = typeof step.subtitle === 'string' ? step.subtitle.trim() : '';
+  if (!subtitle) return title;
+  if (!title) return subtitle;
+  return title.includes(subtitle) ? title : `${title} ${subtitle}`;
+}
+
+/**
+ * The title and subtitle split for two-element display: the title, and the
+ * subtitle only when it adds a target the title does not already spell out.
+ * The visual counterpart of {@link stepLabel} (which joins the same two parts
+ * into one plain-text string) — a renderer shows `title` then a muted
+ * `subtitle`, and joining them with a space reproduces `stepLabel`.
+ */
+export function stepLabelParts(step: { title?: unknown; subtitle?: unknown }): {
+  title: string;
+  subtitle: string | null;
+} {
+  const title = typeof step.title === 'string' ? step.title : '';
+  const subtitle = typeof step.subtitle === 'string' ? step.subtitle.trim() : '';
+  if (!subtitle) return { title, subtitle: null };
+  if (!title) return { title: subtitle, subtitle: null };
+  return title.includes(subtitle) ? { title, subtitle: null } : { title, subtitle };
+}
+
+/**
+ * A step's params in display order: the rendered `locator` first (it is the
+ * step's subject), then the remaining keys in insertion order. Used by the
+ * params disclosure and the analysis lines so every surface lists them the same
+ * way. Returns an empty array when the step carries none.
+ */
+export function orderedStepParams(
+  params: Record<string, string | number | boolean> | null | undefined,
+): Array<[string, string | number | boolean]> {
+  if (!params || typeof params !== 'object') return [];
+  const entries = Object.entries(params);
+  return entries.sort(([a], [b]) => (a === 'locator' ? -1 : b === 'locator' ? 1 : 0));
+}
+
+/**
+ * Normalize a step's raw `params`: keep primitives as they are, JSON-stringify
+ * anything else, mask token-shaped strings, and cap both the key count and each
+ * value's length. Returns undefined when nothing survives.
+ */
+function normalizeStepParams(raw: unknown): Record<string, string | number | boolean> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const out: Record<string, string | number | boolean> = {};
+  let count = 0;
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (count >= MAX_STEP_PARAM_KEYS) break;
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      out[key] = value;
+      count++;
+    } else if (typeof value === 'string') {
+      out[key] = maskTokenLike(value).slice(0, MAX_STEP_PARAM_VALUE_CHARS);
+      count++;
+    } else if (value != null) {
+      try {
+        out[key] = maskTokenLike(JSON.stringify(value)).slice(0, MAX_STEP_PARAM_VALUE_CHARS);
+        count++;
+      } catch {
+        // Non-serializable (circular) values are dropped.
+      }
+    }
+  }
+  return count > 0 ? out : undefined;
 }
 
 /** Step-event category restricted to the values `extractTestStepEvents` emits. */
@@ -115,8 +217,11 @@ export function flattenSteps(steps: any[]): FlatStep[] {
     const flat: FlatStep = {
       title: step.title,
       duration: step.duration,
-      category: categorizeStep(step.title, step.category),
+      category: categorizeStep(step.title, step.category, step.params),
     };
+    if (typeof step.subtitle === 'string' && step.subtitle.length > 0) flat.subtitle = maskTokenLike(step.subtitle);
+    const params = normalizeStepParams(step.params);
+    if (params) flat.params = params;
     if (step.error?.message) {
       flat.error = { message: step.error.message };
       flat.failed = true;

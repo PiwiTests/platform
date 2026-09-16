@@ -49,7 +49,7 @@ export default eventHandler(async (event) => {
   const user = await requireAuth(event);
   const widget = getRouterParam(event, 'widget');
   if (!isAnalyticsWidgetId(widget)) {
-    throw createError({ statusCode: 404, message: 'Unknown analytics widget' });
+    throw apiError({ statusCode: 404, message: 'Unknown analytics widget' });
   }
 
   const db = await getDatabase();

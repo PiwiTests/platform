@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 510" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="ecArr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#667085"/>
+    </marker>
+    <marker id="ecArrAccent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#4353ff"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="920" height="510" rx="12" fill="#fcfcfd" stroke="#e4e7ec"/>
+  <text x="24" y="36" font-size="16" font-weight="700" fill="#101828">The pieces, and how they talk</text>
+  <text x="24" y="56" font-size="12.5" fill="#475467">One server in two shapes; the reporter feeds it; people, agents and CI read it.</text>
+
+  <text x="24" y="82" font-size="10.5" font-weight="700" fill="#98a2b3" letter-spacing="0.6">WHERE TESTS RUN</text>
+  <text x="356" y="82" font-size="10.5" font-weight="700" fill="#98a2b3" letter-spacing="0.6">ONE SERVER, TWO SHAPES</text>
+  <text x="660" y="82" font-size="10.5" font-weight="700" fill="#98a2b3" letter-spacing="0.6">AROUND IT</text>
+
+  <!-- Playwright run -->
+  <rect x="24" y="96" width="240" height="140" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
+  <rect x="24" y="96" width="240" height="30" rx="8" fill="#f2f4f7"/>
+  <rect x="24" y="118" width="240" height="8" fill="#f2f4f7"/>
+  <text x="40" y="116" font-size="13" font-weight="600" fill="#344054">Your Playwright run</text>
+  <text x="40" y="148" font-size="11.5" font-family="ui-monospace, monospace" fill="#344054">@piwitests/reporter</text>
+  <text x="40" y="170" font-size="12" fill="#475467">results, traces, live events,</text>
+  <text x="40" y="186" font-size="12" fill="#475467">locator snapshots, web vitals</text>
+  <text x="40" y="210" font-size="11" fill="#667085">in CI, or on your machine</text>
+
+  <!-- App under test -->
+  <rect x="24" y="286" width="240" height="110" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
+  <rect x="24" y="286" width="240" height="30" rx="8" fill="#f2f4f7"/>
+  <rect x="24" y="308" width="240" height="8" fill="#f2f4f7"/>
+  <text x="40" y="306" font-size="13" font-weight="600" fill="#344054">Your app under test</text>
+  <text x="40" y="338" font-size="12" fill="#475467">Nitro / ASP.NET Core</text>
+  <text x="40" y="354" font-size="12" fill="#475467">instrumentation (optional)</text>
+  <text x="40" y="376" font-size="11" fill="#667085">backend logs, tied to requests</text>
+
+  <line x1="144" y1="286" x2="144" y2="240" stroke="#667085" stroke-width="1.4" marker-end="url(#ecArr)"/>
+  <text x="152" y="266" font-size="11" fill="#475467">backend logs</text>
+
+  <!-- Piwi server -->
+  <rect x="356" y="96" width="220" height="140" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
+  <rect x="356" y="96" width="220" height="30" rx="8" fill="#f2f4f7"/>
+  <rect x="356" y="118" width="220" height="8" fill="#f2f4f7"/>
+  <text x="372" y="116" font-size="13" font-weight="600" fill="#344054">Piwi server</text>
+  <text x="372" y="148" font-size="12" fill="#475467">dashboard · API · MCP</text>
+  <text x="372" y="166" font-size="12" fill="#475467">SQLite or Postgres,</text>
+  <text x="372" y="182" font-size="12" fill="#475467">local or S3 storage</text>
+  <text x="372" y="208" font-size="11" fill="#667085">Docker, or npx @piwitests/server</text>
+
+  <line x1="264" y1="150" x2="352" y2="150" stroke="#4353ff" stroke-width="1.6" marker-end="url(#ecArrAccent)"/>
+  <text x="308" y="140" font-size="11" fill="#4353ff" text-anchor="middle">uploads</text>
+
+  <!-- Desktop app -->
+  <rect x="356" y="286" width="220" height="110" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
+  <rect x="356" y="286" width="220" height="30" rx="8" fill="#f2f4f7"/>
+  <rect x="356" y="308" width="220" height="8" fill="#f2f4f7"/>
+  <text x="372" y="306" font-size="13" font-weight="600" fill="#344054">Desktop app</text>
+  <text x="372" y="338" font-size="12" fill="#475467">the same server, bundled</text>
+  <text x="372" y="354" font-size="12" fill="#475467">in a Tauri shell</text>
+  <text x="372" y="376" font-size="11" fill="#667085">local only, 127.0.0.1</text>
+
+  <line x1="466" y1="236" x2="466" y2="286" stroke="#98a2b3" stroke-width="1.2" stroke-dasharray="4 4"/>
+  <text x="474" y="264" font-size="10.5" fill="#667085">one codebase, two shapes</text>
+
+  <path d="M 264 216 L 310 216 L 310 330 L 352 330" fill="none" stroke="#4353ff" stroke-width="1.4" stroke-dasharray="4 4" marker-end="url(#ecArrAccent)"/>
+  <text x="318" y="260" font-size="10.5" fill="#4353ff">zero-config</text>
+  <text x="318" y="274" font-size="10.5" fill="#4353ff">discovery</text>
+
+  <!-- Right column -->
+  <rect x="660" y="96" width="236" height="76" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
+  <text x="676" y="120" font-size="13" font-weight="600" fill="#344054">Piwi Picker extension</text>
+  <text x="676" y="140" font-size="11.5" fill="#475467">stable locators from any page</text>
+  <text x="676" y="158" font-size="11" fill="#667085">server connection optional</text>
+
+  <rect x="660" y="190" width="236" height="76" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
+  <text x="676" y="214" font-size="13" font-weight="600" fill="#344054">Coding agents</text>
+  <text x="676" y="234" font-size="11.5" fill="#475467">Claude Code, Cursor, VS Code…</text>
+  <text x="676" y="252" font-size="11" fill="#667085">MCP: 46 tools, fix plans</text>
+
+  <rect x="660" y="284" width="236" height="76" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
+  <text x="676" y="308" font-size="13" font-weight="600" fill="#344054">GitHub · GitLab · Bitbucket</text>
+  <text x="676" y="328" font-size="11.5" fill="#475467">diffs read for diagnosis</text>
+  <text x="676" y="346" font-size="11" fill="#667085">PR feedback, auto-heal draft PRs</text>
+
+  <rect x="660" y="378" width="236" height="76" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
+  <text x="676" y="402" font-size="13" font-weight="600" fill="#344054">Notifications</text>
+  <text x="676" y="422" font-size="11.5" fill="#475467">email, Slack, webhook, browser</text>
+  <text x="676" y="440" font-size="11" fill="#667085">per-project subscriptions</text>
+
+  <!-- Fan lines -->
+  <line x1="660" y1="134" x2="580" y2="110" stroke="#667085" stroke-width="1.2" marker-end="url(#ecArr)"/>
+  <line x1="660" y1="228" x2="580" y2="170" stroke="#667085" stroke-width="1.2" marker-end="url(#ecArr)"/>
+  <line x1="580" y1="210" x2="656" y2="322" stroke="#667085" stroke-width="1.2" marker-start="url(#ecArr)" marker-end="url(#ecArr)"/>
+  <line x1="580" y1="232" x2="656" y2="416" stroke="#667085" stroke-width="1.2" marker-end="url(#ecArr)"/>
+
+  <text x="24" y="476" font-size="12" fill="#475467">The live demo is the middle column, compiled into your browser.</text>
+  <text x="24" y="494" font-size="12" fill="#475467">AI, when enabled, is called only by the server, with the model you configured, cloud or local.</text>
+</svg>

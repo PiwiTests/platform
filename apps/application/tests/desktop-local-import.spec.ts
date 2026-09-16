@@ -95,7 +95,7 @@ test.describe('Desktop local import', () => {
         body: JSON.stringify({
           status: 'imported',
           kind: 'trace',
-          testRunId: 12345,
+          runId: 12345,
           projectId: 1,
           runStatus: 'failed',
           startTime: new Date().toISOString(),

@@ -1,3 +1,5 @@
+import { detectScmHost, type ScmProviderName } from '#shared/scm-urls';
+
 export type LinkProvider =
   | 'jira'
   | 'github-issue'
@@ -11,62 +13,77 @@ export type LinkProvider =
   | 'notion'
   | 'generic';
 
-const providerPatterns: { provider: LinkProvider; tests: RegExp[]; keyExtract?: RegExp }[] = [
-  {
-    provider: 'jira',
-    tests: [
-      /^https:\/\/([^./]+)\.atlassian\.net\/browse\//i,
-      /^https:\/\/[^/]+\/jira\/software\/c\/projects\//i,
-      /^https:\/\/[^/]+\/.+\/browse\//i,
-    ],
-    keyExtract: /\/([A-Z][A-Z0-9_]+-\d+)(?:\?|$|#)/i,
-  },
-  {
-    provider: 'github-issue',
-    tests: [/^https:\/\/github\.com\/[^/]+\/[^/]+\/issues\//i],
-    keyExtract: /\/issues\/(\d+)/,
-  },
-  {
-    provider: 'github-pr',
-    tests: [/^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\//i],
-    keyExtract: /\/pull\/(\d+)/,
-  },
-  {
-    provider: 'gitlab-issue',
-    tests: [/^https:\/\/(gitlab\.[^/]+|[^/]+\.gitlab\.io)\/[^/]+\/[^/]+\/-\/issues\//i],
-    keyExtract: /\/issues\/(\d+)/,
-  },
-  {
-    provider: 'gitlab-mr',
-    tests: [/^https:\/\/(gitlab\.[^/]+|[^/]+\.gitlab\.io)\/[^/]+\/[^/]+\/-\/merge_requests\//i],
-    keyExtract: /\/merge_requests\/(\d+)/,
-  },
-  {
-    provider: 'bitbucket',
-    tests: [/^https:\/\/bitbucket\.org\/[^/]+\/[^/]+\/pull-requests\//i],
-    keyExtract: /\/pull-requests\/(\d+)/,
-  },
-  {
-    provider: 'confluence',
-    tests: [/^https:\/\/([^./]+)\.atlassian\.net\/wiki\//i],
-  },
-  {
-    provider: 'slack',
-    tests: [/^https:\/\/[^/]+\.slack\.com\//i],
-  },
-  {
-    provider: 'linear',
-    tests: [/^https:\/\/linear\.app\//i],
-    keyExtract: /\/([A-Za-z]+-\d+)(?:\/|\?|$|#)/,
-  },
-  {
-    provider: 'notion',
-    tests: [/^https:\/\/(www\.)?notion\.so\//i],
-  },
-];
+/**
+ * A provider entry matches a URL when every regex in `tests` matches it and,
+ * for an SCM provider, `detectScmHost` resolves the URL's host to `scmHost` —
+ * so provider-host rules live only in `#shared/scm-urls` and a self-hosted
+ * GitLab is recognized here the same as everywhere. The `tests` of an SCM entry
+ * carry only the path shape that tells an issue from a PR/MR.
+ */
+const providerPatterns: { provider: LinkProvider; scmHost?: ScmProviderName; tests: RegExp[]; keyExtract?: RegExp }[] =
+  [
+    {
+      provider: 'jira',
+      tests: [
+        /^https:\/\/([^./]+)\.atlassian\.net\/browse\//i,
+        /^https:\/\/[^/]+\/jira\/software\/c\/projects\//i,
+        /^https:\/\/[^/]+\/.+\/browse\//i,
+      ],
+      keyExtract: /\/([A-Z][A-Z0-9_]+-\d+)(?:\?|$|#)/i,
+    },
+    {
+      provider: 'github-issue',
+      scmHost: 'github',
+      tests: [/\/[^/]+\/[^/]+\/issues\/\d+/i],
+      keyExtract: /\/issues\/(\d+)/,
+    },
+    {
+      provider: 'github-pr',
+      scmHost: 'github',
+      tests: [/\/[^/]+\/[^/]+\/pull\/\d+/i],
+      keyExtract: /\/pull\/(\d+)/,
+    },
+    {
+      provider: 'gitlab-issue',
+      scmHost: 'gitlab',
+      tests: [/\/-\/issues\/\d+/i],
+      keyExtract: /\/issues\/(\d+)/,
+    },
+    {
+      provider: 'gitlab-mr',
+      scmHost: 'gitlab',
+      tests: [/\/-\/merge_requests\/\d+/i],
+      keyExtract: /\/merge_requests\/(\d+)/,
+    },
+    {
+      provider: 'bitbucket',
+      scmHost: 'bitbucket',
+      tests: [/\/[^/]+\/[^/]+\/pull-requests\/\d+/i],
+      keyExtract: /\/pull-requests\/(\d+)/,
+    },
+    {
+      provider: 'confluence',
+      tests: [/^https:\/\/([^./]+)\.atlassian\.net\/wiki\//i],
+    },
+    {
+      provider: 'slack',
+      tests: [/^https:\/\/[^/]+\.slack\.com\//i],
+    },
+    {
+      provider: 'linear',
+      tests: [/^https:\/\/linear\.app\//i],
+      keyExtract: /\/([A-Za-z]+-\d+)(?:\/|\?|$|#)/,
+    },
+    {
+      provider: 'notion',
+      tests: [/^https:\/\/(www\.)?notion\.so\//i],
+    },
+  ];
 
 export function detectProvider(url: string): LinkProvider {
+  const scmHost = detectScmHost(url);
   for (const entry of providerPatterns) {
+    if (entry.scmHost && entry.scmHost !== scmHost) continue;
     if (entry.tests.some((r) => r.test(url))) {
       return entry.provider;
     }

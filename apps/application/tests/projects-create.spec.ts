@@ -13,7 +13,7 @@ test.describe.serial('Project Creation API Tests', () => {
       },
     });
     // A concurrent browser run may have already created this project — that satisfies the test intent
-    if (res.status() === 400) return;
+    if (res.status() === 409) return;
     expect(res.ok()).toBeTruthy();
     const data = await res.json();
     expect(data.project).toBeDefined();
@@ -44,7 +44,7 @@ test.describe.serial('Project Creation API Tests', () => {
     await request.post('/api/projects', { data: { name: projectName } });
     const res = await request.post('/api/projects', { data: { name: projectName } });
     expect(res.ok()).toBeFalsy();
-    expect(res.status()).toBe(400);
+    expect(res.status()).toBe(409);
   });
 
   test('should create a project with only name (optional fields omitted)', async ({ request }) => {
@@ -63,7 +63,7 @@ test.describe.serial('Project Creation API Tests', () => {
 
     const listRes = await request.get('/api/projects');
     expect(listRes.ok()).toBeTruthy();
-    const projects = await listRes.json();
+    const { items: projects } = await listRes.json();
     const found = projects.find((p: { name: string }) => p.name === projectName);
     expect(found).toBeDefined();
     expect(found.label).toBe('Listed Project');
@@ -151,7 +151,7 @@ test.describe.serial('Tag Management UI Tests', () => {
   test.beforeAll(async ({ request }) => {
     const res = await request.get('/api/tags');
     const data = await res.json();
-    for (const tag of data.tags || []) {
+    for (const tag of data.items || []) {
       if (tag.text.startsWith('ui-test-tag')) {
         await request.delete(`/api/tags/${tag.id}`);
       }

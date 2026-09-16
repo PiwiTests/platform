@@ -14,6 +14,8 @@ export function buildNetworkRequestItems(requests: unknown[] | null | undefined)
   normalizedUrl: string;
   status: number;
   duration: number | null;
+  /** Request start, Unix epoch milliseconds — null when the capture carried none. */
+  startTime: number | null;
   resourceType: string | null;
   contentType: string | null;
   serverLogs: unknown;
@@ -39,6 +41,7 @@ export function buildNetworkRequestItems(requests: unknown[] | null | undefined)
     normalizedUrl: normalizeRoute(rawUrlMap.get(req.url as string) ?? (req.url as string)),
     status: req.status as number,
     duration: (req.duration as number) ?? null,
+    startTime: typeof req.startTime === 'number' && Number.isFinite(req.startTime) ? Math.round(req.startTime) : null,
     resourceType: (req.resourceType as string) ?? null,
     contentType: (req.contentType as string) ?? null,
     serverLogs: (req.serverLogs as unknown) ?? null,

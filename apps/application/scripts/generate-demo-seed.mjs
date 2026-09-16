@@ -40,6 +40,7 @@ import {
   buildSourceFrames,
   storyByClusterId,
 } from '../shared/demo/failure-stories.mjs';
+import { demoTestMeta, demoTags, demoLocks, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -176,6 +177,12 @@ const PROJECTS = [
   },
 ];
 
+// Record each project's default branch from its SCM repo, so branch-aware
+// baselines, flakiness scoping and the default-branch resolver have real data.
+for (const project of PROJECTS) {
+  project.default_branch = SCM_REPOS[project.id]?.defaultBranch ?? 'main';
+}
+
 // Project-tag associations
 const PROJECT_TAGS = [
   { project_id: 1, tag_id: 1 }, // e2e-checkout → smoke
@@ -191,6 +198,21 @@ const PROJECT_TAGS = [
 // ── Timeline markers (dated project events overlaid on the trend charts) ────
 // Dated within project 1's run window (newest run 2025-04-25T08:30Z, ~8h apart)
 // so they land on the charts. Timestamps are rebased to load time like the runs.
+
+// App settings — the `ai` key marks the demo's simulated provider as configured,
+// so the setup page's AI probe reports active, matching the settings surface.
+const APP_SETTINGS = [
+  {
+    key: 'ai',
+    value: {
+      autoDiagnose: false,
+      roles: {
+        diagnosis: { provider: 'demo', model: 'demo-simulated', baseUrl: null, apiKey: null },
+      },
+    },
+    updated_at: ts('2025-04-20T09:00:00'),
+  },
+];
 const MARKERS = [
   {
     id: 1,
@@ -246,39 +268,8 @@ const caseById = new Map(); // caseId → { projectId, file, title, declLine, de
 const caseIdByKey = new Map(); // `${projectId}\x00${file}\x00${title}` → caseId
 
 // Cases that are prone to flake (retry-pass) — their `flaky_root_cause` is set
-// coherently instead of at random.
-/**
- * Test tags and `piwi:` ownership for the demo, derived from the spec's path so
- * the assignment is deterministic and reads like a real suite: a team owns a
- * directory, smoke tests are the first case in each file, and the checkout flow
- * carries the priority that makes the CI gate's `--require-tag` example real.
- */
-const DEMO_OWNERS = [
-  { match: /\/checkout\//, owner: '@checkout-team', feature: 'Checkout' },
-  { match: /\/api\//, owner: '@platform-team', feature: 'API' },
-  { match: /\/ui\//, owner: '@design-systems', feature: 'Design system' },
-  { match: /\/auth\//, owner: '@identity-team', feature: 'Identity' },
-];
-
-function demoTestMeta(filePath, index) {
-  const match = DEMO_OWNERS.find((entry) => entry.match.test(`/${filePath}`));
-  if (!match) return null;
-  const meta = { owner: match.owner, feature: match.feature };
-  // Only the first case of a checkout spec is critical — a suite where
-  // everything is critical teaches nothing about filtering.
-  if (match.owner === '@checkout-team') meta.priority = index === 0 ? 'critical' : 'high';
-  else if (index === 0) meta.priority = 'medium';
-  return meta;
-}
-
-function demoTags(filePath, index) {
-  const tags = [];
-  if (index === 0) tags.push('smoke');
-  if (/\/checkout\//.test(`/${filePath}`)) tags.push('critical');
-  if (/\/api\//.test(`/${filePath}`)) tags.push('api');
-  if (index % 3 === 0) tags.push('regression');
-  return tags;
-}
+// coherently instead of at random. Tags and `piwi:` ownership come from the
+// shared demo-test-meta module (the same rules the run simulator uses).
 
 const FLAKY_CASES = {
   1: { title: 'should apply discount code', rootCause: 'timing' },
@@ -317,6 +308,7 @@ for (const proj of DEMO_PROJECTS) {
       title: c.title,
       flaky_root_cause: flaky?.rootCause ?? null,
       tags: JSON.stringify(demoTags(c.file, proj.cases.indexOf(c))),
+      locks: JSON.stringify(demoLocks(c.file, proj.cases.indexOf(c))),
       owner: demoTestMeta(c.file, proj.cases.indexOf(c))?.owner ?? null,
       priority: demoTestMeta(c.file, proj.cases.indexOf(c))?.priority ?? null,
       feature: demoTestMeta(c.file, proj.cases.indexOf(c))?.feature ?? null,
@@ -408,6 +400,10 @@ const RUN_GREPS = {
 // simulator), so the Workers timeline shows dense rows instead of large gaps.
 const SEED_WORKER_COUNT = 4;
 const SEED_WORKER_GAP_MS = 200;
+/** How long after a test starts its first captured request fires. */
+const SEED_FIRST_REQUEST_OFFSET_MS = 120;
+/** Idle time between one captured request finishing and the next starting. */
+const SEED_REQUEST_GAP_MS = 35;
 
 /**
  * Build realistic `step_events` for a seeded case: before/after hooks, the
@@ -448,14 +444,50 @@ function buildSeedStepEvents(caseStartMs, caseDuration, location, waitHeavy) {
   return { stepEvents: events, wastedMs };
 }
 
-/** Scale a project's themed step titles to a case duration. */
-function buildSteps(proj, caseDuration) {
+/** Shape one themed step into the stored flat form, carrying its optional target/params. */
+function shapeStep(src, duration, startTime) {
+  const step = { title: src.title, duration, category: src.category, startTime };
+  // Playwright 1.63 shape (some projects only): the target in `subtitle`,
+  // curated arguments in `params`.
+  if (src.subtitle) step.subtitle = src.subtitle;
+  if (src.params) step.params = src.params;
+  return step;
+}
+
+/**
+ * Scale a project's themed step titles to a case duration, laying each step's
+ * absolute `startTime` end-to-end from `caseStartMs` so the failure timeline
+ * places them on a real clock rather than estimating from durations. A themed
+ * step with `children` becomes a `test.step`-style parent whose children lay
+ * end-to-end inside its window, so the timeline's per-test waterfall nests them
+ * by containment — the flat, pre-order shape Playwright's own step tree stores.
+ */
+function buildSteps(proj, caseDuration, caseStartMs) {
   const total = proj.stepTitles.reduce((s, st) => s + st.weight, 0);
-  return proj.stepTitles.map((st) => ({
-    title: st.title,
-    duration: Math.round((st.weight / total) * caseDuration),
-    category: st.category,
-  }));
+  let cursor = caseStartMs;
+  const out = [];
+  for (const st of proj.stepTitles) {
+    const duration = Math.round((st.weight / total) * caseDuration);
+    const startTime = cursor;
+    cursor += duration;
+    out.push(shapeStep(st, duration, startTime));
+
+    if (Array.isArray(st.children) && st.children.length > 0 && duration > 0) {
+      const childTotal = st.children.reduce((s, c) => s + (c.weight || 1), 0);
+      let childCursor = startTime;
+      st.children.forEach((child, i) => {
+        // Distribute the parent's window across its children; the last child
+        // ends exactly at the parent's end so containment stays clean.
+        const last = i === st.children.length - 1;
+        const childDur = last
+          ? Math.max(1, startTime + duration - childCursor)
+          : Math.max(1, Math.round(((child.weight || 1) / childTotal) * duration));
+        out.push(shapeStep(child, childDur, childCursor));
+        childCursor += childDur;
+      });
+    }
+  }
+  return out;
 }
 
 /** Themed network requests for one case (jittered durations; story overrides on failures). */
@@ -567,106 +599,23 @@ function buildPageState(proj, storyEntry) {
   };
 }
 
-const aiUsageSlug = (text) =>
-  text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40) || 'x';
-
-/**
- * Tests whose failing locator reads like something an AI step would have been
- * authored from — a semantic, name-based locator. Keyed by spec + test title,
- * the value pairs the natural-language prompt with the EXACT locator the story's
- * failure is about, so the failing locator and the intent actually join up: the
- * healing panel then shows "Compiled from prompt …" on those failures and the
- * diagnosis `aiSteps` section carries a genuinely relevant intent.
- *
- * The showcase is `checkout-email-renamed` (cluster 2): a renamed label is the
- * textbook case for reasoning about intent rather than the broken selector.
- * Structural locators from other stories (`.modal.is-open`, bare `getByRole`)
- * are deliberately absent — an AI step compiles to a named element, so pinning
- * an intent on those would misrepresent the feature.
- */
-const AI_STEP_STORY_INTENTS = new Map(
-  [
-    {
-      file: 'tests/checkout/checkout.spec.ts',
-      title: 'should complete checkout with Apple Pay',
-      template: 'the email address field',
-      locator: "getByLabel('Email address')",
-      kind: 'locator',
-    },
-    {
-      file: 'tests/mobile/forms.spec.ts',
-      title: 'Text input shows keyboard on focus',
-      template: 'the delivery notes field',
-      locator: "getByLabel('Delivery notes')",
-      kind: 'locator',
-    },
-    {
-      file: 'tests/admin/reports.spec.ts',
-      title: 'exports the monthly report as CSV',
-      template: 'export the report as CSV',
-      locator: "getByRole('button', { name: 'Export CSV' })",
-      kind: 'run',
-    },
-    {
-      file: 'tests/checkout/checkout.spec.ts',
-      title: 'should complete checkout with credit card',
-      template: 'pay for the order',
-      locator: "getByRole('button', { name: 'Pay' })",
-      kind: 'run',
-    },
-  ].map((e) => [`${e.file}\x00${e.title}`, e]),
-);
-
-/** The committed-artifact path an entry would live at, mirroring the reporter's key layout. */
-function aiEntryPath(caseDef, template) {
-  const dir = caseDef.file.replace(/[^/]+$/, '').replace(/\/$/, '');
-  const base = caseDef.file.split('/').pop();
-  const h = createHash('sha256').update(`${caseDef.title}::${template}`).digest('hex').slice(0, 8);
-  return `${dir}/__piwi__/${base}/${aiUsageSlug(caseDef.title)}.${aiUsageSlug(template)}.${h}.json`;
-}
-
-/**
- * The AI-step usage manifest a browser test replayed: the committed
- * `page.piwiLocator` / `page.piwiRun` artifacts (`entries`, powering the
- * project "AI steps" liveness tab) plus the `intents` mapping each compiled
- * locator back to its prompt (powering the healing panel's "Compiled from
- * prompt" line and the diagnosis `aiSteps` section).
- *
- * Two sources, both deterministic (no `rng()`, so a test yields the SAME
- * manifest in every run and liveness aggregates across runs):
- *  - tests in `AI_STEP_STORY_INTENTS` always carry an intent whose locator IS
- *    their story's failing locator — these are the ones the UI showcases;
- *  - a deterministic ~1/3 of the remaining tests carry generic intents, so the
- *    liveness tab has realistic volume beyond the handful of story cases.
- */
-function buildAiUsage(caseDef) {
-  const story = AI_STEP_STORY_INTENTS.get(`${caseDef.file}\x00${caseDef.title}`);
-  if (story) {
-    return {
-      entries: [aiEntryPath(caseDef, story.template)],
-      intents: [{ template: story.template, locator: story.locator, kind: story.kind }],
-    };
-  }
-
-  const idHash = createHash('sha256').update(`${caseDef.file}\x00${caseDef.title}`).digest('hex');
-  const pick = parseInt(idHash.slice(0, 2), 16);
-  if (pick % 3 !== 0) return null;
-
-  const prompts = [
-    { template: 'the primary action field', locator: "getByRole('textbox', { name: 'Name' })", kind: 'locator' },
-  ];
-  if (pick % 2 === 0) {
-    prompts.push({ template: 'submit the form', locator: "getByRole('button', { name: 'Continue' })", kind: 'run' });
-  }
-  return {
-    entries: prompts.map((p) => aiEntryPath(caseDef, p.template)),
-    intents: prompts.map((p) => ({ template: p.template, locator: p.locator, kind: p.kind })),
-  };
-}
+// Serial-group cascade: in one checkout run the first cart test fails, and the
+// serial `Cart` describe skips the rest — the tests it blocked link back to it.
+// It rides a story-free run so it neither collides with a cluster failure nor
+// perturbs the deterministic rng stream the rest of the seed depends on.
+const CASCADE_BLOCKER_LOCATION = 'tests/checkout/cart.spec.ts:4:3';
+const CASCADE_BLOCKER_ERROR =
+  'Error: expect(locator).toHaveText(expected)\n\n' +
+  "Locator: getByTestId('cart-count')\n" +
+  'Expected string: "1"\n' +
+  'Received string: "0"\n' +
+  '    at tests/checkout/cart.spec.ts:4:3';
+const CASCADE_BLOCKED_TITLES = [
+  'should remove item from cart',
+  'should update item quantity',
+  'should apply discount code',
+  'should display cart total correctly',
+];
 
 for (const proj of DEMO_PROJECTS) {
   const cfg = PROJECT_CONFIGS[proj.id];
@@ -729,23 +678,28 @@ for (const proj of DEMO_PROJECTS) {
       }
     }
 
-    let failedTests = failingCaseIds.size;
-    let status = failedTests > 0 ? 'failed' : 'passed';
-    let didNotRunTests = 0;
+    let status = failingCaseIds.size > 0 ? 'failed' : 'passed';
     // Occasionally a failure cuts the suite short: trailing (non-failing) tests
     // never execute and the run is interrupted.
-    let didNotRunCaseIds = new Set();
-    if (failedTests > 0 && rng() < 0.15) {
+    const didNotRunCaseIds = new Set();
+    // Why each did-not-run case never executed, keyed by case id. The serial
+    // cascade (a `previous-failure`, with a `blocked_by`) is stitched in by a
+    // post-processing pass so it can't perturb this loop's rng stream.
+    const reasonByCase = new Map();
+    const blockedByByCase = new Map();
+    if (failingCaseIds.size > 0 && rng() < 0.15) {
       status = 'interrupted';
       for (let j = caseIds.length - 1; j >= 0 && didNotRunCaseIds.size < 3; j--) {
         if (!failingCaseIds.has(caseIds[j])) didNotRunCaseIds.add(caseIds[j]);
       }
-      didNotRunTests = didNotRunCaseIds.size;
+      for (const id of didNotRunCaseIds) reasonByCase.set(id, 'max-failures');
     }
 
     const flakyThisRun =
       status !== 'interrupted' && flakyCaseId && !failingCaseIds.has(flakyCaseId) && rng() < cfg.flakyRate;
     const flakyTests = flakyThisRun ? 1 : 0;
+    const failedTests = failingCaseIds.size;
+    const didNotRunTests = didNotRunCaseIds.size;
     const passedTests = caseIds.length - failedTests - didNotRunTests;
 
     const metadata = {
@@ -779,6 +733,7 @@ for (const proj of DEMO_PROJECTS) {
       avg_test_duration: avgTestDuration,
       p90_test_duration: p90TestDuration,
       environment: ENVIRONMENTS[i % ENVIRONMENTS.length],
+      branch: commit.branch && commit.branch !== 'HEAD' ? commit.branch : null,
       label: proj.id === 1 && i === 0 ? 'v2.4.0 release' : null,
       metadata,
       stream_token: null,
@@ -823,6 +778,9 @@ for (const proj of DEMO_PROJECTS) {
       const storyEntry = isFailedCase ? storyByCaseId.get(caseId) : null;
       const story = storyEntry?.story ?? null;
       const noPage = Boolean(story?.evidence.noPageArtifacts);
+      // The story behind this case regardless of pass/fail — passing executions
+      // seed its green ARIA baseline so a later failure has a page to diff against.
+      const storyForCase = storyByCaseId.get(caseId)?.story ?? null;
 
       const caseStatus = isFailedCase ? 'failed' : isDidNotRunCase ? 'didnotrun' : 'passed';
       const caseDuration = isDidNotRunCase
@@ -848,7 +806,14 @@ for (const proj of DEMO_PROJECTS) {
         }
       }
 
-      const steps = buildSteps(proj, caseDuration);
+      const steps = buildSteps(proj, caseDuration, caseStartMs);
+      // Mark the last step of a failing case as the failed one, so the timeline
+      // anchors its window and failure marker on a captured step boundary.
+      if (isFailedCase && steps.length > 0) {
+        const lastStep = steps[steps.length - 1];
+        lastStep.failed = true;
+        lastStep.error = { message: (storyEntry.failingCase.error ?? '').split('\n')[0] || 'Test failed' };
+      }
       const slowestStep = steps.reduce((a, b) => (a.duration > b.duration ? a : b));
 
       // Test annotations — failures link to their cluster, the designated slow
@@ -897,6 +862,13 @@ for (const proj of DEMO_PROJECTS) {
         }));
       }
 
+      // A dialog left open at the failure moment, when the story carries one —
+      // closes just before the failure so it lands in the failure window.
+      const dialogs =
+        isFailedCase && !noPage && story?.evidence.dialogOnFail
+          ? [{ ...story.evidence.dialogOnFail, closedAt: caseStartMs + Math.round(caseDuration * 0.95) }]
+          : null;
+
       // Effective per-test timeout (ms), stable per test case across runs. Most
       // tests keep a healthy 20s budget that timeout-hygiene never flags (its
       // headroom stays under the 20s floor); the designated slow case keeps a
@@ -918,6 +890,16 @@ for (const proj of DEMO_PROJECTS) {
         error: isFailedCase ? storyEntry.failingCase.error : null,
         failure_cluster_id: story?.clusterId ?? null,
         retries: isFlakyCase ? 1 : 0,
+        // A flaky case has one failed attempt before the passing final one; a
+        // plain case has a single attempt. Mirrors what the reporter collects.
+        attempts: JSON.stringify(
+          isFlakyCase
+            ? [
+                { retry: 0, status: 'failed', duration: Math.round(caseDuration / 2), startedAt: caseStartMs },
+                { retry: 1, status: 'passed', duration: caseDuration, startedAt: caseStartMs + caseDuration },
+              ]
+            : [{ retry: 0, status: caseStatus, duration: caseDuration, startedAt: caseStartMs }],
+        ),
         // Regression/new-flaky signals are computed after generation from the
         // actual per-case history (see below), like the server does.
         is_new_regression: 0,
@@ -928,6 +910,7 @@ for (const proj of DEMO_PROJECTS) {
         browser_name: browser.projectName ?? null,
         test_annotations: testAnnotations,
         tags: JSON.stringify(demoTags(caseDef.file, j)),
+        locks: JSON.stringify(demoLocks(caseDef.file, j)),
         test_meta: demoTestMeta(caseDef.file, j),
         steps,
         step_events: stepEvents,
@@ -936,13 +919,21 @@ for (const proj of DEMO_PROJECTS) {
         slowest_step_duration: slowestStep.duration,
         web_vitals: isDidNotRunCase || noPage ? null : buildWebVitals(proj, isFailedCase),
         page_state: isDidNotRunCase || noPage ? null : buildPageState(proj, storyEntry),
-        ai_usage: isDidNotRunCase || noPage ? null : buildAiUsage(caseDef),
+        ai_usage: isDidNotRunCase || noPage ? null : await buildAiUsage(caseDef),
         console_logs: consoleLogs,
-        aria_snapshot: isFailedCase && !noPage ? story?.aria : null,
+        dialogs,
+        aria_snapshot:
+          isFailedCase && !noPage
+            ? story?.aria
+            : !isDidNotRunCase && !isFailedCase
+              ? (storyForCase?.baselineAria ?? null)
+              : null,
         test_source: isFailedCase ? buildTestSource(story, storyEntry.failingCase, caseDef.declLine) : null,
         test_source_frames: isFailedCase ? buildSourceFrames(storyEntry.failingCase) : null,
         worker_index: workerIndex,
         started_at: caseStartMs,
+        did_not_run_reason: isDidNotRunCase ? (reasonByCase.get(caseId) ?? null) : null,
+        blocked_by: isDidNotRunCase ? (blockedByByCase.get(caseId) ?? null) : null,
         created_at: caseStartMs,
       });
 
@@ -950,7 +941,12 @@ for (const proj of DEMO_PROJECTS) {
       workerCursorMs[workerIndex] += caseDuration + SEED_WORKER_GAP_MS;
 
       if (!isDidNotRunCase) {
+        // Requests fire one after another from shortly after the test starts,
+        // so the execution page can order them by start time.
+        let requestStartMs = caseStartMs + SEED_FIRST_REQUEST_OFFSET_MS;
         for (const req of buildNetwork(proj, storyEntry)) {
+          const startTime = requestStartMs;
+          requestStartMs += (req.duration ?? 0) + SEED_REQUEST_GAP_MS;
           NETWORK_REQUESTS.push({
             id: nrId++,
             test_runs_case_id: trcIdVal,
@@ -960,6 +956,7 @@ for (const proj of DEMO_PROJECTS) {
             normalized_url: seedNormalizeUrl(req.url),
             status: req.status,
             duration: req.duration ?? null,
+            start_time: startTime,
             resource_type: req.resourceType ?? null,
             content_type: req.contentType ?? (req.resourceType === 'document' ? 'text/html' : 'application/json'),
             server_logs: req.serverLogs ?? null,
@@ -970,6 +967,70 @@ for (const proj of DEMO_PROJECTS) {
     }
 
     runId++;
+  }
+}
+
+// ── Serial-group cascade (post-processing, rng-free) ────────────────────────
+// Rewrite one story-free-cart checkout run so the first `Cart` test fails and
+// the serial group skips the rest — each blocked test linking back (`blocked_by`)
+// to the failure. Applied after generation so it can't perturb the deterministic
+// rng stream the rest of the seed depends on.
+{
+  const cartKey = (title) => caseIdByKey.get(`1\x00tests/checkout/cart.spec.ts\x00${title}`);
+  const blockerCaseId = cartKey('should add item to cart');
+  const blockedCaseIds = CASCADE_BLOCKED_TITLES.map(cartKey);
+  const cartCaseIds = new Set([blockerCaseId, ...blockedCaseIds]);
+
+  // Project 1 runs, newest first — the newest run has the smallest id.
+  const proj1RunIds = TEST_RUNS.filter((r) => r.project_id === 1)
+    .map((r) => r.id)
+    .sort((a, b) => a - b);
+
+  for (const targetRunId of proj1RunIds) {
+    const cartRows = TEST_RUNS_CASES.filter(
+      (row) => row.test_run_id === targetRunId && cartCaseIds.has(row.test_case_id),
+    );
+    // Only a run where every cart test cleanly passed can host the cascade.
+    if (cartRows.length !== cartCaseIds.size) continue;
+    if (!cartRows.every((row) => row.status === 'passed' && row.retries === 0)) continue;
+
+    for (const row of cartRows) {
+      if (row.test_case_id === blockerCaseId) {
+        row.status = 'failed';
+        row.error = CASCADE_BLOCKER_ERROR;
+        row.attempts = JSON.stringify([
+          { retry: 0, status: 'failed', duration: row.duration, startedAt: row.started_at },
+        ]);
+      } else {
+        row.status = 'didnotrun';
+        row.duration = 0;
+        row.did_not_run_reason = 'previous-failure';
+        row.blocked_by = CASCADE_BLOCKER_LOCATION;
+        row.attempts = JSON.stringify([{ retry: 0, status: 'didnotrun', duration: 0, startedAt: row.started_at }]);
+        // A test that never ran produced no live evidence.
+        row.step_events = null;
+        row.wasted_time_ms = 0;
+        row.web_vitals = null;
+        row.page_state = null;
+        row.ai_usage = null;
+        row.console_logs = null;
+        row.test_source_frames = null;
+      }
+    }
+
+    // Drop the network the blocked (never-run) tests would not have produced.
+    const blockedTrcIds = new Set(cartRows.filter((row) => row.test_case_id !== blockerCaseId).map((row) => row.id));
+    for (let k = NETWORK_REQUESTS.length - 1; k >= 0; k--) {
+      if (blockedTrcIds.has(NETWORK_REQUESTS[k].test_runs_case_id)) NETWORK_REQUESTS.splice(k, 1);
+    }
+
+    // Reflect the new outcomes on the run's counters.
+    const run = TEST_RUNS.find((r) => r.id === targetRunId);
+    run.failed_tests += 1;
+    run.did_not_run_tests += blockedCaseIds.length;
+    run.passed_tests -= cartCaseIds.size;
+    if (run.status === 'passed') run.status = 'failed';
+    break;
   }
 }
 
@@ -1175,7 +1236,12 @@ for (const shot of PASSING_SCREENSHOTS) {
       const overlayPng = await sharp(Buffer.from(overlay), { raw: { width, height, channels: 4 } })
         .png()
         .toBuffer();
-      writeFileSync(new URL(`../public/${overlayRel}`, import.meta.url), overlayPng);
+      // Write beside the other seed artifacts so concurrent generators (e.g. the
+      // unit tests) stay inside their PIWI_DEMO_SEED_OUTPUT_DIR instead of
+      // rewriting the committed binary.
+      const visualDiffPath = join(OUTPUT_DIR, 'screenshots/visual-diff-checkout.png');
+      mkdirSync(dirname(visualDiffPath), { recursive: true });
+      writeFileSync(visualDiffPath, overlayPng);
 
       ATTACHMENTS.push({
         id: attachmentId++,
@@ -1207,18 +1273,21 @@ for (const shot of PASSING_SCREENSHOTS) {
 
 // ── Build failure_clusters rows ────────────────────────────────────────────
 
-const firstRunByProject = {};
-const lastRunByProject = {};
+// Runs are generated newest-first (index 0 is the newest, ids descend as time
+// advances), so the first row encountered holds the project's *newest* run and
+// the last row its *oldest* — despite the loop-order names below.
+const newestRunByProject = {};
+const oldestRunByProject = {};
 for (const run of TEST_RUNS) {
-  if (!(run.project_id in firstRunByProject)) firstRunByProject[run.project_id] = run.id;
-  lastRunByProject[run.project_id] = run.id;
+  if (!(run.project_id in newestRunByProject)) newestRunByProject[run.project_id] = run.id;
+  oldestRunByProject[run.project_id] = run.id;
 }
 
 const CLUSTER_TRIAGE = {
   1: {
-    status: 'resolved',
+    status: 'open',
     triage_note:
-      'Root cause identified: the new payment-provider SDK delays form interactivity on loaded CI runners. Mitigated by waiting for network idle in the payment helper; monitoring for recurrence.',
+      'Root cause identified: the new payment-provider SDK delays form interactivity on loaded CI runners. A fix landed and the cluster was closed, then regressed — reopened automatically. The fix did not hold; investigating the loaded-runner path again.',
   },
   3: {
     status: 'open',
@@ -1229,6 +1298,11 @@ const CLUSTER_TRIAGE = {
     status: 'ignored',
     triage_note:
       'Known issue — three buttons match the unscoped role query on the gallery page. The page intentionally demos multiple variants; the spec needs a name-scoped locator. Not an app bug.',
+  },
+  10: {
+    status: 'open',
+    triage_note:
+      'Capped the API default page size to the requested pageSize so the users table renders 25 rows again; verified once the count assertion turned green.',
   },
 };
 
@@ -1285,9 +1359,7 @@ function buildClusterFix(story, stats) {
   const fix = CLUSTER_FIXES[story.clusterId];
   if (!fix) return {};
 
-  // `firstRunByProject` is the first row encountered, and rows are newest-first
-  // — so it holds the project's *newest* run, despite the name.
-  const landed = fixLandedRun(stats, fix.verification, firstRunByProject[story.projectId]);
+  const landed = fixLandedRun(stats, fix.verification, newestRunByProject[story.projectId]);
   if (!landed) throw new Error(`Cluster ${story.clusterId} has no run a fix could have landed in`);
 
   return {
@@ -1299,10 +1371,23 @@ function buildClusterFix(story, stats) {
   };
 }
 
+// Semantic vectors for a single pair so the demo shows "Fixed before": the open
+// cluster 9 (a report export that never becomes visible) resembles the resolved
+// cluster 10 (a table assertion that was diagnosis-verified). Both carry the same
+// model+recipe tag and near-parallel vectors, so their cosine clears the memory
+// threshold even though their error text differs. Everything else uses the
+// deterministic fingerprint path with no vector.
+const DEMO_EMBED_TAG = 'text-embedding-3-small#v2';
+const DEMO_CLUSTER_EMBEDDINGS = {
+  10: [0.91, 0.12, 0.44, 0.21, 0.68, 0.33, 0.52, 0.6],
+  9: [0.62, 0.4, 0.52, 0.34, 0.5, 0.48, 0.47, 0.44],
+};
+
 for (const story of FAILURE_STORIES) {
   const stats = clusterStats[story.clusterId];
   const fp = storyFingerprints.get(story.clusterId);
   const triage = CLUSTER_TRIAGE[story.clusterId] || {};
+  const embedding = DEMO_CLUSTER_EMBEDDINGS[story.clusterId];
   const createdAt = stats.firstStartMs ? Math.floor(stats.firstStartMs / 1000) : ts('2025-04-20T09:00:00');
   const updatedAt = stats.lastStartMs ? Math.floor(stats.lastStartMs / 1000) : createdAt;
   FAILURE_CLUSTERS.push({
@@ -1315,14 +1400,84 @@ for (const story of FAILURE_STORIES) {
     sample_error: story.failingCases[0].error,
     status: triage.status || 'open',
     triage_note: triage.triage_note || null,
-    first_seen_run_id: stats.firstRunId ?? firstRunByProject[story.projectId],
-    last_seen_run_id: stats.lastRunId ?? lastRunByProject[story.projectId],
+    // A cluster that never fired falls back to the project's run span: first
+    // seen = oldest run (highest id), last seen = newest run (lowest id).
+    first_seen_run_id: stats.firstRunId ?? oldestRunByProject[story.projectId],
+    last_seen_run_id: stats.lastRunId ?? newestRunByProject[story.projectId],
     occurrences: stats.occurrences || 1,
     ...buildClusterFix(story, stats),
+    ...(embedding ? { embedding: JSON.stringify(embedding), embedding_model: DEMO_EMBED_TAG } : {}),
     created_at: createdAt,
     updated_at: updatedAt,
   });
 }
+
+// ── Demo inbox state — assignee + snooze so the inbox queues are exercisable ──
+// The failure inbox's Mine queue matches the signed-in user; assigning an open
+// cluster to the default demo user (Avery) gives that queue a row. One open
+// cluster is snoozed "until it recurs" so the snooze state, its "Unsnooze"
+// action on the cluster page, and the fact that a snoozed cluster leaves every
+// queue are all demonstrable. A far-future deadline keeps it snoozed regardless
+// of the time-shift applied to the rest of the seed.
+{
+  const clusterById = new Map(FAILURE_CLUSTERS.map((c) => [c.id, c]));
+  const assignMine = clusterById.get(7);
+  if (assignMine) assignMine.assignee = DEMO_USERS[0].name;
+  const snoozed = clusterById.get(9);
+  if (snoozed) {
+    snoozed.snoozed_until = Math.floor(Date.UTC(9999, 0, 1) / 1000);
+    snoozed.snooze_mode = 'until-recurs';
+  }
+}
+
+// ── Demo merge suggestions ─────────────────────────────────────────────────
+// Two pending pairs (one LLM-judged, one embedding) so the list and both
+// actions are exercisable, plus one rejected pair that demonstrates a
+// dismissed suggestion. Each pair shares a project; cluster_a_id <
+// cluster_b_id as the unique pair index requires.
+const MERGE_SUGGESTIONS = [
+  {
+    id: 1,
+    project_id: 2,
+    cluster_a_id: 3,
+    cluster_b_id: 4,
+    score: 0.87,
+    method: 'llm',
+    llm_confidence: 'high',
+    llm_reason:
+      'Both failures surface HTTP 5xx responses from the same service tier; the error signatures differ only by endpoint.',
+    status: 'pending',
+    created_at: ts('2025-04-24T10:00:00'),
+    updated_at: ts('2025-04-24T10:00:00'),
+  },
+  {
+    id: 2,
+    project_id: 3,
+    cluster_a_id: 5,
+    cluster_b_id: 6,
+    score: 0.74,
+    method: 'embedding',
+    llm_confidence: null,
+    llm_reason: null,
+    status: 'pending',
+    created_at: ts('2025-04-23T14:30:00'),
+    updated_at: ts('2025-04-23T14:30:00'),
+  },
+  {
+    id: 3,
+    project_id: 1,
+    cluster_a_id: 1,
+    cluster_b_id: 2,
+    score: 0.58,
+    method: 'llm',
+    llm_confidence: 'low',
+    llm_reason:
+      'One failure is a click timeout, the other a renamed field — different root-cause families despite sharing the checkout spec.',
+    status: 'rejected',
+    created_at: ts('2025-04-22T09:00:00'),
+    updated_at: ts('2025-04-22T09:00:00'),
+  },
+];
 
 // ── Demo quarantine ───────────────────────────────────────────────────────
 // Three entries covering the states the tab exists to distinguish: one that has
@@ -1330,6 +1485,9 @@ for (const story of FAILURE_STORIES) {
 // Without all three the exit ramp looks like a list that only grows.
 const QUARANTINED_TESTS = [];
 {
+  // Runs after the anchor count toward the streak; 4 seeded passes land the
+  // entry at "4 / 5" — part-way through the exit ramp, not yet ready.
+  const PARTIAL_QUARANTINE_STREAK_RUNS = 4;
   const quarantineSpec = [
     { projectId: 1, streakState: 'ready', reason: 'Times out on CI only — see cluster 1' },
     { projectId: 2, streakState: 'partial', reason: 'Search index warm-up races the assertion' },
@@ -1346,12 +1504,17 @@ const QUARANTINED_TESTS = [];
     const caseId = caseIdByKey.get(`${spec.projectId}\x00${caseDef.file}\x00${caseDef.title}`);
     if (!caseId) continue;
 
-    // Anchoring to an early run lets the executions already in the seed count
-    // toward the streak, which is what produces the three different states.
+    // The streak counts executions on runs after the anchor (id > anchor), and
+    // ids descend as time advances in the seed, so an anchor on the newest run
+    // makes every seeded execution count (release-ready) and an anchor on the
+    // oldest run counts none (still failing). The partial entry anchors a few
+    // runs short of the oldest so only a handful of passes accumulate.
     const anchorRunId =
       spec.streakState === 'failing'
-        ? (lastRunByProject[spec.projectId] ?? null)
-        : (firstRunByProject[spec.projectId] ?? null);
+        ? (oldestRunByProject[spec.projectId] ?? null)
+        : spec.streakState === 'partial'
+          ? Number(oldestRunByProject[spec.projectId]) - PARTIAL_QUARANTINE_STREAK_RUNS || null
+          : (newestRunByProject[spec.projectId] ?? null);
 
     QUARANTINED_TESTS.push({
       id: qId++,
@@ -1365,6 +1528,29 @@ const QUARANTINED_TESTS = [];
       released_at: null,
       released_reason: null,
     });
+  }
+
+  // A quarantined test whose cluster's fix has verified — the inbox's
+  // "Quarantine ready" queue: the failures stopped, so the quarantine is safe to
+  // lift. Anchored at that cluster's newest run so the demo shows it release-ready.
+  {
+    const story = FAILURE_STORIES.find((s) => s.clusterId === 10);
+    const failing = story?.failingCases?.[0];
+    const caseId = story && failing && caseIdByKey.get(`${story.projectId}\x00${story.specFile}\x00${failing.title}`);
+    if (caseId) {
+      QUARANTINED_TESTS.push({
+        id: qId++,
+        project_id: story.projectId,
+        test_case_id: caseId,
+        reason: 'Held while the pagination fix was verified; the fix landed and held.',
+        source: 'manual',
+        quarantined_at_run_id: newestRunByProject[story.projectId] ?? null,
+        created_by: null,
+        created_at: ts('2025-05-02T09:00:00'),
+        released_at: null,
+        released_reason: null,
+      });
+    }
   }
 }
 
@@ -2464,6 +2650,11 @@ function collectAnchorSec() {
       bump(r.updated_at, 's');
     }
   }
+  for (const r of MERGE_SUGGESTIONS) {
+    bump(r.created_at, 's');
+    bump(r.updated_at, 's');
+  }
+  for (const r of APP_SETTINGS) bump(r.updated_at, 's');
   for (const r of FAILURE_DIAGNOSIS_VERSIONS) bump(r.created_at, 's');
   for (const r of TEST_RUNS) {
     bump(r.start_time, 's');
@@ -2483,6 +2674,7 @@ function collectAnchorSec() {
   for (const r of TEST_RUNS_CASES) {
     bump(r.started_at, 'ms');
     bump(r.created_at, 'ms');
+    for (const e of r.steps || []) bump(e.startTime, 'ms');
     for (const e of r.step_events || []) bump(e.startedAt, 'ms');
     for (const e of r.console_logs || []) bump(e.timestamp, 'ms');
   }
@@ -2501,10 +2693,13 @@ const D = '(SELECT delta_sec FROM _rebase)';
 const D_MS = `(SELECT delta_sec FROM _rebase) * 1000`;
 
 // Shift a JSON array column's per-element ms timestamp (`$.field`) in place,
-// preserving element order (json_each iterates in array order).
+// preserving element order (json_each iterates in array order). Elements that
+// carry no `$.field` are left untouched, so a shift never writes a null key.
 const shiftJsonMs = (table, column, field) =>
-  `UPDATE ${table} SET ${column} = (SELECT json_group_array(json_set(value, '$.${field}', ` +
-  `json_extract(value, '$.${field}') + ${D_MS})) FROM json_each(${table}.${column})) ` +
+  `UPDATE ${table} SET ${column} = (SELECT json_group_array(` +
+  `CASE WHEN json_extract(value, '$.${field}') IS NOT NULL ` +
+  `THEN json_set(value, '$.${field}', json_extract(value, '$.${field}') + ${D_MS}) ELSE value END) ` +
+  `FROM json_each(${table}.${column})) ` +
   `WHERE ${column} IS NOT NULL AND json_valid(${column});`;
 
 const REBASE_SQL = [
@@ -2516,21 +2711,27 @@ const REBASE_SQL = [
   `UPDATE projects SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE markers SET occurred_at = occurred_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE users SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
+  `UPDATE app_settings SET updated_at = updated_at + ${D};`,
   `UPDATE test_suites SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE test_cases SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE test_runs SET start_time = start_time + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE files SET created_at = created_at + ${D};`,
-  `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
+  // fix_landed_at is nullable; NULL + delta stays NULL, so no guard is needed.
+  `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D};`,
+  `UPDATE quarantined_tests SET created_at = created_at + ${D}, released_at = released_at + ${D};`,
   `UPDATE failure_diagnoses SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE failure_diagnosis_versions SET created_at = created_at + ${D};`,
+  `UPDATE cluster_merge_suggestions SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   '',
   '-- Millisecond timestamp columns',
   `UPDATE test_runs_cases SET started_at = started_at + ${D_MS}, created_at = created_at + ${D_MS};`,
+  `UPDATE network_requests SET start_time = start_time + ${D_MS};`,
   `UPDATE project_assignments SET created_at = created_at + ${D_MS};`,
   `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
   '',
   '-- Millisecond timestamps embedded in JSON columns',
+  shiftJsonMs('test_runs_cases', 'steps', 'startTime'),
   shiftJsonMs('test_runs_cases', 'step_events', 'startedAt'),
   shiftJsonMs('test_runs_cases', 'console_logs', 'timestamp'),
   shiftJsonMs('network_requests', 'server_logs', 'timestamp'),
@@ -2562,6 +2763,9 @@ const lines = [
   '-- Project assignments (affectations)',
   insert('project_assignments', PROJECT_ASSIGNMENTS),
   '',
+  '-- App settings (the `ai` key marks the demo provider as configured)',
+  insert('app_settings', APP_SETTINGS),
+  '',
   '-- Project-tag associations',
   insert('project_tags', PROJECT_TAGS),
   '',
@@ -2585,6 +2789,9 @@ const lines = [
   '',
   '-- Demo AI diagnoses',
   insert('failure_diagnoses', FAILURE_DIAGNOSES),
+  '',
+  '-- Demo merge suggestions (reference failure_clusters)',
+  insert('cluster_merge_suggestions', MERGE_SUGGESTIONS),
   '',
   '-- Diagnosis version history (references failure_diagnoses + failure_clusters)',
   insert('failure_diagnosis_versions', FAILURE_DIAGNOSIS_VERSIONS),

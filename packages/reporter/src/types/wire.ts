@@ -14,6 +14,7 @@
 import type {
   BrowserConfig,
   FilterDetails,
+  SelectionStamp,
   SuiteConfigEntry,
   TestAnnotation,
   TestMetadata,
@@ -24,6 +25,7 @@ import type {
 export type {
   BrowserConfig,
   FilterDetails,
+  SelectionStamp,
   SuiteConfigEntry,
   TestAnnotation,
   TestMetadata,
@@ -48,6 +50,8 @@ export interface WireTestCase {
   timeout?: number | null;
   error?: string | null;
   retries?: number;
+  /** One entry per attempt up to and including this one: `{ retry, status, duration, startedAt }`. */
+  attempts?: Array<{ retry: number; status: string; duration: number; startedAt: number | null }> | null;
   workerIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
@@ -61,7 +65,9 @@ export interface WireTestCase {
   pageState?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
+  dialogs?: unknown;
   ariaSnapshot?: unknown;
+  ariaSnapshotJson?: unknown;
   testSource?: string | null;
   testSourceFrames?: TestSourceFrame[] | null;
   browser?: BrowserConfig | null;
@@ -70,6 +76,8 @@ export interface WireTestCase {
   testAnnotations?: TestAnnotation[] | null;
   /** Normalized `TestCase.tags`, `@` stripped. */
   tags?: string[] | null;
+  /** Lock names from the private `TestCase._locks` (best effort; none from blob imports). */
+  locks?: string[] | null;
   /** Ownership metadata parsed from `piwi:` annotations. */
   testMeta?: TestMetadata | null;
   /** Step-event discriminant (only for `step-begin`/`step-end` events). */
@@ -77,6 +85,10 @@ export interface WireTestCase {
   parentTitle?: string | null;
   /** Per-element locator snapshots with ranked alternatives (transient — not stored per-run). */
   locatorSnapshots?: unknown;
+  /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
+  didNotRunReason?: string | null;
+  /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
+  blockedBy?: string | null;
 }
 
 // ── Stream events (discriminated union) ──────────────────────────────────────
@@ -101,6 +113,8 @@ export interface CompleteStreamEvent {
   timeout?: number | null;
   error: string | null;
   retries: number;
+  /** One entry per attempt up to and including this one: `{ retry, status, duration, startedAt }`. */
+  attempts?: Array<{ retry: number; status: string; duration: number; startedAt: number | null }> | null;
   workerIndex: number | null;
   shardIndex: number | null;
   startedAt: number | null;
@@ -109,6 +123,7 @@ export interface CompleteStreamEvent {
   suiteConfig?: SuiteConfigEntry[] | null;
   testAnnotations?: TestAnnotation[] | null;
   tags?: string[] | null;
+  locks?: string[] | null;
   testMeta?: TestMetadata | null;
   steps?: unknown;
   stepEvents?: TestStepEvent[] | null;
@@ -119,17 +134,26 @@ export interface CompleteStreamEvent {
   pageState?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
+  dialogs?: unknown;
   ariaSnapshot?: unknown;
+  ariaSnapshotJson?: unknown;
   testSource?: string | null;
   testSourceFrames?: TestSourceFrame[] | null;
   locatorSnapshots?: unknown;
+  /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
+  didNotRunReason?: string | null;
+  /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
+  blockedBy?: string | null;
 }
 
 export interface StepBeginStreamEvent {
   type: 'step-begin';
   title: string;
+  /** The step's target (rendered locator or URL), carried separately by newer Playwright. */
+  subtitle?: string | null;
   location: string;
-  stepCategory: 'hook' | 'fixture';
+  /** Playwright step category (`hook`, `fixture`, `pw:api`, `pw:expect`, …). */
+  stepCategory: string;
   parentTitle: string | null;
   workerIndex: number | null;
   startedAt: number | null;
@@ -138,10 +162,13 @@ export interface StepBeginStreamEvent {
 export interface StepEndStreamEvent {
   type: 'step-end';
   title: string;
+  /** The step's target (rendered locator or URL), carried separately by newer Playwright. */
+  subtitle?: string | null;
   location: string;
   status: string;
   duration: number;
-  stepCategory: 'hook' | 'fixture';
+  /** Playwright step category (`hook`, `fixture`, `pw:api`, `pw:expect`, …). */
+  stepCategory: string;
   parentTitle: string | null;
   workerIndex: number | null;
   startedAt: number | null;

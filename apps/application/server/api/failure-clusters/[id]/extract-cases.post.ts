@@ -19,14 +19,14 @@ export default eventHandler(async (event) => {
   const body = await readBody(event);
   const testCaseIds: number[] | undefined = body?.testCaseIds;
   if (!testCaseIds || !Array.isArray(testCaseIds) || testCaseIds.length === 0) {
-    throw createError({ statusCode: 400, message: 'testCaseIds must be a non-empty array' });
+    throw apiError({ statusCode: 400, message: 'testCaseIds must be a non-empty array' });
   }
 
   const triageNote: string | undefined = body?.triageNote;
 
   const result = await extractClusterCases(db, id, testCaseIds, triageNote);
   if (!result) {
-    throw createError({ statusCode: 404, message: 'Failure cluster not found' });
+    throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
   }
 
   return result;

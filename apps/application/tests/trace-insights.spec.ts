@@ -138,20 +138,20 @@ async function uploadRun(request: APIRequestContext, traceZip: Buffer | null) {
   }
   const res = await request.post('/api/test-runs/upload', { multipart });
   expect(res.ok()).toBe(true);
-  const { testRunId } = await res.json();
-  const runData = await (await request.get(`/api/test-runs/${testRunId}`)).json();
-  const caseId = runData.testCases?.[0]?.id;
+  const { runId } = await res.json();
+  const runData = await (await request.get(`/api/test-runs/${runId}`)).json();
+  const caseId = runData.testCases?.[0]?.executionId;
   expect(caseId).toBeDefined();
-  return { testRunId, caseId };
+  return { runId, caseId };
 }
 
 test.describe('Trace insights — call stack with source', () => {
   test('returns the full stack with embedded source, project-relative paths and the failing action', async ({
     request,
   }) => {
-    const { testRunId, caseId } = await uploadRun(request, buildInsightTraceZip());
+    const { caseId } = await uploadRun(request, buildInsightTraceZip());
 
-    const res = await request.get(`/api/test-runs/${testRunId}/cases/${caseId}/trace-stacks`);
+    const res = await request.get(`/api/test-run-cases/${caseId}/trace-stacks`);
     expect(res.ok()).toBe(true);
     const body = await res.json();
 
@@ -169,20 +169,20 @@ test.describe('Trace insights — call stack with source', () => {
   });
 
   test('reports no-trace for a case uploaded without a trace', async ({ request }) => {
-    const { testRunId, caseId } = await uploadRun(request, null);
+    const { caseId } = await uploadRun(request, null);
 
-    const stacksRes = await (await request.get(`/api/test-runs/${testRunId}/cases/${caseId}/trace-stacks`)).json();
+    const stacksRes = await (await request.get(`/api/test-run-cases/${caseId}/trace-stacks`)).json();
     expect(stacksRes.status).toBe('no-trace');
-    const networkRes = await (await request.get(`/api/test-runs/${testRunId}/cases/${caseId}/trace-network`)).json();
+    const networkRes = await (await request.get(`/api/test-run-cases/${caseId}/trace-network`)).json();
     expect(networkRes.status).toBe('no-trace');
   });
 });
 
 test.describe('Trace insights — full network trace', () => {
   test('lists every request with masked headers and failing-window correlation', async ({ request }) => {
-    const { testRunId, caseId } = await uploadRun(request, buildInsightTraceZip());
+    const { caseId } = await uploadRun(request, buildInsightTraceZip());
 
-    const res = await request.get(`/api/test-runs/${testRunId}/cases/${caseId}/trace-network`);
+    const res = await request.get(`/api/test-run-cases/${caseId}/trace-network`);
     expect(res.ok()).toBe(true);
     const body = await res.json();
 
@@ -211,8 +211,8 @@ test.describe('Trace insights — full network trace', () => {
   });
 
   test('serves a masked JSON body preview by hash, with or without the extension', async ({ request }) => {
-    const { testRunId, caseId } = await uploadRun(request, buildInsightTraceZip());
-    const base = `/api/test-runs/${testRunId}/cases/${caseId}/trace-network-body`;
+    const { caseId } = await uploadRun(request, buildInsightTraceZip());
+    const base = `/api/test-run-cases/${caseId}/trace-network-body`;
 
     for (const ref of [BODY_SHA1, BODY_SHA1.replace(/\.json$/, '')]) {
       const res = await request.get(`${base}?sha1=${ref}`);
@@ -227,8 +227,8 @@ test.describe('Trace insights — full network trace', () => {
   });
 
   test('rejects malformed hashes and unknown ones the trace never referenced', async ({ request }) => {
-    const { testRunId, caseId } = await uploadRun(request, buildInsightTraceZip());
-    const base = `/api/test-runs/${testRunId}/cases/${caseId}/trace-network-body`;
+    const { caseId } = await uploadRun(request, buildInsightTraceZip());
+    const base = `/api/test-run-cases/${caseId}/trace-network-body`;
 
     expect((await request.get(`${base}?sha1=../../../etc/passwd`)).status()).toBe(400);
     expect((await request.get(`${base}?sha1=zz`)).status()).toBe(400);

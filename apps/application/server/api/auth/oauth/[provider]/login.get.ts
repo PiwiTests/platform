@@ -18,7 +18,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   if (!isAuthEnabled(event)) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'Authentication is not enabled',
     });
@@ -26,7 +26,7 @@ export default eventHandler(async (event) => {
 
   const provider = getRouterParam(event, 'provider');
   if (!provider) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'Provider is required',
     });
@@ -43,7 +43,7 @@ export default eventHandler(async (event) => {
 
   const redirectUrl = initiateOAuth(event, provider, { link });
   if (!redirectUrl) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: `OAuth provider "${provider}" is not configured`,
     });

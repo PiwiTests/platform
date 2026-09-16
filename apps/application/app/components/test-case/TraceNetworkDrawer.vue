@@ -56,10 +56,9 @@ watch(
     }
     bodyPending.value = true;
     try {
-      const result = await $fetch<TraceBodyResponse>(
-        `/api/test-runs/${props.runId}/cases/${props.testRunsCaseId}/trace-network-body`,
-        { query: { sha1 } },
-      );
+      const result = await $fetch<TraceBodyResponse>(`/api/test-run-cases/${props.testRunsCaseId}/trace-network-body`, {
+        query: { sha1 },
+      });
       bodyCache.set(sha1, result);
       body.value = result;
     } catch {

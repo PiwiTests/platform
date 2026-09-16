@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { waitForHydration } from './utils';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { PROJECT } from '#shared/test-project-names';
@@ -28,7 +29,7 @@ test.describe('Environment API Tests', () => {
     expect(response.ok()).toBeTruthy();
     const data = await response.json();
     expect(data.success).toBe(true);
-    expect(data.testRunId).toBeDefined();
+    expect(data.runId).toBeDefined();
   });
 
   test('should retrieve environment from test run details', async ({ request }) => {
@@ -49,7 +50,7 @@ test.describe('Environment API Tests', () => {
 
     const submitData = await submitResponse.json();
 
-    const getResponse = await request.get(`/api/test-runs/${submitData.testRunId}`);
+    const getResponse = await request.get(`/api/test-runs/${submitData.runId}`);
     expect(getResponse.ok()).toBeTruthy();
 
     const testRun = await getResponse.json();
@@ -76,7 +77,7 @@ test.describe('Environment API Tests', () => {
         },
       });
       expect(res.ok()).toBeTruthy();
-      runIds.push((await res.json()).testRunId);
+      runIds.push((await res.json()).runId);
     }
 
     // Verify each run retains its environment
@@ -88,7 +89,7 @@ test.describe('Environment API Tests', () => {
 
     // Verify project detail includes all environments
     const projectRes = await request.get('/api/projects');
-    const projects = await projectRes.json();
+    const { items: projects } = await projectRes.json();
     const project = projects.find((p: { name: string }) => p.name === projectName);
     expect(project).toBeDefined();
 
@@ -118,7 +119,7 @@ test.describe('Environment API Tests', () => {
 
     const data = await response.json();
 
-    const getResponse = await request.get(`/api/test-runs/${data.testRunId}`);
+    const getResponse = await request.get(`/api/test-runs/${data.runId}`);
     const testRun = await getResponse.json();
     expect(testRun.environment).toBeNull();
   });
@@ -141,7 +142,7 @@ test.describe('Environment API Tests', () => {
 
     const data = await response.json();
 
-    const getResponse = await request.get(`/api/test-runs/${data.testRunId}`);
+    const getResponse = await request.get(`/api/test-runs/${data.runId}`);
     const testRun = await getResponse.json();
     expect(testRun.environment).toBeNull();
   });
@@ -164,7 +165,7 @@ test.describe('Environment API Tests', () => {
     expect(submitRes.ok()).toBeTruthy();
 
     const projectsRes = await request.get('/api/projects');
-    const projects = await projectsRes.json();
+    const { items: projects } = await projectsRes.json();
     const project = projects.find((p: { name: string }) => p.name === 'env-latestrun-test');
     expect(project).toBeDefined();
     expect(project.latestRun).toBeDefined();
@@ -191,9 +192,9 @@ test.describe('Environment API Tests', () => {
 
     expect(response.ok()).toBeTruthy();
     const data = await response.json();
-    expect(data.testRunId).toBeDefined();
+    expect(data.runId).toBeDefined();
 
-    const getResponse = await request.get(`/api/test-runs/${data.testRunId}`);
+    const getResponse = await request.get(`/api/test-runs/${data.runId}`);
     const testRun = await getResponse.json();
     expect(testRun.environment).toBe('production');
   });
@@ -275,7 +276,7 @@ test.describe('Environment UI Tests', () => {
 
   test('should display environment badge on test run detail page', async ({ page, request }) => {
     const projectsRes = await request.get('/api/projects');
-    const projects = await projectsRes.json();
+    const { items: projects } = await projectsRes.json();
     const project = projects.find((p: { name: string }) => p.name === PROJECT.ENV_UI);
     expect(project).toBeDefined();
 
@@ -291,34 +292,37 @@ test.describe('Environment UI Tests', () => {
 
   test('should show environment filter on project detail page', async ({ page, request }) => {
     const projectsRes = await request.get('/api/projects');
-    const projects = await projectsRes.json();
+    const { items: projects } = await projectsRes.json();
     const project = projects.find((p: { name: string }) => p.name === PROJECT.ENV_UI);
     expect(project).toBeDefined();
 
     await page.goto(`/projects/${project.id}`);
     await page.waitForURL(/\/projects\/\d+/);
+    await waitForHydration(page);
 
-    await expect(page.getByText('production').first()).toBeVisible();
-    await expect(page.getByText('staging').first()).toBeVisible();
-    await expect(page.getByText('development').first()).toBeVisible();
+    // The environment select in the filter bar offers every environment.
+    await page.getByText('All environments').click();
+    await expect(page.getByRole('option', { name: 'production' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'staging' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'development' })).toBeVisible();
   });
 
   test('should filter test runs by environment', async ({ page, request }) => {
     const projectsRes = await request.get('/api/projects');
-    const projects = await projectsRes.json();
+    const { items: projects } = await projectsRes.json();
     const project = projects.find((p: { name: string }) => p.name === PROJECT.ENV_UI);
     expect(project).toBeDefined();
 
     await page.goto(`/projects/${project.id}`);
     await page.waitForURL(/\/projects\/\d+/);
+    await waitForHydration(page);
 
-    // Click production filter badge to enable filtering
-    await page.getByText('production').first().click();
+    // Pick production in the filter bar's environment select.
+    await page.getByText('All environments').click();
+    await page.getByRole('option', { name: 'production' }).click();
+    await page.keyboard.press('Escape');
 
-    const productionBadge = page.getByText('production').first();
-    await expect(productionBadge).toBeVisible();
-
-    // Add staging to filter
-    await page.getByText('staging').first().click();
+    // An active filter reveals the Reset control.
+    await expect(page.getByRole('button', { name: 'Reset' })).toBeVisible();
   });
 });

@@ -30,7 +30,7 @@ export default eventHandler(async (event) => {
   const body = await readBody(event);
 
   if (body.label === undefined) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'No fields to update',
     });
@@ -40,7 +40,7 @@ export default eventHandler(async (event) => {
     return await patchTestRun(db, id, body.label);
   } catch (err: any) {
     if (err?.message === 'Test run not found') {
-      throw createError({ statusCode: 404, message: 'Test run not found' });
+      throw apiError({ statusCode: 404, message: 'Test run not found' });
     }
     throw err;
   }

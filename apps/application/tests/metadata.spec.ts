@@ -49,7 +49,7 @@ test.describe('Metadata Tests', () => {
     expect(response.ok()).toBeTruthy();
     const data = await response.json();
     expect(data.success).toBe(true);
-    expect(data.testRunId).toBeDefined();
+    expect(data.runId).toBeDefined();
     expect(data.projectId).toBeDefined();
   });
 
@@ -87,10 +87,10 @@ test.describe('Metadata Tests', () => {
 
     expect(submitResponse.ok()).toBeTruthy();
     const submitData = await submitResponse.json();
-    const testRunId = submitData.testRunId;
+    const runId = submitData.runId;
 
     // Now retrieve the test run
-    const getResponse = await request.get(`${baseUrl}/api/test-runs/${testRunId}`);
+    const getResponse = await request.get(`${baseUrl}/api/test-runs/${runId}`);
     expect(getResponse.ok()).toBeTruthy();
 
     const testRun = await getResponse.json();

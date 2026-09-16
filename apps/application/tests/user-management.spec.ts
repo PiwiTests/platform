@@ -7,7 +7,7 @@ test.describe.serial('User Management Page Tests', () => {
   test.beforeAll(async ({ request }) => {
     const usersResponse = await request.get('/api/users');
     const usersData = await usersResponse.json();
-    for (const user of usersData.users || []) {
+    for (const user of usersData.items || []) {
       if (['testuser', 'deletetest'].includes(user.username)) {
         await request.delete(`/api/users/${user.id}`);
       }
@@ -195,13 +195,13 @@ test.describe.serial('Project Members API Tests', () => {
     const response = await request.get(`/api/projects/${projectId}/members`);
     expect(response.ok()).toBeTruthy();
     const body = (await response.json()) as {
-      users: Array<{ id: number; username: string; role: string; global: boolean }>;
+      items: Array<{ id: number; username: string; role: string; global: boolean }>;
     };
 
-    expect(Array.isArray(body.users)).toBe(true);
+    expect(Array.isArray(body.items)).toBe(true);
     // Every administrator has implicit, global access to every project even
     // without an explicit `project_assignments` row.
-    for (const user of body.users) {
+    for (const user of body.items) {
       if (user.role === 'administrator') {
         expect(user.global).toBe(true);
       }

@@ -26,7 +26,7 @@ async function submitRun(
   projectName: string,
   cases: SubmitCase[],
   startTime?: string,
-): Promise<{ testRunId: number; projectId: number }> {
+): Promise<{ runId: number; projectId: number }> {
   const passedTests = cases.filter((c) => c.status === 'passed').length;
   const failedTests = cases.filter((c) => c.status === 'failed').length;
 
@@ -44,7 +44,7 @@ async function submitRun(
     },
   });
   expect(res.ok()).toBeTruthy();
-  return res.json() as Promise<{ testRunId: number; projectId: number }>;
+  return res.json() as Promise<{ runId: number; projectId: number }>;
 }
 
 test.describe.serial('Test tags and piwi metadata', () => {
@@ -68,7 +68,7 @@ test.describe.serial('Test tags and piwi metadata', () => {
       { title: 'untagged helper', status: 'passed' },
     ]);
     projectId = result.projectId;
-    runId = result.testRunId;
+    runId = result.runId;
   });
 
   test('tags and metadata land on the run’s executions', async ({ request }) => {
@@ -147,7 +147,7 @@ test.describe.serial('CI gate policy', () => {
       { title: 'nice-to-have banner', status: 'failed', error: 'Error: cosmetic', tags: ['@cosmetic'] },
       { title: 'stable login', status: 'passed', tags: ['@critical', '@login'] },
     ]);
-    runId = result.testRunId;
+    runId = result.runId;
   });
 
   test('fails when a required tag’s test failed', async ({ request }) => {

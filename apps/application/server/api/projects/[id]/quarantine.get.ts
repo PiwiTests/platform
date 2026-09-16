@@ -1,4 +1,5 @@
 import { getDatabase } from '../../../database';
+import { queryFlag } from '../../../utils/query-params';
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
 import { listQuarantine, RELEASE_AFTER_CONSECUTIVE_PASSES } from '#shared/handlers/quarantine';
 import { proposeQuarantineCandidates } from '../../../utils/quarantine-candidates';
@@ -30,8 +31,7 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   const { entries, debt } = await listQuarantine(db, projectId);
 
-  const query = getQuery(event);
-  const wantCandidates = query.candidates !== 'false' && query.candidates !== false;
+  const wantCandidates = queryFlag(event, 'candidates', { default: true });
   const candidates = wantCandidates
     ? await proposeQuarantineCandidates(db, projectId, new Set(entries.map((e) => e.testCaseId)))
     : [];

@@ -16,5 +16,5 @@ export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run ID');
   const { db } = await requireResolvedProjectAccess(event, id, resolveRunProjectId, 'Test run');
 
-  return getFailureGroups(db, id);
+  return { items: await getFailureGroups(db, id) };
 });

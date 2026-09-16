@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { countFailedFromTally, sumFailedAndTimedOut } from '#shared/utils/test-counts';
+import { countFailedFromTally, normalizeTestCaseStatus, sumFailedAndTimedOut } from '#shared/utils/test-counts';
 
 describe('countFailedFromTally', () => {
   test('sums failed, timedOut (camelCase), and timedout (lowercase)', () => {
@@ -50,5 +50,17 @@ describe('sumFailedAndTimedOut', () => {
   test('ignores zero/negative values', () => {
     expect(sumFailedAndTimedOut(0, 0)).toBe(0);
     expect(sumFailedAndTimedOut(-1, 5)).toBe(5);
+  });
+});
+
+describe('normalizeTestCaseStatus', () => {
+  test("maps Playwright's camelCase timedOut to the canonical lowercase form", () => {
+    expect(normalizeTestCaseStatus('timedOut')).toBe('timedout');
+  });
+
+  test('passes every other status through unchanged', () => {
+    for (const status of ['passed', 'failed', 'skipped', 'timedout', 'didnotrun', 'interrupted']) {
+      expect(normalizeTestCaseStatus(status)).toBe(status);
+    }
   });
 });

@@ -32,7 +32,9 @@ const pendingId = ref<number | null>(null);
 
 async function load() {
   try {
-    suggestions.value = await $fetch<MergeSuggestion[]>(`/api/projects/${props.projectId}/cluster-merge-suggestions`);
+    suggestions.value = (
+      await $fetch<{ items: MergeSuggestion[] }>(`/api/projects/${props.projectId}/cluster-merge-suggestions`)
+    ).items;
   } catch {
     suggestions.value = [];
   }

@@ -26,7 +26,7 @@ defineProps<{
         }}
       </div>
       <div v-if="marker.environment" class="text-xs">
-        <UBadge color="neutral" variant="subtle" size="xs">{{ marker.environment }}</UBadge>
+        <EnvironmentBadge :name="marker.environment" />
       </div>
       <p v-if="marker.description" class="text-xs text-muted">{{ marker.description }}</p>
     </div>

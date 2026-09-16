@@ -439,7 +439,7 @@ describe('authored DOM snapshots (served as trace-extracted)', () => {
 });
 
 describe('cluster 9 (assertion-captured healing) coherence', () => {
-  test('the expect()-captured snapshot heals the dark-mode failure through the real ladder', async () => {
+  test('the expect()-captured snapshot sits at the failing call site; the resolved-but-hidden failure is not healed', async () => {
     const story = FAILURE_STORIES.find((s) => s.clusterId === 9)!;
     const rows = q(`
       select * from locator_snapshots
@@ -468,20 +468,79 @@ describe('cluster 9 (assertion-captured healing) coherence', () => {
       lastSeenAt: null,
     } as unknown as import('~~/server/database/schema').LocatorSnapshotRow;
 
+    // The stored row describes the element the failing assertion targets.
+    expect(row.usedMethod).toBe('getByRole');
+    const alternatives = JSON.parse(row.alternatives) as Array<{ locator: string }>;
+    expect(alternatives.some((a) => a.locator === "locator('.export-btn')")).toBe(true);
+
+    // The call log says the locator resolved (to a hidden button) — the CSS is
+    // the bug, not the selector — so the healing gate declines to suggest a
+    // replacement even though a snapshot sits at the exact call site.
     const healing = await resolveHealingForCase({ error: failing.error, ariaSnapshot: story.aria }, [row], null);
+    expect(healing.applicable).toBe(false);
+    expect(healing.reason).toBe('The locator resolved; this is not a locator problem.');
+    expect(healing.recommendation).toBeNull();
+    expect(healing.failingLocator?.method).toBe('getByRole');
+  });
+});
 
-    // Exact-location rung hits, so the assertion-only locator has real
-    // prior-success history — the point of assertion capture.
-    expect(healing.source).toBe('prior-run');
-    expect(healing.location).toBe(story.captureLocation);
+describe('step timing survives the load-time rebase', () => {
+  interface StepRow {
+    id: number;
+    started_at: number;
+    duration: number;
+    steps: string;
+  }
 
-    // The hidden button is absent from the failing page's ARIA snapshot, so
-    // the name-derived alternatives are flagged stale and the recommendation
-    // falls to the surviving class selector, with add-a-testid advice.
-    expect(healing.priorNameMayBeStale).toBe(true);
-    expect(healing.recommendation?.recommended?.locator).toBe("locator('.export-btn')");
-    expect(healing.recommendation?.suggestAddTestId).toBe(true);
-    expect(healing.fromAriaSnapshot?.length).toBeGreaterThan(0);
+  // Executed cases only: a didnotrun case has duration 0 and no real span, so
+  // its illustrative steps have no window to sit inside.
+  function executedCasesWithSteps(): StepRow[] {
+    return q(`
+      select id, started_at, duration, steps from test_runs_cases
+      where status != 'didnotrun' and duration > 0
+        and steps is not null and json_valid(steps) and json_array_length(steps) > 0
+    `) as unknown as StepRow[];
+  }
+
+  // The rebase shifts started_at and the JSON step timestamps together. If it
+  // ever shifts one without the other, every step's absolute startTime lands
+  // ~months away from its execution window and the Perfetto export (which
+  // clamps each step into that window) collapses them all to the left edge.
+  test('every executed step starts within its execution window', () => {
+    const rows = executedCasesWithSteps();
+    expect(rows.length).toBeGreaterThan(0);
+
+    for (const r of rows) {
+      const start = Number(r.started_at);
+      const end = start + Number(r.duration);
+      const steps = (JSON.parse(r.steps) as Array<{ startTime?: number }>).filter(
+        (s) => typeof s.startTime === 'number',
+      );
+      for (const s of steps) {
+        const t = s.startTime!;
+        // A generous rounding slack still catches a months-scale desync.
+        expect(t, `trc ${r.id}: step startTime before window`).toBeGreaterThanOrEqual(start - 1000);
+        expect(t, `trc ${r.id}: step startTime past window`).toBeLessThanOrEqual(end + 1000);
+      }
+    }
+  });
+
+  test('steps spread across the window instead of collapsing to the start', () => {
+    const rows = executedCasesWithSteps();
+    // The largest step offset, as a fraction of its case duration, across all
+    // multi-step executed cases. In the collapsed-to-left failure mode every
+    // offset is 0; a healthy seed lays steps end-to-end across the span.
+    let maxFraction = 0;
+    for (const r of rows) {
+      const start = Number(r.started_at);
+      const duration = Number(r.duration);
+      const steps = (JSON.parse(r.steps) as Array<{ startTime?: number }>).filter(
+        (s) => typeof s.startTime === 'number',
+      );
+      if (steps.length < 2) continue;
+      for (const s of steps) maxFraction = Math.max(maxFraction, (s.startTime! - start) / duration);
+    }
+    expect(maxFraction).toBeGreaterThan(0.5);
   });
 });
 

@@ -47,7 +47,7 @@ async function submitFailingRun(request: APIRequestContext): Promise<number> {
     },
   });
   expect(res.ok()).toBeTruthy();
-  return (await res.json()).testRunId ?? (await res.json()).id;
+  return (await res.json()).runId ?? (await res.json()).id;
 }
 
 async function firstExecutionAndCluster(request: APIRequestContext) {
@@ -73,14 +73,17 @@ async function firstExecutionAndCluster(request: APIRequestContext) {
     },
   });
   expect(runRes.ok()).toBeTruthy();
-  const runId = (await runRes.json()).testRunId;
+  const runId = (await runRes.json()).runId;
 
   const detail = await (await request.get(`/api/test-runs/${runId}`)).json();
   const execution = detail.testCases?.[0];
   expect(execution, 'the submitted run should have an execution').toBeTruthy();
 
-  const caseDetail = await (await request.get(`/api/test-run-cases/${execution.id}`)).json();
-  return { executionId: execution.id as number, clusterId: caseDetail.failureCluster?.id as number | undefined };
+  const caseDetail = await (await request.get(`/api/test-run-cases/${execution.executionId}`)).json();
+  return {
+    executionId: execution.executionId as number,
+    clusterId: caseDetail.failureCluster?.id as number | undefined,
+  };
 }
 
 test.describe('offline export', () => {
@@ -104,13 +107,18 @@ test.describe('offline export', () => {
     expect(html).not.toMatch(/(?:src|href)\s*=\s*["']https?:/i);
   });
 
-  test('serves the print variant inline so the browser can make a PDF', async ({ request }) => {
+  test('exports one execution as a real PDF file', async ({ request }) => {
     const { executionId } = await firstExecutionAndCluster(request);
 
-    const res = await request.get(`/api/test-run-cases/${executionId}/export?format=html&print=1`);
+    const res = await request.get(`/api/test-run-cases/${executionId}/export?format=pdf`);
     expect(res.status()).toBe(200);
-    expect(res.headers()['content-disposition']).toBe('inline');
-    expect(await res.text()).toContain('window.print()');
+    expect(res.headers()['content-type']).toBe('application/pdf');
+    expect(res.headers()['content-disposition']).toContain('attachment');
+    expect(res.headers()['content-disposition']).toContain(`piwi-execution-${executionId}`);
+
+    // A real PDF, not an HTML page a browser has to print — check the signature.
+    const body = Buffer.from(await res.body());
+    expect(body.subarray(0, 5).toString('latin1')).toBe('%PDF-');
   });
 
   test('exports an execution as a ZIP whose report points at real files', async ({ request }) => {

@@ -5,6 +5,7 @@ import { eq, and, or } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../utils/sanitize';
+import { resolveRunBranch } from '../../utils/run-branch';
 import { runEventBus } from '../../utils/run-events';
 import { persistShardToken } from '../../utils/shard-tokens';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
@@ -46,7 +47,7 @@ export default eventHandler(async (event) => {
 
   // Validate required fields
   if (!body.projectName) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'Missing required field: projectName',
     });
@@ -61,11 +62,11 @@ export default eventHandler(async (event) => {
 
   if (project) {
     if (!scopeAllows(scope, project.id)) {
-      throw createError({ statusCode: 403, message: 'No access to this project' });
+      throw apiError({ statusCode: 403, message: 'No access to this project' });
     }
   } else {
     if (scope !== 'all') {
-      throw createError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
+      throw apiError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
     }
     const result = await db
       .insert(projects)
@@ -78,7 +79,7 @@ export default eventHandler(async (event) => {
   }
 
   if (!project) {
-    throw createError({
+    throw apiError({
       statusCode: 500,
       message: 'Failed to create or retrieve project',
     });
@@ -97,7 +98,7 @@ export default eventHandler(async (event) => {
         and(
           eq(testRuns.projectId, project.id),
           eq(testRuns.instanceId, instanceId),
-          or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initialising')),
+          or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing')),
         ),
       );
 
@@ -140,6 +141,7 @@ export default eventHandler(async (event) => {
         skippedTests: 0,
         didNotRunTests: 0,
         environment: body.environment || null,
+        branch: resolveRunBranch(body.metadata),
         label: body.label || null,
         metadata: { ...(sanitizeMetadata(body.metadata ?? {}) ?? {}), shardTokens: [streamToken] } as Record<
           string,
@@ -150,6 +152,7 @@ export default eventHandler(async (event) => {
         reporterVersion: body.reporterVersion || null,
         streamToken,
         shardTotal,
+        shardIndex: body.shardIndex ?? null,
         shardsFinished: 0,
         isFullRun: body.isFullRun !== false ? 1 : 0,
         filterDetails: body.filterDetails ?? null,
@@ -159,7 +162,7 @@ export default eventHandler(async (event) => {
     const testRun = testRunResult[0];
 
     if (!testRun) {
-      throw createError({
+      throw apiError({
         statusCode: 500,
         message: 'Failed to create test run',
       });
@@ -194,6 +197,7 @@ export default eventHandler(async (event) => {
       skippedTests: 0,
       didNotRunTests: 0,
       environment: body.environment || null,
+      branch: resolveRunBranch(body.metadata),
       label: body.label || null,
       metadata: sanitizeMetadata(body.metadata || null),
       instanceId,
@@ -208,7 +212,7 @@ export default eventHandler(async (event) => {
   const testRun = testRunResult[0];
 
   if (!testRun) {
-    throw createError({
+    throw apiError({
       statusCode: 500,
       message: 'Failed to create test run',
     });

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, watch, onUnmounted } from 'vue';
-import type { TestRunDetails, TestCaseResult, ReportInfo, TestStepEvent } from '~~/types/api';
+import type { TestRunDetails, TestCaseResult, ReportInfo, TestStepEvent, FailureGroup } from '~~/types/api';
+import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunStream } from '~/composables/useRunStream';
 
@@ -8,6 +9,7 @@ const route = useRoute();
 const router = useRouter();
 const runId = route.params.id;
 const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
+const { canSeeAdmin } = useAuth();
 
 const { data: testRun, refresh } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`);
 
@@ -19,17 +21,33 @@ const { data: latestRunInfo, refresh: refreshLatestRun } = projectId
   : { data: ref<LatestRunInfo>(null), refresh: async () => {} };
 useRunStream(refreshLatestRun);
 
+// Which of this project's tests are quarantined — marks the matching rows in the
+// executions list. `candidates=false` skips the heavier flaky-analysis proposal.
+const { data: quarantineData, refresh: refreshQuarantine } = projectId
+  ? await useFetch<{ entries: Array<{ testCaseId: number }> }>(
+      `/api/projects/${projectId}/quarantine?candidates=false`,
+      { key: `run-quarantine-${projectId}` },
+    )
+  : { data: ref<{ entries: Array<{ testCaseId: number }> } | null>(null), refresh: async () => {} };
+const quarantinedCaseIds = computed(() => new Set((quarantineData.value?.entries ?? []).map((e) => e.testCaseId)));
+
 const latestRunId = computed(() => latestRunInfo.value?.id ?? testRun.value?.project?.latestRunId ?? null);
 const latestRunStatus = computed(() => latestRunInfo.value?.status ?? testRun.value?.project?.latestRunStatus ?? null);
 const isLatestRunActive = computed(() => latestRunStatus.value === 'running' || latestRunStatus.value === 'finalizing');
 
 useHead(
-  computed(() => ({
-    title: `Test run #${runId}${testRun.value?.project ? ` — ${testRun.value.project.name}` : ''} — Piwi Dashboard`,
-  })),
+  computed(() => {
+    // The tab title names the run and its project (display label first); on
+    // the page the breadcrumb carries the project.
+    const project = testRun.value?.project?.label || testRun.value?.project?.name;
+    return {
+      title: `Test run #${runId}${project ? ` — ${project}` : ''} — Piwi Dashboard`,
+    };
+  }),
 );
 
 const toast = useToast();
+const { copy } = useCopy();
 const isDeleteConfirmOpen = ref(false);
 const deleting = ref(false);
 
@@ -41,6 +59,10 @@ const liveTestCaseKeys = new Map<string, true>();
 const liveProgress = ref<{ totalTests: number; passedTests: number; failedTests: number; skippedTests: number } | null>(
   null,
 );
+// Worker index → the step the worker is currently on (from transient SSE step
+// events; nothing is persisted from them). Rendered inline on the matching
+// running rows in the test-case views.
+const liveSteps = ref<LiveStepsByWorker>({});
 let eventSource: EventSource | null = null;
 
 // Combined test cases: from server data + live stream.
@@ -111,7 +133,11 @@ function flushPendingEvents() {
         liveTestCases.value = [
           ...liveTestCases.value,
           {
-            id: liveTestCases.value.length + 1,
+            // The persisted execution row only exists once the test completes —
+            // a unique negative placeholder keeps the row keyed (and unlinked)
+            // until test-completed delivers the real id.
+            executionId: -(liveTestCases.value.length + 1),
+            testCaseId: 0,
             title: d.title,
             filePath: d.filePath,
             suitePath: d.suitePath ?? undefined,
@@ -139,6 +165,8 @@ function flushPendingEvents() {
         startedAt?: number;
         browser?: { projectName?: string } | null;
         stepCategory?: string | null;
+        executionId?: number | null;
+        testCaseId?: number | null;
       };
       // Ignore hook/fixture step-end events (published as `test-completed`
       // with a `stepCategory`) — they are not test cases. The hook segments
@@ -164,6 +192,10 @@ function flushPendingEvents() {
             workerIndex: d.workerIndex ?? existing.workerIndex,
             startedAt: d.startedAt ? d.startedAt : existing.startedAt,
             browser: d.browser ?? existing.browser,
+            // The real ids replace the placeholder once persistence happens;
+            // a duplicate event without ids keeps whatever the row already has.
+            executionId: d.executionId ?? existing.executionId,
+            testCaseId: d.testCaseId ?? existing.testCaseId,
           };
           liveTestCases.value = copy;
           displayTestCases.value = [...copy];
@@ -173,7 +205,8 @@ function flushPendingEvents() {
         liveTestCases.value = [
           ...liveTestCases.value,
           {
-            id: liveTestCases.value.length + 1,
+            executionId: d.executionId ?? -(liveTestCases.value.length + 1),
+            testCaseId: d.testCaseId ?? 0,
             title: d.title,
             filePath: d.filePath,
             suitePath: d.suitePath ?? undefined,
@@ -190,6 +223,48 @@ function flushPendingEvents() {
         ];
         displayTestCases.value = [...liveTestCases.value];
       }
+    } else if (parsed.type === 'step-begin') {
+      const d = parsed.data as {
+        title: string;
+        subtitle?: string | null;
+        stepCategory?: string | null;
+        parentTitle?: string | null;
+        workerIndex?: number;
+      };
+      // Suite-level hooks (no worker) keep flowing to the timeline instead.
+      if (d.workerIndex == null) continue;
+      liveSteps.value = {
+        ...liveSteps.value,
+        [d.workerIndex]: {
+          title: d.title,
+          subtitle: d.subtitle ?? null,
+          category: d.stepCategory ?? null,
+          status: undefined,
+          parentTitle: d.parentTitle ?? null,
+        },
+      };
+    } else if (parsed.type === 'step-end') {
+      const d = parsed.data as {
+        title: string;
+        subtitle?: string | null;
+        stepCategory?: string | null;
+        parentTitle?: string | null;
+        status?: string;
+        workerIndex?: number;
+      };
+      if (d.workerIndex == null) continue;
+      // Keep the ended step visible (with its outcome) until the next step
+      // begins, so the readout shows "last thing this worker did".
+      liveSteps.value = {
+        ...liveSteps.value,
+        [d.workerIndex]: {
+          title: d.title,
+          subtitle: d.subtitle ?? null,
+          category: d.stepCategory ?? null,
+          status: d.status ?? 'passed',
+          parentTitle: d.parentTitle ?? null,
+        },
+      };
     } else if (parsed.type === 'run-progress') {
       liveProgress.value = data as {
         totalTests: number;
@@ -208,11 +283,11 @@ function flushPendingEvents() {
       };
     } else if (parsed.type === 'run-finished') {
       isFinalizing.value = false;
+      liveSteps.value = {};
       disconnectStream();
       refresh();
-      // Nudge child tabs (Failure groups, Slow endpoints, Regression context,
-      // Insights) to refetch — they keep their own useFetch state and would
-      // otherwise show stale/partial data from before the run finalized.
+      // Nudge the Changes tab to refetch — it keeps its own fetch state and
+      // would otherwise show stale/partial data from before the run finalized.
       runRefreshKey.value++;
       pollForReports();
     }
@@ -264,7 +339,7 @@ function connectToDemoStream() {
       message.event.runId === Number(runId) &&
       message.event.type === 'run-started'
     ) {
-      // Run transitioned from 'initialising' to 'running' — refetch so
+      // Run transitioned from 'initializing' to 'running' — refetch so
       // isLive flips and progress counters appear.
       refresh();
     }
@@ -314,9 +389,9 @@ function disconnectStream() {
   }
 }
 
-// In demo mode also stream while 'initialising' so the page picks up the
+// In demo mode also stream while 'initializing' so the page picks up the
 // transition to 'running' pushed by the simulator.
-const shouldStream = computed(() => isLive.value || (isDemoMode && testRun.value?.status === 'initialising'));
+const shouldStream = computed(() => isLive.value || (isDemoMode && testRun.value?.status === 'initializing'));
 
 watch(
   shouldStream,
@@ -384,20 +459,42 @@ async function handleDeleteRun() {
   }
 }
 
-const showCustomData = ref(false);
+// A plain-text run summary for the navbar's Copy run summary action.
+function buildRunSummary(): string {
+  const run = testRun.value;
+  if (!run) return '';
+  const statusEmoji =
+    run.status === 'passed' ? '✅' : run.status === 'failed' ? '❌' : run.status === 'running' ? '🔄' : '⚠️';
+  const label = run.label ? ` — ${run.label}` : '';
+  const project = run.project?.label ?? run.project?.name ?? '';
+  const flaky = run.flakyTests ?? 0;
+  const didNotRun = run.didNotRunTests ?? 0;
+  const flakyPart = flaky > 0 ? ` · ${flaky} passed on retry` : '';
+  const didNotRunPart = didNotRun > 0 ? ` · ${didNotRun} didn't run` : '';
+  return [
+    `*Run #${run.id}*${label}`,
+    `Status: ${statusEmoji} ${run.status} | Project: ${project}`,
+    `Tests: ${run.totalTests ?? 0} total · ${run.passedTests ?? 0} passed · ${run.failedTests ?? 0} failed · ${run.skippedTests ?? 0} skipped${didNotRunPart}${flakyPart}`,
+    `Duration: ${formatDuration(run.duration)}`,
+  ].join('\n');
+}
 
 // Test-cases filter state — lifted here so it survives tab switches
 const testCaseSearch = ref('');
 const testCaseActiveStatuses = ref<string[]>([]);
 const testCaseBrowserFilter = ref('all');
 
-// Derive a single string for RunSummary's activeFilter highlight
-const statusFilterForSummary = computed(() =>
-  testCaseActiveStatuses.value.length === 1 ? testCaseActiveStatuses.value[0]! : 'all',
-);
-
+// The count-bar segments toggle into the same set the Tests list chips use, and
+// switch to the Tests tab so the filtered rows are on screen.
 function handleFilterStatus(status: string) {
-  testCaseActiveStatuses.value = !status || status === 'all' ? [] : [status];
+  if (!status || status === 'all') {
+    testCaseActiveStatuses.value = [];
+  } else {
+    testCaseActiveStatuses.value = testCaseActiveStatuses.value.includes(status)
+      ? testCaseActiveStatuses.value.filter((s) => s !== status)
+      : [...testCaseActiveStatuses.value, status];
+  }
+  activeTab.value = 'test-cases';
 }
 
 // Reports from the files table
@@ -407,35 +504,51 @@ const allReports = computed<ReportInfo[]>(() => testRun.value?.reports || []);
 const totalWastedTime = computed(() => {
   const cases = displayTestCases.value;
   if (!cases) return 0;
-  return cases.reduce((sum, tc) => sum + ((tc as any).wastedTimeMs ?? 0), 0);
+  return cases.reduce((sum, tc) => sum + (tc.wastedTimeMs ?? 0), 0);
 });
 
-// Right panel tabs
 const activeTab = ref('test-cases');
 
-// Cluster filter state — set by FailureGroups, consumed by TestCasesList
-const selectedClusterFilter = ref<number | null>(null);
+const hasFailures = computed(() => (displayProgress.value?.failedTests ?? 0) > 0);
+
+// A run whose only problem is flakiness has no failures — the change tabs still
+// have content, so they stay enabled whenever there are failures OR flaky tests.
+const showFailureTabs = computed(() => hasFailures.value || (testRun.value?.flakyTests ?? 0) > 0);
+
+// Cluster names + triage status for the row chips and the cluster group headers,
+// taken from the same failure-groups payload. Fetched whenever the failure tabs
+// become available: a flaky-only run has no failedTests yet still has clusters,
+// and a live run can gain its first failure mid-stream.
+const clusterMeta = ref<Record<number, { name: string; status: string | null }>>({});
+
+async function fetchClusterMeta() {
+  if (!import.meta.client) return;
+  try {
+    const r = await $fetch<{ items: FailureGroup[] }>(`/api/test-runs/${runId}/failure-groups`);
+    clusterMeta.value = Object.fromEntries(
+      r.items.map((g) => [g.clusterId, { name: g.title || `Cluster #${g.clusterId}`, status: g.status ?? null }]),
+    );
+  } catch {
+    // chips fall back to plain cluster ids, headers to no triage badge
+  }
+}
+
+watch(
+  showFailureTabs,
+  (show) => {
+    if (show) fetchClusterMeta();
+  },
+  { immediate: true },
+);
 
 // Increments when a live run finishes, so child tabs that keep their own
 // fetch state can refetch instead of showing stale pre-finish data.
 const runRefreshKey = ref(0);
 
-// Endpoints count from SlowEndpoints
-const endpointsCount = ref(0);
-
-function clearClusterFilter() {
-  selectedClusterFilter.value = null;
-}
-
-const hasFailures = computed(() => testRun.value && testRun.value.failedTests > 0);
-
-const failureGroupCount = computed(() => {
-  if (!testRun.value?.testCases) return 0;
-  const clusterIds = new Set<number>();
-  for (const tc of testRun.value.testCases) {
-    if (tc.failureClusterId != null) clusterIds.add(tc.failureClusterId);
-  }
-  return clusterIds.size;
+// A finishing run can grow its failure-groups payload (new clusters); refetch
+// the display names so newly-appearing chips are labelled.
+watch(runRefreshKey, () => {
+  if (showFailureTabs.value) fetchClusterMeta();
 });
 
 const uniqueWorkerCount = computed(() => {
@@ -450,32 +563,18 @@ const uniqueWorkerCount = computed(() => {
 
 const tabItems = computed(() => [
   {
-    label: `Test cases (${displayTestCases.value.length})`,
+    label: `Tests (${displayTestCases.value.length})`,
     icon: 'i-lucide-beaker',
     value: 'test-cases',
     slot: 'test-cases',
   },
   {
-    label: 'Insights',
-    icon: 'i-lucide-sparkles',
-    value: 'insights',
-    slot: 'insights',
-  },
-  // Failure-only tabs stay visible but disabled on a green run: tabs that
-  // appear and disappear shift every other tab's position between runs.
-  {
-    label: hasFailures.value ? `Failure groups (${failureGroupCount.value})` : 'Failure groups',
-    icon: 'i-lucide-layers',
-    value: 'failure-groups',
-    slot: 'failure-groups',
-    disabled: !hasFailures.value,
-  },
-  {
-    label: 'Regression',
-    icon: 'i-lucide-git-pull-request-arrow',
-    value: 'regression',
-    slot: 'regression',
-    disabled: !hasFailures.value,
+    label: 'Changes',
+    icon: 'i-lucide-git-compare-arrows',
+    value: 'changes',
+    slot: 'changes',
+    disabled: isLive.value,
+    disabledReason: isLive.value ? 'available once the run finishes' : undefined,
   },
   {
     label: `Timeline${uniqueWorkerCount.value > 0 ? ` (${uniqueWorkerCount.value})` : ''}`,
@@ -483,23 +582,49 @@ const tabItems = computed(() => [
     value: 'workers',
     slot: 'workers',
   },
-  { label: 'Compare', icon: 'i-lucide-git-compare-arrows', value: 'compare', slot: 'compare' },
-  {
-    label: `Slow endpoints${endpointsCount.value > 0 ? ` (${endpointsCount.value})` : ''}`,
-    icon: 'i-lucide-network',
-    value: 'endpoints',
-    slot: 'endpoints',
-  },
 ]);
 
 const tabPanelClass: Record<string, string> = {
   'test-cases': 'overflow-hidden flex flex-col',
-  endpoints: 'overflow-hidden flex flex-col',
 };
 
+// The former Failure clusters tab is now the Tests tab's cluster grouping;
+// `?tab=failure-groups` lands there. The grouping cookie is written client-side
+// so the list opens grouped by cluster.
+if (route.query.tab === 'failure-groups') {
+  activeTab.value = 'test-cases';
+  if (import.meta.client) {
+    document.cookie = 'piwi-group-by-run-tests=cluster; path=/; max-age=31536000; sameSite=lax';
+    onMounted(() => {
+      const query = { ...route.query };
+      delete query.cluster;
+      query.tab = 'test-cases';
+      router.replace({ query });
+    });
+  }
+}
+
+// The former Insights, Since last pass and Compare tabs are one Changes tab;
+// the former Slow endpoints tab moved to the project page. Redirect their
+// deep-links so shared URLs and older links still land somewhere sensible.
+const LEGACY_TAB_REDIRECTS: Record<string, string> = {
+  insights: 'changes',
+  regression: 'changes',
+  compare: 'changes',
+  endpoints: 'test-cases',
+};
+if (typeof route.query.tab === 'string' && LEGACY_TAB_REDIRECTS[route.query.tab]) {
+  const target = LEGACY_TAB_REDIRECTS[route.query.tab]!;
+  activeTab.value = target;
+  if (import.meta.client) {
+    onMounted(() => {
+      router.replace({ query: { ...route.query, tab: target } });
+    });
+  }
+}
+
 // Deep-link the active tab via ?tab= so run views can be shared and cross-page
-// links (e.g. Run insights → this run's Performance) land on the right tab.
-// Failure-only tabs (failure-groups/regression) are disabled on a green run,
+// links land on the right tab. The Changes tab is disabled while a run is live,
 // so validate against the currently *enabled* tabs.
 const runTabValues = computed(() => tabItems.value.filter((t) => !t.disabled).map((t) => t.value));
 if (typeof route.query.tab === 'string' && runTabValues.value.includes(route.query.tab)) {
@@ -509,8 +634,11 @@ watch(runTabValues, (vals) => {
   if (!vals.includes(activeTab.value)) activeTab.value = 'test-cases';
 });
 watch(activeTab, (tab) => {
-  if (route.query.tab === tab) return;
-  router.replace({ query: { ...route.query, tab } });
+  const query = { ...route.query };
+  delete query.cluster;
+  query.tab = tab;
+  if (JSON.stringify(query) === JSON.stringify({ ...route.query })) return;
+  router.replace({ query });
 });
 
 // Ref for TestCasesList to call scrollToCase
@@ -525,15 +653,31 @@ function handleSelectTestCase(id: number) {
   });
 }
 
-function handleSelectCluster(clusterId: number) {
-  selectedClusterFilter.value = clusterId;
-  activeTab.value = 'test-cases';
-}
+// ── Navbar More menu ────────────────────────────────────────────────────────
+const moreMenuItems = computed(() => {
+  const items: { label: string; icon: string; color?: 'error'; onSelect: () => void }[] = [];
+  items.push({
+    label: 'Copy run summary',
+    icon: 'i-lucide-clipboard',
+    onSelect: () => copy(buildRunSummary(), { toast: 'Run summary copied' }),
+  });
+  items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => refresh() });
+  if (canSeeAdmin.value) {
+    items.push({
+      label: 'Delete run',
+      icon: 'i-lucide-trash-2',
+      color: 'error',
+      onSelect: () => (isDeleteConfirmOpen.value = true),
+    });
+  }
+  return items;
+});
 </script>
 
 <template>
   <UDashboardPanel id="test-run-detail">
     <template #header>
+      <!-- The breadcrumb's current crumb is the page title; a navbar title would repeat it. -->
       <UDashboardNavbar>
         <template #leading>
           <UDashboardSidebarCollapse />
@@ -560,39 +704,33 @@ function handleSelectCluster(clusterId: number) {
               >
                 {{ item?.label }}
               </NuxtLink>
-              <UTooltip
-                v-if="latestRunId && latestRunId !== Number(runId)"
-                :text="isLatestRunActive ? 'Go to running run' : 'Go to latest run'"
-              >
-                <NuxtLink :to="`/test-runs/${latestRunId}`">
-                  <span
-                    class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors ml-1"
-                  >
-                    <UIcon
-                      name="i-lucide-circle-play"
-                      class="w-3.5 h-3.5 text-blue-500"
-                      :class="{ 'animate-pulse': isLatestRunActive }"
-                    />
-                  </span>
-                </NuxtLink>
-              </UTooltip>
+              <RunFreshnessPill
+                class="ml-1"
+                :latest-run-id="latestRunId"
+                :current-run-id="Number(runId)"
+                :is-active="isLatestRunActive"
+              />
             </template>
           </BreadcrumbNav>
         </template>
         <template #right>
-          <NavbarActions
-            :actions="[
-              { label: 'Refresh', icon: 'i-lucide-refresh-cw', onClick: () => refresh() },
-              {
-                label: 'Delete',
-                icon: 'i-lucide-trash-2',
-                color: 'error',
-                variant: 'soft',
-                loading: deleting,
-                onClick: () => (isDeleteConfirmOpen = true),
-              },
-            ]"
-          />
+          <div class="flex items-center shrink-0 min-w-0">
+            <ExportMenu
+              :perfetto-endpoint="`/api/test-runs/${runId}/perfetto`"
+              :base-name="`piwi-run-${runId}`"
+              class="mr-1"
+            />
+            <UDropdownMenu :items="moreMenuItems">
+              <UButton
+                size="sm"
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-ellipsis-vertical"
+                aria-label="More actions"
+                title="More actions"
+              />
+            </UDropdownMenu>
+          </div>
         </template>
       </UDashboardNavbar>
     </template>
@@ -600,86 +738,67 @@ function handleSelectCluster(clusterId: number) {
     <template #body>
       <DetailPageLayout v-model="activeTab" :tab-items="tabItems" :tab-panel-class="tabPanelClass">
         <template #summary>
-          <RunSummary
+          <RunHeader
             v-if="testRun"
             :test-run="testRun"
             :display-progress="displayProgress"
             :all-reports="allReports"
-            :show-custom-data="showCustomData"
             :finalizing="isFinalizing"
-            :active-filter="statusFilterForSummary"
+            :active-statuses="testCaseActiveStatuses"
             :total-wasted-time="totalWastedTime"
-            @update:show-custom-data="showCustomData = $event"
-            @filter-status="handleFilterStatus"
+            @toggle-status="handleFilterStatus"
             @label-updated="refresh"
           />
         </template>
 
         <template #tab-test-cases>
-          <div v-if="selectedClusterFilter != null" class="flex items-center gap-2 mb-3 shrink-0">
-            <UBadge color="info" variant="subtle" size="sm"> Filtered by failure group </UBadge>
-            <UButton
-              size="xs"
-              color="neutral"
-              variant="ghost"
-              icon="i-lucide-x"
-              label="Clear filter"
-              @click="clearClusterFilter"
-            />
-          </div>
           <TestCasesList
             ref="testCasesListRef"
+            data-shot="failure-clusters"
             v-model:search="testCaseSearch"
             v-model:active-statuses="testCaseActiveStatuses"
             v-model:browser-filter="testCaseBrowserFilter"
             :test-cases="displayTestCases"
-            :suites="testRun?.suites ?? []"
             :is-live="isLive"
-            :failure-cluster-filter="selectedClusterFilter"
+            :live-steps="liveSteps"
+            :cluster-meta="clusterMeta"
+            :quarantined-case-ids="quarantinedCaseIds"
             :project-key="testRun?.projectId"
             :project-name="testRun?.project?.name"
             class="flex-1 min-h-0"
+            @quarantine-changed="refreshQuarantine"
           />
         </template>
 
-        <template #tab-insights>
-          <RunInsights
-            :test-run-id="Number(runId)"
-            :run-status="testRun?.status ?? ''"
+        <template #tab-changes>
+          <ChangesView
+            :test-run="testRun"
+            :test-cases="displayTestCases"
+            :cluster-meta="clusterMeta"
+            :project-key="testRun?.projectId"
+            :project-name="testRun?.project?.name"
             :refresh-key="runRefreshKey"
-            class="flex-1 min-h-0 p-4"
           />
-        </template>
-
-        <template #tab-failure-groups>
-          <FailureGroups :refresh-key="runRefreshKey" @select-cluster="handleSelectCluster" />
-        </template>
-
-        <template #tab-regression>
-          <RegressionContext :refresh-key="runRefreshKey" />
         </template>
 
         <template #tab-workers>
-          <WorkersTimeline
-            :test-cases="throttledTestCases"
-            :setup-steps="testRun?.setupSteps ?? null"
-            :shard-total="testRun?.shardTotal ?? null"
-            :live="isLive"
-            :wasted-patterns="testRun?.wastedWaitPatterns ?? null"
-            @select-test-case="handleSelectTestCase"
-          />
-        </template>
-
-        <template #tab-compare>
-          <RunCompare :test-run="testRun" />
-        </template>
-
-        <template #tab-endpoints>
-          <SlowEndpoints
-            :refresh-key="runRefreshKey"
-            class="flex-1 min-h-0"
-            @endpoints-count="endpointsCount = $event"
-          />
+          <div class="space-y-6 p-1">
+            <WorkersTimeline
+              :test-cases="isLive ? throttledTestCases : displayTestCases"
+              :setup-steps="testRun?.setupSteps ?? null"
+              :shard-total="testRun?.shardTotal ?? null"
+              :live="isLive"
+              :wasted-patterns="testRun?.wastedWaitPatterns ?? null"
+              @select-test-case="handleSelectTestCase"
+            />
+            <RunTimelineExtras
+              v-if="!isLive"
+              :test-cases="displayTestCases"
+              :cluster-meta="clusterMeta"
+              :project-key="testRun?.projectId"
+              :project-name="testRun?.project?.name"
+            />
+          </div>
         </template>
       </DetailPageLayout>
     </template>
@@ -690,7 +809,7 @@ function handleSelectCluster(clusterId: number) {
     <UModal :open="isDeleteConfirmOpen" title="Delete test run" @update:open="isDeleteConfirmOpen = $event">
       <template #body>
         <p>
-          Are you sure you want to delete <strong>Test Run #{{ testRun?.id }}</strong
+          Are you sure you want to delete <strong>test run #{{ testRun?.id }}</strong
           >? This will also remove all associated test results, reports, and traces. This action cannot be undone.
         </p>
       </template>

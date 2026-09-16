@@ -31,7 +31,13 @@ export type ImportFileState =
 
 export interface ImportFileEntry {
   id: number;
-  file: File;
+  /** The picked browser file, uploaded over HTTP. Absent for a desktop path entry. */
+  file?: File;
+  /**
+   * Absolute path on this machine, set only in the desktop shell: the server
+   * reads the archive from disk instead of the browser uploading its bytes.
+   */
+  path?: string;
   name: string;
   size: number;
   state: ImportFileState;
@@ -115,6 +121,32 @@ export function useBlobReportImport(projectName: Ref<string | undefined>) {
     }
   }
 
+  /**
+   * Queue archives already on this machine (desktop shell): the server reads
+   * them from disk, so they skip the browser's hashing and pre-flight and land
+   * straight in `ready`. A batch of more than one shares a random group so its
+   * traces gather into one run; blob reports ignore it. The server re-checks
+   * everything and dedupes by content, so a duplicate still resolves cleanly.
+   */
+  function addLocalPaths(archives: { path: string; name: string; size: number }[]): void {
+    const group = archives.length > 1 ? randomGroup() : undefined;
+    const staged: ImportFileEntry[] = [];
+    for (const archive of archives) {
+      // A path already listed is not queued twice.
+      if (entries.value.some((e) => e.path === archive.path)) continue;
+      staged.push({
+        id: nextId++,
+        name: archive.name,
+        size: archive.size,
+        state: 'ready',
+        progress: 0,
+        path: archive.path,
+        group,
+      });
+    }
+    if (staged.length) entries.value = [...entries.value, ...staged];
+  }
+
   async function addFiles(selected: File[]): Promise<void> {
     const staged: ImportFileEntry[] = selected.map((file) => ({
       id: nextId++,
@@ -155,6 +187,9 @@ export function useBlobReportImport(projectName: Ref<string | undefined>) {
     // Sequential, so a batch of large archives reads one at a time rather than
     // competing for the same disk.
     for (const entry of withinLimit) {
+      // Every entry `addFiles` stages carries a browser file; only desktop
+      // path entries (from `addLocalPaths`) skip this loop entirely.
+      if (!entry.file) continue;
       try {
         entry.progress = 0;
         entry.hash = await sha256Blob(entry.file, (p) => {
@@ -198,7 +233,7 @@ export function useBlobReportImport(projectName: Ref<string | undefined>) {
         if (!entry) return;
         entry.state = STATE_BY_VERDICT[result.status] ?? 'ready';
         entry.message = result.message;
-        if (result.testRunId) entry.result = { testRunId: result.testRunId } as ImportRunResponse;
+        if (result.runId) entry.result = { runId: result.runId } as ImportRunResponse;
       });
     } catch (error) {
       // A pre-flight failure must not block the import — the server re-checks
@@ -226,9 +261,23 @@ export function useBlobReportImport(projectName: Ref<string | undefined>) {
         entry.progress = 0;
 
         try {
-          const result = await uploadArchive(importUrl, projectName.value, entry, entry.group ?? null, (p) => {
-            entry.progress = p;
-          });
+          let result: ImportRunResponse;
+          if (entry.path) {
+            result = await importLocalArchive(entry.path, projectName.value, entry.group ?? null);
+          } else if (entry.file) {
+            result = await uploadArchive(
+              importUrl,
+              projectName.value,
+              entry.file,
+              entry.name,
+              entry.group ?? null,
+              (p) => {
+                entry.progress = p;
+              },
+            );
+          } else {
+            throw new Error('Nothing to import.');
+          }
           entry.result = result;
           entry.state = result.status === 'duplicate' ? 'duplicate' : 'imported';
           entry.message = result.status === 'duplicate' ? 'Already imported into this project.' : undefined;
@@ -264,10 +313,30 @@ export function useBlobReportImport(projectName: Ref<string | undefined>) {
     batch,
     loadLimit,
     addFiles,
+    addLocalPaths,
     startImport,
     remove,
     clearFinished,
   };
+}
+
+/** A random hex grouping key, gathering a batch of dropped traces into one run. */
+function randomGroup(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Import an archive the server can read from disk (desktop shell only). No
+ * upload and no progress — the bytes never leave the machine — so this resolves
+ * with the same summary a browser upload does.
+ */
+function importLocalArchive(path: string, projectName: string, group: string | null): Promise<ImportRunResponse> {
+  return $fetch<ImportRunResponse>('/api/desktop/import-local', {
+    method: 'POST',
+    body: { path, projectName, importGroup: group ?? undefined },
+  });
 }
 
 /** Prefix a path with the app's base URL, as `$fetch` does automatically. */
@@ -295,7 +364,8 @@ async function groupKeyFor(entries: ImportFileEntry[]): Promise<string | null> {
 function uploadArchive(
   url: string,
   projectName: string,
-  entry: ImportFileEntry,
+  file: File,
+  name: string,
   group: string | null,
   onProgress: (fraction: number) => void,
 ): Promise<ImportRunResponse> {
@@ -303,7 +373,7 @@ function uploadArchive(
     const body = new FormData();
     body.append('projectName', projectName);
     if (group) body.append('importGroup', group);
-    body.append('archive', entry.file, entry.name);
+    body.append('archive', file, name);
 
     const request = new XMLHttpRequest();
     request.open('POST', url);

@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 400" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="dbArrAccent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#4353ff"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="920" height="400" rx="12" fill="#fcfcfd" stroke="#e4e7ec"/>
+  <text x="24" y="36" font-size="16" font-weight="700" fill="#101828">The demo is the real application</text>
+  <text x="24" y="56" font-size="12.5" fill="#475467">The backend moved into the browser. The frontend cannot tell the difference.</text>
+
+  <!-- Browser tab container -->
+  <rect x="24" y="84" width="872" height="252" rx="10" fill="#ffffff" stroke="#d0d5dd"/>
+  <rect x="24" y="84" width="872" height="30" rx="10" fill="#f2f4f7"/>
+  <rect x="24" y="106" width="872" height="8" fill="#f2f4f7"/>
+  <circle cx="44" cy="99" r="4" fill="#d0d5dd"/>
+  <circle cx="58" cy="99" r="4" fill="#d0d5dd"/>
+  <circle cx="72" cy="99" r="4" fill="#d0d5dd"/>
+  <text x="90" y="104" font-size="13" font-weight="600" fill="#344054">Your browser tab · piwitests.github.io/demo</text>
+
+  <!-- Frontend -->
+  <rect x="48" y="132" width="200" height="96" rx="8" fill="#fcfcfd" stroke="#d0d5dd"/>
+  <text x="64" y="158" font-size="13" font-weight="600" fill="#344054">Piwi frontend</text>
+  <text x="64" y="178" font-size="12" fill="#475467">the same Nuxt app,</text>
+  <text x="64" y="194" font-size="12" fill="#475467">unmodified</text>
+  <text x="64" y="214" font-size="11" font-family="ui-monospace, monospace" fill="#667085">$fetch('/api/test-runs')</text>
+
+  <line x1="248" y1="180" x2="342" y2="180" stroke="#4353ff" stroke-width="1.6" marker-end="url(#dbArrAccent)"/>
+  <text x="296" y="170" font-size="11" fill="#4353ff" text-anchor="middle">real HTTP calls</text>
+
+  <!-- Service worker -->
+  <rect x="344" y="132" width="216" height="96" rx="8" fill="#fcfcfd" stroke="#d0d5dd"/>
+  <text x="360" y="158" font-size="13" font-weight="600" fill="#344054">Service worker</text>
+  <text x="360" y="178" font-size="12" fill="#475467">serves the real API,</text>
+  <text x="360" y="194" font-size="12" fill="#475467">requests never leave the tab</text>
+  <text x="360" y="214" font-size="11" fill="#667085">same routes, same handlers</text>
+
+  <line x1="560" y1="180" x2="654" y2="180" stroke="#4353ff" stroke-width="1.6" marker-end="url(#dbArrAccent)"/>
+  <text x="608" y="170" font-size="11" fill="#4353ff" text-anchor="middle">Drizzle proxy</text>
+
+  <!-- SQLite -->
+  <rect x="656" y="132" width="216" height="96" rx="8" fill="#fcfcfd" stroke="#d0d5dd"/>
+  <text x="672" y="158" font-size="13" font-weight="600" fill="#344054">SQLite (WASM)</text>
+  <text x="672" y="178" font-size="12" fill="#475467">a real database,</text>
+  <text x="672" y="194" font-size="12" fill="#475467">persisted in OPFS</text>
+  <text x="672" y="214" font-size="11" fill="#667085">seeded with demo data</text>
+
+  <!-- Simulator -->
+  <rect x="344" y="252" width="216" height="68" rx="8" fill="#fcfcfd" stroke="#d0d5dd"/>
+  <text x="360" y="276" font-size="13" font-weight="600" fill="#344054">Run simulator</text>
+  <text x="360" y="298" font-size="11" font-family="ui-monospace, monospace" fill="#667085">setup · begin · events · finish</text>
+
+  <line x1="452" y1="252" x2="452" y2="230" stroke="#4353ff" stroke-width="1.6" marker-end="url(#dbArrAccent)"/>
+  <text x="464" y="246" font-size="11" fill="#4353ff">streams a live run, in the reporter's own protocol</text>
+
+  <text x="24" y="364" font-size="12" fill="#475467">No server, no signup, nothing installed. Reload, and it resets.</text>
+  <text x="24" y="382" font-size="12" fill="#475467">Every feature has to work here too, which keeps the demo honest.</text>
+</svg>

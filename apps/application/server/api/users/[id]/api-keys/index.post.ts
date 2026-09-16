@@ -25,18 +25,18 @@ export default eventHandler(async (event) => {
 
   const targetId = parseInt(getRouterParam(event, 'id') || '0');
   if (!targetId) {
-    throw createError({ statusCode: 400, message: 'Invalid user ID' });
+    throw apiError({ statusCode: 400, message: 'Invalid user ID' });
   }
 
   // Non-administrators can only create keys for themselves
   if (currentUser.role !== Role.ADMINISTRATOR && currentUser.id !== targetId) {
-    throw createError({ statusCode: 403, message: 'Insufficient permissions' });
+    throw apiError({ statusCode: 403, message: 'Insufficient permissions' });
   }
 
   const body = await readBody(event);
   const validation = createKeySchema.safeParse(body);
   if (!validation.success) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'Invalid request body',
       data: validation.error.issues,

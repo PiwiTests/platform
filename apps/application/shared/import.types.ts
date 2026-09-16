@@ -31,7 +31,7 @@ export interface ImportCheckResult {
   /** Human-readable reason, present for everything except `ok`. */
   message?: string;
   /** The run this archive was already imported as, for `duplicate`. */
-  testRunId?: number;
+  runId?: number;
 }
 
 export interface ImportCheckResponse {
@@ -51,7 +51,7 @@ export interface ImportRunResponse {
   kind: 'blob-report' | 'trace';
   /** The execution a trace archive contributed, as `suite › test`. */
   caseTitle?: string;
-  testRunId: number;
+  runId: number;
   projectId: number;
   /** Final status of the imported run (`passed`, `failed`, …). */
   runStatus: string;

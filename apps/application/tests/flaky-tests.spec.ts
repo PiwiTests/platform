@@ -47,7 +47,7 @@ async function submitRun(
     },
   });
   expect(res.ok()).toBeTruthy();
-  return res.json() as Promise<{ testRunId: number; projectId: number }>;
+  return res.json() as Promise<{ runId: number; projectId: number }>;
 }
 
 test.describe.serial('Flaky tests endpoint', () => {
@@ -69,7 +69,7 @@ test.describe.serial('Flaky tests endpoint', () => {
 
     const res = await request.get(`/api/projects/${pid}/flaky-tests?runs=50`);
     expect(res.ok()).toBeTruthy();
-    const tests = await res.json();
+    const { items: tests } = await res.json();
     // 1 run is below the 3-run minimum
     expect(Array.isArray(tests)).toBe(true);
     expect(tests).toHaveLength(0);
@@ -113,7 +113,7 @@ test.describe.serial('Flaky tests endpoint', () => {
 
     const res = await request.get(`/api/projects/${projectId}/flaky-tests?runs=20`);
     expect(res.ok()).toBeTruthy();
-    const tests = await res.json();
+    const { items: tests } = await res.json();
     expect(Array.isArray(tests)).toBe(true);
 
     const flakyTest = (tests as FlakyTestResult[]).find((t) => t.title === 'login flaky test');
@@ -130,7 +130,7 @@ test.describe.serial('Flaky tests endpoint', () => {
 
     const res = await request.get(`/api/projects/${projectId}/flaky-tests?runs=20`);
     expect(res.ok()).toBeTruthy();
-    const tests = await res.json();
+    const { items: tests } = await res.json();
 
     const stableTest = (tests as FlakyTestResult[]).find((t) => t.title === 'stable test');
     expect(stableTest).toBeUndefined();
@@ -162,7 +162,7 @@ test.describe.serial('Flaky tests endpoint', () => {
 
     const res = await request.get(`/api/projects/${projectId}/flaky-tests?runs=20`);
     expect(res.ok()).toBeTruthy();
-    const tests = await res.json();
+    const { items: tests } = await res.json();
 
     const altTest = (tests as FlakyTestResult[]).find((t) => t.title === 'alternating test');
     expect(altTest).toBeDefined();
@@ -176,7 +176,7 @@ test.describe.serial('Flaky tests endpoint', () => {
     // With runs=1, no test should qualify (< 3 runs minimum)
     const res = await request.get(`/api/projects/${projectId}/flaky-tests?runs=1`);
     expect(res.ok()).toBeTruthy();
-    const tests = await res.json();
+    const { items: tests } = await res.json();
     expect(tests).toHaveLength(0);
   });
 
@@ -185,7 +185,7 @@ test.describe.serial('Flaky tests endpoint', () => {
 
     const res = await request.get(`/api/projects/${projectId}/flaky-tests?runs=50`);
     expect(res.ok()).toBeTruthy();
-    const tests = await res.json();
+    const { items: tests } = await res.json();
 
     if (tests.length >= 2) {
       for (let i = 0; i < tests.length - 1; i++) {

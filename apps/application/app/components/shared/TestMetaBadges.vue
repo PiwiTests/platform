@@ -12,11 +12,13 @@ import { TEST_PRIORITIES, type TestMetadata } from '@piwitests/core/test-meta';
 const props = withDefaults(
   defineProps<{
     tags?: string[] | null;
+    /** Lock names this test held — a shared resource the runner serializes holders of. */
+    locks?: string[] | null;
     meta?: TestMetadata | null;
     /** Cap the tags shown; the rest collapse into a `+N` badge. 0 = no cap. */
     maxTags?: number;
   }>(),
-  { tags: null, meta: null, maxTags: 0 },
+  { tags: null, locks: null, meta: null, maxTags: 0 },
 );
 
 type BadgeColor = 'error' | 'warning' | 'info' | 'neutral';
@@ -40,9 +42,12 @@ const priorityColor = computed<BadgeColor>(() =>
   props.meta?.priority ? (PRIORITY_COLOR[props.meta.priority] ?? 'neutral') : 'neutral',
 );
 
+const locks = computed(() => props.locks ?? []);
+
 const hasAnything = computed(
   () =>
     shownTags.value.length > 0 ||
+    locks.value.length > 0 ||
     Boolean(props.meta?.owner || props.meta?.priority || props.meta?.feature || props.meta?.link),
 );
 </script>
@@ -59,6 +64,19 @@ const hasAnything = computed(
 
     <UBadge v-if="hiddenCount > 0" color="neutral" variant="soft" size="xs" class="shrink-0" :title="hiddenTitle">
       +{{ hiddenCount }}
+    </UBadge>
+
+    <UBadge
+      v-for="lock in locks"
+      :key="`lock:${lock}`"
+      color="warning"
+      variant="soft"
+      size="xs"
+      class="shrink-0 gap-1"
+      :title="`Lock ${lock}: only one holder runs at a time`"
+    >
+      <UIcon name="i-lucide-lock" class="size-2.5 shrink-0" />
+      {{ lock }}
     </UBadge>
 
     <UBadge v-if="meta?.owner" color="neutral" variant="soft" size="xs" class="shrink-0 gap-1">

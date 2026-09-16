@@ -20,6 +20,7 @@ test.describe.serial('Live case file uploads', () => {
   const traceContent = Buffer.from('Mock Playwright live trace data');
   const traceHash = createHash('sha256').update(traceContent).digest('hex');
   const screenshotContent = Buffer.from('PNG mock screenshot bytes');
+  const videoContent = Buffer.from('WebM mock video bytes');
 
   const caseWithFiles = {
     title: 'live test with files',
@@ -31,6 +32,24 @@ test.describe.serial('Live case file uploads', () => {
     location: 'tests/live.spec.ts:15:3',
     retries: 0,
   };
+
+  function buildCaseFilesMultipart() {
+    const form = new FormData();
+    form.set('streamToken', streamToken);
+    form.set('testCase', JSON.stringify(caseWithFiles));
+    form.set('trace_hash', traceHash);
+    form.append('trace', new Blob([traceContent], { type: 'application/zip' }), 'trace.zip');
+    form.set(
+      'attach_meta',
+      JSON.stringify([
+        { name: 'screenshot', contentType: 'image/png', originalName: 'failure.png' },
+        { name: 'video', contentType: 'video/webm', originalName: 'failure.webm' },
+      ]),
+    );
+    form.append('attach_file', new Blob([screenshotContent], { type: 'image/png' }), 'failure.png');
+    form.append('attach_file', new Blob([videoContent], { type: 'video/webm' }), 'failure.webm');
+    return form;
+  }
 
   test('start a streaming run and push test cases', async ({ request }) => {
     const startResponse = await request.post('/api/test-runs/start', {
@@ -56,48 +75,37 @@ test.describe.serial('Live case file uploads', () => {
     expect(eventsResponse.ok()).toBeTruthy();
   });
 
-  test('uploads a trace and an attachment for a running case', async ({ request }) => {
+  test('uploads a trace and attachments for a running case', async ({ request }) => {
     const response = await request.post(`/api/test-runs/${runId}/case-files`, {
-      multipart: {
-        streamToken,
-        testCase: JSON.stringify(caseWithFiles),
-        trace_hash: traceHash,
-        trace: {
-          name: 'trace.zip',
-          mimeType: 'application/zip',
-          buffer: traceContent,
-        },
-        attach_meta: JSON.stringify([{ name: 'screenshot', contentType: 'image/png', originalName: 'failure.png' }]),
-        attach_file: {
-          name: 'failure.png',
-          mimeType: 'image/png',
-          buffer: screenshotContent,
-        },
-      },
+      multipart: buildCaseFilesMultipart(),
     });
 
     expect(response.ok()).toBeTruthy();
     const data = await response.json();
     expect(data.success).toBe(true);
-    expect(typeof data.testRunsCaseId).toBe('number');
+    expect(typeof data.executionId).toBe('number');
     expect(data.traces).toBe(1);
-    expect(data.attachments).toBe(1);
-    caseWithFilesId = data.testRunsCaseId;
+    expect(data.attachments).toBe(2);
+    caseWithFilesId = data.executionId;
   });
 
   test('trace and attachment are immediately listed for the case', async ({ request }) => {
     const tracesResponse = await request.get(`/api/test-run-cases/${caseWithFilesId}/traces`);
     expect(tracesResponse.ok()).toBeTruthy();
-    const traces = await tracesResponse.json();
+    const { items: traces } = await tracesResponse.json();
     expect(traces.length).toBe(1);
     expect(traces[0].filePath).toBeDefined();
 
     const caseResponse = await request.get(`/api/test-run-cases/${caseWithFilesId}`);
     expect(caseResponse.ok()).toBeTruthy();
     const caseData = await caseResponse.json();
-    expect(caseData.attachments.length).toBe(1);
-    expect(caseData.attachments[0].name).toBe('screenshot');
-    expect(caseData.attachments[0].contentType).toBe('image/png');
+    expect(caseData.attachments).toHaveLength(2);
+    expect(caseData.attachments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'screenshot', contentType: 'image/png' }),
+        expect.objectContaining({ name: 'video', contentType: 'video/webm' }),
+      ]),
+    );
 
     // The run is still running — live uploads must not require finish
     const runResponse = await request.get(`/api/test-runs/${runId}`);
@@ -105,24 +113,28 @@ test.describe.serial('Live case file uploads', () => {
     expect(runData.status).toBe('running');
   });
 
+  test('serves image and video attachments inline with their MIME types', async ({ request }) => {
+    const caseResponse = await request.get(`/api/test-run-cases/${caseWithFilesId}`);
+    expect(caseResponse.ok()).toBeTruthy();
+    const caseData = await caseResponse.json();
+    for (const expected of [
+      { name: 'screenshot', contentType: 'image/png' },
+      { name: 'video', contentType: 'video/webm' },
+    ]) {
+      const attachment = caseData.attachments.find((item: { name: string }) => item.name === expected.name);
+
+      expect(attachment).toBeDefined();
+      const fileResponse = await request.get(`/api/files/${attachment.path}`);
+
+      expect(fileResponse.ok()).toBeTruthy();
+      expect(fileResponse.headers()['content-type']).toContain(expected.contentType);
+      expect(fileResponse.headers()['content-disposition']).toBe('inline');
+    }
+  });
+
   test('repeated upload for the same case is idempotent', async ({ request }) => {
     const response = await request.post(`/api/test-runs/${runId}/case-files`, {
-      multipart: {
-        streamToken,
-        testCase: JSON.stringify(caseWithFiles),
-        trace_hash: traceHash,
-        trace: {
-          name: 'trace.zip',
-          mimeType: 'application/zip',
-          buffer: traceContent,
-        },
-        attach_meta: JSON.stringify([{ name: 'screenshot', contentType: 'image/png', originalName: 'failure.png' }]),
-        attach_file: {
-          name: 'failure.png',
-          mimeType: 'image/png',
-          buffer: screenshotContent,
-        },
-      },
+      multipart: buildCaseFilesMultipart(),
     });
 
     expect(response.ok()).toBeTruthy();
@@ -130,7 +142,7 @@ test.describe.serial('Live case file uploads', () => {
     expect(data.traces).toBe(0);
     expect(data.attachments).toBe(0);
 
-    const traces = await (await request.get(`/api/test-run-cases/${caseWithFilesId}/traces`)).json();
+    const { items: traces } = await (await request.get(`/api/test-run-cases/${caseWithFilesId}/traces`)).json();
     expect(traces.length).toBe(1);
   });
 
@@ -146,9 +158,9 @@ test.describe.serial('Live case file uploads', () => {
     expect(response.ok()).toBeTruthy();
     const data = await response.json();
     expect(data.traces).toBe(1);
-    dedupCaseId = data.testRunsCaseId;
+    dedupCaseId = data.executionId;
 
-    const traces = await (await request.get(`/api/test-run-cases/${dedupCaseId}/traces`)).json();
+    const { items: traces } = await (await request.get(`/api/test-run-cases/${dedupCaseId}/traces`)).json();
     expect(traces.length).toBe(1);
   });
 
@@ -234,7 +246,7 @@ test.describe.serial('Live case file uploads', () => {
     });
     expect(finishResponse.ok()).toBeTruthy();
 
-    const traces = await (await request.get(`/api/test-run-cases/${caseWithFilesId}/traces`)).json();
+    const { items: traces } = await (await request.get(`/api/test-run-cases/${caseWithFilesId}/traces`)).json();
     expect(traces.length).toBe(1);
 
     // Live uploads require a running run
@@ -249,7 +261,7 @@ test.describe.serial('Live case file uploads', () => {
   });
 
   test('uploaded trace is downloadable with CORS headers for the trace viewer', async ({ request }) => {
-    const traces = await (await request.get(`/api/test-run-cases/${caseWithFilesId}/traces`)).json();
+    const { items: traces } = await (await request.get(`/api/test-run-cases/${caseWithFilesId}/traces`)).json();
     const response = await request.get(`/api/files/${traces[0].filePath}`);
     expect(response.ok()).toBeTruthy();
     expect(response.headers()['access-control-allow-origin']).toBe('*');
@@ -293,7 +305,7 @@ test.describe.serial('Live upload trace resource deduplication', () => {
     const runData = await (await request.get(`/api/test-runs/${runId}`)).json();
     const runCase = runData.testCases.find((tc: { title: string }) => tc.title === testCase.title);
     expect(runCase).toBeDefined();
-    const traces = await (await request.get(`/api/test-run-cases/${runCase.id}/traces`)).json();
+    const { items: traces } = await (await request.get(`/api/test-run-cases/${runCase.executionId}/traces`)).json();
     expect(traces.length).toBe(1);
     const response = await request.get(`/api/files/${traces[0].filePath}`);
     expect(response.ok()).toBeTruthy();
@@ -434,19 +446,19 @@ test.describe.serial('Reporter live upload end-to-end', () => {
         const deadline = Date.now() + 30000;
         while (Date.now() < deadline) {
           try {
-            const runs = await getJSON('/api/test-runs/recent');
+            const { items: runs } = await getJSON('/api/test-runs/recent');
             const run = runs.find(r => r.projectName === PROJECT_NAME);
             if (run) {
               const detail = await getJSON('/api/test-runs/' + run.id);
               const runCase = (detail.testCases || []).find(tc => tc.title === 'live e2e test');
               if (runCase) {
-                const traces = await getJSON('/api/test-run-cases/' + runCase.id + '/traces');
-                const caseData = await getJSON('/api/test-run-cases/' + runCase.id);
+                const { items: traces } = await getJSON('/api/test-run-cases/' + runCase.executionId + '/traces');
+                const caseData = await getJSON('/api/test-run-cases/' + runCase.executionId);
                 const attachments = caseData.attachments || [];
                 if (traces.length > 0 && attachments.length > 0) {
                   return {
                     runId: run.id,
-                    caseId: runCase.id,
+                    caseId: runCase.executionId,
                     traces: traces.length,
                     attachments: attachments.length,
                     attachmentName: attachments[0].name,
@@ -507,7 +519,7 @@ test.describe.serial('Reporter live upload end-to-end', () => {
     const runData = await (await request.get(`/api/test-runs/${result.runId}`)).json();
     expect(runData.status).toBe('passed');
 
-    const traces = await (await request.get(`/api/test-run-cases/${result.caseId}/traces`)).json();
+    const { items: traces } = await (await request.get(`/api/test-run-cases/${result.caseId}/traces`)).json();
     expect(traces.length).toBe(1);
     const caseData = await (await request.get(`/api/test-run-cases/${result.caseId}`)).json();
     expect(caseData.attachments.length).toBe(1);

@@ -79,7 +79,7 @@ committed [`ROADMAP.md`](ROADMAP.md).
 Prerequisites: **Node.js 24+**, npm, Git. Commands run from `apps/application/` unless noted.
 
 ```bash
-cd application
+cd apps/application
 npm install
 npm run app:dev      # http://localhost:3000
 ```
@@ -99,12 +99,16 @@ From `apps/application/`:
 | `npm run app:format` / `app:format:check` | oxfmt |
 | `npm run app:test:unit` | Unit tests (Vitest) — add `:coverage` for coverage |
 | `npm run app:test` | E2E tests (Playwright) — add `:ui` / `:report` |
+| `npm run app:test:ai:live` | Diagnosis E2E against a **real** model (`tests/live/`) — needs `OPENCODE_API_KEY`, spends tokens |
 | `npm test` | Everything: unit first, then E2E |
 | `npm run db:generate` / `db:migrate` / `db:push` / `db:studio` | Drizzle, SQLite — append `:pg` for PostgreSQL |
 | `npm run app:seed:demo` | Regenerate demo seed data (`public/demo/seed.sql`) |
 | `npm run app:seed:dev` | Load the demo sample data into the local dev SQLite DB |
 | `npm run app:generate:demo` / `app:check:demo` | Build the demo SPA / verify every server route has a demo handler |
 | `npm run app:check:demo:runtime` | Drive the **built** demo from its real `/demo/` sub-path in a browser (run `app:generate:demo` first) |
+| `npm run app:screens -- <scene>` | Capture a feature screenshot — `app:screens:docs` for every committed docs illustration, `app:screens:check` to verify they all still have a scene |
+| `npm run app:screens -- --route <path> [--expand] [--height N]` | Screenshot any page without registering a scene — boots and seeds its own server; the `run-app` skill (`.claude/skills/run-app/SKILL.md`) is the full recipe for running and driving the app |
+| `npm run app:measure [-- --url <base>] [--routes …] [--json]` | Measure the execution and failure-cluster pages' legibility (block offsets, scroll height, above-the-fold controls and hints, open code, words); boots its own server without `--url` |
 | `npm run app:generate:deploy` | Regenerate the one-click deploy manifests (`render.yaml`, `fly.toml`, `deploy/`) |
 | `node scripts/db-query.mjs "<sql>" [--json]` | Query the local SQLite DB directly |
 
@@ -151,6 +155,16 @@ The `commitlint` CI check lints **every commit in the PR range**, so one bad mes
 `npx commitlint --from HEAD~<n> --to HEAD` from the repo root, and never bypass the husky `commit-msg` hook with
 `--no-verify`.
 
+### Release notes
+
+release-please generates `CHANGELOG.md` and creates each GitHub release with one raw entry per commit — so squash and
+cherry-pick leave duplicate lines. The `Tidy release notes` workflow (`.github/workflows/changelog-polish.yml`) keeps
+every release body non-empty and duplicate-free deterministically, and never overwrites hand-authored notes. For the
+polished, human-facing format (the [v0.26.0](https://github.com/PiwiTests/platform/releases/tag/v0.26.0) style — a
+narrative intro, `## ✨ Highlights`, thematic features), run the `release-notes` skill
+(`.claude/skills/release-notes/SKILL.md`); both it and the workflow share `scripts/release-notes.mjs` for
+de-duplication and publishing by tag.
+
 ### Cross-platform shell commands
 
 Any command shown to a **user** (docs, `*.md`, in-app `CodeBlock` snippets) must work on Windows too. Prefer a portable
@@ -195,6 +209,11 @@ Seven surfaces carry it, and they drift the moment one changes alone. Update the
 | Docker Hub overview | `DOCKER_HUB.md` first paragraph |
 | npm package descriptions | `packages/server/package.json`, `packages/reporter/package.json` |
 | GitHub repo description + topics | Repository settings — not in the repo, so check it by hand |
+
+The four surfaces that live in the repository are guarded by
+`apps/application/tests/unit/docs-drift.test.ts`, clause by clause — it also checks the documented MCP
+tool count against the registry, and every `doc:` anchor the app deep-links into. The npm descriptions
+and the GitHub repo description are still on you.
 
 Voice rules for all of them, and for `apps/docs/`: see [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md#voice).
 

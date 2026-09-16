@@ -6,13 +6,45 @@ import {
   MAX_RAW_DIFF_BYTES,
   FETCH_TIMEOUT_MS,
 } from './ScmProvider';
-import type { ScmCommitDetail, ScmChanges, ScmFileContent } from './ScmProvider';
+import type {
+  ScmCommitDetail,
+  ScmCommitAuthor,
+  ScmChanges,
+  ScmFileContent,
+  ScmEntityRef,
+  ScmEntityState,
+  ScmPullRequest,
+  ScmFileEdit,
+  CreatePullRequestInput,
+} from './ScmProvider';
 import { TtlCache } from './cache';
+import type { CiRerunSettings } from '#shared/ci-rerun';
+
+/** Turn a non-2xx Bitbucket response into an Error carrying the API's own message. */
+async function bitbucketError(res: Response, action: string): Promise<Error> {
+  const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+  return new Error(`Bitbucket ${action} failed (${res.status}): ${body.error?.message ?? res.statusText}`);
+}
 
 const listBranchesCache = new TtlCache<string[]>(3 * 60 * 1000);
 const listCommitsCache = new TtlCache<ScmCommitDetail[]>(3 * 60 * 1000);
 const fetchChangesCache = new TtlCache<ScmChanges>(10 * 60 * 1000);
 const fetchFileCache = new TtlCache<ScmFileContent | null>(30 * 60 * 1000);
+const defaultBranchCache = new TtlCache<string | null>(30 * 60 * 1000);
+// Author is immutable per SHA, so cache it (incl. negative lookups) for longer.
+const commitAuthorCache = new TtlCache<ScmCommitAuthor | null>(30 * 60 * 1000);
+
+/** Split Bitbucket's `author.raw` ("Ada Lovelace <ada@example.com>") into name + email. */
+function parseAuthorRaw(raw: string): ScmCommitAuthor | null {
+  const match = raw.match(/^\s*(.*?)\s*<([^>]+)>\s*$/);
+  if (match) {
+    const email = match[2]!.trim();
+    return email ? { name: match[1]!.trim() || email, email } : null;
+  }
+  // No angle brackets: a bare email is still usable, anything else is not.
+  const bare = raw.trim();
+  return /^[^\s@]+@[^\s@]+$/.test(bare) ? { name: bare, email: bare } : null;
+}
 
 function parsePatchesByFile(rawDiff: string): Map<string, string> {
   const result = new Map<string, string>();
@@ -40,6 +72,9 @@ function parsePatchesByFile(rawDiff: string): Map<string, string> {
 
 export class BitbucketProvider extends ScmProvider {
   readonly provider = 'bitbucket' as const;
+  get webUrl(): string {
+    return `https://bitbucket.org/${this.workspace}/${this.repoSlug}`;
+  }
   private readonly base: string;
 
   constructor(
@@ -155,6 +190,87 @@ export class BitbucketProvider extends ScmProvider {
     return this.fetchChanges(`${sha}~1`, sha);
   }
 
+  async getCommitAuthor(sha: string): Promise<ScmCommitAuthor | null> {
+    if (!sha) return null;
+    const key = `${this.keyPrefix}:author:${this.workspace}/${this.repoSlug}:${sha}`;
+    const hit = commitAuthorCache.get(key);
+    if (hit !== undefined) return hit;
+
+    try {
+      const res = await fetch(`${this.base}/commit/${encodeURIComponent(sha)}`, {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        commitAuthorCache.set(key, null);
+        return null;
+      }
+      const data = (await res.json()) as { author?: { raw?: string } };
+      const result = data.author?.raw ? parseAuthorRaw(data.author.raw) : null;
+      commitAuthorCache.set(key, result);
+      return result;
+    } catch {
+      return null;
+    }
+  }
+
+  async fetchIssue(number: number): Promise<ScmEntityRef | null> {
+    if (!Number.isInteger(number) || number <= 0) return null;
+    try {
+      const res = await fetch(`${this.base}/issues/${number}`, {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as {
+        title?: string;
+        state?: string;
+        reporter?: { display_name?: string };
+        links?: { html?: { href?: string } };
+        updated_on?: string;
+      };
+      const open = data.state === 'new' || data.state === 'open' || data.state === 'on hold';
+      return {
+        title: data.title ?? null,
+        state: data.state ? (open ? 'open' : 'closed') : null,
+        author: data.reporter?.display_name ?? null,
+        url: data.links?.html?.href ?? null,
+        updatedAt: data.updated_on ?? null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async fetchPullRequest(number: number): Promise<ScmEntityRef | null> {
+    if (!Number.isInteger(number) || number <= 0) return null;
+    try {
+      const res = await fetch(`${this.base}/pullrequests/${number}`, {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as {
+        title?: string;
+        state?: string;
+        author?: { display_name?: string };
+        links?: { html?: { href?: string } };
+        updated_on?: string;
+      };
+      const state: ScmEntityState =
+        data.state === 'MERGED' ? 'merged' : data.state === 'OPEN' ? 'open' : data.state ? 'closed' : null;
+      return {
+        title: data.title ?? null,
+        state,
+        author: data.author?.display_name ?? null,
+        url: data.links?.html?.href ?? null,
+        updatedAt: data.updated_on ?? null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async fetchFileAtRef(path: string, ref: string): Promise<ScmFileContent | null> {
     const cleanPath = path.replace(/^\//, '');
     const key = `${this.keyPrefix}:file:${this.workspace}/${this.repoSlug}:${ref}:${cleanPath}`;
@@ -202,5 +318,147 @@ export class BitbucketProvider extends ScmProvider {
     } catch {
       return 'Could not reach the Bitbucket API. Check your network connection.';
     }
+  }
+
+  override async getDefaultBranch(): Promise<string | null> {
+    const key = `${this.keyPrefix}:default-branch:${this.workspace}/${this.repoSlug}`;
+    const cached = defaultBranchCache.get(key);
+    if (cached !== undefined) return cached;
+    try {
+      const res = await fetch(this.base, {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) return null;
+      const body = (await res.json().catch(() => ({}))) as { mainbranch?: { name?: string } };
+      const branch = body.mainbranch?.name?.trim() || null;
+      defaultBranchCache.set(key, branch);
+      return branch;
+    } catch {
+      return null;
+    }
+  }
+
+  // ── Pull-request discovery + write capability (auto-heal) ──────────────────
+
+  override async findPullRequestForBranch(branch: string): Promise<ScmPullRequest | null> {
+    if (!branch) return null;
+    try {
+      const url = new URL(`${this.base}/pullrequests`);
+      url.searchParams.set('q', `source.branch.name="${branch}"`);
+      url.searchParams.set('state', 'OPEN');
+      url.searchParams.set('pagelen', '1');
+      const res = await fetch(url.toString(), {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as { values?: Array<{ id?: number; links?: { html?: { href?: string } } }> };
+      const pr = data.values?.[0];
+      if (!pr?.id) return null;
+      return {
+        number: pr.id,
+        url: pr.links?.html?.href ?? `https://bitbucket.org/${this.workspace}/${this.repoSlug}/pull-requests/${pr.id}`,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  override async getBranchHead(branch: string): Promise<string | null> {
+    const res = await fetch(`${this.base}/refs/branches/${encodeURIComponent(branch)}`, {
+      headers: this.makeHeaders(),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw await bitbucketError(res, 'read branch');
+    const data = (await res.json()) as { target?: { hash?: string } };
+    return data.target?.hash ?? null;
+  }
+
+  override async createBranch(name: string, fromSha: string): Promise<void> {
+    const res = await fetch(`${this.base}/refs/branches`, {
+      method: 'POST',
+      headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, target: { hash: fromSha } }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) throw await bitbucketError(res, 'create branch');
+  }
+
+  override async commitFiles(branch: string, message: string, files: ScmFileEdit[]): Promise<string> {
+    // Bitbucket's `/src` endpoint takes form fields: `message`, `branch`, and one
+    // field per file keyed by its path — creating a single commit on that branch.
+    const form = new URLSearchParams();
+    form.set('message', message);
+    form.set('branch', branch);
+    for (const f of files) form.set(f.path, f.content);
+
+    const res = await fetch(`${this.base}/src`, {
+      method: 'POST',
+      headers: { ...this.makeHeaders(), 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) throw await bitbucketError(res, 'commit files');
+
+    // The `/src` POST returns no commit hash, so read the branch head back.
+    const head = await this.getBranchHead(branch);
+    if (!head) throw new Error('Bitbucket commit succeeded but the new branch head could not be read');
+    return head;
+  }
+
+  override async createPullRequest(input: CreatePullRequestInput): Promise<ScmPullRequest> {
+    // Bitbucket Cloud has no draft pull requests; `input.draft` is ignored.
+    const res = await fetch(`${this.base}/pullrequests`, {
+      method: 'POST',
+      headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: input.title,
+        summary: { raw: input.body },
+        source: { branch: { name: input.head } },
+        destination: { branch: { name: input.base } },
+      }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) throw await bitbucketError(res, 'open pull request');
+    const pr = (await res.json()) as { id?: number; links?: { html?: { href?: string } } };
+    if (!pr.id) throw new Error('Bitbucket pull request response had no id');
+    return {
+      number: pr.id,
+      url: pr.links?.html?.href ?? `https://bitbucket.org/${this.workspace}/${this.repoSlug}/pull-requests/${pr.id}`,
+    };
+  }
+
+  // ── CI re-run ──────────────────────────────────────────────────────────────
+
+  override async dispatchRerun(settings: CiRerunSettings, playwrightArgs: string): Promise<{ url: string }> {
+    const target = settings.bitbucket;
+    if (!target) throw new Error('No Bitbucket pipeline configured for CI re-run');
+
+    // A custom pipeline still runs against a branch; the config names only the
+    // pipeline, so use the repository's default branch as the ref.
+    const branch = (await this.getDefaultBranch()) || 'main';
+    const res = await fetch(`${this.base}/pipelines/`, {
+      method: 'POST',
+      headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        target: {
+          type: 'pipeline_ref_target',
+          ref_type: 'branch',
+          ref_name: branch,
+          selector: { type: 'custom', pattern: target.pipeline },
+        },
+        variables: [{ key: target.variableName, value: playwrightArgs }],
+      }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) throw await bitbucketError(res, 'trigger pipeline');
+    const pipeline = (await res.json()) as { build_number?: number; links?: { self?: { href?: string } } };
+    const url =
+      pipeline.build_number != null
+        ? `https://bitbucket.org/${this.workspace}/${this.repoSlug}/pipelines/results/${pipeline.build_number}`
+        : (pipeline.links?.self?.href ?? `https://bitbucket.org/${this.workspace}/${this.repoSlug}/pipelines`);
+    return { url };
   }
 }

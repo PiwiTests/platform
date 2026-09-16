@@ -28,6 +28,8 @@ interface NotificationEventData {
   totalTests?: number;
   branch?: string;
   signature?: string;
+  title?: string | null;
+  verification?: string;
   clusterId?: number;
   summary?: string | null;
   rootCause?: string | null;
@@ -63,7 +65,17 @@ function renderBody(data: NotificationEventData): string {
     }
     case 'cluster.new':
       lines.push(`${data.projectName ?? `Project #${data.projectId}`}: new failure cluster`);
-      if (data.signature) lines.push(data.signature);
+      if (data.title || data.signature) lines.push(data.title || data.signature || '');
+      break;
+    case 'cluster.fixed':
+      lines.push(
+        `${data.projectName ?? `Project #${data.projectId}`}: ${data.verification === 'diagnosis-verified' ? 'diagnosis verified' : 'cluster stopped failing'}`,
+      );
+      if (data.title || data.signature) lines.push(data.title || data.signature || '');
+      break;
+    case 'cluster.regressed':
+      lines.push(`${data.projectName ?? `Project #${data.projectId}`}: a fixed cluster is failing again`);
+      if (data.title || data.signature) lines.push(data.title || data.signature || '');
       break;
     case 'diagnosis.completed':
     case 'diagnosis-completed':
@@ -96,15 +108,7 @@ function handleEvent(data: NotificationEventData) {
   }
 
   if (_cookie && data.projectId != null) {
-    const subbed = _cookie.isEventSubscribed(data.projectId, data.type);
-    console.log('[notify-stream] GATE: cookie filter', {
-      projectId: data.projectId,
-      type: data.type,
-      subscribed: subbed,
-      cookieProjects: Object.keys(_cookie.stored.value.projects),
-      matchingEvents: _cookie.stored.value.projects[data.projectId]?.events ?? [],
-    });
-    if (!subbed) return;
+    if (!_cookie.isEventSubscribed(data.projectId, data.type)) return;
   }
 
   const body = renderBody(data);
@@ -119,7 +123,6 @@ function handleEvent(data: NotificationEventData) {
     tag,
     icon: '/logo.svg',
   });
-  console.log('[notify-stream] notification fired', { type: data.type, projectId: data.projectId });
 
   const link = getLink(data);
   if (link) {
@@ -141,8 +144,8 @@ async function checkBrowserSubscriptions(): Promise<boolean> {
   if (!('Notification' in window) || Notification.permission !== 'granted') return false;
 
   try {
-    const res = await $fetch<{ channels: Array<{ type: string }> }>('/api/channels');
-    return res.channels.some((c) => c.type === 'browser');
+    const res = await $fetch<{ items: Array<{ type: string }> }>('/api/channels');
+    return res.items.some((c) => c.type === 'browser');
   } catch {
     return false;
   }
@@ -187,7 +190,6 @@ function connectLive() {
 
 export function useNotificationStream() {
   if (!import.meta.client || started) return;
-  started = true;
   started = true;
 
   const { active } = useDiagnosisNotification();

@@ -18,7 +18,7 @@ export default eventHandler(async (event) => {
 
   const result = (await getTestCase(db, id)) as any;
   if (!result) {
-    throw createError({
+    throw apiError({
       statusCode: 404,
       message: 'Test case not found',
     });

@@ -7,10 +7,11 @@ const props = defineProps<{
   projectName?: string | null;
 }>();
 
-const { data, pending } = await useFetch<TimeoutOpportunity[]>(
-  () => `/api/projects/${props.projectId}/timeout-opportunities`,
-  { lazy: true, server: false },
-);
+const { data, pending } = await useFetch(() => `/api/projects/${props.projectId}/timeout-opportunities`, {
+  lazy: true,
+  server: false,
+  transform: (r: { items: TimeoutOpportunity[] }) => r.items,
+});
 
 const opportunities = computed(() => data.value ?? []);
 
@@ -21,7 +22,7 @@ function formatMs(ms: number | null | undefined): string {
 }
 
 const columns: TableColumn<TimeoutOpportunity>[] = [
-  { accessorKey: 'title', header: createSortHeader<TimeoutOpportunity>('Test case') },
+  { accessorKey: 'title', header: createSortHeader<TimeoutOpportunity>('Test') },
   { accessorKey: 'kind', header: 'Type' },
   { accessorKey: 'timeout', header: createSortHeader<TimeoutOpportunity>('Timeout') },
   { accessorKey: 'p95', header: createSortHeader<TimeoutOpportunity>('p95') },

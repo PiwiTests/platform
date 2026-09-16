@@ -20,11 +20,11 @@ export default eventHandler(async (event) => {
     feedback?: string | null;
     feedbackNote?: string | null;
   } | null;
-  if (!body) throw createError({ statusCode: 400, message: 'Request body required' });
+  if (!body) throw apiError({ statusCode: 400, message: 'Request body required' });
 
   const feedback = body.feedback ?? null;
   if (feedback !== null && feedback !== 'up' && feedback !== 'down') {
-    throw createError({ statusCode: 400, message: 'Feedback must be "up", "down", or null' });
+    throw apiError({ statusCode: 400, message: 'Feedback must be "up", "down", or null' });
   }
 
   const [existing] = await db
@@ -32,7 +32,7 @@ export default eventHandler(async (event) => {
     .from(failureDiagnoses)
     .where(eq(failureDiagnoses.id, id))
     .limit(1);
-  if (!existing) throw createError({ statusCode: 404, message: 'Diagnosis not found' });
+  if (!existing) throw apiError({ statusCode: 404, message: 'Diagnosis not found' });
 
   const feedbackNote = body.feedbackNote?.trim() || null;
 
@@ -41,5 +41,6 @@ export default eventHandler(async (event) => {
     .set({ feedback, feedbackNote, updatedAt: new Date() })
     .where(eq(failureDiagnoses.id, id));
 
-  return { success: true, feedback, feedbackNote };
+  const [diagnosis] = await db.select().from(failureDiagnoses).where(eq(failureDiagnoses.id, id));
+  return { success: true, diagnosis };
 });

@@ -34,7 +34,7 @@ test.describe('Keyboard navigation & tab URL sync', () => {
   });
 
   async function findProjectId(request: APIRequestContext) {
-    const projects = await (await request.get('/api/projects')).json();
+    const { items: projects } = await (await request.get('/api/projects')).json();
     const project = projects.find((p: { name: string }) => p.name === PROJECT.KEYBOARD_NAV);
     return project.id as number;
   }
@@ -68,10 +68,10 @@ test.describe('Keyboard navigation & tab URL sync', () => {
 
     const startLen = await page.evaluate(() => history.length);
 
-    await page.getByRole('tab', { name: 'Performance' }).click();
+    await page.getByRole('button', { name: 'Performance' }).click();
     await expect(page).toHaveURL(/[?&]tab=performance/);
-    await page.getByRole('tab', { name: 'Spec health' }).click();
-    await expect(page).toHaveURL(/[?&]tab=spec-health/);
+    await page.getByRole('button', { name: 'Settings' }).click();
+    await expect(page).toHaveURL(/[?&]tab=settings/);
 
     const endLen = await page.evaluate(() => history.length);
     expect(endLen, 'switching tabs must use replace(), not push()').toBe(startLen);

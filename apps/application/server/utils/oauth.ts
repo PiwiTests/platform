@@ -1,4 +1,5 @@
 import type { H3Event } from 'h3';
+import { apiError } from './api-error';
 import { getDatabase } from '../database';
 import { users } from '../database/schema';
 import { eq, and } from 'drizzle-orm';
@@ -14,6 +15,7 @@ import {
   buildRedirectUri,
   parseAllowList,
   isEmailDomainAllowed,
+  isGoogleEmailVerified,
   isOrgAllowed,
   resolveProvisioningAction,
   resolveLinkAction,
@@ -74,7 +76,7 @@ function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfi
         mapUser: (raw) => ({
           id: String(raw.id),
           email: String(raw.email ?? ''),
-          emailVerified: raw.email_verified === true,
+          emailVerified: isGoogleEmailVerified(raw),
           name: String(raw.name ?? raw.email ?? ''),
           avatar: String(raw.picture ?? ''),
         }),
@@ -237,7 +239,7 @@ async function exchangeCode(
 ): Promise<TokenResponse> {
   const providerCfg = getProviderConfig(event, provider);
   if (!providerCfg) {
-    throw createError({ statusCode: 400, message: `Unknown OAuth provider: ${provider}` });
+    throw apiError({ statusCode: 400, message: `Unknown OAuth provider: ${provider}` });
   }
 
   const body = new URLSearchParams({
@@ -261,7 +263,7 @@ async function exchangeCode(
 
   if (!res.ok) {
     const text = await res.text();
-    throw createError({ statusCode: 502, message: `Token exchange failed: ${res.status} ${text}` });
+    throw apiError({ statusCode: 502, message: `Token exchange failed: ${res.status} ${text}` });
   }
 
   return res.json() as Promise<TokenResponse>;
@@ -278,7 +280,7 @@ async function fetchProviderUser(
 ): Promise<{ id: string; email: string; emailVerified: boolean; name: string; avatar: string }> {
   const providerCfg = getProviderConfig(event, provider);
   if (!providerCfg) {
-    throw createError({ statusCode: 400, message: `Unknown OAuth provider: ${provider}` });
+    throw apiError({ statusCode: 400, message: `Unknown OAuth provider: ${provider}` });
   }
 
   const res = await fetch(providerCfg.userInfoUrl, {
@@ -287,7 +289,7 @@ async function fetchProviderUser(
 
   if (!res.ok) {
     const text = await res.text();
-    throw createError({ statusCode: 502, message: `Failed to fetch user info: ${res.status} ${text}` });
+    throw apiError({ statusCode: 502, message: `Failed to fetch user info: ${res.status} ${text}` });
   }
 
   const raw = (await res.json()) as Record<string, unknown>;
@@ -345,7 +347,7 @@ async function enforceAllowlists(
 ): Promise<void> {
   const allowedDomains = getAllowedEmailDomains(event);
   if (!isEmailDomainAllowed(providerUser.email, providerUser.emailVerified, allowedDomains)) {
-    throw createError({
+    throw apiError({
       statusCode: 403,
       data: { oauthError: 'domain-not-allowed' },
       message: 'A verified email in an allowed domain is required to sign in.',
@@ -357,7 +359,7 @@ async function enforceAllowlists(
     if (allowedOrgs.length > 0) {
       const memberOf = await fetchGithubOrgLogins(accessToken);
       if (!isOrgAllowed(memberOf, allowedOrgs)) {
-        throw createError({
+        throw apiError({
           statusCode: 403,
           data: { oauthError: 'org-not-allowed' },
           message: 'You are not a member of an allowed GitHub organization.',
@@ -398,7 +400,7 @@ async function findOrCreateOAuthUser(profile: OAuthProfile): Promise<User> {
     case 'conflict':
       // Never hijack an account already linked to a *different* provider
       // identity — the single-provider schema cannot represent both.
-      throw createError({
+      throw apiError({
         statusCode: 409,
         data: { oauthError: 'account-exists' },
         message: 'This email is already linked to a different sign-in method.',
@@ -421,7 +423,7 @@ async function findOrCreateOAuthUser(profile: OAuthProfile): Promise<User> {
         .returning();
       const user = result[0];
       if (!user) {
-        throw createError({ statusCode: 500, message: 'Failed to create user' });
+        throw apiError({ statusCode: 500, message: 'Failed to create user' });
       }
       // Signal for operators: a brand-new account was auto-provisioned via OAuth.
       console.info(`[OAuth] New account provisioned: ${user.username} via ${provider} (role: ${user.role})`);
@@ -440,7 +442,7 @@ async function linkProviderToUser(userId: number, profile: OAuthProfile): Promis
 
   const current = (await db.select().from(users).where(eq(users.id, userId)))[0];
   if (!current) {
-    throw createError({ statusCode: 404, message: 'User not found' });
+    throw apiError({ statusCode: 404, message: 'User not found' });
   }
 
   // The provider identity must not already belong to a different account.
@@ -453,7 +455,7 @@ async function linkProviderToUser(userId: number, profile: OAuthProfile): Promis
 
   const action = resolveLinkAction(current, profile, identityTakenBy);
   if (action.kind === 'conflict') {
-    throw createError({
+    throw apiError({
       statusCode: 409,
       data: { oauthError: 'already-linked' },
       message: 'That provider account is already linked to another user.',
@@ -479,7 +481,7 @@ export async function unlinkProvider(userId: number, provider: string): Promise<
 
   const decision = resolveUnlink(u, provider);
   if (!decision.ok) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message:
         decision.reason === 'no-password'

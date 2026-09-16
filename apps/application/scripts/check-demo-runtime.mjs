@@ -73,13 +73,18 @@ function serve() {
         file = join(ROOT, 'index.html');
       }
       try {
+        const data = await readFile(file);
         res.writeHead(200, {
           'Content-Type': CONTENT_TYPES[extname(file)] ?? 'application/octet-stream',
           'Service-Worker-Allowed': BASE,
         });
-        res.end(await readFile(file));
+        res.end(data);
       } catch {
-        res.writeHead(404).end('not found');
+        // Headers are only written once the read succeeds, so a missing file
+        // can still answer 404 (on Windows a read can fail after a successful
+        // stat, e.g. a locked file — the old double writeHead crashed the server).
+        if (!res.headersSent) res.writeHead(404);
+        res.end('not found');
       }
     });
     server.listen(PORT, () => resolve(server));
@@ -143,15 +148,15 @@ async function main() {
     // The in-browser API must answer under the demo's own base path.
     const menu = await page.evaluate(async () => {
       const r = await fetch('/demo/api/projects/menu');
-      return { status: r.status, count: r.ok ? ((await r.json())?.length ?? 0) : 0 };
+      return { status: r.status, count: r.ok ? ((await r.json())?.items?.length ?? 0) : 0 };
     });
     check(menu.status === 200, 'the in-browser API answers', `status ${menu.status}`);
     check(menu.count > 0, 'the seeded database has projects', `${menu.count} projects`);
 
     // Find a cluster to export, rather than hard-coding an id the seed may move.
     const clusterId = await page.evaluate(async () => {
-      const projects = await (await fetch('/demo/api/projects/menu')).json();
-      for (const p of projects ?? []) {
+      const menu = await (await fetch('/demo/api/projects/menu')).json();
+      for (const p of menu.items ?? []) {
         const clusters = await (await fetch(`/demo/api/projects/${p.id}/failure-clusters`)).json();
         const first = (Array.isArray(clusters) ? clusters : (clusters?.items ?? []))[0];
         if (first?.id) return first.id;
@@ -180,6 +185,24 @@ async function main() {
     const bytes = path ? (await readFile(path)).length : 0;
     check(bytes > 1000, 'the ZIP export downloads', `${bytes} bytes as ${download.suggestedFilename()}`);
     check(download.suggestedFilename().endsWith('.zip'), 'the download is named as a ZIP');
+
+    // The PDF is generated the same way — entirely in the service worker, with
+    // no browser print — so prove it produces a real %PDF document in-browser.
+    await exportButton.click();
+    await page.waitForTimeout(400);
+    const [pdfDownload] = await Promise.all([
+      page.waitForEvent('download', { timeout: 30000 }),
+      page.getByRole('button', { name: 'PDF — formatted document', exact: true }).click(),
+    ]);
+    const pdfPath = await pdfDownload.path();
+    const pdfBytes = pdfPath ? await readFile(pdfPath) : Buffer.alloc(0);
+    check(
+      pdfBytes.length > 1000,
+      'the PDF export downloads',
+      `${pdfBytes.length} bytes as ${pdfDownload.suggestedFilename()}`,
+    );
+    check(pdfDownload.suggestedFilename().endsWith('.pdf'), 'the download is named as a PDF');
+    check(pdfBytes.subarray(0, 5).toString('latin1') === '%PDF-', 'the PDF is a real vector document');
 
     check(
       escapedApiUrls.size === 0,

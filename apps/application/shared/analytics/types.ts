@@ -150,6 +150,7 @@ export interface AnalyticsClusterRow {
   title: string | null;
   signature: string;
   errorType: string | null;
+  selector: string | null;
   occurrences: number;
   ageDays: number;
   firstSeenAt: string | Date;

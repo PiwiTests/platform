@@ -19,7 +19,7 @@ export default eventHandler(async (event) => {
   const commit = typeof body?.commit === 'string' ? body.commit.trim() : null;
 
   const result = await patchClusterBaseCommit(db, id, commit);
-  if (!result) throw createError({ statusCode: 404, message: 'Failure cluster not found' });
+  if (!result) throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
 
   return result;
 });

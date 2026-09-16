@@ -24,7 +24,7 @@ export default eventHandler(async (event) => {
   const testRun = testRunResults[0];
 
   if (!testRun) {
-    throw createError({
+    throw apiError({
       statusCode: 404,
       message: 'Test run not found',
     });
@@ -75,6 +75,8 @@ export default eventHandler(async (event) => {
       try {
         const existingCases = await db
           .select({
+            id: testRunsCases.id,
+            testCaseId: testRunsCases.testCaseId,
             title: testCases.title,
             status: testRunsCases.status,
             duration: testRunsCases.duration,
@@ -85,6 +87,8 @@ export default eventHandler(async (event) => {
             workerIndex: testRunsCases.workerIndex,
             shardIndex: testRunsCases.shardIndex,
             browser: testRunsCases.browser,
+            didNotRunReason: testRunsCases.didNotRunReason,
+            blockedBy: testRunsCases.blockedBy,
           })
           .from(testRunsCases)
           .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
@@ -104,6 +108,10 @@ export default eventHandler(async (event) => {
               location,
               workerIndex: tc.workerIndex ?? null,
               browser: tc.browser ?? null,
+              didNotRunReason: tc.didNotRunReason ?? null,
+              blockedBy: tc.blockedBy ?? null,
+              executionId: tc.id,
+              testCaseId: tc.testCaseId,
             },
             seq: 0, // Catch-up events have seq 0
             timestamp: Date.now(),

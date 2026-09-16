@@ -30,7 +30,7 @@ export default eventHandler(async (event) => {
   await requireProjectAccess(event, projectId);
 
   const body = await readBody<{ testCaseId: number }>(event);
-  if (!body?.testCaseId) throw createError({ statusCode: 400, message: 'testCaseId is required' });
+  if (!body?.testCaseId) throw apiError({ statusCode: 400, message: 'testCaseId is required' });
 
   const db = await getDatabase();
 
@@ -38,7 +38,7 @@ export default eventHandler(async (event) => {
     return await classifyAndPersistFlakyRootCause(db, projectId, body.testCaseId);
   } catch (err) {
     if (err instanceof Error && err.message === 'Test case not found') {
-      throw createError({ statusCode: 404, message: 'Test case not found' });
+      throw apiError({ statusCode: 404, message: 'Test case not found' });
     }
     throw err;
   }

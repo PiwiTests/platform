@@ -8,7 +8,8 @@ import { Logger } from '../internal/support/logger.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
 import { detectCiRunLabel } from '../internal/support/ci.js';
 import { getSetupFilePath } from '../internal/support/setup-file.js';
-import { isUiMode } from '../internal/support/run-mode.js';
+import { ariaSampleIdentity, clearAriaSampleFile, writeAriaSampleFile } from '../internal/support/aria-sampling.js';
+import { isUiMode, isListMode } from '../internal/support/run-mode.js';
 
 /**
  * Create a Playwright `globalSetup` function that registers a test run on the
@@ -57,11 +58,20 @@ export function createGlobalSetup(
     const logger = new Logger(opts.verbose ?? false);
 
     // In Playwright's UI mode the reporter never runs to finish a registered
-    // run, so registering here would leave orphaned "initialising" runs (one at
+    // run, so registering here would leave orphaned "initializing" runs (one at
     // UI launch, one per manual run). Skip registration but still chain
     // userSetup so the user's own setup keeps working under the UI.
     if (isUiMode()) {
       logger.debug('UI mode detected — skipping run registration.');
+      if (userSetup) return userSetup(config);
+      return;
+    }
+
+    // `playwright test --list` runs globalSetup but executes no tests, so
+    // registering here would leave an empty phantom run on the dashboard. Skip
+    // registration but still chain userSetup so the user's own setup keeps working.
+    if (isListMode()) {
+      logger.debug('List mode detected — skipping run registration.');
       if (userSetup) return userSetup(config);
       return;
     }
@@ -126,7 +136,31 @@ export function createGlobalSetup(
             projectName: opts.projectName,
           }),
         );
-        logger.debug(`Global setup: initialising run #${response.runId}`);
+        logger.debug(`Global setup: initializing run #${response.runId}`);
+      }
+
+      // Ask the server which tests are due a fresh green ARIA sample this run
+      // and stash the answer for the worker fixtures. A prior run's set is
+      // always cleared first so a stale file never leaks in — even when sampling
+      // is off this run; an old server or a failed call then leaves no file, and
+      // the fixtures sample nothing.
+      if (opts.projectName) clearAriaSampleFile(opts.projectName);
+      if (opts.sampleAriaOnPass !== false && opts.projectName) {
+        const menu = await httpClient.getJSON('/api/projects/menu', auth);
+        const projectId = (menu?.items as Array<{ id: number; name: string }> | undefined)?.find(
+          (p) => p.name.toLowerCase() === opts.projectName!.toLowerCase(),
+        )?.id;
+        if (projectId != null) {
+          const sampling = await httpClient.getJSON(`/api/projects/${projectId}/aria-sampling`, auth);
+          const tests = Array.isArray(sampling?.tests) ? (sampling.tests as Array<Record<string, unknown>>) : null;
+          if (tests) {
+            const identities = tests
+              .filter((t) => typeof t.filePath === 'string' && typeof t.title === 'string')
+              .map((t) => ariaSampleIdentity(t.filePath as string, t.title as string));
+            writeAriaSampleFile(opts.projectName, identities);
+            logger.debug(`Green ARIA sampling: ${identities.length} test(s) due a sample.`);
+          }
+        }
       }
     } catch (error) {
       logger.warn(`Could not register global setup: ${errorMessage(error)}`);

@@ -45,7 +45,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   if (!process.env.PIWI_DESKTOP_TOKEN) {
-    throw createError({ statusCode: 404, message: 'Desktop build only' });
+    throw apiError({ statusCode: 404, message: 'Desktop build only' });
   }
   const user = await requireAuth(event);
 
@@ -58,24 +58,24 @@ export default eventHandler(async (event) => {
   const importGroup = /^[0-9a-f]{64}$/.test(rawGroup) ? rawGroup : null;
 
   if (!path || !projectName) {
-    throw createError({ statusCode: 400, message: 'Missing required fields: path, projectName' });
+    throw apiError({ statusCode: 400, message: 'Missing required fields: path, projectName' });
   }
   if (!isAbsolute(path) || !path.toLowerCase().endsWith('.zip')) {
-    throw createError({ statusCode: 400, message: 'Expected an absolute path to a .zip archive' });
+    throw apiError({ statusCode: 400, message: 'Expected an absolute path to a .zip archive' });
   }
 
   let info;
   try {
     info = await stat(path);
   } catch {
-    throw createError({ statusCode: 404, message: 'File not found' });
+    throw apiError({ statusCode: 404, message: 'File not found' });
   }
   if (!info.isFile()) {
-    throw createError({ statusCode: 400, message: 'Not a file' });
+    throw apiError({ statusCode: 400, message: 'Not a file' });
   }
   const maxUploadBytes = resolveMaxUploadBytes();
   if (info.size > maxUploadBytes) {
-    throw createError({ statusCode: 413, message: `Archive too large (max ${formatBytes(maxUploadBytes)})` });
+    throw apiError({ statusCode: 413, message: `Archive too large (max ${formatBytes(maxUploadBytes)})` });
   }
 
   const data = await readFile(path);

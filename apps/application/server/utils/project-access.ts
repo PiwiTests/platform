@@ -1,4 +1,5 @@
 import type { H3Event } from 'h3';
+import { apiError } from './api-error';
 import { getDatabase } from '../database';
 import type { DbClient } from '../database';
 import {
@@ -61,7 +62,7 @@ export async function requireProjectAccess(event: H3Event, projectId: number, ro
   const db = await getDatabase();
   const canAccess = await canAccessProject(db, user, projectId);
   if (!canAccess) {
-    throw createError({
+    throw apiError({
       statusCode: 403,
       message: 'No access to this project',
     });
@@ -72,7 +73,7 @@ export async function requireProjectAccess(event: H3Event, projectId: number, ro
 /** Parse and validate a numeric route param, throwing 400 if missing/invalid. */
 export function requireRouteId(event: H3Event, paramName = 'id', label = 'ID'): number {
   const id = parseInt(getRouterParam(event, paramName) || '0');
-  if (!id) throw createError({ statusCode: 400, message: `Invalid ${label}` });
+  if (!id) throw apiError({ statusCode: 400, message: `Invalid ${label}` });
   return id;
 }
 
@@ -90,7 +91,7 @@ export async function requireResolvedProjectAccess(
 ): Promise<{ db: DrizzleDB; projectId: number; user: User }> {
   const db = await getDatabase();
   const projectId = await resolve(db, id);
-  if (!projectId) throw createError({ statusCode: 404, message: `${notFoundLabel} not found` });
+  if (!projectId) throw apiError({ statusCode: 404, message: `${notFoundLabel} not found` });
   const user = await requireProjectAccess(event, projectId, roles);
   return { db, projectId, user };
 }
@@ -146,6 +147,7 @@ export async function resolveLinkEntityProjectId(
   if (entityType === 'test_run') return resolveRunProjectId(db, entityId);
   if (entityType === 'test_runs_case') return resolveTestRunCaseProjectId(db, entityId);
   if (entityType === 'test_case') return resolveCaseProjectId(db, entityId);
+  if (entityType === 'failure_cluster') return resolveClusterProjectId(db, entityId);
   return null;
 }
 
@@ -157,6 +159,7 @@ export async function resolveLinkProjectId(db: DrizzleDB, linkId: number): Promi
   if (link.testRunId != null) return resolveRunProjectId(db, link.testRunId);
   if (link.testRunsCaseId != null) return resolveTestRunCaseProjectId(db, link.testRunsCaseId);
   if (link.testCaseId != null) return resolveCaseProjectId(db, link.testCaseId);
+  if (link.failureClusterId != null) return resolveClusterProjectId(db, link.failureClusterId);
   return null;
 }
 

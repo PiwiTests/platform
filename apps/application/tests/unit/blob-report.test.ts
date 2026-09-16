@@ -130,6 +130,42 @@ describe('parseBlobReport', () => {
     expect(parsed.totalTests).toBe(3);
   });
 
+  test('follows Playwright on a test.fail() outcome', async () => {
+    const parsed = await parse(
+      buildBlobReport({
+        runStatus: 'passed',
+        tests: [
+          {
+            testId: 't-xfail',
+            title: 'known bug',
+            attempts: [{ status: 'failed', errorMessage: 'Error: expect(1).toBe(2)', annotations: [{ type: 'fail' }] }],
+          },
+          {
+            testId: 't-xpass',
+            title: 'fixed but still marked',
+            attempts: [{ status: 'passed', annotations: [{ type: 'fail' }] }],
+          },
+        ],
+      }),
+    );
+
+    const byTitle = new Map(parsed.cases.map((entry) => [entry.case.title, entry.case]));
+
+    // An expected failure counts as passed but keeps its error and fail mark.
+    const xfail = byTitle.get('known bug')!;
+    expect(xfail.status).toBe('passed');
+    expect(xfail.error).toContain('expect(1).toBe(2)');
+    expect(xfail.testAnnotations).toEqual([{ type: 'fail' }]);
+
+    // An unexpected pass counts as failed, carrying Playwright's explanation.
+    const xpass = byTitle.get('fixed but still marked')!;
+    expect(xpass.status).toBe('failed');
+    expect(xpass.error).toBe('Expected to fail, but passed.');
+
+    expect(parsed.passedTests).toBe(1);
+    expect(parsed.failedTests).toBe(1);
+  });
+
   test('carries step metrics and splits attachments from traces', async () => {
     const parsed = await parse(
       buildBlobReport({

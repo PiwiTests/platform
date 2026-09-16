@@ -36,6 +36,8 @@ export interface ProbedAttrs {
     classes?: Record<string, number>;
     /** How many elements share this element's role *and* accessible name — i.e. what `getByRole(role, { name })` would really match. */
     roleName?: number;
+    /** Of the `roleName` matches, how many are laid out (a box, or an `offsetParent`) — what `getByRole(role, { name }).visible()` would match. */
+    visibleRoleName?: number;
     /** How many elements `getByText` would match on this element's text, counted no further than 2 — every consumer only asks whether that is exactly one. Undefined when the element has no text, or the subtree was too large to scan. */
     text?: number;
     /** How many elements share this element's `placeholder` — what `getByPlaceholder` would really match. */

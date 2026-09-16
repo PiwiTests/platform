@@ -5,6 +5,7 @@
  * trace dispatch, and the storage-backed `ImportPort`.
  */
 import { createHash } from 'node:crypto';
+import { apiError } from './api-error';
 import { eq } from 'drizzle-orm';
 import { getDatabase } from '../database';
 import { projects } from '../database/schema';
@@ -51,10 +52,10 @@ export async function importArchive(input: ImportArchiveInput): Promise<ImportRu
 
   const maxUploadBytes = resolveMaxUploadBytes();
   if (archive.data.length === 0) {
-    throw createError({ statusCode: 400, message: 'The uploaded archive is empty' });
+    throw apiError({ statusCode: 400, message: 'The uploaded archive is empty' });
   }
   if (archive.data.length > maxUploadBytes) {
-    throw createError({ statusCode: 413, message: `Archive too large (max ${formatBytes(maxUploadBytes)})` });
+    throw apiError({ statusCode: 413, message: `Archive too large (max ${formatBytes(maxUploadBytes)})` });
   }
 
   // Hashed server-side rather than trusted from the client: this is the
@@ -69,16 +70,16 @@ export async function importArchive(input: ImportArchiveInput): Promise<ImportRu
 
   if (project) {
     if (!scopeAllows(scope, project.id)) {
-      throw createError({ statusCode: 403, message: 'No access to this project' });
+      throw apiError({ statusCode: 403, message: 'No access to this project' });
     }
   } else {
     if (scope !== 'all') {
-      throw createError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
+      throw apiError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
     }
     const created = await db.insert(projects).values({ name: projectName }).returning();
     project = created[0];
   }
-  if (!project) throw createError({ statusCode: 500, message: 'Failed to create or retrieve project' });
+  if (!project) throw apiError({ statusCode: 500, message: 'Failed to create or retrieve project' });
 
   const duplicate = await findImportedRun(db, project.id, importHash);
   if (duplicate) return duplicate;
@@ -88,7 +89,7 @@ export async function importArchive(input: ImportArchiveInput): Promise<ImportRu
   try {
     opened = openArchive(archive.data);
   } catch (error) {
-    if (error instanceof ArchiveError) throw createError({ statusCode: 400, message: error.message });
+    if (error instanceof ArchiveError) throw apiError({ statusCode: 400, message: error.message });
     throw error;
   }
   const { entryNames, readEntry } = opened;
@@ -99,7 +100,7 @@ export async function importArchive(input: ImportArchiveInput): Promise<ImportRu
   try {
     if (!entryNames.includes('report.jsonl')) {
       if (!looksLikeTrace(entryNames)) {
-        throw createError({
+        throw apiError({
           statusCode: 400,
           message:
             'Unrecognised archive: expected a Playwright blob report (blob-report/report-*.zip) or a trace file (trace.zip).',
@@ -117,13 +118,13 @@ export async function importArchive(input: ImportArchiveInput): Promise<ImportRu
         environment,
         label,
       });
-      console.log(`[Import] Trace "${parsed.case.title}" imported into run #${result.testRunId}`);
+      console.log(`[Import] Trace "${parsed.case.title}" imported into run #${result.runId}`);
       return result;
     }
 
     const parsed = await parseBlobReport(readEntry);
     if (parsed.cases.length === 0) {
-      throw createError({ statusCode: 400, message: 'The archive contains no test results' });
+      throw apiError({ statusCode: 400, message: 'The archive contains no test results' });
     }
 
     const result = await importBlobReportRun(db, port, {
@@ -136,7 +137,7 @@ export async function importArchive(input: ImportArchiveInput): Promise<ImportRu
       label,
     });
     console.log(
-      `[Import] Run #${result.testRunId} imported from ${archive.filename}: ` +
+      `[Import] Run #${result.runId} imported from ${archive.filename}: ` +
         `${result.totalTests} executions, ${result.traceCount} traces, ${result.attachmentCount} attachments`,
     );
     return result;
@@ -144,7 +145,7 @@ export async function importArchive(input: ImportArchiveInput): Promise<ImportRu
     // The parsers speak in their own error types; the HTTP status is this
     // layer's business.
     if (error instanceof BlobReportError || error instanceof TraceImportError) {
-      throw createError({ statusCode: 400, message: error.message });
+      throw apiError({ statusCode: 400, message: error.message });
     }
     throw error;
   }

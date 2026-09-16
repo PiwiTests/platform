@@ -80,7 +80,13 @@ const axisTicks = computed(() => {
 </script>
 
 <template>
-  <ChartCard icon="i-lucide-grid-3x3" title="Pass rate heatmap" :subtitle="subtitle" help="analytics.heatmap">
+  <ChartCard
+    icon="i-lucide-grid-3x3"
+    title="Pass rate heatmap"
+    :subtitle="subtitle"
+    help="analytics.heatmap"
+    :legend="legendItems"
+  >
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" :text="`Couldn't load the heatmap: ${errorMessage(error)}`">
       <template #action>
@@ -128,7 +134,6 @@ const axisTicks = computed(() => {
             </span>
           </div>
         </div>
-        <ChartLegend :items="legendItems" dense />
       </div>
     </TableScroller>
   </ChartCard>

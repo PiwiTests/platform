@@ -57,7 +57,7 @@ export function useTraceCallStack(
     () => {
       const run = toValue(runId);
       const caseId = toValue(testRunsCaseId);
-      return run && caseId ? `/api/test-runs/${run}/cases/${caseId}/trace-stacks` : null;
+      return run && caseId ? `/api/test-run-cases/${caseId}/trace-stacks` : null;
     },
     enabled,
     options.auto ?? true,
@@ -75,7 +75,7 @@ export function useTraceNetwork(
     () => {
       const run = toValue(runId);
       const caseId = toValue(testRunsCaseId);
-      return run && caseId ? `/api/test-runs/${run}/cases/${caseId}/trace-network` : null;
+      return run && caseId ? `/api/test-run-cases/${caseId}/trace-network` : null;
     },
     enabled,
     options.auto ?? false,

@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { VisXYContainer, VisArea, VisAxis } from '@unovis/vue';
-import { CurveType } from '@unovis/ts';
 import type { AnalyticsWastedTime } from '#shared/analytics/types';
+import { barGeometry, dayTickIndices, formatTickDate, stackSegments } from '~/utils/chart';
 
 const props = defineProps<{ query: Record<string, string> }>();
 
@@ -25,17 +24,40 @@ const chartData = computed<DataPoint[]>(
 
 const hasData = computed(() => chartData.value.some((p) => p.waitMinutes > 0 || p.failedExecMinutes > 0));
 
-const x = (d: DataPoint) => d.date;
 const areaColors = ['rgb(245, 158, 11)', 'rgb(239, 68, 68)'] as const;
 
-const xyContainerRef = ref<UnovisContainerRef | null>(null);
-const { tooltipData, tooltipPos, onRenderComplete } = useChartMarkers(xyContainerRef, chartData, {
-  x: (d) => d.date,
-  series: [
-    { y: (d) => d.waitMinutes, color: areaColors[0] },
-    { y: (d) => d.failedExecMinutes, color: areaColors[1] },
-  ],
-});
+const yMax = computed(() => Math.max(1, ...chartData.value.map((d) => d.waitMinutes + d.failedExecMinutes)));
+
+/** One stacked bar per day: wait minutes on the baseline, failed-run minutes above. */
+function layout(plotWidth: number, plotHeight: number, yScale: (value: number) => number) {
+  const geo = barGeometry(chartData.value.length, plotWidth);
+  return chartData.value.map((d, i) => ({
+    d,
+    slotX: i * geo.slotWidth,
+    slotWidth: geo.slotWidth,
+    barX: geo.xOf(i),
+    barWidth: geo.barWidth,
+    segments: stackSegments(
+      [
+        { color: areaColors[0], value: d.waitMinutes },
+        { color: areaColors[1], value: d.failedExecMinutes },
+      ],
+      plotHeight,
+      yScale,
+    ),
+  }));
+}
+
+function xTicks(plotWidth: number) {
+  const { centerOf } = barGeometry(chartData.value.length, plotWidth);
+  const dates = chartData.value.map((d) => d.date);
+  return dayTickIndices(dates, Math.max(2, Math.floor(plotWidth / 80))).map((i) => ({
+    x: centerOf(i),
+    label: formatTickDate(dates[i] as Date),
+  }));
+}
+
+const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip<DataPoint>(240);
 
 const legendItems = [
   { color: areaColors[0], label: 'Wait steps' },
@@ -57,11 +79,13 @@ const reclaimLabel = computed(() => {
 </script>
 
 <template>
-  <ChartCard icon="i-lucide-hourglass" title="Wasted CI time" :subtitle="subtitle" help="analytics.wasted-time">
-    <template #legend>
-      <ChartLegend :items="legendItems" dense />
-    </template>
-
+  <ChartCard
+    icon="i-lucide-hourglass"
+    title="Wasted CI time"
+    :subtitle="subtitle"
+    help="analytics.wasted-time"
+    :legend="legendItems"
+  >
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" :text="`Couldn't load wasted time: ${errorMessage(error)}`">
       <template #action>
@@ -71,40 +95,57 @@ const reclaimLabel = computed(() => {
       </template>
     </ErrorState>
     <EmptyState v-else-if="!hasData" text="No wasted time recorded in this period." />
-    <div v-else class="w-full relative">
-      <VisXYContainer
-        ref="xyContainerRef"
-        :data="chartData"
+    <div v-else class="w-full">
+      <ChartFrame
+        v-slot="{ plotWidth, plotHeight, yScale }"
         :height="220"
-        :padding="{ top: 10, right: 10, bottom: 0, left: 0 }"
-        :on-render-complete="onRenderComplete"
+        :y-max="yMax"
+        :y-format="(value) => `${value}m`"
       >
-        <VisArea
-          :x="x"
-          :y="[(d: DataPoint) => d.waitMinutes, (d: DataPoint) => d.failedExecMinutes]"
-          :color="areaColors"
-          :curve-type="CurveType.MonotoneX"
-        />
-        <VisAxis
-          type="x"
-          :tick-format="(d: Date) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })"
-        />
-        <VisAxis type="y" label="Minutes" :tick-format="(d: number) => d.toString()" />
-      </VisXYContainer>
+        <template v-for="bar in layout(plotWidth, plotHeight, yScale)" :key="bar.d.date.getTime()">
+          <rect
+            v-for="segment in bar.segments"
+            :key="segment.color"
+            :x="bar.barX"
+            :y="segment.y"
+            :width="bar.barWidth"
+            :height="segment.height"
+            :fill="segment.color"
+          />
+        </template>
 
-      <div
-        v-if="tooltipData"
-        class="fixed z-50 pointer-events-none bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 max-w-[240px]"
-        :style="{ left: `${tooltipPos.x}px`, top: `${tooltipPos.y}px` }"
-      >
-        <div class="p-2 text-sm text-gray-900 dark:text-gray-100">
-          <div class="font-semibold mb-1">
-            {{ new Date(tooltipData.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }}
-          </div>
-          <div><span class="text-amber-500">&#9679;</span> Wait steps: {{ tooltipData.waitMinutes }} min</div>
-          <div><span class="text-red-500">&#9679;</span> Failed attempts: {{ tooltipData.failedExecMinutes }} min</div>
+        <text
+          v-for="tick in xTicks(plotWidth)"
+          :key="tick.x"
+          :x="tick.x"
+          :y="plotHeight + 14"
+          text-anchor="middle"
+          class="fill-gray-400 dark:fill-gray-500 text-[10px]"
+        >
+          {{ tick.label }}
+        </text>
+
+        <rect
+          v-for="bar in layout(plotWidth, plotHeight, yScale)"
+          :key="`hover-${bar.d.date.getTime()}`"
+          :x="bar.slotX"
+          :y="0"
+          :width="bar.slotWidth"
+          :height="plotHeight"
+          :fill="tooltipData === bar.d ? 'rgb(148 163 184 / 0.15)' : 'transparent'"
+          @mouseenter="show($event, bar.d)"
+          @mousemove="move($event)"
+          @mouseleave="hide()"
+        />
+      </ChartFrame>
+
+      <ChartTooltip v-if="tooltipData" :pos="tooltipPos">
+        <div class="font-semibold mb-1">
+          {{ tooltipData.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }}
         </div>
-      </div>
+        <div><span class="text-amber-500">&#9679;</span> Wait steps: {{ tooltipData.waitMinutes }} min</div>
+        <div><span class="text-red-500">&#9679;</span> Failed attempts: {{ tooltipData.failedExecMinutes }} min</div>
+      </ChartTooltip>
 
       <div
         v-if="reclaim"

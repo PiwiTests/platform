@@ -32,6 +32,12 @@
  * ingestion vars here but are owned by the reporter, not this registry.
  */
 
+import {
+  DEFAULT_INTEGRATIONS_SYNC_MINUTES,
+  MIN_INTEGRATIONS_SYNC_MINUTES,
+  MAX_INTEGRATIONS_SYNC_MINUTES,
+} from '#shared/integrations/sync-config';
+
 export type PiwiEnvVarCategory =
   | 'general'
   | 'database'
@@ -46,6 +52,7 @@ export type PiwiEnvVarCategory =
   | 'markers'
   | 'clustering'
   | 'smtp'
+  | 'integrations'
   | 'testing'
   | 'wasted-time'
   | 'demo'
@@ -133,20 +140,20 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 2,
     intro:
       'Piwi uses SQLite by default. Setting `PIWI_DATABASE_URL` switches it to PostgreSQL; migrations run automatically on startup.',
-    note: 'See [Deployment](./deployment) for PostgreSQL setup and [Storage → Data retention](./storage#data-retention) for how the nightly sweep works.',
+    note: 'See [Database](/operate/database) for SQLite versus PostgreSQL and [Storage → Data retention](/operate/storage#data-retention) for how the nightly sweep works.',
   },
   storage: {
     title: 'Storage',
     order: 3,
     intro: 'Controls where test artifacts (HTML reports, traces, attachments) are stored.',
-    note: 'Full details and IAM examples: [Storage configuration](./storage).',
+    note: 'Full details and IAM examples: [Storage configuration](/operate/storage).',
   },
   auth: {
     title: 'Authentication',
     order: 4,
     intro:
       'Authentication is optional and off by default. When disabled, all endpoints behave as a single virtual administrator.',
-    note: '> Behind a reverse proxy, set `PIWI_SITE_URL` so the OAuth `redirect_uri` is built from your public URL and matches what you registered with the provider (instead of being inferred from the request `Host`).\n\nSee [Authentication](./authentication) for roles, API keys, and project assignments.',
+    note: '> Behind a reverse proxy, set `PIWI_SITE_URL` so the OAuth `redirect_uri` is built from your public URL and matches what you registered with the provider (instead of being inferred from the request `Host`).\n\nSee [Authentication](/operate/authentication) for roles, API keys, and project assignments.',
   },
   oauth: { title: 'OAuth (SSO)', order: 5, mergeInto: 'auth' },
   'wasted-time': {
@@ -161,14 +168,14 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 7,
     intro:
       '`PIWI_AI_PROVIDER` is the master switch: when it is set, AI configuration is environment-managed (the Settings UI shows the fields read-only) and the other `PIWI_AI_*` variables apply. When it is unset, AI diagnosis is configured from **Settings → AI** instead and the variables below are ignored.',
-    note: 'See [AI diagnosis](./ai-diagnosis) for how diagnosis, the research stage, and semantic clustering work.',
+    note: 'See [AI diagnosis](/features/ai-diagnosis) for how diagnosis, the research stage, and semantic clustering work.',
   },
   'ai-limits': {
     title: 'AI context limits',
     order: 8,
     intro:
       'Cap how much evidence (and how many tokens) go into each AI diagnosis. Resolution order: defaults ← values stored from **Settings → AI** ← environment; the environment wins and locks the field in the UI. Values are clamped to the min–max range; a `0` disables a section only where the minimum is `0`.',
-    note: 'See [AI diagnosis → Context limits](./ai-diagnosis#context-limits-and-token-cost) for section-by-section guidance.',
+    note: 'See [AI diagnosis → Context limits](/features/ai-diagnosis#context-limits-and-token-cost) for section-by-section guidance.',
   },
   'ai-steps': {
     title: 'AI steps',
@@ -177,7 +184,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 8.5,
     intro:
       "Bounds on the reporter's AI-step **authoring** pass (`page.piwiLocator(...)` / `page.piwiRun(...)` in `resolve`/`heal` mode), which calls the model through this server. They cap how much of the page snapshot and how many output tokens go into each authoring iteration. They never apply during normal `replay` runs, which make no model calls. Values are clamped to the min–max range.",
-    note: 'Reasoning models spend output tokens on hidden chain-of-thought, so raise `PIWI_AI_STEP_MAX_OUTPUT_TOKENS` for them. See [AI steps](./ai-steps) for the full authoring/replay model and the reporter-side `PIWI_AI*` options.',
+    note: 'Reasoning models spend output tokens on hidden chain-of-thought, so raise `PIWI_AI_STEP_MAX_OUTPUT_TOKENS` for them. See [AI steps](/guide/ai-steps) for the full authoring/replay model and the reporter-side `PIWI_AI*` options.',
   },
   ingest: {
     title: 'Ingest limits',
@@ -197,30 +204,37 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 12,
     intro:
       'Required for email notifications and account flows (verification, password reset, invites). Set via environment only.',
-    note: 'Email sending activates once `PIWI_SMTP_HOST`, `PIWI_SMTP_USER`, `PIWI_SMTP_PASS` and `PIWI_SMTP_FROM` are all set. See [Notifications](./notifications) for channels and subscriptions.',
+    note: 'Email sending activates once `PIWI_SMTP_HOST` and `PIWI_SMTP_FROM` are set; add `PIWI_SMTP_USER`/`PIWI_SMTP_PASS` when the server requires authentication. See [Notifications](/features/notifications) for channels and subscriptions.',
+  },
+  integrations: {
+    title: 'Integrations',
+    order: 13,
+    intro:
+      'Connect an issue tracker so pinned links unfurl and stay in sync. Setting `PIWI_JIRA_BASE_URL`, `PIWI_JIRA_EMAIL` and `PIWI_JIRA_API_TOKEN` creates a read-only, environment-managed Jira Cloud connection; otherwise connections are managed from **Settings → Integrations**.',
+    note: 'A connection base URL is administrator-supplied and trusted, so a self-hosted Jira on a private host works. See [Integrations](/operate/integrations).',
   },
   clustering: {
     title: 'Failure clustering',
-    order: 13,
+    order: 14,
     intro:
       'Tunes the similarity thresholds used when grouping failures into clusters by their error fingerprint (and optional embeddings). Only used when an embedding model is configured.',
-    note: 'See [AI diagnosis → Failure clustering](./ai-diagnosis#failure-clustering).',
+    note: 'See [AI diagnosis → Failure clustering](/features/ai-diagnosis#failure-clustering).',
   },
   testing: {
     title: 'Backend logs',
-    order: 14,
+    order: 15,
     intro:
-      'Controls the `X-Piwi-Logs` response-header capture that attaches backend logs to test failures. See [Backend logs](./backend-logs).',
+      'Controls the `X-Piwi-Logs` response-header capture that attaches backend logs to test failures. See [Backend logs](/guide/backend-logs).',
   },
   build: {
     title: 'Build-time',
-    order: 15,
+    order: 16,
     intro:
       'These affect how the app is built rather than how a running instance behaves, and are mostly for contributors.',
   },
-  demo: { title: 'Demo', order: 16, mergeInto: 'build' },
-  test: { title: 'Test harness', order: 17, internal: true },
-  desktop: { title: 'Desktop app', order: 18, internal: true },
+  demo: { title: 'Demo', order: 17, mergeInto: 'build' },
+  test: { title: 'Test harness', order: 18, internal: true },
+  desktop: { title: 'Desktop app', order: 19, internal: true },
 };
 
 export const PIWI_ENV_VARS = {
@@ -276,7 +290,7 @@ export const PIWI_ENV_VARS = {
     category: 'database',
     secret: true,
     example: 'postgres://piwi:piwi@db:5432/piwi',
-    docs: 'deployment#docker-compose-with-postgresql',
+    docs: 'operate/database#postgresql',
   },
   PIWI_RETENTION_DAYS: {
     description:
@@ -284,7 +298,7 @@ export const PIWI_ENV_VARS = {
     category: 'database',
     type: 'number',
     min: 0,
-    docs: 'storage#data-retention',
+    docs: 'operate/storage#data-retention',
   },
   PIWI_RETENTION_NOTIFICATION_DAYS: {
     description:
@@ -324,7 +338,7 @@ export const PIWI_ENV_VARS = {
     category: 'storage',
     relevantWhen: { PIWI_STORAGE_TYPE: 's3' },
     requiredWhen: { PIWI_STORAGE_TYPE: 's3' },
-    docs: 'storage#s3-compatible-storage',
+    docs: 'operate/storage#s3-compatible-storage',
   },
   PIWI_S3_REGION: {
     description: 'S3 bucket region (when PIWI_STORAGE_TYPE is "s3").',
@@ -378,6 +392,33 @@ export const PIWI_ENV_VARS = {
     requiredWhen: { PIWI_AUTH_ENABLED: 'true' },
     notes: 'The server refuses to start when auth is enabled and this is unset.',
   },
+  PIWI_SHARE_LINKS_ENABLED: {
+    description:
+      'Set to "true" to allow minting read-only public share links for executions and failure clusters. Off by default; turning it off again immediately dead-ends every outstanding link without deleting anything.',
+    category: 'auth',
+    type: 'boolean',
+    default: 'false',
+    since: '0.26.0',
+  },
+  PIWI_SHARE_LINK_MAX_TTL_DAYS: {
+    description:
+      'Longest allowed share-link lifetime, in days. The creation dialog offers expiries up to this; 0 lifts the cap and allows links with no expiry.',
+    category: 'auth',
+    type: 'number',
+    default: '30',
+    min: 0,
+    max: 3650,
+    relevantWhen: { PIWI_SHARE_LINKS_ENABLED: 'true' },
+    since: '0.26.0',
+  },
+  PIWI_TRUST_PROXY: {
+    description:
+      'Set to "true" when a reverse proxy sits in front of Piwi, so per-IP rate limits on the auth endpoints key on the client address your proxy appends to X-Forwarded-For instead of on the proxy\'s own address (which would pool every client into one bucket). Leave off when clients connect directly: the header is client-controlled then, and trusting it would let a caller choose its own bucket.',
+    category: 'auth',
+    type: 'boolean',
+    default: 'false',
+    since: '0.26.0',
+  },
 
   // ── OAuth ────────────────────────────────────────────────────────────────
   PIWI_OAUTH_GOOGLE_CLIENT_ID: {
@@ -385,7 +426,7 @@ export const PIWI_ENV_VARS = {
     category: 'oauth',
     relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
     requiredWhen: { PIWI_OAUTH_GOOGLE_CLIENT_SECRET: '*' },
-    docs: 'authentication#oauth-google-github',
+    docs: 'operate/authentication#oauth-google-github',
   },
   PIWI_OAUTH_GOOGLE_CLIENT_SECRET: {
     description: 'Google OAuth client secret.',
@@ -399,7 +440,7 @@ export const PIWI_ENV_VARS = {
     category: 'oauth',
     relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
     requiredWhen: { PIWI_OAUTH_GITHUB_CLIENT_SECRET: '*' },
-    docs: 'authentication#oauth-google-github',
+    docs: 'operate/authentication#oauth-google-github',
   },
   PIWI_OAUTH_GITHUB_CLIENT_SECRET: {
     description: 'GitHub OAuth client secret.',
@@ -425,10 +466,11 @@ export const PIWI_ENV_VARS = {
 
   // ── AI — diagnosis model ─────────────────────────────────────────────────
   PIWI_AI_PROVIDER: {
-    description: 'AI provider for failure diagnosis: "anthropic" or "openai" (OpenAI-compatible).',
+    description:
+      'AI provider for failure diagnosis: "anthropic", "openai" (OpenAI-compatible), or "claude-cli" (the local Claude Code CLI, desktop app only).',
     category: 'ai',
     type: 'enum',
-    enum: ['anthropic', 'openai'],
+    enum: ['anthropic', 'openai', 'claude-cli'],
   },
   PIWI_AI_API_KEY: {
     description: 'API key for the diagnosis provider. Takes precedence over the DB-stored key.',
@@ -436,10 +478,12 @@ export const PIWI_ENV_VARS = {
     secret: true,
     relevantWhen: { PIWI_AI_PROVIDER: '*' },
     requiredWhen: { PIWI_AI_PROVIDER: 'anthropic' },
-    notes: 'Optional for OpenAI-compatible providers that need no key (e.g. a local model).',
+    notes:
+      'Optional for OpenAI-compatible providers that need no key (e.g. a local model). Unused by "claude-cli" — the CLI carries its own login.',
   },
   PIWI_AI_MODEL: {
-    description: 'Diagnosis model name (default: claude-opus-4-8 for Anthropic).',
+    description:
+      'Diagnosis model name (default: claude-opus-4-8 for Anthropic; for "claude-cli" an alias like "opus"/"sonnet", or empty for the CLI default).',
     category: 'ai',
     example: 'claude-opus-4-8',
     relevantWhen: { PIWI_AI_PROVIDER: '*' },
@@ -453,12 +497,31 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AI_PROVIDER: '*' },
     requiredWhen: { PIWI_AI_PROVIDER: 'openai' },
   },
+  PIWI_AI_TEMPERATURE: {
+    description: 'Sampling temperature override for the diagnosis model (OpenAI-compatible only), range 0-2.',
+    category: 'ai',
+    type: 'number',
+    min: 0,
+    max: 2,
+    since: '0.27.0',
+    relevantWhen: { PIWI_AI_PROVIDER: 'openai' },
+    notes:
+      'Omitted from requests when unset (provider default applies). Reasoning models (o1, o3, GPT-5-class) reject any explicit value — leave this unset for them.',
+  },
   PIWI_AI_AUTO_DIAGNOSE: {
     description: 'Set to "true" to auto-diagnose new failure clusters when a run finishes.',
     category: 'ai',
     type: 'boolean',
     default: 'false',
     relevantWhen: { PIWI_AI_PROVIDER: '*' },
+  },
+  PIWI_AI_LANGUAGE: {
+    description:
+      'Language for AI-written prose (diagnosis, root cause, cluster titles), e.g. "French". Unset keeps English. Code, locators, paths and error text stay verbatim.',
+    category: 'ai',
+    example: 'French',
+    since: '0.29.0',
+    docs: 'features/ai-diagnosis#response-language',
   },
   PIWI_AI_AUTO_DIAGNOSE_MAX: {
     description: 'Max clusters auto-diagnosed per finished run (budget cap; default 3).',
@@ -474,7 +537,7 @@ export const PIWI_ENV_VARS = {
     description: 'Provider for the optional research (pre-analysis) stage. Falls back to PIWI_AI_PROVIDER.',
     category: 'ai',
     type: 'enum',
-    enum: ['anthropic', 'openai'],
+    enum: ['anthropic', 'openai', 'claude-cli'],
     relevantWhen: { PIWI_AI_RESEARCH_MODEL: '*' },
   },
   PIWI_AI_RESEARCH_MODEL: {
@@ -493,6 +556,17 @@ export const PIWI_ENV_VARS = {
     category: 'ai',
     secret: true,
     relevantWhen: { PIWI_AI_RESEARCH_MODEL: '*' },
+  },
+  PIWI_AI_RESEARCH_TEMPERATURE: {
+    description: 'Sampling temperature override for the research model (OpenAI-compatible only), range 0-2.',
+    category: 'ai',
+    type: 'number',
+    min: 0,
+    max: 2,
+    since: '0.27.0',
+    relevantWhen: { PIWI_AI_RESEARCH_MODEL: '*' },
+    notes:
+      'Omitted from requests when unset (provider default applies). Reasoning models (o1, o3, GPT-5-class) reject any explicit value — leave this unset for them.',
   },
 
   // ── AI — embedding model ─────────────────────────────────────────────────
@@ -523,6 +597,15 @@ export const PIWI_ENV_VARS = {
     category: 'ai',
     secret: true,
     relevantWhen: { PIWI_AI_EMBEDDING_MODEL: '*' },
+  },
+
+  // ── AI — local Claude CLI ────────────────────────────────────────────────
+  PIWI_CLAUDE_CLI_PATH: {
+    description:
+      'Absolute path to the `claude` binary for the "claude-cli" provider. Set only when the CLI is not on PATH, or to enable the provider outside the desktop app. Auto-detected otherwise.',
+    category: 'ai',
+    since: '0.30.0',
+    example: '/usr/local/bin/claude',
   },
 
   // ── AI — diagnosis context limits ────────────────────────────────────────
@@ -815,6 +898,24 @@ export const PIWI_ENV_VARS = {
     min: 20,
     max: 5000,
   },
+  PIWI_INGEST_MAX_STEP_PARAM_KEYS: {
+    description: 'Max param keys stored per step.',
+    category: 'ingest',
+    type: 'number',
+    default: '20',
+    min: 1,
+    max: 100,
+    since: '0.27.0',
+  },
+  PIWI_INGEST_MAX_STEP_PARAM_VALUE_CHARS: {
+    description: 'Max characters stored per step param value.',
+    category: 'ingest',
+    type: 'number',
+    default: '200',
+    min: 20,
+    max: 2000,
+    since: '0.27.0',
+  },
   PIWI_INGEST_MAX_STEP_EVENTS: {
     description: 'Max step events stored per execution.',
     category: 'ingest',
@@ -822,6 +923,24 @@ export const PIWI_ENV_VARS = {
     default: '1000',
     min: 20,
     max: 10000,
+  },
+  PIWI_INGEST_MAX_LOCKS: {
+    description: 'Max lock names stored per execution.',
+    category: 'ingest',
+    type: 'number',
+    default: '20',
+    min: 1,
+    max: 100,
+    since: '0.27.0',
+  },
+  PIWI_INGEST_MAX_DIALOGS: {
+    description: 'Max browser dialogs stored per execution.',
+    category: 'ingest',
+    type: 'number',
+    default: '50',
+    min: 1,
+    max: 500,
+    since: '0.27.0',
   },
   PIWI_INGEST_MAX_ARIA_CHARS: {
     description: 'Max characters of the ARIA snapshot stored per failing execution.',
@@ -877,7 +996,7 @@ export const PIWI_ENV_VARS = {
     category: 'markers',
     type: 'boolean',
     default: 'true',
-    docs: 'timeline-markers',
+    docs: 'features/timeline-markers',
     notes: 'Only the exact value `false` disables auto-markers.',
   },
 
@@ -886,7 +1005,7 @@ export const PIWI_ENV_VARS = {
       'Disable X-Piwi-Logs response header emission (default: auto-disabled in production, enabled in development).',
     category: 'testing',
     type: 'boolean',
-    docs: 'backend-logs',
+    docs: 'guide/backend-logs',
     notes:
       'Unset: capture is on in development and off in production builds; `true` forces it off everywhere, `false` forces it on even in production.',
   },
@@ -929,17 +1048,15 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_SMTP_HOST: '*' },
   },
   PIWI_SMTP_USER: {
-    description: 'SMTP username.',
+    description: 'SMTP username. Optional — only when the server requires authentication.',
     category: 'smtp',
     relevantWhen: { PIWI_SMTP_HOST: '*' },
-    requiredWhen: { PIWI_SMTP_HOST: '*' },
   },
   PIWI_SMTP_PASS: {
-    description: 'SMTP password. Never returned by the API.',
+    description: 'SMTP password. Optional — only when the server requires authentication. Never returned by the API.',
     category: 'smtp',
     secret: true,
     relevantWhen: { PIWI_SMTP_HOST: '*' },
-    requiredWhen: { PIWI_SMTP_HOST: '*' },
   },
   PIWI_SMTP_FROM: {
     description: 'From address for outbound email (e.g. noreply@example.com).',
@@ -960,6 +1077,42 @@ export const PIWI_ENV_VARS = {
     type: 'boolean',
     relevantWhen: { PIWI_SMTP_HOST: '*' },
     notes: 'Defaults to on when the port is 465, off otherwise.',
+  },
+
+  // ── Integrations ─────────────────────────────────────────────────────────
+  PIWI_JIRA_BASE_URL: {
+    description: 'Base URL of the Jira Cloud site to connect (e.g. https://your-team.atlassian.net).',
+    category: 'integrations',
+    type: 'url',
+    example: 'https://your-team.atlassian.net',
+    since: '0.29.0',
+    docs: 'operate/integrations#connecting-jira-cloud',
+  },
+  PIWI_JIRA_EMAIL: {
+    description: 'Atlassian account email the API token belongs to.',
+    category: 'integrations',
+    example: 'you@example.com',
+    since: '0.29.0',
+    relevantWhen: { PIWI_JIRA_BASE_URL: '*' },
+    requiredWhen: { PIWI_JIRA_BASE_URL: '*' },
+  },
+  PIWI_JIRA_API_TOKEN: {
+    description: 'Jira Cloud API token (from id.atlassian.com). Never returned by the API.',
+    category: 'integrations',
+    secret: true,
+    since: '0.29.0',
+    relevantWhen: { PIWI_JIRA_BASE_URL: '*' },
+    requiredWhen: { PIWI_JIRA_BASE_URL: '*' },
+  },
+  PIWI_INTEGRATIONS_SYNC_MINUTES: {
+    description: 'How often, in minutes, Piwi reads ticket statuses back from the tracker.',
+    category: 'integrations',
+    type: 'number',
+    default: String(DEFAULT_INTEGRATIONS_SYNC_MINUTES),
+    min: MIN_INTEGRATIONS_SYNC_MINUTES,
+    max: MAX_INTEGRATIONS_SYNC_MINUTES,
+    since: '0.29.0',
+    docs: 'operate/integrations#status-sync',
   },
 
   // ── Wasted-time analysis ─────────────────────────────────────────────────
@@ -1024,6 +1177,12 @@ export const PIWI_ENV_VARS = {
     description: 'Mailpit base URL; when set, the email/notification E2E tests run against it.',
     category: 'test',
     runtimeOnly: true,
+  },
+  PIWI_LIVE_JIRA_PROJECT_KEY: {
+    description: 'Jira project key the live Jira E2E files into (with PIWI_JIRA_* credentials).',
+    category: 'test',
+    runtimeOnly: true,
+    since: '0.29.0',
   },
   PIWI_MAILPIT_SMTP_PORT: {
     description: 'SMTP port the email E2E tests send to (Mailpit).',

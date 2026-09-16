@@ -6,10 +6,10 @@ defineProps<{ mode: 'reference' | 'generator' }>()
 
 <template>
   <nav class="config-mode-switch" aria-label="Configuration view">
-    <a :href="withBase('/configuration')" :class="{ active: mode === 'reference' }" :aria-current="mode === 'reference' ? 'page' : undefined">
+    <a :href="withBase('/reference/configuration')" :class="{ active: mode === 'reference' }" :aria-current="mode === 'reference' ? 'page' : undefined">
       📖 Reference
     </a>
-    <a :href="withBase('/configuration/generator')" :class="{ active: mode === 'generator' }" :aria-current="mode === 'generator' ? 'page' : undefined">
+    <a :href="withBase('/reference/configuration/generator')" :class="{ active: mode === 'generator' }" :aria-current="mode === 'generator' ? 'page' : undefined">
       🧩 Generator
     </a>
   </nav>

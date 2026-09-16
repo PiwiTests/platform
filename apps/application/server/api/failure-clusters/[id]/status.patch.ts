@@ -21,13 +21,13 @@ export default eventHandler(async (event) => {
   const status = body?.status;
 
   if (!status || !VALID_STATUSES.includes(status)) {
-    throw createError({ statusCode: 400, message: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` });
+    throw apiError({ statusCode: 400, message: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` });
   }
 
   const triageNote = body?.triageNote;
   const result = await patchClusterStatus(db, id, status, triageNote);
   if (!result) {
-    throw createError({ statusCode: 404, message: 'Failure cluster not found' });
+    throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
   }
 
   return result;

@@ -52,7 +52,7 @@ function getDebounceDelay(): number {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REFRESH_EVENTS = new Set([
-  'run-initialising',
+  'run-initializing',
   'run-started',
   'run-finalizing',
   'run-finished',

@@ -28,12 +28,12 @@ export default eventHandler(async (event) => {
   const body = await readBody(event);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    throw createError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
+    throw apiError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
   }
 
   const db = await getDatabase();
   const projectResults = await db.select().from(projects).where(eq(projects.id, id));
-  if (!projectResults[0]) throw createError({ statusCode: 404, message: 'Project not found' });
+  if (!projectResults[0]) throw apiError({ statusCode: 404, message: 'Project not found' });
 
   // Validate that all supplied userIds actually exist
   if (parsed.data.userIds.length > 0) {
@@ -41,7 +41,7 @@ export default eventHandler(async (event) => {
     const foundIds = new Set(found.map((r) => r.id));
     const missing = parsed.data.userIds.filter((uid) => !foundIds.has(uid));
     if (missing.length > 0) {
-      throw createError({ statusCode: 400, message: `User(s) not found: ${missing.join(', ')}` });
+      throw apiError({ statusCode: 400, message: `User(s) not found: ${missing.join(', ')}` });
     }
   }
 

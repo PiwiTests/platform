@@ -23,6 +23,6 @@ export default eventHandler(async (event) => {
     return await deleteMarker(db, id);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to delete marker';
-    throw createError({ statusCode: message === 'Marker not found' ? 404 : 400, message });
+    throw apiError({ statusCode: message === 'Marker not found' ? 404 : 400, message });
   }
 });

@@ -405,8 +405,8 @@ test.describe.serial('Notification dispatch', () => {
       },
       cookie,
     );
-    const subData = (await subRes.json()) as { subscriptionId?: number };
-    subscriptionId = subData.subscriptionId ?? 0;
+    const subData = (await subRes.json()) as { subscription?: { id: number } };
+    subscriptionId = subData.subscription?.id ?? 0;
   });
 
   test.afterAll(async () => {

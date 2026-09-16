@@ -1,0 +1,153 @@
+export type RetryMode = 'file-line' | 'grep' | 'file';
+
+export interface RetryCase {
+  filePath: string;
+  title: string;
+  line?: number | null;
+  projectName?: string | null;
+}
+
+const MAX_CMD_LENGTH = 4096;
+
+export function escapeGrep(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function escapeShellArg(arg: string): string {
+  return '"' + arg.replace(/"/g, '\\"') + '"';
+}
+
+// Playwright's CLI file filter is matched as a regex against forward-slash paths,
+// so a Windows-captured backslash path (e.g. "tests\foo.spec.ts:10") never matches.
+// Normalize to POSIX separators, which Playwright accepts on every platform.
+export function toPosixPath(filePath: string): string {
+  return filePath.replace(/\\/g, '/');
+}
+
+function groupByProject(cases: RetryCase[]): Map<string, RetryCase[]> {
+  const groups = new Map<string, RetryCase[]>();
+  for (const c of cases) {
+    const key = c.projectName || '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(c);
+  }
+  return groups;
+}
+
+function dedupeFiles(cases: RetryCase[]): string[] {
+  const seen = new Set<string>();
+  return cases
+    .filter((c) => {
+      const key = c.filePath;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((c) => c.filePath);
+}
+
+export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode; pkgRunner?: string }): string {
+  const mode = opts?.mode ?? 'file-line';
+  const pkgRunner = opts?.pkgRunner ?? 'npx';
+  const baseCmd = `${pkgRunner} playwright test`;
+
+  if (cases.length === 0) return '';
+
+  const groups = groupByProject(cases);
+  const commands: string[] = [];
+
+  for (const [project, projectCases] of groups) {
+    let cmd: string;
+
+    if (mode === 'file') {
+      const files = dedupeFiles(projectCases);
+      const args = files.map((f) => escapeShellArg(toPosixPath(f))).join(' ');
+      cmd = `${baseCmd} ${args}`;
+    } else if (mode === 'file-line') {
+      const seen = new Set<string>();
+      const args = projectCases
+        .filter((c) => {
+          const key = c.filePath + ':' + c.line;
+          if (c.line && seen.has(key)) return false;
+          if (c.line) seen.add(key);
+          return true;
+        })
+        .map((c) => {
+          if (c.line) return escapeShellArg(`${toPosixPath(c.filePath)}:${c.line}`);
+          return escapeShellArg(toPosixPath(c.filePath));
+        })
+        .join(' ');
+      cmd = `${baseCmd} ${args}`;
+    } else {
+      const escaped = projectCases.map((c) => escapeGrep(c.title));
+      const grepArg = escaped.length === 1 ? escaped[0]! : `(${escaped.join('|')})`;
+      cmd = `${baseCmd} --grep ${escapeShellArg(grepArg)}`;
+    }
+
+    if (project) {
+      cmd += ` --project=${escapeShellArg(project)}`;
+    }
+
+    commands.push(cmd);
+  }
+
+  let result = commands.join(' && ');
+
+  if (result.length > MAX_CMD_LENGTH) {
+    if (mode === 'grep') {
+      return buildRetryCommand(cases, { ...opts, mode: 'file-line' });
+    }
+    if (mode === 'file-line') {
+      return buildRetryCommand(cases, { ...opts, mode: 'file' });
+    }
+    const files = dedupeFilePaths(cases);
+    const args = files.map((f) => escapeShellArg(toPosixPath(f))).join(' ');
+    let cmd = `${baseCmd} ${args}`;
+    if (cmd.length > MAX_CMD_LENGTH) {
+      cmd = cmd.slice(0, MAX_CMD_LENGTH - 3) + '...';
+    }
+    return cmd;
+  }
+
+  return result;
+}
+
+/**
+ * The Playwright *arguments* for re-running these cases — the file:line specs
+ * (deduped, POSIX-normalized, quoted) plus a single `--project=` when every case
+ * shares one project. Unlike {@link buildRetryCommand} it omits the
+ * `playwright test` prefix, so it can be handed to CI as the value of a
+ * workflow input / pipeline variable that a job appends to its own command.
+ * Always `file-line` shaped; a case without a line contributes its file path.
+ */
+export function buildRetryArgs(cases: RetryCase[]): string {
+  if (cases.length === 0) return '';
+  const seen = new Set<string>();
+  const specs = cases
+    .filter((c) => {
+      if (!c.line) return true;
+      const key = c.filePath + ':' + c.line;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((c) =>
+      c.line ? escapeShellArg(`${toPosixPath(c.filePath)}:${c.line}`) : escapeShellArg(toPosixPath(c.filePath)),
+    );
+
+  const projects = new Set(cases.map((c) => c.projectName || '').filter(Boolean));
+  let args = specs.join(' ');
+  if (projects.size === 1) args += ` --project=${escapeShellArg([...projects][0]!)}`;
+  return args;
+}
+
+function dedupeFilePaths(cases: RetryCase[]): string[] {
+  const seen = new Set<string>();
+  return cases.reduce<string[]>((acc, c) => {
+    if (!seen.has(c.filePath)) {
+      seen.add(c.filePath);
+      acc.push(c.filePath);
+    }
+    return acc;
+  }, []);
+}

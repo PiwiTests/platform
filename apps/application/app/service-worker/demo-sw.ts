@@ -19,6 +19,7 @@
 
 import { handleDemoRequest } from '../demo/api/router';
 import { configureDemoDb, resetDemoDb } from '../demo/db.client';
+import { type ErrorCode, errorCodeForStatus } from '#shared/utils/error-codes';
 
 declare const self: ServiceWorkerGlobalScope & typeof globalThis;
 
@@ -90,7 +91,12 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       (async () => {
         try {
-          const shell = await fetch(APP_SHELL_URL, { credentials: 'same-origin' });
+          // Revalidate the shell on every navigation. GitHub Pages serves
+          // index.html with a short max-age and allows no cache-control
+          // override, so `no-cache` forces a conditional request (304 when
+          // unchanged) that always resolves to the current deploy's shell and
+          // the content-hashed bundles it references.
+          const shell = await fetch(APP_SHELL_URL, { credentials: 'same-origin', cache: 'no-cache' });
           if (shell.ok) return shell;
         } catch {
           // Offline or fetch failure — fall back to the original request below.
@@ -137,19 +143,26 @@ self.addEventListener('fetch', (event) => {
         // generic "Internal server error") so it shows up in the app's own
         // error UI and the page console — service worker console.error calls
         // are easy to miss since they live under a separate DevTools context.
+        // Handlers throw DemoHttpError for client errors; those keep their
+        // status code (400/403/404/409) instead of collapsing into a 500.
         const message = e instanceof Error ? e.message : String(e);
+        const statusCode = (e as { statusCode?: number } | null)?.statusCode ?? 500;
+        const errorCode = (e as { errorCode?: ErrorCode } | null)?.errorCode ?? errorCodeForStatus(statusCode);
         console.error('[Demo SW] handler error for', apiPath, e);
-        return new Response(JSON.stringify({ statusCode: 500, message: `Internal server error: ${message}` }), {
-          status: 500,
+        return new Response(JSON.stringify({ statusCode, message, data: { errorCode } }), {
+          status: statusCode,
           headers: { 'Content-Type': 'application/json' },
         });
       }
 
       if (result === undefined) {
-        return new Response(JSON.stringify({ statusCode: 404, message: 'Not found' }), {
-          status: 404,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({ statusCode: 404, message: 'Not found', data: { errorCode: 'NOT_FOUND' } }),
+          {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        );
       }
 
       // Support binary responses from file handlers

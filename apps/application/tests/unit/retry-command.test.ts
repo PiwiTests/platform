@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { buildRetryCommand } from '../../app/utils/retry-command';
+import { buildRetryCommand } from '#shared/retry-command';
 
 const sampleCases = [
   { filePath: 'tests/login.spec.ts', title: 'should login', line: 10, projectName: 'chromium' },

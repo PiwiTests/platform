@@ -83,7 +83,7 @@ export function useStreamingDiagnosis(clusterId: Ref<number> | number): UseStrea
           baseCommit: body.baseCommit,
           selectedCommitShas: body.selectedCommitShas,
           scope: body.scope,
-          testRunsCaseId: body.testRunsCaseId,
+          executionId: body.testRunsCaseId,
         },
         responseType: 'stream',
         signal: abortController.signal,

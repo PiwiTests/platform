@@ -1,4 +1,5 @@
 import { testRuns } from '../database/schema';
+import { apiError } from './api-error';
 import { eq } from 'drizzle-orm';
 import type { DbClient as DB } from '../database';
 
@@ -22,7 +23,7 @@ export async function validateAndReviveRun(
   const isInterrupted = testRun.status === 'interrupted' && !testRun.streamToken;
 
   if (testRun.status !== 'running' && !isInterrupted) {
-    throw createError({
+    throw apiError({
       statusCode: 409,
       message: 'Test run is not in running state',
     });
@@ -30,7 +31,7 @@ export async function validateAndReviveRun(
 
   if (isInterrupted) {
     if (!bodyStreamToken) {
-      throw createError({
+      throw apiError({
         statusCode: 403,
         message: 'Missing stream token',
       });
@@ -48,7 +49,7 @@ export async function validateAndReviveRun(
   } else if (testRun.streamToken !== bodyStreamToken) {
     // Fallback: accept shard token if provided
     if (isShardToken && bodyStreamToken && isShardToken(bodyStreamToken)) return;
-    throw createError({
+    throw apiError({
       statusCode: 403,
       message: 'Invalid stream token',
     });

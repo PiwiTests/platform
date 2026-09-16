@@ -18,13 +18,13 @@ export default eventHandler(async (event) => {
 
   const targetId = parseInt(getRouterParam(event, 'id') || '0');
   if (!targetId) {
-    throw createError({ statusCode: 400, message: 'Invalid user ID' });
+    throw apiError({ statusCode: 400, message: 'Invalid user ID' });
   }
 
   // Non-administrators can only list their own keys
   if (currentUser.role !== Role.ADMINISTRATOR && currentUser.id !== targetId) {
-    throw createError({ statusCode: 403, message: 'Insufficient permissions' });
+    throw apiError({ statusCode: 403, message: 'Insufficient permissions' });
   }
 
-  return listUserApiKeys(await getDatabase(), targetId);
+  return { items: (await listUserApiKeys(await getDatabase(), targetId)).apiKeys };
 });

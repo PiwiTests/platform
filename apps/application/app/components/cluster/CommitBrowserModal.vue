@@ -71,17 +71,17 @@ async function loadCommits(initial: boolean) {
     loadMoreError.value = null;
   }
   try {
-    const res = await $fetch<{ commits: CommitListItem[]; hasMore?: boolean; error?: string | null }>(
+    const res = await $fetch<{ items: CommitListItem[]; hasMore?: boolean; error?: string | null }>(
       `/api/failure-clusters/${props.clusterId}/commits`,
       { query: { limit: commitLimit.value } },
     );
-    commits.value = res.commits;
+    commits.value = res.items;
     hasMore.value = res.hasMore ?? false;
-    if (res.error && !res.commits.length) {
+    if (res.error && !res.items.length) {
       if (initial) commitsError.value = res.error;
       else loadMoreError.value = res.error;
     }
-    if (initial && res.commits[0]) focusCommit(res.commits[0].sha);
+    if (initial && res.items[0]) focusCommit(res.items[0].sha);
   } catch (err) {
     if (initial) commitsError.value = errorMessage(err);
     else loadMoreError.value = errorMessage(err);

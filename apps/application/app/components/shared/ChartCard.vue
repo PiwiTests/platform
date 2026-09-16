@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * Thin wrapper over `SectionCard` for the `@unovis/vue` trend charts. Gives
- * every chart the standard header (icon / title / subtitle / help / actions)
- * plus an optional `legend` slot, so charts get headers and inline help like
- * every other block instead of ad-hoc `UCard + #header` markup.
+ * Thin wrapper over `SectionCard` for the SVG trend charts. Gives every chart
+ * the standard header (icon / title / subtitle / help / actions) and renders the
+ * `legend` there, so the color key reads as part of the heading instead of
+ * costing a row under the plot.
  */
 import type { HelpTopicKey } from '~/utils/help-content';
 
@@ -15,6 +15,8 @@ defineProps<{
   iconClass?: string;
   /** Inline-help topic rendered next to the title. */
   help?: HelpTopicKey;
+  /** Color key for the plotted series, rendered in the header. */
+  legend?: readonly { color: string; label: string }[];
 }>();
 </script>
 
@@ -23,10 +25,13 @@ defineProps<{
     <template v-if="$slots.subtitle" #subtitle>
       <slot name="subtitle" />
     </template>
-    <template v-if="$slots.legend || $slots.actions" #actions>
-      <slot name="legend" />
+    <template v-if="legend?.length || $slots.actions" #actions>
+      <ChartLegend v-if="legend?.length" :items="legend" />
       <slot name="actions" />
     </template>
     <slot />
+    <template v-if="$slots.footer" #footer>
+      <slot name="footer" />
+    </template>
   </SectionCard>
 </template>

@@ -39,7 +39,7 @@ export default eventHandler(async (event) => {
 
   const validation = requestSchema.safeParse(await readBody(event));
   if (!validation.success) {
-    throw createError({ statusCode: 400, message: 'Invalid request body', data: validation.error.issues });
+    throw apiError({ statusCode: 400, message: 'Invalid request body', data: validation.error.issues });
   }
 
   const db = await getDatabase();
@@ -48,8 +48,9 @@ export default eventHandler(async (event) => {
   // fallback — the same ladder the test-function extractor uses.
   const role = config?.roles.research ?? config?.roles.diagnosis;
   if (!role) {
-    throw createError({
-      statusCode: 400,
+    throw apiError({
+      statusCode: 503,
+      errorCode: 'AI_NOT_CONFIGURED',
       message: 'AI is not configured for this instance — set it up in Settings → AI to author AI steps.',
     });
   }
@@ -59,6 +60,6 @@ export default eventHandler(async (event) => {
     return result.decision;
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to resolve the step';
-    throw createError({ statusCode: 422, message });
+    throw apiError({ statusCode: 422, message });
   }
 });

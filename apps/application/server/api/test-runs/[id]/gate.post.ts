@@ -6,13 +6,14 @@ import { computeRunInsights } from '#shared/handlers/run-insights';
 import { evaluateGatePolicy, isEmptyPolicy, type GateFacts, type GatePolicy } from '@piwitests/core/gate';
 import { parseTagFilter } from '#shared/utils/tag-filter';
 import { getQuarantinedCaseIds } from '#shared/handlers/quarantine';
+import { getSelection, resolveSelectionDefinition } from '#shared/handlers/selections';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Evaluate a CI gate policy against a finished run',
     description:
-      'Applies a pass/fail policy to a run and returns every violation, so a pipeline can block a merge on the analysis rather than on the raw exit code of `playwright test`. Rules: `requireTags` (every test carrying the tag must pass), `maxFailed`, `maxNewRegressions`, `maxNewFlaky`, and `failOnNewCluster`. A required tag that matches no test in the run is itself a violation, so a typo cannot silently pass. Evaluation is read-only — the run is not modified.',
+      'Applies a pass/fail policy to a run and returns every violation, so a pipeline can block a merge on the analysis rather than on the raw exit code of `playwright test`. Rules: `requireTags` (every test carrying the tag must pass), `maxFailed`, `maxNewRegressions`, `maxNewFlaky`, `failOnNewCluster`, `failOnFlaky` (any flaky test in the run), and `requireSelection` (re-resolves a named selection and fails if any test it currently matches did not run, or ran and failed — catching a silently shrunk smoke job). A required tag that matches no test in the run is itself a violation, so a typo cannot silently pass. Evaluation is read-only — the run is not modified.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': ['administrator', 'reporter', 'user'],
     requestBody: {
@@ -27,6 +28,8 @@ defineRouteMeta({
               maxNewFlaky: { type: 'integer', minimum: 0 },
               failOnNewCluster: { type: 'boolean' },
               maxQuarantined: { type: 'integer', minimum: 0 },
+              failOnFlaky: { type: 'boolean' },
+              requireSelection: { type: 'string' },
             },
           },
         },
@@ -46,11 +49,11 @@ function optionalCount(value: unknown): number | undefined {
 
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw createError({ statusCode: 400, message: 'Invalid test run ID' });
+  if (!id) throw apiError({ statusCode: 400, message: 'Invalid test run ID' });
 
   const db = await getDatabase();
   const [run] = await db.select().from(testRuns).where(eq(testRuns.id, id));
-  if (!run) throw createError({ statusCode: 404, message: 'Test run not found' });
+  if (!run) throw apiError({ statusCode: 404, message: 'Test run not found' });
 
   await requireProjectAccess(event, run.projectId);
 
@@ -62,18 +65,23 @@ export default eventHandler(async (event) => {
     maxNewFlaky: optionalCount(body?.maxNewFlaky),
     maxQuarantined: optionalCount(body?.maxQuarantined),
     failOnNewCluster: body?.failOnNewCluster === true,
+    failOnFlaky: body?.failOnFlaky === true,
+    requireSelection:
+      typeof body?.requireSelection === 'string' && body.requireSelection.trim()
+        ? body.requireSelection.trim()
+        : undefined,
   };
 
   if (isEmptyPolicy(policy)) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message:
-        'Gate policy is empty — pass at least one of requireTags, maxFailed, maxNewRegressions, maxNewFlaky, maxQuarantined or failOnNewCluster',
+        'Gate policy is empty — pass at least one of requireTags, maxFailed, maxNewRegressions, maxNewFlaky, maxQuarantined, failOnNewCluster or failOnFlaky',
     });
   }
 
-  if (run.status === 'running' || run.status === 'initialising') {
-    throw createError({ statusCode: 409, message: `Run #${id} has not finished yet (status: ${run.status})` });
+  if (run.status === 'running' || run.status === 'initializing') {
+    throw apiError({ statusCode: 409, message: `Run #${id} has not finished yet (status: ${run.status})` });
   }
 
   const [project] = await db.select().from(projects).where(eq(projects.id, run.projectId));
@@ -137,6 +145,49 @@ export default eventHandler(async (event) => {
       .map((row) => ({ title: row.title, filePath: row.filePath, executionId: row.id }));
   }
 
+  // require-selection: re-resolve the named selection's current definition and
+  // check every test it matches ran and passed in this run. A quarantined test
+  // is exempt — quarantine already means "do not gate on this test".
+  let selectionFacts: GateFacts['selection'];
+  if (policy.requireSelection) {
+    const failingExecByCase = new Map<number, number>();
+    for (const row of caseRows) {
+      if (
+        FAIL_STATUSES.includes(row.status) &&
+        !passedCaseIds.has(row.testCaseId) &&
+        !failingExecByCase.has(row.testCaseId)
+      ) {
+        failingExecByCase.set(row.testCaseId, row.id);
+      }
+    }
+    const selection = await getSelection(db, run.projectId, policy.requireSelection);
+    const matchedTests = selection
+      ? (await resolveSelectionDefinition(db, run.projectId, selection.definition, { format: 'json' })).tests
+      : [];
+    const notRun: NonNullable<GateFacts['selection']>['notRun'] = [];
+    const failed: NonNullable<GateFacts['selection']>['failed'] = [];
+    for (const test of matchedTests) {
+      if (quarantined.has(test.testCaseId)) continue;
+      if (passedCaseIds.has(test.testCaseId)) continue; // ran and passed — satisfied
+      if (failingExecByCase.has(test.testCaseId)) {
+        failed.push({
+          title: test.title,
+          filePath: test.filePath,
+          executionId: failingExecByCase.get(test.testCaseId)!,
+        });
+      } else {
+        // Absent from the run, or present only as a skip — never verified.
+        notRun.push({ title: test.title, filePath: test.filePath });
+      }
+    }
+    selectionFacts = {
+      key: policy.requireSelection,
+      matched: matchedTests.length,
+      notRun: notRun.slice(0, 50),
+      failed: failed.slice(0, 50),
+    };
+  }
+
   const insights = await computeRunInsights(db, id).catch(() => null);
 
   const newClusters = await db
@@ -160,6 +211,8 @@ export default eventHandler(async (event) => {
     unmatchedTags,
     quarantinedFailures,
     quarantinedTotal: quarantined.size,
+    flakyTests: run.flakyTests ?? 0,
+    selection: selectionFacts,
   };
 
   return evaluateGatePolicy(facts, policy);

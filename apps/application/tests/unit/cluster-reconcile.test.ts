@@ -11,6 +11,11 @@ import * as schema from '../../server/database/schema.sqlite';
 import type { ResolvedAiRole } from '../../types/api';
 import type { DbClient } from '../../server/database';
 
+declare global {
+  // Exposed when the test process runs with `--expose-gc` (the unit-test scripts set it).
+  var gc: (() => void) | undefined;
+}
+
 // The schema barrel picks the PostgreSQL schema at import time when
 // PIWI_DATABASE_URL is set, and the similarity thresholds are read from the
 // environment at module load — clear all of it before the module under test
@@ -125,9 +130,27 @@ beforeEach(async () => {
   run1 = await seedRun();
 });
 
-afterEach(() => {
-  client.close();
-  rmSync(tmpDir, { recursive: true, force: true });
+afterEach(async () => {
+  // The native libsql binding releases the DB file handles from a V8
+  // finalizer, so on Windows the file stays locked until a garbage collection
+  // runs. The test scripts run with `--expose-gc`; without it, churn the
+  // allocator to force a GC, then retry until the handle is released.
+  await client.close();
+  globalThis.gc?.();
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'EPERM' || attempt >= 40) throw error;
+      if (!globalThis.gc) {
+        const junk: Buffer[] = [];
+        for (let i = 0; i < 60; i++) junk.push(Buffer.alloc(1 << 20));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
 });
 
 describe('reconcileNewClusters', () => {

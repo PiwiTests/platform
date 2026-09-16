@@ -6,6 +6,8 @@ import {
   locatorIdentityEquals,
   alternativeUsesName,
   CONVENTION_STABILITY_FLOOR,
+  locatorExpression,
+  computeNarrowingSuggestion,
 } from '#shared/locator-healing';
 import type { RankedLocator } from '#shared/locator-healing.types';
 import { extractLeafSelector } from '#shared/error-fingerprint';
@@ -294,5 +296,52 @@ describe('alternativeUsesName', () => {
 
   test('false for an empty name', () => {
     expect(alternativeUsesName(alt('getByLabel', { label: 'Email' }), '  ')).toBe(false);
+  });
+});
+
+describe('locatorExpression', () => {
+  test('renders the positional arg and options as Playwright source', () => {
+    expect(locatorExpression('getByRole', { role: 'row' })).toBe("getByRole('row')");
+    expect(locatorExpression('getByRole', { role: 'button', name: 'Pay now', exact: true })).toBe(
+      "getByRole('button', { name: 'Pay now', exact: true })",
+    );
+    expect(locatorExpression('getByRole', { role: 'heading', level: 2 })).toBe("getByRole('heading', { level: 2 })");
+    expect(locatorExpression('getByLabel', { label: 'Email address' })).toBe("getByLabel('Email address')");
+    expect(locatorExpression('getByTestId', { testId: 'submit' })).toBe("getByTestId('submit')");
+    expect(locatorExpression('locator', { selector: '.btn-primary' })).toBe("locator('.btn-primary')");
+  });
+
+  test('keeps regex options verbatim and escapes quotes', () => {
+    expect(locatorExpression('getByText', { text: "it's here" })).toBe("getByText('it\\'s here')");
+    expect(locatorExpression('getByRole', { role: 'link', name: '/^Docs/i' })).toBe(
+      "getByRole('link', { name: /^Docs/i })",
+    );
+  });
+
+  test('falls back to positional args for an unknown method', () => {
+    expect(locatorExpression('frameLocator', { args: ['#frame'] })).toBe("frameLocator('#frame')");
+    expect(locatorExpression('getByRole', {})).toBe('getByRole()');
+  });
+});
+
+describe('computeNarrowingSuggestion', () => {
+  const base = { playwrightVersion: '1.63.0', matchCount: 3, visibleMatchCount: 1 };
+
+  test('suggests .visible() for a strict-mode failure with one visible match on 1.63+', () => {
+    expect(computeNarrowingSuggestion(base)).toEqual({ method: 'visible', matchCount: 3, visibleCount: 1 });
+    expect(computeNarrowingSuggestion({ ...base, playwrightVersion: '1.64.0' })).not.toBeNull();
+  });
+
+  test('gated off below Playwright 1.63', () => {
+    expect(computeNarrowingSuggestion({ ...base, playwrightVersion: '1.61.1' })).toBeNull();
+    expect(computeNarrowingSuggestion({ ...base, playwrightVersion: null })).toBeNull();
+  });
+
+  test('needs at least two matches and exactly one visible', () => {
+    expect(computeNarrowingSuggestion({ ...base, matchCount: 1 })).toBeNull();
+    expect(computeNarrowingSuggestion({ ...base, matchCount: null })).toBeNull();
+    expect(computeNarrowingSuggestion({ ...base, visibleMatchCount: 2 })).toBeNull();
+    expect(computeNarrowingSuggestion({ ...base, visibleMatchCount: 0 })).toBeNull();
+    expect(computeNarrowingSuggestion({ ...base, visibleMatchCount: null })).toBeNull();
   });
 });

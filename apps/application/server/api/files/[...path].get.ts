@@ -5,6 +5,7 @@ import { getStorage } from '../../storage';
 import { gunzip } from 'zlib';
 import { promisify } from 'util';
 import { reconstructTraceZip } from '../../utils/trace-reconstruct';
+import { prepareHtmlReport } from '../../utils/html-report';
 import sharp from 'sharp';
 
 defineRouteMeta({
@@ -13,7 +14,23 @@ defineRouteMeta({
     summary: 'Download a stored file',
     description:
       'Serves stored files including test reports, trace archives, and attachments. Supports trace ZIP reconstruction from slim blobs and gzip decompression for report archives.',
-    parameters: [{ name: 'path', in: 'path', required: true, schema: { type: 'string' } }],
+    parameters: [
+      { name: 'path', in: 'path', required: true, schema: { type: 'string' } },
+      {
+        name: 'contentType',
+        in: 'query',
+        required: false,
+        schema: { type: 'string' },
+        description: 'Override the response Content-Type for the served file.',
+      },
+      {
+        name: 'compress',
+        in: 'query',
+        required: false,
+        schema: { type: 'string', enum: ['1'] },
+        description: 'Set to "1" to serve the stored archive gzip-compressed rather than decompressed.',
+      },
+    ],
     'x-required-roles': ['administrator', 'reporter', 'user'],
   },
 });
@@ -92,7 +109,7 @@ export default eventHandler(async (event) => {
   }
 
   if (!path) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'File path is required',
     });
@@ -100,7 +117,7 @@ export default eventHandler(async (event) => {
 
   // Security: Prevent path traversal
   if (path.includes('..') || path.startsWith('/')) {
-    throw createError({
+    throw apiError({
       statusCode: 403,
       message: 'Invalid file path',
     });
@@ -151,6 +168,11 @@ export default eventHandler(async (event) => {
     'image/gif',
     'image/svg+xml',
     'image/webp',
+    'video/webm',
+    'video/mp4',
+    'video/ogg',
+    'video/quicktime',
+    'video/x-msvideo',
     'font/woff2',
     'font/ttf',
   ]);
@@ -169,6 +191,11 @@ export default eventHandler(async (event) => {
     if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
     if (ext === '.gif') return 'image/gif';
     if (ext === '.webp') return 'image/webp';
+    if (ext === '.webm') return 'video/webm';
+    if (ext === '.mp4') return 'video/mp4';
+    if (ext === '.ogg' || ext === '.ogv') return 'video/ogg';
+    if (ext === '.mov') return 'video/quicktime';
+    if (ext === '.avi') return 'video/x-msvideo';
     if (ext === '.svg') return 'image/svg+xml';
     if (ext === '.woff' || ext === '.woff2') return 'font/woff2';
     if (ext === '.ttf') return 'font/ttf';
@@ -209,6 +236,14 @@ export default eventHandler(async (event) => {
     setResponseHeader(event, 'Content-Security-Policy', 'sandbox allow-scripts');
   }
 
+  function prepareHtmlResponse(content: Buffer): Buffer {
+    const prepared = prepareHtmlReport(content);
+    applyHtmlCsp();
+    applyInlineDisposition('text/html');
+    setResponseHeader(event, 'Content-Length', prepared.length);
+    return prepared;
+  }
+
   /**
    * SVGs can embed scripts that execute when the file is opened top-level. A
    * no-scripts sandbox renders it as an inert image and blocks any network
@@ -244,10 +279,7 @@ export default eventHandler(async (event) => {
         const htmlContent = await findInArchive(fileContent, 'index.html');
         if (htmlContent) {
           setResponseHeader(event, 'Content-Type', 'text/html');
-          applyHtmlCsp();
-          applyInlineDisposition('text/html');
-          setResponseHeader(event, 'Content-Length', htmlContent.length);
-          return htmlContent;
+          return prepareHtmlResponse(htmlContent);
         }
       } catch {
         // Fall through to serve raw gzip
@@ -276,7 +308,7 @@ export default eventHandler(async (event) => {
     setResponseHeader(event, 'Content-Length', fileContent.length);
     applyInlineDisposition(contentType);
     if (contentType === 'text/html') {
-      applyHtmlCsp();
+      return prepareHtmlResponse(fileContent);
     } else if (contentType === 'image/svg+xml') {
       applySvgCsp();
     }
@@ -288,10 +320,7 @@ export default eventHandler(async (event) => {
   if (await storage.exists(indexPath)) {
     const fileContent = await storage.readFile(indexPath);
     setResponseHeader(event, 'Content-Type', 'text/html');
-    applyHtmlCsp();
-    applyInlineDisposition('text/html');
-    setResponseHeader(event, 'Content-Length', fileContent.length);
-    return fileContent;
+    return prepareHtmlResponse(fileContent);
   }
 
   // 3. Try path + .gz (compressed archive - decompress and serve index.html)
@@ -302,17 +331,14 @@ export default eventHandler(async (event) => {
       const htmlContent = await findInArchive(gzContent, 'index.html');
       if (htmlContent) {
         setResponseHeader(event, 'Content-Type', 'text/html');
-        applyHtmlCsp();
-        applyInlineDisposition('text/html');
-        setResponseHeader(event, 'Content-Length', htmlContent.length);
-        return htmlContent;
+        return prepareHtmlResponse(htmlContent);
       }
     } catch {
       // Fall through to 404
     }
   }
 
-  throw createError({
+  throw apiError({
     statusCode: 404,
     message: 'File not found',
   });

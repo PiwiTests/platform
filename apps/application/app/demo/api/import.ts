@@ -16,6 +16,7 @@
 
 import { eq } from 'drizzle-orm';
 import { getDemoDb, putDemoImportedFile } from '../db.client';
+import { demoHttpError } from './http-error';
 import { openZipBlob, readZipEntries } from '../trace-zip.client';
 import { publishDemoGlobalEvent } from '../run-events';
 import { persistRunCases, type RunCaseInput } from './reporter';
@@ -107,7 +108,7 @@ export async function apiCheckDemoImport(body: {
   files?: unknown[];
 }): Promise<ImportCheckResponse> {
   const projectName = typeof body?.projectName === 'string' ? body.projectName.trim() : '';
-  if (!projectName) throw new Error('Missing required field: projectName');
+  if (!projectName) throw demoHttpError(400, 'Missing required field: projectName');
 
   const db = await getDemoDb();
   const rows = await db.select().from(projects).where(eq(projects.name, projectName));
@@ -134,14 +135,17 @@ export async function apiDemoImport(form: FormData): Promise<ImportRunResponse> 
   const projectName = String(form.get('projectName') ?? '').trim();
   const file = form.get('archive');
   if (!projectName || !(file instanceof Blob)) {
-    throw new Error('Missing required fields: projectName, archive');
+    throw demoHttpError(400, 'Missing required fields: projectName, archive');
   }
 
-  if (file.size === 0) throw new Error('The uploaded archive is empty');
+  if (file.size === 0) throw demoHttpError(400, 'The uploaded archive is empty');
 
   const maxBytes = await resolveDemoMaxBytes();
   if (file.size > maxBytes) {
-    throw new Error(`Archive too large: ${formatBytes(file.size)} against ${formatBytes(maxBytes)} of free storage`);
+    throw demoHttpError(
+      400,
+      `Archive too large: ${formatBytes(file.size)} against ${formatBytes(maxBytes)} of free storage`,
+    );
   }
 
   const groupRaw = String(form.get('importGroup') ?? '').toLowerCase();
@@ -160,7 +164,7 @@ export async function apiDemoImport(form: FormData): Promise<ImportRunResponse> 
   try {
     archive = await openZipBlob(file);
   } catch (error) {
-    throw new Error(`Not a readable ZIP archive: ${(error as Error).message}`);
+    throw demoHttpError(400, `Not a readable ZIP archive: ${(error as Error).message}`);
   }
 
   const port = createDemoImportPort();
@@ -184,7 +188,7 @@ export async function apiDemoImport(form: FormData): Promise<ImportRunResponse> 
   }
 
   const parsed = await parseBlobReport(archive.readEntry);
-  if (parsed.cases.length === 0) throw new Error('The archive contains no test results');
+  if (parsed.cases.length === 0) throw demoHttpError(400, 'The archive contains no test results');
 
   return await importBlobReportRun(db, port, {
     projectId: project.id,

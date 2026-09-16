@@ -164,7 +164,7 @@ export function judgeImportFiles(
 
     const existingRunId = options.alreadyImported.get(hash);
     if (existingRunId !== undefined) {
-      return { name, status: 'duplicate', message: 'Already imported into this project.', testRunId: existingRunId };
+      return { name, status: 'duplicate', message: 'Already imported into this project.', runId: existingRunId };
     }
 
     return { name, status: 'ok' };
@@ -343,7 +343,7 @@ export async function importBlobReportRun(
   return {
     status: 'imported',
     kind: 'blob-report',
-    testRunId: run.id,
+    runId: run.id,
     projectId,
     runStatus: parsed.status,
     startTime: parsed.startTime.toISOString(),
@@ -619,7 +619,7 @@ function summarizeRun(
     status,
     kind: isTrace ? 'trace' : 'blob-report',
     ...(caseTitle ? { caseTitle } : {}),
-    testRunId: run.id,
+    runId: run.id,
     projectId,
     runStatus: run.status,
     startTime: run.startTime.toISOString(),

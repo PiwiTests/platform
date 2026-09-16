@@ -17,6 +17,10 @@ const chromiumExecutable = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?.trim() ||
 // channel flows the suite exercises can save.
 process.env.PIWI_SECRET_KEY ||= 'test-encryption-secret-key-not-for-production';
 
+// Share links are off by default; the suite exercises minting and the public
+// share route, so every test server opts in (inherited via process.env).
+process.env.PIWI_SHARE_LINKS_ENABLED = 'true';
+
 // `PIWI_AUTH_*` is resolved into `runtimeConfig` when the Nuxt config is
 // evaluated, which for a production build is build time. Nitro maps the
 // `NUXT_`-prefixed forms onto the same keys at startup, so auth-enabled servers
@@ -46,6 +50,9 @@ const reporters: ReporterDescription[] = process.env.CI
 const baseConfig = defineConfig({
   testDir: './tests',
   testMatch: '**/*.spec.ts',
+  // `tests/live/` talks to a real LLM and has its own config + npm script; a
+  // normal run must never spend tokens.
+  testIgnore: '**/live/**',
 
   /* Run tests in files in parallel */
   fullyParallel: true,
@@ -81,8 +88,9 @@ const baseConfig = defineConfig({
     /* Base URL to use in actions like `await page.goto('/')`. */
     baseURL: 'http://localhost:3000',
 
-    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
-    trace: 'retain-on-failure',
+    /* Trace on failure, with per-action DOM, ARIA and screenshot snapshots so the
+       evidence timeline can show the page at each step. See https://playwright.dev/docs/trace-viewer */
+    trace: { mode: 'retain-on-failure', snapshots: { dom: true, aria: true, screen: true } },
 
     /* Capture screenshot on first retry for failure diagnostics */
     screenshot: 'only-on-failure',

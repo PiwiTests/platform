@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { VisXYContainer, VisLine, VisAxis } from '@unovis/vue';
-import { CurveType } from '@unovis/ts';
 import type { PerformanceTrendPoint, MarkerInfo } from '~~/types/api';
+import { RUN_DURATION_SERIES, barGeometry, dayTickIndices, formatTickDate, timeToOrdinalX } from '~/utils/chart';
 
 interface Props {
   data: PerformanceTrendPoint[];
@@ -10,13 +9,11 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  height: 300,
+  height: 260,
   markers: () => [],
 });
 
 const emit = defineEmits<{ 'marker-click': [id: number] }>();
-
-const markersRef = computed(() => props.markers);
 
 const chartData = computed(() => {
   if (!props.data || props.data.length === 0) {
@@ -35,118 +32,155 @@ const chartData = computed(() => {
   }));
 });
 
-type DataPoint = {
-  id: number;
-  date: Date;
-  duration: number | null;
-  avgTestDuration: number | null;
-  p90TestDuration: number | null;
-  commit: string | null;
-  status: string;
-  totalTests: number;
-};
+type DataPoint = (typeof chartData)['value'][number];
 
-const x = (d: DataPoint) => d.date;
-
-const yDuration = (d: DataPoint) => d.duration ?? undefined;
-const yAvgDuration = (d: DataPoint) => d.avgTestDuration ?? undefined;
-const yP90Duration = (d: DataPoint) => d.p90TestDuration ?? undefined;
-
-const lineColors = ['rgb(59, 130, 246)', 'rgb(34, 197, 94)', 'rgb(249, 115, 22)'] as const;
-
-const xyContainerRef = ref<UnovisContainerRef | null>(null);
-const { tooltipData, tooltipPos, markerTooltip, markerTooltipPos, onRenderComplete } = useChartMarkers(
-  xyContainerRef,
-  chartData,
-  {
-    x: (d) => d.date,
-    series: [
-      { y: (d) => d.duration, color: lineColors[0] },
-      { y: (d) => d.avgTestDuration, color: lineColors[1] },
-      { y: (d) => d.p90TestDuration, color: lineColors[2] },
-    ],
-    onClick: (d) => navigateTo(`/test-runs/${d.id}`),
-    markers: markersRef,
-    onMarkerClick: (m) => emit('marker-click', m.id),
-  },
+const yMax = computed(() =>
+  Math.max(1, ...chartData.value.flatMap((d) => RUN_DURATION_SERIES.map((s) => d[s.key] ?? 0))),
 );
 
-const legendItems = [
-  { color: lineColors[0], label: 'Total Duration' },
-  { color: lineColors[1], label: 'Avg Test Duration' },
-  { color: lineColors[2], label: 'P90 Test Duration' },
-];
+const dates = computed(() => chartData.value.map((d) => d.date));
+
+function centers(plotWidth: number): number[] {
+  const { centerOf } = barGeometry(chartData.value.length, plotWidth);
+  return chartData.value.map((_, i) => centerOf(i));
+}
+
+/** Straight-segment path through the non-null points; breaks at gaps. */
+function linePath(
+  key: (typeof RUN_DURATION_SERIES)[number]['key'],
+  plotWidth: number,
+  yScale: (value: number) => number,
+): string {
+  const xs = centers(plotWidth);
+  let path = '';
+  let penDown = false;
+  chartData.value.forEach((d, i) => {
+    const value = d[key];
+    if (value == null) {
+      penDown = false;
+      return;
+    }
+    path += `${penDown ? 'L' : 'M'}${xs[i]},${yScale(value)}`;
+    penDown = true;
+  });
+  return path;
+}
+
+function points(
+  key: (typeof RUN_DURATION_SERIES)[number]['key'],
+  plotWidth: number,
+  yScale: (value: number) => number,
+) {
+  const xs = centers(plotWidth);
+  return chartData.value.flatMap((d, i) => {
+    const value = d[key];
+    return value == null ? [] : [{ id: d.id, x: xs[i] as number, y: yScale(value) }];
+  });
+}
+
+function xTicks(plotWidth: number) {
+  const { centerOf } = barGeometry(chartData.value.length, plotWidth);
+  return dayTickIndices(dates.value, Math.max(2, Math.floor(plotWidth / 80))).map((i) => ({
+    x: centerOf(i),
+    label: formatTickDate(dates.value[i] as Date),
+  }));
+}
+
+function markerX(plotWidth: number, occurredAt: string | Date): number | null {
+  return timeToOrdinalX(dates.value, centers(plotWidth), new Date(occurredAt).getTime());
+}
+
+const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip<DataPoint>();
 </script>
 
 <template>
-  <div class="w-full relative">
-    <div v-if="chartData.length > 0">
-      <VisXYContainer
-        ref="xyContainerRef"
-        :data="chartData"
-        :height="height"
-        :padding="{ top: 10, right: 10, bottom: 0, left: 0 }"
-        :on-render-complete="onRenderComplete"
-      >
-        <VisLine
-          :x="x"
-          :y="[yDuration, yAvgDuration, yP90Duration]"
-          :color="lineColors"
-          :curve-type="CurveType.MonotoneX"
-          :line-width="2"
+  <div class="w-full">
+    <ChartFrame
+      v-if="chartData.length > 0"
+      v-slot="{ plotWidth, plotHeight, yScale }"
+      :height="height"
+      :y-max="yMax"
+      :y-format="(value) => `${value}s`"
+    >
+      <template v-for="series in RUN_DURATION_SERIES" :key="series.key">
+        <path :d="linePath(series.key, plotWidth, yScale)" fill="none" :stroke="series.color" stroke-width="2" />
+        <circle
+          v-for="point in points(series.key, plotWidth, yScale)"
+          :key="point.id"
+          :cx="point.x"
+          :cy="point.y"
+          r="3"
+          :fill="series.color"
         />
+      </template>
 
-        <VisAxis
-          type="x"
-          :tick-format="(d: Date) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })"
-          label="Date"
-        />
-        <VisAxis type="y" label="Duration (s)" :tick-format="(d: number) => `${d}s`" />
-      </VisXYContainer>
-
-      <div
-        v-if="tooltipData"
-        class="fixed z-50 pointer-events-none bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 max-w-[260px]"
-        :style="{ left: `${tooltipPos.x}px`, top: `${tooltipPos.y}px` }"
+      <text
+        v-for="tick in xTicks(plotWidth)"
+        :key="tick.x"
+        :x="tick.x"
+        :y="plotHeight + 14"
+        text-anchor="middle"
+        class="fill-gray-400 dark:fill-gray-500 text-[10px]"
       >
-        <div class="p-2 text-sm text-gray-900 dark:text-gray-100">
-          <div class="font-semibold mb-1">
-            {{
-              new Date(tooltipData.date).toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-              })
-            }}
-          </div>
-          <div class="capitalize mb-1">Status: {{ tooltipData.status }}</div>
-          <div class="space-y-0.5">
-            <div>
-              <span class="text-blue-500 dark:text-blue-400">&#9679;</span> Total: {{ tooltipData.duration ?? '-' }}s
-            </div>
-            <div>
-              <span class="text-green-500 dark:text-green-400">&#9679;</span> Avg:
-              {{ tooltipData.avgTestDuration ?? '-' }}s
-            </div>
-            <div>
-              <span class="text-orange-500 dark:text-orange-400">&#9679;</span> P90:
-              {{ tooltipData.p90TestDuration ?? '-' }}s
-            </div>
-            <div class="mt-1">Tests: {{ tooltipData.totalTests }}</div>
-            <div v-if="tooltipData.commit" class="text-gray-400 dark:text-gray-500 text-xs">
-              Commit: {{ tooltipData.commit }}
-            </div>
-          </div>
-          <div class="text-gray-400 dark:text-gray-500 text-xs mt-1">Click to view run details</div>
-        </div>
-      </div>
+        {{ tick.label }}
+      </text>
 
-      <ChartMarkerTooltip :marker="markerTooltip" :pos="markerTooltipPos" />
-    </div>
+      <rect
+        v-for="(d, i) in chartData"
+        :key="`hover-${d.id}`"
+        :x="i * (plotWidth / chartData.length)"
+        :y="0"
+        :width="plotWidth / chartData.length"
+        :height="plotHeight"
+        :fill="tooltipData?.id === d.id ? 'rgb(148 163 184 / 0.15)' : 'transparent'"
+        class="cursor-pointer"
+        @click="navigateTo(`/test-runs/${d.id}`)"
+        @mouseenter="show($event, d)"
+        @mousemove="move($event)"
+        @mouseleave="hide()"
+      />
+
+      <!-- Markers render after the hover columns so their flags stay on top
+           and hover/click reach them (SVG paints in document order). -->
+      <ChartMarkerLines
+        :markers="markers"
+        :x-of="(occurredAt) => markerX(plotWidth, occurredAt)"
+        :plot-height="plotHeight"
+        @marker-click="emit('marker-click', $event)"
+      />
+    </ChartFrame>
 
     <EmptyState v-else text="No performance data available to display chart" />
 
-    <ChartLegend :items="legendItems" />
+    <ChartTooltip v-if="tooltipData" :pos="tooltipPos">
+      <div class="font-semibold mb-1">
+        {{
+          tooltipData.date.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        }}
+      </div>
+      <div class="capitalize mb-1">Status: {{ tooltipData.status }}</div>
+      <div class="space-y-0.5">
+        <div>
+          <span class="text-blue-500 dark:text-blue-400">&#9679;</span> Total: {{ tooltipData.duration ?? '-' }}s
+        </div>
+        <div>
+          <span class="text-green-500 dark:text-green-400">&#9679;</span> Avg: {{ tooltipData.avgTestDuration ?? '-' }}s
+        </div>
+        <div>
+          <span class="text-orange-500 dark:text-orange-400">&#9679;</span> P90:
+          {{ tooltipData.p90TestDuration ?? '-' }}s
+        </div>
+        <div class="mt-1">Tests: {{ tooltipData.totalTests }}</div>
+        <div v-if="tooltipData.commit" class="text-gray-400 dark:text-gray-500 text-xs">
+          Commit: {{ tooltipData.commit }}
+        </div>
+      </div>
+      <div class="text-gray-400 dark:text-gray-500 text-xs mt-1">Click to view run details</div>
+    </ChartTooltip>
   </div>
 </template>

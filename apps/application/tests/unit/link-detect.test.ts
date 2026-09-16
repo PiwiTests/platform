@@ -26,6 +26,18 @@ describe('detectProvider', () => {
     expect(detectProvider('https://bitbucket.org/team/repo/pull-requests/3')).toBe('bitbucket');
   });
 
+  test('detects a self-hosted gitlab issue on a gitlab.* host', () => {
+    expect(detectProvider('https://gitlab.acme.com/group/project/-/issues/12')).toBe('gitlab-issue');
+    expect(detectProvider('https://gitlab.acme.com/group/project/-/merge_requests/8')).toBe('gitlab-mr');
+  });
+
+  test('detects a self-hosted gitlab host that merely contains "gitlab"', () => {
+    // The factory recognizes any host whose name contains "gitlab"; link-detect
+    // must agree so a self-hosted instance unfurls the same everywhere.
+    expect(detectProvider('https://mygitlab.internal/team/app/-/issues/3')).toBe('gitlab-issue');
+    expect(detectProvider('https://mygitlab.internal/team/app/-/merge_requests/4')).toBe('gitlab-mr');
+  });
+
   test('detects confluence (atlassian wiki, not jira)', () => {
     expect(detectProvider('https://myco.atlassian.net/wiki/spaces/ENG/pages/123/Design')).toBe('confluence');
   });

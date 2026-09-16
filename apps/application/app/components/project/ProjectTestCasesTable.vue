@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { h } from 'vue';
-import { UIcon } from '#components';
-import type { TableColumn } from '@nuxt/ui';
 import type { TestCasesPage, TestCaseWithStats } from '~~/types/api';
 import type { TestCasesSort } from '#shared/handlers/projects';
+import { buildTestRowBadges } from '~/utils/test-row-badges';
 
 const props = defineProps<{
   projectId: string | number;
@@ -17,9 +15,15 @@ const emit = defineEmits<{ total: [total: number] }>();
 
 const route = useRoute();
 const router = useRouter();
-const { treeView, setTreeView } = useTreeViewCookie('project-test-cases');
 
-const TREE_LIMIT = 1000;
+// Group by File shows the spec-health numbers as headers; None is the flat list.
+const GROUP_OPTIONS = ['none', 'file'] as const;
+type GroupBy = (typeof GROUP_OPTIONS)[number];
+const { raw: groupByRaw, set: setGroupBy } = useGroupByCookie('project-test-cases', GROUP_OPTIONS);
+const groupBy = computed<GroupBy>(() => (groupByRaw.value as GroupBy) ?? 'none');
+const grouped = computed(() => groupBy.value === 'file');
+
+const GROUP_LIMIT = 1000;
 const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_OPTIONS = [
   { label: '10 / page', value: 10 },
@@ -54,6 +58,11 @@ const statuses = ref<string[]>(typeof init.status === 'string' ? init.status.spl
 const age = ref(typeof init.age === 'string' && init.age !== '' ? Math.max(0, Number(init.age) || 0) : defaultAge);
 const tagsFilter = ref(typeof init.tags === 'string' ? init.tags : '');
 const tagsInput = ref(tagsFilter.value);
+const locksFilter = ref(typeof init.locks === 'string' ? init.locks : '');
+const locksInput = ref(locksFilter.value);
+// Owner filter — deep-linked from a cluster's "Owner" line; set only via the URL,
+// cleared with its chip. Narrows to tests declared to / derived for that owner.
+const ownerFilter = ref(typeof init.owner === 'string' ? init.owner : '');
 const sort = ref<TestCasesSort>(typeof init.sort === 'string' ? (init.sort as TestCasesSort) : 'lastRun');
 const dir = ref<'asc' | 'desc'>(init.dir === 'asc' ? 'asc' : 'desc');
 const initialPageSize = Number(init.pageSize);
@@ -71,16 +80,24 @@ watch(
     tagsFilter.value = value.trim();
   }, 300),
 );
-watch([q, statuses, tagsFilter, age, sort, dir, pageSize, treeView], () => {
+watch(
+  locksInput,
+  useDebounceFn((value: string) => {
+    locksFilter.value = value.trim();
+  }, 300),
+);
+watch([q, statuses, tagsFilter, locksFilter, ownerFilter, age, sort, dir, pageSize, grouped], () => {
   page.value = 1;
 });
 
 const query = computed(() => ({
-  limit: treeView.value ? TREE_LIMIT : pageSize.value,
-  offset: treeView.value ? 0 : (page.value - 1) * pageSize.value,
+  limit: grouped.value ? GROUP_LIMIT : pageSize.value,
+  offset: grouped.value ? 0 : (page.value - 1) * pageSize.value,
   ...(q.value ? { q: q.value } : {}),
   ...(statuses.value.length > 0 ? { status: statuses.value.join(',') } : {}),
   ...(tagsFilter.value ? { tags: tagsFilter.value } : {}),
+  ...(locksFilter.value ? { locks: locksFilter.value } : {}),
+  ...(ownerFilter.value ? { owner: ownerFilter.value } : {}),
   maxAgeDays: age.value,
   sort: sort.value,
   dir: dir.value,
@@ -99,13 +116,15 @@ watch(
 );
 
 if (props.syncQuery) {
-  watch([q, statuses, tagsFilter, age, sort, dir, page, pageSize], () => {
+  watch([q, statuses, tagsFilter, locksFilter, ownerFilter, age, sort, dir, page, pageSize], () => {
     router.replace({
       query: {
         ...route.query,
         q: q.value || undefined,
         status: statuses.value.length > 0 ? statuses.value.join(',') : undefined,
         tags: tagsFilter.value || undefined,
+        locks: locksFilter.value || undefined,
+        owner: ownerFilter.value || undefined,
         age: age.value !== defaultAge ? String(age.value) : undefined,
         sort: sort.value !== 'lastRun' ? sort.value : undefined,
         dir: dir.value !== 'desc' ? dir.value : undefined,
@@ -122,54 +141,130 @@ function toggleStatus(value: string) {
     : [...statuses.value, value];
 }
 
-function toggleSort(key: TestCasesSort) {
-  if (sort.value === key) {
-    dir.value = dir.value === 'asc' ? 'desc' : 'asc';
-  } else {
-    sort.value = key;
-    dir.value = key === 'title' ? 'asc' : 'desc';
-  }
+const SORT_OPTIONS: { label: string; value: TestCasesSort }[] = [
+  { label: 'Last run', value: 'lastRun' },
+  { label: 'Test', value: 'title' },
+  { label: 'Status', value: 'status' },
+  { label: 'Runs', value: 'totalRuns' },
+  { label: 'Pass rate', value: 'passRate' },
+  { label: 'Avg duration', value: 'avgDuration' },
+];
+
+function toggleDir() {
+  dir.value = dir.value === 'asc' ? 'desc' : 'asc';
 }
 
-function sortableHeader(label: string, key: TestCasesSort) {
-  return () => {
-    const active = sort.value === key;
-    const iconName = !active
-      ? 'i-lucide-chevrons-up-down'
-      : dir.value === 'asc'
-        ? 'i-lucide-chevron-up'
-        : 'i-lucide-chevron-down';
-    return h(
-      'button',
-      {
-        type: 'button',
-        class:
-          'flex items-center gap-1 font-semibold select-none cursor-pointer hover:text-highlighted transition-colors',
-        onClick: () => toggleSort(key),
-      },
-      [label, h(UIcon, { name: iconName, class: ['shrink-0 size-3.5', !active && 'opacity-40'] })],
-    );
-  };
+/** Tags and ownership metadata rendered as the row's badges. */
+function catalogBadges(tc: TestCaseWithStats) {
+  return buildTestRowBadges({
+    tags: tc.tags,
+    locks: tc.locks,
+    meta: {
+      owner: tc.owner ?? undefined,
+      priority: toTestPriority(tc.priority),
+      feature: tc.feature ?? undefined,
+    },
+  });
 }
-
-const columns = computed<TableColumn<TestCaseWithStats>[]>(() => [
-  { accessorKey: 'title', header: sortableHeader('Test case', 'title') },
-  { accessorKey: 'status', header: sortableHeader('Status', 'status') },
-  { accessorKey: 'totalRuns', header: sortableHeader('Runs', 'totalRuns') },
-  { accessorKey: 'passRate', header: sortableHeader('Pass rate', 'passRate') },
-  { id: 'results', header: 'Results' },
-  { accessorKey: 'avgDuration', header: sortableHeader('Avg duration', 'avgDuration') },
-  { accessorKey: 'lastRun', header: sortableHeader('Last run', 'lastRun') },
-  { id: 'actions', header: () => h('div', { class: 'text-right' }, 'Actions') },
-]);
 
 const items = computed(() => data.value?.items ?? []);
 const total = computed(() => data.value?.total ?? 0);
 const showingFrom = computed(() => (total.value === 0 ? 0 : (page.value - 1) * pageSize.value + 1));
 const showingTo = computed(() =>
-  treeView.value ? items.value.length : Math.min(page.value * pageSize.value, total.value),
+  grouped.value ? items.value.length : Math.min(page.value * pageSize.value, total.value),
 );
-const hasSearchOrStatusFilter = computed(() => q.value !== '' || statuses.value.length > 0);
+
+// ── Group by File: spec-health numbers as headers ─────────────────────────────
+// The spec-file prefix matches the spec-health endpoint (first two path segments)
+// so each group's header can carry that file's pass rate, flaky rate and timing.
+interface SpecHealth {
+  prefix: string;
+  passRate: number;
+  flakyRate: number;
+  failureCount: number;
+  testCount: number;
+  avgDuration: number;
+}
+
+const { data: specHealth, execute: loadSpecHealth } = useFetch<{ specs: SpecHealth[] }>(
+  () => `/api/projects/${props.projectId}/spec-health?days=90`,
+  { lazy: true, server: false, immediate: false },
+);
+
+// Fetch the spec-health numbers the first time the file grouping is shown.
+watch(
+  grouped,
+  (isGrouped) => {
+    if (isGrouped && !specHealth.value) loadSpecHealth();
+  },
+  { immediate: true },
+);
+
+const specHealthByPrefix = computed(() => {
+  const map = new Map<string, SpecHealth>();
+  for (const s of specHealth.value?.specs ?? []) map.set(s.prefix, s);
+  return map;
+});
+
+function specPrefix(filePath: string): string {
+  return filePath.split(/[\\/]/).slice(0, 2).join('/');
+}
+
+function formatMs(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+const collapsedGroups = ref<Set<string>>(new Set());
+function toggleGroup(prefix: string) {
+  const next = new Set(collapsedGroups.value);
+  if (next.has(prefix)) next.delete(prefix);
+  else next.add(prefix);
+  collapsedGroups.value = next;
+}
+
+const fileGroups = computed(() => {
+  const groups = new Map<string, TestCaseWithStats[]>();
+  for (const item of items.value) {
+    const prefix = specPrefix(item.filePath);
+    if (!groups.has(prefix)) groups.set(prefix, []);
+    groups.get(prefix)!.push(item);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([prefix, rows]) => {
+      const health = specHealthByPrefix.value.get(prefix);
+      const metrics = health
+        ? [
+            {
+              label: 'Pass',
+              value: `${Math.round(health.passRate * 100)}%`,
+              tone: (health.passRate >= 0.9 ? 'good' : health.passRate > 0 ? 'bad' : 'muted') as
+                | 'good'
+                | 'bad'
+                | 'muted',
+            },
+            { label: 'Flaky', value: `${Math.round(health.flakyRate * 100)}%`, tone: 'muted' as const },
+            {
+              label: 'Failures',
+              value: String(health.failureCount),
+              tone: (health.failureCount > 0 ? 'bad' : 'muted') as 'bad' | 'muted',
+            },
+            { label: 'Tests', value: String(health.testCount), tone: 'muted' as const },
+            { label: 'Avg', value: formatMs(health.avgDuration), tone: 'muted' as const },
+          ]
+        : null;
+      return { prefix, rows, metrics, open: !collapsedGroups.value.has(prefix) };
+    });
+});
+const hasSearchOrStatusFilter = computed(
+  () =>
+    q.value !== '' ||
+    statuses.value.length > 0 ||
+    tagsFilter.value !== '' ||
+    locksFilter.value !== '' ||
+    ownerFilter.value !== '',
+);
 const hasAnyFilter = computed(() => hasSearchOrStatusFilter.value || age.value !== 0);
 const initialLoading = computed(() => status.value === 'pending' && !data.value);
 
@@ -177,14 +272,14 @@ defineExpose({ refresh });
 </script>
 
 <template>
-  <SectionCard title="Test cases" icon="i-lucide-flask-conical" :count="data?.total" help="project.test-cases">
+  <SectionCard title="Tests" icon="i-lucide-flask-conical" :count="data?.total" help="project.test-cases">
     <template #actions>
       <UButton
         icon="i-lucide-refresh-cw"
         size="sm"
         color="neutral"
         variant="ghost"
-        aria-label="Refresh test cases"
+        aria-label="Refresh tests"
         :loading="status === 'pending' && !!data"
         @click="() => refresh()"
       />
@@ -192,27 +287,42 @@ defineExpose({ refresh });
 
     <FilterToolbar class="mb-4">
       <template #start>
-        <div class="flex items-center rounded-md border border-default overflow-hidden">
-          <button
-            type="button"
-            class="px-2 py-1 text-xs transition-colors"
-            :class="!treeView ? 'bg-primary text-white dark:text-white' : 'text-muted hover:bg-elevated/60'"
-            title="Flat list"
-            @click="setTreeView(false)"
-          >
-            <UIcon name="i-lucide-list" class="size-3.5" />
-          </button>
-          <button
-            type="button"
-            class="px-2 py-1 text-xs transition-colors"
-            :class="treeView ? 'bg-primary text-white dark:text-white' : 'text-muted hover:bg-elevated/60'"
-            title="Tree view"
-            @click="setTreeView(true)"
-          >
-            <UIcon name="i-lucide-folder-tree" class="size-3.5" />
-          </button>
+        <div class="flex items-center gap-1.5">
+          <span class="text-xs text-muted">Group by</span>
+          <div class="flex items-center rounded-md border border-default overflow-hidden">
+            <button
+              type="button"
+              class="px-2 py-1 text-xs transition-colors"
+              :class="groupBy === 'none' ? 'bg-primary text-white dark:text-white' : 'text-muted hover:bg-elevated/60'"
+              title="Flat list"
+              @click="setGroupBy('none')"
+            >
+              None
+            </button>
+            <button
+              type="button"
+              class="px-2 py-1 text-xs transition-colors"
+              :class="groupBy === 'file' ? 'bg-primary text-white dark:text-white' : 'text-muted hover:bg-elevated/60'"
+              title="Group by spec file, with per-file health"
+              @click="setGroupBy('file')"
+            >
+              File
+            </button>
+          </div>
         </div>
-        <span class="text-sm text-muted tabular-nums"> {{ total }} {{ total === 1 ? 'case' : 'cases' }} </span>
+        <span class="text-sm text-muted tabular-nums"> {{ total }} {{ total === 1 ? 'test' : 'tests' }} </span>
+        <UButton
+          v-if="ownerFilter"
+          size="xs"
+          color="neutral"
+          variant="subtle"
+          icon="i-lucide-users"
+          trailing-icon="i-lucide-x"
+          :title="`Clear owner filter: ${ownerFilter}`"
+          @click="ownerFilter = ''"
+        >
+          Owner: {{ ownerFilter }}
+        </UButton>
       </template>
 
       <UInput
@@ -221,7 +331,7 @@ defineExpose({ refresh });
         icon="i-lucide-search"
         size="sm"
         class="min-w-48 max-sm:flex-1"
-        aria-label="Search test cases"
+        aria-label="Search tests"
       />
       <UInput
         v-model="tagsInput"
@@ -231,6 +341,15 @@ defineExpose({ refresh });
         class="min-w-44 max-sm:flex-1"
         aria-label="Filter by tag"
         title="Show only cases carrying every listed tag. A leading @ is optional."
+      />
+      <UInput
+        v-model="locksInput"
+        placeholder="Locks (comma-separated)…"
+        icon="i-lucide-lock"
+        size="sm"
+        class="min-w-44 max-sm:flex-1"
+        aria-label="Filter by lock"
+        title="Show only cases carrying every listed lock name."
       />
       <div class="flex flex-wrap items-center gap-1">
         <button
@@ -272,6 +391,19 @@ defineExpose({ refresh });
         </button>
       </div>
       <USelect v-model="age" :items="AGE_OPTIONS" size="sm" class="w-36" aria-label="Last run age filter" />
+      <div class="flex items-center gap-1">
+        <span class="text-xs text-muted max-sm:sr-only">Sort</span>
+        <USelect v-model="sort" :items="SORT_OPTIONS" size="sm" class="w-36" aria-label="Sort by" />
+        <UButton
+          size="sm"
+          color="neutral"
+          variant="outline"
+          :icon="dir === 'asc' ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down'"
+          :title="dir === 'asc' ? 'Ascending' : 'Descending'"
+          aria-label="Toggle sort direction"
+          @click="toggleDir"
+        />
+      </div>
     </FilterToolbar>
 
     <LoadingState v-if="initialLoading" text="Loading test cases..." />
@@ -307,167 +439,71 @@ defineExpose({ refresh });
 
     <template v-else>
       <div :class="{ 'opacity-60 pointer-events-none': status === 'pending' }" class="transition-opacity">
-        <!-- Tree view -->
-        <template v-if="treeView">
+        <!-- Group by File: a header carries the spec-health numbers per spec file -->
+        <template v-if="grouped">
           <UAlert
             v-if="items.length < total"
             color="warning"
             variant="subtle"
             icon="i-lucide-triangle-alert"
             class="mb-3"
-            :title="`Showing the first ${items.length} of ${total} cases — narrow the search or filters to see the rest.`"
+            :title="`Showing the first ${items.length} of ${total} tests — narrow the search or filters to see the rest.`"
           />
-          <ProjectTestCasesTree :items="items" :has-filter="hasSearchOrStatusFilter" />
-        </template>
-
-        <!-- Flat view: table from md up, cards below -->
-        <template v-else>
-          <div class="hidden md:block overflow-x-auto">
-            <UTable
-              :data="items"
-              :columns="columns"
-              :ui="{
-                base: 'w-full table-fixed border-separate border-spacing-0 min-w-[56rem]',
-                thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
-                tbody: '[&>tr]:last:[&>td]:border-b-0 [&>tr]:hover:bg-gray-50 dark:[&>tr]:hover:bg-gray-900/50',
-                th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
-                td: 'border-b border-default',
-              }"
+          <div class="space-y-3">
+            <div
+              v-for="group in fileGroups"
+              :key="group.prefix"
+              class="rounded-lg border border-default overflow-hidden"
             >
-              <template #title-cell="{ row }">
-                <div class="min-w-0 space-y-0.5">
-                  <NuxtLink
-                    :to="`/test-cases/${row.original.id}`"
-                    class="text-sm font-medium text-primary hover:underline truncate block"
-                    :title="row.original.title"
-                  >
-                    {{ row.original.title }}
-                  </NuxtLink>
-                  <TestMetaBadges
-                    :tags="row.original.tags"
-                    :meta="{
-                      owner: row.original.owner ?? undefined,
-                      priority: toTestPriority(row.original.priority),
-                      feature: row.original.feature ?? undefined,
-                      link: row.original.link ?? undefined,
-                    }"
-                    :max-tags="4"
-                  />
-                  <div class="flex items-center gap-1 text-xs text-muted">
-                    <UIcon name="i-lucide-file-code" class="size-3 shrink-0" />
-                    <OpenInIdeLink
-                      :file-path="row.original.filePath"
-                      :project-key="projectId"
-                      :project-name="projectName"
-                      class="min-w-0"
-                    />
-                  </div>
-                </div>
-              </template>
-
-              <template #status-cell="{ row }">
-                <UBadge
-                  :color="testCaseCategoryColor(row.original.status)"
-                  variant="subtle"
-                  size="sm"
-                  class="capitalize"
-                >
-                  {{ formatStatusLabel(row.original.status) }}
-                </UBadge>
-              </template>
-
-              <template #totalRuns-cell="{ row }">
-                <span class="text-sm tabular-nums">{{ row.original.totalRuns }}</span>
-              </template>
-
-              <template #passRate-cell="{ row }">
-                <PassRateIndicator :rate="row.original.passRate" />
-              </template>
-
-              <template #results-cell="{ row }">
-                <TestStatusBar
-                  :passed="row.original.passedRuns"
-                  :failed="row.original.failedRuns"
-                  :skipped="row.original.skippedRuns"
-                  :flaky="row.original.flakyRuns"
-                  :did-not-run="row.original.didNotRunRuns"
-                  :total="row.original.totalRuns"
-                />
-              </template>
-
-              <template #avgDuration-cell="{ row }">
-                <DurationValue :ms="row.original.avgDuration" class="text-sm text-muted" />
-              </template>
-
-              <template #lastRun-cell="{ row }">
-                <span class="text-sm text-muted" :title="prettyDateFormat(row.original.lastRun)">
-                  {{ row.original.lastRun != null ? formatRelativeTime(row.original.lastRun) : '—' }}
-                </span>
-              </template>
-
-              <template #actions-cell="{ row }">
-                <div class="flex justify-end">
-                  <UButton
-                    :to="`/test-cases/${row.original.id}`"
-                    size="sm"
-                    variant="outline"
-                    trailing-icon="i-lucide-arrow-right"
-                  >
-                    View
-                  </UButton>
-                </div>
-              </template>
-            </UTable>
-          </div>
-
-          <!-- Below md: one card per case (no horizontal scroll) -->
-          <div class="space-y-2 md:hidden">
-            <div v-for="tc in items" :key="tc.id" class="rounded-lg border border-default p-3 space-y-2">
-              <div class="flex items-start justify-between gap-2">
-                <NuxtLink
-                  :to="`/test-cases/${tc.id}`"
-                  class="text-sm font-medium text-primary hover:underline min-w-0 truncate"
+              <TestRowGroup
+                :label="group.prefix"
+                :count="group.rows.length"
+                :open="group.open"
+                :metrics="group.metrics"
+                icon="i-lucide-folder"
+                @toggle="toggleGroup(group.prefix)"
+              />
+              <div v-if="group.open">
+                <TestRow
+                  v-for="tc in group.rows"
+                  :key="tc.id"
+                  :href="`/test-cases/${tc.id}`"
                   :title="tc.title"
-                >
-                  {{ tc.title }}
-                </NuxtLink>
-                <UBadge
-                  :color="testCaseCategoryColor(tc.status)"
-                  variant="subtle"
-                  size="sm"
-                  class="capitalize shrink-0"
-                >
-                  {{ formatStatusLabel(tc.status) }}
-                </UBadge>
-              </div>
-              <div class="flex items-center gap-1 text-xs text-muted min-w-0">
-                <UIcon name="i-lucide-file-code" class="size-3 shrink-0" />
-                <OpenInIdeLink
+                  :status="tc.status"
                   :file-path="tc.filePath"
+                  :badges="catalogBadges(tc)"
                   :project-key="projectId"
                   :project-name="projectName"
-                  class="min-w-0"
-                />
-              </div>
-              <TestStatusBar
-                :passed="tc.passedRuns"
-                :failed="tc.failedRuns"
-                :skipped="tc.skippedRuns"
-                :flaky="tc.flakyRuns"
-                :did-not-run="tc.didNotRunRuns"
-                :total="tc.totalRuns"
-              />
-              <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                <PassRateIndicator :rate="tc.passRate" />
-                <span class="text-xs text-muted tabular-nums">{{ tc.totalRuns }} runs</span>
-                <DurationValue v-if="tc.avgDuration != null" :ms="tc.avgDuration" class="text-xs text-muted" />
-                <span class="text-xs text-muted" :title="prettyDateFormat(tc.lastRun)">
-                  {{ tc.lastRun != null ? formatRelativeTime(tc.lastRun) : '—' }}
-                </span>
+                >
+                  <template #metrics>
+                    <CatalogRowFacts :tc="tc" />
+                  </template>
+                </TestRow>
               </div>
             </div>
           </div>
+        </template>
 
+        <!-- Flat list: one TestRow per test -->
+        <div v-else class="rounded-lg border border-default overflow-hidden">
+          <TestRow
+            v-for="tc in items"
+            :key="tc.id"
+            :href="`/test-cases/${tc.id}`"
+            :title="tc.title"
+            :status="tc.status"
+            :file-path="tc.filePath"
+            :badges="catalogBadges(tc)"
+            :project-key="projectId"
+            :project-name="projectName"
+          >
+            <template #metrics>
+              <CatalogRowFacts :tc="tc" />
+            </template>
+          </TestRow>
+        </div>
+
+        <template v-if="!grouped">
           <!-- Pagination footer -->
           <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
             <div class="flex flex-wrap items-center gap-3">

@@ -6,7 +6,7 @@ import type { McpContext } from '../utils/mcp/tools';
 import { getPrompt, isKnownPrompt } from '../utils/mcp/prompts';
 import { getProjectScope } from '../utils/project-access';
 import { resolvePublicBaseUrl } from '../utils/oauth-helpers';
-import { ok, rpcErr, RPC, MCP_SERVER_INFO, negotiateProtocolVersion } from '../utils/mcp/protocol';
+import { ok, rpcErr, RPC, mcpServerInfo, negotiateProtocolVersion } from '../utils/mcp/protocol';
 import type { JsonRpcRequest } from '../utils/mcp/protocol';
 import { MCP_PROMPT_DEFS } from '#shared/mcp-prompts';
 
@@ -96,7 +96,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event) {
       return ok(id, {
         protocolVersion: negotiateProtocolVersion(requested),
         capabilities: { tools: {}, prompts: {} },
-        serverInfo: MCP_SERVER_INFO,
+        serverInfo: mcpServerInfo(useRuntimeConfig(event).public.appVersion as string),
         instructions:
           'Piwi Dashboard MCP server — query Playwright test results, failure clusters, AI diagnoses, and SCM diffs. ' +
           'Start with list_projects to discover project IDs. ' +
@@ -133,8 +133,17 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event) {
 
       const db = await getDatabase();
       const args = p?.arguments ?? {};
-      const data = await tool.handler(db, args, ctx);
-      return ok(id, toContent(data));
+      try {
+        const data = await tool.handler(db, args, ctx);
+        return ok(id, toContent(data));
+      } catch (err) {
+        // A tool that throws surfaces as a tool result with `isError: true`, not
+        // a JSON-RPC protocol error: the latter is a transport-level failure that
+        // clients render as a broken connection, while the former is a message the
+        // model reads and recovers from (bad argument, missing entity, no access).
+        const message = err instanceof Error ? err.message : String(err);
+        return ok(id, { content: [{ type: 'text', text: `Error: ${message}` }], isError: true });
+      }
     }
 
     // ── Prompts ──────────────────────────────────────────────────────────────

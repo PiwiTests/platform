@@ -5,7 +5,7 @@ description: Wire a Playwright project up to a Piwi Dashboard — install the re
 
 # Set up Piwi in a Playwright project
 
-Connect a Playwright test suite to a [Piwi Dashboard](https://piwitests.github.io) so every run is uploaded, kept, and analyzed. The mechanical work is done by a deterministic command; your job is to gather the right inputs, run it, finish anything it flags, and prove a run reaches the dashboard.
+Connect a Playwright test suite to a [Piwi Dashboard](https://piwitests.dev) so every run is uploaded, kept, and analyzed. The mechanical work is done by a deterministic command; your job is to gather the right inputs, run it, finish anything it flags, and prove a run reaches the dashboard.
 
 ## Before you start
 

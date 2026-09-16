@@ -1,4 +1,5 @@
 import { and, avg, count, gte, isNotNull, sql, sum } from 'drizzle-orm';
+import { optionalIntQuery } from '../../../utils/query-params';
 import { getDatabase } from '../../../database';
 import { failureDiagnoses } from '../../../database/schema';
 import { requireAuth } from '../../../utils/auth';
@@ -18,8 +19,7 @@ defineRouteMeta({
 export default eventHandler(async (event): Promise<AiUsageSummary> => {
   await requireAuth(event);
 
-  const parsed = parseInt((getQuery(event).days as string) || '30');
-  const days = Math.min(365, Math.max(1, Number.isFinite(parsed) ? parsed : 30));
+  const days = optionalIntQuery(event, 'days', { default: 30, min: 1, max: 365 });
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
   const db = await getDatabase();

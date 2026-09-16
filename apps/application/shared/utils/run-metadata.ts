@@ -4,12 +4,25 @@
  * server-side regression-context builder so the diff stays identical on both.
  */
 
+import { compareUrl } from '#shared/scm-urls';
+
 /** One field that changed between two runs, for the "what changed" summary. */
 export interface MetaDiffEntry {
   key: string;
   label: string;
   before: string | null;
   after: string | null;
+}
+
+/** The commit span between a baseline run and a later run, with a copyable git command. */
+export interface CommitRange {
+  fromSha: string;
+  toSha: string;
+  fromShort: string;
+  toShort: string;
+  repositoryUrl: string | null;
+  compareUrl: string | null;
+  gitCommand: string;
 }
 
 /** The slice of `test_runs.metadata` these helpers read. */
@@ -21,21 +34,29 @@ interface RunMetadataLike {
 
 /** Build a provider-specific "compare two commits" URL, or null when the host is unknown. */
 export function buildCompareUrl(repositoryUrl: string, fromSha: string, toSha: string): string | null {
-  try {
-    const { hostname } = new URL(repositoryUrl);
-    if (hostname === 'github.com' || hostname.endsWith('.github.com')) {
-      return `${repositoryUrl}/compare/${fromSha}...${toSha}`;
-    }
-    if (hostname === 'gitlab.com' || hostname.includes('gitlab')) {
-      return `${repositoryUrl}/-/compare/${fromSha}...${toSha}`;
-    }
-    if (hostname === 'bitbucket.org') {
-      return `${repositoryUrl}/branches/compare/${toSha}..${fromSha}#diff`;
-    }
-  } catch {
-    // ignore
-  }
-  return null;
+  return compareUrl(repositoryUrl, fromSha, toSha);
+}
+
+/**
+ * The commit span from a baseline commit to a later one, with a compare URL when
+ * the repository host is known and the `git log --oneline` command that lists it.
+ * Returns null when either commit is missing or the two are the same.
+ */
+export function buildCommitRange(
+  repositoryUrl: string | null,
+  fromSha: string | null | undefined,
+  toSha: string | null | undefined,
+): CommitRange | null {
+  if (!fromSha || !toSha || fromSha === toSha) return null;
+  return {
+    fromSha,
+    toSha,
+    fromShort: fromSha.slice(0, 7),
+    toShort: toSha.slice(0, 7),
+    repositoryUrl,
+    compareUrl: repositoryUrl ? buildCompareUrl(repositoryUrl, fromSha, toSha) : null,
+    gitCommand: `git log --oneline ${fromSha}..${toSha}`,
+  };
 }
 
 /** Comma-separated list of the distinct browser names configured in a run's report. */

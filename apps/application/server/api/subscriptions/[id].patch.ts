@@ -1,7 +1,8 @@
 import { eq, and, or, isNull } from 'drizzle-orm';
 import { getDatabase } from '../../database';
 import { subscriptions, notificationChannels } from '../../database/schema';
-import { requireAuth, isAuthEnabled } from '../../utils/auth';
+import { requireAuth } from '../../utils/auth';
+import { formatSubscription } from '../../utils/subscriptions';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
 import { Role } from '#shared/types';
 import { z } from 'zod';
@@ -31,14 +32,13 @@ const schema = z.object({
 });
 
 export default eventHandler(async (event) => {
-  if (!isAuthEnabled(event)) throw createError({ statusCode: 400, message: 'Authentication not enabled' });
   const user = await requireAuth(event);
   const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw createError({ statusCode: 400, message: 'Invalid subscription ID' });
+  if (!id) throw apiError({ statusCode: 400, message: 'Invalid subscription ID' });
 
   const body = await readBody(event);
   const parsed = schema.safeParse(body);
-  if (!parsed.success) throw createError({ statusCode: 400, message: 'Invalid request body' });
+  if (!parsed.success) throw apiError({ statusCode: 400, message: 'Invalid request body' });
 
   const db = await getDatabase();
   const isAdmin = user.role === Role.ADMINISTRATOR;
@@ -46,7 +46,7 @@ export default eventHandler(async (event) => {
     .select()
     .from(subscriptions)
     .where(isAdmin ? eq(subscriptions.id, id) : and(eq(subscriptions.id, id), eq(subscriptions.userId, user.id)));
-  if (!sub) throw createError({ statusCode: 404, message: 'Subscription not found' });
+  if (!sub) throw apiError({ statusCode: 404, message: 'Subscription not found' });
 
   const update: Record<string, unknown> = { updatedAt: new Date() };
   const d = parsed.data;
@@ -54,7 +54,7 @@ export default eventHandler(async (event) => {
   if (d.channelId !== undefined) {
     // Ensure the target channel is owned by this user or is global
     const [ch] = await db
-      .select({ id: notificationChannels.id })
+      .select({ id: notificationChannels.id, userId: notificationChannels.userId })
       .from(notificationChannels)
       .where(
         and(
@@ -62,7 +62,12 @@ export default eventHandler(async (event) => {
           isAdmin ? undefined : or(isNull(notificationChannels.userId), eq(notificationChannels.userId, user.id)),
         ),
       );
-    if (!ch) throw createError({ statusCode: 403, message: 'Channel not found or not accessible' });
+    if (!ch) throw apiError({ statusCode: 404, message: 'Channel not found' });
+    // A global subscription delivers with no per-user access check, so it must
+    // stay on a global channel.
+    if (sub.userId === null && ch.userId !== null) {
+      throw apiError({ statusCode: 400, message: 'Global subscriptions require a global channel' });
+    }
     update.channelId = d.channelId;
   }
 
@@ -74,5 +79,12 @@ export default eventHandler(async (event) => {
   if (d.active !== undefined) update.active = d.active;
 
   await db.update(subscriptions).set(update).where(eq(subscriptions.id, id));
-  return { success: true };
+
+  const [updated] = await db
+    .select({ sub: subscriptions, channel: notificationChannels })
+    .from(subscriptions)
+    .innerJoin(notificationChannels, eq(subscriptions.channelId, notificationChannels.id))
+    .where(eq(subscriptions.id, id));
+
+  return { success: true, subscription: formatSubscription(updated!.sub, updated!.channel) };
 });

@@ -25,6 +25,7 @@ import {
   resolvePrFeedbackSettings,
   type PrFeedbackSettings,
 } from '#shared/pr-feedback';
+import { AUTO_HEAL_KEY, DEFAULT_AUTO_HEAL, resolveAutoHealSettings, type AutoHealSettings } from '#shared/auto-heal';
 
 /** GET /api/settings/wasted-waits */
 export async function apiGetWastedWaits() {
@@ -102,4 +103,48 @@ export async function apiPutPrFeedback(body: { settings?: Partial<PrFeedbackSett
     defaults: DEFAULT_PR_FEEDBACK,
     siteUrlConfigured: false,
   };
+}
+
+/**
+ * GET /api/settings/auto-heal
+ *
+ * The demo has no SCM to open a PR against, so `siteUrlConfigured` is always
+ * false — settings save, but nothing is ever pushed from a browser tab.
+ */
+export async function apiGetAutoHeal() {
+  const db = await getDemoDb();
+  const stored = await getAppSetting<Partial<AutoHealSettings>>(db, AUTO_HEAL_KEY);
+  return {
+    settings: stored ? resolveAutoHealSettings(stored) : { ...DEFAULT_AUTO_HEAL },
+    defaults: DEFAULT_AUTO_HEAL,
+    siteUrlConfigured: false,
+  };
+}
+
+/** PUT /api/settings/auto-heal */
+export async function apiPutAutoHeal(body: { settings?: Partial<AutoHealSettings> | null }) {
+  const db = await getDemoDb();
+
+  if (body.settings === null) {
+    await deleteAppSetting(db, AUTO_HEAL_KEY);
+  } else {
+    await setAppSetting(db, AUTO_HEAL_KEY, resolveAutoHealSettings(body.settings));
+  }
+
+  const stored = await getAppSetting<Partial<AutoHealSettings>>(db, AUTO_HEAL_KEY);
+  return {
+    settings: stored ? resolveAutoHealSettings(stored) : { ...DEFAULT_AUTO_HEAL },
+    defaults: DEFAULT_AUTO_HEAL,
+    siteUrlConfigured: false,
+  };
+}
+
+/**
+ * GET /api/heal-actions
+ *
+ * Auto-heal opens PRs through the SCM, which the browser demo has no access to,
+ * so there is never anything to list.
+ */
+export async function apiGetHealActions() {
+  return { actions: [] as never[] };
 }

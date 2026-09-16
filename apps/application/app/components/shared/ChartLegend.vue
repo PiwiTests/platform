@@ -1,22 +1,17 @@
 <script setup lang="ts">
+/**
+ * Color/label key for a chart. Rendered by `ChartCard` from its `legend` prop,
+ * so it sits in the card header rather than under the plot.
+ */
 defineProps<{
-  items: { color: string; label: string }[];
-  /** Compact variant (smaller dots/text) used by inline charts like the history sparkline. */
-  dense?: boolean;
+  items: readonly { color: string; label: string }[];
 }>();
 </script>
 
 <template>
-  <div
-    class="flex items-center justify-center flex-wrap"
-    :class="dense ? 'gap-4 mt-2 text-xs text-gray-500' : 'gap-6 mt-4 text-sm'"
-  >
-    <span v-for="item in items" :key="item.label" class="flex items-center" :class="dense ? 'gap-1' : 'gap-2'">
-      <span
-        class="rounded-full inline-block"
-        :class="dense ? 'w-2.5 h-2.5' : 'w-3 h-3'"
-        :style="{ backgroundColor: item.color }"
-      />
+  <div class="flex items-center flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+    <span v-for="item in items" :key="item.label" class="flex items-center gap-1">
+      <span class="rounded-full inline-block w-2.5 h-2.5" :style="{ backgroundColor: item.color }" />
       {{ item.label }}
     </span>
   </div>

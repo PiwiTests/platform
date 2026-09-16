@@ -15,25 +15,38 @@ const props = defineProps<{
   testRunsCaseId: number;
   /** When set, the card folds to a header with a peek (persisted per user). */
   storageKey?: string;
+  /** Drop the card frame and padding — render a plain heading row over the body. */
+  embedded?: boolean;
 }>();
 
 interface EnvironmentDiffResponse {
   status: 'ok' | 'no-baseline' | 'not-found';
-  baseline?: { runId: number; testRunsCaseId: number; startTime: number | null };
+  baseline?: { runId: number; executionId: number; startTime: number | null; environment?: string | null };
+  /** Set when the baseline came from another environment than the failing run. */
+  baselineNote?: string | null;
   entries?: EnvironmentDiffEntry[];
 }
 
-const cardComponent = computed(() => (props.storageKey ? CollapsibleSectionCard : SectionCard));
-const cardBind = computed(() => (props.storageKey ? { storageKey: props.storageKey } : {}));
+const cardComponent = computed(() =>
+  props.embedded ? SectionCard : props.storageKey ? CollapsibleSectionCard : SectionCard,
+);
+const cardBind = computed(() =>
+  props.embedded ? { embedded: true } : props.storageKey ? { storageKey: props.storageKey } : {},
+);
 
 const {
   data: diff,
   pending,
   error,
-} = useFetch<EnvironmentDiffResponse>(
-  () => `/api/test-runs/${props.runId}/cases/${props.testRunsCaseId}/environment-diff`,
-  { lazy: true },
-);
+} = useFetch<EnvironmentDiffResponse>(() => `/api/test-run-cases/${props.testRunsCaseId}/environment-diff`, {
+  lazy: true,
+});
+
+// The card renders only for a usable diff; the page reads `available` to show
+// its jump chip for exactly the same condition.
+const emit = defineEmits<{ available: [value: boolean] }>();
+const available = computed(() => !pending.value && !error.value && diff.value?.status === 'ok');
+watch(available, (value) => emit('available', value), { immediate: true });
 
 const entries = computed<EnvironmentDiffEntry[]>(() => diff.value?.entries ?? []);
 const meaningful = computed(() => entries.value.filter((e) => !e.informational));
@@ -43,7 +56,8 @@ const baselineNote = computed(() => {
   const b = diff.value?.baseline;
   if (!b) return '';
   const when = b.startTime ? ` · ${formatRelativeTime(new Date(b.startTime))}` : '';
-  return `vs last pass in run #${b.runId}${when}`;
+  const note = diff.value?.baselineNote ? ` · ${diff.value.baselineNote}` : '';
+  return `vs last passing run of this test (run #${b.runId}${when})${note}`;
 });
 
 const foldedText = computed(() => {
@@ -61,7 +75,7 @@ defineExpose({ reveal: () => card.value?.reveal?.() });
 <template>
   <component
     :is="cardComponent"
-    v-if="!pending && !error && diff?.status === 'ok'"
+    v-if="available && diff"
     ref="card"
     v-bind="cardBind"
     icon="i-lucide-git-compare-arrows"
@@ -84,6 +98,13 @@ defineExpose({ reveal: () => card.value?.reveal?.() });
     />
 
     <div v-else class="space-y-2">
+      <!-- Which side is which: the failing run on the left, its last pass on the right -->
+      <div class="flex items-center gap-1.5 text-xs font-medium px-3">
+        <span class="hidden sm:block sm:w-40 shrink-0" aria-hidden="true" />
+        <span class="text-red-700 dark:text-red-400">This run</span>
+        <UIcon name="i-lucide-arrow-left" class="size-3 shrink-0 text-gray-400" />
+        <span class="text-green-700 dark:text-green-400">Last pass, run #{{ diff?.baseline?.runId }}</span>
+      </div>
       <div
         v-for="entry in meaningful"
         :key="entry.key"

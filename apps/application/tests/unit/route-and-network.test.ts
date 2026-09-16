@@ -141,6 +141,15 @@ describe('buildNetworkRequestItems — serverTraces passthrough', () => {
     expect(items[0]!.url).not.toContain('secret');
   });
 
+  test('keeps the request start time as a rounded epoch-ms integer, null when absent', () => {
+    const items = buildNetworkRequestItems([
+      { method: 'GET', url: 'https://app.test/api/a', status: 200, resourceType: 'fetch', startTime: 1717000000123.7 },
+      { method: 'GET', url: 'https://app.test/api/b', status: 200, resourceType: 'fetch', startTime: 'soon' },
+      { method: 'GET', url: 'https://app.test/api/c', status: 200, resourceType: 'fetch' },
+    ]);
+    expect(items.map((i) => i.startTime)).toEqual([1717000000124, null, null]);
+  });
+
   test('serverTraces defaults to null when absent', () => {
     const items = buildNetworkRequestItems([
       { method: 'GET', url: 'https://app.test/api/x', status: 200, resourceType: 'fetch' },

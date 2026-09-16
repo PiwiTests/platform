@@ -46,3 +46,17 @@ export function parseTagFilter(raw: string | undefined | null): string[] {
   }
   return [...seen];
 }
+
+/**
+ * Split a comma-separated lock query parameter into lock names. Locks are stored
+ * verbatim (no `@` convention, unlike tags), so parsing only trims and dedupes.
+ */
+export function parseLockFilter(raw: string | undefined | null): string[] {
+  if (!raw) return [];
+  const seen = new Set<string>();
+  for (const part of raw.split(',')) {
+    const lock = part.trim();
+    if (lock) seen.add(lock);
+  }
+  return [...seen];
+}

@@ -23,7 +23,7 @@ export default eventHandler(async (event) => {
 
   const [exists] = await db.select({ id: testRunsCases.id }).from(testRunsCases).where(eq(testRunsCases.id, id));
   if (!exists) {
-    throw createError({ statusCode: 404, message: 'Test run case not found' });
+    throw apiError({ statusCode: 404, message: 'Test run case not found' });
   }
-  return getTestRunCaseTraces(db, id);
+  return { items: await getTestRunCaseTraces(db, id) };
 });

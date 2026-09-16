@@ -3,6 +3,12 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import { createGlobalSetup } from '../src/public/global-setup.js';
 import { getSetupFilePath, readSetupInfo } from '../src/internal/support/setup-file.js';
+import {
+  ariaSampleIdentity,
+  clearAriaSampleFile,
+  loadAriaSampleSet,
+  resetAriaSampleCache,
+} from '../src/internal/support/aria-sampling.js';
 
 interface RecordedReq {
   method: string;
@@ -52,7 +58,65 @@ function cleanupSetupFile(projectName: string): void {
 describe('createGlobalSetup', () => {
   const cleanupNames: string[] = [];
   afterEach(() => {
-    for (const name of cleanupNames.splice(0)) cleanupSetupFile(name);
+    for (const name of cleanupNames.splice(0)) {
+      cleanupSetupFile(name);
+      clearAriaSampleFile(name);
+    }
+    resetAriaSampleCache();
+  });
+
+  it('fetches the green ARIA sample set at run start and stashes it for the workers', async () => {
+    const { server, url } = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/setup') return jsonRes(res, 200, { runId: 5, setupToken: 't' });
+      if (req.url === '/api/projects/menu') return jsonRes(res, 200, { items: [{ id: 9, name: 'sampling-project' }] });
+      if (req.url === '/api/projects/9/aria-sampling')
+        return jsonRes(res, 200, { tests: [{ filePath: 'tests/a.spec.ts', title: 'due for a sample' }] });
+      return jsonRes(res, 404, {});
+    });
+    cleanupNames.push('sampling-project');
+    process.env.PIWI_PROJECT_NAME = 'sampling-project';
+    try {
+      const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'sampling-project' });
+      await setupFn({ reporter: [PIWI_REPORTER_ENTRY] });
+
+      resetAriaSampleCache();
+      const set = loadAriaSampleSet('sampling-project');
+      expect(set).not.toBeNull();
+      expect(set!.has(ariaSampleIdentity('tests/a.spec.ts', 'due for a sample'))).toBe(true);
+    } finally {
+      delete process.env.PIWI_PROJECT_NAME;
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('leaves no sample set when the server predates the aria-sampling endpoint', async () => {
+    const { server, url } = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/setup') return jsonRes(res, 200, { runId: 5, setupToken: 't' });
+      if (req.url === '/api/projects/menu') return jsonRes(res, 200, { items: [{ id: 9, name: 'old-server' }] });
+      return jsonRes(res, 404, {}); // aria-sampling unknown on an old server
+    });
+    cleanupNames.push('old-server');
+    try {
+      const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'old-server' });
+      await setupFn({ reporter: [PIWI_REPORTER_ENTRY] });
+
+      resetAriaSampleCache();
+      expect(loadAriaSampleSet('old-server')).toBeNull();
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('does not fetch the sample set when sampleAriaOnPass is off', async () => {
+    const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, { runId: 5, setupToken: 't' }));
+    cleanupNames.push('sampling-off');
+    try {
+      const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'sampling-off', sampleAriaOnPass: false });
+      await setupFn({ reporter: [PIWI_REPORTER_ENTRY] });
+      expect(requests.some((r) => r.url.includes('aria-sampling') || r.url.includes('/menu'))).toBe(false);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
   });
 
   it('registers the run and writes the setup file for the reporter to pick up', async () => {
@@ -64,7 +128,7 @@ describe('createGlobalSetup', () => {
       const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'global-setup-register' });
       await setupFn({ reporter: [PIWI_REPORTER_ENTRY] });
 
-      expect(requests).toHaveLength(1);
+      expect(requests.filter((r) => r.url === '/api/test-runs/setup')).toHaveLength(1);
       expect(requests[0]!.method).toBe('POST');
       expect(requests[0]!.url).toBe('/api/test-runs/setup');
       const body = JSON.parse(requests[0]!.body);
@@ -152,6 +216,29 @@ describe('createGlobalSetup', () => {
     }
   });
 
+  it('does not register when Playwright runs in list mode (still chains userSetup)', async () => {
+    const { server, url, requests } = await startServer((_req, res) =>
+      jsonRes(res, 200, { runId: 1, setupToken: 't' }),
+    );
+    const savedArgv = process.argv;
+    process.argv = ['node', 'playwright', 'test', '--list'];
+    try {
+      let userSetupCalled = false;
+      const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'global-setup-list-mode' }, async () => {
+        userSetupCalled = true;
+        return 'chained-result';
+      });
+      const result = await setupFn({ reporter: [PIWI_REPORTER_ENTRY] });
+      expect(requests).toHaveLength(0);
+      expect(userSetupCalled).toBe(true);
+      expect(result).toBe('chained-result');
+      expect(readSetupInfo('global-setup-list-mode')).toBeNull();
+    } finally {
+      process.argv = savedArgv;
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
   it('extracts serverUrl/projectName from an inline reporter entry when no options are passed', async () => {
     const { server, url, requests } = await startServer((_req, res) =>
       jsonRes(res, 200, { runId: 7, setupToken: 'ttt' }),
@@ -161,7 +248,7 @@ describe('createGlobalSetup', () => {
       const setupFn = createGlobalSetup();
       await setupFn({ reporter: [['@piwitests/reporter', { serverUrl: url, projectName: 'global-setup-inline' }]] });
 
-      expect(requests).toHaveLength(1);
+      expect(requests.filter((r) => r.url === '/api/test-runs/setup')).toHaveLength(1);
       const body = JSON.parse(requests[0]!.body);
       expect(body.projectName).toBe('global-setup-inline');
       expect(readSetupInfo('global-setup-inline')?.runId).toBe(7);

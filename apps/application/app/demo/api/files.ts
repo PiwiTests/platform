@@ -58,7 +58,7 @@ export async function apiGetDemoFile(apiPath: string): Promise<unknown> {
 }
 
 /** Wrap bytes in the base64 envelope the service worker turns into a Response. */
-function binaryResponse(bytes: Uint8Array, filePath: string, fallbackType: string) {
+export function binaryResponse(bytes: Uint8Array, filePath: string, fallbackType: string) {
   // Chunked so a multi-megabyte trace does not blow the argument limit of
   // `String.fromCharCode(...bytes)`.
   let binary = '';

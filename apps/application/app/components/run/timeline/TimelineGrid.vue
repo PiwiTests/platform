@@ -1,53 +1,72 @@
 <script setup lang="ts">
-import type { ShardGroup } from '~/composables/useTimelineModel';
+import type { WorkerRow } from '~/composables/useTimelineModel';
 import { TIMELINE_LAYOUT } from '~/utils/timeline';
 
-defineProps<{
-  workerRows: Array<{ shardIndex: number | null; workerIndex: number }>;
-  shardGroups: ShardGroup[];
+const props = defineProps<{
+  workerRows: WorkerRow[];
   tickMarks: Array<{ ms: number; x: number; label: string }>;
   contentWidth: number;
   shardTotal?: number | null;
 }>();
 
 const { barHeight, rowGap, axisHeight, rowHeight } = TIMELINE_LAYOUT;
+
+/** Y of a lane's top, below the axis. */
+function laneTop(lane: number): number {
+  return lane * rowHeight + axisHeight;
+}
 </script>
 
 <template>
   <g>
+    <!-- One shaded band per worker, spanning its test lane plus any expanded step lanes. -->
     <rect
-      v-for="(row, i) in workerRows"
+      v-for="(row, i) in props.workerRows"
       :key="'bg-' + i"
       :x="0"
-      :y="i * rowHeight + axisHeight"
-      :width="contentWidth"
-      :height="rowHeight"
+      :y="laneTop(row.baseLane)"
+      :width="props.contentWidth"
+      :height="row.laneSpan * rowHeight"
       :class="i % 2 === 1 ? 'fill-black/[0.03] dark:fill-white/[0.03]' : 'fill-transparent'"
     />
 
-    <!-- Shard group separator lines -->
+    <!-- A faint divider under the test lane of an expanded worker, above its step lanes. -->
     <line
-      v-for="sg in shardGroups.slice(1)"
-      :key="'shard-sep-' + sg.rowRange[0]"
-      :x1="0"
-      :y1="sg.rowRange[0] * rowHeight + axisHeight - rowGap / 2"
-      :x2="contentWidth"
-      :y2="sg.rowRange[0] * rowHeight + axisHeight - rowGap / 2"
+      v-for="row in props.workerRows.filter((r) => r.laneSpan > 1)"
+      :key="'steps-sep-' + row.baseLane"
+      :x1="TIMELINE_LAYOUT.labelWidth"
+      :y1="laneTop(row.baseLane + 1)"
+      :x2="props.contentWidth"
+      :y2="laneTop(row.baseLane + 1)"
       stroke="currentColor"
-      stroke-dasharray="4,3"
-      class="stroke-gray-400 dark:stroke-gray-500"
+      stroke-dasharray="2,3"
+      class="stroke-gray-300 dark:stroke-gray-600"
     />
+
+    <!-- Shard separator before each worker whose shard differs from the one above. -->
+    <template v-for="(row, i) in props.workerRows" :key="'shard-sep-' + i">
+      <line
+        v-if="i > 0 && row.shardIndex !== props.workerRows[i - 1]!.shardIndex"
+        :x1="0"
+        :y1="laneTop(row.baseLane) - rowGap / 2"
+        :x2="props.contentWidth"
+        :y2="laneTop(row.baseLane) - rowGap / 2"
+        stroke="currentColor"
+        stroke-dasharray="4,3"
+        class="stroke-gray-400 dark:stroke-gray-500"
+      />
+    </template>
 
     <line
       :x1="TIMELINE_LAYOUT.labelWidth"
       :y1="axisHeight"
-      :x2="contentWidth"
+      :x2="props.contentWidth"
       :y2="axisHeight"
       stroke="currentColor"
       class="stroke-gray-300 dark:stroke-gray-600"
     />
 
-    <g v-for="tick in tickMarks" :key="tick.ms">
+    <g v-for="tick in props.tickMarks" :key="tick.ms">
       <line
         :x1="tick.x"
         :y1="axisHeight - 4"
@@ -62,14 +81,14 @@ const { barHeight, rowGap, axisHeight, rowHeight } = TIMELINE_LAYOUT;
     </g>
 
     <text
-      v-for="(row, i) in workerRows"
+      v-for="(row, i) in props.workerRows"
       :key="'label-' + i"
       :x="6"
-      :y="i * rowHeight + axisHeight + barHeight / 2 + 4"
+      :y="laneTop(row.baseLane) + barHeight / 2 + 4"
       class="fill-gray-500 text-[11px] font-medium"
     >
       {{
-        row.shardIndex != null && shardTotal && shardTotal > 1
+        row.shardIndex != null && props.shardTotal && props.shardTotal > 1
           ? `S${row.shardIndex} W${row.workerIndex}`
           : `Worker ${row.workerIndex}`
       }}

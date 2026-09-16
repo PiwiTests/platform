@@ -47,6 +47,13 @@ defineRouteMeta({
           'Comma-separated tags; a case must carry every one of them to match. A leading `@` is optional (`@smoke` and `smoke` are the same tag).',
       },
       {
+        name: 'locks',
+        in: 'query',
+        required: false,
+        schema: { type: 'string' },
+        description: 'Comma-separated lock names; a case must carry every one of them to match.',
+      },
+      {
         name: 'owner',
         in: 'query',
         required: false,

@@ -28,6 +28,15 @@ export interface GatePolicy {
    * not a solution — this is the ceiling on how much of it a suite may carry.
    */
   maxQuarantined?: number;
+  /** Fail when the run contains any flaky test (passed only after a retry). */
+  failOnFlaky?: boolean;
+  /**
+   * Key of a selection every test of which must have run and passed in this run.
+   * The server re-resolves the selection's current definition, so this catches
+   * the failure mode tags cannot: a smoke job that silently shrank — a renamed
+   * file or over-narrow filter dropping a test the selection still expects.
+   */
+  requireSelection?: string;
 }
 
 /** What the server measured about the run, independent of any policy. */
@@ -49,6 +58,18 @@ export interface GateFacts {
   quarantinedFailures: number;
   /** Tests currently quarantined in this project. */
   quarantinedTotal: number;
+  /** Tests that passed only after a retry in this run. */
+  flakyTests: number;
+  /** Set when `requireSelection` was asked: how the named selection fared in this run. */
+  selection?: {
+    key: string;
+    /** How many tests the selection currently resolves to. */
+    matched: number;
+    /** Matched tests that did not run in this run at all. */
+    notRun: Array<{ title: string; filePath: string }>;
+    /** Matched tests that ran but failed (and are not quarantined). */
+    failed: Array<{ title: string; filePath: string; executionId: number }>;
+  };
 }
 
 export interface GateViolation {
@@ -60,7 +81,11 @@ export interface GateViolation {
     | 'max-new-regressions'
     | 'max-new-flaky'
     | 'new-cluster'
-    | 'max-quarantined';
+    | 'max-quarantined'
+    | 'flaky'
+    | 'selection-empty'
+    | 'selection-not-run'
+    | 'selection-failed';
   message: string;
   /** Observed value and the limit it exceeded, when the rule is a threshold. */
   actual?: number;
@@ -81,7 +106,9 @@ export function isEmptyPolicy(policy: GatePolicy): boolean {
     policy.maxNewRegressions == null &&
     policy.maxNewFlaky == null &&
     policy.maxQuarantined == null &&
-    !policy.failOnNewCluster
+    !policy.failOnNewCluster &&
+    !policy.failOnFlaky &&
+    !policy.requireSelection
   );
 }
 
@@ -155,6 +182,51 @@ export function evaluateGatePolicy(facts: GateFacts, policy: GatePolicy): GateRe
     });
   }
 
+  if (policy.failOnFlaky && facts.flakyTests > 0) {
+    violations.push({
+      rule: 'flaky',
+      message: `${facts.flakyTests} flaky ${facts.flakyTests === 1 ? 'test' : 'tests'} detected in this run`,
+      actual: facts.flakyTests,
+      limit: 0,
+    });
+  }
+
+  if (policy.requireSelection && facts.selection) {
+    const { key, matched, notRun, failed } = facts.selection;
+    if (matched === 0) {
+      violations.push({
+        rule: 'selection-empty',
+        message: `selection "${key}" matches no tests — the definition is too narrow, or nothing in the project qualifies`,
+      });
+    }
+    if (notRun.length > 0) {
+      const names = notRun
+        .slice(0, 3)
+        .map((entry) => entry.title)
+        .join(', ');
+      const more = notRun.length > 3 ? `, +${notRun.length - 3} more` : '';
+      violations.push({
+        rule: 'selection-not-run',
+        message: `${notRun.length} test${notRun.length === 1 ? '' : 's'} in selection "${key}" did not run: ${names}${more}`,
+        actual: notRun.length,
+        limit: 0,
+      });
+    }
+    if (failed.length > 0) {
+      const names = failed
+        .slice(0, 3)
+        .map((entry) => entry.title)
+        .join(', ');
+      const more = failed.length > 3 ? `, +${failed.length - 3} more` : '';
+      violations.push({
+        rule: 'selection-failed',
+        message: `${failed.length} test${failed.length === 1 ? '' : 's'} in selection "${key}" failed: ${names}${more}`,
+        actual: failed.length,
+        limit: 0,
+      });
+    }
+  }
+
   return { passed: violations.length === 0, violations, facts };
 }
 
@@ -165,7 +237,7 @@ export function formatGateResult(result: GateResult): string {
     result.passed
       ? `✔ Piwi gate passed — ${facts.projectName} run #${facts.runId}`
       : `✖ Piwi gate failed — ${facts.projectName} run #${facts.runId}`,
-    `  ${facts.totalTests} tests, ${facts.failedTests} failed, ${facts.newRegressions} new, ${facts.newFlaky} newly flaky`,
+    `  ${facts.totalTests} tests, ${facts.failedTests} failed, ${facts.newRegressions} new, ${facts.newFlaky} newly flaky, ${facts.flakyTests} flaky`,
   ];
   if (facts.quarantinedFailures > 0) {
     lines.push(

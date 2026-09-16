@@ -15,18 +15,24 @@ const props = defineProps<{
   storageKey?: string;
   /** Render the content without a card wrapper (for embedding in an existing section). */
   plain?: boolean;
+  /** Keep the heading row but drop the card frame and padding. */
+  embedded?: boolean;
 }>();
 
-const cardComponent = computed(() => (props.plain ? 'div' : props.storageKey ? CollapsibleSectionCard : SectionCard));
+const cardComponent = computed(() =>
+  props.plain ? 'div' : props.embedded ? SectionCard : props.storageKey ? CollapsibleSectionCard : SectionCard,
+);
 const cardBind = computed(() =>
   props.plain
     ? {}
-    : {
-        icon: 'i-lucide-database',
-        title: 'App state at test end',
-        help: 'page-state',
-        ...(props.storageKey ? { storageKey: props.storageKey } : {}),
-      },
+    : props.embedded
+      ? { embedded: true, title: '' }
+      : {
+          icon: 'i-lucide-database',
+          title: 'App state at test end',
+          help: 'page-state',
+          ...(props.storageKey ? { storageKey: props.storageKey } : {}),
+        },
 );
 
 const cookieFlags = (c: PageState['cookies'][number]) =>
@@ -41,10 +47,14 @@ const foldedText = computed(() => {
   ];
   return bits.join(' · ');
 });
+
+// Forward the fold/scroll so a clue or AI citation to `appState` can reveal it.
+const cardRef = ref<{ reveal?: () => void } | null>(null);
+defineExpose({ reveal: () => cardRef.value?.reveal?.() });
 </script>
 
 <template>
-  <component :is="cardComponent" v-bind="cardBind">
+  <component :is="cardComponent" ref="cardRef" v-bind="cardBind">
     <template v-if="storageKey && !plain" #folded>
       <span>{{ foldedText }}</span>
     </template>

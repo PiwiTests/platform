@@ -71,7 +71,7 @@ async function loadTraceDomSnapshot(path: string): Promise<DomSnapshotResult | n
 }
 
 /**
- * GET /api/test-runs/:id/cases/:caseId/dom-snapshot — mirrors the server's
+ * GET /api/test-run-cases/:id/dom-snapshot — mirrors the server's
  * `resolveCaseDomSnapshot`: DOM by default, the ARIA tree as a fallback or on
  * demand (`?source=aria`), and `availableSources` so the picker can offer the
  * view toggle. The DOM ladder is demo-specific: a story's **authored**

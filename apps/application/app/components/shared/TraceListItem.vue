@@ -26,6 +26,24 @@ const downloadUrl = computed(() =>
     ? `${base.value}/${props.trace.filePath}`
     : `${base.value}/api/files/${getFileApiPath(props.trace.filePath)}`,
 );
+
+// In the desktop shell `target="_blank"` is inert, so the anchors are overridden
+// there: the viewer opens in a new app window (which keeps the access-token
+// cookie) and the archive is saved through the shell. On web the anchors are
+// left to do their normal thing (new tab / native download).
+const { isDesktop, openWindow } = useDesktopWindow();
+const { download } = useDesktopDownload();
+
+function onView(event: MouseEvent) {
+  if (!isDesktop) return;
+  event.preventDefault();
+  openWindow(viewUrl.value);
+}
+function onDownload(event: MouseEvent) {
+  if (!isDesktop) return;
+  event.preventDefault();
+  download(downloadUrl.value, name.value, { binary: true });
+}
 </script>
 
 <template>
@@ -37,7 +55,7 @@ const downloadUrl = computed(() =>
       <span v-if="showTime" class="text-xs text-gray-400 shrink-0">{{ formatRelativeTime(trace.createdAt) }}</span>
     </div>
     <div class="flex items-center gap-1.5 shrink-0">
-      <UButton :to="viewUrl" target="_blank" icon="i-lucide-bug-play" size="xs" label="View trace" />
+      <UButton :to="viewUrl" target="_blank" icon="i-lucide-bug-play" size="xs" label="View trace" @click="onView" />
       <UButton
         :to="downloadUrl"
         target="_blank"
@@ -46,6 +64,7 @@ const downloadUrl = computed(() =>
         color="neutral"
         variant="soft"
         label="Download"
+        @click="onDownload"
       />
     </div>
   </div>

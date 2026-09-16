@@ -379,6 +379,20 @@ const windsurfSnippet = computed(() =>
           </div>
         </SectionCard>
 
+        <!-- Agent skills -->
+        <SectionCard icon="i-lucide-graduation-cap" title="Agent skills" help="mcp.skills" data-shot="mcp-agent-skills">
+          <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            The tools above give an agent read access to your results; <strong>skills</strong> tell it what to
+            <em>do</em> with them — investigate a failed run, apply a healed locator at its call site, stabilize the
+            highest-impact flaky tests. Each skill is a portable <code class="font-mono">SKILL.md</code> file that
+            prefers this MCP server and falls back to the dashboard UI. Install them into your test project with the
+            reporter CLI (<code class="font-mono">npx @piwitests/reporter init</code>
+            already does this as part of setup):
+          </p>
+          <CodeBlock code="npx @piwitests/reporter skills add" lang="bash" class="mb-3" />
+          <DocLink to="features/mcp#agent-skills" class="text-sm">What each skill does</DocLink>
+        </SectionCard>
+
         <!-- Authentication -->
         <SectionCard icon="i-lucide-key" title="Authentication" help="mcp.auth">
           <div class="space-y-3 text-sm text-gray-600 dark:text-gray-400">

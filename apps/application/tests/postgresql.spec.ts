@@ -68,7 +68,7 @@ test.describe('PostgreSQL integration', () => {
     expect(response.ok()).toBeTruthy();
     const data = await response.json();
     expect(data.success).toBe(true);
-    expect(data.testRunId).toBeDefined();
+    expect(data.runId).toBeDefined();
     expect(data.projectId).toBeDefined();
   });
 
@@ -76,7 +76,7 @@ test.describe('PostgreSQL integration', () => {
     const response = await request.get(`${baseURL}/api/projects`);
 
     expect(response.ok()).toBeTruthy();
-    const projects = await response.json();
+    const { items: projects } = await response.json();
     expect(Array.isArray(projects)).toBe(true);
     expect(projects.length).toBeGreaterThan(0);
 
@@ -87,7 +87,7 @@ test.describe('PostgreSQL integration', () => {
   test('should get project details with test runs', async ({ request }) => {
     const projectsResponse = await request.get(`${baseURL}/api/projects`);
     expect(projectsResponse.ok()).toBeTruthy();
-    const projects = await projectsResponse.json();
+    const { items: projects } = await projectsResponse.json();
     const project = projects.find((p: { name: string; id: number }) => p.name === PROJECT.PG_TEST);
     expect(project).toBeDefined();
 
@@ -101,7 +101,7 @@ test.describe('PostgreSQL integration', () => {
   test('should get test run details with test cases', async ({ request }) => {
     const projectsResponse = await request.get(`${baseURL}/api/projects`);
     expect(projectsResponse.ok()).toBeTruthy();
-    const projects = await projectsResponse.json();
+    const { items: projects } = await projectsResponse.json();
     const project = projects.find((p: { name: string; id: number }) => p.name === PROJECT.PG_TEST);
     expect(project).toBeDefined();
 
@@ -155,7 +155,7 @@ test.describe('PostgreSQL integration', () => {
     expect(data.success).toBe(true);
 
     // Verify metadata is stored and returned
-    const runResponse = await request.get(`${baseURL}/api/test-runs/${data.testRunId}`);
+    const runResponse = await request.get(`${baseURL}/api/test-runs/${data.runId}`);
     expect(runResponse.ok()).toBeTruthy();
     const runData = await runResponse.json();
     expect(runData.metadata).toBeDefined();

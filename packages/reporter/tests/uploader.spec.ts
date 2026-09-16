@@ -75,7 +75,7 @@ afterEach(() => {
 describe('Uploader.uploadJSON', () => {
   it('POSTs the serialized run (with test cases) to /api/test-runs/submit', async () => {
     const { server, url, requests } = await startServer((_req, res) =>
-      jsonRes(res, 200, { testRunId: 7, projectId: 3 }),
+      jsonRes(res, 200, { runId: 7, projectId: 3 }),
     );
     try {
       const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
@@ -87,7 +87,7 @@ describe('Uploader.uploadJSON', () => {
       const body = JSON.parse(requests[0]!.body);
       expect(body.projectName).toBe('proj');
       expect(body.testCases).toHaveLength(1);
-      expect(response).toEqual({ testRunId: 7, projectId: 3 });
+      expect(response).toEqual({ runId: 7, projectId: 3 });
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
     }
@@ -107,7 +107,7 @@ describe('Uploader.uploadWithFiles', () => {
     fs.writeFileSync(screenshotFile, 'PNG-BYTES');
 
     const { server, url, requests } = await startServer((_req, res) =>
-      jsonRes(res, 200, { testRunId: 1, projectId: 2, reports: [{ label: 'custom', path: 'x' }] }),
+      jsonRes(res, 200, { runId: 1, projectId: 2, reports: [{ label: 'custom', path: 'x' }] }),
     );
     try {
       const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
@@ -150,7 +150,7 @@ describe('Uploader.uploadWithFiles', () => {
     fs.writeFileSync(traceFile, 'TRACE-BYTES');
 
     const { server, url, requests } = await startServer((_req, res) =>
-      jsonRes(res, 200, { testRunId: 1, projectId: 2 }),
+      jsonRes(res, 200, { runId: 1, projectId: 2 }),
     );
     try {
       const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
@@ -179,7 +179,7 @@ describe('Uploader.uploadReportsForStreamingRun', () => {
 
       expect(requests).toHaveLength(1);
       expect(requests[0]!.url).toBe('/api/test-runs/upload');
-      expect(requests[0]!.body).toContain('name="testRunId"');
+      expect(requests[0]!.body).toContain('name="runId"');
       expect(requests[0]!.body).toContain('42');
       expect(requests[0]!.body).toContain('already-submitted');
     } finally {

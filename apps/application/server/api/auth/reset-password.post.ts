@@ -4,7 +4,7 @@ import { users } from '../../database/schema';
 import { validateAccountToken, consumeAccountToken } from '../../utils/account-tokens';
 import { hashPassword, revokeUserSessions } from '../../utils/auth';
 import { clearUserSession } from '../../utils/auth';
-import { checkRateLimit } from '../../utils/rate-limit';
+import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../utils/rate-limit';
 import { z } from 'zod';
 
 defineRouteMeta({
@@ -23,15 +23,15 @@ const schema = z.object({
 });
 
 export default eventHandler(async (event) => {
-  const ip = getRequestIP(event) ?? 'unknown';
-  if (!checkRateLimit(`reset:${ip}`, 10, 15 * 60 * 1000)) {
-    throw createError({ statusCode: 429, message: 'Too many requests. Please wait before trying again.' });
+  const rateKey = `reset:${rateLimitClientIp(event)}`;
+  if (!checkRateLimit(rateKey, 10, 15 * 60 * 1000)) {
+    throw rateLimitedError(event, [rateKey]);
   }
 
   const body = await readBody(event);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    throw createError({ statusCode: 400, message: 'Token and password (min 8 chars) are required' });
+    throw apiError({ statusCode: 400, message: 'Token and password (min 8 chars) are required' });
   }
 
   const { token, password } = parsed.data;
@@ -41,12 +41,12 @@ export default eventHandler(async (event) => {
   let validated = await validateAccountToken(db, token, 'reset');
   if (!validated) validated = await validateAccountToken(db, token, 'invite');
   if (!validated) {
-    throw createError({ statusCode: 400, message: 'Invalid or expired token' });
+    throw apiError({ statusCode: 400, message: 'Invalid or expired token' });
   }
 
   const userRows = await db.select().from(users).where(eq(users.id, validated.userId));
   const user = userRows[0];
-  if (!user) throw createError({ statusCode: 400, message: 'Invalid or expired token' });
+  if (!user) throw apiError({ statusCode: 400, message: 'Invalid or expired token' });
 
   const hashedPassword = await hashPassword(password);
   const extraFields = validated.purpose === 'invite' ? { emailVerified: true } : {};

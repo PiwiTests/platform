@@ -5,6 +5,107 @@ import type { FullConfig, Suite, TestCase } from '@playwright/test/reporter';
 import { Logger } from '../support/logger.js';
 import type { SuiteConfigEntry } from '../../types.js';
 
+type Env = Record<string, string | undefined>;
+
+/** git's answer for a detached HEAD checkout — a state, not a branch name. */
+const DETACHED_HEAD = 'HEAD';
+
+/**
+ * Resolve the logical branch through a fallback chain, never returning the
+ * literal `HEAD` git reports on the detached checkouts CI creates:
+ *
+ *   1. `PIWI_BRANCH` — explicit operator override.
+ *   2. CI provider branch variables, in the same provider precedence
+ *      `collectCiInfo` uses (Jenkins → GitHub → GitLab → CircleCI → Travis →
+ *      Azure), plus Bitbucket. Pull-request source-branch variables win over
+ *      the plain ref so a PR build records the branch under test.
+ *   3. git's `--abbrev-ref HEAD`, with `HEAD` treated as unknown.
+ *
+ * Returns `undefined` when nothing yields a real branch — callers store
+ * "unknown", never `HEAD`.
+ */
+export function resolveScmBranch(env: Env, gitBranch?: string): string | undefined {
+  const pick = (...names: string[]): string | undefined => {
+    for (const name of names) {
+      const value = env[name]?.trim();
+      if (value) return value;
+    }
+    return undefined;
+  };
+
+  const override = env.PIWI_BRANCH?.trim();
+  if (override) return override;
+
+  let provider: string | undefined;
+  if (env.JENKINS_URL) provider = pick('CHANGE_BRANCH', 'BRANCH_NAME');
+  else if (env.GITHUB_ACTIONS) provider = pick('GITHUB_HEAD_REF', 'GITHUB_REF_NAME');
+  else if (env.GITLAB_CI) provider = pick('CI_MERGE_REQUEST_SOURCE_BRANCH_NAME', 'CI_COMMIT_REF_NAME');
+  else if (env.CIRCLECI) provider = pick('CIRCLE_BRANCH');
+  else if (env.TRAVIS) provider = pick('TRAVIS_PULL_REQUEST_BRANCH', 'TRAVIS_BRANCH');
+  else if (env.TF_BUILD) provider = pick('SYSTEM_PULLREQUEST_SOURCEBRANCH', 'BUILD_SOURCEBRANCHNAME');
+  else if (env.BITBUCKET_BUILD_NUMBER) provider = pick('BITBUCKET_BRANCH');
+  if (provider) return normalizeRef(provider);
+
+  const trimmed = gitBranch?.trim();
+  if (trimmed && trimmed !== DETACHED_HEAD) return trimmed;
+
+  return undefined;
+}
+
+/**
+ * Capture the pull-request number where the CI provider exposes it, so PR
+ * feedback can look the PR up exactly instead of guessing by source branch.
+ * GitHub carries it inside `GITHUB_REF` as `refs/pull/<n>/merge`; the others
+ * expose a dedicated variable. Returned as a string to sit beside the other
+ * string-valued SCM fields.
+ */
+export function resolveScmPrNumber(env: Env): string | undefined {
+  const githubRef = env.GITHUB_ACTIONS ? env.GITHUB_REF?.match(/^refs\/pull\/(\d+)\/(?:merge|head)$/) : undefined;
+  const raw =
+    githubRef?.[1] ??
+    env.CI_MERGE_REQUEST_IID ??
+    env.BITBUCKET_PR_ID ??
+    env.SYSTEM_PULLREQUEST_PULLREQUESTNUMBER ??
+    env.CHANGE_ID;
+  const trimmed = raw?.trim();
+  return trimmed && /^\d+$/.test(trimmed) ? trimmed : undefined;
+}
+
+/**
+ * Resolve the branch a pull-request build targets — the branch the run's own
+ * branch forked from — so the dashboard can fall back to its history when the
+ * feature branch has none of its own:
+ *
+ *   1. `PIWI_BASE_BRANCH` — explicit operator override.
+ *   2. The CI provider's pull-request target variable, in the same provider
+ *      precedence `resolveScmBranch` uses. Only pull-request builds carry one;
+ *      a plain push build resolves nothing.
+ *
+ * Returns `undefined` outside a pull-request build — the dashboard then falls
+ * back to the project's default branch.
+ */
+export function resolveScmBaseBranch(env: Env): string | undefined {
+  const override = env.PIWI_BASE_BRANCH?.trim();
+  if (override) return override;
+
+  let target: string | undefined;
+  if (env.JENKINS_URL) target = env.CHANGE_TARGET;
+  else if (env.GITHUB_ACTIONS) target = env.GITHUB_BASE_REF;
+  else if (env.GITLAB_CI) target = env.CI_MERGE_REQUEST_TARGET_BRANCH_NAME;
+  else if (env.TRAVIS)
+    target = env.TRAVIS_PULL_REQUEST && env.TRAVIS_PULL_REQUEST !== 'false' ? env.TRAVIS_BRANCH : undefined;
+  else if (env.TF_BUILD) target = env.SYSTEM_PULLREQUEST_TARGETBRANCH;
+  else if (env.BITBUCKET_BUILD_NUMBER) target = env.BITBUCKET_PR_DESTINATION_BRANCH;
+
+  const trimmed = target?.trim();
+  return trimmed ? normalizeRef(trimmed) : undefined;
+}
+
+/** Strip a leading `refs/heads/` a provider may prefix onto a branch variable. */
+function normalizeRef(ref: string): string {
+  return ref.replace(/^refs\/heads\//, '');
+}
+
 /**
  * Collects CI/CD environment metadata, SCM (git) information, and Playwright
  * config metadata to attach to each test run submission.
@@ -83,6 +184,7 @@ export class MetadataCollector {
           if (use.colorScheme) config.colorScheme = use.colorScheme;
           if (use.reducedMotion) config.reducedMotion = use.reducedMotion;
           if (use.forcedColors) config.forcedColors = use.forcedColors;
+          if (use.contrast) config.contrast = use.contrast;
           if (use.offline) config.offline = use.offline;
           if (use.bypassCSP) config.bypassCSP = use.bypassCSP;
           if (use.javaScriptEnabled === false) config.javaScriptEnabled = false;
@@ -130,6 +232,7 @@ export class MetadataCollector {
 
   private collectScmInfo(_options: any): Record<string, string> | undefined {
     const scm: Record<string, string> = {};
+    let gitBranch: string | undefined;
     try {
       const execOpts: { encoding: 'utf8'; timeout: number; maxBuffer: number; stdio: StdioOptions } = {
         encoding: 'utf8',
@@ -138,7 +241,7 @@ export class MetadataCollector {
         stdio: ['ignore', 'pipe', 'ignore'],
       };
       scm.commit = execSync('git rev-parse HEAD', execOpts).trim();
-      scm.branch = execSync('git rev-parse --abbrev-ref HEAD', execOpts).trim();
+      gitBranch = execSync('git rev-parse --abbrev-ref HEAD', execOpts).trim();
       scm.author = execSync('git log -1 --pretty=format:"%an"', execOpts).trim();
       scm.commitMessage = execSync('git log -1 --pretty=format:"%s"', execOpts).trim();
       try {
@@ -149,6 +252,18 @@ export class MetadataCollector {
     } catch (error) {
       this.logger.debug(`Git info not available: ${errorMessage(error)}`);
     }
+
+    // Resolve the logical branch (plus the PR number and the branch it targets)
+    // from the operator override and CI provider variables even when git is
+    // unavailable or detached, so a CI pull-request build never records the
+    // literal `HEAD` git reports.
+    const branch = resolveScmBranch(process.env, gitBranch);
+    if (branch) scm.branch = branch;
+    const prNumber = resolveScmPrNumber(process.env);
+    if (prNumber) scm.prNumber = prNumber;
+    const baseBranch = resolveScmBaseBranch(process.env);
+    if (baseBranch) scm.baseBranch = baseBranch;
+
     return Object.keys(scm).length > 0 ? scm : undefined;
   }
 

@@ -1,5 +1,6 @@
 import { getDatabase } from '../../database';
 import { getProject } from '#shared/handlers/projects';
+import { optionalIntQuery } from '../../utils/query-params';
 import { requireProjectAccess, requireRouteId } from '../../utils/project-access';
 
 defineRouteMeta({
@@ -25,8 +26,7 @@ export default eventHandler(async (event) => {
 
   await requireProjectAccess(event, id);
 
-  const rawLimit = Number(getQuery(event).limit);
-  const runLimit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : undefined;
+  const runLimit = optionalIntQuery(event, 'limit', { min: 1 });
 
   const db = await getDatabase();
   try {
@@ -35,7 +35,7 @@ export default eventHandler(async (event) => {
     return rest;
   } catch (e: any) {
     if (e?.message === 'Project not found') {
-      throw createError({ statusCode: 404, message: 'Project not found' });
+      throw apiError({ statusCode: 404, message: 'Project not found' });
     }
     throw e;
   }

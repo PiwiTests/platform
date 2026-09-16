@@ -26,6 +26,8 @@ export type SettingsPageId =
   | 'storage'
   | 'performance'
   | 'pr-feedback'
+  | 'auto-heal'
+  | 'integrations'
   | 'ai'
   | 'about';
 
@@ -115,7 +117,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
       { id: 'notifications.smtp', label: 'SMTP email delivery', help: 'settings.smtp', envOnly: true },
       { id: 'notifications.test-email', label: 'Send test email', help: 'notifications.test-email' },
       { id: 'notifications.channels', label: 'Notification channels', help: 'notifications.channels' },
-      { id: 'notifications.subscriptions', label: 'My subscriptions', help: 'notifications.subscriptions' },
+      { id: 'notifications.subscriptions', label: 'Subscriptions', help: 'notifications.subscriptions' },
     ],
   },
   {
@@ -127,6 +129,19 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     roles: [Role.ADMINISTRATOR],
     introHelp: 'settings.tags',
     fields: [{ id: 'tags.list', label: 'Tags', help: 'settings.tags' }],
+  },
+  {
+    id: 'integrations',
+    label: 'Integrations',
+    icon: 'i-lucide-plug',
+    to: '/settings/integrations',
+    group: 'instance',
+    roles: [Role.ADMINISTRATOR],
+    introHelp: 'settings.integrations',
+    fields: [
+      { id: 'integrations.connections', label: 'Connections', help: 'settings.integrations' },
+      { id: 'integrations.connection', label: 'Connect a system', help: 'settings.integrations.connection' },
+    ],
   },
   {
     id: 'storage',
@@ -164,6 +179,16 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     fields: [{ id: 'pr-feedback.settings', label: 'Pull-request feedback', help: 'settings.pr-feedback' }],
   },
   {
+    id: 'auto-heal',
+    label: 'Auto-heal',
+    icon: 'i-lucide-bandage',
+    to: '/settings/auto-heal',
+    group: 'analysis',
+    roles: [Role.ADMINISTRATOR],
+    introHelp: 'settings.auto-heal',
+    fields: [{ id: 'auto-heal.settings', label: 'Auto-heal pull requests', help: 'settings.auto-heal' }],
+  },
+  {
     id: 'ai',
     label: 'AI diagnosis',
     icon: 'i-lucide-sparkles',
@@ -175,6 +200,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
       { id: 'ai.research', label: 'Research model', help: 'settings.ai-research' },
       { id: 'ai.embedding', label: 'Embedding model', help: 'settings.embedding-model' },
       { id: 'ai.auto-diagnose', label: 'Auto-diagnose', help: 'settings.auto-diagnose' },
+      { id: 'ai.notifications', label: 'Diagnosis notifications', help: 'settings.ai-notifications' },
       { id: 'ai.context-limits', label: 'Diagnosis context limits', help: 'settings.ai-limits' },
       { id: 'ai.instructions', label: 'Global analysis instructions', help: 'settings.ai-instructions' },
       { id: 'ai.scm-token', label: 'Repository access token', help: 'project.scm-token' },

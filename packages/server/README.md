@@ -1,16 +1,16 @@
 # @piwitests/server
 
-Run the self-hosted [Piwi Dashboard](https://piwitests.github.io) server — a permanent
+Run the self-hosted [Piwi Dashboard](https://piwitests.dev) server — a permanent
 home for your Playwright test results — with a single command, no Docker required.
 
 > **Docker is the recommended way to run Piwi in production** (pinned runtime, isolated
-> environment): see the [deployment guide](https://piwitests.github.io/deployment). This
+> environment): see the [deployment guide](https://piwitests.dev/operate/deployment). This
 > npm package is a low-friction path for a quick local run or environments where Docker
 > isn't available.
 
 ## Requirements
 
-- Node.js **24+**
+- Node.js **22+**
 
 ## Quick start
 
@@ -39,20 +39,19 @@ npm install @piwitests/server
 
 ## Configuration
 
-All configuration is via environment variables (same as the Docker image). Common ones:
+All configuration is via environment variables (same as the Docker image). `PORT`
+(default `3000`) sets the listen port; everything else is a `PIWI_*` variable
+documented — with its default and whether the Settings UI can override it — in the
+[configuration reference](https://piwitests.dev/reference/configuration). Most deployments set at
+least `PIWI_SECRET_KEY`, the master key for encrypting secrets stored in the database
+(AI API keys, SCM tokens); recommended in any real deployment. Generate one with:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `3000` | Port to listen on |
-| `PIWI_SECRET_KEY` | — | Master key for encrypting secrets stored in the database (AI API keys, SCM tokens). Recommended in any real deployment. Generate with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. |
-| `PIWI_AUTH_ENABLED` | — | Enable authentication (multi-user) |
-| `PIWI_AUTH_SECRET` | — | Secret for encrypting session cookies (required when auth is enabled) |
-| `PIWI_DATABASE_URL` | — | PostgreSQL connection string (e.g. `postgresql://user:pass@host:5432/db`). When set, PostgreSQL is used instead of SQLite. |
-| `PIWI_DATABASE_PATH` | `.data/piwi.db` | SQLite database path (ignored when `PIWI_DATABASE_URL` is set) |
-| `PIWI_STORAGE_TYPE` | `local` | Storage backend (`local` or `s3`) |
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
 
-See the [configuration reference](https://piwitests.github.io/configuration) for the full
-list.
+Enable multi-user access with `PIWI_AUTH_ENABLED=true` plus `PIWI_AUTH_SECRET`, and
+point at PostgreSQL with `PIWI_DATABASE_URL`.
 
 Set variables the usual way for your shell — for example, on a different port:
 
@@ -70,7 +69,7 @@ $env:PORT='8080'; npx @piwitests/server
 
 Add the [`@piwitests/reporter`](https://www.npmjs.com/package/@piwitests/reporter) to your
 Playwright project and point it at this server — see the
-[getting started guide](https://piwitests.github.io/getting-started).
+[getting started guide](https://piwitests.dev/guide/getting-started).
 
 ## License
 

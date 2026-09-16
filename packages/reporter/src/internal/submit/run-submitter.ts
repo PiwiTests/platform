@@ -11,6 +11,7 @@ import { computePerformanceSummary } from '../collect/step-analyzer.js';
 import { resolveOverallStatus, serializeRun } from './serializer.js';
 import { runUrl } from '../support/run-url.js';
 import { emitRunOutputs, ciBuildUrlFromMetadata, type RunOutput } from '../support/ci-output.js';
+import type { FailureLinks } from '../support/failure-links.js';
 import type { CollectedTestCase, SetupStep, FilterDetails } from '../../types.js';
 
 /**
@@ -68,6 +69,7 @@ export class RunSubmitter {
    * @param recovery      Crash-recovery persistence.
    * @param streamManager Streaming session (may be `null` when streaming is disabled).
    * @param logger        Prefixed logger.
+   * @param failureLinks  Failed tests collected during the run, for the per-failure links.
    */
   constructor(
     private readonly httpClient: HttpClient,
@@ -75,6 +77,7 @@ export class RunSubmitter {
     private readonly recovery: CrashRecovery,
     private readonly streamManager: StreamManager | null,
     private readonly logger: Logger = new Logger(),
+    private readonly failureLinks: FailureLinks | null = null,
   ) {}
 
   /** Run the fallback ladder for a completed test run. */
@@ -107,12 +110,21 @@ export class RunSubmitter {
       auth = sm?.auth ?? (await this.httpClient.resolveAuth(run.options));
     } catch (error) {
       this.logger.error(`Authentication failed: ${errorMessage(error)}`);
+      this.saveRecovery(this.buildRunPayload(run, overallStatus, duration));
       throw error;
     }
 
+    // A streaming session retries the recovery file when it opens; without one,
+    // retry it here so a saved payload still reaches the server.
+    if (!sm) await this.recovery.tryUpload(this.httpClient, auth);
+
     let outcome: SubmitOutcome = { done: false, output: null };
 
-    if (sm?.enabled && sm?.runId != null) {
+    // When buffer pressure forced test-result events out of the live stream, the
+    // server is missing that detail; finalizing with `/finish` would lock it in.
+    // Fall through to the batch upload, which re-sends the full run from the
+    // reporter's own in-memory collection, so the dropped detail is recovered.
+    if (sm?.enabled && sm?.runId != null && !sm.bufferLostResults) {
       outcome = await this.tryFinishStreaming(run, overallStatus, duration, auth);
     }
 
@@ -124,7 +136,12 @@ export class RunSubmitter {
       outcome = await this.tryUploadJSON(run, overallStatus, duration, auth);
     }
 
-    if (outcome.output) emitRunOutputs(outcome.output, this.logger, run.options.outputFile);
+    if (outcome.output) {
+      // Failures that had no run id yet (batch mode, or a stream that never
+      // opened) get their link lines now, ahead of the run URL.
+      this.failureLinks?.printPending(outcome.output.runId);
+      emitRunOutputs(outcome.output, this.logger, run.options.outputFile);
+    }
   }
 
   /** Assemble a CI-facing run output, or `null` when the server returned no run id. */
@@ -142,6 +159,7 @@ export class RunSubmitter {
       projectName: run.options.projectName!,
       status,
       ciBuildUrl: ciBuildUrlFromMetadata(run.metadata),
+      failures: this.failureLinks?.resolve(runId) ?? [],
     };
   }
 
@@ -255,17 +273,15 @@ export class RunSubmitter {
     duration: number,
     auth: string | null,
   ): Promise<SubmitOutcome> {
+    const payload = this.buildRunPayload(run, overallStatus, duration);
     try {
-      const response = await this.uploader.uploadWithFiles(
-        this.buildRunPayload(run, overallStatus, duration),
-        this.reportOptions(run),
-        auth,
-      );
+      const response = await this.uploader.uploadWithFiles(payload, this.reportOptions(run), auth);
       this.recovery.clear();
-      return { done: true, output: this.buildOutput(response?.testRunId, response?.projectId, run, overallStatus) };
+      return { done: true, output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus) };
     } catch (error) {
       if (error instanceof HttpError && error.status === 401 && !auth) {
         this.logAuthRequired(run.options.serverUrl);
+        this.saveRecovery(payload);
         throw error;
       }
       this.logger.warn(`Failed to upload with files: ${errorMessage(error)}`);
@@ -284,12 +300,13 @@ export class RunSubmitter {
     try {
       const response = await this.uploader.uploadJSON(payload, auth);
       this.recovery.clear();
-      return { done: true, output: this.buildOutput(response?.testRunId, response?.projectId, run, overallStatus) };
+      return { done: true, output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus) };
     } catch (error) {
       // If the server returned 401 and no auth was configured, this is a
       // configuration error — throw so the caller knows it's fatal.
       if (error instanceof HttpError && error.status === 401 && !auth) {
         this.logAuthRequired(run.options.serverUrl);
+        this.saveRecovery(payload);
         throw error;
       }
       this.logger.error(`All upload methods failed: ${errorMessage(error)}`);
@@ -297,12 +314,18 @@ export class RunSubmitter {
         `Saved a local recovery copy — it will be uploaded automatically on your next test run. ` +
           `If this keeps happening, check that serverUrl (${run.options.serverUrl ?? 'not set'}) is correct and reachable.`,
       );
-      // Save the wire-serialized form so the recovery file matches the
-      // original submit payload (no raw attachments / internal fields).
-      this.recovery.save(serializeRun(payload, { includeTestCases: true }));
+      this.saveRecovery(payload);
       // The ladder is exhausted; nothing to surface to CI.
       return { done: true, output: null };
     }
+  }
+
+  /**
+   * Persist the wire-serialized payload (no raw attachments / internal fields)
+   * so a later run can retry the submit.
+   */
+  private saveRecovery(payload: RunPayload): void {
+    this.recovery.save(serializeRun(payload, { includeTestCases: true }));
   }
 
   /** Log one actionable line explaining how to fix a 401 caused by a missing credential. */

@@ -17,7 +17,7 @@ const { copy } = useCopy();
 const { authState } = useAuth();
 const config = useRuntimeConfig();
 
-const users = computed(() => usersData.value?.users || []);
+const users = computed(() => usersData.value?.items || []);
 const authEnabled = computed(() => usersData.value?.authEnabled || false);
 
 // Check if current user is admin (only matters when auth is enabled)
@@ -44,7 +44,7 @@ const isAddUserModalOpen = ref(false);
 const addUserSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters'),
   password: z
-    .union([z.string().min(6, 'Password must be at least 6 characters'), z.literal('').transform(() => undefined)])
+    .union([z.string().min(8, 'Password must be at least 8 characters'), z.literal('').transform(() => undefined)])
     .optional(),
   role: z.enum(['administrator', 'reporter', 'user']),
   name: z.string().optional(),
@@ -170,7 +170,7 @@ async function openApiKeysModal(user: UserDetails) {
 async function loadApiKeys(userId: number) {
   try {
     const data = await $fetch<ApiKeysResponse>(`/api/users/${userId}/api-keys`);
-    apiKeysList.value = data.apiKeys;
+    apiKeysList.value = data.items;
   } catch {
     apiKeysList.value = [];
   }
@@ -304,7 +304,7 @@ async function openProjectAccessModal(user: UserDetails) {
 
   // Load all projects for the multi-select
   try {
-    const projects = await $fetch<ProjectMenuItem[]>('/api/projects/menu');
+    const projects = (await $fetch<{ items: ProjectMenuItem[] }>('/api/projects/menu')).items;
     allProjectsList.value = projects.map((p) => ({ ...p, label: p.label || p.name }));
   } catch {
     allProjectsList.value = [];
@@ -433,9 +433,7 @@ async function handleInviteUser(user: UserDetails) {
           </template>
 
           <template #createdAt-cell="{ row }">
-            <span class="text-sm text-muted">
-              {{ prettyDateFormat(row.original.createdAt, { dateOnly: true }) }}
-            </span>
+            <ClientDate :date="row.original.createdAt" date-only class="text-sm text-muted" />
           </template>
 
           <template #actions-cell="{ row }">
@@ -645,13 +643,11 @@ async function handleInviteUser(user: UserDetails) {
                   <span
                     >Prefix: <code class="font-mono">pd_{{ key.keyPrefix }}…</code></span
                   >
-                  <span>Created: {{ prettyDateFormat(key.createdAt, { dateOnly: true }) }}</span>
-                  <span v-if="key.lastUsedAt"
-                    >Last used: {{ prettyDateFormat(key.lastUsedAt, { dateOnly: true }) }}</span
-                  >
+                  <span>Created: <ClientDate :date="key.createdAt" date-only /></span>
+                  <span v-if="key.lastUsedAt">Last used: <ClientDate :date="key.lastUsedAt" date-only /></span>
                   <span v-else class="italic">Never used</span>
                   <span v-if="key.expiresAt" :class="new Date(key.expiresAt) < new Date() ? 'text-error' : ''">
-                    Expires: {{ prettyDateFormat(key.expiresAt, { dateOnly: true }) }}
+                    Expires: <ClientDate :date="key.expiresAt" date-only />
                   </span>
                 </div>
               </div>

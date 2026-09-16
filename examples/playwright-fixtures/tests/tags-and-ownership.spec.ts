@@ -5,7 +5,7 @@ import { test, expect } from './fixtures';
  * the dashboard can slice the suite, and so a failure can name the team that
  * owns it.
  *
- * See https://piwitests.github.io/reporter#test-tags
+ * See https://piwitests.dev/reporter#test-tags
  */
 
 // Playwright folds `@tag` tokens in the title into `TestCase.tags`, so this

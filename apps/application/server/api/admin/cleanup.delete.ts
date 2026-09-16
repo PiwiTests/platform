@@ -37,7 +37,7 @@ export default eventHandler(async (event) => {
   const olderThanDays = parseInt(body?.olderThanDays ?? '0', 10);
 
   if (!olderThanDays || olderThanDays < 1) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'olderThanDays must be a positive integer',
     });

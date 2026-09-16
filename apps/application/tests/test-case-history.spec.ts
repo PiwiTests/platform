@@ -40,7 +40,7 @@ test.describe.serial('Test Case History API', () => {
     });
     expect(res1.ok()).toBeTruthy();
     const data1 = await res1.json();
-    firstRunId = data1.testRunId;
+    firstRunId = data1.runId;
 
     // Run 2 — same test cases, different durations, one failure
     const res2 = await request.post('/api/test-runs/submit', {
@@ -74,7 +74,7 @@ test.describe.serial('Test Case History API', () => {
     });
     expect(res2.ok()).toBeTruthy();
     const data2 = await res2.json();
-    secondRunId = data2.testRunId;
+    secondRunId = data2.runId;
 
     // Run 3 — test alpha passes with different duration
     const res3 = await request.post('/api/test-runs/submit', {
@@ -100,7 +100,7 @@ test.describe.serial('Test Case History API', () => {
     });
     expect(res3.ok()).toBeTruthy();
     const data3 = await res3.json();
-    thirdRunId = data3.testRunId;
+    thirdRunId = data3.runId;
   });
 
   test('should return history for a test case across all runs', async ({ request }) => {
@@ -110,7 +110,7 @@ test.describe.serial('Test Case History API', () => {
     const runData = await runRes.json();
     const testCase = runData.testCases.find((tc: { title: string }) => tc.title === 'history test alpha');
     expect(testCase).toBeDefined();
-    testRunsCaseId = testCase.id;
+    testRunsCaseId = testCase.executionId;
 
     // Resolve the stable test_case.id from the execution detail
     const execRes = await request.get(`/api/test-run-cases/${testRunsCaseId}`);
@@ -122,7 +122,7 @@ test.describe.serial('Test Case History API', () => {
     // Fetch history via the stable test case ID
     const historyRes = await request.get(`/api/test-cases/${stableTestCaseId}/history`);
     expect(historyRes.ok()).toBeTruthy();
-    const history = await historyRes.json();
+    const { items: history } = await historyRes.json();
 
     // Should have at least 3 entries (concurrent browser runs create additional history entries)
     expect(Array.isArray(history)).toBe(true);
@@ -143,7 +143,7 @@ test.describe.serial('Test Case History API', () => {
 
   test('should include duration, error, and retries in history entries', async ({ request }) => {
     const historyRes = await request.get(`/api/test-cases/${stableTestCaseId}/history`);
-    const history = await historyRes.json();
+    const { items: history } = await historyRes.json();
 
     // "history test alpha" was in all 3 runs
     // Run 1: alpha passed 1000ms, 0 retries, run status passed
@@ -213,23 +213,23 @@ test.describe.serial('Test Case History API', () => {
     const data = await res.json();
 
     // Get the test_runs_case ID
-    const runRes = await request.get(`/api/test-runs/${data.testRunId}`);
+    const runRes = await request.get(`/api/test-runs/${data.runId}`);
     const runData = await runRes.json();
     const tc = runData.testCases.find((t: { title: string }) => t.title === 'history test single');
 
     // Resolve stable test_case.id
-    const execRes = await request.get(`/api/test-run-cases/${tc.id}`);
+    const execRes = await request.get(`/api/test-run-cases/${tc.executionId}`);
     const execData = await execRes.json();
     const stableId = execData.testCaseId;
 
     // Fetch history — should have at least 1 entry (concurrent browser runs may add more)
     const historyRes = await request.get(`/api/test-cases/${stableId}/history`);
     expect(historyRes.ok()).toBeTruthy();
-    const history = await historyRes.json();
+    const { items: history } = await historyRes.json();
     expect(Array.isArray(history)).toBe(true);
     expect(history.length).toBeGreaterThanOrEqual(1);
     // Verify the entry from our specific run
-    const myEntry = history.find((h: { runId: number }) => h.runId === data.testRunId);
+    const myEntry = history.find((h: { runId: number }) => h.runId === data.runId);
     expect(myEntry).toBeDefined();
     expect(myEntry.status).toBe('passed');
     expect(myEntry.duration).toBe(500);

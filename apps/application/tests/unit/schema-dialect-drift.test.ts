@@ -37,6 +37,9 @@ const CANONICAL_TYPES: Record<string, string> = {
   PgJsonb: 'json',
   PgReal: 'float',
   PgDoublePrecision: 'float',
+  // The only PG custom type is intBoolean (schema.pg.ts): a boolean stored in
+  // an integer column, matching SQLite's integer boolean mode.
+  PgCustomColumn: 'boolean',
 };
 
 /**
@@ -47,10 +50,7 @@ const CANONICAL_TYPES: Record<string, string> = {
 const KNOWN_DIALECT_DIFFS: Record<string, [string, string]> = {
   // Millisecond epoch values exceed int32 on PostgreSQL.
   'test_runs_cases.started_at': ['int', 'bigint'],
-  // Historical: PG stores these as plain 0/1 integers rather than native booleans.
-  'users.email_verified': ['boolean', 'int'],
-  'notification_channels.verified': ['boolean', 'int'],
-  'subscriptions.active': ['boolean', 'int'],
+  'network_requests.start_time': ['int', 'bigint'],
 };
 
 interface ColumnShape {

@@ -17,6 +17,6 @@ export default eventHandler(async (event) => {
   const { db } = await requireResolvedProjectAccess(event, id, getSuggestionProjectId, 'Suggestion');
 
   const ok = await rejectMergeSuggestion(db, id);
-  if (!ok) throw createError({ statusCode: 409, message: 'Suggestion is not pending' });
+  if (!ok) throw apiError({ statusCode: 409, message: 'Suggestion is not pending' });
   return { success: true };
 });

@@ -10,13 +10,10 @@ hero:
   actions:
     - theme: brand
       text: Getting started
-      link: /getting-started
+      link: /guide/getting-started
     - theme: alt
       text: Live demo
-      link: https://piwitests.github.io/demo/
-    - theme: alt
-      text: Core concepts
-      link: /concepts
+      link: https://piwitests.dev/demo/
     - theme: alt
       text: GitHub
       link: https://github.com/PiwiTests/platform
@@ -37,16 +34,26 @@ features:
   - icon: 🔬
     title: Evidence in one place
     details: The bundled Playwright trace viewer, screenshots, console, network calls, Web Vitals, and the failing call stack with real source — all served by your own instance.
-  - icon: 🤖
-    title: AI diagnosis, if you want it
-    details: Optional analysis by a provider you configure (a local model works), read against your actual git diff since the last green run, with suggested patches validated against your source. Off by default.
-  - icon: 📊
-    title: Cross-project analytics
-    details: Portfolio health, a pass-rate heatmap, wasted CI minutes, regression velocity, and an auto-generated insights feed — the view you need when someone asks how the suite is doing.
   - icon: 🔒
     title: Yours to run
     details: One Docker container, SQLite or PostgreSQL, local or S3 storage, optional role-based auth. Zero telemetry — the only outbound calls are the ones you configure.
 ---
+
+<div class="home-prose">
+
+## Why this exists
+
+Playwright's HTML report is excellent, and it lasts exactly until the next build. So the questions that
+actually matter get hard to answer: *Has this test always been flaky? Did my fix work? Which of these
+forty red tests are the same bug? What did we change the day the suite started failing?*
+
+Piwi keeps the runs, so you can answer them — and then does the things a permanent history makes
+possible. It is deliberately **Playwright-only**: that is what makes traces, step timing and locator
+healing first-class rather than lowest-common-denominator. If you need one place for JUnit, pytest and
+Cypress results too, or you only ever debug locally and never look back,
+[Why Piwi?](/guide/comparison) says so plainly.
+
+</div>
 
 <div class="screenshots">
 
@@ -59,20 +66,12 @@ features:
 
 <div class="screenshot-grid">
   <div class="screenshot-item screenshot-featured">
-    <img src="/screenshots/home.png" alt="Dashboard overview — stats and test results trend chart" />
-    <p class="screenshot-caption">Dashboard overview — at-a-glance stats and a test results trend chart across all projects</p>
+    <img src="/screenshots/home.png" alt="Dashboard overview — portfolio stats, per-project health and recent activity" />
+    <p class="screenshot-caption">Dashboard overview — at-a-glance stats, each project's recent runs and pass rate, and live activity across all projects</p>
   </div>
   <div class="screenshot-item">
-    <img src="/screenshots/projects.png" alt="Projects list" />
-    <p class="screenshot-caption">Projects list — last-run status, duration, and test pass/fail ratio for every project</p>
-  </div>
-  <div class="screenshot-item">
-    <img src="/screenshots/project-detail.png" alt="Project detail" />
-    <p class="screenshot-caption">Project detail — complete run history with status badges and test breakdown</p>
-  </div>
-  <div class="screenshot-item">
-    <img src="/screenshots/performance.png" alt="Performance page" />
-    <p class="screenshot-caption">Performance — avg/P90 duration trend, slowest tests ranking, and side-by-side run comparison</p>
+    <img src="/screenshots/project-detail.png" alt="Project detail — per-run result bars above the run history table" />
+    <p class="screenshot-caption">Project detail — one bar per run over the complete history, filtered by environment</p>
   </div>
   <div class="screenshot-item">
     <img src="/screenshots/test-run.png" alt="Test run detail" />
@@ -87,6 +86,10 @@ features:
     <p class="screenshot-caption">Flaky tests — composite flakiness score with retry-pass and alternation detection</p>
   </div>
   <div class="screenshot-item">
+    <img src="/screenshots/performance.png" alt="Performance page" />
+    <p class="screenshot-caption">Performance — per-run total, average and P90 duration, above the slowest-tests ranking</p>
+  </div>
+  <div class="screenshot-item">
     <img src="/screenshots/failure-cluster-triage.png" alt="Cluster triage" />
     <p class="screenshot-caption">Cluster triage — set status, write triage notes, and track resolution</p>
   </div>
@@ -98,97 +101,30 @@ features:
 
 ## Where to go next
 
-- **Setting it up** — [Getting started](/getting-started) walks from a Docker command to your first run in the dashboard.
-- **Just want it on your laptop** — the [desktop app](/desktop) bundles the whole server in a native window: no Docker, no Node, your data in a local folder.
-- **Wondering how it models your tests** — [Core concepts](/concepts) defines runs, test cases, executions, and clusters. Worth five minutes before the rest.
-- **Wiring up CI** — [CI & sharding](/ci): two environment variables, and why ten shards are one run.
-- **Comparing tools** — [Why Piwi?](/comparison) is an honest comparison, including when Piwi isn't the right choice.
-- **Running it for a team** — [Deployment](/deployment), [Configuration](/configuration), [Authentication](/authentication), and [Privacy & data flow](/privacy).
+Start from what you came here to do.
 
-Also here, without a card of their own: [live run streaming](/reporter#live-streaming),
-[notifications](/notifications) to Slack/email/webhooks, [timeline markers](/timeline-markers) for
-annotating trends, [backend log capture](/backend-logs), [Open in IDE](/ide-integration), and an
-[MCP server](/mcp) so a coding agent can ask about test health.
+- **Something is failing right now** — [Recipes](/recipes/) answer the question you arrived with: is
+  this a regression or a flake, which locator to use instead, forty tests are red, the suite is
+  unreliable, CI takes too long.
+- **Setting it up** — [Getting started](/guide/getting-started) goes from a Docker command to your first run
+  in the dashboard. On a laptop, the [desktop app](/features/desktop) bundles the whole server in a native
+  window: no Docker, no Node.
+- **Learning the vocabulary** — [Core concepts](/guide/concepts) defines runs, test cases, executions and
+  clusters. Worth five minutes before the rest.
+- **Seeing everything it does** — the [Feature map](/reference/feature-map) lists every feature, what it needs,
+  where it lives in the dashboard, and the page that explains it.
+- **Wiring up CI** — [CI & sharding](/guide/ci): two environment variables, why ten shards are one run, and
+  how to [block a merge](/guide/ci#blocking-a-merge) on the analysis rather than the exit code.
+- **Running it for a team** — [Deployment](/operate/deployment), [Configuration](/reference/configuration),
+  [Authentication](/operate/authentication), and [Privacy & data flow](/guide/privacy).
+- **Letting an agent do the reading** — the [MCP server](/features/mcp) gives a coding agent 46 tools over your
+  test history, and [AI diagnosis](/features/ai-diagnosis) explains a cluster against your actual git diff with
+  a provider you configure. Both optional; a local model works.
+
+Also here: [cross-project analytics](/features/analytics), [notifications](/features/notifications) to Slack, email or a
+webhook, [timeline markers](/features/timeline-markers) for annotating trends,
+[backend log capture](/guide/backend-logs), [offline export](/features/offline-export) of an investigation,
+[plain-English test steps](/guide/ai-steps) compiled once and replayed with no model calls, and a
+[browser extension](/features/extension) that picks locators from the live page.
 
 </div>
-
-<style>
-.screenshots {
-  max-width: 1152px;
-  margin: 0 auto;
-  padding: 48px 24px;
-}
-
-.screenshots h2 {
-  font-size: 2rem;
-  font-weight: 700;
-  text-align: center;
-  margin-bottom: 40px;
-}
-
-.screenshot-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-}
-
-.screenshot-featured {
-  grid-column: 1 / -1;
-}
-
-.demo-video {
-  margin-bottom: 40px;
-}
-
-.demo-video video {
-  width: 100%;
-  border-radius: 12px;
-  border: 1px solid var(--vp-c-divider);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
-  display: block;
-  background: #000;
-}
-
-.screenshot-item img {
-  width: 100%;
-  border-radius: 12px;
-  border: 1px solid var(--vp-c-divider);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
-  display: block;
-}
-
-.screenshot-caption {
-  margin-top: 10px;
-  font-size: 0.875rem;
-  color: var(--vp-c-text-2);
-  text-align: center;
-}
-
-.next-steps {
-  max-width: 1152px;
-  margin: 0 auto 64px;
-  padding: 40px 24px 0;
-  border-top: 1px solid var(--vp-c-divider);
-}
-
-.next-steps h2 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin-bottom: 20px;
-}
-
-.next-steps ul {
-  padding-left: 1.25rem;
-}
-
-.next-steps li {
-  margin-bottom: 10px;
-  color: var(--vp-c-text-2);
-}
-
-@media (max-width: 768px) {
-  .screenshot-grid {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

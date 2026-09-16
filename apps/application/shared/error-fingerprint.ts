@@ -16,14 +16,22 @@
  * everything here must work in Node and service-worker contexts, so hashing
  * uses Web Crypto instead of node:crypto.
  */
-import { LOCATOR_BUILDER_METHODS } from '@piwitests/core/locator-methods';
+import {
+  extractLeafSelector,
+  extractMessageHead,
+  extractSelector,
+  extractTopFrameFile,
+  stripAnsi,
+} from '@piwitests/core/error-parse';
 import { sha256Hex } from './utils/hash';
+
+export { extractLeafSelector, extractMessageHead, extractSelector, extractTopFrameFile, stripAnsi };
 
 /**
  * Bump when the normalization algorithm changes. The version is part of the
  * hashed input, so old and new fingerprints can never collide silently.
- * Existing clusters are migrated in place by re-fingerprinting their stored
- * `sampleError` on startup (see shared/handlers/failure-cluster-recluster.ts),
+ * Existing clusters are migrated in place by re-fingerprinting their immutable
+ * `fingerprintSample` on startup (see shared/handlers/failure-cluster-recluster.ts),
  * so triage status, notes and diagnoses survive an algorithm change.
  */
 export const FINGERPRINT_VERSION = 3;
@@ -52,8 +60,6 @@ export interface ErrorFingerprint extends ErrorSignature {
   fingerprint: string;
 }
 
-// eslint-disable-next-line no-control-regex -- intentionally matches the ESC byte to strip ANSI color codes
-const ANSI_RE = new RegExp('\\u001B\\[[0-9;]*m', 'g');
 const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 // Long pure-hex runs (hashes) and shorter mixed hex+digit tokens (git short SHAs, random ids)
 const LONG_HEX_RE = /\b[0-9a-f]{8,}\b/gi;
@@ -65,13 +71,6 @@ const EMAIL_RE = /\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/gi;
 // getByTestId('login-button') and getByTestId('logout-button') stay distinct.
 const SELECTOR_OPTION_RE =
   /\b(name|hasText|hasNotText|has|placeholder|label|title|alt|exact)\s*:\s*(['"`])(?:\\.|(?!\2)[\s\S])*?\2/gi;
-const SELECTOR_FN_RE =
-  /\b(?:locator|frameLocator|getByRole|getByTestId|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle)\(/;
-
-export function stripAnsi(text: string): string {
-  return text.replace(ANSI_RE, '');
-}
-
 function classifyError(text: string): ErrorType {
   // Order matters: an expect() that timed out is still an assertion failure
   if (/strict mode violation/i.test(text)) return 'strict-mode';
@@ -84,24 +83,6 @@ function classifyError(text: string): ErrorType {
   if (/net::ERR_|NS_ERROR_|Navigation failed/i.test(text)) return 'navigation';
   if (/Timeout \d+m?s exceeded|TimeoutError|Timed out \d+m?s/i.test(text)) return 'timeout';
   return 'unknown';
-}
-
-/**
- * Cut the error down to its message head: everything before the Playwright
- * call log and the JS stack trace, capped at 5 non-empty lines so long
- * element dumps (strict-mode violations) don't destabilize the fingerprint.
- */
-function extractMessageHead(text: string): string {
-  let head = text;
-  const callLogIdx = head.indexOf('\nCall log:');
-  if (callLogIdx !== -1) head = head.slice(0, callLogIdx);
-  const stackIdx = head.search(/\n\s+at /);
-  if (stackIdx !== -1) head = head.slice(0, stackIdx);
-  const lines = head
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
-  return lines.slice(0, 5).join('\n');
 }
 
 /**
@@ -133,113 +114,8 @@ export function maskVolatile(text: string): string {
  * (row names, hasText, …) that carry per-row data, then apply the standard
  * volatile masking. The primary positional target is preserved.
  */
-function maskSelector(selector: string): string {
+export function maskSelector(selector: string): string {
   return maskVolatile(selector.replace(SELECTOR_OPTION_RE, (_m, key: string) => `${key}: <STR>`));
-}
-
-/**
- * Extract the first Playwright locator expression, scanning forward with a
- * paren-depth counter so nested forms like getByRole('row', { name: '…' })
- * are captured whole.
- */
-export function extractSelector(text: string): string | null {
-  const match = SELECTOR_FN_RE.exec(text);
-  if (!match) return null;
-  const start = match.index;
-  let depth = 0;
-  for (let i = start; i < Math.min(text.length, start + 200); i++) {
-    const ch = text[i];
-    if (ch === '(') {
-      depth++;
-    } else if (ch === ')') {
-      depth--;
-      if (depth === 0) return text.slice(start, i + 1);
-    } else if (ch === '\n') {
-      break;
-    }
-  }
-  // Unbalanced within the window — keep a stable prefix
-  return text.slice(start, start + 80);
-}
-
-/**
- * Locator-creating methods whose innermost call identifies the resolved element.
- * The single source of truth (shared with the reporter's capture proxy) lives in
- * `@piwitests/core/locator-methods`.
- */
-const LEAF_SELECTOR_METHODS = LOCATOR_BUILDER_METHODS;
-
-/**
- * Extract the leaf (innermost) locator call from a chained locator in the error,
- * e.g. `getByRole('row', { name: 'Acme' }).getByRole('button', { name: 'Delete' })`
- * → `getByRole('button', { name: 'Delete' })`.
- *
- * The capture side records a chain's innermost locator-creating call, so the
- * healing signature lookup must compare against the same leaf rather than the
- * outermost call `extractSelector` returns. For a non-chained locator the leaf
- * is the whole expression, so this matches `extractSelector`.
- *
- * Only top-level (depth-0) calls of the chain count — a locator nested inside
- * another call's args (e.g. `filter({ has: getByText('…') })`) sits at depth > 0
- * and is skipped, matching the capture side which advances the origin only
- * through top-level chain links.
- */
-export function extractLeafSelector(text: string): string | null {
-  const first = SELECTOR_FN_RE.exec(text);
-  if (!first) return null;
-
-  // Bound to the chain's own line; the Call log prints it on one line and the
-  // appended stack frame is a separate line.
-  const nl = text.indexOf('\n', first.index);
-  const region = text.slice(first.index, nl === -1 ? undefined : nl);
-
-  let depth = 0;
-  let leafStart = -1;
-  for (let i = 0; i < region.length; i++) {
-    const ch = region[i];
-    if (ch === '(') {
-      depth++;
-      continue;
-    }
-    if (ch === ')') {
-      if (depth > 0) depth--;
-      continue;
-    }
-    if (depth !== 0) continue;
-    const prev = region[i - 1];
-    if (prev && /\w/.test(prev)) continue; // require a word boundary before the method
-    for (const method of LEAF_SELECTOR_METHODS) {
-      if (region.startsWith(method, i) && region[i + method.length] === '(') {
-        leafStart = i;
-        break;
-      }
-    }
-  }
-  if (leafStart === -1) return null;
-
-  depth = 0;
-  for (let i = leafStart; i < region.length; i++) {
-    const ch = region[i];
-    if (ch === '(') {
-      depth++;
-    } else if (ch === ')') {
-      depth--;
-      if (depth === 0) return region.slice(leafStart, i + 1);
-    }
-  }
-  return region.slice(leafStart, leafStart + 80);
-}
-
-/** First stack frame outside node_modules and Node internals, file path only. */
-export function extractTopFrameFile(text: string): string | null {
-  const frameRe = /^\s+at (?:.*? \()?([^()\s][^()]*?):\d+:\d+\)?\s*$/gm;
-  let m: RegExpExecArray | null;
-  while ((m = frameRe.exec(text)) !== null) {
-    const file = m[1]!.replace(/\\/g, '/');
-    if (file.includes('node_modules') || file.startsWith('node:')) continue;
-    return file;
-  }
-  return null;
 }
 
 export function extractErrorSignature(rawError: string): ErrorSignature {

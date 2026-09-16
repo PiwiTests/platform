@@ -17,8 +17,9 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any);
   const result = await listProjects(db, scope);
-  return result.map((p: any) => {
+  const items = result.map((p: any) => {
     const { scmToken: _scm, ...rest } = p;
     return rest;
   });
+  return { items };
 });

@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from '../../database';
-import { createUserRecord } from '#shared/handlers/users';
+import { createUserRecord, toPublicUser } from '#shared/handlers/users';
 import { Role } from '#shared/types';
 import { hashPassword, requireAuth } from '../../utils/auth';
 import { z } from 'zod';
@@ -17,7 +17,7 @@ defineRouteMeta({
 
 const createUserSchema = z.object({
   username: z.string().min(3),
-  password: z.string().min(6).optional(),
+  password: z.string().min(8).optional(),
   role: z.nativeEnum(Role),
   name: z.string().optional(),
   email: z.string().email().optional().or(z.literal('')),
@@ -30,7 +30,7 @@ export default eventHandler(async (event) => {
   const validation = createUserSchema.safeParse(body);
 
   if (!validation.success) {
-    throw createError({
+    throw apiError({
       statusCode: 400,
       message: 'Invalid request body',
       data: validation.error.issues,
@@ -51,22 +51,15 @@ export default eventHandler(async (event) => {
     });
 
     if (!user) {
-      throw createError({ statusCode: 500, message: 'Failed to create user' });
+      throw apiError({ statusCode: 500, message: 'Failed to create user' });
     }
 
-    return {
-      success: true,
-      user: {
-        id: user.id,
-        username: user.username,
-        role: user.role as Role,
-        name: user.name,
-      },
-    };
+    return { success: true, user: toPublicUser(user) };
   } catch (err) {
-    throw createError({
-      statusCode: 400,
-      message: err instanceof Error ? err.message : 'Failed to create user',
+    const message = err instanceof Error ? err.message : 'Failed to create user';
+    throw apiError({
+      statusCode: message === 'Username already exists' ? 409 : 400,
+      message,
     });
   }
 });

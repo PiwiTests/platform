@@ -23,6 +23,7 @@ import {
   buildSourceFrames,
   buildWebAssertionError,
 } from '#shared/demo/failure-stories.mjs';
+import { demoLocks, demoTags, demoTestMeta, buildAiUsage } from '#shared/demo/demo-test-meta.mjs';
 
 export const DEMO_SIMULATOR_INSTANCE_ID = 'demo-simulator';
 
@@ -43,6 +44,10 @@ interface SimStep {
   title: string;
   duration: number;
   category: string;
+  /** Playwright 1.63 step target (rendered locator or URL), carried separately. */
+  subtitle?: string;
+  /** Playwright 1.63 curated per-step arguments. */
+  params?: Record<string, string | number | boolean>;
 }
 
 interface SimAttempt {
@@ -51,6 +56,7 @@ interface SimAttempt {
   duration?: number;
   error?: string;
   consoleLogs?: Array<Record<string, unknown>>;
+  dialogs?: Array<Record<string, unknown>>;
   ariaSnapshot?: string;
   testAnnotations?: Array<{ type: string; description?: string }> | null;
   testSource?: string | null;
@@ -58,6 +64,8 @@ interface SimAttempt {
 }
 
 interface SimTest {
+  /** Spec file the test lives in (source of the deterministic tags/AI usage). */
+  file: string;
   title: string;
   location: string;
   duration: number;
@@ -72,6 +80,9 @@ interface SimTest {
   webVitals: Record<string, unknown>;
   pageState?: Record<string, unknown> | null;
   browser?: Record<string, unknown> | null;
+  tags?: string[];
+  locks?: string[];
+  testMeta?: { owner?: string | null; priority?: string | null; feature?: string | null } | null;
   suitePath?: string[];
   suiteConfig?: Array<{ mode: string; annotations: Array<{ type: string; description?: string }> }>;
 }
@@ -206,30 +217,62 @@ const STRICT_MODE_ARIA_SNAPSHOT =
   '- button "Place order"\n' +
   '- button "Place order"';
 
+/**
+ * The seeded checkout flow in the Playwright 1.63 step shape: a bare-verb title
+ * with the target in `subtitle` and curated `params`. The static seed keeps
+ * other suites in the 1.61 shape, so the demo renders both.
+ */
+const STEP_SHAPE: Array<Omit<SimStep, 'duration'> & { fraction: number; slowFraction: number }> = [
+  {
+    title: 'Navigate',
+    subtitle: '/checkout',
+    category: 'navigation',
+    fraction: 0.2,
+    slowFraction: 0.1,
+    params: { url: 'https://shop.example.com/checkout' },
+  },
+  {
+    title: 'Fill "ada@example.com"',
+    subtitle: "getByLabel('Email')",
+    category: 'input',
+    fraction: 0.12,
+    slowFraction: 0.08,
+    params: { locator: "getByLabel('Email')", value: 'ada@example.com' },
+  },
+  {
+    title: 'Fill "Ada Lovelace"',
+    subtitle: "getByLabel('Name on card')",
+    category: 'input',
+    fraction: 0.25,
+    slowFraction: 0.12,
+    params: { locator: "getByLabel('Name on card')", value: 'Ada Lovelace' },
+  },
+  {
+    title: 'Click',
+    subtitle: "getByRole('button', { name: 'Place order' })",
+    category: 'action',
+    fraction: 0.28,
+    slowFraction: 0.55,
+    params: { locator: "getByRole('button', { name: 'Place order' })" },
+  },
+  {
+    title: 'Expect "toBeVisible"',
+    subtitle: "getByText('Order confirmed')",
+    category: 'assertion',
+    fraction: 0.15,
+    slowFraction: 0.15,
+    params: { locator: "getByText('Order confirmed')" },
+  },
+];
+
 function buildSteps(duration: number, slowStepBias = false): SimStep[] {
-  const fractions: Array<[string, number, string]> = slowStepBias
-    ? [
-        ['Navigate to checkout', 0.1, 'navigation'],
-        ['Sign in and prepare cart', 0.08, 'setup'],
-        ['Fill payment form', 0.12, 'action'],
-        ['Submit order and wait for confirmation', 0.55, 'action'],
-        ['Assert order summary', 0.15, 'assertion'],
-      ]
-    : [
-        ['Navigate to checkout', 0.2, 'navigation'],
-        ['Sign in and prepare cart', 0.12, 'setup'],
-        ['Fill payment form', 0.25, 'action'],
-        ['Submit order and wait for confirmation', 0.28, 'action'],
-        ['Assert order summary', 0.15, 'assertion'],
-      ];
-
-  const steps = fractions.map(([title, fraction, category]) => ({
-    title,
-    duration: Math.round(duration * fraction),
-    category,
+  return STEP_SHAPE.map((s) => ({
+    title: s.title,
+    subtitle: s.subtitle,
+    category: s.category,
+    params: s.params,
+    duration: Math.round(duration * (slowStepBias ? s.slowFraction : s.fraction)),
   }));
-
-  return steps;
 }
 
 const SERVER_LOGS_OK = [
@@ -255,7 +298,7 @@ const SERVER_LOGS_ERROR = [
 ];
 
 function buildNetworkRequests(opts: { slow?: boolean; paymentError?: boolean } = {}): Array<Record<string, unknown>> {
-  return [
+  return withStartTimes([
     {
       method: 'GET',
       url: 'https://shop.example.com/api/cart',
@@ -316,7 +359,21 @@ function buildNetworkRequests(opts: { slow?: boolean; paymentError?: boolean } =
             resourceType: 'fetch',
           },
         ]),
-  ];
+  ]);
+}
+
+/**
+ * Stamp sequential start times onto simulated requests, the way the fixtures
+ * record `request.timing().startTime`: each one starts shortly after the
+ * previous one finished.
+ */
+function withStartTimes(requests: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  let startTime = Date.now();
+  return requests.map((req) => {
+    const stamped = { ...req, startTime };
+    startTime += Number(req.duration ?? 0) + vary(40);
+    return stamped;
+  });
 }
 
 function buildWebVitals(slow = false): Record<string, unknown> {
@@ -583,7 +640,7 @@ function buildWaitHeavyStepEvents(testDuration: number, file: string, line: numb
 }
 
 function baseTests(opts: BaseTestOptions = {}): SimTest[] {
-  return CHECKOUT_TESTS.map((t) => {
+  return CHECKOUT_TESTS.map((t, i) => {
     const duration = vary(Math.round(t.duration * (opts.durationFactor ?? 1)), 0.12);
     const steps = buildSteps(duration, opts.slowSteps);
     const slowest = steps.reduce((a, b) => (a.duration > b.duration ? a : b));
@@ -596,6 +653,7 @@ function baseTests(opts: BaseTestOptions = {}): SimTest[] {
       .reduce((sum, e) => sum + (e.duration as number), 0);
 
     return {
+      file: t.file,
       title: t.title,
       location: `${t.file}:${t.declLine}:${t.declColumn}`,
       duration,
@@ -608,6 +666,11 @@ function baseTests(opts: BaseTestOptions = {}): SimTest[] {
       networkRequests: buildNetworkRequests({ slow: opts.slowNetwork }),
       webVitals: buildWebVitals(opts.slowNetwork),
       pageState: buildPageState(),
+      // Same deterministic tags/ownership the seed generator assigns, so
+      // owner/priority/tag filters see simulated runs like seeded ones.
+      tags: demoTags(t.file, i),
+      locks: demoLocks(t.file, i),
+      testMeta: demoTestMeta(t.file, i),
       suitePath: suite?.suitePath,
       suiteConfig: suite?.suiteConfig,
     };
@@ -698,6 +761,13 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
             duration: failedDuration,
             error: failingCase.error,
             consoleLogs: themedConsoleLogs(CLUSTER1_STORY.evidence.consoleOnFail, startedAt),
+            // The first holder also leaves a confirm dialog open at the failure
+            // moment — it blocks the page until dismissed, so the Pay action
+            // never resolves. Feeds the dialogs lane and the dialog clue.
+            dialogs:
+              i === 0 && CLUSTER1_STORY.evidence.dialogOnFail
+                ? [{ ...CLUSTER1_STORY.evidence.dialogOnFail, closedAt: startedAt + failedDuration - 250 }]
+                : undefined,
             testAnnotations: [{ type: 'fixme', description: `Known issue — see cluster ${CLUSTER1_STORY.clusterId}` }],
             testSource: buildTestSource(CLUSTER1_STORY, failingCase, CHECKOUT_TESTS[i]!.declLine),
             testSourceFrames: buildSourceFrames(failingCase),
@@ -710,10 +780,10 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
           (o) => ({ ...o }),
         );
         const base = buildNetworkRequests();
-        tests[i]!.networkRequests = [
+        tests[i]!.networkRequests = withStartTimes([
           ...base.filter((r) => !netOverrides.some((o) => o.method === r.method && o.url === r.url)),
           ...netOverrides,
-        ];
+        ]);
       }
       // One test fails with a new error signature — a brand-new cluster
       tests[2]!.attempts = [
@@ -922,7 +992,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
 // ── Simulation engine ──────────────────────────────────────────────────────
 
 export interface SimulationHooks {
-  /** Run row created (status 'initialising') — good time to navigate to it */
+  /** Run row created (status 'initializing') — good time to navigate to it */
   onRunCreated?: (runId: number, projectId: number) => void;
   onProgress?: (completed: number, failed: number, total: number) => void;
   onFinished?: (runId: number, status: string) => void;
@@ -1047,7 +1117,7 @@ async function runSingleSimulation(
   const runId = setup.runId;
   hooks.onRunCreated?.(runId, setup.projectId);
 
-  // Let the 'initialising' state be visible for a moment, like a real global setup
+  // Let the 'initializing' state be visible for a moment, like a real global setup
   await sleep(INIT_DELAY_MS / scenario.speed);
 
   const metadata = scenario.metadata();
@@ -1118,8 +1188,58 @@ async function runSingleSimulation(
           },
         ]);
 
-        await sleep(attemptDuration / scenario.speed);
-        virtualNow += attemptDuration;
+        // Stream a few of the test's steps live (transient SSE events, like the
+        // real reporter) so the demo run page shows the in-row live step readout.
+        // Wait steps are the least interesting to watch; the persisted stepEvents
+        // still carry them for the timeline.
+        const liveSteps = (test.steps ?? [])
+          .filter((s) => s.category !== 'wait')
+          .slice(0, 3)
+          .map((s) => ({ ...s, category: s.category === 'expect' ? 'pw:expect' : 'pw:api' }));
+
+        let attemptRemaining = attemptDuration;
+        let stepCursor = virtualNow;
+        if (liveSteps.length === 0) {
+          await sleep(attemptDuration / scenario.speed);
+          virtualNow += attemptDuration;
+        } else {
+          for (const s of liveSteps) {
+            const seg = Math.min(Math.max(s.duration, 1), attemptRemaining);
+            await postEvents([
+              {
+                type: 'step-begin',
+                title: s.title,
+                location: test.location,
+                stepCategory: s.category,
+                parentTitle: test.title,
+                workerIndex,
+                startedAt: stepCursor,
+              },
+            ]);
+            await sleep(seg / scenario.speed);
+            virtualNow += seg;
+            attemptRemaining -= seg;
+            await postEvents([
+              {
+                type: 'step-end',
+                title: s.title,
+                location: test.location,
+                status: 'passed',
+                duration: seg,
+                stepCategory: s.category,
+                parentTitle: test.title,
+                workerIndex,
+                startedAt: stepCursor,
+              },
+            ]);
+            stepCursor += seg;
+            if (attemptRemaining <= 0) break;
+          }
+          if (attemptRemaining > 0) {
+            await sleep(attemptRemaining / scenario.speed);
+            virtualNow += attemptRemaining;
+          }
+        }
 
         await postEvents([
           {
@@ -1128,8 +1248,17 @@ async function runSingleSimulation(
             location: test.location,
             status: a.status,
             duration: attemptDuration,
+            // The effective per-test timeout the real reporter always sends
+            // (Playwright's default unless a test overrides it).
+            timeout: 30000,
             error: a.error ?? null,
             retries: attempt,
+            attempts: test.attempts.slice(0, attempt + 1).map((att, i) => ({
+              retry: i,
+              status: att.status,
+              duration: att.duration ?? test.duration,
+              startedAt: startedAt - (attempt - i) * (test.duration + WORKER_GAP_MS),
+            })),
             steps: test.steps,
             // Remap 0-based step event offsets to absolute epoch ms anchored to
             // this test's actual startedAt, so each test's segments appear in
@@ -1143,7 +1272,12 @@ async function runSingleSimulation(
             networkRequests: test.networkRequests,
             webVitals: test.webVitals,
             pageState: test.pageState ?? null,
+            aiUsage: (await buildAiUsage({ file: test.file, title: test.title })) ?? null,
+            tags: test.tags,
+            locks: test.locks,
+            testMeta: test.testMeta,
             consoleLogs: a.consoleLogs ?? null,
+            dialogs: a.dialogs ?? null,
             ariaSnapshot: a.ariaSnapshot ?? null,
             testSource: a.testSource ?? null,
             testSourceFrames: a.testSourceFrames ?? null,
@@ -1180,6 +1314,39 @@ async function runSingleSimulation(
 
   const interrupted = ctl.stopped || completed < tests.length;
   const status = interrupted ? 'interrupted' : failedCount > 0 ? 'failed' : 'passed';
+
+  // The real reporter materializes tests that never ran (maxFailures, CI kill)
+  // as `didnotrun` complete events so the run page shows what was planned but
+  // never executed — mirror that before finishing the run.
+  if (interrupted) {
+    // A run cut short after failures stopped on its failure budget; one stopped
+    // for any other reason (a CI kill) is a plain interruption.
+    const unrunReason = failedCount > 0 ? 'max-failures' : 'interrupted';
+    const unrunTests = tests.slice(queueIndex);
+    for (const t of unrunTests) {
+      await postEvents([
+        {
+          type: 'complete',
+          title: t.title,
+          location: t.location,
+          status: 'didnotrun',
+          duration: 0,
+          timeout: 30000,
+          retries: 0,
+          workerIndex: null,
+          shardIndex: shardOverride?.shardIndex ?? null,
+          startedAt: null,
+          browser: t.browser ?? null,
+          suitePath: t.suitePath ?? null,
+          suiteConfig: t.suiteConfig ?? null,
+          tags: t.tags,
+          locks: t.locks,
+          testMeta: t.testMeta,
+          didNotRunReason: unrunReason,
+        },
+      ]);
+    }
+  }
 
   await $fetch(`/api/test-runs/${runId}/finish`, {
     method: 'POST',

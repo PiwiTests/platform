@@ -1,0 +1,1 @@
+ALTER TABLE `network_requests` ADD `start_time` integer;

@@ -37,7 +37,7 @@ describe('skill templates ship with the package', () => {
   it('separates the setup skill from the workflow skills', () => {
     expect(ALL_SKILLS).toContain(SETUP_SKILL);
     expect(WORKFLOW_SKILLS).not.toContain(SETUP_SKILL);
-    expect(WORKFLOW_SKILLS.length).toBe(3);
+    expect(WORKFLOW_SKILLS.length).toBe(4);
   });
 });
 

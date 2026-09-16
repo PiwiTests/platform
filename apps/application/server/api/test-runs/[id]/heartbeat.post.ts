@@ -29,13 +29,13 @@ export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
   if (!id) {
-    throw createError({ statusCode: 400, message: 'Invalid test run ID' });
+    throw apiError({ statusCode: 400, message: 'Invalid test run ID' });
   }
 
   const body = await readBody(event);
 
   if (!body.streamToken) {
-    throw createError({ statusCode: 401, message: 'Missing stream token' });
+    throw apiError({ statusCode: 401, message: 'Missing stream token' });
   }
 
   const db = await getDatabase();

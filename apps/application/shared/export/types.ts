@@ -8,10 +8,10 @@
 
 export type ExportKind = 'execution' | 'cluster';
 
-export const EXPORT_FORMATS = ['html', 'zip', 'json', 'md'] as const;
+export const EXPORT_FORMATS = ['html', 'zip', 'pdf', 'json', 'md'] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
-export type ExportOmissionReason = 'too-large' | 'budget-exhausted' | 'unreadable' | 'html-format';
+export type ExportOmissionReason = 'too-large' | 'budget-exhausted' | 'unreadable' | 'html-format' | 'pdf-format';
 
 /** An evidence file left out of this export, and why. */
 export interface ExportOmission {

@@ -50,11 +50,11 @@ export default eventHandler(async (event) => {
   const body = await readBody(event);
 
   const projectName = typeof body?.projectName === 'string' ? body.projectName.trim() : '';
-  if (!projectName) throw createError({ statusCode: 400, message: 'Missing required field: projectName' });
+  if (!projectName) throw apiError({ statusCode: 400, message: 'Missing required field: projectName' });
 
   const requested: unknown[] = Array.isArray(body?.files) ? body.files : [];
   if (requested.length > MAX_FILES_PER_CHECK) {
-    throw createError({ statusCode: 400, message: `Too many files in one check (max ${MAX_FILES_PER_CHECK})` });
+    throw apiError({ statusCode: 400, message: `Too many files in one check (max ${MAX_FILES_PER_CHECK})` });
   }
 
   const db = await getDatabase();
@@ -66,10 +66,10 @@ export default eventHandler(async (event) => {
 
   if (project) {
     if (!scopeAllows(scope, project.id)) {
-      throw createError({ statusCode: 403, message: 'No access to this project' });
+      throw apiError({ statusCode: 403, message: 'No access to this project' });
     }
   } else if (scope !== 'all') {
-    throw createError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
+    throw apiError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
   }
 
   const hashes = requested

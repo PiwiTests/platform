@@ -1,9 +1,9 @@
 {
   "name": "@piwitests/reporter",
-  "version": "0.24.0",
+  "version": "0.32.0",
   "description": "Playwright reporter that streams results, traces and HTML reports to a Piwi Dashboard instance",
   "url": "https://github.com/PiwiTests/platform",
-  "homepage": "https://piwitests.github.io",
+  "homepage": "https://piwitests.dev",
   "repository": {
     "type": "git",
     "url": "https://github.com/PiwiTests/platform"
@@ -62,6 +62,9 @@
     "dist/",
     "templates/"
   ],
+  "engines": {
+    "node": ">=20"
+  },
   "peerDependencies": {
     "@playwright/test": "^1.61.1"
   },

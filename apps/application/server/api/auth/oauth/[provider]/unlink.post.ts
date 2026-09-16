@@ -18,7 +18,7 @@ export default eventHandler(async (event) => {
 
   const provider = getRouterParam(event, 'provider');
   if (!provider) {
-    throw createError({ statusCode: 400, message: 'Provider is required' });
+    throw apiError({ statusCode: 400, message: 'Provider is required' });
   }
 
   await unlinkProvider(user.id, provider);

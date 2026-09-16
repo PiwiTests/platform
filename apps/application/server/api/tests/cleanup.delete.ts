@@ -27,7 +27,7 @@ export default eventHandler(async (event) => {
   const cleanupOptIn = process.env.PIWI_TEST_CLEANUP_ENABLED === 'true';
 
   if (process.env.NODE_ENV === 'production' && !cleanupOptIn) {
-    throw createError({
+    throw apiError({
       statusCode: 403,
       message: 'Cleanup endpoint is disabled in production',
     });

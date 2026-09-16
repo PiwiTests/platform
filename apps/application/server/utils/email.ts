@@ -1,6 +1,12 @@
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
-import type { TopFailure } from '#shared/notification-events';
+import { renderEventSubject, notificationTargetPath, failureTargetPath } from '#shared/notification-events';
+import type {
+  NotificationEvent,
+  NotificationPayload,
+  RunFinishedPayload,
+  TopFailure,
+} from '#shared/notification-events';
 
 export interface SmtpConfig {
   host: string;
@@ -35,7 +41,9 @@ export function getSmtpConfig(): SmtpConfig {
   const secureDefault = port === 465;
   const secure =
     process.env.PIWI_SMTP_SECURE === 'true' || (process.env.PIWI_SMTP_SECURE === undefined && secureDefault);
-  const configured = Boolean(host && user && pass && from);
+  // Credentials are optional — a relay that accepts unauthenticated mail only
+  // needs host + from.
+  const configured = Boolean(host && from);
 
   return { host, port, user, from, fromName, hasPassword: Boolean(pass), secure, configured, envManaged: true };
 }
@@ -47,11 +55,14 @@ export function isEmailConfigured(): boolean {
 function getTransport(): Transporter {
   if (_transport) return _transport;
   const cfg = getSmtpConfig();
+  const pass = process.env.PIWI_SMTP_PASS || '';
   _transport = nodemailer.createTransport({
     host: cfg.host,
     port: cfg.port,
     secure: cfg.secure,
-    auth: { user: cfg.user, pass: process.env.PIWI_SMTP_PASS || '' },
+    // Only authenticate when credentials are set; an auth block with empty
+    // values would make nodemailer attempt AUTH against auth-less relays.
+    ...(cfg.user && pass ? { auth: { user: cfg.user, pass } } : {}),
   });
   return _transport;
 }
@@ -162,6 +173,12 @@ export function renderTestEmail(to: string): { html: string; text: string } {
   return { html, text };
 }
 
+/** Where a failing test links to: its execution, else its history, else the run. */
+function failureUrl(failure: TopFailure, runUrl: string): string {
+  const path = failureTargetPath(failure);
+  return path ? `${siteUrl()}${path}` : runUrl;
+}
+
 export function renderRunNotificationEmail(opts: {
   projectName: string;
   runId: number;
@@ -180,23 +197,27 @@ export function renderRunNotificationEmail(opts: {
   if (failures.length > 0) {
     const rows = failures
       .map((f) => {
-        const caseUrl = f.testCaseId ? `${siteUrl()}/test-cases/${f.testCaseId}` : url;
+        const caseUrl = failureUrl(f, url);
         const title = escapeHtml(f.title);
         const titleHtml = `<a href="${caseUrl}" style="color:#18181b;font-weight:600;text-decoration:none;">${title}</a>`;
         const loc = f.filePath ? `<div style="color:#a1a1aa;font-size:12px;">${escapeHtml(f.filePath)}</div>` : '';
+        const headline = f.headline
+          ? `<div style="margin-top:4px;color:#18181b;font-size:14px;">${escapeHtml(f.headline)}</div>`
+          : '';
         const excerpt = f.errorExcerpt
           ? `<pre style="margin:6px 0 0;white-space:pre-wrap;word-break:break-word;font-size:12px;color:#52525b;background:#fafafa;padding:8px;border-radius:4px;">${escapeHtml(f.errorExcerpt)}</pre>`
           : '';
-        return `<li style="margin-bottom:12px;list-style:none;">${titleHtml}${loc}${excerpt}</li>`;
+        return `<li style="margin-bottom:12px;list-style:none;">${titleHtml}${loc}${headline}${excerpt}</li>`;
       })
       .join('');
     failuresHtml = `<ul style="margin:0 0 24px;padding:0;">${rows}</ul>`;
     failuresText = failures
       .map((f) => {
-        const caseUrl = f.testCaseId ? `${siteUrl()}/test-cases/${f.testCaseId}` : url;
+        const caseUrl = failureUrl(f, url);
         const loc = f.filePath ? ` (${f.filePath})` : '';
+        const headline = f.headline ? `\n  ${f.headline}` : '';
         const excerpt = f.errorExcerpt ? `\n    ${f.errorExcerpt.replace(/\n/g, '\n    ')}` : '';
-        return `- ${f.title}${loc}\n  ${caseUrl}${excerpt}`;
+        return `- ${f.title}${loc}${headline}\n  ${caseUrl}${excerpt}`;
       })
       .join('\n');
   }
@@ -224,13 +245,20 @@ export function renderNewClusterEmail(opts: {
   projectName: string;
   clusterId: number;
   signature: string;
+  /** Display name shown above the signature when it adds something. */
+  title?: string | null;
   sampleErrorExcerpt?: string;
   affectedCases?: number;
+  /** The tracker issue the cluster is known by, named when set. */
+  knownIssue?: { key: string; url: string };
 }): {
   html: string;
   text: string;
 } {
   const url = `${siteUrl()}/failure-clusters/${opts.clusterId}`;
+  const tracked = opts.knownIssue
+    ? `<p style="margin:0 0 16px;color:#52525b;font-size:13px;">Tracked in <a href="${opts.knownIssue.url}" style="color:#18181b;font-weight:600;">${escapeHtml(opts.knownIssue.key)}</a></p>`
+    : '';
   const affected =
     opts.affectedCases && opts.affectedCases > 0
       ? `<p style="margin:0 0 16px;color:#52525b;font-size:13px;">${opts.affectedCases} affected test${opts.affectedCases === 1 ? '' : 's'} in this run</p>`
@@ -241,11 +269,58 @@ export function renderNewClusterEmail(opts: {
   const body = `
     <h2 style="margin:0 0 8px;font-size:20px;color:#18181b;">New failure cluster</h2>
     <p style="margin:0 0 24px;color:#52525b;font-size:14px;">${escapeHtml(opts.projectName)}</p>
+    ${opts.title && opts.title !== opts.signature ? `<p style="margin:0 0 8px;font-size:15px;font-weight:600;color:#18181b;">${escapeHtml(opts.title)}</p>` : ''}
     <p style="margin:0 0 16px;font-family:monospace;font-size:13px;background:#f4f4f5;padding:12px;border-radius:6px;overflow:auto;">${escapeHtml(opts.signature)}</p>
     ${affected}
     ${excerpt}
+    ${tracked}
     <a href="${url}" style="display:inline-block;background:#18181b;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">View cluster</a>`;
   const { html } = emailLayout(`New failure cluster — ${opts.projectName}`, body);
-  const text = `New failure cluster in ${opts.projectName}${opts.affectedCases ? ` (${opts.affectedCases} affected)` : ''}\n\n${opts.signature}${opts.sampleErrorExcerpt ? `\n\n${opts.sampleErrorExcerpt}` : ''}\n\nView: ${url}`;
+  const text = `New failure cluster in ${opts.projectName}${opts.affectedCases ? ` (${opts.affectedCases} affected)` : ''}\n\n${opts.title && opts.title !== opts.signature ? `${opts.title}\n` : ''}${opts.signature}${opts.sampleErrorExcerpt ? `\n\n${opts.sampleErrorExcerpt}` : ''}${opts.knownIssue ? `\n\nTracked in ${opts.knownIssue.key}: ${opts.knownIssue.url}` : ''}\n\nView: ${url}`;
   return { html, text };
+}
+
+/** One event queued for a digest send. */
+export interface DigestItem {
+  event: NotificationEvent;
+  payload: NotificationPayload;
+}
+
+/**
+ * One email summarizing every notification a digest-mode subscription batched
+ * since the previous send: subject line + link per item, with run stats where
+ * the payload carries them.
+ */
+export function renderDigestEmail(items: DigestItem[]): { subject: string; html: string; text: string } {
+  const subject = `Piwi digest — ${items.length} notification${items.length === 1 ? '' : 's'}`;
+
+  const rows = items
+    .map(({ event, payload }) => {
+      const line = renderEventSubject(event, payload);
+      const path = notificationTargetPath(event, payload);
+      const url = path ? `${siteUrl()}${path}` : null;
+      const run = payload as RunFinishedPayload;
+      const stats =
+        event.startsWith('run.') && run.totalTests != null
+          ? `<div style="color:#71717a;font-size:12px;">${run.totalTests} tests${run.failedTests ? ` · <span style="color:#ef4444;">${run.failedTests} failed</span>` : ''}</div>`
+          : '';
+      const title = url
+        ? `<a href="${url}" style="color:#18181b;font-weight:600;text-decoration:none;">${escapeHtml(line)}</a>`
+        : `<span style="font-weight:600;">${escapeHtml(line)}</span>`;
+      return `<li style="margin-bottom:12px;list-style:none;">${title}${stats}</li>`;
+    })
+    .join('');
+
+  const body = `
+    <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">Your notification digest</h2>
+    <ul style="margin:0;padding:0;">${rows}</ul>`;
+  const { html } = emailLayout(subject, body);
+
+  const text = items
+    .map(({ event, payload }) => {
+      const path = notificationTargetPath(event, payload);
+      return `- ${renderEventSubject(event, payload)}${path ? `\n  ${siteUrl()}${path}` : ''}`;
+    })
+    .join('\n');
+  return { subject, html, text: `${subject}\n\n${text}` };
 }

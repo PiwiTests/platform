@@ -10,7 +10,7 @@ const metas: RouteMetaEntry[] = [
   },
   { route: '/api/projects/:id', method: 'DELETE', meta: { openAPI: { 'x-required-roles': ['administrator'] } } },
   {
-    route: '/api/test-runs/:id/cases/:caseId/dom-snapshot',
+    route: '/api/test-run-cases/:caseId/dom-snapshot',
     method: 'GET',
     meta: { openAPI: { 'x-required-roles': ['administrator', 'reporter', 'user'] } },
   },
@@ -38,7 +38,7 @@ describe('buildRoleRouter / matchRequiredRoles', () => {
   });
 
   test('matches nested params and catch-all', () => {
-    expect(matchRequiredRoles(router, 'GET', '/api/test-runs/9/cases/3/dom-snapshot')).toEqual([
+    expect(matchRequiredRoles(router, 'GET', '/api/test-run-cases/3/dom-snapshot')).toEqual([
       'administrator',
       'reporter',
       'user',

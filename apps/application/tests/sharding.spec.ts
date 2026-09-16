@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
 
@@ -130,6 +131,28 @@ test.describe.serial('Sharding API Tests', () => {
     expect((await res.json()).processed).toBe(0);
   });
 
+  test('shard token is also valid for uploading case files', async ({ request }) => {
+    // tokenShard1 is not the run's primary stream token — uploads from that
+    // shard must be accepted via the shard-token fallback.
+    const traceContent = Buffer.from('Mock shard trace data');
+    const response = await request.post(`/api/test-runs/${runId}/case-files`, {
+      multipart: {
+        streamToken: tokenShard1,
+        testCase: JSON.stringify({ title: 'shard 1 test C', location: 'tests/shard1.spec.ts:8:3', retries: 1 }),
+        trace_hash: createHash('sha256').update(traceContent).digest('hex'),
+        trace: {
+          name: 'trace.zip',
+          mimeType: 'application/zip',
+          buffer: traceContent,
+        },
+      },
+    });
+    expect(response.ok()).toBeTruthy();
+    const data = await response.json();
+    expect(data.success).toBe(true);
+    expect(data.traces).toBe(1);
+  });
+
   test('counters reflect events from both shards while still running', async ({ request }) => {
     const res = await request.get(`/api/test-runs/${runId}`);
     expect(res.ok()).toBeTruthy();
@@ -166,8 +189,8 @@ test.describe.serial('Sharding API Tests', () => {
     const runData = await runRes.json();
     expect(runData.status).toBe('running');
     expect(runData.shardsFinished).toBe(1);
-    // Counters should include shard 1's finish totals
-    expect(runData.failedTests).toBeGreaterThanOrEqual(1);
+    // Counters reflect the streamed events; finish totals are not added on top
+    expect(runData.failedTests).toBe(1);
   });
 
   test('run finishes with failed status after all shards report', async ({ request }) => {
@@ -192,18 +215,17 @@ test.describe.serial('Sharding API Tests', () => {
     expect(data.status).toBe('failed');
   });
 
-  test('final counters are properly summed from both shards', async ({ request }) => {
+  test('final counters count each streamed execution exactly once', async ({ request }) => {
     const res = await request.get(`/api/test-runs/${runId}`);
     expect(res.ok()).toBeTruthy();
     const data = await res.json();
     expect(data.status).toBe('failed');
 
-    // Events contributed: shard0 2 passed, shard1 1 failed = 3 total, 2 passed, 1 failed
-    // Finish contributed:  shard1 +1 total (+1 failed), shard0 +2 total (+2 passed)
-    // Final: 3 (events) + 1 + 2 (finish totals) = 6 total
-    expect(data.totalTests).toBe(6);
-    expect(data.passedTests).toBe(4); // 2 from events + 2 from shard0 finish
-    expect(data.failedTests).toBe(2); // 1 from events + 1 from shard1 finish
+    // Streamed events: shard 0 reported 2 passed, shard 1 reported 1 failed.
+    // The shards' finish totals must not be added on top of these.
+    expect(data.totalTests).toBe(3);
+    expect(data.passedTests).toBe(2);
+    expect(data.failedTests).toBe(1);
     expect(data.shardsFinished).toBe(2);
     expect(data.shardTotal).toBe(2);
     expect(data.instanceId).toBe(INSTANCE_ID);
@@ -240,6 +262,132 @@ test.describe.serial('Sharding API Tests', () => {
       },
     });
     expect(res.status()).toBe(409);
+  });
+});
+
+test.describe.serial('Sharding: flaky-only run finishes as passed', () => {
+  const INSTANCE_ID = 'sharding-flaky-only-instance-e2e';
+  let runId: number;
+  let tokenShard0: string;
+  let tokenShard1: string;
+
+  test('two shards start and stream a flaky test plus a passing test', async ({ request }) => {
+    const res0 = await request.post('/api/test-runs/start', {
+      data: {
+        projectName: PROJECT.SHARDING_TEST,
+        startTime: new Date().toISOString(),
+        instanceId: INSTANCE_ID,
+        shardIndex: 1,
+        shardTotal: 2,
+      },
+    });
+    expect(res0.ok()).toBeTruthy();
+    const data0 = await res0.json();
+    runId = data0.runId;
+    tokenShard0 = data0.streamToken;
+
+    const res1 = await request.post('/api/test-runs/start', {
+      data: {
+        projectName: PROJECT.SHARDING_TEST,
+        startTime: new Date().toISOString(),
+        instanceId: INSTANCE_ID,
+        shardIndex: 2,
+        shardTotal: 2,
+      },
+    });
+    expect(res1.ok()).toBeTruthy();
+    tokenShard1 = (await res1.json()).streamToken;
+
+    // Shard 0 reports a flaky test: a failed first attempt, then a passed retry.
+    const events0 = await request.post(`/api/test-runs/${runId}/events`, {
+      data: {
+        streamToken: tokenShard0,
+        testCases: [
+          {
+            type: 'complete',
+            title: 'flaky test',
+            status: 'failed',
+            duration: 1200,
+            location: 'tests/flaky.spec.ts:5:3',
+            retries: 0,
+            error: 'Expected element to be visible',
+          },
+          {
+            type: 'complete',
+            title: 'flaky test',
+            status: 'passed',
+            duration: 900,
+            location: 'tests/flaky.spec.ts:5:3',
+            retries: 1,
+          },
+        ],
+      },
+    });
+    expect(events0.ok()).toBeTruthy();
+    expect((await events0.json()).processed).toBe(2);
+
+    // Shard 1 reports a plain passing test
+    const events1 = await request.post(`/api/test-runs/${runId}/events`, {
+      data: {
+        streamToken: tokenShard1,
+        testCases: [
+          {
+            type: 'complete',
+            title: 'stable test',
+            status: 'passed',
+            duration: 700,
+            location: 'tests/stable.spec.ts:5:3',
+            retries: 0,
+          },
+        ],
+      },
+    });
+    expect(events1.ok()).toBeTruthy();
+  });
+
+  test('run finishes as passed although a flaky attempt failed', async ({ request }) => {
+    // Both shards report 'passed' (Playwright's verdict for a flaky-only run);
+    // shard 0's counters still carry the failed attempt.
+    const finish0 = await request.post(`/api/test-runs/${runId}/finish`, {
+      data: {
+        streamToken: tokenShard0,
+        status: 'passed',
+        duration: 4000,
+        totalTests: 2,
+        passedTests: 1,
+        failedTests: 1,
+        skippedTests: 0,
+        flakyTests: 1,
+      },
+    });
+    expect(finish0.ok()).toBeTruthy();
+    expect((await finish0.json()).status).toBe('running');
+
+    const finish1 = await request.post(`/api/test-runs/${runId}/finish`, {
+      data: {
+        streamToken: tokenShard1,
+        status: 'passed',
+        duration: 3000,
+        totalTests: 1,
+        passedTests: 1,
+        failedTests: 0,
+        skippedTests: 0,
+        flakyTests: 0,
+      },
+    });
+    expect(finish1.ok()).toBeTruthy();
+    // The flaky test's failed attempt must not flip the merged run to failed.
+    expect((await finish1.json()).status).toBe('passed');
+
+    const runRes = await request.get(`/api/test-runs/${runId}`);
+    expect(runRes.ok()).toBeTruthy();
+    const runData = await runRes.json();
+    expect(runData.status).toBe('passed');
+    expect(runData.flakyTests).toBe(1);
+    // 3 streamed executions (flaky attempt + retry, stable test), counted once.
+    expect(runData.totalTests).toBe(3);
+    expect(runData.passedTests).toBe(2);
+    expect(runData.failedTests).toBe(1);
   });
 });
 

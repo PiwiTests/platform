@@ -71,7 +71,7 @@ async function submitRun(
     },
   });
   expect(resp.ok()).toBeTruthy();
-  return (await resp.json()) as { testRunId: number; projectId: number };
+  return (await resp.json()) as { runId: number; projectId: number };
 }
 
 test.describe.serial('Regression context endpoint', () => {
@@ -80,13 +80,13 @@ test.describe.serial('Regression context endpoint', () => {
   test('returns hasGreen: false when no prior passing run exists', async ({ request }) => {
     // Use a timestamp far in the past so concurrent browser runs (which use current timestamps)
     // are not considered "prior" to this run, ensuring hasGreen stays false.
-    const { testRunId } = await submitRun(request, {
+    const { runId } = await submitRun(request, {
       status: 'failed',
       startTime: '2000-01-01T00:00:00.000Z',
       cases: [{ title: 'test A', status: 'failed', location: 'tests/a.spec.ts:1:1', error: 'boom' }],
     });
 
-    const resp = await request.get(`/api/test-runs/${testRunId}/regression-context`);
+    const resp = await request.get(`/api/test-runs/${runId}/regression-context`);
     expect(resp.ok()).toBeTruthy();
     const ctx: RegressionCtx = await resp.json();
     expect(ctx.hasGreen).toBe(false);
@@ -106,7 +106,7 @@ test.describe.serial('Regression context endpoint', () => {
     });
 
     // Submit a failing run (regression)
-    const { testRunId: failId } = await submitRun(request, {
+    const { runId: failId } = await submitRun(request, {
       status: 'failed',
       commit: 'bbb2222bbb2222b',
       branch: 'main',
@@ -141,14 +141,14 @@ test.describe.serial('Regression context endpoint', () => {
   });
 
   test('SSH remote URL is normalized to HTTPS for compare link', async ({ request }) => {
-    const { testRunId: greenId } = await submitRun(request, {
+    const { runId: greenId } = await submitRun(request, {
       status: 'passed',
       commit: 'ccc3333ccc3333c',
       remoteUrl: 'git@github.com:org/my-app.git',
       cases: [{ title: 'ssh test', status: 'passed', location: 'tests/ssh.spec.ts:1:1' }],
     });
 
-    const { testRunId: failId } = await submitRun(request, {
+    const { runId: failId } = await submitRun(request, {
       status: 'failed',
       commit: 'ddd4444ddd4444d',
       remoteUrl: 'git@github.com:org/my-app.git',
@@ -173,7 +173,7 @@ test.describe.serial('Regression context endpoint', () => {
     });
 
     // Submit a failing run with different environment and branch
-    const { testRunId: failId } = await submitRun(request, {
+    const { runId: failId } = await submitRun(request, {
       status: 'failed',
       environment: 'staging',
       branch: 'feature/new-thing',
@@ -195,14 +195,14 @@ test.describe.serial('Regression context endpoint', () => {
   });
 
   test('metadata diff is empty when nothing changed', async ({ request }) => {
-    const { testRunId: _greenId } = await submitRun(request, {
+    const { runId: _greenId } = await submitRun(request, {
       status: 'passed',
       environment: 'ci',
       branch: 'main',
       cases: [{ title: 'stable test', status: 'passed', location: 'tests/stable.spec.ts:1:1' }],
     });
 
-    const { testRunId: failId } = await submitRun(request, {
+    const { runId: failId } = await submitRun(request, {
       status: 'failed',
       environment: 'ci',
       branch: 'main',
@@ -226,7 +226,7 @@ test.describe.serial('Regression context endpoint', () => {
       cases: [{ title: 'same sha', status: 'passed', location: 'tests/x.spec.ts:1:1' }],
     });
 
-    const { testRunId: failId } = await submitRun(request, {
+    const { runId: failId } = await submitRun(request, {
       status: 'failed',
       commit: SHA,
       cases: [{ title: 'same sha', status: 'failed', location: 'tests/x.spec.ts:1:1', error: 'fail' }],

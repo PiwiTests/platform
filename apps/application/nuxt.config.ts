@@ -1,12 +1,23 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
+import { createRequire } from 'module';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { syncCron, resolveSyncMinutes } from './shared/integrations/sync-config';
+
+// The tracker status-pull cadence, derived from the env var at start time.
+const integrationsSyncCron = syncCron(resolveSyncMinutes(process.env.PIWI_INTEGRATIONS_SYNC_MINUTES));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const nodeRequire = createRequire(import.meta.url);
 
 const isDemo = process.env.PIWI_DEMO_MODE === 'true';
+
+// Static head description for the demo shell — same wording as the docs
+// site's og: cards (apps/docs/.vitepress/config.mts).
+const demoDescription =
+  'CI throws away every report it makes. Piwi keeps them — then groups failures by root cause, scores flaky tests, and finds the locator you should have used. Self-hosted, MIT, zero telemetry.';
 
 // The dashboard version is authoritative in `application/package.json`
 // (kept in sync across the monorepo by release-please) — read it once at
@@ -72,7 +83,51 @@ export default defineNuxtConfig({
   devtools: {
     enabled: false,
   },
-  app: isDemo ? { baseURL: '/demo/' } : {},
+  // The demo is a static SPA (ssr: false), so nothing set through
+  // useHead/useSeoMeta exists until the JS bundle runs — link previews and
+  // search snippets only see what is baked into the shell here.
+  app: isDemo
+    ? {
+        baseURL: '/demo/',
+        head: {
+          title: 'Piwi Dashboard — live demo',
+          meta: [
+            { name: 'description', content: demoDescription },
+            { property: 'og:type', content: 'website' },
+            { property: 'og:title', content: 'Piwi Dashboard — live demo' },
+            { property: 'og:description', content: demoDescription },
+            { property: 'og:image', content: 'https://piwitests.dev/og-image.png' },
+            { property: 'og:image:width', content: '1200' },
+            { property: 'og:image:height', content: '630' },
+            { property: 'og:url', content: 'https://piwitests.dev/demo/' },
+            { name: 'twitter:card', content: 'summary_large_image' },
+            { name: 'twitter:title', content: 'Piwi Dashboard — live demo' },
+            { name: 'twitter:description', content: demoDescription },
+            { name: 'twitter:image', content: 'https://piwitests.dev/og-image.png' },
+          ],
+          link: [
+            { rel: 'icon', href: '/demo/favicon.ico', sizes: 'any' },
+            { rel: 'icon', type: 'image/svg+xml', href: '/demo/logo.svg' },
+          ],
+        },
+      }
+    : {},
+
+  // No icon is ever fetched from the iconify CDN at runtime: the collections
+  // are installed locally for the server endpoint, and the client bundle
+  // carries every icon the source references — the static demo has no server
+  // to ask, and a self-hosted instance makes no outbound calls.
+  icon: {
+    fallbackToApi: false,
+    clientBundle: {
+      // Icon names also live in .ts maps (status/browser/SCM icons in
+      // app/utils and shared/), which the default scan globs skip.
+      scan: {
+        globInclude: ['**/*.{vue,jsx,tsx,md,mdc,mdx,yml,yaml}', '**/*.{ts,js,mjs}', '../shared/**/*.{ts,js}'],
+      },
+      sizeLimitKb: 512,
+    },
+  },
 
   css: ['~/assets/css/main.css'],
 
@@ -87,10 +142,12 @@ export default defineNuxtConfig({
       model: process.env.PIWI_AI_MODEL || '',
       baseUrl: process.env.PIWI_AI_BASE_URL || '',
       autoDiagnose: process.env.PIWI_AI_AUTO_DIAGNOSE === 'true',
+      temperature: process.env.PIWI_AI_TEMPERATURE || '',
       researchModel: process.env.PIWI_AI_RESEARCH_MODEL || '',
       researchProvider: process.env.PIWI_AI_RESEARCH_PROVIDER || '',
       researchBaseUrl: process.env.PIWI_AI_RESEARCH_BASE_URL || '',
       researchApiKey: process.env.PIWI_AI_RESEARCH_API_KEY || '',
+      researchTemperature: process.env.PIWI_AI_RESEARCH_TEMPERATURE || '',
       embeddingProvider: process.env.PIWI_AI_EMBEDDING_PROVIDER || '',
       embeddingModel: process.env.PIWI_AI_EMBEDDING_MODEL || '',
       embeddingBaseUrl: process.env.PIWI_AI_EMBEDDING_BASE_URL || '',
@@ -197,7 +254,7 @@ export default defineNuxtConfig({
         // These assets are bundled with playwright-core and served directly from
         // node_modules. During `nuxt build`, Nitro copies them to .output/public/.
         baseURL: '/trace-viewer',
-        dir: resolve(__dirname, '../node_modules/playwright-core/lib/vite/traceViewer'),
+        dir: resolve(dirname(nodeRequire.resolve('playwright-core/package.json')), 'lib/vite/traceViewer'),
         maxAge: 60 * 60 * 24,
       },
     ],
@@ -212,8 +269,8 @@ export default defineNuxtConfig({
         description:
           'REST API for storing and querying Playwright test results, traces, failure diagnoses, and project statistics.',
         version: pkg.version as string,
-        // Security scheme definitions for endpoint-level `security` annotations.
-        // See docs/development.md for conventions.
+        // Security scheme definitions for endpoint-level `security` annotations,
+        // rendered by the in-app reference (app/pages/docs.vue).
         components: {
           securitySchemes: {
             bearerAuth: {
@@ -226,8 +283,10 @@ export default defineNuxtConfig({
             sessionCookie: {
               type: 'apiKey',
               in: 'cookie',
-              name: 'nuxt_session',
-              description: 'Session cookie authentication. Set via POST /api/auth/login.',
+              // Sealed-session cookie name, pinned in server/utils/auth.ts
+              // (SESSION_COOKIE_NAME) rather than left to h3's `h3` default.
+              name: 'piwi_session',
+              description: 'Session cookie authentication (sealed session cookie). Set via POST /api/auth/login.',
             },
           },
         },
@@ -259,8 +318,10 @@ export default defineNuxtConfig({
       tasks: true,
     },
     scheduledTasks: {
-      // Run the notification outbox sweeper every minute
-      '* * * * *': ['notifications:sweep'],
+      // Run the notification, auto-heal and integration outbox sweepers every minute
+      '* * * * *': ['notifications:sweep', 'heal:sweep', 'integrations:sweep'],
+      // Pull tracker statuses back on the configured cadence (default every 15 min).
+      [integrationsSyncCron]: ['integrations:sync'],
       // Nightly data retention: run pruning (opt-in), outbox pruning, orphan sweep
       '17 3 * * *': ['retention:sweep'],
     },
@@ -269,8 +330,6 @@ export default defineNuxtConfig({
   vite: {
     optimizeDeps: {
       include: [
-        '@unovis/ts',
-        '@unovis/vue',
         'date-fns',
         'drizzle-orm',
         'drizzle-orm/sqlite-core',

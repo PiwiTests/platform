@@ -1,6 +1,6 @@
 # Publishing Piwi Picker to Chrome, Edge, and Firefox
 
-Not yet published anywhere — see `apps/docs/extension.md`'s own note ("install unpacked until it is"). This is what closes that gap.
+**Status: live on the Chrome Web Store**, at [`pakhnokpjboejcghgcmkjlpnogfjihhe`](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe) — that ID is assigned by the store and is now permanent for this listing. Edge and Firefox are still unsubmitted; §3 and §4 below are the remaining work, and neither blocks an Edge user today (Edge installs Chrome Web Store extensions once the user allows other stores — see §3).
 
 Current state this guide assumes: manifest name `"Piwi Picker"`, version tracked by release-please repo-wide (`apps/extension/manifest.json`'s version is already an `extra-files` target in `release-please-config.json` — no manual version bumps needed), MIT-licensed, icons present at 16/32/48/128px, standing permissions limited to `activeTab` + `scripting` + `storage`, plus `optional_host_permissions` (`http://*/*`, `https://*/*`) — declared but granted nothing until the user clicks "Record actions" and approves a single origin. See `apps/docs/extension.md`'s permissions table for the exact wording, and the note in §2 step 3 below on justifying this one to reviewers.
 
@@ -22,21 +22,25 @@ npm run extension:zip --workspace=apps/extension
 
 Builds, then zips `dist/`'s contents (manifest at the zip root, not nested — what stores expect) into `apps/extension/piwi-picker-v<version>.zip`, dropping `.map` sourcemaps along the way (`apps/extension/scripts/zip.mjs`, via `archiver` — pure JS, no dependency on a system `zip`/`7z` binary, so this works the same on Windows as it does in CI). The zip is gitignored; regenerate it whenever you need a fresh one rather than keeping an old one around. All three stores want this **same built zip**; the manifest is already store-agnostic MV3, so no store-specific rebuild is needed (Firefox's one extra requirement is a manifest key addition, not a different build — see §4).
 
-## 2. Chrome Web Store
+## 2. Chrome Web Store — **done**
+
+Live at <https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe>. The steps below are kept because every version bump repeats them (step 1 onwards, minus the listing fields you don't change).
 
 1. Dashboard → **New item** → upload the zip.
 2. Store listing requires: description, at least one 1280×800 or 640×400 screenshot, a 128×128 icon (already have it), category (Developer Tools), and a **privacy practices** disclosure. Picking and recording are zero-telemetry/zero-network by default; the one exception is the optional Piwi-instance connection (`options.html`), which — only if the user configures it — sends the API key and a project id (one per configured URL-pattern → project mapping) to fetch that project's function catalog, and nothing else (no recorded data, no browsing history). State both halves plainly rather than only the standalone claim.
 3. Permission justification: Chrome's review form asks you to justify each requested permission in plain English. For `activeTab`/`scripting`/`storage`, reuse the exact wording already in `apps/docs/extension.md`'s permissions table — it's already accurate and honest. `optional_host_permissions` needs its own explanation since the two patterns (`http://*/*`, `https://*/*`) look broad on their own: say plainly that this is declared so the extension *can* request a single origin, on demand, only when the user clicks "Record actions" inside that click's own gesture — nothing is granted at install, and the grant is scoped to whichever one site the user is recording, never `<all_urls>` in practice. Reviewers specifically look for this "declared broad, granted narrow, user-gestured" pattern with optional host permissions — state it explicitly rather than assuming the manifest speaks for itself.
 4. Submit for review. First review is typically the slowest (hours to a few days); version updates thereafter are usually faster.
-5. Once approved, note the **extension ID** Chrome assigns — useful for support links and the docs page.
+5. Once approved, note the **extension ID** Chrome assigns — useful for support links and the docs page. It came out as `pakhnokpjboejcghgcmkjlpnogfjihhe`, and `apps/docs/extension.md`, `apps/docs/recipes/`, and the root `README.md` all link the listing by that ID.
 
 ## 3. Edge Add-ons
 
 Structurally the easiest: Edge is Chromium and accepts the **same zip** unmodified.
 
+Not urgent, because Edge users are already served: opening the Chrome Web Store listing in Edge shows an **Allow extensions from other stores** banner, and after one click **Get** installs and auto-updates the extension exactly as in Chrome. That's what `apps/docs/extension.md` tells Edge users to do today. An Edge Add-ons listing buys discoverability inside Edge's own store and skips that banner — worth doing, not blocking.
+
 1. Partner Center → **Create new extension** → upload the same zip from §1.
 2. Edge's review is generally faster than Chrome's and has a lighter privacy-disclosure form — fill it out the same honest way.
-3. Edge can auto-import a listing from an existing Chrome Web Store entry if you link accounts — worth doing if Chrome approves first, to avoid re-typing the listing.
+3. Edge can auto-import a listing from the existing Chrome Web Store entry if you link accounts — do that rather than re-typing the listing, since Chrome is already approved.
 
 ## 4. Firefox AMO — the one with real differences
 
@@ -69,4 +73,4 @@ Submission steps:
 
 ## 5. Ongoing updates
 
-Every store re-review happens on **every version bump**, not just the first. Since release-please already bumps `apps/extension/manifest.json`'s version repo-wide, the practical loop becomes: tag lands → rebuild zip → re-upload to all three dashboards. That's manual today. It's genuinely automatable later — Chrome Web Store, Edge, and AMO all have publish APIs — following the same shape as `.github/workflows/desktop-release.yml`'s already-established pattern (tag-triggered on `v*`, attaches build output to the release release-please created). Not built yet since it wasn't needed until there's a first manual submission to model it after; a natural next step once this has been done by hand a few times.
+Every store re-review happens on **every version bump**, not just the first. Since release-please already bumps `apps/extension/manifest.json`'s version repo-wide, the practical loop becomes: tag lands → rebuild zip → re-upload to every dashboard the extension is listed on — Chrome today, plus Edge and Firefox once §3 and §4 land. That's manual, which is why the store's listed version can trail a release: nothing reminds you, and a skipped upload is invisible from inside the repo. It's genuinely automatable — Chrome Web Store, Edge, and AMO all have publish APIs — following the same shape as `.github/workflows/desktop-release.yml`'s already-established pattern (tag-triggered on `v*`, attaches build output to the release release-please created). The first manual submission it needed as a model has now happened, so this is the natural next step once the by-hand loop has been run a few times and its quirks are known.

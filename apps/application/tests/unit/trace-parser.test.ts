@@ -434,3 +434,58 @@ describe('parseTraceEvents — modern before/after event pairs', () => {
     expect(data!.timeoutFallback).toBe(false);
   });
 });
+
+describe('parseTraceEvents — 1.63 aria/screen snapshot events', () => {
+  test('keys before/after aria and screenshot files onto their action', async () => {
+    const zip = buildTraceZip([
+      { type: 'before', callId: 'call@8', startTime: 100, class: 'Frame', method: 'click', pageId: 'page@1' },
+      { type: 'aria-snapshot', callId: 'call@8', phase: 'before', pageId: 'page@1', file: 'aria/call@8-before.json' },
+      {
+        type: 'screenshot',
+        callId: 'call@8',
+        phase: 'before',
+        pageId: 'page@1',
+        file: 'screenshots/call@8-before.png',
+      },
+      { type: 'aria-snapshot', callId: 'call@8', phase: 'after', pageId: 'page@1', file: 'aria/call@8-after.json' },
+      { type: 'screenshot', callId: 'call@8', phase: 'after', pageId: 'page@1', file: 'screenshots/call@8-after.png' },
+      { type: 'after', callId: 'call@8', endTime: 200 },
+    ]);
+    const data = await parseTraceEvents(zip);
+    expect(data!.actions[0]).toMatchObject({
+      callId: 'call@8',
+      ariaSnapshotBefore: 'aria/call@8-before.json',
+      ariaSnapshotAfter: 'aria/call@8-after.json',
+      screenshotBefore: 'screenshots/call@8-before.png',
+      screenshotAfter: 'screenshots/call@8-after.png',
+    });
+  });
+
+  test('folds the input-time action phase into after; the real after wins', async () => {
+    const zip = buildTraceZip([
+      { type: 'before', callId: 'c1', startTime: 100, class: 'Frame', method: 'click' },
+      { type: 'aria-snapshot', callId: 'c1', phase: 'action', file: 'aria/c1-action.json' },
+      { type: 'aria-snapshot', callId: 'c1', phase: 'after', file: 'aria/c1-after.json' },
+      { type: 'screenshot', callId: 'c1', phase: 'action', file: 'screenshots/c1-action.png' },
+      // A snapshot for a call that never opened is ignored, not crashed on.
+      { type: 'screenshot', callId: 'ghost', phase: 'before', file: 'screenshots/ghost-before.png' },
+      { type: 'after', callId: 'c1', endTime: 200 },
+    ]);
+    const data = await parseTraceEvents(zip);
+    expect(data!.actions).toHaveLength(1);
+    // `after` arrives last and wins; the lone action-phase screenshot fills after.
+    expect(data!.actions[0]!.ariaSnapshotAfter).toBe('aria/c1-after.json');
+    expect(data!.actions[0]!.screenshotAfter).toBe('screenshots/c1-action.png');
+    expect(data!.actions[0]!.ariaSnapshotBefore).toBeUndefined();
+  });
+
+  test('a 1.61 trace with no snapshot events leaves the fields unset', async () => {
+    const zip = buildTraceZip([
+      { type: 'before', callId: 'c1', startTime: 100, class: 'Frame', method: 'click' },
+      { type: 'after', callId: 'c1', endTime: 200 },
+    ]);
+    const data = await parseTraceEvents(zip);
+    expect(data!.actions[0]!.ariaSnapshotBefore).toBeUndefined();
+    expect(data!.actions[0]!.screenshotAfter).toBeUndefined();
+  });
+});

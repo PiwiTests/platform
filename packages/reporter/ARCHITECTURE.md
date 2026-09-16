@@ -14,6 +14,7 @@ change. Everything under **`src/internal/`** is private plumbing — change it f
 | `PiwiDashboardReporter` (default + named) | `public/reporter.ts` | the Playwright reporter |
 | `wrapConfig` | `public/config-wrapper.ts` | injects reporter + global setup into a PW config |
 | `createGlobalSetup` | `public/global-setup.ts` | registers the run before `globalSetup` |
+| `resolveSelection` | `public/selection.ts` | resolves `PIWI_SELECTION` from an ESM config, returns a grep and stamps the run |
 | `PiwiDashboardOptions`, `PlaywrightTestConfig`, `PiwiFixtures` | `public/options.ts` / `internal/capture/capture-fixtures.ts` | the config contract + capture fixtures type (types) |
 | `piwiFixtures`, `extendPiwiFixtures` | `internal/capture/capture-fixtures.ts` → re-exported by `index.ts` | capture fixtures (imported from `@piwitests/reporter`) |
 
@@ -80,8 +81,9 @@ src/
     files/      file-handler, compression
     capture/    capture-fixtures, locator-healing, attachments   ← runs in the worker
     config/     env (PIWI_* ↔ options)
-    support/    logger, limiter, ci, ci-output, run-url, instance-id,
-                cli-filters, setup-file, source-snippet, worker-index, errors
+    support/    logger, limiter, ci, ci-output, failure-links, run-url, instance-id,
+                cli-filters, setup-file, source-snippet, worker-index, errors,
+                selection-client, selection-env
   types/
     wire.ts        EXTERNAL server contract
     collected.ts   INTERNAL in-process model

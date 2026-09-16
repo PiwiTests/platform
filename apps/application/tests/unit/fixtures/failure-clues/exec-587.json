@@ -1,0 +1,379 @@
+{
+  "execution": {
+    "id": 587,
+    "testCaseId": 31,
+    "status": "failed",
+    "duration": 9555,
+    "browserName": "Chromium",
+    "startedAt": 1788455793486,
+    "locks": [],
+    "shardIndex": null
+  },
+  "parsedError": {
+    "kind": "action-timeout",
+    "errorName": "TimeoutError",
+    "subject": "page",
+    "action": "waitForSelector",
+    "assertion": null,
+    "negated": false,
+    "locator": "locator('.modal.is-open')",
+    "leafLocator": "locator('.modal.is-open')",
+    "expected": null,
+    "received": null,
+    "timeoutMs": 5000,
+    "url": null,
+    "networkErrorCode": null,
+    "timeoutPhase": null,
+    "lastState": "not-found",
+    "resolvedCount": null,
+    "lastCallLogLine": "waiting for locator('.modal.is-open') to be visible",
+    "lastStateLine": "waiting for locator('.modal.is-open') to be visible",
+    "messageHead": "TimeoutError: page.waitForSelector: Timeout 5000ms exceeded.",
+    "topFrame": "tests/ui/modal.spec.ts:15",
+    "isNavigationFailure": false,
+    "isLocatorResolutionFailure": true
+  },
+  "timeline": {
+    "origin": 1788455793486,
+    "end": 1788455803041,
+    "failureAt": 9555,
+    "failedStep": {
+      "index": 3,
+      "label": "Compare against baseline",
+      "at": 5856,
+      "duration": 3699
+    },
+    "lanes": {
+      "steps": [
+        {
+          "id": "step-0",
+          "lane": "steps",
+          "at": 0,
+          "duration": 1541,
+          "label": "Open component page",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 0
+          },
+          "origin": null,
+          "group": null,
+          "category": "navigation"
+        },
+        {
+          "id": "step-1",
+          "lane": "steps",
+          "at": 1541,
+          "duration": 2466,
+          "label": "Interact with component",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 1
+          },
+          "origin": null,
+          "group": null,
+          "category": "action"
+        },
+        {
+          "id": "step-2",
+          "lane": "steps",
+          "at": 4007,
+          "duration": 1849,
+          "label": "Assert rendered state",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 2
+          },
+          "origin": null,
+          "group": null,
+          "category": "assertion"
+        },
+        {
+          "id": "step-3",
+          "lane": "steps",
+          "at": 5856,
+          "duration": 3699,
+          "label": "Compare against baseline",
+          "status": "failed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 3
+          },
+          "origin": null,
+          "group": null,
+          "category": "assertion",
+          "failed": true
+        }
+      ],
+      "console": [
+        {
+          "id": "console-0",
+          "lane": "console",
+          "at": 5733,
+          "label": "Uncaught TypeError: Cannot read properties of undefined (reading 'activate')\n    at ModalController.open (https://design.example.com/assets/modal-C7hQx2.js:2:1381)",
+          "status": "error",
+          "kind": "console",
+          "ref": {
+            "section": "console",
+            "index": 0
+          }
+        }
+      ],
+      "network": [
+        {
+          "id": "network-0",
+          "lane": "network",
+          "at": 120,
+          "duration": 38,
+          "label": "GET https://design.example.com/components/button",
+          "status": "200",
+          "kind": "network",
+          "ref": {
+            "section": "networkRequests",
+            "index": 0
+          }
+        },
+        {
+          "id": "network-1",
+          "lane": "network",
+          "at": 193,
+          "duration": 14,
+          "label": "GET https://design.example.com/assets/tokens-D2mXq.css",
+          "status": "200",
+          "kind": "network",
+          "ref": {
+            "section": "networkRequests",
+            "index": 1
+          }
+        },
+        {
+          "id": "network-2",
+          "lane": "network",
+          "at": 242,
+          "duration": 63,
+          "label": "GET https://design.example.com/assets/components-Bq7Yz.js",
+          "status": "200",
+          "kind": "network",
+          "ref": {
+            "section": "networkRequests",
+            "index": 2
+          }
+        },
+        {
+          "id": "network-3",
+          "lane": "network",
+          "at": 340,
+          "duration": 28,
+          "label": "GET https://design.example.com/fonts/Inter-Variable.woff2",
+          "status": "200",
+          "kind": "network",
+          "ref": {
+            "section": "networkRequests",
+            "index": 3
+          }
+        }
+      ],
+      "backend": [],
+      "dialogs": []
+    },
+    "unplaced": [],
+    "estimated": false,
+    "window": {
+      "start": 0,
+      "end": 9555
+    }
+  },
+  "healing": {
+    "failingLocator": {
+      "method": "locator",
+      "args": {
+        "selector": ".modal.is-open"
+      }
+    },
+    "fromPriorSuccess": null,
+    "fromElementMatch": null,
+    "fromAriaSnapshot": [
+      {
+        "locator": "getByRole('button', { name: 'Open modal' })",
+        "method": "getByRole",
+        "args": {
+          "role": "button",
+          "name": "Open modal"
+        },
+        "score": 50
+      },
+      {
+        "locator": "getByRole('heading', { name: 'Modal' })",
+        "method": "getByRole",
+        "args": {
+          "role": "heading",
+          "name": "Modal"
+        },
+        "score": 47
+      },
+      {
+        "locator": "getByText('Open modal')",
+        "method": "getByText",
+        "args": {
+          "text": "Open modal"
+        },
+        "score": 45
+      },
+      {
+        "locator": "getByText('Modal')",
+        "method": "getByText",
+        "args": {
+          "text": "Modal"
+        },
+        "score": 42
+      }
+    ],
+    "source": "aria-snapshot",
+    "recommendation": {
+      "recommended": {
+        "locator": "getByRole('button', { name: 'Open modal' })",
+        "method": "getByRole",
+        "args": {
+          "role": "button",
+          "name": "Open modal"
+        },
+        "score": 50
+      },
+      "durable": {
+        "locator": "getByRole('button', { name: 'Open modal' })",
+        "method": "getByRole",
+        "args": {
+          "role": "button",
+          "name": "Open modal"
+        },
+        "score": 50
+      },
+      "preservesConvention": false,
+      "hasDurableAlternative": false,
+      "suggestAddTestId": false
+    },
+    "capturedAt": null,
+    "applicable": true,
+    "reason": null,
+    "narrowingSuggestion": null,
+    "location": "tests/ui/modal.spec.ts:15:16",
+    "sourceLine": {
+      "line": 15,
+      "text": "    await page.waitForSelector('.modal.is-open');"
+    },
+    "edit": null
+  },
+  "ariaSnapshot": "- document:\n  - main:\n    - heading \"Modal\"\n    - button \"Open modal\"",
+  "ariaSnapshotJson": null,
+  "appState": {
+    "url": "https://design.example.com/components/button",
+    "hash": null,
+    "historyState": null,
+    "localStorage": [
+      {
+        "key": "docs-theme",
+        "length": 5
+      }
+    ],
+    "sessionStorage": [],
+    "cookies": []
+  },
+  "environmentDiff": {
+    "status": "ok",
+    "baseline": {
+      "runId": 52,
+      "executionId": 627,
+      "startTime": 1788319993000,
+      "environment": "staging"
+    },
+    "baselineNote": null,
+    "entries": []
+  },
+  "pageDiff": null,
+  "networkRequests": [
+    {
+      "method": "GET",
+      "url": "https://design.example.com/components/button",
+      "status": 200,
+      "duration": 38,
+      "startTime": 1788455793606,
+      "serverLogs": null
+    },
+    {
+      "method": "GET",
+      "url": "https://design.example.com/assets/tokens-D2mXq.css",
+      "status": 200,
+      "duration": 14,
+      "startTime": 1788455793679,
+      "serverLogs": null
+    },
+    {
+      "method": "GET",
+      "url": "https://design.example.com/assets/components-Bq7Yz.js",
+      "status": 200,
+      "duration": 63,
+      "startTime": 1788455793728,
+      "serverLogs": null
+    },
+    {
+      "method": "GET",
+      "url": "https://design.example.com/fonts/Inter-Variable.woff2",
+      "status": 200,
+      "duration": 28,
+      "startTime": 1788455793826,
+      "serverLogs": null
+    }
+  ],
+  "consoleLogs": [
+    {
+      "type": "error",
+      "text": "Uncaught TypeError: Cannot read properties of undefined (reading 'activate')\n    at ModalController.open (https://design.example.com/assets/modal-C7hQx2.js:2:1381)",
+      "timestamp": 1788455799219,
+      "location": "https://design.example.com/assets/modal-C7hQx2.js:2:1381"
+    }
+  ],
+  "dialogs": null,
+  "browserPeers": [
+    {
+      "browserName": "Chromium",
+      "status": "failed"
+    }
+  ],
+  "workerExecutions": [
+    {
+      "id": 583,
+      "testCaseId": 27,
+      "title": "Button primary variant renders correctly",
+      "status": "passed",
+      "startedAt": 1788455785000
+    },
+    {
+      "id": 587,
+      "testCaseId": 31,
+      "title": "Modal with large content scrolls correctly",
+      "status": "failed",
+      "startedAt": 1788455793486
+    },
+    {
+      "id": 591,
+      "testCaseId": 35,
+      "title": "Table pagination works correctly",
+      "status": "passed",
+      "startedAt": 1788455803241
+    }
+  ],
+  "lockHolders": [],
+  "cluster": {
+    "fixCommit": null,
+    "fixLandedRunId": null,
+    "fixVerification": null
+  },
+  "timeout": 20000,
+  "slowRequestMs": null
+}

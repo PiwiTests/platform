@@ -21,6 +21,6 @@ export default eventHandler(async (event) => {
   // stored wasted_time_ms is served as-is.
   const wasted = await resolveWastedSettings(db);
   const result = await getTestRun(db, id, wasted.isDefault ? null : wasted.patterns);
-  if (!result) throw createError({ statusCode: 404, message: 'Test run not found' });
+  if (!result) throw apiError({ statusCode: 404, message: 'Test run not found' });
   return result;
 });

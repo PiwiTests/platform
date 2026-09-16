@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { describeCluster } from '#shared/describe-cluster';
 import type { AnalyticsClusterLandscape } from '#shared/analytics/types';
 
 const props = defineProps<{ query: Record<string, string> }>();
@@ -72,7 +73,7 @@ function ageClass(ageDays: number): string {
           class="flex items-center gap-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/60 rounded transition-colors"
         >
           <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium truncate">{{ cluster.title || cluster.signature }}</p>
+            <p class="text-sm font-medium truncate" :title="cluster.signature">{{ describeCluster(cluster) }}</p>
             <p class="text-xs text-gray-500 dark:text-gray-400 truncate">
               {{ cluster.projectLabel || cluster.projectName }}
               <template v-if="cluster.errorType"> · {{ cluster.errorType }}</template>

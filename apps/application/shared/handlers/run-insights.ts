@@ -1,16 +1,23 @@
-import { eq, and, desc, lt } from 'drizzle-orm';
+import { eq, and, isNotNull } from 'drizzle-orm';
 import { testRuns, testRunsCases, testCases, failureClusters } from '../../server/database/schema';
+import type { TestRun } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
+import { resolveRunBranch } from '../../server/utils/run-branch';
+import { selectBaselineRun } from '../../server/utils/branch-baseline';
+import { normalizeGitUrl } from '../../server/utils/scm/git-url';
+import { buildCommitRange, computeMetadataDiff, type CommitRange, type MetaDiffEntry } from '../utils/run-metadata';
+import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
+import { describeRunBaseline, type RunBaselineFallback, type RunBaselineMatch } from '#shared/run-baseline';
 
 interface TestCaseEntry {
-  testRunsCaseId: number;
+  executionId: number;
   title: string;
   filePath: string;
   duration: number | null;
 }
 
 interface PerfChangeEntry {
-  testRunsCaseId: number;
+  executionId: number;
   title: string;
   filePath: string;
   durationBefore: number;
@@ -18,8 +25,40 @@ interface PerfChangeEntry {
   pctChange: number;
 }
 
-interface RunInsightsResult {
+/** The chosen baseline run, echoed so the Changes tab can name it in its selector. */
+export interface InsightsBaseline {
+  id: number;
+  startTime: Date;
+  status: string;
+  label: string | null;
+  branch: string | null;
+  environment: string | null;
+}
+
+/** How the baseline was picked: the automatic ladder, a run, or a base branch someone chose. */
+export type InsightsBaselineSource = 'auto' | 'run' | 'branch';
+
+export interface RunInsightsResult {
   hasBaseline: boolean;
+  /** The baseline this comparison used (the automatic choice, or the one asked for). */
+  baseline: InsightsBaseline | null;
+  baselineSource: InsightsBaselineSource;
+  /** How the baseline relates to this run; null when a specific run was asked for. */
+  baselineMatch: RunBaselineMatch | null;
+  /** Why this baseline — the sentence the Changes tab shows under the selector. */
+  baselineNote: string | null;
+  /** The run being compared, so the selector can say which branch and environment it is on. */
+  run: { branch: string | null; environment: string | null };
+  /** The branch the automatic ladder falls back to, and where that came from. */
+  fallbackBranch: RunBaselineFallback;
+  /** The base branch asked for, echoed even when it yielded no baseline. */
+  baseBranch: string | null;
+  /** Branches with at least one earlier passing run in the project — the base branches on offer. */
+  baseBranches: string[];
+  /** Tests that passed in the baseline and fail here — the one "new failures" set. */
+  newFailures: number;
+  commitRange: CommitRange | null;
+  metadataDiff: MetaDiffEntry[];
   totalTests: number;
   passedTests: number;
   failedTests: number;
@@ -31,24 +70,36 @@ interface RunInsightsResult {
   recurrences: TestCaseEntry[];
   recovered: TestCaseEntry[];
   newFlaky: TestCaseEntry[];
-  slowestTests: Array<{ testRunsCaseId: number; title: string; filePath: string; duration: number }>;
+  slowestTests: Array<{ executionId: number; title: string; filePath: string; duration: number }>;
   mostImproved: PerfChangeEntry[];
   mostRegressed: PerfChangeEntry[];
   workerImbalance: Array<{ workerIndex: number; count: number }>;
   workerImbalanceWarning: string | null;
-  flakyOnRetry: Array<{ testRunsCaseId: number; title: string; filePath: string; retries: number }>;
-  clusterNew: Array<{ clusterId: number; signature: string }>;
+  flakyOnRetry: Array<{ executionId: number; title: string; filePath: string; retries: number }>;
+  clusterNew: Array<{
+    clusterId: number;
+    signature: string;
+    title: string | null;
+    errorType: string | null;
+    selector: string | null;
+  }>;
 }
 
 const FAIL_STATUSES: ReadonlySet<string> = new Set(['failed', 'timedOut', 'timedout']);
 
-export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<RunInsightsResult> {
+export async function computeRunInsights(
+  db: DrizzleDB,
+  runId: number,
+  options?: { baselineId?: number | null; baseBranch?: string | null },
+): Promise<RunInsightsResult> {
   const runResults: any[] = await db
     .select({
       id: testRuns.id,
       projectId: testRuns.projectId,
       status: testRuns.status,
       startTime: testRuns.startTime,
+      branch: testRuns.branch,
+      environment: testRuns.environment,
       metadata: testRuns.metadata,
     })
     .from(testRuns)
@@ -73,24 +124,68 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.testRunId, runId));
 
-  // Find baseline: passing full run before this one
-  const baselineConditions = [
-    eq(testRuns.projectId, run.projectId),
-    eq(testRuns.status, 'passed'),
-    eq(testRuns.isFullRun, 1),
-    lt(testRuns.startTime, run.startTime),
-  ];
+  // The baseline ladder: a passing full run in this run's environment, on its
+  // own branch, else on the branch it forked from (the pull request's target
+  // when the reporter captured one, else the project's default branch), else
+  // any branch; then the same three rungs without the environment.
+  const branch = run.branch ?? resolveRunBranch(run.metadata);
+  const environment: string | null = run.environment ?? null;
+  const fallbackBranch = resolveFallbackBranch(
+    run.metadata,
+    await readProjectDefaultBranch(db, run.projectId, run.metadata),
+  );
 
-  const baselineResults: any[] = await db
-    .select({ id: testRuns.id, startTime: testRuns.startTime })
+  // The base branches on offer: every branch with an earlier passing run.
+  const branchRows: Array<{ branch: string | null }> = await db
+    .selectDistinct({ branch: testRuns.branch })
     .from(testRuns)
-    .where(and(...baselineConditions))
-    .orderBy(desc(testRuns.startTime))
-    .limit(1);
+    .where(and(eq(testRuns.projectId, run.projectId), eq(testRuns.status, 'passed'), isNotNull(testRuns.branch)));
+  const baseBranches = branchRows
+    .map((r) => r.branch)
+    .filter((b): b is string => !!b)
+    .sort();
 
-  const baselineRun = baselineResults[0];
+  // An explicit baseline (the `?baseline=` selection on the Changes tab) wins,
+  // as long as it is a different run in the same project. Then a chosen base
+  // branch restricts the ladder to that branch. Otherwise the automatic choice.
+  const chosenBranch = options?.baseBranch?.trim() || null;
+  let baselineRun: TestRun | null = null;
+  let baselineSource: InsightsBaselineSource = 'auto';
+  let baselineMatch: RunBaselineMatch | null = null;
+  if (options?.baselineId != null && options.baselineId !== runId) {
+    const [picked] = await db.select().from(testRuns).where(eq(testRuns.id, options.baselineId));
+    if (picked && picked.projectId === run.projectId) {
+      baselineRun = picked as TestRun;
+      baselineSource = 'run';
+    }
+  }
+  if (!baselineRun) {
+    const selection = await selectBaselineRun(db, {
+      projectId: run.projectId,
+      before: run.startTime,
+      branch,
+      environment,
+      fallbackBranch: fallbackBranch.branch,
+      baseBranch: chosenBranch,
+      fullRunOnly: true,
+    });
+    if (selection) {
+      baselineRun = selection.run;
+      baselineMatch = selection.match;
+      baselineSource = chosenBranch ? 'branch' : 'auto';
+    }
+  }
+  const scope = { run: { branch, environment }, fallbackBranch, baseBranch: chosenBranch, baseBranches };
   const empty = {
     hasBaseline: false,
+    baseline: null,
+    baselineSource,
+    baselineMatch: null,
+    baselineNote: null,
+    ...scope,
+    newFailures: 0,
+    commitRange: null,
+    metadataDiff: [],
     totalTests: 0,
     passedTests: 0,
     failedTests: 0,
@@ -133,7 +228,7 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
   const recurrences: TestCaseEntry[] = [];
   const recovered: TestCaseEntry[] = [];
   const newFlaky: TestCaseEntry[] = [];
-  const flakyOnRetry: Array<{ testRunsCaseId: number; title: string; filePath: string; retries: number }> = [];
+  const flakyOnRetry: Array<{ executionId: number; title: string; filePath: string; retries: number }> = [];
   const perfChanges: PerfChangeEntry[] = [];
 
   for (const cc of currentCases) {
@@ -145,11 +240,11 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
       const isFail = FAIL_STATUSES.has(cc.status);
 
       if (!wasFail && isFail) {
-        newRegressions.push({ testRunsCaseId: cc.id, title: cc.title, filePath: cc.filePath, duration: cc.duration });
+        newRegressions.push({ executionId: cc.id, title: cc.title, filePath: cc.filePath, duration: cc.duration });
       } else if (wasFail && !isFail) {
-        recovered.push({ testRunsCaseId: cc.id, title: cc.title, filePath: cc.filePath, duration: cc.duration });
+        recovered.push({ executionId: cc.id, title: cc.title, filePath: cc.filePath, duration: cc.duration });
       } else if (wasFail && isFail) {
-        recurrences.push({ testRunsCaseId: cc.id, title: cc.title, filePath: cc.filePath, duration: cc.duration });
+        recurrences.push({ executionId: cc.id, title: cc.title, filePath: cc.filePath, duration: cc.duration });
       }
     }
 
@@ -158,13 +253,13 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
       const wasStable = (bc.retries ?? 0) === 0 && bc.status === 'passed';
       const isNowFlaky = (cc.retries ?? 0) > 0 && cc.status === 'passed';
       if (wasStable && isNowFlaky) {
-        newFlaky.push({ testRunsCaseId: cc.id, title: cc.title, filePath: cc.filePath, duration: cc.duration });
+        newFlaky.push({ executionId: cc.id, title: cc.title, filePath: cc.filePath, duration: cc.duration });
       }
     }
 
     // Flaky on retry (passed but had retries)
     if (cc.status === 'passed' && (cc.retries ?? 0) > 0) {
-      flakyOnRetry.push({ testRunsCaseId: cc.id, title: cc.title, filePath: cc.filePath, retries: cc.retries ?? 0 });
+      flakyOnRetry.push({ executionId: cc.id, title: cc.title, filePath: cc.filePath, retries: cc.retries ?? 0 });
     }
 
     // Duration changes
@@ -174,7 +269,7 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
       if (before > 0) {
         const pctChange = Math.round(((after - before) / before) * 100);
         perfChanges.push({
-          testRunsCaseId: cc.id,
+          executionId: cc.id,
           title: cc.title,
           filePath: cc.filePath,
           durationBefore: before,
@@ -207,16 +302,18 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
     .filter((c) => c.duration != null)
     .sort((a, b) => (b.duration ?? 0) - (a.duration ?? 0))
     .slice(0, 5)
-    .map((c) => ({ testRunsCaseId: c.id, title: c.title, filePath: c.filePath, duration: c.duration }));
+    .map((c) => ({ executionId: c.id, title: c.title, filePath: c.filePath, duration: c.duration }));
 
-  // Filter out zero-change entries so no test appears in both lists with 0%
-  const nonZeroChanges = perfChanges.filter((c) => c.pctChange !== 0);
-
-  // Most improved (top 5 by negative pctChange)
-  const mostImproved = [...nonZeroChanges].sort((a, b) => a.pctChange - b.pctChange).slice(0, 5);
-
-  // Most regressed (top 5 by positive pctChange)
-  const mostRegressed = [...nonZeroChanges].sort((a, b) => b.pctChange - a.pctChange).slice(0, 5);
+  // Split by direction so "slower" only holds tests that got slower and "faster"
+  // only those that got faster — the ten largest each way.
+  const mostRegressed = perfChanges
+    .filter((c) => c.pctChange > 0)
+    .sort((a, b) => b.pctChange - a.pctChange)
+    .slice(0, 10);
+  const mostImproved = perfChanges
+    .filter((c) => c.pctChange < 0)
+    .sort((a, b) => a.pctChange - b.pctChange)
+    .slice(0, 10);
 
   // Worker imbalance
   const workerCounts = new Map<number, number>();
@@ -243,15 +340,62 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
     }
   }
 
+  // Commit span and environment diff between the baseline and this run, so the
+  // Changes tab shows "commits since the baseline" and "environment changes"
+  // against the same baseline every other section uses.
+  const currMeta = run.metadata as any;
+  const baseMeta = (baselineRun as any).metadata ?? null;
+  const remoteUrl: string | null = currMeta?.scm?.remoteUrl ?? baseMeta?.scm?.remoteUrl ?? null;
+  const commitRange = buildCommitRange(
+    normalizeGitUrl(remoteUrl),
+    baseMeta?.scm?.commit ?? null,
+    currMeta?.scm?.commit ?? null,
+  );
+  const metadataDiff = computeMetadataDiff(baseMeta, currMeta, baselineRun.environment, run.environment);
+
   // New clusters (firstSeenRunId === runId)
   const clusterRows: any[] = await db
-    .select({ id: failureClusters.id, signature: failureClusters.signature })
+    .select({
+      id: failureClusters.id,
+      signature: failureClusters.signature,
+      title: failureClusters.title,
+      errorType: failureClusters.errorType,
+      selector: failureClusters.selector,
+    })
     .from(failureClusters)
     .where(and(eq(failureClusters.firstSeenRunId, runId)))
     .limit(20);
 
+  const baselineScope = {
+    branch: baselineRun.branch ?? resolveRunBranch(baselineRun.metadata),
+    environment: baselineRun.environment ?? null,
+  };
+  const baselineNote =
+    baselineSource === 'run'
+      ? 'The run you picked.'
+      : describeRunBaseline({
+          run: scope.run,
+          baseline: baselineScope,
+          match: baselineMatch!,
+          fallback: fallbackBranch,
+        });
+
   return {
     hasBaseline: true,
+    baseline: {
+      id: baselineRun.id,
+      startTime: baselineRun.startTime,
+      status: baselineRun.status,
+      label: baselineRun.label ?? null,
+      ...baselineScope,
+    },
+    baselineSource,
+    baselineMatch,
+    baselineNote,
+    ...scope,
+    newFailures: newRegressions.length,
+    commitRange,
+    metadataDiff,
     totalTests,
     passedTests,
     failedTests,
@@ -269,6 +413,12 @@ export async function computeRunInsights(db: DrizzleDB, runId: number): Promise<
     workerImbalance,
     workerImbalanceWarning,
     flakyOnRetry,
-    clusterNew: clusterRows.map((c: any) => ({ clusterId: c.id, signature: c.signature })),
+    clusterNew: clusterRows.map((c: any) => ({
+      clusterId: c.id,
+      signature: c.signature,
+      title: c.title ?? null,
+      errorType: c.errorType ?? null,
+      selector: c.selector ?? null,
+    })),
   };
 }

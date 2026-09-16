@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { highlightCode, isKnownLanguage } from '../../shared/highlight';
+import { highlightCode, highlightToSpans, isKnownLanguage } from '../../shared/highlight';
 
 describe('highlightCode', () => {
   it.each(['typescript', 'javascript', 'json', 'diff', 'yaml', 'bash', 'css', 'xml', 'python'])('knows %s', (lang) => {
@@ -68,5 +68,50 @@ describe('highlightCode', () => {
 
   it('returns empty output for empty input', () => {
     expect(highlightCode('', 'typescript').html).toBe('');
+  });
+});
+
+describe('highlightToSpans', () => {
+  // The PDF export paints these spans, so the concatenated text must be exactly
+  // the source — no dropped, doubled, or reordered characters.
+  it('reconstructs the source verbatim, quotes and angle brackets included', () => {
+    const source = 'const x = "<a>" + \'y\';';
+    const { spans, language } = highlightToSpans(source, 'typescript');
+    expect(language).toBe('typescript');
+    expect(spans.map((s) => s.text).join('')).toBe(source);
+  });
+
+  it('preserves newlines inside the span text so the caller can lay out lines', () => {
+    const { spans } = highlightToSpans('const a = 1;\nconst b = 2;', 'typescript');
+    expect(spans.map((s) => s.text).join('')).toContain('\n');
+  });
+
+  it('tags keywords, strings and numbers with their scope', () => {
+    const { spans } = highlightToSpans("const greeting = 'hi';", 'typescript');
+    const scopes = new Set(spans.map((s) => s.scope));
+    expect(scopes).toContain('keyword');
+    expect(scopes).toContain('string');
+  });
+
+  it('marks diff additions and deletions', () => {
+    const { spans } = highlightToSpans('-const a = 1;\n+const a = 2;', 'diff');
+    const scopes = spans.map((s) => s.scope);
+    expect(scopes).toContain('addition');
+    expect(scopes).toContain('deletion');
+  });
+
+  // highlight.js escapes `< > " '` in its output; the token stream must decode
+  // them so what the PDF draws is the original text, not `&lt;`.
+  it('decodes escaped entities so markup round-trips through the token stream', () => {
+    const source = '<img src=x onerror="y">';
+    const { spans } = highlightToSpans(source);
+    expect(spans.map((s) => s.text).join('')).toBe(source);
+  });
+
+  it('leaves a block too large to auto-detect as one plain span', () => {
+    const big = 'x'.repeat(200_000);
+    const { spans, language } = highlightToSpans(big);
+    expect(language).toBe('');
+    expect(spans).toEqual([{ text: big, scope: '' }]);
   });
 });

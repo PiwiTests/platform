@@ -8,7 +8,7 @@ Prerequisites: **Node.js 24+**, npm, Git.
 
 ```bash
 git clone https://github.com/PiwiTests/platform.git
-cd platform/application
+cd platform/apps/application
 npm install
 npm run app:dev      # dashboard at http://localhost:3000
 ```

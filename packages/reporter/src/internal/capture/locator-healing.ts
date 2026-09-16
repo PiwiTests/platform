@@ -83,6 +83,7 @@ export const CHAIN_METHODS: string[] = [
   'nth',
   'last',
   'filter',
+  'visible',
   'and',
   'or',
   'locator',

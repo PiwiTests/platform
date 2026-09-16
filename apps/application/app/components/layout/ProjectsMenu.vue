@@ -10,7 +10,9 @@ const route = useRoute();
 const router = useRouter();
 
 // Fetch available projects for the menu
-const { data: projects, refresh } = await useFetch<ProjectMenuItem[]>('/api/projects/menu');
+const { data: projects, refresh } = await useFetch('/api/projects/menu', {
+  transform: (r: { items: ProjectMenuItem[] }) => r.items,
+});
 
 useRunStream(refresh);
 

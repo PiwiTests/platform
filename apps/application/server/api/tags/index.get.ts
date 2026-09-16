@@ -13,5 +13,5 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   await requireAuth(event);
-  return listTags(await getDatabase());
+  return { items: (await listTags(await getDatabase())).tags };
 });

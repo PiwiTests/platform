@@ -1,55 +1,79 @@
 <script setup lang="ts">
+/**
+ * AI diagnosis for a failure cluster or a single execution — one component, one
+ * `scope`. The stored result renders whether or not a provider is configured, so
+ * a diagnosis never disappears when the key is removed; the interactive controls
+ * (diagnose, additional context, screenshots) show only when a provider is set.
+ *
+ * Cluster scope uses the shared cluster-diagnosis store (SCM baseline, streaming,
+ * version history). Execution scope has none of those server-side, so it runs the
+ * plain diagnose endpoint and hides the baseline, streaming and history UI.
+ */
 import type { FailureDiagnosis } from '~~/server/database/schema';
 import { extractCitedSectionIds } from '#shared/diagnosis-sections';
+import { isDiagnosisStale, stalenessReason } from '#shared/diagnosis-staleness';
 import type { DiagnoseImage } from '~/composables/useClusterDiagnosis';
-import { formatRelativeTime } from '~/utils';
+import { formatRelativeTime, errorMessage } from '~/utils';
 
-const props = defineProps<{
-  clusterId?: number;
-  lastSeenRunId?: number;
-  affectedTestCases?: Array<{
-    testCaseId: number;
-    title: string;
-    filePath: string;
-    runCount: number;
-    recentTestRunsCaseId: number;
-  }>;
-}>();
+const props = withDefaults(
+  defineProps<{
+    scope: 'cluster' | 'execution';
+    clusterId?: number;
+    executionId?: number;
+    /**
+     * Keep *Show context* and *Copy prompt* out of the panel; the page renders
+     * them in its own More menu and drives them via the exposed methods.
+     */
+    contextInMenu?: boolean;
+    // ── Cluster scope only ──
+    lastSeenRunId?: number;
+    clusterStatus?: string;
+    fixVerification?: string | null;
+    lastSeenAt?: string | Date | null;
+    affectedTestCases?: Array<{
+      testCaseId: number;
+      title: string;
+      filePath: string;
+      runCount: number;
+      recentTestRunsCaseId: number;
+    }>;
+  }>(),
+  { contextInMenu: false },
+);
 
-const {
-  diagnosis,
-  posting,
-  contextText,
-  contextSections,
-  tokenEstimate,
-  imageTokenEstimate,
-  contextLoading,
-  coverage,
-  baseCommit,
-  selectedCommitShas,
-  refreshContext,
-  runDiagnosis,
-} = useOrProvideClusterDiagnosis(props.clusterId);
+const isCluster = props.scope === 'cluster';
+
+// The prompt/context endpoint — scope-agnostic downstream (CopyAiPromptButton, copyPrompt()).
+const contextEndpoint = computed(() =>
+  isCluster
+    ? `/api/failure-clusters/${props.clusterId}/context`
+    : `/api/test-run-cases/${props.executionId}/diagnosis-context`,
+);
+
+// One store, two shapes. `scope` never changes for a mounted panel, so picking
+// the store once at setup is safe.
+const clusterStore = isCluster ? useOrProvideClusterDiagnosis(props.clusterId) : null;
+const execStore = !isCluster ? useExecutionDiagnosis(props.executionId!) : null;
+
+const diagnosis = clusterStore?.diagnosis ?? execStore!.diagnosis;
+const posting = clusterStore?.posting ?? execStore!.posting;
+const contextSections = clusterStore?.contextSections ?? execStore!.contextSections;
+const tokenEstimate = clusterStore?.tokenEstimate ?? execStore!.tokenEstimate;
+const imageTokenEstimate = clusterStore?.imageTokenEstimate ?? execStore!.imageTokenEstimate;
+const coverage = clusterStore?.coverage ?? execStore!.coverage;
+const contextLoading = clusterStore?.contextLoading ?? execStore!.contextLoading;
+const refreshContext = clusterStore?.refreshContext ?? execStore!.refreshContext;
+const currentContextSha = clusterStore?.currentContextSha ?? ref<string | null>(null);
+
 const { aiStatus } = useAiStatus();
-const toast = useToast();
 
-const {
-  permission: notifPermission,
-  active: notifActive,
-  requestPermission,
-  toggleEnabled,
-} = useDiagnosisNotification();
-
-const {
-  thinkingText: streamThinkingText,
-  stage: streamStage,
-  status: streamStatus,
-  result: streamResult,
-  error: streamError,
-  startStream,
-  cancel: cancelStream,
-  reset: resetStream,
-} = useStreamingDiagnosis(computed(() => props.clusterId ?? 0));
+// Streaming lives on cluster scope only; execution falls back to plain POST.
+const streaming = isCluster ? useStreamingDiagnosis(computed(() => props.clusterId ?? 0)) : null;
+const streamThinkingText = streaming?.thinkingText ?? ref('');
+const streamStage = streaming?.stage ?? ref<string | null>(null);
+const streamStatus = streaming?.status ?? ref('idle');
+const streamResult = streaming?.result ?? ref<FailureDiagnosis | null>(null);
+const streamError = streaming?.error ?? ref<string | null>(null);
 
 const attachments = useAttachments();
 const {
@@ -109,12 +133,10 @@ watch(streamThinkingText, () => {
 
 /** When streaming completes with a result, update the shared diagnosis store. */
 watch(streamResult, (val) => {
-  if (val) {
-    diagnosis.value = val;
-  }
+  if (val) diagnosis.value = val;
 });
 
-/** Pre-fill additional context and selected commits from a stored diagnosis. */
+/** Pre-fill additional context from a stored diagnosis. */
 watch(
   () => diagnosis.value?.details,
   (det) => {
@@ -142,21 +164,31 @@ function buildPromptContext() {
 }
 
 async function diagnose(force = false) {
-  await startStream({
-    force,
-    additionalContext: buildPromptContext() || undefined,
-    baseCommit: baseCommit.value.trim() || undefined,
-    selectedCommitShas: selectedCommitShas.value.length ? [...selectedCommitShas.value] : undefined,
-    images: allImages.value.length ? allImages.value : undefined,
-  });
+  if (streaming && clusterStore) {
+    await streaming.startStream({
+      force,
+      additionalContext: buildPromptContext() || undefined,
+      baseCommit: clusterStore.baseCommit.value.trim() || undefined,
+      selectedCommitShas: clusterStore.selectedCommitShas.value.length
+        ? [...clusterStore.selectedCommitShas.value]
+        : undefined,
+      images: allImages.value.length ? allImages.value : undefined,
+    });
+  } else {
+    await diagnoseFallback(force);
+  }
 }
 
 async function diagnoseFallback(force = false) {
-  await runDiagnosis({
-    force,
-    additionalContext: buildPromptContext() || undefined,
-    images: allImages.value.length ? allImages.value : undefined,
-  });
+  if (clusterStore) {
+    await clusterStore.runDiagnosis({
+      force,
+      additionalContext: buildPromptContext() || undefined,
+      images: allImages.value.length ? allImages.value : undefined,
+    });
+  } else {
+    await execStore!.runDiagnosis({ force, additionalContext: buildPromptContext() || undefined });
+  }
 }
 
 function markDiagnosisFailed() {
@@ -180,25 +212,115 @@ function showResult() {
     !isStreaming() && diagnosis.value && (diagnosis.value.status === 'completed' || diagnosis.value.status === 'failed')
   );
 }
+
+/** A fresh 'running' row (execution scope, no live stream): a diagnosis is in flight. */
+const showRunning = computed(
+  () => !isCluster && diagnosis.value?.status === 'running' && !isStale(diagnosis.value) && !posting.value,
+);
+
+// ── Staleness (cluster scope) ───────────────────────────────────────────────
+const stalenessInput = computed(() => ({
+  storedContextSha: diagnosis.value?.contextSha,
+  currentContextSha: currentContextSha.value,
+  fixVerification: props.fixVerification,
+  status: props.clusterStatus,
+}));
+
+const diagnosisStale = computed(
+  () => isCluster && diagnosis.value?.status === 'completed' && isDiagnosisStale(stalenessInput.value),
+);
+
+const staleReason = computed<'occurrences' | 'evidence' | null>(() =>
+  isCluster
+    ? stalenessReason({
+        ...stalenessInput.value,
+        diagnosedAt: diagnosis.value?.updatedAt ? new Date(diagnosis.value.updatedAt).getTime() : null,
+        lastSeenAt: props.lastSeenAt ? new Date(props.lastSeenAt).getTime() : null,
+      })
+    : null,
+);
+
+// ── History (cluster scope only — no execution versions endpoint) ───────────
+const showHistory = ref(false);
+const versionCount = ref(0);
+
+async function fetchVersionCount() {
+  if (!isCluster || !props.clusterId) return;
+  try {
+    const res = await $fetch<{ items: unknown[] }>(`/api/failure-clusters/${props.clusterId}/diagnoses`);
+    versionCount.value = res.items.length;
+  } catch {
+    versionCount.value = 0;
+  }
+}
+
+onMounted(fetchVersionCount);
+// A completed re-diagnose snapshots the prior version — refresh the count.
+watch(
+  () => diagnosis.value?.updatedAt,
+  () => fetchVersionCount(),
+);
+
+// ── Re-diagnose / Copy prompt (exposed for the page's More menu) ─────────────
+const canReDiagnose = computed(() => Boolean(aiStatus.value?.configured && diagnosis.value?.status === 'completed'));
+
+const promptToast = useToast();
+const { copy: copyPromptText } = useCopy();
+async function copyPrompt() {
+  try {
+    const base = (useRuntimeConfig().app?.baseURL ?? '/').replace(/\/$/, '');
+    const response = await fetch(`${base}${contextEndpoint.value}?format=prompt`);
+    if (!response.ok) throw new Error(`Request failed (${response.status})`);
+    copyPromptText(await response.text(), { toast: 'AI prompt copied' });
+  } catch (error) {
+    promptToast.add({ title: 'Could not copy the prompt', description: errorMessage(error), color: 'error' });
+  }
+}
+
+defineExpose({
+  openContext: () => (showAiContext.value = true),
+  copyPrompt,
+  openHistory: () => (showHistory.value = true),
+  reDiagnose: () => diagnose(true),
+  canReDiagnose,
+  versionCount,
+  posting,
+});
 </script>
 
 <template>
   <div class="space-y-4">
-    <!-- Header -->
-    <div class="pb-2 border-b border-default">
-      <div class="flex items-center justify-between gap-2">
-        <div class="flex items-center gap-1.5">
-          <UIcon name="i-lucide-sparkles" class="size-4 text-primary shrink-0" />
-          <span class="text-sm font-semibold">Diagnosis</span>
-          <HelpHint topic="cluster.diagnosis" />
-          <span class="text-xs text-gray-400">
-            &mdash;
-            <UIcon name="i-lucide-triangle-alert" class="size-3 shrink-0 inline" />
-            AI-generated, verify before applying
-          </span>
-        </div>
-        <div class="flex items-center gap-1.5">
-          <CopyAiPromptButton :context-endpoint="`/api/failure-clusters/${clusterId}/context`" />
+    <!-- Action row: the panel's own header (FixCard supplies the "Diagnosis" label). -->
+    <div class="flex items-center justify-between gap-2">
+      <span class="text-xs text-gray-400 inline-flex items-center gap-1">
+        <UIcon name="i-lucide-triangle-alert" class="size-3 shrink-0" />
+        AI-generated, verify before applying
+      </span>
+      <div class="flex items-center gap-1.5">
+        <UButton
+          v-if="isCluster && versionCount > 0"
+          icon="i-lucide-history"
+          size="xs"
+          color="neutral"
+          variant="outline"
+          title="View previous diagnosis versions"
+          @click="showHistory = true"
+        >
+          History ({{ versionCount }})
+        </UButton>
+        <!-- A stored result under no provider: configuring AI is the way to redo it. -->
+        <UButton
+          v-if="showResult() && !aiStatus?.configured"
+          to="/settings/ai"
+          icon="i-lucide-sparkles"
+          size="xs"
+          color="neutral"
+          variant="outline"
+        >
+          Re-diagnose (configure AI)
+        </UButton>
+        <template v-if="!contextInMenu && aiStatus?.configured">
+          <CopyAiPromptButton :context-endpoint="contextEndpoint" />
           <UButton
             :icon="showAiContext ? 'i-lucide-eye-off' : 'i-lucide-eye'"
             size="xs"
@@ -209,41 +331,19 @@ function showResult() {
           >
             {{ showAiContext ? 'Hide context' : 'Show context' }}
           </UButton>
-          <UButton
-            v-if="diagnosis && diagnosis.status === 'completed'"
-            icon="i-lucide-refresh-cw"
-            size="xs"
-            color="primary"
-            variant="soft"
-            :loading="posting"
-            @click="diagnose(true)"
-          >
-            Re-diagnose
-          </UButton>
-        </div>
+        </template>
+        <UButton
+          v-if="canReDiagnose"
+          icon="i-lucide-refresh-cw"
+          size="xs"
+          color="primary"
+          variant="soft"
+          :loading="posting"
+          @click="diagnose(true)"
+        >
+          Re-diagnose
+        </UButton>
       </div>
-    </div>
-
-    <!-- Browser notification permission prompt -->
-    <div
-      v-if="notifPermission === 'granted' && aiStatus?.configured"
-      class="flex items-center gap-2 px-3 py-2 rounded-lg bg-elevated/50 border border-default text-xs"
-    >
-      <UIcon name="i-lucide-bell" class="size-3.5 shrink-0" :class="notifActive ? 'text-primary' : 'text-gray-400'" />
-      <span class="text-gray-500">{{
-        notifActive ? 'Diagnosis notifications on' : 'Diagnosis notifications off'
-      }}</span>
-      <UButton size="xs" :color="notifActive ? 'neutral' : 'primary'" variant="outline" @click="toggleEnabled">
-        {{ notifActive ? 'Disable' : 'Enable' }}
-      </UButton>
-    </div>
-    <div
-      v-else-if="notifPermission === 'default' && aiStatus?.configured"
-      class="flex items-center gap-2 px-3 py-2 rounded-lg bg-elevated/50 border border-default text-xs"
-    >
-      <UIcon name="i-lucide-bell" class="size-3.5 text-gray-400 shrink-0" />
-      <span class="text-gray-500">Notify when diagnosis completes?</span>
-      <UButton size="xs" color="neutral" variant="outline" @click="requestPermission">Enable</UButton>
     </div>
 
     <!-- Context coverage preview: what evidence will be sent, without opening the modal -->
@@ -274,7 +374,7 @@ function showResult() {
       @refresh="refreshContext"
     />
 
-    <!-- AI configured: full panel -->
+    <!-- AI configured: interactive controls -->
     <template v-if="aiStatus?.configured">
       <!-- Additional context (collapsible, collapsed by default) -->
       <div>
@@ -296,6 +396,7 @@ function showResult() {
         </div>
         <div v-if="showAdditionalContext">
           <div
+            v-if="isCluster"
             class="rounded-lg border-2 transition-colors"
             :class="dragOver ? 'border-primary bg-primary/5 border-solid' : 'border-dashed border-default'"
             @dragover="onDragOver"
@@ -304,7 +405,7 @@ function showResult() {
           >
             <UTextarea
               v-model="additionalContext"
-              placeholder="e.g. We deployed a new auth middleware yesterday\u2026"
+              placeholder="e.g. We deployed a new auth middleware yesterday…"
               :rows="3"
               class="w-full text-sm border-0 bg-transparent focus:ring-0"
             />
@@ -326,15 +427,22 @@ function showResult() {
               >
                 Attach files
               </UButton>
-              <span v-if="dragOver" class="text-xs text-primary">Drop files here\u2026</span>
+              <span v-if="dragOver" class="text-xs text-primary">Drop files here…</span>
               <span v-else class="text-xs text-gray-400">or drag &amp; drop text files and images</span>
             </div>
           </div>
+          <UTextarea
+            v-else
+            v-model="additionalContext"
+            placeholder="e.g. We deployed a new auth middleware yesterday…"
+            :rows="3"
+            class="w-full text-sm"
+          />
         </div>
       </div>
 
-      <!-- Attached text files -->
-      <div v-if="attachedFiles.length" class="flex flex-wrap gap-2">
+      <!-- Attached text files (cluster scope) -->
+      <div v-if="isCluster && attachedFiles.length" class="flex flex-wrap gap-2">
         <div
           v-for="(f, i) in attachedFiles"
           :key="i"
@@ -349,8 +457,8 @@ function showResult() {
         </div>
       </div>
 
-      <!-- Attached images (manually dragged/uploaded) -->
-      <div v-if="attachedImages.length" class="flex flex-wrap gap-2">
+      <!-- Attached images (cluster scope) -->
+      <div v-if="isCluster && attachedImages.length" class="flex flex-wrap gap-2">
         <div v-for="(img, i) in attachedImages" :key="i" class="relative group">
           <img :src="img.preview" :alt="img.name" class="h-16 w-16 object-cover rounded-lg border border-default" />
           <div
@@ -364,9 +472,9 @@ function showResult() {
         </div>
       </div>
 
-      <!-- Screenshots from test evidence (auto-loaded) -->
+      <!-- Screenshots from test evidence (cluster scope, auto-loaded) -->
       <DiagnosisScreenshots
-        v-if="affectedTestCases?.length"
+        v-if="isCluster && affectedTestCases?.length"
         :affected-test-cases="affectedTestCases"
         @update:images="testCaseImages = $event"
       />
@@ -379,15 +487,35 @@ function showResult() {
           color="primary"
           variant="solid"
           :loading="posting"
-          @click="diagnose()"
+          @click="diagnose(diagnosis?.status === 'running')"
         >
-          Diagnose with AI
+          {{ diagnosis?.status === 'running' ? 'Restart diagnosis' : 'Diagnose with AI' }}
         </UButton>
       </div>
 
-      <!-- Live thinking panel while streaming -->
+      <!-- Execution scope: a diagnosis is genuinely in flight (this or another session) -->
+      <div
+        v-if="showRunning"
+        class="flex items-center justify-between gap-2 rounded-lg border border-default bg-elevated/40 p-2.5"
+      >
+        <span class="inline-flex items-center gap-2 text-sm text-gray-500">
+          <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin text-primary shrink-0" />
+          Diagnosis in progress…
+        </span>
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-refresh-cw"
+          :loading="posting"
+          @click="refreshContext"
+        >
+          Refresh
+        </UButton>
+      </div>
+
+      <!-- Live thinking panel while streaming (cluster scope) -->
       <div v-if="isStreaming()" class="rounded-lg border border-default overflow-hidden">
-        <!-- Stage header -->
         <div class="flex items-center justify-between gap-2 px-3 py-2 bg-elevated/30 border-b border-default">
           <div class="flex items-center gap-2 text-sm text-gray-500">
             <UIcon name="i-lucide-loader-2" class="size-4 animate-spin text-primary" />
@@ -403,11 +531,9 @@ function showResult() {
             variant="ghost"
             icon="i-lucide-x"
             title="Cancel diagnosis"
-            @click="cancelStream"
+            @click="streaming?.cancel()"
           />
         </div>
-
-        <!-- Thinking tokens container -->
         <div
           ref="thinkingContainer"
           class="max-h-64 overflow-y-auto p-3 text-xs font-mono leading-relaxed whitespace-pre-wrap break-words text-gray-600 dark:text-gray-400 bg-elevated/10"
@@ -417,20 +543,18 @@ function showResult() {
             <span class="inline-block w-2 h-4 bg-primary/60 animate-pulse ml-0.5 align-text-bottom" />
           </template>
           <template v-else>
-            <span class="text-gray-400 italic">Waiting for model response\u2026</span>
+            <span class="text-gray-400 italic">Waiting for model response…</span>
           </template>
         </div>
-
-        <!-- Token counter footer -->
         <div class="px-3 py-1.5 border-t border-default text-xs text-gray-400 flex items-center gap-2">
           <UIcon name="i-lucide-file-text" class="size-3" />
           <span>{{ streamThinkingText.length.toLocaleString() }} characters received</span>
         </div>
       </div>
 
-      <!-- Stuck diagnosis: running from DB but not actively streaming (server crashed mid-stream) -->
+      <!-- Stuck diagnosis: running from DB but not actively streaming (cluster scope) -->
       <div
-        v-if="diagnosis?.status === 'running' && !isStale(diagnosis) && !isStreaming()"
+        v-if="isCluster && diagnosis?.status === 'running' && !isStale(diagnosis) && !isStreaming()"
         class="rounded-lg border border-warning/40 bg-warning/5 p-3 space-y-2"
       >
         <div class="flex items-center gap-2 text-sm">
@@ -473,35 +597,35 @@ function showResult() {
           </UButton>
         </template>
       </UAlert>
-
-      <!-- Diagnosis result -->
-      <DiagnosisResult
-        v-if="showResult()"
-        :diagnosis="diagnosis"
-        :last-seen-run-id="lastSeenRunId"
-        @view-section="onViewSection"
-        @prefill-context="onPrefillContext"
-      />
     </template>
 
-    <!-- AI not configured -->
-    <template v-else>
-      <div
-        class="flex flex-col items-center justify-center p-8 text-center text-gray-400 border border-dashed border-default rounded-lg"
-      >
-        <UIcon name="i-lucide-sparkles" class="size-8 mb-2 opacity-30" />
-        <p class="text-sm inline-flex items-center gap-1">
-          AI diagnosis is not configured <HelpHint topic="cluster.ai-setup" />
-        </p>
-        <UButton to="/settings/ai" size="xs" color="neutral" variant="outline" class="mt-3">
-          Configure in Settings
-        </UButton>
-        <p class="text-xs text-gray-400 mt-4 max-w-xs">
-          Use the <strong>Show context</strong> button above to inspect the full diagnosis context and copy it for use
-          with your own AI tool.
-        </p>
-      </div>
-    </template>
+    <!-- Result — rendered whether or not a provider is configured. -->
+    <DiagnosisResult
+      v-if="showResult()"
+      :diagnosis="diagnosis"
+      :last-seen-run-id="lastSeenRunId"
+      :stale="diagnosisStale"
+      :stale-reason="staleReason"
+      @view-section="onViewSection"
+      @prefill-context="onPrefillContext"
+    />
+
+    <!-- AI not configured: one line, and only when there is no result to show.
+         Under a stored result the header carries "Re-diagnose (configure AI)". -->
+    <div
+      v-if="!aiStatus?.configured && !showResult()"
+      class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted"
+    >
+      <span class="inline-flex items-center gap-1">
+        <UIcon name="i-lucide-sparkles" class="size-3.5 shrink-0" />
+        AI is not configured
+        <HelpHint topic="cluster.ai-setup" />
+      </span>
+      <span aria-hidden="true">·</span>
+      <NuxtLink to="/settings/ai" class="text-primary hover:underline">Configure</NuxtLink>
+      <span aria-hidden="true">·</span>
+      <CopyAiPromptButton :context-endpoint="contextEndpoint" />
+    </div>
 
     <!-- MCP link -->
     <div class="pt-1 text-center">
@@ -510,8 +634,16 @@ function showResult() {
         class="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-primary transition-colors"
       >
         <UIcon name="i-lucide-bot" class="size-3" />
-        Query this cluster from your AI agent via the MCP server
+        Query this {{ isCluster ? 'cluster' : 'failure' }} from your AI agent via the MCP server
       </NuxtLink>
     </div>
+
+    <DiagnosisHistorySlideover
+      v-if="isCluster && clusterId"
+      :open="showHistory"
+      :cluster-id="clusterId"
+      :current-diagnosis="diagnosis"
+      @update:open="showHistory = $event"
+    />
   </div>
 </template>

@@ -17,7 +17,7 @@ export default eventHandler(async (event) => {
 
   const id = parseInt(getRouterParam(event, 'id') || '0');
   if (!id) {
-    throw createError({ statusCode: 400, message: 'Invalid tag ID' });
+    throw apiError({ statusCode: 400, message: 'Invalid tag ID' });
   }
 
   try {
@@ -26,6 +26,6 @@ export default eventHandler(async (event) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to delete tag';
     const statusCode = message === 'Tag not found' ? 404 : 400;
-    throw createError({ statusCode, message });
+    throw apiError({ statusCode, message });
   }
 });

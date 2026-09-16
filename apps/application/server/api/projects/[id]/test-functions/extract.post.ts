@@ -7,7 +7,7 @@ import { Role } from '#shared/types';
 
 defineRouteMeta({
   openAPI: {
-    tags: ['Test functions'],
+    tags: ['Test Functions'],
     summary: 'Propose a catalog entry from pasted function source (AI)',
     description:
       'Analyzes pasted Playwright page-object-method/helper source with the configured AI provider and returns a proposed test-function catalog entry — a draft only, not saved. Requires reporter or administrator role, and a configured AI provider (see Settings → AI).',
@@ -27,15 +27,16 @@ export default eventHandler(async (event) => {
   const body = await readBody(event);
   const validation = extractSchema.safeParse(body);
   if (!validation.success) {
-    throw createError({ statusCode: 400, message: 'Invalid request body', data: validation.error.issues });
+    throw apiError({ statusCode: 400, message: 'Invalid request body', data: validation.error.issues });
   }
 
   const db = await getDatabase();
   const config = await resolveAiConfig(db);
   const role = config?.roles.research ?? config?.roles.diagnosis;
   if (!role) {
-    throw createError({
-      statusCode: 400,
+    throw apiError({
+      statusCode: 503,
+      errorCode: 'AI_NOT_CONFIGURED',
       message: 'AI is not configured for this instance — set it up in Settings → AI, or fill in the pattern by hand.',
     });
   }
@@ -45,6 +46,6 @@ export default eventHandler(async (event) => {
     return { proposal };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to extract a pattern from that code';
-    throw createError({ statusCode: 422, message });
+    throw apiError({ statusCode: 422, message });
   }
 });

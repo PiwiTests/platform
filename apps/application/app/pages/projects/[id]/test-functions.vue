@@ -27,7 +27,7 @@ useHead(
   })),
 );
 
-const entries = computed(() => catalog.value?.testFunctions ?? []);
+const entries = computed(() => catalog.value?.items ?? []);
 
 const KIND_ITEMS = [
   { label: 'Page-object method', value: 'page-object-method' },
@@ -338,7 +338,7 @@ async function save() {
   const isEdit = editingId.value != null;
   try {
     if (isEdit) {
-      await $fetch(`/api/test-functions/${editingId.value}`, { method: 'PUT', body });
+      await $fetch(`/api/test-functions/${editingId.value}`, { method: 'PATCH', body });
     } else {
       await $fetch(`/api/projects/${projectId}/test-functions`, { method: 'POST', body });
     }
@@ -408,12 +408,14 @@ function describeSteps(entry: TestFunctionInfo): string {
 
     <template #body>
       <div class="p-4 space-y-4">
-        <SectionCard
-          title="Test function catalog"
-          icon="i-lucide-function-square"
-          :count="entries.length || null"
-          subtitle="Page-object methods and helpers the Piwi Picker extension matches a recording against, to generate calls to your own code instead of raw locator lines."
-        >
+        <SectionCard title="Test function catalog" icon="i-lucide-function-square" :count="entries.length || null">
+          <template #subtitle>
+            Page-object methods and helpers the
+            <DocLink to="features/extension#connecting-to-a-piwi-instance" no-icon class="text-primary hover:underline"
+              >Piwi Picker extension</DocLink
+            >
+            matches a recording against, to generate calls to your own code instead of raw locator lines.
+          </template>
           <template #actions>
             <UButton label="Add function" icon="i-lucide-plus" size="sm" @click="openAdd" />
           </template>
@@ -423,7 +425,20 @@ function describeSteps(entry: TestFunctionInfo): string {
             v-else-if="entries.length === 0"
             icon="i-lucide-function-square"
             text="No functions registered yet — add one, or extract one from a recording in the extension."
-          />
+          >
+            <p class="text-xs text-gray-400 max-w-sm">
+              The extension is a separate install:
+              <a
+                href="https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe"
+                target="_blank"
+                rel="noopener"
+                class="text-primary hover:underline"
+                >Piwi Picker on the Chrome Web Store</a
+              >
+              (Chrome and Edge) — setup in the
+              <DocLink to="features/extension" no-icon class="text-primary hover:underline">extension docs</DocLink>.
+            </p>
+          </EmptyState>
           <div v-else class="divide-y divide-gray-200 dark:divide-gray-800">
             <div v-for="entry in entries" :key="entry.id" class="py-3 flex items-start justify-between gap-3">
               <div class="min-w-0 space-y-1">

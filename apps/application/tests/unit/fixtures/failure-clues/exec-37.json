@@ -1,0 +1,514 @@
+{
+  "execution": {
+    "id": 37,
+    "testCaseId": 1,
+    "status": "failed",
+    "duration": 3654,
+    "browserName": "Chromium",
+    "startedAt": 1788620768000,
+    "locks": ["database"],
+    "shardIndex": null
+  },
+  "parsedError": {
+    "kind": "test-timeout",
+    "errorName": null,
+    "subject": "locator",
+    "action": "click",
+    "assertion": null,
+    "negated": false,
+    "locator": "getByRole('button', { name: 'Pay' })",
+    "leafLocator": "getByRole('button', { name: 'Pay' })",
+    "expected": null,
+    "received": null,
+    "timeoutMs": 30000,
+    "url": null,
+    "networkErrorCode": null,
+    "timeoutPhase": null,
+    "lastState": "not-enabled",
+    "resolvedCount": null,
+    "lastCallLogLine": "waiting 100ms",
+    "lastStateLine": "element is not enabled",
+    "messageHead": "Test timeout of 30000ms exceeded.\n---\nlocator.click: Test timeout of 30000ms exceeded.",
+    "topFrame": "tests/helpers/payment.ts:16",
+    "isNavigationFailure": false,
+    "isLocatorResolutionFailure": false
+  },
+  "timeline": {
+    "origin": 1745474575471,
+    "end": 1788620797740,
+    "failureAt": 43146196183,
+    "failedStep": {
+      "index": 4,
+      "label": "Expect \"toBeVisible\" getByText('Order confirmed')",
+      "at": 43146195650,
+      "duration": 533
+    },
+    "lanes": {
+      "steps": [
+        {
+          "id": "step-0",
+          "lane": "steps",
+          "at": 43146192529,
+          "duration": 685,
+          "label": "Navigate /checkout",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 0
+          },
+          "origin": null,
+          "group": null,
+          "subtitle": "/checkout",
+          "params": {
+            "url": "https://shop.example.com/checkout"
+          },
+          "category": "navigation"
+        },
+        {
+          "id": "step-1",
+          "lane": "steps",
+          "at": 43146193214,
+          "duration": 609,
+          "label": "Fill \"ada@example.com\" getByLabel('Email')",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 1
+          },
+          "origin": null,
+          "group": null,
+          "subtitle": "getByLabel('Email')",
+          "params": {
+            "locator": "getByLabel('Email')",
+            "value": "ada@example.com"
+          },
+          "category": "input"
+        },
+        {
+          "id": "step-2",
+          "lane": "steps",
+          "at": 43146193823,
+          "duration": 837,
+          "label": "Fill \"Ada Lovelace\" getByLabel('Name on card')",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 2
+          },
+          "origin": null,
+          "group": null,
+          "subtitle": "getByLabel('Name on card')",
+          "params": {
+            "locator": "getByLabel('Name on card')",
+            "value": "Ada Lovelace"
+          },
+          "category": "input"
+        },
+        {
+          "id": "step-3",
+          "lane": "steps",
+          "at": 43146194660,
+          "duration": 990,
+          "label": "Click getByRole('button', { name: 'Place order' })",
+          "status": "passed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 3
+          },
+          "origin": null,
+          "group": null,
+          "subtitle": "getByRole('button', { name: 'Place order' })",
+          "params": {
+            "locator": "getByRole('button', { name: 'Place order' })"
+          },
+          "category": "action"
+        },
+        {
+          "id": "step-4",
+          "lane": "steps",
+          "at": 43146195650,
+          "duration": 533,
+          "label": "Expect \"toBeVisible\" getByText('Order confirmed')",
+          "status": "failed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 4
+          },
+          "origin": null,
+          "group": null,
+          "subtitle": "getByText('Order confirmed')",
+          "params": {
+            "locator": "getByText('Order confirmed')"
+          },
+          "category": "assertion",
+          "failed": true
+        }
+      ],
+      "console": [
+        {
+          "id": "console-0",
+          "lane": "console",
+          "at": 43146194721,
+          "label": "[checkout] price quote still pending after 20s — Pay stays disabled",
+          "status": "warning",
+          "kind": "console",
+          "ref": {
+            "section": "console",
+            "index": 0
+          }
+        }
+      ],
+      "network": [
+        {
+          "id": "network-0",
+          "lane": "network",
+          "at": 43146192649,
+          "duration": 59,
+          "label": "GET https://shop.example.com/api/cart",
+          "status": "200",
+          "kind": "network",
+          "ref": {
+            "section": "networkRequests",
+            "index": 0
+          }
+        },
+        {
+          "id": "network-1",
+          "lane": "network",
+          "at": 43146192743,
+          "duration": 28400,
+          "label": "POST https://shop.example.com/api/checkout/quote",
+          "status": "200",
+          "kind": "network",
+          "ref": {
+            "section": "networkRequests",
+            "index": 1
+          }
+        },
+        {
+          "id": "network-2",
+          "lane": "network",
+          "at": 43146221522,
+          "duration": 747,
+          "label": "GET https://cdn.pay.example.com/sdk.js",
+          "status": "200",
+          "kind": "network",
+          "ref": {
+            "section": "networkRequests",
+            "index": 2
+          }
+        },
+        {
+          "id": "network-3",
+          "lane": "network",
+          "at": 43146221178,
+          "duration": 309,
+          "label": "POST https://shop.example.com/api/payments/authorize",
+          "status": "201",
+          "kind": "network",
+          "ref": {
+            "section": "networkRequests",
+            "index": 3
+          }
+        }
+      ],
+      "backend": [],
+      "dialogs": [
+        {
+          "id": "dialog-0",
+          "lane": "dialogs",
+          "at": 0,
+          "label": "confirm: Your session is about to expire. Stay signed in?",
+          "status": "confirm",
+          "kind": "dialogs",
+          "ref": {
+            "section": "dialogs",
+            "index": 0
+          }
+        }
+      ]
+    },
+    "unplaced": [],
+    "estimated": false,
+    "window": {
+      "start": 43146185650,
+      "end": 43146198183
+    }
+  },
+  "healing": {
+    "failingLocator": {
+      "method": "getByRole",
+      "args": {
+        "role": "button",
+        "name": "Pay"
+      }
+    },
+    "fromPriorSuccess": null,
+    "fromElementMatch": null,
+    "fromAriaSnapshot": null,
+    "source": "none",
+    "recommendation": null,
+    "capturedAt": null,
+    "applicable": false,
+    "reason": "The locator resolved; this is not a locator problem."
+  },
+  "ariaSnapshot": "- document:\n  - form \"Checkout\":\n    - textbox \"Email address\"\n    - textbox \"Card number\"\n    - textbox \"Expiry date\"\n    - textbox \"CVV\"\n    - button \"Pay now\" [disabled]",
+  "ariaSnapshotJson": null,
+  "appState": {
+    "url": "https://shop.example.com/checkout",
+    "hash": null,
+    "historyState": null,
+    "localStorage": [
+      {
+        "key": "cart",
+        "length": 182
+      },
+      {
+        "key": "theme",
+        "length": 5
+      }
+    ],
+    "sessionStorage": [
+      {
+        "key": "checkout-session",
+        "length": 36
+      }
+    ],
+    "cookies": [
+      {
+        "name": "sid",
+        "domain": ".shop.example.com",
+        "path": "/",
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "ab_variant",
+        "domain": ".shop.example.com",
+        "path": "/",
+        "httpOnly": false,
+        "secure": true
+      }
+    ]
+  },
+  "environmentDiff": {
+    "status": "ok",
+    "baseline": {
+      "runId": 8,
+      "executionId": 85,
+      "startTime": 1788490884000,
+      "environment": "development"
+    },
+    "baselineNote": null,
+    "entries": []
+  },
+  "pageDiff": {
+    "locatorChange": {
+      "type": "renamed",
+      "role": "button",
+      "name": "Pay now",
+      "oldName": "Pay"
+    }
+  },
+  "networkRequests": [
+    {
+      "method": "GET",
+      "url": "https://shop.example.com/api/cart",
+      "status": 200,
+      "duration": 59,
+      "startTime": 1788620768120,
+      "serverLogs": null
+    },
+    {
+      "method": "POST",
+      "url": "https://shop.example.com/api/checkout/quote",
+      "status": 200,
+      "duration": 28400,
+      "startTime": 1788620768214,
+      "serverLogs": null
+    },
+    {
+      "method": "GET",
+      "url": "https://cdn.pay.example.com/sdk.js",
+      "status": 200,
+      "duration": 747,
+      "startTime": 1788620796993,
+      "serverLogs": null
+    },
+    {
+      "method": "POST",
+      "url": "https://shop.example.com/api/payments/authorize",
+      "status": 201,
+      "duration": 309,
+      "startTime": 1788620796649,
+      "serverLogs": null
+    }
+  ],
+  "consoleLogs": [
+    {
+      "type": "warning",
+      "text": "[checkout] price quote still pending after 20s — Pay stays disabled",
+      "timestamp": 1788620770192,
+      "location": "https://shop.example.com/assets/checkout-D4kXqz.js:1:48211"
+    }
+  ],
+  "dialogs": [
+    {
+      "type": "confirm",
+      "message": "Your session is about to expire. Stay signed in?",
+      "closedAt": 1745474575471
+    }
+  ],
+  "browserPeers": [
+    {
+      "browserName": "Chromium",
+      "status": "failed"
+    }
+  ],
+  "workerExecutions": [
+    {
+      "id": 37,
+      "testCaseId": 1,
+      "title": "should complete checkout with credit card",
+      "status": "failed",
+      "startedAt": 1788620768000
+    },
+    {
+      "id": 41,
+      "testCaseId": 5,
+      "title": "should show error for invalid CVV",
+      "status": "passed",
+      "startedAt": 1788620771854
+    },
+    {
+      "id": 45,
+      "testCaseId": 9,
+      "title": "should apply discount code",
+      "status": "passed",
+      "startedAt": 1788620775950
+    }
+  ],
+  "lockHolders": [
+    {
+      "id": 37,
+      "title": "should complete checkout with credit card",
+      "status": "failed",
+      "startedAt": 1788620768000,
+      "duration": 3654,
+      "shardIndex": null,
+      "locks": ["database"]
+    },
+    {
+      "id": 38,
+      "title": "should complete checkout with PayPal",
+      "status": "failed",
+      "startedAt": 1788620768000,
+      "duration": 3596,
+      "shardIndex": null,
+      "locks": ["database", "external-api"]
+    },
+    {
+      "id": 39,
+      "title": "should complete checkout with Apple Pay",
+      "status": "failed",
+      "startedAt": 1788620768000,
+      "duration": 4399,
+      "shardIndex": null,
+      "locks": ["database", "external-api"]
+    },
+    {
+      "id": 40,
+      "title": "should show error for expired card",
+      "status": "passed",
+      "startedAt": 1788620768000,
+      "duration": 3709,
+      "shardIndex": null,
+      "locks": ["database"]
+    },
+    {
+      "id": 41,
+      "title": "should show error for invalid CVV",
+      "status": "passed",
+      "startedAt": 1788620771854,
+      "duration": 3896,
+      "shardIndex": null,
+      "locks": ["database"]
+    },
+    {
+      "id": 42,
+      "title": "should add item to cart",
+      "status": "passed",
+      "startedAt": 1788620771796,
+      "duration": 3588,
+      "shardIndex": null,
+      "locks": []
+    },
+    {
+      "id": 43,
+      "title": "should remove item from cart",
+      "status": "passed",
+      "startedAt": 1788620772599,
+      "duration": 4368,
+      "shardIndex": null,
+      "locks": []
+    },
+    {
+      "id": 44,
+      "title": "should update item quantity",
+      "status": "passed",
+      "startedAt": 1788620771909,
+      "duration": 4039,
+      "shardIndex": null,
+      "locks": []
+    },
+    {
+      "id": 45,
+      "title": "should apply discount code",
+      "status": "passed",
+      "startedAt": 1788620775950,
+      "duration": 3620,
+      "shardIndex": null,
+      "locks": []
+    },
+    {
+      "id": 46,
+      "title": "should display cart total correctly",
+      "status": "didnotrun",
+      "startedAt": 1788620775584,
+      "duration": 0,
+      "shardIndex": null,
+      "locks": []
+    },
+    {
+      "id": 47,
+      "title": "should fill and save shipping address",
+      "status": "didnotrun",
+      "startedAt": 1788620777167,
+      "duration": 0,
+      "shardIndex": null,
+      "locks": []
+    },
+    {
+      "id": 48,
+      "title": "should validate required address fields",
+      "status": "didnotrun",
+      "startedAt": 1788620776148,
+      "duration": 0,
+      "shardIndex": null,
+      "locks": []
+    }
+  ],
+  "cluster": {
+    "fixCommit": "demo001",
+    "fixLandedRunId": 3,
+    "fixVerification": "regressed"
+  },
+  "timeout": 20000,
+  "slowRequestMs": null
+}

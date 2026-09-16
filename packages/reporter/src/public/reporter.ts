@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import type { FullConfig, Suite, TestCase, TestResult, FullResult } from '@playwright/test/reporter';
-import { resolveOptions, usedDesktopDiscovery } from '../internal/config/env.js';
+import { resolveOptions, usedDesktopDiscovery, PIWI_DEFAULTED_CAPTURE_ENV } from '../internal/config/env.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient } from '../internal/transport/http-client.js';
 import { Uploader } from '../internal/submit/uploader.js';
@@ -17,14 +17,23 @@ import { collectSourceFrames, extractFailingLine, readSourceSnippet } from '../i
 import { detectCiRunLabel } from '../internal/support/ci.js';
 import { workerIndexOf } from '../internal/support/worker-index.js';
 import { detectCliFileFilters } from '../internal/support/cli-filters.js';
+import { readSelectionStamp } from '../internal/support/selection-env.js';
+import { isListMode } from '../internal/support/run-mode.js';
 import { createGlobalSetup } from './global-setup.js';
 import { wrapConfig } from './config-wrapper.js';
 import { toWireTestCase } from '../internal/submit/serializer.js';
-import { mergeAnnotations, classifyStatus } from '../internal/collect/skip-classify.js';
-import { collectTestMetadata, collectTestTags } from '../internal/collect/test-meta.js';
+import {
+  mergeAnnotations,
+  classifyStatus,
+  expectedFailureError,
+  resolveUnrunReason,
+  linkBlockedTests,
+} from '../internal/collect/skip-classify.js';
+import { collectTestLocks, collectTestMetadata, collectTestTags } from '../internal/collect/test-meta.js';
 import { buildErrorText } from '../internal/collect/error-text.js';
 import { RunSubmitter } from '../internal/submit/run-submitter.js';
 import { Logger } from '../internal/support/logger.js';
+import { FailureLinks, failureHeadline } from '../internal/support/failure-links.js';
 import type { CollectedTestCase, StreamEvent, SetupStep, FilterDetails, TestAnnotation } from '../types.js';
 
 /**
@@ -33,8 +42,12 @@ import type { CollectedTestCase, StreamEvent, SetupStep, FilterDetails, TestAnno
  * retry command) match on every platform — `path.relative` yields backslashes on Windows.
  */
 function testLocation(test: TestCase): string {
-  const relativeFilePath = path.relative(process.cwd(), test.location.file).split(path.sep).join('/');
-  return `${relativeFilePath}:${test.location.line}:${test.location.column}`;
+  return `${testFile(test)}:${test.location.line}:${test.location.column}`;
+}
+
+/** Spec path relative to the working directory, POSIX separators — the `filePath` the dashboard stores. */
+function testFile(test: TestCase): string {
+  return path.relative(process.cwd(), test.location.file).split(path.sep).join('/');
 }
 
 /**
@@ -61,15 +74,28 @@ export class PiwiDashboardReporter {
   private plannedTests: TestCase[] = [];
   /** Ids of tests that actually reported via `onTestEnd`, to find the ones that never ran. */
   private reportedTestIds = new Set<string>();
+  /** Per-test attempt history, keyed by `test.id`; snapshotted onto every attempt's payload. */
+  private attemptsByTest = new Map<
+    string,
+    Array<{ retry: number; status: string; duration: number; startedAt: number | null }>
+  >();
   private instanceId: string;
   private runLabel: string | null = null;
   private shardInfo: ShardInfo | null = null;
   private metadata: Record<string, any> = {};
   private enabled: boolean;
+  /**
+   * True under `playwright test --list`, where Playwright still constructs this
+   * reporter and fires `onBegin`/`onEnd` but runs no tests. Registering and
+   * finalizing a run would create an empty phantom run and upload an empty report.
+   */
+  private readonly listMode: boolean;
   /** True when the server URL and API key came from the desktop app, not from config. */
   private viaDesktopApp: boolean;
   private isFullRun = true;
   private filterDetails: FilterDetails | null = null;
+  /** Configured `maxFailures` (0 = unlimited) — disambiguates an interrupted run's unrun reason. */
+  private maxFailures = 0;
 
   private httpClient: HttpClient;
   private uploader: Uploader;
@@ -78,6 +104,7 @@ export class PiwiDashboardReporter {
   private streamManager: StreamManager | null = null;
   private recovery: CrashRecovery;
   private submitter: RunSubmitter;
+  private readonly failureLinks: FailureLinks;
   private readonly logger: Logger;
 
   static wrapConfig = wrapConfig;
@@ -86,6 +113,7 @@ export class PiwiDashboardReporter {
   constructor(rawOptions: Record<string, any> = {}) {
     this.options = resolveOptions(rawOptions);
     this.enabled = this.options.enabled !== false && !!this.options.serverUrl;
+    this.listMode = isListMode();
     this.viaDesktopApp = usedDesktopDiscovery();
     this.runLabel = this.options.runLabel || detectCiRunLabel();
     this.instanceId = computeInstanceId(this.options.projectName!, this.runLabel);
@@ -97,6 +125,7 @@ export class PiwiDashboardReporter {
     this.uploader = new Uploader(this.httpClient, this.fileHandler, logger);
     this.recovery = new CrashRecovery(this.options.projectName!, logger);
     this.metadataCollector = new MetadataCollector(logger);
+    this.failureLinks = new FailureLinks(this.httpClient.baseUrl, logger);
 
     const streamBuffer = new StreamBuffer(this.options.projectName!);
     streamBuffer.clearStale();
@@ -113,11 +142,22 @@ export class PiwiDashboardReporter {
       );
     }
 
-    this.submitter = new RunSubmitter(this.httpClient, this.uploader, this.recovery, this.streamManager, logger);
+    this.submitter = new RunSubmitter(
+      this.httpClient,
+      this.uploader,
+      this.recovery,
+      this.streamManager,
+      logger,
+      this.failureLinks,
+    );
   }
 
   /** Playwright reporter hook: called once at the start of the test run */
   onBegin(config: FullConfig, suite: Suite): void {
+    if (this.listMode) {
+      this.logger.debug('List mode (--list) detected — no run registered or report uploaded.');
+      return;
+    }
     if (!this.enabled) {
       this.logger.info('Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');
       return;
@@ -129,9 +169,20 @@ export class PiwiDashboardReporter {
     }
     this.startTime = new Date().toISOString();
     this.playwrightVersion = config.version;
+    this.maxFailures = config.maxFailures ?? 0;
     this.logger.info(
       `Starting test run for project: ${this.options.projectName} (Playwright v${this.playwrightVersion})`,
     );
+
+    // `wrapConfig` records a summary of the capture options it defaulted; name
+    // them once so a half-installed project knows failure evidence is on without
+    // the fixtures.
+    const defaulted = process.env[PIWI_DEFAULTED_CAPTURE_ENV];
+    if (defaulted) {
+      this.logger.info(
+        `Defaulted Playwright ${defaulted} for failure evidence (set defaultCapture: false to opt out).`,
+      );
+    }
 
     // Detect partial-run filters so the dashboard can distinguish full-suite runs from ad-hoc focused runs.
     const rawConfig = config as any;
@@ -142,14 +193,21 @@ export class PiwiDashboardReporter {
     const grepInvert = grepInvertRe?.source;
     // File/path filters come from the CLI invocation, not config.grep.
     const fileFilters = detectCliFileFilters();
-    if (grep || grepInvert || fileFilters.length > 0) {
+    // A run launched by `piwi run <key>` carries the resolved selection's
+    // identity in the environment; stamp it so the dashboard can name the
+    // subset and a gate can re-resolve the same definition.
+    const selection = readSelectionStamp();
+    if (grep || grepInvert || fileFilters.length > 0 || selection) {
       this.isFullRun = false;
       this.filterDetails = {
         ...(grep ? { grep } : {}),
         ...(grepInvert ? { grepInvert } : {}),
         ...(fileFilters.length > 0 ? { files: fileFilters } : {}),
+        ...(selection ? { selection } : {}),
       };
-      this.logger.info('Partial run detected (filter active)');
+      this.logger.info(
+        selection ? `Selection run detected (${selection.key})` : 'Partial run detected (filter active)',
+      );
     }
 
     this.metadata = this.metadataCollector.collect(config, suite, this.options);
@@ -201,15 +259,26 @@ export class PiwiDashboardReporter {
   /** Track suite-level setup steps (beforeAll/afterAll) not tied to any test */
   private setupSteps: SetupStep[] = [];
 
+  /**
+   * Step categories streamed live while the run executes. `pw:assert` is
+   * excluded: it is the polling noise of `expect()`, not a step a human
+   * watches; the meaningful readout is the `pw:expect` wrapper around it.
+   */
+  private static readonly LIVE_STEP_CATEGORIES = new Set(['hook', 'fixture', 'pw:api', 'pw:expect']);
+
   /** Playwright reporter hook: called when a step (including hook/fixture) begins */
   onStepBegin(test: TestCase | undefined, _result: TestResult | undefined, step: any): void {
-    if (!this.enabled || !this.streamManager?.enabled) return;
+    // Gate on the stream manager *existing*, not on it being live yet: the
+    // first fixtures and hooks run while `/start` is still in flight, and
+    // `queueBeginEvent` buffers until the run id lands (same as `onTestBegin`).
+    if (!this.enabled || !this.streamManager) return;
     const cat = step.category;
-    if (cat !== 'hook' && cat !== 'fixture') return;
+    if (!PiwiDashboardReporter.LIVE_STEP_CATEGORIES.has(cat)) return;
 
     const event: StreamEvent = {
       type: 'step-begin',
       title: step.title,
+      subtitle: typeof step.subtitle === 'string' && step.subtitle.length > 0 ? step.subtitle : null,
       location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : 'unknown',
       stepCategory: cat,
       parentTitle: test?.title || null,
@@ -221,10 +290,9 @@ export class PiwiDashboardReporter {
 
   /** Playwright reporter hook: called when a step (including hook/fixture) ends */
   onStepEnd(test: TestCase | undefined, _result: TestResult | undefined, step: any): void {
+    if (!this.enabled || !this.streamManager) return;
     const cat = step.category;
-    if (cat === 'pw:api') return; // not surfaced as stream events; locator locations are captured in the fixture
-    if (!this.enabled || !this.streamManager?.enabled) return;
-    if (cat !== 'hook' && cat !== 'fixture') return;
+    if (!PiwiDashboardReporter.LIVE_STEP_CATEGORIES.has(cat)) return;
 
     const workerIndex = workerIndexOf(_result);
     const startedAt = step.startTime instanceof Date ? step.startTime.getTime() : null;
@@ -232,6 +300,7 @@ export class PiwiDashboardReporter {
     const event: StreamEvent = {
       type: 'step-end',
       title: step.title,
+      subtitle: typeof step.subtitle === 'string' && step.subtitle.length > 0 ? step.subtitle : null,
       location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : 'unknown',
       status: step.error ? 'failed' : 'passed',
       duration: step.duration || 0,
@@ -243,7 +312,7 @@ export class PiwiDashboardReporter {
     this.streamManager?.queueEvent(event);
 
     // Track suite-level hooks (beforeAll/afterAll) for the timeline
-    if (!test && startedAt) {
+    if (!test && startedAt && (cat === 'hook' || cat === 'fixture')) {
       this.setupSteps.push({
         title: step.title,
         category: cat,
@@ -266,6 +335,20 @@ export class PiwiDashboardReporter {
     const annotations = mergeAnnotations(test, result);
     const status = classifyStatus(result.status, annotations);
     const tags = collectTestTags(test);
+    const locks = collectTestLocks(test);
+
+    // Playwright calls onTestEnd once per attempt (result.retry increases), so
+    // accumulate the attempt list per test and snapshot it onto every attempt's
+    // payload — the final attempt then carries the complete history.
+    const attempts = this.attemptsByTest.get(test.id) ?? [];
+    attempts.push({
+      retry: result.retry,
+      status,
+      duration: result.duration,
+      startedAt: result.startTime ? result.startTime.getTime() : null,
+    });
+    this.attemptsByTest.set(test.id, attempts);
+
     const testCase: CollectedTestCase = {
       type: 'complete',
       title: test.title,
@@ -275,8 +358,11 @@ export class PiwiDashboardReporter {
       // Effective per-test timeout (reflects project config + describe-level
       // overrides). `0` means unbounded; kept as-is so the dashboard can flag it.
       timeout: test.timeout ?? null,
-      error: buildErrorText(result),
+      // A `test.fail()` test that passed is now `failed` with no recorded error;
+      // Playwright reports the same line, so synthesize it.
+      error: expectedFailureError(result.status, annotations) ?? buildErrorText(result),
       retries: result.retry,
+      attempts: attempts.map((a) => ({ ...a })),
       workerIndex: workerIndexOf(result),
       shardIndex: this.shardInfo?.current ?? null,
       startedAt: result.startTime ? result.startTime.getTime() : null,
@@ -286,7 +372,11 @@ export class PiwiDashboardReporter {
       suiteConfig,
       testAnnotations: annotations.length ? annotations : null,
       tags: tags.length ? tags : null,
+      locks: locks.length ? locks : null,
       testMeta: collectTestMetadata(annotations),
+      // An annotation-less skip reclassified to `didnotrun` is a serial-group
+      // cascade: an earlier test failed and Playwright skipped the rest.
+      didNotRunReason: status === 'didnotrun' ? 'previous-failure' : null,
     };
 
     if (result.status === 'failed' || result.status === 'timedOut') {
@@ -346,6 +436,26 @@ export class PiwiDashboardReporter {
 
     this.testCases.push(testCase);
 
+    // A cascade's blocking failure has already reported (serial execution runs
+    // it first), so resolve `blockedBy` now — the streamed event then carries
+    // the link even though the whole run isn't collected yet.
+    if (status === 'didnotrun') linkBlockedTests(this.testCases);
+
+    // The final attempt of a failing test gets a dashboard link, printed as
+    // soon as a run id exists (immediately while streaming, after the submit otherwise).
+    const isFailure = status === 'failed' || status === 'timedOut';
+    if (isFailure && result.retry >= (test.retries ?? 0)) {
+      this.failureLinks.add({
+        title: test.title,
+        file: testFile(test),
+        retry: result.retry,
+        browser: typeof testCase.browser?.projectName === 'string' ? testCase.browser.projectName : null,
+        headline: failureHeadline(testCase.error, testCase.performanceMetrics?.steps),
+      });
+    }
+    const liveRunId = this.streamManager?.runId;
+    if (liveRunId != null) this.failureLinks.printPending(liveRunId);
+
     if (this.streamManager) {
       this.streamManager.queueEvent(toWireTestCase(testCase) as StreamEvent);
       if (this.options.liveFileUploads) this.streamManager.scheduleLiveUpload(testCase);
@@ -357,15 +467,17 @@ export class PiwiDashboardReporter {
    * (no `onTestEnd`) — typically because `maxFailures` cut the run short. These
    * carry no result, so they're emitted with zero duration and no error. In
    * streaming mode they're queued as complete events so the pre-finish drain
-   * sends them alongside the rest.
+   * sends them alongside the rest. The `reason` (global timeout / max failures /
+   * interrupted) is resolved once from the overall run status by the caller.
    */
-  private materializeUnrunTests(): void {
+  private materializeUnrunTests(reason: string): void {
     for (const test of this.plannedTests) {
       if (this.reportedTestIds.has(test.id)) continue;
 
       const { suitePath, suiteConfig } = this.metadataCollector.getSuiteInfo(test);
       const declaredAnnotations = (test.annotations ?? []) as TestAnnotation[];
       const tags = collectTestTags(test);
+      const locks = collectTestLocks(test);
       const testCase: CollectedTestCase = {
         type: 'complete',
         title: test.title,
@@ -384,7 +496,9 @@ export class PiwiDashboardReporter {
         suiteConfig,
         testAnnotations: declaredAnnotations.length ? declaredAnnotations : null,
         tags: tags.length ? tags : null,
+        locks: locks.length ? locks : null,
         testMeta: collectTestMetadata(declaredAnnotations),
+        didNotRunReason: reason,
       };
 
       this.testCases.push(testCase);
@@ -399,31 +513,42 @@ export class PiwiDashboardReporter {
 
   /** Playwright reporter hook: called when the full test run finishes */
   async onEnd(result: FullResult): Promise<void> {
-    if (!this.enabled) return;
+    if (this.listMode || !this.enabled) return;
 
-    this.materializeUnrunTests();
+    // Tests Playwright never reported were cut off by a run-level condition —
+    // the global timeout, the failure budget, or an interruption.
+    const unrunReason = resolveUnrunReason(result?.status, {
+      maxFailures: this.maxFailures,
+      failures: this.failedTests + this.timedOutTests,
+    });
+    this.materializeUnrunTests(unrunReason);
 
-    await this.submitter.submit(
-      {
-        options: this.options,
-        testCases: this.testCases,
-        startTime: this.startTime,
-        playwrightVersion: this.playwrightVersion,
-        reporterVersion: this.reporterVersion,
-        totalTests: this.totalTests,
-        passedTests: this.passedTests,
-        failedTests: this.failedTests,
-        skippedTests: this.skippedTests,
-        timedOutTests: this.timedOutTests,
-        didNotRunTests: this.didNotRunTests,
-        metadata: this.metadata,
-        instanceId: this.instanceId,
-        shardInfo: this.shardInfo,
-        setupSteps: this.setupSteps,
-        isFullRun: this.isFullRun,
-        filterDetails: this.filterDetails,
-      },
-      result,
-    );
+    try {
+      await this.submitter.submit(
+        {
+          options: this.options,
+          testCases: this.testCases,
+          startTime: this.startTime,
+          playwrightVersion: this.playwrightVersion,
+          reporterVersion: this.reporterVersion,
+          totalTests: this.totalTests,
+          passedTests: this.passedTests,
+          failedTests: this.failedTests,
+          skippedTests: this.skippedTests,
+          timedOutTests: this.timedOutTests,
+          didNotRunTests: this.didNotRunTests,
+          metadata: this.metadata,
+          instanceId: this.instanceId,
+          shardInfo: this.shardInfo,
+          setupSteps: this.setupSteps,
+          isFullRun: this.isFullRun,
+          filterDetails: this.filterDetails,
+        },
+        result,
+      );
+    } finally {
+      // Body-only attachments were staged as temp files for the uploads above.
+      this.fileHandler.cleanupBodyAttachments();
+    }
   }
 }

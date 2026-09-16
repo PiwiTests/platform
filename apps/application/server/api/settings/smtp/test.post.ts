@@ -7,7 +7,7 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Send test email',
     description:
-      'Sends a test email via the env-configured SMTP settings to verify the configuration. Requires administrator role.',
+      'Sends a test email via the env-configured SMTP settings to verify the configuration. Requires administrator role. Soft-fail: when SMTP is reachable but the send fails, the response is HTTP 200 with `{ success: false, error }` — the request was processed, only the delivery failed. HTTP error statuses are reserved for request-level problems (SMTP not configured → 503, invalid recipient → 400).',
     'x-required-roles': ['administrator'],
     requestBody: {
       content: {
@@ -16,6 +16,23 @@ defineRouteMeta({
             type: 'object',
             required: ['to'],
             properties: { to: { type: 'string', format: 'email' } },
+          },
+        },
+      },
+    },
+    responses: {
+      '200': {
+        description: 'Delivery attempt result. `success` reports the outcome; a failed send still returns 200.',
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['success'],
+              properties: {
+                success: { type: 'boolean' },
+                error: { type: 'string', description: 'Present only when success is false.' },
+              },
+            },
           },
         },
       },
@@ -29,13 +46,13 @@ export default eventHandler(async (event) => {
   await requireAuth(event);
 
   if (!isEmailConfigured()) {
-    throw createError({ statusCode: 503, message: 'SMTP is not configured' });
+    throw apiError({ statusCode: 503, errorCode: 'SMTP_NOT_CONFIGURED', message: 'SMTP is not configured' });
   }
 
   const body = await readBody(event);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    throw createError({ statusCode: 400, message: 'Invalid request: to must be a valid email address' });
+    throw apiError({ statusCode: 400, message: 'Invalid request: to must be a valid email address' });
   }
 
   const { to } = parsed.data;

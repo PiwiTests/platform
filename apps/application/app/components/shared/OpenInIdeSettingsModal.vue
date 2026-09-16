@@ -141,7 +141,7 @@ const projectJbName = mapEntry('jetbrainsProjectNames');
         />
 
         <div class="flex items-center justify-between pt-1">
-          <DocLink to="ide-integration">Learn more</DocLink>
+          <DocLink to="features/ide-integration">Learn more</DocLink>
           <UButton color="neutral" @click="settingsOpen = false">Done</UButton>
         </div>
       </div>

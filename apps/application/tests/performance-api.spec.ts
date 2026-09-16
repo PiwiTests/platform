@@ -3,7 +3,7 @@ import { PROJECT } from '#shared/test-project-names';
 
 test.describe.serial('Performance API Tests', () => {
   let projectId: number;
-  let testRunId: number;
+  let runId: number;
   let networkTestRunId: number;
 
   test('should submit test results with performance data', async ({ request }) => {
@@ -66,14 +66,14 @@ test.describe.serial('Performance API Tests', () => {
     expect(response.ok()).toBeTruthy();
     const data = await response.json();
     expect(data.success).toBe(true);
-    expect(data.testRunId).toBeDefined();
+    expect(data.runId).toBeDefined();
     expect(data.projectId).toBeDefined();
     projectId = data.projectId;
-    testRunId = data.testRunId;
+    runId = data.runId;
   });
 
   test('should return test run with performance data', async ({ request }) => {
-    const response = await request.get(`/api/test-runs/${testRunId}`);
+    const response = await request.get(`/api/test-runs/${runId}`);
     expect(response.ok()).toBeTruthy();
 
     const data = await response.json();
@@ -124,7 +124,7 @@ test.describe.serial('Performance API Tests', () => {
     const response = await request.get(`/api/projects/${projectId}/performance`);
     expect(response.ok()).toBeTruthy();
 
-    const data = await response.json();
+    const { items: data } = await response.json();
     expect(Array.isArray(data)).toBe(true);
     expect(data.length).toBeGreaterThanOrEqual(2);
 
@@ -139,7 +139,7 @@ test.describe.serial('Performance API Tests', () => {
     const response = await request.get(`/api/projects/${projectId}/slow-tests`);
     expect(response.ok()).toBeTruthy();
 
-    const data = await response.json();
+    const { items: data } = await response.json();
     expect(Array.isArray(data)).toBe(true);
     expect(data.length).toBeGreaterThan(0);
 
@@ -164,7 +164,7 @@ test.describe.serial('Performance API Tests', () => {
     const response = await request.get(`/api/projects/${projectId}/slow-tests?runs=5`);
     expect(response.ok()).toBeTruthy();
 
-    const data = await response.json();
+    const { items: data } = await response.json();
     expect(Array.isArray(data)).toBe(true);
   });
 
@@ -233,7 +233,7 @@ test.describe.serial('Performance API Tests', () => {
 
     expect(response.ok()).toBeTruthy();
     const data = await response.json();
-    networkTestRunId = data.testRunId;
+    networkTestRunId = data.runId;
   });
 
   test('should return test case with network and web vitals data', async ({ request }) => {
@@ -249,7 +249,7 @@ test.describe.serial('Performance API Tests', () => {
     expect(tcSummary.webVitals).toBeUndefined();
 
     // Fetch test-run-case detail for full data including network and web vitals
-    const tcResponse = await request.get(`/api/test-run-cases/${tcSummary.id}`);
+    const tcResponse = await request.get(`/api/test-run-cases/${tcSummary.executionId}`);
     expect(tcResponse.ok()).toBeTruthy();
     const tc = await tcResponse.json();
 
@@ -264,7 +264,7 @@ test.describe.serial('Performance API Tests', () => {
     const response = await request.get(`/api/test-runs/${networkTestRunId}/network-requests`);
     expect(response.ok()).toBeTruthy();
 
-    const data = await response.json();
+    const { items: data } = await response.json();
     expect(Array.isArray(data)).toBe(true);
     expect(data.length).toBeGreaterThan(0);
 
@@ -330,13 +330,13 @@ test.describe.serial('Performance API Tests', () => {
 
     // Fetch back the stored test case detail to verify URL sanitization
     // (networkRequests is omitted from the test-run list endpoint for performance)
-    const runResponse = await request.get(`/api/test-runs/${data.testRunId}`);
+    const runResponse = await request.get(`/api/test-runs/${data.runId}`);
     expect(runResponse.ok()).toBeTruthy();
     const run = await runResponse.json();
     const tcSummary = run.testCases.find((t: { title: string }) => t.title === 'search page');
     expect(tcSummary).toBeDefined();
 
-    const tcResponse = await request.get(`/api/test-run-cases/${tcSummary.id}`);
+    const tcResponse = await request.get(`/api/test-run-cases/${tcSummary.executionId}`);
     expect(tcResponse.ok()).toBeTruthy();
     const tc = await tcResponse.json();
     expect(tc.networkRequests[0].url).not.toContain('secret');

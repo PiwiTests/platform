@@ -10,6 +10,30 @@
 export interface DesktopProjectLink {
   path: string;
   exists: boolean;
+  /** Command that starts the app under test (e.g. `npm run dev`), when set. */
+  startCommand?: string | null;
+  /** URL polled until it answers before the test runs (e.g. `http://localhost:3000`). */
+  readinessUrl?: string | null;
+}
+
+/**
+ * Store (or clear) the start command the shell runs before each reproduce/bisect
+ * step when the Playwright config has no `webServer`. Kept in the shell's own
+ * settings beside the folder path; the webview never passes the command at run
+ * time, so the stored text is the single source of truth. Pass `null` to clear.
+ */
+export async function setDesktopProjectStartCommand(
+  projectId: string | number,
+  startCommand: string | null,
+  readinessUrl: string | null,
+): Promise<void> {
+  const core = tauriCore();
+  if (!core) throw new Error('not running inside the desktop shell');
+  await core.invoke('desktop_set_project_start_command', {
+    projectId: String(projectId),
+    startCommand: startCommand?.trim() || null,
+    readinessUrl: readinessUrl?.trim() || null,
+  });
 }
 
 /** One-shot read of a project's linked folder; `null` without bridge or link. */
@@ -25,6 +49,13 @@ export async function getDesktopProjectLink(
   } catch {
     return null;
   }
+}
+
+/** Link a folder to a project outside the composable (e.g. right after creating the project). */
+export async function setDesktopProjectLink(projectId: string | number, path: string): Promise<void> {
+  const core = tauriCore();
+  if (!core) throw new Error('not running inside the desktop shell');
+  await core.invoke('desktop_set_project_link', { projectId: String(projectId), path });
 }
 
 export function useDesktopProjectLink(projectId: MaybeRefOrGetter<string | number | null | undefined>) {
@@ -57,7 +88,7 @@ export function useDesktopProjectLink(projectId: MaybeRefOrGetter<string | numbe
     if (!core || id == null || id === '') return false;
     busy.value = true;
     try {
-      const path = await core.invoke<string | null>('desktop_pick_folder');
+      const path = await pickDesktopFolder();
       if (!path) return false;
       await core.invoke('desktop_set_project_link', { projectId: String(id), path });
       await refresh();

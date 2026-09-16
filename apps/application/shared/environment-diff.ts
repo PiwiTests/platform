@@ -56,6 +56,7 @@ const KEY_LABELS: Record<string, string> = {
   colorScheme: 'Color scheme',
   reducedMotion: 'Reduced motion',
   forcedColors: 'Forced colors',
+  contrast: 'Contrast preference',
   offline: 'Offline mode',
   javaScriptEnabled: 'JavaScript enabled',
   serviceWorkers: 'Service workers',
@@ -96,6 +97,7 @@ export function buildEnvironmentSnapshot(source: EnvironmentSnapshotSource): Rec
     colorScheme: str(b?.colorScheme),
     reducedMotion: str(b?.reducedMotion),
     forcedColors: str(b?.forcedColors),
+    contrast: str(b?.contrast),
     offline: str(b?.offline),
     javaScriptEnabled: str(b?.javaScriptEnabled),
     serviceWorkers: str(b?.serviceWorkers),
@@ -114,11 +116,13 @@ export function buildEnvironmentSnapshot(source: EnvironmentSnapshotSource): Rec
 export function renderEnvironmentDiffMarkdown(result: {
   status: string;
   baseline?: { runId: number } | null;
+  baselineNote?: string | null;
   entries?: EnvironmentDiffEntry[];
 }): string | null {
   if (result.status !== 'ok' || !result.baseline) return null;
   const entries = result.entries ?? [];
-  const header = `## Environment Diff vs Last Pass\nFailing execution's environment compared to the same test's most recent passing execution (run #${result.baseline.runId}):`;
+  const note = result.baselineNote ? ` — ${result.baselineNote}` : '';
+  const header = `## Environment Diff vs Last Pass\nFailing execution's environment compared to the same test's most recent passing execution (run #${result.baseline.runId}${note}):`;
   if (entries.length === 0) {
     return `${header}\n- No differences — the environment is identical to the last pass, so environment drift is unlikely to explain this failure.`;
   }

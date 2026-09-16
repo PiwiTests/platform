@@ -2,7 +2,15 @@ import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
 import { getAppSetting, setAppSetting, deleteAppSetting } from '../../utils/app-settings';
 import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
-import { AI_ROLES, storedRoles, readAiSettings, type RawStoredAi, type RawStoredRole } from '../../utils/ai-settings';
+import {
+  AI_ROLES,
+  storedRoles,
+  readAiSettings,
+  envAiLanguage,
+  type RawStoredAi,
+  type RawStoredRole,
+} from '../../utils/ai-settings';
+import { claudeCliEnabled } from '../../utils/ai-claude-cli';
 import type { AiModelRole, AiProvider, SaveAiSettingsBody } from '~~/types/api';
 
 defineRouteMeta({
@@ -10,12 +18,21 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Save AI settings',
     description:
-      'Updates the per-role AI configuration (diagnosis, research, embedding), auto-diagnose toggle, custom instructions, and SCM token. Each role has its own provider/model/baseUrl/apiKey, or `reuse` to inherit another role. Requires administrator role. Not available when AI is managed via environment variables.',
+      'Updates the per-role AI configuration (diagnosis, research, embedding), auto-diagnose toggle, custom instructions, and SCM token. Each role has its own provider/model/baseUrl/apiKey, or `reuse` to inherit another role. Requires administrator role. Env-managed conflict: when AI is configured via environment variables the environment is authoritative for provider, key, and base URL — those fields are ignored and only per-role model overrides (or clearing them with `roles: null`) are applied. The response always reflects the effective configuration.',
     'x-required-roles': ['administrator'],
   },
 });
 
-const VALID_PROVIDERS: AiProvider[] = ['anthropic', 'openai'];
+const VALID_PROVIDERS: AiProvider[] = ['anthropic', 'openai', 'claude-cli'];
+
+/** Parse and range-check a role's temperature override (OpenAI's documented 0-2 range). */
+function parseTemperature(role: AiModelRole, value: number | null | undefined): number | undefined {
+  if (value == null) return undefined;
+  if (!Number.isFinite(value) || value < 0 || value > 2) {
+    throw apiError({ statusCode: 400, message: `Role "${role}": temperature must be a number between 0 and 2` });
+  }
+  return value;
+}
 
 export default eventHandler(async (event) => {
   await requireAuth(event);
@@ -32,6 +49,14 @@ export default eventHandler(async (event) => {
     const trimmed = body.customInstructions?.trim() || null;
     if (trimmed) await setAppSetting(db, 'ai_instructions', { value: trimmed });
     else await deleteAppSetting(db, 'ai_instructions');
+  }
+
+  // The response language is env-managed when PIWI_AI_LANGUAGE is set — ignore a
+  // client attempt to override it then, the way the provider config is locked.
+  if (body.language !== undefined && envAiLanguage() == null) {
+    const trimmed = body.language?.trim() || null;
+    if (trimmed) await setAppSetting(db, 'ai_language', { value: trimmed.slice(0, 60) });
+    else await deleteAppSetting(db, 'ai_language');
   }
 
   if (body.scmToken !== undefined) {
@@ -66,10 +91,12 @@ export default eventHandler(async (event) => {
         const cfg = input[role];
         if (cfg == null) continue;
         const model = cfg.model?.trim() || undefined;
+        const temperature = parseTemperature(role, cfg.temperature);
         const outRole: RawStoredRole = {};
         if (cfg.reuse) outRole.reuse = cfg.reuse;
         if (model) outRole.model = model;
-        if (outRole.reuse || outRole.model) out[role] = outRole;
+        if (temperature !== undefined) outRole.temperature = temperature;
+        if (outRole.reuse || outRole.model || outRole.temperature !== undefined) out[role] = outRole;
       }
       await setAppSetting(db, 'ai', { roles: out });
       return readAiSettings(db);
@@ -96,31 +123,52 @@ export default eventHandler(async (event) => {
       const cfg = input[role];
       if (cfg == null) continue; // explicit removal
 
+      const temperature = parseTemperature(role, cfg.temperature);
+
       if (cfg.reuse) {
-        if (cfg.reuse === role) throw createError({ statusCode: 400, message: `Role "${role}" cannot reuse itself` });
-        out[role] = { reuse: cfg.reuse, model: cfg.model?.trim() || '' };
+        if (cfg.reuse === role) throw apiError({ statusCode: 400, message: `Role "${role}" cannot reuse itself` });
+        out[role] = {
+          reuse: cfg.reuse,
+          model: cfg.model?.trim() || '',
+          ...(temperature !== undefined ? { temperature } : {}),
+        };
         continue;
       }
 
       const provider = (cfg.provider || '') as AiProvider;
       if (!VALID_PROVIDERS.includes(provider)) {
-        throw createError({ statusCode: 400, message: `Role "${role}" has an invalid provider` });
+        throw apiError({ statusCode: 400, message: `Role "${role}" has an invalid provider` });
+      }
+      // The local CLI provider only makes sense where a `claude` binary lives —
+      // the desktop app (or a self-hoster who pinned PIWI_CLAUDE_CLI_PATH).
+      if (provider === 'claude-cli' && !claudeCliEnabled()) {
+        throw apiError({
+          statusCode: 400,
+          message: `Role "${role}": the local Claude CLI is only available in the Piwi desktop app`,
+        });
       }
       const model = cfg.model?.trim() || '';
       const baseUrl = cfg.baseUrl?.trim() || '';
       if (provider === 'openai' && (!baseUrl || !model)) {
-        throw createError({
+        throw apiError({
           statusCode: 400,
           message: `Role "${role}": OpenAI-compatible provider requires baseUrl and model`,
         });
       }
-      const apiKey = resolveKey(cfg.apiKey, existingRoles[role]?.apiKey);
-      out[role] = { provider, model, baseUrl, ...(apiKey ? { apiKey } : {}) };
+      // claude-cli carries no key or base URL — the CLI owns auth and endpoint.
+      const apiKey = provider === 'claude-cli' ? undefined : resolveKey(cfg.apiKey, existingRoles[role]?.apiKey);
+      out[role] = {
+        provider,
+        model,
+        baseUrl: provider === 'claude-cli' ? '' : baseUrl,
+        ...(apiKey ? { apiKey } : {}),
+        ...(temperature !== undefined ? { temperature } : {}),
+      };
     }
 
     // The diagnosis role is the required root and cannot reuse another role.
     if (!out.diagnosis || out.diagnosis.reuse) {
-      throw createError({ statusCode: 400, message: 'A diagnosis role with its own provider is required' });
+      throw apiError({ statusCode: 400, message: 'A diagnosis role with its own provider is required' });
     }
 
     // Embeddings need an OpenAI-compatible endpoint — Anthropic has no
@@ -129,7 +177,7 @@ export default eventHandler(async (event) => {
       let cfg: RawStoredRole | undefined = out.embedding;
       for (let hops = 0; cfg?.reuse && hops < AI_ROLES.length; hops++) cfg = out[cfg.reuse];
       if (cfg?.provider !== 'openai') {
-        throw createError({
+        throw apiError({
           statusCode: 400,
           message: 'The embedding role requires an OpenAI-compatible provider (Anthropic has no embeddings API)',
         });

@@ -3,6 +3,28 @@ import { eq, and } from 'drizzle-orm';
 
 import type { DrizzleDB } from './db';
 
+type UserRow = typeof users.$inferSelect;
+
+/**
+ * Public projection of a user row — the shape returned to clients by the list,
+ * create, and update endpoints. Drops the password hash and OAuth provider id;
+ * mirrors the columns `listUsers` selects so every user-returning endpoint
+ * speaks the same shape.
+ */
+export function toPublicUser(user: UserRow) {
+  return {
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    name: user.name,
+    email: user.email,
+    emailVerified: user.emailVerified,
+    oauthProvider: user.oauthProvider,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+  };
+}
+
 export async function listUsers(db: DrizzleDB) {
   const allUsers = await db
     .select({
