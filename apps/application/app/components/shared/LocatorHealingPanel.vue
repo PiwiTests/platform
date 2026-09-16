@@ -229,6 +229,15 @@ const pickTraceUrl = computed(() => {
   return getTraceViewerUrl(trace.filePath, config.app?.baseURL, isDemoStaticAsset);
 });
 
+// `target="_blank"` is inert in the desktop shell, so the viewer opens in a new
+// app window there instead; on web the anchor opens a new tab as usual.
+const { isDesktop, openWindow } = useDesktopWindow();
+function onPickFromTrace(event: MouseEvent) {
+  if (!isDesktop || !pickTraceUrl.value) return;
+  event.preventDefault();
+  openWindow(pickTraceUrl.value);
+}
+
 // Interactive DOM snapshot picker
 const pickerOpen = ref(false);
 
@@ -404,6 +413,7 @@ defineExpose({
           variant="outline"
           icon="i-lucide-crosshair"
           title="Open the failure trace in the trace viewer — its Pick locator tool works on the recorded page snapshots"
+          @click="onPickFromTrace"
         >
           Pick from trace
         </UButton>
@@ -759,6 +769,7 @@ defineExpose({
           variant="outline"
           icon="i-lucide-crosshair"
           title="Open the failure trace in the trace viewer — its Pick locator tool works on the recorded page snapshots"
+          @click="onPickFromTrace"
         >
           Pick from trace
         </UButton>
