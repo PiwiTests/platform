@@ -132,30 +132,46 @@ const alternatives = ref<RankedLocator[]>([]);
 
 // ── Build iframe content ────────────────────────────────────
 
-// The snapshot HTML plus the serialized picker script (appended at the end so a
-// truncated document still runs it) load into a HARDENED iframe via `srcdoc`:
-// sandbox="allow-scripts" with NO allow-same-origin, so the picker runs on an
-// opaque origin and can reach the host only via postMessage. A sanitizer bypass
-// in the snapshot therefore cannot touch the dashboard's cookies/storage/API.
-// The document is inlined with `srcdoc` rather than a `blob:` URL because the
-// desktop shell's webview blocks navigations to `blob:` sources (they render as
-// a "content blocked" page); inline `srcdoc` is not a navigation and loads
-// everywhere. The picker's overlay/banner carry their own inline styles, so no
-// extra <style> is needed. <base> is stripped so subresources can't be
+// The snapshot loads into a HARDENED iframe — sandbox="allow-scripts" with NO
+// allow-same-origin, so the picker runs on an opaque origin and can reach the
+// host only via postMessage; a sanitizer bypass in the snapshot cannot touch the
+// dashboard's cookies/storage/API. <base> is stripped so subresources can't be
 // redirected to the tested app.
-const pickerDoc = computed(() =>
-  import.meta.client && snapshot.value?.html
+//
+// The served app (web + desktop) loads the frame from a same-origin endpoint via
+// `src`, so it carries the endpoint's own `sandbox allow-scripts` CSP. A `srcdoc`
+// frame instead INHERITS the page CSP, and the desktop build's `strict-dynamic`
+// policy then blocks the picker's inline script — the picker never starts. The
+// demo is a static SPA with no server and no such CSP, so it keeps building the
+// document inline as a `srcdoc` (its snapshots come from the in-browser router,
+// not an API route an iframe `src` could reach).
+const config = useRuntimeConfig();
+const isDemo = !!config.public.demoMode;
+const apiBase = (config.app.baseURL || '/').replace(/\/$/, '');
+
+const srcDoc = computed(() =>
+  isDemo && import.meta.client && snapshot.value?.html
     ? buildPickerDocument(snapshot.value.html, { probedAttrs: CAPTURED_ATTRIBUTES })
     : undefined,
 );
 
-// Bumped to force the iframe to reload the *same* document — restarting the
-// appended picker script — when re-picking or switching source. A `srcdoc`
-// string that does not change would not reload the frame on its own.
+// Bumped to force the iframe to reload — restarting the picker script — when
+// re-picking or switching source (remounts via `:key`, and busts `frameSrc`).
 const renderKey = ref(0);
 function reloadFrame() {
   renderKey.value += 1;
 }
+
+// The served-app frame source. `renderKey` in the query busts the URL so a
+// re-pick / reload re-runs the picker script (the endpoint is `no-store`, so
+// this only forces a fresh navigation rather than defeating a cache).
+const frameSrc = computed(() => {
+  if (isDemo || snapshot.value?.status !== 'ok' || !snapshot.value.html) return undefined;
+  const params = new URLSearchParams({ mode: 'pick' });
+  if (viewSource.value) params.set('source', viewSource.value);
+  params.set('r', String(renderKey.value));
+  return `${apiBase}/api/test-run-cases/${props.testRunsCaseId}/dom-snapshot-frame?${params.toString()}`;
+});
 
 // The picker signals `pickerReady` once its in-iframe script has run. If that
 // never arrives — the script hung, or was blocked before it could run (a CSP
@@ -181,10 +197,10 @@ function armReadyTimer() {
       : 'The picker did not start. Try reopening it; if it persists, the DOM snapshot may be malformed.';
   }, READY_TIMEOUT_MS);
 }
-// (Re)load of the srcdoc document — a new snapshot, a source switch, or a
-// re-pick (renderKey bump) — re-arms the timer; a document going away clears it.
-watch([pickerDoc, renderKey], () => {
-  if (pickerDoc.value) armReadyTimer();
+// (Re)load of the frame — a new snapshot, a source switch, or a re-pick
+// (renderKey bump) — re-arms the timer; a frame going away clears it.
+watch([frameSrc, srcDoc, renderKey], () => {
+  if (frameSrc.value || srcDoc.value) armReadyTimer();
   else clearReadyTimer();
 });
 watch(iframeReady, (ready) => {
@@ -632,13 +648,15 @@ onBeforeUnmount(() => {
           </div>
           <div :style="canvasStyle">
             <!-- Hardened: allow-scripts WITHOUT allow-same-origin → opaque origin,
-                 postMessage-only bridge. The picker script is baked into the
-                 srcdoc document (see pickerDoc), so no parent-side injection on
-                 load; `renderKey` remounts the frame to re-run it on re-pick. -->
+                 postMessage-only bridge. Served app loads the picker document from
+                 the `dom-snapshot-frame` endpoint (`src`, its own sandbox CSP); the
+                 demo builds it inline (`srcdoc`). `renderKey` remounts the frame to
+                 re-run the picker on re-pick. -->
             <iframe
               ref="iframeRef"
               :key="renderKey"
-              :srcdoc="pickerDoc"
+              :src="frameSrc"
+              :srcdoc="srcDoc"
               :style="iframeStyle"
               class="bg-white"
               sandbox="allow-scripts"

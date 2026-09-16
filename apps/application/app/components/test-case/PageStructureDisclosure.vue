@@ -44,11 +44,22 @@ const contentHeight = ref(0);
 const stageRef = ref<HTMLElement | null>(null);
 const stageWidth = ref(0);
 
-// The document is fed to the iframe via `srcdoc` (inline), never a `blob:` URL:
-// the desktop shell's webview blocks navigations to `blob:` sources (they render
-// as a "content blocked" page), while inline `srcdoc` is not a navigation and
-// loads everywhere. `sandbox="allow-scripts"` still gives it an opaque origin.
-const srcDoc = computed(() => (import.meta.client && html.value ? buildReadonlyDocument(html.value) : undefined));
+// The served app (web + desktop) loads the render from the `dom-snapshot-frame`
+// endpoint via `src`, so it carries its own `sandbox allow-scripts` CSP; a
+// `srcdoc` frame would inherit the desktop page's `strict-dynamic` policy, which
+// blocks the inline measure script. The demo has no server/CSP, so it keeps the
+// inline `srcdoc`. Either way `sandbox="allow-scripts"` gives an opaque origin.
+const config = useRuntimeConfig();
+const isDemo = !!config.public.demoMode;
+const apiBase = (config.app.baseURL || '/').replace(/\/$/, '');
+const frameSrc = computed(() =>
+  isDemo || !hasDom.value
+    ? undefined
+    : `${apiBase}/api/test-run-cases/${props.testRunsCaseId}/dom-snapshot-frame?mode=readonly`,
+);
+const srcDoc = computed(() =>
+  isDemo && import.meta.client && html.value ? buildReadonlyDocument(html.value) : undefined,
+);
 
 const viewport = computed(() => snapshot.value?.viewport ?? null);
 const fitZoom = computed(() => {
@@ -147,6 +158,7 @@ defineExpose({ reveal: () => card.value?.reveal?.() });
           <div :style="canvasStyle">
             <iframe
               ref="iframeRef"
+              :src="frameSrc"
               :srcdoc="srcDoc"
               :style="iframeStyle"
               class="bg-white"
