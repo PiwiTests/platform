@@ -1212,6 +1212,71 @@ export interface AdminStats {
   storageLocation: string;
 }
 
+/**
+ * The evidence families a stored file belongs to, for the storage dashboard.
+ * Trace bytes fold in the deduplicated blobs and their shared trace resources.
+ */
+export type StorageKind = 'trace' | 'screenshot' | 'video' | 'report' | 'attachment' | 'visual-diff';
+
+/** Storage consumed by one evidence family. */
+export interface StorageKindUsage {
+  kind: StorageKind;
+  bytes: number;
+  files: number;
+}
+
+/** Storage consumed by one project. */
+export interface StorageProjectUsage {
+  projectId: number;
+  name: string;
+  label: string | null;
+  bytes: number;
+  files: number;
+}
+
+/** One time bucket in the storage-growth series. */
+export interface StorageTimeBucket {
+  /** Bucket start, ISO `YYYY-MM-DD` (UTC). */
+  date: string;
+  /** Bytes first stored within this bucket. */
+  bytes: number;
+  /** Running total of stored bytes through the end of this bucket. */
+  cumulativeBytes: number;
+}
+
+/** The computed part of the storage analysis (shared by server + demo). */
+export interface StorageAnalysisData {
+  /** True physical footprint: non-deduplicated files + trace blobs + trace resources. */
+  totalBytes: number;
+  /** Number of `files` rows (logical evidence files). */
+  totalFiles: number;
+  /** Projects that hold any stored bytes. */
+  projectCount: number;
+  /** Usage per evidence family, largest first. */
+  byKind: StorageKindUsage[];
+  /** Usage per project, largest first. */
+  byProject: StorageProjectUsage[];
+  /** Storage growth over the lifetime of the retained data. */
+  overTime: StorageTimeBucket[];
+  /** Width of each `overTime` bucket, in days. */
+  bucketDays: number;
+  /** When the analysis was computed (ISO). */
+  generatedAt: string;
+}
+
+/**
+ * Storage analysis returned by GET /api/admin/storage — the computed breakdown
+ * plus the physical location labels and, for local storage, the measured
+ * on-disk size (which can exceed `totalBytes` when untracked files linger).
+ */
+export interface StorageAnalysis extends StorageAnalysisData {
+  storageSizeOnDisk: number | null;
+  /** Where the database lives: a resolved SQLite file path, or a label for PostgreSQL. */
+  databaseLocation: string;
+  /** Where files live: a resolved local storage path, or a label for S3. */
+  storageLocation: string;
+}
+
 // ============================================================================
 // Performance API response types
 // ============================================================================

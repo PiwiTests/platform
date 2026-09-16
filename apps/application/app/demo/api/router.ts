@@ -221,7 +221,7 @@ import {
   apiGetAiUsage,
   apiListAiModels,
 } from './ai';
-import { apiGetAdminStats } from './admin';
+import { apiGetAdminStats, apiGetStorageAnalysis } from './admin';
 import { demoHttpError } from './http-error';
 import { apiDeleteTestRun } from './test-runs';
 import { apiCheckDemoImport, apiDemoImport } from './import';
@@ -1816,6 +1816,7 @@ const routes: RouteEntry[] = [
 
   // Admin
   { method: 'GET', pattern: /^\/api\/admin\/stats$/, handler: () => apiGetAdminStats() },
+  { method: 'GET', pattern: /^\/api\/admin\/storage$/, handler: () => apiGetStorageAnalysis() },
   {
     method: 'DELETE',
     pattern: /^\/api\/admin\/cleanup$/,
