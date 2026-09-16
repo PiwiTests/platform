@@ -172,7 +172,7 @@ opens with no network and no Piwi server. See [Offline export](./offline-export)
 | General | `/settings` | Basic app configuration; a **Reset Demo** button in demo mode |
 | Account | `/settings/account` | Your display name, email, password, and **connected accounts** (link/unlink Google or GitHub — see [OAuth](/operate/authentication#oauth-google-github)) |
 | Users | `/settings/users` | User accounts, roles, project access, and API keys (shown once, stored hashed) — see [Authentication](/operate/authentication) |
-| Storage | `/settings/storage` | Storage stats and cleanup (bulk-delete runs older than N days) — see [Storage](/operate/storage#storage-management) |
+| Storage | `/settings/storage` | Storage analysis (by project, file kind and over time) and cleanup (bulk-delete runs older than N days) — see [Storage](/operate/storage#storage-management) |
 | Tags | `/settings/tags` | Create, color, edit, and delete the tags used to organize projects |
 | Pull requests | `/settings/pr-feedback` | What Piwi posts back to a pull request when a run finishes — see [Pull-request feedback](/guide/ci#pull-request-feedback) |
 | Performance | `/settings/performance` | Wasted-time patterns (which Playwright waits count as "wasted time") and timeout-hygiene thresholds (oversized per-test timeouts, stale `test.slow()` marks) — see [Configuration](/reference/configuration#wasted-time) |

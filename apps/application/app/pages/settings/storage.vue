@@ -1,10 +1,17 @@
 <script setup lang="ts">
-import type { AdminStats } from '~~/types/api';
+import type { StorageAnalysis } from '~~/types/api';
 import { envVarsByCategory, getEnvVarMeta } from '#shared/piwi-env-vars';
 
 const toast = useToast();
 
-const { data: stats, refresh, pending } = await useFetch<AdminStats>('/api/admin/stats');
+// Client-only: the growth chart formats dates, so keep it off the server render
+// to avoid a timezone hydration mismatch (matches the analytics widgets).
+const {
+  data: storage,
+  refresh,
+  pending,
+  error,
+} = useFetch<StorageAnalysis>('/api/admin/storage', { lazy: true, server: false });
 
 // Storage-backend env vars, driven by the shared registry (single source of
 // truth). Excludes test-only vars (they are not runtime settings).
@@ -58,7 +65,7 @@ async function handleCleanup() {
 <template>
   <div class="space-y-6">
     <!-- Data location (resolved on-disk paths) -->
-    <DataLocationCard v-if="stats" :database="stats.databaseLocation" :storage="stats.storageLocation" />
+    <DataLocationCard v-if="storage" :database="storage.databaseLocation" :storage="storage.storageLocation" />
 
     <!-- Storage backend (env-only reference) -->
     <SectionCard icon="i-lucide-server" title="Storage backend" help="settings.storage-backend">
@@ -82,69 +89,8 @@ async function handleCleanup() {
       </div>
     </SectionCard>
 
-    <!-- Stats Overview -->
-    <SectionCard icon="i-lucide-database" title="Storage statistics" help="settings.storage-stats">
-      <div v-if="pending" class="flex items-center gap-2 py-4 text-muted">
-        <UIcon name="i-lucide-loader-2" class="animate-spin" />
-        Loading…
-      </div>
-
-      <div v-else-if="stats" class="grid grid-cols-2 sm:grid-cols-3 gap-4">
-        <div class="space-y-1">
-          <p class="text-sm text-muted">Projects</p>
-          <p class="text-2xl font-semibold">
-            {{ stats.totalProjects }}
-          </p>
-        </div>
-        <div class="space-y-1">
-          <p class="text-sm text-muted">Test runs</p>
-          <p class="text-2xl font-semibold">
-            {{ stats.totalRuns }}
-          </p>
-        </div>
-        <div class="space-y-1">
-          <p class="text-sm text-muted">Tests (unique)</p>
-          <p class="text-2xl font-semibold">
-            {{ stats.totalTestCases }}
-          </p>
-        </div>
-        <div class="space-y-1">
-          <p class="text-sm text-muted">Test results</p>
-          <p class="text-2xl font-semibold">
-            {{ stats.totalRunsCases }}
-          </p>
-        </div>
-        <div class="space-y-1">
-          <p class="text-sm text-muted">Stored files</p>
-          <p class="text-2xl font-semibold">
-            {{ stats.totalFiles }}
-          </p>
-        </div>
-        <div class="space-y-1">
-          <p class="text-sm text-muted">File size (DB)</p>
-          <p class="text-2xl font-semibold">
-            {{ formatBytes(stats.totalFileSize) }}
-          </p>
-        </div>
-        <div class="space-y-1">
-          <p class="text-sm text-muted">Storage on disk</p>
-          <p class="text-2xl font-semibold">
-            {{ formatBytes(stats.storageSizeOnDisk) }}
-          </p>
-        </div>
-      </div>
-
-      <template #footer>
-        <UButton
-          icon="i-lucide-refresh-cw"
-          variant="outline"
-          size="sm"
-          :loading="pending"
-          label="Refresh"
-          @click="refresh()"
-        />
-      </template>
-    </SectionCard>
+    <!-- Storage analysis: usage, growth over time, by file kind, by project -->
+    <StorageAnalysisDashboard :analysis="storage ?? null" :pending="pending" :error="error" @refresh="refresh()" />
 
     <!-- Cleanup Section -->
     <SectionCard icon="i-lucide-trash-2" title="Cleanup old test runs" help="settings.cleanup">

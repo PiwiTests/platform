@@ -40,6 +40,21 @@ export const CASE_STATUS_SERIES = [
   { key: 'skipped', color: 'rgb(156, 163, 175)', label: 'Skipped' },
 ] as const satisfies readonly ChartSeries[];
 
+/**
+ * Storage families for the storage-analysis dashboard, coloured with an
+ * Okabe-Ito categorical palette (colorblind-safe; validated for both surfaces).
+ * Every mark that uses it is directly labelled, which is what keeps the closest
+ * pair legible under deuteranopia.
+ */
+export const STORAGE_KIND_SERIES = [
+  { key: 'trace', color: 'rgb(0, 114, 178)', label: 'Traces' },
+  { key: 'screenshot', color: 'rgb(230, 159, 0)', label: 'Screenshots' },
+  { key: 'video', color: 'rgb(213, 94, 0)', label: 'Videos' },
+  { key: 'report', color: 'rgb(0, 158, 115)', label: 'Reports' },
+  { key: 'attachment', color: 'rgb(204, 121, 167)', label: 'Attachments' },
+  { key: 'visual-diff', color: 'rgb(86, 180, 233)', label: 'Visual diffs' },
+] as const satisfies readonly ChartSeries[];
+
 /** Legend rows for a series list — the color/label pairs `ChartCard` renders. */
 export function legendOf(series: readonly ChartSeries[]): { color: string; label: string }[] {
   return series.map(({ color, label }) => ({ color, label }));

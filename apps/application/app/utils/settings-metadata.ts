@@ -152,7 +152,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     roles: [Role.ADMINISTRATOR],
     fields: [
       { id: 'storage.backend', label: 'Storage backend', help: 'settings.storage-backend', envOnly: true },
-      { id: 'storage.stats', label: 'Storage statistics', help: 'settings.storage-stats' },
+      { id: 'storage.stats', label: 'Storage analysis', help: 'settings.storage-stats' },
       { id: 'storage.cleanup', label: 'Cleanup old test runs', help: 'settings.cleanup' },
     ],
   },

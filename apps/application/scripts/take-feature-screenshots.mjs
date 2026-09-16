@@ -280,6 +280,24 @@ const READY_INSPECTION = {
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
  */
 const SCENES = [
+  // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
+  {
+    name: 'storage-analysis',
+    description: 'Settings → Storage: usage KPIs, storage over time, by file kind and top projects',
+    route: '/settings/storage',
+    viewport: { width: 1280, height: 1700 },
+    async run({ page, shoot, settle }) {
+      // The dashboard fetches client-side; wait for a KPI to resolve before capture.
+      await page
+        .getByText('Total storage')
+        .first()
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[data-shot="storage-analysis"]', pad: 12 });
+    },
+  },
+
   // ── Docs illustrations (committed) ────────────────────────────────────────
   {
     name: 'integrations-settings',
