@@ -188,6 +188,10 @@ describe('PIWI_ENV_VARS registry', () => {
       'PIWI_FEATURE_GROUPS',
       'PIWI_API_KEY',
       'PIWI_OUTPUT_FILE',
+      // Desktop-shell debug flag, read only by the Tauri Rust process (see
+      // `desktop/src-tauri/src/lib.rs`), not the server — the app just names it
+      // in the snapshot picker's "couldn't start" hint.
+      'PIWI_DEBUG',
     ]);
     const realMissing = missing.filter((v) => !knownFalsePositives.has(v));
     expect(realMissing.sort()).toEqual([]);

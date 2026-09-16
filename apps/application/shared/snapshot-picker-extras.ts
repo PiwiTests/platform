@@ -3,7 +3,7 @@
 /**
  * The in-iframe snapshot-only chrome layered on top of the shared picker core
  * (`@piwitests/picker-dom`'s `installPickerOverlay`, run in `'postMessage'`
- * transport — see `snapshot-picker-script.ts`): pre-highlighting likely
+ * transport — see `snapshot-picker-document.ts`): pre-highlighting likely
  * elements, text search, extended inertness (nothing in a dead snapshot
  * should ever react), and reporting content height so the opaque-origin host
  * can size the iframe without reading its document.
@@ -13,9 +13,11 @@
  * sandboxed DOM-snapshot iframe via `String(installSnapshotPickerExtras)`,
  * ahead of the shared core overlay in the same `<script>` tag.
  *
- * Isolated in its own file with `@ts-nocheck` because it is browser-context DOM
- * code that never runs in this module — this keeps the pure, host-side helpers
- * in snapshot-picker-script.ts fully type-checked.
+ * Lives in `shared/` (not `app/utils/`) so the document assembly that
+ * serializes it can run both in the browser (demo `srcdoc`) and on the server
+ * (the `dom-snapshot-frame` endpoint). `@ts-nocheck` because it is
+ * browser-context DOM code that never executes in this module — it is only
+ * ever stringified — which keeps the pure host-side helpers fully type-checked.
  */
 export function installSnapshotPickerExtras() {
   var doc = document;
@@ -229,5 +231,46 @@ export function installSnapshotPickerExtras() {
     }
   } catch (err) {
     /* height stays at the recorded viewport */
+  }
+}
+
+/**
+ * The read-only variant's in-iframe script: no picking overlay, just make the
+ * snapshot inert (no navigation, no submits) and report its content height over
+ * `postMessage` so the host can size the opaque-origin iframe. Kept here (with
+ * the picker extras, `@ts-nocheck`) because it is browser-context code that only
+ * ever runs after being serialized with `String(...)` — never in this module.
+ */
+export function readonlySnapshotScript() {
+  var post = function () {
+    var docEl = document.documentElement;
+    var height = Math.max(docEl.scrollHeight, docEl.offsetHeight, (document.body && document.body.scrollHeight) || 0);
+    parent.postMessage({ type: 'piwiContentHeight', height: height }, '*');
+  };
+  // Neutralize anything that would navigate or mutate away from the snapshot.
+  document.addEventListener(
+    'click',
+    function (event) {
+      var anchor = event.target && event.target.closest && event.target.closest('a,button,[type=submit]');
+      if (anchor) event.preventDefault();
+    },
+    true,
+  );
+  document.addEventListener(
+    'submit',
+    function (event) {
+      event.preventDefault();
+    },
+    true,
+  );
+  if (document.readyState === 'complete' || document.readyState === 'interactive') post();
+  else document.addEventListener('DOMContentLoaded', post);
+  addEventListener('load', post);
+  try {
+    new ResizeObserver(function () {
+      post();
+    }).observe(document.documentElement);
+  } catch (err) {
+    /* ResizeObserver may be unavailable — the load handler still reports once. */
   }
 }

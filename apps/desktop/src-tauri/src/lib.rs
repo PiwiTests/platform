@@ -92,6 +92,15 @@ struct DataDir(PathBuf);
 /// The reporter discovery file, removed on quit so it never outlives the server.
 struct DiscoveryFile(PathBuf);
 
+/// The server log path, shared so the webview error bridge (`desktop_log`) can
+/// append to the *same* `logs/server.log` the server sidecar writes to — a
+/// webview is a separate process whose console never reaches the sidecar's stdout.
+struct LogFile(PathBuf);
+
+/// Whether this launch enabled debug mode (`--devtools` / `PIWI_DEBUG`), so the
+/// aux-window opener can mirror the main window and open the inspector too.
+struct DebugMode(bool);
+
 /// Archives handed to the app by the OS (drag onto the dock icon, "Open with",
 /// a second launch with file arguments) that the dashboard has not collected
 /// yet. The shell only ever queues and pokes; the dashboard drains the queue
@@ -281,6 +290,42 @@ fn append_log(path: &std::path::Path, line: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(f, "{line}");
     }
+}
+
+/// A `PIWI_DEBUG`-style value counts as "on" unless it is empty or an explicit
+/// off word — so `PIWI_DEBUG=1`, `=true`, or even a bare `PIWI_DEBUG=` set to
+/// `on` all enable it, while `=0`/`false`/`off`/`no` (and unset) do not.
+fn is_truthy_flag(value: &str) -> bool {
+    !matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "" | "0" | "false" | "off" | "no"
+    )
+}
+
+/// Whether this launch asked for debug mode: the `--devtools` argument, or a
+/// truthy `PIWI_DEBUG` environment value. Split out from `run()` so it is unit
+/// testable without a real process environment.
+fn debug_mode_requested<'a>(mut args: impl Iterator<Item = &'a str>, piwi_debug: Option<&str>) -> bool {
+    args.any(|a| a == "--devtools" || a == "--debug") || piwi_debug.is_some_and(is_truthy_flag)
+}
+
+/// Prepare a webview log line for `logs/server.log`: collapse newlines to keep
+/// one event on one line, and cap the length so a runaway error loop in the
+/// webview cannot grow the log without bound. Truncation lands on a char
+/// boundary so a multi-byte character is never split (`String::truncate` would
+/// otherwise panic, and this build aborts on panic).
+fn clamp_log_line(message: &str) -> String {
+    const MAX: usize = 4000;
+    let mut msg = message.replace(['\n', '\r'], " ");
+    if msg.len() > MAX {
+        let mut end = MAX;
+        while end > 0 && !msg.is_char_boundary(end) {
+            end -= 1;
+        }
+        msg.truncate(end);
+        msg.push('…');
+    }
+    msg
 }
 
 /// Everything needed to (re)spawn the bundled Node server on the *same* loopback
@@ -506,11 +551,16 @@ async fn desktop_open_window(app: tauri::AppHandle, url: String) -> Result<(), S
     }
     let parsed = tauri::Url::parse(&url).map_err(|e| e.to_string())?;
     let label = format!("aux-{}", AUX_WINDOW_SEQ.fetch_add(1, Ordering::Relaxed));
-    tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::External(parsed))
+    let window = tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::External(parsed))
         .title("Piwi Dashboard")
         .inner_size(1200.0, 820.0)
         .build()
         .map_err(|e| e.to_string())?;
+    // In debug mode, open the inspector on the new window too (the trace viewer,
+    // an attachment) so it can be debugged like the main window.
+    if app.try_state::<DebugMode>().is_some_and(|d| d.0) {
+        window.open_devtools();
+    }
     Ok(())
 }
 
@@ -524,6 +574,27 @@ fn desktop_notify(app: tauri::AppHandle, title: String, body: String) -> Result<
         .body(body)
         .show()
         .map_err(|e| e.to_string())
+}
+
+/// Append a line reported by the webview to the server log. The dashboard runs
+/// in a separate webview process whose console never reaches the Node sidecar's
+/// stdout, so front-end runtime errors — uncaught exceptions, promise
+/// rejections, CSP violations, `console.error` — are invisible in a shipped
+/// build. The desktop error bridge (`app/plugins/desktop.client.ts`) routes them
+/// here so they land in the same `logs/server.log` a user can already open from
+/// the tray, leaving a trace on disk for a reported issue. `level` tags the line
+/// (`error`/`warn`/other); the message is length-capped (see `clamp_log_line`).
+#[tauri::command]
+fn desktop_log(app: tauri::AppHandle, level: String, message: String) {
+    let Some(log) = app.try_state::<LogFile>() else {
+        return;
+    };
+    let tag = match level.as_str() {
+        "error" => "[webview:err]",
+        "warn" => "[webview:warn]",
+        _ => "[webview]",
+    };
+    append_log(&log.0, &format!("{tag} {}", clamp_log_line(&message)));
 }
 
 /// Decode standard base64 (with or without `=` padding) into raw bytes.
@@ -736,6 +807,16 @@ pub fn run() {
 
     let launched_hidden = std::env::args().any(|a| a == "--hidden");
 
+    // Debug mode: `--devtools` (or `--debug`) on the command line, or a truthy
+    // `PIWI_DEBUG` env value. Opens the webview inspector so web runtime errors
+    // can be inspected live in a shipped build (see the setup hook and
+    // `desktop_open_window`). Off by default — a normal launch is unchanged.
+    let all_args: Vec<String> = std::env::args().collect();
+    let debug_mode = debug_mode_requested(
+        all_args.iter().map(String::as_str),
+        std::env::var("PIWI_DEBUG").ok().as_deref(),
+    );
+
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
@@ -784,6 +865,7 @@ pub fn run() {
             desktop_open_external,
             desktop_open_window,
             desktop_notify,
+            desktop_log,
             desktop_save_download,
             desktop_pick_folder,
             desktop_pick_import_files,
@@ -831,6 +913,11 @@ pub fn run() {
             let _ = std::fs::create_dir_all(&log_dir);
             let log_path = log_dir.join("server.log");
             append_log(&log_path, "----- launch -----");
+
+            // Share the log path with the webview error bridge (`desktop_log`)
+            // and record whether this is a debug launch (for the aux-window opener).
+            app.manage(LogFile(log_path.clone()));
+            app.manage(DebugMode(debug_mode));
 
             let secret = load_or_create_secret(&app_data_dir);
             let token = load_or_create_token(&app_data_dir);
@@ -1061,6 +1148,16 @@ pub fn run() {
                 }
             }
 
+            // Debug mode: open the webview inspector so front-end runtime errors
+            // are visible in a shipped, console-less build. Compiled in via the
+            // `devtools` cargo feature; dormant unless this launch asked for it.
+            if debug_mode {
+                append_log(&log_path, "debug mode enabled (--devtools/PIWI_DEBUG): opening devtools");
+                if let Some(w) = app.get_webview_window("main") {
+                    w.open_devtools();
+                }
+            }
+
             // Archives passed on the very first launch ("Open with" while the
             // app was closed) — queued now, drained once the dashboard boots.
             let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -1154,8 +1251,43 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::write_new_download;
+    use super::{clamp_log_line, debug_mode_requested, is_truthy_flag, write_new_download};
     use std::fs;
+
+    #[test]
+    fn truthy_flag_treats_only_off_words_and_empty_as_false() {
+        for on in ["1", "true", "TRUE", "on", "yes", "anything"] {
+            assert!(is_truthy_flag(on), "{on} should be truthy");
+        }
+        for off in ["", "  ", "0", "false", "False", "off", "no"] {
+            assert!(!is_truthy_flag(off), "{off:?} should be falsy");
+        }
+    }
+
+    #[test]
+    fn debug_mode_is_requested_by_the_flag_or_a_truthy_env() {
+        // The flag, in either spelling.
+        assert!(debug_mode_requested(["piwi-desktop", "--devtools"].into_iter(), None));
+        assert!(debug_mode_requested(["piwi-desktop", "--debug"].into_iter(), None));
+        // A truthy env value, with no flag.
+        assert!(debug_mode_requested(["piwi-desktop"].into_iter(), Some("1")));
+        // Neither.
+        assert!(!debug_mode_requested(["piwi-desktop"].into_iter(), None));
+        assert!(!debug_mode_requested(["piwi-desktop", "--hidden"].into_iter(), Some("0")));
+    }
+
+    #[test]
+    fn log_lines_collapse_newlines_and_cap_length_on_a_char_boundary() {
+        assert_eq!(clamp_log_line("a\nb\r\nc"), "a b  c");
+        // A multi-byte character straddling the cap must not panic or be split:
+        // the result is valid UTF-8 and ends with the ellipsis marker.
+        let long = "é".repeat(5000); // 2 bytes each → 10_000 bytes
+        let clamped = clamp_log_line(&long);
+        assert!(clamped.len() <= 4000 + "…".len());
+        assert!(clamped.ends_with('…'));
+        // A short line is returned unchanged (aside from newline collapsing).
+        assert_eq!(clamp_log_line("short"), "short");
+    }
 
     #[test]
     fn does_not_overwrite_an_existing_download() {

@@ -19,6 +19,7 @@ fn main() {
             "desktop_open_external",
             "desktop_open_window",
             "desktop_notify",
+            "desktop_log",
             "desktop_save_download",
             "desktop_pick_folder",
             "desktop_pick_import_files",
