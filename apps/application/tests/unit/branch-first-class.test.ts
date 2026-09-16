@@ -9,7 +9,7 @@ import * as schema from '../../server/database/schema.sqlite';
 // The schema barrel picks PostgreSQL when PIWI_DATABASE_URL is set; clear it so
 // the handler modules under test load the SQLite schema.
 delete process.env.PIWI_DATABASE_URL;
-const { resolveRunBranch, resolveRunPrNumber } = await import('../../server/utils/run-branch');
+const { resolveRunBranch, resolveRunPrNumber, resolveRunBaseBranch } = await import('../../server/utils/run-branch');
 const { selectBaselineRun } = await import('../../server/utils/branch-baseline');
 const { resolveDefaultBranch } = await import('../../server/utils/scm/default-branch');
 const { FALLBACK_DEFAULT_BRANCH } = await import('../../server/utils/scm/git-url');
@@ -31,6 +31,7 @@ async function seedRun(opts: {
   branch: string | null;
   daysAgo: number;
   isFullRun?: number;
+  environment?: string | null;
 }): Promise<number> {
   const [row] = await db
     .insert(schema.testRuns)
@@ -39,6 +40,7 @@ async function seedRun(opts: {
       status: opts.status,
       startTime: daysAgo(opts.daysAgo),
       branch: opts.branch,
+      environment: opts.environment ?? null,
       isFullRun: opts.isFullRun ?? 1,
     })
     .returning({ id: schema.testRuns.id });
@@ -102,12 +104,14 @@ describe('selectBaselineRun', () => {
       projectId: 1,
       before: daysAgo(0),
       branch: 'feature/a',
-      defaultBranch: 'main',
+      environment: null,
+      fallbackBranch: 'main',
     });
-    expect(baseline?.id).toBe(sameBranch);
+    expect(baseline?.run.id).toBe(sameBranch);
+    expect(baseline?.match).toEqual({ branch: 'same', environment: null });
   });
 
-  test('falls back to the default branch when the branch has no history', async () => {
+  test('falls back to the fallback branch when the branch has no history', async () => {
     await seedProject(2, 'main');
     const onMain = await seedRun({ projectId: 2, status: 'passed', branch: 'main', daysAgo: 8 });
 
@@ -115,9 +119,11 @@ describe('selectBaselineRun', () => {
       projectId: 2,
       before: daysAgo(0),
       branch: 'feature/fresh',
-      defaultBranch: 'main',
+      environment: null,
+      fallbackBranch: 'main',
     });
-    expect(baseline?.id).toBe(onMain);
+    expect(baseline?.run.id).toBe(onMain);
+    expect(baseline?.match).toEqual({ branch: 'fallback', environment: null });
   });
 
   test('an unknown branch keeps branch-blind behavior (most recent passing)', async () => {
@@ -129,9 +135,11 @@ describe('selectBaselineRun', () => {
       projectId: 3,
       before: daysAgo(0),
       branch: null,
-      defaultBranch: 'main',
+      environment: null,
+      fallbackBranch: 'main',
     });
-    expect(baseline?.id).toBe(newest);
+    expect(baseline?.run.id).toBe(newest);
+    expect(baseline?.match).toEqual({ branch: null, environment: null });
   });
 
   test('returns null when there is no passing run before the target', async () => {
@@ -141,8 +149,140 @@ describe('selectBaselineRun', () => {
       projectId: 4,
       before: daysAgo(0),
       branch: 'main',
-      defaultBranch: 'main',
+      environment: null,
+      fallbackBranch: 'main',
     });
     expect(baseline).toBeNull();
+  });
+
+  test('a same-environment run on the fallback branch beats a same-branch run from another environment', async () => {
+    await seedProject(5, 'main');
+    await seedRun({ projectId: 5, status: 'passed', branch: 'feature/e', environment: 'production', daysAgo: 1 });
+    const mainStaging = await seedRun({
+      projectId: 5,
+      status: 'passed',
+      branch: 'main',
+      environment: 'staging',
+      daysAgo: 6,
+    });
+
+    const baseline = await selectBaselineRun(db as any, {
+      projectId: 5,
+      before: daysAgo(0),
+      branch: 'feature/e',
+      environment: 'staging',
+      fallbackBranch: 'main',
+    });
+    expect(baseline?.run.id).toBe(mainStaging);
+    expect(baseline?.match).toEqual({ branch: 'fallback', environment: 'same' });
+  });
+
+  test('walks the branch ladder again without the environment when it has no passing run', async () => {
+    await seedProject(6, 'main');
+    await seedRun({ projectId: 6, status: 'passed', branch: 'main', environment: 'production', daysAgo: 2 });
+    const sameBranchProd = await seedRun({
+      projectId: 6,
+      status: 'passed',
+      branch: 'feature/f',
+      environment: 'production',
+      daysAgo: 4,
+    });
+
+    const baseline = await selectBaselineRun(db as any, {
+      projectId: 6,
+      before: daysAgo(0),
+      branch: 'feature/f',
+      environment: 'staging',
+      fallbackBranch: 'main',
+    });
+    expect(baseline?.run.id).toBe(sameBranchProd);
+    expect(baseline?.match).toEqual({ branch: 'same', environment: 'other' });
+  });
+
+  test('a run with no environment label ignores the environment axis', async () => {
+    await seedProject(7, 'main');
+    const labeled = await seedRun({
+      projectId: 7,
+      status: 'passed',
+      branch: 'main',
+      environment: 'staging',
+      daysAgo: 1,
+    });
+    await seedRun({ projectId: 7, status: 'passed', branch: 'main', environment: null, daysAgo: 5 });
+
+    const baseline = await selectBaselineRun(db as any, {
+      projectId: 7,
+      before: daysAgo(0),
+      branch: 'main',
+      environment: null,
+      fallbackBranch: 'main',
+    });
+    expect(baseline?.run.id).toBe(labeled);
+    expect(baseline?.match).toEqual({ branch: 'same', environment: null });
+  });
+
+  test('an explicit base branch restricts the baseline to that branch, same environment first', async () => {
+    await seedProject(8, 'main');
+    await seedRun({ projectId: 8, status: 'passed', branch: 'feature/g', environment: 'staging', daysAgo: 1 });
+    await seedRun({ projectId: 8, status: 'passed', branch: 'main', environment: 'staging', daysAgo: 2 });
+    const releaseProd = await seedRun({
+      projectId: 8,
+      status: 'passed',
+      branch: 'release/1',
+      environment: 'production',
+      daysAgo: 3,
+    });
+    const releaseStaging = await seedRun({
+      projectId: 8,
+      status: 'passed',
+      branch: 'release/1',
+      environment: 'staging',
+      daysAgo: 9,
+    });
+
+    const query = {
+      projectId: 8,
+      before: daysAgo(0),
+      branch: 'feature/g',
+      environment: 'staging',
+      fallbackBranch: 'main',
+    };
+    const chosen = await selectBaselineRun(db as any, { ...query, baseBranch: 'release/1' });
+    expect(chosen?.run.id).toBe(releaseStaging);
+    expect(chosen?.match).toEqual({ branch: 'chosen', environment: 'same' });
+
+    const otherEnv = await selectBaselineRun(db as any, { ...query, environment: 'qa', baseBranch: 'release/1' });
+    expect(otherEnv?.run.id).toBe(releaseProd);
+    expect(otherEnv?.match).toEqual({ branch: 'chosen', environment: 'other' });
+
+    const nothing = await selectBaselineRun(db as any, { ...query, baseBranch: 'does-not-exist' });
+    expect(nothing).toBeNull();
+  });
+
+  test('fullRunOnly skips partial runs on every rung', async () => {
+    await seedProject(9, 'main');
+    await seedRun({ projectId: 9, status: 'passed', branch: 'feature/h', daysAgo: 1, isFullRun: 0 });
+    const full = await seedRun({ projectId: 9, status: 'passed', branch: 'main', daysAgo: 4 });
+
+    const baseline = await selectBaselineRun(db as any, {
+      projectId: 9,
+      before: daysAgo(0),
+      branch: 'feature/h',
+      environment: null,
+      fallbackBranch: 'main',
+      fullRunOnly: true,
+    });
+    expect(baseline?.run.id).toBe(full);
+    expect(baseline?.match).toEqual({ branch: 'fallback', environment: null });
+  });
+});
+
+describe('resolveRunBaseBranch', () => {
+  test("reads scm.baseBranch, ignoring HEAD and the run's own branch", () => {
+    expect(resolveRunBaseBranch({ scm: { branch: 'feature/x', baseBranch: 'main' } })).toBe('main');
+    expect(resolveRunBaseBranch({ scm: { branch: 'main', baseBranch: 'main' } })).toBeNull();
+    expect(resolveRunBaseBranch({ scm: { baseBranch: 'HEAD' } })).toBeNull();
+    expect(resolveRunBaseBranch({ scm: {} })).toBeNull();
+    expect(resolveRunBaseBranch(null)).toBeNull();
   });
 });

@@ -2,12 +2,12 @@ import type { Ref } from 'vue';
 import type { DiagnosisContextCoverage } from '~~/types/api';
 
 /**
- * Derives the one-line SCM status shown on the "What changed" section — the
- * icon, color, headline and detail describing how the baseline diff resolved
+ * Derives the one-line SCM status behind the cluster page's "What changed" line —
+ * the icon, color, headline and detail describing how the baseline diff resolved
  * (provider, file/patch counts, or why it's unavailable). Takes the
- * cluster-diagnosis `coverage` ref so it works both inside the section component
- * (which injects it) and on the page itself (which owns the provided store and
- * cannot inject its own provide).
+ * cluster-diagnosis `coverage` ref so it works both inside a component (which
+ * injects it) and on the page itself (which owns the provided store and cannot
+ * inject its own provide).
  */
 export function useScmStatusSummary(coverage: Ref<DiagnosisContextCoverage | null>) {
   const scmStatus = computed(() => {
@@ -42,7 +42,7 @@ export function useScmStatusSummary(coverage: Ref<DiagnosisContextCoverage | nul
         color: 'text-gray-400',
         icon: 'i-lucide-git-branch',
         text: 'No last passing run',
-        detail: 'enter a baseline commit below to enable diff',
+        detail: 'pick a baseline commit to enable the diff',
       };
     if (!scm.hasCommitRange)
       return {

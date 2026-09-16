@@ -9,6 +9,8 @@ import { resolveRunBranch } from './run-branch';
 import { resolveDefaultBranch } from './scm/default-branch';
 import { FALLBACK_DEFAULT_BRANCH } from './scm/git-url';
 import { selectBaselineRun } from './branch-baseline';
+import { resolveFallbackBranch } from '#shared/handlers/baseline-scope';
+import { describeRunBaseline } from '#shared/run-baseline';
 
 export interface RunForRegression {
   id: number;
@@ -16,6 +18,7 @@ export interface RunForRegression {
   status: string;
   startTime: Date;
   environment: string | null;
+  branch?: string | null;
   metadata: unknown;
 }
 
@@ -27,6 +30,8 @@ export type RegressionContextResult =
       lastGreenRunAt: Date;
       lastGreenCommit: string | null;
       lastGreenBranch: string | null;
+      /** Why this run was the baseline — the sentence the Changes tab shows. */
+      baselineNote: string;
       currentCommit: string | null;
       currentBranch: string | null;
       commitRange: {
@@ -45,23 +50,33 @@ export type RegressionContextResult =
 const FAIL_STATUSES = new Set<string>(FAILED_STATUS_KEYS);
 
 export async function computeRegressionContext(db: DbClient, run: RunForRegression): Promise<RegressionContextResult> {
-  // Prefer the last green run on this run's own branch, falling back to the
-  // default branch (what a fresh branch forked from), so "what changed since
-  // last green" is a diff within one line of history, not across unrelated ones.
-  const branch = resolveRunBranch(run.metadata);
+  // The last green run the run-level ladder picks: the same environment first,
+  // and within it this run's own branch, then the branch it forked from, then
+  // any — so "what changed since last green" is a diff within one line of
+  // history, not across unrelated ones.
+  const branch = run.branch ?? resolveRunBranch(run.metadata);
   const [project] = await db
     .select({ id: projects.id, defaultBranch: projects.defaultBranch })
     .from(projects)
     .where(eq(projects.id, run.projectId));
   const defaultBranch = project ? await resolveDefaultBranch(db, project, run.metadata) : FALLBACK_DEFAULT_BRANCH;
+  const fallback = resolveFallbackBranch(run.metadata, defaultBranch);
 
-  const lastGreen = await selectBaselineRun(db, {
+  const selection = await selectBaselineRun(db, {
     projectId: run.projectId,
     before: run.startTime,
     branch,
-    defaultBranch,
+    environment: run.environment ?? null,
+    fallbackBranch: fallback.branch,
   });
-  if (!lastGreen) return { hasGreen: false };
+  if (!selection) return { hasGreen: false };
+  const lastGreen = selection.run;
+  const baselineNote = describeRunBaseline({
+    run: { branch, environment: run.environment ?? null },
+    baseline: { branch: lastGreen.branch ?? null, environment: lastGreen.environment ?? null },
+    match: selection.match,
+    fallback,
+  });
 
   const currMeta = run.metadata as RunMetadata | null;
   const greenMeta = lastGreen.metadata as RunMetadata | null;
@@ -124,6 +139,7 @@ export async function computeRegressionContext(db: DbClient, run: RunForRegressi
     lastGreenRunAt: lastGreen.startTime,
     lastGreenCommit,
     lastGreenBranch: greenMeta?.scm?.branch ?? null,
+    baselineNote,
     currentCommit,
     currentBranch: currMeta?.scm?.branch ?? null,
     commitRange,

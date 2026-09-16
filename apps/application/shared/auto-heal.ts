@@ -14,6 +14,8 @@
  * orchestration in `server/utils/heal/`.
  */
 
+import type { ScmProviderName } from '#shared/scm-urls';
+
 /** `app_settings` key holding the resolved {@link AutoHealSettings}. */
 export const AUTO_HEAL_KEY = 'auto_heal';
 
@@ -119,7 +121,7 @@ export interface HealEditPayload {
 /** Everything needed to open one heal PR, snapshotted so a retry is deterministic. */
 export interface HealActionPayload {
   repositoryUrl: string;
-  provider: 'github' | 'gitlab' | 'bitbucket';
+  provider: ScmProviderName;
   baseBranch: string;
   /** The commit the failing run was on, used as the branch start point when set. */
   baseSha: string | null;

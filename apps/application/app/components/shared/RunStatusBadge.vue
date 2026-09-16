@@ -14,6 +14,6 @@ defineProps<{
       name="i-lucide-loader-circle"
       class="size-3 animate-spin shrink-0"
     />
-    {{ status }}
+    {{ formatStatusLabel(status) }}
   </UBadge>
 </template>

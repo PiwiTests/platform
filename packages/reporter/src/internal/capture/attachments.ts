@@ -8,7 +8,9 @@
 export const ATTACHMENT_NAMES = {
   locators: 'piwi-locators',
   ariaSnapshot: 'piwi-aria-snapshot',
+  ariaSnapshotJson: 'piwi-aria-snapshot-json',
   console: 'piwi-console',
+  dialogs: 'piwi-dialogs',
   network: 'piwi-network',
   webVitals: 'piwi-web-vitals',
   locatorSuggestion: 'piwi-locator-suggestion',

@@ -66,7 +66,7 @@ function varRow(name) {
   if (meta.notes) parts.push(meta.notes);
   if (meta.since) parts.push(`*Added in ${meta.since}.*`);
   if (meta.until) parts.push(`*Removed in ${meta.until}.*`);
-  if (meta.docs) parts.push(`See [details](./${meta.docs}).`);
+  if (meta.docs) parts.push(`See [details](/${meta.docs}).`);
   return `| ${variable} | ${cell(def)} | ${cell(parts.join(' '))} |`;
 }
 
@@ -114,6 +114,6 @@ ${internalVars.map((name) => `\`${name}\``).join(', ')} exist only for the funct
 :::
 `;
 
-mkdirSync(join(here, '..'), { recursive: true });
-writeFileSync(join(here, '..', 'configuration.md'), page);
-console.log(`generated apps/docs/configuration.md from ${varNames.length} registry entries (v${appVersion})`);
+mkdirSync(join(here, '..', 'reference'), { recursive: true });
+writeFileSync(join(here, '..', 'reference', 'configuration.md'), page);
+console.log(`generated apps/docs/reference/configuration.md from ${varNames.length} registry entries (v${appVersion})`);

@@ -1,6 +1,6 @@
 [package]
 name = "piwi-desktop"
-version = "0.26.1" # x-release-please-version
+version = "0.32.0" # x-release-please-version
 description = "Piwi Dashboard desktop app"
 authors = ["piwitests"]
 license = "MIT"
@@ -16,7 +16,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+# `devtools` compiles the webview inspector into release builds too (it is
+# always on in debug builds). It stays dormant unless the app is launched with
+# `--devtools` or `PIWI_DEBUG` set — see `run()` in src/lib.rs — so a normal
+# shipped launch is unchanged, but a user chasing a bug can open the inspector.
+tauri = { version = "2", features = ["tray-icon", "devtools"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"

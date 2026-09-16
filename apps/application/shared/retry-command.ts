@@ -112,6 +112,35 @@ export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode;
   return result;
 }
 
+/**
+ * The Playwright *arguments* for re-running these cases — the file:line specs
+ * (deduped, POSIX-normalized, quoted) plus a single `--project=` when every case
+ * shares one project. Unlike {@link buildRetryCommand} it omits the
+ * `playwright test` prefix, so it can be handed to CI as the value of a
+ * workflow input / pipeline variable that a job appends to its own command.
+ * Always `file-line` shaped; a case without a line contributes its file path.
+ */
+export function buildRetryArgs(cases: RetryCase[]): string {
+  if (cases.length === 0) return '';
+  const seen = new Set<string>();
+  const specs = cases
+    .filter((c) => {
+      if (!c.line) return true;
+      const key = c.filePath + ':' + c.line;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((c) =>
+      c.line ? escapeShellArg(`${toPosixPath(c.filePath)}:${c.line}`) : escapeShellArg(toPosixPath(c.filePath)),
+    );
+
+  const projects = new Set(cases.map((c) => c.projectName || '').filter(Boolean));
+  let args = specs.join(' ');
+  if (projects.size === 1) args += ` --project=${escapeShellArg([...projects][0]!)}`;
+  return args;
+}
+
 function dedupeFilePaths(cases: RetryCase[]): string[] {
   const seen = new Set<string>();
   return cases.reduce<string[]>((acc, c) => {

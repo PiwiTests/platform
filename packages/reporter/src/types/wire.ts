@@ -65,7 +65,9 @@ export interface WireTestCase {
   pageState?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
+  dialogs?: unknown;
   ariaSnapshot?: unknown;
+  ariaSnapshotJson?: unknown;
   testSource?: string | null;
   testSourceFrames?: TestSourceFrame[] | null;
   browser?: BrowserConfig | null;
@@ -74,6 +76,8 @@ export interface WireTestCase {
   testAnnotations?: TestAnnotation[] | null;
   /** Normalized `TestCase.tags`, `@` stripped. */
   tags?: string[] | null;
+  /** Lock names from the private `TestCase._locks` (best effort; none from blob imports). */
+  locks?: string[] | null;
   /** Ownership metadata parsed from `piwi:` annotations. */
   testMeta?: TestMetadata | null;
   /** Step-event discriminant (only for `step-begin`/`step-end` events). */
@@ -119,6 +123,7 @@ export interface CompleteStreamEvent {
   suiteConfig?: SuiteConfigEntry[] | null;
   testAnnotations?: TestAnnotation[] | null;
   tags?: string[] | null;
+  locks?: string[] | null;
   testMeta?: TestMetadata | null;
   steps?: unknown;
   stepEvents?: TestStepEvent[] | null;
@@ -129,7 +134,9 @@ export interface CompleteStreamEvent {
   pageState?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
+  dialogs?: unknown;
   ariaSnapshot?: unknown;
+  ariaSnapshotJson?: unknown;
   testSource?: string | null;
   testSourceFrames?: TestSourceFrame[] | null;
   locatorSnapshots?: unknown;
@@ -142,6 +149,8 @@ export interface CompleteStreamEvent {
 export interface StepBeginStreamEvent {
   type: 'step-begin';
   title: string;
+  /** The step's target (rendered locator or URL), carried separately by newer Playwright. */
+  subtitle?: string | null;
   location: string;
   /** Playwright step category (`hook`, `fixture`, `pw:api`, `pw:expect`, …). */
   stepCategory: string;
@@ -153,6 +162,8 @@ export interface StepBeginStreamEvent {
 export interface StepEndStreamEvent {
   type: 'step-end';
   title: string;
+  /** The step's target (rendered locator or URL), carried separately by newer Playwright. */
+  subtitle?: string | null;
   location: string;
   status: string;
   duration: number;

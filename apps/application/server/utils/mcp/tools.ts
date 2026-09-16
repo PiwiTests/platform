@@ -7,22 +7,36 @@ import {
   getProjectTestCases,
   getProjectSpecHealth,
 } from '#shared/handlers/projects';
-import { parseTagFilter } from '#shared/utils/tag-filter';
+import { parseLockFilter, parseTagFilter } from '#shared/utils/tag-filter';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { buildFixPlan } from '../fix-plan';
 import { enrichFixPlanOwnership } from '../scm/ownership';
 import { getNetworkRequests, getFailureGroups } from '#shared/handlers/test-runs';
-import { getTestCase, getTestRunCaseTraces, getTestCaseStabilityTrend } from '#shared/handlers/test-cases';
+import {
+  getTestCase,
+  getTestRunCase,
+  getTestRunCaseTraces,
+  getTestCaseStabilityTrend,
+  getFailureClues,
+  type FailureCluesResult,
+} from '#shared/handlers/test-cases';
 import {
   getFailureCluster,
   getClusterDiagnosis,
   patchClusterStatus,
   patchClusterBaseCommit,
+  getOpenFailureClusters,
 } from '#shared/handlers/failure-clusters';
+import { clusterInQueue, isInboxQueue } from '#shared/inbox-queues';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { searchProjectsTestRunsCases } from '#shared/handlers/search';
 import { listTags } from '#shared/handlers/tags';
-import { listLinks } from '#shared/handlers/links';
+import { listLinks, type LinkEntityType } from '#shared/handlers/links';
+import { resolveLinkEntityProjectId } from '../project-access';
+import { buildIssueDraft, type DraftEntityType } from '../integrations/draft';
+import { createIssue } from '../integrations/create';
+import { getClusterKnownIssue } from '../integrations/known-issue';
+import { toIssueLocale } from '#shared/integrations/messages';
 import { getAdminStats } from '#shared/handlers/admin';
 import { createTestFunction } from '#shared/handlers/test-functions';
 import { createTestFunctionSchema } from '#shared/test-function-schemas';
@@ -50,6 +64,8 @@ import type {
 import type { RunMetadata, BrowserConfig } from '../run-json-types';
 import { getStorage } from '../../storage';
 import { getLocatorHealingBatch, getLocatorHealing } from '../locator-healing';
+import { getPageDiff } from '../page-diff';
+import { describePageDiff, formatPageDiffSummary } from '#shared/page-diff';
 import { inlineCasePayloads } from '../case-payloads';
 import { selectCaseScreenshots } from '../case-screenshots';
 import { createScmProvider } from '../scm';
@@ -102,6 +118,18 @@ function compactBrowser(browser: unknown): string | null {
   const b = browser as BrowserConfig | null;
   if (!b) return null;
   return [b.projectName, b.browserName].filter(Boolean).join('/') || null;
+}
+
+/** Project the deterministic clues into the compact shape MCP tools return. */
+function compactClues(result: FailureCluesResult) {
+  if (result.clues.length === 0) return null;
+  return result.clues.map((clue) => ({
+    rule: clue.rule,
+    strength: clue.strength,
+    title: clue.title,
+    detail: clue.detail,
+    citations: clue.citations.map((c) => c.section),
+  }));
 }
 
 /**
@@ -511,6 +539,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         runStatus: testRuns.status,
         runStart: testRuns.startTime,
         rawBrowser: testRunsCases.browser,
+        locks: testRunsCases.locks,
       })
       .from(testRunsCases)
       .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
@@ -535,6 +564,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         runStatus: r.runStatus,
         startedAt: iso(r.runStart),
         browser: compactBrowser(r.rawBrowser),
+        locks: Array.isArray(r.locks) && r.locks.length ? (r.locks as string[]) : null,
       }),
     );
 
@@ -629,6 +659,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       id: tc.id,
       title: tc.title,
       filePath: tc.filePath,
+      tags: tc.tags?.length ? tc.tags : null,
+      locks: tc.locks?.length ? tc.locks : null,
       project: tc.project ? { id: tc.project.id, name: tc.project.name } : null,
       stats: dropNulls({
         totalRuns: tc.totalRuns,
@@ -695,6 +727,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const cluster = await getFailureCluster(db, id);
     if (!cluster) return null;
     if (cluster.project?.id != null) assertProject(ctx, cluster.project.id);
+
+    const knownIssue = await getClusterKnownIssue(db, id);
 
     // Fetch locator healing for up to 5 affected cases via a single batch
     // query (2 DB round-trips instead of 5×2) so AI coding agents get fix
@@ -777,6 +811,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           }),
       ),
       locatorHealing: healingResults.length > 0 ? healingResults : null,
+      issue: knownIssue ? dropNulls({ key: knownIssue.key, url: knownIssue.url, status: knownIssue.status }) : null,
     });
   },
 
@@ -792,7 +827,27 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
     const plan = await buildFixPlan(db, clusterId);
     if (!plan) return null;
-    return enrichFixPlanOwnership(db, cluster.projectId, plan);
+    const enriched = await enrichFixPlanOwnership(db, cluster.projectId, plan);
+
+    // Additive: the story, the situation sentence and the computed next step,
+    // read on the cluster's latest occurrence through the shared handlers.
+    const clusterDetail = await getFailureCluster(db, clusterId).catch(() => null);
+    const latestId = clusterDetail?.latestTestRunsCaseId ?? null;
+    const [cluesResult, detail] = await Promise.all([
+      latestId ? getFailureClues(db, latestId).catch(() => null) : Promise.resolve(null),
+      latestId ? getTestRunCase(db, latestId).catch(() => null) : Promise.resolve(null),
+    ]);
+    const story = cluesResult?.story ?? null;
+    const situation = (detail as { situation?: { text?: string } | null } | null)?.situation ?? null;
+
+    return {
+      ...(enriched as unknown as Record<string, unknown>),
+      story: story
+        ? dropNulls({ id: story.id, sentence: story.sentence, strength: story.strength, clueIds: story.clueIds })
+        : null,
+      situation: situation?.text || null,
+      nextStep: clusterDetail?.nextStep ?? null,
+    };
   },
 
   // ── get_cluster_diagnosis ──────────────────────────────────────────────────
@@ -995,13 +1050,23 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         id: testCases.id,
         title: testCases.title,
         filePath: testCases.filePath,
+        tags: testCases.tags,
+        locks: testCases.locks,
       })
       .from(testCases)
       .where(and(...conditions))
       .orderBy(desc(testCases.id))
       .limit(pageSize + 1);
 
-    const mapped = rows.map((r) => dropNulls({ id: r.id, title: r.title, filePath: r.filePath }));
+    const mapped = rows.map((r) =>
+      dropNulls({
+        id: r.id,
+        title: r.title,
+        filePath: r.filePath,
+        tags: Array.isArray(r.tags) && r.tags.length ? (r.tags as string[]) : null,
+        locks: Array.isArray(r.locks) && r.locks.length ? (r.locks as string[]) : null,
+      }),
+    );
 
     return paginatedItems(mapped, pageSize, (r) => String(r.id!));
   },
@@ -1031,6 +1096,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
     const evidence = want('aria') || want('source') ? await inlineCasePayloads(db, row) : row;
 
+    // Deterministic clues ride alongside the error unless the caller opts out.
+    const clues = want('clues') ? await getFailureClues(db, id).catch(() => null) : null;
+
     return dropNulls({
       executionId: row.id,
       testCaseId: row.testCaseId,
@@ -1041,6 +1109,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       retries: row.retries || null,
       headline: caseHeadline(row)?.headline ?? null,
       error: row.error, // full, untruncated
+      clues: clues ? compactClues(clues) : null,
       clusterId: row.failureClusterId || null,
       line: row.line || null,
       column: row.column || null,
@@ -1055,6 +1124,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       ariaSnapshot: want('aria') ? trunc(evidence.ariaSnapshot, 8000) : null,
       testSource: want('source') ? evidence.testSource || null : null,
       testAnnotations: row.testAnnotations,
+      locks: Array.isArray(row.locks) && row.locks.length ? (row.locks as string[]) : null,
       startedAt: iso(row.startedAt),
       isNewRegression: row.isNewRegression || null,
       isNewFlaky: row.isNewFlaky || null,
@@ -1175,11 +1245,21 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const runId = numericParam(params.runId, 'runId');
     if ((await checkEntityScope(db, ctx, runId, resolveRunProjectId)) === 'not-found') return null;
 
-    const r = await computeRunInsights(db, runId);
+    const baseBranch = typeof params.baseBranch === 'string' ? params.baseBranch.trim() || null : null;
+    const r = await computeRunInsights(db, runId, { baseBranch });
     const cap = <T>(a: T[]) => a.slice(0, 15);
     return dropNulls({
       runId,
       hasBaseline: r.hasBaseline,
+      baseline: r.baseline
+        ? {
+            runId: r.baseline.id,
+            branch: r.baseline.branch,
+            environment: r.baseline.environment,
+            note: r.baselineNote,
+          }
+        : null,
+      baseBranches: r.baseBranches,
       totalTests: r.totalTests,
       passedTests: r.passedTests,
       failedTests: r.failedTests,
@@ -1381,10 +1461,14 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           ? resolveTestRunCaseProjectId
           : entityType === 'test_case'
             ? resolveCaseProjectId
-            : null;
-    if (!resolver) throw new Error('entityType must be test_run, test_runs_case, or test_case');
+            : entityType === 'failure_cluster'
+              ? resolveClusterProjectId
+              : null;
+    if (!resolver) {
+      throw new Error('entityType must be test_run, test_runs_case, test_case, or failure_cluster');
+    }
     if ((await checkEntityScope(db, ctx, entityId, resolver)) === 'not-found') return null;
-    const { links } = await listLinks(db, entityType, entityId);
+    const { links } = await listLinks(db, entityType as LinkEntityType, entityId);
     return {
       links: links.map((l: any) =>
         dropNulls({
@@ -1397,6 +1481,62 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         }),
       ),
     };
+  },
+
+  async create_issue(db, params, ctx) {
+    assertWriteRole(ctx);
+    const entityType = String(params.entityType ?? '') as DraftEntityType;
+    if (entityType !== 'failure_cluster' && entityType !== 'test_runs_case') {
+      throw new Error('entityType must be failure_cluster or test_runs_case');
+    }
+    const entityId = numericParam(params.entityId, 'entityId');
+    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
+    if (projectId == null) return null;
+    assertProject(ctx, projectId);
+
+    const include = {
+      includeDiagnosis: params.includeDiagnosis === undefined ? undefined : Boolean(params.includeDiagnosis),
+      includePatch: params.includePatch === undefined ? undefined : Boolean(params.includePatch),
+    };
+    const siteUrl = process.env.PIWI_SITE_URL ?? null;
+    const locale = toIssueLocale(params.locale);
+
+    const draft = await buildIssueDraft(db, entityType, entityId, { include, locale, siteUrl });
+    if (!draft) throw new Error('No Jira connection is configured');
+
+    // Already tracked: hand back the existing issue rather than filing a second.
+    if (draft.existing.length) {
+      const first = draft.existing[0]!;
+      return dropNulls({ key: first.key, url: first.url, existing: draft.existing });
+    }
+
+    if (!draft.connectionId || !draft.projectKey || !draft.issueType) {
+      throw new Error('Configure a Jira project binding (project key and issue type) before filing issues');
+    }
+
+    const outcome = await createIssue(db, {
+      entityType,
+      entityId,
+      connectionId: draft.connectionId,
+      title: typeof params.title === 'string' ? params.title : draft.title,
+      projectKey: draft.projectKey,
+      issueType: draft.issueType,
+      labels: draft.labels,
+      assignee: draft.assignee,
+      locale: draft.locale,
+      include,
+      requestedBy: ctx.user?.id ?? null,
+      siteUrl,
+    });
+    if (!outcome) return null;
+    if (outcome.status !== 'done') {
+      throw new Error(outcome.error || 'Filing the issue did not complete; it is queued for retry');
+    }
+    return dropNulls({
+      key: outcome.key,
+      url: outcome.url,
+      existing: draft.existing.length ? draft.existing : undefined,
+    });
   },
 
   // ── list_tags ──────────────────────────────────────────────────────────────
@@ -1417,6 +1557,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       offset,
       q: query,
       tags: parseTagFilter(typeof params.tags === 'string' ? params.tags : undefined),
+      locks: parseLockFilter(typeof params.locks === 'string' ? params.locks : undefined),
       owner: typeof params.owner === 'string' && params.owner.trim() ? params.owner.trim() : undefined,
       priority: typeof params.priority === 'string' ? params.priority.trim().toLowerCase() : undefined,
     });
@@ -1434,6 +1575,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           flaky: t.flakyRuns || null,
           lastStatus: t.lastStatus || null,
           tags: t.tags?.length ? t.tags : null,
+          locks: t.locks?.length ? t.locks : null,
           owner: t.owner || null,
           priority: t.priority || null,
           avgDuration: t.avgDuration != null ? Math.round(t.avgDuration) : null,
@@ -1520,6 +1662,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             totalRoutes: suggestions.smoke.totalRoutes,
             coveredRoutes: suggestions.smoke.coveredRoutes,
             testCaseIds: suggestions.smoke.testCaseIds,
+            splitLocks: suggestions.smoke.splitLocks.length ? suggestions.smoke.splitLocks : null,
             picks: suggestions.smoke.picks.map((p) =>
               dropNulls({
                 testCaseId: p.testCaseId,
@@ -1567,6 +1710,34 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (ctx.scope !== 'all' && ctx.scope.size === 0) return { items: [], nextCursor: null };
     const pageSize = clampPageSize(params.pageSize);
     const cursor = numericCursor(params.cursor);
+
+    // Queue filter: reuse the inbox source (open, non-snoozed, enriched) and the
+    // same pure predicates the dashboard queues use, then page in memory by id on
+    // the same axis as the emitted cursor.
+    const queue = params.queue as string | undefined;
+    if (queue && isInboxQueue(queue) && queue !== 'all') {
+      const user = { name: ctx.user?.name ?? null, email: ctx.user?.email ?? null };
+      const enriched = await getOpenFailureClusters(db, ctx.scope, 200);
+      const mappedQueue = enriched
+        .filter((c) => clusterInQueue(c, queue, { user, lastVisitMs: null }))
+        .filter((c) => (cursor ? c.id < cursor : true))
+        .sort((a, b) => b.occurrences - a.occurrences || b.id - a.id)
+        .map((c) =>
+          dropNulls({
+            id: c.id,
+            projectId: c.projectId,
+            signature: c.signature,
+            title: c.title || null,
+            errorType: c.errorType || null,
+            status: c.status,
+            occurrences: c.occurrences,
+            lastSeenRunId: c.lastSeenRunId,
+            sampleError: trunc(c.sampleError, 300),
+          }),
+        );
+      return paginatedItems(mappedQueue, pageSize, (c: any) => String(c.id));
+    }
+
     const statusFilter = (params.status as string) || 'open';
 
     const conditions = [eq(failureClusters.status, statusFilter)];
@@ -1629,7 +1800,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       .from(testCases)
       .where(eq(testCases.id, row.testCaseId));
 
-    const [healing, screenshotRows, diagContext] = await Promise.all([
+    const [healing, screenshotRows, diagContext, cluesResult, pageDiff, detail] = await Promise.all([
       getLocatorHealing(db, id).catch(() => null),
       selectCaseScreenshots(db, id),
       row.failureClusterId
@@ -1640,9 +1811,15 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             skipScm: true,
           }).catch(() => null)
         : Promise.resolve(null),
+      getFailureClues(db, id).catch(() => null),
+      getPageDiff(db, id).catch(() => null),
+      getTestRunCase(db, id).catch(() => null),
     ]);
 
     const rec = healing && healing.source !== 'none' ? healing.recommendation?.recommended : null;
+    const story = cluesResult?.story ?? null;
+    const nextStep = (detail as { nextStep?: unknown } | null)?.nextStep ?? null;
+    const situation = (detail as { situation?: { text?: string } | null } | null)?.situation ?? null;
 
     return dropNulls({
       executionId: id,
@@ -1652,12 +1829,32 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       status: row.status,
       headline: caseHeadline(row)?.headline ?? null,
       error: trunc(row.error, 1500),
+      story: story
+        ? dropNulls({ id: story.id, sentence: story.sentence, strength: story.strength, clueIds: story.clueIds })
+        : null,
+      situation: situation?.text || null,
+      nextStep: nextStep ?? null,
+      clues: cluesResult ? compactClues(cluesResult) : null,
       clusterId: row.failureClusterId || null,
       slowestStep: row.slowestStep || null,
       steps: row.steps,
       consoleLogs: row.consoleLogs,
       ariaSnapshot: trunc(evidence.ariaSnapshot, 3000),
       locatorFix: rec ? dropNulls({ locator: rec.locator, method: rec.method, score: rec.score }) : null,
+      pageDiff:
+        pageDiff?.status === 'ok' && pageDiff.summary
+          ? dropNulls({
+              summary: describePageDiff(pageDiff.summary),
+              changes: formatPageDiffSummary(pageDiff.summary),
+              baselineRunId: pageDiff.baseline?.runId ?? null,
+              locatorChange:
+                pageDiff.hunks?.find((h) => h.matchesLocator)?.type === 'renamed'
+                  ? `the failing locator's ${pageDiff.hunks.find((h) => h.matchesLocator)!.role} was renamed`
+                  : pageDiff.hunks?.some((h) => h.matchesLocator && h.type === 'removed')
+                    ? `the failing locator's node was removed from the page`
+                    : null,
+            })
+          : null,
       screenshotCount: screenshotRows.length || null,
       diagnosisContext: diagContext?.text || null,
       isNewRegression: row.isNewRegression || null,

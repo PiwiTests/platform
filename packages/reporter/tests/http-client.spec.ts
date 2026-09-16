@@ -214,6 +214,26 @@ describe('HttpClient (against fake http.Server)', () => {
     });
   });
 
+  describe('connection dropped mid-response', () => {
+    it('rejects when the socket closes after the headers but before the body completes', async () => {
+      const { server, url } = await startServer((_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.write('{"partial":');
+        setTimeout(() => res.socket?.destroy(), 20);
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false), 5000);
+        await expect(client.postJSON('/api/cut', {}, null)).rejects.toThrow(
+          /closed before the response completed|aborted|ECONNRESET|socket hang up/,
+        );
+      } finally {
+        (server as any).closeAllConnections?.();
+        server.close();
+        await new Promise<void>((r) => server.on('close', () => r()));
+      }
+    });
+  });
+
   describe('insecure transport warning', () => {
     function warningsFor(url: string): string[] {
       const logger = new Logger(false);

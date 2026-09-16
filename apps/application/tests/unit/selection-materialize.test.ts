@@ -2,9 +2,33 @@ import { describe, test, expect } from 'vitest';
 import { materializeSelection, type ResolvedTest } from '#shared/selection';
 
 const tests: ResolvedTest[] = [
-  { testCaseId: 1, filePath: 'tests/login.spec.ts', suitePath: '', title: 'logs in', line: 10, avgDurationMs: 1200 },
-  { testCaseId: 2, filePath: 'tests/login.spec.ts', suitePath: '', title: 'logs out', line: 24, avgDurationMs: 800 },
-  { testCaseId: 3, filePath: 'tests/cart.spec.ts', suitePath: '', title: 'adds item', line: null, avgDurationMs: null },
+  {
+    testCaseId: 1,
+    filePath: 'tests/login.spec.ts',
+    suitePath: '',
+    title: 'logs in',
+    line: 10,
+    avgDurationMs: 1200,
+    locks: [],
+  },
+  {
+    testCaseId: 2,
+    filePath: 'tests/login.spec.ts',
+    suitePath: '',
+    title: 'logs out',
+    line: 24,
+    avgDurationMs: 800,
+    locks: [],
+  },
+  {
+    testCaseId: 3,
+    filePath: 'tests/cart.spec.ts',
+    suitePath: '',
+    title: 'adds item',
+    line: null,
+    avgDurationMs: null,
+    locks: [],
+  },
 ];
 
 describe('materializeSelection', () => {
@@ -30,7 +54,17 @@ describe('materializeSelection', () => {
 
   test('grep escapes regex metacharacters in titles', () => {
     const m = materializeSelection(
-      [{ testCaseId: 1, filePath: 'a.spec.ts', suitePath: '', title: 'a (b) [c]', line: 1, avgDurationMs: 1 }],
+      [
+        {
+          testCaseId: 1,
+          filePath: 'a.spec.ts',
+          suitePath: '',
+          title: 'a (b) [c]',
+          line: 1,
+          avgDurationMs: 1,
+          locks: [],
+        },
+      ],
       'grep',
     );
     expect(m.args[1]).toBe('a \\(b\\) \\[c\\]');

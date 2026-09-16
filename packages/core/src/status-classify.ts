@@ -26,19 +26,57 @@ export function mergeAnnotations(test: AnnotationCarrier, result: AnnotationCarr
 }
 
 /**
- * Distinguish an intentional skip from a test that could not run.
+ * Whether a test is declared "should fail" — `test.fail()` and its conditional,
+ * callback and `.only` variants all add a `fail` annotation and set Playwright's
+ * `expectedStatus` to `failed`. A `skip`/`fixme` annotation wins over `fail`
+ * (the test is expected to be skipped, not to fail), matching how Playwright
+ * resolves `expectedStatus` when several annotations apply.
+ */
+export function expectsFailure(annotations: TestAnnotation[]): boolean {
+  if (annotations.some((a) => a.type === 'skip' || a.type === 'fixme')) return false;
+  return annotations.some((a) => a.type === 'fail');
+}
+
+/** Playwright's message for a `test.fail()` test that unexpectedly passed. */
+export const EXPECTED_FAILURE_PASSED_MESSAGE = 'Expected to fail, but passed.';
+
+/**
+ * Synthetic error text for a should-fail test that passed — the one case where
+ * `classifyStatus` reports `failed` without Playwright recording any error.
+ * Returns null everywhere else, so callers fall back to the real error text.
+ */
+export function expectedFailureError(rawStatus: string, annotations: TestAnnotation[]): string | null {
+  return rawStatus === 'passed' && expectsFailure(annotations) ? EXPECTED_FAILURE_PASSED_MESSAGE : null;
+}
+
+/**
+ * Map a Playwright `result.status` to Piwi's stored status, following
+ * Playwright's own outcome so a run reads the same in both.
  *
- * Playwright reports both as `result.status === 'skipped'`, but an intentional
- * `test.skip()` / `test.fixme()` (static, conditional, or runtime) always
- * carries a `skip`/`fixme` annotation, while a test skipped as a side effect of
- * an earlier failure in a `describe.serial` group carries none. The latter is
- * reclassified to `didnotrun` so the dashboard can tell a deliberate skip apart
- * from a test that never executed. Non-skipped statuses pass through unchanged.
+ * Two reclassifications apply:
+ *  - A `skipped` result is an intentional `test.skip()` / `test.fixme()` (static,
+ *    conditional, or runtime) when it carries a `skip`/`fixme` annotation, and
+ *    stays `skipped`. Without one it is a side effect of an earlier failure in a
+ *    `describe.serial` group, reclassified to `didnotrun` so the dashboard can
+ *    tell a deliberate skip apart from a test that never executed.
+ *  - A `test.fail()` test (`expectsFailure`) inverts pass and fail: an actual
+ *    `failed` is the expected outcome and counts as `passed`, while an actual
+ *    `passed` is unexpected and counts as `failed`. A `timedOut` passes through
+ *    unchanged — Playwright counts it as unexpected and the dashboard already
+ *    reads a timeout as a failure.
+ *
+ * Every other status passes through unchanged.
  */
 export function classifyStatus(rawStatus: string, annotations: TestAnnotation[]): string {
-  if (rawStatus !== 'skipped') return rawStatus;
-  const intentional = annotations.some((a) => a.type === 'skip' || a.type === 'fixme');
-  return intentional ? 'skipped' : 'didnotrun';
+  if (rawStatus === 'skipped') {
+    const intentional = annotations.some((a) => a.type === 'skip' || a.type === 'fixme');
+    return intentional ? 'skipped' : 'didnotrun';
+  }
+  if (expectsFailure(annotations)) {
+    if (rawStatus === 'failed') return 'passed';
+    if (rawStatus === 'passed') return 'failed';
+  }
+  return rawStatus;
 }
 
 /**

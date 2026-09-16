@@ -42,6 +42,23 @@ describe('buildEnvironmentSnapshot', () => {
     expect(snap.channel).toBeNull();
   });
 
+  test('picks up the contrast preference from the browser config', () => {
+    const snap = snapshot({ browser: { ...browser, contrast: 'more' } });
+    expect(snap.contrast).toBe('more');
+  });
+
+  test('reports a contrast preference change with its label', () => {
+    const failing = snapshot({ browser: { ...browser, contrast: 'more' } });
+    const baseline = snapshot({ browser: { ...browser, contrast: 'no-preference' } });
+    const diff = computeEnvironmentDiff(failing, baseline);
+    expect(diff).toContainEqual({
+      key: 'contrast',
+      label: 'Contrast preference',
+      failing: 'more',
+      baseline: 'no-preference',
+    });
+  });
+
   test('never includes non-whitelisted keys such as commit SHA or geolocation', () => {
     const snap = snapshot({
       browser: { ...browser, geolocation: { longitude: 1, latitude: 2 } },

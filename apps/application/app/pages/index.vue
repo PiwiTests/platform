@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import type { HomeFilterState } from '~/components/home/HomeFilters.vue';
-import type { ProjectOverview, TestRunForChart } from '~~/types/api';
+import type { FilterBarState } from '~/components/shared/FilterBar.vue';
+import type { OpenFailureCluster, ProjectOverview, TestRunForChart } from '~~/types/api';
 import { errorMessage } from '~/utils';
 
 useHead({ title: 'Piwi Dashboard' });
+
+const { canWrite } = useAuth();
 
 // `lazy` so client-side navigation to Home is instant — the page renders a
 // skeleton immediately instead of blocking on the fetch (which felt like a hang).
@@ -27,7 +29,15 @@ const {
   transform: (r: { items: TestRunForChart[] }) => r.items,
 });
 
-useRunStream(() => Promise.all([refreshOverview(), refreshRecentRuns()]));
+// Open failure clusters across the visible projects — the "Open failures" card.
+const { data: openClusters, refresh: refreshOpenClusters } = useFetch('/api/failure-clusters', {
+  lazy: true,
+  query: { status: 'open', limit: 50 },
+  default: () => [] as OpenFailureCluster[],
+  transform: (r: { items: OpenFailureCluster[] }) => r.items,
+});
+
+useRunStream(() => Promise.all([refreshOverview(), refreshRecentRuns(), refreshOpenClusters()]));
 
 // True only before the first project-overview load resolves — drives the skeleton.
 // Gated on `overview` (which decides projects-vs-onboarding) so a slow load can't
@@ -47,14 +57,16 @@ function retryLoad(): void {
 
 // ── Filters (persisted to cookie, SSR-safe — no hydration flicker) ───────────
 
-const filters = useCookie<HomeFilterState>('piwi-home-filters', {
-  default: () => ({ environments: [], fullRunsOnly: true }),
+const filters = useCookie<FilterBarState>('piwi-home-filters', {
+  default: () => ({ environments: [], branches: [], fullRunsOnly: true }),
   encode: (v) => JSON.stringify(v),
   decode: (v) => {
     try {
-      return v ? (JSON.parse(v) as HomeFilterState) : { environments: [], fullRunsOnly: true };
+      return v
+        ? { environments: [], branches: [], fullRunsOnly: true, ...(JSON.parse(v) as Partial<FilterBarState>) }
+        : { environments: [], branches: [], fullRunsOnly: true };
     } catch {
-      return { environments: [], fullRunsOnly: true };
+      return { environments: [], branches: [], fullRunsOnly: true };
     }
   },
 });
@@ -150,6 +162,33 @@ const hasMoreActivity = computed(() => allActivity.value.length > ACTIVITY_PREVI
 const hasActivity = computed(() => filteredRecentRuns.value.length > 0);
 const hasProjects = computed(() => (overview.value?.length ?? 0) > 0);
 
+// ── Stat-strip links ──────────────────────────────────────────────────────────
+// The "failing now" number narrows the Project health table to failing projects;
+// "runs today" expands the Recent activity card. Both are in-page filters, so
+// they set state rather than navigate.
+
+const healthFilter = ref<'all' | 'failing'>('all');
+
+const healthProjects = computed(() =>
+  healthFilter.value === 'failing'
+    ? filteredOverview.value.filter((p) => p.tendency === 'failing')
+    : filteredOverview.value,
+);
+
+function focusFailingProjects(): void {
+  if (overviewStats.value.failingNow === 0) return;
+  healthFilter.value = 'failing';
+  if (import.meta.client)
+    document.getElementById('project-health')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function expandActivity(): void {
+  if (overviewStats.value.runs24h === 0) return;
+  activityExpanded.value = true;
+  if (import.meta.client)
+    document.getElementById('recent-activity')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 // Runs that exist (within the environment filter) but are hidden by "Full runs
 // only" — without this, a project's very first (partial) run reads as if
 // nothing arrived: 0 runs today, no recent activity, "No full runs" everywhere.
@@ -179,39 +218,6 @@ function statusBorderClass(status: string): string {
   if (status === 'failed' || status === 'timedout' || status === 'interrupted') return 'border-l-red-500';
   return 'border-l-gray-300 dark:border-l-gray-600';
 }
-
-// ── Feature highlights (empty state) ─────────────────────────────────────────
-
-const featureHighlights = [
-  {
-    icon: 'i-lucide-radio',
-    tagline: 'Watch your CI run live',
-    title: 'Live streaming',
-    description:
-      'Follow test execution in real time. Investigate failures while the suite is still running — no waiting for the CI job to finish.',
-  },
-  {
-    icon: 'i-lucide-layers',
-    tagline: '10 failures, 2 root causes',
-    title: 'Failure clustering',
-    description:
-      'Tests sharing the same error are grouped automatically. Triage one cluster instead of scrolling through unrelated failures.',
-  },
-  {
-    icon: 'i-lucide-brain-circuit',
-    tagline: 'Diagnosis grounded in your code',
-    title: 'AI diagnosis',
-    description:
-      'AI analyzes failure clusters using your actual SCM diff, trace files, and run history — not a generic prompt.',
-  },
-  {
-    icon: 'i-lucide-archive',
-    tagline: 'Every run, forever',
-    title: 'Permanent test intelligence',
-    description:
-      'Test results, traces, and HTML reports stored permanently. Compare runs, track flakiness trends, and never lose a CI result again.',
-  },
-] as const;
 </script>
 
 <template>
@@ -223,7 +229,7 @@ const featureHighlights = [
           <UBreadcrumb :items="[{ label: 'Home', icon: 'i-lucide-house', to: '/' }]" />
         </template>
         <template v-if="hasProjects" #trailing>
-          <HomeFilters v-model="filters" :available-environments="availableEnvironments" />
+          <FilterBar v-model="filters" :available-environments="availableEnvironments" :available-branches="[]" />
         </template>
       </UDashboardNavbar>
     </template>
@@ -272,18 +278,23 @@ const featureHighlights = [
           :actions="[{ label: 'Show them', color: 'primary', variant: 'solid', size: 'xs', onClick: showPartialRuns }]"
         />
 
-        <!-- Compact stat strip (full-run-aware) -->
+        <!-- Compact stat strip (full-run-aware) — every number is a link -->
         <div
           v-if="hasProjects"
           class="flex flex-wrap items-center gap-x-8 gap-y-3 text-sm border border-gray-200 dark:border-gray-700 rounded-xl px-6 py-4 bg-gray-50 dark:bg-gray-900/50"
         >
-          <div class="flex items-center gap-1.5">
+          <NuxtLink to="/projects" class="flex items-center gap-1.5 hover:underline">
             <UIcon name="i-lucide-folder" class="size-4 text-primary shrink-0" />
             <span class="font-semibold tabular-nums">{{ overviewStats.totalProjects }}</span>
             <span class="text-gray-500">projects</span>
-          </div>
+          </NuxtLink>
 
-          <div class="flex items-center gap-1.5">
+          <button
+            type="button"
+            class="flex items-center gap-1.5"
+            :class="overviewStats.failingNow > 0 ? 'hover:underline cursor-pointer' : 'cursor-default'"
+            @click="focusFailingProjects"
+          >
             <div
               class="w-2 h-2 rounded-full shrink-0"
               :class="overviewStats.failingNow > 0 ? 'bg-red-500' : 'bg-green-500'"
@@ -294,9 +305,9 @@ const featureHighlights = [
               >{{ overviewStats.failingNow }}</span
             >
             <span class="text-gray-500">failing now</span>
-          </div>
+          </button>
 
-          <div class="flex items-center gap-1.5">
+          <NuxtLink to="/analytics" class="flex items-center gap-1.5 hover:underline">
             <div
               class="w-2 h-2 rounded-full shrink-0"
               :class="overviewStats.flakyNow > 0 ? 'bg-amber-400' : 'bg-gray-300 dark:bg-gray-600'"
@@ -307,7 +318,7 @@ const featureHighlights = [
               >{{ overviewStats.flakyNow }}</span
             >
             <span class="text-gray-500">flaky</span>
-          </div>
+          </NuxtLink>
 
           <div v-if="overviewStats.avgPassRate !== null" class="flex items-center gap-1.5">
             <UIcon name="i-lucide-check-circle" class="size-4 text-green-500 shrink-0" />
@@ -315,21 +326,48 @@ const featureHighlights = [
             <span class="text-gray-500">avg pass rate</span>
           </div>
 
-          <div class="flex items-center gap-1.5">
+          <button
+            type="button"
+            class="flex items-center gap-1.5"
+            :class="overviewStats.runs24h > 0 ? 'hover:underline cursor-pointer' : 'cursor-default'"
+            @click="expandActivity"
+          >
             <UIcon name="i-lucide-play-circle" class="size-4 text-primary shrink-0" />
             <span class="font-semibold tabular-nums">{{ overviewStats.runs24h }}</span>
             <span class="text-gray-500">runs today</span>
-          </div>
+          </button>
         </div>
+
+        <!-- Open failures across the visible projects — one click to a failing cluster -->
+        <OpenFailuresCard
+          v-if="hasProjects"
+          data-shot="open-failures"
+          :clusters="openClusters"
+          :can-write="canWrite"
+          @changed="refreshOpenClusters"
+        />
 
         <!-- Per-project trend table + Recent activity side by side on wide screens -->
         <div v-if="hasProjects || hasActivity" class="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-          <div class="xl:col-span-2">
-            <ProjectTrendTable v-if="hasProjects" :projects="filteredOverview" />
+          <div id="project-health" class="xl:col-span-2 space-y-2 scroll-mt-4">
+            <div
+              v-if="healthFilter === 'failing'"
+              class="flex items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400"
+            >
+              <span>Showing failing projects only</span>
+              <UButton size="xs" variant="ghost" icon="i-lucide-x" @click="healthFilter = 'all'">Clear</UButton>
+            </div>
+            <ProjectTrendTable v-if="hasProjects" :projects="healthProjects" />
           </div>
 
           <!-- Recent activity -->
-          <SectionCard v-if="hasActivity" icon="i-lucide-activity" title="Recent activity">
+          <SectionCard
+            id="recent-activity"
+            v-if="hasActivity"
+            icon="i-lucide-activity"
+            title="Recent activity"
+            class="scroll-mt-4"
+          >
             <template #actions>
               <UButton
                 v-if="hasMoreActivity && !activityExpanded"
@@ -382,27 +420,10 @@ const featureHighlights = [
           <p>No runs match the current filters.</p>
         </div>
 
-        <!-- Empty state: setup wizard first (the actionable step), feature highlights after.
-             Once projects exist the wizard moves to /setup, which stays reachable from the
-             sidebar — the steps past "install the reporter" must not vanish on first run. -->
-        <template v-if="!hasProjects">
-          <GetStartedWizard />
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <UCard v-for="feature in featureHighlights" :key="feature.title" class="flex flex-col">
-              <div class="flex flex-col gap-3 h-full">
-                <div class="p-2 bg-primary/10 rounded-lg w-fit">
-                  <UIcon :name="feature.icon" class="size-5 text-primary" />
-                </div>
-                <div>
-                  <p class="text-xs font-semibold uppercase tracking-wide text-primary mb-1">{{ feature.tagline }}</p>
-                  <h3 class="font-semibold mb-1">{{ feature.title }}</h3>
-                  <p class="text-sm text-gray-600 dark:text-gray-400">{{ feature.description }}</p>
-                </div>
-              </div>
-            </UCard>
-          </div>
-        </template>
+        <!-- Empty instance: the setup wizard is the one actionable step. Once
+             projects exist it moves to /setup, which stays reachable from the
+             sidebar — the steps past "install the reporter" must not vanish. -->
+        <GetStartedWizard v-if="!hasProjects" />
       </div>
     </template>
   </UDashboardPanel>

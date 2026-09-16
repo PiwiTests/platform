@@ -24,6 +24,7 @@ import {
   type ImpactResolution,
   type SelectionResolution,
 } from '../internal/support/selection-client.js';
+import { computeAddReporterArgs } from './add-reporter.js';
 
 const EXIT_OK = 0;
 const EXIT_ERROR = 2;
@@ -46,7 +47,7 @@ Connection:
 Selection:
   --format <fmt>        args (file:line, default) | grep | files | json
   --budget <duration>   Cap total time, e.g. 5m, 90s, 300000 (ms)
-  --shard <i/n>         Keep only shard i of n, balanced by test duration
+  --shard <i/n>         Keep only shard i of n, balanced by duration, lock-aware
   --fail-fast           Order the least-reliable tests first (fail-fast)
   --base <ref>          For "impact": the ref to diff the working tree against
 
@@ -347,6 +348,17 @@ function spawnPlaywright(pkgRunner: string, playwrightArgs: string[], env: NodeJ
   });
 }
 
+/**
+ * Spawn Playwright for `run`, prepending `--add-reporter @piwitests/reporter`
+ * when the target config has no Piwi reporter and the installed Playwright is
+ * 1.63 or later. Logs one line naming what was added, or why it was not.
+ */
+function spawnPlaywrightForRun(pkgRunner: string, playwrightArgs: string[], env: NodeJS.ProcessEnv): Promise<number> {
+  const decision = computeAddReporterArgs(process.cwd(), playwrightArgs);
+  if (decision.log) console.error(decision.log);
+  return spawnPlaywright(pkgRunner, [...decision.args, ...playwrightArgs], env);
+}
+
 async function runRunImpact(args: SelectArgs, env: NodeJS.ProcessEnv): Promise<number> {
   let projectId: number;
   try {
@@ -357,7 +369,7 @@ async function runRunImpact(args: SelectArgs, env: NodeJS.ProcessEnv): Promise<n
       return EXIT_ERROR;
     }
     console.error(`piwi run: ${(e as Error).message} — running the full suite`);
-    return spawnPlaywright(args.pkgRunner, args.extra, env);
+    return spawnPlaywrightForRun(args.pkgRunner, args.extra, env);
   }
 
   let impact: ImpactResolution;
@@ -369,7 +381,7 @@ async function runRunImpact(args: SelectArgs, env: NodeJS.ProcessEnv): Promise<n
       return EXIT_ERROR;
     }
     console.error(`piwi run: ${(e as Error).message} — running the full suite`);
-    return spawnPlaywright(args.pkgRunner, args.extra, env);
+    return spawnPlaywrightForRun(args.pkgRunner, args.extra, env);
   }
 
   printWarnings(impact);
@@ -377,7 +389,7 @@ async function runRunImpact(args: SelectArgs, env: NodeJS.ProcessEnv): Promise<n
     console.error(
       `piwi run: impact widened to the full suite (${impact.impact.unmappedSourceFiles.length} unmapped source file(s))`,
     );
-    return spawnPlaywright(args.pkgRunner, args.extra, env);
+    return spawnPlaywrightForRun(args.pkgRunner, args.extra, env);
   }
   if (impact.estimate.count === 0) {
     console.error(`piwi run: no tests impacted by ${impact.impact.changedFiles} changed file(s) — nothing to run`);
@@ -391,7 +403,7 @@ async function runRunImpact(args: SelectArgs, env: NodeJS.ProcessEnv): Promise<n
     PIWI_SELECTION_COUNT: String(impact.estimate.count),
   };
   console.error(`piwi run: impact → ${impact.estimate.count} test(s)`);
-  return spawnPlaywright(args.pkgRunner, [...impact.materialization.args, ...args.extra], runEnv);
+  return spawnPlaywrightForRun(args.pkgRunner, [...impact.materialization.args, ...args.extra], runEnv);
 }
 
 export async function runRun(argv: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
@@ -430,7 +442,7 @@ export async function runRun(argv: string[], env: NodeJS.ProcessEnv = process.en
       return EXIT_ERROR;
     }
     console.error(`piwi run: ${(e as Error).message} — running the full suite`);
-    return spawnPlaywright(args.pkgRunner, args.extra, env);
+    return spawnPlaywrightForRun(args.pkgRunner, args.extra, env);
   }
 
   let outcome: { resolution: Resolution; fromCache: boolean } | null;
@@ -443,7 +455,7 @@ export async function runRun(argv: string[], env: NodeJS.ProcessEnv = process.en
 
   if (!outcome) {
     console.error('piwi run: dashboard unreachable and no cached resolution — running the full suite');
-    return spawnPlaywright(args.pkgRunner, args.extra, env);
+    return spawnPlaywrightForRun(args.pkgRunner, args.extra, env);
   }
 
   const { resolution } = outcome;
@@ -463,5 +475,5 @@ export async function runRun(argv: string[], env: NodeJS.ProcessEnv = process.en
   console.error(
     `piwi run: ${args.key} → ${resolution.estimate.count} tests${resolution.materialization.format !== args.format ? ` (materialized as ${resolution.materialization.format})` : ''}`,
   );
-  return spawnPlaywright(args.pkgRunner, [...resolution.materialization.args, ...args.extra], runEnv);
+  return spawnPlaywrightForRun(args.pkgRunner, [...resolution.materialization.args, ...args.extra], runEnv);
 }

@@ -8,14 +8,20 @@
 import { consoleLine } from './fields';
 import { renderExportHtml } from './render-html';
 import { renderExportMarkdown } from './render-markdown';
+import { renderExportPdf } from './render-pdf';
 import { buildExportZip, type ExportZipEntry } from './zip';
-import type { ExportAsset, ExportAssetReader, ExportBudget, ExportBundle, ExportFormat } from './types';
+import type {
+  ExportAsset,
+  ExportAssetReader,
+  ExportBudget,
+  ExportBundle,
+  ExportFormat,
+  ExportOmissionReason,
+} from './types';
 
 export interface BuildExportOptions {
   reader: ExportAssetReader;
   budget: ExportBudget;
-  /** Emit the auto-print hook in the HTML (used for "Save as PDF"). */
-  print?: boolean;
 }
 
 export interface BuiltExport {
@@ -63,7 +69,7 @@ export function exportFileName(bundle: ExportBundle, format: ExportFormat, id: n
 async function readAssets(
   bundle: ExportBundle,
   opts: BuildExportOptions,
-  accept: (asset: ExportAsset, bytes: number) => true | 'too-large' | 'html-format',
+  accept: (asset: ExportAsset, bytes: number) => true | ExportOmissionReason,
 ): Promise<Map<string, Uint8Array>> {
   const out = new Map<string, Uint8Array>();
   let used = 0;
@@ -157,7 +163,6 @@ export async function buildExport(
     });
 
     const html = renderExportHtml(bundle, {
-      print: opts.print,
       assetUrl: (asset) => {
         const bytes = bytesByPath.get(asset.storagePath);
         if (!bytes) return null;
@@ -165,6 +170,23 @@ export async function buildExport(
       },
     });
     return { fileName, contentType: 'text/html; charset=utf-8', bytes: encoder.encode(html) };
+  }
+
+  if (format === 'pdf') {
+    // A real vector PDF, generated in pure JS so it works the same on the
+    // server, the desktop shell and the demo — no browser print. Only
+    // screenshots embed; other evidence is listed, exactly as the HTML report.
+    const bytesByPath = await readAssets(bundle, opts, (asset, declared) => {
+      // A PDF can only carry raster images; everything else is listed instead.
+      if (asset.kind !== 'screenshot') return 'pdf-format';
+      if (declared > opts.budget.maxInlineBytes) return 'too-large';
+      return true;
+    });
+
+    const bytes = await renderExportPdf(bundle, {
+      imageFor: (asset) => bytesByPath.get(asset.storagePath) ?? null,
+    });
+    return { fileName, contentType: 'application/pdf', bytes };
   }
 
   // ZIP — everything that fits the total budget, at full fidelity.

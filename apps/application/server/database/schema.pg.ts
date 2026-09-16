@@ -50,8 +50,10 @@ export const projects = pgTable(
     label: text('label'), // Display label (defaults to name if not set)
     description: text('description'),
     diagnosisInstructions: text('diagnosis_instructions'),
+    aiLanguage: text('ai_language'), // per-project AI response language override (e.g. "French")
     scmToken: text('scm_token'), // Per-project SCM token for GitHub/GitLab/Bitbucket API access
     defaultBranch: text('default_branch'), // Repository default branch; null = resolve from SCM provider, else 'main'
+    ciRerun: jsonb('ci_rerun'), // CiRerunSettings — provider-specific "re-run from the dashboard" target (off by default)
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -159,6 +161,7 @@ export const testCases = pgTable(
     // that reports this test. Per-execution truth lives on test_runs_cases;
     // these denormalized columns let project-wide views filter without a join.
     tags: jsonb('tags'), // string[] — normalized, '@' stripped
+    locks: jsonb('locks'), // string[] — lock names this test most recently declared (best effort)
     owner: text('owner'),
     priority: text('priority'), // 'critical' | 'high' | 'medium' | 'low'
     feature: text('feature'),
@@ -234,7 +237,8 @@ export const failureClusters = pgTable(
     signature: text('signature').notNull(), // normalized first error line — human-readable cluster name
     errorType: text('error_type'), // 'timeout', 'assertion', 'strict-mode', 'navigation', 'crash', 'unknown'
     selector: text('selector'), // locator extracted from the error, if any
-    sampleError: text('sample_error'), // one full raw error kept for display
+    sampleError: text('sample_error'), // one raw error kept for display; refreshed to a better exemplar as the cluster recurs
+    fingerprintSample: text('fingerprint_sample'), // immutable raw error captured at creation; re-fingerprinting on a version bump reads this so a display-sample refresh can't move the fingerprint source (null on rows created before this column — recluster falls back to sample_error)
     // Run ids are intentionally NOT foreign keys: runs are deleted independently
     // and clusters must survive them (stale ids are tolerated)
     firstSeenRunId: integer('first_seen_run_id').notNull(),
@@ -253,6 +257,15 @@ export const failureClusters = pgTable(
     fixCommit: text('fix_commit'), // commit of that run, when the reporter recorded one
     timeToResolutionMs: integer('time_to_resolution_ms'), // first seen → fix landed
     fixVerification: text('fix_verification'), // 'stopped-failing' | 'diagnosis-verified' | 'regressed'
+    lastRerunDispatch: jsonb('last_rerun_dispatch'), // ClusterRerunDispatch — most recent "Re-run in CI" dispatch
+    bisectResult: jsonb('bisect_result'), // BisectedCommit — first bad commit the desktop bisect found (sha, subject, author, date)
+    // Inbox triage — orthogonal to `status`. A snooze hides a cluster from every
+    // inbox queue until the deadline passes (or, in "until-recurs" mode, until a
+    // new run adds an occurrence); `assignee` is the person a triager assigned it
+    // to, taking precedence over the owner derived from the test's annotation.
+    snoozedUntil: timestamp('snoozed_until', { mode: 'date' }), // hidden from queues until this instant; null when not snoozed
+    snoozeMode: text('snooze_mode'), // 'until' (wake at snoozedUntil) | 'until-recurs' (wake at snoozedUntil OR a new occurrence)
+    assignee: text('assignee'), // person this cluster is assigned to (name or email); overrides the derived owner
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -392,6 +405,8 @@ export const failureDiagnosisVersions = pgTable(
     outputTokens: integer('output_tokens'),
     durationMs: integer('duration_ms'),
     contextSha: text('context_sha'),
+    feedback: text('feedback'), // 'up', 'down' — captured as of the snapshot
+    feedbackNote: text('feedback_note'),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -464,19 +479,24 @@ export const testRunsCases = pgTable(
     pageState: jsonb('page_state'), // URL/history/storage-keys/cookie-flags at test end (values never captured)
     aiUsage: jsonb('ai_usage'), // { entries: string[], intents?: {template,locator,kind}[] } — replayed AI-step artifacts + their prompts
     consoleLogs: jsonb('console_logs'), // Array of { type, text, timestamp, location } console entries
+    dialogs: jsonb('dialogs'), // Array of { type, message, defaultValue, closedAt } browser dialogs
+    evidenceSources: jsonb('evidence_sources'), // { console?, network?, aria?: 'trace' } — marks evidence recovered from the trace when the capture fixtures were absent
     // Legacy inline payload columns: still readable on old rows, no longer
     // written — new rows store these payloads content-addressed in
     // case_payloads and reference them via the *PayloadId columns below.
     ariaSnapshot: text('aria_snapshot'), // ARIA snapshot of the page (YAML-like string from locator.ariaSnapshot())
+    ariaSnapshotJson: text('aria_snapshot_json'), // ARIA tree as JSON (from locator.ariaSnapshotJSON(), Playwright >= 1.63)
     testSource: text('test_source'), // Source snippet around the failing assertion (sent by reporter)
     testSourceFrames: jsonb('test_source_frames'), // Array<{ file, line, snippet }> — in-project call-stack frames (innermost first)
     ariaSnapshotPayloadId: integer('aria_snapshot_payload_id').references(() => casePayloads.id),
+    ariaSnapshotJsonPayloadId: integer('aria_snapshot_json_payload_id').references(() => casePayloads.id),
     testSourcePayloadId: integer('test_source_payload_id').references(() => casePayloads.id),
     testSourceFramesPayloadId: integer('test_source_frames_payload_id').references(() => casePayloads.id),
     browser: jsonb('browser'), // Playwright project/browser config: { projectName, browserName, channel, viewport }
     browserName: text('browser_name'), // Scalar browser identity (projectName) for index efficiency
     testAnnotations: jsonb('test_annotations'), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
     tags: jsonb('tags'), // string[] — tags this execution declared ('@' stripped)
+    locks: jsonb('locks'), // string[] — lock names this execution held (best effort; none from blob imports)
     testMeta: jsonb('test_meta'), // { owner?, priority?, feature?, link? } from `piwi:` annotations
     workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
     shardIndex: integer('shard_index'), // Shard index (1-based) for sharded runs; null = not sharded
@@ -506,6 +526,9 @@ export const testRunsCases = pgTable(
     ariaPayloadIdx: index('idx_trc_aria_payload')
       .on(table.ariaSnapshotPayloadId)
       .where(sql`aria_snapshot_payload_id IS NOT NULL`),
+    ariaJsonPayloadIdx: index('idx_trc_aria_json_payload')
+      .on(table.ariaSnapshotJsonPayloadId)
+      .where(sql`aria_snapshot_json_payload_id IS NOT NULL`),
     sourcePayloadIdx: index('idx_trc_source_payload')
       .on(table.testSourcePayloadId)
       .where(sql`test_source_payload_id IS NOT NULL`),
@@ -640,6 +663,34 @@ export const files = pgTable(
   }),
 );
 
+// Integration connections table - one row per external system (Jira, Confluence, …)
+// an administrator connected. Global infrastructure, mirroring notification_channels
+// in spirit but never user-scoped. Credentials are AES-256-GCM-encrypted JSON.
+export const integrationConnections = pgTable(
+  'integration_connections',
+  {
+    id: serial('id').primaryKey(),
+    provider: text('provider').notNull(), // 'jira' | 'confluence' | 'github-issues' | …
+    name: text('name').notNull(),
+    baseUrl: text('base_url').notNull(),
+    config: jsonb('config'), // provider-specific, non-secret (flavor, site id, default space…)
+    credentials: text('credentials'), // AES-256-GCM JSON: { email, apiToken } | { token } | { pat }
+    status: text('status').notNull().default('unverified'), // 'unverified' | 'ok' | 'failed'
+    lastCheckedAt: timestamp('last_checked_at', { mode: 'date' }),
+    lastError: text('last_error'),
+    managedBy: text('managed_by').notNull().default('db'), // 'db' | 'env'
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    providerIdx: index('idx_integration_connections_provider').on(t.provider),
+  }),
+);
+
 // Entity links table - attach external URLs (Jira, GitHub, etc.) to runs, test-case runs, or test cases
 export const entityLinks = pgTable(
   'entity_links',
@@ -649,6 +700,7 @@ export const entityLinks = pgTable(
     testRunId: integer('test_run_id').references(() => testRuns.id, { onDelete: 'cascade' }),
     testRunsCaseId: integer('test_runs_case_id').references(() => testRunsCases.id, { onDelete: 'cascade' }),
     testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'cascade' }),
+    failureClusterId: integer('failure_cluster_id').references(() => failureClusters.id, { onDelete: 'cascade' }),
 
     url: text('url').notNull(),
 
@@ -663,6 +715,11 @@ export const entityLinks = pgTable(
     metadata: jsonb('metadata'),
     unfurledAt: timestamp('unfurled_at', { withTimezone: true, mode: 'date' }),
 
+    // The connection that can read/write this record, and the tracker's stable id.
+    connectionId: integer('connection_id').references(() => integrationConnections.id, { onDelete: 'set null' }),
+    externalId: text('external_id'), // tracker's stable id (Jira issue id, not the key — keys change on move)
+    origin: text('origin').notNull().default('pinned'), // 'pinned' | 'created' | 'annotation' | 'reporter'
+
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -671,7 +728,9 @@ export const entityLinks = pgTable(
     runIdx: index('idx_entity_links_run').on(t.testRunId),
     caseRunIdx: index('idx_entity_links_case_run').on(t.testRunsCaseId),
     caseIdx: index('idx_entity_links_case').on(t.testCaseId),
+    clusterIdx: index('idx_entity_links_cluster').on(t.failureClusterId),
     createdByIdx: index('idx_entity_links_created_by').on(t.createdBy),
+    connectionIdx: index('idx_entity_links_connection').on(t.connectionId),
   }),
 );
 
@@ -909,6 +968,82 @@ export const healActions = pgTable(
   }),
 );
 
+// Project integrations table — the per-project binding of a connection: which Jira
+// project a project's tickets land in, the issue type, labels, owner routes, the
+// include toggles and the auto-create policy (disabled by default).
+export const projectIntegrations = pgTable(
+  'project_integrations',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    connectionId: integer('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    projectKey: text('project_key'), // Jira project key (tracker binding)
+    issueType: text('issue_type'),
+    labels: jsonb('labels'), // string[]
+    defaultAssignee: text('default_assignee'), // account id / name
+    spaceId: text('space_id'), // Confluence space (wiki binding)
+    parentPageId: text('parent_page_id'), // Confluence parent page
+    locale: text('locale'), // ticket language for this project ('en' | 'fr'); overrides the connection default
+    include: jsonb('include'), // { includeDiagnosis, includePatch, includeScreenshot, includeShareLink }
+    policies: jsonb('policies'), // { commentOnFix, transitionOnFix, commentOnRegression, resolveOnClose, … }
+    ownerRoutes: jsonb('owner_routes'), // { owner, projectKey?, componentId?, assigneeAccountId?, labels? }[]
+    autoCreate: jsonb('auto_create'), // { enabled, minOccurrences, minRuns, dailyCap, routeUnmatched } — disabled by default
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectIdx: index('idx_project_integrations_project').on(t.projectId),
+    connectionIdx: index('idx_project_integrations_connection').on(t.connectionId),
+    projectConnectionIdx: uniqueIndex('idx_project_integrations_project_connection').on(t.projectId, t.connectionId),
+  }),
+);
+
+// Integration actions outbox — every outbound write to an external system is a
+// durable row, retried with backoff, deduped by a unique key, and listable. The
+// payload is snapshotted at enqueue so a retry is deterministic.
+export const integrationActions = pgTable(
+  'integration_actions',
+  {
+    id: serial('id').primaryKey(),
+    connectionId: integer('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'create-issue' | 'comment' | 'transition' | 'attach' | 'sync-status' | 'create-page' | 'update-page'
+    entityType: text('entity_type').notNull(), // 'failure_cluster' | 'test_runs_case' | 'test_case' | 'test_run'
+    entityId: integer('entity_id').notNull(),
+    dedupeKey: text('dedupe_key').notNull(),
+    status: text('status').notNull().default('pending'), // 'pending' | 'done' | 'failed' | 'skipped'
+    attempts: integer('attempts').notNull().default(0),
+    scheduledFor: timestamp('scheduled_for', { mode: 'date' }),
+    error: text('error'),
+    payload: jsonb('payload').notNull(),
+    result: jsonb('result'), // { key, url } | { commentId } | { pageId, version }
+    requestedBy: integer('requested_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    finishedAt: timestamp('finished_at', { mode: 'date' }),
+  },
+  (t) => ({
+    dedupeKeyIdx: uniqueIndex('idx_integration_actions_dedupe').on(t.dedupeKey),
+    projectStatusIdx: index('idx_integration_actions_project_status').on(t.projectId, t.status),
+    statusScheduledIdx: index('idx_integration_actions_status').on(t.status, t.scheduledFor),
+    connectionIdx: index('idx_integration_actions_connection').on(t.connectionId),
+    requestedByIdx: index('idx_integration_actions_requested_by').on(t.requestedBy),
+  }),
+);
+
 // Project assignments table — user-to-project access (null projectId = global access)
 export const projectAssignments = pgTable(
   'project_assignments',
@@ -1102,6 +1237,12 @@ export type ProjectAssignment = typeof projectAssignments.$inferSelect;
 export type NewProjectAssignment = typeof projectAssignments.$inferInsert;
 export type EntityLink = typeof entityLinks.$inferSelect;
 export type NewEntityLink = typeof entityLinks.$inferInsert;
+export type IntegrationConnection = typeof integrationConnections.$inferSelect;
+export type NewIntegrationConnection = typeof integrationConnections.$inferInsert;
+export type ProjectIntegration = typeof projectIntegrations.$inferSelect;
+export type NewProjectIntegration = typeof projectIntegrations.$inferInsert;
+export type IntegrationAction = typeof integrationActions.$inferSelect;
+export type NewIntegrationAction = typeof integrationActions.$inferInsert;
 export type NetworkRequest = typeof networkRequests.$inferSelect;
 export type NewNetworkRequest = typeof networkRequests.$inferInsert;
 export type LocatorSnapshotRow = typeof locatorSnapshots.$inferSelect;

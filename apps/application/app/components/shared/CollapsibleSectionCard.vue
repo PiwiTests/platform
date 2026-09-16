@@ -44,9 +44,11 @@ defineExpose({ setFolded, reveal });
 
 <template>
   <div ref="rootEl" class="scroll-mt-4">
-    <UCard :ui="{ header: 'p-3 sm:px-4 sm:py-3', body: folded ? 'p-0 sm:p-0' : '' }" :class="folded && 'divide-y-0'">
+    <UCard :ui="{ header: 'p-2.5 sm:px-4 sm:py-3', body: folded ? 'p-0 sm:p-0' : '' }" :class="folded && 'divide-y-0'">
       <template #header>
-        <div class="flex items-center justify-between gap-2">
+        <!-- Below `sm` the actions drop to their own full-width row under the
+             title so a wide actions group never squeezes the heading on a phone. -->
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <!-- role=button (not <button>) so the nested HelpHint button stays valid HTML -->
           <div
             class="flex items-center gap-2 min-w-0 flex-1 cursor-pointer select-none rounded-sm outline-none focus-visible:outline-2 focus-visible:outline-primary"
@@ -74,7 +76,7 @@ defineExpose({ setFolded, reveal });
               <slot name="folded" />
             </span>
           </div>
-          <div v-if="$slots.actions" class="flex items-center gap-1 shrink-0">
+          <div v-if="$slots.actions" class="flex items-center gap-1 sm:shrink-0">
             <slot name="actions" />
           </div>
         </div>

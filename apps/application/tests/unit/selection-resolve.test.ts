@@ -26,6 +26,7 @@ interface CaseOpts {
   filePath?: string;
   suitePath?: string;
   tags?: string[];
+  locks?: string[];
   owner?: string | null;
   priority?: string | null;
   feature?: string | null;
@@ -40,6 +41,7 @@ async function seedCase(title: string, opts: CaseOpts = {}): Promise<number> {
     suitePath: opts.suitePath ?? '',
     title,
     tags: opts.tags ?? null,
+    locks: opts.locks ?? null,
     owner: opts.owner ?? null,
     priority: opts.priority ?? null,
     feature: opts.feature ?? null,
@@ -246,6 +248,57 @@ describe('duration-balanced sharding', () => {
     const a = await resolveSelectionDefinition(db, 1, {}, { shard: { index: 2, total: 3 } });
     const b = await resolveSelectionDefinition(db, 1, {}, { shard: { index: 2, total: 3 } });
     expect(a.tests.map((t) => t.testCaseId)).toEqual(b.tests.map((t) => t.testCaseId));
+  });
+
+  test('keeps every holder of a lock in the same shard', async () => {
+    // Two holders of `db` plus six singletons; a plain duration split would
+    // scatter the holders, but lock-aware sharding keeps them together.
+    const held1 = await seedCase('held-a', { filePath: 'tests/f0.spec.ts', locks: ['db'] });
+    const held2 = await seedCase('held-b', { filePath: 'tests/f7.spec.ts', locks: ['db'] });
+    await seedExecution(held1, 'passed', { duration: 1000 });
+    await seedExecution(held2, 'passed', { duration: 8000 });
+    for (let i = 1; i < 7; i++) {
+      const id = await seedCase(`t${i}`, { filePath: `tests/f${i}.spec.ts` });
+      await seedExecution(id, 'passed', { duration: (i + 1) * 1000 });
+    }
+
+    const shards = await Promise.all(
+      [1, 2, 3, 4].map((index) => resolveSelectionDefinition(db, 1, {}, { shard: { index, total: 4 } })),
+    );
+    const homeOf = (id: number) => shards.findIndex((s) => s.tests.some((t) => t.testCaseId === id));
+    expect(homeOf(held1)).toBe(homeOf(held2));
+    expect(homeOf(held1)).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('split-lock warning', () => {
+  test('warns when a lock is shared by more than one test', async () => {
+    const a = await seedCase('a', { locks: ['db'] });
+    const b = await seedCase('b', { locks: ['db'] });
+    await seedExecution(a, 'passed');
+    await seedExecution(b, 'passed');
+
+    const r = await resolveSelectionDefinition(db, 1, {});
+    const warning = r.warnings.find((w) => w.code === 'split-lock');
+    expect(warning).toBeDefined();
+    expect(warning!.message).toContain('db');
+  });
+
+  test('does not warn when each lock is held by a single test', async () => {
+    const a = await seedCase('a', { locks: ['db'] });
+    const b = await seedCase('b', { locks: ['cache'] });
+    await seedExecution(a, 'passed');
+    await seedExecution(b, 'passed');
+
+    const r = await resolveSelectionDefinition(db, 1, {});
+    expect(r.warnings.some((w) => w.code === 'split-lock')).toBe(false);
+  });
+
+  test('surfaces locks on each resolved test', async () => {
+    const a = await seedCase('a', { locks: ['db', 'cache'] });
+    await seedExecution(a, 'passed');
+    const r = await resolveSelectionDefinition(db, 1, {});
+    expect(r.tests[0]!.locks).toEqual(['db', 'cache']);
   });
 });
 

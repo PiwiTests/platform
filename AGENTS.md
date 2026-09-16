@@ -64,6 +64,12 @@ toolchains (Tauri, VitePress) rather than through the root install, and `example
 `@piwitests/*` from the published npm registry — release-please bumps its pinned versions — so making it a workspace
 would symlink the local copies and defeat the example.
 
+**Adding a workspace takes two entries in [`release-please-config.json`](release-please-config.json)**, not one: its
+`package.json` `$.version`, *and* its `package-lock.json` `$.packages['<dir>'].version`. release-please natively bumps
+only the root package (and the lockfile's root entries); every other workspace is a plain JSON substitution it has no
+npm awareness of, so a missing lockfile entry leaves that workspace a release behind and makes `npm install` rewrite
+the lockfile on every checkout.
+
 `plans/` holds two tracked-by-hand files: `plans/roadmap.md` (working priorities) and `plans/exploration-findings.md`
 (a log of bugs, tech debt and inconsistencies found while exploring). Both are local-only. Public direction lives in the
 committed [`ROADMAP.md`](ROADMAP.md).
@@ -101,6 +107,8 @@ From `apps/application/`:
 | `npm run app:generate:demo` / `app:check:demo` | Build the demo SPA / verify every server route has a demo handler |
 | `npm run app:check:demo:runtime` | Drive the **built** demo from its real `/demo/` sub-path in a browser (run `app:generate:demo` first) |
 | `npm run app:screens -- <scene>` | Capture a feature screenshot — `app:screens:docs` for every committed docs illustration, `app:screens:check` to verify they all still have a scene |
+| `npm run app:screens -- --route <path> [--expand] [--height N]` | Screenshot any page without registering a scene — boots and seeds its own server; the `run-app` skill (`.claude/skills/run-app/SKILL.md`) is the full recipe for running and driving the app |
+| `npm run app:measure [-- --url <base>] [--routes …] [--json]` | Measure the execution and failure-cluster pages' legibility (block offsets, scroll height, above-the-fold controls and hints, open code, words); boots its own server without `--url` |
 | `npm run app:generate:deploy` | Regenerate the one-click deploy manifests (`render.yaml`, `fly.toml`, `deploy/`) |
 | `node scripts/db-query.mjs "<sql>" [--json]` | Query the local SQLite DB directly |
 
@@ -146,6 +154,16 @@ Format `type(scope): subject`:
 The `commitlint` CI check lints **every commit in the PR range**, so one bad message turns the PR red. Self-check with
 `npx commitlint --from HEAD~<n> --to HEAD` from the repo root, and never bypass the husky `commit-msg` hook with
 `--no-verify`.
+
+### Release notes
+
+release-please generates `CHANGELOG.md` and creates each GitHub release with one raw entry per commit — so squash and
+cherry-pick leave duplicate lines. The `Tidy release notes` workflow (`.github/workflows/changelog-polish.yml`) keeps
+every release body non-empty and duplicate-free deterministically, and never overwrites hand-authored notes. For the
+polished, human-facing format (the [v0.26.0](https://github.com/PiwiTests/platform/releases/tag/v0.26.0) style — a
+narrative intro, `## ✨ Highlights`, thematic features), run the `release-notes` skill
+(`.claude/skills/release-notes/SKILL.md`); both it and the workflow share `scripts/release-notes.mjs` for
+de-duplication and publishing by tag.
 
 ### Cross-platform shell commands
 

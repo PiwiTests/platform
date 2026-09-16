@@ -93,6 +93,38 @@ describe('describeFailure — test timeouts name the step when the error carries
   });
 });
 
+describe('describeFailure — toHaveCount reads the received count from an unbulleted retry line', () => {
+  // Playwright indents the retry-count line under its `waiting for` bullet without a
+  // bullet of its own; the received count must still reach the headline.
+  const err = `Error: expect(locator).toHaveCount(expected) failed
+
+Locator:  getByRole('row')
+Expected: 26
+Received: 51
+Timeout:  5000ms
+
+Call log:
+  - Expect "toHaveCount" with timeout 5000ms
+  - waiting for getByRole('row')
+    9 × locator resolved to 51 elements
+      - unexpected value "51"
+
+    at tests/admin/users.spec.ts:7:44`;
+
+  test('the headline names the resolved count, not "none"', () => {
+    const d = describeFailureText(err);
+    expect(d?.headline).toBe("Expected 26 rows, found 51 — getByRole('row') toHaveCount");
+    expect(d?.detail).toBeNull();
+  });
+
+  test('the count mismatch is not read as a locator-resolution failure', () => {
+    const parsed = parsePlaywrightError(err);
+    expect(parsed.resolvedCount).toBe(51);
+    expect(parsed.lastState).toBe('resolved-count');
+    expect(parsed.isLocatorResolutionFailure).toBe(false);
+  });
+});
+
 describe('describeFailure — parts and detail', () => {
   test('marks the locator so a UI can render it as code', () => {
     const d = describeFailure(parsePlaywrightError(ERRORS.clickNotEnabled));

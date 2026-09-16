@@ -1,6 +1,7 @@
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
 import { resolveAiConfig } from '../../../utils/ai-provider';
+import { CLAUDE_CLI_MODELS } from '../../../utils/claude-cli-models';
 import type { AiModelRole, ModelInfo } from '~~/types/api';
 
 /** Convert per-token pricing string to per-million-tokens, keeping larger values as-is. */
@@ -52,6 +53,15 @@ export default eventHandler(async (event) => {
   }>(event).catch(() => null);
 
   const { provider, baseUrl } = body || {};
+
+  // The local CLI has no models endpoint. Offer the family aliases (always the
+  // latest of each) followed by every pinned version, so the picker can list
+  // them all; the CLI resolves whichever the user's subscription grants (and any
+  // free-typed string still works). Pricing mirrors the per-1M rates the CLI
+  // reports as cost, whether or not the account is billed per token.
+  if (provider === 'claude-cli') {
+    return { models: CLAUDE_CLI_MODELS };
+  }
 
   // The form clears key fields after save, so listing models for a saved
   // config must fall back to the stored (decrypted) or env-managed key.

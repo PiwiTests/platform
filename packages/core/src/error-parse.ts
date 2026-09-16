@@ -302,6 +302,8 @@ const TEST_TIMEOUT_RE = /\bTest timeout of (\d+)ms exceeded(?: while (?:running 
 const STRICT_RE = /strict mode violation: (.+?) resolved to (\d+) elements/;
 const URL_RE = /https?:\/\/[^\s'"`)]+/;
 const CALL_LOG_LINE_RE = /^\s*-\s+(?:(\d+) × )?(.*)$/;
+/** A retry-count line Playwright prints without a bullet, indented under a `waiting for` bullet. */
+const RETRY_COUNT_LINE_RE = /^\s+\d+ × (.+)$/;
 
 interface CallLogRead {
   state: CallLogState;
@@ -322,17 +324,23 @@ function withoutStackFrames(text: string): string {
 }
 
 /**
- * The call-log bullet lines: everything after `Call log:` when the header is
- * present, otherwise any `  - …` bullet in the text (a message that was cut
- * before the header still carries them).
+ * The call-log lines: everything after `Call log:` when the header is present,
+ * otherwise any `  - …` bullet in the text (a message that was cut before the
+ * header still carries them). A retry-count line (`N × locator resolved to …`)
+ * rides under its `waiting for` bullet without one of its own, so it is read too.
  */
 function callLogLines(text: string): string[] {
   const start = text.indexOf('Call log:');
   const region = start === -1 ? text : text.slice(start + 'Call log:'.length);
   const lines: string[] = [];
   for (const line of region.split('\n')) {
-    const m = CALL_LOG_LINE_RE.exec(line);
-    if (m) lines.push(m[2]!.trim());
+    const bulleted = CALL_LOG_LINE_RE.exec(line);
+    if (bulleted) {
+      lines.push(bulleted[2]!.trim());
+      continue;
+    }
+    const retry = RETRY_COUNT_LINE_RE.exec(line);
+    if (retry) lines.push(retry[1]!.trim());
   }
   return lines;
 }
@@ -462,11 +470,29 @@ function readUrl(text: string, callLog: CallLogRead, received: string | null): s
   return null;
 }
 
+/** Context that backs the parse when the error text alone is thin. */
+export interface ParseErrorContext {
+  /**
+   * The failing step's curated params (Playwright's rendered `locator`, a
+   * navigation `url`). Read only where the error text names none — a custom
+   * `expect.extend` matcher or a `test.step` failure carries no Playwright
+   * locator in its message, but the step still recorded one.
+   */
+  stepParams?: Record<string, string | number | boolean> | null;
+}
+
 /**
  * Parse a raw Playwright error (ANSI codes allowed) into its structured facts.
  * Never throws; empty input yields an `unknown` record.
+ *
+ * The optional `context` supplies the failing step's params: its `locator` and
+ * `url` back the parsed fields only when the error text itself names none, so
+ * text parsing stays the primary source and the params are the fallback.
  */
-export function parsePlaywrightError(raw: string | null | undefined): ParsedPlaywrightError {
+export function parsePlaywrightError(
+  raw: string | null | undefined,
+  context?: ParseErrorContext,
+): ParsedPlaywrightError {
   const clean = stripAnsi(raw ?? '').replace(/\r\n?/g, '\n');
   const text = withoutStackFrames(clean);
   const messageHead = extractMessageHead(clean);
@@ -517,12 +543,18 @@ export function parsePlaywrightError(raw: string | null | undefined): ParsedPlay
   else if (/\bTimeout \d+ms exceeded/.test(text) || errorName === 'TimeoutError') kind = 'action-timeout';
   else kind = 'unknown';
 
-  const locator = readLocator(text, strict);
+  // The failing step's rendered locator / URL back the parse where the error
+  // text names none (custom matchers, test.step failures); the text wins when
+  // it carries its own.
+  const paramsLocator = typeof context?.stepParams?.locator === 'string' ? context.stepParams.locator : null;
+  const paramsUrl = typeof context?.stepParams?.url === 'string' ? context.stepParams.url : null;
+
+  const locator = readLocator(text, strict) ?? paramsLocator;
   const leafLocator = locator ? extractLeafSelector(locator) : null;
   const expected = headerValue(text, 'Expected');
   const received = headerValue(text, 'Received');
   const timeoutMs = readTimeout(text, callLog);
-  const url = readUrl(text, callLog, received);
+  const url = readUrl(text, callLog, received) ?? paramsUrl;
   const frame = extractTopFrame(clean);
 
   const resolvedCount = strict ? Number(strict[2]) : callLog.count;

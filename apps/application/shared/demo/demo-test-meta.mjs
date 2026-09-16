@@ -49,6 +49,23 @@ export function demoTags(filePath, index) {
   return tags;
 }
 
+/**
+ * Lock names the demo assigns so the timeline's lock lanes and the Locks table
+ * have something to draw. Payment writes serialize on a shared `database`; the
+ * external payment providers and the API suite serialize on a shared
+ * `external-api` sandbox. Deterministic and path-derived, like `demoTags`, so a
+ * simulated run declares the same locks the seed did.
+ */
+export function demoLocks(filePath, index) {
+  const p = `/${filePath}`;
+  const locks = [];
+  if (/\/checkout\/checkout\.spec\.ts$/.test(p)) locks.push('database');
+  if (/\/api\//.test(p)) locks.push('external-api');
+  // PayPal and Apple Pay also reach the external payment provider.
+  if (/\/checkout\/checkout\.spec\.ts$/.test(p) && (index === 1 || index === 2)) locks.push('external-api');
+  return locks;
+}
+
 const aiUsageSlug = (text) =>
   text
     .toLowerCase()

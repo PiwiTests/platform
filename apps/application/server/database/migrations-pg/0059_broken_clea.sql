@@ -1,0 +1,3 @@
+ALTER TABLE "entity_links" ADD COLUMN "failure_cluster_id" integer;--> statement-breakpoint
+ALTER TABLE "entity_links" ADD CONSTRAINT "entity_links_failure_cluster_id_failure_clusters_id_fk" FOREIGN KEY ("failure_cluster_id") REFERENCES "public"."failure_clusters"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "idx_entity_links_cluster" ON "entity_links" USING btree ("failure_cluster_id");

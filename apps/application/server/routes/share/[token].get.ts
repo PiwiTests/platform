@@ -69,7 +69,6 @@ export default eventHandler(async (event) => {
   const built = await buildExport(bundle, 'html', link.entityId, {
     reader: serverAssetReader,
     budget: resolveExportBudget(),
-    print: false,
   });
 
   await recordShareLinkView(db, link.id);

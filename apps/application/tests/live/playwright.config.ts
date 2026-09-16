@@ -9,9 +9,6 @@ import { defineConfig } from '@playwright/test';
  * suite — `playwright.config.ts` ignores `tests/live/` — and runs on demand:
  *
  *   OPENCODE_API_KEY=<key> npm run app:test:ai:live
- *
- * `.github/workflows/ai-live-e2e.yml` runs the same command with the repository
- * `OPENCODE_API` secret.
  */
 
 const apiKey = process.env.OPENCODE_API_KEY || process.env.PIWI_AI_API_KEY || '';
@@ -25,18 +22,18 @@ const baseUrl = process.env.PIWI_AI_BASE_URL || 'https://opencode.ai/zen/v1';
 const model = process.env.PIWI_AI_MODEL || 'deepseek-v4-flash';
 
 const PORT = 3102;
-// Its own subdirectory: the workflow runs this alongside the reporter's live
-// AI-step E2E, whose server keeps its state under `.live-temp/steps`.
+// Its own subdirectory: the reporter's live AI-step E2E keeps its server state
+// under `.live-temp/steps`.
 const tempDir = join(process.cwd(), '.live-temp', 'diagnosis');
 
 // The server self-migrates on boot but only creates the database file, not the
 // directory holding it.
 mkdirSync(join(tempDir, 'storage'), { recursive: true });
 
-// CI runs the production output the workflow built once; locally the dev server
-// compiles on demand. `PIWI_AI_*` is read when the Nuxt config is evaluated —
-// build time for a production build — so the built server also gets the
-// `NUXT_AI_*` forms Nitro maps onto the same runtimeConfig keys at startup.
+// CI runs the production output when it is already built; locally the dev
+// server compiles on demand. `PIWI_AI_*` is read when the Nuxt config is
+// evaluated — build time for a production build — so the built server also gets
+// the `NUXT_AI_*` forms Nitro maps onto the same runtimeConfig keys at startup.
 const serverCommand = process.env.CI ? 'node .output/server/index.mjs' : 'npm run app:dev';
 
 export default defineConfig({

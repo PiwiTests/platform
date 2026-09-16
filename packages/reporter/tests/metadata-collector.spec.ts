@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { FullConfig } from '@playwright/test/reporter';
 import {
   MetadataCollector,
+  resolveScmBaseBranch,
   resolveScmBranch,
   resolveScmPrNumber,
 } from '../src/internal/collect/metadata-collector.js';
@@ -131,6 +132,26 @@ describe('MetadataCollector.getBrowserConfig', () => {
     const mc = new MetadataCollector();
     const test = { parent: { parent: { parent: undefined } } } as any;
     expect(mc.getBrowserConfig(test)).toBe(null);
+  });
+
+  it('captures the contrast preference alongside reducedMotion and forcedColors', () => {
+    const mc = new MetadataCollector();
+    const project = {
+      name: 'chromium',
+      use: { reducedMotion: 'reduce', forcedColors: 'active', contrast: 'more' },
+    };
+    const test = { parent: { parent: { project: () => project } } } as any;
+    const cfg = mc.getBrowserConfig(test);
+    expect(cfg?.reducedMotion).toBe('reduce');
+    expect(cfg?.forcedColors).toBe('active');
+    expect(cfg?.contrast).toBe('more');
+  });
+
+  it('omits contrast when the project does not set it', () => {
+    const mc = new MetadataCollector();
+    const project = { name: 'chromium', use: { browserName: 'chromium' } };
+    const test = { parent: { parent: { project: () => project } } } as any;
+    expect(mc.getBrowserConfig(test)).not.toHaveProperty('contrast');
   });
 });
 
@@ -314,6 +335,42 @@ describe('resolveScmPrNumber — pull-request number capture', () => {
 
   it('rejects non-numeric PR values', () => {
     expect(resolveScmPrNumber({ CHANGE_ID: 'not-a-number' })).toBeUndefined();
+  });
+});
+
+describe('resolveScmBaseBranch — pull-request target branch capture', () => {
+  it('returns undefined outside a pull-request build', () => {
+    expect(resolveScmBaseBranch({})).toBeUndefined();
+    expect(resolveScmBaseBranch({ GITHUB_ACTIONS: 'true', GITHUB_REF_NAME: 'main' })).toBeUndefined();
+    expect(resolveScmBaseBranch({ TRAVIS: 'true', TRAVIS_PULL_REQUEST: 'false', TRAVIS_BRANCH: 'main' })).toBeUndefined();
+  });
+
+  it('PIWI_BASE_BRANCH overrides the provider variable', () => {
+    const env = { PIWI_BASE_BRANCH: 'release/2', GITHUB_ACTIONS: 'true', GITHUB_BASE_REF: 'main' };
+    expect(resolveScmBaseBranch(env)).toBe('release/2');
+  });
+
+  it('GitHub Actions reads GITHUB_BASE_REF', () => {
+    expect(resolveScmBaseBranch({ GITHUB_ACTIONS: 'true', GITHUB_BASE_REF: 'develop' })).toBe('develop');
+  });
+
+  it('GitLab reads the merge-request target branch', () => {
+    const env = { GITLAB_CI: 'true', CI_MERGE_REQUEST_TARGET_BRANCH_NAME: 'main' };
+    expect(resolveScmBaseBranch(env)).toBe('main');
+  });
+
+  it('Travis uses TRAVIS_BRANCH only on a pull-request build', () => {
+    expect(resolveScmBaseBranch({ TRAVIS: 'true', TRAVIS_PULL_REQUEST: '12', TRAVIS_BRANCH: 'main' })).toBe('main');
+  });
+
+  it('Azure Pipelines strips refs/heads/ from the target branch', () => {
+    const env = { TF_BUILD: 'true', SYSTEM_PULLREQUEST_TARGETBRANCH: 'refs/heads/main' };
+    expect(resolveScmBaseBranch(env)).toBe('main');
+  });
+
+  it('Jenkins and Bitbucket read their destination variables', () => {
+    expect(resolveScmBaseBranch({ JENKINS_URL: 'x', CHANGE_TARGET: 'main' })).toBe('main');
+    expect(resolveScmBaseBranch({ BITBUCKET_BUILD_NUMBER: '9', BITBUCKET_PR_DESTINATION_BRANCH: 'trunk' })).toBe('trunk');
   });
 });
 

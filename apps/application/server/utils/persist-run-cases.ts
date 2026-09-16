@@ -1,5 +1,5 @@
 import { testCases, testRunsCases, testSuites, networkRequests } from '../database/schema';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import {
   buildNetworkRequestItems,
   buildNetworkRequestInsertValues,
@@ -7,20 +7,24 @@ import {
 } from './network-request-helpers';
 import {
   capArray,
+  capSteps,
   capConsoleLogs,
   capErrorText,
   capSourceFrames,
   capText,
   sanitizeWebVitals,
   sanitizeConsoleLogs,
+  sanitizeDialogs,
   sanitizePageState,
   sanitizeAiUsage,
 } from './sanitize';
 import { resolveIngestLimits } from './ingest-limits';
 import { normalizeTestCaseStatus } from '#shared/utils/test-counts';
 import { upsertCasePayloads } from './case-payloads';
+import { GREEN_SAMPLE_MAX_AGE_MS } from '#shared/handlers/aria-sampling';
 import { computeErrorFingerprint, type ErrorFingerprint } from '#shared/error-fingerprint';
 import {
+  normalizeTestLocks,
   normalizeTestTags,
   parseTestMetadata,
   sanitizeTestMetadata,
@@ -57,6 +61,8 @@ export interface RunCaseInput {
   testAnnotations?: Array<{ type: string; description?: string }> | null;
   /** Tags declared on the test — re-normalized here, so raw reporter input is fine. */
   tags?: unknown;
+  /** Lock names the execution held — re-normalized here, so raw reporter input is fine. */
+  locks?: unknown;
   /** `piwi:` metadata; re-derived from `testAnnotations` when absent. */
   testMeta?: unknown;
   title: string;
@@ -80,7 +86,9 @@ export interface RunCaseInput {
   pageState?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
+  dialogs?: unknown;
   ariaSnapshot?: string | null;
+  ariaSnapshotJson?: string | null;
   testSource?: string | null;
   testSourceFrames?: unknown;
   workerIndex?: number | null;
@@ -190,15 +198,20 @@ async function resolveSuites(db: DB, projectId: number, cases: RunCaseInput[]): 
   return suiteIdMap;
 }
 
-/** Latest-known tags + `piwi:` metadata for one test case, as stored. */
+/** Latest-known tags, locks + `piwi:` metadata for one test case, as stored. */
 interface CaseMetaSnapshot {
   tags: string[];
+  locks: string[];
   meta: TestMetadata | null;
 }
 
+function sameStringList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((value, i) => value === b[i]);
+}
+
 function sameSnapshot(stored: CaseMetaSnapshot, incoming: CaseMetaSnapshot): boolean {
-  if (stored.tags.length !== incoming.tags.length) return false;
-  if (stored.tags.some((tag, i) => tag !== incoming.tags[i])) return false;
+  if (!sameStringList(stored.tags, incoming.tags)) return false;
+  if (!sameStringList(stored.locks, incoming.locks)) return false;
   const a = stored.meta ?? {};
   const b = incoming.meta ?? {};
   return a.owner === b.owner && a.priority === b.priority && a.feature === b.feature && a.link === b.link;
@@ -223,6 +236,7 @@ async function syncTestCaseMetadata(db: DB, incoming: Map<number, CaseMetaSnapsh
     .select({
       id: testCases.id,
       tags: testCases.tags,
+      locks: testCases.locks,
       owner: testCases.owner,
       priority: testCases.priority,
       feature: testCases.feature,
@@ -236,6 +250,7 @@ async function syncTestCaseMetadata(db: DB, incoming: Map<number, CaseMetaSnapsh
       row.id,
       {
         tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
+        locks: Array.isArray(row.locks) ? (row.locks as string[]) : [],
         meta: sanitizeTestMetadata({
           owner: row.owner,
           priority: row.priority,
@@ -254,6 +269,7 @@ async function syncTestCaseMetadata(db: DB, incoming: Map<number, CaseMetaSnapsh
       .update(testCases)
       .set({
         tags: next.tags.length ? next.tags : null,
+        locks: next.locks.length ? next.locks : null,
         owner: next.meta?.owner ?? null,
         priority: next.meta?.priority ?? null,
         feature: next.meta?.feature ?? null,
@@ -273,19 +289,80 @@ async function syncTestCaseMetadata(db: DB, incoming: Map<number, CaseMetaSnapsh
  *
  * Shared by the submit, upload and streaming-events endpoints. Returns the
  * inserted junction rows in input order so callers can link attachments (e.g.
- * trace files) by index.
+ * trace files) by index. Each entry also carries the index of the input case
+ * that produced it, so the streaming endpoint can attach the persisted
+ * execution id to the right `test-completed` event even when duplicates were
+ * skipped.
  *
  * Deduplication is enforced by a DB unique index on
  * `(test_run_id, test_case_id, retries, browser)` — the `ON CONFLICT DO NOTHING`
  * clause silently skips rows that would violate it. This naturally handles both
  * batch retries and same-test-different-browser scenarios.
  */
+/**
+ * Drop redundant green ARIA samples before they reach storage. A passing
+ * execution's snapshot is kept only when the test has no other green snapshot
+ * from the last {@link GREEN_SAMPLE_MAX_AGE_MS} — both against snapshots already
+ * stored and against duplicates within this same batch. Failing snapshots are
+ * never touched. Mutates `payloads[i].aria` in place; the rows keep their other
+ * evidence, they just stop carrying a duplicate green page.
+ */
+async function dedupeGreenSamples(
+  db: DB,
+  rows: Array<typeof testRunsCases.$inferInsert>,
+  payloads: Array<{ aria: string | null; ariaJson: string | null; source: string | null; framesJson: string | null }>,
+  now: number = Date.now(),
+): Promise<void> {
+  const cutoff = now - GREEN_SAMPLE_MAX_AGE_MS;
+  const seenInBatch = new Set<number>();
+  const greenRows: Array<{ index: number; caseId: number }> = [];
+
+  rows.forEach((row, i) => {
+    if (row.status !== 'passed' || !payloads[i]!.aria || row.testCaseId == null) return;
+    const caseId = row.testCaseId;
+    // One green sample per test per batch is enough — drop the rest outright.
+    if (seenInBatch.has(caseId)) {
+      payloads[i]!.aria = null;
+      payloads[i]!.ariaJson = null;
+      return;
+    }
+    seenInBatch.add(caseId);
+    greenRows.push({ index: i, caseId });
+  });
+  if (greenRows.length === 0) return;
+
+  const caseIds = greenRows.map((r) => r.caseId);
+  const existing = await db
+    .select({
+      testCaseId: testRunsCases.testCaseId,
+      latest: sql<number>`max(${testRunsCases.createdAt})`,
+    })
+    .from(testRunsCases)
+    .where(
+      and(
+        inArray(testRunsCases.testCaseId, caseIds),
+        eq(testRunsCases.status, 'passed'),
+        or(isNotNull(testRunsCases.ariaSnapshotPayloadId), isNotNull(testRunsCases.ariaSnapshot)),
+      ),
+    )
+    .groupBy(testRunsCases.testCaseId);
+
+  const freshById = new Map(existing.map((r) => [r.testCaseId, Number(r.latest)]));
+  for (const { index, caseId } of greenRows) {
+    const latest = freshById.get(caseId);
+    if (latest != null && latest >= cutoff) {
+      payloads[index]!.aria = null;
+      payloads[index]!.ariaJson = null;
+    }
+  }
+}
+
 export async function persistRunCases(
   db: DB,
   projectId: number,
   testRunId: number,
   cases: RunCaseInput[],
-): Promise<Array<{ id: number; status: string }>> {
+): Promise<Array<{ id: number; status: string; testCaseId: number; inputIndex: number }>> {
   if (cases.length === 0) return [];
 
   const limits = resolveIngestLimits();
@@ -306,10 +383,18 @@ export async function persistRunCases(
   );
 
   const runCasesRows: Array<typeof testRunsCases.$inferInsert> = [];
+  // Input index of each row in `runCasesRows`, so inserted rows can be mapped
+  // back to the batch entry that produced them after the insert.
+  const rowInputIndices: number[] = [];
   // Capped payload strings per row, deduplicated into case_payloads after the
   // loop; the junction rows store only the payload ids (inline columns stay
   // null on new rows — readers coalesce via inlineCasePayloads).
-  const rowPayloads: Array<{ aria: string | null; source: string | null; framesJson: string | null }> = [];
+  const rowPayloads: Array<{
+    aria: string | null;
+    ariaJson: string | null;
+    source: string | null;
+    framesJson: string | null;
+  }> = [];
   const networkRequestBuilders: NetworkRequestBuilder[] = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
   const pendingClusters = new Map<string, PendingCluster>();
@@ -359,8 +444,9 @@ export async function persistRunCases(
     // convenience rather than a guarantee. Annotations win over a supplied
     // `testMeta` because they are the declared source.
     const tags = normalizeTestTags(c.tags);
+    const locks = normalizeTestLocks(c.locks).slice(0, limits.locks);
     const testMeta = parseTestMetadata(c.testAnnotations) ?? sanitizeTestMetadata(c.testMeta);
-    caseMetaSnapshots.set(caseId, { tags, meta: testMeta });
+    caseMetaSnapshots.set(caseId, { tags, locks, meta: testMeta });
 
     // Collect locator snapshots; upserted in one batch after the case insert.
     // Only a passed case may purge stale locations — a failed run can stop
@@ -384,9 +470,10 @@ export async function persistRunCases(
     rowFingerprints.push(fingerprint);
 
     const aria = capText(c.ariaSnapshot, limits.ariaSnapshotChars);
+    const ariaJson = capText(c.ariaSnapshotJson, limits.ariaSnapshotChars);
     const source = capText(c.testSource, limits.testSourceChars);
     const frames = capSourceFrames(c.testSourceFrames, limits);
-    rowPayloads.push({ aria, source, framesJson: frames != null ? JSON.stringify(frames) : null });
+    rowPayloads.push({ aria, ariaJson, source, framesJson: frames != null ? JSON.stringify(frames) : null });
 
     runCasesRows.push({
       testRunId,
@@ -399,7 +486,7 @@ export async function persistRunCases(
       attempts: capArray(normalizeAttemptStatuses(c.attempts), 30),
       line: c.line,
       column: c.column,
-      steps: capArray(c.steps, limits.steps),
+      steps: capSteps(c.steps, limits),
       stepEvents: capArray(c.stepEvents, limits.stepEvents),
       slowestStep: c.slowestStep ?? null,
       slowestStepDuration: c.slowestStepDuration ?? null,
@@ -412,11 +499,14 @@ export async function persistRunCases(
           sanitizeConsoleLogs(c.consoleLogs as Array<Record<string, unknown>> | null | undefined),
           limits,
         ) ?? null,
+      dialogs: capArray(sanitizeDialogs(c.dialogs), limits.dialogs) ?? null,
       ariaSnapshot: null,
+      ariaSnapshotJson: null,
       testSource: null,
       testSourceFrames: null,
       testAnnotations: (c.testAnnotations as any) ?? null,
       tags: tags.length ? tags : null,
+      locks: locks.length ? locks : null,
       testMeta,
       browser: c.browser ?? null,
       browserName: resolveBrowserName(c.browser),
@@ -426,6 +516,7 @@ export async function persistRunCases(
       didNotRunReason: c.didNotRunReason ?? null,
       blockedBy: c.blockedBy ?? null,
     });
+    rowInputIndices.push(i);
 
     const nrItems = buildNetworkRequestItems(c.networkRequests as Array<Record<string, unknown>> | null | undefined);
     networkRequestBuilders.push({ items: nrItems });
@@ -433,15 +524,20 @@ export async function persistRunCases(
 
   if (runCasesRows.length === 0) return [];
 
+  // Keep at most one green ARIA sample per test per day: a passing snapshot is
+  // dropped when the test already has a recent one, so many runs a day stay bounded.
+  await dedupeGreenSamples(db, runCasesRows, rowPayloads);
+
   // Payloads land first so the junction rows can reference them.
   const payloadIds = await upsertCasePayloads(
     db,
     projectId,
-    rowPayloads.flatMap((p) => [p.aria, p.source, p.framesJson]),
+    rowPayloads.flatMap((p) => [p.aria, p.ariaJson, p.source, p.framesJson]),
   );
   runCasesRows.forEach((row, i) => {
     const p = rowPayloads[i]!;
     row.ariaSnapshotPayloadId = p.aria ? (payloadIds.get(p.aria) ?? null) : null;
+    row.ariaSnapshotJsonPayloadId = p.ariaJson ? (payloadIds.get(p.ariaJson) ?? null) : null;
     row.testSourcePayloadId = p.source ? (payloadIds.get(p.source) ?? null) : null;
     row.testSourceFramesPayloadId = p.framesJson ? (payloadIds.get(p.framesJson) ?? null) : null;
   });
@@ -452,11 +548,32 @@ export async function persistRunCases(
     if (fingerprint) row.failureClusterId = clusterIds.get(fingerprint.fingerprint) ?? null;
   });
 
-  const insertedCases = await db
-    .insert(testRunsCases)
-    .values(runCasesRows)
-    .onConflictDoNothing()
-    .returning({ id: testRunsCases.id, status: testRunsCases.status });
+  const insertedCases = await db.insert(testRunsCases).values(runCasesRows).onConflictDoNothing().returning({
+    id: testRunsCases.id,
+    status: testRunsCases.status,
+    testCaseId: testRunsCases.testCaseId,
+    retries: testRunsCases.retries,
+    browserName: testRunsCases.browserName,
+  });
+
+  // The unique (run, case, retries, browser) index makes this tuple unique
+  // within a batch, so each inserted row maps back to exactly one input entry
+  // even when ON CONFLICT DO NOTHING skipped duplicates in between.
+  const tupleToInputIndex = new Map<string, number>();
+  runCasesRows.forEach((row, k) => {
+    const tuple = `${row.testCaseId}\x00${row.retries ?? 0}\x00${row.browserName ?? ''}`;
+    tupleToInputIndex.set(tuple, rowInputIndices[k]!);
+  });
+
+  const result = insertedCases.map((r) => {
+    const tuple = `${r.testCaseId}\x00${r.retries ?? 0}\x00${r.browserName ?? ''}`;
+    return {
+      id: r.id,
+      status: r.status,
+      testCaseId: r.testCaseId,
+      inputIndex: tupleToInputIndex.get(tuple) ?? -1,
+    };
+  });
 
   const nrValues = buildNetworkRequestInsertValues(networkRequestBuilders, insertedCases, testRunId);
   if (nrValues.length > 0) {
@@ -466,5 +583,5 @@ export async function persistRunCases(
   await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
   await syncTestCaseMetadata(db, caseMetaSnapshots);
 
-  return insertedCases;
+  return result;
 }

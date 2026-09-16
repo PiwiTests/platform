@@ -23,7 +23,7 @@ import {
   buildSourceFrames,
   buildWebAssertionError,
 } from '#shared/demo/failure-stories.mjs';
-import { demoTags, demoTestMeta, buildAiUsage } from '#shared/demo/demo-test-meta.mjs';
+import { demoLocks, demoTags, demoTestMeta, buildAiUsage } from '#shared/demo/demo-test-meta.mjs';
 
 export const DEMO_SIMULATOR_INSTANCE_ID = 'demo-simulator';
 
@@ -44,6 +44,10 @@ interface SimStep {
   title: string;
   duration: number;
   category: string;
+  /** Playwright 1.63 step target (rendered locator or URL), carried separately. */
+  subtitle?: string;
+  /** Playwright 1.63 curated per-step arguments. */
+  params?: Record<string, string | number | boolean>;
 }
 
 interface SimAttempt {
@@ -52,6 +56,7 @@ interface SimAttempt {
   duration?: number;
   error?: string;
   consoleLogs?: Array<Record<string, unknown>>;
+  dialogs?: Array<Record<string, unknown>>;
   ariaSnapshot?: string;
   testAnnotations?: Array<{ type: string; description?: string }> | null;
   testSource?: string | null;
@@ -76,6 +81,7 @@ interface SimTest {
   pageState?: Record<string, unknown> | null;
   browser?: Record<string, unknown> | null;
   tags?: string[];
+  locks?: string[];
   testMeta?: { owner?: string | null; priority?: string | null; feature?: string | null } | null;
   suitePath?: string[];
   suiteConfig?: Array<{ mode: string; annotations: Array<{ type: string; description?: string }> }>;
@@ -211,30 +217,62 @@ const STRICT_MODE_ARIA_SNAPSHOT =
   '- button "Place order"\n' +
   '- button "Place order"';
 
+/**
+ * The seeded checkout flow in the Playwright 1.63 step shape: a bare-verb title
+ * with the target in `subtitle` and curated `params`. The static seed keeps
+ * other suites in the 1.61 shape, so the demo renders both.
+ */
+const STEP_SHAPE: Array<Omit<SimStep, 'duration'> & { fraction: number; slowFraction: number }> = [
+  {
+    title: 'Navigate',
+    subtitle: '/checkout',
+    category: 'navigation',
+    fraction: 0.2,
+    slowFraction: 0.1,
+    params: { url: 'https://shop.example.com/checkout' },
+  },
+  {
+    title: 'Fill "ada@example.com"',
+    subtitle: "getByLabel('Email')",
+    category: 'input',
+    fraction: 0.12,
+    slowFraction: 0.08,
+    params: { locator: "getByLabel('Email')", value: 'ada@example.com' },
+  },
+  {
+    title: 'Fill "Ada Lovelace"',
+    subtitle: "getByLabel('Name on card')",
+    category: 'input',
+    fraction: 0.25,
+    slowFraction: 0.12,
+    params: { locator: "getByLabel('Name on card')", value: 'Ada Lovelace' },
+  },
+  {
+    title: 'Click',
+    subtitle: "getByRole('button', { name: 'Place order' })",
+    category: 'action',
+    fraction: 0.28,
+    slowFraction: 0.55,
+    params: { locator: "getByRole('button', { name: 'Place order' })" },
+  },
+  {
+    title: 'Expect "toBeVisible"',
+    subtitle: "getByText('Order confirmed')",
+    category: 'assertion',
+    fraction: 0.15,
+    slowFraction: 0.15,
+    params: { locator: "getByText('Order confirmed')" },
+  },
+];
+
 function buildSteps(duration: number, slowStepBias = false): SimStep[] {
-  const fractions: Array<[string, number, string]> = slowStepBias
-    ? [
-        ['Navigate to checkout', 0.1, 'navigation'],
-        ['Sign in and prepare cart', 0.08, 'setup'],
-        ['Fill payment form', 0.12, 'action'],
-        ['Submit order and wait for confirmation', 0.55, 'action'],
-        ['Assert order summary', 0.15, 'assertion'],
-      ]
-    : [
-        ['Navigate to checkout', 0.2, 'navigation'],
-        ['Sign in and prepare cart', 0.12, 'setup'],
-        ['Fill payment form', 0.25, 'action'],
-        ['Submit order and wait for confirmation', 0.28, 'action'],
-        ['Assert order summary', 0.15, 'assertion'],
-      ];
-
-  const steps = fractions.map(([title, fraction, category]) => ({
-    title,
-    duration: Math.round(duration * fraction),
-    category,
+  return STEP_SHAPE.map((s) => ({
+    title: s.title,
+    subtitle: s.subtitle,
+    category: s.category,
+    params: s.params,
+    duration: Math.round(duration * (slowStepBias ? s.slowFraction : s.fraction)),
   }));
-
-  return steps;
 }
 
 const SERVER_LOGS_OK = [
@@ -631,6 +669,7 @@ function baseTests(opts: BaseTestOptions = {}): SimTest[] {
       // Same deterministic tags/ownership the seed generator assigns, so
       // owner/priority/tag filters see simulated runs like seeded ones.
       tags: demoTags(t.file, i),
+      locks: demoLocks(t.file, i),
       testMeta: demoTestMeta(t.file, i),
       suitePath: suite?.suitePath,
       suiteConfig: suite?.suiteConfig,
@@ -722,6 +761,13 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
             duration: failedDuration,
             error: failingCase.error,
             consoleLogs: themedConsoleLogs(CLUSTER1_STORY.evidence.consoleOnFail, startedAt),
+            // The first holder also leaves a confirm dialog open at the failure
+            // moment — it blocks the page until dismissed, so the Pay action
+            // never resolves. Feeds the dialogs lane and the dialog clue.
+            dialogs:
+              i === 0 && CLUSTER1_STORY.evidence.dialogOnFail
+                ? [{ ...CLUSTER1_STORY.evidence.dialogOnFail, closedAt: startedAt + failedDuration - 250 }]
+                : undefined,
             testAnnotations: [{ type: 'fixme', description: `Known issue — see cluster ${CLUSTER1_STORY.clusterId}` }],
             testSource: buildTestSource(CLUSTER1_STORY, failingCase, CHECKOUT_TESTS[i]!.declLine),
             testSourceFrames: buildSourceFrames(failingCase),
@@ -1228,8 +1274,10 @@ async function runSingleSimulation(
             pageState: test.pageState ?? null,
             aiUsage: (await buildAiUsage({ file: test.file, title: test.title })) ?? null,
             tags: test.tags,
+            locks: test.locks,
             testMeta: test.testMeta,
             consoleLogs: a.consoleLogs ?? null,
+            dialogs: a.dialogs ?? null,
             ariaSnapshot: a.ariaSnapshot ?? null,
             testSource: a.testSource ?? null,
             testSourceFrames: a.testSourceFrames ?? null,
@@ -1292,6 +1340,7 @@ async function runSingleSimulation(
           suitePath: t.suitePath ?? null,
           suiteConfig: t.suiteConfig ?? null,
           tags: t.tags,
+          locks: t.locks,
           testMeta: t.testMeta,
           didNotRunReason: unrunReason,
         },

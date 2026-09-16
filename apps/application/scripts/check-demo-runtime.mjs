@@ -186,6 +186,24 @@ async function main() {
     check(bytes > 1000, 'the ZIP export downloads', `${bytes} bytes as ${download.suggestedFilename()}`);
     check(download.suggestedFilename().endsWith('.zip'), 'the download is named as a ZIP');
 
+    // The PDF is generated the same way — entirely in the service worker, with
+    // no browser print — so prove it produces a real %PDF document in-browser.
+    await exportButton.click();
+    await page.waitForTimeout(400);
+    const [pdfDownload] = await Promise.all([
+      page.waitForEvent('download', { timeout: 30000 }),
+      page.getByRole('button', { name: 'PDF — formatted document', exact: true }).click(),
+    ]);
+    const pdfPath = await pdfDownload.path();
+    const pdfBytes = pdfPath ? await readFile(pdfPath) : Buffer.alloc(0);
+    check(
+      pdfBytes.length > 1000,
+      'the PDF export downloads',
+      `${pdfBytes.length} bytes as ${pdfDownload.suggestedFilename()}`,
+    );
+    check(pdfDownload.suggestedFilename().endsWith('.pdf'), 'the download is named as a PDF');
+    check(pdfBytes.subarray(0, 5).toString('latin1') === '%PDF-', 'the PDF is a real vector document');
+
     check(
       escapedApiUrls.size === 0,
       'every API request stays inside the demo base path',

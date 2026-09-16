@@ -66,6 +66,20 @@ function displayArg(arg: string): string {
   return /[\s"'()|]/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg;
 }
 
+/**
+ * A single argv for reproducing or bisecting the failing test(s) in one worktree
+ * run: the deduped `file:line` specs plus one `--project=` per distinct project.
+ * Unlike `buildLocalRunPlan` this never splits into per-project steps — a bisect
+ * runs one command at each commit, and running the union of the failing tests is
+ * exactly the probe a bisect needs.
+ */
+export function buildReproduceArgs(cases: RetryCase[]): string[] {
+  const args = specArgs(cases, 'file-line');
+  const projects = [...new Set(cases.map((c) => c.projectName || '').filter(Boolean))];
+  for (const project of projects) args.push(`--project=${project}`);
+  return args;
+}
+
 export function buildLocalRunPlan(cases: RetryCase[], options: LocalRunOptions = {}): LocalRunStep[] {
   if (cases.length === 0) return [];
   const mode = options.mode ?? 'file-line';

@@ -5,15 +5,14 @@ import { extendPiwiAi } from '../../../dist/index.js';
 /**
  * The LIVE end-to-end test: it drives `page.piwiLocator` / `page.piwiRun` in
  * `resolve` mode against a REAL Piwi dashboard server backed by a REAL LLM
- * (OpenCode / DeepSeek in CI), so the whole authoring path runs for real —
- * prompt building, the provider call, the deterministic `@piwitests/core`
- * compilation of the model's element picks, execution against a live browser,
- * and the postcondition oracle that verifies the authored flow actually works.
+ * so the whole authoring path runs for real — prompt building, the provider
+ * call, the deterministic `@piwitests/core` compilation of the model's element
+ * picks, execution against a live browser, and the postcondition oracle that
+ * verifies the authored flow actually works.
  *
  * Unlike `ai-steps.spec.ts` (which stubs the resolver for a zero-token CI gate),
- * this one costs tokens, so it is gated behind a manual/labelled workflow — see
- * `.github/workflows/ai-live-e2e.yml`. The server URL, mode and (throwaway)
- * artifact directory come from the environment the workflow sets:
+ * this one costs tokens, so it only runs on demand. The server URL, mode and
+ * throwaway artifact directory come from the environment:
  *   PIWI_AI=resolve  PIWI_DASHBOARD_URL=<server>  PIWI_AI_DIR=<temp>
  */
 const test = extendPiwiAi(base);

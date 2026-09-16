@@ -21,9 +21,11 @@ vi.mock('../../server/utils/notifications/emit', () => ({
 }));
 
 let changedFiles: string[] = [];
+let commitAuthor: { name: string; email: string } | null = null;
 vi.mock('../../server/utils/scm', () => ({
   createScmProvider: async () => ({
     fetchChanges: async () => ({ files: changedFiles.map((filename) => ({ filename })) }),
+    getCommitAuthor: async () => commitAuthor,
   }),
 }));
 
@@ -69,10 +71,8 @@ async function insertCluster(opts: { status?: string; triageNote?: string | null
   return id;
 }
 
-async function insertCase(runId: number, status: 'passed' | 'failed', clusterId: number | null) {
-  await db
-    .insert(schema.testRunsCases)
-    .values({ testRunId: runId, testCaseId: 1, status, failureClusterId: clusterId });
+async function insertCase(runId: number, status: 'passed' | 'failed', clusterId: number | null, testCaseId = 1) {
+  await db.insert(schema.testRunsCases).values({ testRunId: runId, testCaseId, status, failureClusterId: clusterId });
 }
 
 async function markSeen(clusterId: number, runId: number) {
@@ -99,12 +99,16 @@ beforeAll(async () => {
     migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
   });
   await db.insert(schema.projects).values({ id: 1, name: 'shop', label: 'Shop' });
-  await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'tests/checkout.spec.ts', title: 'pays' });
+  await db.insert(schema.testCases).values([
+    { id: 1, projectId: 1, filePath: 'tests/checkout.spec.ts', title: 'pays' },
+    { id: 2, projectId: 1, filePath: 'tests/checkout.spec.ts', title: 'refunds' },
+  ]);
 });
 
 beforeEach(() => {
   emitted.length = 0;
   changedFiles = [];
+  commitAuthor = null;
 });
 
 describe('appendTriageNote', () => {
@@ -251,15 +255,51 @@ describe('verifyClusterFixes — status transitions', () => {
     expect(emitted[0]!.payload).toMatchObject({ reopened: false });
   });
 
-  test('a partial run records nothing and emits nothing', async () => {
+  test('a partial run that covers every affected test records the fix', async () => {
+    // Cluster on test case 2 so it does not collide with the many case-1
+    // clusters this serial suite accumulates.
     const failing = await insertRun('failed', '777aaa');
     const clusterId = await insertCluster({ firstSeenRunId: failing });
-    await insertCase(failing, 'failed', clusterId);
+    await insertCase(failing, 'failed', clusterId, 2);
 
+    // A filtered re-run of exactly the affected test, passing, is enough.
     const partial = await insertRun('passed', '888bbb', { isFullRun: false });
-    await insertCase(partial, 'passed', null);
-    expect(await verifyClusterFixes(db, partial)).toEqual([]);
+    await insertCase(partial, 'passed', null, 2);
+
+    const fixed = await verifyClusterFixes(db, partial);
+    expect(fixed.some((f) => f.clusterId === clusterId)).toBe(true);
+    expect((await cluster(clusterId)).fixLandedRunId).toBe(partial);
+  });
+
+  test('a partial run that misses an affected test records nothing', async () => {
+    const failing = await insertRun('failed', '999aaa');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    // The cluster covers two tests (1 and 2).
+    await insertCase(failing, 'failed', clusterId, 1);
+    await insertCase(failing, 'failed', clusterId, 2);
+
+    // A filtered run that ran only one of them proves nothing: the other was
+    // never shown to pass.
+    const partial = await insertRun('passed', '999bbb', { isFullRun: false });
+    await insertCase(partial, 'passed', null, 1);
+
+    const fixed = await verifyClusterFixes(db, partial);
+    expect(fixed.some((f) => f.clusterId === clusterId)).toBe(false);
     expect((await cluster(clusterId)).fixLandedRunId).toBeNull();
-    expect(emitted).toEqual([]);
+  });
+
+  test('cluster.fixed carries the resolved fix author on the payload', async () => {
+    const failing = await insertRun('failed', 'a10aaa');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2);
+    commitAuthor = { name: 'Ada Lovelace', email: 'ada@example.com' };
+
+    const green = await insertRun('passed', 'a10bbb');
+    await insertCase(green, 'passed', null, 2);
+    await verifyClusterFixes(db, green);
+
+    const mine = emitted.find((e) => (e.payload as { clusterId?: number }).clusterId === clusterId);
+    expect(mine?.event).toBe('cluster.fixed');
+    expect(mine?.payload).toMatchObject({ fixAuthor: { name: 'Ada Lovelace', email: 'ada@example.com' } });
   });
 });

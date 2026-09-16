@@ -13,8 +13,18 @@ interface ClassifyInput {
   stepNames: string[];
   networkErrorCount: number;
   status5xxCount: number;
+  /**
+   * How many of the test's recent flaky executions had a request that failed (or
+   * returned 5xx) on the failing attempt but not on the attempt that passed on
+   * retry. That delta is the sharpest available evidence that the flakiness is a
+   * network problem, so each vote weighs several keyword matches.
+   */
+  attemptDiffNetworkVotes?: number;
   browserDistribution: Record<string, number>;
 }
+
+/** Weight of one attempt-diff network vote, in keyword-match equivalents. */
+const ATTEMPT_DIFF_NETWORK_WEIGHT = 3;
 
 const TIMING_KEYWORDS = [
   'timeout',
@@ -84,7 +94,11 @@ export function classifyFlakyRootCause(input: ClassifyInput): FlakyRootCause {
   }
 
   const timingCount = countKeywordMatches(allTexts, TIMING_KEYWORDS);
-  const networkCount = countKeywordMatches(allTexts, NETWORK_KEYWORDS) + input.networkErrorCount + input.status5xxCount;
+  const networkCount =
+    countKeywordMatches(allTexts, NETWORK_KEYWORDS) +
+    input.networkErrorCount +
+    input.status5xxCount +
+    (input.attemptDiffNetworkVotes ?? 0) * ATTEMPT_DIFF_NETWORK_WEIGHT;
   const assertionCount = countKeywordMatches(allTexts, ASSERTION_MARKERS);
 
   // Assertion requires NO timing/network keywords present

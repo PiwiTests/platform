@@ -171,7 +171,7 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_fix_plan',
     description:
-      'Everything needed to fix one failure cluster, in a single answer: the diagnosis and its validated patch, ranked locator replacements each with the exact file and line and a ready-to-apply `edit` (the rewritten line plus a unified diff `git apply` accepts), the failing tests, the owning team, and the command that verifies the work. `verify.expectation` states what the dashboard records once those tests pass, so you can confirm the fix landed rather than guessing. Prefer this over assembling get_cluster + get_cluster_diagnosis + get_locator_healing yourself.',
+      'Everything needed to fix one failure cluster, in a single answer: the diagnosis and its validated patch, ranked locator replacements each with the exact file and line and a ready-to-apply `edit` (the rewritten line plus a unified diff `git apply` accepts), the failing tests, the owning team, the command that verifies the work, a `reproduce` recipe (checkout, pinned install, browser install and the exact test command as `{ bash, powershell }` steps), and a `bisect` script (`git bisect` between the last green and the failing commit, or `available: false` with a reason). `verify.expectation` states what the dashboard records once those tests pass, so you can confirm the fix landed rather than guessing. It also carries the `story`, the `situation` sentence and the computed `nextStep` for the cluster. Prefer this over assembling get_cluster + get_cluster_diagnosis + get_locator_healing yourself.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -317,10 +317,17 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_run_insights',
     description:
-      'Compare a run to its last green baseline: pass-rate delta, new regressions, recurrences, recovered tests, new flaky tests, biggest perf improvements/regressions, worker imbalance, and newly opened clusters. Use this to answer "what changed?" and "did my fix work?".',
+      'Compare a run to its baseline: pass-rate delta, new regressions, recurrences, recovered tests, new flaky tests, biggest perf improvements/regressions, worker imbalance, and newly opened clusters. The baseline is the last passing run in the same environment, on the same branch, else the branch it forked from, else any; `baseline` names why it was chosen. Use this to answer "what changed?" and "did my fix work?".',
     inputSchema: {
       type: 'object',
-      properties: { runId: { type: 'number', description: 'Test run ID' } },
+      properties: {
+        runId: { type: 'number', description: 'Test run ID' },
+        baseBranch: {
+          type: 'string',
+          description:
+            'Optional: take the baseline from this branch only (its last passing run, same environment first) instead of the automatic choice',
+        },
+      },
       required: ['runId'],
     },
   },
@@ -429,16 +436,44 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'list_links',
     description:
-      'List external entity links (Jira, GitHub PR/issue, etc.) attached to a run, test-run-case, or test case, with provider and unfurled status.',
+      'List external entity links (Jira, GitHub PR/issue, etc.) attached to a run, test-run-case, test case, or failure cluster, with provider and unfurled status.',
     inputSchema: {
       type: 'object',
       properties: {
         entityType: {
           type: 'string',
-          enum: ['test_run', 'test_runs_case', 'test_case'],
+          enum: ['test_run', 'test_runs_case', 'test_case', 'failure_cluster'],
           description: 'Which entity the links are attached to',
         },
         entityId: { type: 'number', description: 'The entity ID matching entityType' },
+      },
+      required: ['entityType', 'entityId'],
+    },
+  },
+  {
+    name: 'create_issue',
+    description:
+      "File a Jira issue from a failure cluster or a failing execution, with the fix plan as its body — the same ticket the dashboard's Create issue button produces. The issue is deduped by cluster, so calling twice for the same cluster returns the existing action rather than a second ticket. Returns the issue { key, url } and any `existing` issues that already track the cluster (a pinned link, a matching label, or a fixed-before match) so you can link instead of filing again. Requires a Jira connection and a project binding (project key and issue type). Reporter or administrator access.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entityType: {
+          type: 'string',
+          enum: ['failure_cluster', 'test_runs_case'],
+          description: 'Whether to file for a failure cluster or one failing execution',
+        },
+        entityId: { type: 'number', description: 'The cluster id or the execution (testRunsCaseId)' },
+        title: { type: 'string', description: 'Optional issue title; defaults to the cluster name' },
+        includeDiagnosis: {
+          type: 'boolean',
+          description: 'Include the AI diagnosis summary and root cause (default true)',
+        },
+        includePatch: { type: 'boolean', description: 'Include the suggested patch as a diff (default true)' },
+        locale: {
+          type: 'string',
+          enum: ['en', 'fr'],
+          description: "The ticket's language; defaults from the project/connection binding, else English",
+        },
       },
       required: ['entityType', 'entityId'],
     },
@@ -462,6 +497,10 @@ export const MCP_TOOL_DEFS = [
         tags: {
           type: 'string',
           description: 'Comma-separated tags; a test must carry every one of them. A leading @ is optional.',
+        },
+        locks: {
+          type: 'string',
+          description: 'Comma-separated lock names; a test must carry every one of them.',
         },
         owner: { type: 'string', description: 'Exact owner declared via the piwi:owner annotation' },
         priority: {
@@ -527,7 +566,7 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'suggest_selections',
     description:
-      'Suggest tags and a smoke suite for a project from observed history (suggest-only, with evidence). Returns `slow` tags for duration outliers, `feature` tags from the route families tests hit, and a mined smoke suite — a budgeted set cover over observed routes, each pick buying fewer new routes than the last. `budgetMs` caps the smoke suite (default 5 min).',
+      'Suggest tags and a smoke suite for a project from observed history (suggest-only, with evidence). Returns `slow` tags for duration outliers, `feature` tags from the route families tests hit, and a mined smoke suite — a budgeted set cover over observed routes, each pick buying fewer new routes than the last. The smoke suite lists any `splitLocks` (locks held by more than one pick), which plain `playwright test --shard` could split across shards — run it with `piwi run --shard` (lock-aware) instead. `budgetMs` caps the smoke suite (default 5 min).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -540,7 +579,7 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'analyze_selections',
     description:
-      'Health and drift for a project\'s selections. For each: what it resolves to now (count, quarantined members, duration, warnings) and whether that differs from what its most recent stamped run recorded — a silent drift a green build can hide. Plus coverage: how many tests are matched by no stored selection (the "unselected" gap), with a sample. Read-only.',
+      'Health and drift for a project\'s selections. For each: what it resolves to now (count, quarantined members, duration, warnings — including a `split-lock` warning when a lock is shared by more than one test, which Playwright\'s own `--shard` could split across shards) and whether that differs from what its most recent stamped run recorded — a silent drift a green build can hide. Plus coverage: how many tests are matched by no stored selection (the "unselected" gap), with a sample. Read-only.',
     inputSchema: {
       type: 'object',
       properties: { projectId: { type: 'number', description: 'Project ID' } },
@@ -550,11 +589,16 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'list_open_clusters',
     description:
-      'Open failure clusters across all in-scope projects, ranked by occurrences — a cross-project triage queue. Filter by status; paginate with pageSize/cursor.',
+      'Open failure clusters across all in-scope projects, ranked by occurrences — a cross-project triage queue, the same one the dashboard failure inbox shows. Filter by status, or by an inbox `queue` to focus (regressions on the default branch, fixes that did not hold, quarantines ready for release, merge suggestions awaiting a decision, the ones needing a ticket, or the ones assigned to you). A `queue` filter implies open clusters and excludes snoozed ones. Paginate with pageSize/cursor.',
     inputSchema: {
       type: 'object',
       properties: {
         status: { type: 'string', enum: ['open', 'resolved', 'ignored'], description: 'Triage status (default: open)' },
+        queue: {
+          type: 'string',
+          enum: ['mine', 'needs-ticket', 'regressions', 'fix-didnt-hold', 'quarantine-ready', 'merge-suggestions'],
+          description: 'Focus one inbox queue (open, non-snoozed clusters only); overrides status',
+        },
         pageSize: { type: 'number', description: 'Results per page (default 10, max 50)' },
         cursor: { type: 'string', description: 'Opaque cursor from a previous response to get the next page' },
       },
@@ -569,7 +613,7 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'explain_failure',
     description:
-      'One-call evidence bundle for a single failing execution: a one-line headline, the error, steps, console, ARIA snapshot, the recommended locator fix, a screenshot count, and the AI diagnosis context. Prefer this over chaining get_test_run_case + get_locator_healing + get_test_case_context.',
+      'One-call evidence bundle for a single failing execution: a one-line headline, the error, steps, console, ARIA snapshot, the recommended locator fix, the structural page diff against the last green sample, a screenshot count, and the AI diagnosis context. It also carries the `story` (the clues chained into one sentence when a known combination matches), the `situation` sentence (since when, on which commit, in how many tests, who owns it) and the computed `nextStep`. Prefer this over chaining get_test_run_case + get_locator_healing + get_test_case_context.',
     inputSchema: {
       type: 'object',
       properties: { executionId: { type: 'number', description: 'Test run case ID (executionId)' } },
@@ -783,6 +827,8 @@ export interface McpCaseSummary {
   runId?: number;
   runStatus?: string;
   startedAt?: string;
+  /** Lock names this execution held (best effort; none from blob imports). */
+  locks?: string[] | null;
 }
 
 /** Project summary returned by list_projects. */

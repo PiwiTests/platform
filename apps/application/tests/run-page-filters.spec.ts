@@ -2,7 +2,7 @@ import { test, expect, type APIRequestContext } from './fixtures';
 import { waitForHydration, retryPost } from './utils';
 import { PROJECT } from '#shared/test-project-names';
 
-test.describe.serial('Run page test-case filters', () => {
+test.describe.serial('Run page Tests tab', () => {
   const loginTimeout = (ms: number) =>
     `TimeoutError: locator.click: Timeout ${ms}ms exceeded.\nCall log:\n  - waiting for getByTestId('login-button')`;
   const cartAssertion = `Error: expect(locator).toHaveText(expected)\n\nLocator: getByTestId('cart-total')\nExpected string: "3 items"\nReceived string: "0 items"`;
@@ -10,9 +10,14 @@ test.describe.serial('Run page test-case filters', () => {
   let runId = 0;
   let loginClusterId = 0;
 
-  // The flat list's title links — the desktop table is the visible copy at the
-  // test viewport (the mobile card is display:none from `md` up).
+  // The test-row title links — the visible copy at the test viewport.
   const visibleTitles = (page: import('@playwright/test').Page) => page.locator('a[href^="/test-run-cases/"]:visible');
+  const groupBy = (page: import('@playwright/test').Page) => page.getByRole('combobox', { name: 'Group tests by' });
+
+  async function selectGroup(page: import('@playwright/test').Page, label: string) {
+    await groupBy(page).click();
+    await page.getByRole('option', { name: label }).click();
+  }
 
   async function submitRun(request: APIRequestContext) {
     const response = await retryPost(request, '/api/test-runs/submit', {
@@ -31,6 +36,7 @@ test.describe.serial('Run page test-case filters', () => {
             status: 'failed',
             duration: 31000,
             location: 'tests/auth.spec.ts:10:5',
+            suitePath: ['Authentication'],
             error: loginTimeout(30000),
           },
           {
@@ -38,6 +44,7 @@ test.describe.serial('Run page test-case filters', () => {
             status: 'failed',
             duration: 16000,
             location: 'tests/auth.spec.ts:30:5',
+            suitePath: ['Authentication'],
             error: loginTimeout(15000),
           },
           {
@@ -69,19 +76,19 @@ test.describe.serial('Run page test-case filters', () => {
     loginClusterId = loginHeader.failureClusterId;
   });
 
-  test('lists failures first with their error text and a cluster badge', async ({ page }) => {
+  test('the None grouping lists failures first with their error text and a cluster chip', async ({ page }) => {
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
+    await selectGroup(page, 'None');
 
-    // Failure-first default order, stable within each group
+    // Failure-first default order, stable within each status.
     await expect(visibleTitles(page)).toHaveCount(4);
     await expect(visibleTitles(page).nth(0)).toHaveText('login via header');
     await expect(visibleTitles(page).nth(1)).toHaveText('login via modal');
     await expect(visibleTitles(page).nth(2)).toHaveText('cart shows items');
     await expect(visibleTitles(page).nth(3)).toHaveText('homepage loads');
 
-    // The one-line headline under each failed title, with the raw error as its
-    // tooltip (visible copy only — the mobile card below `md` duplicates the same DOM)
+    // The one-line headline under each failed title, with the raw error as its tooltip.
     const loginHeadline = page
       .getByText("getByTestId('login-button') was not found on the page — click timed out after 30 s")
       .filter({ visible: true });
@@ -93,60 +100,75 @@ test.describe.serial('Run page test-case filters', () => {
         .filter({ visible: true }),
     ).toBeVisible();
 
-    // A cluster badge on every failing row links to the cluster page
+    // A cluster chip on every failing row links to the cluster page.
     const clusterLinks = page.locator('a[href^="/failure-clusters/"]:visible');
     await expect(clusterLinks).toHaveCount(3, { timeout: 15000 });
     await expect(clusterLinks.first()).toHaveAttribute('href', `/failure-clusters/${loginClusterId}`);
   });
 
-  test('summary tiles toggle into the same status set and zero tiles are disabled', async ({ page }) => {
+  test('the cluster grouping is the default on a red run and hides passing tests under a group', async ({ page }) => {
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
 
-    // Zero-count tiles are disabled (Skipped is 0 on this run)
-    await expect(page.getByRole('button', { name: 'Skipped 0' })).toBeDisabled();
+    // Two clusters, each with an "Open cluster" link in its group header.
+    await expect(page.getByRole('link', { name: /Open cluster/ })).toHaveCount(2, { timeout: 15000 });
 
-    // Clicking a tile toggles its status in the set the chips share
-    await page.getByRole('button', { name: 'Failed 3' }).click();
+    // The passing row lives in a collapsed Passed group, so only the failures show.
     await expect(visibleTitles(page)).toHaveCount(3);
-    await page.getByRole('button', { name: 'Failed 3' }).click();
-    await expect(visibleTitles(page)).toHaveCount(4);
+    await expect(page.getByText('homepage loads')).toHaveCount(0);
 
-    // Two tiles combine instead of replacing each other
-    await page.getByRole('button', { name: 'Passed 1' }).click();
-    await expect(visibleTitles(page)).toHaveCount(1);
-    await page.getByRole('button', { name: 'Failed 3' }).click();
+    // Switching to None reveals every row.
+    await selectGroup(page, 'None');
     await expect(visibleTitles(page)).toHaveCount(4);
-    await expect(page.getByRole('button', { name: 'Passed 1' })).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByRole('button', { name: 'Failed 3' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  test('cluster filter is named, counted, deep-linkable and clearable', async ({ page }) => {
+  test('the File + Describe grouping nests tests under their describe block', async ({ page }) => {
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await selectGroup(page, 'File + Describe');
+
+    // The two auth tests share a describe block, so a nested "Authentication"
+    // group header appears (under its file) with both tests beneath it.
+    await expect(page.getByText('Authentication', { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(visibleTitles(page).filter({ hasText: 'login via header' })).toHaveCount(1);
+    await expect(visibleTitles(page).filter({ hasText: 'login via modal' })).toHaveCount(1);
+  });
+
+  test('the count bar filters the list and switches to the Tests tab from another tab', async ({ page }) => {
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
 
+    // Move to another tab first, then click a count-bar segment.
     await page
-      .getByRole('button', { name: /Failure clusters/ })
+      .getByRole('button', { name: /^Timeline/ })
       .first()
       .click();
-    const loginGroupRow = page.locator('table').getByRole('row').filter({ hasText: 'Timeout' }).first();
-    await loginGroupRow.getByRole('button', { name: 'Show failing tests' }).click();
+    await expect(page).toHaveURL(/tab=workers/);
 
-    // The chip names the cluster and its matched count
-    await expect(page.getByText(/Cluster: .* · 2 tests/)).toBeVisible();
-    await expect(visibleTitles(page)).toHaveCount(2);
-    await expect(visibleTitles(page).first()).toHaveText('login via header');
+    await page.getByRole('button', { name: '3 failed' }).first().click();
 
-    // The filter is deep-linkable: reload keeps the chip and the rows
-    await expect(page).toHaveURL(/cluster=\d+/);
-    await page.reload();
+    // It lands back on the Tests tab with only the failing rows.
+    await expect(page).toHaveURL(/tab=test-cases/);
+    await expect(groupBy(page)).toBeVisible();
+    await expect(visibleTitles(page)).toHaveCount(3);
+    await expect(page.getByText('homepage loads')).toHaveCount(0);
+  });
+
+  test('search matches the error text, not only the title', async ({ page }) => {
+    await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await expect(page.getByText(/Cluster: .* · 2 tests/)).toBeVisible();
-    await expect(visibleTitles(page)).toHaveCount(2);
 
-    // Clearing restores the full list and drops the query param
-    await page.getByRole('button', { name: 'Clear filter' }).click();
-    await expect(visibleTitles(page)).toHaveCount(4);
-    await expect(page).not.toHaveURL(/cluster=/);
+    // "0 items" only appears in the cart assertion's error, never in a title.
+    await page.getByPlaceholder('Search title').fill('0 items');
+    await expect(visibleTitles(page)).toHaveCount(1);
+    await expect(visibleTitles(page).first()).toHaveText('cart shows items');
+  });
+
+  test('?tab=failure-groups redirects to the Tests tab with the cluster grouping', async ({ page }) => {
+    await page.goto(`/test-runs/${runId}?tab=failure-groups`);
+    await waitForHydration(page);
+
+    await expect(page).toHaveURL(/tab=test-cases/);
+    await expect(page.getByRole('link', { name: /Open cluster/ })).toHaveCount(2, { timeout: 15000 });
   });
 });

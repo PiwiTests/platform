@@ -36,7 +36,7 @@ test.describe('Inline help (HelpHint)', () => {
 
     // "Learn more" resolves through docsUrl() to the verified anchor.
     const learnMore = page.getByRole('link', { name: /Learn more/ });
-    await expect(learnMore).toHaveAttribute('href', `${DOCS_BASE_URL}/mcp#what-it-provides`);
+    await expect(learnMore).toHaveAttribute('href', `${DOCS_BASE_URL}/features/mcp#what-it-provides`);
     await expect(learnMore).toHaveAttribute('target', '_blank');
   });
 
@@ -66,7 +66,7 @@ test.describe('Inline help (HelpHint)', () => {
 
     await expect(page.getByText('Duration trends for the suite')).toBeVisible();
     const learnMore = page.getByRole('link', { name: /Learn more/ });
-    await expect(learnMore).toHaveAttribute('href', `${DOCS_BASE_URL}/flaky-tests#performance`);
+    await expect(learnMore).toHaveAttribute('href', `${DOCS_BASE_URL}/features/slow-tests`);
   });
 
   test('settings AI provider hint lists the backing PIWI_AI_* env vars', async ({ page }) => {
@@ -88,7 +88,7 @@ test.describe('Inline help (HelpHint)', () => {
 
     // A "Configuration reference" link points at the canonical docs page.
     const configLink = page.getByRole('link', { name: /Configuration reference/ });
-    await expect(configLink).toHaveAttribute('href', `${DOCS_BASE_URL}/configuration`);
+    await expect(configLink).toHaveAttribute('href', `${DOCS_BASE_URL}/reference/configuration`);
     await expect(configLink).toHaveAttribute('target', '_blank');
   });
 

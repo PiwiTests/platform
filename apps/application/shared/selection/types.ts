@@ -121,6 +121,8 @@ export interface ResolvedTest {
   title: string;
   line: number | null;
   avgDurationMs: number | null;
+  /** Lock names this test most recently declared, driving lock-aware sharding. */
+  locks: string[];
 }
 
 /** A non-fatal note attached to a resolution. */
@@ -132,7 +134,8 @@ export interface SelectionWarning {
     | 'budget-evicted-pin'
     | 'grep-overselects'
     | 'materialization-truncated'
-    | 'impact-widened';
+    | 'impact-widened'
+    | 'split-lock';
   message: string;
 }
 

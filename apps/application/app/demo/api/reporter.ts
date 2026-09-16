@@ -32,6 +32,7 @@ import { resolveRunBranch } from '~~/server/utils/run-branch';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import {
   capArray,
+  capSteps,
   capConsoleLogs,
   capErrorText,
   capSourceFrames,
@@ -40,6 +41,7 @@ import {
   sanitizeMetadata,
   sanitizeWebVitals,
   sanitizeConsoleLogs,
+  sanitizeDialogs,
   sanitizePageState,
 } from '~~/server/utils/sanitize';
 import { DEFAULT_INGEST_LIMITS } from '#shared/ingest-limits';
@@ -49,6 +51,7 @@ import { countFailedFromTally, sumFailedAndTimedOut } from '#shared/utils/test-c
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
 import { joinSuitePath, SUITE_PATH_SEP } from '#shared/utils/suites';
 import {
+  normalizeTestLocks,
   normalizeTestTags,
   parseTestMetadata,
   sanitizeTestMetadata,
@@ -389,6 +392,7 @@ export interface RunCaseInput {
   testSourceFrames?: unknown;
   testAnnotations?: unknown;
   tags?: unknown;
+  locks?: unknown;
   testMeta?: unknown;
   status: string;
   duration?: number | null;
@@ -406,7 +410,9 @@ export interface RunCaseInput {
   pageState?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
+  dialogs?: unknown;
   ariaSnapshot?: string | null;
+  ariaSnapshotJson?: string | null;
   workerIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
@@ -475,15 +481,20 @@ async function resolveSuites(db: DemoDb, projectId: number, cases: RunCaseInput[
   return suiteIdMap;
 }
 
-/** Latest-known tags + `piwi:` metadata for one test case, as stored. */
+/** Latest-known tags, locks + `piwi:` metadata for one test case, as stored. */
 interface CaseMetaSnapshot {
   tags: string[];
+  locks: string[];
   meta: TestMetadata | null;
 }
 
+function sameStringList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((value, i) => value === b[i]);
+}
+
 function sameSnapshot(stored: CaseMetaSnapshot, incoming: CaseMetaSnapshot): boolean {
-  if (stored.tags.length !== incoming.tags.length) return false;
-  if (stored.tags.some((tag, i) => tag !== incoming.tags[i])) return false;
+  if (!sameStringList(stored.tags, incoming.tags)) return false;
+  if (!sameStringList(stored.locks, incoming.locks)) return false;
   const a = stored.meta ?? {};
   const b = incoming.meta ?? {};
   return a.owner === b.owner && a.priority === b.priority && a.feature === b.feature && a.link === b.link;
@@ -498,6 +509,7 @@ async function syncTestCaseMetadata(db: DemoDb, incoming: Map<number, CaseMetaSn
     .select({
       id: testCases.id,
       tags: testCases.tags,
+      locks: testCases.locks,
       owner: testCases.owner,
       priority: testCases.priority,
       feature: testCases.feature,
@@ -511,6 +523,7 @@ async function syncTestCaseMetadata(db: DemoDb, incoming: Map<number, CaseMetaSn
       row.id,
       {
         tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
+        locks: Array.isArray(row.locks) ? (row.locks as string[]) : [],
         meta: sanitizeTestMetadata({
           owner: row.owner,
           priority: row.priority,
@@ -529,6 +542,7 @@ async function syncTestCaseMetadata(db: DemoDb, incoming: Map<number, CaseMetaSn
       .update(testCases)
       .set({
         tags: next.tags.length ? next.tags : null,
+        locks: next.locks.length ? next.locks : null,
         owner: next.meta?.owner ?? null,
         priority: next.meta?.priority ?? null,
         feature: next.meta?.feature ?? null,
@@ -545,7 +559,7 @@ export async function persistRunCases(
   testRunId: number,
   cases: RunCaseInput[],
   deduplicate?: boolean,
-): Promise<Array<{ id: number; status: string }>> {
+): Promise<Array<{ id: number; status: string; testCaseId: number; inputIndex: number }>> {
   if (cases.length === 0) return [];
 
   const suiteIdMap = await resolveSuites(db, projectId, cases);
@@ -576,6 +590,9 @@ export async function persistRunCases(
   }
 
   const runCasesRows: Array<typeof testRunsCases.$inferInsert> = [];
+  // Input index of each row in `runCasesRows`, so inserted rows can be mapped
+  // back to the batch entry that produced them after the insert.
+  const rowInputIndices: number[] = [];
   const networkRequestBuilders: NetworkRequestBuilder[] = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
   const pendingClusters = new Map<string, PendingCluster>();
@@ -586,7 +603,8 @@ export async function persistRunCases(
   }> = [];
   const caseMetaSnapshots = new Map<number, CaseMetaSnapshot>();
 
-  for (const c of cases) {
+  for (let i = 0; i < cases.length; i++) {
+    const c = cases[i]!;
     const suitePath = joinSuitePath(c.suitePath);
     const cacheKey = `${c.filePath}::${suitePath}::${c.title}`;
     let shared = existingCaseMap.get(cacheKey);
@@ -613,8 +631,9 @@ export async function persistRunCases(
     // Re-normalize on arrival, like the server — annotations win over a
     // supplied `testMeta` because they are the declared source.
     const tags = normalizeTestTags(c.tags);
+    const locks = normalizeTestLocks(c.locks).slice(0, DEFAULT_INGEST_LIMITS.locks);
     const testMeta = parseTestMetadata(c.testAnnotations) ?? sanitizeTestMetadata(c.testMeta);
-    caseMetaSnapshots.set(shared.id, { tags, meta: testMeta });
+    caseMetaSnapshots.set(shared.id, { tags, locks, meta: testMeta });
 
     if (deduplicate && existingRunCaseSet) {
       const rowKey = `${shared.id}::${c.retries ?? 0}::${resolveBrowserName(c.browser) ?? ''}`;
@@ -655,7 +674,7 @@ export async function persistRunCases(
       attempts: capArray(c.attempts, 30),
       line: c.line,
       column: c.column,
-      steps: capArray(c.steps, DEFAULT_INGEST_LIMITS.steps),
+      steps: capSteps(c.steps, DEFAULT_INGEST_LIMITS),
       stepEvents: capArray(c.stepEvents, DEFAULT_INGEST_LIMITS.stepEvents),
       slowestStep: c.slowestStep ?? null,
       slowestStepDuration: c.slowestStepDuration ?? null,
@@ -667,13 +686,16 @@ export async function persistRunCases(
           sanitizeConsoleLogs(c.consoleLogs as Array<Record<string, unknown>> | null | undefined),
           DEFAULT_INGEST_LIMITS,
         ) ?? null,
+      dialogs: capArray(sanitizeDialogs(c.dialogs), DEFAULT_INGEST_LIMITS.dialogs) ?? null,
       // Demo-mode rows keep writing inline (never case_payloads), which
       // permanently exercises the readers' payload → inline fallback.
       ariaSnapshot: capText(c.ariaSnapshot, DEFAULT_INGEST_LIMITS.ariaSnapshotChars),
+      ariaSnapshotJson: capText(c.ariaSnapshotJson, DEFAULT_INGEST_LIMITS.ariaSnapshotChars),
       testSource: capText(c.testSource, DEFAULT_INGEST_LIMITS.testSourceChars),
       testSourceFrames: capSourceFrames(c.testSourceFrames, DEFAULT_INGEST_LIMITS),
       testAnnotations: (c.testAnnotations as never) ?? null,
       tags: tags.length ? tags : null,
+      locks: locks.length ? locks : null,
       testMeta,
       browser: c.browser ?? null,
       browserName: resolveBrowserName(c.browser),
@@ -685,6 +707,7 @@ export async function persistRunCases(
       didNotRunReason: c.didNotRunReason ?? null,
       blockedBy: c.blockedBy ?? null,
     });
+    rowInputIndices.push(i);
 
     const nrItems = buildNetworkRequestItems(c.networkRequests as Array<Record<string, unknown>> | null | undefined);
     networkRequestBuilders.push({ items: nrItems });
@@ -700,11 +723,32 @@ export async function persistRunCases(
 
   // ON CONFLICT DO NOTHING + the (run, case, retries, browser) unique index keep
   // this idempotent across batch retries and same-test-different-browser rows.
-  const insertedCases = await db
-    .insert(testRunsCases)
-    .values(runCasesRows)
-    .onConflictDoNothing()
-    .returning({ id: testRunsCases.id, status: testRunsCases.status });
+  const insertedCases = await db.insert(testRunsCases).values(runCasesRows).onConflictDoNothing().returning({
+    id: testRunsCases.id,
+    status: testRunsCases.status,
+    testCaseId: testRunsCases.testCaseId,
+    retries: testRunsCases.retries,
+    browserName: testRunsCases.browserName,
+  });
+
+  // The unique (run, case, retries, browser) index makes this tuple unique
+  // within a batch, so each inserted row maps back to exactly one input entry
+  // even when deduplication skipped duplicates in between.
+  const tupleToInputIndex = new Map<string, number>();
+  runCasesRows.forEach((row, k) => {
+    const tuple = `${row.testCaseId}\x00${row.retries ?? 0}\x00${row.browserName ?? ''}`;
+    tupleToInputIndex.set(tuple, rowInputIndices[k]!);
+  });
+
+  const result = insertedCases.map((r) => {
+    const tuple = `${r.testCaseId}\x00${r.retries ?? 0}\x00${r.browserName ?? ''}`;
+    return {
+      id: r.id,
+      status: r.status,
+      testCaseId: r.testCaseId,
+      inputIndex: tupleToInputIndex.get(tuple) ?? -1,
+    };
+  });
 
   const nrValues = buildNetworkRequestInsertValues(networkRequestBuilders, insertedCases, testRunId);
   if (nrValues.length > 0) {
@@ -714,7 +758,7 @@ export async function persistRunCases(
   await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
   await syncTestCaseMetadata(db, caseMetaSnapshots);
 
-  return insertedCases;
+  return result;
 }
 
 /** POST /api/test-runs/:id/events */
@@ -767,6 +811,7 @@ export async function apiPostRunEvents(
         type: 'step-begin',
         data: {
           title: tc.title,
+          subtitle: tc.subtitle ?? null,
           parentTitle: tc.parentTitle,
           stepCategory: tc.stepCategory ?? null,
           location: tc.location,
@@ -796,6 +841,7 @@ export async function apiPostRunEvents(
         type: 'step-end',
         data: {
           title: tc.title,
+          subtitle: tc.subtitle ?? null,
           parentTitle: tc.parentTitle,
           stepCategory: tc.stepCategory ?? null,
           status: tc.status,
@@ -867,7 +913,15 @@ export async function apiPostRunEvents(
 
   const updatedRun = updatedRuns[0] ?? testRun;
 
-  for (const tc of parsedEvents) {
+  // The persisted execution id rides along so the live run page can deep-link
+  // each row to its real case page instead of a fabricated id (mirrors the
+  // server's events handler).
+  const persistedByInputIndex = new Map(
+    insertedRunCases.filter((r) => r.inputIndex >= 0).map((r) => [r.inputIndex, r]),
+  );
+
+  for (const [index, tc] of parsedEvents.entries()) {
+    const persisted = persistedByInputIndex.get(index);
     publishDemoRunEvent(id, {
       type: 'test-completed',
       data: {
@@ -884,6 +938,8 @@ export async function apiPostRunEvents(
         shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
         browser: tc.browser ?? null,
+        executionId: persisted?.id ?? null,
+        testCaseId: persisted?.testCaseId ?? null,
       },
     });
   }

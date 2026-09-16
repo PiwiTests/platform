@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { waitForHydration } from './utils';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { PROJECT } from '#shared/test-project-names';
@@ -297,10 +298,13 @@ test.describe('Environment UI Tests', () => {
 
     await page.goto(`/projects/${project.id}`);
     await page.waitForURL(/\/projects\/\d+/);
+    await waitForHydration(page);
 
-    await expect(page.getByText('production').first()).toBeVisible();
-    await expect(page.getByText('staging').first()).toBeVisible();
-    await expect(page.getByText('development').first()).toBeVisible();
+    // The environment select in the filter bar offers every environment.
+    await page.getByText('All environments').click();
+    await expect(page.getByRole('option', { name: 'production' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'staging' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'development' })).toBeVisible();
   });
 
   test('should filter test runs by environment', async ({ page, request }) => {
@@ -311,14 +315,14 @@ test.describe('Environment UI Tests', () => {
 
     await page.goto(`/projects/${project.id}`);
     await page.waitForURL(/\/projects\/\d+/);
+    await waitForHydration(page);
 
-    // Click production filter badge to enable filtering
-    await page.getByText('production').first().click();
+    // Pick production in the filter bar's environment select.
+    await page.getByText('All environments').click();
+    await page.getByRole('option', { name: 'production' }).click();
+    await page.keyboard.press('Escape');
 
-    const productionBadge = page.getByText('production').first();
-    await expect(productionBadge).toBeVisible();
-
-    // Add staging to filter
-    await page.getByText('staging').first().click();
+    // An active filter reveals the Reset control.
+    await expect(page.getByRole('button', { name: 'Reset' })).toBeVisible();
   });
 });

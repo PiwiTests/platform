@@ -9,6 +9,10 @@ import type { ServerLogEntry, ServerSpanEntry } from '~~/types/api';
 
 export interface TestStepInfo {
   title: string;
+  /** The step's target (rendered locator or URL), carried separately by newer Playwright. */
+  subtitle?: string;
+  /** Curated per-step arguments (rendered locator, URL, value, `test.step` author values). */
+  params?: Record<string, string | number | boolean>;
   duration?: number;
   category?: string;
   /** Error message when the step failed (undefined when the step passed). */
@@ -53,6 +57,8 @@ export interface RunScmMetadata {
   branch?: string | null;
   /** Pull-request number captured from the CI provider, when it exposes one. */
   prNumber?: string | number | null;
+  /** The branch a pull-request build targets, when the CI provider exposes it. */
+  baseBranch?: string | null;
   remoteUrl?: string | null;
 }
 

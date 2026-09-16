@@ -18,6 +18,8 @@ import {
   isBuiltinKey,
   materializeSelection,
   MAX_FAILED_IN_LAST_RUNS,
+  partitionTestsIntoShards,
+  locksSpanningTests,
   validateSelectionDefinition,
   validateSelectionKey,
   type MaterializedSelection,
@@ -38,6 +40,7 @@ export interface CatalogRow {
   suitePath: string;
   title: string;
   tags: string[];
+  locks: string[];
   owner: string | null;
   priority: string | null;
   feature: string | null;
@@ -97,6 +100,7 @@ export async function loadSelectionCatalog(
       suitePath: testCases.suitePath,
       title: testCases.title,
       tags: testCases.tags,
+      locks: testCases.locks,
       owner: testCases.owner,
       priority: testCases.priority,
       feature: testCases.feature,
@@ -125,6 +129,7 @@ export async function loadSelectionCatalog(
       suitePath: row.suitePath ?? '',
       title: row.title,
       tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
+      locks: Array.isArray(row.locks) ? (row.locks as string[]) : [],
       owner: row.owner ?? null,
       priority: row.priority ?? null,
       feature: row.feature ?? null,
@@ -305,6 +310,7 @@ function toResolvedTest(row: CatalogRow): ResolvedTest {
     title: row.title,
     line: row.lastLine,
     avgDurationMs: row.avgDurationMs,
+    locks: row.locks,
   };
 }
 
@@ -340,25 +346,6 @@ export interface ResolveOptions {
    * correctly. Analytics resolves many selections against one shared catalog.
    */
   catalog?: CatalogRow[];
-}
-
-/**
- * Split rows into `total` shards balanced by summed average duration
- * (longest-processing-time first: assign the heaviest test to the lightest
- * shard). Historically informed balancing that Playwright's file-count sharding
- * cannot do.
- */
-function partitionByDuration(rows: CatalogRow[], total: number): CatalogRow[][] {
-  const buckets: CatalogRow[][] = Array.from({ length: total }, () => []);
-  const loads = new Array<number>(total).fill(0);
-  const sorted = [...rows].sort((a, b) => (b.avgDurationMs ?? 0) - (a.avgDurationMs ?? 0) || stableCompare(a, b));
-  for (const row of sorted) {
-    let lightest = 0;
-    for (let i = 1; i < total; i++) if (loads[i]! < loads[lightest]!) lightest = i;
-    buckets[lightest]!.push(row);
-    loads[lightest] = loads[lightest]! + (row.avgDurationMs ?? 0);
-  }
-  return buckets.map((bucket) => bucket.sort(stableCompare));
 }
 
 /**
@@ -425,10 +412,11 @@ export async function resolveSelectionDefinition(
     }
   }
 
-  // shard: keep only this shard's duration-balanced bucket of the final set.
+  // shard: keep only this shard's duration-balanced bucket of the final set,
+  // with every test that shares a lock kept together in one shard.
   const shard = options.shard;
   if (shard && shard.total >= 1 && shard.index >= 1 && shard.index <= shard.total) {
-    ordered = partitionByDuration(ordered, shard.total)[shard.index - 1] ?? [];
+    ordered = partitionTestsIntoShards(ordered, shard.total)[shard.index - 1] ?? [];
   }
 
   // fail-fast: emit worst-first, so the tests most likely to fail start first.
@@ -438,6 +426,14 @@ export async function resolveSelectionDefinition(
     warnings.push({
       code: 'quarantined-included',
       message: 'The selection includes one or more quarantined tests',
+    });
+  }
+
+  const spanningLocks = locksSpanningTests(ordered);
+  if (spanningLocks.length > 0) {
+    warnings.push({
+      code: 'split-lock',
+      message: `Lock(s) ${spanningLocks.join(', ')} are held by more than one test — sharding with Playwright's own "playwright test --shard" could split a lock across shards; run this selection with "piwi run --shard i/n" (lock-aware) to keep each lock in one shard`,
     });
   }
 

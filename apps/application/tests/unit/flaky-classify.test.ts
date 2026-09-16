@@ -94,4 +94,32 @@ describe('Flaky root cause classification', () => {
     });
     expect(result).toBe('other');
   });
+
+  test('an attempt-diff network vote makes an otherwise-unclear flake network', async () => {
+    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
+    const result = classifyFlakyRootCause({
+      errorMessages: ['Something went wrong: undefined is not a function'],
+      stepErrors: [],
+      stepNames: ['submit order'],
+      networkErrorCount: 0,
+      status5xxCount: 0,
+      attemptDiffNetworkVotes: 1,
+      browserDistribution: { chromium: 3 },
+    });
+    expect(result).toBe('network');
+  });
+
+  test('an attempt-diff network vote outweighs a lone assertion keyword', async () => {
+    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
+    const result = classifyFlakyRootCause({
+      errorMessages: ['expect(received).toBe(expected)'],
+      stepErrors: [],
+      stepNames: [],
+      networkErrorCount: 0,
+      status5xxCount: 0,
+      attemptDiffNetworkVotes: 2,
+      browserDistribution: { chromium: 3 },
+    });
+    expect(result).toBe('network');
+  });
 });

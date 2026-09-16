@@ -178,7 +178,9 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
   `EnvManagedAlert`.
 - **Domain widgets** — `RunStatusBadge`, `StatusChip` (status icon + label in one badge, for detail summaries),
   `TestStatusBar`, `TagBadge` / `TagsSelect`, `BrowserBadge`, `MarkerBadge` / `MarkerFormModal`,
-  `ScreenshotLightbox`, `VideoPlayer`, `TraceListItem`, `LocatorHealingPanel` / `LocatorAlternativeRow`,
+  `ZoomableImage` (a click / keyboard-accessible image with a hover "Enlarge" affordance) driving
+  `ScreenshotLightbox` (full-screen, keyboard-navigable, with an actual-size zoom toggle for large captures),
+  `VideoPlayer`, `TraceListItem`, `LocatorHealingPanel` / `LocatorAlternativeRow`,
   `SnapshotLocatorPicker`, `EnvironmentDiffCard`, `DataLocationCard`.
 
 ### Composables & utils

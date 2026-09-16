@@ -170,9 +170,9 @@ test.describe('Desktop local run', () => {
   test('without the bridge the button does not exist', async ({ page }) => {
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    // The copyable Retry button proves the summary (where "Run locally" would
-    // sit) has rendered with failed cases.
-    await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible();
+    // The copyable Copy retry command button proves the header (where "Run
+    // locally" would sit) has rendered with failed cases.
+    await expect(page.getByRole('button', { name: 'Copy retry command' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Run locally' })).toHaveCount(0);
   });
 

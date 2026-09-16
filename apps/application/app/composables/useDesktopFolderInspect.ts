@@ -20,6 +20,8 @@ export interface DesktopFolderInspection {
   reporterConfigured: boolean;
   /** `projectName` parsed out of the Playwright config, when set as a literal. */
   configuredProjectName: string | null;
+  /** The Playwright config declares a `webServer` — Playwright starts the app itself. */
+  webServer: boolean;
 }
 
 /** Open the native folder picker. `null` on cancel or without the bridge. */
@@ -50,4 +52,54 @@ export function isFolderPiwiReady(inspection: DesktopFolderInspection | null): b
     inspection.reporterInstalled &&
     inspection.reporterConfigured
   );
+}
+
+/** One importable Playwright archive found on disk: a blob report or a trace. */
+export interface DesktopLocalArchive {
+  /** Absolute path to the `.zip` on this machine. */
+  path: string;
+  /** File name (basename). */
+  name: string;
+  /** Size in bytes. */
+  size: number;
+  /**
+   * `'blob'` for a Playwright blob report (a whole run), `'trace'` for a trace
+   * file (one execution); `null` for a hand-picked file, whose kind the server
+   * decides when it opens it.
+   */
+  kind: 'blob' | 'trace' | null;
+}
+
+/**
+ * Importable archives left in a checkout by previous Playwright runs — blob
+ * reports under `blob-report/` and traces under `test-results/`. Empty without
+ * the bridge, on failure, or when the folder has none.
+ */
+export async function findDesktopImportableRuns(path: string): Promise<DesktopLocalArchive[]> {
+  const core = tauriCore();
+  if (!core || !path) return [];
+  try {
+    return (await core.invoke<DesktopLocalArchive[] | null>('desktop_find_importable_runs', { path })) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Open the native multi-select picker for import archives, filtered to `.zip`
+ * and starting at `defaultPath` (the linked project folder) when given. Empty
+ * on cancel or without the bridge.
+ */
+export async function pickDesktopImportFiles(defaultPath?: string | null): Promise<DesktopLocalArchive[]> {
+  const core = tauriCore();
+  if (!core) return [];
+  try {
+    return (
+      (await core.invoke<DesktopLocalArchive[] | null>('desktop_pick_import_files', {
+        defaultPath: defaultPath ?? null,
+      })) ?? []
+    );
+  } catch {
+    return [];
+  }
 }

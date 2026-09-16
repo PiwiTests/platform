@@ -33,6 +33,11 @@ export interface DescribeFailureContext {
    * test timeout interrupted when the error itself carries no pending action.
    */
   lastStepTitle?: string | null;
+  /**
+   * The failing step's curated params. Its `locator` / `url` back the headline
+   * where the error text names none (custom matchers, `test.step` failures).
+   */
+  stepParams?: Record<string, string | number | boolean> | null;
 }
 
 /** Longest headline before the builder falls back to the leaf locator and shorter values. */
@@ -568,7 +573,7 @@ export function describeFailureText(
   ctx?: DescribeFailureContext,
 ): FailureDescription | null {
   if (!raw || !raw.trim()) return null;
-  return describeFailure(parsePlaywrightError(raw), ctx);
+  return describeFailure(parsePlaywrightError(raw, { stepParams: ctx?.stepParams }), ctx);
 }
 
 /**
@@ -581,6 +586,22 @@ export function lastStepTitle(
   if (!steps || steps.length === 0) return null;
   const failed = steps.find((s) => s.failed);
   return (failed ?? steps[steps.length - 1])?.title ?? null;
+}
+
+/**
+ * The failing step's params (else the last step's) — the `stepParams` a
+ * headline reads for its locator when the error text carries none. Mirrors
+ * {@link lastStepTitle}'s failed-else-last choice.
+ */
+export function failingStepParams(
+  steps:
+    | ReadonlyArray<{ failed?: boolean | null; params?: Record<string, string | number | boolean> | null }>
+    | null
+    | undefined,
+): Record<string, string | number | boolean> | null {
+  if (!steps || steps.length === 0) return null;
+  const failed = steps.find((s) => s.failed);
+  return (failed ?? steps[steps.length - 1])?.params ?? null;
 }
 
 /** The headline as markdown: locators and values in code spans, the rest escaped. */

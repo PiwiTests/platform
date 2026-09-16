@@ -36,9 +36,17 @@ export interface StoryNetworkRequest {
   serverLogs?: Array<{ timestamp: number; level: string; category: string; message: string; stack?: string }>;
 }
 
+export interface StoryDialog {
+  type: string;
+  message: string;
+  defaultValue?: string | null;
+}
+
 export interface StoryEvidence {
   consoleOnFail?: StoryConsoleEntry[];
   failingNetwork?: StoryNetworkRequest[];
+  /** A browser dialog left open at the failure moment. */
+  dialogOnFail?: StoryDialog;
   /** localStorage keys missing from the failing page state (vs the passing template). */
   pageStateDropKeys?: string[];
   /** Crash stories: the page is gone — no console/aria/page-state/web-vitals at all. */
@@ -134,7 +142,17 @@ export interface DemoProject {
     sessionStorage: Array<{ key: string; length: number }>;
     cookies: Array<Record<string, unknown>>;
   } | null;
-  stepTitles: Array<{ title: string; category: string; weight: number }>;
+  stepTitles: DemoStepTitle[];
+}
+
+/** A themed step for a project's cases; `children` nest inside its time window. */
+export interface DemoStepTitle {
+  title: string;
+  category: string;
+  weight: number;
+  subtitle?: string;
+  params?: Record<string, string | number | boolean>;
+  children?: DemoStepTitle[];
 }
 
 export interface ScmCommitFile {

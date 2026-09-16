@@ -1,7 +1,7 @@
 {
+  "name": "platform",
+  "version": "0.32.0",
   "private": true,
-  "version": "0.26.1",
-  "type": "module",
   "workspaces": [
     "packages/core",
     "packages/picker-dom",
@@ -11,9 +11,7 @@
     "apps/extension",
     "integrations/nitro"
   ],
-  "engines": {
-    "node": ">=24.0.0"
-  },
+  "type": "module",
   "scripts": {
     "prepare": "husky"
   },
@@ -27,5 +25,8 @@
     "oxlint": "^1.74.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
+  },
+  "engines": {
+    "node": ">=24.0.0"
   }
 }

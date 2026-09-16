@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import type { EntityLinkInfo } from '~~/types/api';
 import { detectProvider, getProviderIcon } from '#shared/link-detect';
+import type { LinkEntityType } from '#shared/handlers/links';
 
 const props = defineProps<{
-  entityType: 'test_run' | 'test_runs_case' | 'test_case';
+  entityType: LinkEntityType;
   entityId: number;
   links?: EntityLinkInfo[] | null;
+  /** Hide the add/remove controls for viewers without write access. */
+  readonly?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -82,9 +85,11 @@ watch(
 
 <template>
   <div class="flex flex-wrap items-center gap-1.5">
-    <LinkChip v-for="link in localLinks" :key="link.id" :link="link" removable @remove="removeLink" />
+    <LinkChip v-for="link in localLinks" :key="link.id" :link="link" :removable="!readonly" @remove="removeLink" />
 
-    <UPopover v-model:open="addLinkOpen">
+    <span v-if="readonly && localLinks.length === 0" class="text-xs text-muted">None</span>
+
+    <UPopover v-if="!readonly" v-model:open="addLinkOpen">
       <UButton
         size="xs"
         variant="ghost"

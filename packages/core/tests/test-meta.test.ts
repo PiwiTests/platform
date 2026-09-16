@@ -1,10 +1,13 @@
 import { describe, test, expect } from 'vitest';
 import {
   isPiwiAnnotation,
+  normalizeTestLocks,
   normalizeTestTags,
   parseTestMetadata,
   priorityRank,
   sanitizeTestMetadata,
+  MAX_TEST_LOCKS,
+  MAX_TEST_LOCK_CHARS,
   MAX_TEST_TAGS,
   MAX_TEST_TAG_CHARS,
 } from '../src/test-meta';
@@ -40,6 +43,36 @@ describe('normalizeTestTags', () => {
   test('caps the length of a single tag', () => {
     const [tag] = normalizeTestTags(['x'.repeat(MAX_TEST_TAG_CHARS + 20)]);
     expect(tag).toHaveLength(MAX_TEST_TAG_CHARS);
+  });
+});
+
+describe('normalizeTestLocks', () => {
+  test('keeps lock names verbatim, no @ stripping', () => {
+    expect(normalizeTestLocks(['database', 'external-api'])).toEqual(['database', 'external-api']);
+  });
+
+  test('preserves declaration order and drops duplicates', () => {
+    expect(normalizeTestLocks(['db', 'api', 'db'])).toEqual(['db', 'api']);
+  });
+
+  test('trims and drops non-strings and blanks rather than throwing', () => {
+    expect(normalizeTestLocks(['  db  ', 42, null, '', '   '])).toEqual(['db']);
+  });
+
+  test('returns an empty array for anything that is not an array', () => {
+    for (const input of [null, undefined, 'db', 7, {}]) {
+      expect(normalizeTestLocks(input)).toEqual([]);
+    }
+  });
+
+  test('caps the number of locks', () => {
+    const many = Array.from({ length: MAX_TEST_LOCKS + 5 }, (_, i) => `lock${i}`);
+    expect(normalizeTestLocks(many)).toHaveLength(MAX_TEST_LOCKS);
+  });
+
+  test('caps the length of a single lock', () => {
+    const [lock] = normalizeTestLocks(['x'.repeat(MAX_TEST_LOCK_CHARS + 20)]);
+    expect(lock).toHaveLength(MAX_TEST_LOCK_CHARS);
   });
 });
 

@@ -19,8 +19,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  * dev` can boot the sidecar and load the dashboard.
  */
 export const { test, expect } = createTauriTest({
-  // Required by the type, but only used by browser-only mode, which we don't run.
-  devUrl: 'http://127.0.0.1:3000',
+  // Deliberately empty. The type requires a string, but a *truthy* `devUrl` is
+  // not just browser-only: in tauri mode the fixture navigates the webview to it
+  // (`window.location.href = devUrl`) the instant the control socket answers a
+  // ping — before the shell has driven its own token bootstrap, and often before
+  // the native `main` window even exists. The plugin only retries window
+  // resolution for ~2s per command, so on a loaded CI runner that premature
+  // `eval` loses the race and fails the run with
+  // `window 'main' not found after retries (available windows: [])`. An empty
+  // (falsy) value skips that navigation entirely and lets the shell load itself.
+  devUrl: '',
   tauriCommand: 'npx tauri dev',
   tauriFeatures: ['e2e-testing'],
   tauriCwd: resolve(__dirname, '..'),

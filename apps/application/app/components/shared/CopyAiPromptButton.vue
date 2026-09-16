@@ -12,25 +12,10 @@ const props = defineProps<{
   contextEndpoint: string;
 }>();
 
-const { copy, copied } = useCopy();
-const toast = useToast();
-const loading = ref(false);
+const { copyPrompt: copyPromptFor, copied, loading } = useCopyAiPrompt();
 
-// Fetched directly rather than through `$fetch`, so the base path is applied by
-// hand — the demo's service worker only intercepts its own `/demo/` prefix.
-const base = computed(() => (useRuntimeConfig().app?.baseURL ?? '/').replace(/\/$/, ''));
-
-async function copyPrompt() {
-  loading.value = true;
-  try {
-    const response = await fetch(`${base.value}${props.contextEndpoint}?format=prompt`);
-    if (!response.ok) throw new Error(`Request failed (${response.status})`);
-    copy(await response.text(), { toast: 'AI prompt copied' });
-  } catch (error) {
-    toast.add({ title: 'Could not copy the prompt', description: errorMessage(error), color: 'error' });
-  } finally {
-    loading.value = false;
-  }
+function copyPrompt() {
+  return copyPromptFor(props.contextEndpoint);
 }
 </script>
 

@@ -1,29 +1,28 @@
 <script setup lang="ts">
-import type {
-  AiStepIntent,
-  PerformanceStep,
-  WebVitals,
-  NetworkRequest,
-  TestCaseHistoryPoint,
-  TraceInfo,
-} from '~~/types/api';
-import type { TableColumn } from '@nuxt/ui';
-import { CASE_STATUS_SERIES, legendOf } from '~/utils/chart';
-import { getPerformanceHints } from '~/utils/performance-hints';
+import type { AiStepIntent, TestCaseHistoryPoint, TraceInfo } from '~~/types/api';
+import { isPiwiAnnotation } from '@piwitests/core/test-meta';
 import { renderAnsi } from '~/utils';
-import type { NavbarAction } from '~/components/shared/NavbarActions.vue';
-import type { HelpTopicKey } from '~/utils/help-content';
-import { condenseErrorText } from '#shared/error-fingerprint';
+import { buildRetryCommand } from '~/utils/retry-command';
 import type { FailureVerdict } from '#shared/failure-verdict';
+import type { FailureCluesResult } from '#shared/handlers/test-cases';
 import { clusterSectionLocatorKey } from '~/composables/useClusterSectionLocator';
+import { EVIDENCE_SECTION_TAB } from '~/utils/evidence-sections';
+import type { FixSectionKey } from '~/components/shared/Toolbox.vue';
+import type { RerunInfo } from '~/composables/useCiRerun';
+import type { BlockedCaseRef } from '~~/types/api';
+import type { ReproRecipe, BisectResult, ReproduceDesktopContext } from '#shared/reproduce';
+import type { FixedBeforeMatch, FixPlan } from '#shared/fix-plan.types';
+import type { Situation, SituationPart } from '#shared/situation';
+import type { NextStep } from '#shared/next-step';
+import { commitUrl } from '#shared/scm-urls';
 
 const route = useRoute();
-const router = useRouter();
 const testCaseId = route.params.id;
 
 const { data: testCase, refresh } = await useFetch(`/api/test-run-cases/${testCaseId}`);
+
 // The rows ride in the SSR payload, so the server and the client agree on the
-// History tab's count and its table at hydration.
+// History block's strip at hydration.
 const { data: historyData } = await useAsyncData(
   `test-run-case-history-${testCaseId}`,
   () => {
@@ -35,20 +34,28 @@ const { data: historyData } = await useAsyncData(
   { default: (): TestCaseHistoryPoint[] => [], watch: [() => testCase.value?.testCaseId] },
 );
 
+// The deterministic clues and the story that chains them: the story line leads
+// with the story (or the top clue), folds every clue under its disclosure, and
+// the top clue's section chooses the default evidence tab.
+const { data: cluesData } = await useFetch<FailureCluesResult>(`/api/test-run-cases/${testCaseId}/clues`, {
+  default: (): FailureCluesResult => ({ clues: [], story: null, failureAt: null }),
+});
+const clues = computed(() => cluesData.value?.clues ?? []);
+const story = computed(() => cluesData.value?.story ?? null);
+const cluesFailureAt = computed(() => cluesData.value?.failureAt ?? null);
+
+// The evidence opens on the story: the first member clue's cited section and the
+// story's strength (or the top clue's, when no combination matched) tell the tab
+// strip which view leads.
+const defaultHint = useEvidenceHint(clues, story);
+
 const { data: traceData, refresh: refreshTraces } = await useFetch(`/api/test-run-cases/${testCaseId}/traces`, {
-  // The endpoint returns `{ items: [...] }` — without the unwrap, `hasTrace`
-  // and every trace-gated view stay false and the Artifacts tab never shows
-  // the Traces card.
   transform: (r: { items: TraceInfo[] }) => r.items,
 });
 
 /** Whether a trace file exists for this execution — unlocks the "go deeper" evidence views. */
 const hasTrace = computed(() => (traceData.value?.length ?? 0) > 0);
 
-// "Execution" is the word `docs/concepts.md` defines for one attempt of one test
-// on one browser — the distinction the whole object model rests on. The UI used
-// to say "Test run case", which is the join-table's name, not a concept anyone
-// was taught. Say the documented word.
 useHead(
   computed(() => ({
     title: testCase.value?.title
@@ -57,72 +64,9 @@ useHead(
   })),
 );
 
-// Tab membership branches on *status*, not the error string: a flaky
-// passed-on-retry execution still failed at attempt 1 and must offer the
-// Diagnosis tab; a passing one keeps a stable strip.
-const hasFailedAttempt = computed(() => {
-  const tc = testCase.value;
-  if (!tc) return false;
-  const statuses = [tc.status, ...(tc.attempts ?? []).map((a: { status: string }) => a.status)];
-  return statuses.some((s) => isFailedStatus(s));
-});
-
-// Declared before the tab set: `normalizeTab` evaluates `tabItems` during
-// setup, so every computed it touches must already be initialized.
 const runIsActive = computed(() => {
   const status = testCase.value?.testRun?.status;
   return status === 'running' || status === 'finalizing';
-});
-
-const performanceHints = computed(() => {
-  if (!testCase.value) return [];
-  return getPerformanceHints(testCase.value);
-});
-
-const steps = computed(() => {
-  if (!testCase.value?.steps) return [];
-  return testCase.value.steps as PerformanceStep[];
-});
-
-const webVitals = computed<WebVitals | null>(() => {
-  return (testCase.value?.webVitals as unknown as WebVitals | null) ?? null;
-});
-
-/** AI-step intent mappings from the execution's usage manifest (when the test replays AI steps). */
-const aiIntents = computed<AiStepIntent[] | null>(() => {
-  const usage = testCase.value?.aiUsage as unknown as { intents?: AiStepIntent[] } | null;
-  return usage?.intents ?? null;
-});
-
-const networkRequests = computed<NetworkRequest[]>(() => {
-  return (testCase.value?.networkRequests as unknown as NetworkRequest[] | null) ?? [];
-});
-
-const historicalTiming = computed(() => {
-  if (!historyData.value || historyData.value.length < 2 || !testCase.value?.duration) return null;
-  const previous = historyData.value.filter((h) => h.duration !== null && h.id !== testCase.value?.id);
-  if (previous.length === 0) return null;
-  const avg = previous.reduce((sum, h) => sum + (h.duration || 0), 0) / previous.length;
-  const current = testCase.value.duration;
-  const diff = current - avg;
-  const pct = avg > 0 ? Math.round((diff / avg) * 100) : 0;
-  return { avg: Math.round(avg), current, diff: Math.round(diff), pct };
-});
-
-const metadata = computed(() => {
-  return testCase.value?.testRun?.metadata as Record<string, unknown> | null | undefined;
-});
-
-const scmInfo = computed(() => {
-  const m = metadata.value;
-  if (!m?.scm) return null;
-  return m.scm as { commit?: string; branch?: string; author?: string; commitMessage?: string };
-});
-
-const ciInfo = computed(() => {
-  const m = metadata.value;
-  if (!m?.ci) return null;
-  return m.ci as { provider?: string; buildNumber?: string; buildUrl?: string; workflow?: string };
 });
 
 /** The one-line verdict on a failing execution, built server-side from the stored error and signals. */
@@ -151,220 +95,204 @@ const failureCluster = computed(() => {
   } | null;
 });
 
-// ── Tabs ────────────────────────────────────────────────────────────────────
-// The tab set branches on status, not the error string: a failing execution
-// (or one whose earlier attempt failed) leads with Diagnosis; Artifacts is
-// always present in a fixed order so content never relocates between states.
-// While a run streams, the Diagnosis slot is reserved (disabled) instead of
-// appearing mid-view and reflowing the strip.
-const tabItems = computed(() => {
-  const items: {
-    label: string;
-    icon: string;
-    value: string;
-    slot: string;
-    disabled?: boolean;
-    disabledReason?: string;
-    help?: HelpTopicKey;
-  }[] = [];
-  if (hasFailedAttempt.value) {
-    items.push({
-      label: 'Diagnosis',
-      icon: 'i-lucide-stethoscope',
-      value: 'diagnosis',
-      slot: 'diagnosis',
-      help: 'case.diagnosis-tab',
-    });
-  } else if (runIsActive.value) {
-    items.push({
-      label: 'Diagnosis',
-      icon: 'i-lucide-stethoscope',
-      value: 'diagnosis',
-      slot: 'diagnosis',
-      disabled: true,
-      disabledReason: 'unavailable until a test fails',
-    });
-  }
-  items.push({
-    label: `Steps (${steps.value.length})`,
-    icon: 'i-lucide-list-checks',
-    value: 'steps',
-    slot: 'steps',
-    help: 'case.steps',
-  });
-  items.push({
-    label: 'Artifacts',
-    icon: 'i-lucide-paperclip',
-    value: 'artifacts',
-    slot: 'artifacts',
-    help: 'case.artifacts',
-  });
-  items.push({ label: 'Performance', icon: 'i-lucide-gauge', value: 'performance', slot: 'performance' });
-  items.push({
-    label: `History${historyData.value?.length ? ` (${historyData.value.length})` : ''}`,
-    icon: 'i-lucide-trending-up',
-    value: 'history',
-    slot: 'history',
-  });
-  return items;
+/** AI-step intent mappings from the execution's usage manifest (locator-fix probe). */
+const aiIntents = computed<AiStepIntent[] | null>(() => {
+  const usage = testCase.value?.aiUsage as unknown as { intents?: AiStepIntent[] } | null;
+  return usage?.intents ?? null;
 });
 
-// A disabled tab (e.g. the reserved Diagnosis slot on an active, not-yet-failed
-// run) is not a navigable target, so a `?tab=` pointing at it must fall back to
-// the default rather than render a panel whose control is disabled.
-const tabValues = computed(() => tabItems.value.filter((t) => !t.disabled).map((t) => t.value));
+// ── Fix card ────────────────────────────────────────────────────────────────
+/** Whether the desktop (Tauri) bridge is present — set on mount below. */
+const desktopBridge = ref(false);
 
-function defaultTab() {
-  return hasFailedAttempt.value ? 'diagnosis' : 'steps';
+// The local reproduction recipe and generated bisect for this execution.
+const { data: reproduceData } = await useFetch<{
+  reproduce: ReproRecipe;
+  bisect: BisectResult;
+  desktop: ReproduceDesktopContext;
+} | null>(`/api/test-run-cases/${testCaseId}/reproduce`);
+
+/** The cluster's stored diagnosis, only when it completed and has a summary. */
+const clusterDiagnosis = computed(() => {
+  const d = failureCluster.value?.diagnosis;
+  return d && d.status === 'completed' && d.summary ? d : null;
+});
+const confidenceColor = (c?: string | null): 'success' | 'warning' | 'neutral' =>
+  c === 'high' ? 'success' : c === 'medium' ? 'warning' : 'neutral';
+
+// The story is the one explanation on the first screen. A completed diagnosis
+// leads the story line only when no deterministic story chained the clues — the
+// story stays primary when it exists.
+const storyDiagnosis = computed(() =>
+  !story.value && clusterDiagnosis.value
+    ? { summary: clusterDiagnosis.value.summary as string, confidence: clusterDiagnosis.value.confidence ?? null }
+    : null,
+);
+
+// The situation sentence and the single next step, built server-side from the
+// verdict and the same healing / diagnosis facts the toolbox reads.
+const situation = computed(() => (testCase.value as { situation?: Situation | null } | null)?.situation ?? null);
+const nextStep = computed(() => (testCase.value as { nextStep?: NextStep | null } | null)?.nextStep ?? null);
+
+// A `commit` part of the situation links to the SCM host only when the run has a repository.
+const repositoryUrl = computed(() => reproduceData.value?.desktop?.repositoryUrl ?? null);
+function situationCommitHref(part: SituationPart): string | null {
+  return part.id != null ? commitUrl(repositoryUrl.value, String(part.id)) : null;
 }
 
-/** Map a raw ?tab= value (incl. legacy aliases) to a currently-valid tab. */
-function normalizeTab(raw: unknown): string {
-  let t = typeof raw === 'string' ? raw : '';
-  if (t === 'error') t = 'diagnosis'; // legacy: the old Failure tab
-  if (t === 'traces') t = 'artifacts'; // legacy: old Traces & Console tab
-  return tabValues.value.includes(t) ? t : defaultTab();
-}
-
-const activeTab = ref(normalizeTab(route.query.tab));
-
-// A live run can make `error` appear (or disappear) mid-session, swapping the tab
-// set out from under the user; re-normalize so the panel never goes blank.
-watch(tabValues, (vals) => {
-  if (!vals.includes(activeTab.value)) activeTab.value = normalizeTab(route.query.tab);
+// The story, situation and next lines are only for a problem execution; a passing
+// one shows identity and facts alone.
+const isProblem = computed(() => {
+  const s = testCase.value?.status;
+  return s === 'failed' || s === 'timedout' || s === 'timedOut' || s === 'didnotrun';
 });
 
-// Keep the active tab in the URL so a failure can be deep-linked and shared.
-// `immediate` covers the initial resolved tab too — e.g. landing on a failing
-// case with no `?tab=` already defaults in-memory to 'diagnosis', but without
-// firing this on mount the URL bar would never reflect that default.
-watch(
-  activeTab,
-  (tab) => {
-    if (route.query.tab === tab) return;
-    router.replace({ query: { ...route.query, tab } });
+const blockedTests = computed(() => (testCase.value as { blockedTests?: BlockedCaseRef[] } | null)?.blockedTests ?? []);
+
+/** A locator-resolution failure — the only case the Locator fix section applies to. */
+const isLocatorFailure = computed(() =>
+  Boolean(verdict.value?.isLocatorResolutionFailure && testCase.value?.testRun?.id),
+);
+
+// CI re-run for the cluster this failure belongs to, for the Verify section.
+const { data: rerunInfo, refresh: refreshRerun } = await useAsyncData<RerunInfo | null>(
+  `test-run-case-rerun-${testCaseId}`,
+  () => {
+    const id = failureCluster.value?.id;
+    return id ? $fetch<RerunInfo>(`/api/failure-clusters/${id}/rerun`) : Promise.resolve(null);
   },
-  { immediate: true },
+  { default: (): RerunInfo | null => null, watch: [() => failureCluster.value?.id] },
 );
+// "Fixed before" for the cluster this failure belongs to.
+const { data: fixedBeforeData, refresh: refreshFixedBefore } = await useAsyncData<FixedBeforeMatch[]>(
+  `test-run-case-fixed-before-${testCaseId}`,
+  () => {
+    const id = failureCluster.value?.id;
+    return id
+      ? $fetch<{ items: FixedBeforeMatch[] }>(`/api/failure-clusters/${id}/fixed-before`).then((r) => r.items)
+      : Promise.resolve([]);
+  },
+  { default: (): FixedBeforeMatch[] => [], watch: [() => failureCluster.value?.id] },
+);
+const fixedBefore = computed(() => fixedBeforeData.value ?? []);
 
-const historyColumns: TableColumn<TestCaseHistoryPoint>[] = [
-  { accessorKey: 'startTime', header: 'Date' },
-  { accessorKey: 'status', header: 'Status' },
-  { accessorKey: 'duration', header: 'Duration' },
-  { accessorKey: 'retries', header: 'Retries' },
-  { accessorKey: 'runId', header: 'Run' },
-  { accessorKey: 'error', header: 'Error' },
-];
+// The cluster's fix plan — its diagnosis patch backs the next step's copy /
+// download / open-in-IDE actions, so it is fetched once here rather than by each
+// action.
+const { data: fixPlanData } = await useAsyncData<FixPlan | null>(
+  `test-run-case-fix-plan-${testCaseId}`,
+  () => {
+    const id = failureCluster.value?.id;
+    return id ? $fetch<FixPlan>(`/api/failure-clusters/${id}/fix-plan`).catch(() => null) : Promise.resolve(null);
+  },
+  { default: (): FixPlan | null => null, watch: [() => failureCluster.value?.id] },
+);
+const fixPlanPatch = computed(() => fixPlanData.value?.diagnosis?.patch ?? null);
 
-const stepCategoryColor: Record<string, 'info' | 'success' | 'warning' | 'neutral'> = {
-  navigation: 'info',
-  assertion: 'success',
-  action: 'warning',
-  input: 'warning',
-  api: 'info',
-  wait: 'neutral',
-  hook: 'neutral',
-  fixture: 'neutral',
-};
-
-// Widths are set via per-column `meta.class` (Nuxt UI applies these to th/td);
-// with `table-fixed w-full` the width-less Step column absorbs the remaining space.
-const stepColumns: TableColumn<PerformanceStep>[] = [
-  { id: 'index', header: '#', meta: { class: { th: 'w-12', td: 'w-12' } } },
-  { id: 'status', header: '', meta: { class: { th: 'w-10', td: 'w-10' } } },
-  { accessorKey: 'category', header: 'Category', meta: { class: { th: 'w-28', td: 'w-28' } } },
-  { accessorKey: 'title', header: 'Step' }, // no width → absorbs remaining width
-  { accessorKey: 'duration', header: 'Duration', meta: { class: { th: 'w-44', td: 'w-44' } } },
-];
-
-// ── Steps tab derived data ───────────────────────────────────────────────────
-// Per-category rollup for the summary strip above the table. Durations are summed
-// over the flat step list (parents include their children), matching how the
-// reporter's StepMetrics already reports navigation/wait totals.
-const stepSummary = computed(() => {
-  const byCat = new Map<string, { count: number; duration: number }>();
-  for (const s of steps.value) {
-    const entry = byCat.get(s.category) ?? { count: 0, duration: 0 };
-    entry.count += 1;
-    entry.duration += s.duration || 0;
-    byCat.set(s.category, entry);
-  }
-  return Array.from(byCat, ([category, v]) => ({ category, ...v })).sort((a, b) => b.duration - a.duration);
+const { applyingId, applyTriage } = useApplyClusterTriage({
+  clusterId: () => failureCluster.value?.id ?? null,
+  status: () => failureCluster.value?.status,
+  currentNote: () => (failureCluster.value as { triageNote?: string | null } | null)?.triageNote,
+  onApplied: () => Promise.all([refresh(), refreshFixedBefore()]),
 });
 
-// Row index of the single slowest step, used to tag that row. Mirrors the header's
-// slowestStep (max flat-step duration) but resolved to a stable row. All-zero
-// durations (a test that never ran) must not tag row 0 as "slowest".
-const slowestStepIndex = computed(() => {
-  let idx = -1;
-  let max = -1;
-  steps.value.forEach((s, i) => {
-    if ((s.duration || 0) > max) {
-      max = s.duration || 0;
-      idx = i;
-    }
-  });
-  return max > 0 ? idx : -1;
+const { rerunning, triggerRerun } = useCiRerun(() => failureCluster.value?.id ?? null, refreshRerun);
+
+/** The Verify section shows when a CI re-run is configured, or in the desktop shell. */
+const showVerify = computed(() => Boolean(rerunInfo.value?.available) || desktopBridge.value);
+
+/** Reproduce shows for a failing execution once its recipe is available. */
+const showReproduce = computed(() => Boolean(verdict.value) && Boolean(reproduceData.value?.reproduce?.steps?.length));
+
+/** The Fix card's sections, in the order the card renders them. */
+const fixSections = computed<FixSectionKey[]>(() => {
+  const s: FixSectionKey[] = [];
+  if (isLocatorFailure.value) s.push('locator-fix');
+  if (failureCluster.value) s.push('fix-plan');
+  s.push('diagnosis');
+  if (fixedBefore.value.length) s.push('fixed-before');
+  if (showVerify.value) s.push('verify');
+  if (showReproduce.value) s.push('reproduce');
+  if (blockedTests.value.length) s.push('blocked');
+  return s;
 });
 
-const maxStepDuration = computed(() => steps.value.reduce((m, s) => Math.max(m, s.duration || 0), 0));
+// The Fix card covers a failing execution (something to fix) or one that blocked others.
+const showFix = computed(() => Boolean(verdict.value) || blockedTests.value.length > 0);
 
-// A true waterfall needs a startTime on every step (only runs from a recent
-// reporter carry one); otherwise the bars fall back to left-aligned magnitude.
-const hasStepTimings = computed(
-  () => steps.value.length > 0 && steps.value.every((s) => typeof s.startTime === 'number'),
+// ── Folded one-line summaries for the toolbox sections ───────────────────────
+const { aiStatus } = useAiStatus();
+const diagnosisSummary = computed(() =>
+  diagnosisSectionSummary(failureCluster.value?.diagnosis, aiStatus.value?.configured),
 );
-const timelineStart = computed(
-  () =>
-    testCase.value?.startedAt ??
-    (hasStepTimings.value ? Math.min(...steps.value.map((s) => s.startTime as number)) : 0),
+const reproduceSummary = computed(() =>
+  reproduceSectionSummary(
+    reproduceData.value?.reproduce?.steps?.length ?? 0,
+    Boolean(reproduceData.value?.bisect?.available),
+  ),
 );
-const timelineDuration = computed(() => {
-  const total = testCase.value?.duration ?? 0;
-  if (total > 0) return total;
-  if (hasStepTimings.value) {
-    const end = Math.max(...steps.value.map((s) => (s.startTime as number) + (s.duration || 0)));
-    return Math.max(1, end - timelineStart.value);
+const verifySummary = computed(() =>
+  verifySectionSummary(retryCommand.value ?? '', Boolean(rerunInfo.value?.available), 'Re-run the failing test'),
+);
+
+// ── Header: identity, exceptional badges ─────────────────────────────────────
+// Playwright test marks only — `piwi:` annotations are ownership, not marks.
+const annotations = computed(() =>
+  (testCase.value?.testAnnotations ?? []).filter(
+    (ann: { type: string; description?: string | null }) => !isPiwiAnnotation(ann.type),
+  ),
+);
+
+const quarantined = computed(() => Boolean((testCase.value as { quarantined?: boolean } | null)?.quarantined));
+
+/**
+ * Exceptional badges only. The why-signals (regression, passed on retry, newly
+ * flaky) live in the headline's fact row when there is a headline, so they show
+ * in the header only for an execution with no headline (a passing or
+ * passed-on-retry attempt) — a fact appears once. Playwright marks always show.
+ */
+const headerBadges = computed(() => {
+  const tc = testCase.value;
+  type Badge = {
+    label: string;
+    color?: 'error' | 'warning' | 'neutral';
+    icon?: string;
+    title?: string;
+    mono?: boolean;
+  };
+  if (!tc) return [] as Badge[];
+  const out: Badge[] = [];
+  if (!verdict.value) {
+    if (tc.isNewRegression)
+      out.push({
+        label: 'New regression',
+        color: 'error',
+        icon: 'i-lucide-git-pull-request-arrow',
+        title: 'Passed in the baseline run, failing here',
+      });
+    if (tc.status === 'passed' && (tc.retries ?? 0) > 0)
+      out.push({
+        label: 'Passed on retry',
+        color: 'warning',
+        icon: 'i-lucide-refresh-cw',
+        title: 'This test failed then passed on a retry',
+      });
+    if (tc.isNewFlaky)
+      out.push({
+        label: 'Newly flaky',
+        color: 'warning',
+        icon: 'i-lucide-shuffle',
+        title: 'Newly started passing only on retry',
+      });
   }
-  return 0;
+  for (const ann of annotations.value)
+    out.push({ label: `@${ann.type}`, color: 'neutral', mono: true, title: ann.description || ann.type });
+  return out;
 });
 
-/** Bar geometry for a step: a real waterfall when timings exist, else magnitude. */
-function stepBarStyle(step: PerformanceStep): Record<string, string> {
-  if (hasStepTimings.value && timelineDuration.value > 0) {
-    const left = Math.max(
-      0,
-      Math.min(100, (((step.startTime as number) - timelineStart.value) / timelineDuration.value) * 100),
-    );
-    const width = Math.min(100 - left, Math.max(1.5, ((step.duration || 0) / timelineDuration.value) * 100));
-    return { left: `${left}%`, width: `${width}%` };
-  }
-  const width = maxStepDuration.value > 0 ? Math.max(2, ((step.duration || 0) / maxStepDuration.value) * 100) : 0;
-  return { left: '0%', width: `${width}%` };
-}
-
-/** Step duration as a share of the whole test's wall-clock (e.g. "12%"). */
-function stepPctOfTest(duration: number): string {
-  const total = testCase.value?.duration ?? 0;
-  if (total <= 0) return '';
-  const pct = (duration / total) * 100;
-  if (pct > 0 && pct < 1) return '<1%';
-  return `${Math.round(pct)}%`;
-}
-
-/** Severity color for a duration value, shared by the number and its bar. */
-function stepDurationTextClass(duration: number): string {
-  return duration > 2000 ? 'text-red-600 font-medium' : duration > 500 ? 'text-orange-500' : 'text-gray-500';
-}
-function stepBarColorClass(duration: number): string {
-  return duration > 2000 ? 'bg-red-500' : duration > 500 ? 'bg-orange-400' : 'bg-gray-400 dark:bg-gray-500';
-}
-
-const environment = computed(() => testCase.value?.testRun?.environment);
-
-// ── Retry command ─────────────────────────────────────────────────────────
-// The summary card owns the copy and run-locally controls (as the run page's
-// summary does); the navbar keeps only the page-level actions.
+// ── Retry command ────────────────────────────────────────────────────────────
+// The trailing "then" on the next-step line, plus the More menu and the Verify
+// section — no longer an always-on header button.
 const retryCases = computed(() => [
   {
     filePath: testCase.value?.filePath ?? '',
@@ -373,62 +301,33 @@ const retryCases = computed(() => [
     projectName: (testCase.value?.browser as { projectName?: string } | null)?.projectName ?? null,
   },
 ]);
+const retryCommand = computed(() => buildRetryCommand(retryCases.value));
+const { copy: copyRetry } = useCopy();
 
-const navbarActions = computed<NavbarAction[]>(() => [
-  { label: 'Refresh', icon: 'i-lucide-refresh-cw', onClick: () => refresh() },
-]);
+onMounted(() => {
+  desktopBridge.value = !!tauriCore();
+});
 
-// ── Live streaming ──────────────────────────────────────────────────────────
-const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
-let eventSource: EventSource | null = null;
-
-function connectToRunStream() {
-  if (!import.meta.client || isDemoMode || eventSource) return;
-  const runId = testCase.value?.testRun?.id;
-  if (!runId) return;
-
-  eventSource = new EventSource(`/api/test-runs/${runId}/stream`);
-  eventSource.onmessage = (event) => {
-    try {
-      const parsed = JSON.parse(event.data);
-      if (parsed.type === 'case-files' && parsed.data?.executionId === Number(testCaseId)) {
-        refresh();
-        refreshTraces();
-      } else if (parsed.type === 'run-finished') {
-        refresh();
-        refreshTraces();
-        disconnectRunStream();
-      }
-    } catch {
-      // Ignore non-JSON messages (e.g. heartbeat comments)
-    }
-  };
-  eventSource.onerror = () => {
-    // EventSource will auto-reconnect
-  };
-}
-
-function disconnectRunStream() {
-  if (eventSource) {
-    eventSource.close();
-    eventSource = null;
+// ── Quarantine ──────────────────────────────────────────────────────────────
+const { canWrite } = useAuth();
+const { quarantineOne, releaseOne } = useQuarantine(() => testCase.value?.testRun?.project?.id ?? null);
+const quarantineBusy = ref(false);
+async function toggleQuarantine() {
+  const stableId = testCase.value?.testCaseId;
+  if (!stableId || quarantineBusy.value) return;
+  quarantineBusy.value = true;
+  try {
+    const ok = quarantined.value
+      ? await releaseOne(stableId)
+      : await quarantineOne(stableId, 'Quarantined from execution');
+    if (ok) await refresh();
+  } finally {
+    quarantineBusy.value = false;
   }
 }
 
-watch(
-  runIsActive,
-  (active) => {
-    if (active) connectToRunStream();
-    else disconnectRunStream();
-  },
-  { immediate: true },
-);
-
-onUnmounted(disconnectRunStream);
-
-// ── Copy failure ──────────────────────────────────────────────────────────
-const { copyRich, copied: failureCopied } = useCopyRich();
-
+// ── Copy failure ────────────────────────────────────────────────────────────
+const { copyRich } = useCopyRich();
 function copyFailure() {
   const tc = testCase.value;
   if (!tc?.error) return;
@@ -439,7 +338,7 @@ function copyFailure() {
   const rawError = tc.error.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const clusterUrl = failureCluster.value ? `${origin}/failure-clusters/${failureCluster.value.id}` : null;
-  const testCaseUrl = `${origin}/test-run-cases/${testCaseId}?tab=diagnosis`;
+  const testCaseUrl = `${origin}/test-run-cases/${testCaseId}`;
   const stableUrl = testCase.value?.testCaseId ? `${origin}/test-cases/${testCase.value.testCaseId}` : null;
 
   const plain = [
@@ -465,82 +364,190 @@ function copyFailure() {
   copyRich(plain, html, { toast: 'Failure copied' });
 }
 
-// ── Diagnosis section locator ───────────────────────────────────────────────
-// Lets an AI-diagnosis evidence citation (in TestCaseAiCard → DiagnosisResult)
-// unfold and scroll to the matching evidence section on this page.
-const errorEl = ref<HTMLElement | null>(null);
-const testSourceCard = ref<{ reveal: () => void } | null>(null);
-const consoleCard = ref<{ reveal: () => void } | null>(null);
-const networkCard = ref<{ showTraceMode: () => void; reveal: () => void } | null>(null);
-const evidenceCard = ref<{ reveal: () => void } | null>(null);
-const envDiffCard = ref<{ reveal: () => void } | null>(null);
-const visualDiffCard = ref<{ reveal: () => void } | null>(null);
-const domSnapshotCard = ref<{ reveal: () => void } | null>(null);
-const ariaCard = ref<{ reveal: () => void } | null>(null);
+// ── Link an issue ─────────────────────────────────────────────────────────
+const linksModalOpen = ref(false);
+
+// ── Create issue / link to the cluster's known issue ─────────────────────────
+const toast = useToast();
+const { hasTracker } = useTrackerStatus();
+const knownIssue = computed(() => fixPlanData.value?.issue ?? null);
+const issueModalOpen = ref(false);
+
+async function linkKnownIssue() {
+  const issue = knownIssue.value;
+  if (!issue || !testCase.value) return;
+  try {
+    await $fetch('/api/links', {
+      method: 'POST',
+      body: { entityType: 'test_runs_case', entityId: testCase.value.id, url: issue.url, title: issue.key },
+    });
+    toast.add({ title: `Linked ${issue.key}`, color: 'success' });
+    await refresh();
+  } catch (e) {
+    toast.add({ title: 'Could not link the issue', description: errorMessage(e), color: 'error' });
+  }
+}
+
+function onIssueCreated() {
+  issueModalOpen.value = false;
+  void refresh();
+}
+
+// ── Navbar More menu ────────────────────────────────────────────────────────
+const moreMenuItems = computed(() => {
+  const items: { label: string; icon: string; color?: 'warning'; onSelect: () => void }[] = [];
+  // The retry command was the header's always-on primary; it now lives here and
+  // on the next-step line (for code-change steps) and in the Verify section.
+  if (retryCommand.value && !desktopBridge.value) {
+    items.push({
+      label: 'Copy retry command',
+      icon: 'i-lucide-clipboard',
+      onSelect: () => copyRetry(retryCommand.value, { toast: 'Retry command copied' }),
+    });
+  }
+  if (canWrite.value && testCase.value?.testCaseId) {
+    items.push(
+      quarantined.value
+        ? {
+            label: 'Release from quarantine',
+            icon: 'i-lucide-shield-check',
+            color: 'warning',
+            onSelect: toggleQuarantine,
+          }
+        : {
+            label: 'Quarantine this test',
+            icon: 'i-lucide-shield-alert',
+            color: 'warning',
+            onSelect: toggleQuarantine,
+          },
+    );
+  }
+  if (canWrite.value && hasTracker.value && failureCluster.value) {
+    if (knownIssue.value) {
+      items.push({
+        label: `Link to ${knownIssue.value.key}`,
+        icon: 'i-simple-icons-jira',
+        onSelect: () => void linkKnownIssue(),
+      });
+    } else {
+      items.push({ label: 'Create issue', icon: 'i-simple-icons-jira', onSelect: () => (issueModalOpen.value = true) });
+    }
+  }
+  items.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linksModalOpen.value = true) });
+  if (testCase.value?.error) items.push({ label: 'Copy failure', icon: 'i-lucide-clipboard', onSelect: copyFailure });
+  items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => refresh() });
+  return items;
+});
+
+// ── Live streaming ──────────────────────────────────────────────────────────
+const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
+let eventSource: EventSource | null = null;
+function connectToRunStream() {
+  if (!import.meta.client || isDemoMode || eventSource) return;
+  const runId = testCase.value?.testRun?.id;
+  if (!runId) return;
+  eventSource = new EventSource(`/api/test-runs/${runId}/stream`);
+  eventSource.onmessage = (event) => {
+    try {
+      const parsed = JSON.parse(event.data);
+      if (parsed.type === 'case-files' && parsed.data?.executionId === Number(testCaseId)) {
+        refresh();
+        refreshTraces();
+      } else if (parsed.type === 'run-finished') {
+        refresh();
+        refreshTraces();
+        disconnectRunStream();
+      }
+    } catch {
+      // Ignore non-JSON messages (e.g. heartbeat comments)
+    }
+  };
+  eventSource.onerror = () => {
+    // EventSource will auto-reconnect
+  };
+}
+function disconnectRunStream() {
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+}
+watch(
+  runIsActive,
+  (active) => {
+    if (active) connectToRunStream();
+    else disconnectRunStream();
+  },
+  { immediate: true },
+);
+onUnmounted(disconnectRunStream);
+
+// ── Section locator ─────────────────────────────────────────────────────────
+// A clue or diagnosis citation reveals the evidence it came from: the evidence
+// tabs handle the tabbed sections (switch tab + scroll), while the raw error and
+// locator-fix blocks scroll in place.
+const evidenceEl = ref<HTMLElement | null>(null);
+const factsLine = ref<{ revealRawError: () => void } | null>(null);
+const locatorPanel = ref<{
+  copyPatch: () => void;
+  copyRecommendedLocator: () => void;
+  openPicker: () => void;
+  expandAlternatives: () => void;
+} | null>(null);
+const evidenceTabs = ref<{
+  canLocate: (id: string) => boolean;
+  revealSection: (id: string) => boolean;
+  selectTab: (t: string) => void;
+} | null>(null);
+const toolbox = ref<{ scrollToSection: (k: FixSectionKey) => void } | null>(null);
 
 function scrollToEl(el: HTMLElement | null) {
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
-
-const sectionToAction: Record<string, () => void> = {
-  sampleError: () => scrollToEl(errorEl.value),
-  executionError: () => scrollToEl(errorEl.value),
-  testSource: () => testSourceCard.value?.reveal(),
-  sourceFiles: () => testSourceCard.value?.reveal(),
-  environmentDiff: () => envDiffCard.value?.reveal(),
-  visualDiff: () => visualDiffCard.value?.reveal(),
-  domSnapshot: () => domSnapshotCard.value?.reveal(),
-  ariaSnapshot: () => ariaCard.value?.reveal(),
-  screenshots: () => evidenceCard.value?.reveal(),
-  tracePointers: () => evidenceCard.value?.reveal(),
-  artifacts: () => evidenceCard.value?.reveal(),
-  console: () => consoleCard.value?.reveal(),
-  networkRequests: () => networkCard.value?.reveal(),
-  serverTraces: () => networkCard.value?.reveal(),
-  traceCallStack: () => testSourceCard.value?.reveal(),
-  traceNetwork: () => {
-    networkCard.value?.showTraceMode();
-    networkCard.value?.reveal();
-  },
-  steps: () => {
-    activeTab.value = 'steps';
-  },
-  failingSteps: () => {
-    activeTab.value = 'steps';
-  },
+// The raw error is a disclosure on the facts line; the locator fix lives in the
+// toolbox. A citation reveals or scrolls to the block that holds it.
+const pageSections: Record<string, () => void> = {
+  sampleError: () => factsLine.value?.revealRawError(),
+  executionError: () => factsLine.value?.revealRawError(),
+  locatorHealing: () => toolbox.value?.scrollToSection('locator-fix'),
 };
-
-// The lazily fetched cards report whether they rendered anything (no baseline,
-// no screenshot or no trace leaves them empty), so their chips follow the card.
-const envDiffAvailable = ref(false);
-const visualDiffAvailable = ref(false);
-const domSnapshotAvailable = ref(false);
-
-// The jump-chip row under the error — the same section map the AI citations
-// use, so the funnel has a map even when no AI is configured. Each chip is
-// gated by the same availability condition as the section it targets: a chip
-// that scrolls to nothing reads as broken.
-const sectionChips = computed(() =>
-  [
-    {
-      id: 'testSource',
-      label: 'Test source',
-      available: Boolean(testCase.value?.testSourceFrames?.length || testCase.value?.testSource || hasTrace.value),
-    },
-    { id: 'environmentDiff', label: 'Environment diff', available: envDiffAvailable.value },
-    { id: 'visualDiff', label: 'Visual diff', available: visualDiffAvailable.value },
-    { id: 'domSnapshot', label: 'DOM snapshot', available: domSnapshotAvailable.value },
-    { id: 'ariaSnapshot', label: 'ARIA snapshot', available: Boolean(testCase.value?.ariaSnapshot) },
-    { id: 'screenshots', label: 'Screenshots', available: true },
-    { id: 'console', label: 'Console', available: Boolean((testCase.value as any)?.consoleLogs?.length) },
-    { id: 'networkRequests', label: 'Network', available: networkRequests.value.length > 0 || hasTrace.value },
-    { id: 'steps', label: 'Steps', available: true },
-  ].filter((c) => c.available),
-);
-
 provide(clusterSectionLocatorKey, {
-  canLocate: (id: string) => id in sectionToAction,
-  open: (id: string) => sectionToAction[id]?.(),
+  // Answered from static maps so a citation renders as a button at SSR time too,
+  // not only once the evidence card has mounted and registered its ref.
+  canLocate: (id: string) => id in pageSections || id in EVIDENCE_SECTION_TAB,
+  open: (id: string) => {
+    if (id in pageSections) pageSections[id]!();
+    else evidenceTabs.value?.revealSection(id);
+  },
+});
+
+// ── Next step: turn one action id into the real behaviour ────────────────────
+// The next-step line stays presentation-only; the page owns the wiring through
+// the shared composable, reusing the same fetches and panels the toolbox does
+// rather than issuing new requests. Page-specific targets are callbacks.
+const { setClusterStatus } = useClusterTriage(() => failureCluster.value?.id ?? null, { onSaved: () => refresh() });
+
+const { handle: handleNextStepAction } = useNextStepActions({
+  clusterId: () => failureCluster.value?.id ?? null,
+  fixPlanPatch: () => fixPlanPatch.value,
+  ideProject: () => testCase.value?.testRun?.project ?? null,
+  locatorPanel: () => locatorPanel.value,
+  reproRecipe: () => reproduceData.value?.reproduce ?? null,
+  diagnosisContextEndpoint: () => `/api/test-run-cases/${testCaseId}/diagnosis-context`,
+  scrollToSection: (k) => toolbox.value?.scrollToSection(k),
+  selectAttemptsTab: () => {
+    evidenceTabs.value?.selectTab('attempts');
+    nextTick(() => scrollToEl(evidenceEl.value));
+  },
+  setClusterStatus,
+  quarantine: () => toggleQuarantine(),
+  rerunInCi: () => triggerRerun(),
+  whatChanged: () => {
+    if (failureCluster.value) navigateTo(`/failure-clusters/${failureCluster.value.id}`);
+  },
+  reDiagnose: () => {
+    if (failureCluster.value) navigateTo(`/failure-clusters/${failureCluster.value.id}#fix-plan`);
+  },
 });
 </script>
 
@@ -558,7 +565,7 @@ provide(clusterSectionLocatorKey, {
               ...(testCase?.testRun?.project?.id
                 ? [
                     {
-                      label: testCase.testRun.project.name || 'Project',
+                      label: testCase.testRun.project.label || testCase.testRun.project.name || 'Project',
                       to: `/projects/${testCase.testRun.project.id}`,
                     },
                   ]
@@ -576,11 +583,11 @@ provide(clusterSectionLocatorKey, {
               v-if="testCase?.testCaseId"
               :to="`/test-cases/${testCase.testCaseId}`"
               class="text-xs text-gray-500 hover:text-primary mr-2 flex items-center gap-1 shrink-0"
-              title="View test case history"
-              aria-label="Test case history"
+              title="View this test's history across runs"
+              aria-label="Test history"
             >
               <UIcon name="i-lucide-trending-up" class="size-3.5" />
-              <span class="hidden xl:inline">Test case</span>
+              <span class="hidden xl:inline">Test history</span>
             </NuxtLink>
             <ShareLinksModal
               v-if="testCase && !isDemoMode"
@@ -589,631 +596,317 @@ provide(clusterSectionLocatorKey, {
             <ExportMenu
               v-if="testCase"
               :endpoint="`/api/test-run-cases/${testCase.id}/export`"
+              :perfetto-endpoint="`/api/test-run-cases/${testCase.id}/perfetto`"
               :base-name="`piwi-execution-${testCase.id}`"
-              class="mr-2"
+              class="mr-1"
             />
-            <NavbarActions :actions="navbarActions" />
+            <UDropdownMenu :items="moreMenuItems">
+              <UButton
+                size="sm"
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-ellipsis-vertical"
+                aria-label="More actions"
+                title="More actions"
+              />
+            </UDropdownMenu>
           </div>
         </template>
       </UDashboardNavbar>
     </template>
 
     <template #body>
-      <DetailPageLayout v-model="activeTab" :tab-items="tabItems">
-        <template #summary>
-          <TestCaseSummary
-            :test-case="(testCase ?? null) as any"
-            :scm-info="scmInfo"
-            :ci-info="ciInfo"
-            :browser="testCase?.browser ?? null"
-            :environment="environment"
-            :steps-count="steps.length"
-            :historical-timing="historicalTiming"
-            :stable-links="(testCase as any)?.stableLinks ?? null"
-            :project-key="testCase?.testRun?.project?.id"
-            :project-name="testCase?.testRun?.project?.name"
-            :project-label="testCase?.testRun?.project?.label ?? testCase?.testRun?.project?.name"
-            :retry-cases="retryCases"
-            @refresh="refresh()"
-          />
-          <DidNotRunCard
-            :status="testCase?.status"
-            :reason="(testCase as any)?.didNotRunReason ?? null"
-            :blocked-by-case="(testCase as any)?.blockedByCase ?? null"
-            :blocked-tests="(testCase as any)?.blockedTests ?? null"
-            class="mt-4"
-          />
-        </template>
-
-        <!-- ── Diagnosis (failing cases) ────────────────────────────────── -->
-        <template #tab-diagnosis>
-          <div class="space-y-4">
-            <!-- What broke, in one line — the raw error follows verbatim -->
-            <TestCaseHeadlineCard v-if="verdict" :verdict="verdict" />
-
-            <div ref="errorEl" class="scroll-mt-4">
-              <SectionCard v-if="testCase?.error" icon="i-lucide-circle-x" icon-class="text-red-500" title="Error">
-                <template #actions>
-                  <UTooltip :text="failureCopied ? 'Copied!' : 'Copy failure'">
-                    <UButton
-                      size="xs"
-                      variant="ghost"
-                      color="neutral"
-                      :icon="failureCopied ? 'i-lucide-check' : 'i-lucide-clipboard'"
-                      aria-label="Copy failure"
-                      @click="copyFailure"
-                    />
-                  </UTooltip>
-                </template>
-                <div
-                  class="text-xs font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto rounded bg-red-50 dark:bg-red-950/20 p-3"
-                  v-html="renderAnsi(condenseErrorText(testCase.error))"
-                />
-              </SectionCard>
-            </div>
-
-            <!-- Two columns: evidence funnel (left) + verdict/cluster/AI rail (right) -->
-            <div class="flex flex-wrap gap-1.5">
-              <UButton
-                v-for="s in sectionChips"
-                :key="s.id"
-                size="xs"
-                variant="soft"
-                color="neutral"
-                :label="s.label"
-                @click="sectionToAction[s.id]?.()"
-              />
-            </div>
-            <div class="grid grid-cols-1 xl:grid-cols-[3fr_2fr] gap-4">
-              <!-- Right rail (DOM-first so it follows the error below the xl split) -->
-              <div class="space-y-4 xl:order-2">
-                <TestCaseVerdictCard
-                  :test-case="(testCase as any) ?? null"
-                  :history="historyData"
-                  :current-id="Number(testCaseId)"
-                />
-
-                <FailureClusterCard v-if="failureCluster" :cluster="failureCluster" />
-
-                <TestCaseAiCard :test-runs-case-id="Number(testCaseId)" />
-              </div>
-
-              <!-- Left column: evidence funnel -->
-              <div class="space-y-4 xl:order-1 min-w-0">
-                <!-- Test source: the failing line and its callers; full trace call stack when available -->
-                <TestSourceCard
-                  v-if="testCase?.testSourceFrames?.length || testCase?.testSource || hasTrace"
-                  ref="testSourceCard"
-                  storage-key="case-test-source"
-                  :default-folded="false"
-                  :frames="testCase?.testSourceFrames ?? null"
-                  :test-source="testCase?.testSource ?? null"
-                  :run-id="testCase?.testRun?.id ?? null"
-                  :test-runs-case-id="Number(testCaseId)"
-                  :has-trace="hasTrace"
-                  :project-key="testCase?.testRun?.project?.id"
-                  :project-name="testCase?.testRun?.project?.name"
-                />
-
-                <!-- Screenshots, video, traces, non-media attachments -->
-                <TestCaseEvidenceCard
-                  ref="evidenceCard"
-                  storage-key="case-evidence"
-                  :default-folded="false"
-                  :attachments="(testCase as any)?.attachments ?? []"
-                  :traces="(traceData as any[]) ?? []"
-                />
-
-                <!-- Alternative locators for a broken locator -->
-                <LocatorHealingPanel
-                  v-if="testCase?.testRun?.id"
-                  storage-key="case-locators"
-                  :run-id="testCase.testRun.id"
-                  :test-runs-case-id="Number(testCaseId)"
-                  :ai-intents="aiIntents"
-                />
-
-                <!-- What changed in the environment since the last pass -->
-                <EnvironmentDiffCard
-                  v-if="testCase?.testRun?.id"
-                  ref="envDiffCard"
-                  storage-key="case-env-diff"
-                  :run-id="testCase.testRun.id"
-                  :test-runs-case-id="Number(testCaseId)"
-                  @available="envDiffAvailable = $event"
-                />
-
-                <!-- What changed visually since the last pass -->
-                <VisualDiffCard
-                  v-if="testCase?.testRun?.id"
-                  ref="visualDiffCard"
-                  storage-key="case-visual-diff"
-                  :run-id="testCase.testRun.id"
-                  :test-runs-case-id="Number(testCaseId)"
-                  @available="visualDiffAvailable = $event"
-                />
-
-                <!-- Console output -->
-                <TestCaseConsoleCard
-                  v-if="(testCase as any)?.consoleLogs?.length"
-                  ref="consoleCard"
-                  storage-key="case-console"
-                  :entries="(testCase as any)?.consoleLogs ?? []"
-                />
-
-                <!-- Network requests + backend logs; full trace network when available -->
-                <TestCaseNetworkRequests
-                  v-if="networkRequests.length > 0 || hasTrace"
-                  ref="networkCard"
-                  storage-key="case-network"
-                  :requests="networkRequests"
-                  :run-id="testCase?.testRun?.id ?? null"
-                  :test-runs-case-id="Number(testCaseId)"
-                  :has-trace="hasTrace"
-                />
-
-                <!-- App state at test end -->
-                <PageStateCard
-                  v-if="(testCase as any)?.pageState"
-                  storage-key="case-page-state"
-                  :page-state="(testCase as any).pageState"
-                />
-
-                <!-- ARIA snapshot captured at failure time -->
-                <CollapsibleSectionCard
-                  v-if="testCase?.ariaSnapshot"
-                  ref="ariaCard"
-                  storage-key="case-aria"
-                  icon="i-lucide-scan-text"
-                  title="ARIA snapshot"
-                  help="case.aria"
-                >
-                  <template #folded>Accessibility tree captured at the moment of failure</template>
-                  <div class="max-h-96 overflow-y-auto">
-                    <MarkdownPreview :text="'```yaml\n' + testCase.ariaSnapshot + '\n```'" />
-                  </div>
-                </CollapsibleSectionCard>
-
-                <!-- Failure-time HTML extracted from the uploaded trace -->
-                <DomSnapshotCard
-                  v-if="testCase?.testRun?.id"
-                  ref="domSnapshotCard"
-                  storage-key="case-dom-snapshot"
-                  :run-id="testCase.testRun.id"
-                  :test-runs-case-id="Number(testCaseId)"
-                  @available="domSnapshotAvailable = $event"
-                />
-              </div>
-            </div>
-          </div>
-        </template>
-
-        <!-- ── Steps ────────────────────────────────────────────────────── -->
-        <template #tab-steps>
-          <div class="space-y-3">
-            <UAlert
-              v-if="isFailedStatus(testCase?.status ?? '') && steps.length > 0 && !steps.some((s) => s.failed)"
-              color="warning"
-              variant="subtle"
-              icon="i-lucide-info"
-              title="The failure was not captured at step level"
-              description="The test failed, but none of the recorded steps is marked failed — the error happened outside the step list."
-            />
-            <div v-if="steps.length > 0">
-              <!-- Per-category summary strip -->
-              <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs mb-3">
-                <span class="font-medium text-gray-600 dark:text-gray-300">{{ steps.length }} steps</span>
-                <span class="text-gray-300 dark:text-gray-600">·</span>
-                <span v-for="c in stepSummary" :key="c.category" class="inline-flex items-center gap-1">
-                  <UBadge :color="stepCategoryColor[c.category] || 'neutral'" variant="soft" size="xs">
-                    {{ c.category }}
-                  </UBadge>
-                  <span class="tabular-nums text-gray-500 dark:text-gray-400"
-                    >×{{ c.count }} · <DurationValue :ms="c.duration"
-                  /></span>
-                </span>
-              </div>
-
-              <TableScroller min-width="40rem" :bleed="false">
-                <UTable
-                  :data="steps"
-                  :columns="stepColumns"
-                  :ui="{
-                    base: 'table-fixed w-full border-separate border-spacing-0 min-w-[40rem]',
-                    thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
-                    tbody: '[&>tr]:last:[&>td]:border-b-0',
-                    th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
-                    td: 'border-b border-default align-top',
-                  }"
-                >
-                  <template #index-cell="{ row }">
-                    <span class="text-xs tabular-nums text-gray-400 dark:text-gray-500">{{ row.index + 1 }}</span>
-                  </template>
-                  <template #status-cell="{ row }">
-                    <span
-                      v-if="testCase?.status === 'didnotrun'"
-                      class="inline-flex items-center justify-center size-5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 text-xs leading-none"
-                      title="Not run"
-                      >–</span
-                    >
-                    <span
-                      v-else-if="row.original.failed"
-                      class="inline-flex items-center justify-center size-5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs leading-none"
-                      title="Step failed"
-                      >✗</span
-                    >
-                    <span
-                      v-else
-                      class="inline-flex items-center justify-center size-5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-xs leading-none"
-                      title="Step passed"
-                      >✓</span
-                    >
-                  </template>
-                  <template #category-cell="{ row }">
-                    <UBadge :color="stepCategoryColor[row.original.category] || 'neutral'" variant="soft" size="xs">
-                      {{ row.original.category }}
-                    </UBadge>
-                  </template>
-                  <template #title-cell="{ row }">
-                    <div class="flex items-center gap-2">
-                      <span :class="row.original.failed ? 'text-red-600 dark:text-red-400 font-medium' : ''">
-                        {{ row.original.title }}
-                      </span>
-                      <UBadge
-                        v-if="row.index === slowestStepIndex"
-                        color="warning"
-                        variant="subtle"
-                        size="xs"
-                        class="shrink-0"
-                        title="Slowest step in this test"
-                      >
-                        slowest
-                      </UBadge>
-                    </div>
-                    <ErrorText
-                      v-if="row.original.failed && row.original.error?.message"
-                      mode="block"
-                      :text="row.original.error.message"
-                      class="mt-1"
-                    />
-                    <OpenInIdeLink
-                      v-if="row.original.location"
-                      :location="row.original.location"
-                      :project-key="testCase?.testRun?.project?.id"
-                      :project-name="testCase?.testRun?.project?.name"
-                      class="text-xs text-gray-400 dark:text-gray-500 mt-0.5"
-                    />
-                  </template>
-                  <template #duration-cell="{ row }">
-                    <div class="min-w-[6rem]">
-                      <div class="flex items-center justify-between gap-2">
-                        <DurationValue
-                          :ms="row.original.duration"
-                          :class="`text-sm ${stepDurationTextClass(row.original.duration)}`"
-                          unit-class="opacity-60"
-                        />
-                        <span
-                          v-if="stepPctOfTest(row.original.duration)"
-                          class="text-xs tabular-nums text-gray-400 dark:text-gray-500"
-                        >
-                          {{ stepPctOfTest(row.original.duration) }}
-                        </span>
-                      </div>
-                      <div class="relative mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-                        <div
-                          class="absolute inset-y-0 rounded-full"
-                          :class="stepBarColorClass(row.original.duration)"
-                          :style="stepBarStyle(row.original)"
-                        />
-                      </div>
-                    </div>
-                  </template>
-                </UTable>
-              </TableScroller>
-            </div>
-            <EmptyState v-else icon="i-lucide-list-checks" text="No steps recorded for this execution" />
-          </div>
-        </template>
-
-        <!-- ── Artifacts (passing cases) ────────────────────────────────── -->
-        <template #tab-artifacts>
-          <div class="space-y-4 pt-4">
-            <TestCaseTracesCard :traces="(traceData as any[]) || []" />
-            <TestCaseAttachmentsCard :attachments="(testCase as any)?.attachments ?? []" />
-            <PageStateCard
-              v-if="(testCase as any)?.pageState"
-              storage-key="case-page-state"
-              :page-state="(testCase as any).pageState"
-            />
-            <TestCaseConsoleCard
-              v-if="(testCase as any)?.consoleLogs?.length"
-              :entries="(testCase as any)?.consoleLogs ?? []"
-            />
-            <TestCaseNetworkRequests
-              v-if="networkRequests.length > 0 || hasTrace"
-              :requests="networkRequests"
-              :run-id="testCase?.testRun?.id ?? null"
-              :test-runs-case-id="Number(testCaseId)"
-              :has-trace="hasTrace"
-            />
-
-            <EmptyState
-              v-if="
-                !(traceData as any[])?.length &&
-                !(testCase as any)?.attachments?.length &&
-                !(testCase as any)?.consoleLogs?.length &&
-                !networkRequests.length
-              "
-              :icon="runIsActive ? 'i-lucide-loader-circle' : 'i-lucide-inbox'"
-              :text="
-                runIsActive
-                  ? 'Run in progress — traces and attachments appear here as soon as they are uploaded.'
-                  : 'No traces, console logs, or network requests captured for this test case.'
-              "
-            />
-          </div>
-        </template>
-
-        <!-- ── Performance ──────────────────────────────────────────────── -->
-        <template #tab-performance>
-          <div class="space-y-4 pt-1">
-            <div v-if="performanceHints.length > 0" class="space-y-2">
-              <div
-                v-for="(hint, index) in performanceHints"
-                :key="index"
-                :class="[
-                  'p-3 rounded-lg border',
-                  hint.type === 'warning'
-                    ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
-                    : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800',
-                ]"
+      <!-- No side gutter below `sm`: the cards go full-bleed to the screen edge. -->
+      <div class="flex flex-col gap-4 p-4 max-sm:px-0 max-w-6xl mx-auto w-full">
+        <!-- ── One block: what broke, what is going on, what to do next ── -->
+        <SituationBlock help="case.situation">
+          <!-- Line 1: identity kicker — status, title, marks, quarantine -->
+          <template #identity>
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <StatusChip :status="testCase?.status ?? ''" class="shrink-0" />
+              <span class="text-highlighted min-w-0 break-words">
+                {{ testCase?.title || `Execution #${testCaseId}` }}
+              </span>
+              <span
+                v-for="badge in headerBadges"
+                :key="badge.label"
+                :title="badge.title"
+                :class="badge.mono ? 'font-mono text-xs' : ''"
               >
-                <div class="flex items-start gap-2">
-                  <UIcon
-                    :name="hint.type === 'warning' ? 'i-lucide-alert-triangle' : 'i-lucide-lightbulb'"
-                    :class="hint.type === 'warning' ? 'text-amber-600' : 'text-blue-600'"
-                    class="size-4 mt-0.5 shrink-0"
-                  />
-                  <div>
-                    <p
-                      :class="
-                        hint.type === 'warning'
-                          ? 'text-amber-800 dark:text-amber-200 font-medium'
-                          : 'text-blue-800 dark:text-blue-200 font-medium'
-                      "
-                    >
-                      {{ hint.message }}
-                    </p>
-                    <p
-                      :class="
-                        hint.type === 'warning'
-                          ? 'text-amber-700 dark:text-amber-300'
-                          : 'text-blue-700 dark:text-blue-300'
-                      "
-                      class="mt-1"
-                    >
-                      {{ hint.details }}
-                    </p>
-                  </div>
-                </div>
-              </div>
+                {{ badge.label }}
+              </span>
+              <QuarantinedChip v-if="quarantined" />
             </div>
+          </template>
 
-            <SectionCard
-              v-if="webVitals"
-              icon="i-lucide-gauge"
-              title="Browser performance (Web Vitals)"
-              help="case.web-vitals"
+          <!-- Line 2: the headline — the page's h1 -->
+          <template v-if="verdict" #headline>
+            <h1
+              data-shot="failure-headline"
+              class="text-lg sm:text-xl font-semibold leading-snug text-highlighted break-words"
             >
-              <div class="space-y-4">
-                <StatTileGrid v-if="webVitals.navigation" min-tile-width="10rem">
-                  <StatTile
-                    label="TTFB"
-                    hint="Time to first byte"
-                    :value-class="
-                      webVitals.navigation.ttfb > 600
-                        ? 'text-red-600'
-                        : webVitals.navigation.ttfb > 200
-                          ? 'text-orange-500'
-                          : 'text-green-600'
-                    "
-                  >
-                    <DurationValue :ms="webVitals.navigation.ttfb" />
-                  </StatTile>
-                  <StatTile
-                    label="DOM Interactive"
-                    hint="DOM interactive"
-                    :value-class="
-                      webVitals.navigation.domInteractive > 3000
-                        ? 'text-red-600'
-                        : webVitals.navigation.domInteractive > 1500
-                          ? 'text-orange-500'
-                          : 'text-green-600'
-                    "
-                  >
-                    <DurationValue :ms="webVitals.navigation.domInteractive" />
-                  </StatTile>
-                  <StatTile
-                    label="DOMContentLoaded"
-                    hint="DOMContentLoaded"
-                    :value-class="
-                      webVitals.navigation.domContentLoaded > 3000
-                        ? 'text-red-600'
-                        : webVitals.navigation.domContentLoaded > 1500
-                          ? 'text-orange-500'
-                          : 'text-green-600'
-                    "
-                  >
-                    <DurationValue :ms="webVitals.navigation.domContentLoaded" />
-                  </StatTile>
-                  <StatTile
-                    label="Load Complete"
-                    hint="Page fully loaded"
-                    :value-class="
-                      webVitals.navigation.loadComplete > 5000
-                        ? 'text-red-600'
-                        : webVitals.navigation.loadComplete > 3000
-                          ? 'text-orange-500'
-                          : 'text-green-600'
-                    "
-                  >
-                    <DurationValue :ms="webVitals.navigation.loadComplete" />
-                  </StatTile>
-                </StatTileGrid>
+              <FailureHeadline :parts="verdict.parts" plain />
+            </h1>
+            <p
+              v-if="verdict.detail && !story"
+              class="font-mono text-xs text-muted truncate mt-1"
+              :title="verdict.detail"
+            >
+              {{ verdict.detail }}
+            </p>
+          </template>
 
-                <StatTileGrid
-                  v-if="webVitals.paint && (webVitals.paint.firstPaint || webVitals.paint.firstContentfulPaint)"
-                  min-tile-width="10rem"
-                  class="pt-2 border-t"
+          <!-- Line 3: most likely — the story line, with every clue folded under it -->
+          <template v-if="verdict && (story || clues.length)" #story>
+            <StoryLine :story="story" :clues="clues" :failure-at="cluesFailureAt" :diagnosis="storyDiagnosis" />
+          </template>
+
+          <!-- Line 4: the situation sentence — one clause per fact, with links -->
+          <template v-if="situation" #situation>
+            <p data-shot="situation">
+              <template v-for="(part, i) in situation.parts" :key="i">
+                <NuxtLink
+                  v-if="part.href"
+                  :to="part.href"
+                  :class="[SENTENCE_LINK_CLASS, part.kind === 'commit' ? 'font-mono' : '']"
+                  >{{ part.text }}</NuxtLink
                 >
-                  <StatTile v-if="webVitals.paint.firstPaint !== undefined" label="First Paint (FP)">
-                    <DurationValue :ms="webVitals.paint.firstPaint" />
-                  </StatTile>
-                  <StatTile
-                    v-if="webVitals.paint.firstContentfulPaint !== undefined"
-                    label="First Contentful Paint (FCP)"
-                    :value-class="
-                      webVitals.paint.firstContentfulPaint > 3000
-                        ? 'text-red-600'
-                        : webVitals.paint.firstContentfulPaint > 1800
-                          ? 'text-orange-500'
-                          : 'text-green-600'
-                    "
-                  >
-                    <DurationValue :ms="webVitals.paint.firstContentfulPaint" />
-                  </StatTile>
-                </StatTileGrid>
+                <a
+                  v-else-if="part.kind === 'commit' && situationCommitHref(part)"
+                  :href="situationCommitHref(part)!"
+                  target="_blank"
+                  rel="noopener"
+                  :class="[SENTENCE_LINK_CLASS, 'font-mono']"
+                  >{{ part.text }}</a
+                >
+                <span v-else-if="part.kind === 'commit'" class="font-mono">{{ part.text }}</span>
+                <span v-else-if="part.kind === 'owner'" class="text-highlighted">{{ part.text }}</span>
+                <template v-else>{{ part.text }}</template>
+              </template>
+            </p>
+          </template>
 
-                <!-- Core Web Vitals — Google rating bands; missing values render "n/a"
-                     without alarm colors (INP is often absent in short tests). -->
-                <StatTileGrid v-if="webVitals.vitals" min-tile-width="10rem" class="pt-2 border-t">
-                  <StatTile
-                    label="Largest Contentful Paint (LCP)"
-                    :value-class="
-                      webVitals.vitals.lcp == null
-                        ? 'text-gray-400'
-                        : webVitals.vitals.lcp > 4000
-                          ? 'text-red-600'
-                          : webVitals.vitals.lcp > 2500
-                            ? 'text-orange-500'
-                            : 'text-green-600'
-                    "
-                  >
-                    <DurationValue :ms="webVitals.vitals.lcp" fallback="n/a" />
-                  </StatTile>
-                  <StatTile
-                    label="Cumulative Layout Shift (CLS)"
-                    :value="webVitals.vitals.cls != null ? String(webVitals.vitals.cls) : 'n/a'"
-                    :value-class="
-                      webVitals.vitals.cls == null
-                        ? 'text-gray-400'
-                        : webVitals.vitals.cls > 0.25
-                          ? 'text-red-600'
-                          : webVitals.vitals.cls > 0.1
-                            ? 'text-orange-500'
-                            : 'text-green-600'
-                    "
-                  />
-                  <StatTile
-                    label="Interaction to Next Paint (INP)"
-                    :value-class="
-                      webVitals.vitals.inp == null
-                        ? 'text-gray-400'
-                        : webVitals.vitals.inp > 500
-                          ? 'text-red-600'
-                          : webVitals.vitals.inp > 200
-                            ? 'text-orange-500'
-                            : 'text-green-600'
-                    "
-                  >
-                    <DurationValue :ms="webVitals.vitals.inp" fallback="n/a" />
-                  </StatTile>
-                </StatTileGrid>
+          <!-- Line 5: the next step -->
+          <template v-if="isProblem && nextStep" #next>
+            <NextStepLine :next-step="nextStep" :retry-command="retryCommand" @action="handleNextStepAction" />
+          </template>
 
-                <div v-if="webVitals.navigation?.url" class="text-xs text-gray-400 pt-1">
-                  Page: <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">{{ webVitals.navigation.url }}</code>
-                </div>
-              </div>
-            </SectionCard>
-
-            <FeatureUnavailable
-              v-if="performanceHints.length === 0 && !webVitals"
-              icon="i-lucide-gauge"
-              title="No performance hints or Web Vitals for this execution"
-              text="Web Vitals and step timing come from the Piwi capture fixtures — extend your Playwright test with piwiFixtures to collect them."
-              doc="capture-fixtures"
+          <!-- Line 6: the facts line, one size smaller, with Details and Raw error -->
+          <template #facts>
+            <ExecutionFactsLine
+              ref="factsLine"
+              :test-case="testCase"
+              :history="historyData"
+              @copy-failure="copyFailure"
             />
-          </div>
-        </template>
+          </template>
+        </SituationBlock>
 
-        <!-- ── History ──────────────────────────────────────────────────── -->
-        <template #tab-history>
-          <div class="space-y-4 pt-4" data-shot="execution-history">
-            <div v-if="historyData && historyData.length > 0" class="space-y-4">
-              <ChartCard title="Duration trend" icon="i-lucide-trending-up" :legend="legendOf(CASE_STATUS_SERIES)">
-                <template #actions>
-                  <UButton
-                    v-if="testCase?.testCaseId"
-                    :to="`/test-cases/${testCase.testCaseId}`"
+        <!-- Why this execution never ran — pinned under the block for a did-not-run case. -->
+        <DidNotRunCard
+          :status="testCase?.status"
+          :reason="(testCase as any)?.didNotRunReason ?? null"
+          :blocked-by-case="(testCase as any)?.blockedByCase ?? null"
+        />
+
+        <!-- ── Evidence ───────────────────────────────────────────────── -->
+        <div ref="evidenceEl" class="scroll-mt-4">
+          <EvidenceTabs
+            ref="evidenceTabs"
+            :test-case="testCase"
+            :traces="(traceData as TraceInfo[]) ?? []"
+            :has-trace="hasTrace"
+            :default-hint="defaultHint"
+            help="case.evidence"
+          />
+        </div>
+
+        <!-- ── More ways to fix ───────────────────────────────────────── -->
+        <div class="scroll-mt-4">
+          <Toolbox
+            v-if="showFix"
+            ref="toolbox"
+            :sections="fixSections"
+            :next-step-kind="nextStep?.kind ?? null"
+            help="fix.toolbox"
+          >
+            <template #diagnosis-summary>{{ diagnosisSummary }}</template>
+            <template #locator-fix-summary>Ranked replacement locators from the failing page</template>
+            <template #verify-summary>{{ verifySummary }}</template>
+            <template #reproduce-summary>{{ reproduceSummary }}</template>
+            <template #fixed-before-summary
+              >{{ fixedBefore.length }} similar resolved cluster{{ fixedBefore.length === 1 ? '' : 's' }}</template
+            >
+            <template #blocked-summary
+              >{{ blockedTests.length }} test{{ blockedTests.length === 1 ? '' : 's' }}</template
+            >
+            <template #fix-plan-summary>The cluster's full fix plan — diagnosis, edits and verify command</template>
+
+            <!-- Ranked replacement locators for a broken locator -->
+            <template #locator-fix>
+              <LocatorHealingPanel
+                v-if="testCase?.testRun?.id"
+                ref="locatorPanel"
+                :run-id="testCase.testRun.id"
+                :test-runs-case-id="Number(testCaseId)"
+                :ai-intents="aiIntents"
+                :chrome="false"
+                :has-page-diff="true"
+                @show-page-diff="evidenceTabs?.revealSection('pageDiff')"
+              />
+            </template>
+
+            <!-- A link to the cluster's full fix plan -->
+            <template v-if="failureCluster" #fix-plan>
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                <template v-if="failureCluster.diagnosis?.status === 'completed'">
+                  <UBadge v-if="failureCluster.diagnosis.category" color="neutral" variant="soft" size="xs">
+                    {{ failureCluster.diagnosis.category }}
+                  </UBadge>
+                  <UBadge
+                    v-if="failureCluster.diagnosis.confidence"
+                    :color="confidenceColor(failureCluster.diagnosis.confidence)"
+                    variant="soft"
                     size="xs"
-                    variant="outline"
-                    color="neutral"
-                    trailing-icon="i-lucide-arrow-right"
                   >
-                    View full test history
-                  </UButton>
+                    {{ failureCluster.diagnosis.confidence }} confidence
+                  </UBadge>
                 </template>
-                <TestCaseHistoryChart :data="historyData" :height="200" />
-              </ChartCard>
-              <TableScroller min-width="44rem" :bleed="false">
-                <UTable
-                  :data="historyData"
-                  :columns="historyColumns"
-                  :ui="{
-                    base: 'table-fixed border-separate border-spacing-0 min-w-[44rem]',
-                    thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
-                    tbody: '[&>tr]:last:[&>td]:border-b-0',
-                    th: 'first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
-                    td: 'border-b border-default',
-                  }"
+                <UButton
+                  :to="`/failure-clusters/${failureCluster.id}#fix-plan`"
+                  size="xs"
+                  color="neutral"
+                  variant="link"
+                  trailing-icon="i-lucide-arrow-right"
+                  class="px-0"
                 >
-                  <template #startTime-cell="{ row }">
-                    <span class="text-xs whitespace-nowrap">
-                      <ClientOnly>
-                        <span :title="prettyDateFormat(row.original.startTime)">
-                          {{ formatRelativeTime(row.original.startTime) }}
-                        </span>
-                      </ClientOnly>
-                    </span>
-                  </template>
-                  <template #status-cell="{ row }">
-                    <UBadge :color="getStatusColor(row.original.status)" variant="subtle" class="capitalize">{{
-                      formatStatusLabel(row.original.status)
-                    }}</UBadge>
-                  </template>
-                  <template #duration-cell="{ row }">
-                    <DurationValue v-if="row.original.duration !== null" :ms="row.original.duration" />
-                    <span v-else class="text-gray-400">&mdash;</span>
-                  </template>
-                  <template #runId-cell="{ row }">
-                    <NuxtLink :to="`/test-runs/${row.original.runId}`" class="text-primary hover:underline">
-                      #{{ row.original.runId }}
-                    </NuxtLink>
-                  </template>
-                  <template #error-cell="{ row }">
-                    <ErrorText v-if="row.original.error" :text="row.original.error" class="max-w-xs" />
-                  </template>
-                </UTable>
-              </TableScroller>
-            </div>
-            <EmptyState v-else icon="i-lucide-trending-up" text="No prior executions of this test yet.">
-              <p class="text-xs text-gray-400">
-                This is the first recorded run. Once it runs again, its status and duration trend appear here.
-              </p>
-            </EmptyState>
-          </div>
-        </template>
-      </DetailPageLayout>
+                  Open on the cluster
+                </UButton>
+              </div>
+            </template>
+
+            <!-- The cluster's diagnosis summary, else the execution-scope diagnosis -->
+            <template #diagnosis>
+              <div v-if="clusterDiagnosis" class="space-y-1.5">
+                <p class="text-sm text-toned">{{ clusterDiagnosis.summary }}</p>
+                <UButton
+                  :to="`/failure-clusters/${failureCluster!.id}`"
+                  size="xs"
+                  color="neutral"
+                  variant="link"
+                  trailing-icon="i-lucide-arrow-right"
+                  class="px-0"
+                >
+                  Open
+                </UButton>
+              </div>
+              <DiagnosisPanel v-else scope="execution" :execution-id="Number(testCaseId)" />
+            </template>
+
+            <!-- Fixed before — resolved clusters this one resembles, and how each was fixed -->
+            <template v-if="fixedBefore.length" #fixed-before>
+              <FixedBeforeMatches
+                :matches="fixedBefore"
+                :can-write="canWrite"
+                :applying-id="applyingId"
+                @apply="applyTriage"
+              />
+            </template>
+
+            <!-- Re-run in CI, or run locally in the desktop shell -->
+            <template v-if="showVerify" #verify>
+              <div class="flex flex-wrap items-center gap-2">
+                <UButton
+                  v-if="rerunInfo?.available"
+                  size="xs"
+                  color="primary"
+                  variant="soft"
+                  icon="i-lucide-refresh-cw"
+                  :loading="rerunning"
+                  @click="triggerRerun"
+                >
+                  Re-run in CI
+                </UButton>
+                <DesktopRunLocallyButton
+                  :project-id="testCase?.testRun?.project?.id"
+                  :project-label="testCase?.testRun?.project?.label ?? testCase?.testRun?.project?.name"
+                  :cases="retryCases"
+                />
+                <ClientOnly>
+                  <span v-if="rerunInfo?.lastDispatch" class="text-xs text-muted">
+                    Last re-run {{ formatRelativeTime(rerunInfo.lastDispatch.at) }}
+                    <template v-if="rerunInfo.lastDispatch.byName">by {{ rerunInfo.lastDispatch.byName }}</template>
+                  </span>
+                </ClientOnly>
+              </div>
+            </template>
+
+            <!-- Reproduce locally, then bisect the regression -->
+            <template v-if="showReproduce" #reproduce>
+              <ReproduceSection
+                :reproduce="reproduceData!.reproduce"
+                :bisect="reproduceData!.bisect"
+                :context="reproduceData!.desktop"
+                :project-label="testCase?.testRun?.project?.label ?? testCase?.testRun?.project?.name"
+              />
+            </template>
+
+            <!-- The downstream tests this failure blocked from running -->
+            <template #blocked>
+              <ul class="space-y-1 text-sm">
+                <li v-for="t in blockedTests" :key="t.id" class="flex items-center gap-2 min-w-0">
+                  <UIcon name="i-lucide-circle-slash" class="size-3.5 shrink-0 text-amber-500" />
+                  <NuxtLink :to="`/test-run-cases/${t.id}`" class="text-primary hover:underline truncate">
+                    {{ t.title }}
+                  </NuxtLink>
+                </li>
+              </ul>
+            </template>
+          </Toolbox>
+        </div>
+
+        <!-- ── History ────────────────────────────────────────────────── -->
+        <SectionCard icon="i-lucide-history" title="History" data-shot="execution-history">
+          <template #actions>
+            <UButton
+              v-if="testCase?.testCaseId"
+              :to="`/test-cases/${testCase.testCaseId}`"
+              size="xs"
+              variant="outline"
+              color="neutral"
+              trailing-icon="i-lucide-arrow-right"
+            >
+              Test history
+            </UButton>
+          </template>
+          <ClientOnly>
+            <HistoryStrip v-if="historyData?.length" :history="historyData" :current-id="Number(testCaseId)" />
+            <p v-else class="text-sm text-muted">No prior executions of this test yet.</p>
+          </ClientOnly>
+        </SectionCard>
+      </div>
     </template>
   </UDashboardPanel>
+
+  <!-- Link an issue: view and add external links for this execution. -->
+  <UModal v-model:open="linksModalOpen" title="Links">
+    <template #body>
+      <EntityLinks
+        v-if="testCase?.executionId"
+        entity-type="test_case"
+        :entity-id="testCase.executionId"
+        :links="(testCase as any)?.stableLinks ?? null"
+        @updated="refresh()"
+      />
+    </template>
+  </UModal>
+
+  <CreateIssueModal
+    v-if="testCase?.id"
+    v-model:open="issueModalOpen"
+    entity-type="test_runs_case"
+    :entity-id="testCase.id"
+    @created="onIssueCreated"
+    @linked="onIssueCreated"
+  />
 </template>

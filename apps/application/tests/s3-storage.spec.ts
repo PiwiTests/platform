@@ -6,18 +6,19 @@ import { getStorage, resetStorage } from '../server/storage';
 /**
  * S3 storage tests.
  *
- * These tests require a running S3-compatible server (e.g. MinIO).
- * They are skipped automatically when `S3_TEST_ENDPOINT` is not set, so running
- * `npm test` locally without a local S3 server works as expected.
+ * These tests require a running S3-compatible server (e.g. RustFS).
+ * They are skipped automatically when `PIWI_S3_TEST_ENDPOINT` is not set, so
+ * running `npm test` locally without a local S3 server works as expected.
  *
- * To run them locally, start MinIO and export the variables below:
+ * To run them locally, start RustFS and export the variables below:
  *
  *   docker run -d -p 9000:9000 \
- *     -e MINIO_ROOT_USER=minioadmin \
- *     -e MINIO_ROOT_PASSWORD=minioadmin \
- *     minio/minio server /data
+ *     -e RUSTFS_ACCESS_KEY=rustfsadmin \
+ *     -e RUSTFS_SECRET_KEY=rustfsadmin \
+ *     -e RUSTFS_CONSOLE_ENABLE=false \
+ *     rustfs/rustfs:1.0.0-rc.6 /data
  *
- *   AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin \
+ *   AWS_ACCESS_KEY_ID=rustfsadmin AWS_SECRET_ACCESS_KEY=rustfsadmin \
  *     aws --endpoint-url http://localhost:9000 s3 mb s3://playwright-test --region us-east-1
  *
  *   PIWI_S3_TEST_ENDPOINT=http://localhost:9000 \
@@ -28,8 +29,8 @@ import { getStorage, resetStorage } from '../server/storage';
 const S3_ENDPOINT = process.env.PIWI_S3_TEST_ENDPOINT;
 const S3_BUCKET = process.env.PIWI_S3_TEST_BUCKET || 'playwright-test';
 const S3_REGION = process.env.PIWI_S3_TEST_REGION || 'us-east-1';
-const S3_ACCESS_KEY_ID = process.env.PIWI_S3_TEST_ACCESS_KEY_ID || 'minioadmin';
-const S3_SECRET_ACCESS_KEY = process.env.PIWI_S3_TEST_SECRET_ACCESS_KEY || 'minioadmin';
+const S3_ACCESS_KEY_ID = process.env.PIWI_S3_TEST_ACCESS_KEY_ID || 'rustfsadmin';
+const S3_SECRET_ACCESS_KEY = process.env.PIWI_S3_TEST_SECRET_ACCESS_KEY || 'rustfsadmin';
 
 test.describe('S3 storage', () => {
   test.skip(!S3_ENDPOINT, 'Set PIWI_S3_TEST_ENDPOINT to run S3 tests (see s3-storage.spec.ts header for instructions)');

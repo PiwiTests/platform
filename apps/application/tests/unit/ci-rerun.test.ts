@@ -1,0 +1,73 @@
+import { describe, test, expect } from 'vitest';
+import { resolveCiRerunSettings, hasRerunTarget } from '#shared/ci-rerun';
+import { buildRetryArgs } from '#shared/retry-command';
+
+describe('resolveCiRerunSettings', () => {
+  test('defaults to disabled with no targets', () => {
+    expect(resolveCiRerunSettings(null)).toEqual({ enabled: false });
+    expect(resolveCiRerunSettings({})).toEqual({ enabled: false });
+  });
+
+  test('keeps a fully specified target and trims values', () => {
+    const resolved = resolveCiRerunSettings({
+      enabled: true,
+      github: { workflow: ' e2e.yml ', ref: 'main', inputName: 'args' },
+    });
+    expect(resolved).toEqual({ enabled: true, github: { workflow: 'e2e.yml', ref: 'main', inputName: 'args' } });
+  });
+
+  test('drops an incomplete target rather than storing a half-configured one', () => {
+    const resolved = resolveCiRerunSettings({
+      enabled: true,
+      github: { workflow: 'e2e.yml', ref: '', inputName: 'args' },
+      gitlab: { ref: 'main', variableName: 'PW_ARGS' },
+    });
+    expect(resolved.github).toBeUndefined();
+    expect(resolved.gitlab).toEqual({ ref: 'main', variableName: 'PW_ARGS' });
+  });
+});
+
+describe('hasRerunTarget', () => {
+  const settings = resolveCiRerunSettings({
+    enabled: true,
+    gitlab: { ref: 'main', variableName: 'PW_ARGS' },
+  });
+
+  test('true only when enabled and a target exists for the provider', () => {
+    expect(hasRerunTarget(settings, 'gitlab')).toBe(true);
+    expect(hasRerunTarget(settings, 'github')).toBe(false);
+  });
+
+  test('false when disabled even if a target is present', () => {
+    expect(hasRerunTarget({ ...settings, enabled: false }, 'gitlab')).toBe(false);
+    expect(hasRerunTarget(null, 'gitlab')).toBe(false);
+  });
+});
+
+describe('buildRetryArgs', () => {
+  test('emits file:line specs and a shared --project, without the runner prefix', () => {
+    const args = buildRetryArgs([
+      { filePath: 'tests/checkout.spec.ts', title: 'pays', line: 12, projectName: 'chromium' },
+      { filePath: 'tests/checkout.spec.ts', title: 'refunds', line: 40, projectName: 'chromium' },
+    ]);
+    expect(args).toBe('"tests/checkout.spec.ts:12" "tests/checkout.spec.ts:40" --project="chromium"');
+  });
+
+  test('omits --project when the cases span more than one project', () => {
+    const args = buildRetryArgs([
+      { filePath: 'a.spec.ts', title: 'a', line: 1, projectName: 'chromium' },
+      { filePath: 'b.spec.ts', title: 'b', line: 2, projectName: 'firefox' },
+    ]);
+    expect(args).toBe('"a.spec.ts:1" "b.spec.ts:2"');
+  });
+
+  test('falls back to the file path when a case has no line', () => {
+    const args = buildRetryArgs([{ filePath: 'tests/x.spec.ts', title: 'x', line: null, projectName: null }]);
+    expect(args).toBe('"tests/x.spec.ts"');
+  });
+
+  test('normalizes Windows separators', () => {
+    const args = buildRetryArgs([{ filePath: 'tests\\win.spec.ts', title: 'w', line: 5, projectName: null }]);
+    expect(args).toBe('"tests/win.spec.ts:5"');
+  });
+});

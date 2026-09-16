@@ -26,9 +26,9 @@ export async function getAnalyticsFlakyLeaderboard(
         db,
         project.id,
         RUNS_PER_PROJECT,
-        scope.environment ?? undefined,
+        scope.environments?.length === 1 ? scope.environments[0] : undefined,
         undefined,
-        scope.branch ?? undefined,
+        scope.branches?.length === 1 ? scope.branches[0] : undefined,
       );
       return flaky.map(
         (test): AnalyticsFlakyRow => ({

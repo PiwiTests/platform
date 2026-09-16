@@ -164,11 +164,13 @@ const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip
                   ? 'text-red-600'
                   : ''
             "
-            >{{ tooltipData.status }}</span
+            >{{ formatStatusLabel(tooltipData.status) }}</span
           >
         </div>
         <div>Duration: {{ tooltipData.duration }}ms</div>
-        <div v-if="tooltipData.runStatus" class="text-gray-400 text-xs">Run status: {{ tooltipData.runStatus }}</div>
+        <div v-if="tooltipData.runStatus" class="text-gray-400 text-xs">
+          Run status: {{ formatStatusLabel(tooltipData.runStatus) }}
+        </div>
       </div>
       <div class="text-gray-400 text-xs mt-1">Click to view run details</div>
     </ChartTooltip>

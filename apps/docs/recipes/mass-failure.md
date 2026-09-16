@@ -52,17 +52,18 @@ conversation over.
 
 When a later run executes every test a cluster covers and they all pass, Piwi records the fix — the run,
 the commit, and how long the cluster was open — with three separate verdicts, because they aren't the
-same claim:
+same claim. The run doesn't have to be a full one: re-running just the affected tests and seeing them all
+pass closes the cluster too.
 
 | Verdict | Means |
 |---|---|
 | **Stopped failing** | The tests pass again. A flaky test can manage this by accident. |
-| **Diagnosis verified** | Commits since the last failing run touched a file the [suggested patch](../ai-diagnosis#what-a-diagnosis-contains) named. |
+| **Diagnosis verified** | Commits since the last failing run touched a file the [suggested patch](/features/ai-diagnosis#what-a-diagnosis-contains) named. |
 | **Regressed** | A fix was recorded and the cluster is failing again. |
 
 ## Optional: let a model do the first pass
 
-With [AI diagnosis](../ai-diagnosis) configured, each cluster gets an explanation read against your
+With [AI diagnosis](/features/ai-diagnosis) configured, each cluster gets an explanation read against your
 actual git diff since the last green run, and any suggested patch is validated against your source
 before it's shown. It's off by default and works with a local model — the point is that clustering has
 already decided *what* is worth diagnosing, so the model runs a few times per run, not forty.
@@ -73,19 +74,19 @@ about collapsing near-duplicates.
 
 ## Other ways in
 
-**From your agent.** `get_failure_groups` over the [MCP server](../mcp) returns a run's failures grouped
+**From your agent.** `get_failure_groups` over the [MCP server](/features/mcp) returns a run's failures grouped
 by cluster with the worker correlation included, and `get_test_case_context` pulls the evidence behind a
 single failure — steps, console, network, SCM diff. No install; the server is part of the dashboard.
 
 **From a script.** The same grouping is available over the REST API if you'd rather post a summary into
 your own channel — see the [API docs](https://piwitests.dev/demo/docs).
 
-**Before anyone opens anything.** Subscribe to the `cluster.new` [notification](../notifications) event
+**Before anyone opens anything.** Subscribe to the `cluster.new` [notification](/features/notifications) event
 instead of `run.failed`: you hear once when a genuinely new root cause appears, not on every red build,
 and the payload carries a sample error excerpt and the affected cases.
 
 ## See also
 
-- [AI diagnosis & failure clustering](../ai-diagnosis) — how fingerprints and semantic merging work
+- [AI diagnosis & failure clustering](/features/ai-diagnosis) — how fingerprints and semantic merging work
 - [Regression or flake?](./regression-or-flaky) — when it's one test rather than forty
-- [Core concepts](../concepts) — *cluster*, *fingerprint*, *baseline*
+- [Core concepts](/guide/concepts) — *cluster*, *fingerprint*, *baseline*

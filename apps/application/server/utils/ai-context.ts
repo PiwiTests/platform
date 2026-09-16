@@ -12,8 +12,10 @@ import {
 } from '../database/schema';
 import type { FailureCluster } from '../database/schema';
 import type { DiagnosisContextCoverage } from '~~/types/api';
+import { stepLabel, orderedStepParams } from '@piwitests/core/step-analysis';
 import { condenseErrorText, maskVolatile, stripAnsi } from '#shared/error-fingerprint';
 import { DIAGNOSIS_SECTIONS } from '#shared/diagnosis-sections';
+import { evidenceAbsenceReason } from '#shared/evidence-state';
 import { durationStats } from '#shared/utils/stats';
 import { computeRegressionContext } from './regression-context';
 import { normalizeGitUrl } from './scm/git-url';
@@ -42,8 +44,9 @@ import {
 } from './trace-insights';
 import { getTraceDomSnapshot } from './dom-snapshot';
 import { renderAppStateMarkdown, type PageStateLike } from '#shared/page-state';
-import { getLastPassPageState } from '#shared/handlers/test-cases';
+import { getLastPassPageState, getFailureClues } from '#shared/handlers/test-cases';
 import { getLocatorHealing } from './locator-healing';
+import { findFixedBefore } from './cluster-memory';
 import { healingNotApplicableMarkdown } from '#shared/locator-resolution';
 import { getEnvironmentDiff } from './environment-diff';
 import { renderEnvironmentDiffMarkdown } from '#shared/environment-diff';
@@ -106,6 +109,7 @@ const CLUSTER_ONLY_SECTIONS = new Set<SectionId>([
   'selectedCommits',
   'topSuspectedCommit',
   'priorDiagnosis',
+  'previouslyFixed',
 ]);
 
 /**
@@ -119,6 +123,7 @@ const SECTION_ORDER: SectionId[] = [
   'clusterSummary',
   'sampleError',
   'executionError',
+  'clues',
   'representativeExecution',
   'testSource',
   'sourceFiles',
@@ -151,6 +156,7 @@ const SECTION_ORDER: SectionId[] = [
   'topSuspectedCommit',
   'selectedCommits',
   'priorDiagnosis',
+  'previouslyFixed',
   'runContext',
   'testAnnotations',
   'tracePointers',
@@ -375,6 +381,7 @@ async function loadExecutionRow(db: DbClient, where: SQL) {
       webVitals: testRunsCases.webVitals,
       pageState: testRunsCases.pageState,
       aiUsage: testRunsCases.aiUsage,
+      evidenceSources: testRunsCases.evidenceSources,
       testAnnotations: testRunsCases.testAnnotations,
       workerIndex: testRunsCases.workerIndex,
       shardIndex: testRunsCases.shardIndex,
@@ -458,15 +465,28 @@ function ciRunHeaderLines(rep: RepresentativeRow): string[] {
   return lines;
 }
 
+/**
+ * A step's params on one line, omitting `locator` (it is already the step's
+ * label). Surfaces a navigation's full URL, an action's value/button and a
+ * `test.step` author's own values (`{ user: 'admin' }`); null when the step
+ * carried none worth printing.
+ */
+function stepParamsLine(step: TestStepInfo): string | null {
+  const entries = orderedStepParams(step.params).filter(([key]) => key !== 'locator');
+  if (entries.length === 0) return null;
+  return `Parameters: ${entries.map(([key, value]) => `${key}=${value}`).join(', ')}`;
+}
+
 /** Extract steps that have an error attached (D6). */
 function failingStepsSection(rep: RepresentativeRow, limits: ContextLimits): string | null {
   const steps = (rep.steps as TestStepInfo[] | null) ?? [];
   const failing = steps.filter((s) => s.error?.message);
   if (failing.length === 0) return null;
-  const out = failing.map(
-    (s) =>
-      `- [${s.category ?? 'step'}] ${s.title}\n\`\`\`\n${condenseErrorText(s.error!.message!, limits.sampleErrorChars)}\n\`\`\``,
-  );
+  const out = failing.map((s) => {
+    const params = stepParamsLine(s);
+    const paramLine = params ? `\n  ${params}` : '';
+    return `- [${s.category ?? 'step'}] ${stepLabel(s)}${paramLine}\n\`\`\`\n${condenseErrorText(s.error!.message!, limits.sampleErrorChars)}\n\`\`\``;
+  });
   return `### Failed Steps\n${out.join('\n')}`;
 }
 
@@ -677,6 +697,26 @@ async function environmentDiffSection(
       baselineRunId: result.baseline.runId,
     },
   };
+}
+
+/**
+ * Deterministic clues for the representative execution: the rule-based
+ * correlations `buildFailureClues` finds over the same evidence, rendered as
+ * ranked lines each carrying the `[section]` citation of the evidence it came
+ * from — so the model reads them as findings to confirm or refute, not as
+ * conclusions, and can follow each back to its source.
+ */
+async function cluesSection(db: DbClient, rep: RepresentativeRow, limits: ContextLimits): Promise<string | null> {
+  const { clues, story } = await getFailureClues(db, rep.id, { slowRequestMs: limits.slowRequestMs });
+  if (clues.length === 0) return null;
+  const lines = clues.map((clue) => {
+    const cites = clue.citations.map((c) => `[${c.section}]`).join('');
+    return `- [${clue.strength}] ${clue.title} — ${clue.detail} ${cites}`.trimEnd();
+  });
+  // When the clues chain into a story, lead with its one-sentence summary so the
+  // model reads the correlation before the individual findings.
+  const storyLine = story ? `**Most likely:** ${story.sentence} [${story.strength}]\n\n` : '';
+  return `## Clues\n${storyLine}Deterministic, rule-based correlations found in the evidence below. Treat each as a hypothesis to confirm or refute against its cited section, not as a conclusion:\n${lines.join('\n')}`;
 }
 
 /**
@@ -1168,6 +1208,33 @@ async function priorDiagnosisSection(db: DbClient, cluster: FailureCluster): Pro
   return lines.join('\n');
 }
 
+/**
+ * The single closest resolved cluster this one resembles, with the resolving
+ * commit and the note — so the model can say "this was fixed before by …"
+ * instead of re-deriving a known fix. Capped tight; the top match is the signal.
+ */
+async function previouslyFixedSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
+  const matches = await findFixedBefore(db, cluster).catch(() => []);
+  const top = matches[0];
+  if (!top) return null;
+
+  const lines: string[] = ['## Previously Fixed Similar Failure'];
+  lines.push(
+    `A resolved cluster closely resembles this one (${top.reason}). Consider whether the same fix applies before proposing a new one.`,
+  );
+  const where = [
+    `cluster #${top.clusterId} "${top.title}"`,
+    top.fixCommitShort ? `fixed in ${top.fixCommitShort}` : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
+  lines.push(`- ${where}`);
+  if (top.diagnosisTitle) lines.push(`- Prior diagnosis: ${top.diagnosisTitle}`);
+  if (top.triageNote) lines.push(`- Triage note: ${top.triageNote.replace(/\s+/g, ' ').trim()}`);
+
+  return lines.join('\n').slice(0, 600);
+}
+
 // ── Content-aware ARIA snapshot truncation ───────────────────────────────────
 
 interface AriaBlock {
@@ -1628,7 +1695,9 @@ export function representativeExecutionSections(
           const prefix = s.failed ? '✗ ' : '- ';
           const suffix = s.failed ? ' ← FAILED' : '';
           const dur = s.duration != null ? ` (${s.duration}ms)` : '';
-          return `${prefix}[${s.category ?? 'step'}] ${s.title}${dur}${suffix}`;
+          const params = stepParamsLine(s);
+          const paramLine = params ? `\n    ${params}` : '';
+          return `${prefix}[${s.category ?? 'step'}] ${stepLabel(s)}${dur}${suffix}${paramLine}`;
         })
         .join('\n')}`,
     });
@@ -2246,6 +2315,7 @@ async function scmInvestigationSections(
       const lines: string[] = [
         `## What Changed Since Last Green Run`,
         `- Last green run: #${regression.lastGreenRunId} (${regression.lastGreenRunAt.toISOString()})`,
+        `- Baseline: ${regression.baselineNote}`,
         `- New failures in this run: ${regression.newFailures}`,
       ];
       if (regression.commitRange) {
@@ -2605,6 +2675,10 @@ export async function buildDiagnosisContext(
       push(section(s.id, REP_SECTION_TITLES[s.id] ?? s.id, s.markdown));
     }
 
+    // Deterministic clues — placed right after the errors so the model reads
+    // them as evidence to confirm or refute, each with its [section] citation.
+    push(section('clues', 'Clues', await cluesSection(db, rep, limits)));
+
     // Failing steps (D6)
     push(section('failingSteps', 'Failed Steps', failingStepsSection(rep, limits)));
 
@@ -2785,6 +2859,9 @@ export async function buildDiagnosisContext(
   // D10: Prior diagnosis + triage note (cluster-scoped)
   if (cluster) {
     push(section('priorDiagnosis', 'Prior Assessment', await priorDiagnosisSection(db, cluster)));
+    // A previously fixed similar failure — the resolved cluster this one most
+    // resembles, so the model can reuse a known fix rather than re-derive it.
+    push(section('previouslyFixed', 'Previously Fixed Similar Failure', await previouslyFixedSection(db, cluster)));
   }
 
   // Build absent-section reasons for sections where we know *why* data is
@@ -2813,17 +2890,32 @@ export async function buildDiagnosisContext(
       ? `SCM diff fetch failed: ${scmError}`
       : 'no SCM diff available — check repository URL in project settings or configure a SCM token';
   }
+  // The capture fixtures were active for this execution when any fixture-produced
+  // field is present that was not itself recovered from the trace. The humans'
+  // empty cards read the same signal via `resolveEvidenceState`, so the model and
+  // the reader get the same reason for a blank section.
+  const evidenceSrc = (rep?.evidenceSources as { console?: string; network?: string; aria?: string } | null) ?? {};
+  const fixturesActive =
+    (sectionIds.has('console') && evidenceSrc.console !== 'trace') ||
+    (sectionIds.has('networkRequests') && evidenceSrc.network !== 'trace') ||
+    sectionIds.has('appState') ||
+    sectionIds.has('webVitals') ||
+    (Boolean(rep?.ariaSnapshot) && evidenceSrc.aria !== 'trace') ||
+    Boolean(rep?.aiUsage);
   if (!sectionIds.has('console')) {
-    absentReasons.console =
-      'no console entries captured — collectPerformanceMetrics may be disabled in reporter options';
+    absentReasons.console = evidenceAbsenceReason('console', { hasData: false, fixturesActive })!;
   }
   if (!sectionIds.has('networkRequests')) {
-    absentReasons.networkRequests =
-      'no network data captured — collectPerformanceMetrics may be disabled in reporter options';
+    absentReasons.networkRequests = evidenceAbsenceReason('network', { hasData: false, fixturesActive })!;
   }
   if (!sectionIds.has('serverTraces')) {
-    absentReasons.serverTraces =
-      'no server-side spans captured — install a Piwi backend integration to emit the X-Piwi-Trace header';
+    absentReasons.serverTraces = evidenceAbsenceReason('backendLogs', { hasData: false, fixturesActive })!;
+  }
+  if (!sectionIds.has('serverLogs')) {
+    absentReasons.serverLogs = evidenceAbsenceReason('backendLogs', { hasData: false, fixturesActive })!;
+  }
+  if (!sectionIds.has('webVitals')) {
+    absentReasons.webVitals = evidenceAbsenceReason('webVitals', { hasData: false, fixturesActive })!;
   }
   if (!sectionIds.has('environmentDiff')) {
     absentReasons.environmentDiff = 'no passing baseline execution recorded for this test to compare against';
@@ -2837,7 +2929,7 @@ export async function buildDiagnosisContext(
       'no DOM snapshot — requires an uploaded trace containing frame snapshots (enable trace recording and uploadTraces)';
   }
   if (!sectionIds.has('appState')) {
-    absentReasons.appState = 'no page state captured — capturePageState may be disabled or the reporter predates it';
+    absentReasons.appState = evidenceAbsenceReason('appState', { hasData: false, fixturesActive })!;
   }
 
   const coverageBlock = buildCoverageBlock(contextSections, {

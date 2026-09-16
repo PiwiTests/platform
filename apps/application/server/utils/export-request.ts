@@ -33,31 +33,16 @@ export function exportPiwiVersion(event: H3Event): string | null {
 
 /** Build the file and write it to the response. */
 export async function sendExport(event: H3Event, bundle: ExportBundle, format: ExportFormat, id: number) {
-  // `print=1` is the PDF path: the browser has to *render* the report so its
-  // own print dialog can turn it into a PDF. Attaching it would download a file
-  // nobody asked for instead.
-  const print = format === 'html' && getQuery(event).print === '1';
-
   const built = await buildExport(bundle, format, id, {
     reader: serverAssetReader,
     budget: resolveExportBudget(),
-    print,
   });
 
   setResponseHeader(event, 'Content-Type', built.contentType);
   setResponseHeader(event, 'Content-Length', built.bytes.length);
-  setResponseHeader(
-    event,
-    'Content-Disposition',
-    print ? 'inline' : `attachment; filename="${sanitizeFilename(built.fileName)}"`,
-  );
+  setResponseHeader(event, 'Content-Disposition', `attachment; filename="${sanitizeFilename(built.fileName)}"`);
   setResponseHeader(event, 'X-Content-Type-Options', 'nosniff');
   setResponseHeader(event, 'Cache-Control', 'no-store');
-  if (print) {
-    // Rendered in the dashboard's own origin, so keep it in a unique origin —
-    // `allow-modals` is what lets the document call window.print().
-    setResponseHeader(event, 'Content-Security-Policy', 'sandbox allow-scripts allow-modals');
-  }
 
   return Buffer.from(built.bytes);
 }

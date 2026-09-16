@@ -30,8 +30,8 @@ export { extractLeafSelector, extractMessageHead, extractSelector, extractTopFra
 /**
  * Bump when the normalization algorithm changes. The version is part of the
  * hashed input, so old and new fingerprints can never collide silently.
- * Existing clusters are migrated in place by re-fingerprinting their stored
- * `sampleError` on startup (see shared/handlers/failure-cluster-recluster.ts),
+ * Existing clusters are migrated in place by re-fingerprinting their immutable
+ * `fingerprintSample` on startup (see shared/handlers/failure-cluster-recluster.ts),
  * so triage status, notes and diagnoses survive an algorithm change.
  */
 export const FINGERPRINT_VERSION = 3;
@@ -114,7 +114,7 @@ export function maskVolatile(text: string): string {
  * (row names, hasText, …) that carry per-row data, then apply the standard
  * volatile masking. The primary positional target is preserved.
  */
-function maskSelector(selector: string): string {
+export function maskSelector(selector: string): string {
   return maskVolatile(selector.replace(SELECTOR_OPTION_RE, (_m, key: string) => `${key}: <STR>`));
 }
 

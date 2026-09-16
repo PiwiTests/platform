@@ -4,10 +4,14 @@
  * handler run the exact same query + classification + write, never two
  * hand-mirrored copies.
  */
-import { eq, and, desc } from 'drizzle-orm';
-import { testCases, testRunsCases, testRuns } from '../../server/database/schema';
+import { eq, and, desc, gt, inArray } from 'drizzle-orm';
+import { testCases, testRunsCases, testRuns, networkRequests } from '../../server/database/schema';
 import { classifyFlakyRootCause, type FlakyRootCause } from '../flaky-classify';
+import { getAttemptDiff } from './test-cases';
 import type { DrizzleDB } from './db';
+
+/** How many recent flaky executions to diff for the attempt-diff network vote. */
+const ATTEMPT_DIFF_SAMPLE = 10;
 
 export async function classifyAndPersistFlakyRootCause(
   db: DrizzleDB,
@@ -63,12 +67,48 @@ export async function classifyAndPersistFlakyRootCause(
     }
   }
 
+  // Count the failed requests actually captured across the recent failing
+  // attempts — the classifier's network signal was long fed a dead 0 here.
+  let networkErrorCount = 0;
+  let status5xxCount = 0;
+  const failingIds = recentFailures.map((r) => r.id);
+  if (failingIds.length > 0) {
+    const netRows = await db
+      .select({ status: networkRequests.status })
+      .from(networkRequests)
+      .where(inArray(networkRequests.testRunsCaseId, failingIds));
+    for (const nr of netRows) {
+      const s = nr.status ?? 0;
+      if (s === 0) networkErrorCount++;
+      else if (s >= 500) status5xxCount++;
+    }
+  }
+
+  // The sharpest network signal: a recent flaky execution whose failing attempt
+  // had a request that failed (or 5xx'd) and the passing attempt did not.
+  let attemptDiffNetworkVotes = 0;
+  const flakyExecutions = await db
+    .select({ id: testRunsCases.id })
+    .from(testRunsCases)
+    .where(
+      and(eq(testRunsCases.testCaseId, testCaseId), eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0)),
+    )
+    .orderBy(desc(testRunsCases.createdAt))
+    .limit(ATTEMPT_DIFF_SAMPLE);
+  for (const exec of flakyExecutions) {
+    const diff = await getAttemptDiff(db, exec.id);
+    if (diff.differences.some((d) => d.kind === 'network' && d.only === 'failing')) {
+      attemptDiffNetworkVotes++;
+    }
+  }
+
   const rootCause = classifyFlakyRootCause({
     errorMessages,
     stepErrors,
     stepNames,
-    networkErrorCount: 0,
-    status5xxCount: 0,
+    networkErrorCount,
+    status5xxCount,
+    attemptDiffNetworkVotes,
     browserDistribution,
   });
 

@@ -369,6 +369,81 @@ test.describe('File Upload API Tests', () => {
     }
   });
 
+  test('renders an HTML report with opaque-origin storage isolation', async ({ request, page }) => {
+    const htmlReport = Buffer.from(`
+      <!doctype html>
+      <html>
+        <head><title>Sandboxed report</title></head>
+        <body>
+          <h1>Sandboxed report</h1>
+          <script>
+            window.addEventListener('focus', (event) => event.target.document.nodeType);
+            window.onload = () => {
+              document.body.dataset.reportReady = localStorage.getItem('piwi-report-isolation') || 'ready';
+            };
+          </script>
+        </body>
+      </html>
+    `);
+
+    await page.goto('/');
+    await page.evaluate(() => localStorage.setItem('piwi-report-isolation', 'dashboard-value'));
+
+    const uploadResponse = await request.post('/api/test-runs/upload', {
+      multipart: {
+        projectName: PROJECT.HTML_REPORT_SANDBOX,
+        testRun: JSON.stringify({
+          status: 'passed',
+          startTime: new Date().toISOString(),
+          duration: 1000,
+          totalTests: 1,
+          passedTests: 1,
+          failedTests: 0,
+          skippedTests: 0,
+        }),
+        testCases: JSON.stringify([{ title: 'sandboxed report', status: 'passed', duration: 100 }]),
+        htmlReport: {
+          name: 'index.html',
+          mimeType: 'text/html',
+          buffer: htmlReport,
+        },
+      },
+    });
+    if (!uploadResponse.ok()) {
+      throw new Error(`Report upload failed with ${uploadResponse.status()}: ${await uploadResponse.text()}`);
+    }
+
+    const uploadData = await uploadResponse.json();
+    const reportPath = uploadData.reports?.[0]?.path;
+    expect(reportPath).toBeDefined();
+
+    const pageErrors: string[] = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+    const reportResponse = await page.goto(`/api/files/${reportPath}`);
+    expect(reportResponse?.headers()['content-security-policy']).toBe('sandbox allow-scripts');
+
+    await expect(page.locator('h1')).toHaveText('Sandboxed report');
+    await expect(page.locator('body')).toHaveAttribute('data-report-ready', 'ready');
+
+    const isolation = await page.evaluate(() => ({
+      cookie: (() => {
+        try {
+          return document.cookie;
+        } catch (error) {
+          return error instanceof DOMException ? error.name : 'blocked';
+        }
+      })(),
+      storedDashboardValue: localStorage.getItem('piwi-report-isolation'),
+    }));
+    expect(isolation.cookie).toBe('SecurityError');
+    expect(isolation.storedDashboardValue).toBeNull();
+    expect(
+      pageErrors.some((message) =>
+        /Failed to read a named property|Failed to read the 'localStorage' property/.test(message),
+      ),
+    ).toBe(false);
+  });
+
   test('should prevent path traversal in file download', async ({ request }) => {
     const response = await request.get('/api/files/../../../etc/passwd');
     expect(response.status()).toBeGreaterThan(400);

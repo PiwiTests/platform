@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { waitForHydration } from './utils';
 import { PROJECT } from '#shared/test-project-names';
 
 test.describe.serial('Project Edit Tests', () => {
@@ -74,26 +75,24 @@ test.describe.serial('Project Edit Tests', () => {
     await expect(editButton).toBeVisible();
   });
 
-  test('should navigate to edit page', async ({ page }) => {
-    // Navigate directly to edit page
+  test('should redirect the edit route into the Settings tab', async ({ page }) => {
+    // The edit page folded into the project's Settings tab.
     await page.goto(`/projects/${projectId}/edit`);
 
-    // Should show edit page
-    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/edit`));
-    await expect(page.locator('h2')).toContainText('Edit project settings');
+    await page.waitForURL(new RegExp(`/projects/${projectId}\\?tab=settings`));
+    await expect(page.getByRole('heading', { name: 'Project settings' })).toBeVisible();
   });
 
   test('should display edit form', async ({ page }) => {
-    await page.goto(`/projects/${projectId}/edit`);
+    await page.goto(`/projects/${projectId}?tab=settings`);
 
     // Check form is visible
-    await expect(page.locator('h2')).toContainText('Edit project settings');
+    await expect(page.getByRole('heading', { name: 'Project settings' })).toBeVisible();
 
     // Check that form fields are present
     await expect(page.locator('input').first()).toBeVisible();
     await expect(page.locator('textarea').first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Save changes' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
   });
 
   test('should display custom label in project list', async ({ page, request }) => {
@@ -134,15 +133,14 @@ test.describe.serial('Project Edit Tests', () => {
     expect(project.label).toBe('API Test Label');
   });
 
-  test('should show Edit button on project detail page', async ({ page }) => {
+  test('should reach Settings from the navbar More menu', async ({ page }) => {
     await page.goto(`/projects/${projectId}`);
+    await waitForHydration(page);
 
-    // Check for Edit button in navbar
-    const editButton = page.getByRole('link', { name: /Edit/i }).first();
-    await expect(editButton).toBeVisible();
-
-    // Click should navigate to edit page
-    await editButton.click();
-    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/edit`));
+    // Edit moved into the navbar's More menu, and opens the Settings tab.
+    await page.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Edit' }).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}\\?tab=settings`));
+    await expect(page.getByRole('heading', { name: 'Project settings' })).toBeVisible();
   });
 });

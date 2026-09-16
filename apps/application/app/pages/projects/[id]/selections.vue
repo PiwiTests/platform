@@ -376,7 +376,9 @@ function saveSmoke(testCaseIds: number[]) {
               <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">piwi run</code> and
               <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">piwi select</code> resolve against this dashboard
               — see the
-              <DocLink to="test-selection" no-icon class="text-primary hover:underline">test selection docs</DocLink>.
+              <DocLink to="guide/test-selection" no-icon class="text-primary hover:underline"
+                >test selection docs</DocLink
+              >.
             </p>
           </EmptyState>
           <div v-else class="divide-y divide-gray-200 dark:divide-gray-800">

@@ -15,15 +15,17 @@ mod mcp_clients;
 mod mcp_stdio;
 mod runner;
 mod updates;
+mod worktree;
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::json;
 use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::async_runtime::Receiver;
 use tauri::{AppHandle, Emitter as _, Manager, RunEvent, WindowEvent};
 
 use tauri_plugin_autostart::MacosLauncher;
@@ -31,22 +33,32 @@ use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_dialog::{DialogExt as _, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_notification::NotificationExt as _;
 use tauri_plugin_opener::OpenerExt as _;
-use tauri_plugin_shell::process::CommandChild;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt as _;
 use tauri_plugin_store::StoreExt as _;
 
-use inspect::desktop_inspect_folder;
+use inspect::{desktop_find_importable_runs, desktop_inspect_folder};
 use mcp_clients::{desktop_mcp_clients, desktop_mcp_connect, desktop_mcp_disconnect, desktop_mcp_reveal};
 use updates::{desktop_check_update, desktop_install_update, desktop_restart_app};
 use runner::{
     desktop_check_local_env, desktop_check_local_specs, desktop_get_project_link,
-    desktop_pick_folder, desktop_run_local_tests, desktop_set_project_link,
-    desktop_stop_local_tests,
+    desktop_pick_folder, desktop_pick_import_files, desktop_run_local_tests,
+    desktop_set_project_link, desktop_set_project_start_command, desktop_stop_local_tests,
 };
+use worktree::{desktop_bisect_here, desktop_reproduce_here};
 
 pub(crate) const STORE_FILE: &str = "settings.json";
 const RUN_BG_KEY: &str = "runInBackground";
+/// Persisted maximized state of the main window. Absent on first launch, when
+/// the window opens maximized by default.
+const WINDOW_MAXIMIZED_KEY: &str = "windowMaximized";
 const READY_TIMEOUT_SECS: u64 = 60;
+/// Backoff before each auto-restart of a crashed server, capped at the last value.
+const RESTART_BACKOFFS_SECS: [u64; 4] = [1, 2, 4, 8];
+/// Stop auto-restarting once the server has crashed this many times inside
+/// `RESTART_WINDOW_SECS` — a tight crash-loop is a real fault, not a transient one.
+const MAX_RESTARTS_IN_WINDOW: u32 = 5;
+const RESTART_WINDOW_SECS: u64 = 60;
 /// Preferred loopback port — stable so the reporter can target it; falls back to
 /// a free port if it's already in use (see `pick_port`).
 const PREFERRED_PORT: u16 = 3000;
@@ -59,6 +71,11 @@ pub(crate) const DISCOVERY_FILE: &str = "desktop.json";
 /// Holds the running Node sidecar so it can be stopped cleanly on quit.
 #[derive(Default)]
 struct ServerProcess(Mutex<Option<CommandChild>>);
+
+/// Set true when the app is intentionally shutting down, so the server
+/// supervisor treats the deliberate `kill()` on quit as expected and does not
+/// restart the server it is about to stop.
+struct ShuttingDown(Arc<AtomicBool>);
 
 /// Shared "keep serving after the window closes" flag (tray toggle + close handler).
 struct RunInBackground(Arc<AtomicBool>);
@@ -74,6 +91,15 @@ struct DataDir(PathBuf);
 
 /// The reporter discovery file, removed on quit so it never outlives the server.
 struct DiscoveryFile(PathBuf);
+
+/// The server log path, shared so the webview error bridge (`desktop_log`) can
+/// append to the *same* `logs/server.log` the server sidecar writes to — a
+/// webview is a separate process whose console never reaches the sidecar's stdout.
+struct LogFile(PathBuf);
+
+/// Whether this launch enabled debug mode (`--devtools` / `PIWI_DEBUG`), so the
+/// aux-window opener can mirror the main window and open the inspector too.
+struct DebugMode(bool);
 
 /// Archives handed to the app by the OS (drag onto the dock icon, "Open with",
 /// a second launch with file arguments) that the dashboard has not collected
@@ -266,6 +292,178 @@ fn append_log(path: &std::path::Path, line: &str) {
     }
 }
 
+/// A `PIWI_DEBUG`-style value counts as "on" unless it is empty or an explicit
+/// off word — so `PIWI_DEBUG=1`, `=true`, or even a bare `PIWI_DEBUG=` set to
+/// `on` all enable it, while `=0`/`false`/`off`/`no` (and unset) do not.
+fn is_truthy_flag(value: &str) -> bool {
+    !matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "" | "0" | "false" | "off" | "no"
+    )
+}
+
+/// Whether this launch asked for debug mode: the `--devtools` argument, or a
+/// truthy `PIWI_DEBUG` environment value. Split out from `run()` so it is unit
+/// testable without a real process environment.
+fn debug_mode_requested<'a>(mut args: impl Iterator<Item = &'a str>, piwi_debug: Option<&str>) -> bool {
+    args.any(|a| a == "--devtools" || a == "--debug") || piwi_debug.is_some_and(is_truthy_flag)
+}
+
+/// Prepare a webview log line for `logs/server.log`: collapse newlines to keep
+/// one event on one line, and cap the length so a runaway error loop in the
+/// webview cannot grow the log without bound. Truncation lands on a char
+/// boundary so a multi-byte character is never split (`String::truncate` would
+/// otherwise panic, and this build aborts on panic).
+fn clamp_log_line(message: &str) -> String {
+    const MAX: usize = 4000;
+    let mut msg = message.replace(['\n', '\r'], " ");
+    if msg.len() > MAX {
+        let mut end = MAX;
+        while end > 0 && !msg.is_char_boundary(end) {
+            end -= 1;
+        }
+        msg.truncate(end);
+        msg.push('…');
+    }
+    msg
+}
+
+/// Everything needed to (re)spawn the bundled Node server on the *same* loopback
+/// port and desktop token, so a restart reconnects the already-loaded window
+/// transparently — no re-navigation, and the reporter's discovery file stays valid.
+struct ServerConfig {
+    server_entry: PathBuf,
+    db_path: PathBuf,
+    storage_dir: PathBuf,
+    secret: String,
+    token: String,
+    port: u16,
+    log_path: PathBuf,
+}
+
+/// Spawn the bundled Node sidecar running the Nitro server. Returns its event
+/// stream and child handle, or `None` when the sidecar is missing or the spawn
+/// fails (both logged to the server log; the readiness probe then times out).
+fn spawn_server_process(app: &AppHandle, cfg: &ServerConfig) -> Option<(Receiver<CommandEvent>, CommandChild)> {
+    let cmd = match app.shell().sidecar("node") {
+        Ok(cmd) => cmd,
+        Err(e) => {
+            append_log(&cfg.log_path, &format!("sidecar 'node' not found: {e}"));
+            return None;
+        }
+    };
+    let cmd = cmd
+        .args([node_path(&cfg.server_entry)])
+        .env("NODE_ENV", "production")
+        .env("NITRO_HOST", "127.0.0.1")
+        .env("NITRO_PORT", cfg.port.to_string())
+        .env("PIWI_DATABASE_PATH", node_path(&cfg.db_path))
+        .env("PIWI_STORAGE_PATH", node_path(&cfg.storage_dir))
+        .env("PIWI_SECRET_KEY", cfg.secret.clone())
+        .env("PIWI_DESKTOP_TOKEN", cfg.token.clone())
+        // Tell the bundled Nuxt app it is running in the desktop shell so it hides
+        // account/user management (single-user, auth off) and surfaces the local
+        // connection details (data location, reporter token, MCP endpoint).
+        .env("NUXT_PUBLIC_DESKTOP", "true");
+
+    match cmd.spawn() {
+        Ok(pair) => Some(pair),
+        Err(e) => {
+            append_log(&cfg.log_path, &format!("failed to spawn server: {e}"));
+            None
+        }
+    }
+}
+
+/// Own the sidecar for the life of the app: tee its output to the log and, when
+/// it exits without a deliberate quit (an OOM crash, say), restart it on the same
+/// port and token with a capped backoff so the window is never left pointed at a
+/// dead port. A tight crash-loop (`MAX_RESTARTS_IN_WINDOW` inside
+/// `RESTART_WINDOW_SECS`) stops the loop rather than hammering. Runs on its own
+/// thread and keeps `ServerProcess` pointing at the live child.
+fn supervise_server(
+    app: AppHandle,
+    cfg: ServerConfig,
+    initial: (Receiver<CommandEvent>, CommandChild),
+    shutting_down: Arc<AtomicBool>,
+) {
+    let (mut rx, child) = initial;
+    app.state::<ServerProcess>().0.lock().unwrap().replace(child);
+
+    std::thread::spawn(move || {
+        let mut restarts: u32 = 0;
+        let mut window_start = Instant::now();
+
+        loop {
+            // Drain the sidecar's output (no console in a release build) until it
+            // exits or the channel closes.
+            while let Some(event) = rx.blocking_recv() {
+                match event {
+                    CommandEvent::Stdout(line) => append_log(
+                        &cfg.log_path,
+                        &format!("[server] {}", String::from_utf8_lossy(&line).trim_end()),
+                    ),
+                    CommandEvent::Stderr(line) => append_log(
+                        &cfg.log_path,
+                        &format!("[server:err] {}", String::from_utf8_lossy(&line).trim_end()),
+                    ),
+                    CommandEvent::Error(err) => append_log(&cfg.log_path, &format!("[server:proc] {err}")),
+                    CommandEvent::Terminated(payload) => {
+                        append_log(
+                            &cfg.log_path,
+                            &format!("[server] exited: code={:?} signal={:?}", payload.code, payload.signal),
+                        );
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+
+            // A deliberate quit killed the server — do not resurrect it.
+            if shutting_down.load(Ordering::SeqCst) {
+                break;
+            }
+
+            // A server that stayed up past the window has recovered; forget older
+            // crashes so a much later, isolated crash still gets the full budget.
+            if window_start.elapsed() > Duration::from_secs(RESTART_WINDOW_SECS) {
+                restarts = 0;
+                window_start = Instant::now();
+            }
+            if restarts >= MAX_RESTARTS_IN_WINDOW {
+                append_log(
+                    &cfg.log_path,
+                    "[server] crashed repeatedly — stopping auto-restart; relaunch the app or check the logs.",
+                );
+                let _ = app.emit("server-status", "crashed");
+                break;
+            }
+
+            let backoff = RESTART_BACKOFFS_SECS[(restarts as usize).min(RESTART_BACKOFFS_SECS.len() - 1)];
+            restarts += 1;
+            append_log(&cfg.log_path, &format!("[server] restarting in {backoff}s (attempt {restarts})"));
+            let _ = app.emit("server-status", "restarting");
+            std::thread::sleep(Duration::from_secs(backoff));
+
+            if shutting_down.load(Ordering::SeqCst) {
+                break;
+            }
+
+            match spawn_server_process(&app, &cfg) {
+                Some((new_rx, new_child)) => {
+                    app.state::<ServerProcess>().0.lock().unwrap().replace(new_child);
+                    rx = new_rx;
+                    let _ = app.emit("server-status", "ready");
+                }
+                None => {
+                    let _ = app.emit("server-status", "crashed");
+                    break;
+                }
+            }
+        }
+    });
+}
+
 // ── Desktop service settings, exposed to the in-app Settings UI over IPC ───────
 // The bundled dashboard webview drives the same "run in background" and "start on
 // login" options as the tray. window.__TAURI__ is injected into the desktop
@@ -333,6 +531,39 @@ fn desktop_open_external(app: tauri::AppHandle, url: String) -> Result<(), Strin
         .map_err(|e| e.to_string())
 }
 
+/// Unique label for each runtime-created auxiliary window (Tauri requires labels
+/// to be distinct for the life of the app).
+static AUX_WINDOW_SEQ: AtomicU32 = AtomicU32::new(0);
+
+/// Open a dashboard URL in a new app window. `target="_blank"` and `window.open`
+/// are dropped inside the webview, so a link that should open a standalone
+/// window — the Playwright trace viewer, a captured attachment — does nothing
+/// there without this. Restricted to the bundled server's loopback origin so a
+/// stray call can't point a window at an external site; because the new window
+/// belongs to this app it shares the webview's cookie jar, so the desktop
+/// access-token cookie rides along and the guarded file routes it loads
+/// (`/api/files/...`, and the trace the viewer fetches) are authorized.
+#[tauri::command]
+async fn desktop_open_window(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let allowed = url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:");
+    if !allowed {
+        return Err("unsupported url".into());
+    }
+    let parsed = tauri::Url::parse(&url).map_err(|e| e.to_string())?;
+    let label = format!("aux-{}", AUX_WINDOW_SEQ.fetch_add(1, Ordering::Relaxed));
+    let window = tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::External(parsed))
+        .title("Piwi Dashboard")
+        .inner_size(1200.0, 820.0)
+        .build()
+        .map_err(|e| e.to_string())?;
+    // In debug mode, open the inspector on the new window too (the trace viewer,
+    // an attachment) so it can be debugged like the main window.
+    if app.try_state::<DebugMode>().is_some_and(|d| d.0) {
+        window.open_devtools();
+    }
+    Ok(())
+}
+
 /// Show a native OS notification (the webview's own Notification API is
 /// unavailable / permission-denied there).
 #[tauri::command]
@@ -343,6 +574,27 @@ fn desktop_notify(app: tauri::AppHandle, title: String, body: String) -> Result<
         .body(body)
         .show()
         .map_err(|e| e.to_string())
+}
+
+/// Append a line reported by the webview to the server log. The dashboard runs
+/// in a separate webview process whose console never reaches the Node sidecar's
+/// stdout, so front-end runtime errors — uncaught exceptions, promise
+/// rejections, CSP violations, `console.error` — are invisible in a shipped
+/// build. The desktop error bridge (`app/plugins/desktop.client.ts`) routes them
+/// here so they land in the same `logs/server.log` a user can already open from
+/// the tray, leaving a trace on disk for a reported issue. `level` tags the line
+/// (`error`/`warn`/other); the message is length-capped (see `clamp_log_line`).
+#[tauri::command]
+fn desktop_log(app: tauri::AppHandle, level: String, message: String) {
+    let Some(log) = app.try_state::<LogFile>() else {
+        return;
+    };
+    let tag = match level.as_str() {
+        "error" => "[webview:err]",
+        "warn" => "[webview:warn]",
+        _ => "[webview]",
+    };
+    append_log(&log.0, &format!("{tag} {}", clamp_log_line(&message)));
 }
 
 /// Decode standard base64 (with or without `=` padding) into raw bytes.
@@ -555,6 +807,16 @@ pub fn run() {
 
     let launched_hidden = std::env::args().any(|a| a == "--hidden");
 
+    // Debug mode: `--devtools` (or `--debug`) on the command line, or a truthy
+    // `PIWI_DEBUG` env value. Opens the webview inspector so web runtime errors
+    // can be inspected live in a shipped build (see the setup hook and
+    // `desktop_open_window`). Off by default — a normal launch is unchanged.
+    let all_args: Vec<String> = std::env::args().collect();
+    let debug_mode = debug_mode_requested(
+        all_args.iter().map(String::as_str),
+        std::env::var("PIWI_DEBUG").ok().as_deref(),
+    );
+
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
@@ -601,14 +863,21 @@ pub fn run() {
             desktop_set_run_in_background,
             desktop_set_start_on_login,
             desktop_open_external,
+            desktop_open_window,
             desktop_notify,
+            desktop_log,
             desktop_save_download,
             desktop_pick_folder,
+            desktop_pick_import_files,
             desktop_inspect_folder,
+            desktop_find_importable_runs,
             desktop_get_project_link,
             desktop_set_project_link,
             desktop_run_local_tests,
             desktop_stop_local_tests,
+            desktop_set_project_start_command,
+            desktop_reproduce_here,
+            desktop_bisect_here,
             desktop_check_local_specs,
             desktop_check_local_env,
             desktop_take_pending_open_files,
@@ -645,6 +914,11 @@ pub fn run() {
             let log_path = log_dir.join("server.log");
             append_log(&log_path, "----- launch -----");
 
+            // Share the log path with the webview error bridge (`desktop_log`)
+            // and record whether this is a debug launch (for the aux-window opener).
+            app.manage(LogFile(log_path.clone()));
+            app.manage(DebugMode(debug_mode));
+
             let secret = load_or_create_secret(&app_data_dir);
             let token = load_or_create_token(&app_data_dir);
             let port = pick_port();
@@ -680,6 +954,11 @@ pub fn run() {
             let run_bg = Arc::new(AtomicBool::new(run_bg_initial));
             app.manage(RunInBackground(run_bg.clone()));
 
+            // Flipped on a deliberate quit so the server supervisor tells an
+            // intentional shutdown apart from a crash worth restarting.
+            let shutting_down = Arc::new(AtomicBool::new(false));
+            app.manage(ShuttingDown(shutting_down.clone()));
+
             // --- resolve the bundled server entry (shipped unpacked via resources) ---
             // Tauri may place the resource at <res>/resources/app-server (preserving
             // the config-relative path) or <res>/app-server — accept either.
@@ -712,60 +991,22 @@ pub fn run() {
                 ),
             );
 
-            // --- spawn the Node sidecar running the Nitro server ---
-            // Best-effort: a spawn failure is logged and surfaces as a readiness
-            // timeout (the splash shows an error) instead of a silent panic.
-            match app.shell().sidecar("node") {
-                Err(e) => append_log(&log_path, &format!("sidecar 'node' not found: {e}")),
-                Ok(cmd) => {
-                    let cmd = cmd
-                        .args([node_path(&server_entry)])
-                        .env("NODE_ENV", "production")
-                        .env("NITRO_HOST", "127.0.0.1")
-                        .env("NITRO_PORT", port.to_string())
-                        .env("PIWI_DATABASE_PATH", node_path(&db_path))
-                        .env("PIWI_STORAGE_PATH", node_path(&storage_dir))
-                        .env("PIWI_SECRET_KEY", secret)
-                        .env("PIWI_DESKTOP_TOKEN", token.clone())
-                        // Tell the bundled Nuxt app it is running in the desktop
-                        // shell so it hides account/user management (single-user,
-                        // auth off) and surfaces the local connection details
-                        // (data location, reporter token, MCP endpoint).
-                        .env("NUXT_PUBLIC_DESKTOP", "true");
-
-                    match cmd.spawn() {
-                        Err(e) => append_log(&log_path, &format!("failed to spawn server: {e}")),
-                        Ok((mut rx, child)) => {
-                            app.state::<ServerProcess>().0.lock().unwrap().replace(child);
-
-                            // Tee the sidecar's output to the log file (no console in release).
-                            let drain_log = log_path.clone();
-                            tauri::async_runtime::spawn(async move {
-                                use tauri_plugin_shell::process::CommandEvent;
-                                while let Some(event) = rx.recv().await {
-                                    match event {
-                                        CommandEvent::Stdout(line) => append_log(
-                                            &drain_log,
-                                            &format!("[server] {}", String::from_utf8_lossy(&line).trim_end()),
-                                        ),
-                                        CommandEvent::Stderr(line) => append_log(
-                                            &drain_log,
-                                            &format!("[server:err] {}", String::from_utf8_lossy(&line).trim_end()),
-                                        ),
-                                        CommandEvent::Error(err) => {
-                                            append_log(&drain_log, &format!("[server:proc] {err}"))
-                                        }
-                                        CommandEvent::Terminated(p) => append_log(
-                                            &drain_log,
-                                            &format!("[server] exited: code={:?} signal={:?}", p.code, p.signal),
-                                        ),
-                                        _ => {}
-                                    }
-                                }
-                            });
-                        }
-                    }
-                }
+            // --- spawn and supervise the Node sidecar running the Nitro server ---
+            // A spawn failure is logged and surfaces as a readiness timeout (the
+            // splash shows an error) instead of a silent panic. Once running, the
+            // supervisor restarts the server if it exits unexpectedly (e.g. an OOM
+            // crash) so the window is never left pointed at a dead port.
+            let server_config = ServerConfig {
+                server_entry: server_entry.clone(),
+                db_path: db_path.clone(),
+                storage_dir: storage_dir.clone(),
+                secret,
+                token: token.clone(),
+                port,
+                log_path: log_path.clone(),
+            };
+            if let Some(initial) = spawn_server_process(app.handle(), &server_config) {
+                supervise_server(app.handle().clone(), server_config, initial, shutting_down.clone());
             }
 
             // --- when the server is ready, navigate the window to it ---
@@ -884,10 +1125,36 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            // Window size: maximized on first launch (no stored preference), and
+            // thereafter whatever the user last left it as — persisted on quit
+            // (see the ExitRequested handler). Applied while the window is still
+            // visible, before the --hidden case may hide it.
+            let start_maximized = app
+                .store(STORE_FILE)
+                .ok()
+                .and_then(|s| s.get(WINDOW_MAXIMIZED_KEY))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            if start_maximized {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.maximize();
+                }
+            }
+
             // If autostarted with --hidden, stay in the tray instead of popping up.
             if launched_hidden {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.hide();
+                }
+            }
+
+            // Debug mode: open the webview inspector so front-end runtime errors
+            // are visible in a shipped, console-less build. Compiled in via the
+            // `devtools` cargo feature; dormant unless this launch asked for it.
+            if debug_mode {
+                append_log(&log_path, "debug mode enabled (--devtools/PIWI_DEBUG): opening devtools");
+                if let Some(w) = app.get_webview_window("main") {
+                    w.open_devtools();
                 }
             }
 
@@ -936,6 +1203,19 @@ pub fn run() {
         .expect("error while building the Piwi Dashboard app")
         .run(|app_handle, event| match event {
             RunEvent::ExitRequested { .. } => {
+                // Remember whether the window was maximized so the next launch
+                // restores it (first launch, with no stored value, maximizes).
+                if let Some(w) = app_handle.get_webview_window("main") {
+                    if let Ok(store) = app_handle.store(STORE_FILE) {
+                        store.set(WINDOW_MAXIMIZED_KEY, json!(w.is_maximized().unwrap_or(false)));
+                        let _ = store.save();
+                    }
+                }
+                // Tell the supervisor this stop is deliberate so it doesn't restart
+                // the server we are about to kill.
+                if let Some(flag) = app_handle.try_state::<ShuttingDown>() {
+                    flag.0.store(true, Ordering::SeqCst);
+                }
                 // Best-effort: stop the bundled server so no orphan process lingers.
                 if let Some(child) = app_handle.state::<ServerProcess>().0.lock().unwrap().take() {
                     let _ = child.kill();
@@ -971,8 +1251,43 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::write_new_download;
+    use super::{clamp_log_line, debug_mode_requested, is_truthy_flag, write_new_download};
     use std::fs;
+
+    #[test]
+    fn truthy_flag_treats_only_off_words_and_empty_as_false() {
+        for on in ["1", "true", "TRUE", "on", "yes", "anything"] {
+            assert!(is_truthy_flag(on), "{on} should be truthy");
+        }
+        for off in ["", "  ", "0", "false", "False", "off", "no"] {
+            assert!(!is_truthy_flag(off), "{off:?} should be falsy");
+        }
+    }
+
+    #[test]
+    fn debug_mode_is_requested_by_the_flag_or_a_truthy_env() {
+        // The flag, in either spelling.
+        assert!(debug_mode_requested(["piwi-desktop", "--devtools"].into_iter(), None));
+        assert!(debug_mode_requested(["piwi-desktop", "--debug"].into_iter(), None));
+        // A truthy env value, with no flag.
+        assert!(debug_mode_requested(["piwi-desktop"].into_iter(), Some("1")));
+        // Neither.
+        assert!(!debug_mode_requested(["piwi-desktop"].into_iter(), None));
+        assert!(!debug_mode_requested(["piwi-desktop", "--hidden"].into_iter(), Some("0")));
+    }
+
+    #[test]
+    fn log_lines_collapse_newlines_and_cap_length_on_a_char_boundary() {
+        assert_eq!(clamp_log_line("a\nb\r\nc"), "a b  c");
+        // A multi-byte character straddling the cap must not panic or be split:
+        // the result is valid UTF-8 and ends with the ellipsis marker.
+        let long = "é".repeat(5000); // 2 bytes each → 10_000 bytes
+        let clamped = clamp_log_line(&long);
+        assert!(clamped.len() <= 4000 + "…".len());
+        assert!(clamped.ends_with('…'));
+        // A short line is returned unchanged (aside from newline collapsing).
+        assert_eq!(clamp_log_line("short"), "short");
+    }
 
     #[test]
     fn does_not_overwrite_an_existing_download() {

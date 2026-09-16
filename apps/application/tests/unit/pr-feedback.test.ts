@@ -91,6 +91,17 @@ describe('buildPrComment', () => {
     expect(buildPrComment(summary())).not.toContain('Selection');
   });
 
+  test('flags a lock held on two shards at once', () => {
+    const body = buildPrComment(summary({ splitLocks: ['database'] }));
+    expect(body).toContain('`database`');
+    expect(body).toContain('two shards at once');
+    expect(body).toContain('piwi run --shard');
+  });
+
+  test('says nothing about split locks when none crossed shards', () => {
+    expect(buildPrComment(summary())).not.toContain('two shards at once');
+  });
+
   test('separates new failures from pre-existing ones', () => {
     const body = buildPrComment(
       summary({

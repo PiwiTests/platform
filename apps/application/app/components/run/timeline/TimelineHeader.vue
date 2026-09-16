@@ -1,24 +1,30 @@
 <script setup lang="ts">
-interface SpanTypeItem {
-  key: string;
-  label: string;
-  checked: boolean;
-}
-
 defineProps<{
   workerCount: number;
   shardTotal?: number | null;
   testCount: number;
   hookCount: number;
   waitCount: number;
-  /** Span-type toggles to offer (only the kinds present in the run). */
-  spanTypes: SpanTypeItem[];
+  /** Whether the run has any setup/hook/fixture/wait spans to reveal. */
+  hasNonTestSpans: boolean;
+  /** Current state of the one span toggle. */
+  showHooksAndWaits: boolean;
+  /** Whether the run declared any locks (best effort). */
+  hasLocks?: boolean;
+  /** Current state of the lock toggle. */
+  showLocks?: boolean;
+  /** Distinct lock names in the run. */
+  lockCount?: number;
+  /** How many test rows are currently expanded into their step waterfall. */
+  expandedCount?: number;
   live?: boolean;
 }>();
 
 defineEmits<{
   reset: [];
-  toggleSpan: [key: string, visible: boolean];
+  toggleHooksAndWaits: [visible: boolean];
+  toggleLocks: [visible: boolean];
+  collapseAll: [];
 }>();
 </script>
 
@@ -32,34 +38,40 @@ defineEmits<{
         </template>
         &middot; {{ testCount }} tests
         <template v-if="hookCount > 0"> &middot; {{ hookCount }} hooks </template>
-        <template v-if="waitCount > 0"> &middot; {{ waitCount }} waits </template></span
+        <template v-if="waitCount > 0"> &middot; {{ waitCount }} waits </template>
+        <template v-if="lockCount && lockCount > 0">
+          &middot; {{ lockCount }} lock{{ lockCount > 1 ? 's' : '' }}
+        </template></span
       >
       <HelpHint topic="run.timeline" />
     </span>
     <div class="flex items-center gap-1">
-      <UPopover v-if="spanTypes.length > 1" :content="{ align: 'end' }">
-        <UButton
-          size="xs"
-          color="neutral"
-          variant="ghost"
-          icon="i-lucide-list-filter"
-          trailing-icon="i-lucide-chevron-down"
-          title="Show or hide span types"
-        >
-          Span types
-        </UButton>
-        <template #content>
-          <div class="p-2 flex flex-col gap-2 min-w-56">
-            <UCheckbox
-              v-for="span in spanTypes"
-              :key="span.key"
-              :model-value="span.checked"
-              :label="span.label"
-              @update:model-value="$emit('toggleSpan', span.key, $event === true)"
-            />
-          </div>
-        </template>
-      </UPopover>
+      <UButton
+        v-if="expandedCount && expandedCount > 0"
+        size="xs"
+        color="neutral"
+        variant="ghost"
+        icon="i-lucide-chevrons-down-up"
+        @click="$emit('collapseAll')"
+      >
+        Collapse steps ({{ expandedCount }})
+      </UButton>
+      <USwitch
+        v-if="hasNonTestSpans"
+        :model-value="showHooksAndWaits"
+        label="Show hooks and waits"
+        size="xs"
+        class="mr-1"
+        @update:model-value="$emit('toggleHooksAndWaits', $event === true)"
+      />
+      <USwitch
+        v-if="hasLocks"
+        :model-value="showLocks"
+        label="Show locks"
+        size="xs"
+        class="mr-1"
+        @update:model-value="$emit('toggleLocks', $event === true)"
+      />
 
       <UButton
         v-if="!live"

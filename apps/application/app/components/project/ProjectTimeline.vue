@@ -106,7 +106,7 @@ async function handleDelete() {
           </div>
           <div class="text-sm text-muted"><ClientDate :date="m.occurredAt" /></div>
           <div v-if="m.environment" class="text-xs">
-            <UBadge color="neutral" variant="subtle" size="xs">{{ m.environment }}</UBadge>
+            <EnvironmentBadge :name="m.environment" />
           </div>
           <p v-if="m.description" class="text-sm text-muted">{{ m.description }}</p>
         </div>
@@ -148,9 +148,7 @@ async function handleDelete() {
         </template>
 
         <template #environment-cell="{ row }">
-          <UBadge v-if="row.original.environment" color="neutral" variant="subtle" size="xs">
-            {{ row.original.environment }}
-          </UBadge>
+          <EnvironmentBadge v-if="row.original.environment" :name="row.original.environment" class="text-xs" />
           <span v-else class="text-xs text-muted">All</span>
         </template>
 

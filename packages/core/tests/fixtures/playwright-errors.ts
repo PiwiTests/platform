@@ -80,8 +80,8 @@ Timeout:  5000ms
 Call log:
   - Expect "toHaveCount" with timeout 5000ms
   - waiting for getByRole('row')
-  - 9 × locator resolved to 51 elements
-    - unexpected value "51"
+    9 × locator resolved to 51 elements
+      - unexpected value "51"
 ${STACK}`,
 
   toHaveCountZero: `Error: expect(locator).toHaveCount(expected) failed
@@ -94,8 +94,8 @@ Timeout:  5000ms
 Call log:
   - Expect "toHaveCount" with timeout 5000ms
   - waiting for getByRole('listitem')
-  - 9 × locator resolved to 0 elements
-    - unexpected value "0"
+    9 × locator resolved to 0 elements
+      - unexpected value "0"
 ${STACK}`,
 
   toBeVisibleText: `Error: expect(locator).toBeVisible() failed

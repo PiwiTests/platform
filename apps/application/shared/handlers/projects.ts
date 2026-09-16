@@ -9,9 +9,10 @@ import {
   failureClusters,
   failureDiagnoses,
   casePayloads,
+  entityLinks,
 } from '../../server/database/schema';
 import { asc, desc, eq, exists, sql, and, or, inArray, gte, lte, isNull, isNotNull, count } from 'drizzle-orm';
-import { jsonArrayContainsAll, parseTagFilter } from '../utils/tag-filter';
+import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
 import { FAILED_STATUS_KEYS } from '../utils/test-counts';
 import { TEST_PRIORITIES } from '@piwitests/core/test-meta';
 
@@ -303,15 +304,26 @@ export async function updateProject(
     label?: string | null;
     description?: string | null;
     diagnosisInstructions?: string | null;
+    aiLanguage?: string | null;
     scmToken?: string | null;
     defaultBranch?: string | null;
+    ciRerun?: unknown;
     tagIds?: number[];
   },
 ) {
   const projectResults: any[] = await db.select().from(projects).where(eq(projects.id, id));
   if (!projectResults[0]) throw new Error('Project not found');
 
-  const { label, description, diagnosisInstructions, scmToken, defaultBranch, tagIds: dataTagIds } = data;
+  const {
+    label,
+    description,
+    diagnosisInstructions,
+    aiLanguage,
+    scmToken,
+    defaultBranch,
+    ciRerun,
+    tagIds: dataTagIds,
+  } = data;
 
   // Update project
   await db
@@ -320,8 +332,10 @@ export async function updateProject(
       label,
       description,
       diagnosisInstructions: diagnosisInstructions ?? undefined,
+      aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
       scmToken: scmToken !== undefined ? scmToken : undefined,
       defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
+      ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
       updatedAt: new Date(),
     })
     .where(eq(projects.id, id));
@@ -395,6 +409,18 @@ export async function deleteProjectData(db: DrizzleDB, projectId: number) {
 
   await db.delete(testCases).where(eq(testCases.projectId, projectId));
   await db.delete(casePayloads).where(eq(casePayloads.projectId, projectId));
+
+  // Entity links pinned to this project's clusters (a known-issue link Piwi
+  // created, or a URL a person pinned) are not covered by the cluster cascade,
+  // so remove them before the cluster rows go.
+  const projectClusterRows = await db
+    .select({ id: failureClusters.id })
+    .from(failureClusters)
+    .where(eq(failureClusters.projectId, projectId));
+  const projectClusterIds = projectClusterRows.map((r: { id: number }) => r.id);
+  if (projectClusterIds.length > 0) {
+    await db.delete(entityLinks).where(inArray(entityLinks.failureClusterId, projectClusterIds));
+  }
 
   // Deleting the project row cascades to: projectTags, failureClusters,
   // failureDiagnoses, traceBlobs, traceResources
@@ -503,6 +529,8 @@ export interface TestCasesQuery {
   statuses?: string[];
   /** Every tag here must be present on a case for it to match. */
   tags?: string[];
+  /** Every lock here must be present on a case for it to match. */
+  locks?: string[];
   owner?: string;
   priority?: string;
   maxAgeDays: number;
@@ -533,6 +561,7 @@ export function parseTestCasesQuery(input?: URLSearchParams | Record<string, unk
     .filter((s) => (TEST_CASE_STATUS_FILTERS as readonly string[]).includes(s));
   const rawSort = get('sort') ?? '';
   const tags = parseTagFilter(get('tags'));
+  const locks = parseLockFilter(get('locks'));
   const rawPriority = (get('priority') ?? '').trim().toLowerCase();
   const priorities = TEST_PRIORITIES as readonly string[];
   return {
@@ -541,6 +570,7 @@ export function parseTestCasesQuery(input?: URLSearchParams | Record<string, unk
     q: get('q')?.trim() || undefined,
     statuses: statuses.length > 0 ? statuses : undefined,
     tags: tags.length > 0 ? tags : undefined,
+    locks: locks.length > 0 ? locks : undefined,
     owner: get('owner')?.trim() || undefined,
     priority: priorities.includes(rawPriority) ? rawPriority : undefined,
     maxAgeDays: Math.max(0, num('maxAgeDays', 0)),
@@ -581,6 +611,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     q,
     statuses,
     tags,
+    locks,
     owner,
     priority,
     maxAgeDays = 0,
@@ -637,6 +668,9 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
   if (tags && tags.length > 0) {
     conditions.push(...jsonArrayContainsAll(testCases.tags, tags));
   }
+  if (locks && locks.length > 0) {
+    conditions.push(...jsonArrayContainsAll(testCases.locks, locks));
+  }
   if (owner) {
     conditions.push(eq(testCases.owner, owner));
   }
@@ -666,6 +700,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       suitePath: testCases.suitePath,
       title: testCases.title,
       tags: testCases.tags,
+      locks: testCases.locks,
       owner: testCases.owner,
       priority: testCases.priority,
       feature: testCases.feature,
@@ -1102,6 +1137,9 @@ export async function getProjectFailureClusters(db: DrizzleDB, projectId: number
       fixCommit: failureClusters.fixCommit,
       timeToResolutionMs: failureClusters.timeToResolutionMs,
       fixVerification: failureClusters.fixVerification,
+      assignee: failureClusters.assignee,
+      snoozedUntil: failureClusters.snoozedUntil,
+      snoozeMode: failureClusters.snoozeMode,
     })
     .from(failureClusters)
     .where(and(...whereClauses))
@@ -1151,6 +1189,26 @@ export async function getProjectFailureClusters(db: DrizzleDB, projectId: number
       : [];
   const diagnosisById = new Map(diagnosisRows.map((d: any) => [d.clusterId, d]));
 
+  // A pinned known-issue link per cluster (newest wins), carried into the list as
+  // a compact chip so a triaged cluster shows what is already tracking it.
+  const linkRows: any[] = await db
+    .select({
+      clusterId: entityLinks.failureClusterId,
+      id: entityLinks.id,
+      url: entityLinks.url,
+      provider: entityLinks.provider,
+      key: entityLinks.key,
+    })
+    .from(entityLinks)
+    .where(inArray(entityLinks.failureClusterId, clusterIds))
+    .orderBy(desc(entityLinks.id));
+  const issueByCluster = new Map<number, { url: string; provider: string; key: string | null }>();
+  for (const row of linkRows) {
+    if (row.clusterId != null && !issueByCluster.has(row.clusterId)) {
+      issueByCluster.set(row.clusterId, { url: row.url, provider: row.provider, key: row.key ?? null });
+    }
+  }
+
   return clusters.map((c: any) => {
     const runData = runDataById.get(c.lastSeenRunId) as { status: string; startTime: Date } | undefined;
     return {
@@ -1159,6 +1217,7 @@ export async function getProjectFailureClusters(db: DrizzleDB, projectId: number
       lastSeenRunStatus: runData?.status ?? null,
       lastSeenAt: runData?.startTime ?? null,
       diagnosis: diagnosisById.get(c.id) ?? null,
+      issueLink: issueByCluster.get(c.id) ?? null,
     };
   });
 }

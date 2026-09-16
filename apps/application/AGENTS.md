@@ -119,6 +119,10 @@ the `SCENES` registry of `scripts/take-feature-screenshots.mjs`, run it (`node s
 report or PR. Scenes tagged `desktop` write to `.screens/`, which is **gitignored — those images are a report artifact,
 never committed**; the scene, kept current, is what's committed.
 
+**Always send those screenshots to the user in the conversation too — not only attach them to the PR.** A user-facing
+change is never reported as done without the pictures. When the change alters existing UI, send the before and the
+after; capture both narrow (~390 px) and wide (~1280 px) when the change is about layout or responsiveness.
+
 Scenes tagged `docs` are the exception: they write the committed illustrations in `apps/docs/public/screenshots/`, so
 the scene name _is_ the image name and `npm run app:screens:docs` regenerates every one of them.
 
@@ -181,6 +185,38 @@ Settings pages are driven by the `SETTINGS_PAGES` registry in `app/utils/setting
 - Row highlighting: `:meta="{ class: { tr: '…' } }"` — **not** `:row-attrs`, which Nuxt UI v4 dropped.
 - Actions column: `{ id: 'actions', header: 'Actions' }` plus right-aligned `#actions-header` / `#actions-cell` slots.
 - A table with ≥5 columns needs the mobile treatment from the responsive rule above.
+
+### Typography and emphasis (MUST follow)
+
+A screen is read top to bottom; emphasis tells the reader where to look, and it only works when it is rare. These
+rules apply to every block a page opens on and to any card that states facts (the situation block, page headers,
+summaries, list rows). Dense tables and code views are exempt only where a rule says so.
+
+- **Four text styles per block, no more**: a heading (`text-lg sm:text-xl font-semibold text-highlighted`, at most
+  one per block), a body (`text-sm text-highlighted leading-relaxed`, every sentence), a label (`text-xs font-medium
+text-muted`) and a meta style (`text-xs text-muted` — qualifiers, facts, footers). Code — a locator, a path, a
+  commit — is the body or meta style in `font-mono`, inheriting the color. Nothing else in the block: no
+  `text-toned`/`text-dimmed` mixed with `text-muted`, no italics, no uppercase micro-labels, no `font-semibold` on a
+  sentence.
+- **Structure with layout, not with styling.** A block with several kinds of lines gets one label column
+  (`SituationBlock` renders a `<dl>` with a 6.5 rem label column: _Most likely_, _Situation_, _State_, _Next_), so the
+  reader scans labels, not formatting. A badge, a color or a bold span is never what tells two lines apart.
+- **One accent color per screen: the primary action.** The solid `color="primary"` button is the only saturated
+  element the reader is meant to click. Every other button is `color="neutral"` — `variant="outline"` for a secondary
+  action, `variant="ghost"` for a disclosure or a menu trigger. No `warning`, `success` or `soft` buttons for ordinary
+  actions.
+- **Links inside a sentence keep the sentence's color**: `underline decoration-dotted underline-offset-2
+hover:decoration-solid`. `text-primary` links belong in navigation lists and tables, not in prose.
+- **Badges are for exceptions, at most two per screen** — the status chip and one exceptional state (_Quarantined_, a
+  did-not-run cause). A strength, a confidence, an error type, a tag or a mark such as `@fixme` is plain meta text,
+  never a chip. Two red chips on one screen is a bug.
+- **Icons only where they carry meaning the text does not**: a status dot, a chevron on a disclosure or a menu, the
+  check on a copied button. No icon in front of a label, a heading or a fact.
+- **A locator inside a heading or a sentence is plain mono** (`<LocatorCode plain>`, `<FailureHeadline plain>`).
+  Syntax highlighting belongs in code views — clue rows, the toolbox, the picker — where it competes with nothing.
+- **Say a fact once, in one style.** When the same fact could be a chip and words, keep the words.
+- **Measure it.** `npm run app:measure -- --json` reports `distinctTextStyles` inside the situation block. Keep it at
+  or under 15 on the execution page and 12 on the cluster page; a change that raises it needs a reason in the PR.
 
 ### Other UI rules
 
@@ -256,8 +292,8 @@ same files load unchanged in Vite, Vitest and plain Node (the generator script r
   registered in `shared/test-project-names.ts`.
 - **AI test** — an E2E that needs a model goes against the mock OpenAI-compatible server in `tests/ai-diagnosis.spec.ts`,
   so the main suite stays at zero tokens. `tests/live/` is the only place that talks to a real provider: it is excluded
-  from `playwright.config.ts`, has its own config, and runs from `npm run app:test:ai:live` or the `ai-live-e2e`
-  workflow. Assume the live model is text-only — that suite pins `PIWI_AI_MAX_IMAGES=0`.
+  from `playwright.config.ts`, has its own config, and runs from `npm run app:test:ai:live`. Assume the live model is
+  text-only — that suite pins `PIWI_AI_MAX_IMAGES=0`.
 
 ## Extension points
 
@@ -276,6 +312,16 @@ Where to add things in subsystems whose wiring spans several files:
 ## Subsystem invariants
 
 These are the rules that a reasonable change would otherwise break.
+
+### SCM providers — one source for hosts and URLs
+
+Provider hosts and web URLs live only in `shared/scm-urls.ts` (`detectScmHost`, `commitUrl`, `compareUrl`,
+`fileUrl`, `branchUrl`); provider API calls live only in `server/utils/scm/`. Anything that needs a provider gets it
+from `createScmProvider` / `scmProviderForUrl` (or the pure link helpers from `#shared/scm-urls`) — never a hand-written
+`github.com` / `gitlab` / `bitbucket.org` host switch or a re-implemented `/commit/<sha>` path. Import the
+`ScmProviderName` union from `#shared/scm-urls`; never re-declare `'github' | 'gitlab' | 'bitbucket'`.
+`tests/unit/scm-single-source.test.ts` scans `server`, `shared`, `app` and `types` for provider host literals and the
+union outside an explicit allow-list, so a new home for either is a visible diff to that list.
 
 ### Failure clustering & fingerprints
 
@@ -438,6 +484,11 @@ apply the cursor in memory on the same axis as the emitted cursor, or paging loo
 
 ## Running the app locally to verify a change
 
+The step-by-step recipe, the seeded routes worth opening and the pitfalls live in the `run-app` skill
+(`.claude/skills/run-app/SKILL.md`) — read it first. The short form: `npm run app:screens -- --route <path> --expand
+--height 2400` screenshots any page against a throwaway server it boots and seeds itself, and `npm run app:seed:dev`
+followed by `npm run app:dev:bg` gives you a server on port 3000 to iterate against.
+
 When you need to see a change working — a UI tweak, a flow, a screenshot — run a **plain (non-demo) dev server backed by
 a dev DB seeded from the demo data**:
 
@@ -449,8 +500,14 @@ npm run app:seed:dev                             # 3. load sample data (server m
 NUXT_IGNORE_LOCK=1 npx nuxt dev --port 3002      # 4. plain dev server, auth disabled by default
 ```
 
-`app:seed:dev` is idempotent (`INSERT OR IGNORE`); to refresh stale rows wipe `.data` and repeat from step 2. Drive the
-app with Playwright — `scripts/take-demo-screenshots.mjs` is a working harness.
+`app:seed:dev` creates and migrates a missing or empty dev DB itself, so step 2 is only needed when you want a clean
+schema by hand; it is idempotent (`INSERT OR IGNORE`), and to refresh stale rows wipe `.data` and re-run it. It also
+copies the committed evidence media (`public/demo/{screenshots,traces,videos}`) into the storage directory under the
+`demo/…` paths the seeded rows reference, so the failure pages serve the real screenshot, trace and video through the
+file endpoint rather than a broken image. Drive the
+app with Playwright — `scripts/take-feature-screenshots.mjs` (`--route`, `--url`) is the working harness, and its
+`settlePage` is the wait strategy to copy: the run and execution pages hold an SSE stream open, so a bare
+`networkidle` never resolves, and the page scrolls inside a panel, so `fullPage` captures a single viewport.
 
 **Caveats that cost real debugging time:**
 

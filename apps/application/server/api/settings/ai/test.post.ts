@@ -41,6 +41,7 @@ export default eventHandler(async (event) => {
     apiKey?: string;
     model?: string;
     baseUrl?: string;
+    temperature?: number | null;
   } | null;
 
   const role: AiModelRole = body?.role === 'research' || body?.role === 'embedding' ? body.role : 'diagnosis';
@@ -62,6 +63,7 @@ export default eventHandler(async (event) => {
       apiKey,
       model: body.model || '',
       baseUrl: body.baseUrl || null,
+      temperature: body.temperature ?? resolved?.roles[role]?.temperature ?? null,
     };
   }
 

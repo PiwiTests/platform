@@ -4,8 +4,10 @@
  * proxy (`LOCATOR_METHODS`) and the server's leaf-selector extraction
  * (`LEAF_SELECTOR_METHODS` in `error-fingerprint.ts`).
  *
- * `frameLocator` is intentionally excluded — the capture proxy does not wrap
- * frame locators.
+ * `frameLocator` is excluded — it resolves a frame, not the leaf element the
+ * innermost builder call identifies. The capture proxy wraps the no-selector
+ * `frameLocator()` entry point separately so locators built through it capture,
+ * but a frame locator is never itself a leaf selector.
  */
 export const LOCATOR_BUILDER_METHODS: readonly string[] = [
   'getByRole',

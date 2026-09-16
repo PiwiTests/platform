@@ -5,11 +5,13 @@ import { resolveRunBranch } from './run-branch';
 import { resolveDefaultBranch } from './scm/default-branch';
 import { FALLBACK_DEFAULT_BRANCH } from './scm/git-url';
 import { selectBaselineRun } from './branch-baseline';
+import { resolveFallbackBranch } from '#shared/handlers/baseline-scope';
 
 /**
  * Compute isNewRegression and isNewFlaky signals for all test_runs_cases
- * in a finished run by comparing against the branch-aware passing baseline
- * (same branch, else the default branch, else any branch).
+ * in a finished run by comparing against the passing baseline the run-level
+ * ladder picks: the same environment first, and within it the same branch,
+ * else the branch it forked from, else any branch.
  */
 export async function computeRegressionSignals(db: DB, runId: number): Promise<void> {
   const runResults: any[] = await db
@@ -18,6 +20,7 @@ export async function computeRegressionSignals(db: DB, runId: number): Promise<v
       projectId: testRuns.projectId,
       startTime: testRuns.startTime,
       branch: testRuns.branch,
+      environment: testRuns.environment,
       metadata: testRuns.metadata,
     })
     .from(testRuns)
@@ -33,13 +36,15 @@ export async function computeRegressionSignals(db: DB, runId: number): Promise<v
   const branch = run.branch ?? resolveRunBranch(run.metadata);
   const defaultBranch = project ? await resolveDefaultBranch(db, project, run.metadata) : FALLBACK_DEFAULT_BRANCH;
 
-  const baselineRun = await selectBaselineRun(db, {
+  const baseline = await selectBaselineRun(db, {
     projectId: run.projectId,
     before: run.startTime,
     branch,
-    defaultBranch,
+    environment: run.environment ?? null,
+    fallbackBranch: resolveFallbackBranch(run.metadata, defaultBranch).branch,
   });
-  if (!baselineRun) return;
+  if (!baseline) return;
+  const baselineRun = baseline.run;
 
   // Fetch baseline case statuses and retries
   const baselineCases: any[] = await db

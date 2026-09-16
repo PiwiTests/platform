@@ -9,10 +9,10 @@ export interface AnalyticsScope {
   days: number;
   /** Optional explicit project filter (always intersected with the caller's access scope). */
   projectIds?: number[];
-  /** Restrict to runs reported for one deployment environment. */
-  environment?: string | null;
-  /** Restrict to runs reported on one SCM branch. */
-  branch?: string | null;
+  /** Restrict to runs reported for any of these deployment environments. */
+  environments?: string[];
+  /** Restrict to runs reported on any of these SCM branches. */
+  branches?: string[];
   /** Only count full-suite runs (default) — partial/--grep runs skew every rate. */
   fullRunsOnly: boolean;
 }
@@ -49,25 +49,35 @@ export function parseAnalyticsScope(query: QueryLike): AnalyticsScope {
         .filter((p) => Number.isInteger(p) && p > 0)
     : undefined;
 
-  const environment = pick(query, 'environment') || null;
-  const branch = pick(query, 'branch') || null;
+  const environments = parseList(pick(query, 'environments') ?? pick(query, 'environment'));
+  const branches = parseList(pick(query, 'branches') ?? pick(query, 'branch'));
   const fullRunsOnly = pick(query, 'fullRunsOnly') !== 'false';
 
   return {
     days,
     projectIds: projectIds && projectIds.length > 0 ? projectIds : undefined,
-    environment,
-    branch,
+    environments,
+    branches,
     fullRunsOnly,
   };
+}
+
+/** Split a comma-separated query value into a trimmed, non-empty list (undefined when empty). */
+function parseList(raw: string | null): string[] | undefined {
+  if (!raw) return undefined;
+  const values = raw
+    .split(',')
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0);
+  return values.length > 0 ? values : undefined;
 }
 
 /** Serialize a scope back into query params (used by the client composable). */
 export function analyticsScopeToQuery(scope: AnalyticsScope): Record<string, string> {
   const query: Record<string, string> = { days: String(scope.days) };
   if (scope.projectIds && scope.projectIds.length > 0) query.projects = scope.projectIds.join(',');
-  if (scope.environment) query.environment = scope.environment;
-  if (scope.branch) query.branch = scope.branch;
+  if (scope.environments && scope.environments.length > 0) query.environments = scope.environments.join(',');
+  if (scope.branches && scope.branches.length > 0) query.branches = scope.branches.join(',');
   if (!scope.fullRunsOnly) query.fullRunsOnly = 'false';
   return query;
 }

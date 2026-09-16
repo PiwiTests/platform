@@ -1,14 +1,18 @@
 import { ScmProvider, truncatePatch, MAX_SCM_FILES, MAX_FILE_BYTES, FETCH_TIMEOUT_MS } from './ScmProvider';
 import type {
   ScmCommitDetail,
+  ScmCommitAuthor,
   ScmChanges,
   ScmFileContent,
+  ScmEntityRef,
+  ScmEntityState,
   ScmPullRequest,
   ScmCommitStatus,
   ScmFileEdit,
   CreatePullRequestInput,
 } from './ScmProvider';
 import { TtlCache } from './cache';
+import type { CiRerunSettings } from '#shared/ci-rerun';
 
 /** Turn a non-2xx GitHub response into an Error carrying the API's own message. */
 async function githubError(res: Response, action: string): Promise<Error> {
@@ -24,9 +28,14 @@ const fetchCommitDiffCache = new TtlCache<ScmChanges>(10 * 60 * 1000);
 const fetchFileCache = new TtlCache<ScmFileContent | null>(30 * 60 * 1000);
 const fetchTreeCache = new TtlCache<string[]>(10 * 60 * 1000);
 const defaultBranchCache = new TtlCache<string | null>(30 * 60 * 1000);
+// Author is immutable per SHA, so cache it (incl. negative lookups) for longer.
+const commitAuthorCache = new TtlCache<ScmCommitAuthor | null>(30 * 60 * 1000);
 
 export class GitHubProvider extends ScmProvider {
   readonly provider = 'github' as const;
+  get webUrl(): string {
+    return `https://github.com/${this.repoPath}`;
+  }
 
   constructor(
     private readonly repoPath: string,
@@ -147,6 +156,83 @@ export class GitHubProvider extends ScmProvider {
     };
     fetchCommitDiffCache.set(key, result);
     return result;
+  }
+
+  async getCommitAuthor(sha: string): Promise<ScmCommitAuthor | null> {
+    if (!sha) return null;
+    const key = `${this.keyPrefix}:author:${this.repoPath}:${sha}`;
+    const hit = commitAuthorCache.get(key);
+    if (hit !== undefined) return hit;
+
+    try {
+      const res = await fetch(`https://api.github.com/repos/${this.repoPath}/commits/${sha}`, {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        commitAuthorCache.set(key, null);
+        return null;
+      }
+      const data = (await res.json()) as { commit?: { author?: { name?: string; email?: string } } };
+      const name = data.commit?.author?.name?.trim() ?? '';
+      const email = data.commit?.author?.email?.trim() ?? '';
+      const result = email ? { name: name || email, email } : null;
+      commitAuthorCache.set(key, result);
+      return result;
+    } catch {
+      return null;
+    }
+  }
+
+  async fetchIssue(number: number): Promise<ScmEntityRef | null> {
+    return this.fetchEntity('issues', number);
+  }
+
+  async fetchPullRequest(number: number): Promise<ScmEntityRef | null> {
+    return this.fetchEntity('pulls', number);
+  }
+
+  private async fetchEntity(endpoint: 'issues' | 'pulls', number: number): Promise<ScmEntityRef | null> {
+    if (!Number.isInteger(number) || number <= 0) return null;
+    try {
+      const res = await fetch(`https://api.github.com/repos/${this.repoPath}/${endpoint}/${number}`, {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as {
+        title?: string;
+        state?: string;
+        merged?: boolean;
+        draft?: boolean;
+        user?: { login?: string };
+        html_url?: string;
+        updated_at?: string;
+      };
+      const state: ScmEntityState =
+        endpoint === 'pulls'
+          ? data.merged
+            ? 'merged'
+            : data.state === 'closed'
+              ? 'closed'
+              : data.draft
+                ? 'draft'
+                : 'open'
+          : data.state === 'closed'
+            ? 'closed'
+            : data.state === 'open'
+              ? 'open'
+              : null;
+      return {
+        title: data.title ?? null,
+        state,
+        author: data.user?.login ?? null,
+        url: data.html_url ?? null,
+        updatedAt: data.updated_at ?? null,
+      };
+    } catch {
+      return null;
+    }
   }
 
   async fetchFileAtRef(path: string, ref: string): Promise<ScmFileContent | null> {
@@ -412,5 +498,29 @@ export class GitHubProvider extends ScmProvider {
     const pr = (await res.json()) as { number?: number; html_url?: string };
     if (!pr.number) throw new Error('GitHub pull request response had no number');
     return { number: pr.number, url: pr.html_url ?? `https://github.com/${this.repoPath}/pull/${pr.number}` };
+  }
+
+  // ── CI re-run ──────────────────────────────────────────────────────────────
+
+  override async dispatchRerun(settings: CiRerunSettings, playwrightArgs: string): Promise<{ url: string }> {
+    const target = settings.github;
+    if (!target) throw new Error('No GitHub workflow configured for CI re-run');
+
+    const res = await fetch(
+      `https://api.github.com/repos/${this.repoPath}/actions/workflows/${encodeURIComponent(target.workflow)}/dispatches`,
+      {
+        method: 'POST',
+        headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref: target.ref, inputs: { [target.inputName]: playwrightArgs } }),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      },
+    );
+    if (!res.ok) throw await githubError(res, 'dispatch workflow');
+
+    // workflow_dispatch answers 204 with no run id, so link to the workflow's
+    // runs page filtered to the branch instead of a specific run.
+    const runs = new URL(`https://github.com/${this.repoPath}/actions/workflows/${target.workflow}`);
+    runs.searchParams.set('query', `branch:${target.ref}`);
+    return { url: runs.toString() };
   }
 }

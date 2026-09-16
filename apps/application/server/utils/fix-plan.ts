@@ -19,68 +19,20 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { failureClusters, failureDiagnoses, testCases, testRunsCases } from '../database/schema';
 import { getLocatorHealingBatch } from './locator-healing';
+import { findFixedBefore } from './cluster-memory';
+import { getClusterKnownIssue } from './integrations/known-issue';
 import { validatePatch, type PatchValidation } from '#shared/patch';
 import { parseCallsiteLocation } from '#shared/callsite-location';
 import { buildRetryCommand } from '#shared/retry-command';
-import type { LocatorEdit } from '#shared/locator-healing.types';
+import { computeReproduceContext } from '#shared/handlers/reproduce';
+import type { FixPlan, FixPlanEdit } from '#shared/fix-plan.types';
 import type { DrizzleDB } from '#shared/handlers/db';
+import type { BrowserConfig } from '#shared/types';
+
+export type { FixPlan, FixPlanEdit } from '#shared/fix-plan.types';
 
 /** Executions inspected for locator suggestions — enough to cover a cluster. */
 const MAX_HEALED_CASES = 5;
-
-export interface FixPlanEdit {
-  filePath: string;
-  /** 1-based line the failing locator sits on, when the trace identified it. */
-  line: number | null;
-  /** The line as captured, so an agent can match before rewriting. */
-  currentLine: string | null;
-  /** The locator that broke. */
-  failingLocator: string | null;
-  /** The ranked replacement to use instead. */
-  suggestedLocator: string | null;
-  /** Stability score of the suggestion, 0-100. */
-  score: number | null;
-  /**
-   * The ranked replacement as a ready-to-apply edit: the failing line rewritten,
-   * plus a git-applyable unified diff. Null when there is no captured source line
-   * to rewrite. Deterministic locator-line rewrite only — never model output.
-   */
-  edit: LocatorEdit | null;
-  executionId: number;
-}
-
-export interface FixPlan {
-  cluster: {
-    id: number;
-    title: string | null;
-    signature: string;
-    errorType: string | null;
-    status: string;
-    occurrences: number;
-    /** Set when a previous fix landed and later broke again. */
-    fixVerification: string | null;
-  };
-  diagnosis: {
-    category: string | null;
-    confidence: string | null;
-    rootCause: string | null;
-    summary: string | null;
-    /** Unified diff proposed by the model. */
-    patch: string | null;
-    /** Whether that patch still applies to the current source. */
-    patchValidation: PatchValidation | null;
-  } | null;
-  /** Concrete locator rewrites, one per failing call site. */
-  edits: FixPlanEdit[];
-  failingTests: Array<{ testCaseId: number; title: string; filePath: string; executionId: number }>;
-  ownership: { owner: string | null; source: string | null };
-  verify: {
-    /** Playwright invocation that runs exactly the affected tests. */
-    command: string;
-    /** What happens on the dashboard when it passes. */
-    expectation: string;
-  };
-}
 
 /** Shell-quote a title for `-g`, since test titles routinely contain spaces. */
 function quote(value: string): string {
@@ -103,6 +55,7 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
       title: testCases.title,
       filePath: testCases.filePath,
       owner: testCases.owner,
+      browser: testRunsCases.browser,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
@@ -121,7 +74,12 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
       filePath: row.filePath,
       executionId: row.executionId,
       owner: row.owner,
+      projectName: (row.browser as BrowserConfig | null)?.projectName ?? null,
     }));
+
+  // The browser binary the failures ran on — taken from the newest execution, so
+  // the reproduction installs the right one.
+  const reproBrowser = (caseRows[0]?.browser as BrowserConfig | null)?.browserName ?? null;
 
   const [diagnosisRow] = await db
     .select()
@@ -189,6 +147,29 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
   );
   const titles = failingTests.slice(0, 5).map((test) => test.title);
   const grep = titles.length ? ` -g ${quote(titles.join('|'))}` : '';
+  const verifyCommand = `${fileCmd || 'npx playwright test'}${grep}`;
+
+  // Reproduce locally and bisect the regression window: the checkout of the
+  // failing commit, a pinned install, the browser and the exact test command,
+  // then a `git bisect` between the last green commit and this one. Computed from
+  // the same last-seen run the "What changed" panel reads, so it degrades in
+  // lockstep — no SCM metadata means no bisect, spelled out in the payload.
+  const { reproduce, bisect, desktop } = await computeReproduceContext(db, {
+    runId: cluster.lastSeenRunId,
+    cases: failingTests.map((test) => ({
+      filePath: test.filePath,
+      title: test.title,
+      projectName: test.projectName,
+    })),
+    browserName: reproBrowser,
+    verifyCommand,
+    clusterId: cluster.id,
+  });
+
+  // Resolved clusters this one resembles, and how each was fixed — best-effort,
+  // never a reason the plan fails to build.
+  const fixedBefore = await findFixedBefore(db, cluster).catch(() => []);
+  const issue = await getClusterKnownIssue(db as never, clusterId).catch(() => null);
 
   return {
     cluster: {
@@ -202,12 +183,18 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
     },
     diagnosis,
     edits,
-    failingTests: failingTests.map(({ owner: _owner, ...rest }) => rest),
+    failingTests: failingTests.map(({ owner: _owner, projectName: _projectName, ...rest }) => rest),
     ownership: { owner: declaredOwner, source: declaredOwner ? 'annotation' : null },
     verify: {
-      command: `${fileCmd || 'npx playwright test'}${grep}`,
+      command: verifyCommand,
       expectation:
-        'Run the full suite afterwards. When every test in this cluster passes in one full run, Piwi records the fix — with the commit and how long the cluster was open — and the cluster stops being reported as open.',
+        'Re-run the affected tests, or the whole suite. When every test in this cluster passes in one run, full or filtered, Piwi records the fix — with the commit and how long the cluster was open — and the cluster stops being reported as open.',
     },
+    reproduce,
+    bisect,
+    bisectedCommit: desktop.bisectedCommit,
+    reproduceDesktop: desktop,
+    fixedBefore,
+    issue,
   };
 }

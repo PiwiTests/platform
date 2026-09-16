@@ -35,6 +35,24 @@ test.describe.serial('MCP server', () => {
             location: 'tests/checkout.spec.ts:10:1',
             error: 'Expected button to be visible',
             retries: 0,
+            steps: [
+              {
+                title: 'Navigate',
+                subtitle: '/checkout',
+                category: 'navigation',
+                duration: 500,
+                params: { url: 'https://shop.example.com/checkout' },
+              },
+              {
+                title: 'Click',
+                subtitle: "getByRole('button', { name: 'Pay' })",
+                category: 'action',
+                duration: 1500,
+                failed: true,
+                error: { message: 'Expected button to be visible' },
+                params: { locator: "getByRole('button', { name: 'Pay' })" },
+              },
+            ],
           },
           {
             title: 'payment fails',
@@ -73,7 +91,7 @@ test.describe.serial('MCP server', () => {
   test('tools/list — returns all tools', async ({ request }) => {
     const body = await mcp(request, 'tools/list');
     const tools: { name: string }[] = body.result.tools;
-    expect(tools.length).toBe(45);
+    expect(tools.length).toBe(46);
     const names = tools.map((t) => t.name);
     expect(names).toContain('list_projects');
     expect(names).toContain('get_run');
@@ -94,6 +112,7 @@ test.describe.serial('MCP server', () => {
     expect(names).toContain('list_open_clusters');
     expect(names).toContain('get_fix_plan');
     expect(names).toContain('create_test_function');
+    expect(names).toContain('create_issue');
     expect(names).toContain('analyze_selections');
     // Every tool has a description and inputSchema
     for (const t of tools) {
@@ -274,6 +293,54 @@ test.describe.serial('MCP server', () => {
     expect(hasEvidence).toBe(true);
   });
 
+  test('tools/call get_test_run_case — steps carry their 1.63 subtitle and params', async ({ request }) => {
+    const run = JSON.parse(
+      (await mcp(request, 'tools/call', { name: 'get_run', arguments: { runId, statusFilter: 'failed' } })).result
+        .content[0].text,
+    );
+    const checkout = run.cases.find((c: { title: string }) => c.title === 'checkout fails');
+    expect(checkout).toBeTruthy();
+    const res = JSON.parse(
+      (
+        await mcp(request, 'tools/call', {
+          name: 'get_test_run_case',
+          arguments: { executionId: checkout.executionId, include: ['steps'] },
+        })
+      ).result.content[0].text,
+    );
+    const nav = res.steps.find((s: { title: string }) => s.title === 'Navigate');
+    expect(nav.subtitle).toBe('/checkout');
+    expect(nav.params.url).toBe('https://shop.example.com/checkout');
+    const click = res.steps.find((s: { subtitle?: string }) => s.subtitle === "getByRole('button', { name: 'Pay' })");
+    expect(click.params.locator).toBe("getByRole('button', { name: 'Pay' })");
+  });
+
+  test('tools/call explain_failure — carries situation and nextStep (and story when a combination matches)', async ({
+    request,
+  }) => {
+    const run = JSON.parse(
+      (await mcp(request, 'tools/call', { name: 'get_run', arguments: { runId, statusFilter: 'failed' } })).result
+        .content[0].text,
+    );
+    const execId = run.cases[0].executionId;
+    const res = JSON.parse(
+      (await mcp(request, 'tools/call', { name: 'explain_failure', arguments: { executionId: execId } })).result
+        .content[0].text,
+    );
+    // A failing execution always has a situation sentence and a computed next step.
+    expect(typeof res.situation).toBe('string');
+    expect(res.situation.length).toBeGreaterThan(0);
+    expect(res.nextStep).toBeTruthy();
+    expect(typeof res.nextStep.kind).toBe('string');
+    expect(res.nextStep.primary).toBeTruthy();
+    // `story` is present only when a known clue combination matches; when present
+    // it is one sentence over a set of clue ids.
+    if (res.story) {
+      expect(typeof res.story.sentence).toBe('string');
+      expect(Array.isArray(res.story.clueIds)).toBe(true);
+    }
+  });
+
   test('tools/call get_run_insights — returns baseline comparison shape', async ({ request }) => {
     const insights = JSON.parse(
       (await mcp(request, 'tools/call', { name: 'get_run_insights', arguments: { runId } })).result.content[0].text,
@@ -375,6 +442,6 @@ test.describe.serial('MCP server', () => {
     const ping = body.find((r: any) => r.id === 1);
     const list = body.find((r: any) => r.id === 2);
     expect(ping.result).toEqual({});
-    expect(list.result.tools.length).toBe(45);
+    expect(list.result.tools.length).toBe(46);
   });
 });

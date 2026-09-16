@@ -106,6 +106,7 @@ export default eventHandler(async (event) => {
         type: 'step-begin',
         data: {
           title: tc.title,
+          subtitle: tc.subtitle ?? null,
           parentTitle: tc.parentTitle,
           stepCategory: tc.stepCategory ?? null,
           location: tc.location,
@@ -136,6 +137,7 @@ export default eventHandler(async (event) => {
         type: 'step-end',
         data: {
           title: tc.title,
+          subtitle: tc.subtitle ?? null,
           parentTitle: tc.parentTitle,
           stepCategory: tc.stepCategory ?? null,
           status: tc.status,
@@ -215,8 +217,15 @@ export default eventHandler(async (event) => {
 
   const updatedRun = updatedRuns[0];
 
-  // Publish test-completed events to SSE subscribers
-  for (const tc of parsedEvents) {
+  // Publish test-completed events to SSE subscribers. The persisted execution
+  // id rides along so the live run page can deep-link each row to its real
+  // case page instead of a fabricated id (see persistRunCases' inputIndex).
+  const persistedByInputIndex = new Map(
+    insertedRunCases.filter((r) => r.inputIndex >= 0).map((r) => [r.inputIndex, r]),
+  );
+
+  for (const [index, tc] of parsedEvents.entries()) {
+    const persisted = persistedByInputIndex.get(index);
     runEventBus.publish(id, {
       type: 'test-completed',
       data: {
@@ -233,6 +242,8 @@ export default eventHandler(async (event) => {
         shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
         browser: tc.browser ?? null,
+        executionId: persisted?.id ?? null,
+        testCaseId: persisted?.testCaseId ?? null,
       },
     });
   }

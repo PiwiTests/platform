@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getAppSetting } from './app-settings';
+import { callClaudeCli, streamClaudeCli } from './ai-claude-cli';
 import { decryptSecret, getEncryptionKey } from './crypto';
 import type { AiProvider, AiConfig, AiModelRole, ResolvedAiRole } from '~~/types/api';
 import type { DbClient } from '../database';
@@ -17,6 +18,8 @@ interface StoredRole {
   apiKey?: string; // encrypted at rest
   /** When set, inherit provider/apiKey/baseUrl from the named role (model may still differ). */
   reuse?: AiModelRole | null;
+  /** OpenAI-compat only: sampling temperature override. Not inherited via `reuse` — it's a call-time tuning knob, not a credential. */
+  temperature?: number;
 }
 
 /** Stored shape of the `ai` app-setting. New installs use `roles`; older installs use the flat fields. */
@@ -37,10 +40,20 @@ interface StoredAi {
 /** What a role is used for: embeddings need an OpenAI-compatible endpoint (Anthropic has no embeddings API). */
 type RoleKind = 'chat' | 'embedding';
 
+/** Parse a `PIWI_AI_*_TEMPERATURE` env var (string) into a finite number, or null when unset/invalid. */
+function parseTemperature(raw?: string): number | null {
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
 function isValidRole(role: ResolvedAiRole, kind: RoleKind): boolean {
+  // Embeddings require an OpenAI-compatible endpoint; the CLI has no embeddings API.
   if (kind === 'embedding') return role.provider === 'openai' && Boolean(role.baseUrl && role.model);
   if (role.provider === 'anthropic') return Boolean(role.apiKey);
   if (role.provider === 'openai') return Boolean(role.baseUrl && role.model);
+  // claude-cli needs no key, base URL or model (the CLI supplies its own default model).
+  if (role.provider === 'claude-cli') return true;
   return false;
 }
 
@@ -51,10 +64,17 @@ function makeRole(
   model?: string | null,
   baseUrl?: string | null,
   kind: RoleKind = 'chat',
+  temperature?: number | null,
 ): ResolvedAiRole | null {
   const p = (provider || '') as AiProvider;
-  if (p !== 'anthropic' && p !== 'openai') return null;
-  const role: ResolvedAiRole = { provider: p, apiKey: apiKey || '', model: model || '', baseUrl: baseUrl || null };
+  if (p !== 'anthropic' && p !== 'openai' && p !== 'claude-cli') return null;
+  const role: ResolvedAiRole = {
+    provider: p,
+    apiKey: apiKey || '',
+    model: model || '',
+    baseUrl: baseUrl || null,
+    temperature: temperature ?? null,
+  };
   return isValidRole(role, kind) ? role : null;
 }
 
@@ -71,9 +91,9 @@ function resolveStoredRoles(roles: Partial<Record<AiModelRole, StoredRole>>): Ai
     if (!cfg) continue;
     if (cfg.reuse && out[cfg.reuse]) {
       const base = out[cfg.reuse]!;
-      out[role] = makeRole(base.provider, base.apiKey, cfg.model || base.model, base.baseUrl, kind);
+      out[role] = makeRole(base.provider, base.apiKey, cfg.model || base.model, base.baseUrl, kind, cfg.temperature);
     } else {
-      out[role] = makeRole(cfg.provider, decrypt(cfg.apiKey), cfg.model, cfg.baseUrl, kind);
+      out[role] = makeRole(cfg.provider, decrypt(cfg.apiKey), cfg.model, cfg.baseUrl, kind, cfg.temperature);
     }
   }
 
@@ -97,6 +117,7 @@ function assembleConfig(
     apiKey: diagnosis.apiKey,
     model: diagnosis.model,
     baseUrl: diagnosis.baseUrl,
+    temperature: diagnosis.temperature,
     autoDiagnose,
     source,
     roles: { diagnosis, research, embedding },
@@ -112,10 +133,12 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
         model?: string;
         baseUrl?: string;
         autoDiagnose?: boolean | string;
+        temperature?: string;
         researchModel?: string;
         researchProvider?: string;
         researchBaseUrl?: string;
         researchApiKey?: string;
+        researchTemperature?: string;
         embeddingProvider?: string;
         embeddingModel?: string;
         embeddingBaseUrl?: string;
@@ -124,7 +147,14 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
     | undefined;
 
   if (envAi?.provider) {
-    const diagnosis = makeRole(envAi.provider, envAi.apiKey, envAi.model, envAi.baseUrl);
+    const diagnosis = makeRole(
+      envAi.provider,
+      envAi.apiKey,
+      envAi.model,
+      envAi.baseUrl,
+      'chat',
+      parseTemperature(envAi.temperature),
+    );
     // Research defaults its provider/baseUrl/key to the diagnosis role when not overridden.
     const research = envAi.researchModel
       ? makeRole(
@@ -132,6 +162,8 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
           envAi.researchApiKey || envAi.apiKey,
           envAi.researchModel,
           envAi.researchBaseUrl || envAi.baseUrl,
+          'chat',
+          parseTemperature(envAi.researchTemperature),
         )
       : null;
     // Embedding defaults its provider/key/baseUrl to the main role when not
@@ -266,6 +298,8 @@ export interface AiCallResult {
   cacheCreationInputTokens: number | null;
   /** Tokens served from the provider prompt cache (Anthropic `cache_read_input_tokens`, OpenAI `cached_tokens`). */
   cacheReadInputTokens: number | null;
+  /** Dollar cost the provider reported for the call (the `claude-cli` provider only), else null. */
+  costUsd?: number | null;
 }
 
 export interface StreamChunk {
@@ -279,12 +313,17 @@ export interface StreamResult {
   outputTokens: number | null;
   cacheCreationInputTokens: number | null;
   cacheReadInputTokens: number | null;
+  /** Dollar cost the provider reported for the call (the `claude-cli` provider only), else null. */
+  costUsd?: number | null;
 }
 
 export async function callAiProvider(config: ResolvedAiRole, opts: AiCallOptions): Promise<AiCallResult> {
   try {
     if (config.provider === 'anthropic') {
       return await callAnthropic(config, opts);
+    }
+    if (config.provider === 'claude-cli') {
+      return await callClaudeCli(config, opts);
     }
     return await callOpenAiCompat(config, opts);
   } catch (err) {
@@ -398,11 +437,13 @@ function openAiUserContent(opts: AiCallOptions, attempt: OpenAiAttempt): string 
 }
 
 /** Which rungs of the OpenAI-compatibility ladder this request body still uses. */
-interface OpenAiAttempt {
+export interface OpenAiAttempt {
   /** Enforce the JSON schema with `response_format: json_schema` rather than `json_object`. */
   strictFormat: boolean;
   /** Send `opts.images` as `image_url` parts. */
   withImages: boolean;
+  /** Parameter name accepted by the OpenAI-compatible provider for the output limit. */
+  completionTokenParameter: 'max_tokens' | 'max_completion_tokens';
 }
 
 /**
@@ -410,8 +451,16 @@ interface OpenAiAttempt {
  * `response_format: json_schema` where the server supports it; callers step down
  * to the older `json_object` mode on HTTP 400. The schema also stays inlined in
  * the system prompt so servers that ignore response_format still see it.
+ *
+ * `temperature` is omitted entirely unless explicitly configured — reasoning
+ * models (o1/o3/GPT-5-class) reject any explicit value other than their
+ * default (1), so leaving it unset is the only value that works everywhere.
  */
-function buildOpenAiBody(config: ResolvedAiRole, opts: AiCallOptions, attempt: OpenAiAttempt): Record<string, unknown> {
+export function buildOpenAiBody(
+  config: ResolvedAiRole,
+  opts: AiCallOptions,
+  attempt: OpenAiAttempt,
+): Record<string, unknown> {
   const systemContent = opts.jsonSchema
     ? `${opts.system}\n\nRespond ONLY with a JSON object matching this schema:\n${JSON.stringify(opts.jsonSchema)}`
     : opts.system;
@@ -424,8 +473,8 @@ function buildOpenAiBody(config: ResolvedAiRole, opts: AiCallOptions, attempt: O
 
   return {
     model: config.model,
-    max_tokens: opts.maxTokens ?? 8192,
-    temperature: 0,
+    [attempt.completionTokenParameter]: opts.maxTokens ?? 8192,
+    ...(config.temperature != null ? { temperature: config.temperature } : {}),
     ...(responseFormat ? { response_format: responseFormat } : {}),
     messages: [
       { role: 'system', content: systemContent },
@@ -437,6 +486,15 @@ function buildOpenAiBody(config: ResolvedAiRole, opts: AiCallOptions, attempt: O
 /** A rejection from a text-only model handed `image_url` parts. */
 function rejectsImages(status: number, body: string): boolean {
   return status === 400 && /image|vision/i.test(body);
+}
+
+function rejectsMaxTokens(status: number, body: string, attempt: OpenAiAttempt): boolean {
+  return (
+    status === 400 &&
+    attempt.completionTokenParameter === 'max_tokens' &&
+    /max_tokens/i.test(body) &&
+    /max_completion_tokens/i.test(body)
+  );
 }
 
 /**
@@ -452,21 +510,39 @@ async function postOpenAiWithFallbacks(
   opts: AiCallOptions,
   model: string,
 ): Promise<{ res: Response; errorBody: string }> {
-  const attempt: OpenAiAttempt = { strictFormat: true, withImages: true };
-  let res = await send(attempt);
-  let errorBody = res.ok ? '' : await res.text().catch(() => '');
+  const attempt: OpenAiAttempt = {
+    strictFormat: true,
+    withImages: true,
+    completionTokenParameter: 'max_tokens',
+  };
+  const sendAttempt = async (): Promise<{ res: Response; errorBody: string }> => {
+    const res = await send(attempt);
+    return { res, errorBody: res.ok ? '' : await res.text().catch(() => '') };
+  };
 
-  if (!res.ok && opts.images?.length && rejectsImages(res.status, errorBody)) {
-    console.warn(`[ai-provider] ${model} rejected the attached image(s) — retrying text-only`);
-    attempt.withImages = false;
-    res = await send(attempt);
-    errorBody = res.ok ? '' : await res.text().catch(() => '');
-  }
+  let { res, errorBody } = await sendAttempt();
+  for (let retry = 0; retry < 3 && !res.ok; retry++) {
+    let retryWithUpdatedAttempt = false;
 
-  if (!res.ok && res.status === 400 && opts.jsonSchema && attempt.strictFormat) {
-    attempt.strictFormat = false;
-    res = await send(attempt);
-    errorBody = res.ok ? '' : await res.text().catch(() => '');
+    if (opts.images?.length && attempt.withImages && rejectsImages(res.status, errorBody)) {
+      console.warn(`[ai-provider] ${model} rejected the attached image(s) — retrying text-only`);
+      attempt.withImages = false;
+      retryWithUpdatedAttempt = true;
+    }
+
+    if (!retryWithUpdatedAttempt && rejectsMaxTokens(res.status, errorBody, attempt)) {
+      console.warn(`[ai-provider] ${model} requires max_completion_tokens — retrying with that parameter`);
+      attempt.completionTokenParameter = 'max_completion_tokens';
+      retryWithUpdatedAttempt = true;
+    }
+
+    if (!retryWithUpdatedAttempt && res.status === 400 && opts.jsonSchema && attempt.strictFormat) {
+      attempt.strictFormat = false;
+      retryWithUpdatedAttempt = true;
+    }
+
+    if (!retryWithUpdatedAttempt) break;
+    ({ res, errorBody } = await sendAttempt());
   }
 
   return { res, errorBody };
@@ -524,6 +600,8 @@ export async function* streamAiProvider(config: ResolvedAiRole, opts: AiCallOpti
   try {
     if (config.provider === 'anthropic') {
       yield* streamAnthropic(config, opts);
+    } else if (config.provider === 'claude-cli') {
+      yield* streamClaudeCli(config, opts);
     } else {
       yield* streamOpenAiCompat(config, opts);
     }

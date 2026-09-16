@@ -22,7 +22,7 @@ function formatMs(ms: number | null | undefined): string {
 }
 
 const columns: TableColumn<TimeoutOpportunity>[] = [
-  { accessorKey: 'title', header: createSortHeader<TimeoutOpportunity>('Test case') },
+  { accessorKey: 'title', header: createSortHeader<TimeoutOpportunity>('Test') },
   { accessorKey: 'kind', header: 'Type' },
   { accessorKey: 'timeout', header: createSortHeader<TimeoutOpportunity>('Timeout') },
   { accessorKey: 'p95', header: createSortHeader<TimeoutOpportunity>('p95') },

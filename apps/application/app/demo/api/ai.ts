@@ -943,6 +943,8 @@ export async function apiGetAiSettings() {
     hasScmToken: scmRows.length > 0,
     envManaged: true,
     customInstructions: null,
+    language: null,
+    languageEnvManaged: false,
   };
 }
 

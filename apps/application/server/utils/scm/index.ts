@@ -5,20 +5,12 @@ import { eq } from 'drizzle-orm';
 import { GitHubProvider } from './GitHubProvider';
 import { GitLabProvider } from './GitLabProvider';
 import { BitbucketProvider } from './BitbucketProvider';
+import { detectScmHost, type ScmProviderName } from '#shared/scm-urls';
 import type { DbClient } from '../../database';
 
 /** Returns the SCM provider name for a repository URL, or null if unsupported. */
-export function detectScmProvider(repositoryUrl: string | null | undefined): 'github' | 'gitlab' | 'bitbucket' | null {
-  if (!repositoryUrl) return null;
-  try {
-    const { hostname } = new URL(repositoryUrl);
-    if (hostname === 'github.com' || hostname.endsWith('.github.com')) return 'github';
-    if (hostname === 'gitlab.com' || hostname.includes('gitlab')) return 'gitlab';
-    if (hostname === 'bitbucket.org') return 'bitbucket';
-  } catch {
-    /* ignore */
-  }
-  return null;
+export function detectScmProvider(repositoryUrl: string | null | undefined): ScmProviderName | null {
+  return detectScmHost(repositoryUrl);
 }
 
 /** Instantiate the correct provider for the given URL with a pre-loaded token. */
@@ -55,23 +47,24 @@ export async function createScmProvider(
   db: DbClient,
   projectId?: number,
 ): Promise<GitHubProvider | GitLabProvider | BitbucketProvider | null> {
-  let token: string | null = null;
+  const token = await resolveScmToken(db, projectId);
+  return scmProviderForUrl(repositoryUrl, token);
+}
 
-  // Try per-project token first
+/**
+ * Resolve the SCM token to use, decrypted: the per-project token when set,
+ * otherwise the global `scm_token` app setting. Returns null when neither is
+ * configured. Shared by {@link createScmProvider} and callers that only need to
+ * know whether a token exists (e.g. the CI re-run availability check).
+ */
+export async function resolveScmToken(db: DbClient, projectId?: number): Promise<string | null> {
   if (projectId) {
     const [project] = await db.select({ scmToken: projects.scmToken }).from(projects).where(eq(projects.id, projectId));
-    if (project?.scmToken) {
-      token = decryptSecret(project.scmToken, getEncryptionKey());
-    }
+    if (project?.scmToken) return decryptSecret(project.scmToken, getEncryptionKey());
   }
 
-  // Fall back to global token
-  if (!token) {
-    const tokenSetting = await getAppSetting<{ value?: string }>(db, 'scm_token');
-    if (tokenSetting?.value) {
-      token = decryptSecret(tokenSetting.value, getEncryptionKey());
-    }
-  }
+  const tokenSetting = await getAppSetting<{ value?: string }>(db, 'scm_token');
+  if (tokenSetting?.value) return decryptSecret(tokenSetting.value, getEncryptionKey());
 
-  return scmProviderForUrl(repositoryUrl, token);
+  return null;
 }

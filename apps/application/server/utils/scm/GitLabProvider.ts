@@ -1,14 +1,18 @@
 import { ScmProvider, truncatePatch, MAX_SCM_FILES, MAX_FILE_BYTES, FETCH_TIMEOUT_MS } from './ScmProvider';
 import type {
   ScmCommitDetail,
+  ScmCommitAuthor,
   ScmChanges,
   ScmFileContent,
+  ScmEntityRef,
+  ScmEntityState,
   ScmPullRequest,
   ScmCommitStatus,
   ScmFileEdit,
   CreatePullRequestInput,
 } from './ScmProvider';
 import { TtlCache } from './cache';
+import type { CiRerunSettings } from '#shared/ci-rerun';
 
 /** Turn a non-2xx GitLab response into an Error carrying the API's own message. */
 async function gitlabError(res: Response, action: string): Promise<Error> {
@@ -25,6 +29,8 @@ const fetchCommitDiffCache = new TtlCache<ScmChanges>(10 * 60 * 1000);
 const fetchFileCache = new TtlCache<ScmFileContent | null>(30 * 60 * 1000);
 const fetchTreeCache = new TtlCache<string[]>(10 * 60 * 1000);
 const defaultBranchCache = new TtlCache<string | null>(30 * 60 * 1000);
+// Author is immutable per SHA, so cache it (incl. negative lookups) for longer.
+const commitAuthorCache = new TtlCache<ScmCommitAuthor | null>(30 * 60 * 1000);
 
 /** Count added/removed lines in a unified-diff hunk body (ignores +++/--- headers). */
 function countDiffLines(diff: string): { additions: number; deletions: number } {
@@ -39,6 +45,9 @@ function countDiffLines(diff: string): { additions: number; deletions: number } 
 
 export class GitLabProvider extends ScmProvider {
   readonly provider = 'gitlab' as const;
+  get webUrl(): string {
+    return `https://${this.hostname}/${this.repoPath}`;
+  }
 
   constructor(
     private readonly hostname: string,
@@ -173,6 +182,101 @@ export class GitLabProvider extends ScmProvider {
     };
     fetchCommitDiffCache.set(key, result);
     return result;
+  }
+
+  async getCommitAuthor(sha: string): Promise<ScmCommitAuthor | null> {
+    if (!sha) return null;
+    const key = `${this.keyPrefix}:author:${this.hostname}:${this.repoPath}:${sha}`;
+    const hit = commitAuthorCache.get(key);
+    if (hit !== undefined) return hit;
+
+    try {
+      const projectPath = encodeURIComponent(this.repoPath);
+      const res = await fetch(
+        `https://${this.hostname}/api/v4/projects/${projectPath}/repository/commits/${encodeURIComponent(sha)}`,
+        { headers: this.makeHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+      );
+      if (!res.ok) {
+        commitAuthorCache.set(key, null);
+        return null;
+      }
+      const data = (await res.json()) as { author_name?: string; author_email?: string };
+      const name = data.author_name?.trim() ?? '';
+      const email = data.author_email?.trim() ?? '';
+      const result = email ? { name: name || email, email } : null;
+      commitAuthorCache.set(key, result);
+      return result;
+    } catch {
+      return null;
+    }
+  }
+
+  async fetchIssue(number: number): Promise<ScmEntityRef | null> {
+    if (!Number.isInteger(number) || number <= 0) return null;
+    try {
+      const projectPath = encodeURIComponent(this.repoPath);
+      const res = await fetch(`https://${this.hostname}/api/v4/projects/${projectPath}/issues/${number}`, {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as {
+        title?: string;
+        state?: string;
+        author?: { name?: string; username?: string };
+        web_url?: string;
+        updated_at?: string;
+      };
+      return {
+        title: data.title ?? null,
+        state: data.state === 'closed' ? 'closed' : data.state === 'opened' ? 'open' : null,
+        author: data.author?.name ?? data.author?.username ?? null,
+        url: data.web_url ?? null,
+        updatedAt: data.updated_at ?? null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async fetchPullRequest(number: number): Promise<ScmEntityRef | null> {
+    if (!Number.isInteger(number) || number <= 0) return null;
+    try {
+      const projectPath = encodeURIComponent(this.repoPath);
+      const res = await fetch(`https://${this.hostname}/api/v4/projects/${projectPath}/merge_requests/${number}`, {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as {
+        title?: string;
+        state?: string;
+        draft?: boolean;
+        work_in_progress?: boolean;
+        author?: { name?: string; username?: string };
+        web_url?: string;
+        updated_at?: string;
+      };
+      const state: ScmEntityState =
+        data.state === 'merged'
+          ? 'merged'
+          : data.state === 'closed'
+            ? 'closed'
+            : data.draft || data.work_in_progress
+              ? 'draft'
+              : data.state === 'opened'
+                ? 'open'
+                : null;
+      return {
+        title: data.title ?? null,
+        state,
+        author: data.author?.name ?? data.author?.username ?? null,
+        url: data.web_url ?? null,
+        updatedAt: data.updated_at ?? null,
+      };
+    } catch {
+      return null;
+    }
   }
 
   async fetchFileAtRef(path: string, ref: string): Promise<ScmFileContent | null> {
@@ -406,5 +510,26 @@ export class GitLabProvider extends ScmProvider {
       number: mr.iid,
       url: mr.web_url ?? `https://${this.hostname}/${this.repoPath}/-/merge_requests/${mr.iid}`,
     };
+  }
+
+  // ── CI re-run ──────────────────────────────────────────────────────────────
+
+  override async dispatchRerun(settings: CiRerunSettings, playwrightArgs: string): Promise<{ url: string }> {
+    const target = settings.gitlab;
+    if (!target) throw new Error('No GitLab pipeline configured for CI re-run');
+
+    const res = await fetch(`https://${this.hostname}/api/v4/projects/${this.projectPath()}/pipeline`, {
+      method: 'POST',
+      headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ref: target.ref,
+        variables: [{ key: target.variableName, value: playwrightArgs }],
+      }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) throw await gitlabError(res, 'trigger pipeline');
+    const pipeline = (await res.json()) as { id?: number; web_url?: string };
+    const url = pipeline.web_url ?? `https://${this.hostname}/${this.repoPath}/-/pipelines/${pipeline.id ?? ''}`;
+    return { url };
   }
 }

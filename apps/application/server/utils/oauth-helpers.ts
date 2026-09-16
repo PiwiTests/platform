@@ -77,6 +77,16 @@ export function isEmailDomainAllowed(email: string, emailVerified: boolean, allo
   return allowedDomains.includes(emailDomainOf(email));
 }
 
+/**
+ * Whether a Google userinfo payload says the address is verified. The
+ * `oauth2/v2/userinfo` endpoint names the flag `verified_email`; the OpenID
+ * Connect `userinfo` shape names it `email_verified`. Both are honored so the
+ * verdict does not depend on which endpoint answered.
+ */
+export function isGoogleEmailVerified(raw: Record<string, unknown>): boolean {
+  return raw.verified_email === true || raw.email_verified === true;
+}
+
 /** Whether the user's org memberships satisfy the org allowlist (empty = no restriction). */
 export function isOrgAllowed(memberOrgs: string[], allowedOrgs: string[]): boolean {
   if (allowedOrgs.length === 0) {

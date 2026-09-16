@@ -1,5 +1,10 @@
 import { describe, test, expect } from 'vitest';
-import { describeCluster, clusterFallbackTitle, clusterSignatureLine } from '#shared/describe-cluster';
+import {
+  describeCluster,
+  clusterFallbackTitle,
+  clusterSignatureLine,
+  headlineAddsValue,
+} from '#shared/describe-cluster';
 import { extractErrorSignature } from '#shared/error-fingerprint';
 
 /** Build the cluster fields the way ingest does: signature, type and locator from the raw error. */
@@ -102,5 +107,42 @@ describe('describeCluster', () => {
     expect(clusterFallbackTitle({ signature: 'Error: boom <N> <VALUE> <URL>', errorType: 'unknown' })).toBe(
       'Error: boom … … …',
     );
+  });
+});
+
+describe('headlineAddsValue', () => {
+  test('an expected/received pair the name lacks adds value', () => {
+    expect(
+      headlineAddsValue(
+        "toHaveCount mismatch on getByRole('row') in users.spec.ts",
+        "Expected 26 rows, found 51 — getByRole('row') toHaveCount",
+      ),
+    ).toBe(true);
+  });
+
+  test('a not-found state and a timeout duration the name lacks add value', () => {
+    expect(
+      headlineAddsValue(
+        "Timeout on getByLabel('Email address') in checkout.spec.ts",
+        "getByLabel('Email address') was not found on the page — fill timed out after 10 s",
+      ),
+    ).toBe(true);
+  });
+
+  test('a name and headline that differ only in word order add nothing', () => {
+    expect(headlineAddsValue("getByRole('row') toHaveCount mismatch", "toHaveCount mismatch — getByRole('row')")).toBe(
+      false,
+    );
+  });
+
+  test('an empty or identical headline adds nothing', () => {
+    expect(headlineAddsValue('Timeout on getByLabel', null)).toBe(false);
+    expect(headlineAddsValue('Timeout on getByLabel', 'Timeout on getByLabel')).toBe(false);
+  });
+
+  test('a bare count in the headline adds value', () => {
+    expect(
+      headlineAddsValue('Strict-mode violation on getByRole(button)', 'getByRole(button) matched 3 elements'),
+    ).toBe(true);
   });
 });

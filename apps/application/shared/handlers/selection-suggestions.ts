@@ -13,6 +13,7 @@ import { and, eq, isNotNull } from 'drizzle-orm';
 import { networkRequests, testCases, testRunsCases } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import { loadSelectionCatalog, type CatalogRow } from './selections';
+import { locksSpanningTests } from '../selection';
 
 /** A proposed tag for one test, with the evidence for it. */
 export interface TagSuggestion {
@@ -53,6 +54,12 @@ export interface SmokeMining {
   picks: SmokeCandidate[];
   /** test_case ids of the picks, ready to save as `{ include: [{ ids }] }`. */
   testCaseIds: number[];
+  /**
+   * Lock names held by more than one pick — sharding this suite with Playwright's
+   * own `--shard` could split them across shards; run it with `piwi run --shard`
+   * (lock-aware) instead. Empty when no lock spans two picks.
+   */
+  splitLocks: string[];
 }
 
 export interface SelectionSuggestions {
@@ -235,6 +242,7 @@ function mineSmokeSuite(
     coveredRoutes: covered.size,
     picks,
     testCaseIds: picks.map((p) => p.testCaseId),
+    splitLocks: locksSpanningTests(picks.map((p) => byId.get(p.testCaseId)!)),
   };
 }
 

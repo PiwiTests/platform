@@ -9,32 +9,14 @@
  * buttons behave like the real dashboard (and survive a reload).
  */
 
-import { eq, desc } from 'drizzle-orm';
-import { failureDiagnoses, failureDiagnosisVersions } from '../../../server/database/schema';
+import { eq } from 'drizzle-orm';
+import { failureDiagnoses } from '../../../server/database/schema';
+import { listDiagnosisVersions } from '#shared/handlers/diagnosis-versions';
 import type { DrizzleDB } from '#shared/handlers/db';
 
 /** GET /api/failure-clusters/:id/diagnoses */
-export async function listClusterDiagnosisVersions(db: DrizzleDB, clusterId: number) {
-  const versions = await db
-    .select()
-    .from(failureDiagnosisVersions)
-    .where(eq(failureDiagnosisVersions.clusterId, clusterId))
-    .orderBy(desc(failureDiagnosisVersions.createdAt))
-    .limit(50);
-
-  return versions.map((v) => ({
-    id: v.id,
-    status: v.status,
-    category: v.category,
-    confidence: v.confidence,
-    summary: v.summary,
-    rootCause: v.rootCause,
-    model: v.model,
-    inputTokens: v.inputTokens,
-    outputTokens: v.outputTokens,
-    durationMs: v.durationMs,
-    createdAt: v.createdAt,
-  }));
+export async function listClusterDiagnosisVersions(db: DrizzleDB, clusterId: number, opts: { full?: boolean } = {}) {
+  return listDiagnosisVersions(db, clusterId, opts);
 }
 
 /** PATCH /api/failure-diagnoses/:id/feedback */

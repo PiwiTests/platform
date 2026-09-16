@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isUiMode } from '../src/internal/support/run-mode.js';
+import { isUiMode, isListMode } from '../src/internal/support/run-mode.js';
 
 const NODE = ['/usr/bin/node', '/path/to/playwright'];
 
@@ -29,5 +29,27 @@ describe('isUiMode', () => {
   it('only considers tokens after the `test` subcommand', () => {
     // A `--ui` token sitting before `test` is not part of the test invocation.
     expect(isUiMode([...NODE, '--ui', 'test'])).toBe(false);
+  });
+});
+
+describe('isListMode', () => {
+  it('is false for a plain test run', () => {
+    expect(isListMode([...NODE, 'test'])).toBe(false);
+    expect(isListMode([...NODE, 'test', 'tests/login.spec.ts'])).toBe(false);
+  });
+
+  it('detects the --list flag', () => {
+    expect(isListMode([...NODE, 'test', '--list'])).toBe(true);
+  });
+
+  it('does not confuse a similarly-named token for the list flag', () => {
+    // A positional file filter whose name contains "list" must not trigger list mode.
+    expect(isListMode([...NODE, 'test', 'list.spec.ts'])).toBe(false);
+    expect(isListMode([...NODE, 'test', '--listen'])).toBe(false);
+  });
+
+  it('only considers tokens after the `test` subcommand', () => {
+    // A `--list` token sitting before `test` is not part of the test invocation.
+    expect(isListMode([...NODE, '--list', 'test'])).toBe(false);
   });
 });

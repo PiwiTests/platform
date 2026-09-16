@@ -78,7 +78,7 @@ const INIT_COMMAND = 'npx @piwitests/reporter init';
           @click="copy(INIT_COMMAND, { toast: true })"
         />
       </span>
-      <DocLink to="reporter" class="text-xs">Reporter docs</DocLink>
+      <DocLink to="guide/reporter" class="text-xs">Reporter docs</DocLink>
     </p>
     <p v-else-if="ready" class="flex items-center gap-1.5 text-xs text-muted">
       <UIcon name="i-lucide-sparkles" class="size-3.5 text-success" />

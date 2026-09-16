@@ -1,7 +1,7 @@
 /**
- * UI tests for the project test-cases catalog (`/projects/:id/test-cases`):
- * server-driven search, status filtering and the flat/tree toggle on the
- * revamped shared table.
+ * UI tests for the project test catalog, folded into the project's Tests tab:
+ * server-driven search, status filtering and the group-by-file view on the
+ * shared table. The old `/projects/:id/test-cases` route redirects into the tab.
  */
 import { test, expect, type APIRequestContext } from './fixtures';
 import { waitForHydration, retryPost } from './utils';
@@ -56,7 +56,7 @@ test.describe.serial('Project test-cases catalog', () => {
     await page.goto(`/projects/${projectId}/test-cases`);
     await waitForHydration(page);
 
-    await expect(page.getByText('4 cases')).toBeVisible();
+    await expect(page.getByText('4 tests')).toBeVisible();
     await expect(page.getByRole('link', { name: 'login works' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'checkout works' })).toBeVisible();
     await expect(page.getByText('tests/auth/login.spec.ts').first()).toBeVisible();
@@ -66,31 +66,31 @@ test.describe.serial('Project test-cases catalog', () => {
     await page.goto(`/projects/${projectId}/test-cases`);
     await waitForHydration(page);
 
-    await page.getByRole('textbox', { name: 'Search test cases' }).fill('checkout');
+    await page.getByRole('textbox', { name: 'Search tests' }).fill('checkout');
     // The query is debounced and refetched server-side; web-first assertions retry.
     await expect(page.getByRole('link', { name: 'checkout works' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'login works' })).toHaveCount(0);
-    await expect(page.getByText('2 cases')).toBeVisible();
+    await expect(page.getByText('2 tests')).toBeVisible();
   });
 
   test('the Failed status pill filters to failing cases', async ({ page }) => {
     await page.goto(`/projects/${projectId}/test-cases`);
     await waitForHydration(page);
 
-    await page.getByRole('button', { name: 'Failed' }).click();
+    await page.getByRole('button', { name: 'Failed', exact: true }).click();
     await expect(page.getByRole('link', { name: 'checkout works' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'login works' })).toHaveCount(0);
-    await expect(page.getByText('1 case', { exact: true })).toBeVisible();
+    await expect(page.getByText('1 test', { exact: true })).toBeVisible();
   });
 
-  test('tree view groups cases by spec file', async ({ page }) => {
+  test('group by file groups tests under their spec-file prefix', async ({ page }) => {
     await page.goto(`/projects/${projectId}/test-cases`);
     await waitForHydration(page);
 
-    await page.getByTitle('Tree view').click();
-    // Both spec files appear as group headers with their case counts.
-    await expect(page.getByText('tests/auth/login.spec.ts')).toBeVisible();
-    await expect(page.getByText('tests/shop/checkout.spec.ts')).toBeVisible();
-    await expect(page.getByText('2 cases').first()).toBeVisible();
+    await page.getByRole('button', { name: 'File', exact: true }).click();
+    // Each spec-file prefix appears as a group header with its test count.
+    await expect(page.getByText('tests/auth', { exact: true })).toBeVisible();
+    await expect(page.getByText('tests/shop', { exact: true })).toBeVisible();
+    await expect(page.getByText('2 tests').first()).toBeVisible();
   });
 });

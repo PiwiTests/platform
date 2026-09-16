@@ -907,6 +907,12 @@ export const FAILURE_STORIES = [
     aria:
       '- document:\n  - form "Checkout":\n    - textbox "Email address"\n    - textbox "Card number"\n' +
       '    - textbox "Expiry date"\n    - textbox "CVV"\n    - button "Pay now" [disabled]',
+    // The page as it last passed: the pay button was named "Pay" and enabled.
+    // Diffed against the failure it reads as a renamed, now-disabled button —
+    // exactly why the `name: 'Pay'` locator stopped matching.
+    baselineAria:
+      '- document:\n  - form "Checkout":\n    - textbox "Email address"\n    - textbox "Card number"\n' +
+      '    - textbox "Expiry date"\n    - textbox "CVV"\n    - button "Pay"',
     domSnapshot: { viewport: DOM_SNAPSHOT_VIEWPORT, html: CHECKOUT_PAY_DOM },
     evidence: {
       consoleOnFail: [
@@ -925,6 +931,12 @@ export const FAILURE_STORIES = [
           resourceType: 'fetch',
         },
       ],
+      // A confirm dialog left open at the failure moment blocks the page until
+      // it is dismissed, so the Pay action never resolves.
+      dialogOnFail: {
+        type: 'confirm',
+        message: 'Your session is about to expire. Stay signed in?',
+      },
       pageStateDropKeys: ['quote'],
     },
     appFiles: ['tests/helpers/payment.ts', 'src/components/CheckoutForm.vue'],
@@ -1459,6 +1471,12 @@ export const FAILURE_STORIES = [
       ),
     ],
     aria: '- document:\n  - main:\n    - heading "Users"\n    - table "Users":\n      - row "Name Email Role"\n      - row "Ada Lovelace ada@example.com admin"',
+    // The page as it last passed: a rows-per-page control and pagination that
+    // vanished on the failure, which is why every row renders at once.
+    baselineAria:
+      '- document:\n  - main:\n    - heading "User directory"\n    - button "Rows per page: 25"\n' +
+      '    - table "Users":\n      - row "Name Email Role"\n      - row "Ada Lovelace ada@example.com admin"\n' +
+      '    - navigation "Pagination":\n      - button "Next page"',
     evidence: {
       failingNetwork: [
         {
@@ -1711,12 +1729,45 @@ export const DEMO_PROJECTS = [
         { name: 'ab_variant', domain: '.shop.example.com', path: '/', httpOnly: false, secure: true },
       ],
     },
+    // Steps in the Playwright 1.63 shape: a bare verb title with the target
+    // carried in `subtitle`, plus curated `params`. The other demo projects keep
+    // the 1.61 shape (target folded into the title, no params) so both render.
     stepTitles: [
-      { title: 'Add items to cart', category: 'action', weight: 900 },
-      { title: 'Fill contact details', category: 'action', weight: 800 },
-      { title: 'Fill payment form', category: 'action', weight: 1100 },
-      { title: 'Submit payment', category: 'action', weight: 1300 },
-      { title: 'Verify confirmation', category: 'assertion', weight: 700 },
+      {
+        title: 'Navigate',
+        subtitle: '/checkout',
+        category: 'navigation',
+        weight: 900,
+        params: { url: 'https://shop.example.com/checkout' },
+      },
+      {
+        title: 'Fill "ada@example.com"',
+        subtitle: "getByLabel('Email')",
+        category: 'input',
+        weight: 800,
+        params: { locator: "getByLabel('Email')", value: 'ada@example.com' },
+      },
+      {
+        title: 'Fill "Ada Lovelace"',
+        subtitle: "getByLabel('Name on card')",
+        category: 'input',
+        weight: 1100,
+        params: { locator: "getByLabel('Name on card')", value: 'Ada Lovelace' },
+      },
+      {
+        title: 'Click',
+        subtitle: "getByRole('button', { name: 'Place order' })",
+        category: 'action',
+        weight: 1300,
+        params: { locator: "getByRole('button', { name: 'Place order' })" },
+      },
+      {
+        title: 'Expect "toBeVisible"',
+        subtitle: "getByText('Order confirmed')",
+        category: 'assertion',
+        weight: 700,
+        params: { locator: "getByText('Order confirmed')" },
+      },
     ],
   },
   {
@@ -2213,10 +2264,98 @@ export const DEMO_PROJECTS = [
       ],
     },
     stepTitles: [
-      { title: 'Sign in', category: 'setup', weight: 900 },
-      { title: 'Navigate to section', category: 'navigation', weight: 600 },
-      { title: 'Perform admin action', category: 'action', weight: 1000 },
-      { title: 'Assert table state', category: 'assertion', weight: 700 },
+      {
+        title: 'Sign in',
+        category: 'test.step',
+        weight: 900,
+        children: [
+          {
+            title: 'Fill "admin@example.com"',
+            category: 'input',
+            weight: 200,
+            subtitle: "getByLabel('Email')",
+            params: { locator: "getByLabel('Email')", value: 'admin@example.com' },
+          },
+          {
+            title: 'Fill "********"',
+            category: 'input',
+            weight: 200,
+            subtitle: "getByLabel('Password')",
+            params: { locator: "getByLabel('Password')" },
+          },
+          {
+            title: 'Click',
+            category: 'action',
+            weight: 500,
+            subtitle: "getByRole('button', { name: 'Sign in' })",
+            params: { locator: "getByRole('button', { name: 'Sign in' })" },
+          },
+        ],
+      },
+      {
+        title: 'Navigate to section',
+        category: 'test.step',
+        weight: 600,
+        children: [
+          {
+            title: 'Click',
+            category: 'action',
+            weight: 300,
+            subtitle: "getByRole('link', { name: 'Users' })",
+            params: { locator: "getByRole('link', { name: 'Users' })" },
+          },
+          { title: 'Wait for load state', category: 'wait', weight: 300 },
+        ],
+      },
+      {
+        title: 'Perform admin action',
+        category: 'test.step',
+        weight: 1000,
+        children: [
+          {
+            title: 'Click',
+            category: 'action',
+            weight: 400,
+            subtitle: "getByRole('row', { name: 'Ada Lovelace' }).getByRole('button', { name: 'Edit' })",
+            params: { locator: "getByRole('row', { name: 'Ada Lovelace' })" },
+          },
+          {
+            title: 'Fill "Editor"',
+            category: 'input',
+            weight: 300,
+            subtitle: "getByLabel('Role')",
+            params: { locator: "getByLabel('Role')", value: 'Editor' },
+          },
+          {
+            title: 'Click',
+            category: 'action',
+            weight: 300,
+            subtitle: "getByRole('button', { name: 'Save' })",
+            params: { locator: "getByRole('button', { name: 'Save' })" },
+          },
+        ],
+      },
+      {
+        title: 'Assert table state',
+        category: 'test.step',
+        weight: 700,
+        children: [
+          {
+            title: 'Expect "toHaveText"',
+            category: 'assertion',
+            weight: 400,
+            subtitle: "getByRole('cell', { name: 'Editor' })",
+            params: { locator: "getByRole('cell', { name: 'Editor' })" },
+          },
+          {
+            title: 'Expect "toBeVisible"',
+            category: 'assertion',
+            weight: 300,
+            subtitle: "getByText('Saved')",
+            params: { locator: "getByText('Saved')" },
+          },
+        ],
+      },
     ],
   },
 ];

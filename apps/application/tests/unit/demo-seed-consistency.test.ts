@@ -484,6 +484,66 @@ describe('cluster 9 (assertion-captured healing) coherence', () => {
   });
 });
 
+describe('step timing survives the load-time rebase', () => {
+  interface StepRow {
+    id: number;
+    started_at: number;
+    duration: number;
+    steps: string;
+  }
+
+  // Executed cases only: a didnotrun case has duration 0 and no real span, so
+  // its illustrative steps have no window to sit inside.
+  function executedCasesWithSteps(): StepRow[] {
+    return q(`
+      select id, started_at, duration, steps from test_runs_cases
+      where status != 'didnotrun' and duration > 0
+        and steps is not null and json_valid(steps) and json_array_length(steps) > 0
+    `) as unknown as StepRow[];
+  }
+
+  // The rebase shifts started_at and the JSON step timestamps together. If it
+  // ever shifts one without the other, every step's absolute startTime lands
+  // ~months away from its execution window and the Perfetto export (which
+  // clamps each step into that window) collapses them all to the left edge.
+  test('every executed step starts within its execution window', () => {
+    const rows = executedCasesWithSteps();
+    expect(rows.length).toBeGreaterThan(0);
+
+    for (const r of rows) {
+      const start = Number(r.started_at);
+      const end = start + Number(r.duration);
+      const steps = (JSON.parse(r.steps) as Array<{ startTime?: number }>).filter(
+        (s) => typeof s.startTime === 'number',
+      );
+      for (const s of steps) {
+        const t = s.startTime!;
+        // A generous rounding slack still catches a months-scale desync.
+        expect(t, `trc ${r.id}: step startTime before window`).toBeGreaterThanOrEqual(start - 1000);
+        expect(t, `trc ${r.id}: step startTime past window`).toBeLessThanOrEqual(end + 1000);
+      }
+    }
+  });
+
+  test('steps spread across the window instead of collapsing to the start', () => {
+    const rows = executedCasesWithSteps();
+    // The largest step offset, as a fraction of its case duration, across all
+    // multi-step executed cases. In the collapsed-to-left failure mode every
+    // offset is 0; a healthy seed lays steps end-to-end across the span.
+    let maxFraction = 0;
+    for (const r of rows) {
+      const start = Number(r.started_at);
+      const duration = Number(r.duration);
+      const steps = (JSON.parse(r.steps) as Array<{ startTime?: number }>).filter(
+        (s) => typeof s.startTime === 'number',
+      );
+      if (steps.length < 2) continue;
+      for (const s of steps) maxFraction = Math.max(maxFraction, (s.startTime! - start) / duration);
+    }
+    expect(maxFraction).toBeGreaterThan(0.5);
+  });
+});
+
 describe('simulator ↔ seed fingerprint parity', () => {
   test('the simulator error strings are identity-equal to the story fixtures they claim to reuse', () => {
     const c1 = FAILURE_STORIES.find((s) => s.clusterId === 1)!;

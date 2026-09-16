@@ -269,7 +269,7 @@ const goFurtherOpen = ref(false);
               <code class="text-xs bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">piwiFixtures</code> to
               automatically capture network timing, browser Web Vitals, console errors, ARIA snapshots on failure, and
               the locator snapshots that power locator healing. See the
-              <DocLink to="capture-fixtures" no-icon class="text-primary hover:underline"
+              <DocLink to="guide/capture-fixtures" no-icon class="text-primary hover:underline"
                 >capture fixtures guide</DocLink
               >.
             </p>
@@ -293,7 +293,7 @@ const goFurtherOpen = ref(false);
       <div class="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
         <span
           >Need more options? See the
-          <DocLink to="reporter" no-icon class="text-primary hover:underline">full reporter docs</DocLink>.</span
+          <DocLink to="guide/reporter" no-icon class="text-primary hover:underline">full reporter docs</DocLink>.</span
         >
         <UButton
           :to="docsUrl('demo/')"

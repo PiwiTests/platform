@@ -14,6 +14,11 @@ import {
 import { CONTEXT_LIMIT_FIELDS, DEFAULT_CONTEXT_LIMITS } from '#shared/ai-context-limits';
 import { DEFAULT_INGEST_LIMITS, INGEST_LIMIT_FIELDS } from '#shared/ingest-limits';
 import { DEFAULT_WASTED_WAIT_PATTERNS } from '#shared/utils/wasted-waits';
+import {
+  DEFAULT_INTEGRATIONS_SYNC_MINUTES,
+  MIN_INTEGRATIONS_SYNC_MINUTES,
+  MAX_INTEGRATIONS_SYNC_MINUTES,
+} from '#shared/integrations/sync-config';
 
 const ROOT = resolve(__dirname, '../..');
 
@@ -180,8 +185,13 @@ describe('PIWI_ENV_VARS registry', () => {
       'PIWI_ENV_VARS',
       'PIWI_ENV_CATEGORIES',
       'PIWI_ENV_KEYS',
+      'PIWI_FEATURE_GROUPS',
       'PIWI_API_KEY',
       'PIWI_OUTPUT_FILE',
+      // Desktop-shell debug flag, read only by the Tauri Rust process (see
+      // `desktop/src-tauri/src/lib.rs`), not the server — the app just names it
+      // in the snapshot picker's "couldn't start" hint.
+      'PIWI_DEBUG',
     ]);
     const realMissing = missing.filter((v) => !knownFalsePositives.has(v));
     expect(realMissing.sort()).toEqual([]);
@@ -211,6 +221,14 @@ describe('PIWI_ENV_VARS registry', () => {
 
   test('registry default for wasted-wait patterns matches the code constant', () => {
     expect(PIWI_ENV_VARS.PIWI_WASTED_WAIT_PATTERNS.default).toBe(DEFAULT_WASTED_WAIT_PATTERNS.join(','));
+  });
+
+  test('registry default and clamps for the integrations sync interval match the code constants', () => {
+    const meta = PIWI_ENV_VARS.PIWI_INTEGRATIONS_SYNC_MINUTES;
+    expect(meta.type).toBe('number');
+    expect(meta.default).toBe(String(DEFAULT_INTEGRATIONS_SYNC_MINUTES));
+    expect(meta.min).toBe(MIN_INTEGRATIONS_SYNC_MINUTES);
+    expect(meta.max).toBe(MAX_INTEGRATIONS_SYNC_MINUTES);
   });
 
   test('relevantWhen/requiredWhen only reference registered vars, never themselves', () => {

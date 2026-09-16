@@ -70,11 +70,11 @@ export default eventHandler(async (event) => {
     }));
   };
 
+  // No early close on an empty subscription set: an event can still be targeted
+  // at this user by id (e.g. cluster.fixed to the author of the fix), and that
+  // must reach them even with nothing subscribed. Such a connection stays quiet
+  // until an event is addressed to them.
   let subs = await loadSubscriptions();
-  if (subs.length === 0) {
-    setResponseHeaders(event, { 'Content-Type': 'text/event-stream' });
-    return new Response('', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
-  }
 
   // Compute the caller's project scope once for the life of the connection, and
   // never stream an event for a project they cannot access.
@@ -113,8 +113,14 @@ export default eventHandler(async (event) => {
           });
       }
 
+      // A targeted event (e.g. cluster.fixed addressed at the author of the fix)
+      // is delivered to that one user regardless of their subscriptions; every
+      // other connection falls back to normal subscription matching.
+      const targetUserId = notificationEvent.targetUserId as number | undefined;
+      const targetedAtMe = typeof targetUserId === 'number' && targetUserId === user.id;
+
       const type = notificationEvent.type as string | undefined;
-      if (typeof projectId === 'number' && type && !matchesSubscription(type, projectId)) return;
+      if (!targetedAtMe && typeof projectId === 'number' && type && !matchesSubscription(type, projectId)) return;
 
       try {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(notificationEvent)}\n\n`));

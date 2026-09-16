@@ -30,7 +30,7 @@ into the codebase.
 
 Every source path in the dashboard is clickable, including the failing call stack. Hover the path and
 use **open in IDE** to land on the exact line. That mapping is configured
-[per browser](../ide-integration) and stored locally — your checkout path is never sent to the server.
+[per browser](/features/ide-integration) and stored locally — your checkout path is never sent to the server.
 
 No IDE integration set up? The path and line number are plain text on the page; the fastest route is
 usually copying them.
@@ -77,9 +77,9 @@ Worth knowing before you switch it on:
 
 ## Requirements, honestly
 
-Locator healing needs the [capture fixtures](../capture-fixtures) in your test setup. The reporter alone
+Locator healing needs the [capture fixtures](/guide/capture-fixtures) in your test setup. The reporter alone
 uploads results without touching your test code, but it cannot see the DOM — the ranked alternatives
-come from [locator snapshots](../concepts#locator-snapshot) the fixtures record while the test runs.
+come from [locator snapshots](/guide/concepts#locator-snapshot) the fixtures record while the test runs.
 
 It is one file:
 
@@ -105,11 +105,11 @@ don't want mid-release. Four routes that don't need it:
 
 **Pick from the trace, after the fact.** When the failing execution has an uploaded trace, the
 alternative-locators panel offers **Pick from trace**: it opens the trace in the dashboard's bundled
-[trace viewer](../evidence#trace-viewer), whose *Pick locator* tool works on the recorded page
+[trace viewer](/features/evidence#trace-viewer), whose *Pick locator* tool works on the recorded page
 snapshots. So a CI failure nobody watched live can still be picked visually, days later, from the page
 as it actually was.
 
-**Pick against the live page.** The [browser extension](../extension) scores locators with the same
+**Pick against the live page.** The [browser extension](/features/extension) scores locators with the same
 engine the dashboard uses, directly on the page you're looking at. Picking and recording are fully
 standalone — nothing is sent anywhere, and it works without a Piwi instance at all. The cost: one
 click from the [Chrome Web Store](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe),
@@ -119,14 +119,14 @@ which is also how you install it in Edge.
 screenshot, and the failing call stack. Playwright's trace viewer is bundled and served by your own
 instance — the DOM snapshot at the moment of failure usually shows what the element became.
 
-**Ask your agent.** `get_locator_healing` over the [MCP server](../mcp) returns the recommended fix and
+**Ask your agent.** `get_locator_healing` over the [MCP server](/features/mcp) returns the recommended fix and
 the full alternatives list for a failing case, so a coding agent can apply it without you opening the
 dashboard. This one does still depend on captured snapshots — it reads the same data the panel does.
 
 ## See also
 
-- [Capture fixtures](../capture-fixtures) — everything else the fixtures unlock
-- [Reporter](../reporter#locator-healing) — configuration and how the scoring works
-- [Reporter → Inspect the failing page live](../reporter#inspect-the-failing-page-live-local-runs) — the
+- [Capture fixtures](/guide/capture-fixtures) — everything else the fixtures unlock
+- [Reporter](/features/locator-healing) — configuration and how the scoring works
+- [Reporter → Inspect the failing page live](/features/locator-healing#inspect-the-failing-page-live-local-runs) — the
   full reference for the pause-on-failure options
-- [Browser extension](../extension) — picking and recording locators against a live page
+- [Browser extension](/features/extension) — picking and recording locators against a live page

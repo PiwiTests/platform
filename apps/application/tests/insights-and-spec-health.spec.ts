@@ -134,3 +134,101 @@ test.describe.serial('Insights, spec health & flaky classification', () => {
     expect((await request.get('/api/projects/9999999/spec-health')).status()).toBe(404);
   });
 });
+
+/**
+ * The run-level baseline ladder as the API exposes it: environment first, then
+ * branch; the base branch a pull-request run targets; and the two explicit
+ * choices (`baseBranch`, `baseline`) with the sentence that explains each.
+ */
+test.describe.serial('Run baseline: environment, base branch and the explicit choices', () => {
+  const daysAgo = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const cases = (secondStatus: 'passed' | 'failed') => [
+    { title: 'home loads', status: 'passed', duration: 300, location: 'tests/home.spec.ts:1:1' },
+    { title: 'search works', status: secondStatus, duration: 400, location: 'tests/search.spec.ts:1:1' },
+  ];
+  const run = (opts: { status: string; environment: string; branch: string; days: number; baseBranch?: string }) => ({
+    status: opts.status,
+    environment: opts.environment,
+    startTime: daysAgo(opts.days),
+    duration: 1000,
+    totalTests: 2,
+    passedTests: opts.status === 'passed' ? 2 : 1,
+    failedTests: opts.status === 'passed' ? 0 : 1,
+    skippedTests: 0,
+    metadata: { scm: { branch: opts.branch, baseBranch: opts.baseBranch, commit: `${opts.branch}-${opts.days}` } },
+    testCases: cases(opts.status === 'passed' ? 'passed' : 'failed'),
+  });
+
+  async function submitTo(request: APIRequestContext, body: Record<string, unknown>) {
+    const res = await request.post('/api/test-runs/submit', {
+      data: { projectName: PROJECT.INSIGHTS_BASELINE, ...body },
+    });
+    expect(res.ok()).toBeTruthy();
+    return res.json() as Promise<{ runId: number; projectId: number }>;
+  }
+
+  let productionMain = 0;
+  let stagingMain = 0;
+  let stagingFeature = 0;
+
+  test('seeds passing runs on main in two environments and a failing pull-request run', async ({ request }) => {
+    stagingMain = (await submitTo(request, run({ status: 'passed', environment: 'staging', branch: 'main', days: 4 })))
+      .runId;
+    productionMain = (
+      await submitTo(request, run({ status: 'passed', environment: 'production', branch: 'main', days: 2 }))
+    ).runId;
+    stagingFeature = (
+      await submitTo(
+        request,
+        run({ status: 'failed', environment: 'staging', branch: 'feature/x', days: 1, baseBranch: 'main' }),
+      )
+    ).runId;
+    expect(stagingFeature).toBeGreaterThan(stagingMain);
+  });
+
+  test('the automatic baseline stays in the environment and falls back to the pull-request target', async ({
+    request,
+  }) => {
+    const res = await request.get(`/api/test-runs/${stagingFeature}/insights`);
+    expect(res.ok()).toBeTruthy();
+    const insights = await res.json();
+    expect(insights.hasBaseline).toBe(true);
+    // The newer production run on main loses to the older staging one.
+    expect(insights.baseline.id).toBe(stagingMain);
+    expect(insights.baselineSource).toBe('auto');
+    expect(insights.baselineMatch).toEqual({ branch: 'fallback', environment: 'same' });
+    expect(insights.fallbackBranch).toEqual({ branch: 'main', source: 'pull-request' });
+    expect(insights.baselineNote).toBe(
+      "No passing staging run exists on feature/x; the last passing run on the pull request's target branch main in staging.",
+    );
+    expect(insights.run).toEqual({ branch: 'feature/x', environment: 'staging' });
+    expect(insights.baseBranches).toEqual(['main']);
+    expect((insights.newRegressions as Array<{ title: string }>).map((r) => r.title)).toEqual(['search works']);
+    // No environment change is reported against a same-environment baseline.
+    expect((insights.metadataDiff as Array<{ key: string }>).map((d) => d.key)).not.toContain('environment');
+  });
+
+  test('a chosen base branch restricts the baseline to that branch', async ({ request }) => {
+    const chosen = await (await request.get(`/api/test-runs/${stagingFeature}/insights?baseBranch=main`)).json();
+    expect(chosen.baseline.id).toBe(stagingMain);
+    expect(chosen.baselineSource).toBe('branch');
+    expect(chosen.baselineMatch).toEqual({ branch: 'chosen', environment: 'same' });
+    expect(chosen.baselineNote).toBe('The last passing run on main in staging, the base branch you chose.');
+
+    const none = await (await request.get(`/api/test-runs/${stagingFeature}/insights?baseBranch=nope`)).json();
+    expect(none.hasBaseline).toBe(false);
+    expect(none.baseBranch).toBe('nope');
+    expect(none.baseBranches).toEqual(['main']);
+  });
+
+  test('a chosen run is used as-is and its environment change is reported', async ({ request }) => {
+    const picked = await (
+      await request.get(`/api/test-runs/${stagingFeature}/insights?baseline=${productionMain}`)
+    ).json();
+    expect(picked.baseline.id).toBe(productionMain);
+    expect(picked.baselineSource).toBe('run');
+    expect(picked.baselineMatch).toBeNull();
+    expect(picked.baselineNote).toBe('The run you picked.');
+    expect((picked.metadataDiff as Array<{ key: string }>).map((d) => d.key)).toContain('environment');
+  });
+});

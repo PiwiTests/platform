@@ -26,6 +26,8 @@ const props = withDefaults(
     /** Playwright annotations; `piwi:` ones are ownership metadata (see `meta`). */
     annotations?: Annotation[] | null;
     tags?: string[] | null;
+    /** Lock names this test held — a shared resource the runner serializes holders of. */
+    locks?: string[] | null;
     meta?: TestMetadata | null;
     /** Cap the tags shown; the rest collapse into a `+N` badge. 0 = no cap. */
     maxTags?: number;
@@ -36,6 +38,7 @@ const props = withDefaults(
     isNewFlaky: false,
     annotations: null,
     tags: null,
+    locks: null,
     meta: null,
     maxTags: 0,
   },
@@ -80,6 +83,7 @@ const marks = computed(() => (props.annotations ?? []).filter((ann) => !isPiwiAn
 const hasMeta = computed(() =>
   Boolean(
     (props.tags?.length ?? 0) > 0 ||
+    (props.locks?.length ?? 0) > 0 ||
     props.meta?.owner ||
     props.meta?.priority ||
     props.meta?.feature ||
@@ -137,6 +141,6 @@ const hasAnything = computed(
       {{ annotationLabel(ann) }}
     </UBadge>
 
-    <TestMetaBadges :tags="tags" :meta="meta" :max-tags="maxTags" />
+    <TestMetaBadges :tags="tags" :locks="locks" :meta="meta" :max-tags="maxTags" />
   </div>
 </template>

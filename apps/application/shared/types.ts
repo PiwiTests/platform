@@ -84,7 +84,9 @@ export interface TestCasePayload {
   /** AI-step usage manifest (`{ entries: string[] }`): committed AI-step artifacts this test replayed. */
   aiUsage?: unknown;
   consoleLogs?: unknown;
+  dialogs?: unknown;
   ariaSnapshot?: unknown;
+  ariaSnapshotJson?: unknown;
   workerIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
@@ -94,6 +96,8 @@ export interface TestCasePayload {
   testAnnotations?: TestAnnotation[] | null;
   /** Tags declared on the test (`TestCase.tags`), normalized with `@` stripped. */
   tags?: string[] | null;
+  /** Lock names the execution held (`TestCase._locks`); best effort — none from blob imports. */
+  locks?: string[] | null;
   /** Ownership metadata declared via `piwi:` annotations. */
   testMeta?: TestMetadata | null;
   /** Per-element locator snapshots with ranked alternatives (transient — not stored as a column). */
@@ -170,6 +174,8 @@ export interface StreamEventPayload {
   steps?: unknown;
   stepEvents?: TestStepEvent[] | null;
   stepCategory?: string | null;
+  /** Step target for a `step-begin`/`step-end` event (rendered locator or URL). */
+  subtitle?: string | null;
   parentTitle?: string | null;
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
@@ -179,12 +185,15 @@ export interface StreamEventPayload {
   pageState?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
+  dialogs?: unknown;
   ariaSnapshot?: unknown;
+  ariaSnapshotJson?: unknown;
   browser?: BrowserConfig | null;
   suitePath?: string[] | null;
   suiteConfig?: SuiteConfigEntry[] | null;
   testAnnotations?: TestAnnotation[] | null;
   tags?: string[] | null;
+  locks?: string[] | null;
   testMeta?: TestMetadata | null;
   locatorSnapshots?: LocatorSnapshot[] | null;
   /** Source snippet around the failing line of the spec file (captured on failure only). */

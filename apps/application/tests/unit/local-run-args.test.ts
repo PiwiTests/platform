@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { buildLocalRunPlan } from '../../app/utils/local-run-args';
+import { buildLocalRunPlan, buildReproduceArgs } from '../../app/utils/local-run-args';
 
 const CASE = {
   filePath: 'tests/checkout.spec.ts',
@@ -82,5 +82,36 @@ describe('buildLocalRunPlan', () => {
     const plan = buildLocalRunPlan([{ ...CASE, title: 'pays (visa)' }], { mode: 'grep' });
     expect(plan[0]!.args[1]).toBe('pays \\(visa\\)');
     expect(plan[0]!.display).toBe('playwright test --grep "pays \\(visa\\)" --project=chromium');
+  });
+});
+
+describe('buildReproduceArgs', () => {
+  test('one file:line spec plus its project', () => {
+    expect(buildReproduceArgs([CASE])).toEqual(['tests/checkout.spec.ts:42', '--project=chromium']);
+  });
+
+  test('drops the line when a case has none', () => {
+    expect(buildReproduceArgs([{ ...CASE, line: null }])).toEqual(['tests/checkout.spec.ts', '--project=chromium']);
+  });
+
+  test('never splits into steps — all specs then one --project per distinct project', () => {
+    const args = buildReproduceArgs([
+      CASE,
+      { ...CASE, filePath: 'tests/login.spec.ts', line: 7, projectName: 'firefox' },
+    ]);
+    expect(args).toEqual([
+      'tests/checkout.spec.ts:42',
+      'tests/login.spec.ts:7',
+      '--project=chromium',
+      '--project=firefox',
+    ]);
+  });
+
+  test('dedupes identical specs', () => {
+    expect(buildReproduceArgs([CASE, { ...CASE }])).toEqual(['tests/checkout.spec.ts:42', '--project=chromium']);
+  });
+
+  test('omits the project filter when no project is known', () => {
+    expect(buildReproduceArgs([{ ...CASE, projectName: null }])).toEqual(['tests/checkout.spec.ts:42']);
   });
 });

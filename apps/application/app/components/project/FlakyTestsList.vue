@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { TableColumn } from '@nuxt/ui';
 import type { FlakyTest } from '~~/types/api';
+import { buildTestRowBadges } from '~/utils/test-row-badges';
 
 const props = defineProps<{
   projectId: string | number;
@@ -9,6 +9,12 @@ const props = defineProps<{
   /** Piwi project name, threaded so the IDE opener can default the JetBrains project. */
   projectName?: string | null;
 }>();
+
+const emit = defineEmits<{ count: [total: number]; quarantined: [] }>();
+
+const toast = useToast();
+const { canWrite } = useAuth();
+const quarantiningId = ref<number | null>(null);
 
 const runsWindow = ref(50);
 const rootCauseFilter = ref<string[]>([]);
@@ -32,6 +38,26 @@ const filteredTests = computed(() => {
   if (rootCauseFilter.value.length === 0) return tests.value ?? [];
   return (tests.value ?? []).filter((t) => rootCauseFilter.value.includes(t.rootCause ?? ''));
 });
+
+watch(tests, (list) => emit('count', list?.length ?? 0));
+
+async function quarantineTest(test: FlakyTest) {
+  quarantiningId.value = test.testCaseId;
+  try {
+    await $fetch(`/api/projects/${props.projectId}/quarantine`, {
+      method: 'POST',
+      body: { testCaseId: test.testCaseId, reason: 'Flaky', source: 'manual' },
+    });
+    toast.add({ title: 'Test quarantined', description: test.title, color: 'success' });
+    emit('quarantined');
+  } catch (error: unknown) {
+    const message =
+      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
+    toast.add({ title: 'Quarantine failed', description: message || 'An error occurred', color: 'error' });
+  } finally {
+    quarantiningId.value = null;
+  }
+}
 
 function scoreColor(score: number): 'error' | 'warning' | 'neutral' {
   if (score >= 60) return 'error';
@@ -71,17 +97,19 @@ const ROOT_CAUSE_OPTIONS = [
   { label: 'Other', value: 'other' },
 ];
 
-const columns: TableColumn<FlakyTest>[] = [
-  { accessorKey: 'title', header: createSortHeader<FlakyTest>('Test') },
-  { accessorKey: 'impact', header: createSortHeader<FlakyTest>('Impact') },
-  { accessorKey: 'score', header: createSortHeader<FlakyTest>('Score') },
-  { accessorKey: 'failureRate', header: createSortHeader<FlakyTest>('Failure rate') },
-  { accessorKey: 'retryPassRuns', header: createSortHeader<FlakyTest>('Retry passes') },
-  { accessorKey: 'alternations', header: createSortHeader<FlakyTest>('Flips') },
-  { accessorKey: 'rootCause', header: 'Root cause' },
-  { accessorKey: 'lastFlakeAt', header: createSortHeader<FlakyTest>('Last flake') },
-  { id: 'actions', header: 'Actions' },
-];
+function impactDotClass(wastedCiMinutes: number): string {
+  if (wastedCiMinutes >= 30) return 'bg-red-500';
+  if (wastedCiMinutes >= 5) return 'bg-amber-500';
+  return 'bg-green-500';
+}
+
+/** Tags and ownership metadata rendered as the row's badges. */
+function flakyBadges(test: FlakyTest) {
+  return buildTestRowBadges({
+    tags: test.tags,
+    meta: { owner: test.owner ?? undefined, priority: toTestPriority(test.priority) },
+  });
+}
 </script>
 
 <template>
@@ -93,10 +121,7 @@ const columns: TableColumn<FlakyTest>[] = [
             Tests that fail intermittently — detected by retry passes and status alternations
             <HelpHint topic="project.flaky-tests" />
           </p>
-          <UBadge v-if="environment" color="neutral" variant="subtle" size="sm" class="gap-1">
-            <UIcon name="i-lucide-layers" class="size-3" />
-            {{ environment }}
-          </UBadge>
+          <EnvironmentBadge v-if="environment" :name="environment" class="text-xs" />
           <div class="flex items-center gap-1.5">
             <UButton
               v-for="opt in ROOT_CAUSE_OPTIONS"
@@ -123,103 +148,59 @@ const columns: TableColumn<FlakyTest>[] = [
       </div>
     </template>
 
-    <TableScroller min-width="52rem" :bleed="false">
-      <UTable :data="filteredTests" :columns="columns" :loading="loading" sticky class="max-h-[32rem]">
-        <template #actions-header>
-          <div class="text-right">Actions</div>
-        </template>
+    <LoadingState v-if="loading && filteredTests.length === 0" text="Loading flaky tests…" />
 
-        <template #title-cell="{ row }">
-          <div class="min-w-0 space-y-0.5">
-            <NuxtLink
-              :to="`/test-run-cases/${row.original.latestRunsCaseId}`"
-              class="text-sm font-medium text-primary hover:underline truncate block"
-              :title="row.original.title"
-            >
-              {{ row.original.title }}
-            </NuxtLink>
-            <TestMetaBadges
-              :tags="row.original.tags"
-              :meta="{ owner: row.original.owner ?? undefined, priority: toTestPriority(row.original.priority) }"
-              :max-tags="3"
-            />
-            <OpenInIdeLink
-              :file-path="row.original.filePath"
-              :project-key="projectId"
-              :project-name="projectName"
-              class="text-xs text-gray-400"
-            />
-          </div>
-        </template>
-
-        <template #impact-cell="{ row }">
-          <div class="flex items-center gap-2">
-            <span
-              class="inline-block w-2 h-2 rounded-full shrink-0"
-              :class="{
-                'bg-red-500': row.original.wastedCiMinutes >= 30,
-                'bg-amber-500': row.original.wastedCiMinutes >= 5 && row.original.wastedCiMinutes < 30,
-                'bg-green-500': row.original.wastedCiMinutes >= 0 && row.original.wastedCiMinutes < 5,
-              }"
-            />
-            <span class="text-sm tabular-nums">{{ Math.round(row.original.wastedCiMinutes) }} min wasted</span>
-          </div>
-        </template>
-
-        <template #score-cell="{ row }">
-          <UBadge :color="scoreColor(row.original.score)" variant="subtle" size="sm">
-            {{ row.original.score }}
-          </UBadge>
-        </template>
-
-        <template #failureRate-cell="{ row }">
-          <span class="text-sm tabular-nums">{{ Math.round(row.original.failureRate * 100) }}%</span>
-        </template>
-
-        <template #retryPassRuns-cell="{ row }">
-          <UBadge v-if="row.original.retryPassRuns" color="warning" variant="outline" size="sm">
-            {{ row.original.retryPassRuns }} run{{ row.original.retryPassRuns === 1 ? '' : 's' }}
-          </UBadge>
-          <span v-else class="text-gray-400 text-xs">—</span>
-        </template>
-
-        <template #alternations-cell="{ row }">
-          <UBadge v-if="row.original.alternations >= 2" color="neutral" variant="outline" size="sm">
-            {{ row.original.alternations }}
-          </UBadge>
-          <span v-else class="text-gray-400 text-xs">—</span>
-        </template>
-
-        <template #rootCause-cell="{ row }">
-          <TagBadge
-            v-if="row.original.rootCause"
-            :text="row.original.rootCause"
-            :color="rootCauseColor(row.original.rootCause)"
-          />
-          <span v-else class="text-gray-400 text-xs">—</span>
-        </template>
-
-        <template #lastFlakeAt-cell="{ row }">
-          <span v-if="row.original.lastFlakeAt" class="text-sm text-gray-500">
-            {{ formatRelativeTime(row.original.lastFlakeAt) }}
+    <div v-else-if="filteredTests.length" class="rounded-lg border border-default overflow-hidden">
+      <TestRow
+        v-for="test in filteredTests"
+        :key="test.testCaseId"
+        :href="`/test-cases/${test.testCaseId}`"
+        :title="test.title"
+        status="flaky"
+        icon="i-lucide-shuffle"
+        icon-class="text-amber-600 dark:text-amber-400"
+        :file-path="test.filePath"
+        :badges="flakyBadges(test)"
+        :project-key="projectId"
+        :project-name="projectName"
+      >
+        <template #metrics>
+          <span
+            class="inline-flex items-center gap-1 tabular-nums"
+            :title="`${Math.round(test.wastedCiMinutes)} CI minutes wasted`"
+          >
+            <span class="inline-block size-2 rounded-full shrink-0" :class="impactDotClass(test.wastedCiMinutes)" />
+            {{ Math.round(test.wastedCiMinutes) }} min
           </span>
-          <span v-else class="text-gray-400 text-xs">—</span>
+          <UBadge :color="scoreColor(test.score)" variant="subtle" size="xs" title="Flaky score">
+            {{ test.score }}
+          </UBadge>
+          <span class="tabular-nums" title="Failure rate">{{ Math.round(test.failureRate * 100) }}% fail</span>
+          <UButton
+            v-if="canWrite"
+            size="xs"
+            variant="outline"
+            color="warning"
+            icon="i-lucide-shield-alert"
+            :loading="quarantiningId === test.testCaseId"
+            @click="quarantineTest(test)"
+          >
+            Quarantine
+          </UButton>
         </template>
 
-        <template #actions-cell="{ row }">
-          <div class="flex justify-end">
-            <UButton
-              :to="`/test-run-cases/${row.original.latestRunsCaseId}`"
-              size="sm"
-              variant="outline"
-              trailing-icon="i-lucide-arrow-right"
-            >
-              View
-            </UButton>
+        <template #subline>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+            <TagBadge v-if="test.rootCause" :text="test.rootCause" :color="rootCauseColor(test.rootCause)" />
+            <span v-if="test.retryPassRuns" class="tabular-nums">
+              {{ test.retryPassRuns }} retry pass{{ test.retryPassRuns === 1 ? '' : 'es' }}
+            </span>
+            <span v-if="test.alternations >= 2" class="tabular-nums">{{ test.alternations }} flips</span>
+            <span v-if="test.lastFlakeAt">Last flake {{ formatRelativeTime(test.lastFlakeAt) }}</span>
           </div>
         </template>
-      </UTable>
-    </TableScroller>
+      </TestRow>
+    </div>
 
     <p v-if="!loading && filteredTests.length === 0" class="text-sm text-gray-500 py-4 text-center">
       No flaky tests detected in the last {{ runsWindow }} runs.

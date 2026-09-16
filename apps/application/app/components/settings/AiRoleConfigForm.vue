@@ -9,15 +9,10 @@ import type { AiModelRole, ModelInfo } from '~~/types/api';
 import type { HelpTopicKey } from '~/utils/help-content';
 import { helpEnvVars } from '~/utils/help-content';
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
+import type { RoleForm } from '~/utils/ai-settings-form';
 
-export interface RoleForm {
-  enabled: boolean;
-  reuse: AiModelRole | null;
-  provider: string;
-  model: string;
-  baseUrl: string;
-  apiKey: string;
-}
+// Re-exported for existing importers; the canonical definition lives in the util.
+export type { RoleForm };
 
 interface RoleMeta {
   key: AiModelRole;
@@ -27,6 +22,8 @@ interface RoleMeta {
   optional: boolean;
   enableLabel: string;
   blurb: string;
+  /** Optional standing explanation shown when the role is expanded (e.g. why embeddings are OpenAI-only). */
+  note?: string;
   reuseTargets: readonly AiModelRole[];
   modelPlaceholderAnthropic: string;
   modelPlaceholderOpenai: string;
@@ -84,6 +81,11 @@ const roleEnvVars = computed<PiwiEnvVarName[]>(() => helpEnvVars(props.meta.help
     </div>
 
     <template v-if="!meta.optional || model.enabled">
+      <div v-if="meta.note" class="flex items-start gap-2 rounded-md bg-elevated/50 px-3 py-2 text-sm text-muted">
+        <UIcon name="i-lucide-info" class="size-4 mt-0.5 shrink-0 text-primary" />
+        <span>{{ meta.note }}</span>
+      </div>
+
       <UFormField v-if="meta.reuseTargets.length" label="Provider source">
         <USelect v-model="reuseModel" :items="reuseOptions" :disabled="disabled && !envManaged" class="w-full" />
       </UFormField>
@@ -105,6 +107,17 @@ const roleEnvVars = computed<PiwiEnvVarName[]>(() => helpEnvVars(props.meta.help
           />
         </UFormField>
 
+        <div
+          v-if="model.provider === 'claude-cli'"
+          class="flex items-start gap-2 rounded-md bg-elevated/50 px-3 py-2 text-sm text-muted"
+        >
+          <UIcon name="i-lucide-terminal" class="size-4 mt-0.5 shrink-0 text-primary" />
+          <span>
+            Runs the local <code class="font-mono">claude</code> command, so it uses your Claude Code sign-in — no API
+            key to enter. Sign-in status and usage are managed at the top of this section.
+          </span>
+        </div>
+
         <UFormField
           v-if="model.provider === 'openai'"
           label="Preset"
@@ -120,7 +133,7 @@ const roleEnvVars = computed<PiwiEnvVarName[]>(() => helpEnvVars(props.meta.help
         </UFormField>
 
         <UFormField
-          v-if="model.provider"
+          v-if="model.provider && model.provider !== 'claude-cli'"
           label="API key"
           :description="
             hasApiKey
@@ -155,6 +168,29 @@ const roleEnvVars = computed<PiwiEnvVarName[]>(() => helpEnvVars(props.meta.help
             </span>
           </template>
           <UInput v-model="model.baseUrl" placeholder="http://localhost:11434/v1" :disabled="disabled" class="w-full" />
+        </UFormField>
+
+        <UFormField
+          v-if="model.provider === 'openai'"
+          label="Temperature"
+          description="Leave blank to use the model's default. Reasoning models (o1, o3, GPT-5-class) reject any explicit value and must be left blank."
+        >
+          <template #label>
+            <span class="inline-flex items-center gap-1">
+              Temperature
+              <EnvManagedBadge v-if="disabled" :env-vars="roleEnvVars" />
+            </span>
+          </template>
+          <UInput
+            v-model="model.temperature"
+            type="number"
+            step="0.1"
+            min="0"
+            max="2"
+            placeholder="Default"
+            :disabled="disabled"
+            class="w-full"
+          />
         </UFormField>
       </template>
 

@@ -4,7 +4,20 @@
  */
 
 import type { Role, FilterDetails, TestMetadata, TestSourceFrame } from '#shared/types';
+import type { ScmProviderName } from '#shared/scm-urls';
+import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
+import type { ClusterState } from '#shared/cluster-state';
+import type { NextStep } from '#shared/next-step';
 export type { TestMetadata, TestSourceFrame };
+export type { ClusterState } from '#shared/cluster-state';
+export type { NextStep } from '#shared/next-step';
+
+/** One run's occurrence count for a cluster, for the occurrence sparkline. */
+export interface OccurrenceSeriesPoint {
+  runId: number;
+  startedAt: string | Date | null;
+  occurrences: number;
+}
 
 // ============================================================================
 // Metadata types
@@ -280,6 +293,54 @@ export interface ProjectOverview {
 }
 
 /**
+ * One open failure cluster across projects - returned by
+ * GET /api/failure-clusters?status=open. Drives the Home "Open failures" card.
+ */
+export interface OpenFailureCluster {
+  id: number;
+  projectId: number;
+  projectName: string;
+  projectLabel: string | null;
+  title: string | null;
+  signature: string;
+  errorType: string | null;
+  selector: string | null;
+  sampleError: string | null;
+  filePath: string | null;
+  status: string;
+  affectedTests: number;
+  occurrences: number;
+  firstSeenAt: string | Date | null;
+  lastSeenAt: string | Date | null;
+  lastSeenRunId: number;
+  lastSeenRunStatus: string | null;
+  owner: { name: string; source: 'annotation' | 'codeowners' } | null;
+  /** Who the cluster is assigned to (name or email); overrides the derived owner. */
+  assignee: string | null;
+  issueLink: { url: string; provider: string; key: string | null } | null;
+  /** A one-line cause hint for the row — muted secondary text. */
+  topClue: { text: string; strength: 'strong' | 'medium' | 'weak' } | null;
+  /** Fix-verification state; `'regressed'` drives the "fix didn't hold" queue and badge. */
+  fixVerification: string | null;
+  /** A new regression on the project's default branch in the last-seen run. */
+  regressionOnDefault: boolean;
+  /** The last-seen run was on the project's default branch — a needs-ticket candidate must be. */
+  onDefaultBranch: boolean;
+  /** The cluster already carries a tracker issue — excluded from needs-ticket. */
+  hasKnownIssue: boolean;
+  /** Days a cluster may sit untracked on the default branch before needs-ticket lists it. */
+  needsTicketAfterDays: number;
+  /** Affected tests currently quarantined, and how many are ready for release. */
+  quarantinedCount: number;
+  quarantineReadyCount: number;
+  /** The cluster is part of a pending merge suggestion awaiting a decision. */
+  mergeSuggestionPending: boolean;
+  /** Snooze state — hidden from queues while snoozed; cleared/marked on wake. */
+  snoozedUntil: string | Date | null;
+  snoozeMode: string | null;
+}
+
+/**
  * Project with test runs - returned by GET /api/projects/[id]
  */
 export interface ProjectWithTestRuns {
@@ -305,6 +366,8 @@ export interface ProjectDetails {
   diagnosisInstructions?: string | null;
   hasScmToken: boolean;
   defaultBranch?: string | null;
+  /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
+  ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
   color?: string | null;
   tags?: TagInfo[];
 }
@@ -448,6 +511,10 @@ export interface PerformanceStep {
   title: string;
   duration: number;
   category: string;
+  /** The step's target (rendered locator or URL), carried separately by newer Playwright. */
+  subtitle?: string;
+  /** Curated per-step arguments (rendered locator, URL, value, `test.step` author values). */
+  params?: Record<string, string | number | boolean>;
   /** Error message when the step failed (undefined when the step passed). */
   error?: { message?: string };
   /** True when the step failed. */
@@ -464,6 +531,8 @@ export interface PerformanceStep {
  */
 export interface TestStepEvent {
   title: string;
+  /** The step's target (rendered locator or URL), carried separately by newer Playwright. */
+  subtitle?: string | null;
   category: 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait';
   startedAt: number;
   duration: number;
@@ -600,6 +669,51 @@ export interface TraceBodyResponse {
   truncated?: boolean;
 }
 
+/** Whether an action carries a snapshot for each phase, per snapshot kind. */
+export interface TraceSnapshotAvailability {
+  before: boolean;
+  after: boolean;
+}
+
+/** One action's per-phase aria and screen snapshot availability, for the Screen tab and filmstrip. */
+export interface TraceSnapshotStep {
+  /** The action's callId — addresses its snapshot files in the resource endpoint. */
+  callId: string;
+  /** Position of the action in trace order. */
+  index: number;
+  /** Display title of the step (the action's api name). */
+  title: string;
+  /** True when this is the failing action. */
+  failed: boolean;
+  /** Start time of the action, in the trace's own timebase. */
+  startTime: number;
+  aria: TraceSnapshotAvailability;
+  screen: TraceSnapshotAvailability;
+}
+
+/** `GET /api/test-run-cases/:id/trace-snapshots` */
+export interface TraceSnapshotsResponse {
+  status: 'ok' | 'no-trace' | 'no-snapshots';
+  steps: TraceSnapshotStep[];
+  /** The failing action's callId, when the trace recorded one. */
+  failingCallId: string | null;
+  /** Any step carries an aria / screen snapshot — drives the tab's presence. */
+  hasAria: boolean;
+  hasScreen: boolean;
+  /**
+   * Structural diff of the failing action's page *before* it ran against the
+   * page *at the failure* (its before-phase aria tree vs its after-phase tree).
+   * Null when either phase's aria snapshot is missing.
+   */
+  pageDiff?: { summary: PageDiffSummary; hunks: PageDiffHunk[] } | null;
+  /**
+   * The accessibility tree at the failing step, as ARIA text (the failing
+   * action's after-phase snapshot, else its before-phase). Surfaced on the
+   * failing step in the timeline. Null when the failing step recorded no aria.
+   */
+  failingAriaText?: string | null;
+}
+
 /**
  * Browser performance / web vitals recorded via dashboard fixture
  */
@@ -729,6 +843,8 @@ export interface TestCaseResult {
   testAnnotations?: Array<{ type: string; description?: string }> | null;
   /** Tags declared on the test, normalized with `@` stripped. */
   tags?: string[] | null;
+  /** Lock names this execution held (best effort; none from blob imports). */
+  locks?: string[] | null;
   /** Ownership metadata from `piwi:` annotations. */
   testMeta?: TestMetadata | null;
   status: string;
@@ -865,6 +981,10 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
   affectedTests: number;
   lastSeenRunStatus: string | null;
   lastSeenAt: string | Date | null;
+  /** The execution in the last-seen run — the cluster's latest occurrence, or null when none loads. */
+  latestTestRunsCaseId: number | null;
+  /** The test case that latest occurrence belongs to. */
+  latestTestCaseId: number | null;
   diagnosis: DiagnosisCompact | null;
   project: { id: number; name: string; label: string | null } | null;
   affectedTestCases: Array<{
@@ -873,7 +993,22 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
     filePath: string;
     runCount: number;
     recentTestRunsCaseId: number;
+    quarantined: boolean;
   }>;
+  /** Known-issue links pinned to this cluster (Jira / GitHub issue, etc.). */
+  links: EntityLinkInfo[];
+  /** Effective owner of the cluster's tests: `piwi:owner` annotation or CODEOWNERS. */
+  owner: { name: string; source: 'annotation' | 'codeowners' } | null;
+  /** Inbox triage: assignee (overrides the owner) and snooze state. */
+  assignee: string | null;
+  snoozedUntil: string | Date | null;
+  snoozeMode: string | null;
+  /** One sentence with one verb for the cluster's state, and the control that changes it. */
+  clusterState: ClusterState;
+  /** Occurrences per run over the project's last 20 runs, oldest first. */
+  occurrenceSeries: OccurrenceSeriesPoint[];
+  /** The single next step chosen by the policy. */
+  nextStep: NextStep;
 }
 
 /**
@@ -896,6 +1031,12 @@ export interface ProjectFailureCluster extends ClusterResolutionFields {
   lastSeenRunStatus: string | null;
   lastSeenAt: string | Date | null;
   diagnosis: DiagnosisCompact | null;
+  /** The pinned known-issue link (newest), shown as a chip. */
+  issueLink: { url: string; provider: string; key: string | null } | null;
+  /** Inbox triage — assignee and snooze state. A snoozed open cluster is not failing now. */
+  assignee: string | null;
+  snoozedUntil: string | Date | null;
+  snoozeMode: string | null;
 }
 
 /**
@@ -912,6 +1053,8 @@ export interface TestCaseWithStats {
   title: string;
   /** Latest-known tags and `piwi:` metadata declared on the test. */
   tags: string[] | null;
+  /** Latest-known lock names declared on the test (best effort). */
+  locks: string[] | null;
   owner: string | null;
   priority: string | null;
   feature: string | null;
@@ -1223,7 +1366,7 @@ export interface DiagnosisContextCoverage {
     hasCommitRange: boolean;
     /** Set when the user manually overrode the baseline commit SHA */
     baseCommitUsed: string | null;
-    provider: 'github' | 'gitlab' | 'bitbucket' | null;
+    provider: ScmProviderName | null;
     commitsCount: number;
     filesCount: number;
     patchedFilesCount: number;
@@ -1314,8 +1457,51 @@ export interface ScmChanges {
   patchesOmitted?: boolean;
 }
 
-/** Supported AI provider identifiers */
-export type AiProvider = 'anthropic' | 'openai';
+/**
+ * Supported AI provider identifiers.
+ * - `anthropic` — the Anthropic API (needs an API key).
+ * - `openai` — any OpenAI-compatible HTTP endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, …).
+ * - `claude-cli` — the locally-installed `claude` CLI (Claude Code). Desktop app only: the
+ *   bundled server shells out to `claude -p --output-format json`, so authentication is the CLI's
+ *   own subscription/OAuth login and no API key is stored.
+ */
+export type AiProvider = 'anthropic' | 'openai' | 'claude-cli';
+
+/**
+ * Health + authentication state of the local `claude` CLI, returned by
+ * GET /api/ai/claude-cli/status. Only meaningful inside the desktop app.
+ */
+export interface ClaudeCliStatus {
+  /** True when the desktop app is running and may shell out to the CLI at all. */
+  desktop: boolean;
+  /** True when the `claude` binary was found and is runnable. */
+  available: boolean;
+  /** Resolved absolute path to the binary, when found. */
+  binaryPath: string | null;
+  /** CLI version string (e.g. "2.1.270"), when detectable. */
+  version: string | null;
+  /** True when `claude auth status` reports a signed-in account. */
+  loggedIn: boolean;
+  /** How the CLI is authenticated: "oauth_token", "api_key", … */
+  authMethod: string | null;
+  /** The API provider the CLI talks to: "firstParty", "bedrock", "vertex". */
+  apiProvider: string | null;
+  /** A human-readable problem when the CLI is missing or misconfigured. */
+  error: string | null;
+  /** Running usage totals since the server started (live, not persisted). */
+  usage: ClaudeCliUsageTotals;
+}
+
+/** In-memory usage tally for CLI calls since the server started. Resets on restart. */
+export interface ClaudeCliUsageTotals {
+  calls: number;
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  /** ISO timestamp the tally started (server start / first call). */
+  since: string | null;
+}
 
 /**
  * Model metadata returned by the provider's models endpoint.
@@ -1347,6 +1533,8 @@ export interface ResolvedAiRole {
   apiKey: string;
   model: string;
   baseUrl: string | null;
+  /** OpenAI-compat only: sampling temperature. Omitted from the request when null (provider default applies) — reasoning models (o1/o3/GPT-5-class) reject any explicit value. */
+  temperature: number | null;
 }
 
 /**
@@ -1362,6 +1550,7 @@ export interface AiConfig {
   apiKey: string;
   model: string;
   baseUrl: string | null;
+  temperature: number | null;
   autoDiagnose: boolean;
   source: 'env' | 'settings';
   /** Per-role resolved configs. `diagnosis` is always present; others are null when unconfigured. */
@@ -1393,6 +1582,8 @@ export interface AiRoleSettings {
   baseUrl: string | null;
   reuse: AiModelRole | null;
   hasApiKey: boolean;
+  /** OpenAI-compat only: sampling temperature override, or null for the provider default. */
+  temperature: number | null;
 }
 
 /**
@@ -1409,6 +1600,10 @@ export interface AiSettings {
   hasScmToken: boolean;
   envManaged: boolean;
   customInstructions: string | null;
+  /** The AI response language ("French", "Japanese", …); null keeps English prose. */
+  language: string | null;
+  /** True when the language is fixed by `PIWI_AI_LANGUAGE` (rendered locked). */
+  languageEnvManaged: boolean;
 }
 
 // ============================================================================
@@ -1424,6 +1619,8 @@ export interface AiRoleConfigInput {
   baseUrl?: string | null;
   apiKey?: string | null;
   reuse?: AiModelRole | null;
+  /** OpenAI-compat only: sampling temperature override, or null/omitted for the provider default. */
+  temperature?: number | null;
 }
 
 /**
@@ -1434,6 +1631,8 @@ export interface SaveAiSettingsBody {
   autoDiagnose?: boolean;
   customInstructions?: string | null;
   scmToken?: string | null;
+  /** The instance-wide AI response language; ignored when env-managed. */
+  language?: string | null;
 }
 
 /**
@@ -1478,6 +1677,11 @@ export interface EntityLinkInfo {
   statusText?: string | null;
   statusColor?: string | null;
   unfurledAt?: string | Date | null;
+  /** The connection that can read/write this record, when Piwi owns it. */
+  connectionId?: number | null;
+  externalId?: string | null;
+  /** Who put the link there: pinned by a person, created by Piwi, etc. */
+  origin?: string | null;
   createdBy?: number | null;
   createdAt: Date;
   updatedAt: Date;
@@ -1513,4 +1717,20 @@ export interface FlakyTest {
   impact: number;
   wastedCiMinutes: number;
   avgFailedDurationMs: number;
+}
+
+/** A page diff between a failing execution and its last green sample. */
+export interface PageDiff {
+  status: 'ok' | 'no-failure-snapshot' | 'no-green-sample' | 'not-applicable' | 'not-found';
+  baseline?: {
+    executionId: number;
+    runId: number;
+    at: number | null;
+    commit: string | null;
+    branch: string | null;
+    environment: string | null;
+  };
+  baselineNote?: string | null;
+  summary?: import('#shared/page-diff').PageDiffSummary;
+  hunks?: import('#shared/page-diff').PageDiffHunk[];
 }

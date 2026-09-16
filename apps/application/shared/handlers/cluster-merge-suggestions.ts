@@ -90,6 +90,19 @@ export async function listMergeSuggestions(db: DrizzleDB, projectId: number, sta
   }));
 }
 
+/**
+ * The survivor/victim clusters a pending suggestion would merge, for a caller
+ * that must act before the merge deletes the victim (the merge-comment policy).
+ */
+export async function getMergeSuggestionPair(
+  db: DrizzleDB,
+  id: number,
+): Promise<{ survivorId: number; victimId: number; projectId: number } | null> {
+  const [s] = await db.select().from(clusterMergeSuggestions).where(eq(clusterMergeSuggestions.id, id));
+  if (!s || s.status !== 'pending') return null;
+  return { survivorId: s.clusterAId, victimId: s.clusterBId, projectId: s.projectId };
+}
+
 /** Approve a suggestion: merge clusterB into clusterA (lower id survives). */
 export async function approveMergeSuggestion(db: DrizzleDB, id: number): Promise<{ survivorId: number } | null> {
   const [s] = await db.select().from(clusterMergeSuggestions).where(eq(clusterMergeSuggestions.id, id));

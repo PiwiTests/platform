@@ -18,7 +18,7 @@ app faster; it tells you whether that is even the problem.
 
 ## 1. Split the bill before optimizing anything
 
-[Analytics](../analytics) has two widgets that belong side by side: **CI time** (total minutes your runs
+[Analytics](/features/analytics) has two widgets that belong side by side: **CI time** (total minutes your runs
 consumed) and **Wasted CI time** — the portion that produced no signal, defined as time inside wait
 steps plus time spent on attempts that ended failed or timed out.
 
@@ -40,7 +40,7 @@ only explicit sleeps count — `waitForTimeout` and friends — because framewor
   wasted waits, teardown. Filter to wasted waits and the sleeps light up as bars you can click straight
   through to the test.
 - Tune what counts in **Settings → Performance** (or lock it with
-  [`PIWI_WASTED_WAIT_PATTERNS`](../configuration#wasted-time)). Classification happens *when a run is
+  [`PIWI_WASTED_WAIT_PATTERNS`](/reference/configuration#wasted-time)). Classification happens *when a run is
   viewed*, so widening the patterns re-classifies your whole history immediately — no re-run needed.
 
 <figure>
@@ -77,7 +77,7 @@ four-minute timeout is what actually hurts.
 
 [Cutting the flakiness that costs the most](./flaky-cleanup) is the whole recipe for this. The short
 version: sort by impact, fix the red dots, and
-[quarantine](../flaky-tests#quarantine-with-a-way-out) the rest so they stop blocking merges while
+[quarantine](/features/flaky-tests#quarantine-with-a-way-out) the rest so they stop blocking merges while
 still running.
 
 ## 5. Ask whether the app is slow, not the test
@@ -85,27 +85,27 @@ still running.
 Everything above shaves time off the harness. This step is the one that finds a real performance bug.
 
 - **Slow endpoints** — on a run, network requests grouped by method and normalized route
-  (`/api/users/:id`) with avg/p90/max duration and error rate. [Analytics](../analytics) lifts the same
+  (`/api/users/:id`) with avg/p90/max duration and error rate. [Analytics](/features/analytics) lifts the same
   view across every project, so a shared endpoint regressing shows up before any single suite notices.
 - **Web Vitals** — TTFB, FCP, LCP, CLS and the rest per execution, color-coded. LCP/CLS/INP are
   Chromium-only, and INP needs an interaction, so short tests often show `n/a`.
 
-Both require the [capture fixtures](../capture-fixtures) — the reporter alone cannot see the network.
+Both require the [capture fixtures](/guide/capture-fixtures) — the reporter alone cannot see the network.
 Without them you still have the trace: its network waterfall shows the same requests for one execution,
 just not aggregated across the suite.
 
 ## 6. Spend the parallelism you already have
 
-- **Worker imbalance** is called out in a run's [Insights](../flaky-tests#run-insights): if one worker
-  finishes long after the others, the suite is as slow as its unluckiest shard, and no amount of
-  per-test tuning fixes that.
+- **Worker imbalance** is called out in a run's [Timeline](/features/ui-overview#test-run-detail) tab, under the worker
+  distribution: if one worker finishes long after the others, the suite is as slow as its unluckiest shard, and no
+  amount of per-test tuning fixes that.
 - **Sharding** is Playwright's own `--shard`; Piwi merges the shards back into [one
-  run](../concepts#test-run), so you can raise the shard count without turning your history into
-  fragments. See [CI & sharding](../ci#sharding).
+  run](/guide/concepts#test-run), so you can raise the shard count without turning your history into
+  fragments. See [CI & sharding](/guide/ci#sharding).
 
 ## Other ways in
 
-**Ask your agent.** Over the [MCP server](../mcp) — no install, it is part of the server —
+**Ask your agent.** Over the [MCP server](/features/mcp) — no install, it is part of the server —
 `get_slow_tests` returns the ranked slowest tests, `get_performance_trend` the duration history, and
 `get_run_insights` the worker-imbalance and duration deltas for one run. Useful for "what should I
 speed up this sprint?" without opening a browser.
@@ -114,12 +114,12 @@ speed up this sprint?" without opening a browser.
 into a channel — see the [API docs](https://piwitests.dev/demo/docs).
 
 **Watch it drift.** Rather than auditing periodically, subscribe to the `perf.regression`
-[notification](../notifications) event and let it tell you when a duration trend breaks.
+[notification](/features/notifications) event and let it tell you when a duration trend breaks.
 
 ## See also
 
-- [Flaky tests → Performance](../flaky-tests#performance) — the full reference for trends, slowest
+- [Slow tests & wasted time](/features/slow-tests) — the full reference for trends, slowest
   tests and timeout hygiene
 - [Cut the flakiness that costs the most](./flaky-cleanup) — step 4 in full
-- [Analytics](../analytics) — CI time and wasted CI time across every project
-- [Capture fixtures](../capture-fixtures) — what unlocks the network and Web Vitals views
+- [Analytics](/features/analytics) — CI time and wasted CI time across every project
+- [Capture fixtures](/guide/capture-fixtures) — what unlocks the network and Web Vitals views

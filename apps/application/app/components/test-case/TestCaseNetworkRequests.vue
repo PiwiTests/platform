@@ -13,11 +13,21 @@ const props = defineProps<{
   storageKey?: string;
   /** Whether the card starts folded on first visit (no stored cookie). */
   defaultFolded?: boolean;
+  /** Mark the request list as recovered from the trace (the capture fixtures were absent). */
+  derivedFromTrace?: boolean;
+  /** Drop the card frame and padding — render a plain heading row over the body. */
+  embedded?: boolean;
 }>();
 
-const cardComponent = computed(() => (props.storageKey ? CollapsibleSectionCard : SectionCard));
+const cardComponent = computed(() =>
+  props.embedded ? SectionCard : props.storageKey ? CollapsibleSectionCard : SectionCard,
+);
 const cardBind = computed(() =>
-  props.storageKey ? { storageKey: props.storageKey, defaultFolded: props.defaultFolded } : {},
+  props.embedded
+    ? { embedded: true }
+    : props.storageKey
+      ? { storageKey: props.storageKey, defaultFolded: props.defaultFolded }
+      : {},
 );
 
 type Filter = 'all' | 'failed' | 'logs';
@@ -277,14 +287,15 @@ function rowAccent(r: DecoratedRequest): string {
     :is="cardComponent"
     ref="card"
     v-bind="cardBind"
-    icon="i-lucide-network"
-    title="Network requests"
-    :count="view === 'trace' ? traceCount : totals.total"
-    help="case.network"
+    :icon="embedded ? undefined : 'i-lucide-network'"
+    :title="embedded ? '' : 'Network requests'"
+    :count="embedded ? null : view === 'trace' ? traceCount : totals.total"
+    :help="embedded ? undefined : 'case.network'"
   >
     <template v-if="storageKey" #folded>{{ peek }}</template>
     <template #actions>
       <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <TraceDerivedChip v-if="derivedFromTrace" />
         <template v-if="view === 'captured'">
           <div v-if="totals.errorLogs > 0 || totals.warnLogs > 0" class="flex items-center gap-2 text-xs">
             <span v-if="totals.errorLogs > 0" class="flex items-center gap-1 text-red-600 dark:text-red-400">
@@ -491,7 +502,7 @@ function rowAccent(r: DecoratedRequest): string {
     >
       <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />
       No backend server logs captured — install
-      <DocLink to="backend-logs" no-icon class="underline">a Piwi backend integration</DocLink>
+      <DocLink to="guide/backend-logs" no-icon class="underline">a Piwi backend integration</DocLink>
       to see server-side warnings and errors under each request.
     </p>
 
@@ -500,7 +511,7 @@ function rowAccent(r: DecoratedRequest): string {
       <span>
         Want to go deeper? Record traces (<code>trace: 'retain-on-failure'</code>) to see every request with headers,
         timing and bodies here.
-        <DocLink to="evidence#trace-powered-deep-views" no-icon class="underline">Learn more</DocLink>
+        <DocLink to="features/evidence#trace-powered-deep-views" no-icon class="underline">Learn more</DocLink>
       </span>
     </p>
   </component>

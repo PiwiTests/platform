@@ -68,10 +68,10 @@ Five ways in, depending on what you already have:
 | Path | Start here if | What it costs |
 |---|---|---|
 | **[Live demo](https://piwitests.dev/demo/)** | You just want to look around first | Nothing — seeded data, runs entirely in your browser |
-| **[Desktop app](https://piwitests.dev/desktop)** | You run Playwright locally and don't want to run a server | Download an installer — no Docker, no Node |
+| **[Desktop app](https://piwitests.dev/features/desktop)** | You run Playwright locally and don't want to run a server | Download an installer — no Docker, no Node |
 | **Docker** *(below)* | You have Docker, or you're setting up a shared instance | One command |
 | **`npx @piwitests/server`** | You have Node.js 22+ and would rather skip Docker | One command |
-| **[One-click deploy](https://piwitests.dev/deployment#one-click-deploy)** | You want a shared instance and no server to run it on | A button, plus whatever your host charges |
+| **[One-click deploy](https://piwitests.dev/operate/deployment#one-click-deploy)** | You want a shared instance and no server to run it on | A button, plus whatever your host charges |
 
 Two caveats worth knowing before you pick. The **desktop installers are not yet code-signed**, so the
 first launch needs a click-through, and they exist for Windows x64 and Apple-silicon macOS only — on
@@ -80,7 +80,7 @@ Linux or an Intel Mac, use Docker or `npx`. The **one-click templates** ([`rende
 configuration reference so they can't drift from what the app reads) each provision one container with a
 persistent volume and authentication on, but per-provider limits apply — Render needs a paid instance
 for its disk, Koyeb attaches volumes after the fact. Both are covered in the
-[deployment guide](https://piwitests.dev/deployment#one-click-deploy).
+[deployment guide](https://piwitests.dev/operate/deployment#one-click-deploy).
 
 ## Quick start
 
@@ -106,7 +106,7 @@ current directory.
 > **Linux hosts:** the container runs as non-root UID 1001, so without the `chown` above, Docker
 > auto-creates `.data` owned by `root` and the container can't write to it. Docker Desktop on Windows
 > and macOS handles this for you. See
-> [Permission issues with volumes](https://piwitests.dev/deployment#permission-issues-with-volumes).
+> [Permission issues with volumes](https://piwitests.dev/operate/deployment#permission-issues-with-volumes).
 
 **2. Add the reporter to your test project**
 
@@ -146,17 +146,17 @@ export { expect }
 ```
 
 Import `test` from this file in your specs instead of `@playwright/test` — that's the whole change.
-Details in the [capture fixtures guide](https://piwitests.dev/capture-fixtures); a runnable
+Details in the [capture fixtures guide](https://piwitests.dev/guide/capture-fixtures); a runnable
 project lives in [`examples/playwright-fixtures`](./examples/playwright-fixtures).
 
 Steps 2–4 are also one command, if you prefer:
 `npx @piwitests/reporter init --server-url http://localhost:3000 --project my-project` — idempotent,
 and anything it won't rewrite is reported as a manual step with the exact change to make. See
-[Getting started → Fast path](https://piwitests.dev/getting-started#fast-path-one-command).
+[Getting started → Fast path](https://piwitests.dev/guide/getting-started#fast-path-one-command).
 
 In CI, set `PIWI_DASHBOARD_URL` (and `PIWI_API_KEY` if auth is on) and you're done — branch, commit, CI
 metadata and `--shard` merging are detected automatically. See
-[CI & sharding](https://piwitests.dev/ci).
+[CI & sharding](https://piwitests.dev/guide/ci).
 
 It's one Node process: **~300 MB RAM idle** (1 GB comfortable), **1 vCPU**, `linux/amd64` or
 `linux/arm64`. Disk is the variable — traces and reports dominate, so budget roughly 50–200 MB per run
@@ -169,14 +169,17 @@ The command above gives you an **open dashboard with authentication off**, which
 and not fine on a network. Three things to set before anyone else can reach it:
 
 - `PIWI_AUTH_ENABLED=true` and `PIWI_AUTH_SECRET` — turn on accounts and roles
-  ([guide](https://piwitests.dev/authentication)).
+  ([guide](https://piwitests.dev/operate/authentication)).
 - `PIWI_SECRET_KEY` — without it, stored credentials (AI keys, SCM tokens) are encrypted with a
   built-in development key rather than yours.
 - **HTTPS**, via a reverse proxy — see the
-  [deployment guide](https://piwitests.dev/deployment#reverse-proxy-https).
+  [deployment guide](https://piwitests.dev/operate/deployment#reverse-proxy-https).
 
 Generate a value for either secret with
 `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`.
+
+The full list — including the trust-proxy flag, backups and version pinning — is the
+[production checklist](https://piwitests.dev/operate/production-checklist).
 
 Found a vulnerability? Please report it privately via the [security policy](./SECURITY.md).
 
@@ -184,11 +187,11 @@ Found a vulnerability? Please report it privately via the [security policy](./SE
 
 | | |
 |---|---|
-| [![Failure cluster with AI diagnosis](./apps/docs/public/screenshots/failure-cluster.png)](https://piwitests.dev/ai-diagnosis) | [![AI diagnosis grounded in your SCM diff](./apps/docs/public/screenshots/ai-diagnosis.png)](https://piwitests.dev/ai-diagnosis) |
+| [![Failure cluster with AI diagnosis](./apps/docs/public/screenshots/failure-cluster.png)](https://piwitests.dev/features/ai-diagnosis) | [![AI diagnosis grounded in your SCM diff](./apps/docs/public/screenshots/ai-diagnosis.png)](https://piwitests.dev/features/ai-diagnosis) |
 | **Failure clusters** — forty red tests, three root causes | **AI diagnosis** — read against your actual git diff |
-| [![Flaky test detection](./apps/docs/public/screenshots/flaky-detection.png)](https://piwitests.dev/flaky-tests) | [![Test run detail with worker timeline](./apps/docs/public/screenshots/test-run.png)](https://piwitests.dev/ui-overview) |
+| [![Flaky test detection](./apps/docs/public/screenshots/flaky-detection.png)](https://piwitests.dev/features/flaky-tests) | [![Test run detail with worker timeline](./apps/docs/public/screenshots/test-run.png)](https://piwitests.dev/features/ui-overview) |
 | **Flaky tests** — scored, classified, ranked by wasted CI time | **Run detail** — cases, worker timeline, traces, retry command |
-| [![Locator healing suggestions](./apps/docs/public/screenshots/locator-healing.png)](https://piwitests.dev/reporter#locator-healing) | [![Performance trends](./apps/docs/public/screenshots/performance-trends.png)](https://piwitests.dev/flaky-tests#performance) |
+| [![Locator healing suggestions](./apps/docs/public/screenshots/locator-healing.png)](https://piwitests.dev/guide/reporter#locator-healing) | [![Performance trends](./apps/docs/public/screenshots/performance-trends.png)](https://piwitests.dev/features/flaky-tests#performance) |
 | **Locator healing** — replacements from the last passing run | **Performance** — P90 trends and slowest-test tracking |
 
 ## Where this fits
@@ -202,7 +205,7 @@ pytest and Cypress results too, [ReportPortal](https://reportportal.io) or
 look back, you don't need any of this.
 
 The longer version, including where Piwi loses, is in
-[Why Piwi?](https://piwitests.dev/comparison).
+[Why Piwi?](https://piwitests.dev/guide/comparison).
 
 ## Published artifacts
 
@@ -220,7 +223,7 @@ Everything below is built and published from this repository on each release.
 | [Piwi Picker](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe) | Chrome Web Store | The browser extension — ranked Playwright locators picked from the live page (Chrome, Edge, and other Chromium browsers) |
 
 The two instrumentation packages are optional and only needed for
-[backend log capture](https://piwitests.dev/backend-logs). Both container registries carry the
+[backend log capture](https://piwitests.dev/guide/backend-logs). Both container registries carry the
 same images; use whichever your organization prefers. The extension is the one entry uploaded to its
 store by hand rather than by CI, so its listed version can trail a release by a day or two.
 
@@ -232,20 +235,20 @@ local/S3 storage with a full Playwright E2E suite.
 
 Upgrades apply database migrations automatically on startup — and those migrations are **forward-only**,
 so rolling back means restoring a backup, not pulling the old tag. Read
-[Upgrading](https://piwitests.dev/upgrading) before your first version bump. Direction and
+[Upgrading](https://piwitests.dev/operate/upgrading) before your first version bump. Direction and
 non-goals live in the [roadmap](./ROADMAP.md).
 
 ## Documentation
 
 Full docs at **[piwitests.dev](https://piwitests.dev)**. The usual entry points:
 
-- [Getting started](https://piwitests.dev/getting-started) — install, reporter, first run
-- [Core concepts](https://piwitests.dev/concepts) — runs, test cases, executions, clusters
-- [Reporter](https://piwitests.dev/reporter) and [CI & sharding](https://piwitests.dev/ci) — getting results in
-- [Deployment](https://piwitests.dev/deployment) and [Configuration](https://piwitests.dev/configuration) — running your instance
-- [Upgrading](https://piwitests.dev/upgrading) — what a version bump does, and why downgrading isn't a thing
-- [Privacy & data flow](https://piwitests.dev/privacy) — exactly what leaves your server (nothing you didn't configure)
-- [Browser extension](https://piwitests.dev/extension) — pick ranked locators from the live page, standalone ([install from the Chrome Web Store](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe) — works in Edge too)
+- [Getting started](https://piwitests.dev/guide/getting-started) — install, reporter, first run
+- [Core concepts](https://piwitests.dev/guide/concepts) — runs, test cases, executions, clusters
+- [Reporter](https://piwitests.dev/guide/reporter) and [CI & sharding](https://piwitests.dev/guide/ci) — getting results in
+- [Deployment](https://piwitests.dev/operate/deployment) and [Configuration](https://piwitests.dev/reference/configuration) — running your instance
+- [Upgrading](https://piwitests.dev/operate/upgrading) — what a version bump does, and why downgrading isn't a thing
+- [Privacy & data flow](https://piwitests.dev/guide/privacy) — exactly what leaves your server (nothing you didn't configure)
+- [Browser extension](https://piwitests.dev/features/extension) — pick ranked locators from the live page, standalone ([install from the Chrome Web Store](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe) — works in Edge too)
 
 A running dashboard also serves interactive API docs at `/docs`, rendered in-app from its own OpenAPI
 spec — no external CDN, so they work offline.

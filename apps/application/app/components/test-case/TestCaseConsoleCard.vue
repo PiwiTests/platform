@@ -20,11 +20,21 @@ const props = defineProps<{
   storageKey?: string;
   /** Whether the card starts folded on first visit (no stored cookie). */
   defaultFolded?: boolean;
+  /** Mark the entries as recovered from the trace (the capture fixtures were absent). */
+  derivedFromTrace?: boolean;
+  /** Drop the card frame and padding — render a plain heading row over the body. */
+  embedded?: boolean;
 }>();
 
-const cardComponent = computed(() => (props.storageKey ? CollapsibleSectionCard : SectionCard));
+const cardComponent = computed(() =>
+  props.embedded ? SectionCard : props.storageKey ? CollapsibleSectionCard : SectionCard,
+);
 const cardBind = computed(() =>
-  props.storageKey ? { storageKey: props.storageKey, defaultFolded: props.defaultFolded } : {},
+  props.embedded
+    ? { embedded: true }
+    : props.storageKey
+      ? { storageKey: props.storageKey, defaultFolded: props.defaultFolded }
+      : {},
 );
 
 const peek = computed(() => {
@@ -75,11 +85,12 @@ function consoleTypeIcon(type: string): string {
     v-if="entries.length > 0"
     ref="card"
     v-bind="cardBind"
-    icon="i-lucide-terminal"
-    title="Console output"
-    :count="entries.length"
-    help="case.console"
+    :icon="embedded ? undefined : 'i-lucide-terminal'"
+    :title="embedded ? '' : 'Console output'"
+    :count="embedded ? null : entries.length"
+    :help="embedded ? undefined : 'case.console'"
   >
+    <template v-if="derivedFromTrace" #actions><TraceDerivedChip /></template>
     <template v-if="storageKey" #folded>{{ peek }}</template>
     <div class="space-y-1 max-h-80 overflow-y-auto">
       <div

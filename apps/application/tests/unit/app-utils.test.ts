@@ -155,9 +155,9 @@ describe('getStatusColor', () => {
 });
 
 describe('formatStatusLabel', () => {
-  test('normalizes timedOut/timedout to "failed" and didnotrun to "didn\'t run"', () => {
-    expect(formatStatusLabel('timedOut')).toBe('failed');
-    expect(formatStatusLabel('timedout')).toBe('failed');
+  test('renders timedOut/timedout as "timed out" and didnotrun as "didn\'t run"', () => {
+    expect(formatStatusLabel('timedOut')).toBe('timed out');
+    expect(formatStatusLabel('timedout')).toBe('timed out');
     expect(formatStatusLabel('didnotrun')).toBe("didn't run");
     expect(formatStatusLabel('never-run')).toBe('never run');
     expect(formatStatusLabel('passed')).toBe('passed');
@@ -275,7 +275,7 @@ describe('cluster color helpers', () => {
     });
 
     test('only the corroborated verdict claims the fix was verified', () => {
-      expect(fixVerificationBadge('diagnosis-verified')).toMatchObject({ label: 'Fix verified', color: 'success' });
+      expect(fixVerificationBadge('diagnosis-verified')).toMatchObject({ label: 'Verified', color: 'success' });
       // "Stopped failing" must not read as a verified fix — nothing says which
       // change did it.
       expect(fixVerificationBadge('stopped-failing')).toMatchObject({ label: 'Stopped failing', color: 'info' });

@@ -222,16 +222,21 @@ jobs:
 
       # The containers boot while node and the dependencies install; the readiness
       # probes below collect them once that work is done.
-      - name: Start MinIO (local S3 server)
+      # MinIO stopped publishing free Docker images (repo archived in 2026), so
+      # the S3-compatible test backend is RustFS (Apache-2.0, S3 API on :9000).
+      # The console is off — the tests only touch the S3 API.
+      - name: Start RustFS (local S3 server)
         if: matrix.storage == 's3'
         working-directory: .
         run: |
           docker run -d \
-            --name minio \
+            --name rustfs \
             -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin \
-            -e MINIO_ROOT_PASSWORD=minioadmin \
-            minio/minio server /data
+            -e RUSTFS_ACCESS_KEY=PIWICIACCESSKEY \
+            -e RUSTFS_SECRET_KEY=PIWICISECRETKEY \
+            -e RUSTFS_ADDRESS=:9000 \
+            -e RUSTFS_CONSOLE_ENABLE=false \
+            rustfs/rustfs:1.0.0-rc.6 /data
 
       - name: Start PostgreSQL
         if: matrix.database == 'postgres'
@@ -265,11 +270,13 @@ jobs:
         if: matrix.storage == 's3'
         working-directory: .
         env:
-          AWS_ACCESS_KEY_ID: minioadmin
-          AWS_SECRET_ACCESS_KEY: minioadmin
+          AWS_ACCESS_KEY_ID: PIWICIACCESSKEY
+          AWS_SECRET_ACCESS_KEY: PIWICISECRETKEY
         run: |
-          # Wait up to 30 s for MinIO to become healthy
-          timeout 30 bash -c 'until curl -sf http://localhost:9000/minio/health/live; do sleep 1; done'
+          # Wait up to 60 s for the S3 API to answer with our credentials. This
+          # is server-agnostic (a successful ListBuckets), so it also confirms
+          # auth works, not just that an HTTP port is open.
+          timeout 60 bash -c 'until aws --endpoint-url http://localhost:9000 s3 ls >/dev/null 2>&1; do sleep 2; done'
           # Bucket for the main app server under test, plus the bucket the
           # dedicated s3-storage.spec.ts adapter tests target.
           aws --endpoint-url http://localhost:9000 s3 mb s3://piwi-main --region us-east-1
@@ -313,8 +320,8 @@ jobs:
           PIWI_S3_ENDPOINT: ${{ matrix.storage == 's3' && 'http://localhost:9000' || '' }}
           PIWI_S3_BUCKET: ${{ matrix.storage == 's3' && 'piwi-main' || '' }}
           PIWI_S3_REGION: ${{ matrix.storage == 's3' && 'us-east-1' || '' }}
-          PIWI_S3_ACCESS_KEY_ID: ${{ matrix.storage == 's3' && 'minioadmin' || '' }}
-          PIWI_S3_SECRET_ACCESS_KEY: ${{ matrix.storage == 's3' && 'minioadmin' || '' }}
+          PIWI_S3_ACCESS_KEY_ID: ${{ matrix.storage == 's3' && 'PIWICIACCESSKEY' || '' }}
+          PIWI_S3_SECRET_ACCESS_KEY: ${{ matrix.storage == 's3' && 'PIWICISECRETKEY' || '' }}
           PIWI_S3_FORCE_PATH_STYLE: ${{ matrix.storage == 's3' && 'true' || '' }}
           PIWI_DATABASE_URL: ${{ matrix.database == 'postgres' && 'postgresql://postgres:postgres@localhost:5432/playwright_main' || '' }}
           # --- Dedicated adapter specs (s3-storage.spec.ts / postgresql.spec.ts) ---
@@ -322,8 +329,8 @@ jobs:
           PIWI_S3_TEST_ENDPOINT: ${{ matrix.storage == 's3' && 'http://localhost:9000' || '' }}
           PIWI_S3_TEST_BUCKET: ${{ matrix.storage == 's3' && 'playwright-test' || '' }}
           PIWI_S3_TEST_REGION: ${{ matrix.storage == 's3' && 'us-east-1' || '' }}
-          PIWI_S3_TEST_ACCESS_KEY_ID: ${{ matrix.storage == 's3' && 'minioadmin' || '' }}
-          PIWI_S3_TEST_SECRET_ACCESS_KEY: ${{ matrix.storage == 's3' && 'minioadmin' || '' }}
+          PIWI_S3_TEST_ACCESS_KEY_ID: ${{ matrix.storage == 's3' && 'PIWICIACCESSKEY' || '' }}
+          PIWI_S3_TEST_SECRET_ACCESS_KEY: ${{ matrix.storage == 's3' && 'PIWICISECRETKEY' || '' }}
           PIWI_POSTGRES_TEST_URL: ${{ matrix.database == 'postgres' && 'postgresql://postgres:postgres@localhost:5432/playwright_test' || '' }}
         # The servers pointed at .test-temp only create their database file, not
         # the directory holding it, and Playwright starts them before globalSetup.

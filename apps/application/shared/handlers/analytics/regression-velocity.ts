@@ -41,8 +41,9 @@ export async function getAnalyticsRegressionVelocity(
   ];
   if (allowed !== 'all') conditions.push(inArray(testRuns.projectId, allowed));
   if (scope.fullRunsOnly) conditions.push(eq(testRuns.isFullRun, 1));
-  if (scope.environment) conditions.push(eq(testRuns.environment, scope.environment));
-  if (scope.branch) conditions.push(eq(testRuns.branch, scope.branch));
+  if (scope.environments && scope.environments.length > 0)
+    conditions.push(inArray(testRuns.environment, scope.environments));
+  if (scope.branches && scope.branches.length > 0) conditions.push(inArray(testRuns.branch, scope.branches));
 
   // One aggregated row per run; bucketed and split into current/previous in JS.
   const rows: any[] = await db

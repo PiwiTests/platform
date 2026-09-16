@@ -77,6 +77,8 @@ export interface ClusterNewPayload {
   runId: number;
   sampleErrorExcerpt?: string;
   affectedCases?: number;
+  /** The tracker issue the cluster is known by, named in the message when set. */
+  knownIssue?: { key: string; url: string };
 }
 
 /**
@@ -165,7 +167,19 @@ export function buildTopFailures(rows: TopFailureInput[], limit: number = TOP_FA
   });
 }
 
-/** A cluster whose every affected test passed again in a full run. */
+/**
+ * The author of a fixing commit, resolved through the SCM provider when a token
+ * exists. Lets the fix outcome reach the person who did the work directly — by
+ * email when the address belongs to a registered Piwi user, and as a targeted
+ * browser notification for that user — on top of the normal subscription
+ * routing. Absent when no token is configured or the host exposes no email.
+ */
+export interface FixAuthor {
+  name: string;
+  email: string;
+}
+
+/** A cluster whose every affected test passed again. */
 export interface ClusterFixedPayload {
   clusterId: number;
   projectId: number;
@@ -183,6 +197,10 @@ export interface ClusterFixedPayload {
   testCount?: number;
   /** True when this verdict also moved the triage status from open to resolved. */
   resolved?: boolean;
+  /** Author of the fixing commit ({@link commit}), when it could be resolved. */
+  fixAuthor?: FixAuthor;
+  /** The tracker issue the cluster is known by, named in the message when set. */
+  knownIssue?: { key: string; url: string };
 }
 
 /** A cluster with a recorded fix that is failing again. */
@@ -198,6 +216,10 @@ export interface ClusterRegressedPayload {
   fixLandedRunId: number | null;
   /** True when this verdict also moved the triage status from resolved back to open. */
   reopened?: boolean;
+  /** Author of the fix that did not hold, when it could be resolved. */
+  fixAuthor?: FixAuthor;
+  /** The tracker issue the cluster is known by, named in the message when set. */
+  knownIssue?: { key: string; url: string };
 }
 
 export interface DiagnosisCompletedPayload {

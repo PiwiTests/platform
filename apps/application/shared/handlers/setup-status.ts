@@ -26,8 +26,9 @@ import {
   appSettings,
   quarantinedTests,
   failureClusters,
+  testRunsCases,
 } from '../../server/database/schema';
-import { eq, isNotNull } from 'drizzle-orm';
+import { and, eq, isNotNull, or } from 'drizzle-orm';
 
 import type { DrizzleDB } from './db';
 
@@ -43,7 +44,8 @@ export type SetupCapabilityId =
   | 'scm'
   | 'tags'
   | 'markers'
-  | 'quarantine';
+  | 'quarantine'
+  | 'green-samples';
 
 export interface SetupCapability {
   id: SetupCapabilityId;
@@ -74,6 +76,7 @@ export async function getSetupStatus(db: DrizzleDB): Promise<SetupStatus> {
     hasTags,
     hasMarkers,
     hasQuarantine,
+    hasGreenSamples,
   ] = await Promise.all([
     exists(db, db.select({ id: testRuns.id }).from(testRuns).limit(1)),
     exists(db, db.select({ id: networkRequests.id }).from(networkRequests).limit(1)),
@@ -93,6 +96,19 @@ export async function getSetupStatus(db: DrizzleDB): Promise<SetupStatus> {
     exists(db, db.select({ id: tags.id }).from(tags).limit(1)),
     exists(db, db.select({ id: markers.id }).from(markers).limit(1)),
     exists(db, db.select({ id: quarantinedTests.id }).from(quarantinedTests).limit(1)),
+    exists(
+      db,
+      db
+        .select({ id: testRunsCases.id })
+        .from(testRunsCases)
+        .where(
+          and(
+            eq(testRunsCases.status, 'passed'),
+            or(isNotNull(testRunsCases.ariaSnapshotPayloadId), isNotNull(testRunsCases.ariaSnapshot)),
+          ),
+        )
+        .limit(1),
+    ),
   ]);
 
   // AI also counts as active when pinned by environment — an env-configured
@@ -113,6 +129,7 @@ export async function getSetupStatus(db: DrizzleDB): Promise<SetupStatus> {
     { id: 'tags', active: hasTags },
     { id: 'markers', active: hasMarkers },
     { id: 'quarantine', active: hasQuarantine },
+    { id: 'green-samples', active: hasGreenSamples },
   ];
 
   return { capabilities };

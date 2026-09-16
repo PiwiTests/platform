@@ -78,6 +78,7 @@ const creatingProject = ref(false);
 // Desktop shell only: a folder picked to start the project from. Its inspection
 // prefills the name; the folder is linked to the project once created.
 const newProjectFolder = ref<string | null>(null);
+const { propose: proposePrevRuns } = useDesktopImportPrevRuns();
 
 function onFolderDetected(inspection: DesktopFolderInspection) {
   if (inspection.suggestedName) newProject.name = inspection.suggestedName;
@@ -117,6 +118,9 @@ async function handleCreateProject() {
       try {
         await setDesktopProjectLink(created.project.id, folder);
         folderLinked = true;
+        // Offer to backfill history from the runs already in the linked folder;
+        // the proposal survives the navigation to the project page below.
+        void proposePrevRuns(newProject.name?.trim(), folder);
       } catch (error) {
         toast.add({
           title: 'Project created, but the folder could not be linked',
@@ -308,12 +312,11 @@ const columns: TableColumn<ProjectWithStats>[] = [
           </template>
           <template #branch-cell="{ row }">
             <div v-if="row.original.latestRun?.metadata?.scm" class="flex items-center gap-1 flex-wrap">
-              <span
+              <BranchLabel
                 v-if="row.original.latestRun.metadata.scm.branch"
-                class="text-xs font-medium bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded"
-              >
-                {{ row.original.latestRun.metadata.scm.branch }}
-              </span>
+                :name="row.original.latestRun.metadata.scm.branch"
+                class="text-xs max-w-[12rem]"
+              />
               <code v-if="row.original.latestRun.metadata.scm.commit" class="text-xs text-gray-500">
                 {{ row.original.latestRun.metadata.scm.commit.substring(0, 7) }}
               </code>
@@ -351,8 +354,14 @@ const columns: TableColumn<ProjectWithStats>[] = [
           </template>
           <template #actions-cell="{ row }">
             <div class="flex justify-end gap-2">
-              <UButton :to="`/projects/${row.original.id}`" size="sm" variant="outline">View details</UButton>
-              <UButton :to="`/projects/${row.original.id}/edit`" size="sm" variant="ghost" icon="i-lucide-pencil" />
+              <UButton
+                :to="`/projects/${row.original.id}/edit`"
+                size="sm"
+                variant="ghost"
+                icon="i-lucide-pencil"
+                :aria-label="`Edit ${row.original.label || row.original.name}`"
+                title="Edit project"
+              />
             </div>
           </template>
         </UTable>
@@ -375,7 +384,7 @@ const columns: TableColumn<ProjectWithStats>[] = [
           <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">npx @piwitests/reporter init</code> wires a Playwright
           project in one command. See the <NuxtLink to="/" class="text-primary hover:underline">home page</NuxtLink> for
           a copy-paste setup, or the
-          <DocLink to="getting-started#fast-path-one-command" no-icon class="text-primary hover:underline"
+          <DocLink to="guide/getting-started#fast-path-one-command" no-icon class="text-primary hover:underline"
             >getting-started docs</DocLink
           >.
         </p>

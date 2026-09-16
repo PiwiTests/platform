@@ -7,8 +7,12 @@
  * would silently fork brand-new clusters and orphan all the triage history
  * (status, notes, diagnoses) attached to the old ones.
  *
- * This backfill recomputes each cluster's fingerprint from its stored
- * `sampleError` and migrates in place:
+ * This backfill recomputes each cluster's fingerprint from its immutable
+ * `fingerprintSample` (the raw error captured at creation, falling back to
+ * `sampleError` for rows created before that column existed) and migrates in
+ * place. Reading the frozen sample rather than the display `sampleError` keeps
+ * the re-fingerprint deterministic even after the display exemplar has been
+ * refreshed to a later occurrence:
  *  - unchanged fingerprint  → already current, skip (keeps the pass idempotent)
  *  - fingerprint now equals another cluster in the same project → merge into it
  *    (the older/lower id wins so the longest-lived triage state survives)
@@ -32,6 +36,7 @@ export async function reclusterFailureFingerprints(db: DrizzleDB): Promise<{ upd
       projectId: failureClusters.projectId,
       fingerprint: failureClusters.fingerprint,
       sampleError: failureClusters.sampleError,
+      fingerprintSample: failureClusters.fingerprintSample,
     })
     .from(failureClusters)
     .orderBy(asc(failureClusters.id));
@@ -40,9 +45,11 @@ export async function reclusterFailureFingerprints(db: DrizzleDB): Promise<{ upd
   let merged = 0;
 
   for (const cluster of clusters) {
-    if (!cluster.sampleError) continue; // nothing to recompute from — leave as-is
+    // Prefer the frozen fingerprint source; older rows only have sampleError.
+    const source = cluster.fingerprintSample ?? cluster.sampleError;
+    if (!source) continue; // nothing to recompute from — leave as-is
 
-    const fp = await computeErrorFingerprint(cluster.sampleError);
+    const fp = await computeErrorFingerprint(source);
     if (fp.fingerprint === cluster.fingerprint) continue; // already on the current algorithm
 
     const [survivor] = await db

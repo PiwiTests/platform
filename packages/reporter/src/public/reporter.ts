@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import type { FullConfig, Suite, TestCase, TestResult, FullResult } from '@playwright/test/reporter';
-import { resolveOptions, usedDesktopDiscovery } from '../internal/config/env.js';
+import { resolveOptions, usedDesktopDiscovery, PIWI_DEFAULTED_CAPTURE_ENV } from '../internal/config/env.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient } from '../internal/transport/http-client.js';
 import { Uploader } from '../internal/submit/uploader.js';
@@ -18,16 +18,18 @@ import { detectCiRunLabel } from '../internal/support/ci.js';
 import { workerIndexOf } from '../internal/support/worker-index.js';
 import { detectCliFileFilters } from '../internal/support/cli-filters.js';
 import { readSelectionStamp } from '../internal/support/selection-env.js';
+import { isListMode } from '../internal/support/run-mode.js';
 import { createGlobalSetup } from './global-setup.js';
 import { wrapConfig } from './config-wrapper.js';
 import { toWireTestCase } from '../internal/submit/serializer.js';
 import {
   mergeAnnotations,
   classifyStatus,
+  expectedFailureError,
   resolveUnrunReason,
   linkBlockedTests,
 } from '../internal/collect/skip-classify.js';
-import { collectTestMetadata, collectTestTags } from '../internal/collect/test-meta.js';
+import { collectTestLocks, collectTestMetadata, collectTestTags } from '../internal/collect/test-meta.js';
 import { buildErrorText } from '../internal/collect/error-text.js';
 import { RunSubmitter } from '../internal/submit/run-submitter.js';
 import { Logger } from '../internal/support/logger.js';
@@ -82,6 +84,12 @@ export class PiwiDashboardReporter {
   private shardInfo: ShardInfo | null = null;
   private metadata: Record<string, any> = {};
   private enabled: boolean;
+  /**
+   * True under `playwright test --list`, where Playwright still constructs this
+   * reporter and fires `onBegin`/`onEnd` but runs no tests. Registering and
+   * finalizing a run would create an empty phantom run and upload an empty report.
+   */
+  private readonly listMode: boolean;
   /** True when the server URL and API key came from the desktop app, not from config. */
   private viaDesktopApp: boolean;
   private isFullRun = true;
@@ -105,6 +113,7 @@ export class PiwiDashboardReporter {
   constructor(rawOptions: Record<string, any> = {}) {
     this.options = resolveOptions(rawOptions);
     this.enabled = this.options.enabled !== false && !!this.options.serverUrl;
+    this.listMode = isListMode();
     this.viaDesktopApp = usedDesktopDiscovery();
     this.runLabel = this.options.runLabel || detectCiRunLabel();
     this.instanceId = computeInstanceId(this.options.projectName!, this.runLabel);
@@ -145,6 +154,10 @@ export class PiwiDashboardReporter {
 
   /** Playwright reporter hook: called once at the start of the test run */
   onBegin(config: FullConfig, suite: Suite): void {
+    if (this.listMode) {
+      this.logger.debug('List mode (--list) detected — no run registered or report uploaded.');
+      return;
+    }
     if (!this.enabled) {
       this.logger.info('Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');
       return;
@@ -160,6 +173,16 @@ export class PiwiDashboardReporter {
     this.logger.info(
       `Starting test run for project: ${this.options.projectName} (Playwright v${this.playwrightVersion})`,
     );
+
+    // `wrapConfig` records a summary of the capture options it defaulted; name
+    // them once so a half-installed project knows failure evidence is on without
+    // the fixtures.
+    const defaulted = process.env[PIWI_DEFAULTED_CAPTURE_ENV];
+    if (defaulted) {
+      this.logger.info(
+        `Defaulted Playwright ${defaulted} for failure evidence (set defaultCapture: false to opt out).`,
+      );
+    }
 
     // Detect partial-run filters so the dashboard can distinguish full-suite runs from ad-hoc focused runs.
     const rawConfig = config as any;
@@ -255,6 +278,7 @@ export class PiwiDashboardReporter {
     const event: StreamEvent = {
       type: 'step-begin',
       title: step.title,
+      subtitle: typeof step.subtitle === 'string' && step.subtitle.length > 0 ? step.subtitle : null,
       location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : 'unknown',
       stepCategory: cat,
       parentTitle: test?.title || null,
@@ -276,6 +300,7 @@ export class PiwiDashboardReporter {
     const event: StreamEvent = {
       type: 'step-end',
       title: step.title,
+      subtitle: typeof step.subtitle === 'string' && step.subtitle.length > 0 ? step.subtitle : null,
       location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : 'unknown',
       status: step.error ? 'failed' : 'passed',
       duration: step.duration || 0,
@@ -310,6 +335,7 @@ export class PiwiDashboardReporter {
     const annotations = mergeAnnotations(test, result);
     const status = classifyStatus(result.status, annotations);
     const tags = collectTestTags(test);
+    const locks = collectTestLocks(test);
 
     // Playwright calls onTestEnd once per attempt (result.retry increases), so
     // accumulate the attempt list per test and snapshot it onto every attempt's
@@ -332,7 +358,9 @@ export class PiwiDashboardReporter {
       // Effective per-test timeout (reflects project config + describe-level
       // overrides). `0` means unbounded; kept as-is so the dashboard can flag it.
       timeout: test.timeout ?? null,
-      error: buildErrorText(result),
+      // A `test.fail()` test that passed is now `failed` with no recorded error;
+      // Playwright reports the same line, so synthesize it.
+      error: expectedFailureError(result.status, annotations) ?? buildErrorText(result),
       retries: result.retry,
       attempts: attempts.map((a) => ({ ...a })),
       workerIndex: workerIndexOf(result),
@@ -344,6 +372,7 @@ export class PiwiDashboardReporter {
       suiteConfig,
       testAnnotations: annotations.length ? annotations : null,
       tags: tags.length ? tags : null,
+      locks: locks.length ? locks : null,
       testMeta: collectTestMetadata(annotations),
       // An annotation-less skip reclassified to `didnotrun` is a serial-group
       // cascade: an earlier test failed and Playwright skipped the rest.
@@ -448,6 +477,7 @@ export class PiwiDashboardReporter {
       const { suitePath, suiteConfig } = this.metadataCollector.getSuiteInfo(test);
       const declaredAnnotations = (test.annotations ?? []) as TestAnnotation[];
       const tags = collectTestTags(test);
+      const locks = collectTestLocks(test);
       const testCase: CollectedTestCase = {
         type: 'complete',
         title: test.title,
@@ -466,6 +496,7 @@ export class PiwiDashboardReporter {
         suiteConfig,
         testAnnotations: declaredAnnotations.length ? declaredAnnotations : null,
         tags: tags.length ? tags : null,
+        locks: locks.length ? locks : null,
         testMeta: collectTestMetadata(declaredAnnotations),
         didNotRunReason: reason,
       };
@@ -482,7 +513,7 @@ export class PiwiDashboardReporter {
 
   /** Playwright reporter hook: called when the full test run finishes */
   async onEnd(result: FullResult): Promise<void> {
-    if (!this.enabled) return;
+    if (this.listMode || !this.enabled) return;
 
     // Tests Playwright never reported were cut off by a run-level condition —
     // the global timeout, the failure budget, or an interruption.

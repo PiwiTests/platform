@@ -411,7 +411,7 @@ function describeSteps(entry: TestFunctionInfo): string {
         <SectionCard title="Test function catalog" icon="i-lucide-function-square" :count="entries.length || null">
           <template #subtitle>
             Page-object methods and helpers the
-            <DocLink to="extension#connecting-to-a-piwi-instance" no-icon class="text-primary hover:underline"
+            <DocLink to="features/extension#connecting-to-a-piwi-instance" no-icon class="text-primary hover:underline"
               >Piwi Picker extension</DocLink
             >
             matches a recording against, to generate calls to your own code instead of raw locator lines.
@@ -436,7 +436,7 @@ function describeSteps(entry: TestFunctionInfo): string {
                 >Piwi Picker on the Chrome Web Store</a
               >
               (Chrome and Edge) — setup in the
-              <DocLink to="extension" no-icon class="text-primary hover:underline">extension docs</DocLink>.
+              <DocLink to="features/extension" no-icon class="text-primary hover:underline">extension docs</DocLink>.
             </p>
           </EmptyState>
           <div v-else class="divide-y divide-gray-200 dark:divide-gray-800">

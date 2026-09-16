@@ -45,7 +45,6 @@ async function respond(
   bundle: Awaited<ReturnType<typeof collectExecutionBundle>>,
   format: ExportFormat,
   id: number,
-  query?: URLSearchParams,
 ): Promise<Response> {
   if (!bundle) {
     return new Response(JSON.stringify({ statusCode: 404, message: 'Not found' }), {
@@ -57,7 +56,6 @@ async function respond(
   const built = await buildExport(bundle, format, id, {
     reader: demoAssetReader,
     budget: { maxInlineBytes: DEFAULT_EXPORT_MAX_INLINE_BYTES, maxTotalBytes: DEFAULT_EXPORT_MAX_BYTES },
-    print: query?.get('print') === '1',
   });
 
   return new Response(built.bytes as BufferSource, {
@@ -74,7 +72,7 @@ async function respond(
 export async function apiExportTestRunCase(id: number, query?: URLSearchParams): Promise<Response> {
   const db = await getDemoDb();
   const bundle = await collectExecutionBundle(db, id, { maxCases: 1, piwiVersion: 'demo' });
-  return respond(bundle, parseFormat(query), id, query);
+  return respond(bundle, parseFormat(query), id);
 }
 
 export async function apiExportFailureCluster(id: number, query?: URLSearchParams): Promise<Response> {
@@ -86,5 +84,5 @@ export async function apiExportFailureCluster(id: number, query?: URLSearchParam
       : Math.min(DEFAULT_EXPORT_MAX_CASES, Math.max(1, Number(requested) || DEFAULT_EXPORT_MAX_CASES));
 
   const bundle = await collectClusterBundle(db, id, { maxCases, piwiVersion: 'demo' });
-  return respond(bundle, parseFormat(query), id, query);
+  return respond(bundle, parseFormat(query), id);
 }

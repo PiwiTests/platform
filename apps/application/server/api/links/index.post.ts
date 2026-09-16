@@ -4,20 +4,21 @@ import { entityLinks } from '../../database/schema';
 import { eq } from 'drizzle-orm';
 import { createLink } from '#shared/handlers/links';
 import { z } from 'zod';
-import { unfurlUrl } from '../../utils/unfurl';
+import { detectProviderWithConnections } from '../../utils/integrations/link-resolve';
+import { unfurlLink } from '../../utils/integrations/link-unfurl';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Links'],
     summary: 'Create an entity link',
     description:
-      'Attach an external URL to a run, test-case run, or test case. Provider is auto-detected from the URL.',
+      'Attach an external URL to a run, test-case run, test case, or failure cluster. Provider is auto-detected from the URL.',
     'x-required-roles': ['administrator', 'reporter'],
   },
 });
 
 const createLinkSchema = z.object({
-  entityType: z.enum(['test_run', 'test_runs_case', 'test_case']),
+  entityType: z.enum(['test_run', 'test_runs_case', 'test_case', 'failure_cluster']),
   entityId: z.number().int().positive(),
   url: z.string().url('Must be a valid URL'),
   title: z.string().max(200).nullable().optional(),
@@ -44,7 +45,7 @@ export default eventHandler(async (event) => {
 
   let result: { link: any };
   try {
-    result = await createLink(db, { entityType, entityId, url, title });
+    result = await createLink(db, { entityType, entityId, url, title }, (u) => detectProviderWithConnections(db, u));
   } catch (err) {
     throw apiError({
       statusCode: 404,
@@ -57,8 +58,9 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 500, message: 'Failed to create link' });
   }
 
-  // Best-effort unfurl (server-only enrichment) — tries rich provider first, falls back to OpenGraph
-  const { title: fetchedTitle, statusText, statusColor } = await unfurlUrl(url, db);
+  // Best-effort unfurl (server-only enrichment) — through the connection when the
+  // link matched one, otherwise the rich provider / OpenGraph path.
+  const { title: fetchedTitle, statusText, statusColor } = await unfurlLink(db, inserted);
   if (fetchedTitle || statusText) {
     await db
       .update(entityLinks)

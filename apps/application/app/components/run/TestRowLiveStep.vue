@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { stepLabel, stepLabelParts } from '@piwitests/core/step-analysis';
 import type { LiveStepInfo } from '~/utils/live-steps';
 
 /**
@@ -6,7 +7,13 @@ import type { LiveStepInfo } from '~/utils/live-steps';
  * Replaces the bare "In progress..." placeholder while step events stream in;
  * the outcome icon lingers on the last step until the next one begins.
  */
-defineProps<{ step: LiveStepInfo }>();
+const props = defineProps<{ step: LiveStepInfo }>();
+
+// The title reads first; the target (locator or URL) follows in a muted style
+// after a middot — `Click · getByRole(…)`. `label` stays the joined plain text
+// for the truncation tooltip.
+const parts = computed(() => stepLabelParts(props.step));
+const label = computed(() => stepLabel(props.step));
 </script>
 
 <template>
@@ -18,6 +25,8 @@ defineProps<{ step: LiveStepInfo }>();
       class="size-3 shrink-0"
     />
     <UIcon v-else name="i-lucide-loader-circle" class="size-3 shrink-0 animate-spin" />
-    <span class="truncate" :title="step.title">{{ step.title }}</span>
+    <span class="truncate" :title="label">
+      {{ parts.title }}<span v-if="parts.subtitle" class="text-info/60"> · {{ parts.subtitle }}</span>
+    </span>
   </span>
 </template>

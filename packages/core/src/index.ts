@@ -17,6 +17,7 @@ export * from './describe-failure';
 export * from './gate';
 export * from './locator-methods';
 export * from './status-classify';
+export * from './mask';
 export * from './step-analysis';
 export * from './test-meta';
 export * from './wire';

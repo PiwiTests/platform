@@ -19,6 +19,7 @@ import { resolveDefaultBranch } from '../scm/default-branch';
 import { resolveRunBranch } from '../run-branch';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { describeCluster } from '#shared/describe-cluster';
+import { getClusterKnownIssue } from '../integrations/known-issue';
 import type { DbClient } from '../../database';
 
 /**
@@ -101,10 +102,15 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
     }
 
     // Perf regression: the run is markedly slower than the median of prior
-    // completed runs on the same branch.
+    // completed runs on the same branch and in the same environment.
     if (runRow.duration && runRow.duration > 0) {
       const priorRuns = await db
-        .select({ duration: testRuns.duration, branch: testRuns.branch, metadata: testRuns.metadata })
+        .select({
+          duration: testRuns.duration,
+          branch: testRuns.branch,
+          environment: testRuns.environment,
+          metadata: testRuns.metadata,
+        })
         .from(testRuns)
         .where(
           and(
@@ -118,6 +124,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
 
       const priorDurations = priorRuns
         .filter((r) => (r.branch ?? resolveRunBranch(r.metadata)) === branch)
+        .filter((r) => (r.environment ?? null) === (runRow.environment ?? null))
         .map((r) => r.duration ?? 0)
         .filter((d) => d > 0)
         .slice(0, PERF_BASELINE_RUNS);
@@ -151,6 +158,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
         .from(testRunsCases)
         .where(and(eq(testRunsCases.testRunId, runId), eq(testRunsCases.failureClusterId, cluster.id)));
 
+      const knownIssue = (await getClusterKnownIssue(db, cluster.id).catch(() => null)) ?? undefined;
       await emitNotification(db, 'cluster.new', {
         clusterId: cluster.id,
         projectId: runRow.projectId,
@@ -160,6 +168,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
         runId,
         sampleErrorExcerpt: errorExcerpt(cluster.sampleError),
         affectedCases: affected.length,
+        knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
       });
     }
   } catch (e) {

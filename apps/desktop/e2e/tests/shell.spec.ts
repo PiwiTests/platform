@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures';
+import type { TauriPage } from '@srsholmes/tauri-playwright';
 
 /**
  * Smoke test for the shell integration, driving the real webview.
@@ -18,7 +19,21 @@ import { test, expect } from '../fixtures';
  * `evaluate()` runs its argument as `await (<script>)`, so each script must be a
  * single expression; the plugin awaits it and hands back the resolved value.
  */
-test('the dashboard can reach the shell IPC commands', async ({ tauriPage }) => {
+test('the dashboard can reach the shell IPC commands', async ({ tauriPage: fixturePage }) => {
+  // Only the real-app ("tauri") project runs (see fixtures.ts), so the fixture is
+  // always a TauriPage. Narrow the declared `TauriPage | BrowserPageAdapter` union
+  // so the window helper below is reachable; the rest of the test uses it through
+  // the same `tauriPage` name.
+  const tauriPage = fixturePage as TauriPage;
+
+  // The control socket accepts commands as soon as the plugin binds it, which can
+  // be a beat before the shell's `main` window is created (the heavy startup work
+  // — picking a port, spawning the Node sidecar, building the tray — runs on the
+  // main thread first). Every eval-based command only retries window resolution
+  // for ~2s, so gate on the window's existence up front (`list_windows` tolerates
+  // an empty list) instead of letting the first probe race that budget.
+  await tauriPage.waitForWindow((w) => w.label === 'main', { timeout: 60_000 });
+
   // The shell boots the sidecar server then navigates the window to it; wait for
   // the app shell to render before probing.
   await tauriPage.waitForSelector('#__nuxt, [data-nuxt-root], body *', 60_000);

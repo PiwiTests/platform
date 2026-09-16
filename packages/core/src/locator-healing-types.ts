@@ -22,6 +22,21 @@ export interface RankedLocator {
 }
 
 /**
+ * A suggestion to narrow a strict-mode-ambiguous locator with `.visible()`:
+ * when the failing locator matches several elements but only one of them is
+ * visible, adding `.visible()` resolves the strict-mode violation without
+ * changing the locator itself. Surfaced beside the replacement locators.
+ */
+export interface NarrowingSuggestion {
+  /** The chain modifier to add before the action — `visible` today. */
+  method: 'visible';
+  /** How many elements the failing locator matched (the strict-mode count). */
+  matchCount: number;
+  /** How many of those were visible — always 1 when the suggestion is shown. */
+  visibleCount: number;
+}
+
+/**
  * The single recommended fix, chosen from the stability-ranked alternatives so
  * it keeps the developer's original locator style where that style is stable
  * enough — a minimal, idiomatic edit. The full ranked menu stays available; this
@@ -51,6 +66,8 @@ export interface SelectorCounts {
   classes?: Record<string, number>;
   /** How many elements share this element's role *and* accessible name — what `getByRole(role, { name })` would really match. Absent when unknown (an older capture, or a probe run without the structural pass). */
   roleName?: number;
+  /** Of the `roleName` matches, how many are visible (a laid-out box, or an `offsetParent`) — what `getByRole(role, { name }).visible()` would match. Absent when unknown. */
+  visibleRoleName?: number;
   /** How many role-bearing elements share this element's exact text. Absent when unknown. */
   text?: number;
   /** How many elements share this element's `placeholder` — what `getByPlaceholder` would really match. Absent when unknown. */
@@ -240,6 +257,12 @@ export interface LocatorHealingResult {
    * from the active alternative list. Null when no alternatives are available.
    */
   recommendation: LocatorFixRecommendation | null;
+  /**
+   * When the failure is a strict-mode violation and only one of the matches is
+   * visible, a suggestion to add `.visible()` beside the replacement locators.
+   * Gated on the run's stored Playwright being 1.63 or later. Null otherwise.
+   */
+  narrowingSuggestion?: NarrowingSuggestion | null;
   /**
    * When the alternatives come from a stored snapshot (`prior-run` /
    * `fingerprint` / `cross-test`), the time that snapshot was last captured —

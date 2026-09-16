@@ -7,6 +7,8 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { failureClusters } from '../database/schema';
 import { callAiProvider } from './ai-provider';
+import { resolveProjectAiLanguage } from './ai-settings';
+import { languageInstruction } from './ai-system-prompt';
 import type { ResolvedAiRole } from '~~/types/api';
 import type { DbClient } from '../database';
 
@@ -49,6 +51,7 @@ const SAMPLE_CAP = 800;
 export async function generateClusterTitles(
   role: ResolvedAiRole,
   clusters: ClusterForNaming[],
+  language?: string | null,
 ): Promise<Map<number, string>> {
   const result = new Map<number, string>();
   if (clusters.length === 0) return result;
@@ -60,8 +63,9 @@ export async function generateClusterTitles(
     )
     .join('\n\n');
 
+  const langLine = languageInstruction(language);
   const res = await callAiProvider(role, {
-    system: NAMING_SYSTEM_PROMPT,
+    system: langLine ? `${NAMING_SYSTEM_PROMPT}\n${langLine}` : NAMING_SYSTEM_PROMPT,
     user: `Name these ${clusters.length} failure clusters. Return one title per id.\n\n${user}`,
     jsonSchema: NAMING_JSON_SCHEMA as unknown as object,
     maxTokens: 1024,
@@ -110,7 +114,8 @@ export async function nameNewClusters(
 
   if (rows.length === 0) return 0;
 
-  const titles = await generateClusterTitles(role, rows);
+  const language = await resolveProjectAiLanguage(db, projectId);
+  const titles = await generateClusterTitles(role, rows, language);
   let named = 0;
   for (const [id, title] of titles) {
     await db.update(failureClusters).set({ title, updatedAt: new Date() }).where(eq(failureClusters.id, id));

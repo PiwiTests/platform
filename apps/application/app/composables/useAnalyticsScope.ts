@@ -5,16 +5,18 @@ export interface AnalyticsScopeState {
   days: number;
   /** Selected project ids; empty = every project the caller can see. */
   projectIds: number[];
-  environment: string | null;
-  branch: string | null;
+  /** Selected environments; empty = every environment. */
+  environments: string[];
+  /** Selected branches; empty = every branch. */
+  branches: string[];
   fullRunsOnly: boolean;
 }
 
 export const DEFAULT_ANALYTICS_SCOPE_STATE: AnalyticsScopeState = {
   days: DEFAULT_ANALYTICS_DAYS,
   projectIds: [],
-  environment: null,
-  branch: null,
+  environments: [],
+  branches: [],
   fullRunsOnly: true,
 };
 
@@ -40,8 +42,8 @@ export function useAnalyticsScope() {
   const scope = computed<AnalyticsScope>(() => ({
     days: state.value.days,
     projectIds: state.value.projectIds.length > 0 ? state.value.projectIds : undefined,
-    environment: state.value.environment,
-    branch: state.value.branch,
+    environments: state.value.environments.length > 0 ? state.value.environments : undefined,
+    branches: state.value.branches.length > 0 ? state.value.branches : undefined,
     fullRunsOnly: state.value.fullRunsOnly,
   }));
 

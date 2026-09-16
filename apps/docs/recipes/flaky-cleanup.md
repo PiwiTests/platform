@@ -58,8 +58,8 @@ You will not fix them all today, and disabling them is how suites rot. The usual
 `--grep-invert @quarantine` approach stops the test running, so nothing ever proves it recovered and the
 list only grows.
 
-[Quarantine in Piwi](../flaky-tests#quarantine-with-a-way-out) keeps the test running and reporting. It
-is excluded from the [CI gate](../ci#blocking-a-merge)'s verdict and nothing else:
+[Quarantine in Piwi](/features/flaky-tests#quarantine-with-a-way-out) keeps the test running and reporting. It
+is excluded from the [CI gate](/guide/ci#blocking-a-merge)'s verdict and nothing else:
 
 - Passing runs accumulate as a **streak**; one failure resets it.
 - After five consecutive passes the test is flagged **ready to release** — you're told, not asked.
@@ -74,12 +74,12 @@ it can't grow unbounded.
 
 A flaky fix is easy to believe and hard to confirm. Each test case has a **stability trend** — pass
 rate, flaky rate, and average duration bucketed over time — which is the honest answer to "did that
-help?". If the suite-wide picture is what you need, [Analytics](../analytics) lifts the same signals
+help?". If the suite-wide picture is what you need, [Analytics](/features/analytics) lifts the same signals
 across every project, including wasted CI minutes and a global flaky leaderboard.
 
 ## Other ways in
 
-**Ask your agent.** `list_flaky_tests` over the [MCP server](../mcp) returns the scores, impact ranking,
+**Ask your agent.** `list_flaky_tests` over the [MCP server](/features/mcp) returns the scores, impact ranking,
 and root-cause category; `get_test_stability_trend` answers whether one test is getting worse. Useful
 for "what should I fix this sprint?" without opening a browser.
 
@@ -88,11 +88,11 @@ for "what should I fix this sprint?" without opening a browser.
 be a scheduled job. Shapes are in the [API docs](https://piwitests.dev/demo/docs).
 
 **No server at all.** If this is your own laptop suite rather than a team's, the
-[desktop app](../desktop) runs the same analysis with no Docker and no Node — Windows x64 and
+[desktop app](/features/desktop) runs the same analysis with no Docker and no Node — Windows x64 and
 Apple-silicon macOS only, and the installers aren't signed yet.
 
 ## See also
 
-- [Flaky tests](../flaky-tests) — the full scoring, quarantine, and performance reference
-- [Analytics](../analytics) — the same signals across every project
+- [Flaky tests](/features/flaky-tests) — the full scoring, quarantine, and performance reference
+- [Analytics](/features/analytics) — the same signals across every project
 - [Regression or flake?](./regression-or-flaky) — deciding whether one red test belongs on this list

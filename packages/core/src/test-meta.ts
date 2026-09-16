@@ -24,6 +24,8 @@ export type TestPriority = (typeof TEST_PRIORITIES)[number];
 
 export const MAX_TEST_TAGS = 20;
 export const MAX_TEST_TAG_CHARS = 60;
+export const MAX_TEST_LOCKS = 20;
+export const MAX_TEST_LOCK_CHARS = 100;
 /** Cap for `owner` and `feature`; `link` gets its own, longer cap. */
 export const MAX_TEST_META_CHARS = 120;
 export const MAX_TEST_LINK_CHARS = 500;
@@ -65,6 +67,32 @@ export function normalizeTestTags(raw: unknown): string[] {
     seen.add(tag);
     out.push(tag);
     if (out.length >= MAX_TEST_TAGS) break;
+  }
+
+  return out;
+}
+
+/**
+ * Normalize raw test locks into the stored form: a lock is a named shared
+ * resource the runner serializes holders of, declared verbatim (no `@` prefix
+ * to strip, unlike tags). Non-string and blank entries are dropped, duplicates
+ * removed, declaration order preserved.
+ *
+ * Playwright never exposes locks publicly — the reporter reads a private field —
+ * so this normalizer is deliberately defensive about its input.
+ */
+export function normalizeTestLocks(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  for (const entry of raw) {
+    if (typeof entry !== 'string') continue;
+    const lock = entry.trim().slice(0, MAX_TEST_LOCK_CHARS);
+    if (!lock || seen.has(lock)) continue;
+    seen.add(lock);
+    out.push(lock);
+    if (out.length >= MAX_TEST_LOCKS) break;
   }
 
   return out;

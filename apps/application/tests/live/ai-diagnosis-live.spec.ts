@@ -1,14 +1,13 @@
 /**
  * The LIVE end-to-end test of the AI diagnosis pipeline: a real failure is
- * ingested, then diagnosed by a REAL model (OpenCode / DeepSeek in CI) through
- * the same endpoints the dashboard calls — context assembly, the provider call,
- * schema-validated parsing and persistence, on both the synchronous and the SSE
- * path.
+ * ingested, then diagnosed by a REAL model through the same endpoints the
+ * dashboard calls — context assembly, the provider call, schema-validated
+ * parsing and persistence, on both the synchronous and the SSE path.
  *
  * `tests/ai-diagnosis.spec.ts` covers the same endpoints against a mock provider
  * for a zero-token CI gate; this one costs tokens, so it lives under `tests/live/`
- * (excluded from the main suite) and runs behind `npm run app:test:ai:live` — see
- * `playwright.config.ts` next to this file and `.github/workflows/ai-live-e2e.yml`.
+ * (excluded from the main suite) and runs behind `npm run app:test:ai:live` —
+ * see `playwright.config.ts` next to this file.
  *
  * The model is text-only, so the server runs with screenshots disabled and the
  * first test proves an attached screenshot really is kept out of the context: an

@@ -4,6 +4,8 @@ import {
   parseCodeowners,
   type CompiledCodeowners,
 } from '@piwitests/core/codeowners';
+import type { CiRerunSettings } from '#shared/ci-rerun';
+import { commitUrl, compareUrl, fileUrl, type ScmProviderName } from '#shared/scm-urls';
 
 export interface ChangedFile {
   filename: string;
@@ -24,6 +26,12 @@ export interface ScmCommitDetail {
   message: string;
   author: string;
   date: string;
+}
+
+/** The name and email a commit records for its author. */
+export interface ScmCommitAuthor {
+  name: string;
+  email: string;
 }
 
 export interface ScmChanges {
@@ -70,6 +78,24 @@ export interface ScmPullRequest {
   url: string;
 }
 
+/** Normalized lifecycle state of an issue or pull/merge request. */
+export type ScmEntityState = 'open' | 'closed' | 'merged' | 'draft' | null;
+
+/**
+ * An issue or pull/merge request reduced to what an unfurl card needs. Each
+ * provider maps its own host's state vocabulary onto {@link ScmEntityState}.
+ */
+export interface ScmEntityRef {
+  title: string | null;
+  state: ScmEntityState;
+  /** Display name or login of the author, or null when the host omits it. */
+  author: string | null;
+  /** Canonical web URL of the entity, or null when the host omits it. */
+  url: string | null;
+  /** ISO-8601 timestamp of the last update, or null. */
+  updatedAt: string | null;
+}
+
 /** A commit status (GitHub "status", GitLab "commit status", Bitbucket "build status"). */
 export interface ScmCommitStatus {
   state: 'success' | 'failure' | 'error' | 'pending';
@@ -97,7 +123,9 @@ export interface CreatePullRequestInput {
 }
 
 export abstract class ScmProvider {
-  abstract readonly provider: 'github' | 'gitlab' | 'bitbucket';
+  abstract readonly provider: ScmProviderName;
+  /** Canonical web URL of the repository (no trailing slash), for building links. */
+  abstract readonly webUrl: string;
   protected readonly token: string | null;
   /**
    * Namespaces module-level cache keys by the token in use so a token-less
@@ -117,10 +145,36 @@ export abstract class ScmProvider {
     return h;
   }
 
+  // ── Web links ──────────────────────────────────────────────────────────────
+  // Built from this provider's own `webUrl` through the shared `#shared/scm-urls`
+  // module, so server code that holds a provider never hand-writes a URL.
+
+  /** URL for viewing one commit. */
+  commitUrl(sha: string): string | null {
+    return commitUrl(this.webUrl, sha);
+  }
+
+  /** URL comparing two commits. */
+  compareUrl(fromSha: string, toSha: string): string | null {
+    return compareUrl(this.webUrl, fromSha, toSha);
+  }
+
+  /** URL for a file at a ref, optionally anchored to a line. */
+  fileUrl(ref: string, path: string, line?: number | null): string | null {
+    return fileUrl(this.webUrl, ref, path, line);
+  }
+
   abstract listBranches(limit?: number): Promise<string[]>;
   abstract listCommits(limit?: number, branch?: string): Promise<ScmCommitDetail[]>;
   abstract fetchChanges(fromSha: string, toSha: string): Promise<ScmChanges | null>;
   abstract fetchCommitDiff(sha: string): Promise<ScmChanges | null>;
+  /**
+   * The author (name + email) a commit records, or null when the commit cannot
+   * be read or the host does not expose an email. Best-effort like the other
+   * read lookups — a token-less or failing fetch returns null — and content is
+   * immutable per SHA, so implementations cache aggressively.
+   */
+  abstract getCommitAuthor(sha: string): Promise<ScmCommitAuthor | null>;
   abstract probeError(branch?: string): Promise<string | null>;
   /**
    * Full content of a single file at a ref (commit SHA / branch). Returns null
@@ -134,6 +188,19 @@ export abstract class ScmProvider {
    * on failure; may be capped by the provider.
    */
   abstract fetchTree(ref: string): Promise<string[] | null>;
+
+  /**
+   * An issue reduced to {@link ScmEntityRef}, or null when the host has no such
+   * issue, the repository disabled issues, or the fetch fails. Best-effort like
+   * the other reads: a token-less fetch still works against a public repo.
+   */
+  abstract fetchIssue(number: number): Promise<ScmEntityRef | null>;
+
+  /**
+   * A pull/merge request reduced to {@link ScmEntityRef}, or null when it does
+   * not exist or the fetch fails. Best-effort, like {@link fetchIssue}.
+   */
+  abstract fetchPullRequest(number: number): Promise<ScmEntityRef | null>;
 
   // ── Pull-request feedback (optional capability) ────────────────────────────
   //
@@ -201,6 +268,22 @@ export abstract class ScmProvider {
   /** Open a pull/merge request; returns its number + URL. Throws on failure. */
   async createPullRequest(_input: CreatePullRequestInput): Promise<ScmPullRequest> {
     throw new Error(`${this.provider} does not support opening pull requests`);
+  }
+
+  // ── CI re-run (workflow / pipeline dispatch) ───────────────────────────────
+  //
+  // Like the auto-heal write methods, this THROWS on failure with the provider's
+  // own message so the route can surface exactly what went wrong; the caller
+  // has already checked the feature is enabled and a target is configured.
+
+  /**
+   * Dispatch a CI re-run of the given Playwright arguments, using this
+   * provider's target in `settings`. Returns the runs/pipeline URL to watch.
+   * Throws when the provider is unsupported, has no configured target, or the
+   * dispatch request fails.
+   */
+  async dispatchRerun(_settings: CiRerunSettings, _playwrightArgs: string): Promise<{ url: string }> {
+    throw new Error(`${this.provider} does not support CI re-run`);
   }
 
   /**

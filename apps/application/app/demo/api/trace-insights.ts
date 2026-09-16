@@ -14,15 +14,19 @@ import {
   buildTraceBodyPreview,
   buildTraceCallStack,
   buildTraceNetwork,
+  buildTraceSnapshots,
   matchNetworkBodySha1,
   parseNetworkTexts,
   parseStacksTexts,
+  resolveSnapshotFile,
   type TraceResourceReader,
   type TraceResourceSnapshot,
   type TraceStacksIndex,
 } from '~~/server/utils/trace-insights';
+import { ariaJsonToText } from '#shared/aria-json';
 import { readZipEntries } from '../trace-zip.client';
 import { getDemoDb, getDemoDbBaseUrl } from '../db.client';
+import { binaryResponse } from './files';
 
 /** Only committed demo assets may be fetched (mirrors files.ts). */
 const ALLOWED_TRACE_PREFIX = 'demo/traces/';
@@ -34,6 +38,8 @@ interface DemoTraceBundle {
   stacks: TraceStacksIndex | null;
   network: TraceResourceSnapshot[];
   readResource: TraceResourceReader;
+  /** Bytes of an `aria/*` or `screenshots/*` snapshot entry, or null when absent. */
+  readSnapshot: (file: string) => Uint8Array | null;
 }
 
 // The committed trace is immutable for the lifetime of a build — inflate and
@@ -74,6 +80,9 @@ async function loadTraceBundle(path: string): Promise<DemoTraceBundle | null> {
   const resources = new Map(
     entries.filter((e) => e.name.startsWith('resources/')).map((e) => [e.name.slice('resources/'.length), e.data]),
   );
+  const snapshotEntries = new Map(
+    entries.filter((e) => e.name.startsWith('aria/') || e.name.startsWith('screenshots/')).map((e) => [e.name, e.data]),
+  );
 
   return {
     parsed: traceTexts.length > 0 ? parseTraceTexts(traceTexts) : null,
@@ -89,6 +98,7 @@ async function loadTraceBundle(path: string): Promise<DemoTraceBundle | null> {
       }
       return null;
     },
+    readSnapshot: (file) => snapshotEntries.get(file) ?? null,
   };
 }
 
@@ -144,4 +154,38 @@ export async function apiGetDemoTraceNetworkBody(testRunsCaseId: number, query?:
   const bytes = await bundle.readResource(match.name);
   if (!bytes) return { status: 'not-found' };
   return buildTraceBodyPreview(bytes, match.mimeType);
+}
+
+/** Read an `aria/*.json` snapshot entry and convert it to the ARIA text form, or null. */
+function readDemoAriaText(bundle: DemoTraceBundle, file: string): string | null {
+  const bytes = bundle.readSnapshot(file);
+  return bytes ? ariaJsonToText(new TextDecoder().decode(bytes)) : null;
+}
+
+/** GET /api/test-run-cases/:id/trace-snapshots — mirrors trace-snapshots.get.ts. */
+export async function apiGetDemoTraceSnapshots(testRunsCaseId: number): Promise<unknown> {
+  const { path } = await resolveCaseTrace(testRunsCaseId);
+  if (!path) return { status: 'no-trace', steps: [], failingCallId: null, hasAria: false, hasScreen: false };
+  const bundle = await getTraceBundle(path);
+  if (!bundle) return { status: 'no-trace', steps: [], failingCallId: null, hasAria: false, hasScreen: false };
+  return buildTraceSnapshots(bundle.parsed, (file) => readDemoAriaText(bundle, file));
+}
+
+/** GET /api/test-run-cases/:id/trace-snapshot?callId=&kind=&phase= — mirrors trace-snapshot.get.ts. */
+export async function apiGetDemoTraceSnapshot(testRunsCaseId: number, query?: URLSearchParams): Promise<unknown> {
+  const callId = query?.get('callId') ?? '';
+  const kind = query?.get('kind');
+  const phase = query?.get('phase');
+  if (!callId || (kind !== 'aria' && kind !== 'screen') || (phase !== 'before' && phase !== 'after')) {
+    return undefined;
+  }
+
+  const { path } = await resolveCaseTrace(testRunsCaseId);
+  if (!path) return undefined;
+  const bundle = await getTraceBundle(path);
+  const file = resolveSnapshotFile(bundle?.parsed ?? null, callId, kind, phase);
+  if (!bundle || !file) return undefined;
+  const bytes = bundle.readSnapshot(file);
+  if (!bytes) return undefined;
+  return binaryResponse(bytes, file, kind === 'aria' ? 'application/json' : 'image/png');
 }

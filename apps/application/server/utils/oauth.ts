@@ -15,6 +15,7 @@ import {
   buildRedirectUri,
   parseAllowList,
   isEmailDomainAllowed,
+  isGoogleEmailVerified,
   isOrgAllowed,
   resolveProvisioningAction,
   resolveLinkAction,
@@ -75,7 +76,7 @@ function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfi
         mapUser: (raw) => ({
           id: String(raw.id),
           email: String(raw.email ?? ''),
-          emailVerified: raw.email_verified === true,
+          emailVerified: isGoogleEmailVerified(raw),
           name: String(raw.name ?? raw.email ?? ''),
           avatar: String(raw.picture ?? ''),
         }),

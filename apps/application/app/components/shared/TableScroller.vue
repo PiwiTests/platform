@@ -2,9 +2,9 @@
 /**
  * Horizontal-scroll wrapper for wide content (tables, charts, diffs) so it
  * scrolls in place instead of stretching the page on small screens. Optionally
- * bleeds to the card edge on mobile (`-mx-4`) for full-width swiping, and
- * applies a `minWidth` to the inner content so columns keep a readable width
- * while the wrapper scrolls.
+ * bleeds to the card edge on mobile (`-mx-2.5`, matching the card body padding
+ * below `sm`) for full-width swiping, and applies a `minWidth` to the inner
+ * content so columns keep a readable width while the wrapper scrolls.
  *
  * Usage: `<TableScroller min-width="56rem"><UTable ... /></TableScroller>`
  */
@@ -20,7 +20,7 @@ withDefaults(
 </script>
 
 <template>
-  <div class="overflow-x-auto" :class="bleed ? '-mx-4 px-4 sm:mx-0 sm:px-0' : ''">
+  <div class="overflow-x-auto" :class="bleed ? '-mx-2.5 px-2.5 sm:mx-0 sm:px-0' : ''">
     <div :style="minWidth ? { minWidth } : undefined">
       <slot />
     </div>

@@ -16,16 +16,108 @@
  * spec) are handled separately by `useDesktopDownload`, wired at the button
  * that triggers them.
  */
-export default defineNuxtPlugin(() => {
+export default defineNuxtPlugin((nuxtApp) => {
   const core = tauriCore();
   if (!core) return; // no bridge — not running inside the desktop shell
 
   installExternalLinkHandler(core);
   installNativeNotifications(core);
+  installErrorForwarding(core);
+
+  // Vue's own error channels don't reach window.onerror — hook them explicitly
+  // so a render/lifecycle error or a Nuxt app error also lands in the log. The
+  // hooks must return void, so forward fire-and-forget (never return the promise).
+  const forwardVueError = (label: string, value: unknown): void => {
+    core.invoke('desktop_log', { level: 'error', message: `${label}: ${describeError(value)}` }).catch(() => {});
+  };
+  nuxtApp.hook('vue:error', (err, _instance, info) => {
+    forwardVueError(`vue:error [${info}]`, err);
+  });
+  nuxtApp.hook('app:error', (err) => {
+    forwardVueError('app:error', err);
+  });
 });
 
 interface Bridge {
   invoke: <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
+}
+
+/** Render an error/rejection reason as one string, keeping the stack when there is one. */
+function describeError(value: unknown): string {
+  if (value instanceof Error) {
+    return value.stack ? `${value.name}: ${value.message}\n${value.stack}` : `${value.name}: ${value.message}`;
+  }
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+/**
+ * Forward front-end runtime errors to the shell's server log (`desktop_log`).
+ * A webview is a separate process whose console never reaches the Node sidecar's
+ * stdout, so uncaught errors, promise rejections, CSP violations and
+ * `console.error` are invisible in a shipped build — this routes them to the
+ * same `logs/server.log` the user can open from the tray, so a reported issue
+ * leaves a trace on disk. Desktop-only: the shared web build has no bridge and
+ * never installs any of this.
+ */
+function installErrorForwarding(core: Bridge) {
+  const forward = (level: 'error' | 'warn', message: string) =>
+    core.invoke('desktop_log', { level, message }).catch(() => {});
+
+  // Uncaught errors and (in capture phase) failed resource loads.
+  window.addEventListener(
+    'error',
+    (event) => {
+      if (event.error || event.message) {
+        const where = event.filename ? ` (${event.filename}:${event.lineno}:${event.colno})` : '';
+        forward('error', `Uncaught ${describeError(event.error ?? event.message)}${where}`);
+        return;
+      }
+      const el = event.target as (Element & { src?: string; href?: string }) | null;
+      const url = el?.src || el?.href;
+      if (url) forward('error', `Failed to load resource: ${url}`);
+    },
+    true,
+  );
+
+  window.addEventListener('unhandledrejection', (event) => {
+    forward('error', `Unhandled promise rejection: ${describeError(event.reason)}`);
+  });
+
+  // CSP violations are how a blocked script/style/frame shows up — the exact
+  // signal for a policy that stops the dashboard's own code from running.
+  document.addEventListener('securitypolicyviolation', (event) => {
+    const at = event.sourceFile ? ` at ${event.sourceFile}:${event.lineNumber}:${event.columnNumber}` : '';
+    forward('error', `CSP violation: ${event.violatedDirective} blocked ${event.blockedURI || '(inline)'}${at}`);
+  });
+
+  // Errors from our sandboxed snapshot/picker iframes: they run on an opaque
+  // origin and can reach us only over postMessage, so their own window.onerror
+  // never reaches this document (see snapshot-picker-script.ts).
+  window.addEventListener('message', (event) => {
+    const data = event.data as { type?: unknown; message?: unknown; stack?: unknown } | null;
+    if (data && data.type === 'piwiError' && typeof data.message === 'string') {
+      forward('error', `picker iframe: ${data.message}${data.stack ? ` — ${String(data.stack)}` : ''}`);
+    }
+  });
+
+  // Mirror console.error / console.warn, preserving the original call so the
+  // devtools console still shows them when it is open.
+  for (const level of ['error', 'warn'] as const) {
+    const original = console[level].bind(console);
+    console[level] = (...args: unknown[]) => {
+      original(...args);
+      try {
+        forward(level, args.map(describeError).join(' '));
+      } catch {
+        /* logging must never break the caller */
+      }
+    };
+  }
 }
 
 /**

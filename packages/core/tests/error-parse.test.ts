@@ -383,6 +383,38 @@ describe('parsePlaywrightError — edge cases', () => {
   });
 });
 
+describe('parsePlaywrightError — step params back the locator', () => {
+  test("the error text's own locator wins over the step params", () => {
+    const parsed = parsePlaywrightError(
+      "TimeoutError: locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for getByRole('link')\n",
+      { stepParams: { locator: "getByRole('button', { name: 'Pay' })" } },
+    );
+    expect(parsed.locator).toBe("getByRole('link')");
+  });
+
+  test('the step params supply the locator when the error text names none', () => {
+    // A custom expect.extend matcher: no Playwright-rendered locator in the message.
+    const parsed = parsePlaywrightError('Error: expected the badge to read "3"\n    at tests/x.spec.ts:4:1', {
+      stepParams: { locator: "getByTestId('badge')" },
+    });
+    expect(parsed.locator).toBe("getByTestId('badge')");
+    expect(parsed.leafLocator).toBe("getByTestId('badge')");
+  });
+
+  test('the step params supply the URL when the error text names none', () => {
+    const parsed = parsePlaywrightError('Error: something went wrong in a test.step\n    at tests/x.spec.ts:4:1', {
+      stepParams: { url: 'https://shop.example.com/login' },
+    });
+    expect(parsed.url).toBe('https://shop.example.com/login');
+  });
+
+  test('no context leaves the parse unchanged', () => {
+    const raw = 'Error: expected the badge to read "3"\n    at tests/x.spec.ts:4:1';
+    expect(parsePlaywrightError(raw).locator).toBeNull();
+    expect(parsePlaywrightError(raw, {}).locator).toBeNull();
+  });
+});
+
 describe('locator and frame helpers', () => {
   test('extractSelector returns the first balanced call; extractLocatorChain the whole chain', () => {
     const text = "page.getByRole('row', { name: 'Acme' }).getByRole('button', { name: 'Delete' }).first().click()";

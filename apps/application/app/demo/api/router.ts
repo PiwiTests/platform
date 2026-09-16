@@ -30,10 +30,21 @@ import {
 import { getDemoDb } from '../db.client';
 import { getLocatorHealing, saveLocatorPick } from '~~/server/utils/locator-healing';
 import { buildFixPlan } from '~~/server/utils/fix-plan';
+import { findFixedBefore } from '~~/server/utils/cluster-memory';
+import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
+import { contextStalenessHash } from '#shared/diagnosis-staleness';
 import { getEnvironmentDiff } from '~~/server/utils/environment-diff';
+import { getPageDiff } from '~~/server/utils/page-diff';
 import { apiGetDemoDomSnapshot } from './dom-snapshot';
 import { apiExportTestRunCase, apiExportFailureCluster } from './export';
-import { apiGetDemoTraceStacks, apiGetDemoTraceNetwork, apiGetDemoTraceNetworkBody } from './trace-insights';
+import { apiPerfettoTestRun, apiPerfettoTestRunCase } from './perfetto';
+import {
+  apiGetDemoTraceStacks,
+  apiGetDemoTraceNetwork,
+  apiGetDemoTraceNetworkBody,
+  apiGetDemoTraceSnapshots,
+  apiGetDemoTraceSnapshot,
+} from './trace-insights';
 import {
   listProjects,
   getProject,
@@ -93,15 +104,26 @@ import {
   getTestCaseHistory,
   getTestRunCaseTraces,
   getTestCaseStabilityTrend,
+  getFailureTimeline,
+  getExecutionSteps,
+  getFailureClues,
+  getAttemptDiff,
 } from '#shared/handlers/test-cases';
+import { buildExecutionReproduce } from '#shared/handlers/reproduce';
 import {
   getFailureCluster,
+  getOpenFailureClusters,
   patchClusterStatus,
+  patchClusterAssignee,
+  patchClusterSnooze,
+  quarantineClusterTests,
+  bulkTriageClusters,
   patchClusterBaseCommit,
   extractClusterCases,
   getClusterDiagnosis,
   getExecutionDiagnosis,
 } from '#shared/handlers/failure-clusters';
+import { parseBulkIds, isSnoozeOption } from '#shared/inbox-queues';
 import { getClusterCommits, getClusterCommitDiff, getClusterBranches } from './scm';
 import { getTimeoutThresholds } from '~~/server/utils/timeout-thresholds';
 import { getAppSetting } from '~~/server/utils/app-settings';
@@ -120,7 +142,36 @@ import {
   approveMergeSuggestion,
   rejectMergeSuggestion,
 } from '#shared/handlers/cluster-merge-suggestions';
-import { listLinks, createLink, patchLink, deleteLink, refreshLinkMeta } from '#shared/handlers/links';
+import {
+  listLinks,
+  createLink,
+  patchLink,
+  deleteLink,
+  refreshLinkMeta,
+  LINK_ENTITY_TYPES,
+  type LinkEntityType,
+} from '#shared/handlers/links';
+import {
+  listDemoConnections,
+  getDemoConnection,
+  createDemoConnection,
+  updateDemoConnection,
+  testDemoConnection,
+  demoTrackerStatus,
+  demoIssueDraft,
+  demoCreateIssue,
+  demoIntegrationActions,
+  demoSyncTrackerLinks,
+  demoConnectionProjects,
+  demoConnectionIssueTypes,
+  demoAssignable,
+  getDemoProjectIntegration,
+  saveDemoProjectIntegration,
+  generateDemoWebhookToken,
+} from './integrations';
+import type { ConnectionInput } from '#shared/integrations/types';
+import type { ResolvedProjectIntegration } from '#shared/integrations/binding';
+import { toIssueLocale } from '#shared/integrations/messages';
 import {
   getTestRun,
   getRecentTestRuns,
@@ -146,6 +197,7 @@ import {
 } from '#shared/handlers/users';
 import { searchProjectsTestRunsCases } from '#shared/handlers/search';
 import { getSetupStatus } from '#shared/handlers/setup-status';
+import { getAriaSampling } from '#shared/handlers/aria-sampling';
 import {
   apiSetupTestRun,
   apiBeginTestRun,
@@ -470,6 +522,14 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/aria-sampling$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return getAriaSampling(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/spec-health$/,
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
@@ -595,6 +655,14 @@ const routes: RouteEntry[] = [
       return getTestRunSummary(await getDemoDb(), +m[1]!);
     },
   },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/perfetto$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return apiPerfettoTestRun(+m[1]!);
+    },
+  },
 
   // Failure groups
   {
@@ -620,13 +688,27 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/test-runs\/(\d+)\/insights$/,
-    handler: async (m, _b, _q, ctx) => {
+    handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'run', +m[1]!);
-      return computeRunInsights(await getDemoDb(), +m[1]!);
+      const baselineRaw = q?.get('baseline');
+      const baselineId = baselineRaw ? Number(baselineRaw) : null;
+      const baseBranch = q?.get('baseBranch')?.trim() || null;
+      return computeRunInsights(await getDemoDb(), +m[1]!, {
+        baselineId: baselineId != null && Number.isFinite(baselineId) ? baselineId : null,
+        baseBranch,
+      });
     },
   },
 
   // Failure clusters
+  {
+    method: 'GET',
+    pattern: /^\/api\/failure-clusters$/,
+    handler: async (_m, _b, q, ctx) => {
+      const limit = Math.min(200, Math.max(1, Number(q?.get('limit')) || 50));
+      return { items: await getOpenFailureClusters(await getDemoDb(), ctx?.scope, limit) };
+    },
+  },
   {
     method: 'GET',
     pattern: /^\/api\/failure-clusters\/(\d+)$/,
@@ -650,6 +732,65 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
       const b = body as { status?: string; triageNote?: string | null };
       return patchClusterStatus(await getDemoDb(), +m[1]!, b.status ?? '', b.triageNote);
+    },
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/assignee$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const b = body as { assignee?: string | null };
+      return patchClusterAssignee(await getDemoDb(), +m[1]!, b.assignee ?? null);
+    },
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/snooze$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const b = body as { snooze?: string | null };
+      const snooze = b.snooze ?? null;
+      if (snooze !== null && !isSnoozeOption(snooze)) throw demoHttpError(400, 'Invalid snooze option');
+      return patchClusterSnooze(await getDemoDb(), +m[1]!, snooze);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/quarantine$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const b = (body ?? {}) as { reason?: string };
+      return quarantineClusterTests(await getDemoDb(), +m[1]!, { reason: b.reason });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/failure-clusters\/bulk$/,
+    handler: async (_m, body, _q, _ctx) => {
+      const b = (body ?? {}) as {
+        ids?: unknown;
+        action?: string;
+        status?: string;
+        assignee?: string | null;
+        snooze?: string | null;
+      };
+      const ids = parseBulkIds(b.ids);
+      if (!ids) throw demoHttpError(400, 'ids must be a non-empty array of positive integers (max 200)');
+      const db = await getDemoDb();
+      let result;
+      if (b.action === 'status') {
+        result = await bulkTriageClusters(db, ids, { action: 'status', status: b.status ?? '' });
+      } else if (b.action === 'assign') {
+        result = await bulkTriageClusters(db, ids, { action: 'assign', assignee: b.assignee ?? null });
+      } else if (b.action === 'snooze') {
+        const snooze = b.snooze ?? null;
+        if (snooze !== null && !isSnoozeOption(snooze)) throw demoHttpError(400, 'Invalid snooze option');
+        result = await bulkTriageClusters(db, ids, { action: 'snooze', snooze });
+      } else {
+        throw demoHttpError(400, 'action must be one of: status, assign, snooze');
+      }
+      if (!result) throw demoHttpError(400, 'Invalid bulk triage request');
+      return { requested: ids.length, updated: result.updated };
     },
   },
   {
@@ -696,10 +837,11 @@ const routes: RouteEntry[] = [
       const format = query?.get('format');
       if (format === 'prompt') return getClusterContextPrompt(db, +m[1]!, query);
       const clusterCtx = await getClusterContext(db, +m[1]!, query);
+      const contextSha = await contextStalenessHash(clusterCtx.sections);
       // Default format mirrors the server: a plain context/coverage/scmChanges
       // envelope; `?format=json` returns the full structured shape.
-      if (format === 'json') return clusterCtx;
-      return { context: clusterCtx.text, coverage: clusterCtx.coverage, scmChanges: clusterCtx.scmChanges };
+      if (format === 'json') return { ...clusterCtx, contextSha };
+      return { context: clusterCtx.text, contextSha, coverage: clusterCtx.coverage, scmChanges: clusterCtx.scmChanges };
     },
   },
   {
@@ -742,9 +884,36 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/failure-clusters\/(\d+)\/diagnoses$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const full = (q as URLSearchParams | undefined)?.get('full') === '1';
+      return { items: await listClusterDiagnosisVersions(await getDemoDb(), +m[1]!, { full }) };
+    },
+  },
+  {
+    method: 'GET',
+    // CI re-run availability — always off in the browser demo (no server, token
+    // or CI to dispatch to), so the button renders disabled with a clear reason.
+    pattern: /^\/api\/failure-clusters\/(\d+)\/rerun$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      return { items: await listClusterDiagnosisVersions(await getDemoDb(), +m[1]!) };
+      return {
+        available: false,
+        reason: 'CI re-run is not available in the demo.',
+        provider: null,
+        enabled: false,
+        hasToken: false,
+        lastDispatch: null,
+      };
+    },
+  },
+  {
+    method: 'POST',
+    // No-op dispatch: the demo has no CI to trigger.
+    pattern: /^\/api\/failure-clusters\/(\d+)\/rerun$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      return { ok: false, demo: true, message: 'CI re-run is not available in the demo.' };
     },
   },
   {
@@ -847,6 +1016,14 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/perfetto$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return apiPerfettoTestRunCase(+m[1]!);
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/test-run-cases\/(\d+)\/diagnosis-context$/,
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
@@ -901,6 +1078,54 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/page-diff$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return getPageDiff(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/timeline$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return getFailureTimeline(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/steps$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return getExecutionSteps(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/clues$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return getFailureClues(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/reproduce$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return buildExecutionReproduce(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/attempt-diff$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return getAttemptDiff(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/test-run-cases\/(\d+)\/dom-snapshot$/,
     handler: async (m, _body, query, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
@@ -929,6 +1154,22 @@ const routes: RouteEntry[] = [
     handler: async (m, _body, query, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
       return apiGetDemoTraceNetworkBody(+m[1]!, query);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/trace-snapshots$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return apiGetDemoTraceSnapshots(+m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/trace-snapshot$/,
+    handler: async (m, _body, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return apiGetDemoTraceSnapshot(+m[1]!, query);
     },
   },
   // The demo cannot pixel-diff in the browser — it serves the overlay the
@@ -1091,9 +1332,25 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/failure-clusters\/(\d+)\/fix-plan$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const plan = await buildFixPlan(await getDemoDb(), +m[1]!);
+      const format = (q as URLSearchParams | undefined)?.get('format');
+      if (format === 'markdown' && plan) return fixPlanToMarkdown(plan);
+      return plan;
+    },
+  },
+
+  // Fixed before — resolved clusters this one resembles, read straight from the
+  // in-browser DB by the same scorer the server uses.
+  {
+    method: 'GET',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/fixed-before$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      return buildFixPlan(await getDemoDb(), +m[1]!);
+      const db = await getDemoDb();
+      const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, +m[1]!));
+      return { items: cluster ? await findFixedBefore(db, cluster) : [] };
     },
   },
 
@@ -1390,10 +1647,10 @@ const routes: RouteEntry[] = [
     handler: async (_, __, q) => {
       const entityType = q?.get('entityType') ?? '';
       const entityId = parseInt(q?.get('entityId') ?? '0', 10);
-      if (!['test_run', 'test_runs_case', 'test_case'].includes(entityType) || !entityId) {
+      if (!(LINK_ENTITY_TYPES as readonly string[]).includes(entityType) || !entityId) {
         throw demoHttpError(400, 'Invalid entityType or entityId');
       }
-      return { items: (await listLinks(await getDemoDb(), entityType, entityId)).links };
+      return { items: (await listLinks(await getDemoDb(), entityType as LinkEntityType, entityId)).links };
     },
   },
   {
@@ -1411,6 +1668,100 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/links\/(\d+)\/refresh$/,
     handler: async (m) => refreshLinkMeta(await getDemoDb(), +m[1]!),
+  },
+
+  // Integrations — one canned Jira connection, answered from constants
+  { method: 'GET', pattern: /^\/api\/integrations\/connections$/, handler: async () => listDemoConnections() },
+  {
+    method: 'POST',
+    pattern: /^\/api\/integrations\/connections$/,
+    handler: async (_, body) => createDemoConnection(body as ConnectionInput),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)$/,
+    handler: async (m) => {
+      const found = getDemoConnection(+m[1]!);
+      if (!found) throw demoHttpError(404, 'Connection not found');
+      return found;
+    },
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/integrations\/connections\/(\d+)$/,
+    handler: async (m, body) => updateDemoConnection(+m[1]!, body as Partial<ConnectionInput>),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/integrations\/connections\/(\d+)$/,
+    handler: async () => ({ success: true }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/test$/,
+    handler: async () => testDemoConnection(),
+  },
+  { method: 'GET', pattern: /^\/api\/integrations\/status$/, handler: async () => demoTrackerStatus() },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/issue-draft$/,
+    handler: async (_, __, q) => {
+      const entityType = (q?.get('entityType') ?? '') as 'failure_cluster' | 'test_runs_case';
+      const entityId = Number(q?.get('entityId') ?? 0);
+      const draft = await demoIssueDraft(
+        await getDemoDb(),
+        entityType,
+        entityId,
+        toIssueLocale(q?.get('locale')) ?? undefined,
+      );
+      if (!draft) throw demoHttpError(404, 'No tracker connected or entity unavailable');
+      return draft;
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/integrations\/issues$/,
+    handler: async (_, body) => {
+      const b = body as { entityType: 'failure_cluster' | 'test_runs_case'; entityId: number; title?: string };
+      return demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title);
+    },
+  },
+  { method: 'GET', pattern: /^\/api\/integrations\/actions$/, handler: async () => demoIntegrationActions() },
+  { method: 'POST', pattern: /^\/api\/integrations\/sync$/, handler: async () => demoSyncTrackerLinks() },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/projects$/,
+    handler: async () => demoConnectionProjects(),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/issue-types$/,
+    handler: async () => demoConnectionIssueTypes(),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/assignable$/,
+    handler: async () => demoAssignable(),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/webhook-token$/,
+    handler: async () => generateDemoWebhookToken(),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/webhook-token$/,
+    handler: async () => ({ success: true }),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/integrations$/,
+    handler: async () => getDemoProjectIntegration(),
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/projects\/(\d+)\/integrations$/,
+    handler: async (body) => saveDemoProjectIntegration((body ?? {}) as Partial<ResolvedProjectIntegration>),
   },
 
   // Search

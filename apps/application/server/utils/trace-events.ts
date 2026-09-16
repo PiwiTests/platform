@@ -24,6 +24,20 @@ export interface TraceAction {
   snapshotName?: string;
   beforeSnapshot?: string;
   afterSnapshot?: string;
+  /**
+   * Trace-relative path of the aria-tree JSON captured before / after this
+   * action (`aria/<callId>-<phase>.json`), present when the trace was recorded
+   * with `snapshots.aria` (Playwright 1.63+).
+   */
+  ariaSnapshotBefore?: string;
+  ariaSnapshotAfter?: string;
+  /**
+   * Trace-relative path of the PNG captured before / after this action
+   * (`screenshots/<callId>-<phase>.png`), present when the trace was recorded
+   * with `snapshots.screen`.
+   */
+  screenshotBefore?: string;
+  screenshotAfter?: string;
 }
 
 export interface TraceConsoleEntry {
@@ -280,6 +294,27 @@ function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
 
     if (type === 'frame-snapshot' && evt.snapshot && typeof evt.snapshot === 'object') {
       frameSnapshots.push(evt.snapshot as TraceFrameSnapshot);
+    }
+
+    // 1.63 aria / screen snapshots: one file per action per phase, keyed to the
+    // action's callId (the `before` event opened the action just before). The
+    // recorder emits `before`, an optional input-time `action`, and `after`; the
+    // `action` and `after` phases both stand for "after the action" — `after`
+    // wins because it arrives last in the stream.
+    if (type === 'aria-snapshot' || type === 'screenshot') {
+      const callId = evt.callId as string;
+      const file = evt.file as string | undefined;
+      const phase = evt.phase as string | undefined;
+      const action = callId ? openActions.get(callId) : undefined;
+      if (action && file) {
+        if (phase === 'before') {
+          if (type === 'aria-snapshot') action.ariaSnapshotBefore = file;
+          else action.screenshotBefore = file;
+        } else if (phase === 'action' || phase === 'after') {
+          if (type === 'aria-snapshot') action.ariaSnapshotAfter = file;
+          else action.screenshotAfter = file;
+        }
+      }
     }
 
     // Modern traces emit console messages as their own top-level event; older

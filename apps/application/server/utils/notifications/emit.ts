@@ -19,8 +19,22 @@ export async function emitNotification(
   db: LibSQLDatabase<any>,
   event: NotificationEvent,
   payload: NotificationPayload,
+  opts?: {
+    /**
+     * Deliver the browser (SSE) notification to this user even when they have no
+     * matching subscription — per-user targeting for events addressed at one
+     * person, such as the author of a fix. Normal subscription routing is
+     * unaffected: other subscribers still receive the event, and the outbox
+     * (email/Slack/webhook) is untouched by this flag.
+     */
+    targetUserId?: number;
+  },
 ): Promise<void> {
-  runEventBus.publishNotification({ type: event, ...payload });
+  runEventBus.publishNotification({
+    type: event,
+    ...payload,
+    ...(opts?.targetUserId != null ? { targetUserId: opts.targetUserId } : {}),
+  });
 
   try {
     const enqueued = await matchAndEnqueue(db, event, payload);

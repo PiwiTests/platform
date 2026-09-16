@@ -36,7 +36,7 @@ const isDesktop = useIsDesktop();
             >
               Chrome Web Store
             </UButton>
-            <DocLink to="extension" class="text-sm">Docs</DocLink>
+            <DocLink to="features/extension" class="text-sm">Docs</DocLink>
           </div>
         </div>
       </li>
@@ -52,7 +52,7 @@ const isDesktop = useIsDesktop();
             nothing else is configured. For one developer's own history on a laptop.
           </p>
           <div class="flex items-center gap-3 mt-2 text-sm">
-            <DocLink to="desktop" class="text-sm">Docs</DocLink>
+            <DocLink to="features/desktop" class="text-sm">Docs</DocLink>
           </div>
         </div>
       </li>
@@ -72,9 +72,9 @@ const isDesktop = useIsDesktop();
             <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">select</code> execute a named test selection.
           </p>
           <div class="flex items-center gap-3 mt-2 text-sm">
-            <DocLink to="getting-started#fast-path-one-command" class="text-sm">init</DocLink>
-            <DocLink to="ci#blocking-a-merge" class="text-sm">gate</DocLink>
-            <DocLink to="test-selection" class="text-sm">run &amp; select</DocLink>
+            <DocLink to="guide/getting-started#fast-path-one-command" class="text-sm">init</DocLink>
+            <DocLink to="guide/ci#blocking-a-merge" class="text-sm">gate</DocLink>
+            <DocLink to="guide/test-selection" class="text-sm">run &amp; select</DocLink>
           </div>
         </div>
       </li>
@@ -91,7 +91,7 @@ const isDesktop = useIsDesktop();
           </p>
           <div class="flex items-center gap-3 mt-2 text-sm">
             <UButton to="/mcp" size="xs" variant="soft" icon="i-lucide-plug">MCP setup</UButton>
-            <DocLink to="mcp#agent-skills" class="text-sm">Skills docs</DocLink>
+            <DocLink to="features/mcp#agent-skills" class="text-sm">Skills docs</DocLink>
           </div>
         </div>
       </li>
@@ -107,7 +107,7 @@ const isDesktop = useIsDesktop();
             scheme. Configured per browser from any source path, since the source lives on your machine.
           </p>
           <div class="flex items-center gap-3 mt-2 text-sm">
-            <DocLink to="ide-integration" class="text-sm">Docs</DocLink>
+            <DocLink to="features/ide-integration" class="text-sm">Docs</DocLink>
           </div>
         </div>
       </li>

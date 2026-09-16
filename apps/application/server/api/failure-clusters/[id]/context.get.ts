@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { buildDiagnosisContext } from '../../../utils/ai-context';
 import { loadDiagnosisSystemPrompt } from '../../../utils/ai-diagnosis';
 import { buildPromptPreview } from '#shared/ai-prompt-preview';
+import { contextStalenessHash } from '#shared/diagnosis-staleness';
 import { DIAGNOSIS_JSON_SCHEMA } from '#shared/ai-diagnosis';
 import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../../utils/project-access';
 
@@ -54,10 +55,15 @@ export default eventHandler(async (event) => {
     });
   }
 
+  // Same hash the completed diagnosis stored, so the client can tell whether the
+  // evidence has changed since (staleness detection).
+  const contextSha = await contextStalenessHash(ctx.sections);
+
   if (format === 'json') {
     return {
       scope: ctx.scope,
       text: ctx.text,
+      contextSha,
       sections: ctx.sections,
       coverage: ctx.coverage,
       scmChanges: ctx.scmChanges,
@@ -68,5 +74,5 @@ export default eventHandler(async (event) => {
     };
   }
 
-  return { context: ctx.text, coverage: ctx.coverage, scmChanges: ctx.scmChanges };
+  return { context: ctx.text, contextSha, coverage: ctx.coverage, scmChanges: ctx.scmChanges };
 });

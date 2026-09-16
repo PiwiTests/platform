@@ -40,7 +40,7 @@ import {
   buildSourceFrames,
   storyByClusterId,
 } from '../shared/demo/failure-stories.mjs';
-import { demoTestMeta, demoTags, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
+import { demoTestMeta, demoTags, demoLocks, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -308,6 +308,7 @@ for (const proj of DEMO_PROJECTS) {
       title: c.title,
       flaky_root_cause: flaky?.rootCause ?? null,
       tags: JSON.stringify(demoTags(c.file, proj.cases.indexOf(c))),
+      locks: JSON.stringify(demoLocks(c.file, proj.cases.indexOf(c))),
       owner: demoTestMeta(c.file, proj.cases.indexOf(c))?.owner ?? null,
       priority: demoTestMeta(c.file, proj.cases.indexOf(c))?.priority ?? null,
       feature: demoTestMeta(c.file, proj.cases.indexOf(c))?.feature ?? null,
@@ -443,14 +444,50 @@ function buildSeedStepEvents(caseStartMs, caseDuration, location, waitHeavy) {
   return { stepEvents: events, wastedMs };
 }
 
-/** Scale a project's themed step titles to a case duration. */
-function buildSteps(proj, caseDuration) {
+/** Shape one themed step into the stored flat form, carrying its optional target/params. */
+function shapeStep(src, duration, startTime) {
+  const step = { title: src.title, duration, category: src.category, startTime };
+  // Playwright 1.63 shape (some projects only): the target in `subtitle`,
+  // curated arguments in `params`.
+  if (src.subtitle) step.subtitle = src.subtitle;
+  if (src.params) step.params = src.params;
+  return step;
+}
+
+/**
+ * Scale a project's themed step titles to a case duration, laying each step's
+ * absolute `startTime` end-to-end from `caseStartMs` so the failure timeline
+ * places them on a real clock rather than estimating from durations. A themed
+ * step with `children` becomes a `test.step`-style parent whose children lay
+ * end-to-end inside its window, so the timeline's per-test waterfall nests them
+ * by containment — the flat, pre-order shape Playwright's own step tree stores.
+ */
+function buildSteps(proj, caseDuration, caseStartMs) {
   const total = proj.stepTitles.reduce((s, st) => s + st.weight, 0);
-  return proj.stepTitles.map((st) => ({
-    title: st.title,
-    duration: Math.round((st.weight / total) * caseDuration),
-    category: st.category,
-  }));
+  let cursor = caseStartMs;
+  const out = [];
+  for (const st of proj.stepTitles) {
+    const duration = Math.round((st.weight / total) * caseDuration);
+    const startTime = cursor;
+    cursor += duration;
+    out.push(shapeStep(st, duration, startTime));
+
+    if (Array.isArray(st.children) && st.children.length > 0 && duration > 0) {
+      const childTotal = st.children.reduce((s, c) => s + (c.weight || 1), 0);
+      let childCursor = startTime;
+      st.children.forEach((child, i) => {
+        // Distribute the parent's window across its children; the last child
+        // ends exactly at the parent's end so containment stays clean.
+        const last = i === st.children.length - 1;
+        const childDur = last
+          ? Math.max(1, startTime + duration - childCursor)
+          : Math.max(1, Math.round(((child.weight || 1) / childTotal) * duration));
+        out.push(shapeStep(child, childDur, childCursor));
+        childCursor += childDur;
+      });
+    }
+  }
+  return out;
 }
 
 /** Themed network requests for one case (jittered durations; story overrides on failures). */
@@ -741,6 +778,9 @@ for (const proj of DEMO_PROJECTS) {
       const storyEntry = isFailedCase ? storyByCaseId.get(caseId) : null;
       const story = storyEntry?.story ?? null;
       const noPage = Boolean(story?.evidence.noPageArtifacts);
+      // The story behind this case regardless of pass/fail — passing executions
+      // seed its green ARIA baseline so a later failure has a page to diff against.
+      const storyForCase = storyByCaseId.get(caseId)?.story ?? null;
 
       const caseStatus = isFailedCase ? 'failed' : isDidNotRunCase ? 'didnotrun' : 'passed';
       const caseDuration = isDidNotRunCase
@@ -766,7 +806,14 @@ for (const proj of DEMO_PROJECTS) {
         }
       }
 
-      const steps = buildSteps(proj, caseDuration);
+      const steps = buildSteps(proj, caseDuration, caseStartMs);
+      // Mark the last step of a failing case as the failed one, so the timeline
+      // anchors its window and failure marker on a captured step boundary.
+      if (isFailedCase && steps.length > 0) {
+        const lastStep = steps[steps.length - 1];
+        lastStep.failed = true;
+        lastStep.error = { message: (storyEntry.failingCase.error ?? '').split('\n')[0] || 'Test failed' };
+      }
       const slowestStep = steps.reduce((a, b) => (a.duration > b.duration ? a : b));
 
       // Test annotations — failures link to their cluster, the designated slow
@@ -815,6 +862,13 @@ for (const proj of DEMO_PROJECTS) {
         }));
       }
 
+      // A dialog left open at the failure moment, when the story carries one —
+      // closes just before the failure so it lands in the failure window.
+      const dialogs =
+        isFailedCase && !noPage && story?.evidence.dialogOnFail
+          ? [{ ...story.evidence.dialogOnFail, closedAt: caseStartMs + Math.round(caseDuration * 0.95) }]
+          : null;
+
       // Effective per-test timeout (ms), stable per test case across runs. Most
       // tests keep a healthy 20s budget that timeout-hygiene never flags (its
       // headroom stays under the 20s floor); the designated slow case keeps a
@@ -856,6 +910,7 @@ for (const proj of DEMO_PROJECTS) {
         browser_name: browser.projectName ?? null,
         test_annotations: testAnnotations,
         tags: JSON.stringify(demoTags(caseDef.file, j)),
+        locks: JSON.stringify(demoLocks(caseDef.file, j)),
         test_meta: demoTestMeta(caseDef.file, j),
         steps,
         step_events: stepEvents,
@@ -866,7 +921,13 @@ for (const proj of DEMO_PROJECTS) {
         page_state: isDidNotRunCase || noPage ? null : buildPageState(proj, storyEntry),
         ai_usage: isDidNotRunCase || noPage ? null : await buildAiUsage(caseDef),
         console_logs: consoleLogs,
-        aria_snapshot: isFailedCase && !noPage ? story?.aria : null,
+        dialogs,
+        aria_snapshot:
+          isFailedCase && !noPage
+            ? story?.aria
+            : !isDidNotRunCase && !isFailedCase
+              ? (storyForCase?.baselineAria ?? null)
+              : null,
         test_source: isFailedCase ? buildTestSource(story, storyEntry.failingCase, caseDef.declLine) : null,
         test_source_frames: isFailedCase ? buildSourceFrames(storyEntry.failingCase) : null,
         worker_index: workerIndex,
@@ -1224,9 +1285,9 @@ for (const run of TEST_RUNS) {
 
 const CLUSTER_TRIAGE = {
   1: {
-    status: 'resolved',
+    status: 'open',
     triage_note:
-      'Root cause identified: the new payment-provider SDK delays form interactivity on loaded CI runners. Mitigated by waiting for network idle in the payment helper; monitoring for recurrence.',
+      'Root cause identified: the new payment-provider SDK delays form interactivity on loaded CI runners. A fix landed and the cluster was closed, then regressed — reopened automatically. The fix did not hold; investigating the loaded-runner path again.',
   },
   3: {
     status: 'open',
@@ -1237,6 +1298,11 @@ const CLUSTER_TRIAGE = {
     status: 'ignored',
     triage_note:
       'Known issue — three buttons match the unscoped role query on the gallery page. The page intentionally demos multiple variants; the spec needs a name-scoped locator. Not an app bug.',
+  },
+  10: {
+    status: 'open',
+    triage_note:
+      'Capped the API default page size to the requested pageSize so the users table renders 25 rows again; verified once the count assertion turned green.',
   },
 };
 
@@ -1305,10 +1371,23 @@ function buildClusterFix(story, stats) {
   };
 }
 
+// Semantic vectors for a single pair so the demo shows "Fixed before": the open
+// cluster 9 (a report export that never becomes visible) resembles the resolved
+// cluster 10 (a table assertion that was diagnosis-verified). Both carry the same
+// model+recipe tag and near-parallel vectors, so their cosine clears the memory
+// threshold even though their error text differs. Everything else uses the
+// deterministic fingerprint path with no vector.
+const DEMO_EMBED_TAG = 'text-embedding-3-small#v2';
+const DEMO_CLUSTER_EMBEDDINGS = {
+  10: [0.91, 0.12, 0.44, 0.21, 0.68, 0.33, 0.52, 0.6],
+  9: [0.62, 0.4, 0.52, 0.34, 0.5, 0.48, 0.47, 0.44],
+};
+
 for (const story of FAILURE_STORIES) {
   const stats = clusterStats[story.clusterId];
   const fp = storyFingerprints.get(story.clusterId);
   const triage = CLUSTER_TRIAGE[story.clusterId] || {};
+  const embedding = DEMO_CLUSTER_EMBEDDINGS[story.clusterId];
   const createdAt = stats.firstStartMs ? Math.floor(stats.firstStartMs / 1000) : ts('2025-04-20T09:00:00');
   const updatedAt = stats.lastStartMs ? Math.floor(stats.lastStartMs / 1000) : createdAt;
   FAILURE_CLUSTERS.push({
@@ -1327,9 +1406,28 @@ for (const story of FAILURE_STORIES) {
     last_seen_run_id: stats.lastRunId ?? newestRunByProject[story.projectId],
     occurrences: stats.occurrences || 1,
     ...buildClusterFix(story, stats),
+    ...(embedding ? { embedding: JSON.stringify(embedding), embedding_model: DEMO_EMBED_TAG } : {}),
     created_at: createdAt,
     updated_at: updatedAt,
   });
+}
+
+// ── Demo inbox state — assignee + snooze so the inbox queues are exercisable ──
+// The failure inbox's Mine queue matches the signed-in user; assigning an open
+// cluster to the default demo user (Avery) gives that queue a row. One open
+// cluster is snoozed "until it recurs" so the snooze state, its "Unsnooze"
+// action on the cluster page, and the fact that a snoozed cluster leaves every
+// queue are all demonstrable. A far-future deadline keeps it snoozed regardless
+// of the time-shift applied to the rest of the seed.
+{
+  const clusterById = new Map(FAILURE_CLUSTERS.map((c) => [c.id, c]));
+  const assignMine = clusterById.get(7);
+  if (assignMine) assignMine.assignee = DEMO_USERS[0].name;
+  const snoozed = clusterById.get(9);
+  if (snoozed) {
+    snoozed.snoozed_until = Math.floor(Date.UTC(9999, 0, 1) / 1000);
+    snoozed.snooze_mode = 'until-recurs';
+  }
 }
 
 // ── Demo merge suggestions ─────────────────────────────────────────────────
@@ -1430,6 +1528,29 @@ const QUARANTINED_TESTS = [];
       released_at: null,
       released_reason: null,
     });
+  }
+
+  // A quarantined test whose cluster's fix has verified — the inbox's
+  // "Quarantine ready" queue: the failures stopped, so the quarantine is safe to
+  // lift. Anchored at that cluster's newest run so the demo shows it release-ready.
+  {
+    const story = FAILURE_STORIES.find((s) => s.clusterId === 10);
+    const failing = story?.failingCases?.[0];
+    const caseId = story && failing && caseIdByKey.get(`${story.projectId}\x00${story.specFile}\x00${failing.title}`);
+    if (caseId) {
+      QUARANTINED_TESTS.push({
+        id: qId++,
+        project_id: story.projectId,
+        test_case_id: caseId,
+        reason: 'Held while the pagination fix was verified; the fix landed and held.',
+        source: 'manual',
+        quarantined_at_run_id: newestRunByProject[story.projectId] ?? null,
+        created_by: null,
+        created_at: ts('2025-05-02T09:00:00'),
+        released_at: null,
+        released_reason: null,
+      });
+    }
   }
 }
 
@@ -2553,6 +2674,7 @@ function collectAnchorSec() {
   for (const r of TEST_RUNS_CASES) {
     bump(r.started_at, 'ms');
     bump(r.created_at, 'ms');
+    for (const e of r.steps || []) bump(e.startTime, 'ms');
     for (const e of r.step_events || []) bump(e.startedAt, 'ms');
     for (const e of r.console_logs || []) bump(e.timestamp, 'ms');
   }
@@ -2571,10 +2693,13 @@ const D = '(SELECT delta_sec FROM _rebase)';
 const D_MS = `(SELECT delta_sec FROM _rebase) * 1000`;
 
 // Shift a JSON array column's per-element ms timestamp (`$.field`) in place,
-// preserving element order (json_each iterates in array order).
+// preserving element order (json_each iterates in array order). Elements that
+// carry no `$.field` are left untouched, so a shift never writes a null key.
 const shiftJsonMs = (table, column, field) =>
-  `UPDATE ${table} SET ${column} = (SELECT json_group_array(json_set(value, '$.${field}', ` +
-  `json_extract(value, '$.${field}') + ${D_MS})) FROM json_each(${table}.${column})) ` +
+  `UPDATE ${table} SET ${column} = (SELECT json_group_array(` +
+  `CASE WHEN json_extract(value, '$.${field}') IS NOT NULL ` +
+  `THEN json_set(value, '$.${field}', json_extract(value, '$.${field}') + ${D_MS}) ELSE value END) ` +
+  `FROM json_each(${table}.${column})) ` +
   `WHERE ${column} IS NOT NULL AND json_valid(${column});`;
 
 const REBASE_SQL = [
@@ -2606,6 +2731,7 @@ const REBASE_SQL = [
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
   '',
   '-- Millisecond timestamps embedded in JSON columns',
+  shiftJsonMs('test_runs_cases', 'steps', 'startTime'),
   shiftJsonMs('test_runs_cases', 'step_events', 'startedAt'),
   shiftJsonMs('test_runs_cases', 'console_logs', 'timestamp'),
   shiftJsonMs('network_requests', 'server_logs', 'timestamp'),

@@ -7,6 +7,11 @@ import {
   computePerformanceSummary,
   extractTestStepEvents,
   extractWaitEvents,
+  stepLabel,
+  stepLabelParts,
+  orderedStepParams,
+  MAX_STEP_PARAM_KEYS,
+  MAX_STEP_PARAM_VALUE_CHARS,
 } from '../src/internal/collect/step-analyzer.js';
 
 describe('categorizeStep', () => {
@@ -86,6 +91,16 @@ describe('categorizeStep', () => {
     expect(categorizeStep('Set input files', 'pw:api')).toBe('input');
     // expect steps carry pwCategory 'expect'
     expect(categorizeStep('Expect "toBeVisible"', 'expect')).toBe('assertion');
+  });
+
+  it('classifies a bare "Navigate" title (newer Playwright moves the URL to the subtitle)', () => {
+    expect(categorizeStep('Navigate', 'pw:api')).toBe('navigation');
+  });
+
+  it('prefers a rendered params.url over the title for navigation', () => {
+    expect(categorizeStep('Navigate', 'pw:api', { url: 'https://example.com/' })).toBe('navigation');
+    // Even a bare verb with a url param resolves to navigation.
+    expect(categorizeStep('Go to app', undefined, { url: 'https://example.com/' })).toBe('navigation');
   });
 
   it('classifies api steps', () => {
@@ -396,5 +411,163 @@ describe('extractWaitEvents', () => {
   it('accepts numeric startTime', () => {
     const events = extractWaitEvents([{ title: 'page.waitForTimeout', startTime: 12345, duration: 100 }] as any);
     expect(events[0].startedAt).toBe(12345);
+  });
+});
+
+describe('stepLabel', () => {
+  it('returns the title alone when there is no subtitle', () => {
+    expect(stepLabel({ title: 'Click' })).toBe('Click');
+  });
+
+  it('appends the subtitle when it adds a target the title lacks', () => {
+    expect(stepLabel({ title: 'Click', subtitle: "getByRole('button', { name: 'Pay' })" })).toBe(
+      "Click getByRole('button', { name: 'Pay' })",
+    );
+  });
+
+  it('does not repeat a subtitle already contained in the title', () => {
+    expect(stepLabel({ title: 'Fill "x" getByLabel(\'Email\')', subtitle: "getByLabel('Email')" })).toBe(
+      'Fill "x" getByLabel(\'Email\')',
+    );
+  });
+
+  it('falls back to the subtitle when the title is empty', () => {
+    expect(stepLabel({ title: '', subtitle: 'example.com/' })).toBe('example.com/');
+  });
+});
+
+describe('stepLabelParts', () => {
+  it('returns the title with a null subtitle when there is none', () => {
+    expect(stepLabelParts({ title: 'Click' })).toEqual({ title: 'Click', subtitle: null });
+  });
+
+  it('splits the title and the subtitle when the subtitle adds a target', () => {
+    expect(stepLabelParts({ title: 'Click', subtitle: "getByRole('button', { name: 'Pay' })" })).toEqual({
+      title: 'Click',
+      subtitle: "getByRole('button', { name: 'Pay' })",
+    });
+  });
+
+  it('folds a subtitle already contained in the title', () => {
+    expect(stepLabelParts({ title: 'Fill "x" getByLabel(\'Email\')', subtitle: "getByLabel('Email')" })).toEqual({
+      title: 'Fill "x" getByLabel(\'Email\')',
+      subtitle: null,
+    });
+  });
+
+  it('rejoins to the same string stepLabel produces', () => {
+    const step = { title: 'Navigate', subtitle: '/checkout' };
+    const parts = stepLabelParts(step);
+    expect([parts.title, parts.subtitle].filter(Boolean).join(' ')).toBe(stepLabel(step));
+  });
+});
+
+describe('orderedStepParams', () => {
+  it('is empty for null or non-object params', () => {
+    expect(orderedStepParams(null)).toEqual([]);
+    expect(orderedStepParams(undefined)).toEqual([]);
+  });
+
+  it('puts the locator first and keeps the rest in insertion order', () => {
+    expect(orderedStepParams({ value: 'x', button: 'left', locator: "getByRole('button')" })).toEqual([
+      ['locator', "getByRole('button')"],
+      ['value', 'x'],
+      ['button', 'left'],
+    ]);
+  });
+
+  it('keeps insertion order when there is no locator', () => {
+    expect(orderedStepParams({ url: 'https://x/', method: 'GET' })).toEqual([
+      ['url', 'https://x/'],
+      ['method', 'GET'],
+    ]);
+  });
+});
+
+describe('flattenSteps captures 1.63 subtitle and params', () => {
+  it('captures a Click step\'s locator subtitle and params', () => {
+    const flat = flattenSteps([
+      {
+        title: 'Click',
+        category: 'pw:api',
+        duration: 5,
+        subtitle: "getByRole('button', { name: 'Pay' })",
+        params: { locator: "getByRole('button', { name: 'Pay' })", button: 'left' },
+        steps: [],
+      },
+    ] as any);
+    expect(flat[0].subtitle).toBe("getByRole('button', { name: 'Pay' })");
+    expect(flat[0].params).toEqual({ locator: "getByRole('button', { name: 'Pay' })", button: 'left' });
+    expect(flat[0].category).toBe('action');
+  });
+
+  it('captures a Navigate step and categorizes it from params.url', () => {
+    const flat = flattenSteps([
+      {
+        title: 'Navigate',
+        category: 'pw:api',
+        duration: 12,
+        subtitle: 'example.com/',
+        params: { url: 'https://example.com/' },
+        steps: [],
+      },
+    ] as any);
+    expect(flat[0].subtitle).toBe('example.com/');
+    expect(flat[0].params).toEqual({ url: 'https://example.com/' });
+    expect(flat[0].category).toBe('navigation');
+  });
+
+  it('keeps a test.step author\'s own params, stringifying non-primitives', () => {
+    const flat = flattenSteps([
+      {
+        title: 'sign in',
+        category: 'test.step',
+        duration: 40,
+        params: { user: 'admin', attempts: 2, remember: true, extra: { role: 'owner' } },
+        steps: [],
+      },
+    ] as any);
+    expect(flat[0].params).toEqual({
+      user: 'admin',
+      attempts: 2,
+      remember: true,
+      extra: '{"role":"owner"}',
+    });
+  });
+
+  it('caps params to the key limit and each value to the char limit', () => {
+    const rawParams: Record<string, string> = {};
+    for (let i = 0; i < MAX_STEP_PARAM_KEYS + 10; i++) rawParams[`k${i}`] = 'v';
+    rawParams.long = 'a'.repeat(MAX_STEP_PARAM_VALUE_CHARS + 50);
+    const flat = flattenSteps([{ title: 'Click', duration: 1, params: rawParams, steps: [] }] as any);
+    expect(Object.keys(flat[0].params!).length).toBe(MAX_STEP_PARAM_KEYS);
+  });
+
+  it('masks token-shaped values in params and subtitle', () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcDEF123456';
+    const hex = 'a'.repeat(40);
+    const flat = flattenSteps([
+      {
+        title: 'Set token',
+        category: 'test.step',
+        duration: 1,
+        subtitle: `Authorization ${jwt}`,
+        params: { token: jwt, sessionId: hex },
+        steps: [],
+      },
+    ] as any);
+    expect(flat[0].params!.token).toBe('[masked-token]');
+    expect(flat[0].params!.sessionId).toBe('[masked-hex]');
+    expect(flat[0].subtitle).toContain('[masked-token]');
+    expect(flat[0].subtitle).not.toContain(jwt);
+  });
+
+  it('leaves 1.61-shaped steps (no subtitle/params) unchanged', () => {
+    const flat = flattenSteps([
+      { title: "Click getByRole('button', { name: 'Pay' })", category: 'pw:api', duration: 5, steps: [] },
+    ] as any);
+    expect('subtitle' in flat[0]).toBe(false);
+    expect('params' in flat[0]).toBe(false);
+    expect(flat[0].category).toBe('action');
   });
 });

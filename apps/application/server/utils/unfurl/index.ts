@@ -2,13 +2,46 @@ import { detectProvider, extractKey } from '#shared/link-detect';
 import type { LinkProvider } from '#shared/link-detect';
 import { getAppSetting } from '../app-settings';
 import { decryptSecret, getEncryptionKey } from '../crypto';
+import { scmProviderForUrl } from '../scm';
+import { resolveJiraUnfurlConfig } from '../integrations/connections';
 import { UnfurlProvider, type UnfurlResult } from './UnfurlProvider';
 import { GenericUnfurlProvider } from './GenericUnfurlProvider';
 import { JiraUnfurlProvider } from './JiraUnfurlProvider';
 import type { AtlassianConfig } from './JiraUnfurlProvider';
-import { ConfluenceUnfurlProvider } from './ConfluenceUnfurlProvider';
-import { GitHubUnfurlProvider } from './GitHubUnfurlProvider';
+import { ScmUnfurlProvider } from './ScmUnfurlProvider';
 import type { DbClient } from '../../database';
+
+/** The SCM link providers, whose entity is unfurled through `server/utils/scm/`. */
+const SCM_PROVIDERS: ReadonlySet<LinkProvider> = new Set([
+  'github-issue',
+  'github-pr',
+  'gitlab-issue',
+  'gitlab-mr',
+  'bitbucket',
+]);
+
+/**
+ * The web URL of the repository a link points at, derived from the link itself,
+ * so `scmProviderForUrl` can build the right provider. Returns null when the
+ * link has no owner/repo (or group/project) segments.
+ */
+function repositoryUrlFromLink(url: string, provider: LinkProvider): string | null {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.replace(/^\/+/, '');
+    // A GitLab project path can be nested (group/subgroup/project) and always
+    // sits before the `/-/` that begins the issue / MR route.
+    if (provider === 'gitlab-issue' || provider === 'gitlab-mr') {
+      const repoPath = path.split('/-/')[0]?.replace(/\/+$/, '') ?? '';
+      return repoPath.includes('/') ? `${parsed.origin}/${repoPath}` : null;
+    }
+    const [owner, repo] = path.split('/');
+    if (!owner || !repo) return null;
+    return `${parsed.origin}/${owner}/${repo.replace(/\.git$/, '')}`;
+  } catch {
+    return null;
+  }
+}
 
 const RICH_PROVIDERS: ReadonlySet<LinkProvider> = new Set([
   'jira',
@@ -40,20 +73,15 @@ export function unfurlProviderForProvider(
     case 'jira':
       return atlassianConfig ? new JiraUnfurlProvider(atlassianConfig) : null;
     case 'confluence':
-      return atlassianConfig ? new ConfluenceUnfurlProvider(atlassianConfig) : null;
-    case 'github-issue':
-    case 'github-pr': {
-      if (!url) return null;
-      const parsed = GitHubUnfurlProvider.parseUrl(url);
-      if (!parsed) return null;
-      return new GitHubUnfurlProvider(provider, parsed.owner, parsed.repo, scmToken);
+      // Unreachable until a Confluence connection exists; the class stays for then.
+      return null;
+    default: {
+      if (!SCM_PROVIDERS.has(provider) || !url) return null;
+      const repositoryUrl = repositoryUrlFromLink(url, provider);
+      if (!repositoryUrl) return null;
+      const scm = scmProviderForUrl(repositoryUrl, scmToken ?? null);
+      return scm ? new ScmUnfurlProvider(provider, scm) : null;
     }
-    case 'gitlab-issue':
-    case 'gitlab-mr':
-    case 'bitbucket':
-      return null;
-    default:
-      return null;
   }
 }
 
@@ -61,17 +89,17 @@ export function unfurlProviderForProvider(
 export async function createUnfurlProvider(url: string, db: DbClient): Promise<UnfurlProvider | null> {
   const providerType = detectProvider(url);
 
-  // Atlassian providers need config from DB
-  if (providerType === 'jira' || providerType === 'confluence') {
-    const config = await loadAtlassianConfig(db);
-    if (config) {
-      return unfurlProviderForProvider(providerType, url, config);
-    }
+  // Jira reads its config from the matching connection; Confluence is unreachable.
+  if (providerType === 'jira') {
+    const config = await resolveJiraUnfurlConfig(db, url);
+    return config ? unfurlProviderForProvider(providerType, url, config) : null;
+  }
+  if (providerType === 'confluence') {
     return null;
   }
 
   // SCM providers — try token from DB for private repos, but also work without it
-  if (providerType === 'github-issue' || providerType === 'github-pr') {
+  if (SCM_PROVIDERS.has(providerType)) {
     const token = await loadScmToken(db);
     return unfurlProviderForProvider(providerType, url, null, token);
   }
@@ -109,7 +137,7 @@ export async function unfurlUrlWithProvider(
   providerType: LinkProvider,
   db: DbClient,
 ): Promise<UnfurlResult> {
-  const config = await loadAtlassianConfig(db);
+  const config = providerType === 'jira' ? await resolveJiraUnfurlConfig(db, url) : null;
   const token = await loadScmToken(db);
   const provider = unfurlProviderForProvider(providerType, url, config, token);
   if (provider) {
@@ -122,19 +150,6 @@ export async function unfurlUrlWithProvider(
 
   const generic = new GenericUnfurlProvider();
   return generic.unfurl(url, null);
-}
-
-async function loadAtlassianConfig(db: DbClient): Promise<AtlassianConfig | null> {
-  const setting = await getAppSetting<{ value?: string }>(db, 'atlassian');
-  if (!setting?.value) return null;
-  try {
-    const decrypted = decryptSecret(setting.value, getEncryptionKey());
-    const parsed = JSON.parse(decrypted) as AtlassianConfig;
-    if (parsed.baseUrl && parsed.email && parsed.apiToken) return parsed;
-  } catch {
-    /* corrupt setting — ignore */
-  }
-  return null;
 }
 
 async function loadScmToken(db: DbClient): Promise<string | null> {

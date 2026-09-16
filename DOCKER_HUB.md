@@ -25,7 +25,7 @@ Open `http://localhost:3000`. The SQLite database and file storage are created a
 
 > **Linux hosts:** without the `chown`, Docker auto-creates `.data` owned by `root` and the container (non-root UID 1001) can't write to it. Docker Desktop on Windows and macOS handles this for you.
 
-Then point the [Playwright reporter](https://piwitests.dev/reporter) at it — one `npm install` and four lines in `playwright.config.ts`, covered in the [getting started guide](https://piwitests.dev/getting-started).
+Then point the [Playwright reporter](https://piwitests.dev/guide/reporter) at it — one `npm install` and four lines in `playwright.config.ts`, covered in the [getting started guide](https://piwitests.dev/guide/getting-started).
 
 ---
 
@@ -52,60 +52,25 @@ Then point the [Playwright reporter](https://piwitests.dev/reporter) at it — o
 
 The same multi-arch image is mirrored to the GitHub Container Registry as `ghcr.io/piwitests/platform`, which additionally carries an `edge` tag built from `main` (no release testing — not for production).
 
-Read [Upgrading](https://piwitests.dev/upgrading) before bumping a tag: migrations run automatically on startup and are **forward-only**, so rolling back means restoring a backup.
+Read [Upgrading](https://piwitests.dev/operate/upgrading) before bumping a tag: migrations run automatically on startup and are **forward-only**, so rolling back means restoring a backup.
 
 ---
 
 ## Configuration
 
-Piwi runs with **zero configuration** — set variables only to change a default. The full list, with defaults and which ones the Settings UI can override, is the [configuration reference](https://piwitests.dev/configuration); the [configuration generator](https://piwitests.dev/configuration/generator) builds a ready-to-paste `.env`, Compose, Kubernetes or systemd block in your browser.
+Piwi runs with **zero configuration** — set variables only to change a default. The full list, with defaults and which ones the Settings UI can override, is the [configuration reference](https://piwitests.dev/reference/configuration); the [configuration generator](https://piwitests.dev/reference/configuration/generator) builds a ready-to-paste `.env`, Compose, Kubernetes or systemd block in your browser.
 
 The three worth knowing before you expose the container to a network:
 
 | Variable | Why |
 |----------|-----|
-| `PIWI_AUTH_ENABLED` | Authentication is **off by default**. Set to `true` for anything beyond localhost — see [Authentication](https://piwitests.dev/authentication). |
+| `PIWI_AUTH_ENABLED` | Authentication is **off by default**. Set to `true` for anything beyond localhost — see [Authentication](https://piwitests.dev/operate/authentication). |
 | `PIWI_AUTH_SECRET` | Signs session cookies. Required when auth is enabled. |
 | `PIWI_SECRET_KEY` | Encrypts secrets stored in the database (AI keys, SCM tokens). Recommended in every deployment. |
 
 Generate a value for the latter two with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`.
 
-Beyond those: `PIWI_DATABASE_URL` switches to PostgreSQL, `PIWI_STORAGE_TYPE=s3` plus the `PIWI_S3_*` variables switch artifact storage to any S3-compatible service, and `PIWI_RETENTION_DAYS` turns on nightly pruning of old runs.
-
----
-
-## Docker Compose
-
-```yaml
-services:
-  piwi-dashboard:
-    image: phenx/piwitests-server:latest
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./.data:/app/.data
-    environment:
-      PIWI_SECRET_KEY: "replace-with-a-32-byte-hex-string"
-      PIWI_AUTH_ENABLED: "true"
-      PIWI_AUTH_SECRET: "replace-with-a-different-32-byte-hex-string"
-    restart: unless-stopped
-```
-
-PostgreSQL, S3 and MinIO variants are in the [deployment guide](https://piwitests.dev/deployment#docker-compose), alongside Kubernetes manifests, reverse-proxy configuration and backups.
-
----
-
-## Troubleshooting
-
-**Volume permission error** (Linux hosts only) — `mkdir -p .data && chown -R 1001:1001 .data`, then recreate the container.
-
-**Container exits immediately** — `docker logs piwi-dashboard`.
-
-**Data not persisted after restart** — the `-v` volume mount is missing.
-
-**SQLite locked / concurrent write errors** — SQLite allows one writer at a time; set `PIWI_DATABASE_URL` to switch to PostgreSQL.
-
-More, including port conflicts and reverse-proxy issues: [deployment troubleshooting](https://piwitests.dev/deployment#troubleshooting).
+Beyond those: `PIWI_DATABASE_URL` switches to PostgreSQL, `PIWI_STORAGE_TYPE=s3` plus the `PIWI_S3_*` variables switch artifact storage to any S3-compatible service, and `PIWI_RETENTION_DAYS` turns on nightly pruning of old runs. Compose, Kubernetes, PostgreSQL, S3/MinIO, reverse-proxy, backups and troubleshooting are all in the [deployment guide](https://piwitests.dev/operate/deployment).
 
 ---
 

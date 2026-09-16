@@ -1,25 +1,23 @@
 /**
- * Host-side helpers for the DOM-snapshot locator picker: deriving highlight
- * hints, and assembling the hardened iframe document.
+ * Host-side helpers for the DOM-snapshot locator picker.
  *
- * The snapshot loads into a sandboxed iframe — `sandbox="allow-scripts"` with NO
- * `allow-same-origin`, i.e. an opaque origin — with the picker overlay appended
- * as a `<script>` (see `snapshot-picker-overlay.ts`). The picker can touch only
- * its own document and talks to the host purely over `postMessage`, so a
- * sanitizer bypass in the rendered snapshot can't reach the dashboard's
- * cookies, storage, or API. `<base>` is stripped so the snapshot's relative
- * subresources can't be redirected to the tested app.
+ * The document assembly (`buildPickerDocument` / `buildReadonlyDocument` and the
+ * serialized in-iframe scripts) now lives in `#shared/snapshot-picker-document`
+ * so the server's `dom-snapshot-frame` endpoint can build the identical document
+ * (a `src`-loaded frame escapes the desktop page CSP that blocks a `srcdoc`
+ * one). It is re-exported here so existing call sites keep importing from
+ * `~/utils/snapshot-picker-script`. The only host-only piece — deriving the
+ * highlight hints the picker is driven with — stays below.
  */
-
 import type { RankedLocator } from '#shared/locator-healing.types';
-import { installPickerOverlay, probeElementAttrs, type PickerOverlayArg, type ProbeArg } from '@piwitests/picker-dom';
-import { installSnapshotPickerExtras } from './snapshot-picker-overlay';
 
-/** Configuration handed to the serialized picker (the only bridge into it). */
-export interface SnapshotPickerConfig {
-  /** Attribute whitelist to probe — the shared `CAPTURED_ATTRIBUTES`. */
-  probedAttrs: string[];
-}
+export {
+  stripBaseTag,
+  snapshotPickerScriptTag,
+  buildPickerDocument,
+  buildReadonlyDocument,
+  type SnapshotPickerConfig,
+} from '#shared/snapshot-picker-document';
 
 /** A text hint the in-iframe picker highlights on open. */
 export interface PickerHint {
@@ -55,50 +53,4 @@ export function deriveHighlightHints(input: {
   for (const a of input.fromElementMatch ?? []) push(nameOf(a.args));
   for (const a of input.fromAriaSnapshot ?? []) push(nameOf(a.args));
   return out.slice(0, 6);
-}
-
-/** Escape a serialized function/value so a stray `</script>` in it can't close the tag early. */
-const escScriptClose = (src: string): string => src.replace(/<\/(script)/gi, '<\\/$1');
-
-/**
- * The `<script>` tag to append to the snapshot HTML. Three self-contained
- * pieces run in sequence, each re-serialized independently via
- * `Function.prototype.toString()` — a serialized function can carry no
- * imports, so they can't just import one another:
- *
- *  1. `probeElementAttrs` is installed on `globalThis.__piwiProbe` — the
- *     shared core overlay reads it from there when a pick commits, since it
- *     runs standalone in this iframe with no Node process to probe from later
- *     (contrast the reporter's live picker, which probes after the fact from
- *     Node against a live element handle).
- *  2. The snapshot-only chrome (`installSnapshotPickerExtras`) — search,
- *     highlight hints, extended inertness, content-height reporting. Installs
- *     `globalThis.__piwiSnapshotExtras` before the core overlay runs, so its
- *     `onPick`/`onClose` hooks are in place before they're ever needed.
- *  3. The shared core overlay (`installPickerOverlay`), run with
- *     `transport: 'postMessage'`.
- */
-export function snapshotPickerScriptTag(config: SnapshotPickerConfig): string {
-  const probeArg: ProbeArg = { keep: config.probedAttrs, includeStructural: false, includeLabelText: true };
-  const overlayArg: PickerOverlayArg = { transport: 'postMessage', probeArg };
-  const probeSrc = escScriptClose(String(probeElementAttrs));
-  const extrasSrc = escScriptClose(String(installSnapshotPickerExtras));
-  const overlaySrc = escScriptClose(String(installPickerOverlay));
-  return (
-    `<script>` +
-    `globalThis.__piwiProbe = (${probeSrc});` +
-    `(${extrasSrc})();` +
-    `(${overlaySrc})(${JSON.stringify(overlayArg)});` +
-    `</script>`
-  );
-}
-
-/** Strip `<base>` so the snapshot's relative subresources can't be redirected to the tested app. */
-export function stripBaseTag(html: string): string {
-  return html.replace(/<base\b[^>]*>/gi, '');
-}
-
-/** Build the full blob HTML: the snapshot with `<base>` stripped, plus the appended picker script. */
-export function buildPickerDocument(html: string, config: SnapshotPickerConfig): string {
-  return stripBaseTag(html) + snapshotPickerScriptTag(config);
 }

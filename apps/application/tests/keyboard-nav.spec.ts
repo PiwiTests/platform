@@ -70,8 +70,8 @@ test.describe('Keyboard navigation & tab URL sync', () => {
 
     await page.getByRole('button', { name: 'Performance' }).click();
     await expect(page).toHaveURL(/[?&]tab=performance/);
-    await page.getByRole('button', { name: 'Spec health' }).click();
-    await expect(page).toHaveURL(/[?&]tab=spec-health/);
+    await page.getByRole('button', { name: 'Settings' }).click();
+    await expect(page).toHaveURL(/[?&]tab=settings/);
 
     const endLen = await page.evaluate(() => history.length);
     expect(endLen, 'switching tabs must use replace(), not push()').toBe(startLen);

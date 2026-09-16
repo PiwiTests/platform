@@ -20,7 +20,7 @@ const highlighted = computed(() => {
 <template>
   <div class="relative">
     <pre
-      class="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-4 pt-8 pb-3 text-sm font-mono overflow-x-auto leading-relaxed"
+      class="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-4 max-sm:px-2 pt-8 pb-3 text-sm font-mono overflow-x-auto leading-relaxed"
     ><code class="hljs !bg-transparent" v-html="highlighted" /></pre>
     <!-- Language label -->
     <span

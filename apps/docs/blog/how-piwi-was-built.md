@@ -50,7 +50,7 @@ This is the part that changed the most. At the start, Piwi did roughly what its 
   <figcaption>One failing execution, diagnosis-first: the error, the wasted waits, the evidence, and a verdict, on one screen.</figcaption>
 </figure>
 
-Everything captured about a failed attempt now lands on a single [diagnosis-first page](/evidence): the raw error, a verdict (new regression or just flaky, how many retries, how long it has been failing), the test source as a real call stack (so a failure inside a helper shows the helper, not just the line that called it), screenshots and video, an environment diff and a visual diff against the last green run, console output, network requests with backend logs inlined, the app's state at the end, and the failure-time ARIA and DOM snapshots. Most of it comes from one opt-in file of capture fixtures in your Playwright setup.
+Everything captured about a failed attempt now lands on a single [diagnosis-first page](/features/evidence): the raw error, a verdict (new regression or just flaky, how many retries, how long it has been failing), the test source as a real call stack (so a failure inside a helper shows the helper, not just the line that called it), screenshots and video, an environment diff and a visual diff against the last green run, console output, network requests with backend logs inlined, the app's state at the end, and the failure-time ARIA and DOM snapshots. Most of it comes from one opt-in file of capture fixtures in your Playwright setup.
 
 With a trace attached it goes further: the complete call stack with real source read from the trace's own embedded files, and the full network waterfall. The Playwright trace viewer is bundled and served by the dashboard itself, so traces never leave your server. And each trace is stored as a slim events archive plus a shared, hash-deduplicated resource pool, so keeping every run costs much less than it sounds. Sensitive headers and token-shaped strings are masked before anything is shown.
 
@@ -95,11 +95,11 @@ When the locator breaks, Piwi works back from the failure through a ladder of ma
   <figcaption>Reference data is captured while tests pass: every locator that proves it works leaves ranked replacements behind.</figcaption>
 </figure>
 
-The one place Piwi does write is [auto-heal PRs](/auto-heal), and even there the developer stays in charge. The edits are one-line rewrites taken straight from the captured snapshot, so no model-generated code is ever in the write path. Piwi re-reads each file at the branch head and only touches lines that still match exactly (a drifted line is dropped, not guessed), and it opens a draft pull request you review, merge, or close. `@piwitests/core` exists so the reporter, the dashboard, the picker and the extension all score locators with the same logic.
+The one place Piwi does write is [auto-heal PRs](/features/auto-heal), and even there the developer stays in charge. The edits are one-line rewrites taken straight from the captured snapshot, so no model-generated code is ever in the write path. Piwi re-reads each file at the branch head and only touches lines that still match exactly (a drifted line is dropped, not guessed), and it opens a draft pull request you review, merge, or close. `@piwitests/core` exists so the reporter, the dashboard, the picker and the extension all score locators with the same logic.
 
 ## Flaky tests and wasted time
 
-A flaky test is a test whose result you cannot trust, and every suite has some. Piwi computes a [composite flakiness score](/flaky-tests) per test (retry passes, status flips, failure rate) and classifies the likely root cause, but the ranking that matters is a different one: impact, measured in wasted CI minutes. Retries multiplied by the average failed duration, plus whether the test blocks the pipeline. A test that flakes constantly but finishes in 200 ms costs nothing; one that flakes weekly and burns a four-minute timeout is the one to fix. **Fix the expensive ones, not the annoying ones.**
+A flaky test is a test whose result you cannot trust, and every suite has some. Piwi computes a [composite flakiness score](/features/flaky-tests) per test (retry passes, status flips, failure rate) and classifies the likely root cause, but the ranking that matters is a different one: impact, measured in wasted CI minutes. Retries multiplied by the average failed duration, plus whether the test blocks the pipeline. A test that flakes constantly but finishes in 200 ms costs nothing; one that flakes weekly and burns a four-minute timeout is the one to fix. **Fix the expensive ones, not the annoying ones.**
 
 <figure>
   <img src="/screenshots/flaky-detection.png" alt="The flaky tests tab: each test with its composite score, failure rate, retry passes and impact">
@@ -119,7 +119,7 @@ Everything above lives in the dashboard. These pieces reach back into your workf
 - **The CI gate.** `npx @piwitests/reporter gate` fails a build on the dashboard's analysis instead of the raw exit code: new regressions, newly flaky tests, a failure cluster never seen before, missing required tags. A red run full of known quarantined flakes can pass; a green-looking run that introduced a brand-new failure cluster can fail.
 - **Pull-request feedback.** When a run finishes on a branch with an open PR, Piwi comments with new failures separated from pre-existing ones, each with its owner and the suggested replacement locator. The owner comes from CODEOWNERS, read from the repository, so nobody edits test files to declare ownership.
 - **Fix verification.** A cluster doesn't just go quiet: when a full run executes every test it covers and they all pass, Piwi records the fix with the run, the commit, and how long the cluster was open. There are three verdicts, because they are not the same claim: stopped failing (a flaky test can do that by accident), diagnosis verified (the commits since the last failure touched a file the suggested patch named), and regressed (the fix didn't hold). A partial run never closes a cluster, because a test that didn't execute hasn't been shown to pass.
-- **Fix plans for agents.** The [MCP server](/mcp) lets a coding agent ask for a fix plan: one call returning the diagnosis, the validated patch, the locator replacement with the file and line to edit, the failing tests, the owner, and the command that verifies the work. That last part is what makes it a loop instead of a lookup: the agent can prove its own fix landed.
+- **Fix plans for agents.** The [MCP server](/features/mcp) lets a coding agent ask for a fix plan: one call returning the diagnosis, the validated patch, the locator replacement with the file and line to edit, the failing tests, the owner, and the command that verifies the work. That last part is what makes it a loop instead of a lookup: the agent can prove its own fix landed.
 
 ## Ideas worth keeping
 
@@ -138,7 +138,7 @@ The idea came from earlier experiments: I had built browser playgrounds for EF C
 
 ### AI steps: the LLM is a compiler, not a runtime
 
-The usual objection to natural-language tests is that a model in the hot path is slow, flaky, and a network dependency in CI. [AI steps](/ai-steps) keep it out of the path entirely: `page.piwiLocator('the email address field')` calls the model once, at authoring time, and every run after that is plain Playwright with **zero model calls and zero network**.
+The usual objection to natural-language tests is that a model in the hot path is slow, flaky, and a network dependency in CI. [AI steps](/guide/ai-steps) keep it out of the path entirely: `page.piwiLocator('the email address field')` calls the model once, at authoring time, and every run after that is plain Playwright with **zero model calls and zero network**.
 
 The obvious way to build this is to let the model emit the locator, cache the string, and replay it. That falls apart the moment you commit the cache to git: model output is not byte-stable, so every re-author rewrites the file and your diffs fill with noise, and a stored free-form selector is opaque and unsafe to run. So the model never returns a locator. It returns one decision from a closed schema, the element's ARIA role and accessible name, and a deterministic scorer in `@piwitests/core` compiles that into an allowlisted locator program:
 
@@ -169,7 +169,7 @@ The failure loop is the heart. These make it comfortable to live with every day.
 
 ### The desktop app
 
-Not everyone wants to run a server. The [desktop app](/desktop) bundles the same server that ships in the Docker image inside a [Tauri](https://tauri.app/) shell, bound to `127.0.0.1`, with your data in a local folder. But packaging is the boring half: the interesting features are the ones **only a desktop app can do**, because they need to touch your machine.
+Not everyone wants to run a server. The [desktop app](/features/desktop) bundles the same server that ships in the Docker image inside a [Tauri](https://tauri.app/) shell, bound to `127.0.0.1`, with your data in a local folder. But packaging is the boring half: the interesting features are the ones **only a desktop app can do**, because they need to touch your machine.
 
 - **Run tests from the dashboard.** A failing run is one click from a local retry: **Run locally** re-runs the failed tests using your project's own Playwright and the app's bundled Node, nothing to install, with headed, UI-mode, inspector and repeat-each presets (up to 1000 times, the flake-hunting mode). A test case has a Reproduce locally shortcut, a cluster can re-run every affected test at once, and the results stream straight back into the dashboard.
 - **One-click MCP setup.** The app detects installed AI clients (Claude Code, Claude Desktop, Cursor, VS Code, Windsurf, Gemini CLI) and writes the `piwi` entry into each client's own config file, with a backup kept and the entry rewritten if the app's address changes later.
@@ -180,7 +180,7 @@ The reporter also finds the app on its own when nothing else is configured, with
 
 ### The browser extension
 
-If the dashboard can score locators, so can a tool running on any page, with no test involved. [Piwi Picker](/extension) picks ranked, stable Playwright locators straight from the page in front of you, scored by the same engine the dashboard uses, and nothing leaves the browser by default. A locator matching several elements is ranked below one that matches exactly one, so a scoped chain like `getByTestId('product-43').getByRole('button')` beats a bare `getByRole('button')` that hits every card on the page. Framework noise like `data-v-4f2a1b` is skipped, and an element with no role is scoped through its text. It also records a flow across pages into a runnable spec.
+If the dashboard can score locators, so can a tool running on any page, with no test involved. [Piwi Picker](/features/extension) picks ranked, stable Playwright locators straight from the page in front of you, scored by the same engine the dashboard uses, and nothing leaves the browser by default. A locator matching several elements is ranked below one that matches exactly one, so a scoped chain like `getByTestId('product-43').getByRole('button')` beats a bare `getByRole('button')` that hits every card on the page. Framework noise like `data-v-4f2a1b` is skipped, and an element with no role is scoped through its text. It also records a flow across pages into a runnable spec.
 
 The part I am proudest of is **test functions**. You register your own page-object methods and helpers in a catalog: paste the source and a model proposes the name, the parameters and the DOM pattern, in a form you review before saving (an MCP tool can register them too). Then, while you record, the extension live-ranks which of your functions the steps look like, with a progress indicator until a full match. On export, matched steps collapse into **a call to your own function instead of raw locator lines**, and anything unmatched stays plain locators. The matcher only ever selects among the functions you registered, it never invents one. A checklist can also score the whole catalog against whatever page you are on: ready to use here, partial match, or not found on this page.
 
@@ -195,7 +195,7 @@ The test list tells you what failed. It does not tell you **where the minutes ac
 
 ### Open in IDE
 
-Every source path in the dashboard is clickable and can [open in your editor](/ide-integration) at the right line. The mapping from a repo-relative path to a real file is stored in your browser, per machine, so **nothing about your filesystem is sent to the server**. The tricky part is knowing whether the jump worked: only the JetBrains local server can confirm it from a web page, while `vscode://` links are fire-and-forget. So "Auto" probes the one that can answer first, then falls back to a URL launch, honestly labeled "opening, can't confirm".
+Every source path in the dashboard is clickable and can [open in your editor](/features/ide-integration) at the right line. The mapping from a repo-relative path to a real file is stored in your browser, per machine, so **nothing about your filesystem is sent to the server**. The tricky part is knowing whether the jump worked: only the JetBrains local server can confirm it from a web page, while `vscode://` links are fire-and-forget. So "Auto" probes the one that can answer first, then falls back to a URL launch, honestly labeled "opening, can't confirm".
 
 ### A few more, in brief
 
@@ -218,7 +218,7 @@ Three eras, several assistants, and **I was the architect throughout**: the desi
 
 ## Where it is now
 
-Eight months in, the mission fits in three sentences: **keep the history, explain the failures, hand back a fix**, with the rule that a feature serving none of them is an argument against building it. That clarity was earned, not designed up front. Piwi is at v0.25 and still pre-1.0; the most recent step, [auto-heal PRs](/auto-heal), is the most literal form yet of that third sentence.
+Eight months in, the mission fits in three sentences: **keep the history, explain the failures, hand back a fix**, with the rule that a feature serving none of them is an argument against building it. That clarity was earned, not designed up front. Piwi is at v0.25 and still pre-1.0; the most recent step, [auto-heal PRs](/features/auto-heal), is the most literal form yet of that third sentence.
 
 The rhythm is slower now, on purpose. I stabilize what exists: features, performance, security, with regular audits to keep the code cohesive, performant, maintainable and secure. New ideas still come, but each one has to answer two questions first: **would I actually use this? Will it help me the day I am fixing or improving my tests?** If the answer is no, it does not get built.
 

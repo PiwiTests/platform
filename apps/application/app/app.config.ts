@@ -13,9 +13,25 @@ export default defineAppConfig({
     },
     card: {
       slots: {
-        // Solid muted header so block headers clearly separate from the card
-        // body in both modes (zinc-100 on white / zinc-800 on zinc-900).
+        // Below `sm` a card goes full-bleed: no page gutter, no side border and no
+        // side radius, so text starts 12 px from the screen edge on its own inner
+        // padding. Top and bottom borders stay. From `sm` up the Nuxt UI default
+        // (bordered, rounded, `p-6`) applies unchanged.
+        root: 'max-sm:rounded-none max-sm:border-x-0',
+        // Solid muted header so block headers clearly separate from the card body
+        // in both modes (zinc-100 on white / zinc-800 on zinc-900). Below `sm` the
+        // header adds 12 px per side; from `sm` up it is `px-6`.
         header: 'px-3 py-3 sm:px-6 bg-muted',
+        body: 'max-sm:p-3',
+        footer: 'max-sm:p-3',
+      },
+    },
+    dashboardPanel: {
+      slots: {
+        // Below `sm` the page has no side gutter: cards are full-bleed and their own
+        // 12 px padding is the only inset. Vertical padding and the `sm`-and-up
+        // default (`p-6`) are the Nuxt UI defaults.
+        body: 'max-sm:px-0',
       },
     },
     table: {

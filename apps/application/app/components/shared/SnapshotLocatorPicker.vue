@@ -122,40 +122,91 @@ type PickerStep = (typeof PICKER_STEP)[keyof typeof PICKER_STEP];
 const step = ref<PickerStep>('pick-element');
 const iframeRef = ref<HTMLIFrameElement | null>(null);
 const iframeReady = ref(false);
+// Set when the picker script fails to start (a thrown init error reported over
+// postMessage, or the readiness timeout below) so the host shows why instead of
+// an endless "Initializing picker…" spinner.
+const pickerError = ref<string | null>(null);
+const isDesktop = useIsDesktop();
 const pickedAttrs = ref<ElementAttributes | null>(null);
 const alternatives = ref<RankedLocator[]>([]);
 
 // ── Build iframe content ────────────────────────────────────
 
-// The snapshot HTML plus the serialized picker script (appended at the end so a
-// truncated document still runs it) load into a HARDENED blob iframe:
-// sandbox="allow-scripts" with NO allow-same-origin, so the picker runs on an
-// opaque origin and can reach the host only via postMessage. A sanitizer bypass
-// in the snapshot therefore cannot touch the dashboard's cookies/storage/API.
-// The picker's overlay/banner carry their own inline styles, so no extra <style>
-// is needed. <base> is stripped so subresources can't be redirected to the
-// tested app.
-const iframeBlobUrl = ref<string | undefined>(undefined);
+// The snapshot loads into a HARDENED iframe — sandbox="allow-scripts" with NO
+// allow-same-origin, so the picker runs on an opaque origin and can reach the
+// host only via postMessage; a sanitizer bypass in the snapshot cannot touch the
+// dashboard's cookies/storage/API. <base> is stripped so subresources can't be
+// redirected to the tested app.
+//
+// The served app (web + desktop) loads the frame from a same-origin endpoint via
+// `src`, so it carries the endpoint's own `sandbox allow-scripts` CSP. A `srcdoc`
+// frame instead INHERITS the page CSP, and the desktop build's `strict-dynamic`
+// policy then blocks the picker's inline script — the picker never starts. The
+// demo is a static SPA with no server and no such CSP, so it keeps building the
+// document inline as a `srcdoc` (its snapshots come from the in-browser router,
+// not an API route an iframe `src` could reach).
+const config = useRuntimeConfig();
+const isDemo = !!config.public.demoMode;
+const apiBase = (config.app.baseURL || '/').replace(/\/$/, '');
 
-function makeBlobUrl(html: string): string {
-  return URL.createObjectURL(
-    new Blob([buildPickerDocument(html, { probedAttrs: CAPTURED_ATTRIBUTES })], { type: 'text/html' }),
-  );
+const srcDoc = computed(() =>
+  isDemo && import.meta.client && snapshot.value?.html
+    ? buildPickerDocument(snapshot.value.html, { probedAttrs: CAPTURED_ATTRIBUTES })
+    : undefined,
+);
+
+// Bumped to force the iframe to reload — restarting the picker script — when
+// re-picking or switching source (remounts via `:key`, and busts `frameSrc`).
+const renderKey = ref(0);
+function reloadFrame() {
+  renderKey.value += 1;
 }
 
-watch(
-  () => snapshot.value?.html,
-  (html) => {
-    // Revoke previous blob
-    if (iframeBlobUrl.value) {
-      URL.revokeObjectURL(iframeBlobUrl.value);
-      iframeBlobUrl.value = undefined;
-    }
-    if (!html) return;
-    iframeBlobUrl.value = makeBlobUrl(html);
-  },
-  { immediate: true },
-);
+// The served-app frame source. `renderKey` in the query busts the URL so a
+// re-pick / reload re-runs the picker script (the endpoint is `no-store`, so
+// this only forces a fresh navigation rather than defeating a cache).
+const frameSrc = computed(() => {
+  if (isDemo || snapshot.value?.status !== 'ok' || !snapshot.value.html) return undefined;
+  const params = new URLSearchParams({ mode: 'pick' });
+  if (viewSource.value) params.set('source', viewSource.value);
+  params.set('r', String(renderKey.value));
+  return `${apiBase}/api/test-run-cases/${props.testRunsCaseId}/dom-snapshot-frame?${params.toString()}`;
+});
+
+// The picker signals `pickerReady` once its in-iframe script has run. If that
+// never arrives — the script hung, or was blocked before it could run (a CSP
+// block executes no code, so it can't even report an error) — surface a message
+// instead of spinning forever. Armed whenever the frame (re)loads a document,
+// cleared the moment it reports ready.
+const READY_TIMEOUT_MS = 8000;
+let readyTimer: ReturnType<typeof setTimeout> | null = null;
+function clearReadyTimer() {
+  if (readyTimer) {
+    clearTimeout(readyTimer);
+    readyTimer = null;
+  }
+}
+function armReadyTimer() {
+  clearReadyTimer();
+  pickerError.value = null;
+  if (!import.meta.client) return;
+  readyTimer = setTimeout(() => {
+    if (iframeReady.value) return;
+    pickerError.value = isDesktop
+      ? 'The picker did not start. In the desktop app this is usually the Content-Security-Policy blocking the sandboxed snapshot frame — relaunch with --devtools (or PIWI_DEBUG=1) and check the console and logs/server.log to confirm.'
+      : 'The picker did not start. Try reopening it; if it persists, the DOM snapshot may be malformed.';
+  }, READY_TIMEOUT_MS);
+}
+// (Re)load of the frame — a new snapshot, a source switch, or a re-pick
+// (renderKey bump) — re-arms the timer; a frame going away clears it.
+watch([frameSrc, srcDoc, renderKey], () => {
+  if (frameSrc.value || srcDoc.value) armReadyTimer();
+  else clearReadyTimer();
+});
+watch(iframeReady, (ready) => {
+  if (ready) clearReadyTimer();
+});
+onBeforeUnmount(clearReadyTimer);
 
 // ── Viewport-accurate rendering (trace-viewer style) ────────────────────────
 // Size the iframe to the recorded page viewport width and its full content
@@ -236,12 +287,6 @@ onBeforeUnmount(() => {
   stageObserver?.disconnect();
 });
 
-// ── Iframe cleanup ───────────────────────────────────────────────────────────
-
-onBeforeUnmount(() => {
-  if (iframeBlobUrl.value) URL.revokeObjectURL(iframeBlobUrl.value);
-});
-
 // ── Message handler from iframe ──────────────────────────────────────────────
 
 function handleMessage(event: MessageEvent) {
@@ -254,6 +299,14 @@ function handleMessage(event: MessageEvent) {
     // Pre-highlight the element the failing locator meant to hit, so the user
     // does not have to hunt for it in a full-page snapshot.
     postHighlightHints();
+    return;
+  }
+  if (data?.type === 'piwiError') {
+    // The picker script threw while starting — show why rather than spin
+    // forever. The desktop error bridge also forwards this to logs/server.log.
+    clearReadyTimer();
+    pickerError.value =
+      typeof data.message === 'string' && data.message ? data.message : 'The picker failed to initialize.';
     return;
   }
   if (data?.type === 'piwiContentHeight' && typeof data.height === 'number') {
@@ -335,10 +388,6 @@ function forwardKeyToPicker(e: KeyboardEvent) {
   win.postMessage({ type: 'piwiPickerKey', key: e.key }, '*');
 }
 
-function cleanupIframe() {
-  if (iframeRef.value) iframeRef.value.src = 'about:blank';
-}
-
 onMounted(() => {
   window.addEventListener('message', handleMessage);
   window.addEventListener('keydown', forwardKeyToPicker, true);
@@ -402,7 +451,6 @@ async function confirm() {
 }
 
 function close() {
-  cleanupIframe();
   isOpen.value = false;
 }
 
@@ -412,17 +460,13 @@ function resetPicker() {
   selectedAlt.value = null;
   step.value = 'pick-element';
   iframeReady.value = false;
+  pickerError.value = null;
   searchQuery.value = '';
   searchCount.value = 0;
   searchIndex.value = -1;
-  // Reload the iframe to restore the picker. Recreate the blob URL so the src
-  // string actually changes (reassigning the same URL isn't a guaranteed
-  // reload), which reloads the document and re-runs the appended picker script.
-  const html = snapshot.value?.html;
-  if (html) {
-    if (iframeBlobUrl.value) URL.revokeObjectURL(iframeBlobUrl.value);
-    iframeBlobUrl.value = makeBlobUrl(html);
-  }
+  // Reload the iframe to restore the picker, re-running the appended picker
+  // script over the same document.
+  reloadFrame();
 }
 
 // ── Copy ────────────────────────────────────────────────────────────────────
@@ -585,9 +629,18 @@ onBeforeUnmount(() => {
           class="relative border border-default rounded-lg overflow-auto"
           :class="[step === 'pick-element' ? 'h-[75vh]' : 'h-80', viewport ? 'bg-gray-100 dark:bg-gray-800' : '']"
         >
+          <!-- Error overlay: the picker script threw or never started -->
+          <div
+            v-if="pickerError"
+            class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white dark:bg-gray-900 z-10 p-6 text-center"
+          >
+            <UIcon name="i-lucide-alert-triangle" class="size-6 text-amber-500" />
+            <p class="text-sm text-gray-600 dark:text-gray-300 max-w-md">{{ pickerError }}</p>
+            <UButton size="xs" variant="outline" color="neutral" @click="resetPicker">Retry</UButton>
+          </div>
           <!-- Loading overlay until the picker script initializes -->
           <div
-            v-if="!iframeReady"
+            v-else-if="!iframeReady"
             class="absolute inset-0 flex items-center justify-center bg-white dark:bg-gray-900 z-10"
           >
             <UIcon name="i-lucide-loader" class="size-5 animate-spin text-gray-400" />
@@ -595,11 +648,15 @@ onBeforeUnmount(() => {
           </div>
           <div :style="canvasStyle">
             <!-- Hardened: allow-scripts WITHOUT allow-same-origin → opaque origin,
-                 postMessage-only bridge. The picker script is baked into the blob
-                 HTML (see makeBlobUrl), so no parent-side injection on load. -->
+                 postMessage-only bridge. Served app loads the picker document from
+                 the `dom-snapshot-frame` endpoint (`src`, its own sandbox CSP); the
+                 demo builds it inline (`srcdoc`). `renderKey` remounts the frame to
+                 re-run the picker on re-pick. -->
             <iframe
               ref="iframeRef"
-              :src="iframeBlobUrl"
+              :key="renderKey"
+              :src="frameSrc"
+              :srcdoc="srcDoc"
               :style="iframeStyle"
               class="bg-white"
               sandbox="allow-scripts"
@@ -640,7 +697,7 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- Alternatives list -->
-          <div class="space-y-1" role="radiogroup" aria-label="Alternative locators">
+          <div class="space-y-1" role="radiogroup" aria-label="Locator alternatives">
             <LocatorAlternativeRow
               v-for="(alt, i) in alternatives"
               :key="i"

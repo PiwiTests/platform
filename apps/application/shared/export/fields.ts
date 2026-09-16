@@ -95,6 +95,7 @@ export const OMISSION_REASONS: Record<string, string> = {
   'budget-exhausted': 'the export size budget was reached',
   unreadable: 'the file could not be read from storage',
   'html-format': 'not embeddable in a single HTML file — use the ZIP export',
+  'pdf-format': 'not embeddable in a PDF — use the ZIP or HTML export',
 };
 
 /** One console entry as a single line, shared by both renderers and the ZIP log. */

@@ -14,10 +14,18 @@
  *   node scripts/take-feature-screenshots.mjs --url http://localhost:3002
  *   node scripts/take-feature-screenshots.mjs --freeze-now 2026-08-02T09:00:00Z
  *   node scripts/take-feature-screenshots.mjs <scene> --out ../docs/public/screenshots
+ *   node scripts/take-feature-screenshots.mjs --route /test-run-cases/37 --expand --height 2400
  *
  * Without --url the script boots its own dev server on port 3050 and tears it
  * down at the end; a missing dev DB is created and seeded first. With --url it
  * drives the server you point it at.
+ *
+ * `--route <path>` captures one page without registering a scene — the way to
+ * look at any screen while verifying a change. It gets the same server, the
+ * same hydration and settle waits, and writes `.screens/route-<slug>.png`.
+ * `--expand` unfolds every collapsed section first; `--width` and `--height`
+ * size the viewport (the dashboard scrolls inside a panel, so a taller viewport
+ * is how more of a page gets into one image); `--name` picks the file stem.
  *
  * Every scene declares a `mode`: `web` (the default) captures the dashboard as
  * a browser serves it, `desktop` captures the Tauri shell — the server runs
@@ -32,12 +40,14 @@
  */
 
 import { createRequire } from 'module';
-import { spawn, execSync } from 'child_process';
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
+import { createHash } from 'node:crypto';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 import { drawAnnotations, clearAnnotations } from './screenshot-annotations.mjs';
+import { resolveChromium, startServer, waitForPortFree } from './lib/dev-server.mjs';
+import { waitForHydration, settlePage } from './lib/page-waits.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -46,7 +56,6 @@ const sharp = require('sharp');
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const APP_DIR = join(__dirname, '..');
 const DOCS_SHOTS_DIR = join(APP_DIR, '..', 'docs', 'public', 'screenshots');
-const PORT = 3050;
 
 /** Where a scene's images land. `screens` is gitignored; `docs` is committed. */
 const OUT_TARGETS = {
@@ -55,6 +64,83 @@ const OUT_TARGETS = {
 };
 
 const DEFAULT_VIEWPORT = { width: 1280, height: 860 };
+
+/**
+ * A real Playwright 1.63 trace recorded with `snapshots: { dom, aria, screen }`,
+ * ingested by the failing-step-evidence scene so the timeline can show the page
+ * captured at the failing step. The seeded demo traces predate 1.63, so this
+ * feature can only be driven from a genuine snapshot-bearing trace.
+ */
+const TRACE_SNAPSHOT_FIXTURE = join(APP_DIR, 'tests', 'fixtures', 'trace-aria-screen-1.63.zip');
+const TRACE_SNAPSHOT_CASE = {
+  title: 'checkout — cancel is gone after paying',
+  location: 'tests/checkout.spec.ts:12:3',
+  retries: 0,
+};
+
+/**
+ * Start a run, push one failing case with a marked failing step, and upload the
+ * 1.63 trace fixture for it. Returns its executionId. Retries the pushes while
+ * the dev server compiles the API routes on first hit.
+ */
+async function ingestTraceSnapshotCase(request, base) {
+  const trace = readFileSync(TRACE_SNAPSHOT_FIXTURE);
+  const traceHash = createHash('sha256').update(trace).digest('hex');
+
+  const post = async (path, options) => {
+    let last;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 3000));
+      try {
+        const res = await request.post(`${base}${path}`, options);
+        if (res.ok()) return res;
+        last = new Error(`${path} → ${res.status()}`);
+      } catch (error) {
+        last = error;
+      }
+    }
+    throw last ?? new Error(`could not POST ${path}`);
+  };
+
+  const started = await (
+    await post('/api/test-runs/start', {
+      data: { projectName: 'trace-snapshots', startTime: new Date().toISOString() },
+    })
+  ).json();
+  const { runId, streamToken } = started;
+
+  await post(`/api/test-runs/${runId}/events`, {
+    data: {
+      streamToken,
+      testCases: [
+        {
+          type: 'complete',
+          ...TRACE_SNAPSHOT_CASE,
+          status: 'failed',
+          duration: 2000,
+          error:
+            "TimeoutError: locator.click: Timeout 1500ms exceeded.\n  - waiting for getByRole('button', { name: 'Cancel' })",
+          steps: [
+            { title: 'Navigate to "data:text/html"', category: 'navigation', duration: 40, startTime: 0 },
+            { title: 'Fill "a@b.test"', category: 'input', duration: 20, startTime: 50 },
+            { title: 'Click "Pay now"', category: 'click', duration: 30, startTime: 80 },
+            { title: 'Click "Cancel"', category: 'click', duration: 1500, startTime: 120, failed: true },
+          ],
+        },
+      ],
+    },
+  });
+
+  const upload = await post(`/api/test-runs/${runId}/case-files`, {
+    multipart: {
+      streamToken,
+      testCase: JSON.stringify(TRACE_SNAPSHOT_CASE),
+      trace_hash: traceHash,
+      trace: { name: 'trace.zip', mimeType: 'application/zip', buffer: trace },
+    },
+  });
+  return (await upload.json()).executionId;
+}
 
 /** Surfaces a scene can be captured against. */
 const MODES = ['web', 'desktop'];
@@ -190,28 +276,140 @@ const READY_INSPECTION = {
  *   charts      — wait for chart geometry to render before capturing
  *   link        — desktop mode: mocked linked folder for `desktop_get_project_link` (or null)
  *   inspection  — desktop mode: mocked `desktop_inspect_folder` answer (default READY_INSPECTION)
+ *   importableRuns — desktop mode: archives `desktop_find_importable_runs` reports (default [])
+ *   pickedFiles — desktop mode: archives the native import picker returns (default [])
  */
 const SCENES = [
   // ── Docs illustrations (committed) ────────────────────────────────────────
   {
-    name: 'locator-healing',
-    description: 'Alternative locators panel with ranked replacements and a recommended fix',
+    name: 'integrations-settings',
+    description: 'Settings → Integrations: the Jira card with a connected system and a test button',
     tags: ['docs'],
     out: 'docs',
-    route: '/test-run-cases/13',
+    // Run with the server's Jira env vars set (PIWI_JIRA_BASE_URL / PIWI_JIRA_EMAIL
+    // / PIWI_JIRA_API_TOKEN) so the environment-managed Jira connection appears;
+    // no network call is made just to render the page.
+    route: '/settings/integrations',
+    viewport: { width: 1280, height: 1000 },
+    of: '[data-shot="integrations-settings"]',
+    pad: 12,
+  },
+  {
+    name: 'create-issue-modal',
+    description: 'Create issue modal on a cluster: title, fields, include toggles and the fix-plan preview',
+    tags: ['docs'],
+    out: 'docs',
+    // A db-managed Jira connection makes the entry points appear; its base URL
+    // points at a dead local port so the dedupe search fails fast (no real Jira).
+    async prepare({ base, request }) {
+      const list = await (await request.get(`${base}/api/integrations/connections`)).json();
+      if (!list.connections?.some((c) => c.provider === 'jira')) {
+        await request.post(`${base}/api/integrations/connections`, {
+          data: {
+            provider: 'jira',
+            name: 'Jira',
+            baseUrl: 'http://127.0.0.1:9',
+            credentials: { email: 'you@example.com', apiToken: 'screenshot-token' },
+          },
+        });
+      }
+    },
+    route: '/failure-clusters/10',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="cluster-create-issue"]').first().click();
+      await page.getByRole('dialog').waitFor();
+      // The preview renders once the draft resolves.
+      await page
+        .getByText('What happened')
+        .first()
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  },
+  {
+    name: 'cluster-issue-chip',
+    description: 'Cluster state line with the known-issue chip and the Open in Jira action',
+    tags: ['docs'],
+    out: 'docs',
+    // Pin a Jira issue to the cluster so its key shows on the state line.
+    async prepare({ base, request }) {
+      const list = await (await request.get(`${base}/api/integrations/connections`)).json();
+      if (!list.connections?.some((c) => c.provider === 'jira')) {
+        await request.post(`${base}/api/integrations/connections`, {
+          data: {
+            provider: 'jira',
+            name: 'Jira',
+            baseUrl: 'http://127.0.0.1:9',
+            credentials: { email: 'you@example.com', apiToken: 'screenshot-token' },
+          },
+        });
+      }
+      const links = await (await request.get(`${base}/api/links?entityType=failure_cluster&entityId=10`)).json();
+      if (!links.links?.some((l) => l.provider === 'jira')) {
+        await request.post(`${base}/api/links`, {
+          data: {
+            entityType: 'failure_cluster',
+            entityId: 10,
+            url: 'http://127.0.0.1:9/browse/PROJ-128',
+            title: 'Checkout button is disabled',
+          },
+        });
+      }
+    },
+    route: '/failure-clusters/10',
+    viewport: { width: 1280, height: 700 },
+    of: '[data-shot="cluster-state"]',
+    pad: 12,
+  },
+  {
+    name: 'project-integration-binding',
+    description: 'Project → Settings → Issue tracker: the binding form with policies and owner routes',
+    tags: ['docs'],
+    out: 'docs',
+    // A db-managed Jira connection makes the binding form appear; its base URL
+    // points at a dead local port so no real Jira is contacted.
+    async prepare({ base, request }) {
+      const list = await (await request.get(`${base}/api/integrations/connections`)).json();
+      if (!list.connections?.some((c) => c.provider === 'jira')) {
+        await request.post(`${base}/api/integrations/connections`, {
+          data: {
+            provider: 'jira',
+            name: 'Jira',
+            baseUrl: 'http://127.0.0.1:9',
+            credentials: { email: 'you@example.com', apiToken: 'screenshot-token' },
+          },
+        });
+      }
+    },
+    route: '/projects/2?tab=settings',
+    viewport: { width: 1280, height: 1600 },
+    of: '[data-shot="project-integration-binding"]',
+    pad: 12,
+  },
+  {
+    name: 'locator-healing',
+    description: 'Locator fix: ranked replacements and a recommended fix in the toolbox',
+    tags: ['docs'],
+    out: 'docs',
+    // Execution 533 is a strict-mode locator-resolution failure with pre-captured
+    // alternatives; its next step is "replace the locator", so the toolbox opens
+    // the Locator fix section with the panel in full.
+    route: '/test-run-cases/533',
     viewport: { width: 1280, height: 1300 },
-    expand: ['[data-shot="alternative-locators"]'],
     of: '[data-shot="alternative-locators"]',
     pad: 12,
   },
   {
     name: 'gather-evidence',
-    description: 'Failing execution, Diagnosis tab: the error and the evidence gathered on one screen (dark)',
+    description: 'Failing execution: the header, the headline and the evidence tabs on one screen (dark)',
     tags: ['docs'],
     out: 'docs',
     // Execution 37 carries an attachment, a trace and a visual diff, so the
     // evidence cards are populated rather than empty.
-    route: '/test-run-cases/37?tab=diagnosis',
+    route: '/test-run-cases/37',
     viewport: { width: 1560, height: 1400 },
     colorScheme: 'dark',
   },
@@ -228,17 +426,20 @@ const SCENES = [
   },
   {
     name: 'ai-diagnosis',
-    description: 'Failure cluster page: the AI diagnosis beside the error and evidence (dark)',
+    description: 'Failure cluster page: the AI diagnosis card at the foot of the cluster page (dark)',
     tags: ['docs'],
     out: 'docs',
     // Cluster 10 ships a stored, "diagnosis-verified" diagnosis in the demo seed.
     route: '/failure-clusters/10',
-    viewport: { width: 1600, height: 1240 },
+    viewport: { width: 1600, height: 1600 },
+    of: '[data-shot="cluster-diagnosis"]',
+    pad: 12,
     colorScheme: 'dark',
-    // The panel hides a stored diagnosis until AI reports configured. Run this
+    // The stored diagnosis renders with or without a provider, but run this
     // scene with the server's AI env vars set (PIWI_AI_PROVIDER / PIWI_AI_API_KEY
-    // / PIWI_AI_MODEL) so status is configured; the model is never called
-    // because cluster 10's diagnosis is already stored in the demo seed.
+    // / PIWI_AI_MODEL) so the illustration shows the configured panel (Re-diagnose
+    // and History, no "not configured" line); the model is never called because
+    // cluster 10's diagnosis is already stored in the demo seed.
   },
   {
     name: 'flaky-detection',
@@ -256,25 +457,20 @@ const SCENES = [
     // row until something asks for a classification.
     async prepare({ request, base }) {
       const flaky = await (await request.get(`${base}/api/projects/1/flaky-tests`)).json();
-      for (const test of flaky) {
+      for (const test of flaky.items ?? []) {
         await request.post(`${base}/api/projects/1/flaky-classify`, { data: { testCaseId: test.testCaseId } });
       }
     },
   },
   {
-    name: 'run-insights',
-    description: 'Run Insights tab: pass-rate delta, new regressions and new flaky tests',
+    name: 'run-changes',
+    description: 'Run Changes tab: one baseline, new failures, fixed, slower/faster and commits since',
     tags: ['docs'],
     out: 'docs',
-    route: '/test-runs/2?tab=insights',
+    route: '/test-runs/2?tab=changes',
     viewport: { width: 1280, height: 1560 },
-    of: '[data-shot="run-insights"]',
+    of: '[data-shot="run-changes"]',
     pad: 12,
-    annotate: [
-      { type: 'box', target: '[data-shot="run-summary"]', label: 'vs the last passing run' },
-      { type: 'step', target: '[data-shot="pass-rate"]', n: 1, corner: 'tl' },
-      { type: 'step', target: '[data-shot="new-regressions"]', n: 2, corner: 'tl' },
-    ],
   },
   {
     name: 'performance-trends',
@@ -289,23 +485,24 @@ const SCENES = [
   },
   {
     name: 'failure-clusters',
-    description: 'Failure clusters tab grouping failures by normalized error signature',
+    description: 'Run page Tests tab grouped by failure cluster, failures first',
     tags: ['docs'],
     out: 'docs',
-    route: '/projects/1?tab=failure-clusters',
-    // The cluster table needs ~1850px before it stops scrolling sideways, and a
-    // clipped table hides the occurrence counts the page is about.
-    viewport: { width: 2200, height: 1000 },
+    // The run's Tests tab opens grouped by cluster on a red run; each group
+    // header names the cluster and its triage status, with the failing rows
+    // beneath and the passing tests folded away.
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 1000 },
     of: '[data-shot="failure-clusters"]',
     pad: 12,
   },
   {
     name: 'test-case-detail',
-    description: 'Test case detail: summary stats, duration trend, status history, executions',
+    description: 'Test history: facts line, duration trend with the execution strip, recent executions',
     tags: ['docs'],
     out: 'docs',
     route: '/test-cases/1',
-    viewport: { width: 1280, height: 1960 },
+    viewport: { width: 1280, height: 1600 },
     charts: true,
     of: '[data-shot="test-case-detail"]',
     pad: 8,
@@ -354,6 +551,19 @@ const SCENES = [
   },
 
   // ── Feature states (report artifacts) ─────────────────────────────────────
+  {
+    name: 'attempt-diff',
+    description: 'Attempts tab: every attempt, and what differed between the failing and passing attempt',
+    // Execution 21 is a flaky test that passed on retry, so the Attempts tab holds a diff.
+    route: '/test-run-cases/21',
+    viewport: { width: 1280, height: 1000 },
+    of: '[data-shot="attempts-diff"]',
+    pad: 12,
+    async run({ shoot, openTab }) {
+      await openTab('Attempts');
+      await shoot();
+    },
+  },
   {
     name: 'execution-history',
     description: 'Execution page opened straight onto its History tab (duration trend + executions)',
@@ -423,9 +633,10 @@ const SCENES = [
         },
         {
           type: 'step-begin',
-          title: 'expect(page).toHaveURL("**/success")',
+          title: 'Click',
+          subtitle: "getByRole('button', { name: 'Place order' })",
           location: 'tests/checkout.spec.ts:14:5',
-          stepCategory: 'pw:expect',
+          stepCategory: 'pw:api',
           parentTitle: 'purchase flow submits the order',
           workerIndex: 0,
           startedAt: Date.now(),
@@ -482,6 +693,161 @@ const SCENES = [
   },
 
   {
+    name: 'step-params',
+    description: "Whole-test steps table: a step's muted subtitle and its open Parameters disclosure",
+    route: '/projects',
+    viewport: { width: 1280, height: 2400 },
+    of: 'table',
+    pad: 12,
+    async run({ page, base, goto, shoot }) {
+      // Find a failing execution whose steps carry the 1.63 params shape, then
+      // open its Timeline tab, expand every step, and open a Parameters disclosure.
+      const projects = await (await page.request.get(`${base}/api/projects`)).json();
+      const projectList = Array.isArray(projects) ? projects : (projects.items ?? projects.projects ?? []);
+      let execId = null;
+      outer: for (const project of projectList) {
+        const detail = await (await page.request.get(`${base}/api/projects/${project.id}`)).json();
+        for (const run of detail.testRuns ?? []) {
+          const runDetail = await (await page.request.get(`${base}/api/test-runs/${run.id}`)).json();
+          for (const c of runDetail.testCases ?? []) {
+            if (c.status !== 'failed' || !c.executionId) continue;
+            const exec = await (await page.request.get(`${base}/api/test-run-cases/${c.executionId}`)).json();
+            if ((exec.steps ?? []).some((s) => s && s.params && Object.keys(s.params).length > 0)) {
+              execId = c.executionId;
+              break outer;
+            }
+          }
+        }
+      }
+      if (!execId) throw new Error('no execution with 1.63 step params found for the step-params scene');
+      await goto(`/test-run-cases/${execId}`);
+      await page.getByRole('tab', { name: /^Timeline/ }).click();
+      const whole = page.getByRole('button', { name: 'Whole test' });
+      if (await whole.count()) await whole.click();
+      const disclosure = page.locator('table [data-testid="step-params"]:visible').first();
+      await disclosure.getByText(/Parameters/).click();
+      await page.evaluate(() => document.fonts.ready);
+      await page.waitForTimeout(300);
+      await shoot();
+    },
+  },
+
+  {
+    name: 'page-diff',
+    description: 'Screen tab: the Screenshot · Page diff toggle and the structural diff of the failing page',
+    // Execution 37 (checkout) has a green ARIA sample and a failing one that
+    // renames the "Pay" button and disables it — a legible one-line diff.
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 1200 },
+    of: '[data-shot="screen-evidence"]',
+    pad: 12,
+    async run({ page, shoot, settle }) {
+      await page
+        .getByRole('tablist', { name: 'Evidence sections' })
+        .getByRole('tab', { name: 'Screen', exact: true })
+        .click();
+      const toggle = page.getByRole('tablist', { name: 'Screen view' }).getByRole('tab', { name: 'Page diff' });
+      await toggle.waitFor({ state: 'visible', timeout: 30_000 });
+      await toggle.click();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'failing-step-evidence',
+    description: "Timeline tab: the failing step's before/at-failure screenshot and ARIA tree, tied to the step",
+    viewport: { width: 1280, height: 1600 },
+    of: 'table',
+    pad: 12,
+    async prepare({ request, base }) {
+      this.executionId = await ingestTraceSnapshotCase(request, base);
+    },
+    async run({ page, goto, settle, shoot }) {
+      await goto(`/test-run-cases/${this.executionId}`);
+      await page
+        .getByRole('tablist', { name: 'Evidence sections' })
+        .getByRole('tab', { name: 'Timeline', exact: true })
+        .click();
+      // Unfold the accessibility tree so the capture shows both the screenshot
+      // and the ARIA the failing step carries.
+      const aria = page.getByRole('button', { name: 'Accessibility tree at the failure' }).first();
+      await aria.waitFor({ state: 'visible', timeout: 30_000 });
+      await aria.click();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'failing-step-evidence-mobile',
+    description: "Failing step's page snapshot on the timeline at phone width",
+    viewport: { width: 390, height: 1800 },
+    of: '[data-shot="failing-step-evidence"]',
+    pad: 12,
+    async prepare({ request, base }) {
+      this.executionId = await ingestTraceSnapshotCase(request, base);
+    },
+    async run({ page, goto, settle, shoot }) {
+      await goto(`/test-run-cases/${this.executionId}`);
+      await page
+        .getByRole('tablist', { name: 'Evidence sections' })
+        .getByRole('tab', { name: 'Timeline', exact: true })
+        .click();
+      const aria = page.getByRole('button', { name: 'Accessibility tree at the failure' }).first();
+      await aria.waitFor({ state: 'visible', timeout: 30_000 });
+      await aria.click();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'failing-step-evidence-fallback',
+    description: "Failing step evidence on a pre-1.63 trace: the run's failure screenshot bound to the failing step",
+    route: '/projects',
+    viewport: { width: 1280, height: 2000 },
+    of: 'table',
+    pad: 12,
+    async run({ page, base, goto, settle, shoot }) {
+      // Find a failed execution whose steps carry a failing step and whose case
+      // has an image attachment — the seeded demo traces predate 1.63, so the
+      // failing step falls back to the run's failure screenshot.
+      const projects = await (await page.request.get(`${base}/api/projects`)).json();
+      const projectList = Array.isArray(projects) ? projects : (projects.items ?? projects.projects ?? []);
+      let execId = null;
+      outer: for (const project of projectList) {
+        const detail = await (await page.request.get(`${base}/api/projects/${project.id}`)).json();
+        for (const run of detail.testRuns ?? []) {
+          const runDetail = await (await page.request.get(`${base}/api/test-runs/${run.id}`)).json();
+          for (const c of runDetail.testCases ?? []) {
+            if (c.status !== 'failed' || !c.executionId) continue;
+            const exec = await (await page.request.get(`${base}/api/test-run-cases/${c.executionId}`)).json();
+            const hasFailedStep = (exec.steps ?? []).some((s) => s && s.failed);
+            const hasImage = (exec.attachments ?? []).some(
+              (a) => (a.contentType ?? '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(a.path ?? ''),
+            );
+            if (hasFailedStep && hasImage) {
+              execId = c.executionId;
+              break outer;
+            }
+          }
+        }
+      }
+      if (!execId)
+        throw new Error('no failed execution with a failing step and an image attachment for the fallback scene');
+      await goto(`/test-run-cases/${execId}`);
+      await page
+        .getByRole('tablist', { name: 'Evidence sections' })
+        .getByRole('tab', { name: 'Timeline', exact: true })
+        .click();
+      await page
+        .locator('table')
+        .getByText('Page at the failing step')
+        .first()
+        .waitFor({ state: 'visible', timeout: 30_000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'setup-companion-tools',
     description: 'Setup page: the companion-tools card below the capability ladder',
     route: '/setup',
@@ -509,23 +875,52 @@ const SCENES = [
   // ── Failure headline (report artifacts) ──────────────────────────────────
   {
     name: 'failure-headline',
-    description: 'Failing execution, Diagnosis tab: the one-line headline card above the raw error',
+    description: 'Failing execution: the situation block — headline, most likely, situation and next step',
     tags: ['desktop'],
-    // Execution 37 is clustered with a sibling in its run, so the facts row
-    // carries the cluster link next to the why and since-when chips.
-    route: '/test-run-cases/37?tab=diagnosis',
+    // Execution 37 is clustered with a sibling in its run, so the situation
+    // sentence carries the cluster link next to the regression badge.
+    route: '/test-run-cases/37',
     viewport: { width: 1280, height: 900 },
-    of: '[data-shot="failure-headline"]',
+    of: '[data-shot="situation-block"]',
     pad: 12,
   },
   {
     name: 'failure-headline-mobile',
-    description: 'The same headline card at phone width',
+    description: 'The same situation block at phone width',
     tags: ['desktop'],
-    route: '/test-run-cases/37?tab=diagnosis',
+    route: '/test-run-cases/37',
     viewport: { width: 375, height: 812 },
-    of: '[data-shot="failure-headline"]',
+    of: '[data-shot="situation-block"]',
     pad: 8,
+  },
+
+  // ── Failure page clarity (report artifacts) ───────────────────────────────
+  // The first screen of each detail page in its default state, at wide and phone
+  // width, so the clarity plan's "In numbers" table can be re-read visually after
+  // each phase. Full-viewport, nothing expanded — the baseline these phases diff.
+  {
+    name: 'execution-clarity',
+    description: 'Execution page first screen, default state (1280×800 clarity baseline)',
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 800 },
+  },
+  {
+    name: 'execution-clarity-mobile',
+    description: 'The same execution page first screen at phone width',
+    route: '/test-run-cases/37',
+    viewport: { width: 390, height: 800 },
+  },
+  {
+    name: 'cluster-clarity',
+    description: 'Failure cluster page first screen, default state (1280×800 clarity baseline)',
+    route: '/failure-clusters/10',
+    viewport: { width: 1280, height: 800 },
+  },
+  {
+    name: 'cluster-clarity-mobile',
+    description: 'The same cluster page first screen at phone width',
+    route: '/failure-clusters/10',
+    viewport: { width: 390, height: 800 },
   },
 
   // ── Desktop shell (report artifacts) ──────────────────────────────────────
@@ -549,6 +944,34 @@ const SCENES = [
       await page.getByRole('button', { name: /collapse sidebar/i }).click();
       await settle();
       await shoot('collapsed', { clip: { x: 0, y: 0, width: 320, height: 560 } });
+    },
+  },
+  {
+    name: 'ai-claude-cli',
+    description: 'Settings → AI: use the local Claude Code CLI as the provider — no API key (desktop shell)',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/ai',
+    viewport: { width: 1000, height: 1100 },
+    of: '[data-shot="ai-model-providers"]',
+    pad: 12,
+    outputs: ['ai-claude-cli.png', 'ai-claude-cli-selected.png'],
+    async run({ page, shoot, settle }) {
+      // The status card sits at the top of the providers section and probes the
+      // real `claude` on this machine (installed + signed-in; no tokens spent).
+      // Wait for that probe to resolve before capturing.
+      await page.getByText('billed to your Claude Code sign-in').first().waitFor();
+      await page.getByText('Checking for the Claude CLI…').waitFor({ state: 'hidden' });
+      await settle();
+      await shoot();
+
+      // Select the CLI as the diagnosis provider to reveal the no-API-key role
+      // form (the provider select carries whatever config is stored).
+      await page.getByRole('combobox').first().click();
+      await page.getByRole('option', { name: 'Claude Code (local)' }).click();
+      await page.getByText('it uses your Claude Code sign-in').first().waitFor();
+      await settle();
+      await shoot('selected');
     },
   },
   {
@@ -638,6 +1061,54 @@ const SCENES = [
     },
   },
   {
+    name: 'import-previous-runs',
+    description: 'After linking a folder, offer to import the runs already in it (desktop shell)',
+    tags: ['desktop'],
+    mode: 'desktop',
+    link: null,
+    importableRuns: [
+      {
+        path: `${READY_INSPECTION.path}/blob-report/report-1.zip`,
+        name: 'report-1.zip',
+        size: 2_412_000,
+        kind: 'blob',
+      },
+      {
+        path: `${READY_INSPECTION.path}/blob-report/report-2.zip`,
+        name: 'report-2.zip',
+        size: 1_968_000,
+        kind: 'blob',
+      },
+      {
+        path: `${READY_INSPECTION.path}/test-results/checkout-chromium/trace.zip`,
+        name: 'trace.zip',
+        size: 826_000,
+        kind: 'trace',
+      },
+    ],
+    route: '/projects/2?tab=settings',
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'Choose folder…' }).click();
+      const dialog = page.getByRole('dialog');
+      await dialog.getByRole('heading', { name: 'Import previous runs' }).waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'import-runs-desktop',
+    description: 'Import page: the browse button opens at the linked project folder (desktop shell)',
+    tags: ['desktop'],
+    mode: 'desktop',
+    link: { path: READY_INSPECTION.path, exists: true },
+    route: '/projects/2/import',
+    async run({ page, shoot, settle }) {
+      await page.getByText(`Opens in ${READY_INSPECTION.path}`).waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'notifications-settings',
     description: 'Notifications settings (auth off): SMTP status, channels, subscriptions; plus the project bell',
     route: '/settings/notifications',
@@ -694,6 +1165,8 @@ function outDirFor(scene, override) {
 function bridgeScript(scene) {
   const inspection = scene.inspection ?? READY_INSPECTION;
   const link = scene.link ?? null;
+  const importableRuns = scene.importableRuns ?? [];
+  const pickedFiles = scene.pickedFiles ?? [];
   return `
     window.__mockLink = ${JSON.stringify(link)};
     window.__TAURI__ = {
@@ -704,11 +1177,19 @@ function bridgeScript(scene) {
               return Promise.resolve(${JSON.stringify(inspection.path)});
             case 'desktop_inspect_folder':
               return Promise.resolve({ ...${JSON.stringify(inspection)}, path: args.path });
+            case 'desktop_find_importable_runs':
+              return Promise.resolve(${JSON.stringify(importableRuns)});
+            case 'desktop_pick_import_files':
+              return Promise.resolve(${JSON.stringify(pickedFiles)});
             case 'desktop_get_project_link':
               return Promise.resolve(window.__mockLink);
             case 'desktop_set_project_link':
               window.__mockLink = args.path ? { path: args.path, exists: true } : null;
               return Promise.resolve(null);
+            case 'desktop_open_window':
+              return Promise.resolve(null);
+            case 'desktop_save_download':
+              return Promise.resolve('~/Downloads/' + (args?.filename ?? 'download'));
             case 'desktop_get_service_settings':
               return Promise.resolve({ run_in_background: false, start_on_login: false });
             case 'desktop_check_update':
@@ -723,38 +1204,6 @@ function bridgeScript(scene) {
       event: { listen: () => Promise.resolve(() => {}) },
     };
   `;
-}
-
-async function waitForHydration(page) {
-  await page.waitForLoadState('load');
-  await page
-    .waitForFunction(() => window.useNuxtApp?.().isHydrating === false, undefined, { timeout: 20000 })
-    .catch(() => page.waitForTimeout(1500));
-}
-
-/**
- * Wait for the page to stop moving: web fonts resolved, no in-flight requests,
- * nothing reporting itself busy, and — when the scene asks — chart geometry
- * actually drawn. Replaces guessing with a timeout.
- */
-async function settlePage(page, { charts = false, timeout = 20_000 } = {}) {
-  await page.waitForLoadState('networkidle', { timeout }).catch(() => {});
-  await page.evaluate(() => document.fonts.ready);
-  await page
-    .waitForFunction(() => !document.querySelector('[aria-busy="true"]'), undefined, { timeout })
-    .catch(() => {});
-  if (charts) {
-    await page.waitForFunction(
-      () => {
-        const svgs = [...document.querySelectorAll('svg')];
-        return svgs.some((svg) => svg.querySelector('path[d], rect[width], circle[r]'));
-      },
-      undefined,
-      { timeout },
-    );
-  }
-  // One frame after the last mutation, so a chart that just mounted has painted.
-  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 }
 
 /** Attributes the region capture puts on the page, and takes off again. */
@@ -845,103 +1294,6 @@ function regionStyle(pad, { gridParent = false } = {}) {
     .join('\n');
 }
 
-function ensureDevDb() {
-  if (existsSync(join(APP_DIR, '.data', 'piwi.db'))) return;
-  console.log('No dev DB — creating and seeding one (first run only)…');
-  if (!existsSync(join(APP_DIR, 'public', 'demo', 'seed.sql'))) {
-    execSync('npm run app:seed:demo', { cwd: APP_DIR, stdio: 'inherit' });
-  }
-  mkdirSync(join(APP_DIR, '.data'), { recursive: true });
-  execSync('npm run db:migrate', { cwd: APP_DIR, stdio: 'inherit' });
-  execSync('npm run app:seed:dev', { cwd: APP_DIR, stdio: 'inherit' });
-}
-
-async function waitForHealth(base, timeoutMs = 120_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(`${base}/api/health`);
-      if (res.ok) return;
-    } catch {
-      // not up yet
-    }
-    await new Promise((r) => setTimeout(r, 1000));
-  }
-  throw new Error(`server at ${base} did not become healthy within ${timeoutMs / 1000}s`);
-}
-
-/**
- * Wait for a stopped server to release the port. Without this a second mode's
- * server fails to bind and the run silently captures against the first one,
- * which is still answering.
- */
-async function waitForPortFree(base, timeoutMs = 30_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      await fetch(`${base}/api/health`);
-    } catch {
-      return;
-    }
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  throw new Error(`server at ${base} did not shut down within ${timeoutMs / 1000}s`);
-}
-
-/**
- * Boot a dev server in `mode`; returns { base, stop }. The desktop UI is enabled
- * for `desktop` only — the sidebar's back/forward pair exists in the Tauri shell
- * alone, and would misrepresent the web app in a full-viewport capture.
- */
-async function startServer(mode) {
-  ensureDevDb();
-  const desktop = mode === 'desktop';
-  const child = spawn('npx', ['nuxt', 'dev', '--port', String(PORT)], {
-    cwd: APP_DIR,
-    env: { ...process.env, NUXT_IGNORE_LOCK: '1', ...(desktop ? { NUXT_PUBLIC_DESKTOP: 'true' } : {}) },
-    stdio: 'ignore',
-    // Detached puts nuxt in its own process group so stop() can kill the whole
-    // tree; on Windows npx needs a shell and group-kill is unsupported anyway.
-    detached: process.platform !== 'win32',
-    shell: process.platform === 'win32',
-  });
-  const stop = () => {
-    // Negative pid kills the whole nuxt process group where supported. On
-    // Windows child.kill() only terminates the cmd wrapper — the nuxt node
-    // process survives and keeps the port bound, so kill the tree explicitly.
-    try {
-      if (process.platform === 'win32') {
-        execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: 'ignore' });
-      } else {
-        process.kill(-child.pid, 'SIGTERM');
-      }
-    } catch {
-      // already gone
-    }
-  };
-  process.on('SIGINT', () => {
-    stop();
-    process.exit(130);
-  });
-  const base = `http://localhost:${PORT}`;
-  console.log(`Starting dev server at ${base}${desktop ? ' (desktop UI enabled)' : ''}…`);
-  try {
-    await waitForHealth(base);
-  } catch (err) {
-    stop();
-    throw err;
-  }
-  return { base, stop };
-}
-
-function resolveChromium() {
-  // The sandboxed environments provide a Chromium via PLAYWRIGHT_BROWSERS_PATH;
-  // a normal checkout uses Playwright's own download.
-  const provided = process.env.PLAYWRIGHT_BROWSERS_PATH;
-  if (provided && existsSync(join(provided, 'chromium'))) return join(provided, 'chromium');
-  return undefined;
-}
-
 /** Levenshtein distance, for suggesting what the user meant by an unknown scene. */
 function editDistance(a, b) {
   const rows = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
@@ -1014,7 +1366,20 @@ function checkDocsImages() {
 }
 
 function parseArgs(argv) {
-  const flags = { scenes: [], tag: null, url: null, out: null, freezeNow: null, list: false, check: false };
+  const flags = {
+    scenes: [],
+    tag: null,
+    url: null,
+    out: null,
+    freezeNow: null,
+    list: false,
+    check: false,
+    route: null,
+    width: null,
+    height: null,
+    expand: false,
+    name: null,
+  };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--list') flags.list = true;
@@ -1023,10 +1388,41 @@ function parseArgs(argv) {
     else if (arg === '--url') flags.url = argv[++i];
     else if (arg === '--out') flags.out = resolve(process.cwd(), argv[++i]);
     else if (arg === '--freeze-now') flags.freezeNow = argv[++i];
+    else if (arg === '--route') flags.route = argv[++i];
+    else if (arg === '--width') flags.width = Number(argv[++i]);
+    else if (arg === '--height') flags.height = Number(argv[++i]);
+    else if (arg === '--expand') flags.expand = true;
+    else if (arg === '--name') flags.name = argv[++i];
     else if (arg.startsWith('--')) throw new Error(`unknown flag: ${arg}`);
     else flags.scenes.push(arg);
   }
   return flags;
+}
+
+/**
+ * The one-off scene behind `--route`: one page, captured like a registered
+ * scene but never listed and never checked against the docs images.
+ */
+function adHocScene(flags) {
+  if (!flags.route.startsWith('/')) throw new Error(`--route needs an absolute path, got "${flags.route}"`);
+  for (const [flag, value] of [
+    ['--width', flags.width],
+    ['--height', flags.height],
+  ]) {
+    if (value != null && !(Number.isInteger(value) && value > 0)) throw new Error(`${flag} needs a positive integer`);
+  }
+  const slug =
+    flags.route
+      .replace(/^\//, '')
+      .replace(/[^a-z0-9]+/gi, '-')
+      .replace(/^-|-$/g, '') || 'home';
+  return {
+    name: flags.name ?? `route-${slug}`,
+    route: flags.route,
+    viewport: { width: flags.width ?? DEFAULT_VIEWPORT.width, height: flags.height ?? DEFAULT_VIEWPORT.height },
+    expandAll: flags.expand,
+    out: 'screens',
+  };
 }
 
 function selectScenes(flags) {
@@ -1087,6 +1483,21 @@ async function captureScene(browser, scene, { base, outDir, freezeNow }) {
       .locator(`${selector} [role="button"][aria-expanded="true"]`)
       .first()
       .waitFor({ state: 'visible', timeout: 10_000 });
+    await settle();
+  };
+
+  /**
+   * Unfold every collapsed section on the page. Each click shrinks the set of
+   * folded toggles (and may reveal new ones), so the first match is clicked
+   * until none is left, with a ceiling so a toggle that never flips cannot
+   * loop forever.
+   */
+  const expandAll = async () => {
+    const folded = page.locator('main [role="button"][aria-expanded="false"]');
+    for (let i = 0; i < 40 && (await folded.count()) > 0; i++) {
+      await folded.first().click();
+      await page.waitForTimeout(100);
+    }
     await settle();
   };
 
@@ -1187,6 +1598,7 @@ async function captureScene(browser, scene, { base, outDir, freezeNow }) {
     if (scene.prepare) await scene.prepare({ base, request: context.request });
     await goto(scene.route ?? '/');
     for (const selector of scene.expand ?? []) await expand(selector);
+    if (scene.expandAll) await expandAll();
     if (scene.run) {
       await scene.run({ page, base, shoot, goto, settle, openTab, expand, annotate, clear });
     }
@@ -1216,7 +1628,7 @@ async function main() {
     return;
   }
 
-  const scenes = selectScenes(flags);
+  const scenes = flags.route ? [adHocScene(flags)] : selectScenes(flags);
   const freezeNow = flags.freezeNow ? new Date(flags.freezeNow) : null;
   if (freezeNow && Number.isNaN(freezeNow.getTime())) {
     throw new Error(`--freeze-now needs an ISO timestamp, got "${flags.freezeNow}"`);
@@ -1238,7 +1650,7 @@ async function main() {
   let written = 0;
   try {
     for (const [mode, group] of byMode) {
-      const server = flags.url ? { base: flags.url, stop: () => {} } : await startServer(mode);
+      const server = flags.url ? { base: flags.url, stop: () => {} } : await startServer({ mode });
       try {
         for (const scene of group) {
           try {

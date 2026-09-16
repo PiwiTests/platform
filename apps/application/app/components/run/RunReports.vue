@@ -7,6 +7,7 @@ defineProps<{
 }>();
 
 const config = useRuntimeConfig();
+const { onOpenReport } = useDesktopReportLink();
 </script>
 
 <template>
@@ -20,6 +21,7 @@ const config = useRuntimeConfig();
       target="_blank"
       size="xs"
       variant="outline"
+      @click="onOpenReport($event, report)"
     >
       {{ report.label }}
     </UButton>

@@ -2,8 +2,32 @@
  * Shared utilities for locator healing — pure functions that work in both
  * Node.js and browser (Web Crypto) environments.
  */
-import type { RankedLocator, LocatorFixRecommendation } from './locator-healing.types';
+import type { RankedLocator, LocatorFixRecommendation, NarrowingSuggestion } from './locator-healing.types';
 import { sha256Hex } from './utils/hash';
+import { compareVersions } from './piwi-env-vars';
+
+/** Playwright's first release with `locator.visible()`. */
+const VISIBLE_MIN_VERSION = '1.63';
+
+/**
+ * Suggest narrowing a strict-mode-ambiguous locator with `.visible()` when the
+ * run is on Playwright 1.63 or later, the failing locator matched several
+ * elements, and exactly one of them was visible. Null in every other case — a
+ * non-strict failure, an older Playwright, an unknown match count, or more than
+ * one visible match (where `.visible()` would not resolve the ambiguity).
+ */
+export function computeNarrowingSuggestion(input: {
+  playwrightVersion: string | null | undefined;
+  matchCount: number | null | undefined;
+  visibleMatchCount: number | null | undefined;
+}): NarrowingSuggestion | null {
+  const version = input.playwrightVersion;
+  if (!version || compareVersions(version, VISIBLE_MIN_VERSION) < 0) return null;
+  const matchCount = input.matchCount;
+  if (typeof matchCount !== 'number' || matchCount < 2) return null;
+  if (input.visibleMatchCount !== 1) return null;
+  return { method: 'visible', matchCount, visibleCount: 1 };
+}
 
 /**
  * Method family for each locator method. The single recommended fix prefers an

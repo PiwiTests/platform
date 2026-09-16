@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
@@ -148,6 +148,41 @@ describe('release streaks', () => {
 
     const { entries } = await listQuarantine(db, 1);
     expect(entries[0]!.consecutivePasses).toBe(0);
+  });
+});
+
+describe('streak queries', () => {
+  test('the number of queries does not grow with the quarantine list', async () => {
+    const one = await seedCase('one');
+    await addQuarantine(db, 1, one);
+    await seedExecution(one, 'passed');
+
+    const select = vi.spyOn(db, 'select');
+    await listQuarantine(db, 1);
+    const queriesForOne = select.mock.calls.length;
+
+    for (const title of ['two', 'three', 'four', 'five']) {
+      const caseId = await seedCase(title);
+      await addQuarantine(db, 1, caseId);
+      await seedExecution(caseId, 'passed');
+    }
+
+    select.mockClear();
+    const { entries } = await listQuarantine(db, 1);
+    expect(entries).toHaveLength(5);
+    expect(select.mock.calls.length).toBe(queriesForOne);
+    select.mockRestore();
+  });
+
+  test('scans at most the newest executions of each test', async () => {
+    const caseId = await seedCase('long-history');
+    await addQuarantine(db, 1, caseId);
+    await seedExecution(caseId, 'failed');
+    for (let i = 0; i < 40; i++) await seedExecution(caseId, 'passed');
+
+    const { entries } = await listQuarantine(db, 1);
+    expect(entries[0]!.consecutivePasses).toBe(30);
+    expect(entries[0]!.runsSinceQuarantine).toBe(30);
   });
 });
 

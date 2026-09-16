@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { AiSettings, AiModelRole, ModelInfo, AiRoleConfigInput, SaveAiSettingsBody } from '~~/types/api';
-import type { RoleForm } from '~/components/settings/AiRoleConfigForm.vue';
+import type { AiSettings, AiModelRole, ModelInfo } from '~~/types/api';
+import { type RoleForm, buildAiSaveBody, parseRoleTemperature } from '~/utils/ai-settings-form';
 import { CONTEXT_LIMIT_FIELDS } from '#shared/ai-context-limits';
 import type { ContextLimits, ContextLimitField } from '#shared/ai-context-limits';
 import { pageEnvVars, getSettingsPage } from '~/utils/settings-metadata';
@@ -14,7 +14,7 @@ const { data: settings, refresh } = await useFetch<AiSettings>('/api/settings/ai
 type RoleKey = AiModelRole;
 
 function blankRole(): RoleForm {
-  return { enabled: false, reuse: null, provider: '', model: '', baseUrl: '', apiKey: '' };
+  return { enabled: false, reuse: null, provider: '', model: '', baseUrl: '', apiKey: '', temperature: '' };
 }
 
 const roles = reactive<Record<RoleKey, RoleForm>>({
@@ -24,10 +24,23 @@ const roles = reactive<Record<RoleKey, RoleForm>>({
 });
 
 const autoDiagnose = ref(false);
+
+// Browser notifications when a diagnosis finishes — a per-browser client
+// preference (not stored server-side), so it lives outside the settings save.
+const {
+  permission: notifPermission,
+  supported: notifSupported,
+  active: notifActive,
+  requestPermission: requestNotifPermission,
+  toggleEnabled: toggleNotifEnabled,
+} = useDiagnosisNotification();
+
 const customInstructions = ref<string>('');
+const aiLanguage = ref<string>('');
 const scmToken = ref<string>('');
 const saving = ref(false);
 const savingInstructions = ref(false);
+const savingLanguage = ref(false);
 const savingScmToken = ref(false);
 
 const testingRoles = reactive<Record<RoleKey, boolean>>({
@@ -107,18 +120,31 @@ const ROLE_META = [
     optional: true,
     enableLabel: 'Semantic clustering',
     blurb: 'Embeds failures so semantically-similar errors group together (used by failure clustering).',
+    note: 'Embeddings need an OpenAI-compatible endpoint — neither the Anthropic API nor Claude Code (local) has an embeddings API, so those cannot be used here. A local server such as ollama or LM Studio works well for this.',
     reuseTargets: ['diagnosis', 'research'],
     modelPlaceholderAnthropic: '— Anthropic has no embeddings API —',
     modelPlaceholderOpenai: 'e.g. text-embedding-3-small',
   },
 ] as const;
 
-const providerOptions = [
-  { label: 'Anthropic API', value: 'anthropic' },
-  { label: 'OpenAI-compatible', value: 'openai' },
-];
-// Anthropic has no embeddings API — the embedding role must be OpenAI-compatible.
-const embeddingProviderOptions = providerOptions.filter((p) => p.value !== 'anthropic');
+// The local Claude CLI provider is only offered in the desktop app (or when a
+// stored/env config already selected it, so it stays visible and editable).
+const isDesktop = useIsDesktop();
+const usesClaudeCli = computed(() =>
+  Object.values(settings.value?.roles ?? {}).some((r) => r?.provider === 'claude-cli'),
+);
+const showClaudeCli = computed(() => isDesktop || usesClaudeCli.value);
+
+const providerOptions = computed(() => {
+  const opts = [
+    { label: 'Anthropic API', value: 'anthropic' },
+    { label: 'OpenAI-compatible', value: 'openai' },
+  ];
+  if (showClaudeCli.value) opts.unshift({ label: 'Claude Code (local)', value: 'claude-cli' });
+  return opts;
+});
+// Anthropic and the CLI have no embeddings API — the embedding role must be OpenAI-compatible.
+const embeddingProviderOptions = computed(() => providerOptions.value.filter((p) => p.value === 'openai'));
 
 // Stable per-role reuse options (recomputed only when role-enable state changes),
 // so the child <USelect>'s `items` keep a stable reference and the listbox doesn't
@@ -141,6 +167,11 @@ const reuseOptionsByRole = computed<Record<RoleKey, Array<{ label: string; value
 const envManaged = computed(() => Boolean(settings.value?.envManaged));
 const aiEnvVars = pageEnvVars(getSettingsPage('ai'));
 
+// The required diagnosis role has no enable toggle — it is "configured" exactly
+// when a provider is selected. Drives the dependent auto-diagnose control (and
+// mirrors the save logic in ai-settings-form).
+const diagnosisConfigured = computed(() => Boolean(roles.diagnosis.provider));
+
 watch(
   settings,
   (val) => {
@@ -154,9 +185,11 @@ watch(
       form.model = r?.model ?? '';
       form.baseUrl = r?.baseUrl ?? '';
       form.apiKey = '';
+      form.temperature = r?.temperature != null ? String(r.temperature) : '';
     }
     autoDiagnose.value = val.autoDiagnose;
     customInstructions.value = val.customInstructions || '';
+    aiLanguage.value = val.language || '';
   },
   { immediate: true },
 );
@@ -191,44 +224,20 @@ function applyPreset(role: RoleKey, label: string) {
 }
 
 // ── Save ─────────────────────────────────────────────────────────────────────
-function roleBody(role: RoleKey): AiRoleConfigInput | null {
-  const r = roles[role];
-  if (!r.enabled) return null;
-  if (r.reuse) return { reuse: r.reuse, model: r.model || undefined };
-  const body: AiRoleConfigInput = {
-    provider: r.provider,
-    model: r.model || undefined,
-    baseUrl: r.baseUrl || undefined,
-  };
-  if (r.apiKey !== '') body.apiKey = r.apiKey;
-  return body;
-}
-
 async function save() {
   saving.value = true;
   try {
-    // When env-managed, never send roles: null (would clear overrides).
-    // When diagnosis is disabled or missing provider in non-env mode, clear the config.
-    if (!envManaged && (!roles.diagnosis.enabled || !roles.diagnosis.provider)) {
-      await $fetch('/api/settings/ai', { method: 'PUT', body: { roles: null, autoDiagnose: autoDiagnose.value } });
-    } else {
-      await $fetch('/api/settings/ai', {
-        method: 'PUT',
-        body: {
-          roles: {
-            diagnosis: roleBody('diagnosis'),
-            research: roleBody('research'),
-            embedding: roleBody('embedding'),
-          },
-          autoDiagnose: autoDiagnose.value,
-        },
-      });
-    }
+    // buildAiSaveBody decides clear-vs-save: with no diagnosis provider (and not
+    // env-managed) it clears the config; otherwise it sends every configured
+    // role. The diagnosis role is required and has no enable toggle, so it counts
+    // as configured the moment a provider is picked — see the util for details.
+    const body = buildAiSaveBody(roles, { envManaged: envManaged.value, autoDiagnose: autoDiagnose.value });
+    await $fetch('/api/settings/ai', { method: 'PUT', body });
     await refresh();
     for (const meta of ROLE_META) roles[meta.key].apiKey = '';
     toast.add({ title: 'Settings saved', color: 'success' });
   } catch (err) {
-    toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' });
+    toast.add({ title: 'Save failed', description: errorMessage(err), color: 'error' });
   } finally {
     saving.value = false;
   }
@@ -242,7 +251,7 @@ async function saveScmToken() {
     scmToken.value = '';
     toast.add({ title: 'SCM token saved', color: 'success' });
   } catch (err) {
-    toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' });
+    toast.add({ title: 'Save failed', description: errorMessage(err), color: 'error' });
   } finally {
     savingScmToken.value = false;
   }
@@ -255,9 +264,22 @@ async function saveInstructions() {
     await refresh();
     toast.add({ title: 'Instructions saved', color: 'success' });
   } catch (err) {
-    toast.add({ title: 'Save failed', description: String((err as Error)?.message ?? err), color: 'error' });
+    toast.add({ title: 'Save failed', description: errorMessage(err), color: 'error' });
   } finally {
     savingInstructions.value = false;
+  }
+}
+
+async function saveLanguage() {
+  savingLanguage.value = true;
+  try {
+    await $fetch('/api/settings/ai', { method: 'PUT', body: { language: aiLanguage.value || null } });
+    await refresh();
+    toast.add({ title: 'Response language saved', color: 'success' });
+  } catch (err) {
+    toast.add({ title: 'Save failed', description: errorMessage(err), color: 'error' });
+  } finally {
+    savingLanguage.value = false;
   }
 }
 
@@ -276,13 +298,15 @@ async function testRole(role: RoleKey) {
         apiKey: src.apiKey || undefined,
         model: r.model || (r.reuse ? src.model : '') || undefined,
         baseUrl: src.baseUrl || undefined,
+        // Temperature is per-role (not inherited via reuse), so read it off `r`, not `src`.
+        temperature: parseRoleTemperature(role, r.temperature),
       },
     });
     if (res.success)
       toast.add({ title: 'Connection successful', description: `Model: ${res.model}`, color: 'success' });
     else toast.add({ title: 'Connection failed', description: res.error || 'Unknown error', color: 'error' });
   } catch (err) {
-    toast.add({ title: 'Connection failed', description: String((err as Error)?.message ?? err), color: 'error' });
+    toast.add({ title: 'Connection failed', description: errorMessage(err), color: 'error' });
   } finally {
     testingRoles[role] = false;
   }
@@ -322,7 +346,7 @@ async function saveLimits() {
   } catch (e) {
     toast.add({
       title: 'Failed to save context limits',
-      description: String((e as Error)?.message ?? e),
+      description: errorMessage(e),
       color: 'error',
     });
   } finally {
@@ -349,7 +373,9 @@ function resetLimits() {
         re-enter credentials.
       </template>
 
-      <div class="space-y-5">
+      <div class="space-y-5" data-shot="ai-model-providers">
+        <ClaudeCliStatusCard v-if="showClaudeCli" />
+
         <AiRoleConfigForm
           v-for="meta in ROLE_META"
           :key="meta.key"
@@ -372,12 +398,43 @@ function resetLimits() {
 
         <SettingsField label="Auto-diagnose" help="settings.auto-diagnose" :env-managed="envManaged">
           <div class="flex items-center gap-3">
-            <USwitch v-model="autoDiagnose" :disabled="envManaged || !roles.diagnosis.enabled" />
+            <USwitch v-model="autoDiagnose" :disabled="envManaged || !diagnosisConfigured" />
             <span class="text-sm text-gray-500">
               Automatically diagnose new failure clusters when a run finishes — up to 3 clusters per run (research +
               diagnosis call each), plus one batched call to title new clusters
             </span>
           </div>
+        </SettingsField>
+
+        <SettingsField label="Diagnosis notifications" help="settings.ai-notifications">
+          <ClientOnly>
+            <div class="flex items-center gap-3">
+              <template v-if="!notifSupported">
+                <span class="text-sm text-gray-500">This browser does not support notifications.</span>
+              </template>
+              <template v-else-if="notifPermission === 'denied'">
+                <span class="text-sm text-gray-500">Notifications are blocked in your browser settings.</span>
+              </template>
+              <template v-else-if="notifPermission === 'default'">
+                <UButton
+                  size="sm"
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-bell"
+                  @click="requestNotifPermission"
+                >
+                  Enable notifications
+                </UButton>
+                <span class="text-sm text-gray-500">Get a browser notification when a diagnosis finishes.</span>
+              </template>
+              <template v-else>
+                <USwitch :model-value="notifActive" @update:model-value="toggleNotifEnabled" />
+                <span class="text-sm text-gray-500">
+                  Show a browser notification when a diagnosis finishes — this browser only.
+                </span>
+              </template>
+            </div>
+          </ClientOnly>
         </SettingsField>
       </div>
 
@@ -435,6 +492,33 @@ function resetLimits() {
         <div class="flex justify-end">
           <UButton color="primary" :loading="savingInstructions" icon="i-lucide-save" @click="saveInstructions">
             Save instructions
+          </UButton>
+        </div>
+      </template>
+    </SectionCard>
+
+    <SectionCard title="Response language">
+      <template #subtitle>
+        The language the AI writes its prose in — diagnosis, root cause, cluster titles. Code, locators, file paths and
+        error text stay verbatim. Leave blank for English.
+      </template>
+      <EnvManagedAlert v-if="settings?.languageEnvManaged" :env-vars="['PIWI_AI_LANGUAGE']" class="mb-3" />
+      <UInput
+        v-model="aiLanguage"
+        :disabled="settings?.languageEnvManaged"
+        placeholder="e.g. French, Japanese, German"
+        class="w-full max-w-sm"
+      />
+      <template #footer>
+        <div class="flex justify-end">
+          <UButton
+            color="primary"
+            :loading="savingLanguage"
+            :disabled="settings?.languageEnvManaged"
+            icon="i-lucide-save"
+            @click="saveLanguage"
+          >
+            Save language
           </UButton>
         </div>
       </template>

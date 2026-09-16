@@ -20,6 +20,17 @@ export function resolveRunBranch(metadata: unknown): string | null {
   return branch;
 }
 
+/**
+ * The branch a pull-request run targets, read from the reporter's SCM metadata.
+ * Null when the reporter captured none, or when it names the run's own branch.
+ */
+export function resolveRunBaseBranch(metadata: unknown): string | null {
+  const meta = (metadata as RunMetadata | null) ?? null;
+  const base = meta?.scm?.baseBranch?.trim();
+  if (!base || base === DETACHED_HEAD) return null;
+  return base === resolveRunBranch(metadata) ? null : base;
+}
+
 /** The pull-request number captured by the reporter, as a number when numeric. */
 export function resolveRunPrNumber(metadata: unknown): number | null {
   const meta = (metadata as RunMetadata | null) ?? null;

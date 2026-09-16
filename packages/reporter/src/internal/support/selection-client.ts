@@ -8,7 +8,7 @@
 export interface SelectionResolution {
   key: string | null;
   version: number | null;
-  tests: Array<{ testCaseId: number; filePath: string; title: string; line: number | null }>;
+  tests: Array<{ testCaseId: number; filePath: string; title: string; line: number | null; locks?: string[] }>;
   resolvedHash: string;
   estimate: { count: number; totalDurationMs: number | null };
   warnings: Array<{ code: string; message: string }>;

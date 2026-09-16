@@ -31,13 +31,16 @@ export interface ParsedCompleteEvent {
   pageState?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
+  dialogs?: unknown;
   ariaSnapshot?: unknown;
+  ariaSnapshotJson?: unknown;
   testSource?: string | null;
   testSourceFrames?: unknown;
   suitePath?: string[] | null;
   suiteConfig?: Array<{ mode: string; annotations: Array<{ type: string; description?: string }> }> | null;
   testAnnotations?: Array<{ type: string; description?: string }> | null;
   tags?: unknown;
+  locks?: unknown;
   testMeta?: unknown;
   workerIndex?: number | null;
   shardIndex?: number | null;
@@ -63,6 +66,7 @@ export function mapCompleteEventToRunCase(tc: ParsedCompleteEvent): RunCaseInput
     suiteConfig: tc.suiteConfig ?? null,
     testAnnotations: tc.testAnnotations ?? null,
     tags: tc.tags ?? null,
+    locks: tc.locks ?? null,
     testMeta: tc.testMeta ?? null,
     title: tc.title as string,
     status: tc.status as string,
@@ -83,7 +87,9 @@ export function mapCompleteEventToRunCase(tc: ParsedCompleteEvent): RunCaseInput
     pageState: tc.pageState,
     aiUsage: tc.aiUsage,
     consoleLogs: tc.consoleLogs,
+    dialogs: tc.dialogs,
     ariaSnapshot: (tc.ariaSnapshot as string | null | undefined) ?? null,
+    ariaSnapshotJson: (tc.ariaSnapshotJson as string | null | undefined) ?? null,
     testSource: tc.testSource ?? null,
     testSourceFrames: tc.testSourceFrames ?? null,
     workerIndex: tc.workerIndex ?? null,

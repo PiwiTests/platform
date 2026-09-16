@@ -71,6 +71,36 @@ export function resolveScmPrNumber(env: Env): string | undefined {
   return trimmed && /^\d+$/.test(trimmed) ? trimmed : undefined;
 }
 
+/**
+ * Resolve the branch a pull-request build targets — the branch the run's own
+ * branch forked from — so the dashboard can fall back to its history when the
+ * feature branch has none of its own:
+ *
+ *   1. `PIWI_BASE_BRANCH` — explicit operator override.
+ *   2. The CI provider's pull-request target variable, in the same provider
+ *      precedence `resolveScmBranch` uses. Only pull-request builds carry one;
+ *      a plain push build resolves nothing.
+ *
+ * Returns `undefined` outside a pull-request build — the dashboard then falls
+ * back to the project's default branch.
+ */
+export function resolveScmBaseBranch(env: Env): string | undefined {
+  const override = env.PIWI_BASE_BRANCH?.trim();
+  if (override) return override;
+
+  let target: string | undefined;
+  if (env.JENKINS_URL) target = env.CHANGE_TARGET;
+  else if (env.GITHUB_ACTIONS) target = env.GITHUB_BASE_REF;
+  else if (env.GITLAB_CI) target = env.CI_MERGE_REQUEST_TARGET_BRANCH_NAME;
+  else if (env.TRAVIS)
+    target = env.TRAVIS_PULL_REQUEST && env.TRAVIS_PULL_REQUEST !== 'false' ? env.TRAVIS_BRANCH : undefined;
+  else if (env.TF_BUILD) target = env.SYSTEM_PULLREQUEST_TARGETBRANCH;
+  else if (env.BITBUCKET_BUILD_NUMBER) target = env.BITBUCKET_PR_DESTINATION_BRANCH;
+
+  const trimmed = target?.trim();
+  return trimmed ? normalizeRef(trimmed) : undefined;
+}
+
 /** Strip a leading `refs/heads/` a provider may prefix onto a branch variable. */
 function normalizeRef(ref: string): string {
   return ref.replace(/^refs\/heads\//, '');
@@ -154,6 +184,7 @@ export class MetadataCollector {
           if (use.colorScheme) config.colorScheme = use.colorScheme;
           if (use.reducedMotion) config.reducedMotion = use.reducedMotion;
           if (use.forcedColors) config.forcedColors = use.forcedColors;
+          if (use.contrast) config.contrast = use.contrast;
           if (use.offline) config.offline = use.offline;
           if (use.bypassCSP) config.bypassCSP = use.bypassCSP;
           if (use.javaScriptEnabled === false) config.javaScriptEnabled = false;
@@ -222,13 +253,16 @@ export class MetadataCollector {
       this.logger.debug(`Git info not available: ${errorMessage(error)}`);
     }
 
-    // Resolve the logical branch (and PR number) from the operator override and
-    // CI provider variables even when git is unavailable or detached, so a CI
-    // pull-request build never records the literal `HEAD` git reports.
+    // Resolve the logical branch (plus the PR number and the branch it targets)
+    // from the operator override and CI provider variables even when git is
+    // unavailable or detached, so a CI pull-request build never records the
+    // literal `HEAD` git reports.
     const branch = resolveScmBranch(process.env, gitBranch);
     if (branch) scm.branch = branch;
     const prNumber = resolveScmPrNumber(process.env);
     if (prNumber) scm.prNumber = prNumber;
+    const baseBranch = resolveScmBaseBranch(process.env);
+    if (baseBranch) scm.baseBranch = baseBranch;
 
     return Object.keys(scm).length > 0 ? scm : undefined;
   }

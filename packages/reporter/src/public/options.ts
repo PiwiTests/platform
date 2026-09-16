@@ -78,6 +78,33 @@ export interface PiwiDashboardOptions {
    * `false`. Can also be forced off with `PIWI_CAPTURE_SERVER_TRACES=false`.
    */
   captureServerTraces?: boolean;
+  /**
+   * Sample the ARIA snapshot at the end of a *passing* test, so a later failure
+   * can be diffed against the page as it last looked when green. Rate-limited by
+   * the server: at run start the reporter asks which tests are due a fresh
+   * sample (their newest green snapshot is older than a day, or missing) and
+   * captures only those, so steady-state runs pay nothing. Rides the existing
+   * capture fixtures — no snapshot is taken without them. Defaults to `true`.
+   * Set to `false` (or `PIWI_SAMPLE_ARIA_ON_PASS=false`) to never sample on pass.
+   */
+  sampleAriaOnPass?: boolean;
+  /**
+   * When installed via `wrapConfig`, default Playwright's own `screenshot` and
+   * `trace` options on the top-level `use` block so a failing test keeps a
+   * screenshot (`'only-on-failure'`) and a trace (`'retain-on-failure'`) even
+   * without the capture fixtures — the trace alone unlocks the DOM snapshot,
+   * full call stack, full network with bodies and the visual diff. On Playwright
+   * 1.63 or later the trace default also turns on the per-action aria tree
+   * (`snapshots: { dom: true, aria: true }`), which adds the accessibility tree
+   * before and after each action at negligible size. The `screen` snapshot kind
+   * (a PNG per action, the trace's biggest cost) stays opt-in — set it yourself
+   * with `use: { trace: { mode: 'retain-on-failure', snapshots: { dom: true,
+   * aria: true, screen: true } } }`. Only fills options the config leaves unset;
+   * an explicit value (including `'off'`) and per-project `use` blocks are never
+   * touched. Defaults to `true`. Set to `false` (or `PIWI_DEFAULT_CAPTURE=false`)
+   * to opt out and let Playwright's own defaults stand.
+   */
+  defaultCapture?: boolean;
 
   // ── Local debugging aids (headed runs only, never under CI) ────────────────
   /**
@@ -112,6 +139,18 @@ export interface PiwiDashboardOptions {
   streamingBatchSize?: number;
   /** Max delay (ms) before flushing pending events during streaming. Defaults to `2000`. */
   streamingBatchDelay?: number;
+  /**
+   * Byte budget for the in-memory stream buffer (the queue of events waiting to
+   * reach the dashboard, and the crash-recovery file it writes if delivery
+   * fails). When the server is unreachable or a huge suite outruns delivery, the
+   * queue is capped here instead of growing without bound: the lowest-value
+   * events are shed first — live step progress, then per-test `begin` markers,
+   * and only as a last resort test results (the final counts and the end-of-run
+   * batch submit stay complete regardless). Defaults to `104857600` (100 MB).
+   * Set to `0` to disable the cap (unbounded, the pre-`0.28` behavior). Can also
+   * be set with `PIWI_MAX_STREAM_BUFFER_BYTES`.
+   */
+  maxStreamBufferBytes?: number;
 
   // ── CI gate ────────────────────────────────────────────────────────────────
   /**

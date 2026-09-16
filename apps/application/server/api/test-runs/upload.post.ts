@@ -13,6 +13,7 @@ import { tmpdir } from 'os';
 import { rm, mkdir, readdir } from 'fs/promises';
 import { parseLocation } from '../../utils/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
+import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
 import { postRunPrFeedbackInBackground } from '../../utils/scm/pr-feedback';
 import { maybeEnqueueHealActionInBackground } from '../../utils/heal/policy';
 import { sanitizeMetadata } from '../../utils/sanitize';
@@ -323,26 +324,24 @@ export default eventHandler(async (event) => {
     }
   }
 
-  // Store all reports and collect their metadata
+  // Store all reports and collect their metadata. Reports are processed one at a
+  // time — each `.gz` report is inflated fully into memory before being written
+  // to disk, so decompressing them in parallel would stack every report's peak
+  // at once. Each report buffer is dropped from the map as soon as it's stored.
   const storedReports: { type: string; label: string; path: string; size: number }[] = [];
 
-  const reportResults = await Promise.all(
-    [...reportFiles.entries()].map(async ([type, report]) => {
-      try {
-        console.log(`[Upload] Storing ${type} report: ${report.filename}`);
-        const { path: storedPath, size } = await storeReport(type, report);
-        const label = getReportLabel(type, report.label);
-        console.log(`[Upload] Stored ${type} report at ${storedPath} (${size} bytes)`);
-        return { type, label, path: storedPath, size };
-      } catch (error) {
-        console.error(`[Upload] Failed to store ${type} report: ${error}`);
-        return null;
-      }
-    }),
-  );
-
-  for (const r of reportResults) {
-    if (r) storedReports.push(r);
+  for (const [type, report] of [...reportFiles.entries()]) {
+    try {
+      console.log(`[Upload] Storing ${type} report: ${report.filename}`);
+      const { path: storedPath, size } = await storeReport(type, report);
+      const label = getReportLabel(type, report.label);
+      console.log(`[Upload] Stored ${type} report at ${storedPath} (${size} bytes)`);
+      storedReports.push({ type, label, path: storedPath, size });
+    } catch (error) {
+      console.error(`[Upload] Failed to store ${type} report: ${error}`);
+    } finally {
+      reportFiles.delete(type);
+    }
   }
 
   // Create or retrieve the test run
@@ -509,7 +508,9 @@ export default eventHandler(async (event) => {
         pageState: testCase.pageState,
         aiUsage: testCase.aiUsage,
         consoleLogs: testCase.consoleLogs,
+        dialogs: testCase.dialogs,
         ariaSnapshot: testCase.ariaSnapshot as string | null | undefined,
+        ariaSnapshotJson: testCase.ariaSnapshotJson as string | null | undefined,
         testSource: testCase.testSource as string | null | undefined,
         testSourceFrames: testCase.testSourceFrames as unknown,
         browser: testCase.browser as unknown | null | undefined,
@@ -517,6 +518,7 @@ export default eventHandler(async (event) => {
         shardIndex: testCase.shardIndex as number | null | undefined,
         startedAt: testCase.startedAt as number | null | undefined,
         tags: testCase.tags ?? null,
+        locks: testCase.locks ?? null,
         testMeta: testCase.testMeta ?? null,
         locatorSnapshots: (testCase as any).locatorSnapshots ?? null,
         didNotRunReason: (testCase.didNotRunReason as string | null | undefined) ?? null,
@@ -531,6 +533,9 @@ export default eventHandler(async (event) => {
     // determined the blob already exists); those still need a files record pointing at
     // the existing blob path.
     const allTraceIndices = new Set([...traceFiles.keys(), ...traceHashes.keys()]);
+    // Execution rows that got a trace this upload — evidence is derived from
+    // them once all files are stored.
+    const tracedCaseIds: number[] = [];
     if (insertedRunCases.length > 0 && allTraceIndices.size > 0) {
       for (const index of allTraceIndices) {
         if (index < 0 || index >= insertedRunCases.length) continue;
@@ -581,8 +586,13 @@ export default eventHandler(async (event) => {
             size,
             blobId,
           });
+          tracedCaseIds.push(testRunsCaseId);
         } catch (error) {
           console.error(`[Upload] Failed to store trace for case #${testRunsCaseId}: ${error}`);
+        } finally {
+          // Drop the (large) trace buffer once stored so peak memory holds one
+          // trace at a time rather than every uploaded trace at once.
+          traceFiles.delete(index);
         }
       }
     }
@@ -619,6 +629,17 @@ export default eventHandler(async (event) => {
             console.error(`[Upload] Failed to store attachment for case #${testRunsCaseId}: ${error}`);
           }
         }
+      }
+    }
+
+    // With traces and attachments stored, recover the evidence the capture
+    // fixtures would have provided (console, network, ARIA) for any execution
+    // that got a trace but no fixture data. Idempotent and best-effort.
+    for (const tracedCaseId of tracedCaseIds) {
+      try {
+        await deriveTraceEvidence(db, tracedCaseId);
+      } catch (error) {
+        console.error(`[Upload] Failed to derive trace evidence for case #${tracedCaseId}: ${error}`);
       }
     }
   }

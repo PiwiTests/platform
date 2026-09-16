@@ -119,6 +119,21 @@ export const useAuth = () => {
   const canEdit = computed(() => hasRole([Role.ADMINISTRATOR]));
 
   /**
+   * Whether write/triage actions gated to reporter-or-admin should be shown —
+   * quarantine, link edits and the like, matching those routes'
+   * `x-required-roles: ['administrator', 'reporter']`.
+   *
+   * Like `canSeeAdmin`, this is true when authentication is disabled: with no
+   * users at all nobody holds a role, and the server returns a virtual admin,
+   * so gating on the role alone would hide the actions from everyone on a
+   * default self-hosted install. A UI affordance only — the server still
+   * enforces the role from each route's meta.
+   */
+  const canWrite = computed(
+    () => !useRuntimeConfig().public.authEnabled || hasRole([Role.ADMINISTRATOR, Role.REPORTER]),
+  );
+
+  /**
    * Whether admin-only surfaces should be shown.
    *
    * Differs from `isAdmin` in one case that matters: when authentication is
@@ -142,6 +157,7 @@ export const useAuth = () => {
     isAdmin,
     isReporter,
     canEdit,
+    canWrite,
     canSeeAdmin,
     // Demo "act as" switcher
     demoUsers,

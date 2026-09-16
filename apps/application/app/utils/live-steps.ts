@@ -8,6 +8,8 @@ import type { TestCaseResult } from '~~/types/api';
  */
 export interface LiveStepInfo {
   title: string;
+  /** The step's target (rendered locator or URL), carried separately by newer Playwright. */
+  subtitle?: string | null;
   category?: string | null;
   status?: string | null;
   /** Owning test's title — pins the step to the right running row. */

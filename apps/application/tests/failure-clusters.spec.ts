@@ -366,6 +366,57 @@ test.describe.serial('Failure clustering', () => {
     expect(groups[0].status).toBe('resolved');
     expect(groups[0].triageNote).toBe('Investigated — flaky test infrastructure');
   });
+
+  test('a known-issue link pins to the cluster and surfaces in the detail and the list', async ({ request }) => {
+    // Cluster detail carries an (empty) links array and an owner field.
+    const before = await request.get(`/api/failure-clusters/${firstRunClusterId}`);
+    expect(before.ok()).toBeTruthy();
+    const beforeBody = (await before.json()) as {
+      links: Array<{ id: number }>;
+      owner: { name: string; source: string } | null;
+    };
+    expect(Array.isArray(beforeBody.links)).toBe(true);
+    expect(beforeBody.links).toHaveLength(0);
+    // No annotation and no reachable CODEOWNERS in the test env.
+    expect(beforeBody.owner).toBeNull();
+
+    // Pin a GitHub issue to the cluster via the shared links endpoint.
+    const create = await request.post('/api/links', {
+      data: {
+        entityType: 'failure_cluster',
+        entityId: firstRunClusterId,
+        url: 'https://github.com/piwitests/platform/issues/123',
+      },
+    });
+    expect(create.ok(), `POST /api/links failed: ${create.status()} ${await create.text()}`).toBeTruthy();
+    const linkId = ((await create.json()) as { link: { id: number; provider: string; key: string | null } }).link.id;
+
+    // The cluster detail now returns the pinned link.
+    const after = await request.get(`/api/failure-clusters/${firstRunClusterId}`);
+    const afterBody = (await after.json()) as { links: Array<{ id: number; provider: string; key: string | null }> };
+    expect(afterBody.links).toHaveLength(1);
+    expect(afterBody.links[0]!.provider).toBe('github-issue');
+    expect(afterBody.links[0]!.key).toBe('123');
+
+    // The project cluster list carries the pinned link as a compact chip source.
+    const list = await request.get(`/api/projects/${projectId}/failure-clusters`);
+    const clusters = (await list.json()).items as Array<{
+      id: number;
+      issueLink: { url: string; provider: string; key: string | null } | null;
+    }>;
+    const login = clusters.find((c) => c.id === firstRunClusterId)!;
+    expect(login.issueLink).not.toBeNull();
+    expect(login.issueLink!.key).toBe('123');
+
+    // GET /api/links reads it back by the new entity type.
+    const listLinks = await request.get(`/api/links?entityType=failure_cluster&entityId=${firstRunClusterId}`);
+    expect(listLinks.ok()).toBeTruthy();
+    expect(((await listLinks.json()).items as unknown[]).length).toBe(1);
+
+    // Clean up so the list assertions in other tests stay unaffected.
+    const del = await request.delete(`/api/links/${linkId}`);
+    expect(del.ok()).toBeTruthy();
+  });
 });
 
 // ── Extract cases from a cluster ─────────────────────────────────────────────

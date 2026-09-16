@@ -182,7 +182,8 @@ function linkState(link: ShareLinkSummary): { label: string; color: 'success' | 
 
         <p class="text-xs text-gray-400">
           A link renders the same bounded report as an offline export, live at view time —
-          <DocLink to="share-links" no-icon class="text-primary hover:underline">how share links work</DocLink>.
+          <DocLink to="features/share-links" no-icon class="text-primary hover:underline">how share links work</DocLink
+          >.
         </p>
       </div>
     </template>

@@ -4,6 +4,7 @@ import type { PiwiDashboardOptions, ShardInfo } from '../../public/options.js';
 import type { HttpClient } from '../transport/http-client.js';
 import { HttpError } from '../transport/http-client.js';
 import type { StreamBuffer } from './stream-buffer.js';
+import { BoundedEventQueue } from './bounded-queue.js';
 import type { CrashRecovery } from './crash-recovery.js';
 import type { Uploader } from '../submit/uploader.js';
 import type { FileHandler } from '../files/file-handler.js';
@@ -19,8 +20,17 @@ import type { CollectedTestCase, StreamEvent, FilterDetails } from '../../types.
  * live file uploads.
  */
 export class StreamManager {
-  private pendingEvents: StreamEvent[] = [];
-  private pendingBeginEvents: StreamEvent[] = [];
+  /**
+   * Bounded queue of events waiting to reach the server. Capped at
+   * `options.maxStreamBufferBytes` so a stalled server or an oversized suite
+   * cannot grow the reporter's memory without bound; the queue sheds live
+   * progress before it ever sheds a test result (see `BoundedEventQueue`).
+   */
+  private readonly pendingEvents: BoundedEventQueue;
+  /** Begin events buffered before the stream opens; capped the same way. */
+  private readonly pendingBeginEvents: BoundedEventQueue;
+  /** Guards `reportBufferPressure` so its summary is logged at most once. */
+  private bufferPressureReported = false;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private flushPromises: Array<Promise<boolean>> = [];
   private liveUploadPromises: Array<Promise<void>> = [];
@@ -85,7 +95,21 @@ export class StreamManager {
     private readonly fileHandler: FileHandler,
     private readonly options: PiwiDashboardOptions,
     private readonly logger: Logger = new Logger(),
-  ) {}
+  ) {
+    const maxBytes = this.options.maxStreamBufferBytes ?? 0;
+    this.pendingEvents = new BoundedEventQueue(maxBytes);
+    this.pendingBeginEvents = new BoundedEventQueue(maxBytes);
+  }
+
+  /**
+   * Whether buffer pressure forced a test-result (`complete`) event to be
+   * dropped from the live stream. When true the submitter finalizes via the
+   * end-of-run batch (which re-sends the full run from the reporter's own
+   * memory) instead of `/finish`, so the dropped detail is not lost.
+   */
+  get bufferLostResults(): boolean {
+    return this.pendingEvents.lostResults || this.pendingBeginEvents.lostResults;
+  }
 
   /** Begin the streaming session after `onBegin` fires. Non-blocking — the actual handshake runs asynchronously. */
   start(
@@ -206,8 +230,7 @@ export class StreamManager {
         this.scheduleHeartbeat();
 
         if (this.pendingBeginEvents.length > 0) {
-          this.pendingEvents = [...this.pendingBeginEvents, ...this.pendingEvents];
-          this.pendingBeginEvents = [];
+          this.pendingEvents.prepend(this.pendingBeginEvents.takeAll());
         }
         // Flush whatever queued while `/start` was in flight — step-end events
         // land in `pendingEvents` directly, so keying this off begin events
@@ -237,13 +260,13 @@ export class StreamManager {
     if (this._enabled && this._runId) {
       this.queueEvent(event);
     } else {
-      this.pendingBeginEvents.push(event);
+      this.pendingBeginEvents.enqueue(event);
     }
   }
 
   /** Queue a test-case event. Triggers an immediate flush when the batch size is reached, otherwise schedules a timer-based flush. */
   queueEvent(event: StreamEvent): void {
-    this.pendingEvents.push(event);
+    this.pendingEvents.enqueue(event);
 
     if (this.pendingEvents.length >= this.options.streamingBatchSize!) {
       this.flush();
@@ -258,9 +281,9 @@ export class StreamManager {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
-    if (this.pendingEvents.length === 0 || !this._enabled || !this._runId) return null;
+    if (this.pendingEvents.isEmpty || !this._enabled || !this._runId) return null;
 
-    const events = this.pendingEvents.splice(0);
+    const events = this.pendingEvents.takeAll();
     // Never rejects: failed events are re-queued so the retry timer or the
     // end-of-run drain can resend them (the server deduplicates).
     const promise = this.httpClient
@@ -272,7 +295,7 @@ export class StreamManager {
           return true;
         },
         (error) => {
-          this.pendingEvents = events.concat(this.pendingEvents);
+          this.pendingEvents.prepend(events);
           this.scheduleRetry(errorMessage(error));
           return false;
         },
@@ -296,7 +319,7 @@ export class StreamManager {
       const buffered = this.streamBuffer.load();
       if (buffered.length > 0) {
         this.streamBuffer.clear();
-        this.pendingEvents = buffered.concat(this.pendingEvents);
+        this.pendingEvents.prepend(buffered);
       }
       if (this.pendingEvents.length > 0) this.flush();
     }, delay);
@@ -355,10 +378,19 @@ export class StreamManager {
 
   /** Drain all pending and buffered events before the run finishes. Retries up to 10 times with exponential back-off. */
   async drain(): Promise<void> {
+    try {
+      await this._drain();
+    } finally {
+      // Report any buffer pressure exactly once, whichever exit the drain took.
+      this.reportBufferPressure();
+    }
+  }
+
+  private async _drain(): Promise<void> {
     this.stopHeartbeat();
     this.clearRetryTimer();
     if (!this._enabled) {
-      this.pendingEvents = [];
+      this.pendingEvents.clear();
       this.flushPromises = [];
       return;
     }
@@ -366,16 +398,16 @@ export class StreamManager {
     try {
       const MAX_ATTEMPTS = 10;
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        if (this._enabled && this.pendingEvents.length > 0) this.flush();
+        if (this._enabled && !this.pendingEvents.isEmpty) this.flush();
         if (this.flushPromises.length > 0) {
           await Promise.allSettled(this.flushPromises);
           this.flushPromises = [];
         }
-        if (this.pendingEvents.length === 0) {
+        if (this.pendingEvents.isEmpty) {
           const buffered = this.streamBuffer.load();
           if (buffered.length > 0) {
-            this.pendingEvents = buffered;
             this.streamBuffer.clear();
+            this.pendingEvents.prepend(buffered);
             continue;
           }
           return;
@@ -391,17 +423,47 @@ export class StreamManager {
         await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * Math.pow(2, attempt), 10000)));
       }
 
-      if (this.pendingEvents.length > 0) {
+      if (!this.pendingEvents.isEmpty) {
+        const remaining = this.pendingEvents.takeAll();
         this.logger.warn(
-          `Could not deliver ${this.pendingEvents.length} live event(s) to the dashboard — continuing with the end-of-run submit.`,
+          `Could not deliver ${remaining.length} live event(s) to the dashboard — continuing with the end-of-run submit.`,
         );
-        this.streamBuffer.append(this.pendingEvents);
-        this.pendingEvents = [];
+        this.streamBuffer.append(remaining);
       }
     } finally {
       // Flush failures inside the loop re-arm the retry timer; the drain is the
       // last delivery attempt, so nothing may stay scheduled past it.
       this.clearRetryTimer();
+    }
+  }
+
+  // Emit a single summary when buffer pressure shed events, so a full disk or a
+  // stalled server does not silently swallow data. Reported once per drain.
+  private reportBufferPressure(): void {
+    if (this.bufferPressureReported) return;
+    const dropped = this.pendingEvents.droppedCount + this.pendingBeginEvents.droppedCount;
+    if (dropped === 0) return;
+    this.bufferPressureReported = true;
+
+    const byType = this.pendingEvents.droppedByType;
+    const beginByType = this.pendingBeginEvents.droppedByType;
+    const count = (type: StreamEvent['type']): number => (byType[type] ?? 0) + (beginByType[type] ?? 0);
+    const steps = count('step-begin') + count('step-end');
+    const begins = count('begin');
+    const results = count('complete');
+    const limitMb = ((this.options.maxStreamBufferBytes ?? 0) / (1024 * 1024)).toFixed(0);
+
+    if (results > 0) {
+      this.logger.warn(
+        `Stream buffer hit its ${limitMb} MB limit — dropped ${dropped} live event(s), including ${results} test result(s) ` +
+          `that will not show live on the dashboard (the run's final counts stay accurate, and the end-of-run submit still carries the full run). ` +
+          `Raise \`maxStreamBufferBytes\` or check the dashboard connection.`,
+      );
+    } else {
+      this.logger.warn(
+        `Stream buffer hit its ${limitMb} MB limit — dropped ${dropped} live progress event(s) ` +
+          `(${steps} step, ${begins} begin) to stay within budget. No test results were lost.`,
+      );
     }
   }
 

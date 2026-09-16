@@ -7,6 +7,7 @@ import {
   alternativeUsesName,
   CONVENTION_STABILITY_FLOOR,
   locatorExpression,
+  computeNarrowingSuggestion,
 } from '#shared/locator-healing';
 import type { RankedLocator } from '#shared/locator-healing.types';
 import { extractLeafSelector } from '#shared/error-fingerprint';
@@ -320,5 +321,27 @@ describe('locatorExpression', () => {
   test('falls back to positional args for an unknown method', () => {
     expect(locatorExpression('frameLocator', { args: ['#frame'] })).toBe("frameLocator('#frame')");
     expect(locatorExpression('getByRole', {})).toBe('getByRole()');
+  });
+});
+
+describe('computeNarrowingSuggestion', () => {
+  const base = { playwrightVersion: '1.63.0', matchCount: 3, visibleMatchCount: 1 };
+
+  test('suggests .visible() for a strict-mode failure with one visible match on 1.63+', () => {
+    expect(computeNarrowingSuggestion(base)).toEqual({ method: 'visible', matchCount: 3, visibleCount: 1 });
+    expect(computeNarrowingSuggestion({ ...base, playwrightVersion: '1.64.0' })).not.toBeNull();
+  });
+
+  test('gated off below Playwright 1.63', () => {
+    expect(computeNarrowingSuggestion({ ...base, playwrightVersion: '1.61.1' })).toBeNull();
+    expect(computeNarrowingSuggestion({ ...base, playwrightVersion: null })).toBeNull();
+  });
+
+  test('needs at least two matches and exactly one visible', () => {
+    expect(computeNarrowingSuggestion({ ...base, matchCount: 1 })).toBeNull();
+    expect(computeNarrowingSuggestion({ ...base, matchCount: null })).toBeNull();
+    expect(computeNarrowingSuggestion({ ...base, visibleMatchCount: 2 })).toBeNull();
+    expect(computeNarrowingSuggestion({ ...base, visibleMatchCount: 0 })).toBeNull();
+    expect(computeNarrowingSuggestion({ ...base, visibleMatchCount: null })).toBeNull();
   });
 });

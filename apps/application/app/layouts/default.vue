@@ -271,24 +271,18 @@ const groups = computed<CommandPaletteGroup[]>(() => {
     },
   ];
 
-  // On a project page, surface its tab panels in the palette. Several of these
-  // (Spec health, Timeline, Flaky tests…) have no standalone route, so this is the
-  // fastest keyboard path to them. An unavailable-for-role tab (e.g. Members) is
-  // omitted; the project page also tolerates an unknown ?tab= by falling back.
+  // On a project page, surface its tab panels in the palette — the fastest
+  // keyboard path to each. The project page tolerates an unknown ?tab= by
+  // falling back to Runs.
   if (currentProjectId.value) {
     const pid = currentProjectId.value;
-    // Same order as the project page's grouped tab strip (Results → Failures →
-    // Health), so the palette and the page agree on where a tab sits.
+    // Same order as the project page's tab strip.
     const projectTabs: [value: string, label: string, icon: string][] = [
-      ['test-runs', 'Test runs', 'i-lucide-play'],
-      ['test-cases', 'Test cases', 'i-lucide-flask-conical'],
-      ['compare', 'Compare', 'i-lucide-git-compare-arrows'],
-      ['failure-clusters', 'Failure clusters', 'i-lucide-layers'],
-      ['flaky-tests', 'Flaky tests', 'i-lucide-shuffle'],
-      ['quarantine', 'Quarantine', 'i-lucide-shield-alert'],
-      ['spec-health', 'Spec health', 'i-lucide-table-2'],
+      ['runs', 'Runs', 'i-lucide-play-circle'],
+      ['tests', 'Tests', 'i-lucide-flask-conical'],
+      ['failures', 'Failures', 'i-lucide-layers'],
       ['performance', 'Performance', 'i-lucide-trending-up'],
-      ['timeline', 'Timeline', 'i-lucide-git-commit-horizontal'],
+      ['settings', 'Settings', 'i-lucide-settings'],
     ];
     staticGroups.unshift({
       id: 'project-tabs',
@@ -343,7 +337,7 @@ const groups = computed<CommandPaletteGroup[]>(() => {
   if (searchResults.value.cases.length > 0) {
     resultGroups.push({
       id: 'search-cases',
-      label: 'Test cases',
+      label: 'Tests',
       ignoreFilter: true,
       items: searchResults.value.cases.map((c) => ({
         id: `case-${c.id}`,
@@ -478,6 +472,9 @@ onMounted(async () => {
 
     <!-- Desktop shell: import dialog for archives dropped on the window or opened with the app -->
     <DesktopImportModal />
+
+    <!-- Desktop shell: after linking a folder, offer to import the runs already in it -->
+    <DesktopImportPreviousRunsModal />
 
     <!-- Desktop shell: the Local runs tray — local test runs keep streaming here across navigation -->
     <DesktopLocalRunsTray />

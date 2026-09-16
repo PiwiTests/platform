@@ -22,7 +22,7 @@ withDefaults(
 </script>
 
 <template>
-  <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-3 min-w-0">
+  <div class="rounded-lg bg-gray-50 dark:bg-gray-900 p-2.5 sm:p-3 min-w-0">
     <p class="text-xs font-medium text-gray-500 uppercase tracking-wider inline-flex items-center gap-1 max-w-full">
       <slot name="label">{{ label }}</slot>
     </p>

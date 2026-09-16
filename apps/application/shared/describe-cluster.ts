@@ -129,3 +129,38 @@ export function clusterSignatureLine(cluster: DescribableCluster): string | null
   const name = describeCluster(cluster);
   return cluster.signature && cluster.signature !== name ? cluster.signature : null;
 }
+
+/** Concrete element states that a headline can carry but a deterministic name does not. */
+const HEADLINE_STATE_PHRASES = [
+  'not found',
+  'not visible',
+  'not enabled',
+  'not editable',
+  'not attached',
+  'not stable',
+];
+
+/**
+ * Whether the latest occurrence's headline adds a value the cluster name lacks —
+ * an expected/received pair, a timeout duration, a "not found" / "not visible" /
+ * "not enabled" state, or a count. Returns false when the name already says
+ * everything (the headline differs only in wording or word order), so the page
+ * can show the headline as a second line only when it is worth the room.
+ */
+export function headlineAddsValue(name: string, headline: string | null | undefined): boolean {
+  const head = (headline ?? '').trim();
+  if (!head) return false;
+  const nameLc = name.toLowerCase();
+  const headLc = head.toLowerCase();
+  if (headLc === nameLc) return false;
+
+  // A concrete state ("was not found on the page") the name does not carry.
+  if (HEADLINE_STATE_PHRASES.some((p) => headLc.includes(p) && !nameLc.includes(p))) return true;
+
+  // A number the name lacks — a count, an expected/received value, or a timeout
+  // duration. Names carry no digits (spec line numbers are stripped), so a new
+  // number in the headline is a value the name is missing.
+  const nameNumbers = new Set(nameLc.match(/\d+/g) ?? []);
+  const headlineNumbers = headLc.match(/\d+/g) ?? [];
+  return headlineNumbers.some((n) => !nameNumbers.has(n));
+}

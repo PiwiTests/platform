@@ -27,6 +27,7 @@ export type SettingsPageId =
   | 'performance'
   | 'pr-feedback'
   | 'auto-heal'
+  | 'integrations'
   | 'ai'
   | 'about';
 
@@ -130,6 +131,19 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     fields: [{ id: 'tags.list', label: 'Tags', help: 'settings.tags' }],
   },
   {
+    id: 'integrations',
+    label: 'Integrations',
+    icon: 'i-lucide-plug',
+    to: '/settings/integrations',
+    group: 'instance',
+    roles: [Role.ADMINISTRATOR],
+    introHelp: 'settings.integrations',
+    fields: [
+      { id: 'integrations.connections', label: 'Connections', help: 'settings.integrations' },
+      { id: 'integrations.connection', label: 'Connect a system', help: 'settings.integrations.connection' },
+    ],
+  },
+  {
     id: 'storage',
     label: 'Storage',
     icon: 'i-lucide-hard-drive',
@@ -186,6 +200,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
       { id: 'ai.research', label: 'Research model', help: 'settings.ai-research' },
       { id: 'ai.embedding', label: 'Embedding model', help: 'settings.embedding-model' },
       { id: 'ai.auto-diagnose', label: 'Auto-diagnose', help: 'settings.auto-diagnose' },
+      { id: 'ai.notifications', label: 'Diagnosis notifications', help: 'settings.ai-notifications' },
       { id: 'ai.context-limits', label: 'Diagnosis context limits', help: 'settings.ai-limits' },
       { id: 'ai.instructions', label: 'Global analysis instructions', help: 'settings.ai-instructions' },
       { id: 'ai.scm-token', label: 'Repository access token', help: 'project.scm-token' },

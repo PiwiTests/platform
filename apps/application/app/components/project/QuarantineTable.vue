@@ -6,7 +6,16 @@
  * it can earn its way out, and the table says when it has rather than waiting
  * to be asked.
  */
-const props = defineProps<{ projectId: string | number; projectName?: string | null }>();
+import { buildTestRowBadges } from '~/utils/test-row-badges';
+
+const props = defineProps<{
+  projectId: string | number;
+  projectName?: string | null;
+  /** Hide the "Worth quarantining" card — its role is the flaky list's Quarantine action. */
+  hideCandidates?: boolean;
+}>();
+
+const emit = defineEmits<{ count: [active: number] }>();
 
 interface QuarantineEntry {
   id: number;
@@ -45,6 +54,8 @@ const busy = ref<number | null>(null);
 const { data, status, error, refresh } = await useFetch<QuarantineResponse>(
   () => `/api/projects/${props.projectId}/quarantine`,
 );
+
+watch(data, (d) => emit('count', d?.debt.active ?? 0));
 
 function formatAge(ms: number): string {
   const hours = Math.round(ms / 3_600_000);
@@ -112,64 +123,52 @@ async function release(testCaseId: number) {
           text="Nothing quarantined. Tests you quarantine appear here with their progress back out."
         />
 
-        <TableScroller v-else>
-          <table class="w-full text-sm">
-            <thead class="text-left text-xs text-muted">
-              <tr>
-                <th class="px-3 py-2">Test</th>
-                <th class="px-3 py-2">Reason</th>
-                <th class="px-3 py-2 whitespace-nowrap">Streak</th>
-                <th class="px-3 py-2 whitespace-nowrap">Age</th>
-                <th class="px-3 py-2 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="entry in data.entries" :key="entry.id" class="border-t border-default">
-                <td class="px-3 py-2 min-w-0">
-                  <NuxtLink :to="`/test-cases/${entry.testCaseId}`" class="text-primary hover:underline font-medium">
-                    {{ entry.title }}
-                  </NuxtLink>
-                  <TestMetaBadges
-                    :tags="entry.tags"
-                    :meta="{ owner: entry.owner ?? undefined }"
-                    :max-tags="3"
-                    class="ml-1"
-                  />
-                  <div class="text-xs text-muted">
-                    <OpenInIdeLink :file-path="entry.filePath" :project-key="projectId" :project-name="projectName" />
-                  </div>
-                </td>
-                <td class="px-3 py-2 text-muted">{{ entry.reason || '—' }}</td>
-                <td class="px-3 py-2 whitespace-nowrap">
-                  <UBadge v-if="entry.releaseProposed" color="success" variant="soft" size="xs">
-                    {{ entry.consecutivePasses }} green — ready
-                  </UBadge>
-                  <span v-else-if="entry.runsSinceQuarantine === 0" class="text-xs text-muted">not run yet</span>
-                  <span v-else class="text-xs">
-                    {{ entry.consecutivePasses }} / {{ data.releaseAfterConsecutivePasses }}
-                  </span>
-                </td>
-                <td class="px-3 py-2 whitespace-nowrap text-muted">{{ formatAge(entry.ageMs) }}</td>
-                <td class="px-3 py-2 text-right">
-                  <UButton
-                    size="xs"
-                    :color="entry.releaseProposed ? 'primary' : 'neutral'"
-                    variant="soft"
-                    :loading="busy === entry.testCaseId"
-                    @click="release(entry.testCaseId)"
-                  >
-                    Release
-                  </UButton>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </TableScroller>
+        <div v-else class="rounded-lg border border-default overflow-hidden">
+          <TestRow
+            v-for="entry in data.entries"
+            :key="entry.id"
+            :href="`/test-cases/${entry.testCaseId}`"
+            :title="entry.title"
+            status="quarantined"
+            icon="i-lucide-shield-alert"
+            icon-class="text-amber-600 dark:text-amber-400"
+            :file-path="entry.filePath"
+            :badges="buildTestRowBadges({ tags: entry.tags, meta: { owner: entry.owner ?? undefined } })"
+            :project-key="projectId"
+            :project-name="projectName"
+          >
+            <template #metrics>
+              <UBadge v-if="entry.releaseProposed" color="success" variant="soft" size="xs">
+                {{ entry.consecutivePasses }} green — ready
+              </UBadge>
+              <span v-else-if="entry.runsSinceQuarantine === 0" class="text-xs">not run yet</span>
+              <span v-else class="text-xs tabular-nums" title="Consecutive passes toward release">
+                {{ entry.consecutivePasses }} / {{ data.releaseAfterConsecutivePasses }}
+              </span>
+              <span class="tabular-nums" :title="`Quarantined ${formatAge(entry.ageMs)} ago`">
+                {{ formatAge(entry.ageMs) }}
+              </span>
+              <UButton
+                size="xs"
+                :color="entry.releaseProposed ? 'primary' : 'neutral'"
+                variant="soft"
+                :loading="busy === entry.testCaseId"
+                @click="release(entry.testCaseId)"
+              >
+                Release
+              </UButton>
+            </template>
+
+            <template v-if="entry.reason" #subline>
+              <p class="text-xs text-muted">{{ entry.reason }}</p>
+            </template>
+          </TestRow>
+        </div>
       </template>
     </SectionCard>
 
     <SectionCard
-      v-if="data && data.candidates.length > 0"
+      v-if="!hideCandidates && data && data.candidates.length > 0"
       title="Worth quarantining"
       icon="i-lucide-lightbulb"
       :count="data.candidates.length"

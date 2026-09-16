@@ -10,7 +10,7 @@ hero:
   actions:
     - theme: brand
       text: Getting started
-      link: /getting-started
+      link: /guide/getting-started
     - theme: alt
       text: Live demo
       link: https://piwitests.dev/demo/
@@ -51,7 +51,7 @@ Piwi keeps the runs, so you can answer them — and then does the things a perma
 possible. It is deliberately **Playwright-only**: that is what makes traces, step timing and locator
 healing first-class rather than lowest-common-denominator. If you need one place for JUnit, pytest and
 Cypress results too, or you only ever debug locally and never look back,
-[Why Piwi?](/comparison) says so plainly.
+[Why Piwi?](/guide/comparison) says so plainly.
 
 </div>
 
@@ -106,23 +106,25 @@ Start from what you came here to do.
 - **Something is failing right now** — [Recipes](/recipes/) answer the question you arrived with: is
   this a regression or a flake, which locator to use instead, forty tests are red, the suite is
   unreliable, CI takes too long.
-- **Setting it up** — [Getting started](/getting-started) goes from a Docker command to your first run
-  in the dashboard. On a laptop, the [desktop app](/desktop) bundles the whole server in a native
+- **Setting it up** — [Getting started](/guide/getting-started) goes from a Docker command to your first run
+  in the dashboard. On a laptop, the [desktop app](/features/desktop) bundles the whole server in a native
   window: no Docker, no Node.
-- **Learning the vocabulary** — [Core concepts](/concepts) defines runs, test cases, executions and
+- **Learning the vocabulary** — [Core concepts](/guide/concepts) defines runs, test cases, executions and
   clusters. Worth five minutes before the rest.
-- **Wiring up CI** — [CI & sharding](/ci): two environment variables, why ten shards are one run, and
-  how to [block a merge](/ci#blocking-a-merge) on the analysis rather than the exit code.
-- **Running it for a team** — [Deployment](/deployment), [Configuration](/configuration),
-  [Authentication](/authentication), and [Privacy & data flow](/privacy).
-- **Letting an agent do the reading** — the [MCP server](/mcp) gives a coding agent 45 tools over your
-  test history, and [AI diagnosis](/ai-diagnosis) explains a cluster against your actual git diff with
+- **Seeing everything it does** — the [Feature map](/reference/feature-map) lists every feature, what it needs,
+  where it lives in the dashboard, and the page that explains it.
+- **Wiring up CI** — [CI & sharding](/guide/ci): two environment variables, why ten shards are one run, and
+  how to [block a merge](/guide/ci#blocking-a-merge) on the analysis rather than the exit code.
+- **Running it for a team** — [Deployment](/operate/deployment), [Configuration](/reference/configuration),
+  [Authentication](/operate/authentication), and [Privacy & data flow](/guide/privacy).
+- **Letting an agent do the reading** — the [MCP server](/features/mcp) gives a coding agent 46 tools over your
+  test history, and [AI diagnosis](/features/ai-diagnosis) explains a cluster against your actual git diff with
   a provider you configure. Both optional; a local model works.
 
-Also here: [cross-project analytics](/analytics), [notifications](/notifications) to Slack, email or a
-webhook, [timeline markers](/timeline-markers) for annotating trends,
-[backend log capture](/backend-logs), [offline export](/offline-export) of an investigation,
-[plain-English test steps](/ai-steps) compiled once and replayed with no model calls, and a
-[browser extension](/extension) that picks locators from the live page.
+Also here: [cross-project analytics](/features/analytics), [notifications](/features/notifications) to Slack, email or a
+webhook, [timeline markers](/features/timeline-markers) for annotating trends,
+[backend log capture](/guide/backend-logs), [offline export](/features/offline-export) of an investigation,
+[plain-English test steps](/guide/ai-steps) compiled once and replayed with no model calls, and a
+[browser extension](/features/extension) that picks locators from the live page.
 
 </div>

@@ -3,6 +3,10 @@ import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { createRequire } from 'module';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { syncCron, resolveSyncMinutes } from './shared/integrations/sync-config';
+
+// The tracker status-pull cadence, derived from the env var at start time.
+const integrationsSyncCron = syncCron(resolveSyncMinutes(process.env.PIWI_INTEGRATIONS_SYNC_MINUTES));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -138,10 +142,12 @@ export default defineNuxtConfig({
       model: process.env.PIWI_AI_MODEL || '',
       baseUrl: process.env.PIWI_AI_BASE_URL || '',
       autoDiagnose: process.env.PIWI_AI_AUTO_DIAGNOSE === 'true',
+      temperature: process.env.PIWI_AI_TEMPERATURE || '',
       researchModel: process.env.PIWI_AI_RESEARCH_MODEL || '',
       researchProvider: process.env.PIWI_AI_RESEARCH_PROVIDER || '',
       researchBaseUrl: process.env.PIWI_AI_RESEARCH_BASE_URL || '',
       researchApiKey: process.env.PIWI_AI_RESEARCH_API_KEY || '',
+      researchTemperature: process.env.PIWI_AI_RESEARCH_TEMPERATURE || '',
       embeddingProvider: process.env.PIWI_AI_EMBEDDING_PROVIDER || '',
       embeddingModel: process.env.PIWI_AI_EMBEDDING_MODEL || '',
       embeddingBaseUrl: process.env.PIWI_AI_EMBEDDING_BASE_URL || '',
@@ -316,8 +322,10 @@ export default defineNuxtConfig({
       tasks: true,
     },
     scheduledTasks: {
-      // Run the notification and auto-heal outbox sweepers every minute
-      '* * * * *': ['notifications:sweep', 'heal:sweep'],
+      // Run the notification, auto-heal and integration outbox sweepers every minute
+      '* * * * *': ['notifications:sweep', 'heal:sweep', 'integrations:sweep'],
+      // Pull tracker statuses back on the configured cadence (default every 15 min).
+      [integrationsSyncCron]: ['integrations:sync'],
       // Nightly data retention: run pruning (opt-in), outbox pruning, orphan sweep
       '17 3 * * *': ['retention:sweep'],
     },

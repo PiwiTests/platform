@@ -106,21 +106,24 @@ export async function resolveCasePayloadContents(
 
 interface CasePayloadRefFields {
   ariaSnapshot?: string | null;
+  ariaSnapshotJson?: string | null;
   testSource?: string | null;
   testSourceFrames?: unknown;
   ariaSnapshotPayloadId?: number | null;
+  ariaSnapshotJsonPayloadId?: number | null;
   testSourcePayloadId?: number | null;
   testSourceFramesPayloadId?: number | null;
 }
 
 /**
- * Return a copy of the row with `ariaSnapshot`/`testSource`/`testSourceFrames`
- * coalesced from their content-addressed payloads, falling back to the legacy
- * inline columns for rows written before dedup existed.
+ * Return a copy of the row with `ariaSnapshot`/`ariaSnapshotJson`/`testSource`/
+ * `testSourceFrames` coalesced from their content-addressed payloads, falling
+ * back to the legacy inline columns for rows written before dedup existed.
  */
 export async function inlineCasePayloads<T extends CasePayloadRefFields>(db: DrizzleDB, row: T): Promise<T> {
   const contents = await resolveCasePayloadContents(db, [
     row.ariaSnapshotPayloadId,
+    row.ariaSnapshotJsonPayloadId,
     row.testSourcePayloadId,
     row.testSourceFramesPayloadId,
   ]);
@@ -129,6 +132,8 @@ export async function inlineCasePayloads<T extends CasePayloadRefFields>(db: Dri
   const resolved: T = { ...row };
   const aria = row.ariaSnapshotPayloadId != null ? contents.get(row.ariaSnapshotPayloadId) : undefined;
   if (aria !== undefined) resolved.ariaSnapshot = aria;
+  const ariaJson = row.ariaSnapshotJsonPayloadId != null ? contents.get(row.ariaSnapshotJsonPayloadId) : undefined;
+  if (ariaJson !== undefined) resolved.ariaSnapshotJson = ariaJson;
   const source = row.testSourcePayloadId != null ? contents.get(row.testSourcePayloadId) : undefined;
   if (source !== undefined) resolved.testSource = source;
   const framesJson = row.testSourceFramesPayloadId != null ? contents.get(row.testSourceFramesPayloadId) : undefined;

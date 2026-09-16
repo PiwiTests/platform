@@ -1,4 +1,5 @@
 import { test, expect } from 'vitest';
+import { stepLabel } from '@piwitests/core/step-analysis';
 import { liveStepForCase, type LiveStepsByWorker } from '../../app/utils/live-steps';
 import type { TestCaseResult } from '../../types/api';
 
@@ -48,4 +49,18 @@ test('a lingering step from the previous test never surfaces on the next row', (
 test('a step with no parent title falls back to the worker match', () => {
   const anonymous: LiveStepsByWorker = { 0: { title: 'fixture: context', category: 'fixture' } };
   expect(liveStepForCase(anonymous, makeCase({}))?.title).toBe('fixture: context');
+});
+
+test('a live step keeps its subtitle, and the label composes both', () => {
+  const withSubtitle: LiveStepsByWorker = {
+    0: {
+      title: 'Click',
+      subtitle: "getByRole('button', { name: 'Pay' })",
+      category: 'pw:api',
+      parentTitle: 'checkout completes',
+    },
+  };
+  const live = liveStepForCase(withSubtitle, makeCase({}));
+  expect(live?.subtitle).toBe("getByRole('button', { name: 'Pay' })");
+  expect(stepLabel(live!)).toBe("Click getByRole('button', { name: 'Pay' })");
 });

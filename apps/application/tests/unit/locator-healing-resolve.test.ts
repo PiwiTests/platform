@@ -143,6 +143,53 @@ describe('resolveHealingForCase — resolution gate', () => {
   });
 });
 
+describe('resolveHealingForCase — narrowing suggestion', () => {
+  const strictError = `Error: locator.click: Error: strict mode violation: ${FAILING} resolved to 3 elements:\n    1) <button>Pay</button>\n    2) <button>Pay</button>\n    3) <button>Pay</button>\n    at tests/checkout.spec.ts:42:5`;
+  // The aria tree omits hidden nodes, so a single matching entry means one visible match.
+  const oneVisibleAria = '- heading "Checkout"\n- button "Pay"';
+
+  test('suggests .visible() when one match is visible and Playwright is 1.63+', async () => {
+    const r = await resolveHealingForCase(
+      { error: strictError, ariaSnapshot: oneVisibleAria, playwrightVersion: '1.63.0' },
+      [],
+      null,
+    );
+    expect(r.narrowingSuggestion).toEqual({ method: 'visible', matchCount: 3, visibleCount: 1 });
+  });
+
+  test('withheld below Playwright 1.63', async () => {
+    const r = await resolveHealingForCase(
+      { error: strictError, ariaSnapshot: oneVisibleAria, playwrightVersion: '1.61.1' },
+      [],
+      null,
+    );
+    expect(r.narrowingSuggestion ?? null).toBeNull();
+  });
+
+  test('withheld when several matches are visible', async () => {
+    const r = await resolveHealingForCase(
+      {
+        error: strictError,
+        ariaSnapshot: '- button "Pay"\n- button "Pay"',
+        playwrightVersion: '1.63.0',
+      },
+      [],
+      null,
+    );
+    expect(r.narrowingSuggestion ?? null).toBeNull();
+  });
+
+  test('withheld for a non-strict failure', async () => {
+    const timeout = `TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for ${FAILING}\n    at tests/checkout.spec.ts:42:5`;
+    const r = await resolveHealingForCase(
+      { error: timeout, ariaSnapshot: oneVisibleAria, playwrightVersion: '1.63.0' },
+      [],
+      null,
+    );
+    expect(r.narrowingSuggestion ?? null).toBeNull();
+  });
+});
+
 describe('resolveHealingForCase — healed detection', () => {
   const healedRows = async (recSig: string, healedRunId: number) => [
     // The failing call site, matched by location; its recommendation is PAY_TESTID.

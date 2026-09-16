@@ -79,10 +79,43 @@ describe('buildFailureVerdict', () => {
 
   test('an unclustered failure without SCM metadata is a first failure in its own run', () => {
     const verdict = buildFailureVerdict({ error: PAY_ERROR, status: 'failed', runId: 9 });
-    expect(verdict!.since).toEqual({ firstFailingRunId: 9, firstFailingAt: null, isFirstFailure: true, commit: null });
+    expect(verdict!.since).toEqual({
+      firstFailingRunId: 9,
+      firstFailingAt: null,
+      isFirstFailure: true,
+      commit: null,
+      fixedBefore: null,
+    });
     expect(verdict!.cluster).toBeNull();
     expect(verdict!.owner).toBeNull();
     expect(verdict!.why).toBeNull();
+  });
+
+  test('since.fixedBefore is set when the cluster regressed, null otherwise', () => {
+    const cluster = {
+      signature: 'x',
+      id: 1,
+      firstSeenRunId: 4,
+      firstSeenAt: null,
+      sameRunCaseCount: 1,
+      fixCommit: 'demo001abc',
+      fixLandedRunId: 3,
+      fixLandedAt: null,
+    };
+    const regressed = buildFailureVerdict({
+      error: PAY_ERROR,
+      status: 'failed',
+      runId: 9,
+      cluster: { ...cluster, fixVerification: 'regressed' },
+    });
+    expect(regressed!.since.fixedBefore).toEqual({ commit: 'demo001abc', commitShort: 'demo001', runId: 3, at: null });
+    const verified = buildFailureVerdict({
+      error: PAY_ERROR,
+      status: 'failed',
+      runId: 9,
+      cluster: { ...cluster, fixVerification: 'diagnosis-verified' },
+    });
+    expect(verified!.since.fixedBefore).toBeNull();
   });
 
   test('classifies why in priority order: regression, retry pass, new flaky, infrastructure', () => {

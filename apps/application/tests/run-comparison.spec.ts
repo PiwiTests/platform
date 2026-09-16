@@ -144,242 +144,38 @@ test.describe.serial('Run Comparison', () => {
     }
   });
 
-  test('compare page shows selection UI and Latest vs Previous button', async ({ page }) => {
-    await page.goto(`/projects/${projectId}?tab=compare`);
+  test('selecting two runs and comparing opens the newer run’s Changes tab', async ({ page }) => {
+    await page.goto(`/projects/${projectId}?tab=runs`);
     await waitForHydration(page);
-    await expect(page.getByText('Select run A...')).toBeVisible();
-    await expect(page.getByText('Select run B...')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Latest vs previous' })).toBeVisible();
+
+    await page.getByRole('checkbox', { name: `Select run #${run1Id}` }).check();
+    await page.getByRole('checkbox', { name: `Select run #${run2Id}` }).check();
+
+    await page.getByRole('button', { name: 'Compare', exact: true }).click();
+
+    const newer = Math.max(run1Id, run2Id);
+    const older = Math.min(run1Id, run2Id);
+    await page.waitForURL(new RegExp(`/test-runs/${newer}\\?tab=changes&baseline=${older}`));
   });
 
-  test('compare page loads comparison via dropdown selection', async ({ page }) => {
+  test('the retired compare tab and route both land on the Runs tab', async ({ page }) => {
     await page.goto(`/projects/${projectId}?tab=compare`);
     await waitForHydration(page);
+    await expect(page).toHaveURL(/[?&]tab=runs/);
 
-    // Open run A dropdown and select the first run
-    await page.locator('button').filter({ hasText: 'Select run A...' }).click();
-    await page
-      .getByRole('option')
-      .filter({ hasText: `Run #${run1Id}` })
-      .click({ force: true });
+    await page.goto(`/projects/${projectId}/compare`);
+    await page.waitForURL(new RegExp(`/projects/${projectId}\\?tab=runs`));
+  });
 
-    // Open run B dropdown and select the second run
-    await page.locator('button').filter({ hasText: 'Select run B...' }).click();
-    await page
-      .getByRole('option')
-      .filter({ hasText: `Run #${run2Id}` })
-      .last()
-      .click({ force: true });
+  test('run detail Changes tab compares against a baseline', async ({ page }) => {
+    await page.goto(`/test-runs/${run2Id}?tab=changes`);
+    await waitForHydration(page);
 
-    // Wait for comparison data to load (requires two API fetches for run details)
-    await expect(page.getByText('Status changes', { exact: true })).toBeVisible({ timeout: 30000 });
+    // The Changes tab reads run 2 against one baseline (run 1, the last passing run).
+    await expect(page.getByText('Compared with')).toBeVisible({ timeout: 15000 });
 
-    // Run 1 vs Run 2 comparison expectations:
-    //   login works: 500ms → 300ms  (delta -200, -40%)    → improved
-    //   dashboard loads: 1200ms → 5000ms (delta +3800, +317%) → regressed, new failure
-    //   profile page: 800ms → 750ms (delta -50, -6.25%)   → unchanged
-
-    // Status changes
-    await expect(page.getByText('1 new failure')).toBeVisible();
-
-    // Duration changes
-    await expect(page.getByText('1 improved')).toBeVisible();
-    await expect(page.getByText('1 regressed')).toBeVisible();
-    await expect(page.getByText('1 unchanged')).toBeVisible();
-
-    // Verify comparison table is visible (the "Test case" column header is specific to comparison tables)
-    await expect(page.getByRole('table').last()).toBeVisible();
-
-    // Check specific data in table
-    await expect(page.getByText('login works')).toBeVisible();
+    // "dashboard loads" passed in run 1 and failed in run 2, so it is a new failure.
+    await expect(page.getByText('New failures')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('dashboard loads')).toBeVisible();
-    await expect(page.getByText('profile page')).toBeVisible();
-  });
-
-  test('compare page shows added/removed tests across non-overlapping runs', async ({ page }) => {
-    // Run 1 has "login works", "dashboard loads", "profile page"
-    // Run 3 has "login works", "settings page"
-    // So Run 1 has "dashboard loads" and "profile page" not in Run 3
-    // Run 3 has "settings page" not in Run 1
-    await page.goto(`/projects/${projectId}?tab=compare`);
-    await waitForHydration(page);
-
-    // Select runs via dropdown
-    await page.locator('button').filter({ hasText: 'Select run A...' }).click();
-    await page
-      .getByRole('option')
-      .filter({ hasText: `Run #${run1Id}` })
-      .click({ force: true });
-    await page.locator('button').filter({ hasText: 'Select run B...' }).click();
-    await page
-      .getByRole('option')
-      .filter({ hasText: `Run #${run3Id}` })
-      .last()
-      .click({ force: true });
-
-    await expect(page.getByText('Duration changes', { exact: true })).toBeVisible({ timeout: 30000 });
-
-    // login works: 500ms → 550ms (delta +50, +10%) → unchanged (exactly at 10% threshold)
-    // dashboard loads, profile page: only in run A (removed)
-    // settings page: only in run B (added)
-    // These should appear in the table
-
-    await expect(page.getByText('login works')).toBeVisible();
-    await expect(page.getByText('dashboard loads')).toBeVisible();
-    await expect(page.getByText('profile page')).toBeVisible();
-    await expect(page.getByText('settings page')).toBeVisible();
-  });
-
-  test('Latest vs previous button selects runs and shows comparison', async ({ page }) => {
-    await page.goto(`/projects/${projectId}?tab=compare`);
-    await waitForHydration(page);
-
-    // Click "Latest vs previous"
-    await page.getByRole('button', { name: 'Latest vs previous' }).click();
-
-    // Should show comparison data
-    await expect(page.getByText('Duration changes', { exact: true })).toBeVisible({ timeout: 30000 });
-    await expect(page.getByRole('table')).toBeVisible();
-  });
-
-  test('run detail page shows comparison section', async ({ page }) => {
-    await page.goto(`/test-runs/${run2Id}`);
-    await waitForHydration(page);
-
-    // Switch to the Compare tab
-    await page
-      .getByRole('button', { name: /^Compare$/ })
-      .first()
-      .click();
-
-    // Use "Compare with previous run" button
-    await page.getByRole('button', { name: 'Compare with previous run' }).click();
-
-    // Should show comparison data
-    await expect(page.getByText('Duration changes', { exact: true })).toBeVisible({ timeout: 15000 });
-    // The comparison table has a "Test case" column header
-    await expect(page.getByText('Test case').first()).toBeVisible();
-  });
-
-  test('compare page shows no overlapping tests message for unrelated runs', async ({ page }) => {
-    // Create a separate independent project with no shared test cases
-    const res = await page.request.post('/api/test-runs/submit', {
-      data: {
-        projectName: PROJECT.UNRELATED,
-        status: 'passed',
-        startTime: new Date().toISOString(),
-        duration: 5000,
-        totalTests: 1,
-        passedTests: 1,
-        failedTests: 0,
-        skippedTests: 0,
-        testCases: [
-          {
-            title: 'unique test',
-            status: 'passed',
-            duration: 100,
-            location: 'tests/unique.spec.ts:1:1',
-            retries: 0,
-          },
-        ],
-      },
-    });
-    expect(res.ok()).toBeTruthy();
-    const data = await res.json();
-    const unrelatedProjectId = data.projectId;
-
-    // Navigate to compare page for this unrelated project (only 1 run, nothing to compare)
-    await page.goto(`/projects/${unrelatedProjectId}?tab=compare`);
-    await waitForHydration(page);
-
-    // Should show "select two runs" since we haven't selected any runs for comparison
-    await expect(page.getByText('Select two runs to compare test results')).toBeVisible();
-  });
-
-  test('compare page shows non-overlapping tests with missing data markers', async ({ page }) => {
-    // Create a project with 2 runs that have completely different test cases
-    const projectName = PROJECT.NO_OVERLAP;
-    const r1 = await page.request.post('/api/test-runs/submit', {
-      data: {
-        projectName,
-        status: 'passed',
-        startTime: new Date(Date.now() - 60000).toISOString(),
-        duration: 5000,
-        totalTests: 1,
-        passedTests: 1,
-        failedTests: 0,
-        skippedTests: 0,
-        testCases: [
-          {
-            title: 'alpha test',
-            status: 'passed',
-            duration: 200,
-            location: 'tests/alpha.spec.ts:1:1',
-            retries: 0,
-          },
-        ],
-      },
-    });
-    const r1Data = await r1.json();
-
-    const r2 = await page.request.post('/api/test-runs/submit', {
-      data: {
-        projectName,
-        status: 'passed',
-        startTime: new Date().toISOString(),
-        duration: 5000,
-        totalTests: 1,
-        passedTests: 1,
-        failedTests: 0,
-        skippedTests: 0,
-        testCases: [
-          {
-            title: 'beta test',
-            status: 'passed',
-            duration: 300,
-            location: 'tests/beta.spec.ts:1:1',
-            retries: 0,
-          },
-        ],
-      },
-    });
-    const r2Data = await r2.json();
-
-    // Navigate and select runs via dropdown
-    await page.goto(`/projects/${r1Data.projectId}?tab=compare`);
-    await waitForHydration(page);
-
-    await page.locator('button').filter({ hasText: 'Select run A...' }).click();
-    await page
-      .getByRole('option')
-      .filter({ hasText: `Run #${r1Data.runId}` })
-      .click({ force: true });
-    await page.locator('button').filter({ hasText: 'Select run B...' }).click();
-    await page
-      .getByRole('option')
-      .filter({ hasText: `Run #${r2Data.runId}` })
-      .last()
-      .click({ force: true });
-
-    // Non-overlapping tests still appear in the comparison table — each has null/dash for the missing side
-    // "alpha test" (only in run A) should show with a dash for Duration B
-    // "beta test" (only in run B) should show with a dash for Duration A
-    await expect(page.getByText('Duration changes', { exact: true })).toBeVisible({ timeout: 30000 });
-    await expect(page.getByText('alpha test')).toBeVisible();
-    await expect(page.getByText('beta test')).toBeVisible();
-  });
-
-  test('performance tab shows comparison section', async ({ page }) => {
-    await page.goto(`/projects/${projectId}?tab=performance`);
-    await waitForHydration(page);
-
-    await expect(page.getByText('Run comparison')).toBeVisible();
-
-    // Use "Compare latest vs previous" button
-    await page.getByRole('button', { name: 'Compare latest vs previous' }).click();
-
-    // Should load comparison data — the comparison table has a "Test case" column header
-    await expect(page.getByText('improved').first()).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('Test case').first()).toBeVisible();
   });
 });

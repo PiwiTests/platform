@@ -207,6 +207,7 @@ test.describe('Gzip Compression Tests', () => {
 
       const htmlContent = await downloadResponse.text();
       expect(htmlContent).toContain('Playwright Test Report');
+      expect(htmlContent).toContain('localStorage');
     }
   });
 

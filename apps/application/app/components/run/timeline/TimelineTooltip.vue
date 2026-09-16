@@ -6,18 +6,23 @@ import {
   timelineStatusHex,
   timelineHookFill,
   timelineHookStroke,
+  timelineStepColor,
   formatTimelineTime,
 } from '~/utils/timeline';
 
 const props = defineProps<{
   item: TimelineItem | null;
   pos: { x: number; y: number };
+  /** Lock name → color, so the tooltip swatches match the brackets. */
+  lockColorMap?: Map<string, string>;
 }>();
 
 const swatchStyle = computed(() => {
   const item = props.item;
   if (!item) return {};
   if (item.kind === 'test') return { backgroundColor: timelineStatusHex(item.status) };
+  if (item.kind === 'step')
+    return { backgroundColor: timelineStepColor(item.category ?? 'other', item.status === 'failed') };
   if (item.kind === 'wait') {
     return { backgroundColor: TIMELINE_WAIT_COLORS.swatch + '66', borderColor: TIMELINE_WAIT_COLORS.swatch };
   }
@@ -51,7 +56,7 @@ const positionStyle = computed(() => {
       <div class="flex items-center gap-2 mb-1">
         <span
           class="inline-block size-2.5 rounded-full shrink-0"
-          :class="{ 'border border-dashed': item.kind !== 'test' }"
+          :class="{ 'border border-dashed': item.kind !== 'test' && item.kind !== 'step' }"
           :style="swatchStyle"
         />
         <span class="font-medium text-gray-900 dark:text-white max-w-64 truncate">
@@ -60,16 +65,30 @@ const positionStyle = computed(() => {
             class="uppercase text-[10px] tracking-wider mr-1"
             :class="item.kind === 'wait' ? 'text-amber-500' : 'text-gray-500'"
           >
-            {{ item.kind }}
+            {{ item.kind === 'step' ? (item.category ?? 'step') : item.kind }}
           </span>
           {{ item.title }}
         </span>
       </div>
+      <div v-if="item.subtitle" class="mb-1 font-mono text-[11px] text-gray-400 truncate max-w-72">
+        {{ item.subtitle }}
+      </div>
       <div class="flex items-center gap-3 text-gray-500">
-        <span class="capitalize">{{ item.status }}</span>
+        <span class="capitalize">{{ formatStatusLabel(item.status) }}</span>
         <span>{{ formatTimelineTime(item.duration) }}</span>
         <span>Worker {{ item.workerIndex }}</span>
         <span v-if="item.parentTitle" class="italic truncate max-w-48"> for {{ item.parentTitle }} </span>
+      </div>
+      <div v-if="item.error" class="mt-1 text-red-500 truncate max-w-72">{{ item.error }}</div>
+      <div v-if="item.locks?.length" class="flex items-center gap-2 flex-wrap mt-1 text-gray-500">
+        <UIcon name="i-lucide-lock" class="size-3 shrink-0" />
+        <span v-for="lock in item.locks" :key="lock" class="inline-flex items-center gap-1">
+          <span
+            class="inline-block size-2 rounded-sm shrink-0"
+            :style="{ backgroundColor: lockColorMap?.get(lock) ?? '#a1a1aa' }"
+          />
+          {{ lock }}
+        </span>
       </div>
     </div>
   </Teleport>

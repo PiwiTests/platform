@@ -11,7 +11,10 @@ import {
   failureClusterAliases,
   failureDiagnoses,
   failureDiagnosisVersions,
+  entityLinks,
 } from '../../server/database/schema';
+import { preferExemplar } from '../prefer-exemplar';
+import { wakeOnRecurrence } from '../inbox-queues';
 import type { DrizzleDB } from './db';
 
 /** Per-fingerprint accumulator for the batch being persisted. */
@@ -42,18 +45,50 @@ export async function getOrCreateFailureClusters(
   const ids = new Map<string, number>();
   if (pending.size === 0) return ids;
 
-  const bumpExisting = (clusterId: number, count: number) =>
+  // Bump a re-hit cluster: always advance lastSeenRunId/occurrences, and refresh
+  // the display exemplar (sampleError + its derived signature/errorType/selector)
+  // to this occurrence when it is a better one. The fingerprint and the frozen
+  // fingerprintSample are deliberately left untouched, so refreshing the display
+  // can never destabilize re-fingerprinting.
+  const bumpExisting = (
+    clusterId: number,
+    p: PendingCluster,
+    currentSampleError: string | null,
+    snooze?: { snoozedUntil: Date | null; snoozeMode: string | null },
+  ) =>
     db
       .update(failureClusters)
       .set({
         lastSeenRunId: testRunId,
-        occurrences: sql`${failureClusters.occurrences} + ${count}`,
+        occurrences: sql`${failureClusters.occurrences} + ${p.count}`,
         updatedAt: new Date(),
+        // A fresh occurrence wakes an "until it recurs" snooze — the cluster
+        // returns to the inbox (its "snoozed, back" marker is the surviving mode).
+        ...(snooze ? (wakeOnRecurrence(snooze) ?? {}) : {}),
+        ...(preferExemplar(currentSampleError ?? '', p.sampleError)
+          ? {
+              sampleError: p.sampleError,
+              signature: p.fp.signature,
+              errorType: p.fp.errorType,
+              selector: p.fp.selector,
+              // Drop the stale vector so the post-run reconciler re-embeds from
+              // the new sample instead of scoring the old one. Its backfill
+              // treats a null embedding as "needs a vector" (embeddingModel is
+              // left as-is; it's overwritten together with the new vector).
+              embedding: null,
+            }
+          : {}),
       })
       .where(eq(failureClusters.id, clusterId));
 
   const existing = await db
-    .select({ id: failureClusters.id, fingerprint: failureClusters.fingerprint })
+    .select({
+      id: failureClusters.id,
+      fingerprint: failureClusters.fingerprint,
+      sampleError: failureClusters.sampleError,
+      snoozedUntil: failureClusters.snoozedUntil,
+      snoozeMode: failureClusters.snoozeMode,
+    })
     .from(failureClusters)
     .where(and(eq(failureClusters.projectId, projectId), inArray(failureClusters.fingerprint, [...pending.keys()])));
 
@@ -62,7 +97,10 @@ export async function getOrCreateFailureClusters(
       const p = pending.get(cluster.fingerprint);
       if (!p) return;
       ids.set(cluster.fingerprint, cluster.id);
-      await bumpExisting(cluster.id, p.count);
+      await bumpExisting(cluster.id, p, cluster.sampleError, {
+        snoozedUntil: cluster.snoozedUntil,
+        snoozeMode: cluster.snoozeMode,
+      });
     }),
   );
 
@@ -71,8 +109,15 @@ export async function getOrCreateFailureClusters(
   const unmatched = [...pending.keys()].filter((fp) => !ids.has(fp));
   if (unmatched.length > 0) {
     const aliases = await db
-      .select({ fingerprint: failureClusterAliases.fingerprint, clusterId: failureClusterAliases.clusterId })
+      .select({
+        fingerprint: failureClusterAliases.fingerprint,
+        clusterId: failureClusterAliases.clusterId,
+        sampleError: failureClusters.sampleError,
+        snoozedUntil: failureClusters.snoozedUntil,
+        snoozeMode: failureClusters.snoozeMode,
+      })
       .from(failureClusterAliases)
+      .innerJoin(failureClusters, eq(failureClusters.id, failureClusterAliases.clusterId))
       .where(
         and(eq(failureClusterAliases.projectId, projectId), inArray(failureClusterAliases.fingerprint, unmatched)),
       );
@@ -81,7 +126,7 @@ export async function getOrCreateFailureClusters(
         const p = pending.get(a.fingerprint);
         if (!p || ids.has(a.fingerprint)) return;
         ids.set(a.fingerprint, a.clusterId);
-        await bumpExisting(a.clusterId, p.count);
+        await bumpExisting(a.clusterId, p, a.sampleError, { snoozedUntil: a.snoozedUntil, snoozeMode: a.snoozeMode });
       }),
     );
   }
@@ -99,6 +144,10 @@ export async function getOrCreateFailureClusters(
           errorType: p.fp.errorType,
           selector: p.fp.selector,
           sampleError: p.sampleError,
+          // Immutable fingerprint source: seeded from the same raw error as the
+          // display sample, but never refreshed, so re-fingerprinting on a
+          // version bump stays independent of later exemplar refreshes.
+          fingerprintSample: p.sampleError,
           firstSeenRunId: testRunId,
           lastSeenRunId: testRunId,
           occurrences: p.count,
@@ -112,12 +161,20 @@ export async function getOrCreateFailureClusters(
       }
 
       const winner = await db
-        .select({ id: failureClusters.id })
+        .select({
+          id: failureClusters.id,
+          sampleError: failureClusters.sampleError,
+          snoozedUntil: failureClusters.snoozedUntil,
+          snoozeMode: failureClusters.snoozeMode,
+        })
         .from(failureClusters)
         .where(and(eq(failureClusters.projectId, projectId), eq(failureClusters.fingerprint, fingerprint)));
       if (winner[0]) {
         ids.set(fingerprint, winner[0].id);
-        await bumpExisting(winner[0].id, p.count);
+        await bumpExisting(winner[0].id, p, winner[0].sampleError, {
+          snoozedUntil: winner[0].snoozedUntil,
+          snoozeMode: winner[0].snoozeMode,
+        });
       }
     }),
   );
@@ -149,6 +206,14 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
       .update(testRunsCases)
       .set({ failureClusterId: survivorId })
       .where(eq(testRunsCases.failureClusterId, victimId));
+
+    // The survivor inherits the victim's external links, so a ticket Piwi filed
+    // (or a pinned issue) keeps tracking the failure across the merge rather than
+    // being cascade-deleted with the victim cluster.
+    await tx
+      .update(entityLinks)
+      .set({ failureClusterId: survivorId })
+      .where(eq(entityLinks.failureClusterId, victimId));
 
     // Execution-scope diagnoses are keyed by test-run-case and stay meaningful —
     // move them to the survivor. A cluster-scope diagnosis on the victim is

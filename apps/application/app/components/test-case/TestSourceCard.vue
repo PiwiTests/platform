@@ -8,6 +8,8 @@
  * what enabling tracing would add; the trace is never a requirement.
  */
 import type { TestSourceFrame } from '~~/types/api';
+import SectionCard from '../shared/SectionCard.vue';
+import CollapsibleSectionCard from '../shared/CollapsibleSectionCard.vue';
 
 const props = defineProps<{
   frames: TestSourceFrame[] | null;
@@ -17,10 +19,24 @@ const props = defineProps<{
   hasTrace: boolean;
   projectKey?: string | number | null;
   projectName?: string | null;
-  storageKey: string;
+  /** When set, the card folds to a header with a peek (persisted per user); without one it is always open. */
+  storageKey?: string;
   /** Whether the card starts folded on first visit (no stored cookie). */
   defaultFolded?: boolean;
+  /** Drop the card frame and padding — render a plain heading row over the body. */
+  embedded?: boolean;
 }>();
+
+const cardComponent = computed(() =>
+  props.embedded ? SectionCard : props.storageKey ? CollapsibleSectionCard : SectionCard,
+);
+const cardBind = computed(() =>
+  props.embedded
+    ? { embedded: true }
+    : props.storageKey
+      ? { storageKey: props.storageKey, defaultFolded: props.defaultFolded }
+      : {},
+);
 
 const { data: stack, pending: stackPending } = useTraceCallStack(
   () => props.runId,
@@ -52,21 +68,25 @@ const count = computed(() =>
   mode.value === 'trace' && traceAvailable.value ? traceFrames.value.length : capturedCount.value || null,
 );
 
-const card = ref<{ reveal: () => void } | null>(null);
-defineExpose({ reveal: () => card.value?.reveal() });
+const card = ref<{ reveal?: () => void; $el?: HTMLElement } | null>(null);
+function reveal() {
+  if (card.value?.reveal) card.value.reveal();
+  else card.value?.$el?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+}
+defineExpose({ reveal });
 </script>
 
 <template>
-  <CollapsibleSectionCard
+  <component
+    :is="cardComponent"
     ref="card"
-    :storage-key="storageKey"
-    :default-folded="defaultFolded"
+    v-bind="cardBind"
     icon="i-lucide-code"
     :count="count"
     title="Test source"
     help="case.test-source"
   >
-    <template #folded>
+    <template v-if="storageKey" #folded>
       <template v-if="mode === 'trace' && traceAvailable">
         Full call stack from the trace{{ stack?.hasSources === false ? ' (recorded without sources)' : '' }}
       </template>
@@ -103,8 +123,8 @@ defineExpose({ reveal: () => card.value?.reveal() });
       <span>
         Want to go deeper? Record traces (<code>trace: 'retain-on-failure'</code>) to see the full call stack with
         source here.
-        <DocLink to="evidence#trace-powered-deep-views" no-icon class="underline">Learn more</DocLink>
+        <DocLink to="features/evidence#trace-powered-deep-views" no-icon class="underline">Learn more</DocLink>
       </span>
     </p>
-  </CollapsibleSectionCard>
+  </component>
 </template>

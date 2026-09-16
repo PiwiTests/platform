@@ -9,7 +9,12 @@
  * the demo mirror and the MCP tools build the same object.
  */
 import { describeCluster, type DescribableCluster } from '#shared/describe-cluster';
-import { describeFailureText, lastStepTitle, type FailureDescription } from '#shared/describe-failure';
+import {
+  describeFailureText,
+  failingStepParams,
+  lastStepTitle,
+  type FailureDescription,
+} from '#shared/describe-failure';
 import { parsePlaywrightError, type ParsedErrorKind } from '#shared/error-parse';
 
 export type FailureWhy = 'new-regression' | 'passed-on-retry' | 'new-flaky' | 'infrastructure';
@@ -36,6 +41,16 @@ export interface FailureVerdict extends FailureDescription {
     isFirstFailure: boolean;
     /** The commit and author the run reported, when the reporter collected SCM metadata. */
     commit: FailureVerdictCommit | null;
+    /**
+     * The earlier fix that did not hold — set when the execution's cluster
+     * carries a fix verification that later regressed. Null otherwise.
+     */
+    fixedBefore: {
+      commit: string | null;
+      commitShort: string | null;
+      runId: number | null;
+      at: string | Date | null;
+    } | null;
   };
   cluster: {
     id: number;
@@ -47,16 +62,20 @@ export interface FailureVerdict extends FailureDescription {
   owner: { name: string; source: 'annotation' | 'codeowners' } | null;
 }
 
-/** The step list shape the headline needs: only the failed (or last) step's title. */
-type StepLike = { title: string; failed?: boolean | null };
+/** The step list shape the headline needs: the failed (or last) step's title and params. */
+type StepLike = { title: string; failed?: boolean | null; params?: Record<string, string | number | boolean> | null };
 
 /**
  * The headline for a stored execution: the parsed error, with the failed step's
- * title feeding a test-timeout line. Null when the execution has no error.
+ * title feeding a test-timeout line and its params backing the locator where
+ * the error text names none. Null when the execution has no error.
  */
 export function caseHeadline(row: { error?: string | null; steps?: unknown }): FailureDescription | null {
   const steps = Array.isArray(row.steps) ? (row.steps as StepLike[]) : null;
-  return describeFailureText(row.error, { lastStepTitle: lastStepTitle(steps) });
+  return describeFailureText(row.error, {
+    lastStepTitle: lastStepTitle(steps),
+    stepParams: failingStepParams(steps),
+  });
 }
 
 export interface FailureVerdictInput {
@@ -81,6 +100,11 @@ export interface FailureVerdictInput {
         firstSeenRunId: number;
         firstSeenAt?: string | Date | null;
         sameRunCaseCount: number;
+        /** Fix-verification facts, so a regressed fix surfaces as `since.fixedBefore`. */
+        fixVerification?: string | null;
+        fixCommit?: string | null;
+        fixLandedRunId?: number | null;
+        fixLandedAt?: string | Date | null;
       })
     | null;
   /** The test's `piwi:owner` annotation; CODEOWNERS is layered on by the server route. */
@@ -106,12 +130,26 @@ function classifyWhy(input: FailureVerdictInput, kind: ParsedErrorKind): Failure
 /** Build the verdict for an execution, or null when it carries no error. */
 export function buildFailureVerdict(input: FailureVerdictInput): FailureVerdict | null {
   if (!input.error || !input.error.trim()) return null;
-  const parsed = parsePlaywrightError(input.error);
+  const steps = Array.isArray(input.steps) ? (input.steps as StepLike[]) : null;
+  const parsed = parsePlaywrightError(input.error, { stepParams: failingStepParams(steps) });
   const description = caseHeadline({ error: input.error, steps: input.steps });
   if (!description) return null;
 
   const sha = input.scm?.commit?.trim() || null;
   const cluster = input.cluster ?? null;
+
+  // A cluster whose recorded fix regressed carries the "fixed once before, the
+  // fix did not hold" fact; it belongs to the situation, not the clue list.
+  const fixSha = cluster?.fixCommit?.trim() || null;
+  const fixedBefore =
+    cluster && cluster.fixVerification === 'regressed' && (fixSha || cluster.fixLandedRunId != null)
+      ? {
+          commit: fixSha,
+          commitShort: fixSha ? fixSha.slice(0, 7) : null,
+          runId: cluster.fixLandedRunId ?? null,
+          at: cluster.fixLandedAt ?? null,
+        }
+      : null;
 
   return {
     ...description,
@@ -132,6 +170,7 @@ export function buildFailureVerdict(input: FailureVerdictInput): FailureVerdict 
             branch: input.scm?.branch?.trim() || null,
           }
         : null,
+      fixedBefore,
     },
     cluster: cluster
       ? { id: cluster.id, name: describeCluster(cluster), otherTestsInRun: Math.max(0, cluster.sameRunCaseCount - 1) }

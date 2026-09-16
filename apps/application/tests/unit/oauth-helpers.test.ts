@@ -10,6 +10,7 @@ import {
   parseAllowList,
   emailDomainOf,
   isEmailDomainAllowed,
+  isGoogleEmailVerified,
   isOrgAllowed,
   resolveProvisioningAction,
   resolveLinkAction,
@@ -121,6 +122,16 @@ describe('allowlists', () => {
     expect(isEmailDomainAllowed('alice@example.com', false, allowed)).toBe(false); // unverified
     expect(isEmailDomainAllowed('eve@evil.com', true, allowed)).toBe(false); // wrong domain
     expect(isEmailDomainAllowed('', true, allowed)).toBe(false); // no email
+  });
+
+  test('Google verification is read from either userinfo spelling', () => {
+    // oauth2/v2/userinfo
+    expect(isGoogleEmailVerified({ email: 'a@example.com', verified_email: true })).toBe(true);
+    // OpenID Connect userinfo
+    expect(isGoogleEmailVerified({ email: 'a@example.com', email_verified: true })).toBe(true);
+    expect(isGoogleEmailVerified({ email: 'a@example.com', verified_email: false })).toBe(false);
+    expect(isGoogleEmailVerified({ email: 'a@example.com', verified_email: 'true' })).toBe(false);
+    expect(isGoogleEmailVerified({ email: 'a@example.com' })).toBe(false);
   });
 
   test('org allowlist matches case-insensitively, empty = unrestricted', () => {

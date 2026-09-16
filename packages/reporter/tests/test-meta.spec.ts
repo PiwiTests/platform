@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { collectTestMetadata, collectTestTags } from '../src/internal/collect/test-meta.js';
+import { collectTestLocks, collectTestMetadata, collectTestTags } from '../src/internal/collect/test-meta.js';
 
 describe('collectTestTags', () => {
   it('reads the tags Playwright folded together from the title and the test option', () => {
@@ -15,6 +15,20 @@ describe('collectTestTags', () => {
   it('tolerates a TestCase without a tags property', () => {
     expect(collectTestTags({})).toEqual([]);
     expect(collectTestTags({ tags: undefined })).toEqual([]);
+  });
+});
+
+describe('collectTestLocks', () => {
+  it('reads the private _locks array Playwright populates for in-process reporters', () => {
+    expect(collectTestLocks({ _locks: ['database', 'external-api'] })).toEqual(['database', 'external-api']);
+  });
+
+  // Blob-imported and merged runs carry no locks — the tele protocol drops them,
+  // so a `TestCase` without `_locks` must yield an empty array, not throw.
+  it('returns an empty array when there is no _locks field', () => {
+    expect(collectTestLocks({})).toEqual([]);
+    expect(collectTestLocks(undefined)).toEqual([]);
+    expect(collectTestLocks({ _locks: 'db' })).toEqual([]);
   });
 });
 

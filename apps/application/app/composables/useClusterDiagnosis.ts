@@ -31,11 +31,15 @@ export interface ClusterDiagnosisStore {
 
   // Shared context (single fetch, used by both panels)
   contextText: Ref<string | null>;
+  /** SHA-256 of the current context text — compared with a diagnosis's stored hash for staleness. */
+  currentContextSha: Ref<string | null>;
   contextSections: Ref<ContextSection[]>;
   tokenEstimate: Ref<number>;
   imageTokenEstimate: Ref<number>;
   coverage: Ref<DiagnosisContextCoverage | null>;
   scmChanges: Ref<ScmChanges | null>;
+  /** The "What changed" card has something to show: a resolved diff or a hand-picked commit range. */
+  hasChangesToShow: ComputedRef<boolean>;
   contextLoading: Ref<boolean>;
   refreshContext: () => Promise<void>;
 
@@ -57,12 +61,18 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
   const baseCommitIsPinned = computed(() => !!savedBaseCommit.value);
 
   const contextText = ref<string | null>(null);
+  const currentContextSha = ref<string | null>(null);
   const contextSections = ref<ContextSection[]>([]);
   const tokenEstimate = ref(0);
   const imageTokenEstimate = ref(0);
   const coverage = ref<DiagnosisContextCoverage | null>(null);
   const scmChanges = ref<ScmChanges | null>(null);
   const contextLoading = ref(false);
+  // The "What changed" card — baseline picker, commit browser and diff — opens
+  // only with a resolved diff or a hand-picked commit range. With nothing to
+  // diff, the situation block's line says why, and the first screen spends
+  // nothing on a picker for a diff it does not have.
+  const hasChangesToShow = computed(() => Boolean(scmChanges.value) || selectedCommitShas.value.length > 0);
 
   const diagnosis = ref<FailureDiagnosis | null>(null);
   const posting = ref(false);
@@ -80,6 +90,7 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
 
   interface ContextJsonResponse {
     text: string;
+    contextSha?: string;
     sections: ContextSection[];
     tokenEstimate: number;
     imageTokenEstimate?: number;
@@ -94,6 +105,7 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
         query: { ...buildContextQuery(), format: 'json' },
       });
       contextText.value = res.text;
+      currentContextSha.value = res.contextSha ?? null;
       contextSections.value = res.sections;
       tokenEstimate.value = res.tokenEstimate;
       imageTokenEstimate.value = res.imageTokenEstimate ?? 0;
@@ -101,6 +113,7 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
       scmChanges.value = res.scmChanges ?? null;
     } catch {
       contextText.value = '(failed to load context)';
+      currentContextSha.value = null;
       contextSections.value = [];
       tokenEstimate.value = 0;
       imageTokenEstimate.value = 0;
@@ -241,11 +254,13 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
     autoSelectedCommits,
     baseCommitIsPinned,
     contextText,
+    currentContextSha,
     contextSections,
     tokenEstimate,
     imageTokenEstimate,
     coverage,
     scmChanges,
+    hasChangesToShow,
     contextLoading,
     refreshContext,
     diagnosis,

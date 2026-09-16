@@ -7,7 +7,10 @@ import {
   sanitizeMetadata,
   sanitizeConsoleLogs,
   sanitizeAiUsage,
+  sanitizeDialogs,
+  capSteps,
 } from '../../server/utils/sanitize';
+import { DEFAULT_INGEST_LIMITS } from '#shared/ingest-limits';
 
 describe('sanitizeUrl', () => {
   test('strips query string and fragment, keeping scheme + host + path', () => {
@@ -150,5 +153,61 @@ describe('sanitizeAiUsage', () => {
     expect(sanitizeAiUsage({ intents: [intent] })).toBeNull();
     expect(sanitizeAiUsage({ entries: [], intents: [intent] })).toBeNull();
     expect(sanitizeAiUsage(null)).toBeNull();
+  });
+});
+
+describe('capSteps', () => {
+  test('caps the step count to the limit', () => {
+    const steps = Array.from({ length: DEFAULT_INGEST_LIMITS.steps + 5 }, (_, i) => ({ title: `s${i}`, duration: 1 }));
+    const out = capSteps(steps, DEFAULT_INGEST_LIMITS) as unknown[];
+    expect(out).toHaveLength(DEFAULT_INGEST_LIMITS.steps);
+  });
+
+  test('re-caps params keys and value length, never trusting the reporter', () => {
+    const params: Record<string, string> = {};
+    for (let i = 0; i < DEFAULT_INGEST_LIMITS.stepParamKeys + 10; i++) params[`k${i}`] = 'v';
+    params.long = 'a'.repeat(DEFAULT_INGEST_LIMITS.stepParamValueChars + 100);
+    const out = capSteps([{ title: 'Click', duration: 1, params }], DEFAULT_INGEST_LIMITS) as Array<{
+      params: Record<string, string>;
+    }>;
+    expect(Object.keys(out[0]!.params).length).toBe(DEFAULT_INGEST_LIMITS.stepParamKeys);
+  });
+
+  test('masks token-shaped param values and subtitles on ingest', () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcDEF123456';
+    const out = capSteps(
+      [{ title: 'Set token', duration: 1, subtitle: jwt, params: { token: jwt } }],
+      DEFAULT_INGEST_LIMITS,
+    ) as Array<{ subtitle: string; params: Record<string, string> }>;
+    expect(out[0]!.params.token).toBe('[masked-token]');
+    expect(out[0]!.subtitle).toBe('[masked-token]');
+  });
+
+  test('drops non-object params rather than trusting them through', () => {
+    const out = capSteps([{ title: 'Click', duration: 1, params: 'not-an-object' }], DEFAULT_INGEST_LIMITS) as Array<
+      Record<string, unknown>
+    >;
+    expect('params' in out[0]!).toBe(false);
+  });
+});
+
+describe('sanitizeDialogs', () => {
+  test('keeps recognized fields and drops unknown ones', () => {
+    const out = sanitizeDialogs([
+      { type: 'confirm', message: 'Stay signed in?', defaultValue: 'yes', closedAt: 123, extra: 'x' },
+    ]);
+    expect(out).toEqual([{ type: 'confirm', message: 'Stay signed in?', defaultValue: 'yes', closedAt: 123 }]);
+  });
+
+  test('masks a token-shaped dialog message', () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcDEF123456';
+    const out = sanitizeDialogs([{ type: 'prompt', message: jwt }]) as Array<{ message: string }>;
+    expect(out[0]!.message).toBe('[masked-token]');
+  });
+
+  test('returns null for non-arrays and empty results', () => {
+    expect(sanitizeDialogs(null)).toBeNull();
+    expect(sanitizeDialogs('nope')).toBeNull();
+    expect(sanitizeDialogs([42, null])).toBeNull();
   });
 });

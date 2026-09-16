@@ -1,5 +1,10 @@
 import { describe, test, expect } from 'vitest';
-import { useTimelineModel, type TimelineModelInput } from '../../app/composables/useTimelineModel';
+import {
+  useTimelineModel,
+  computeLockSummary,
+  type TimelineItem,
+  type TimelineModelInput,
+} from '../../app/composables/useTimelineModel';
 import type { TestCaseResult, TestStepEvent } from '../../types/api';
 
 type StepLike = Partial<TestStepEvent> & { title: string; category: string };
@@ -12,7 +17,24 @@ type CaseLike = {
   startedAt?: number | null;
   duration?: number | null;
   stepEvents?: StepLike[] | null;
+  locks?: string[] | null;
 };
+
+/** Minimal test-kind timeline item for the pure lock-summary tests. */
+function testItem(start: number, duration: number, locks: string[]): TimelineItem {
+  return {
+    key: `t${start}`,
+    kind: 'test',
+    testCaseId: start,
+    title: `t${start}`,
+    status: 'passed',
+    workerIndex: 0,
+    start,
+    duration,
+    rowIndex: 0,
+    locks,
+  };
+}
 
 function model(cases: CaseLike[], extra: Partial<TimelineModelInput> = {}) {
   return useTimelineModel({ testCases: cases as unknown as TestCaseResult[], ...extra });
@@ -266,5 +288,63 @@ describe('useTimelineModel', () => {
 
     expect(timelineData.value).toHaveLength(1);
     expect(timelineData.value[0]!.kind).toBe('test');
+  });
+
+  test('exposes the run locks (sorted, distinct) and carries them onto test bars', () => {
+    const { runLocks, timelineData } = model([
+      {
+        executionId: 1,
+        title: 'A',
+        status: 'passed',
+        workerIndex: 0,
+        startedAt: 1000,
+        duration: 500,
+        locks: ['db', 'api'],
+      },
+      { executionId: 2, title: 'B', status: 'passed', workerIndex: 1, startedAt: 1000, duration: 400, locks: ['db'] },
+      { executionId: 3, title: 'C', status: 'passed', workerIndex: 0, startedAt: 1600, duration: 200, locks: null },
+    ]);
+    expect(runLocks.value).toEqual(['api', 'db']);
+    expect(timelineData.value.find((d) => d.key === 't1')!.locks).toEqual(['db', 'api']);
+    expect(timelineData.value.find((d) => d.key === 't3')!.locks).toBeNull();
+  });
+});
+
+describe('computeLockSummary', () => {
+  test('reports held time, share and back-to-back serialization per lock', () => {
+    // Two holders of `db` run back-to-back (gap 0), one holder of `api` alone.
+    const items = [testItem(0, 1000, ['db']), testItem(1000, 1000, ['db']), testItem(3000, 500, ['api'])];
+    const summary = computeLockSummary(items, 4000);
+
+    const db = summary.find((r) => r.lock === 'db')!;
+    expect(db.testCount).toBe(2);
+    expect(db.heldMs).toBe(2000); // merged 0..2000
+    expect(db.share).toBeCloseTo(0.5);
+    // The second holder started within 500ms of the first ending → serialized.
+    expect(db.serializationMs).toBe(1000);
+
+    const api = summary.find((r) => r.lock === 'api')!;
+    expect(api.serializationMs).toBe(0); // a single holder never serializes
+
+    // Ordered by held time descending.
+    expect(summary[0]!.lock).toBe('db');
+  });
+
+  test('a gap over 500ms is not counted as serialization', () => {
+    const items = [testItem(0, 1000, ['db']), testItem(2000, 1000, ['db'])];
+    const summary = computeLockSummary(items, 4000);
+    expect(summary[0]!.serializationMs).toBe(0);
+  });
+
+  test('flags a lock that dominates the run tail', () => {
+    // Held across the whole final quarter (3000..4000) of a 4000ms run.
+    const summary = computeLockSummary([testItem(2800, 1200, ['db'])], 4000);
+    expect(summary[0]!.dominatesTail).toBe(true);
+  });
+
+  test('ignores non-test items and lock-less bars', () => {
+    const hook: TimelineItem = { ...testItem(0, 100, ['db']), kind: 'hook' };
+    const summary = computeLockSummary([hook, testItem(0, 100, [])], 1000);
+    expect(summary).toHaveLength(0);
   });
 });

@@ -17,12 +17,16 @@ import { FAILED_STATUS_KEYS } from '../utils/test-counts';
 import { normalizeRoute } from '../utils/route';
 import { percentile } from '../utils/stats';
 import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
-import { buildCompareUrl, computeMetadataDiff } from '../utils/run-metadata';
+import { buildCommitRange, computeMetadataDiff } from '../utils/run-metadata';
 import type { TestStepEvent } from '../types';
 import type { EndpointSummary, DiagnosisCompact } from '../../types/api';
 
 import type { DrizzleDB } from './db';
 import { normalizeGitUrl } from '../../server/utils/scm/git-url';
+import { selectBaselineRun } from '../../server/utils/branch-baseline';
+import { resolveRunBranch } from '../../server/utils/run-branch';
+import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
+import { describeRunBaseline } from '#shared/run-baseline';
 import { getLocatorHealingBatch } from '../../server/utils/locator-healing';
 
 type ProjectScope = 'all' | Set<number>;
@@ -33,7 +37,11 @@ export async function getProjectLatestRun(db: DrizzleDB, projectId: number) {
     .select({ id: testRuns.id, status: testRuns.status })
     .from(testRuns)
     .where(eq(testRuns.projectId, projectId))
-    .orderBy(desc(testRuns.id))
+    // Rank by start_time (id as a deterministic tiebreaker), not MAX(id), so
+    // "latest" stays correct when rows are ingested out of chronological order —
+    // historical uploads on the server, or the demo seed which inserts runs
+    // newest-first (MAX(id) would be the oldest run). Matches `listProjects`.
+    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
     .limit(1);
   return rows[0] ?? null;
 }
@@ -58,7 +66,9 @@ export async function getTestRun(
     .select({ id: testRuns.id, status: testRuns.status })
     .from(testRuns)
     .where(eq(testRuns.projectId, testRun.projectId))
-    .orderBy(desc(testRuns.id))
+    // Rank by start_time (see getProjectLatestRun) so the "Newer run" pill points
+    // at the chronologically newest run, not MAX(id).
+    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
     .limit(1);
   const latestRunId = latestRunResult[0]?.id ?? null;
   const latestRunStatus = latestRunResult[0]?.status ?? null;
@@ -116,6 +126,7 @@ export async function getTestRun(
       suitePath: testCases.suitePath,
       testAnnotations: testRunsCases.testAnnotations,
       tags: testRunsCases.tags,
+      locks: testRunsCases.locks,
       testMeta: testRunsCases.testMeta,
       isNewRegression: testRunsCases.isNewRegression,
       isNewFlaky: testRunsCases.isNewFlaky,
@@ -144,6 +155,7 @@ export async function getTestRun(
     suitePath: splitSuitePath(tc.suitePath),
     testAnnotations: (tc.testAnnotations as any) ?? null,
     tags: (tc.tags as string[] | null) ?? null,
+    locks: (tc.locks as string[] | null) ?? null,
     testMeta: (tc.testMeta as any) ?? null,
     status: tc.status,
     duration: tc.duration,
@@ -679,6 +691,7 @@ export async function computeRegressionContextForRun(db: DrizzleDB, runId: numbe
       status: testRuns.status,
       startTime: testRuns.startTime,
       environment: testRuns.environment,
+      branch: testRuns.branch,
       metadata: testRuns.metadata,
     })
     .from(testRuns)
@@ -687,22 +700,25 @@ export async function computeRegressionContextForRun(db: DrizzleDB, runId: numbe
   const run = runResults[0];
   if (!run) return null;
 
-  const greenResults = await db
-    .select({
-      id: testRuns.id,
-      startTime: testRuns.startTime,
-      environment: testRuns.environment,
-      metadata: testRuns.metadata,
-    })
-    .from(testRuns)
-    .where(
-      and(eq(testRuns.projectId, run.projectId), eq(testRuns.status, 'passed'), lt(testRuns.startTime, run.startTime)),
-    )
-    .orderBy(desc(testRuns.startTime))
-    .limit(1);
-
-  const lastGreen = greenResults[0];
-  if (!lastGreen) return { hasGreen: false };
+  // The same ladder the Changes tab walks: the run's environment first, and
+  // within it its own branch, the branch it forked from, then any branch.
+  const branch = run.branch ?? resolveRunBranch(run.metadata);
+  const fallback = resolveFallbackBranch(run.metadata, await readProjectDefaultBranch(db, run.projectId, run.metadata));
+  const selection = await selectBaselineRun(db, {
+    projectId: run.projectId,
+    before: run.startTime,
+    branch,
+    environment: run.environment ?? null,
+    fallbackBranch: fallback.branch,
+  });
+  if (!selection) return { hasGreen: false };
+  const lastGreen = selection.run;
+  const baselineNote = describeRunBaseline({
+    run: { branch, environment: run.environment ?? null },
+    baseline: { branch: lastGreen.branch ?? null, environment: lastGreen.environment ?? null },
+    match: selection.match,
+    fallback,
+  });
 
   const currMeta = run.metadata as any;
   const greenMeta = lastGreen.metadata as any;
@@ -712,19 +728,7 @@ export async function computeRegressionContextForRun(db: DrizzleDB, runId: numbe
 
   const repositoryUrl = normalizeGitUrl(remoteUrl);
 
-  let commitRange = null;
-  if (currentCommit && lastGreenCommit && currentCommit !== lastGreenCommit) {
-    const compareUrl = repositoryUrl ? buildCompareUrl(repositoryUrl, lastGreenCommit, currentCommit) : null;
-    commitRange = {
-      fromSha: lastGreenCommit,
-      toSha: currentCommit,
-      fromShort: lastGreenCommit.slice(0, 7),
-      toShort: currentCommit.slice(0, 7),
-      repositoryUrl,
-      compareUrl,
-      gitCommand: `git log --oneline ${lastGreenCommit}..${currentCommit}`,
-    };
-  }
+  const commitRange = buildCommitRange(repositoryUrl, lastGreenCommit, currentCommit);
 
   const metadataDiff = computeMetadataDiff(greenMeta, currMeta, lastGreen.environment, run.environment);
 
@@ -765,6 +769,7 @@ export async function computeRegressionContextForRun(db: DrizzleDB, runId: numbe
     lastGreenRunAt: lastGreen.startTime,
     lastGreenCommit,
     lastGreenBranch: greenMeta?.scm?.branch ?? null,
+    baselineNote,
     currentCommit,
     currentBranch: currMeta?.scm?.branch ?? null,
     commitRange,
