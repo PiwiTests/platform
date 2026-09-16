@@ -25,6 +25,7 @@ const emit = defineEmits<{
 
 const toast = useToast();
 const config = useRuntimeConfig();
+const { onOpenReport } = useDesktopReportLink();
 
 const storageStats = computed(() => props.testRun?.storageStats);
 const ci = computed(() => props.testRun?.metadata?.ci);
@@ -201,6 +202,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         :title="
           primaryReport.size ? `${primaryReport.label} · ${formatBytes(primaryReport.size)}` : primaryReport.label
         "
+        @click="onOpenReport($event, primaryReport)"
       >
         <span class="hidden sm:inline">{{ primaryReport.label }}</span>
       </UButton>

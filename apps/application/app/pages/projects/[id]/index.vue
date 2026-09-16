@@ -32,6 +32,7 @@ const confirmDeleteRunId = ref<number | null>(null);
 
 const { isAdmin, isReporter } = useAuth();
 const runtimeConfig = useRuntimeConfig();
+const { isDesktop, openReport } = useDesktopReportLink();
 const authEnabled = computed(() => Boolean(runtimeConfig.public.authEnabled));
 const canManage = computed(() => !authEnabled.value || isAdmin.value);
 const canEditMarkers = computed(() => !authEnabled.value || isAdmin.value || isReporter.value);
@@ -353,12 +354,19 @@ function openRun(runId: number) {
 // The report links and the delete action share one row overflow menu, so the
 // table fits without a horizontal scroll at 1280 px.
 function runMenuItems(run: TestRunSummary) {
-  const items: Array<Record<string, unknown>> = (run.reports ?? []).map((report) => ({
-    label: report.label,
-    icon: reportIcon(report.type),
-    to: fileApiUrl(report.path, null, runtimeConfig.app?.baseURL),
-    target: '_blank',
-  }));
+  // In the desktop shell a `target="_blank"` menu link is inert, so open the
+  // report through the shell instead (a window for viewable reports, a disk
+  // save for a blob archive); on the web it stays a normal new-tab link.
+  const items: Array<Record<string, unknown>> = (run.reports ?? []).map((report) =>
+    isDesktop
+      ? { label: report.label, icon: reportIcon(report.type), onSelect: () => openReport(report) }
+      : {
+          label: report.label,
+          icon: reportIcon(report.type),
+          to: fileApiUrl(report.path, null, runtimeConfig.app?.baseURL),
+          target: '_blank',
+        },
+  );
   if (items.length) items.push({ type: 'separator' });
   items.push({
     label: 'Delete run',

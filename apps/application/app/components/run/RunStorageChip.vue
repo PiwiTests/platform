@@ -13,6 +13,7 @@ defineProps<{
 }>();
 
 const config = useRuntimeConfig();
+const { onOpenReport } = useDesktopReportLink();
 </script>
 
 <template>
@@ -54,6 +55,7 @@ const config = useRuntimeConfig();
             variant="outline"
             class="min-w-0"
             :ui="{ label: 'truncate' }"
+            @click="onOpenReport($event, report)"
           >
             {{ report.label }}
           </UButton>

@@ -72,6 +72,16 @@ function fileName(path: string): string {
   return path.split('/').pop() || path;
 }
 
+// `target="_blank"` is inert in the desktop shell — open the attachment in a new
+// app window (which keeps the access-token cookie so the guarded file route
+// loads) instead. On web the anchor opens a new tab as usual.
+const { isDesktop, openWindow } = useDesktopWindow();
+function onOpenAttachment(event: MouseEvent, url: string) {
+  if (!isDesktop) return;
+  event.preventDefault();
+  openWindow(url);
+}
+
 // Forward reveal so a diagnosis citation can unfold + scroll to this card.
 const card = ref<{ reveal?: () => void; $el?: HTMLElement } | null>(null);
 defineExpose({
@@ -115,6 +125,7 @@ defineExpose({
               color="neutral"
               variant="soft"
               label="Open"
+              @click="onOpenAttachment($event, fileUrl(att.path, att.contentType))"
             />
           </div>
         </div>

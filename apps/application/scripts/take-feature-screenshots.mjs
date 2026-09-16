@@ -1186,6 +1186,10 @@ function bridgeScript(scene) {
             case 'desktop_set_project_link':
               window.__mockLink = args.path ? { path: args.path, exists: true } : null;
               return Promise.resolve(null);
+            case 'desktop_open_window':
+              return Promise.resolve(null);
+            case 'desktop_save_download':
+              return Promise.resolve('~/Downloads/' + (args?.filename ?? 'download'));
             case 'desktop_get_service_settings':
               return Promise.resolve({ run_in_background: false, start_on_login: false });
             case 'desktop_check_update':

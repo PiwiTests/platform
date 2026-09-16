@@ -40,10 +40,15 @@ const hasDom = computed(() => snapshot.value?.status === 'ok' && !!html.value);
 
 // ── Iframe: same hardened rendering as the picker, without the picking overlay ─
 const iframeRef = ref<HTMLIFrameElement | null>(null);
-const blobUrl = ref<string | undefined>(undefined);
 const contentHeight = ref(0);
 const stageRef = ref<HTMLElement | null>(null);
 const stageWidth = ref(0);
+
+// The document is fed to the iframe via `srcdoc` (inline), never a `blob:` URL:
+// the desktop shell's webview blocks navigations to `blob:` sources (they render
+// as a "content blocked" page), while inline `srcdoc` is not a navigation and
+// loads everywhere. `sandbox="allow-scripts"` still gives it an opaque origin.
+const srcDoc = computed(() => (import.meta.client && html.value ? buildReadonlyDocument(html.value) : undefined));
 
 const viewport = computed(() => snapshot.value?.viewport ?? null);
 const fitZoom = computed(() => {
@@ -70,16 +75,6 @@ const iframeStyle = computed(() => {
   };
 });
 
-watch(html, (value) => {
-  if (blobUrl.value) {
-    URL.revokeObjectURL(blobUrl.value);
-    blobUrl.value = undefined;
-  }
-  if (import.meta.client && value) {
-    blobUrl.value = URL.createObjectURL(new Blob([buildReadonlyDocument(value)], { type: 'text/html' }));
-  }
-});
-
 function handleMessage(event: MessageEvent) {
   if (!iframeRef.value || event.source !== iframeRef.value.contentWindow) return;
   if (event.data?.type === 'piwiContentHeight' && typeof event.data.height === 'number') {
@@ -101,7 +96,6 @@ onMounted(() => window.addEventListener('message', handleMessage));
 onBeforeUnmount(() => {
   window.removeEventListener('message', handleMessage);
   stageObserver?.disconnect();
-  if (blobUrl.value) URL.revokeObjectURL(blobUrl.value);
 });
 
 const { copy: copyHtml, copied: htmlCopied } = useCopy();
@@ -153,7 +147,7 @@ defineExpose({ reveal: () => card.value?.reveal?.() });
           <div :style="canvasStyle">
             <iframe
               ref="iframeRef"
-              :src="blobUrl"
+              :srcdoc="srcDoc"
               :style="iframeStyle"
               class="bg-white"
               sandbox="allow-scripts"

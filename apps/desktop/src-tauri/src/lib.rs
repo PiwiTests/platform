@@ -18,7 +18,7 @@ mod updates;
 mod worktree;
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -49,6 +49,9 @@ use worktree::{desktop_bisect_here, desktop_reproduce_here};
 
 pub(crate) const STORE_FILE: &str = "settings.json";
 const RUN_BG_KEY: &str = "runInBackground";
+/// Persisted maximized state of the main window. Absent on first launch, when
+/// the window opens maximized by default.
+const WINDOW_MAXIMIZED_KEY: &str = "windowMaximized";
 const READY_TIMEOUT_SECS: u64 = 60;
 /// Backoff before each auto-restart of a crashed server, capped at the last value.
 const RESTART_BACKOFFS_SECS: [u64; 4] = [1, 2, 4, 8];
@@ -483,6 +486,34 @@ fn desktop_open_external(app: tauri::AppHandle, url: String) -> Result<(), Strin
         .map_err(|e| e.to_string())
 }
 
+/// Unique label for each runtime-created auxiliary window (Tauri requires labels
+/// to be distinct for the life of the app).
+static AUX_WINDOW_SEQ: AtomicU32 = AtomicU32::new(0);
+
+/// Open a dashboard URL in a new app window. `target="_blank"` and `window.open`
+/// are dropped inside the webview, so a link that should open a standalone
+/// window — the Playwright trace viewer, a captured attachment — does nothing
+/// there without this. Restricted to the bundled server's loopback origin so a
+/// stray call can't point a window at an external site; because the new window
+/// belongs to this app it shares the webview's cookie jar, so the desktop
+/// access-token cookie rides along and the guarded file routes it loads
+/// (`/api/files/...`, and the trace the viewer fetches) are authorized.
+#[tauri::command]
+async fn desktop_open_window(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let allowed = url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:");
+    if !allowed {
+        return Err("unsupported url".into());
+    }
+    let parsed = tauri::Url::parse(&url).map_err(|e| e.to_string())?;
+    let label = format!("aux-{}", AUX_WINDOW_SEQ.fetch_add(1, Ordering::Relaxed));
+    tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::External(parsed))
+        .title("Piwi Dashboard")
+        .inner_size(1200.0, 820.0)
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Show a native OS notification (the webview's own Notification API is
 /// unavailable / permission-denied there).
 #[tauri::command]
@@ -751,6 +782,7 @@ pub fn run() {
             desktop_set_run_in_background,
             desktop_set_start_on_login,
             desktop_open_external,
+            desktop_open_window,
             desktop_notify,
             desktop_save_download,
             desktop_pick_folder,
@@ -1006,6 +1038,22 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            // Window size: maximized on first launch (no stored preference), and
+            // thereafter whatever the user last left it as — persisted on quit
+            // (see the ExitRequested handler). Applied while the window is still
+            // visible, before the --hidden case may hide it.
+            let start_maximized = app
+                .store(STORE_FILE)
+                .ok()
+                .and_then(|s| s.get(WINDOW_MAXIMIZED_KEY))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            if start_maximized {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.maximize();
+                }
+            }
+
             // If autostarted with --hidden, stay in the tray instead of popping up.
             if launched_hidden {
                 if let Some(w) = app.get_webview_window("main") {
@@ -1058,6 +1106,14 @@ pub fn run() {
         .expect("error while building the Piwi Dashboard app")
         .run(|app_handle, event| match event {
             RunEvent::ExitRequested { .. } => {
+                // Remember whether the window was maximized so the next launch
+                // restores it (first launch, with no stored value, maximizes).
+                if let Some(w) = app_handle.get_webview_window("main") {
+                    if let Ok(store) = app_handle.store(STORE_FILE) {
+                        store.set(WINDOW_MAXIMIZED_KEY, json!(w.is_maximized().unwrap_or(false)));
+                        let _ = store.save();
+                    }
+                }
                 // Tell the supervisor this stop is deliberate so it doesn't restart
                 // the server we are about to kill.
                 if let Some(flag) = app_handle.try_state::<ShuttingDown>() {
