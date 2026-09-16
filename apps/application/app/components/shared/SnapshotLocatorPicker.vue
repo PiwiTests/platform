@@ -128,34 +128,29 @@ const alternatives = ref<RankedLocator[]>([]);
 // ── Build iframe content ────────────────────────────────────
 
 // The snapshot HTML plus the serialized picker script (appended at the end so a
-// truncated document still runs it) load into a HARDENED blob iframe:
+// truncated document still runs it) load into a HARDENED iframe via `srcdoc`:
 // sandbox="allow-scripts" with NO allow-same-origin, so the picker runs on an
 // opaque origin and can reach the host only via postMessage. A sanitizer bypass
 // in the snapshot therefore cannot touch the dashboard's cookies/storage/API.
-// The picker's overlay/banner carry their own inline styles, so no extra <style>
-// is needed. <base> is stripped so subresources can't be redirected to the
-// tested app.
-const iframeBlobUrl = ref<string | undefined>(undefined);
-
-function makeBlobUrl(html: string): string {
-  return URL.createObjectURL(
-    new Blob([buildPickerDocument(html, { probedAttrs: CAPTURED_ATTRIBUTES })], { type: 'text/html' }),
-  );
-}
-
-watch(
-  () => snapshot.value?.html,
-  (html) => {
-    // Revoke previous blob
-    if (iframeBlobUrl.value) {
-      URL.revokeObjectURL(iframeBlobUrl.value);
-      iframeBlobUrl.value = undefined;
-    }
-    if (!html) return;
-    iframeBlobUrl.value = makeBlobUrl(html);
-  },
-  { immediate: true },
+// The document is inlined with `srcdoc` rather than a `blob:` URL because the
+// desktop shell's webview blocks navigations to `blob:` sources (they render as
+// a "content blocked" page); inline `srcdoc` is not a navigation and loads
+// everywhere. The picker's overlay/banner carry their own inline styles, so no
+// extra <style> is needed. <base> is stripped so subresources can't be
+// redirected to the tested app.
+const pickerDoc = computed(() =>
+  import.meta.client && snapshot.value?.html
+    ? buildPickerDocument(snapshot.value.html, { probedAttrs: CAPTURED_ATTRIBUTES })
+    : undefined,
 );
+
+// Bumped to force the iframe to reload the *same* document — restarting the
+// appended picker script — when re-picking or switching source. A `srcdoc`
+// string that does not change would not reload the frame on its own.
+const renderKey = ref(0);
+function reloadFrame() {
+  renderKey.value += 1;
+}
 
 // ── Viewport-accurate rendering (trace-viewer style) ────────────────────────
 // Size the iframe to the recorded page viewport width and its full content
@@ -234,12 +229,6 @@ watch(stageRef, (el) => {
 });
 onBeforeUnmount(() => {
   stageObserver?.disconnect();
-});
-
-// ── Iframe cleanup ───────────────────────────────────────────────────────────
-
-onBeforeUnmount(() => {
-  if (iframeBlobUrl.value) URL.revokeObjectURL(iframeBlobUrl.value);
 });
 
 // ── Message handler from iframe ──────────────────────────────────────────────
@@ -335,10 +324,6 @@ function forwardKeyToPicker(e: KeyboardEvent) {
   win.postMessage({ type: 'piwiPickerKey', key: e.key }, '*');
 }
 
-function cleanupIframe() {
-  if (iframeRef.value) iframeRef.value.src = 'about:blank';
-}
-
 onMounted(() => {
   window.addEventListener('message', handleMessage);
   window.addEventListener('keydown', forwardKeyToPicker, true);
@@ -402,7 +387,6 @@ async function confirm() {
 }
 
 function close() {
-  cleanupIframe();
   isOpen.value = false;
 }
 
@@ -415,14 +399,9 @@ function resetPicker() {
   searchQuery.value = '';
   searchCount.value = 0;
   searchIndex.value = -1;
-  // Reload the iframe to restore the picker. Recreate the blob URL so the src
-  // string actually changes (reassigning the same URL isn't a guaranteed
-  // reload), which reloads the document and re-runs the appended picker script.
-  const html = snapshot.value?.html;
-  if (html) {
-    if (iframeBlobUrl.value) URL.revokeObjectURL(iframeBlobUrl.value);
-    iframeBlobUrl.value = makeBlobUrl(html);
-  }
+  // Reload the iframe to restore the picker, re-running the appended picker
+  // script over the same document.
+  reloadFrame();
 }
 
 // ── Copy ────────────────────────────────────────────────────────────────────
@@ -595,11 +574,13 @@ onBeforeUnmount(() => {
           </div>
           <div :style="canvasStyle">
             <!-- Hardened: allow-scripts WITHOUT allow-same-origin → opaque origin,
-                 postMessage-only bridge. The picker script is baked into the blob
-                 HTML (see makeBlobUrl), so no parent-side injection on load. -->
+                 postMessage-only bridge. The picker script is baked into the
+                 srcdoc document (see pickerDoc), so no parent-side injection on
+                 load; `renderKey` remounts the frame to re-run it on re-pick. -->
             <iframe
               ref="iframeRef"
-              :src="iframeBlobUrl"
+              :key="renderKey"
+              :srcdoc="pickerDoc"
               :style="iframeStyle"
               class="bg-white"
               sandbox="allow-scripts"
