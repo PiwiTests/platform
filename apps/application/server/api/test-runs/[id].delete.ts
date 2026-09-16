@@ -1,7 +1,7 @@
 import { testRuns, testRunsCases, files } from '../../database/schema';
 import { eq, inArray } from 'drizzle-orm';
 import { requireResolvedProjectAccess, requireRouteId, resolveRunProjectId } from '../../utils/project-access';
-import { deleteFileRow } from '../../utils/delete-run-files';
+import { deleteFileRow, deleteRunStorageDir } from '../../utils/delete-run-files';
 import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
 
 defineRouteMeta({
@@ -17,7 +17,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run ID');
-  const { db } = await requireResolvedProjectAccess(event, id, resolveRunProjectId, 'Test run');
+  const { db, projectId } = await requireResolvedProjectAccess(event, id, resolveRunProjectId, 'Test run');
 
   const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id));
   const testRun = testRunResults[0];
@@ -52,6 +52,10 @@ export default eventHandler(async (event) => {
     }
     await db.delete(files).where(inArray(files.testRunsCaseId, caseIds));
   }
+
+  // Sweep the run's storage directory so any run-scoped object not tracked in
+  // `files` (or orphaned by an earlier failed cleanup) is removed as well.
+  await deleteRunStorageDir(projectId, id);
 
   // Delete test run cases
   await db.delete(testRunsCases).where(eq(testRunsCases.testRunId, id));

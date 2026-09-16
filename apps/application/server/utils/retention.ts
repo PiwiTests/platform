@@ -20,7 +20,7 @@ import {
   testRuns,
   testRunsCases,
 } from '../database/schema';
-import { deleteFileRow } from './delete-run-files';
+import { deleteFileRow, deleteRunStorageDir } from './delete-run-files';
 import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -52,7 +52,10 @@ export interface DeleteRunsResult {
 export async function deleteRunsOlderThan(db: DbClient, olderThanDays: number): Promise<DeleteRunsResult> {
   const cutoffDate = new Date(Date.now() - olderThanDays * MS_PER_DAY);
 
-  const oldRuns = await db.select({ id: testRuns.id }).from(testRuns).where(lt(testRuns.startTime, cutoffDate));
+  const oldRuns = await db
+    .select({ id: testRuns.id, projectId: testRuns.projectId })
+    .from(testRuns)
+    .where(lt(testRuns.startTime, cutoffDate));
   if (oldRuns.length === 0) return { deletedRuns: 0, deletedCases: 0 };
   const runIds = oldRuns.map((r) => r.id);
 
@@ -99,6 +102,13 @@ export async function deleteRunsOlderThan(db: DbClient, olderThanDays: number): 
     const runFiles = await db.select().from(files).where(inArray(files.testRunId, batch));
     for (const file of runFiles) await deleteFileRow(file);
     await db.delete(files).where(inArray(files.testRunId, batch));
+  }
+
+  // Sweep each run's storage directory to remove any run-scoped object not
+  // tracked in `files` (or orphaned by an earlier failed cleanup). Shared
+  // deduplicated blobs and trace resources live outside these directories.
+  for (const run of oldRuns) {
+    await deleteRunStorageDir(run.projectId, run.id);
   }
 
   // Dependent rows of the doomed cases/runs.
