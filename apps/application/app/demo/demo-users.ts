@@ -33,6 +33,14 @@ export const DEFAULT_DEMO_USER_ID = 1;
 /** localStorage key holding the currently selected demo user id. */
 export const DEMO_USER_STORAGE_KEY = 'piwi-demo-user-id';
 
+/**
+ * Cookie carrying the selected demo user id to the service worker. The built
+ * SPA's data fetching does not attach request headers, so the worker reads the
+ * "act as" identity from this cookie (via the Cookie Store API) instead. Set by
+ * the demo-fetch plugin, read by the demo service worker.
+ */
+export const DEMO_USER_COOKIE = 'piwi-demo-user';
+
 export function findDemoUser(id: number | null | undefined): DemoUser {
   return DEMO_USERS.find((u) => u.id === id) ?? DEMO_USERS[0]!;
 }
