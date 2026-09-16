@@ -64,6 +64,12 @@ toolchains (Tauri, VitePress) rather than through the root install, and `example
 `@piwitests/*` from the published npm registry — release-please bumps its pinned versions — so making it a workspace
 would symlink the local copies and defeat the example.
 
+**Adding a workspace takes two entries in [`release-please-config.json`](release-please-config.json)**, not one: its
+`package.json` `$.version`, *and* its `package-lock.json` `$.packages['<dir>'].version`. release-please natively bumps
+only the root package (and the lockfile's root entries); every other workspace is a plain JSON substitution it has no
+npm awareness of, so a missing lockfile entry leaves that workspace a release behind and makes `npm install` rewrite
+the lockfile on every checkout.
+
 `plans/` holds two tracked-by-hand files: `plans/roadmap.md` (working priorities) and `plans/exploration-findings.md`
 (a log of bugs, tech debt and inconsistencies found while exploring). Both are local-only. Public direction lives in the
 committed [`ROADMAP.md`](ROADMAP.md).
