@@ -1,4 +1,5 @@
 {
+  "name": "platform",
   "private": true,
   "version": "0.32.0",
   "type": "module",
