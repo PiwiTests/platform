@@ -201,9 +201,9 @@ test.describe('Dashboard UI Tests', () => {
     await page.goto('/settings/storage');
     await waitForHydration(page);
 
-    // Check heading and stats section
-    await expect(page.getByText('Storage statistics')).toBeVisible();
-    await expect(page.getByText('Test runs', { exact: true })).toBeVisible();
+    // Storage analysis dashboard header (always rendered, before its data loads)
+    // and the cleanup section below it.
+    await expect(page.getByText('Storage usage')).toBeVisible();
     await expect(page.getByText('Cleanup old test runs')).toBeVisible();
 
     // Verify the cleanup button exists

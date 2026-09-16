@@ -101,7 +101,7 @@ PIWI_S3_SECRET_ACCESS_KEY=your-r2-secret-key
 
 The **Settings › Storage** page (`/settings/storage`) provides administrators with:
 
-- **Statistics** — total projects, test runs, unique test cases, traces, stored reports, aggregate report size, and actual on-disk storage size (local only).
+- **Storage analysis** — total storage used and file count, the projects that consume the most space, a breakdown by file kind (traces, screenshots, videos, reports, attachments, visual diffs), storage growth over time, and the actual on-disk storage size (local only) — which also surfaces any untracked files lingering on disk.
 - **Cleanup** — permanently delete all test runs older than a configurable number of days (7, 14, 30, 60, 90, 180, or 365 days). A confirmation dialog is shown before any data is deleted.
 
 You can also delete individual test runs:

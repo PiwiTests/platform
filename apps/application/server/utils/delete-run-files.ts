@@ -1,21 +1,31 @@
-import { dirname } from 'path';
+import { posix } from 'path';
 import { getDatabase } from '../database';
 import { files, traceBlobs, traceResources } from '../database/schema';
 import { eq, count } from 'drizzle-orm';
 import { getStorage } from '../storage';
 import type { File } from '../database/schema';
 
+/** True when a storage path points directly at a project root (`project-<id>`). */
+function isProjectRoot(path: string): boolean {
+  return /^project-\d+\/?$/.test(path) || path === '' || path === '.' || path === '/';
+}
+
 /**
  * Delete a file from storage, with proper handling for shared resources.
  *
- * - Reports: delete the entire report directory (not just index.html)
+ * - Reports: delete the whole report directory when the report has its own
+ *   subdirectory; delete just the file when it is stored directly under the
+ *   project root (a single-file report, e.g. a blob `.zip`), because deleting
+ *   the project root would wipe every other run's storage.
  * - Traces with blobId: reference-counted — only deletes the shared blob
  *   from storage when no other row still references it. When the project's
  *   last blob is removed, also deletes trace-resource files and cleans up
  *   the now-empty blobs/ and trace-resources/ directories.
  * - Other files: single-file deletion
  *
- * Does NOT delete the database row — the caller manages that.
+ * Does NOT delete the database row — the caller manages that. Storage errors
+ * are logged rather than thrown, so one unreachable object cannot abort the
+ * deletion of the rest, but they are never silent.
  */
 export async function deleteFileRow(file: File): Promise<void> {
   const storage = getStorage();
@@ -23,11 +33,19 @@ export async function deleteFileRow(file: File): Promise<void> {
 
   try {
     if (file.type === 'report') {
-      // Reports store the entry file path, e.g.
+      // Reports are stored either in their own directory
       //   project-1/run-…-html-report/index.html
-      // Delete the parent directory so all sibling assets are cleaned up.
-      const dirPath = dirname(file.path);
-      await storage.deleteDirectory(dirPath);
+      // or as a single file directly under the project
+      //   project-1/run-…-report.zip
+      // Deleting the parent directory is right for the first shape but would
+      // wipe the entire project for the second, so fall back to a single-file
+      // delete whenever the parent is the project root.
+      const dirPath = posix.dirname(file.path);
+      if (isProjectRoot(dirPath)) {
+        await storage.deleteFile(file.path);
+      } else {
+        await storage.deleteDirectory(dirPath);
+      }
     } else if (file.type === 'trace' && file.blobId) {
       // Deduplicated trace blob: only remove from storage when no other
       // files row references the same blob.
@@ -86,7 +104,29 @@ export async function deleteFileRow(file: File): Promise<void> {
       // Non-deduped file — single file deletion
       await storage.deleteFile(file.path);
     }
-  } catch {
-    // Ignore missing files / storage errors
+  } catch (error) {
+    console.warn(`[delete-run] Failed to remove storage for file #${file.id} (${file.path}):`, error);
+  }
+}
+
+/**
+ * Remove a run's own storage directory (`project-{projectId}/run-{runId}/`),
+ * which holds every run-scoped object: non-deduped traces, screenshots,
+ * videos, attachments and visual diffs. A trailing separator keeps the sweep
+ * exact, so removing run 1 never touches run 10. Shared, deduplicated objects
+ * (`project-{id}/blobs/`, `project-{id}/trace-resources/`) live outside this
+ * directory and are reference-counted by `deleteFileRow`, so they are left
+ * untouched here.
+ *
+ * This is a backstop for run deletion: it removes files that were orphaned by
+ * an earlier failure or by a version that predated per-file cleanup, so a run
+ * never leaves bytes behind even when a `files` row is missing.
+ */
+export async function deleteRunStorageDir(projectId: number, runId: number): Promise<void> {
+  const storage = getStorage();
+  try {
+    await storage.deleteDirectory(`project-${projectId}/run-${runId}`);
+  } catch (error) {
+    console.warn(`[delete-run] Failed to sweep run directory project-${projectId}/run-${runId}:`, error);
   }
 }

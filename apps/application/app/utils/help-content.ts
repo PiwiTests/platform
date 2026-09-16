@@ -365,8 +365,8 @@ export const HELP_TOPICS = {
 
   // ── Settings ──────────────────────────────────────────────────────────
   'settings.storage-stats': {
-    title: 'Storage statistics',
-    text: 'How much disk your reports, traces and attachments use, broken down so you can see what to clean up.',
+    title: 'Storage analysis',
+    text: 'How much disk your reports, traces, screenshots and videos use — broken down by project, by file kind and over time, so you can see what to clean up.',
     doc: 'operate/storage#storage-architecture',
   },
   'settings.cleanup': {
