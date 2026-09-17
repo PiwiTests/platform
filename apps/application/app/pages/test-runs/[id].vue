@@ -63,8 +63,31 @@ const liveTestCaseKeys = new Map<string, true>();
 const liveSteps = ref<LiveStepsByWorker>({});
 let eventSource: EventSource | null = null;
 
-// Combined test cases: from server data + live stream.
+// Combined test cases: from server data + live stream. Includes every attempt
+// (a retried test has one row per attempt) — the timeline and the per-execution
+// links need them all.
 const displayTestCases = ref<TestCaseResult[]>([]);
+
+/**
+ * One entry per test — the final attempt (highest retry count) — so a retried
+ * test is a single row whose outcome is its last attempt. Keyed by the
+ * persisted test-case id + browser once known, else the streaming key (title +
+ * location + browser), so it collapses live placeholder rows and finished
+ * attempt rows alike. Feeds the header counts, the count bar and the grouped
+ * list; the timeline keeps the full attempt list.
+ */
+function dedupeFinalAttempts(cases: TestCaseResult[]): TestCaseResult[] {
+  const byKey = new Map<string, TestCaseResult>();
+  for (const tc of cases) {
+    const browser = tc.browser?.projectName ?? tc.browser?.browserName ?? '';
+    const key = tc.testCaseId > 0 ? `c${tc.testCaseId}\x00${browser}` : `${tc.title}\x00${tc.location}\x00${browser}`;
+    const prev = byKey.get(key);
+    if (!prev || (tc.retries ?? 0) >= (prev.retries ?? 0)) byKey.set(key, tc);
+  }
+  return [...byKey.values()];
+}
+
+const dedupedDisplayCases = computed(() => dedupeFinalAttempts(displayTestCases.value));
 
 watch(
   [isLive, testRun],
@@ -417,17 +440,14 @@ watch(
 
 // Display progress: while live it is derived from the de-duplicated cases (so
 // the header counts, the bar and the grouped list are computed from one source
-// and can never disagree); once finished it comes from the persisted run totals.
-// A flaky test is one that passed on a retry, so it counts as passed — exactly
-// as the list treats it — instead of inflating the failures via its earlier
-// failed attempt.
+// and cannot disagree), with the planned suite size the reporter reports at
+// /start as the denominator (right from the first render). Once finished it
+// comes from the persisted run totals, which the reporter now counts per test.
+// A flaky test passed on a retry, so it counts as passed — as the list treats
+// it — instead of inflating the failures via its earlier failed attempt.
 const displayProgress = computed(() => {
   if (isLive.value) {
-    // Derived from the de-duplicated cases, so the bar, the header counts and
-    // the grouped list all count from one source. The denominator is the planned
-    // suite size the reporter reports at /start (so the total is right from the
-    // first render), falling back to the tests seen so far when it isn't known.
-    const s = summarizeRunCases(displayTestCases.value);
+    const s = summarizeRunCases(dedupedDisplayCases.value);
     return {
       totalTests: Math.max(testRun.value?.totalTests ?? 0, s.total),
       passedTests: s.passed,
@@ -568,7 +588,7 @@ const uniqueWorkerCount = computed(() => {
 
 const tabItems = computed(() => [
   {
-    label: `Tests (${displayTestCases.value.length})`,
+    label: `Tests (${dedupedDisplayCases.value.length})`,
     icon: 'i-lucide-beaker',
     value: 'test-cases',
     slot: 'test-cases',
@@ -653,8 +673,19 @@ const testCasesListRef: {
 
 function handleSelectTestCase(id: number) {
   activeTab.value = 'test-cases';
+  // The timeline lists every attempt, but the Tests list shows one row per test
+  // (its final attempt), so redirect a non-final attempt's id to its test's row.
+  const source = displayTestCases.value.find((tc) => tc.executionId === id);
+  const rowId =
+    source && source.testCaseId > 0
+      ? (dedupedDisplayCases.value.find(
+          (tc) =>
+            tc.testCaseId === source.testCaseId &&
+            (tc.browser?.projectName ?? '') === (source.browser?.projectName ?? ''),
+        )?.executionId ?? id)
+      : id;
   nextTick(() => {
-    testCasesListRef.value?.scrollToCase(id);
+    testCasesListRef.value?.scrollToCase(rowId);
   });
 }
 
@@ -763,7 +794,7 @@ const moreMenuItems = computed(() => {
             v-model:search="testCaseSearch"
             v-model:active-statuses="testCaseActiveStatuses"
             v-model:browser-filter="testCaseBrowserFilter"
-            :test-cases="displayTestCases"
+            :test-cases="dedupedDisplayCases"
             :is-live="isLive"
             :live-steps="liveSteps"
             :cluster-meta="clusterMeta"

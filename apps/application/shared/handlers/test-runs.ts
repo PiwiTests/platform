@@ -137,31 +137,17 @@ export async function getTestRun(
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.testRunId, id));
 
-  // Playwright persists one row per attempt, so a retried test has several rows.
-  // Collapse them to the final attempt per (test, browser) — the highest retry
-  // count — so the run's cases are counted and listed one per test: a
-  // passed-on-retry test shows once, as a pass, rather than as a separate failed
-  // and passed row. The final row carries the full `attempts` history, and every
-  // attempt stays queryable through the per-execution endpoints.
-  const finalAttempts = new Map<string, (typeof runsCases)[number]>();
-  for (const row of runsCases) {
-    const key = `${row.testCaseId}\x00${JSON.stringify(row.browser ?? null)}`;
-    const prev = finalAttempts.get(key);
-    if (!prev || (row.retries ?? 0) >= (prev.retries ?? 0)) finalAttempts.set(key, row);
-  }
-  const dedupedRunsCases = [...finalAttempts.values()];
-
   const suites = await fetchAndFormatSuites(
     db,
     testSuites,
     testRun.projectId,
-    [...new Set(dedupedRunsCases.map((tc: any) => tc.filePath))],
+    [...new Set(runsCases.map((tc: any) => tc.filePath))],
     eq,
     and,
     inArray,
   );
 
-  const formattedTestCases = dedupedRunsCases.map((tc: any) => ({
+  const formattedTestCases = runsCases.map((tc: any) => ({
     executionId: tc.id,
     testCaseId: tc.testCaseId,
     title: tc.title,
@@ -203,7 +189,7 @@ export async function getTestRun(
     blockedBy: (tc.blockedBy as string | null) ?? null,
   }));
 
-  const runsCaseIds = dedupedRunsCases.map((tc: any) => tc.id);
+  const runsCaseIds = runsCases.map((tc: any) => tc.id);
   const linksForRun = await db.select().from(entityLinks).where(eq(entityLinks.testRunId, id));
 
   const linksForCases =
