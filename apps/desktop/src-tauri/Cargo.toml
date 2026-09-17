@@ -36,6 +36,20 @@ rand = "0.8"
 # Playwright runner drive the real webview to smoke-test the shell integration.
 tauri-plugin-playwright = { version = "0.4", optional = true }
 
+# Windows-only: the taskbar thumbnail toolbar (Stop/Open buttons under the
+# taskbar-button thumbnail) needs ITaskbarList3 plus a window subclass to receive
+# the button clicks. Pinned to the same `windows` version Tauri already resolves
+# so the `HWND` returned by `WebviewWindow::hwnd()` is the same type (one shared
+# copy of the crate), and so nothing extra is pulled in.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 [features]
 # Build with `--features e2e-testing` for Playwright end-to-end tests. Pulls in
 # the playwright control plugin and Tauri's runtime-ACL support so the capability

@@ -14,6 +14,8 @@ mod inspect;
 mod mcp_clients;
 mod mcp_stdio;
 mod runner;
+#[cfg(windows)]
+mod taskbar_win;
 mod updates;
 mod worktree;
 
@@ -26,6 +28,7 @@ use serde_json::json;
 use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::async_runtime::Receiver;
+use tauri::window::{ProgressBarState, ProgressBarStatus};
 use tauri::{AppHandle, Emitter as _, Manager, RunEvent, WindowEvent};
 
 use tauri_plugin_autostart::MacosLauncher;
@@ -138,10 +141,71 @@ fn desktop_take_pending_open_files(app: tauri::AppHandle) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Ambient status while the window is hidden or unfocused: an unread count on
-/// the dock/taskbar icon (where the platform supports a badge) and the tray
-/// tooltip. Driven by the dashboard, which knows what fired; the shell only
-/// renders. Count 0 clears everything.
+/// Two ambient signals the dashboard drives share the tray tooltip — the unread
+/// notification count and the live progress of local test runs — so they are
+/// held in one place and composed together instead of overwriting each other.
+/// The badge (dock/taskbar) still tracks unread only; run progress goes to the
+/// taskbar/Dock progress bar and the window title (see `desktop_set_run_progress`).
+#[derive(Default)]
+struct TrayStatus(Mutex<TrayStatusInner>);
+
+#[derive(Default)]
+struct TrayStatusInner {
+    /// Unread notifications raised while the window was hidden/unfocused.
+    unread: u32,
+    /// The first line of the most recent such notification, shown with the count.
+    activity: Option<String>,
+    /// Label of the local run(s) currently in flight, e.g. "Running 7/12…".
+    progress: Option<String>,
+}
+
+const TRAY_TOOLTIP_IDLE: &str = "Piwi Dashboard (click to open)";
+/// The window's resting title (matches `tauri.conf.json`); run progress prefixes
+/// it while a run is active and it is restored when the run ends.
+const MAIN_WINDOW_TITLE: &str = "Piwi Dashboard";
+
+/// Compose the tray tooltip from the ambient signals. An active run leads; the
+/// unread count follows; the free-form notification status line shows only
+/// alongside an unread count and only when no run is in flight to show instead.
+fn compose_tooltip(unread: u32, activity: Option<&str>, progress: Option<&str>) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(p) = progress.filter(|s| !s.is_empty()) {
+        parts.push(p.to_string());
+    }
+    if unread > 0 {
+        parts.push(format!("{unread} unread"));
+        if progress.is_none() {
+            if let Some(s) = activity.filter(|s| !s.is_empty()) {
+                parts.push(s.to_string());
+            }
+        }
+    }
+    if parts.is_empty() {
+        TRAY_TOOLTIP_IDLE.to_string()
+    } else {
+        format!("Piwi Dashboard — {}", parts.join(" — "))
+    }
+}
+
+/// Re-render the tray tooltip from the current `TrayStatus`. Called on the main
+/// thread by whichever signal changed.
+fn refresh_tray_tooltip(app: &tauri::AppHandle) {
+    let Some(state) = app.try_state::<TrayStatus>() else {
+        return;
+    };
+    let tooltip = {
+        let inner = state.0.lock().unwrap();
+        compose_tooltip(inner.unread, inner.activity.as_deref(), inner.progress.as_deref())
+    };
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_tooltip(Some(tooltip));
+    }
+}
+
+/// Ambient unread status while the window is hidden or unfocused: an unread
+/// count on the dock/taskbar badge (where the platform supports one) and the
+/// tray tooltip. Driven by the dashboard, which knows what fired; the shell only
+/// renders. Count 0 clears the unread part (a run's progress, if any, stays).
 #[tauri::command]
 fn desktop_set_activity(app: tauri::AppHandle, count: u32, status: Option<String>) {
     let handle = app.clone();
@@ -149,17 +213,132 @@ fn desktop_set_activity(app: tauri::AppHandle, count: u32, status: Option<String
     let _ = app.run_on_main_thread(move || {
         if let Some(w) = handle.get_webview_window("main") {
             // Unsupported platforms (Windows) reject the call — that's fine,
-            // the tray tooltip below still carries the count.
+            // the tray tooltip still carries the count.
             let _ = w.set_badge_count(if count > 0 { Some(count as i64) } else { None });
         }
-        if let Some(tray) = handle.tray_by_id("main") {
-            let tooltip = match (count, status.as_deref()) {
-                (0, _) => "Piwi Dashboard (click to open)".to_string(),
-                (n, None) => format!("Piwi Dashboard — {n} unread"),
-                (n, Some(s)) => format!("Piwi Dashboard — {n} unread — {s}"),
-            };
-            let _ = tray.set_tooltip(Some(tooltip));
+        if let Some(state) = handle.try_state::<TrayStatus>() {
+            let mut inner = state.0.lock().unwrap();
+            inner.unread = count;
+            inner.activity = status.filter(|s| !s.is_empty());
         }
+        refresh_tray_tooltip(&handle);
+    });
+}
+
+/// Map the dashboard's run state to a taskbar/Dock progress-bar status. Any
+/// unrecognised value (including "none") clears the bar.
+fn progress_bar_status(state: &str) -> Option<ProgressBarStatus> {
+    match state {
+        "normal" => Some(ProgressBarStatus::Normal),
+        "indeterminate" => Some(ProgressBarStatus::Indeterminate),
+        "paused" => Some(ProgressBarStatus::Paused),
+        "error" => Some(ProgressBarStatus::Error),
+        _ => None,
+    }
+}
+
+/// The colour of the status dot drawn on the tray icon (all platforms) and the
+/// taskbar overlay icon (Windows) for a run state, or `None` when the run is
+/// idle and the app's own icon should show instead. A determinate `normal` at
+/// 100% is the finished-pass flash (green); a running `normal` is blue.
+fn status_dot_color(state: &str, fraction: Option<f64>) -> Option<(u8, u8, u8)> {
+    match state {
+        "error" => Some((220, 38, 38)),   // red-600 — failed
+        "paused" => Some((217, 119, 6)),  // amber-600 — paused
+        "normal" if fraction.is_some_and(|f| f >= 1.0) => Some((22, 163, 74)), // green-600 — passed
+        "normal" | "indeterminate" => Some((37, 99, 235)), // blue-600 — running
+        _ => None,                        // none / unknown — restore the app icon
+    }
+}
+
+/// Draw a filled, 1px anti-aliased circle in `color` on a transparent square as
+/// raw RGBA — a small status dot for the tray/overlay icon. Kept dependency-free
+/// (no image crate) since the shape is trivial; the taskbar/Dock bar and the
+/// tooltip carry the exact fraction, so the dot only needs to convey state.
+fn render_status_dot(color: (u8, u8, u8), size: u32) -> Vec<u8> {
+    let (r, g, b) = color;
+    let n = size as f32;
+    let center = n / 2.0;
+    // A small margin so the dot is not clipped at the icon's edge.
+    let radius = center - n * 0.08;
+    let mut rgba = Vec::with_capacity((size * size * 4) as usize);
+    for y in 0..size {
+        for x in 0..size {
+            let dx = x as f32 + 0.5 - center;
+            let dy = y as f32 + 0.5 - center;
+            let dist = (dx * dx + dy * dy).sqrt();
+            let alpha = if dist <= radius - 0.5 {
+                255.0
+            } else if dist >= radius + 0.5 {
+                0.0
+            } else {
+                (radius + 0.5 - dist) * 255.0
+            };
+            rgba.extend_from_slice(&[r, g, b, alpha.round().clamp(0.0, 255.0) as u8]);
+        }
+    }
+    rgba
+}
+
+/// Live progress of the local test run(s), rendered on the OS shell so a run can
+/// be watched with the window minimised or in the tray: the taskbar/Dock progress
+/// bar, the window title (which the Windows taskbar shows on hover) and the tray
+/// tooltip. Driven by the dashboard, which aggregates its active runs into one
+/// `state` (`normal`/`indeterminate`/`paused`/`error`/`none`), an optional 0–1
+/// `fraction` and a `label`. `state = "none"` clears the bar and restores the
+/// resting title; run progress leaves the tooltip while the unread count (if any)
+/// stays.
+#[tauri::command]
+fn desktop_set_run_progress(
+    app: tauri::AppHandle,
+    state: String,
+    fraction: Option<f64>,
+    label: Option<String>,
+) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let status = progress_bar_status(&state);
+        let active = status.is_some();
+        let glyph = status_dot_color(&state, fraction);
+        if let Some(w) = handle.get_webview_window("main") {
+            // A determinate bar carries the fraction as 0–100; an indeterminate
+            // one (a countless phase such as install/checkout) carries none.
+            let progress = match &status {
+                Some(ProgressBarStatus::Indeterminate) | None => None,
+                Some(_) => fraction.map(|f| (f.clamp(0.0, 1.0) * 100.0).round() as u64),
+            };
+            let _ = w.set_progress_bar(ProgressBarState {
+                status: Some(status.unwrap_or(ProgressBarStatus::None)),
+                progress,
+            });
+            let title = match label.as_deref().filter(|s| active && !s.is_empty()) {
+                Some(l) => format!("▶ {l} · {MAIN_WINDOW_TITLE}"),
+                None => MAIN_WINDOW_TITLE.to_string(),
+            };
+            let _ = w.set_title(&title);
+            // Windows only: a small state dot in the corner of the taskbar button
+            // (the overlay-icon API is Windows-specific).
+            #[cfg(windows)]
+            {
+                let overlay =
+                    glyph.map(|c| tauri::image::Image::new_owned(render_status_dot(c, 16), 16, 16));
+                let _ = w.set_overlay_icon(overlay);
+            }
+        }
+        // Tray icon: a state dot while a run is active, the app's own icon when
+        // idle — an at-a-glance status when the window is closed to the tray.
+        if let Some(tray) = handle.tray_by_id("main") {
+            let icon = match glyph {
+                Some(c) => Some(tauri::image::Image::new_owned(render_status_dot(c, 32), 32, 32)),
+                None => handle.default_window_icon().cloned(),
+            };
+            let _ = tray.set_icon(icon);
+        }
+        if let Some(tray_state) = handle.try_state::<TrayStatus>() {
+            let mut inner = tray_state.0.lock().unwrap();
+            inner.progress = if active { label.filter(|s| !s.is_empty()) } else { None };
+        }
+        refresh_tray_tooltip(&handle);
     });
 }
 
@@ -994,10 +1173,12 @@ pub fn run() {
             desktop_check_update,
             desktop_install_update,
             desktop_restart_app,
-            desktop_set_activity
+            desktop_set_activity,
+            desktop_set_run_progress
         ])
         .manage(ServerProcess::default())
         .manage(runner::LocalRuns::default())
+        .manage(TrayStatus::default())
         .manage(QuitConfirmed::default())
         .manage(PendingOpenFiles::default())
         .manage(updates::UpdaterSupport(updater_supported))
@@ -1282,6 +1463,13 @@ pub fn run() {
                 let _ = app.handle().add_capability(E2E_PLAYWRIGHT_CAPABILITY);
             }
 
+            // Windows: add the Stop/Open buttons to the main window's taskbar
+            // thumbnail toolbar (no-op on other platforms).
+            #[cfg(windows)]
+            if let Some(main) = app.get_webview_window("main") {
+                taskbar_win::install(&main);
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -1358,10 +1546,80 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        clamp_log_line, debug_mode_requested, ide_launcher_args, is_safe_launcher_command,
-        is_truthy_flag, write_new_download,
+        clamp_log_line, compose_tooltip, debug_mode_requested, ide_launcher_args,
+        is_safe_launcher_command, is_truthy_flag, progress_bar_status, render_status_dot,
+        status_dot_color, write_new_download,
     };
     use std::fs;
+    use tauri::window::ProgressBarStatus;
+
+    #[test]
+    fn tooltip_composes_run_progress_unread_and_idle() {
+        // Idle: nothing to say.
+        assert_eq!(compose_tooltip(0, None, None), "Piwi Dashboard (click to open)");
+        // Unread only, matching the pre-run-progress behaviour.
+        assert_eq!(compose_tooltip(2, None, None), "Piwi Dashboard — 2 unread");
+        assert_eq!(
+            compose_tooltip(2, Some("acme-web: failure"), None),
+            "Piwi Dashboard — 2 unread — acme-web: failure"
+        );
+        // A run in flight leads and its label is what shows.
+        assert_eq!(
+            compose_tooltip(0, None, Some("Running 7/12…")),
+            "Piwi Dashboard — Running 7/12…"
+        );
+        // Both signals: the run leads, the count follows, the notification status
+        // line is dropped (the run is the more useful thing to surface).
+        assert_eq!(
+            compose_tooltip(3, Some("acme-web: failure"), Some("Running 7/12…")),
+            "Piwi Dashboard — Running 7/12… — 3 unread"
+        );
+        // Empty strings are treated as absent, not shown as blanks.
+        assert_eq!(compose_tooltip(0, Some(""), Some("")), "Piwi Dashboard (click to open)");
+    }
+
+    #[test]
+    fn progress_state_maps_to_a_bar_status_and_none_clears() {
+        assert!(matches!(progress_bar_status("normal"), Some(ProgressBarStatus::Normal)));
+        assert!(matches!(
+            progress_bar_status("indeterminate"),
+            Some(ProgressBarStatus::Indeterminate)
+        ));
+        assert!(matches!(progress_bar_status("paused"), Some(ProgressBarStatus::Paused)));
+        assert!(matches!(progress_bar_status("error"), Some(ProgressBarStatus::Error)));
+        // "none" and anything unrecognised clear the bar.
+        assert!(progress_bar_status("none").is_none());
+        assert!(progress_bar_status("").is_none());
+        assert!(progress_bar_status("bogus").is_none());
+    }
+
+    #[test]
+    fn status_dot_color_maps_states_to_colours() {
+        assert_eq!(status_dot_color("error", None), Some((220, 38, 38)));
+        assert_eq!(status_dot_color("paused", None), Some((217, 119, 6)));
+        // Running is blue; the finished-pass flash (normal at 100%) is green.
+        assert_eq!(status_dot_color("normal", Some(0.5)), Some((37, 99, 235)));
+        assert_eq!(status_dot_color("indeterminate", None), Some((37, 99, 235)));
+        assert_eq!(status_dot_color("normal", Some(1.0)), Some((22, 163, 74)));
+        // Idle / unknown clears the dot so the app icon shows through.
+        assert_eq!(status_dot_color("none", None), None);
+        assert_eq!(status_dot_color("bogus", Some(1.0)), None);
+    }
+
+    #[test]
+    fn status_dot_is_opaque_at_the_centre_and_clear_at_the_corners() {
+        let size = 32u32;
+        let rgba = render_status_dot((10, 20, 30), size);
+        assert_eq!(rgba.len(), (size * size * 4) as usize);
+        let px = |x: u32, y: u32| {
+            let i = ((y * size + x) * 4) as usize;
+            (rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3])
+        };
+        // Centre: fully opaque, in the requested colour.
+        assert_eq!(px(size / 2, size / 2), (10, 20, 30, 255));
+        // Corner: fully transparent.
+        assert_eq!(px(0, 0).3, 0);
+    }
 
     #[test]
     fn truthy_flag_treats_only_off_words_and_empty_as_false() {
