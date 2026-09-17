@@ -53,10 +53,11 @@ import { projects, testRuns, testRunsCases, testCases, failureClusters, failureD
 import { buildDiagnosisContext, buildClusterDiagnosisContext } from '../ai-context';
 import { stripAnsi } from '#shared/error-fingerprint';
 import { caseHeadline } from '#shared/failure-verdict';
-import { MCP_TOOL_DEFS } from '#shared/mcp-tools';
+import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS } from '#shared/mcp-tools';
 import type {
   McpToolDef,
   McpToolName,
+  DesktopMcpToolName,
   McpFlakyTestItem,
   McpAffectedTestCase,
   PaginatedResponse,
@@ -83,6 +84,12 @@ import type { ProjectScope } from '../project-access';
 import type { User } from '../../database/schema';
 import { Role } from '#shared/types';
 import type { DbClient } from '../../database';
+import { stat, readFile, writeFile } from 'node:fs/promises';
+import { isAbsolute, resolve as resolvePath, relative as relativePath, basename } from 'node:path';
+import { importArchive } from '../import-archive';
+import { sanitizeFilename } from '../sanitize-filename';
+import { resolveMaxUploadBytes } from '../upload-limits';
+import { formatBytes } from '#shared/utils/format-bytes';
 
 // ── Token-optimization helpers ───────────────────────────────────────────────
 
@@ -2007,4 +2014,235 @@ async function resolveProjectRepoUrl(db: DbClient, projectId: number): Promise<s
 export const MCP_TOOLS: McpTool[] = MCP_TOOL_DEFS.map((def) => ({
   ...def,
   handler: HANDLERS[def.name],
+}));
+
+// ── Desktop-only tools ────────────────────────────────────────────────────────
+//
+// Served only by the desktop app's bundled server — the one launched with
+// PIWI_DESKTOP_TOKEN. They read and write files on the machine the server runs
+// on, which is exactly why a hosted instance can never offer them. The route
+// appends `DESKTOP_MCP_TOOLS` to the catalog only in desktop mode; each handler
+// also calls `assertDesktop()` so a server build can never run one even if the
+// route wiring regressed. Paths are supplied by the caller: the desktop guard
+// already limits `/mcp` to the local access token, whose holder owns this
+// machine — the same trust the local-import route (`desktop/import-local`)
+// relies on.
+
+const MAX_SOURCE_BYTES = 256 * 1024;
+
+/** Refuse a desktop-only tool unless this is the guarded desktop build. */
+function assertDesktop(): void {
+  if (!process.env.PIWI_DESKTOP_TOKEN) {
+    throw new Error('This tool is only available in the Piwi desktop app');
+  }
+}
+
+/** The recommended locator edit, as `getLocatorHealing` returns it. */
+interface LocatorSourceEdit {
+  line: number;
+  oldLine: string;
+  newLine: string;
+}
+
+/**
+ * Plan a single-line locator rewrite against the on-disk file. Pure and
+ * unit-tested: it never touches the filesystem. The guard compares the target
+ * line to what Piwi recorded (ignoring trailing whitespace) and refuses on any
+ * mismatch, so a file edited since the run is left untouched rather than
+ * clobbered.
+ */
+export function planLocatorSourceEdit(
+  fileText: string,
+  edit: LocatorSourceEdit,
+): { ok: true; newText: string } | { ok: false; reason: string; foundLine: string | null } {
+  const lines = fileText.split('\n');
+  const index = edit.line - 1;
+  if (index < 0 || index >= lines.length) {
+    return {
+      ok: false,
+      reason: `the file has ${lines.length} lines but the fix targets line ${edit.line}`,
+      foundLine: null,
+    };
+  }
+  const current = lines[index]!;
+  const trimEnd = (s: string) => s.replace(/\s+$/, '');
+  if (trimEnd(current) !== trimEnd(edit.oldLine)) {
+    return {
+      ok: false,
+      reason:
+        'the on-disk line no longer matches what Piwi recorded — the file changed since the run; apply the diff by hand',
+      foundLine: current,
+    };
+  }
+  lines[index] = edit.newLine;
+  return { ok: true, newText: lines.join('\n') };
+}
+
+const DESKTOP_HANDLERS: Record<DesktopMcpToolName, McpToolHandler> = {
+  // ── import_local_report ──────────────────────────────────────────────────────
+  async import_local_report(_db, params, ctx) {
+    assertDesktop();
+    const path = String(params.path ?? '');
+    const projectName = String(params.projectName ?? '').trim();
+    if (!path || !isAbsolute(path) || !path.toLowerCase().endsWith('.zip')) {
+      throw new Error('path must be an absolute path to a .zip archive');
+    }
+    if (!projectName) throw new Error('projectName is required');
+    const environment =
+      typeof params.environment === 'string' && params.environment.trim() ? params.environment.trim() : null;
+    const label = typeof params.label === 'string' && params.label.trim() ? params.label.trim() : null;
+
+    let info;
+    try {
+      info = await stat(path);
+    } catch {
+      throw new Error(`file not found: ${path}`);
+    }
+    if (!info.isFile()) throw new Error('not a file');
+    const maxBytes = resolveMaxUploadBytes();
+    if (info.size > maxBytes) throw new Error(`archive too large (max ${formatBytes(maxBytes)})`);
+
+    const data = await readFile(path);
+    return importArchive({
+      user: ctx.user,
+      projectName,
+      archive: { filename: sanitizeFilename(basename(path)), data },
+      environment,
+      label,
+      importGroup: null,
+    });
+  },
+
+  // ── read_local_source ────────────────────────────────────────────────────────
+  async read_local_source(_db, params) {
+    assertDesktop();
+    const path = String(params.path ?? '');
+    if (!path || !isAbsolute(path)) throw new Error('path must be an absolute path');
+
+    let info;
+    try {
+      info = await stat(path);
+    } catch {
+      throw new Error(`file not found: ${path}`);
+    }
+    if (!info.isFile()) throw new Error('not a file');
+    if (info.size > MAX_SOURCE_BYTES && params.line == null) {
+      throw new Error(`file is ${formatBytes(info.size)} — pass a line to read a window instead of the whole file`);
+    }
+
+    const text = await readFile(path, 'utf8');
+    const lines = text.split('\n');
+    if (params.line == null) {
+      return { path, totalLines: lines.length, startLine: 1, endLine: lines.length, text };
+    }
+    const line = numericParam(params.line, 'line');
+    const rawContext = Number(params.contextLines ?? 40);
+    const contextLines = Math.min(500, Math.max(0, Number.isFinite(rawContext) ? Math.floor(rawContext) : 40));
+    const startLine = Math.max(1, line - contextLines);
+    const endLine = Math.min(lines.length, line + contextLines);
+    return {
+      path,
+      totalLines: lines.length,
+      line,
+      startLine,
+      endLine,
+      text: lines.slice(startLine - 1, endLine).join('\n'),
+    };
+  },
+
+  // ── apply_locator_fix ────────────────────────────────────────────────────────
+  async apply_locator_fix(db, params, ctx) {
+    assertDesktop();
+    const executionId = numericParam(params.executionId, 'executionId');
+    const repoRoot = String(params.repoRoot ?? '');
+    const apply = params.apply === true;
+    if (!repoRoot || !isAbsolute(repoRoot)) throw new Error('repoRoot must be an absolute path');
+    if ((await checkEntityScope(db, ctx, executionId, resolveTestRunCaseProjectId)) === 'not-found') return null;
+
+    const healing = await getLocatorHealing(db, executionId);
+    if (!healing)
+      return dropNulls({ executionId, applied: false, reason: 'no locator-healing data for this execution' });
+    if (healing.applicable === false) {
+      return dropNulls({
+        executionId,
+        applied: false,
+        reason: healing.reason ?? 'locator healing does not apply here',
+      });
+    }
+    if (!healing.edit || !healing.edit.filePath) {
+      return dropNulls({
+        executionId,
+        applied: false,
+        reason: 'no ready-to-apply edit — call get_locator_healing to inspect the alternatives',
+      });
+    }
+    const edit = { ...healing.edit, filePath: healing.edit.filePath };
+
+    // Keep the write inside the checkout the caller named — a healing filePath is
+    // repo-relative, so a resolved target that climbs out of repoRoot is a
+    // mismatched root, not a file to write.
+    const target = resolvePath(repoRoot, edit.filePath);
+    const rel = relativePath(repoRoot, target);
+    if (rel.startsWith('..') || isAbsolute(rel)) {
+      throw new Error(`the fix targets ${edit.filePath}, which is outside repoRoot`);
+    }
+
+    let fileText: string;
+    try {
+      fileText = await readFile(target, 'utf8');
+    } catch {
+      return dropNulls({
+        executionId,
+        applied: false,
+        filePath: edit.filePath,
+        reason: `file not found under repoRoot: ${edit.filePath}`,
+        unifiedDiff: edit.unifiedDiff,
+      });
+    }
+
+    const plan = planLocatorSourceEdit(fileText, edit);
+    if (!plan.ok) {
+      return dropNulls({
+        executionId,
+        applied: false,
+        filePath: edit.filePath,
+        line: edit.line,
+        reason: plan.reason,
+        foundLine: plan.foundLine,
+        oldLine: edit.oldLine,
+        newLine: edit.newLine,
+        unifiedDiff: edit.unifiedDiff,
+      });
+    }
+
+    if (!apply) {
+      return dropNulls({
+        executionId,
+        applied: false,
+        preview: true,
+        filePath: edit.filePath,
+        line: edit.line,
+        oldLine: edit.oldLine,
+        newLine: edit.newLine,
+        unifiedDiff: edit.unifiedDiff,
+        note: 'preview only — call again with apply=true to write this change',
+      });
+    }
+
+    await writeFile(target, plan.newText, 'utf8');
+    return dropNulls({
+      executionId,
+      applied: true,
+      filePath: edit.filePath,
+      line: edit.line,
+      oldLine: edit.oldLine,
+      newLine: edit.newLine,
+    });
+  },
+};
+
+/** Desktop-only tools, merged into the catalog by the route in desktop mode. */
+export const DESKTOP_MCP_TOOLS: McpTool[] = DESKTOP_MCP_TOOL_DEFS.map((def) => ({
+  ...def,
+  handler: DESKTOP_HANDLERS[def.name],
 }));

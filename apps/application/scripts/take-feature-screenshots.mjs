@@ -889,6 +889,16 @@ const SCENES = [
     of: '[data-shot="mcp-agent-skills"]',
     pad: 12,
   },
+  {
+    name: 'mcp-desktop-tools',
+    description: 'MCP page (desktop app): the local-only tools a hosted instance cannot offer',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/mcp',
+    viewport: { width: 1000, height: 1000 },
+    of: '[data-shot="mcp-desktop-tools"]',
+    pad: 12,
+  },
 
   // ── Failure headline (report artifacts) ──────────────────────────────────
   {
