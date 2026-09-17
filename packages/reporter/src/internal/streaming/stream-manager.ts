@@ -121,6 +121,7 @@ export class StreamManager {
     shardInfo?: ShardInfo | null,
     isFullRun?: boolean,
     filterDetails?: FilterDetails | null,
+    plannedTotal?: number,
   ): void {
     this._startPromise = this._doStart(
       startTime,
@@ -131,6 +132,7 @@ export class StreamManager {
       shardInfo,
       isFullRun,
       filterDetails,
+      plannedTotal,
     );
   }
 
@@ -143,6 +145,7 @@ export class StreamManager {
     shardInfo?: ShardInfo | null,
     isFullRun?: boolean,
     filterDetails?: FilterDetails | null,
+    plannedTotal?: number,
   ): Promise<void> {
     const setupInfo = readSetupInfo(this.options.projectName!);
 
@@ -160,7 +163,7 @@ export class StreamManager {
             `/api/test-runs/${setupInfo.runId}/begin`,
             {
               setupToken: setupInfo.setupToken,
-              totalTests: 0,
+              totalTests: plannedTotal ?? 0,
               metadata,
               playwrightVersion,
               reporterVersion,
@@ -192,6 +195,7 @@ export class StreamManager {
               shardTotal,
               isFullRun,
               filterDetails,
+              totalTests: plannedTotal ?? 0,
             },
             this._auth,
           );
@@ -213,6 +217,7 @@ export class StreamManager {
             shardTotal,
             isFullRun,
             filterDetails,
+            totalTests: plannedTotal ?? 0,
           },
           this._auth,
         );

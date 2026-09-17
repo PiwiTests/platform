@@ -13,15 +13,15 @@ import { postRunPrFeedbackInBackground } from '../../../utils/scm/pr-feedback';
 import { maybeEnqueueHealActionInBackground } from '../../../utils/heal/policy';
 import { computeRegressionSignals } from '../../../utils/compute-regression-signals';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
-import { FAILED_STATUS_KEYS, sumFailedAndTimedOut } from '#shared/utils/test-counts';
-
-const FAIL_STATUSES = new Set<string>(FAILED_STATUS_KEYS);
+import { sumFailedAndTimedOut, distinctRunCountsFromAttempts } from '#shared/utils/test-counts';
 
 /**
- * Whether any test in the run failed, judged by each test's last attempt per browser.
- * The `failedTests` counter counts attempts, so it would fail flaky-only runs.
+ * Distinct-test counters for a run, computed from its persisted attempt rows.
+ * A sharded run's counters come from the streamed events (per attempt), so the
+ * final tally is recomputed here — the final attempt per test decides its
+ * outcome, and a flaky-only run reads as passed with zero failures.
  */
-async function hasFinalAttemptFailure(db: DbClient, runId: number): Promise<boolean> {
+async function computeRunCounts(db: DbClient, runId: number) {
   const rows = await db
     .select({
       testCaseId: testRunsCases.testCaseId,
@@ -31,19 +31,7 @@ async function hasFinalAttemptFailure(db: DbClient, runId: number): Promise<bool
     })
     .from(testRunsCases)
     .where(eq(testRunsCases.testRunId, runId));
-
-  const finalAttempts = new Map<string, { retries: number; status: string }>();
-  for (const row of rows) {
-    const key = `${row.testCaseId}|${row.browserName ?? ''}`;
-    const retries = row.retries ?? 0;
-    const prev = finalAttempts.get(key);
-    if (!prev || retries > prev.retries) finalAttempts.set(key, { retries, status: row.status });
-  }
-
-  for (const attempt of finalAttempts.values()) {
-    if (FAIL_STATUSES.has(attempt.status)) return true;
-  }
-  return false;
+  return distinctRunCountsFromAttempts(rows);
 }
 
 defineRouteMeta({
@@ -183,8 +171,11 @@ export default eventHandler(async (event) => {
       updatedRun.shardTotal != null &&
       updatedRun.shardsFinished >= updatedRun.shardTotal
     ) {
-      // All shards done — determine final status
-      finalStatus = (await hasFinalAttemptFailure(db, id)) ? 'failed' : 'passed';
+      // All shards done — recompute distinct-test counters from the persisted
+      // rows (the per-shard events counted attempts) and derive the final status
+      // from them, so a flaky-only sharded run reads as passed with no failures.
+      const counts = await computeRunCounts(db, id);
+      finalStatus = counts.failedTests > 0 ? 'failed' : 'passed';
 
       if (allDurations.length > 0) {
         const aggStats = durationStats(allDurations);
@@ -205,6 +196,14 @@ export default eventHandler(async (event) => {
           status: finalStatus,
           streamToken: null,
           duration: updatedRun.duration, // keep max duration
+          // The planned total (summed across shards at /start), or the distinct
+          // rows when a shard reported no planned count.
+          totalTests: Math.max(updatedRun.totalTests ?? 0, counts.totalTests),
+          passedTests: counts.passedTests,
+          failedTests: counts.failedTests,
+          skippedTests: counts.skippedTests,
+          didNotRunTests: counts.didNotRunTests,
+          flakyTests: counts.flakyTests,
           avgTestDuration,
           p90TestDuration,
           metadata: finalMeta,
@@ -218,12 +217,12 @@ export default eventHandler(async (event) => {
         data: {
           status: finalStatus,
           duration: updatedRun.duration,
-          totalTests: updatedRun.totalTests,
-          passedTests: updatedRun.passedTests,
-          failedTests: updatedRun.failedTests,
-          skippedTests: updatedRun.skippedTests,
-          didNotRunTests: updatedRun.didNotRunTests,
-          flakyTests: updatedRun.flakyTests,
+          totalTests: Math.max(updatedRun.totalTests ?? 0, counts.totalTests),
+          passedTests: counts.passedTests,
+          failedTests: counts.failedTests,
+          skippedTests: counts.skippedTests,
+          didNotRunTests: counts.didNotRunTests,
+          flakyTests: counts.flakyTests,
         },
       });
 

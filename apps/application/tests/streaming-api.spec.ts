@@ -20,6 +20,9 @@ test.describe.serial('Streaming API Tests', () => {
       data: {
         projectName: PROJECT.STREAMING_TEST,
         startTime: new Date().toISOString(),
+        // The reporter reports the planned suite size up front; the two streamed
+        // tests below make up this run's total.
+        totalTests: 2,
       },
     });
 

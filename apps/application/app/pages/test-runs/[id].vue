@@ -4,6 +4,7 @@ import type { TestRunDetails, TestCaseResult, ReportInfo, TestStepEvent, Failure
 import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunStream } from '~/composables/useRunStream';
+import { summarizeRunCases } from '#shared/utils/test-counts';
 
 const route = useRoute();
 const router = useRouter();
@@ -56,17 +57,37 @@ const isLive = computed(() => testRun.value?.status === 'running' || testRun.val
 const isFinalizing = ref(false);
 const liveTestCases = ref<TestCaseResult[]>([]);
 const liveTestCaseKeys = new Map<string, true>();
-const liveProgress = ref<{ totalTests: number; passedTests: number; failedTests: number; skippedTests: number } | null>(
-  null,
-);
 // Worker index → the step the worker is currently on (from transient SSE step
 // events; nothing is persisted from them). Rendered inline on the matching
 // running rows in the test-case views.
 const liveSteps = ref<LiveStepsByWorker>({});
 let eventSource: EventSource | null = null;
 
-// Combined test cases: from server data + live stream.
+// Combined test cases: from server data + live stream. Includes every attempt
+// (a retried test has one row per attempt) — the timeline and the per-execution
+// links need them all.
 const displayTestCases = ref<TestCaseResult[]>([]);
+
+/**
+ * One entry per test — the final attempt (highest retry count) — so a retried
+ * test is a single row whose outcome is its last attempt. Keyed by the
+ * persisted test-case id + browser once known, else the streaming key (title +
+ * location + browser), so it collapses live placeholder rows and finished
+ * attempt rows alike. Feeds the header counts, the count bar and the grouped
+ * list; the timeline keeps the full attempt list.
+ */
+function dedupeFinalAttempts(cases: TestCaseResult[]): TestCaseResult[] {
+  const byKey = new Map<string, TestCaseResult>();
+  for (const tc of cases) {
+    const browser = tc.browser?.projectName ?? tc.browser?.browserName ?? '';
+    const key = tc.testCaseId > 0 ? `c${tc.testCaseId}\x00${browser}` : `${tc.title}\x00${tc.location}\x00${browser}`;
+    const prev = byKey.get(key);
+    if (!prev || (tc.retries ?? 0) >= (prev.retries ?? 0)) byKey.set(key, tc);
+  }
+  return [...byKey.values()];
+}
+
+const dedupedDisplayCases = computed(() => dedupeFinalAttempts(displayTestCases.value));
 
 watch(
   [isLive, testRun],
@@ -104,14 +125,10 @@ function flushPendingEvents() {
   pendingEvents = [];
   for (const parsed of events) {
     const data = parsed.data as Record<string, unknown>;
-    if (parsed.type === 'init') {
-      liveProgress.value = {
-        totalTests: data.totalTests as number,
-        passedTests: data.passedTests as number,
-        failedTests: data.failedTests as number,
-        skippedTests: data.skippedTests as number,
-      };
-    } else if (parsed.type === 'test-begin') {
+    // 'init' and 'run-progress' carry the server's running counters; the header
+    // and bar are derived from the de-duplicated case list instead (see
+    // displayProgress), so those snapshots are not applied here.
+    if (parsed.type === 'test-begin') {
       const d = data as {
         title: string;
         filePath?: string;
@@ -165,6 +182,7 @@ function flushPendingEvents() {
         startedAt?: number;
         browser?: { projectName?: string } | null;
         stepCategory?: string | null;
+        retries?: number | null;
         executionId?: number | null;
         testCaseId?: number | null;
       };
@@ -192,6 +210,9 @@ function flushPendingEvents() {
             workerIndex: d.workerIndex ?? existing.workerIndex,
             startedAt: d.startedAt ? d.startedAt : existing.startedAt,
             browser: d.browser ?? existing.browser,
+            // A later attempt's higher retry count wins, so a fail-then-pass
+            // test ends up as passed-on-retry rather than a plain pass.
+            retries: d.retries ?? existing.retries,
             // The real ids replace the placeholder once persistence happens;
             // a duplicate event without ids keeps whatever the row already has.
             executionId: d.executionId ?? existing.executionId,
@@ -219,6 +240,7 @@ function flushPendingEvents() {
             workerIndex: d.workerIndex ?? null,
             startedAt: d.startedAt ?? undefined,
             browser: d.browser ?? null,
+            retries: d.retries ?? null,
           },
         ];
         displayTestCases.value = [...liveTestCases.value];
@@ -265,22 +287,9 @@ function flushPendingEvents() {
           parentTitle: d.parentTitle ?? null,
         },
       };
-    } else if (parsed.type === 'run-progress') {
-      liveProgress.value = data as {
-        totalTests: number;
-        passedTests: number;
-        failedTests: number;
-        skippedTests: number;
-      };
     } else if (parsed.type === 'run-finalizing') {
       // Tests are done, reports/traces are uploading — show progress bar
       isFinalizing.value = true;
-      liveProgress.value = data as {
-        totalTests: number;
-        passedTests: number;
-        failedTests: number;
-        skippedTests: number;
-      };
     } else if (parsed.type === 'run-finished') {
       isFinalizing.value = false;
       liveSteps.value = {};
@@ -429,10 +438,24 @@ watch(
   { immediate: true },
 );
 
-// Display progress: live or from loaded data
+// Display progress: while live it is derived from the de-duplicated cases (so
+// the header counts, the bar and the grouped list are computed from one source
+// and cannot disagree), with the planned suite size the reporter reports at
+// /start as the denominator (right from the first render). Once finished it
+// comes from the persisted run totals, which the reporter now counts per test.
+// A flaky test passed on a retry, so it counts as passed — as the list treats
+// it — instead of inflating the failures via its earlier failed attempt.
 const displayProgress = computed(() => {
-  if (isLive.value && liveProgress.value) {
-    return liveProgress.value;
+  if (isLive.value) {
+    const s = summarizeRunCases(dedupedDisplayCases.value);
+    return {
+      totalTests: Math.max(testRun.value?.totalTests ?? 0, s.total),
+      passedTests: s.passed,
+      failedTests: s.failed,
+      skippedTests: s.skipped,
+      didNotRunTests: s.didNotRun,
+      flakyTests: s.flaky,
+    };
   }
   if (!testRun.value) return null;
   return {
@@ -440,6 +463,8 @@ const displayProgress = computed(() => {
     passedTests: testRun.value.passedTests,
     failedTests: testRun.value.failedTests,
     skippedTests: testRun.value.skippedTests,
+    didNotRunTests: testRun.value.didNotRunTests ?? 0,
+    flakyTests: testRun.value.flakyTests ?? 0,
   };
 });
 
@@ -563,7 +588,7 @@ const uniqueWorkerCount = computed(() => {
 
 const tabItems = computed(() => [
   {
-    label: `Tests (${displayTestCases.value.length})`,
+    label: `Tests (${dedupedDisplayCases.value.length})`,
     icon: 'i-lucide-beaker',
     value: 'test-cases',
     slot: 'test-cases',
@@ -648,8 +673,19 @@ const testCasesListRef: {
 
 function handleSelectTestCase(id: number) {
   activeTab.value = 'test-cases';
+  // The timeline lists every attempt, but the Tests list shows one row per test
+  // (its final attempt), so redirect a non-final attempt's id to its test's row.
+  const source = displayTestCases.value.find((tc) => tc.executionId === id);
+  const rowId =
+    source && source.testCaseId > 0
+      ? (dedupedDisplayCases.value.find(
+          (tc) =>
+            tc.testCaseId === source.testCaseId &&
+            (tc.browser?.projectName ?? '') === (source.browser?.projectName ?? ''),
+        )?.executionId ?? id)
+      : id;
   nextTick(() => {
-    testCasesListRef.value?.scrollToCase(id);
+    testCasesListRef.value?.scrollToCase(rowId);
   });
 }
 
@@ -758,8 +794,9 @@ const moreMenuItems = computed(() => {
             v-model:search="testCaseSearch"
             v-model:active-statuses="testCaseActiveStatuses"
             v-model:browser-filter="testCaseBrowserFilter"
-            :test-cases="displayTestCases"
+            :test-cases="dedupedDisplayCases"
             :is-live="isLive"
+            :total="displayProgress?.totalTests"
             :live-steps="liveSteps"
             :cluster-meta="clusterMeta"
             :quarantined-case-ids="quarantinedCaseIds"
