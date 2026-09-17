@@ -29,8 +29,11 @@ Grab the installer for your OS from the [latest release](https://github.com/Piwi
 |----|-----------|
 | **Windows** | `.msi` |
 | **macOS** (Apple silicon) | `.dmg` |
+| **Linux** (x86-64) | `.AppImage`, `.deb`, or `.rpm` |
 
-Linux is not packaged yet — use [Docker or `npx`](/operate/deployment) there.
+On Linux, `.AppImage` runs anywhere (`chmod +x` and launch) and `.deb`/`.rpm`
+install through your package manager; all three need a system WebKitGTK
+(`webkit2gtk-4.1`).
 
 ### Unsigned builds
 
@@ -39,6 +42,7 @@ your OS shows a first-run warning:
 
 - **macOS:** right-click the app → **Open** → **Open** (once).
 - **Windows:** SmartScreen → **More info** → **Run anyway**.
+- **Linux:** no gatekeeper prompt — the installers just run.
 
 ## Where your data lives
 
@@ -50,6 +54,7 @@ app-data directory:
 |----|----------|
 | **Windows** | `%APPDATA%\io.piwitests.dashboard\.data` |
 | **macOS** | `~/Library/Application Support/io.piwitests.dashboard/.data` |
+| **Linux** | `~/.local/share/io.piwitests.dashboard/.data` |
 
 That folder holds `piwi.db` (SQLite) and `storage/` (reports, traces,
 attachments). Back it up by copying the folder while the app is closed.
@@ -63,9 +68,9 @@ By default, closing the window quits the app. From the tray icon you can enable:
 - **Start on login** — launch the app (hidden, into the tray) when you log in.
 
 While the window is hidden or unfocused, subscribed
-[notifications](/features/notifications) (the bell on a project page) show as **native
-OS notifications**, and each one bumps an unread count on the dock icon
-(macOS/Linux) and in the tray tooltip. Focusing the window clears it.
+[notifications](/features/notifications) show as **native OS notifications**, and
+each one bumps an unread count on the dock icon (macOS/Linux) and in the tray
+tooltip. Focusing the window clears it.
 
 ## Sending results to it
 
@@ -99,16 +104,14 @@ to copy the token and a ready-made snippet:
 ```
 
 The token is a **local secret** — prefer the `PIWI_API_KEY` env var over
-committing it. The app uses port **3000** by default (falling back to another
-local port only if 3000 is already taken — the window's address bar shows the
-actual one).
+committing it. The app uses port **3000** by default (another local port if
+3000 is taken — the address bar shows which).
 
-> **Why a token?** The server binds `127.0.0.1`, which blocks other machines —
-> but loopback alone doesn't stop *other local processes* or *web pages open in
-> your browser* from reaching it. The token means only the app itself and tools
-> you've handed it to (your reporter) can submit or read. Accepting results from
-> *other machines* over the network is intentionally not supported in the desktop
-> build — run the [Docker image](/operate/deployment) for a shared, always-on server.
+> **Why a token?** Binding `127.0.0.1` blocks other machines, but not *other
+> local processes* or *browser pages* — so the token means only the app and the
+> tools you hand it (your reporter) can submit or read. The desktop build never
+> accepts results from other machines; run the [Docker image](/operate/deployment)
+> for a shared, always-on server.
 
 ## Projects from local folders
 
@@ -119,8 +122,8 @@ Playwright config, else the `package.json` name, else the folder name), and
 checks the setup — Playwright config present, Playwright installed, the
 [reporter](/guide/reporter) installed and wired into the config. Anything missing is
 a warning, not a blocker: create the project anyway and run
-`npx @piwitests/reporter init` in the folder when you're ready. The chosen folder is linked to the new project
-automatically.
+`npx @piwitests/reporter init` in the folder when you're ready. The folder is
+linked to the new project automatically.
 
 The link itself is a per-machine setting, managed with the rest of the project
 settings: **project page → Edit → Local folder** shows the folder, the same
@@ -139,7 +142,7 @@ A failing run is one click from a local retry. On a run page (or a single
 execution page), **Run locally** re-runs the failed tests on this machine —
 immediately, with the options you used last time. The app executes the folder's
 *own* Playwright with the app's bundled Node — nothing extra to install — and
-the output streams into the **Local runs** tray in the corner of the window.
+the output streams into the **Local runs** tray.
 
 - **First use:** a dialog asks you to link the Piwi project to its checkout —
   the folder that contains the tests. Link it any time under

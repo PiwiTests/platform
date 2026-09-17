@@ -9,8 +9,8 @@ build prerequisites and the release flow.
 A [Tauri](https://tauri.app) window around **the same Nuxt/Nitro server** shipped as the Docker image and
 `@piwitests/server`. On launch the Rust shell picks a free loopback port, resolves a per-user data dir, spawns the
 bundled server as a **Node sidecar**, polls `GET /api/health` until the database is migrated, then points the window at
-it through a one-time token bootstrap (`/__piwi/session`). Targets for v1 are Windows (`.msi`) and macOS (`.dmg`);
-Linux is deferred.
+it through a one-time token bootstrap (`/__piwi/session`). Targets are Windows (`.msi`), macOS (`.dmg`) and Linux
+(`.deb` / `.rpm` / `.AppImage`) — all three feature-equivalent and built from the same shell.
 
 ## Rules
 
@@ -31,8 +31,9 @@ Linux is deferred.
   `app/components/desktop/` cards — do not sniff user agents.
 - The sidecar layout (`src-tauri/binaries/node-<triple>`, `src-tauri/resources/app-server/.output/`) is what the
   packaging scripts and CI (`desktop-release.yml`, `desktop-e2e.yml`) expect; changing it means updating both.
-- Commit scope for changes here is `app` unless the change is CI-only (`ci`) — `desktop` is not in the commitlint
-  scope list.
+- Commit scope: `app` for a desktop feature whose code lands in the shared `apps/application/` server or UI (where
+  backend work goes, behind a desktop guard — the common case), `desktop` for a change confined to this directory (the
+  shell and its scripts), and `ci` for CI-only. All three are valid commitlint scopes.
 
 ## Commands
 
