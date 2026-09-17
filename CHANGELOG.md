@@ -4,83 +4,126 @@
 
 ## [0.33.0](https://github.com/PiwiTests/platform/compare/v0.32.0...v0.33.0) (2026-09-17)
 
+This release adds a storage analysis dashboard that tracks how your data grows, and builds out the desktop app's tooling — a local-only MCP server with file tools, an IDE launcher that opens files straight from the app, and a debug mode that forwards webview errors to the log.
+
+**Full diff:** [v0.32.0…v0.33.0](https://github.com/PiwiTests/platform/compare/v0.32.0...v0.33.0)
+
+### ✨ Highlights
+
+- **📊 Storage analysis dashboard** — A new dashboard tracks how your stored data grows over time, replacing the old storage statistics view.
+- **🧱 Local-only desktop MCP** — The desktop app runs its own MCP server under a distinct name, scoped to local-only tools including file access.
+- **🚀 Open files in your IDE** — Jump from the app into your editor through a command-line IDE launcher, with a test button to verify the setup.
+- **🐛 Desktop debug mode** — A debug mode forwards webview runtime errors into the log, making desktop issues easier to trace.
+- **🧹 Full run deletion** — Removing a run now deletes its files from disk and S3, not just its database rows.
 
 ### Features
 
-* **admin:** add storage analysis dashboard with growth tracking ([9867c57](https://github.com/PiwiTests/platform/commit/9867c57e285a7e2e00c554ccb697b73f8b2ad7a3))
-* **app:** add desktop debug mode and forward webview runtime errors to the log ([c33d6a1](https://github.com/PiwiTests/platform/commit/c33d6a1869f4e14c81c57a0bd27fe6bbdf5f6e16))
-* **app:** add desktop debug mode and forward webview runtime errors to the log ([6c51203](https://github.com/PiwiTests/platform/commit/6c5120350da57782fcb36e0aaeb25c9892b897de))
-* **app:** add storage analysis endpoint ([bb1ca20](https://github.com/PiwiTests/platform/commit/bb1ca20c759c739d6f73904ba158738cc6b50f8d))
-* **app:** give the desktop MCP local-only tools and a distinct name ([d415622](https://github.com/PiwiTests/platform/commit/d4156224b93c9e913572f74900e0e8eabfed7e9e))
-* **app:** open files via the desktop IDE launcher and add a test button ([d357b26](https://github.com/PiwiTests/platform/commit/d357b2687535f60fd5152792b3ffbdff54cee284))
-* **desktop:** add local file tools to MCP server ([92ae805](https://github.com/PiwiTests/platform/commit/92ae805b184667080fcf31ccc70cc212014a0317))
-* **desktop:** open files in IDE via command-line launcher ([13ab888](https://github.com/PiwiTests/platform/commit/13ab888f3837e75a44abc15d55c0c44455c601f6))
-* **ui:** replace storage statistics with a storage analysis dashboard ([9f4c5b4](https://github.com/PiwiTests/platform/commit/9f4c5b44962ba486efdecdda4861278eb24a8e84))
+#### Storage analysis
+- **admin, ui:** a storage analysis dashboard with growth tracking, replacing the old storage statistics view, backed by a new storage analysis endpoint ([9867c57](https://github.com/PiwiTests/platform/commit/9867c57e285a7e2e00c554ccb697b73f8b2ad7a3), [9f4c5b4](https://github.com/PiwiTests/platform/commit/9f4c5b44962ba486efdecdda4861278eb24a8e84), [bb1ca20](https://github.com/PiwiTests/platform/commit/bb1ca20c759c739d6f73904ba158738cc6b50f8d))
 
+#### Desktop MCP & IDE launcher
+- **desktop:** add local file tools to the MCP server ([92ae805](https://github.com/PiwiTests/platform/commit/92ae805b184667080fcf31ccc70cc212014a0317))
+- **app:** give the desktop MCP local-only tools and a distinct name ([d415622](https://github.com/PiwiTests/platform/commit/d4156224b93c9e913572f74900e0e8eabfed7e9e))
+- **app, desktop:** open files in your IDE via a command-line launcher, with a test button ([d357b26](https://github.com/PiwiTests/platform/commit/d357b2687535f60fd5152792b3ffbdff54cee284), [13ab888](https://github.com/PiwiTests/platform/commit/13ab888f3837e75a44abc15d55c0c44455c601f6))
+
+#### Desktop diagnostics
+- **app:** add a desktop debug mode and forward webview runtime errors to the log ([c33d6a1](https://github.com/PiwiTests/platform/commit/c33d6a1869f4e14c81c57a0bd27fe6bbdf5f6e16), [6c51203](https://github.com/PiwiTests/platform/commit/6c5120350da57782fcb36e0aaeb25c9892b897de))
 
 ### Bug Fixes
 
-* **app:** delete run files from disk and S3 when removing a run ([f331c08](https://github.com/PiwiTests/platform/commit/f331c087a8163d1e9cf42f4cdbd22bdf7eb86c4a))
-* **app:** serve the DOM snapshot picker from a sandboxed endpoint (fixes desktop CSP block) ([e035f41](https://github.com/PiwiTests/platform/commit/e035f41f00ca81f83ab14b3c6d8a8e32123cea7a))
-* **release:** keep package-lock workspace versions in the release bump ([5e404a9](https://github.com/PiwiTests/platform/commit/5e404a97890d2677a135479e260ffacc5e441fc8))
-* **release:** pin the root package name so the lockfile stops churning ([a6afd25](https://github.com/PiwiTests/platform/commit/a6afd2590ec07a9b91d99c7307766ec1f6aba98b))
+- **app:** delete run files from disk and S3 when removing a run ([f331c08](https://github.com/PiwiTests/platform/commit/f331c087a8163d1e9cf42f4cdbd22bdf7eb86c4a))
+- **app:** serve the DOM snapshot picker from a sandboxed endpoint, fixing a desktop CSP block ([e035f41](https://github.com/PiwiTests/platform/commit/e035f41f00ca81f83ab14b3c6d8a8e32123cea7a))
+- **release:** keep package-lock workspace versions in the release bump ([5e404a9](https://github.com/PiwiTests/platform/commit/5e404a97890d2677a135479e260ffacc5e441fc8))
+- **release:** pin the root package name so the lockfile stops churning ([a6afd25](https://github.com/PiwiTests/platform/commit/a6afd2590ec07a9b91d99c7307766ec1f6aba98b))
+
+<!-- notes:polished -->
 
 ## [0.32.0](https://github.com/PiwiTests/platform/compare/v0.31.0...v0.32.0) (2026-09-16)
 
+This release opens evidence and run reports in their own desktop windows, renders embedded evidence from `srcdoc` iframes instead of blob URLs, and makes the reporter follow Playwright's own outcome for `test.fail()` tests.
+
+**Full diff:** [v0.31.0…v0.32.0](https://github.com/PiwiTests/platform/compare/v0.31.0...v0.32.0)
+
+### ✨ Highlights
+
+- **🪟 Multi-window desktop evidence** — Open captured evidence and full run reports in their own windows in the desktop app, with evidence windows opening maximized.
+- **🖼️ More reliable evidence rendering** — Embedded iframes, including failure-time DOM snapshots, now render from `srcdoc` rather than blob URLs.
+- **✅ Truer `test.fail()` outcomes** — The reporter now follows Playwright's own result for `test.fail()` tests.
 
 ### Features
 
-* **app:** open desktop evidence in new windows and start maximized ([7500cd9](https://github.com/PiwiTests/platform/commit/7500cd990fdf73d310ec30ad2048a0da6bae75c3))
-
+#### Desktop app
+- **app:** open evidence in new windows, starting maximized ([7500cd9](https://github.com/PiwiTests/platform/commit/7500cd990fdf73d310ec30ad2048a0da6bae75c3))
 
 ### Bug Fixes
 
-* **app:** open run reports in a new window in the desktop shell ([33884b1](https://github.com/PiwiTests/platform/commit/33884b117f2244af002c9b8e272abe9a5859a055))
-* **desktop:** use srcdoc for iframes instead of blob URLs ([e268822](https://github.com/PiwiTests/platform/commit/e2688226be4aea72dd38ae445e51d8505f1f56bb))
-* **reporter:** follow Playwright's outcome for test.fail() tests ([778a295](https://github.com/PiwiTests/platform/commit/778a295f1a07d9162e3e6de378ea611e92717a33))
-* **ui:** render failure-time DOM snapshots with srcdoc ([5c9349b](https://github.com/PiwiTests/platform/commit/5c9349bb5d6e5d8aa5b9efa258463734a05fae95))
+- **app:** open run reports in a new window in the desktop shell ([33884b1](https://github.com/PiwiTests/platform/commit/33884b117f2244af002c9b8e272abe9a5859a055))
+- **desktop:** render iframes from `srcdoc` instead of blob URLs ([e268822](https://github.com/PiwiTests/platform/commit/e2688226be4aea72dd38ae445e51d8505f1f56bb))
+- **ui:** render failure-time DOM snapshots with `srcdoc` ([5c9349b](https://github.com/PiwiTests/platform/commit/5c9349bb5d6e5d8aa5b9efa258463734a05fae95))
+- **reporter:** follow Playwright's outcome for `test.fail()` tests ([778a295](https://github.com/PiwiTests/platform/commit/778a295f1a07d9162e3e6de378ea611e92717a33))
+
+<!-- notes:polished -->
 
 ## [0.31.0](https://github.com/PiwiTests/platform/compare/v0.30.2...v0.31.0) (2026-09-15)
 
+This release makes evidence screenshots zoomable in a lightbox, and fixes AI usage accounting so Claude Code's cached prompt tokens are counted as input.
+
+**Full diff:** [v0.30.2…v0.31.0](https://github.com/PiwiTests/platform/compare/v0.30.2...v0.31.0)
+
+### ✨ Highlights
+
+- **🔍 Zoomable evidence screenshots** — Screenshot galleries and test-step evidence open in a lightbox with zoom.
+- **🤖 Accurate AI token usage** — Claude Code's cached prompt tokens are now counted as input, so usage is no longer undercounted.
 
 ### Features
 
-* **app:** add zoom and lightbox to screenshot galleries ([ea80b62](https://github.com/PiwiTests/platform/commit/ea80b62b20fe058d1559dc32ca05554346325303))
-* **ui:** make test-step evidence screenshots enlargeable in a lightbox ([8d52bff](https://github.com/PiwiTests/platform/commit/8d52bffbe640ce3427cde0c6ac1f4fd1b94853de))
-
+#### Screenshot lightbox
+- **app:** add zoom and a lightbox to screenshot galleries ([ea80b62](https://github.com/PiwiTests/platform/commit/ea80b62b20fe058d1559dc32ca05554346325303))
+- **ui:** make test-step evidence screenshots enlargeable in a lightbox ([8d52bff](https://github.com/PiwiTests/platform/commit/8d52bffbe640ce3427cde0c6ac1f4fd1b94853de))
 
 ### Bug Fixes
 
-* **ai:** count Claude Code cache tokens as input so usage isn't undercounted ([f8c22c5](https://github.com/PiwiTests/platform/commit/f8c22c5a3f6885d42af5cc001b090fffedf482eb))
-* **ai:** count Claude Code cache tokens as input so usage isn't undercounted ([86e6df1](https://github.com/PiwiTests/platform/commit/86e6df1644bbde6012b2409605c283b21c6cd133))
+- **ai:** count Claude Code cache tokens as input so usage isn't undercounted ([f8c22c5](https://github.com/PiwiTests/platform/commit/f8c22c5a3f6885d42af5cc001b090fffedf482eb), [86e6df1](https://github.com/PiwiTests/platform/commit/86e6df1644bbde6012b2409605c283b21c6cd133))
+
+<!-- notes:polished -->
 
 ## [0.30.2](https://github.com/PiwiTests/platform/compare/v0.30.1...v0.30.2) (2026-09-15)
 
+This patch saves local-Claude diagnosis configuration instead of rejecting it.
+
+**Full diff:** [v0.30.1…v0.30.2](https://github.com/PiwiTests/platform/compare/v0.30.1...v0.30.2)
 
 ### Bug Fixes
 
-* **ai:** save local-Claude diagnosis config instead of rejecting it ([2266988](https://github.com/PiwiTests/platform/commit/2266988e611b6c1abc1610c8e1bfa6178bd9060b))
-* **ai:** save local-Claude diagnosis config instead of rejecting it ([eeef43d](https://github.com/PiwiTests/platform/commit/eeef43d605c8b816b3281eef1b713813e3680e51))
+- **ai:** save local-Claude diagnosis config instead of rejecting it ([2266988](https://github.com/PiwiTests/platform/commit/2266988e611b6c1abc1610c8e1bfa6178bd9060b), [eeef43d](https://github.com/PiwiTests/platform/commit/eeef43d605c8b816b3281eef1b713813e3680e51))
+
+<!-- notes:polished -->
 
 ## [0.30.1](https://github.com/PiwiTests/platform/compare/v0.30.0...v0.30.1) (2026-09-15)
 
+This patch gets the local Claude Code CLI provider working from the desktop app, guards against CLI flags the installed version doesn't support, and deep-links live test rows to their persisted execution.
+
+**Full diff:** [v0.30.0…v0.30.1](https://github.com/PiwiTests/platform/compare/v0.30.0...v0.30.1)
 
 ### Bug Fixes
 
-* **ai:** make the local claude CLI provider work from the desktop app ([399d568](https://github.com/PiwiTests/platform/commit/399d56802fb0bba63fe0d47a8492eb76103d6d1e))
-* **ai:** make the local claude CLI provider work from the desktop app ([4b07cdc](https://github.com/PiwiTests/platform/commit/4b07cdc0084563adad0f93f4f4d05bca0936705d))
-* **ai:** only pass claude CLI flags the installed version supports ([b1c28bd](https://github.com/PiwiTests/platform/commit/b1c28bda90c6bc20ac5a850a893358f6e6953dd2))
-* **ai:** only pass claude CLI flags the installed version supports ([2e6dc0a](https://github.com/PiwiTests/platform/commit/2e6dc0a8af83b79d27a8fa5534e612758a469a5d))
-* **app:** deep-link live test rows to their persisted execution ([c1c137e](https://github.com/PiwiTests/platform/commit/c1c137e0022ad7443e91911b4a7ac754588c87e6))
-* **app:** deep-link live test rows to their persisted execution ([731cb2f](https://github.com/PiwiTests/platform/commit/731cb2f61562175d4473a5d6e22d52833c0318a4))
+- **ai:** make the local Claude CLI provider work from the desktop app ([399d568](https://github.com/PiwiTests/platform/commit/399d56802fb0bba63fe0d47a8492eb76103d6d1e), [4b07cdc](https://github.com/PiwiTests/platform/commit/4b07cdc0084563adad0f93f4f4d05bca0936705d))
+- **ai:** only pass Claude CLI flags the installed version supports ([b1c28bd](https://github.com/PiwiTests/platform/commit/b1c28bda90c6bc20ac5a850a893358f6e6953dd2), [2e6dc0a](https://github.com/PiwiTests/platform/commit/2e6dc0a8af83b79d27a8fa5534e612758a469a5d))
+- **app:** deep-link live test rows to their persisted execution ([c1c137e](https://github.com/PiwiTests/platform/commit/c1c137e0022ad7443e91911b4a7ac754588c87e6), [731cb2f](https://github.com/PiwiTests/platform/commit/731cb2f61562175d4473a5d6e22d52833c0318a4))
+
+<!-- notes:polished -->
 
 ## [0.30.0](https://github.com/PiwiTests/platform/compare/v0.29.0...v0.30.0) (2026-09-13)
 
+This release adds the local Claude Code CLI as an AI provider for the desktop app, so failure diagnosis can run through your existing Claude Code sign-in.
+
+**Full diff:** [v0.29.0…v0.30.0](https://github.com/PiwiTests/platform/compare/v0.29.0...v0.30.0)
 
 ### Features
 
-* **ai:** add Claude Code (local CLI) as an AI provider ([b59424a](https://github.com/PiwiTests/platform/commit/b59424a9a087dfc2d1e5d4d535ef9a3808ef9fd5))
-* **ai:** add local Claude Code CLI as an AI provider for the desktop app ([650c3e8](https://github.com/PiwiTests/platform/commit/650c3e8ba0900607ecfdb647f2c86ada956d4ccc))
+- **ai:** add the local Claude Code CLI as an AI provider for the desktop app ([b59424a](https://github.com/PiwiTests/platform/commit/b59424a9a087dfc2d1e5d4d535ef9a3808ef9fd5), [650c3e8](https://github.com/PiwiTests/platform/commit/650c3e8ba0900607ecfdb647f2c86ada956d4ccc))
+
+<!-- notes:polished -->
 
 ## [0.29.0](https://github.com/PiwiTests/platform/compare/v0.28.0...v0.29.0) (2026-09-13)
 
