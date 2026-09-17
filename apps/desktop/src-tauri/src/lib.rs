@@ -14,6 +14,8 @@ mod inspect;
 mod mcp_clients;
 mod mcp_stdio;
 mod runner;
+#[cfg(windows)]
+mod taskbar_win;
 mod updates;
 mod worktree;
 
@@ -235,6 +237,49 @@ fn progress_bar_status(state: &str) -> Option<ProgressBarStatus> {
     }
 }
 
+/// The colour of the status dot drawn on the tray icon (all platforms) and the
+/// taskbar overlay icon (Windows) for a run state, or `None` when the run is
+/// idle and the app's own icon should show instead. A determinate `normal` at
+/// 100% is the finished-pass flash (green); a running `normal` is blue.
+fn status_dot_color(state: &str, fraction: Option<f64>) -> Option<(u8, u8, u8)> {
+    match state {
+        "error" => Some((220, 38, 38)),   // red-600 — failed
+        "paused" => Some((217, 119, 6)),  // amber-600 — paused
+        "normal" if fraction.is_some_and(|f| f >= 1.0) => Some((22, 163, 74)), // green-600 — passed
+        "normal" | "indeterminate" => Some((37, 99, 235)), // blue-600 — running
+        _ => None,                        // none / unknown — restore the app icon
+    }
+}
+
+/// Draw a filled, 1px anti-aliased circle in `color` on a transparent square as
+/// raw RGBA — a small status dot for the tray/overlay icon. Kept dependency-free
+/// (no image crate) since the shape is trivial; the taskbar/Dock bar and the
+/// tooltip carry the exact fraction, so the dot only needs to convey state.
+fn render_status_dot(color: (u8, u8, u8), size: u32) -> Vec<u8> {
+    let (r, g, b) = color;
+    let n = size as f32;
+    let center = n / 2.0;
+    // A small margin so the dot is not clipped at the icon's edge.
+    let radius = center - n * 0.08;
+    let mut rgba = Vec::with_capacity((size * size * 4) as usize);
+    for y in 0..size {
+        for x in 0..size {
+            let dx = x as f32 + 0.5 - center;
+            let dy = y as f32 + 0.5 - center;
+            let dist = (dx * dx + dy * dy).sqrt();
+            let alpha = if dist <= radius - 0.5 {
+                255.0
+            } else if dist >= radius + 0.5 {
+                0.0
+            } else {
+                (radius + 0.5 - dist) * 255.0
+            };
+            rgba.extend_from_slice(&[r, g, b, alpha.round().clamp(0.0, 255.0) as u8]);
+        }
+    }
+    rgba
+}
+
 /// Live progress of the local test run(s), rendered on the OS shell so a run can
 /// be watched with the window minimised or in the tray: the taskbar/Dock progress
 /// bar, the window title (which the Windows taskbar shows on hover) and the tray
@@ -254,6 +299,7 @@ fn desktop_set_run_progress(
     let _ = app.run_on_main_thread(move || {
         let status = progress_bar_status(&state);
         let active = status.is_some();
+        let glyph = status_dot_color(&state, fraction);
         if let Some(w) = handle.get_webview_window("main") {
             // A determinate bar carries the fraction as 0–100; an indeterminate
             // one (a countless phase such as install/checkout) carries none.
@@ -270,6 +316,23 @@ fn desktop_set_run_progress(
                 None => MAIN_WINDOW_TITLE.to_string(),
             };
             let _ = w.set_title(&title);
+            // Windows only: a small state dot in the corner of the taskbar button
+            // (the overlay-icon API is Windows-specific).
+            #[cfg(windows)]
+            {
+                let overlay =
+                    glyph.map(|c| tauri::image::Image::new_owned(render_status_dot(c, 16), 16, 16));
+                let _ = w.set_overlay_icon(overlay);
+            }
+        }
+        // Tray icon: a state dot while a run is active, the app's own icon when
+        // idle — an at-a-glance status when the window is closed to the tray.
+        if let Some(tray) = handle.tray_by_id("main") {
+            let icon = match glyph {
+                Some(c) => Some(tauri::image::Image::new_owned(render_status_dot(c, 32), 32, 32)),
+                None => handle.default_window_icon().cloned(),
+            };
+            let _ = tray.set_icon(icon);
         }
         if let Some(tray_state) = handle.try_state::<TrayStatus>() {
             let mut inner = tray_state.0.lock().unwrap();
@@ -1400,6 +1463,13 @@ pub fn run() {
                 let _ = app.handle().add_capability(E2E_PLAYWRIGHT_CAPABILITY);
             }
 
+            // Windows: add the Stop/Open buttons to the main window's taskbar
+            // thumbnail toolbar (no-op on other platforms).
+            #[cfg(windows)]
+            if let Some(main) = app.get_webview_window("main") {
+                taskbar_win::install(&main);
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -1477,7 +1547,8 @@ pub fn run() {
 mod tests {
     use super::{
         clamp_log_line, compose_tooltip, debug_mode_requested, ide_launcher_args,
-        is_safe_launcher_command, is_truthy_flag, progress_bar_status, write_new_download,
+        is_safe_launcher_command, is_truthy_flag, progress_bar_status, render_status_dot,
+        status_dot_color, write_new_download,
     };
     use std::fs;
     use tauri::window::ProgressBarStatus;
@@ -1520,6 +1591,34 @@ mod tests {
         assert!(progress_bar_status("none").is_none());
         assert!(progress_bar_status("").is_none());
         assert!(progress_bar_status("bogus").is_none());
+    }
+
+    #[test]
+    fn status_dot_color_maps_states_to_colours() {
+        assert_eq!(status_dot_color("error", None), Some((220, 38, 38)));
+        assert_eq!(status_dot_color("paused", None), Some((217, 119, 6)));
+        // Running is blue; the finished-pass flash (normal at 100%) is green.
+        assert_eq!(status_dot_color("normal", Some(0.5)), Some((37, 99, 235)));
+        assert_eq!(status_dot_color("indeterminate", None), Some((37, 99, 235)));
+        assert_eq!(status_dot_color("normal", Some(1.0)), Some((22, 163, 74)));
+        // Idle / unknown clears the dot so the app icon shows through.
+        assert_eq!(status_dot_color("none", None), None);
+        assert_eq!(status_dot_color("bogus", Some(1.0)), None);
+    }
+
+    #[test]
+    fn status_dot_is_opaque_at_the_centre_and_clear_at_the_corners() {
+        let size = 32u32;
+        let rgba = render_status_dot((10, 20, 30), size);
+        assert_eq!(rgba.len(), (size * size * 4) as usize);
+        let px = |x: u32, y: u32| {
+            let i = ((y * size + x) * 4) as usize;
+            (rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3])
+        };
+        // Centre: fully opaque, in the requested colour.
+        assert_eq!(px(size / 2, size / 2), (10, 20, 30, 255));
+        // Corner: fully transparent.
+        assert_eq!(px(0, 0).3, 0);
     }
 
     #[test]

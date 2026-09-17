@@ -19,7 +19,21 @@ export default defineNuxtPlugin(() => {
   const core = tauriCore();
   if (!core) return; // not running inside the desktop shell
 
-  const { runs } = useDesktopLocalRuns();
+  const { runs, stopRun } = useDesktopLocalRuns();
+
+  // The Windows taskbar thumbnail toolbar's "Stop" button (see the shell's
+  // taskbar_win module) reaches the dashboard as this event — the shell doesn't
+  // own which run is current, so stopping the active runs happens here.
+  const events = tauriEvent();
+  if (events) {
+    events
+      .listen('piwi:taskbar-stop', () => {
+        for (const run of runs.value) {
+          if (run.status === 'running') void stopRun(run);
+        }
+      })
+      .catch(() => {});
+  }
 
   // How long the finished-outcome bar lingers before it clears.
   const PASS_FLASH_MS = 3000;
