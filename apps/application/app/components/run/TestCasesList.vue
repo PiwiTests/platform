@@ -13,6 +13,9 @@ type GroupBy = 'cluster' | 'file' | 'file-describe' | 'lock' | 'none';
 const props = defineProps<{
   testCases: TestCaseResult[];
   isLive: boolean;
+  /** Planned suite size — the "N / total completed" denominator while live, so
+   *  it counts toward the whole run, not just the tests seen so far. */
+  total?: number | null;
   /** Worker index → current step, rendered inline on the matching running rows. */
   liveSteps?: LiveStepsByWorker | null;
   clusterMeta?: ClusterMeta | null;
@@ -640,7 +643,7 @@ defineExpose({ scrollToCase });
           aria-live="polite"
           class="text-sm text-zinc-500 tabular-nums inline-flex items-center gap-1"
         >
-          {{ finishedCount }} / {{ testCases.length }} completed <HelpHint topic="run.live" />
+          {{ finishedCount }} / {{ Math.max(total ?? 0, testCases.length) }} completed <HelpHint topic="run.live" />
         </span>
         <span v-else class="text-sm text-zinc-500 tabular-nums inline-flex items-center gap-1">
           {{ visibleTestCount }}{{ visibleTestCount !== testCases.length ? ` / ${testCases.length}` : '' }} executions

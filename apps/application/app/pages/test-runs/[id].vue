@@ -796,6 +796,7 @@ const moreMenuItems = computed(() => {
             v-model:browser-filter="testCaseBrowserFilter"
             :test-cases="dedupedDisplayCases"
             :is-live="isLive"
+            :total="displayProgress?.totalTests"
             :live-steps="liveSteps"
             :cluster-meta="clusterMeta"
             :quarantined-case-ids="quarantinedCaseIds"
