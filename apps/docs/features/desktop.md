@@ -236,28 +236,29 @@ signals.
 
 ## Connecting AI assistants
 
-The app exposes the same [MCP server](/features/mcp) as every Piwi deployment — and on
-this machine it can also do the wiring. The **MCP server** page detects
-installed clients — Claude Code, Claude Desktop, Cursor, VS Code, Windsurf and
-Gemini CLI — and connects each with one click:
+The app exposes the same [MCP server](/features/mcp) as every Piwi deployment,
+plus local-only tools a hosted instance cannot — `import_local_report` (pull a
+local blob/trace `.zip` into a project), `read_local_source` (the current on-disk
+source, not the failure-time snapshot) and `apply_locator_fix` (apply a
+recommended fix to the real file, preview by default). It registers as
+`piwi-desktop`, so it coexists with a hosted Piwi in one client. On this machine
+it can also do the wiring: the **MCP server** page detects installed clients —
+Claude Code, Claude Desktop, Cursor, VS Code, Windsurf and Gemini CLI — and
+connects each with one click:
 
-- The `piwi` entry is written into the client's **own config file**, with the
-  app's URL and access token filled in; a backup copy is kept next to the file,
-  and only that one entry is ever added, updated or removed.
+- A `piwi-desktop` entry is written into the client's **own config file**, with
+  the app's URL and access token filled in; a backup copy is kept next to the
+  file, and only that one entry is ever added, updated or removed. An older
+  build's `piwi` entry is retired when you reconnect.
 - A config that is not plain JSON (comments, trailing commas) is never
   rewritten — the page says so and shows the copy-paste snippet instead.
-- Written entries embed this app's address, which can change when port 3000 is
-  taken — on every launch the app checks the clients it configured and
-  rewrites any entry that drifted.
-- **Claude Desktop** is wired differently, because its config file accepts only
-  servers started as a local command — a URL entry there is reported as invalid
-  and ignored. It is pointed at this app's own built-in bridge instead
-  (`piwi-desktop mcp-stdio`), which speaks MCP over stdin/stdout and forwards to
-  the local endpoint. Nothing to install, no Node, and no token written into
-  Claude's config: the bridge looks the address up when it runs, so that entry
-  never drifts. The app has to be **running** for Claude Desktop to reach it —
-  keep *Run in background* (or *Start on login*) on if you want it always
-  available.
+- Entries embed this app's address, which can change if port 3000 is taken; each
+  launch rewrites any configured entry that drifted.
+- **Claude Desktop** accepts only local-command servers, not URLs, so it is
+  pointed at this app's built-in bridge (`piwi-desktop mcp-stdio`), which speaks
+  MCP over stdin/stdout and forwards to the local endpoint — nothing to install,
+  no token copied, no drift. The app must be **running** for Claude Desktop to
+  reach it; keep *Run in background* (or *Start on login*) on.
 
 Restart the client after connecting; most MCP clients read their config at
 startup.

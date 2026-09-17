@@ -4,9 +4,14 @@
 export const MCP_PROTOCOL_VERSION = '2025-06-18';
 export const SUPPORTED_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const;
 
-/** `serverInfo` for the `initialize` response — the version is the running app's version. */
-export function mcpServerInfo(appVersion: string) {
-  return { name: 'piwi-dashboard', version: appVersion };
+/**
+ * `serverInfo` for the `initialize` response — the version is the running app's
+ * version. The desktop app registers under a distinct name (`piwi-desktop`) so a
+ * client configured with both a hosted Piwi and the local desktop app tells them
+ * apart and namespaces their tools separately.
+ */
+export function mcpServerInfo(appVersion: string, opts?: { desktop?: boolean }) {
+  return { name: opts?.desktop ? 'piwi-desktop' : 'piwi-dashboard', version: appVersion };
 }
 
 /** Pick the protocol version to advertise: the client's if supported, else ours. */

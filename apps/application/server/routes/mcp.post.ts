@@ -1,7 +1,7 @@
 import { getRequestURL, type H3Event } from 'h3';
 import { requireAuth, isAuthEnabled } from '../utils/auth';
 import { getDatabase } from '../database';
-import { MCP_TOOLS, toContent } from '../utils/mcp/tools';
+import { MCP_TOOLS, DESKTOP_MCP_TOOLS, toContent } from '../utils/mcp/tools';
 import type { McpContext } from '../utils/mcp/tools';
 import { getPrompt, isKnownPrompt } from '../utils/mcp/prompts';
 import { getProjectScope } from '../utils/project-access';
@@ -10,7 +10,12 @@ import { ok, rpcErr, RPC, mcpServerInfo, negotiateProtocolVersion } from '../uti
 import type { JsonRpcRequest } from '../utils/mcp/protocol';
 import { MCP_PROMPT_DEFS } from '#shared/mcp-prompts';
 
-const TOOL_MAP = new Map(MCP_TOOLS.map((t) => [t.name, t]));
+// The desktop app's bundled server (launched with PIWI_DESKTOP_TOKEN) advertises
+// the shared catalog plus the desktop-only tools that read and write files on the
+// machine it runs on; a hosted/Docker/npx server serves the shared catalog only.
+const IS_DESKTOP = !!process.env.PIWI_DESKTOP_TOKEN;
+const ACTIVE_TOOLS = IS_DESKTOP ? [...MCP_TOOLS, ...DESKTOP_MCP_TOOLS] : MCP_TOOLS;
+const TOOL_MAP = new Map(ACTIVE_TOOLS.map((t) => [t.name, t]));
 const MAX_BODY_BYTES = 1_048_576; // 1 MB — reject oversized batches early
 
 // ── MCP Streamable HTTP endpoint ─────────────────────────────────────────────
@@ -96,15 +101,18 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event) {
       return ok(id, {
         protocolVersion: negotiateProtocolVersion(requested),
         capabilities: { tools: {}, prompts: {} },
-        serverInfo: mcpServerInfo(useRuntimeConfig(event).public.appVersion as string),
+        serverInfo: mcpServerInfo(useRuntimeConfig(event).public.appVersion as string, { desktop: IS_DESKTOP }),
         instructions:
-          'Piwi Dashboard MCP server — query Playwright test results, failure clusters, AI diagnoses, and SCM diffs. ' +
+          `${IS_DESKTOP ? 'Piwi desktop app' : 'Piwi Dashboard'} MCP server — query Playwright test results, failure clusters, AI diagnoses, and SCM diffs. ` +
           'Start with list_projects to discover project IDs. ' +
           'List tools return {items, nextCursor}; pass nextCursor back (when non-null) to page. ' +
           'IDs: testCaseId = stable test identity; executionId/testRunsCaseId = one per-run execution. ' +
           'Errors are truncated; use get_test_run_case for full error text and explain_failure for a one-call evidence bundle. ' +
           'Write/triage tools (set_cluster_status, run_cluster_diagnosis, set_cluster_base_commit, submit_diagnosis_feedback) require reporter or admin access. ' +
-          'The setup_piwi prompt (prompts/get) generates a ready-to-run setup for a Playwright project not yet reporting here.',
+          'The setup_piwi prompt (prompts/get) generates a ready-to-run setup for a Playwright project not yet reporting here.' +
+          (IS_DESKTOP
+            ? ' This is the local desktop app, running on your machine: it adds tools that reach the disk — import_local_report (pull a local blob/trace .zip into a project), read_local_source (read the current on-disk source) and apply_locator_fix (apply a recommended locator fix to the real file).'
+            : ''),
       });
     }
 
@@ -115,7 +123,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event) {
     // ── Tool listing ─────────────────────────────────────────────────────────
     case 'tools/list': {
       return ok(id, {
-        tools: MCP_TOOLS.map((t) => ({
+        tools: ACTIVE_TOOLS.map((t) => ({
           name: t.name,
           description: t.description,
           inputSchema: t.inputSchema,

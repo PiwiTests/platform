@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MCP_TOOL_DEFS } from '#shared/mcp-tools';
+import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS } from '#shared/mcp-tools';
 import { MCP_PROMPT_DEFS } from '#shared/mcp-prompts';
 
 const config = useRuntimeConfig();
@@ -31,6 +31,11 @@ useHead({ title: 'MCP server — Piwi Dashboard' });
 // `tools/list` (see shared/mcp-tools.ts). New tools appear here automatically.
 const tools = MCP_TOOL_DEFS;
 
+// Desktop-only tools: served only by the local desktop app (which registers as
+// `piwi-desktop`), because they read and write files on this machine. Shown here
+// only inside the desktop build — a hosted instance never exposes them.
+const desktopTools = DESKTOP_MCP_TOOL_DEFS;
+
 // Same for the prompts the server exposes over `prompts/list`
 // (see shared/mcp-prompts.ts).
 const prompts = MCP_PROMPT_DEFS;
@@ -45,16 +50,21 @@ const clientItems = [
   { label: 'Windsurf / Continue', slot: 'windsurf' },
 ];
 
+// The desktop app's one-click connect writes the entry under `piwi-desktop` so it
+// coexists with a hosted Piwi kept under `piwi`; match that key in the copy-paste
+// snippets below when this page is served by the desktop build.
+const serverKey = isDesktop ? 'piwi-desktop' : 'piwi';
+
 const claudeCodeSnippet = computed(
   () =>
-    `claude mcp add --transport http piwi ${mcpUrl.value} \\\n  --header "Authorization: Bearer ${bearerToken.value}"`,
+    `claude mcp add --transport http ${serverKey} ${mcpUrl.value} \\\n  --header "Authorization: Bearer ${bearerToken.value}"`,
 );
 
 const opencodeSnippet = computed(() =>
   JSON.stringify(
     {
       mcp: {
-        piwi: {
+        [serverKey]: {
           type: 'remote',
           url: mcpUrl.value,
           headers: { Authorization: `Bearer ${bearerToken.value}` },
@@ -70,7 +80,7 @@ const cursorSnippet = computed(() =>
   JSON.stringify(
     {
       mcpServers: {
-        piwi: {
+        [serverKey]: {
           url: mcpUrl.value,
           headers: { Authorization: `Bearer ${bearerToken.value}` },
         },
@@ -85,7 +95,7 @@ const vscodeSnippet = computed(() =>
   JSON.stringify(
     {
       servers: {
-        piwi: {
+        [serverKey]: {
           type: 'http',
           url: mcpUrl.value,
           headers: { Authorization: `Bearer ${bearerToken.value}` },
@@ -106,7 +116,7 @@ const claudeDesktopSnippet = computed(() =>
   JSON.stringify(
     {
       mcpServers: {
-        piwi: {
+        [serverKey]: {
           command: 'npx',
           args: [
             '-y',
@@ -128,14 +138,14 @@ const claudeDesktopSnippet = computed(() =>
 
 const geminiSnippet = computed(
   () =>
-    `gemini mcp add --transport http piwi ${mcpUrl.value} \\\n  --header "Authorization: Bearer ${bearerToken.value}"`,
+    `gemini mcp add --transport http ${serverKey} ${mcpUrl.value} \\\n  --header "Authorization: Bearer ${bearerToken.value}"`,
 );
 
 const windsurfSnippet = computed(() =>
   JSON.stringify(
     {
       mcpServers: {
-        piwi: {
+        [serverKey]: {
           serverUrl: mcpUrl.value,
           headers: { Authorization: `Bearer ${bearerToken.value}` },
         },
@@ -227,8 +237,8 @@ const windsurfSnippet = computed(() =>
                 <CodeBlock :code="claudeCodeSnippet" lang="sh" />
                 <p class="text-xs text-gray-400">
                   After adding, restart Claude Code and use
-                  <code class="font-mono">/mcp</code> to verify <strong>piwi</strong> is connected. Claude will call the
-                  tools automatically when you ask about test results or failures.
+                  <code class="font-mono">/mcp</code> to verify <strong>{{ serverKey }}</strong> is connected. Claude
+                  will call the tools automatically when you ask about test results or failures.
                 </p>
               </div>
             </template>
@@ -341,6 +351,27 @@ const windsurfSnippet = computed(() =>
               <div class="min-w-0">
                 <p class="text-sm font-mono font-semibold text-foreground">{{ t.name }}</p>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ t.description }}</p>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="isDesktop" data-shot="mcp-desktop-tools">
+            <p class="text-sm text-highlighted leading-relaxed mt-5">
+              Because it runs on this machine, the desktop app registers as
+              <code class="font-mono">piwi-desktop</code> and adds tools that reach the disk — things a hosted instance
+              cannot do:
+            </p>
+            <div class="flex flex-col gap-1.5 mt-3">
+              <div
+                v-for="t in desktopTools"
+                :key="t.name"
+                class="flex items-start gap-3 px-3 py-2.5 rounded-md bg-elevated/50 border border-default hover:bg-elevated transition-colors"
+              >
+                <UIcon name="i-lucide-hard-drive" class="size-4 mt-0.5 shrink-0 text-primary" />
+                <div class="min-w-0">
+                  <p class="text-sm font-mono font-semibold text-foreground">{{ t.name }}</p>
+                  <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ t.description }}</p>
+                </div>
               </div>
             </div>
           </div>

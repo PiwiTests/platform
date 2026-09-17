@@ -784,6 +784,79 @@ export const MCP_TOOL_DEFS = [
  */
 export type McpToolName = (typeof MCP_TOOL_DEFS)[number]['name'];
 
+/**
+ * Desktop-only tools — served **only** by the desktop app's bundled server (the
+ * one launched with `PIWI_DESKTOP_TOKEN`), never by a hosted/Docker/npx server.
+ *
+ * They exist because the desktop server runs on the developer's own machine,
+ * next to the checkout and the CI artifacts — reach a hosted instance simply
+ * does not have. The route (`server/routes/mcp.post.ts`) appends these to
+ * `tools/list` and accepts them in `tools/call` only in desktop mode; every
+ * handler also re-checks the desktop token, so they can never be reached on a
+ * server build.
+ *
+ * Kept in a separate catalog from `MCP_TOOL_DEFS` so the documented "N tools"
+ * count and the hosted surface are unchanged — the desktop server advertises
+ * the full catalog plus these.
+ */
+export const DESKTOP_MCP_TOOL_DEFS = [
+  {
+    name: 'import_local_report',
+    description:
+      'Desktop app only. Import a Playwright blob report or trace .zip straight from a path on THIS machine into a Piwi project — the local server reads the file itself, nothing is uploaded. Use after a local or CI run to pull its results in for analysis (a hosted Piwi cannot read your disk). Idempotent by content hash: re-importing the same archive is a no-op. Returns the created/updated run.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to a blob report or trace .zip on this machine' },
+        projectName: { type: 'string', description: 'Piwi project to import into (created if it does not exist)' },
+        environment: { type: 'string', description: 'Optional environment label for the imported run' },
+        label: { type: 'string', description: 'Optional run label' },
+      },
+      required: ['path', 'projectName'],
+    },
+  },
+  {
+    name: 'read_local_source',
+    description:
+      'Desktop app only. Read a source file from THIS machine — the current on-disk code, not the snippet Piwi captured at failure time, so you can fix against the real file. Pass a line to get a window around it (default ±40 lines); omit it to read the whole file (capped at ~256 KB). Returns the path, the 1-based line range and the text.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to the file on this machine' },
+        line: {
+          type: 'number',
+          description: '1-based line to center the window on (omit to read the whole file)',
+        },
+        contextLines: { type: 'number', description: 'Lines of context on each side of `line` (default 40, max 500)' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'apply_locator_fix',
+    description:
+      "Desktop app only. Apply Piwi's recommended locator fix for a failing execution to the file on THIS machine. Resolves the healing recommendation for executionId, finds the failing line under repoRoot, and rewrites just that one locator call. Previews by default (apply=false): returns the file, line, the old and new line, and a unified diff, changing nothing. Set apply=true to write it. Refuses when the on-disk line no longer matches what Piwi recorded (the file drifted) and hands back the diff so you can place it by hand.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        executionId: {
+          type: 'number',
+          description: 'Test run case ID (executionId from get_run.cases / explain_failure)',
+        },
+        repoRoot: {
+          type: 'string',
+          description: 'Absolute path to the checkout root the failing test file lives under',
+        },
+        apply: { type: 'boolean', description: 'Write the change (default false — preview only)' },
+      },
+      required: ['executionId', 'repoRoot'],
+    },
+  },
+] as const satisfies readonly McpToolDef[];
+
+/** Union of every desktop-only tool name — types the desktop handler map. */
+export type DesktopMcpToolName = (typeof DESKTOP_MCP_TOOL_DEFS)[number]['name'];
+
 // ── Tool output item types ────────────────────────────────────────────────────
 //
 // Fields are optional when `dropNulls` may strip them at runtime (null / '' /

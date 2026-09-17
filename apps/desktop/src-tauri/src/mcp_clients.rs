@@ -2,18 +2,23 @@
 //
 // The dashboard's /mcp page shows copy-paste snippets for connecting MCP
 // clients; on this machine the shell can do better and write the client's own
-// config file. Almost every client is configured the same way: a `piwi` entry
-// inside the client's server map, pointing at this app's /mcp endpoint with the
-// local access token as the Bearer header. Claude Desktop is the exception —
+// config file. Almost every client is configured the same way: a `piwi-desktop`
+// entry inside the client's server map, pointing at this app's /mcp endpoint with
+// the local access token as the Bearer header. Claude Desktop is the exception —
 // it accepts only stdio servers there, so it gets a command instead (see
 // `stdio_bridge_entry`).
+//
+// The entry is keyed `piwi-desktop`, not `piwi`, so it never collides with a
+// hosted Piwi a user has added by hand under `piwi` — the two coexist in one
+// client. Older builds wrote `piwi`; connecting rewrites to `piwi-desktop` and
+// drops the stale loopback `piwi` we left behind (never a remote one).
 //
 // Editing another app's config is done conservatively:
 //   - only strict JSON is ever rewritten — a file that does not parse (JSONC
 //     with comments, trailing commas) is reported as `manual` and left alone;
 //   - the previous content is copied to `<file>.piwi-backup` before a write;
-//   - only the `piwi` key is added, updated or removed — everything else in
-//     the file is preserved as parsed.
+//   - only the `piwi-desktop` key (and a stale loopback `piwi`) is touched —
+//     everything else in the file is preserved as parsed.
 //
 // A written URL embeds the port picked at launch, which is not guaranteed
 // across launches — so `heal_configured_clients` runs at startup and rewrites
@@ -41,6 +46,14 @@ impl ServerInfo {
         format!("Bearer {}", self.token)
     }
 }
+
+/// The key this app writes its MCP entry under. Distinct from `piwi` so a hosted
+/// Piwi added by hand (conventionally `piwi`) and this local app live together.
+const PIWI_ENTRY_KEY: &str = "piwi-desktop";
+
+/// The key older builds wrote under. Removed on connect/disconnect when it holds
+/// an entry only this app would have written (see `is_local_piwi_entry`).
+const LEGACY_ENTRY_KEY: &str = "piwi";
 
 const CLIENT_IDS: [&str; 7] = [
     "claude-code",
@@ -222,7 +235,7 @@ pub struct McpClientStatus {
 fn classify(existing: Option<&Value>, container: &str, expected: &Value) -> &'static str {
     match existing
         .and_then(|v| v.get(container))
-        .and_then(|c| c.get("piwi"))
+        .and_then(|c| c.get(PIWI_ENTRY_KEY))
     {
         None => "not_connected",
         Some(current) if current == expected => "connected",
@@ -230,8 +243,28 @@ fn classify(existing: Option<&Value>, container: &str, expected: &Value) -> &'st
     }
 }
 
-/// Set or remove the `piwi` entry, preserving everything else. `entry: None`
-/// removes. Returns the new document.
+/// Whether an entry is one only this app would have written under `piwi`: a
+/// loopback `/mcp` URL (the URL-client shape) or a command spawning this exe in
+/// bridge mode (the Claude Desktop shape). A hosted Piwi added by hand points at
+/// a real host, so it never matches — its `piwi` entry is left untouched.
+fn is_local_piwi_entry(value: &Value) -> bool {
+    for key in ["url", "serverUrl", "httpUrl"] {
+        if let Some(url) = value.get(key).and_then(|v| v.as_str()) {
+            if (url.contains("127.0.0.1") || url.contains("localhost")) && url.ends_with("/mcp") {
+                return true;
+            }
+        }
+    }
+    let has_bridge_arg = value
+        .get("args")
+        .and_then(|v| v.as_array())
+        .is_some_and(|args| args.iter().any(|a| a.as_str() == Some(mcp_stdio::STDIO_ARG)));
+    has_bridge_arg && value.get("command").is_some()
+}
+
+/// Set or remove this app's entry (keyed `PIWI_ENTRY_KEY`), preserving everything
+/// else, and drop a stale loopback `piwi` an older build left behind. `entry:
+/// None` removes ours. Returns the new document.
 fn merge_piwi_entry(existing: Value, container: &str, entry: Option<Value>) -> Value {
     let mut root = match existing {
         Value::Object(map) => map,
@@ -246,12 +279,17 @@ fn merge_piwi_entry(existing: Value, container: &str, entry: Option<Value>) -> V
         *servers = Value::Object(Map::new());
     }
     let map = servers.as_object_mut().expect("container is an object");
+    // Retire the pre-`piwi-desktop` entry, but only when it is unmistakably ours
+    // — never a hosted Piwi a user keeps under `piwi`.
+    if map.get(LEGACY_ENTRY_KEY).is_some_and(is_local_piwi_entry) {
+        map.remove(LEGACY_ENTRY_KEY);
+    }
     match entry {
         Some(value) => {
-            map.insert("piwi".to_string(), value);
+            map.insert(PIWI_ENTRY_KEY.to_string(), value);
         }
         None => {
-            map.remove("piwi");
+            map.remove(PIWI_ENTRY_KEY);
         }
     }
     Value::Object(root)
@@ -492,14 +530,14 @@ mod tests {
         );
         assert_eq!(expected, other_port);
 
-        let configured = json!({ "mcpServers": { "piwi": expected } });
+        let configured = json!({ "mcpServers": { "piwi-desktop": expected } });
         assert_eq!(
             classify(Some(&configured), "mcpServers", &expected),
             "connected"
         );
 
         let old_shape = json!({
-            "mcpServers": { "piwi": { "type": "http", "url": "http://127.0.0.1:3000/mcp" } }
+            "mcpServers": { "piwi-desktop": { "type": "http", "url": "http://127.0.0.1:3000/mcp" } }
         });
         assert_eq!(classify(Some(&old_shape), "mcpServers", &expected), "stale");
     }
@@ -514,13 +552,26 @@ mod tests {
             classify(Some(&empty), "mcpServers", &expected),
             "not_connected"
         );
-        let connected = json!({ "mcpServers": { "piwi": expected } });
+        let connected = json!({ "mcpServers": { "piwi-desktop": expected } });
         assert_eq!(
             classify(Some(&connected), "mcpServers", &expected),
             "connected"
         );
-        let stale = json!({ "mcpServers": { "piwi": { "url": "http://127.0.0.1:9999/mcp" } } });
+        let stale =
+            json!({ "mcpServers": { "piwi-desktop": { "url": "http://127.0.0.1:9999/mcp" } } });
         assert_eq!(classify(Some(&stale), "mcpServers", &expected), "stale");
+    }
+
+    /// A hosted Piwi a user keeps under `piwi` is invisible to classify — the
+    /// app only ever looks at its own `piwi-desktop` key, so the two never fight.
+    #[test]
+    fn a_hosted_piwi_under_the_legacy_key_does_not_read_as_connected() {
+        let expected = entry_for("cursor", &info());
+        let hosted = json!({ "mcpServers": { "piwi": { "url": "https://piwi.example.com/mcp" } } });
+        assert_eq!(
+            classify(Some(&hosted), "mcpServers", &expected),
+            "not_connected"
+        );
     }
 
     #[test]
@@ -532,23 +583,76 @@ mod tests {
         let merged = merge_piwi_entry(existing, "mcpServers", Some(json!({ "url": "u" })));
         assert_eq!(merged["theme"], "dark");
         assert_eq!(merged["mcpServers"]["other"]["command"], "npx");
-        assert_eq!(merged["mcpServers"]["piwi"]["url"], "u");
+        assert_eq!(merged["mcpServers"]["piwi-desktop"]["url"], "u");
     }
 
     #[test]
-    fn merge_removes_only_the_piwi_entry() {
+    fn merge_removes_only_our_own_entry() {
         let existing = json!({
-            "mcpServers": { "piwi": { "url": "u" }, "other": { "command": "npx" } }
+            "mcpServers": { "piwi-desktop": { "url": "u" }, "other": { "command": "npx" } }
         });
         let merged = merge_piwi_entry(existing, "mcpServers", None);
-        assert!(merged["mcpServers"].get("piwi").is_none());
+        assert!(merged["mcpServers"].get("piwi-desktop").is_none());
         assert_eq!(merged["mcpServers"]["other"]["command"], "npx");
     }
 
     #[test]
     fn merge_creates_the_container_on_a_fresh_file() {
         let merged = merge_piwi_entry(json!({}), "servers", Some(json!({ "type": "http" })));
-        assert_eq!(merged["servers"]["piwi"]["type"], "http");
+        assert_eq!(merged["servers"]["piwi-desktop"]["type"], "http");
+    }
+
+    /// Connecting rewrites an older build's loopback `piwi` to `piwi-desktop`,
+    /// leaving no dead duplicate behind.
+    #[test]
+    fn merge_retires_a_legacy_loopback_entry_it_wrote() {
+        let existing = json!({
+            "mcpServers": {
+                "piwi": { "type": "http", "url": "http://127.0.0.1:3000/mcp", "headers": { "Authorization": "Bearer pd_old" } }
+            }
+        });
+        let merged = merge_piwi_entry(existing, "mcpServers", Some(json!({ "url": "new" })));
+        assert!(
+            merged["mcpServers"].get("piwi").is_none(),
+            "stale loopback piwi should be dropped"
+        );
+        assert_eq!(merged["mcpServers"]["piwi-desktop"]["url"], "new");
+    }
+
+    /// The legacy Claude Desktop shape (this exe in bridge mode) is also ours to
+    /// retire.
+    #[test]
+    fn merge_retires_a_legacy_stdio_bridge_entry() {
+        let existing = json!({
+            "mcpServers": { "piwi": { "command": "/Applications/Piwi.app/piwi-desktop", "args": ["mcp-stdio"] } }
+        });
+        let merged = merge_piwi_entry(existing, "mcpServers", Some(json!({ "command": "x", "args": ["mcp-stdio"] })));
+        assert!(merged["mcpServers"].get("piwi").is_none());
+        assert!(merged["mcpServers"].get("piwi-desktop").is_some());
+    }
+
+    /// A hosted Piwi under `piwi` is never removed — only this app's own leftovers.
+    #[test]
+    fn merge_keeps_a_hosted_piwi_under_the_legacy_key() {
+        let existing = json!({
+            "mcpServers": { "piwi": { "url": "https://piwi.example.com/mcp", "headers": { "Authorization": "Bearer pd_x" } } }
+        });
+        let merged = merge_piwi_entry(existing, "mcpServers", Some(json!({ "url": "new" })));
+        assert_eq!(
+            merged["mcpServers"]["piwi"]["url"],
+            "https://piwi.example.com/mcp",
+            "a remote piwi must be left alone"
+        );
+        assert_eq!(merged["mcpServers"]["piwi-desktop"]["url"], "new");
+    }
+
+    #[test]
+    fn local_piwi_entries_are_recognized_but_remote_ones_are_not() {
+        assert!(is_local_piwi_entry(&json!({ "url": "http://127.0.0.1:5000/mcp" })));
+        assert!(is_local_piwi_entry(&json!({ "serverUrl": "http://localhost:5000/mcp" })));
+        assert!(is_local_piwi_entry(&json!({ "command": "piwi-desktop", "args": ["mcp-stdio"] })));
+        assert!(!is_local_piwi_entry(&json!({ "url": "https://piwi.example.com/mcp" })));
+        assert!(!is_local_piwi_entry(&json!({ "command": "npx", "args": ["other-mcp"] })));
     }
 
     #[test]
