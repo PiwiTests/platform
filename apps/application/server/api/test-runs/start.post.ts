@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from '../../database';
 import { projects, testRuns } from '../../database/schema';
-import { eq, and, or } from 'drizzle-orm';
+import { eq, and, or, sql } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../utils/sanitize';
@@ -115,6 +115,15 @@ export default eventHandler(async (event) => {
         existingShardedRun.metadata as Record<string, unknown> | null,
       );
 
+      // Each shard contributes its slice of the planned suite, so the run's
+      // total is the sum across shards.
+      if (body.totalTests) {
+        await db
+          .update(testRuns)
+          .set({ totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` })
+          .where(eq(testRuns.id, existingShardedRun.id));
+      }
+
       return {
         success: true,
         runId: existingShardedRun.id,
@@ -135,7 +144,7 @@ export default eventHandler(async (event) => {
         status: 'running',
         startTime: new Date(body.startTime || new Date().toISOString()),
         duration: null,
-        totalTests: 0,
+        totalTests: body.totalTests || 0,
         passedTests: 0,
         failedTests: 0,
         skippedTests: 0,

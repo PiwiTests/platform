@@ -87,6 +87,7 @@ export default eventHandler(async (event) => {
             workerIndex: testRunsCases.workerIndex,
             shardIndex: testRunsCases.shardIndex,
             browser: testRunsCases.browser,
+            retries: testRunsCases.retries,
             didNotRunReason: testRunsCases.didNotRunReason,
             blockedBy: testRunsCases.blockedBy,
           })
@@ -108,6 +109,7 @@ export default eventHandler(async (event) => {
               location,
               workerIndex: tc.workerIndex ?? null,
               browser: tc.browser ?? null,
+              retries: tc.retries ?? null,
               didNotRunReason: tc.didNotRunReason ?? null,
               blockedBy: tc.blockedBy ?? null,
               executionId: tc.id,

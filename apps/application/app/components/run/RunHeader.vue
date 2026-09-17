@@ -10,7 +10,14 @@ import type { RetryMode } from '~/utils/retry-command';
  */
 const props = defineProps<{
   testRun: TestRunDetails;
-  displayProgress: { totalTests: number; passedTests: number; failedTests: number; skippedTests: number } | null;
+  displayProgress: {
+    totalTests: number;
+    passedTests: number;
+    failedTests: number;
+    skippedTests: number;
+    didNotRunTests?: number;
+    flakyTests?: number;
+  } | null;
   allReports: ReportInfo[];
   totalWastedTime?: number;
   /** The active status filters, shared with the Tests tab chips and the count bar. */
@@ -39,6 +46,11 @@ const passed = computed(() => props.displayProgress?.passedTests ?? props.testRu
 const failed = computed(() => props.displayProgress?.failedTests ?? props.testRun?.failedTests ?? 0);
 const skipped = computed(() => props.displayProgress?.skippedTests ?? props.testRun?.skippedTests ?? 0);
 const total = computed(() => props.displayProgress?.totalTests ?? props.testRun?.totalTests ?? 0);
+// Flaky and didn't-run track the live progress too (both are 0 on the persisted
+// row until the run finishes), so the bar shows passed-on-retry and didn't-run
+// segments while the run is still going instead of only at the end.
+const flaky = computed(() => props.displayProgress?.flakyTests ?? props.testRun?.flakyTests ?? 0);
+const didNotRun = computed(() => props.displayProgress?.didNotRunTests ?? props.testRun?.didNotRunTests ?? 0);
 
 // The first uploaded report is the run's headline artifact.
 const primaryReport = computed(() => props.allReports[0] ?? null);
@@ -297,9 +309,9 @@ function onLabelKeydown(e: KeyboardEvent) {
       <RunCountBar
         :passed="passed"
         :failed="failed"
-        :flaky="testRun?.flakyTests ?? 0"
+        :flaky="flaky"
         :skipped="skipped"
-        :did-not-run="testRun?.didNotRunTests ?? 0"
+        :did-not-run="didNotRun"
         :total="total"
         :active-statuses="activeStatuses"
         @toggle-status="emit('toggle-status', $event)"

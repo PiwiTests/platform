@@ -1125,12 +1125,11 @@ async function runSingleSimulation(
     method: 'POST',
     body: {
       setupToken: setup.setupToken,
-      // Matches the real reporter (stream-manager.ts), which always sends 0
-      // here — `totalTests` is built up from `events.post`/`reporter.ts` as
-      // each test completes, then finalized by `finish`. Sending the real
-      // count upfront would double it, since those insert counts land on
-      // top of an already-correct total instead of starting from zero.
-      totalTests: 0,
+      // Matches the real reporter (stream-manager.ts), which reports the planned
+      // suite size up front so the dashboard shows the real total from the first
+      // render; the per-status counters build up from the streamed events, but
+      // the total is no longer incremented per row.
+      totalTests: tests.length,
       metadata,
       playwrightVersion: scenario.playwrightVersion ?? '1.51.0',
       reporterVersion: '0.7.0',

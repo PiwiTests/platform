@@ -9,7 +9,8 @@ test.describe.serial('Sharding API Tests', () => {
   let tokenShard1: string;
 
   test('two shards start a run with the same instanceId', async ({ request }) => {
-    // First shard — creates the shared run
+    // First shard — creates the shared run. Each shard reports its slice of the
+    // planned suite (2 here, 1 below), so the run's total is their sum, 3.
     const res0 = await request.post('/api/test-runs/start', {
       data: {
         projectName: PROJECT.SHARDING_TEST,
@@ -17,6 +18,7 @@ test.describe.serial('Sharding API Tests', () => {
         instanceId: INSTANCE_ID,
         shardIndex: 1,
         shardTotal: 2,
+        totalTests: 2,
       },
     });
     expect(res0.ok()).toBeTruthy();
@@ -35,6 +37,7 @@ test.describe.serial('Sharding API Tests', () => {
         instanceId: INSTANCE_ID,
         shardIndex: 2,
         shardTotal: 2,
+        totalTests: 1,
       },
     });
     expect(res1.ok()).toBeTruthy();
@@ -384,10 +387,11 @@ test.describe.serial('Sharding: flaky-only run finishes as passed', () => {
     const runData = await runRes.json();
     expect(runData.status).toBe('passed');
     expect(runData.flakyTests).toBe(1);
-    // 3 streamed executions (flaky attempt + retry, stable test), counted once.
-    expect(runData.totalTests).toBe(3);
+    // Two distinct tests — the flaky one (failed attempt + passed retry) and the
+    // stable one — counted once each: the flaky test is a pass, not a failure.
+    expect(runData.totalTests).toBe(2);
     expect(runData.passedTests).toBe(2);
-    expect(runData.failedTests).toBe(1);
+    expect(runData.failedTests).toBe(0);
   });
 });
 
