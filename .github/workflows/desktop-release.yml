@@ -75,7 +75,9 @@ jobs:
           targets: ${{ matrix.target }}
 
       # Tauri's Linux prerequisites: WebKitGTK for the webview, appindicator for
-      # the tray icon, librsvg for the icons, and patchelf for the AppImage.
+      # the tray icon, librsvg for the icons, patchelf for the AppImage. The last
+      # two the AppImage bundler shells out to: xdg-utils (xdg-open) which it
+      # copies in for the opener, and squashfs-tools (mksquashfs) to pack the image.
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: |
@@ -91,7 +93,9 @@ jobs:
             wget \
             file \
             libxdo-dev \
-            libssl-dev
+            libssl-dev \
+            xdg-utils \
+            squashfs-tools
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -137,6 +141,11 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Linux AppImage bundling runs linuxdeploy (and its plugins), each a
+          # self-mounting AppImage. GitHub runners have no libfuse2, so mounting
+          # fails with "failed to run linuxdeploy"; extract-and-run unpacks the
+          # tools to a temp dir instead. No-op on Windows/macOS.
+          APPIMAGE_EXTRACT_AND_RUN: 1
           # macOS signing is intentionally OFF: passing an invalid/placeholder
           # APPLE_CERTIFICATE secret makes tauri-action fail at `security import`.
           # Builds ship unsigned (right-click -> Open). To enable signing, add
