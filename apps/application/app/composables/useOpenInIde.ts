@@ -20,6 +20,8 @@ import {
   buildJetbrainsNavigateUrl,
   buildVscodeUrl,
   joinWorkspacePath,
+  VSCODE_CLI_COMMANDS,
+  type IdeFamily,
   type VscodeScheme,
 } from '~/utils/ide-links';
 
@@ -132,6 +134,26 @@ export function useOpenInIde() {
   function resolveAbsPath(filePath: string, projectKey?: string | number | null): string | null {
     const root = resolveRoot(projectKey);
     return root ? joinWorkspacePath(root, filePath) : null;
+  }
+
+  /**
+   * Which command-line launchers the desktop shell should try for a method, in
+   * order. VS Code flavors map to their `code`/`cursor`/… commands; JetBrains
+   * uses the product tag, which is also the launcher name Toolbox generates
+   * (`idea`, `rider`, `webstorm`, …). Auto tries JetBrains first — the family
+   * whose URL scheme is the most fragile — then VS Code.
+   */
+  function desktopAttempts(method: IdeMethod): Array<{ family: IdeFamily; command: string; label: string }> {
+    const vscode = {
+      family: 'vscode' as const,
+      command: VSCODE_CLI_COMMANDS[prefs.value.vscodeScheme],
+      label: VSCODE_SCHEME_LABELS[prefs.value.vscodeScheme],
+    };
+    const product = prefs.value.jetbrainsProduct.trim();
+    const jetbrains = product ? [{ family: 'jetbrains' as const, command: product, label: 'JetBrains' }] : [];
+    if (method === 'vscode') return [vscode];
+    if (method === 'jetbrains-url' || method === 'jetbrains-http') return jetbrains;
+    return [...jetbrains, vscode];
   }
 
   const isConfigured = computed(
@@ -268,6 +290,39 @@ export function useOpenInIde() {
       );
       return ok;
     };
+
+    // Desktop shell: spawn the IDE's command-line launcher first. It opens the
+    // file at the line reliably and reports whether it actually started, where
+    // the URL schemes below are fire-and-forget. On a machine with no matching
+    // launcher on the PATH this falls through to those schemes unchanged.
+    if (tauriCore() && root) {
+      const abs = joinWorkspacePath(root, rel);
+      for (const attempt of desktopAttempts(method)) {
+        const res = await openFileInDesktopIde({
+          family: attempt.family,
+          command: attempt.command,
+          absPath: abs,
+          line,
+          column,
+        });
+        if (res.ok) {
+          toast.add({ title: `Opened in ${attempt.label}`, color: 'success', icon: 'i-lucide-check' });
+          return;
+        }
+        if (res.reason) {
+          // A real error (a missing file, a bad path) — a URL scheme won't help.
+          toast.add({
+            title: 'Could not open in IDE',
+            description: res.reason,
+            color: 'error',
+            icon: 'i-lucide-triangle-alert',
+            actions: [configureAction],
+          });
+          return;
+        }
+        // Otherwise the launcher was not on the PATH — try the next / fall through.
+      }
+    }
 
     if (method === 'vscode') {
       openVscode();
