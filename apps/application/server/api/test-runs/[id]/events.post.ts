@@ -242,6 +242,9 @@ export default eventHandler(async (event) => {
         shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
         browser: tc.browser ?? null,
+        // The attempt number rides along so the live page can tell a
+        // passed-on-retry (flaky) test from a first-try pass.
+        retries: tc.retries ?? null,
         executionId: persisted?.id ?? null,
         testCaseId: persisted?.testCaseId ?? null,
       },

@@ -45,6 +45,53 @@ export function countFailedFromTally(tally: Record<string, number> | undefined |
   return sum;
 }
 
+const FAILED_STATUS_SET = new Set<string>(FAILED_STATUS_KEYS);
+
+/** A distinct-test tally of a run's cases, as the run views count them. */
+export interface RunCaseSummary {
+  /** Number of cases summarized — the denominator (`= passed + failed + skipped + didNotRun + running`). */
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  didNotRun: number;
+  /** Passed on a retry — a subset of `passed`, not an extra bucket. */
+  flaky: number;
+  /** Still in flight (not yet settled). */
+  running: number;
+}
+
+/**
+ * Tally a run's cases the way the live run views count them: timed-out folds
+ * into `failed`, a case whose final status is `passed` after a retry counts as
+ * `passed` **and** as `flaky` (never as a failure), and `running` is the
+ * in-flight remainder. Pass one entry per test (de-duplicate attempts first)
+ * and the buckets reconcile: `total = passed + failed + skipped + didNotRun +
+ * running`. This is the single source the run header, the count bar and the
+ * grouped list all count with, so they cannot disagree.
+ */
+export function summarizeRunCases(cases: ReadonlyArray<{ status: string; retries?: number | null }>): RunCaseSummary {
+  const s: RunCaseSummary = {
+    total: cases.length,
+    passed: 0,
+    failed: 0,
+    skipped: 0,
+    didNotRun: 0,
+    flaky: 0,
+    running: 0,
+  };
+  for (const tc of cases) {
+    if (FAILED_STATUS_SET.has(tc.status)) s.failed++;
+    else if (tc.status === 'passed') {
+      s.passed++;
+      if ((tc.retries ?? 0) > 0) s.flaky++;
+    } else if (tc.status === 'skipped') s.skipped++;
+    else if (tc.status === 'didnotrun') s.didNotRun++;
+    else if (tc.status === 'running') s.running++;
+  }
+  return s;
+}
+
 /**
  * Sum the `failedTests` and `timedOutTests` fields from a run submission body.
  * The reporter tracks these separately, but the server stores a single

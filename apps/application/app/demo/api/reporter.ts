@@ -938,6 +938,9 @@ export async function apiPostRunEvents(
         shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
         browser: tc.browser ?? null,
+        // Mirrors the server: the attempt number lets the live page mark a
+        // passed-on-retry (flaky) test as passing rather than failing.
+        retries: (tc as { retries?: number | null }).retries ?? null,
         executionId: persisted?.id ?? null,
         testCaseId: persisted?.testCaseId ?? null,
       },

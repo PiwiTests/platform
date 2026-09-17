@@ -1,5 +1,10 @@
 import { describe, test, expect } from 'vitest';
-import { countFailedFromTally, normalizeTestCaseStatus, sumFailedAndTimedOut } from '#shared/utils/test-counts';
+import {
+  countFailedFromTally,
+  normalizeTestCaseStatus,
+  summarizeRunCases,
+  sumFailedAndTimedOut,
+} from '#shared/utils/test-counts';
 
 describe('countFailedFromTally', () => {
   test('sums failed, timedOut (camelCase), and timedout (lowercase)', () => {
@@ -50,6 +55,57 @@ describe('sumFailedAndTimedOut', () => {
   test('ignores zero/negative values', () => {
     expect(sumFailedAndTimedOut(0, 0)).toBe(0);
     expect(sumFailedAndTimedOut(-1, 5)).toBe(5);
+  });
+});
+
+describe('summarizeRunCases', () => {
+  test('counts a passed-on-retry (flaky) case as passed and flaky, never as failed', () => {
+    const s = summarizeRunCases([
+      { status: 'passed', retries: 0 },
+      { status: 'passed', retries: 2 }, // flaky: passed after retries
+    ]);
+    expect(s.passed).toBe(2);
+    expect(s.flaky).toBe(1);
+    expect(s.failed).toBe(0);
+  });
+
+  test('folds timed-out into failed (both spellings)', () => {
+    const s = summarizeRunCases([{ status: 'failed' }, { status: 'timedOut' }, { status: 'timedout' }]);
+    expect(s.failed).toBe(3);
+  });
+
+  test('tallies a mid-flight run so every bucket reconciles with the total', () => {
+    // A running run: passed (incl. flaky), failed, skipped, didn't run, and
+    // still-running cases — one entry per test, as the live view de-duplicates.
+    const cases = [
+      ...Array.from({ length: 150 }, () => ({ status: 'passed', retries: 0 })),
+      ...Array.from({ length: 3 }, () => ({ status: 'passed', retries: 1 })), // flaky
+      ...Array.from({ length: 15 }, () => ({ status: 'failed' })),
+      ...Array.from({ length: 10 }, () => ({ status: 'skipped' })),
+      ...Array.from({ length: 28 }, () => ({ status: 'didnotrun' })),
+      ...Array.from({ length: 3 }, () => ({ status: 'running' })),
+    ];
+    const s = summarizeRunCases(cases);
+    expect(s).toEqual({ total: 209, passed: 153, failed: 15, skipped: 10, didNotRun: 28, flaky: 3, running: 3 });
+    expect(s.passed + s.failed + s.skipped + s.didNotRun + s.running).toBe(s.total);
+  });
+
+  test('treats a missing retries field as zero (not flaky)', () => {
+    const s = summarizeRunCases([{ status: 'passed' }, { status: 'passed', retries: null }]);
+    expect(s.passed).toBe(2);
+    expect(s.flaky).toBe(0);
+  });
+
+  test('returns an all-zero summary for no cases', () => {
+    expect(summarizeRunCases([])).toEqual({
+      total: 0,
+      passed: 0,
+      failed: 0,
+      skipped: 0,
+      didNotRun: 0,
+      flaky: 0,
+      running: 0,
+    });
   });
 });
 

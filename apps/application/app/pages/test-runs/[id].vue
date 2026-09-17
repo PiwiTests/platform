@@ -4,6 +4,7 @@ import type { TestRunDetails, TestCaseResult, ReportInfo, TestStepEvent, Failure
 import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunStream } from '~/composables/useRunStream';
+import { summarizeRunCases } from '#shared/utils/test-counts';
 
 const route = useRoute();
 const router = useRouter();
@@ -56,9 +57,6 @@ const isLive = computed(() => testRun.value?.status === 'running' || testRun.val
 const isFinalizing = ref(false);
 const liveTestCases = ref<TestCaseResult[]>([]);
 const liveTestCaseKeys = new Map<string, true>();
-const liveProgress = ref<{ totalTests: number; passedTests: number; failedTests: number; skippedTests: number } | null>(
-  null,
-);
 // Worker index → the step the worker is currently on (from transient SSE step
 // events; nothing is persisted from them). Rendered inline on the matching
 // running rows in the test-case views.
@@ -104,14 +102,10 @@ function flushPendingEvents() {
   pendingEvents = [];
   for (const parsed of events) {
     const data = parsed.data as Record<string, unknown>;
-    if (parsed.type === 'init') {
-      liveProgress.value = {
-        totalTests: data.totalTests as number,
-        passedTests: data.passedTests as number,
-        failedTests: data.failedTests as number,
-        skippedTests: data.skippedTests as number,
-      };
-    } else if (parsed.type === 'test-begin') {
+    // 'init' and 'run-progress' carry the server's running counters; the header
+    // and bar are derived from the de-duplicated case list instead (see
+    // displayProgress), so those snapshots are not applied here.
+    if (parsed.type === 'test-begin') {
       const d = data as {
         title: string;
         filePath?: string;
@@ -165,6 +159,7 @@ function flushPendingEvents() {
         startedAt?: number;
         browser?: { projectName?: string } | null;
         stepCategory?: string | null;
+        retries?: number | null;
         executionId?: number | null;
         testCaseId?: number | null;
       };
@@ -192,6 +187,9 @@ function flushPendingEvents() {
             workerIndex: d.workerIndex ?? existing.workerIndex,
             startedAt: d.startedAt ? d.startedAt : existing.startedAt,
             browser: d.browser ?? existing.browser,
+            // A later attempt's higher retry count wins, so a fail-then-pass
+            // test ends up as passed-on-retry rather than a plain pass.
+            retries: d.retries ?? existing.retries,
             // The real ids replace the placeholder once persistence happens;
             // a duplicate event without ids keeps whatever the row already has.
             executionId: d.executionId ?? existing.executionId,
@@ -219,6 +217,7 @@ function flushPendingEvents() {
             workerIndex: d.workerIndex ?? null,
             startedAt: d.startedAt ?? undefined,
             browser: d.browser ?? null,
+            retries: d.retries ?? null,
           },
         ];
         displayTestCases.value = [...liveTestCases.value];
@@ -265,22 +264,9 @@ function flushPendingEvents() {
           parentTitle: d.parentTitle ?? null,
         },
       };
-    } else if (parsed.type === 'run-progress') {
-      liveProgress.value = data as {
-        totalTests: number;
-        passedTests: number;
-        failedTests: number;
-        skippedTests: number;
-      };
     } else if (parsed.type === 'run-finalizing') {
       // Tests are done, reports/traces are uploading — show progress bar
       isFinalizing.value = true;
-      liveProgress.value = data as {
-        totalTests: number;
-        passedTests: number;
-        failedTests: number;
-        skippedTests: number;
-      };
     } else if (parsed.type === 'run-finished') {
       isFinalizing.value = false;
       liveSteps.value = {};
@@ -429,10 +415,27 @@ watch(
   { immediate: true },
 );
 
-// Display progress: live or from loaded data
+// Display progress: while live it is derived from the de-duplicated cases (so
+// the header counts, the bar and the grouped list are computed from one source
+// and can never disagree); once finished it comes from the persisted run totals.
+// A flaky test is one that passed on a retry, so it counts as passed — exactly
+// as the list treats it — instead of inflating the failures via its earlier
+// failed attempt.
 const displayProgress = computed(() => {
-  if (isLive.value && liveProgress.value) {
-    return liveProgress.value;
+  if (isLive.value) {
+    // Derived from the de-duplicated cases, so the bar, the header counts and
+    // the grouped list all count from one source and divide by the same total.
+    // (The stored `totalTests` counter tallies attempts, not tests, while the
+    // run streams, so it is deliberately not used here.)
+    const s = summarizeRunCases(displayTestCases.value);
+    return {
+      totalTests: s.total,
+      passedTests: s.passed,
+      failedTests: s.failed,
+      skippedTests: s.skipped,
+      didNotRunTests: s.didNotRun,
+      flakyTests: s.flaky,
+    };
   }
   if (!testRun.value) return null;
   return {
@@ -440,6 +443,8 @@ const displayProgress = computed(() => {
     passedTests: testRun.value.passedTests,
     failedTests: testRun.value.failedTests,
     skippedTests: testRun.value.skippedTests,
+    didNotRunTests: testRun.value.didNotRunTests ?? 0,
+    flakyTests: testRun.value.flakyTests ?? 0,
   };
 });
 

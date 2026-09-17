@@ -2,6 +2,7 @@
 import { computed, nextTick, watch, ref, onUnmounted } from 'vue';
 import type { TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo, LiveStepsByWorker } from '~/utils/live-steps';
+import { summarizeRunCases } from '#shared/utils/test-counts';
 
 /** Cluster id → its display name and triage status, for the row chip and the
  *  cluster group header. Supplied by the page from the failure-groups payload. */
@@ -245,15 +246,8 @@ interface TestItem {
 type Row = GroupHeaderItem | TestItem;
 
 function computeStats(cases: TestCaseResult[]) {
-  const s = { passed: 0, failed: 0, skipped: 0, didnotrun: 0, running: 0 };
-  for (const tc of cases) {
-    if (isFailedStatus(tc.status)) s.failed++;
-    else if (tc.status === 'passed') s.passed++;
-    else if (tc.status === 'skipped') s.skipped++;
-    else if (tc.status === 'didnotrun') s.didnotrun++;
-    else if (tc.status === 'running') s.running++;
-  }
-  return s;
+  const s = summarizeRunCases(cases);
+  return { passed: s.passed, failed: s.failed, skipped: s.skipped, didnotrun: s.didNotRun, running: s.running };
 }
 
 /** The remainder buckets (non-failing) shown as their own groups; the quiet
