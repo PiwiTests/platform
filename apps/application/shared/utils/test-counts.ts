@@ -47,6 +47,53 @@ export function countFailedFromTally(tally: Record<string, number> | undefined |
 
 const FAILED_STATUS_SET = new Set<string>(FAILED_STATUS_KEYS);
 
+/** Stored run counters, distinct by test. `failedTests` already folds timed-out in. */
+export interface DistinctRunCounts {
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  skippedTests: number;
+  didNotRunTests: number;
+  flakyTests: number;
+}
+
+/**
+ * Reduce a run's per-attempt `test_runs_cases` rows to distinct-test counters:
+ * the final attempt per (test case, browser) — the highest retry — decides each
+ * test's outcome, timed-out folds into `failedTests` (Piwi has no separate
+ * column), and a test that passed only after a retry counts as passed and as
+ * flaky. Used to set a run's stored counters from the rows the server holds,
+ * so retry attempts never inflate them.
+ */
+export function distinctRunCountsFromAttempts(
+  rows: ReadonlyArray<{ testCaseId: number; browserName?: string | null; retries?: number | null; status: string }>,
+): DistinctRunCounts {
+  const final = new Map<string, { status: string; retries: number }>();
+  for (const r of rows) {
+    const key = `${r.testCaseId}\x00${r.browserName ?? ''}`;
+    const retries = r.retries ?? 0;
+    const prev = final.get(key);
+    if (!prev || retries >= prev.retries) final.set(key, { status: r.status, retries });
+  }
+  const counts: DistinctRunCounts = {
+    totalTests: final.size,
+    passedTests: 0,
+    failedTests: 0,
+    skippedTests: 0,
+    didNotRunTests: 0,
+    flakyTests: 0,
+  };
+  for (const { status, retries } of final.values()) {
+    if (FAILED_STATUS_SET.has(status)) counts.failedTests++;
+    else if (status === 'passed') {
+      counts.passedTests++;
+      if (retries > 0) counts.flakyTests++;
+    } else if (status === 'skipped') counts.skippedTests++;
+    else if (status === 'didnotrun') counts.didNotRunTests++;
+  }
+  return counts;
+}
+
 /** A distinct-test tally of a run's cases, as the run views count them. */
 export interface RunCaseSummary {
   /** Number of cases summarized — the denominator (`= passed + failed + skipped + didNotRun + running`). */

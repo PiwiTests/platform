@@ -191,9 +191,8 @@ export default eventHandler(async (event) => {
 
   const insertedRunCases = await persistRunCases(db, projectId, id, cases);
 
-  // Increment counters only for newly inserted rows (DB unique constraint skips duplicates)
-  const insertedCount = insertedRunCases.length;
-  // Derive status counts directly from the inserted rows
+  // Derive per-status counts from the newly inserted rows (the DB unique
+  // constraint skips duplicates), to accumulate live progress counters.
   const insertedStatusCounts = insertedRunCases.reduce(
     (acc: Record<string, number>, row: { status: string }) => {
       acc[row.status] = (acc[row.status] || 0) + 1;
@@ -202,11 +201,14 @@ export default eventHandler(async (event) => {
     {} as Record<string, number>,
   );
 
+  // `totalTests` is the planned suite size set once at /start, so it is not
+  // touched here — incrementing per inserted row would count retry attempts as
+  // extra tests. The per-status counters still accumulate for live progress;
+  // the reporter's distinct final counts replace them at /finish.
   const updatedRuns = await db
     .update(testRuns)
     .set({
       updatedAt: new Date(),
-      totalTests: sql`${testRuns.totalTests} + ${insertedCount}`,
       passedTests: sql`${testRuns.passedTests} + ${insertedStatusCounts['passed'] || 0}`,
       failedTests: sql`${testRuns.failedTests} + ${countFailedFromTally(insertedStatusCounts)}`,
       skippedTests: sql`${testRuns.skippedTests} + ${insertedStatusCounts['skipped'] || 0}`,

@@ -234,6 +234,9 @@ export class PiwiDashboardReporter {
       this.shardInfo,
       this.isFullRun,
       this.filterDetails,
+      // The planned suite size for this shard, known before any test runs, so
+      // the dashboard shows the real total from the first render.
+      this.plannedTests.length,
     );
   }
 

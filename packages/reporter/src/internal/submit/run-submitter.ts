@@ -8,7 +8,7 @@ import type { CrashRecovery } from '../streaming/crash-recovery.js';
 import type { StreamManager } from '../streaming/stream-manager.js';
 import { Logger } from '../support/logger.js';
 import { computePerformanceSummary } from '../collect/step-analyzer.js';
-import { resolveOverallStatus, serializeRun } from './serializer.js';
+import { computeDistinctRunCounts, resolveOverallStatus, serializeRun } from './serializer.js';
 import { runUrl } from '../support/run-url.js';
 import { emitRunOutputs, ciBuildUrlFromMetadata, type RunOutput } from '../support/ci-output.js';
 import type { FailureLinks } from '../support/failure-links.js';
@@ -84,6 +84,19 @@ export class RunSubmitter {
   async submit(run: CollectedRun, result: FullResult): Promise<void> {
     const endTime = new Date().toISOString();
     const duration = new Date(endTime).getTime() - new Date(run.startTime!).getTime();
+
+    // Playwright reports each attempt through `onTestEnd`, so the collected
+    // counters tally attempts. Collapse them to distinct-test counts before
+    // anything reads them, so the submitted summary (and every fallback rung)
+    // counts tests, not attempts, and a retried-then-passed test is a pass.
+    const counts = computeDistinctRunCounts(run.testCases);
+    run.totalTests = counts.totalTests;
+    run.passedTests = counts.passedTests;
+    run.failedTests = counts.failedTests;
+    run.timedOutTests = counts.timedOutTests;
+    run.skippedTests = counts.skippedTests;
+    run.didNotRunTests = counts.didNotRunTests;
+
     const overallStatus = resolveOverallStatus(result, {
       failedTests: run.failedTests,
       timedOutTests: run.timedOutTests,

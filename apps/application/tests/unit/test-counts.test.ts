@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import {
   countFailedFromTally,
+  distinctRunCountsFromAttempts,
   normalizeTestCaseStatus,
   summarizeRunCases,
   sumFailedAndTimedOut,
@@ -106,6 +107,43 @@ describe('summarizeRunCases', () => {
       flaky: 0,
       running: 0,
     });
+  });
+});
+
+describe('distinctRunCountsFromAttempts', () => {
+  test('collapses retry rows to the final attempt per (test, browser)', () => {
+    const counts = distinctRunCountsFromAttempts([
+      { testCaseId: 1, browserName: 'chromium', retries: 0, status: 'failed' },
+      { testCaseId: 1, browserName: 'chromium', retries: 1, status: 'passed' },
+      { testCaseId: 2, browserName: 'chromium', retries: 0, status: 'failed' },
+    ]);
+    // Test 1 flaked (failed then passed), test 2 is a hard failure.
+    expect(counts).toEqual({
+      totalTests: 2,
+      passedTests: 1,
+      failedTests: 1,
+      skippedTests: 0,
+      didNotRunTests: 0,
+      flakyTests: 1,
+    });
+  });
+
+  test('folds timed-out into failedTests', () => {
+    const counts = distinctRunCountsFromAttempts([
+      { testCaseId: 1, browserName: '', retries: 0, status: 'timedout' },
+      { testCaseId: 2, browserName: '', retries: 0, status: 'failed' },
+    ]);
+    expect(counts.failedTests).toBe(2);
+    expect(counts.totalTests).toBe(2);
+  });
+
+  test('keeps the same test in different browsers separate', () => {
+    const counts = distinctRunCountsFromAttempts([
+      { testCaseId: 1, browserName: 'chromium', retries: 0, status: 'passed' },
+      { testCaseId: 1, browserName: 'firefox', retries: 0, status: 'passed' },
+    ]);
+    expect(counts.totalTests).toBe(2);
+    expect(counts.passedTests).toBe(2);
   });
 });
 

@@ -47,7 +47,7 @@ import {
 import { DEFAULT_INGEST_LIMITS } from '#shared/ingest-limits';
 import { computeErrorFingerprint, type ErrorFingerprint } from '#shared/error-fingerprint';
 import { durationStats } from '#shared/utils/stats';
-import { countFailedFromTally, sumFailedAndTimedOut } from '#shared/utils/test-counts';
+import { countFailedFromTally, distinctRunCountsFromAttempts, sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
 import { joinSuitePath, SUITE_PATH_SEP } from '#shared/utils/suites';
 import {
@@ -887,7 +887,6 @@ export async function apiPostRunEvents(
 
   const insertedRunCases = await persistRunCases(db, testRun.projectId, id, cases, true);
 
-  const insertedCount = insertedRunCases.length;
   // Derive status counts from the actually inserted rows (the unique index can
   // skip duplicates), matching the server's events handler.
   const insertedStatusCounts = insertedRunCases.reduce(
@@ -898,11 +897,13 @@ export async function apiPostRunEvents(
     {} as Record<string, number>,
   );
 
+  // `totalTests` is the planned suite size set at /start, so it is left as-is
+  // here — incrementing per row would count retry attempts as extra tests
+  // (mirrors the server's events handler).
   const updatedRuns = await db
     .update(testRuns)
     .set({
       updatedAt: new Date(),
-      totalTests: sql`${testRuns.totalTests} + ${insertedCount}`,
       passedTests: sql`${testRuns.passedTests} + ${insertedStatusCounts['passed'] || 0}`,
       failedTests: sql`${testRuns.failedTests} + ${countFailedFromTally(insertedStatusCounts)}`,
       skippedTests: sql`${testRuns.skippedTests} + ${insertedStatusCounts['skipped'] || 0}`,
@@ -1009,7 +1010,9 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       .set({
         updatedAt: new Date(),
         status: 'running',
-        totalTests: sql`${testRuns.totalTests} + ${body.totalTests ?? 0}`,
+        // `totalTests` is the planned total set at /begin; the per-status
+        // counters track live progress and are recomputed distinctly once all
+        // shards finish.
         passedTests: sql`${testRuns.passedTests} + ${body.passedTests ?? 0}`,
         failedTests: sql`${testRuns.failedTests} + ${sumFailedAndTimedOut(body.failedTests, body.timedOutTests)}`,
         skippedTests: sql`${testRuns.skippedTests} + ${body.skippedTests ?? 0}`,
@@ -1041,7 +1044,20 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       updatedRun.shardTotal != null &&
       updatedRun.shardsFinished >= updatedRun.shardTotal
     ) {
-      finalStatus = (updatedRun.failedTests ?? 0) > 0 ? 'failed' : 'passed';
+      // Recompute distinct-test counters from the persisted rows (the per-shard
+      // events counted attempts), so a flaky-only sharded run reads as passed —
+      // mirrors the server's finish handler.
+      const attemptRows = await db
+        .select({
+          testCaseId: testRunsCases.testCaseId,
+          browserName: testRunsCases.browserName,
+          retries: testRunsCases.retries,
+          status: testRunsCases.status,
+        })
+        .from(testRunsCases)
+        .where(eq(testRunsCases.testRunId, id));
+      const counts = distinctRunCountsFromAttempts(attemptRows);
+      finalStatus = counts.failedTests > 0 ? 'failed' : 'passed';
 
       let avgTestDuration: number | null = null;
       let p90TestDuration: number | null = null;
@@ -1061,6 +1077,12 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         .set({
           status: finalStatus,
           streamToken: null,
+          totalTests: counts.totalTests,
+          passedTests: counts.passedTests,
+          failedTests: counts.failedTests,
+          skippedTests: counts.skippedTests,
+          didNotRunTests: counts.didNotRunTests,
+          flakyTests: counts.flakyTests,
           avgTestDuration,
           p90TestDuration,
           metadata: finalMeta,
@@ -1073,12 +1095,12 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         data: {
           status: finalStatus,
           duration: updatedRun.duration,
-          totalTests: updatedRun.totalTests,
-          passedTests: updatedRun.passedTests,
-          failedTests: updatedRun.failedTests,
-          skippedTests: updatedRun.skippedTests,
-          didNotRunTests: updatedRun.didNotRunTests,
-          flakyTests: updatedRun.flakyTests,
+          totalTests: counts.totalTests,
+          passedTests: counts.passedTests,
+          failedTests: counts.failedTests,
+          skippedTests: counts.skippedTests,
+          didNotRunTests: counts.didNotRunTests,
+          flakyTests: counts.flakyTests,
         },
       });
 

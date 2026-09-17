@@ -424,12 +424,12 @@ watch(
 const displayProgress = computed(() => {
   if (isLive.value) {
     // Derived from the de-duplicated cases, so the bar, the header counts and
-    // the grouped list all count from one source and divide by the same total.
-    // (The stored `totalTests` counter tallies attempts, not tests, while the
-    // run streams, so it is deliberately not used here.)
+    // the grouped list all count from one source. The denominator is the planned
+    // suite size the reporter reports at /start (so the total is right from the
+    // first render), falling back to the tests seen so far when it isn't known.
     const s = summarizeRunCases(displayTestCases.value);
     return {
-      totalTests: s.total,
+      totalTests: Math.max(testRun.value?.totalTests ?? 0, s.total),
       passedTests: s.passed,
       failedTests: s.failed,
       skippedTests: s.skipped,

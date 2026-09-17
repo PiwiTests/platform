@@ -1,7 +1,59 @@
 import { describe, it, expect } from 'vitest';
-import { resolveOverallStatus, toWireTestCase, serializeRun } from '../src/internal/submit/serializer.js';
+import {
+  computeDistinctRunCounts,
+  resolveOverallStatus,
+  toWireTestCase,
+  serializeRun,
+} from '../src/internal/submit/serializer.js';
 import type { RunPayload } from '../src/internal/submit/uploader.js';
 import type { CollectedTestCase } from '../src/types.js';
+
+describe('computeDistinctRunCounts', () => {
+  it('counts one test regardless of how many attempts it took', () => {
+    const counts = computeDistinctRunCounts([
+      { title: 't', location: 'a.spec.ts:1:1', status: 'failed', retries: 0 },
+      { title: 't', location: 'a.spec.ts:1:1', status: 'passed', retries: 1 },
+    ]);
+    // The final (highest-retry) attempt wins: one test, passed, and flaky.
+    expect(counts.totalTests).toBe(1);
+    expect(counts.passedTests).toBe(1);
+    expect(counts.failedTests).toBe(0);
+    expect(counts.flakyTests).toBe(1);
+  });
+
+  it('keeps the same title in different browsers as separate tests', () => {
+    const counts = computeDistinctRunCounts([
+      { title: 't', location: 'a.spec.ts:1:1', status: 'passed', retries: 0, browser: { projectName: 'chromium' } },
+      { title: 't', location: 'a.spec.ts:1:1', status: 'failed', retries: 0, browser: { projectName: 'firefox' } },
+    ]);
+    expect(counts.totalTests).toBe(2);
+    expect(counts.passedTests).toBe(1);
+    expect(counts.failedTests).toBe(1);
+  });
+
+  it('buckets timed-out separately and tallies skipped / didnotrun', () => {
+    const counts = computeDistinctRunCounts([
+      { title: 'a', location: 'a.spec.ts:1:1', status: 'timedOut' },
+      { title: 'b', location: 'a.spec.ts:2:1', status: 'skipped' },
+      { title: 'c', location: 'a.spec.ts:3:1', status: 'didnotrun' },
+    ]);
+    expect(counts).toMatchObject({
+      totalTests: 3,
+      timedOutTests: 1,
+      skippedTests: 1,
+      didNotRunTests: 1,
+      failedTests: 0,
+      passedTests: 0,
+      flakyTests: 0,
+    });
+  });
+
+  it('does not count a first-try pass as flaky', () => {
+    const counts = computeDistinctRunCounts([{ title: 'a', location: 'a.spec.ts:1:1', status: 'passed', retries: 0 }]);
+    expect(counts.passedTests).toBe(1);
+    expect(counts.flakyTests).toBe(0);
+  });
+});
 
 describe('resolveOverallStatus', () => {
   const counters = { failedTests: 0, timedOutTests: 0, totalTests: 5 };
