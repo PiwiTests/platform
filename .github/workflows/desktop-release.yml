@@ -164,6 +164,11 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
+          # Retry a failed asset upload. Uploading the installers to the release
+          # intermittently times out ("Error saving asset"), and with the updater
+          # enabled each job pushes more/larger assets, so one flaky upload fails
+          # the whole leg. This re-tries the upload instead.
+          retryAttempts: 3
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && '--config src-tauri/tauri.updater.conf.json' || '' }}
           # Attach to the release release-please already made for this tag. On a
           # manual dispatch (no tag) tagName is empty, so tauri-action just builds.
