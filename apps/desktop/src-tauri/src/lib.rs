@@ -531,6 +531,111 @@ fn desktop_open_external(app: tauri::AppHandle, url: String) -> Result<(), Strin
         .map_err(|e| e.to_string())
 }
 
+/// Argv (after the launcher command) that opens `path` at an optional
+/// line/column through an IDE's command-line launcher.
+///
+///  - VS Code family: `--goto <path>:<line>:<col>` — the flag makes the trailing
+///    `:line:col` a caret position rather than part of the file name.
+///  - JetBrains: `--line <n> --column <c> <path>` — the flags precede the path.
+///
+/// Line and column are included only when present.
+fn ide_launcher_args(
+    family: &str,
+    path: &str,
+    line: Option<u32>,
+    column: Option<u32>,
+) -> Result<Vec<String>, String> {
+    match family {
+        "vscode" => {
+            let mut target = path.to_string();
+            if let Some(l) = line {
+                target.push_str(&format!(":{l}"));
+                if let Some(c) = column {
+                    target.push_str(&format!(":{c}"));
+                }
+            }
+            Ok(vec!["--goto".to_string(), target])
+        }
+        "jetbrains" => {
+            let mut args: Vec<String> = Vec::new();
+            if let Some(l) = line {
+                args.push("--line".to_string());
+                args.push(l.to_string());
+                if let Some(c) = column {
+                    args.push("--column".to_string());
+                    args.push(c.to_string());
+                }
+            }
+            args.push(path.to_string());
+            Ok(args)
+        }
+        other => Err(format!("unknown IDE family: {other}")),
+    }
+}
+
+/// A launcher command the webview may spawn: a bare executable name resolved on
+/// the PATH. No path separators, whitespace or shell metacharacters, so a stray
+/// call can neither point at an arbitrary binary nor smuggle in extra arguments.
+fn is_safe_launcher_command(command: &str) -> bool {
+    !command.is_empty()
+        && command.len() <= 64
+        && command
+            .bytes()
+            .next()
+            .is_some_and(|b| b.is_ascii_alphanumeric())
+        && command
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'+' | b'-'))
+}
+
+/// Open a source file in a local IDE by spawning its command-line launcher
+/// (`code --goto …`, `rider --line …`). The desktop shell does this natively, so
+/// it works without a `vscode://`/`jetbrains://` protocol handler, JetBrains
+/// Toolbox, an open-project name to match or "allow unsigned requests" — the
+/// reasons the URL schemes are unreliable, on Rider especially.
+///
+/// Resolves `true` when the launcher started, `false` when it is not on the PATH
+/// (so the webview can fall back to a URL scheme), and errors on a bad command,
+/// a non-absolute path or a file that does not exist. The command is restricted
+/// to a bare PATH-resolved name; the path must be an existing file.
+#[tauri::command]
+fn desktop_open_in_ide(
+    app: tauri::AppHandle,
+    command: String,
+    family: String,
+    path: String,
+    line: Option<u32>,
+    column: Option<u32>,
+) -> Result<bool, String> {
+    if !is_safe_launcher_command(&command) {
+        return Err(format!("unsupported IDE launcher command: {command}"));
+    }
+    let file = std::path::Path::new(&path);
+    if !file.is_absolute() {
+        return Err("the file path must be absolute".into());
+    }
+    if !file.is_file() {
+        return Err(format!("file not found: {path}"));
+    }
+    let args = ide_launcher_args(&family, &path, line, column)?;
+
+    // A missing launcher (not on the PATH) is reported as `false`, not raised, so
+    // the caller can still try a URL scheme. On a successful spawn the child is
+    // held on a background task until it exits: the launcher hands the file off
+    // to the running IDE and returns in well under a second, but dropping the
+    // handle immediately could cut that handoff short.
+    match app.shell().command(command.as_str()).args(args).spawn() {
+        Ok((mut rx, child)) => {
+            tauri::async_runtime::spawn(async move {
+                let _child = child;
+                while rx.recv().await.is_some() {}
+            });
+            Ok(true)
+        }
+        Err(_) => Ok(false),
+    }
+}
+
 /// Unique label for each runtime-created auxiliary window (Tauri requires labels
 /// to be distinct for the life of the app).
 static AUX_WINDOW_SEQ: AtomicU32 = AtomicU32::new(0);
@@ -863,6 +968,7 @@ pub fn run() {
             desktop_set_run_in_background,
             desktop_set_start_on_login,
             desktop_open_external,
+            desktop_open_in_ide,
             desktop_open_window,
             desktop_notify,
             desktop_log,
@@ -1251,7 +1357,10 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_log_line, debug_mode_requested, is_truthy_flag, write_new_download};
+    use super::{
+        clamp_log_line, debug_mode_requested, ide_launcher_args, is_safe_launcher_command,
+        is_truthy_flag, write_new_download,
+    };
     use std::fs;
 
     #[test]
@@ -1287,6 +1396,68 @@ mod tests {
         assert!(clamped.ends_with('…'));
         // A short line is returned unchanged (aside from newline collapsing).
         assert_eq!(clamp_log_line("short"), "short");
+    }
+
+    #[test]
+    fn vscode_launcher_args_put_the_position_after_the_path() {
+        assert_eq!(
+            ide_launcher_args("vscode", "/repo/a.ts", Some(12), Some(3)).unwrap(),
+            vec!["--goto".to_string(), "/repo/a.ts:12:3".to_string()]
+        );
+        // Line only, then no position at all.
+        assert_eq!(
+            ide_launcher_args("vscode", "/repo/a.ts", Some(9), None).unwrap(),
+            vec!["--goto".to_string(), "/repo/a.ts:9".to_string()]
+        );
+        assert_eq!(
+            ide_launcher_args("vscode", "/repo/a.ts", None, None).unwrap(),
+            vec!["--goto".to_string(), "/repo/a.ts".to_string()]
+        );
+    }
+
+    #[test]
+    fn jetbrains_launcher_args_put_the_flags_before_the_path() {
+        assert_eq!(
+            ide_launcher_args("jetbrains", "/repo/a.ts", Some(12), Some(3)).unwrap(),
+            vec![
+                "--line".to_string(),
+                "12".to_string(),
+                "--column".to_string(),
+                "3".to_string(),
+                "/repo/a.ts".to_string()
+            ]
+        );
+        // A column without a line is dropped — the launcher needs the line first.
+        assert_eq!(
+            ide_launcher_args("jetbrains", "/repo/a.ts", None, Some(3)).unwrap(),
+            vec!["/repo/a.ts".to_string()]
+        );
+    }
+
+    #[test]
+    fn unknown_ide_family_is_rejected() {
+        assert!(ide_launcher_args("emacs", "/repo/a.ts", None, None).is_err());
+    }
+
+    #[test]
+    fn launcher_command_allows_bare_names_and_rejects_anything_path_or_shell_like() {
+        for ok in ["code", "code-insiders", "rider", "idea", "webstorm64", "rustrover"] {
+            assert!(is_safe_launcher_command(ok), "{ok} should be allowed");
+        }
+        for bad in [
+            "",
+            " code",
+            "-rf",
+            "/usr/bin/code",
+            "code me",
+            "code;rm -rf /",
+            "code$(whoami)",
+            "code|cat",
+            "..",
+            &"c".repeat(65),
+        ] {
+            assert!(!is_safe_launcher_command(bad), "{bad:?} should be rejected");
+        }
     }
 
     #[test]

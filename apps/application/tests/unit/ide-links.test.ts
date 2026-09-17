@@ -6,6 +6,7 @@ import {
   encodePathForUrl,
   joinWorkspacePath,
   parseLocation,
+  VSCODE_CLI_COMMANDS,
 } from '../../app/utils/ide-links';
 
 describe('joinWorkspacePath', () => {
@@ -102,6 +103,17 @@ describe('buildJetbrainsHttpUrl', () => {
     expect(buildJetbrainsHttpUrl({ port: 63350, path: 'tests/a.ts', line: 7 })).toBe(
       'http://localhost:63350/api/file/tests/a.ts:7',
     );
+  });
+});
+
+describe('VSCODE_CLI_COMMANDS', () => {
+  test('maps each flavor to the command it installs on the PATH', () => {
+    expect(VSCODE_CLI_COMMANDS).toEqual({
+      vscode: 'code',
+      'vscode-insiders': 'code-insiders',
+      vscodium: 'codium',
+      cursor: 'cursor',
+    });
   });
 });
 

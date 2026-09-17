@@ -25,8 +25,9 @@ the server.
 2. Set your **workspace root**: the absolute path of your local checkout, e.g.
    `/home/me/my-repo` (or `C:\Users\me\my-repo` on Windows). Repo-relative paths
    are joined onto it, which is what VS Code needs to resolve a file.
-3. Pick a **method** (or leave it on **Auto**) and close the dialog. Clicking a
-   path now opens it in your editor.
+3. Pick a **method** (or leave it on **Auto**), then hit **Test** to open
+   `package.json` and confirm it lands in your editor. Close the dialog —
+   clicking any path now opens it there.
 
 ## Methods
 
@@ -36,6 +37,33 @@ the server.
 | **JetBrains (URL)** | `jetbrains://<product>/navigate/reference?project=<name>&path=<rel>:<line>` | [JetBrains Toolbox](https://www.jetbrains.com/toolbox-app/); the IDE product tag (e.g. `idea`, `webstorm`) and the open project name. |
 | **JetBrains (local server)** | `http://localhost:63342/api/file/<path>:<line>` | The IDE running with the **[IDE Remote Control](https://plugins.jetbrains.com/plugin/19991-ide-remote-control)** plugin and **Settings → Build → Debugger → "Allow unsigned requests"** enabled. |
 | **Auto** | Tries the JetBrains local server first, then falls back to a URL launch | Whatever the chosen fallback needs. |
+
+### Desktop app — direct launch (most reliable)
+
+In the [desktop app](./desktop.md) there is a better path than any URL scheme: the
+shell runs your IDE's **command-line launcher** directly. Whatever method you
+pick, clicking a path first tries the launcher —
+
+- VS Code family: `code --goto <file>:<line>:<column>` (or `cursor`, `codium`,
+  `code-insiders`, matching the flavor you chose);
+- JetBrains: `<product> --line <line> --column <column> <file>`, where
+  `<product>` is the product tag you set (`rider`, `idea`, `webstorm`, …).
+
+This needs **no** `vscode://`/`jetbrains://` protocol handler, no JetBrains
+Toolbox, no open-project name to match and no "allow unsigned requests" — the
+reasons the URL schemes are unreliable, on Rider especially — and unlike a URL
+scheme it reports back whether the file actually opened. The only requirement is
+that the launcher is on your `PATH`:
+
+- **JetBrains:** Toolbox → **Settings** → **Generate shell scripts** (the script
+  name is the product tag, e.g. `rider`).
+- **VS Code:** command palette → **Shell Command: Install 'code' command in
+  PATH** (macOS; already on `PATH` on Windows/Linux).
+
+When no matching launcher is found the desktop app falls back to the URL scheme
+for the chosen method, so nothing regresses. On desktop, a project's
+[linked folder](./desktop.md) also stands in for the workspace root, so files
+open with zero extra setup.
 
 ### Auto — "try all, stop on first success"
 
@@ -57,6 +85,15 @@ method (and Auto's detectable rung) therefore works best when the dashboard is
 served over **http / localhost**. Over HTTPS, Auto still falls back to the URL
 schemes, which are unaffected.
 :::
+
+## Test your setup
+
+The **Configure…** dialog has a **Test** row with two buttons — **Open
+package.json** and **Open &lt;your Playwright config&gt;** — that open a known
+file with your current settings, so you can confirm files land in your editor
+without hunting down a real failure first. On the desktop app the Playwright
+config's real file name is read from the linked folder; elsewhere it defaults to
+`playwright.config.ts`.
 
 ## Per-project overrides
 

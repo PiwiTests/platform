@@ -17,7 +17,8 @@ import {
 } from '~/composables/useOpenInIde';
 import type { VscodeScheme } from '~/utils/ide-links';
 
-const { prefs, settingsOpen, settingsContext } = useOpenInIde();
+const { prefs, settingsOpen, settingsContext, openInIde } = useOpenInIde();
+const isDesktop = useIsDesktop();
 
 const methodItems = (Object.keys(IDE_METHOD_LABELS) as IdeMethod[]).map((value) => ({
   label: IDE_METHOD_LABELS[value],
@@ -52,6 +53,33 @@ function mapEntry(map: 'projectRoots' | 'jetbrainsProjectNames') {
 }
 const projectRoot = mapEntry('projectRoots');
 const projectJbName = mapEntry('jetbrainsProjectNames');
+
+// The Playwright config's real file name comes from inspecting the linked folder
+// (desktop shell); off desktop, fall back to the most common name so the test
+// button still opens something meaningful.
+const pwConfigName = ref('playwright.config.ts');
+watch(
+  [settingsOpen, projectKey],
+  async ([open, key]) => {
+    pwConfigName.value = 'playwright.config.ts';
+    if (!open || !key) return;
+    const linked = await getDesktopProjectLink(key);
+    if (!linked?.exists) return;
+    const inspection = await inspectDesktopFolder(linked.path);
+    if (inspection?.playwrightConfig) pwConfigName.value = inspection.playwrightConfig;
+  },
+  { immediate: true },
+);
+
+/** Open a well-known file to check the current settings actually reach the editor. */
+function testOpen(filePath: string) {
+  openInIde({
+    filePath,
+    line: 1,
+    projectKey: projectKey.value,
+    projectName: settingsContext.value.projectName ?? null,
+  });
+}
 </script>
 
 <template>
@@ -70,6 +98,15 @@ const projectJbName = mapEntry('jetbrainsProjectNames');
           Click a source path anywhere in the dashboard to open it in your editor. These preferences are stored in this
           browser only.
         </p>
+
+        <UAlert
+          v-if="isDesktop"
+          color="primary"
+          variant="soft"
+          icon="i-lucide-app-window"
+          title="Desktop app opens files directly"
+          description="Files open through your IDE's command-line launcher (code, cursor, rider, idea, …) — the most reliable method, and the one that confirms it worked. Make sure the launcher is on your PATH: JetBrains Toolbox → Settings → “Generate shell scripts”, or VS Code → “Shell Command: Install 'code' command in PATH”. When no launcher is found it falls back to a URL scheme."
+        />
 
         <UFormField
           label="Method"
@@ -139,6 +176,28 @@ const projectJbName = mapEntry('jetbrainsProjectNames');
           title="JetBrains prerequisites"
           description="The jetbrains:// link needs JetBrains Toolbox. The local server needs the IDE Remote Control plugin with 'Allow unsigned requests', and browsers block it when this dashboard is served over HTTPS."
         />
+
+        <USeparator />
+        <UFormField
+          label="Test"
+          name="test"
+          description="Open a known file with the current settings to check it lands in your editor."
+        >
+          <div class="flex flex-wrap items-center gap-2">
+            <UButton
+              size="sm"
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-file-code"
+              @click="testOpen('package.json')"
+            >
+              Open package.json
+            </UButton>
+            <UButton size="sm" color="neutral" variant="soft" icon="i-lucide-file-cog" @click="testOpen(pwConfigName)">
+              Open {{ pwConfigName }}
+            </UButton>
+          </div>
+        </UFormField>
 
         <div class="flex items-center justify-between pt-1">
           <DocLink to="features/ide-integration">Learn more</DocLink>

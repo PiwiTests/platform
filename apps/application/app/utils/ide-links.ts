@@ -15,6 +15,21 @@ export { parseLocation } from '#shared/parse-location';
 
 export type VscodeScheme = 'vscode' | 'vscode-insiders' | 'vscodium' | 'cursor';
 
+/** IDE argument dialect for the desktop command-line launcher. */
+export type IdeFamily = 'vscode' | 'jetbrains';
+
+/**
+ * Command-line launcher names each VS Code flavor installs on the `PATH` (the
+ * `code`/`cursor`/… commands). The desktop shell spawns these directly — a far
+ * more reliable open than a `vscode://` URL, and one it can confirm started.
+ */
+export const VSCODE_CLI_COMMANDS: Record<VscodeScheme, string> = {
+  vscode: 'code',
+  'vscode-insiders': 'code-insiders',
+  vscodium: 'codium',
+  cursor: 'cursor',
+};
+
 /** `:line` when a line is present, `:line:col` when a column is too, else ''. */
 function positionSuffix(line?: number | null, column?: number | null): string {
   if (line == null) return '';

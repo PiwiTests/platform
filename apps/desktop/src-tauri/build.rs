@@ -17,6 +17,7 @@ fn main() {
             "desktop_set_run_in_background",
             "desktop_set_start_on_login",
             "desktop_open_external",
+            "desktop_open_in_ide",
             "desktop_open_window",
             "desktop_notify",
             "desktop_log",
