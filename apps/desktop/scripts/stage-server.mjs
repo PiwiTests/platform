@@ -85,6 +85,25 @@ execSync('npm install --omit=dev --ignore-scripts --no-audit --no-fund', {
   stdio: 'inherit',
 });
 
+// Drop musl-libc native variants (npm installs both glibc and musl builds of
+// @libsql on Linux). The bundled Node is the official glibc build, so musl
+// addons never load — and worse, the Linux AppImage bundler runs `ldd` on every
+// ELF it finds and aborts on a musl binary. Prune them everywhere they nest.
+const installedModules = join(dest, 'node_modules');
+let muslDropped = 0;
+const pruneMusl = (dir) => {
+  for (const name of readdirSync(dir)) {
+    if (name.includes('musl')) {
+      rmSync(join(dir, name), { recursive: true, force: true });
+      muslDropped++;
+    } else if (name.startsWith('@')) {
+      pruneMusl(join(dir, name));
+    }
+  }
+};
+if (existsSync(installedModules)) pruneMusl(installedModules);
+console.log(`[stage] Dropped ${muslDropped} musl native variant(s)`);
+
 // Trim assets not needed at runtime — smaller install, and no source maps that
 // would map the minified server/client bundles back to readable source:
 //   - the in-browser demo SPA (public/demo, unused by the desktop app)
