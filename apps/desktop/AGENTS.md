@@ -9,8 +9,8 @@ build prerequisites and the release flow.
 A [Tauri](https://tauri.app) window around **the same Nuxt/Nitro server** shipped as the Docker image and
 `@piwitests/server`. On launch the Rust shell picks a free loopback port, resolves a per-user data dir, spawns the
 bundled server as a **Node sidecar**, polls `GET /api/health` until the database is migrated, then points the window at
-it through a one-time token bootstrap (`/__piwi/session`). Targets for v1 are Windows (`.msi`) and macOS (`.dmg`);
-Linux is deferred.
+it through a one-time token bootstrap (`/__piwi/session`). Targets are Windows (`.msi`), macOS (`.dmg`) and Linux
+(`.deb` / `.rpm` / `.AppImage`) — all three feature-equivalent and built from the same shell.
 
 ## Rules
 

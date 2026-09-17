@@ -5,7 +5,8 @@ shipped as the Docker image and `@piwitests/server`, and runs it locally. No
 Docker, no `npx`, no server to set up — double-click and go. Everything binds
 `127.0.0.1`; your data lives under the OS app-data directory.
 
-Targets for v1: **Windows (`.msi`)** and **macOS (`.dmg`)**. Linux is deferred.
+Targets: **Windows (`.msi`)**, **macOS (`.dmg`)**, and **Linux (`.deb` / `.rpm` /
+`.AppImage`)**.
 
 ## How it works
 
@@ -58,7 +59,8 @@ npx tauri icon ../application/public/logo.svg   # generate icons (once)
 
 # 3. Run in dev, or build an installer
 npm run dev                 # launches the app against the staged server
-npm run build               # produces the .msi / .dmg under src-tauri/target
+npm run build               # produces the installer for this OS under src-tauri/target
+                            # (.msi on Windows, .dmg on macOS, .deb/.rpm/.AppImage on Linux)
 ```
 
 > The Node sidecar (`src-tauri/binaries/`), the staged server

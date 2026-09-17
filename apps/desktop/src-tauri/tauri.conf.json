@@ -28,7 +28,10 @@
     "active": true,
     "targets": [
       "msi",
-      "dmg"
+      "dmg",
+      "deb",
+      "rpm",
+      "appimage"
     ],
     "icon": [
       "icons/32x32.png",

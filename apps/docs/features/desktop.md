@@ -29,8 +29,12 @@ Grab the installer for your OS from the [latest release](https://github.com/Piwi
 |----|-----------|
 | **Windows** | `.msi` |
 | **macOS** (Apple silicon) | `.dmg` |
+| **Linux** (x86-64) | `.AppImage`, `.deb`, or `.rpm` |
 
-Linux is not packaged yet — use [Docker or `npx`](/operate/deployment) there.
+The `.AppImage` runs anywhere — `chmod +x` it and launch. The `.deb` (Debian /
+Ubuntu) and `.rpm` (Fedora / RHEL) install through your package manager. All
+three need a system WebKitGTK (`webkit2gtk-4.1`), which most desktops already
+have; install it from your distro if the app reports it missing.
 
 ### Unsigned builds
 
@@ -39,6 +43,8 @@ your OS shows a first-run warning:
 
 - **macOS:** right-click the app → **Open** → **Open** (once).
 - **Windows:** SmartScreen → **More info** → **Run anyway**.
+- **Linux:** the `.AppImage`, `.deb` and `.rpm` are unsigned; no extra step —
+  make the `.AppImage` executable (`chmod +x`) and run it.
 
 ## Where your data lives
 
@@ -50,6 +56,7 @@ app-data directory:
 |----|----------|
 | **Windows** | `%APPDATA%\io.piwitests.dashboard\.data` |
 | **macOS** | `~/Library/Application Support/io.piwitests.dashboard/.data` |
+| **Linux** | `~/.local/share/io.piwitests.dashboard/.data` |
 
 That folder holds `piwi.db` (SQLite) and `storage/` (reports, traces,
 attachments). Back it up by copying the folder while the app is closed.
