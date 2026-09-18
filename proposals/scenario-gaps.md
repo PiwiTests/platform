@@ -1,57 +1,106 @@
-# Scenario gaps — suggesting the tests that are missing
+# Scenario gaps — the Test Map
 
-A design record for **scenario gaps**: the dashboard proposing tests that do not exist yet, computed from the history
-it already keeps (routes, pages, locators, failures, diffs), from a small amount of new capture, and from two new
-inputs an application team can opt into. A gap is always a suggestion with evidence and a next step — a draft spec,
-an MCP call, a line in the pull-request comment — never a verdict.
+A design record for **scenario gaps**: the dashboard proposing tests that do not exist yet, from one model of what the
+application exposes, what the suite touches, what the suite would actually notice, and what is worth caring about. A
+gap is always a suggestion with evidence and a next step — a draft spec, an MCP call, a line in the pull-request
+comment — never a verdict.
 
-**Status.** Proposed. Nothing below is shipped. The reach edges, the surface inventory and the detectors are designed
-to land in that order, each useful on its own.
+**Status.** Proposed, second revision. The first revision built two references (a reach index and a surface
+inventory) and listed the difference; a review of the products and the research in this area (see
+[Prior art](#prior-art) and [References](#references)) changed the shape of the product in three ways, recorded in
+[What changed](#what-changed-since-the-first-revision). Nothing is shipped.
 
 **Summary.** A missing test is only visible against a reference for what the application can do. Piwi stores five such
 references today without treating any of them as one: the routes tests hit (`network_requests.normalized_url`), the
 pages they end on (`test_runs_cases.page_state`), the controls they touch (`locator_snapshots`), the controls and links
 a page exposes (ARIA snapshots), and the page-object methods a project owns (`test_functions`). Failures add a sixth:
 every cluster is a scenario that was missing until it happened. Diffs add a seventh, and the sharpest: a changed file
-no test reaches. The proposal builds one **reach index** (test → what it observably exercised) and one **surface
-inventory** (what the application declares or exposes), runs deterministic **detectors** over the difference, ranks
-the result by usage, risk and cost, and delivers it where the decision is made: a Gaps tab with the inbox's triage
-verbs, an uncovered-changes section in PR feedback, a warn-only gate policy, and MCP tools so an agent writes the test.
-Two new inputs are optional and bring their own process: an **application manifest** (declared routes and pages, from
-the instrumentation packages, an OpenAPI URL or a committed JSON file) and **production route usage** (daily hit
-counts per route, no bodies, no identifiers). Everything stays on the instance, honest by construction, and proposes
-rather than applies.
+no test reaches. Three findings from the literature reshape what is built on top. **Reach is not protection** — a
+large share of code that tests execute is pseudo-tested, nothing fails when it breaks [8][9] — so the model gets a
+third axis, *checked*, measured by probing passing tests with mutated network responses at the Playwright route
+boundary. **A dashboard of predictions changes nothing** — Google measured no behavior change from company-wide bug
+prediction [6], while coverage on changed lines inside code review is the form developers used [7] — so the
+pull-request comment and the MCP tools ship first and the Gaps tab last. **Where bugs escape is knowable** —
+changed-but-untested code, high churn, and *older* components rather than new ones [1][2][3][5] — so the ranking is an
+explicit *exposure* score. Everything stays on the instance, honest by construction, and proposes rather than applies.
 
 ## Problem
 
 Piwi answers "what broke, why, and what to do" well. It cannot answer the question the same people ask the day after
-a release: **what did we never test?** Three concrete shapes of that question go unanswered today.
+a release: **what did we never test, and what do we only think we test?**
 
-1. **The suite is judged by what it contains, not by what it leaves out.** The catalog lists tests; spec health,
-   flaky leaderboards and selection analytics describe those tests. Nothing describes the application side — routes
-   no test has ever requested, pages no test has ever visited, a button rendered on twelve pages that no locator has
-   ever targeted. The raw material is in the database (see the table below), read today only in one direction.
+1. **The suite is judged by what it contains, not by what it leaves out.** The catalog lists tests; spec health, flaky
+   leaderboards and selection analytics describe those tests. Nothing describes the application side — routes no test
+   has ever requested, pages no test has ever visited, a button rendered on twelve pages that no locator has ever
+   targeted.
 
-2. **A bug that escaped teaches nothing structural.** When a cluster is diagnosed and fixed, the diagnosis names the
-   root cause and the patch, fix verification records that the fix held, and the story ends. Whether the test that
-   failed was actually *about* that behavior, or caught it by accident, is never asked. A "checkout happy path" test
-   that fails on a rounding bug is evidence that no rounding test exists — and the next rounding bug will need the same
-   luck.
+2. **A passing test is taken as protection.** A test that visits a page and asserts a heading is visible "covers" the
+   page and every request it makes. Whether it would fail if the orders endpoint returned a 500 is never asked. At the
+   unit level this is measured — between 6 and 53 percent of covered methods are pseudo-tested [8] — and an end-to-end
+   suite has the same disease under a different name.
 
-3. **A pull request is judged on the tests that ran, not on the code it changed.** PR feedback separates new
-   failures from pre-existing ones, and the impact command maps changed files to tests. The inverse — the changed
-   files that map to *no* test — is computed today only as a warning that widens the selection to the full suite
-   ([`selection-impact.ts`](../apps/application/server/utils/selection-impact.ts)). That warning is the single most
-   useful signal in this document, and it is currently thrown away.
+3. **A bug that escaped teaches nothing structural.** When a cluster is diagnosed and fixed, the story ends. Whether
+   the test that failed was actually *about* that behavior, or caught it by accident, is never asked.
 
-Against the ROADMAP's own test: this is job 3, **hand back a fix**, applied before the failure exists. "The point is
-to leave with something to do" — a ranked list of tests worth writing, each with the evidence for it and the closest
-existing test to fork, is the same principle one step earlier in the loop. It also strengthens job 1: history that
-can only describe the past is worth less than history that shapes what gets tested next.
+4. **A pull request is judged on the tests that ran, not on the code it changed.** The impact command maps changed
+   files to tests; the inverse — the changed files that map to *no* test — is computed only as a warning that widens
+   the selection ([`selection-impact.ts`](../apps/application/server/utils/selection-impact.ts)) and then thrown away.
+   Changed-but-untested code is where field faults concentrate [1][2].
+
+Against the ROADMAP's own test: this is job 3, **hand back a fix**, applied before the failure exists.
+
+## What changed since the first revision
+
+| Change | Was | Now | Evidence |
+|---|---|---|---|
+| Third axis | reached or not | reached · checked · exposed; a gap is high exposure with low reach or low check | [8][9][19] |
+| Oracle probes | assertion-count heuristic only | scheduled probe runs mutate responses at `page.route` and record whether the test noticed | [8][19] |
+| Delivery order | Gaps tab in M1, PR comment in M2 | PR comment and MCP tools in M1, tab in M3 | [6][7] |
+| Exposure score | usage × risk / cost, risk loosely defined | usage, churn, age, escape history, priority as named factors; age weighted *up* | [3][4][5] |
+| Ticket as a unit | file-level only | changes joined to tickets through ids in commit messages and the PR; a verdict per ticket | [2]; Teamscale feature coverage |
+| Feature as a unit | route, page, control | surfaces clustered into features; gaps reported per feature | [26] |
+| Usage source | a standalone usage integration | counts come from the instrumentation packages teams already install | mabl retired its Segment usage integration in 2026 |
+| Guided exploration | not in scope | an explorer spends its budget only on inventoried or declared surface the suite does not reach | [13][26][27][28] |
+| Precision loop | dismiss reasons | per-detector precision tracked from triage; a detector below threshold on a project mutes itself | [25][18] |
+
+## The model: reached, checked, exposed
+
+Every element of the application surface — a route, a page, a control, and the feature that groups them — is scored on
+three axes:
+
+- **Reached** — does any test observably exercise it? From the reach index. Discounted when the only tests are flaky,
+  quarantined, skipped for weeks, or a single test.
+- **Checked** — would a test fail if it broke? From the oracle ledger: probe outcomes first, an assertion prior from
+  step analysis before a probe has run.
+- **Exposed** — how much does it matter? From production usage, churn, age, escape history and priority tags.
+
+Four classes fall out:
+
+| Class | Meaning |
+|---|---|
+| **Blind spot** | No trusted test reaches it. Declared in a manifest, seen in an ARIA inventory, or linked from a visited page, and never exercised. |
+| **False comfort** | Tests reach it and a probe shows they would not notice it breaking. The most dangerous class, because the catalog says it is covered. |
+| **Fragile** | Reached and checked, but only by a single test, a flaky one, a quarantined one, or one that has not actually run in weeks. |
+| **Protected** | Reached by more than one trusted test and at least one probe made a test fail. Not listed; counted, so the trend is visible. |
+
+The score is stated in the open so the ranking is arguable rather than magic:
+
+```
+protection = reach × check              # each in [0.1, 1]; a missing input never zeroes a row
+gap score  = exposure × (1 − protection) / cost
+
+reach     from trusted covering tests (flaky, quarantined, phantom, single → discounted)
+check     probe outcomes; before a probe: assertion prior from step analysis
+exposure  usage_30d · churn_90d · age · escape_history · priority
+cost      low when a catalog method reaches the page or a test can be forked
+```
+
+"Coverage" is used only with the qualifier the selection suggestions already use — *observed* reach, never
+instrumented coverage — and the UI repeats that qualifier.
 
 ## What the dashboard already knows
 
-No detector in M1 needs new capture. Everything in this table exists and is indexed.
+No detector in M1 needs new capture.
 
 | Signal | Where it lives today | Captured on |
 |---|---|---|
@@ -64,391 +113,448 @@ No detector in M1 needs new capture. Everything in this table exists and is inde
 | Console entries, dialogs, backend logs and spans | `console_logs`, `dialogs`, `network_requests.server_logs` / `server_traces` | every execution |
 | Browser, viewport, environment, branch | `test_runs_cases.browser`, `test_runs.environment` / `branch` | every execution / run |
 | Tags, owner, priority, feature | `test_cases` denormalized columns, `test_runs_cases.test_meta` | refreshed every run |
-| Page-object methods and the DOM pattern each drives | `test_functions` (`module`, `name`, `url_pattern`, `steps`) | catalog, scanned or recorded |
+| Page-object methods and the DOM pattern each drives | `test_functions` (`module`, `name`, `url_pattern`, `steps`) | catalog |
 | Failure clusters, diagnoses, fix verification, first bad commit | `failure_clusters`, `failure_diagnoses`, cluster fix/regression state | per cluster |
 | Skipped, did-not-run, blocked-by cascade, quarantine | `test_runs_cases.status` / `did_not_run_reason` / `blocked_by`, `quarantined_tests` | every execution |
-| Commit, branch, PR number, base branch | `test_runs.metadata.scm` (reporter's [`metadata-collector.ts`](../packages/reporter/src/internal/collect/metadata-collector.ts)) | every run |
-| Changed files with patches between two refs, file content at a ref | SCM providers ([`ScmProvider.ts`](../apps/application/server/utils/scm/ScmProvider.ts)), 30 files / 200 KB caps | on demand |
+| Commit, branch, PR number, base branch | `test_runs.metadata.scm` ([`metadata-collector.ts`](../packages/reporter/src/internal/collect/metadata-collector.ts)) | every run |
+| Changed files with patches, file content at a ref | SCM providers ([`ScmProvider.ts`](../apps/application/server/utils/scm/ScmProvider.ts)), 30 files / 200 KB caps | on demand |
 | Ownership | CODEOWNERS ([`scm/ownership.ts`](../apps/application/server/utils/scm/ownership.ts)) | on demand |
 | Linked tickets | `entity_links`, Jira integration | per cluster |
 
-Two rows carry the design's main caveat. **Source frames exist only for failures**, because they come from the error
-stack; a test that always passes has none. **ARIA snapshots exist only for failures**, so the "everything on the page"
-reference is sparse on healthy suites. Both are fixed by the same small capture change in M2, and until then the
-detectors say so in their evidence.
+Two rows carry the main caveat. **Source frames exist only for failures**, and **ARIA snapshots exist only for
+failures**. Both are fixed by the same capture change in M2; until then the detectors say so in their evidence.
 
-## Design in one page
+## Architecture
+
+Three stores sit between the sources Piwi already ingests and the places a gap is delivered. Each is a
+materialization, rebuildable from tables that exist today, refreshed on ingest and pruned with the runs that fed it.
 
 ```
-┌─ Delivery ────────────────────────────────────────────────────────────────┐
-│ Gaps tab (triage: accept · snooze · dismiss · "covered by") · PR comment  │
-│ "uncovered changes" · gate policy (warn-only) · MCP tools + skill ·       │
-│ digest notification · accepted gap → draft spec (clipboard / PR / agent)  │
-├─ Ranking ─────────────────────────────────────────────────────────────────┤
-│ score = usage weight × risk (churn, past clusters, priority) × 1/cost     │
-│ (a catalog method that reaches the page makes a gap cheap to close)       │
-├─ Detectors (deterministic rules, AI optional on top) ─────────────────────┤
-│ surface gaps · failure-derived gaps · diff-derived gaps · matrix gaps ·   │
-│ false-coverage signals that discount the others                           │
-├─ Two references, kept per project ────────────────────────────────────────┤
-│ reach index: test → {file, route, page, control} it observably exercised  │
-│ surface inventory: {route, page, control, link} the app exposes/declares  │
-└───────────────────────────────────────────────────────────────────────────┘
+SOURCES                        STORES (per project)          ANALYSIS              DELIVERY
+reporter attachments  ──┐      ┌─ surface inventory ─┐       ┌─ detectors ──┐      ┌─ PR comment + status  (M1)
+instrumentation       ──┼────► │  reach index        │ ────► │  exposure    │ ───► │  MCP tools + skill    (M1)
+SCM (diff, tickets)   ──┤      │  oracle ledger      │       │  ranking     │      │  gate policy, warn    (M2)
+failure history       ──┤      └─────────────────────┘       └─ draft ──────┘      │  Gaps tab + inbox     (M3)
+probe runs (M2)       ──┘                                          ▲               └─ weekly digest        (M3)
+                                                                   └──── triage: dismissed-as-wrong, covered-by
+                                                                         → detector precision, manual reach edges
 ```
 
-Vocabulary: a **gap** is one suggested scenario with evidence. A **surface** is the application side (routes, pages,
-controls, links). **Reach** is the test side. "Coverage" is used only with the qualifier the selection suggestions
-already use — *observed* coverage, never instrumented code coverage — and the UI repeats that qualifier.
+### Storage
+
+```
+app_surface     id, project_id, kind ∈ route|page|control|link, key, attrs JSON, feature_id?,
+                origin ∈ observed|manifest|openapi|usage, first_seen_run_id, last_seen_run_id,
+                last_seen_at, usage_30d                       unique (project_id, kind, key)
+
+features        id, project_id, name, url_patterns JSON, tag?, source ∈ tag|cluster|manual
+
+test_reach      id, project_id, test_case_id, kind ∈ route|page|control|file|handler, target,
+                origin ∈ observed|trace|convention|import|coverage|manual,
+                last_seen_run_id, last_seen_at                unique (test_case_id, kind, target)
+
+oracle_probes   id, project_id, test_case_id, surface_id, mutation ∈ status-500|empty-body|
+                drop-field|stale-value|slow, outcome ∈ noticed|not-noticed|inconclusive,
+                run_id, probed_at, evidence JSON
+
+scenario_gaps   id, project_id, detector, class ∈ blind-spot|false-comfort|fragile, key,
+                title, evidence JSON, factors JSON, score, feature_id?, ticket?,
+                test_case_id?, failure_cluster_id?, test_run_id?, pr_number?,
+                status ∈ open|snoozed|dismissed|accepted|closed, dismiss_reason?,
+                assigned_to?, created_at, updated_at, closed_at, closed_by_run_id?
+```
+
+Both dialects. Nothing large goes inline: the page inventory and probe evidence flow through `case_payloads`. Gaps
+persist because triage must survive recomputation, and a gap closes itself when its surface gains a trusted edge, so
+"closed this month" is a real number.
 
 ## The reach index
 
-One table, `test_reach`, one row per `(test_case_id, kind, target)`:
+What each test observably exercised. It degrades in the safe direction: no edge means no evidence, never proof of
+absence.
+
+| Edge | Source today | Captured on | Change needed |
+|---|---|---|---|
+| `route` | `network_requests.normalized_url` + method + status | every execution | none |
+| `page` | `page_state.url` at test end; every navigation once the page inventory ships | every execution | M2 attachment |
+| `control` | `locator_snapshots.element_*` resolved to role + accessible name | every execution | none |
+| `file` | `locator_snapshots.location` (in-project call site, every run) ∪ `test_source_frames` (failures) ∪ trace action call sites where traces are retained | every execution for locator call sites | none; import edges in M3 |
+| `handler` | root server span carrying the handler file, or a file-routing convention (Nitro, Nuxt pages, Next, SvelteKit) applied to `route`/`page` edges | every execution | M2 instrumentation field |
+| `coverage` origin | sampled V8 coverage from Chromium on one scheduled job, resolved through source maps | nightly only | M5, opt-in |
+
+This is the same map regression test selection reads forward [20][21][24]. The impact resolver's reach map becomes a
+read of this table; its safe widening on an unmapped source file stays, it just happens less, and each time it does
+the file is also a gap.
+
+## The surface inventory, and features as the unit
+
+Three origins, each a ramp a team can take independently; the detectors say which origin a row came from so "never
+observed" is never confused with "declared and never observed":
+
+1. **Observed** (M1, no setup). Every reach edge is also a surface row. Every control and link in a stored ARIA
+   snapshot is a row keyed by role, accessible name and page. Coverage criteria for GUIs have been event-based since
+   2001 [10]; this is the observed version of that model.
+2. **Declared** (M3). The instrumentation packages already own the framework and grow a route manifest served at
+   `/__piwi/manifest` outside production, fetched once by the reporter's global setup. An **OpenAPI URL** per project
+   adds documented response codes, so status-code class coverage [11][12] becomes a detector rather than a guess. A
+   committed **`piwi.manifest.json`** covers anything else.
+3. **Usage** (M4). Daily hit counts per route from the instrumentation packages in production mode. Never a separate
+   analytics hookup.
+
+**Features.** Files and routes are the engineer's unit; the tester's and the product owner's unit is the feature, and
+the strongest recent result in end-to-end generation measures feature coverage rather than line coverage [26].
+Surfaces are clustered into features three ways, in order of trust: the `piwi:feature` tag on tests that reach them,
+the function catalog's `url_pattern`, and URL clustering with a name proposed the way clusters are already named. A
+gap is then reported as "Refunds: 2 of 9 declared routes reached, 0 error paths, only 1 trusted test", and the Gaps
+tab, the PR comment and the digest group by feature.
+
+**Tickets.** Ticket coverage — the ratio of a ticket's changed methods that tests executed — exposes gaps teams then
+act on [2]. Piwi gets the join for free: ticket ids in commit messages and the PR body, and the Jira binding's links.
+At change time every gap carries its ticket, and the PR comment gives a verdict per ticket, not just per file.
+
+## Oracle probes
+
+Reach says a test touched a route. It does not say the test would fail if that route returned garbage. Mutation
+testing is the accepted answer at the unit level [8][9], and Meta now uses mutants to decide which tests are worth
+generating [19]. An end-to-end suite has a cheaper mutation point than source code: the network boundary Playwright
+already controls.
 
 ```
-test_reach
-  id, project_id FK, test_case_id FK, kind, target, last_seen_run_id FK (set null), last_seen_at
-  kind ∈ 'route' | 'page' | 'control' | 'file' | 'handler'
-  unique (test_case_id, kind, target); index (project_id, kind, target)
+1. pick a pair        test T reaches route R; T passing; R unprobed; highest exposure first
+2. run T under        page.route(R, mutate) — one of: status-500 · empty-body · drop-field ·
+   interception       stale-value (replay a previous response) · slow (+5 s); client side only
+3a. T fails           → noticed: R is checked by T; ledger row; protection up
+3b. T passes          → not-noticed: false-comfort gap on R; evidence is the mutation
+4. next pair          nightly budget of N probes per project; a pair is re-probed only when
+                      the test's source or the route's handler changes
 ```
 
-It is a materialization, not a source of truth: rebuildable from the tables above, refreshed by
-[`persist-run-cases.ts`](../apps/application/server/utils/persist-run-cases.ts) on every ingest, pruned with the runs
-that fed it. Its edges, in the order they become available:
-
-| Edge | Source | Available |
+| Mutation | What "not noticed" means | Suggested next step |
 |---|---|---|
-| `route` — `GET /api/orders/:id` | `network_requests.normalized_url` + `method` | today |
-| `page` — `/checkout` | `page_state.url` at test end; every navigation once the page inventory ships (M2) | today (end URL), M2 (all) |
-| `control` — `button "Export CSV"` on `/reports` | `locator_snapshots.element_*` resolved to a role + accessible name | today |
-| `file` — `pages/CartPage.ts` | `locator_snapshots.location` (every run) ∪ `test_source_frames` (failures) ∪ trace action call sites where traces are retained | today |
-| `handler` — `server/api/orders/[id].get.ts` | root server span carrying the handler's file (M2 instrumentation change) or a file-routing convention (Nitro, Nuxt pages, Next, SvelteKit) applied to the `route`/`page` edges | M2 |
+| `status-500` | the test never depends on the request succeeding | assert the effect on the page, or that no error toast appears |
+| `empty-body` | the rendered data is never asserted | assert one field from the response |
+| `drop-field` (one JSON key) | that field is never asserted | a targeted assertion, named in the evidence |
+| `stale-value` | the test cannot tell a write took effect | assert on the value that should have changed |
+| `slow` (+5 s) | the test does not wait for this request; a timing-flaky candidate | an explicit wait; the flaky classifier learns |
 
-The `file` edge is what makes the impact command precise and the diff detector honest. Today it exists only where a
-test has failed; `locator_snapshots.location` already records the in-project call site of every locator on passing
-runs, so most page-object files are reachable from it with no reporter change. The remaining hole (helpers that never
-create a locator) closes with the trace call sites when the project retains traces on success, and with the shallow
-import graph below otherwise.
+**Where it runs.** A probe run is a normal Playwright run with the reporter's capture fixtures in probe mode, driven
+by `piwi probe` from a scheduled CI job or from the desktop app, against the same target the nightly suite uses. The
+reporter receives the probe plan from the server (pairs and mutations), applies it through `page.route` in the worker,
+and stamps the run so it never counts as a real run: no clusters, no regression signals, no notifications — exactly as
+imports are silent today.
 
-**Import edges (optional, M3).** For a changed file with no reach, the SCM layer can fetch the file at the run's ref
-and read its import specifiers one level up: the pages and handlers that import it already have edges. Capped by the
-same 30-file budget as diagnosis, cached per commit, and marked in the evidence as inferred.
+**Budget and safety.** One mutation per test per run, a per-project nightly budget (default fifty), pairs ordered by
+exposure, re-probe only on change. Response mutation happens in the browser, so the backend never receives anything
+it would not receive in the plain run. Probes are off for any project without a scheduled job configured; nothing
+runs on a developer's machine unasked.
 
-## The surface inventory
+**Before a probe has run**, the check factor is an assertion prior from step analysis: a test with no `expect` steps,
+or only visibility assertions, on the route's page starts low. Probes replace the prior with an observation, and the
+ledger records which.
 
-One table, `app_surface`, one row per `(project_id, kind, key)`:
+## Exposure
 
-```
-app_surface
-  id, project_id FK, kind, key, attrs JSON, origin,
-  first_seen_run_id FK (set null), last_seen_run_id FK (set null), last_seen_at, usage_30d
-  kind ∈ 'route' | 'page' | 'control' | 'link'
-  origin ∈ 'observed' | 'manifest' | 'openapi' | 'usage'
-  unique (project_id, kind, key)
-```
+Each factor lives in [0.1, 1] so a missing input can never zero a row; the Gaps tab and the MCP tool show the
+factors, not just the product.
 
-Three origins, each a ramp a team can take independently:
+| Factor | Source | Why it is in the score |
+|---|---|---|
+| **Usage** | `usage_30d` from instrumentation in production; otherwise in-degree in the link graph and the number of tests that reach the surface's neighbors | suites built from real usage are as effective as white-box ones [14][15] |
+| **Churn** | commits touching the files behind the surface in the last 90 days, cached per commit | relative churn is highly predictive of defect density [3]; change-level risk models are built on it [4] |
+| **Age** | first commit of the files behind the surface | escaped defects concentrate in older, frequently modified components, not new code [5]; age multiplies churn |
+| **Escape history** | files in any cluster's first-bad or fixing commit; tracker bugs without a linked cluster | an area that has already let a bug through is the definition of a residual-fault region [5] |
+| **Priority** | highest `piwi:priority` among tests reaching the surface's neighbors; feature-level tag | the team's own statement of what matters |
 
-1. **Observed** (M1, no setup). Every `route` edge and `page` edge in the reach index is also a surface row. Every
-   control and link in a stored ARIA snapshot is a surface row keyed by role + accessible name + page. This alone
-   powers the single-covering-test and success-only detectors, and the reachable-but-unvisited detector on the pages
-   where a snapshot exists.
-
-2. **Declared** (M3, one config or one CI step). What the application says it has, so "never observed" becomes
-   "declared and never observed" — a real gap rather than an absence of evidence:
-   - The **instrumentation packages** already own the framework. The Nitro plugin knows the router; the ASP.NET Core
-     package knows the endpoint data source. Each grows a manifest: the route table (method, pattern, handler file)
-     served at `/__piwi/manifest` outside production, fetched once by the reporter's global setup when a `baseURL` is
-     configured and the header proves the plugin is present. Same guard as log capture (`PIWI_TEST_LOGS_DISABLED`).
-   - An **OpenAPI URL** per project (dashboard setting). Routes, methods and — the part nothing else provides —
-     documented response codes, so "409 is documented on `POST /api/orders` and no test has ever seen it" is a
-     detector, not a guess.
-   - A **committed `piwi.manifest.json`** for anything else: `{ routes: [...], pages: [...] }`, uploaded by the reporter
-     when present next to the Playwright config. Written by hand or generated by the team's own build step; Piwi does
-     not care which.
-
-3. **Usage** (M4, a production process). Daily hit counts per route, so gaps rank by what real traffic touches.
-   Detailed under *New data* below.
-
-The inventory is upserted, never truncated: a route that stops appearing keeps `last_seen_at` and ages out of the
-detectors after the retention window.
+**The mabl lesson.** mabl weighted page coverage by daily users through a Segment integration and retired it in 2026.
+A usage signal that needs its own analytics hookup is a signal most teams never turn on. Piwi's usage counts come
+from the instrumentation package a backend team installs once for logs and spans, with one more environment
+variable, and an uploaded access-log summary for teams that will not instrument production.
 
 ## Detectors
 
-Every detector is a pure function over the two references plus history, returns gaps with evidence lines and a 0–1
-confidence, and lives in `shared/handlers/scenario-gaps.ts` next to the selection suggestions so the demo mirrors it.
-Deterministic first, like the failure clues engine; a model is only ever asked to *draft* the test for an accepted gap.
+Pure functions over the stores plus history, in `shared/handlers/scenario-gaps.ts` beside the selection suggestions
+so the demo runs them. Deterministic first, like the failure clues engine; a model is asked only to draft the test
+for an accepted gap.
 
-### Surface gaps
+| Detector | Class | Rule | Evidence line | Next step |
+|---|---|---|---|---|
+| Declared, never hit | blind spot | manifest/OpenAPI row with no `route`/`page` edge | "Declared in OpenAPI · 0 tests in 30 runs" | request it; fork the test reaching the nearest sibling |
+| Success only | blind spot | route whose observed statuses are all 2xx/3xx; stronger with documented error codes [11] | "Seen 412 times, always 200 · documents 401, 409" | the error path per documented code |
+| Not noticed | false comfort | probe outcome `not-noticed` on a route with exposure above threshold | "Passes with 500 on POST /api/orders" | the assertion named by the mutation |
+| Assertion-light | false comfort (prior) | zero or visibility-only `expect` steps on the page; becomes a prior once a probe runs | "3 tests, 0 expect on data" | schedule a probe; propose one assertion |
+| Single covering test | fragile | surface reached by exactly one trusted test (the smoke set cover read backwards) | "Only checkout › coupon reaches this · quarantined" | a second scenario |
+| Phantom coverage | fragile | test skipped, fixme, did-not-run or blocked-by for > 30 days | "Skipped 47 days · last passed 2026-07-12" | discounts every surface it used to reach |
+| Reachable, unvisited | blind spot | `link` row whose href matches no `page` edge | "Linked from 7 pages · never navigated to" | visit and assert; explorer target |
+| Control nobody exercises | blind spot | `control` row with no `control` edge project-wide [10] | "On 12 pages · no locator targets it" | interact; catalog searched for a matching method |
+| Catalog method no test calls | blind spot | `test_functions` row with no `file` edge, page reached | "CartPage.applyCoupon · page reached by 4, called by 0" | the cheapest gap: steps already exist |
+| Incidental catch | fragile | cluster diagnosis names a file or component in none of the affected tests' titles, tags, feature or `file` edges [25] | "Cause pricing/rounding.ts · caught by checkout › happy path" | a regression test seeded from the failing step and the validated patch |
+| Fix did not hold | fragile | cluster state regressed | "Fixed in a1b2c3d · regressed 6 days later" | same, ranked higher |
+| Passed with errors | false comfort | passing execution with console error, backend `Error` log, or background 5xx | "Passed · POST /api/audit returned 500 in background" | "no server errors during X"; route joins success-only |
+| Escaped defect | blind spot | tracker bug in the project's binding with no linked cluster; matched by labels, feature, title words | "PROJ-412 · no cluster · mentions refund" | a scenario for the issue; feeds escape history |
+| Changed, unreached | blind spot | changed source file with no `file`/`handler` edge from any test in this run [1][2] | "+41 −3 · no test in run #812 · 0 in 30 runs" | derived from the file kind; per ticket |
+| New error path | blind spot | hunk adds a thrown error or status to a handler with a `route` edge | "Adds 409 to POST /api/orders · never observed" | success-only for that code |
+| New control | blind spot | hunk adds a field, button or menu item to a template whose page has reach | "Adds input[name=promo] on /checkout" | control detector scoped to the PR |
+| Locator break ahead | prediction | hunk removes a testid/id/name present in `locator_snapshots.element_attrs` | "Removes data-testid=submit-order · 3 call sites" | healing pre-flight, not a gap |
+| Intent without a test | blind spot | commit/PR title words match no test title, tag or feature | "fix: negative quantity · no test mentions quantity" | regression test drafted from the diff and message |
+| Matrix | fragile | critical feature on one browser or viewport class; feature on one environment; flag state never both ways | "critical · chromium only · no mobile viewport" | the missing Playwright project |
 
-| Detector | Rule | Evidence lines | Proposed scenario |
-|---|---|---|---|
-| **Declared, never hit** | `app_surface` row with origin `manifest`/`openapi` and no `route`/`page` reach edge | "Declared in OpenAPI · 0 tests in the last 30 runs" | request the route / visit the page; fork the test that reaches the nearest sibling route |
-| **Success only** | route with reach edges whose observed statuses are all 2xx/3xx; stronger when OpenAPI documents an error code | "Seen 412 times, always 200 · OpenAPI documents 401, 409" | the error path for each documented code, using the closest existing test's setup |
-| **Single covering test** | route or page reached by exactly one test (the smoke miner's set cover, read backwards) | "Only `checkout › applies coupon` reaches this · that test is quarantined" | a second scenario, or a direct assertion in a test that already passes nearby |
-| **Reachable, unvisited** | a `link` surface row whose `href` matches no `page` edge in the project | "Linked from 7 pages · never navigated to" | visit and assert the page; the link's page tells which test is closest |
-| **Control nobody exercises** | a `control` surface row (from ARIA) with no `control` reach edge across the project | "Rendered on 12 pages · no locator targets it" | interact and assert; the function catalog is searched for a method whose DOM pattern matches |
-| **Catalog method no test calls** | a `test_functions` row whose `module` has no `file` reach edge and whose `url_pattern` page has reach | "`CartPage.applyCoupon` · page reached by 4 tests · method called by none" | a scenario built from that method — the cheapest gap in the list |
+## Change time
 
-### Failure-derived gaps
-
-| Detector | Rule | Evidence lines | Proposed scenario |
-|---|---|---|---|
-| **Incidental catch** | a cluster whose diagnosis names a component or file that appears in none of the affected tests' titles, tags, `feature` or reached `file` edges | "Diagnosed cause: `pricing/rounding.ts` · caught by `checkout › happy path`" | a dedicated regression test seeded from the failing step, the assertion and the validated patch already on the cluster |
-| **Fix did not hold** | cluster state `regressed` | "Fixed in `a1b2c3d`, regressed 6 days later" | same as above, ranked higher — the verifying test is too coarse |
-| **Phantom coverage** | a test skipped, `fixme`, `didnotrun` or blocked-by for longer than N days (default 30) | "Skipped for 47 days · last passed on 2026-07-12" | none — this is a false-coverage row; it discounts every surface the test used to reach |
-| **Passed with errors** | a passing execution whose console has an `error`, or whose backend logs carry `Error`, or a 5xx on a background request | "Passed · `POST /api/audit` returned 500 in the background" | an assertion scenario ("no server errors during X"), and the route joins *success only* |
-| **Escaped defect** (M3) | a tracker issue in the project's Jira binding that no cluster links to, matched by the binding's labels | "Bug PROJ-412 · not linked to any cluster · title mentions `refund`" | a scenario for the issue; matched against tests by feature tag and title words |
-
-### Diff-derived gaps
-
-Computed for a run stamped with a PR number, between the baseline commit the run-changes ladder already picks
-([`run-baseline.ts`](../apps/application/shared/run-baseline.ts)) and the run's commit.
-
-| Detector | Rule | Evidence lines | Proposed scenario |
-|---|---|---|---|
-| **Changed, unreached** | a changed source file (by the impact resolver's extension set) with no `file`/`handler` reach edge from any test *in this run* | "Changed (+41 −3) · no test in run #812 reached it · 0 tests in the last 30 runs" | derived from the file: a route handler → *declared, never hit*; a page → visit it; a component → its importing pages |
-| **New error path** | a patch hunk adding a thrown error or status code to a handler with a `route` edge | "Adds `409` to `POST /api/orders` · never observed" | *success only* for that route and code |
-| **New control** | a patch hunk adding a form field, button or menu item to a template whose page has reach | "Adds `input[name=promo]` to `/checkout` · no locator targets it" | *control nobody exercises*, scoped to the PR |
-| **Locator break ahead** | a patch hunk removing a `data-testid`, `id` or `name` value that appears in `locator_snapshots.element_attrs` | "Removes `data-testid=submit-order` · 3 call sites depend on it" | not a gap — a prediction; handed to healing as a pre-flight so the fix is ready before the run fails |
-| **No spec touched** | a PR whose diff changes source files and no test file | "7 source files changed · 0 spec files" | the *changed, unreached* list, which is the whole diff |
-| **Intent without a test** | commit or PR title words (after stop-word removal) that match no test title, tag or `feature` in the catalog | "`fix: negative quantity in cart` · no test mentions quantity" | a regression test drafted from the diff and the commit message |
-
-### Matrix gaps
-
-| Detector | Rule | Proposed scenario |
-|---|---|---|
-| **Browser / viewport** | a test or feature tagged `priority: critical` that ran on one browser or one viewport class in the last N runs | the same test under the missing Playwright project |
-| **Environment** | a feature whose tests ran only on one `environment` while the project reports several | the same selection against the other environment |
-| **Flag / storage** | a storage key or cookie name observed on some executions of a page and never on others (a feature flag) whose "on" and "off" states were never both exercised on the same test | the other state |
-
-### False-coverage signals
-
-These never produce a gap of their own. They lower the confidence of every surface a test reaches, so a route covered
-only by an assertion-light or flaky test still ranks as a gap:
-
-- **assertion-light** — a test with zero `expect` steps, or only visibility assertions, per step analysis;
-- **retry-dependent** — passes only after a retry in most of the last N runs;
-- **phantom** — the skip/did-not-run detector above;
-- **quarantined** — the existing table.
-
-## Ranking
-
-Each gap carries `score = usage × risk / cost`, every factor in `[0.1, 1]` so a missing input never zeroes a row:
-
-- **usage** — `usage_30d` from the production process when present; otherwise the number of tests that reach the
-  surface's neighbors (a page linked from seven others is more used than a page linked from one).
-- **risk** — churn of the files behind the surface over the last 90 days (SCM commits, cached), whether those files
-  appear in any cluster's first-bad or fixing commit, and the highest `priority` tag among the tests that reach the
-  surface's neighbors.
-- **cost** — low when the function catalog has a method whose `url_pattern` matches the page, or a test already
-  reaches the page (fork it); high when nothing reaches the page at all.
-
-Ranking is transparent: the Gaps tab shows the three factors per row and the evidence lines behind each, and the MCP
-tool returns the same numbers.
-
-## New data, and the process that brings it
-
-Everything in M1 runs on stored data. The rest adds capture in the order of cost to the team adopting it.
-
-1. **Page inventory on passing runs** (reporter, M2). A compact list of controls and links per visited page —
-   `{ url, controls: [{ role, name }], links: [{ name, href }] }` — attached as `piwi-page-inventory` and stored
-   through `case_payloads` (identical pages across tests and runs dedupe to one row). Taken from `ariaSnapshot()` at
-   navigation settle and at test end, bounded by the same timeout as the failure snapshot, capped at 500 entries per
-   page, and skipped when the same URL was already inventoried by the worker during the run. Opt-out
-   `capturePageInventory: false`. This is what turns *control nobody exercises* and *reachable, unvisited* from
-   failure-sampled into whole-suite.
-
-2. **Handler file on the root span** (instrumentation packages, M2). The root span the Nitro plugin already emits
-   gains `handler: 'server/api/orders/[id].get.ts'`; the ASP.NET Core package adds the endpoint's display name and
-   source when available. The reporter already forwards spans untouched; the server maps the field onto a `handler`
-   reach edge. One field, both packages, no new header.
-
-3. **The application manifest** (M3). The three ramps described under *surface inventory*. The new process for a
-   team is one of: install the instrumentation package they may already have, paste an OpenAPI URL, or commit a JSON
-   file. The reporter uploads whatever it finds on the next run; nothing is required.
-
-4. **Production route usage** (M4, opt-in, a real process). The instrumentation packages gain a `usage` mode — on in
-   production only when `PIWI_USAGE_ENDPOINT` and an API key are set — that counts requests per route pattern per
-   day in memory and posts `{ day, routes: [{ method, pattern, count }] }` once a day (and on shutdown) to
-   `POST /api/projects/:id/usage`. No paths with identifiers (the same normalization the reporter applies), no
-   bodies, no headers, no user data, a hard cap on distinct patterns. Teams that will not run it can upload the same
-   JSON from their access logs by hand or from a cron. The value is the one sentence this whole feature can then
-   say: "of your 20 most-used routes, 6 have no test."
-
-5. **Sampled real coverage** (M4, opt-in). `PIWI_COVERAGE=1` on one scheduled job makes the capture fixtures collect
-   V8 coverage from Chromium per test and attach it; the server resolves it through the bundle's source maps (fetched
-   from the app under test, same origin as the manifest) into `file` reach edges with origin `coverage`. Heavy, so it
-   is sampled — a nightly full run, not every PR — and it replaces every heuristic edge above with the truth for the
-   frontend where it runs.
-
-## Diff-time delivery
-
-The moment of leverage is the pull request. PR feedback ([`pr-feedback.ts`](../apps/application/shared/pr-feedback.ts))
-gains one section, after the failure lists and before the selection line:
+A diff is the smallest, most current reference there is, and it arrives at the only moment someone can still act [1][7].
 
 ```
-#### 🟣 Uncovered changes (3 of 7 files)
-No test in this run reached these files. Observed reach, not instrumented coverage.
-
-- `server/api/orders/[id].patch.ts` — changed (+41 −3) · adds `409` · 0 tests in the last 30 runs → suggested: *PATCH /api/orders/:id returns 409 on a stale version*
-- `components/PromoField.vue` — new · imported by `/checkout` (4 tests reach the page) → suggested: *checkout applies a promo code*
-- `utils/rounding.ts` — changed · in the fixing commit of cluster #212 (regressed once) → suggested: *cart total rounds half-up*
+PR run finishes ─► baseline ladder ─► SCM diff ─► join per file ─┬─► PR comment, per ticket
+(branch, pr#,       (run-baseline.ts)   (files,     reach: this run │   commit status (warn-only gate row)
+ commit, selection)                     hunks,      + last 30 runs  │   MCP get_change_coverage
+                                        tickets)    oracle ledger   │
+                                                    file kind →     │
+desktop: the same join on the local working tree ──► detector ──────┘
 ```
 
-Each line links to the gap on the dashboard, and the dashboard row links back to the PR. The gate
-([`gate.post.ts`](../apps/application/server/api/test-runs/%5Bid%5D/gate.post.ts)) gains `maxUncoveredChanges`,
-off by default and **warn-only in its first release** (a violation is reported, the verdict is unchanged) until the
-reach index has a full milestone of production behind it. A blocking mode is a later decision, not a default.
-
-The desktop app runs the same analysis against the local working tree before anything is pushed: it already reads
-local source and generates reproduction and bisect commands, so "what in my uncommitted diff has no test" is one
-more command in the same toolbox.
-
-## Dashboard delivery
-
-A **Gaps** tab on the project page, alongside Selections, listing gaps ranked by score with the inbox's verbs:
-
-- **Accept** — opens the draft. The draft is a spec skeleton assembled deterministically: title from the gap,
-  `piwi:` annotations from the nearest test, the catalog methods that reach the page as steps, and a `TODO` assertion
-  naming what to check. With an AI provider configured, the same grounding pipeline diagnosis uses (source at the
-  ref, the nearest test's source, the patch for a diff gap) fills the assertion in and the draft is validated the way
-  patches are. Delivery is a choice per accept: copy to clipboard, open as a draft PR on the auto-heal PR machinery
-  (branch, one new file, evidence-rich body, per-project allowlist), or hand to an agent through MCP.
-- **Snooze** — the existing options (`1-day`, `1-week`, `until-recurs`); a snoozed surface gap wakes when the surface
-  changes (new declared code, a diff touching its handler).
-- **Dismiss** with a reason: `not-worth-testing`, `covered-elsewhere`, `wrong`. The second asks for the covering
-  test and writes a manual `test_reach` edge with origin `manual`, so the index learns; the third is the feedback loop
-  for detector precision, reported per detector on the admin stats page.
-- **Covered by** — the same manual edge without dismissing, for gaps the team wants to keep watching.
-
-A **gaps** inbox queue on Home lists accepted-but-unwritten gaps older than a week, next to `needs-ticket`. A weekly
-**digest** through the existing notification channels carries the top five new gaps per project, off by default.
-
-## MCP and agents
-
-Three tools, one skill:
-
-- `list_scenario_gaps(projectId, { kinds?, minScore?, prNumber?, limit })` — ranked gaps with evidence, factors and
-  the nearest test.
-- `get_change_coverage(runId | projectId + base + head)` — per changed file: reach edges found, the tests behind
-  them, and the gap when there is none. What an agent working a PR calls first.
-- `draft_scenario(gapId)` — the same deterministic skeleton the Accept button builds, plus the grounding context
-  (nearest test source, catalog methods, patch) so the agent writes the assertion itself.
-
-The `write-the-missing-test` skill template mirrors `run-the-right-tests`: call `get_change_coverage` on the current
-branch, pick the highest-scoring gap in scope, draft it, run it through `piwi run` with a file filter, and open it in
-the same PR. Accepting a gap through MCP records the same triage state as the tab.
-
-## Storage & API
-
-Three tables, both dialects, and one column:
+Inline when a PR-stamped run finishes, before PR feedback posts. A run stamped with a selection reaches less by
+construction, so "no test in this run" is always paired with the count from history. The section in
+[`pr-feedback.ts`](../apps/application/shared/pr-feedback.ts):
 
 ```
-test_reach            (above)
-app_surface           (above)
-scenario_gaps
-  id, project_id FK, detector, key (dedupe: detector + surface/test/file/cluster), title,
-  evidence JSON, confidence, score, factors JSON,
-  test_case_id FK?, failure_cluster_id FK?, test_run_id FK?, pr_number?,
-  status ∈ 'open' | 'snoozed' | 'dismissed' | 'accepted' | 'closed', snoozed_until, dismiss_reason,
-  assigned_to FK users?, created_at, updated_at, closed_at
-test_reach.origin     ∈ 'observed' | 'trace' | 'convention' | 'import' | 'coverage' | 'manual'
+#### 🟣 Uncovered changes · 3 of 7 files · 2 tickets
+Observed reach, not instrumented coverage. Numbers from this run and the last 30 on `main`.
+
+**PROJ-418 · Stale-version conflict on order updates**
+- `server/api/orders/[id].patch.ts` · changed (+41 −3) · adds `409` · 0 tests in 30 runs
+  → *PATCH /api/orders/:id returns 409 on a stale version* · draft
+- `components/OrderRow.vue` · reached by 4 tests · **not noticed**: `checkout › edits quantity`
+  still passes when the PATCH returns 500 → *assert the row reflects the saved quantity* · draft
+
+**No ticket**
+- `utils/rounding.ts` · in the fixing commit of cluster #212, regressed once · exposure high
+  → *cart total rounds half-up* · draft
+
+4 files reached and checked. Gate `maxUncoveredChanges`: warn.
 ```
 
-Gaps are persisted, unlike selection suggestions, because triage state must survive recomputation and a gap closes
-itself: the nightly recompute marks a gap `closed` when its surface gains a reach edge, and the closing run is
-recorded so "we closed 14 gaps this month" is a real number. Recompute runs as a Nitro scheduled task per project
-after the nightly retention sweep, and on demand from the tab; diff detectors run inline when a PR run finishes,
-before PR feedback posts.
+The gate ([`gate.post.ts`](../apps/application/server/api/test-runs/%5Bid%5D/gate.post.ts)) gains
+`maxUncoveredChanges`, off by default and **warn-only in its first release**. A blocking mode is a later decision on
+precision data, never a default. The desktop app runs the same join against the local working tree before anything is
+pushed.
 
-Endpoints, project-scoped through the existing access guards:
+## Guided exploration
+
+Crawling an application to infer its states is twenty years old [13], and the current generation of tools does it with
+an agent that proposes journeys and emits Playwright [26][27][28]. Their weakness is that they explore everything,
+including the checkout flow forty tests already cover. Piwi knows where the suite is *not*.
+
+The explorer is an agent driving Playwright through the same MCP tools, with a page budget and a rule: start from a
+reached page, follow only frontier links and controls (inventoried links first, declared routes last), stop when the
+frontier is empty or the budget is spent. It reports new surface rows, pages that returned errors, and a recorded path
+per discovered page in the extension's existing recording format, matched against the function catalog — so the
+output is a draft test, not a screenshot. Runs from a scheduled job or the desktop app, never on a production origin,
+off unless configured. M4, because its value is proportional to how good the frontier is.
+
+## Delivery, and the learning loop
+
+The order matters more than the surfaces. A ranked list on a project page is the exact artifact that changed nothing
+at Google [6].
+
+1. **The PR comment and commit status** (M1). Where the author already looks, per ticket, with a draft link per gap.
+2. **MCP tools and a skill** (M1). `get_change_coverage(run | base, head)`,
+   `list_scenario_gaps(project, { class, feature, minScore, pr })`, `draft_scenario(gap)`. The
+   `write-the-missing-test` skill mirrors `run-the-right-tests`: read change coverage on the current branch, take the
+   top gap in scope, draft, run it with a file filter, open it in the same PR. TestGen-LLM's 73 percent acceptance came
+   from filtering candidates before proposing them [18]; the draft builder validates the same way diagnosis validates
+   patches.
+3. **The draft** (M1). A deterministic skeleton: title from the gap, `piwi:` annotations from the nearest test,
+   catalog methods that reach the page as steps, a `TODO` assertion naming what to check. With an AI provider, the
+   assertion is filled in from the source at the ref, the nearest test's source and the patch. Delivered by clipboard,
+   as a draft PR on the auto-heal machinery, or to the agent.
+4. **The Gaps tab** (M3), grouped by feature, with the inbox verbs. Accept opens the draft. Snooze wakes when the
+   surface changes. Dismiss asks for a reason: *not worth testing*, *covered elsewhere* (asks for the test, writes a
+   manual reach edge), *wrong*. A `gaps` inbox queue on Home lists accepted-but-unwritten gaps older than a week.
+5. **The digest** (M3). Top five new gaps per project, weekly, off by default.
+
+**Precision is a first-class number.** Heuristic traceability tops out around 78 percent precision at the function
+level [25], and the incidental-catch detector is that problem in reverse. Every triage verdict is a labeled example:
+accepted and covered-by count for the detector, dismissed-as-wrong counts against it. The admin stats page shows
+precision per detector per project. A detector below 60 percent on a project with at least twenty verdicts mutes
+itself there and says so, and its rows drop out of the PR comment first.
+
+## API
 
 ```
-GET            /api/projects/:id/gaps                       # ranked, filterable by detector/status/pr
+GET            /api/projects/:id/gaps                       # ranked; filter by class/detector/feature/status/pr
 GET            /api/projects/:id/gaps/:gapId                 # evidence, factors, nearest test, draft
 POST           /api/projects/:id/gaps/:gapId/triage          # accept | snooze | dismiss | covered-by
 POST           /api/projects/:id/gaps/:gapId/draft           # skeleton, optionally AI-filled → clipboard | pr
 GET            /api/projects/:id/gaps/change-coverage        # ?run= | ?base=&head=
 POST           /api/projects/:id/gaps/recompute
 GET/PUT        /api/projects/:id/surface/manifest            # declared routes/pages (openapi url | json)
-POST           /api/projects/:id/usage                       # production route counts (API key, usage scope)
+GET            /api/projects/:id/probes/plan                 # what `piwi probe` runs tonight (reporter API key)
+POST           /api/projects/:id/probes/results              # outcomes from a probe run
+POST           /api/projects/:id/usage                       # production route counts (usage-scoped key)
 ```
 
-Retention: `test_reach` and `app_surface` rows referencing pruned runs keep their `last_seen_at` and age out after
-`PIWI_RETENTION_DAYS`; `scenario_gaps` in `closed`/`dismissed` state are pruned with the same window; open gaps are
-never pruned. Imported runs feed the reach index (they are real history) but never trigger diff detectors or PR
-feedback, consistent with imports being silent.
+Retention: `test_reach` and `app_surface` rows referencing pruned runs keep `last_seen_at` and age out after
+`PIWI_RETENTION_DAYS`; closed and dismissed gaps prune with the same window; open gaps never. Imported runs feed the
+reach index but never trigger diff detectors, probes or PR feedback.
+
+## New data, and the process each one implies
+
+1. **Page inventory on passing runs** (reporter, M2). `{ url, controls: [{ role, name }], links: [{ name, href }] }`
+   attached as `piwi-page-inventory`, stored through `case_payloads`, taken at navigation settle and test end, capped
+   at 500 entries per page, skipped when the worker already inventoried the URL in this run, opt-out
+   `capturePageInventory: false`.
+2. **Handler file on the root span** (both instrumentation packages, M2). One field; the reporter already forwards
+   spans untouched.
+3. **Probe mode and `piwi probe`** (reporter, M2). The reporter fetches the plan, applies it via `page.route`, stamps
+   the run as a probe. Process: one scheduled CI job per project, or the desktop app.
+4. **The application manifest** (M3). Instrumentation-served route table, an OpenAPI URL, or a committed JSON.
+5. **Production route usage** (M4, opt-in). Instrumentation in production counts requests per route pattern per day
+   and posts `{ day, routes: [{ method, pattern, count }] }` once a day under a usage-scoped key. No identifiers, no
+   bodies, no headers, a hard cap on distinct patterns. Process: two environment variables on the production
+   deployment, or a cron that uploads an access-log summary.
+6. **Guided exploration** (M4). A scheduled job or a desktop action, page budget, never a production origin.
+7. **Sampled real coverage** (M5, opt-in). `PIWI_COVERAGE=1` on one scheduled job; V8 coverage resolved through source
+   maps into `file` edges with origin `coverage`.
 
 ## What this deliberately is not
 
-- **Not instrumented coverage, and it never claims to be.** Every screen, comment and tool result says *observed
-  reach*. The optional V8 sampling is the one place real coverage enters, and its edges are labeled by origin.
-- **Not a test generator.** The draft is a skeleton with the reachable setup filled in; the assertion is the human's
-  or the agent's, and an AI-filled draft goes through the same validation as a diagnosis patch. Nothing is committed
-  except through the reviewed PR ramp, on the auto-heal rules.
-- **Not a gate by default.** `maxUncoveredChanges` ships warn-only. A team decides to block on it after seeing its
-  precision on their own data, never on day one.
-- **Not a coverage percentage.** No single number on the project page. A percentage over an observed surface is
-  wrong in the unsafe direction (it looks complete when the surface is sparse). The Gaps tab shows counts per
-  detector and the trend of gaps closed.
-- **Not a service, not telemetry.** The usage process is the application posting to the team's own Piwi instance
-  under their own key; nothing leaves the deployment.
+- **Not coverage, and it never claims to be.** Every screen, comment and tool result says *observed reach*.
+- **Not mutation testing of the application.** Probes mutate responses in the browser, never source or server state.
+- **Not a test generator.** The draft is a skeleton with the reachable setup filled in; the assertion is the human's or
+  the agent's, and an AI-filled draft is validated like a diagnosis patch. Nothing is committed except through the
+  reviewed PR ramp.
+- **Not a gate by default.** Warn-only until precision is measured on the team's own data.
+- **Not a percentage.** A percentage over an observed surface looks complete exactly when the surface is sparse. Counts
+  per class and per feature, and the trend of gaps closed.
+- **Not a crawler of everything.** Exploration is budgeted against the suite's reach.
+- **Not a service, not telemetry.** Usage counts are the application posting to the team's own instance.
 
 ## Interactions worth designing, not discovering
 
-- **Impact and gaps share the index.** The impact resolver's `reach` map becomes a read of `test_reach`. Its safe
-  widening on an unmapped source file stays; it just happens less often, and each time it does, it is also a gap.
-- **Healing gets a pre-flight.** The *locator break ahead* detector is a diff-time input to locator healing: the
-  ranked alternatives already stored per call site can be recomputed against the new template before the run fails.
-  Worth wiring in M3 so the auto-heal PR can land in the same PR that broke the locator.
-- **Baselines on partial runs.** A PR run stamped with a selection reaches less by construction. *Changed,
-  unreached* must read "no test *in this run*" and add the project-wide count from history, or every smoke run will
-  cry wolf. The evidence line format above is designed for that.
-- **The 1.0 freeze.** The manifest JSON shape, the usage payload and the `piwi-page-inventory` attachment are
-  external contracts. Land them, or explicitly defer them, in the stabilization pass.
-- **Surface key stability.** Controls are keyed by role + accessible name + page; a renamed button is a new surface
-  and an aged-out old one, which is correct. Routes are keyed by the reporter's normalization, so a change to that
-  normalization is a migration of `app_surface`, and a note in [`1.0-stabilization.md`](1.0-stabilization.md).
-- **Demo mode.** Detectors are pure and live in `shared/handlers/`, so the demo mirror runs them over the seed. The
-  seed gains a declared manifest and one PR-stamped run so the Gaps tab and the uncovered-changes section render.
+- **Impact and gaps share the index.** The impact resolver's `reach` map becomes a read of `test_reach`.
+- **Probes and fixtures.** A test that seeds data through the API before the UI step would see its seeding request
+  mutated if the route matches; probes mutate only requests issued after the first navigation (open question 1).
+- **Healing gets a pre-flight.** *Locator break ahead* is a diff-time input to locator healing; the ranked alternatives
+  per call site can be recomputed against the new template before the run fails.
+- **Baselines on partial runs.** *Changed, unreached* reads "no test *in this run*" and adds the project-wide count.
+- **The 1.0 freeze.** The manifest JSON, the usage payload, the probe plan and the `piwi-page-inventory` attachment are
+  external contracts; land or defer them in [`1.0-stabilization.md`](1.0-stabilization.md).
+- **Demo mode.** Detectors are pure and live in `shared/handlers/`; the seed gains a declared manifest, a PR-stamped run
+  and a few probe outcomes so the Gaps tab and the PR section render.
 
 ## Milestones
 
-- **M1 — the index and the first detectors (stored data only).** `test_reach` + `app_surface` (origin `observed`)
-  built on ingest and backfilled by a one-off task; `scenario_gaps` with triage; detectors *success only*, *single
-  covering test*, *catalog method no test calls*, *incidental catch*, *fix did not hold*, *phantom coverage*,
-  *passed with errors*, plus the false-coverage discounts; ranking without usage; the Gaps tab; `list_scenario_gaps`;
-  demo handlers; docs page. Useful with zero setup on any instance with history.
-- **M2 — the whole suite, and the diff.** Page inventory on passing runs (reporter) and handler file on the root
-  span (both instrumentation packages) → *control nobody exercises*, *reachable unvisited*, and `file`/`handler`
-  edges on passing tests; diff detectors on PR runs; the uncovered-changes section in PR feedback;
-  `maxUncoveredChanges` warn-only; `get_change_coverage`; the desktop's local-diff command.
-- **M3 — declared surfaces and the ramps.** Manifest from the instrumentation packages, OpenAPI URL and committed
-  JSON → *declared, never hit* and documented error codes; *escaped defect* over the Jira binding; import edges;
-  *locator break ahead* wired into healing; `draft_scenario`, the Accept ramp (clipboard / draft PR / agent) and the
-  skill; digest notification; matrix detectors.
-- **M4 — usage and truth.** Production route usage in the instrumentation packages and the upload endpoint; usage
-  in the ranking and the "most-used routes without a test" card; sampled V8 coverage with source-map resolution;
-  a decision on a blocking gate mode based on M2–M3 precision data.
+- **M1 — the index, the diff, and the agent.** `test_reach`, `app_surface` (observed), `scenario_gaps`; detectors on
+  stored data (success only, single covering test, phantom, passed with errors, catalog method, incidental catch, fix
+  did not hold, assertion-light as prior, changed/unreached, new error path, intent without a test); exposure without
+  usage; the PR comment section per ticket; `get_change_coverage`, `list_scenario_gaps`, `draft_scenario` and the
+  skill; deterministic draft; demo handlers; docs. Useful with zero setup on any instance with history and an SCM
+  token.
+- **M2 — the whole suite, and the oracle.** Page inventory on passing runs; handler file on the root span; probe mode
+  and `piwi probe` with the nightly budget; the oracle ledger; not-noticed, control, reachable-unvisited, new-control
+  and locator-break-ahead detectors; features from tags and catalog; `maxUncoveredChanges` warn-only; the desktop
+  local-diff command.
+- **M3 — declared surface, the tab, and the loop.** Manifest from instrumentation, OpenAPI URL, committed JSON;
+  documented error codes; escaped defects over the Jira binding; import edges; the Gaps tab grouped by feature with
+  triage; the gaps inbox queue; the digest; precision per detector with self-muting; matrix detectors; healing
+  pre-flight wired to auto-heal.
+- **M4 — usage and exploration.** Production route counts in both instrumentation packages and the upload endpoint;
+  usage in exposure and the "most-used routes without a test" card; guided exploration from a scheduled job and the
+  desktop.
+- **M5 — truth, and the blocking decision.** Sampled V8 coverage with source-map resolution; a decision on a blocking
+  gate mode from M2–M4 precision data; probes extended to dialogs and storage state if the route probes have earned it.
 
 ## Open questions
 
-1. **Where the page inventory is taken.** At every navigation settle is complete but costs an `ariaSnapshot()` per
-   page per test; at test end only is cheap but misses intermediate pages. The per-worker URL cache makes the first
-   affordable on most suites — is a size threshold (skip pages over N nodes) enough, or does it need a per-project
-   sampling rate?
-2. **Accessible-name keys across locales.** A suite that runs in two languages produces two surfaces for one button.
-   Key by `data-testid` when present, else role + name, and accept the duplication otherwise?
-3. **Manifest fetch trust.** The reporter fetching `/__piwi/manifest` from `baseURL` is one more request against the
-   app under test at setup. Guard it behind the instrumentation header being present on the first response, or
-   behind an explicit reporter option?
-4. **Usage payload authentication.** A production app posting to Piwi needs a credential with one scope. Do API
-   keys grow scopes for this, or does the usage endpoint take its own token kind like the streaming token?
-5. **Which detectors post to the PR.** The uncovered-changes section can become the longest part of the comment on
-   a refactor. Cap at five lines with a link, or only post the rows above a score threshold?
-6. **Incidental-catch matching.** Diagnosis names a cause in prose and sometimes a file; matching that against test
-   titles and reached files is a heuristic. Ship it with a low default confidence and let dismiss-as-wrong tune the
-   threshold, or hold it until the reach index has `file` edges on passing tests (M2)?
-7. **Gaps for tests that exist but are wrong.** Assertion-light and retry-dependent tests only discount today. A
-   detector that proposes *strengthening* an existing test ("add a network assertion to `checkout › happy path`") is
-   adjacent and cheap; is it this feature or a spec-health one?
+1. **Probe mutations and test fixtures.** Mutate only requests issued after the first navigation, or only the Nth
+   matching request? Configurable per project?
+2. **Probe budget defaults.** Fifty a night is a guess; should the budget be minutes, using recorded test durations?
+3. **Feature clustering trust.** Does a cluster-derived feature appear in the PR comment, or only in the tab until
+   someone names it?
+4. **Where the page inventory is taken.** Every navigation settle, with a node-count threshold, or a sampling rate?
+5. **Accessible-name keys across locales.** Key by `data-testid` when present, else role and name?
+6. **Manifest fetch trust.** Guard behind the instrumentation header on the first response, or an explicit option?
+7. **Usage payload authentication.** API-key scopes, or a token kind like the streaming token?
+8. **How much of the PR comment.** Cap at five lines with a link, or a score threshold?
+9. **Strengthening versus adding.** A not-noticed probe suggests strengthening an existing test. This feature, or spec
+   health?
+
+## Prior art
+
+| Product | What it does | Relation |
+|---|---|---|
+| [Teamscale Test Gap Analysis](https://teamscale.com/features/test-gap-analysis) | changed-and-untested methods from repository changes and profiler coverage; feature coverage maps gaps to tickets | the mature form of change-time gaps; needs code coverage; method-level |
+| [SeaLights](https://docs.sealights.io/knowledgebase/coverage-and-quality-insights/test-gaps-analysis-report) | test gap analytics, user-story coverage, quality gates | same idea, closed SaaS, coverage-based |
+| [Codecov patch coverage](https://docs.codecov.com/docs/commit-status) | a status check on the lines a PR touched | the mainstream form of "uncovered changes" |
+| [Datadog Test Impact Analysis](https://docs.datadoghq.com/tests/test_impact_analysis/how_it_works/), [Develocity PTS](https://gradle.com/develocity/product/predictive-test-selection/), Launchable | per-test coverage or learned history to select tests | the same index read forward; none reports the inverse |
+| [mabl coverage](https://help.mabl.com/hc/en-us/articles/19083839661460-The-coverage-overview-dashboard) | link crawler discovers pages; journeys per page; daily users via a Segment integration retired in 2026 | closest to the surface inventory; knows only its own tests |
+| [Octomind](https://octomind.dev/docs/advanced/octomind-bot), Checksum, Meticulous | crawl the app or record sessions, propose journeys, emit Playwright or replay | the draft ramp as a whole product; blind to the existing suite and its failures |
+| [Keploy](https://keploy.io/record-replay-testing), [Speedscale](https://docs.speedscale.com/concepts/replay/) | record production API traffic, replay as regression tests | the usage pillar taken to generation, APIs only |
+| [Restats](https://github.com/SeUniVr/restats) | REST coverage metrics from an OpenAPI spec and observed traffic | the declared-surface detectors, as an academic tool |
+
+## References
+
+1. Eder, Hauptmann, Junker, Juergens, Vaas, Prommer. *Did we test our changes? Assessing alignment between tests and
+   development in practice.* AST 2013. <https://ieeexplore.ieee.org/document/6595800> — changed-but-untested methods
+   over 14 months of an industrial system; the origin of test gap analysis.
+2. Rott, Niedermayr, Juergens, Pagano. *Ticket coverage: putting test coverage into context.* WETSoM 2017.
+   <https://arxiv.org/abs/1804.07599> — per-ticket ratio of changed methods executed by tests; the ticket join.
+3. Nagappan, Ball. *Use of relative code churn measures to predict system defect density.* ICSE 2005.
+   <https://www.microsoft.com/en-us/research/publication/use-of-relative-code-churn-measures-to-predict-system-defect-density/>
+   — the churn factor.
+4. Kamei, Shihab, Adams, Hassan, Mockus, Sinha, Ubayashi. *A large-scale empirical study of just-in-time quality
+   assurance.* IEEE TSE 2013. <https://dl.acm.org/doi/10.1145/3558489.3559068> — change-level risk prediction.
+5. Cotroneo, De Rosa, Improta, Varriale. *What makes software bugs escape testing? Evidence from a large-scale
+   empirical study.* arXiv, April 2026. <https://arxiv.org/abs/2604.26672> — escaped bugs concentrate in older,
+   frequently modified, high-churn components; the age factor and escape history.
+6. Lewis, Lin, Sadowski, Zhu, Ou, Whitehead. *Does bug prediction support human developers? Findings from a Google
+   case study.* ICSE 2013.
+   <https://neverworkintheory.org/2013/06/06/does-bug-prediction-support-human-developers-findings-from-a-google-case-study.html>
+   — no identifiable change in developer behavior; why the dashboard ships last.
+7. Ivanković, Petrović, Just, Fraser. *Code coverage at Google.* ESEC/FSE 2019.
+   <https://dl.acm.org/doi/10.1145/3338906.3340459> — coverage on changed lines in code review; why the PR comment
+   ships first.
+8. Niedermayr, Juergens, Wagner. *Will my tests tell me if I break this code?* CSED 2016.
+   <https://arxiv.org/abs/1611.07163> — pseudo-tested methods, 6 to 53 percent of covered methods; the checked axis.
+9. Vera-Pérez, Danglot, Monperrus, Baudry. *A comprehensive study of pseudo-tested methods.* Empirical Software
+   Engineering 2018. <https://arxiv.org/abs/1807.05030> — replication on 28k+ methods; Descartes.
+10. Memon, Soffa, Pollack. *Coverage criteria for GUI testing.* ESEC/FSE 2001.
+    <https://dl.acm.org/doi/10.1145/503209.503244> — event-based adequacy; the control surface.
+11. Martin-Lopez, Segura, Ruiz-Cortés. *Test coverage criteria for RESTful web APIs.* A-TEST 2019.
+    <https://dl.acm.org/doi/10.1145/3340433.3342822> — status-code class coverage; the success-only detector.
+12. Corradini, Zampieri, Pasqua, Ceccato. *Restats: a test coverage tool for RESTful APIs.* ICSME 2021.
+    <https://arxiv.org/abs/2108.08209>.
+13. Mesbah, van Deursen, Lenselink. *Crawling Ajax-based web applications through dynamic analysis of user interface
+    state changes.* ACM TWEB 2012. <https://dl.acm.org/doi/10.1145/2109205.2109208> — Crawljax; guided exploration.
+14. Elbaum, Rothermel, Karre, Fisher. *Leveraging user-session data to support web application testing.* IEEE TSE
+    2005. <https://www.researchgate.net/publication/3188481_Leveraging_User-Session_Data_to_Support_Web_Application_Testing>
+    — the usage pillar.
+15. Sampath, Sprenkle, Gibson, Pollock, Souter. *Applying concept analysis to user-session-based testing of web
+    applications.* IEEE TSE 2007.
+    <https://www.academia.edu/3490133/Applying_Concept_Analysis_to_User_Session_Based_Testing_of_Web_Applications>.
+16. Santelices, Chittimalli, Apiwattanapong, Orso, Harrold. *Test-suite augmentation for evolving software.* ASE
+    2008. <https://www.semanticscholar.org/paper/Test-Suite-Augmentation-for-Evolving-Software-Santelices-Chittimalli/05cf2988ea3ac5e697fc51f85e7dd2031dd8af01>
+    — the formal name of the change-time ramp.
+17. Danglot, Vera-Pérez, Yu, Zaidman, Monperrus, Baudry. *A snowballing literature study on test amplification.* JSS
+    2019. <https://arxiv.org/abs/1705.10692>.
+18. Alshahwan et al. *Automated unit test improvement using large language models at Meta.* FSE 2024 Industry.
+    <https://arxiv.org/abs/2402.09171> — 73 percent acceptance through pre-filtering; the draft builder's rule.
+19. Foster et al. *Mutation-guided LLM-based test generation at Meta.* FSE 2025 Industry.
+    <https://arxiv.org/abs/2501.12862> — mutants drive which tests are generated; the oracle probes.
+20. Gligoric, Eloussi, Marinov. *Practical regression test selection with dynamic file dependencies.* ISSTA 2015.
+    <https://dl.acm.org/doi/10.1145/2771783.2771784> — Ekstazi.
+21. Legunsen, Shi, Marinov. *STARTS: STAtic regression test selection.* ASE 2017.
+    <https://www.cs.cornell.edu/~legunsen/pubs/LegunsenETAL17STARTS.pdf>.
+22. Herzig, Greiler, Czerwonka, Murphy. *The art of testing less without sacrificing quality.* ICSE 2015.
+    <https://www.microsoft.com/en-us/research/publication/the-art-of-testing-less-without-sacrificing-quality/>.
+23. Memon et al. *Taming Google-scale continuous testing.* ICSE SEIP 2017.
+    <https://research.google/pubs/taming-google-scale-continuous-testing/>.
+24. Machalica, Samylkin, Porth, Chandra. *Predictive test selection.* ICSE SEIP 2019.
+    <https://arxiv.org/abs/1810.05286> — the index read forward.
+25. White, Krinke, Tan. *Establishing multilevel test-to-code traceability links.* ICSE 2020.
+    <http://www0.cs.ucl.ac.uk/staff/jkrinke/publications/icse20.pdf> — 78 percent MAP; the precision loop.
+26. Alian, Nashid, Shahbandeh, Shabani, Mesbah. *Feature-driven end-to-end test generation.* ICSE 2025.
+    <https://arxiv.org/abs/2408.01894> — AutoE2E and E2EBench; features as the unit.
+27. Le et al. *Automated web application testing: end-to-end test case generation with large language models and
+    screen transition graphs.* JSAI 2025. <https://arxiv.org/abs/2506.02529>.
+28. Ye, Yu, Xu, Peng, Yu. *AI agents for web testing: a case study in the wild.* arXiv 2025.
+    <https://arxiv.org/abs/2509.05197>.
