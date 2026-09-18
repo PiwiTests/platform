@@ -5,6 +5,7 @@ import { getStorage } from '../storage';
 import { parseZipDirectory, decompressEntry, buildZip } from './trace-zip';
 import type { ZipEntry } from './trace-zip';
 import { safeStorageSegment } from './sanitize-filename';
+import { compressResource } from './resource-compression';
 
 /**
  * Return the set of hashes that already have a stored blob for the given project.
@@ -85,21 +86,25 @@ export async function upsertTraceBlob(
 
       const newResources = safeResources.filter((r) => !existingNames.has(r.name));
 
-      // 3. Decompress and store new resources one at a time to limit peak memory
+      // 3. Decompress and store new resources one at a time to limit peak memory.
+      //    Text resources (network bodies, CSS, JS) are gzip-compressed at rest;
+      //    already-compressed ones (images, fonts) are stored as-is. `size` is
+      //    the on-disk byte count so storage stats stay honest.
       for (const { meta, name } of newResources) {
         const resourceData = await decompressEntry(data, meta);
+        const { data: stored } = compressResource(resourceData);
         const resourcePath = `${resourcesDir}/${name}`;
-        await storage.writeFile(resourcePath, resourceData);
+        await storage.writeFile(resourcePath, stored);
         await db
           .insert(traceResources)
           .values({
             projectId,
             name,
             path: resourcePath,
-            size: resourceData.length,
+            size: stored.length,
           })
           .onConflictDoNothing();
-        // resourceData goes out of scope here and is eligible for GC
+        // resourceData / stored go out of scope here and are eligible for GC
       }
 
       // 4. Decompress event entries for the slim ZIP (these are small text-based files)
@@ -115,7 +120,7 @@ export async function upsertTraceBlob(
       // 5. All resource names (new + pre-existing) for the manifest
       const resourceNames = names;
 
-      const slimZip = buildZip(eventEntries);
+      const slimZip = buildZip(eventEntries, { compress: true });
       // Release the decompressed event buffers now that they're fused into the
       // slim ZIP, so the manifest write and blob write below don't hold both.
       eventEntries = [];

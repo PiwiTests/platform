@@ -395,6 +395,21 @@ Rules when touching it:
   the same `instanceId` exists; `/finish` accumulates counters with SQL `+` and only sets the final status when
   `shardsFinished === shardTotal`. `cancelInstanceRuns()` skips sharded runs when `isShardedRun: true`.
 
+### Trace storage compression
+
+Trace evidence is compressed at rest, transparently. Two rules keep it that way:
+
+- The shared resource pool (`project-<id>/trace-resources/`) stores text resources gzip-wrapped in a
+  self-describing container (see `server/utils/resource-compression.ts`). **Every read of a pool resource
+  MUST pass the bytes through `decodeResource`** — reconstruction, evidence, DOM-snapshot inlining all
+  do. Add a new pool reader and you add a `decodeResource` call, or you serve compressed bytes as if they
+  were raw. `compressResource` is the only writer; `trace_resources.size` is the on-disk (post-compression)
+  byte count. There is no encoding column — the container's magic prefix is the source of truth, so a
+  resource that is itself gzip (Playwright can store one) is never double-decoded.
+- The persisted slim events blob is built with `buildZip(entries, { compress: true })`; reconstruction
+  rebuilds the served ZIP stored (uncompressed) for speed. `buildZip` defaults to stored — pass
+  `{ compress: true }` only for the write-once-keep path, never for archives rebuilt on every open.
+
 ## Adding a field to test run data
 
 The full chain, in order:

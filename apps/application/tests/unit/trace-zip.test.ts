@@ -1,4 +1,5 @@
 import { describe, test, expect } from 'vitest';
+import { randomBytes } from 'node:crypto';
 import { buildZip, parseZipSync, parseZipDirectory } from '../../server/utils/trace-zip';
 
 describe('buildZip / parseZipSync round-trip', () => {
@@ -30,6 +31,53 @@ describe('buildZip / parseZipSync round-trip', () => {
 
   test('produces a valid empty archive', () => {
     expect(parseZipSync(buildZip([]))).toHaveLength(0);
+  });
+});
+
+describe('buildZip compression (opt-in)', () => {
+  const compressibleText = Buffer.from('{"type":"before","callId":"call@1","value":123}\n'.repeat(200), 'utf8');
+
+  test('deflates a compressible entry, shrinks the archive, and round-trips it', () => {
+    const stored = buildZip([{ name: 'trace.trace', data: compressibleText }]);
+    const compressed = buildZip([{ name: 'trace.trace', data: compressibleText }], { compress: true });
+
+    expect(compressed.length).toBeLessThan(stored.length);
+    expect(parseZipDirectory(compressed)[0]!.method).toBe(8); // deflated
+    expect(parseZipSync(compressed)[0]!.data.equals(compressibleText)).toBe(true);
+  });
+
+  test('stores an incompressible entry rather than growing it', () => {
+    const highEntropy = randomBytes(8192);
+    const [meta] = parseZipDirectory(buildZip([{ name: 'shot.png', data: highEntropy }], { compress: true }));
+    expect(meta!.method).toBe(0); // stored — deflate would not have shrunk it
+    expect(
+      parseZipSync(buildZip([{ name: 'shot.png', data: highEntropy }], { compress: true }))[0]!.data.equals(
+        highEntropy,
+      ),
+    ).toBe(true);
+  });
+
+  test('leaves tiny entries stored even when compression is requested', () => {
+    const [meta] = parseZipDirectory(buildZip([{ name: 'small.txt', data: Buffer.from('short') }], { compress: true }));
+    expect(meta!.method).toBe(0);
+  });
+
+  test('mixes deflated and stored entries in one archive and recovers all of them', () => {
+    const png = randomBytes(4096);
+    const zip = buildZip(
+      [
+        { name: 'trace.trace', data: compressibleText },
+        { name: 'resources/shot.png', data: png },
+      ],
+      { compress: true },
+    );
+    const metas = parseZipDirectory(zip);
+    expect(metas.find((m) => m.name === 'trace.trace')!.method).toBe(8);
+    expect(metas.find((m) => m.name === 'resources/shot.png')!.method).toBe(0);
+
+    const parsed = parseZipSync(zip);
+    expect(parsed.find((e) => e.name === 'trace.trace')!.data.equals(compressibleText)).toBe(true);
+    expect(parsed.find((e) => e.name === 'resources/shot.png')!.data.equals(png)).toBe(true);
   });
 });
 
