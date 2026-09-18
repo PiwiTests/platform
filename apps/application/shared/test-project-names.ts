@@ -37,6 +37,7 @@ export const PROJECT = {
   DEFAULT_PROJECT: 'default-project',
   DELETE_EVIDENCE: 'delete-evidence-project',
   DELETE_PROJECT: 'delete-whole-project',
+  DELETE_RESOURCE_REFCOUNT: 'delete-resource-refcount-project',
   DELETE_SHARED_BLOB: 'delete-shared-blob-project',
   DELETE_TEST: 'delete-test-project',
   DESKTOP_IMPORT_PREV: 'desktop-import-prev-test',

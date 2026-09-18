@@ -410,6 +410,22 @@ Trace evidence is compressed at rest, transparently. Two rules keep it that way:
   rebuilds the served ZIP stored (uncompressed) for speed. `buildZip` defaults to stored — pass
   `{ compress: true }` only for the write-once-keep path, never for archives rebuilt on every open.
 
+### Trace resource refcounting
+
+Shared pool resources are reference-counted through `trace_blob_resources` (blob ↔ resource), so a partial
+delete frees a resource the moment no surviving blob references it (`gcTraceBlobs`), not only when the
+project loses its last blob. Two invariants keep it correct:
+
+- **Any blob write MUST record its resource links and then set `trace_blobs.resources_indexed = true`, in
+  that order.** `upsertTraceBlob` does this via `linkBlobResources`; the flag flips only after the links
+  exist, so a half-written blob is never trusted. A new blob-writing path must do the same, or resources it
+  needs can be reclaimed out from under it.
+- **Per-resource GC only runs for a project whose blobs are all indexed.** Deletes on a project with any
+  `resources_indexed = false` blob fall back to the whole-project rule (resources go only when the last blob
+  does), because such a blob's links may be missing. `backfillTraceBlobResources` (kicked off at startup
+  from `initDatabase`, non-blocking) indexes pre-existing blobs from their manifests; the nightly
+  `reclaimOrphanTraceResources` sweeps resources nothing references any more, same gate.
+
 ## Adding a field to test run data
 
 The full chain, in order:

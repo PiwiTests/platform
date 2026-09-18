@@ -2,6 +2,7 @@ import { test, expect, type APIRequestContext } from './fixtures';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { PROJECT } from '#shared/test-project-names';
+import { buildZip } from '../server/utils/trace-zip';
 
 /**
  * End-to-end deletion coverage for runs that carry real evidence (a trace, so a
@@ -147,6 +148,96 @@ test.describe.serial('Deleting frees a shared trace blob (no leak)', () => {
     // Deleting the last referencing run frees it.
     expect((await request.delete(`/api/test-runs/${second.runId}`)).ok()).toBeTruthy();
     expect((await request.get(`/api/files/${blobPath}`)).status()).toBe(404);
+  });
+});
+
+/** A minimal trace ZIP: one event stream (its marker makes the blob hash unique) plus named resources. */
+function buildTrace(marker: string, resources: { name: string; content: string }[]): Buffer {
+  return buildZip([
+    { name: 'trace.trace', data: Buffer.from(`{"type":"context","marker":"${marker}"}\n`) },
+    ...resources.map((r) => ({ name: `resources/${r.name}`, data: Buffer.from(r.content, 'utf8') })),
+  ]);
+}
+
+async function uploadRunWithTrace(request: APIRequestContext, projectName: string, trace: Buffer) {
+  const hash = sha256(trace);
+  const response = await request.post('/api/test-runs/upload', {
+    multipart: {
+      projectName,
+      testRun: JSON.stringify({
+        status: 'failed',
+        startTime: new Date().toISOString(),
+        duration: 3000,
+        totalTests: 1,
+        passedTests: 0,
+        failedTests: 1,
+        skippedTests: 0,
+      }),
+      testCases: JSON.stringify([
+        { title: 'refcount case', status: 'failed', duration: 500, location: 'tests/rc.spec.ts:1:1', error: 'boom' },
+      ]),
+      trace_0: { name: 'trace.zip', mimeType: 'application/zip', buffer: trace },
+      trace_hashes: JSON.stringify({ 0: hash }),
+    },
+  });
+  expect(response.ok(), `upload failed: ${response.status()} ${await response.text()}`).toBeTruthy();
+  return { ...(await response.json()), hash } as { runId: number; projectId: number; hash: string };
+}
+
+test.describe.serial('Partial delete reclaims only unshared resources', () => {
+  // Two traces in one project: one shared resource (same name+bytes → stored once,
+  // referenced by both blobs) plus a resource unique to each.
+  const SHARED = { name: 'shared-res', content: 'shared resource body '.repeat(40) };
+  const traceA = buildTrace('A', [SHARED, { name: 'only-a-res', content: 'A-only body '.repeat(40) }]);
+  const traceB = buildTrace('B', [SHARED, { name: 'only-b-res', content: 'B-only body '.repeat(40) }]);
+
+  let projectId: number;
+  let runA: number;
+  let runB: number;
+  let hashA: string;
+  let hashB: string;
+  const resPath = (name: string) => `project-${projectId}/trace-resources/${name}`;
+  const blobPath = (hash: string) => `project-${projectId}/blobs/${hash}.zip`;
+
+  test('upload two runs sharing a resource', async ({ request }) => {
+    const a = await uploadRunWithTrace(request, PROJECT.DELETE_RESOURCE_REFCOUNT, traceA);
+    projectId = a.projectId;
+    runA = a.runId;
+    hashA = a.hash;
+    const b = await uploadRunWithTrace(request, PROJECT.DELETE_RESOURCE_REFCOUNT, traceB);
+    runB = b.runId;
+    hashB = b.hash;
+    expect(b.projectId).toBe(projectId);
+
+    for (const p of [
+      blobPath(hashA),
+      blobPath(hashB),
+      resPath('shared-res'),
+      resPath('only-a-res'),
+      resPath('only-b-res'),
+    ]) {
+      expect((await request.get(`/api/files/${p}`)).ok(), `present before delete: ${p}`).toBeTruthy();
+    }
+  });
+
+  test('deleting run A frees only its unique resource', async ({ request }) => {
+    expect((await request.delete(`/api/test-runs/${runA}`)).ok()).toBeTruthy();
+
+    expect((await request.get(`/api/files/${blobPath(hashA)}`)).status(), 'A blob gone').toBe(404);
+    expect((await request.get(`/api/files/${blobPath(hashB)}`)).ok(), 'B blob kept').toBeTruthy();
+    // The resource only run A used is reclaimed by the partial delete…
+    expect((await request.get(`/api/files/${resPath('only-a-res')}`)).status(), 'A-only reclaimed').toBe(404);
+    // …while the shared one and B's own resource survive.
+    expect((await request.get(`/api/files/${resPath('shared-res')}`)).ok(), 'shared kept').toBeTruthy();
+    expect((await request.get(`/api/files/${resPath('only-b-res')}`)).ok(), 'B-only kept').toBeTruthy();
+  });
+
+  test('deleting run B frees the shared and remaining resources', async ({ request }) => {
+    expect((await request.delete(`/api/test-runs/${runB}`)).ok()).toBeTruthy();
+
+    expect((await request.get(`/api/files/${blobPath(hashB)}`)).status()).toBe(404);
+    expect((await request.get(`/api/files/${resPath('shared-res')}`)).status()).toBe(404);
+    expect((await request.get(`/api/files/${resPath('only-b-res')}`)).status()).toBe(404);
   });
 });
 

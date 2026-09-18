@@ -149,6 +149,11 @@ original bytes, and resources written before compression existed keep reading un
 of deduplication — a resource is stored once per project **and** compressed — and it needs no
 configuration.
 
+Shared resources are also **reference-counted**: each is freed as soon as no remaining trace references it,
+so deleting some of a project's runs reclaims the resources unique to them without waiting for the whole
+project to be removed. This applies automatically; evidence stored before an upgrade is enrolled by a
+one-time background pass, and a nightly sweep frees anything left unreferenced.
+
 ### Evidence payload deduplication
 
 Large failure evidence captured per execution — the page's ARIA snapshot, the failing test's source snippet, and its source stack frames — is stored content-addressed: each unique payload is written once per project (keyed by SHA-256) and executions reference it by id. A test that fails the same way across many runs, or across several browsers in one run, stores that evidence a single time instead of once per execution. Unreferenced payloads are garbage-collected when runs are deleted. Deduplication happens server-side at ingest, so it applies regardless of reporter version.
