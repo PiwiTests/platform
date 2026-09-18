@@ -62,6 +62,8 @@ Against the ROADMAP's own test: this is job 3, **hand back a fix**, applied befo
 | Usage source | a standalone usage integration | counts come from the instrumentation packages teams already install | mabl retired its Segment usage integration in 2026 |
 | Guided exploration | not in scope | an explorer spends its budget only on inventoried or declared surface the suite does not reach | [13][26][27][28] |
 | Precision loop | dismiss reasons | per-detector precision tracked from triage; a detector below threshold on a project mutes itself | [25][18] |
+| Server-side probes | client-side response mutation only | a signed per-request header carries a fault the instrumentation applies inside the handler, a dependency call or the serializer; two signals per probe, oracle and resilience | [29][35][36] |
+| Feature graph | three separate stores | one typed graph: pages, controls, routes, handlers, dependencies, files, tests, tickets, clusters; reach, check and change are edge kinds; detectors are missing-edge patterns | [10][13][29] |
 
 ## The model: reached, checked, exposed
 
@@ -74,7 +76,7 @@ three axes:
   step analysis before a probe has run.
 - **Exposed** — how much does it matter? From production usage, churn, age, escape history and priority tags.
 
-Four classes fall out:
+Five classes fall out:
 
 | Class | Meaning |
 |---|---|
@@ -82,6 +84,7 @@ Four classes fall out:
 | **False comfort** | Tests reach it and a probe shows they would not notice it breaking. The most dangerous class, because the catalog says it is covered. |
 | **Fragile** | Reached and checked, but only by a single test, a flaky one, a quarantined one, or one that has not actually run in weeks. |
 | **Protected** | Reached by more than one trusted test and at least one probe made a test fail. Not listed; counted, so the trend is visible. |
+| **Unhandled failure** | A server-side probe made a dependency or handler fail and the application did not degrade gracefully: blank page, uncaught error, infinite spinner. Listed whether or not a test noticed. |
 
 The score is stated in the open so the ranking is arguable rather than magic:
 
@@ -153,11 +156,19 @@ test_reach      id, project_id, test_case_id, kind ∈ route|page|control|file|h
                 origin ∈ observed|trace|convention|import|coverage|manual,
                 last_seen_run_id, last_seen_at                unique (test_case_id, kind, target)
 
-oracle_probes   id, project_id, test_case_id, surface_id, mutation ∈ status-500|empty-body|
-                drop-field|stale-value|slow, outcome ∈ noticed|not-noticed|inconclusive,
+oracle_probes   id, project_id, test_case_id, surface_id, level ∈ client|server,
+                fault ∈ status-500|empty-body|drop-field|stale-value|slow|throw|dependency|extreme|replay|auth,
+                target? (dependency name for server faults), applied (from X-Piwi-Trace),
+                outcome ∈ noticed|not-noticed|inconclusive, handled ∈ graceful|degraded|unhandled|n/a,
                 run_id, probed_at, evidence JSON
 
-scenario_gaps   id, project_id, detector, class ∈ blind-spot|false-comfort|fragile, key,
+graph_edges     id, project_id, from_kind, from_key, to_kind, to_key,
+                kind ∈ links|contains|triggers|loads|handled-by|calls|imports|groups|
+                       reaches|checks|uses|drives|changes|affects|caused-by|owns,
+                confidence, origin, evidence JSON, first_seen_run_id, last_seen_run_id
+                unique (project_id, from_kind, from_key, kind, to_kind, to_key)
+
+scenario_gaps   id, project_id, detector, class ∈ blind-spot|false-comfort|fragile|unhandled, key,
                 title, evidence JSON, factors JSON, score, feature_id?, ticket?,
                 test_case_id?, failure_cluster_id?, test_run_id?, pr_number?,
                 status ∈ open|snoozed|dismissed|accepted|closed, dismiss_reason?,
@@ -252,6 +263,58 @@ runs on a developer's machine unasked.
 or only visibility assertions, on the route's page starts low. Probes replace the prior with an observation, and the
 ledger records which.
 
+## Server-side probes
+
+The client-side probe rewrites a response in the browser, so the server never runs its error path. A server-side
+probe sends the fault with the request and lets the instrumentation package apply it inside the server, scoped to
+that one request. This is the mechanism Netflix built as FIT — a header carrying a fault rule that hooks in the
+common libraries honor [35] — and LinkedIn as LinkedOut — a request filter injecting error, delay or timeout on one
+downstream call for one request [36]. The research form is service-level fault injection: start from a passing
+functional test, inject faults at every remote call it makes, and let the test tell you what it never checked [29].
+
+The plumbing already exists. The Nitro plugin ([`integrations/nitro/src/index.ts`](../integrations/nitro/src/index.ts))
+wraps the whole handler chain in an AsyncLocalStorage scope and parses the W3C `traceparent` header at the same
+point, so a probe header read there is visible to every hook, middleware and handler of exactly that request and to
+nothing else. The ASP.NET Core package sits in the same position with middleware and a delegating handler for
+outbound calls.
+
+```
+reporter worker ──── request + X-Piwi-Probe (HMAC · nonce · TTL) ────► instrumentation · request scope
+picks (test, route, fault)                                              ├─ handler:    throw · status · delay · extreme
+on the Nth request to R,                                                ├─ dependency: fail or delay one outbound call ──► DB · cache · downstream
+after the first navigation                                              └─ data:       mutate the object before serialization
+                ◄─── response + X-Piwi-Trace: fault applied? ───────────┘
+two signals per probe:  oracle    — what the test did: noticed · not noticed         → oracle ledger
+                        resilience — what the app did: console · dialogs · ARIA · logs → graceful · degraded · unhandled
+```
+
+| Fault | Applied where | What it reveals beyond the client probe |
+|---|---|---|
+| `throw` · `status` · `delay` | inside the handler | the server's error middleware, logging and retry logic execute; the backend log capture records what they did |
+| `dependency` (fail or delay one outbound call) | the outbound client: fetch, HTTP client, DB driver hook, cache | the child spans already recorded per request name every dependency call site before any probe runs; the LinkedOut and Filibuster class of fault [29][36] |
+| `data` (drop, null, empty list, stale) | the response object before serialization | the server serializer and the client parser both run on the mutated shape |
+| `extreme` (empty or default return) | the handler | if every test still passes, the handler is pseudo-tested by the end-to-end suite in the unit-level sense [8] |
+| `replay` · `auth` · `slow-first` | the request pipeline | idempotency of a repeated write, session expiry mid-flow, a race on the first request |
+
+**Two signals per probe.** The oracle signal is whether the test failed. The resilience signal is what the
+application did while the fault was applied, and the capture fixtures already record it: console errors, uncaught
+exceptions, dialogs, the ARIA snapshot, backend logs. That adds the fourth gap class, *unhandled failure*: under a
+failed payments call the checkout page shows nothing, logs an uncaught error, and no test covers it. Chaos tools ask
+whether the system survives [34]; this asks that and whether anyone would have known.
+
+**Search.** Follows Filibuster [29]: enumerate the requests and child spans of a passing test, inject one fault per
+distinct call site, deduplicate by route pattern, order by exposure, and try pairs only for the top of the list.
+Google's mutation testing reached a 75 percent usefulness rate by surfacing one mutant per line and only the ones
+its filters rated interesting [31]; the same strictness applies to which probes are run and which results are shown.
+
+**Guards.** The header is HMAC-signed with a secret shared between reporter and instrumentation, carries a nonce and
+a short TTL, and is honored only outside production under the same guard as log capture (`PIWI_TEST_LOGS_DISABLED`).
+Fault classes are allow-listed per project. Dependency faults on state-changing routes can leave partial writes,
+which is real behavior worth seeing, so they default to off and require an ephemeral or staging database. The
+instrumentation reports the fault it actually applied in `X-Piwi-Trace`, so a probe the server did not honor is
+recorded as inconclusive, never as a pass. The client-side probe stays in M2 because it needs nothing from the
+backend; the server-side probe is M3, enabled only where the instrumentation header is present.
+
 ## Exposure
 
 Each factor lives in [0.1, 1] so a missing input can never zero a row; the Gaps tab and the MCP tool show the
@@ -297,6 +360,11 @@ for an accepted gap.
 | Locator break ahead | prediction | hunk removes a testid/id/name present in `locator_snapshots.element_attrs` | "Removes data-testid=submit-order · 3 call sites" | healing pre-flight, not a gap |
 | Intent without a test | blind spot | commit/PR title words match no test title, tag or feature | "fix: negative quantity · no test mentions quantity" | regression test drafted from the diff and message |
 | Matrix | fragile | critical feature on one browser or viewport class; feature on one environment; flag state never both ways | "critical · chromium only · no mobile viewport" | the missing Playwright project |
+| Not handled | unhandled | server probe outcome `handled ∈ degraded\|unhandled`: blank page, uncaught error, spinner past the test timeout | "payments-svc down → /checkout blank, uncaught TypeError" | an error-state scenario; owner from the handler's file |
+| Unprobed dependency | false comfort (prior) | a `calls` edge to a dependency with no `checks` edge from any test | "payments-svc called by 3 routes · never probed" | schedule a dependency probe |
+| API-only route | blind spot | a `route` node with reach but no `triggers` edge from any control | "POST /api/exports · reached only by request fixtures" | an API-level scenario, or nothing if the route is headless by design |
+| Orphan test | fragile | a test whose `reaches` edges all point to surface not seen in the last N runs | "3 pages it reaches disappeared 40 days ago" | retire or repoint; the surface drift that removed them is named |
+| Surface drift | blind spot | nodes first seen in the last run with no `reaches` edge; nodes that vanished with tests still pointing at them | "/billing/plans appeared in run #830 · 0 tests" | a scenario for the new surface; explorer target |
 
 ## Change time
 
@@ -349,6 +417,77 @@ frontier is empty or the budget is spent. It reports new surface rows, pages tha
 per discovered page in the extension's existing recording format, matched against the function catalog — so the
 output is a draft test, not a screenshot. Runs from a scheduled job or the desktop app, never on a production origin,
 off unless configured. M4, because its value is proportional to how good the frontier is.
+
+## The feature graph: one substrate
+
+Everything above stores facts about the same objects: a page links to a page, a control triggers a route, a route is
+handled by a file, a handler calls a dependency, a test reaches and checks some of these, a commit changes a file, a
+cluster is caused by another. Kept as three tables they answer three questions. Kept as one typed graph they answer
+any path question, and every detector becomes a missing-edge pattern. The reach index, the surface inventory and the
+oracle ledger are views over it.
+
+Two edge kinds are new, and both come from data already captured. **Triggers**: step events carry a start time per
+action and network requests carry a start time per request, so "clicking *Place order* caused `POST /api/orders`" is
+a co-occurrence inside the step window, confirmed across executions and scored by how often it holds. **Calls**: the
+child spans under a request's root span name every dependency the handler reached. Joined through the route, they
+connect a button to a database query. Crawlers infer the client-side state graph [13], tracing tools draw the
+service map, and fault-injection interposition records the RPC graph [29]; none of them joins the three through the
+tests that exercise them.
+
+```
+TESTS              PAGES          CONTROLS         ROUTES                 HANDLERS              DEPENDENCIES
+cart › coupon ···► /cart ───────► Apply coupon ──► POST /api/coupons ───► coupons.post.ts ────► DB
+                     │ links        contains         triggers ·94           handled by            calls
+checkout › happy ·► /checkout ───► Place order ───► POST /api/orders ────► orders.post.ts ─────► DB · payments-svc · cache
+  path               │                                 ✗ checks: not noticed (500)                  (payments-svc unprobed)
+(no test)          /orders/:id ──► Change address ─► PATCH /api/orders/:id ► orders/[id].patch.ts ► DB
+                                                                                 ▲ changes: PR #418 · PROJ-418
+```
+
+Reading left to right answers what a test protects; right to left answers what a change threatens. In the sketch the
+bottom row is a blind spot end to end, the middle row is reached but its order route did not notice a 500, the
+payments dependency has never been probed, and the pull request touches the one handler nobody reaches.
+
+| Edge | From → to | Source | Confidence |
+|---|---|---|---|
+| `links` | page → page | ARIA snapshot link targets; page inventory (M2) | observed |
+| `contains` | page → control | ARIA snapshot; locator snapshots resolved to role + name | observed |
+| `triggers` | control → route | request start time inside the action step's window, across executions | share of executions where it held; shown on the edge |
+| `loads` | page → route | document and XHR requests during navigation settle | observed |
+| `handled-by` | route → handler file | root span handler field (M2) or file-routing convention | observed or convention, labeled |
+| `calls` | handler → dependency | child spans under the request's root span | observed |
+| `imports` | file → file | shallow import scan at the run's ref (M3) | inferred |
+| `groups` | feature → page, route, control | tags, catalog url patterns, URL clustering | by source, in that order |
+| `reaches` | test → page, control, route, file, handler | the reach index | trusted or discounted per test |
+| `checks` | test → route, dependency | the oracle ledger, with outcome | probe or assertion prior |
+| `uses` · `drives` | test → catalog function → control pattern | function catalog, source frames, call sites | observed |
+| `changes` | commit or ticket → file | SCM diff, commit message ids | observed |
+| `affects` · `caused-by` | cluster → test; cluster → file | failure clusters, first-bad and fixing commits | observed |
+| `owns` | owner → file, test | CODEOWNERS | observed |
+
+What the graph answers that the tables cannot:
+
+- **Blast radius of a change**, in both directions: file → handler → route → control → page → feature, and at each
+  hop the tests that reach it, the tests that check it, and the owner. The impact command and the uncovered-changes
+  section from one traversal.
+- **Blast radius of a dependency.** If the payments service is down, which features degrade, which pages show it,
+  and which tests would notice. Server-side probes fill the `checks` edges on dependency nodes; the graph says which
+  ones are worth filling.
+- **The path to a gap.** From a reached page to an unreached one through links and controls. That path is the
+  explorer's frontier walk and the draft's step list; a gap with no path is a gap the draft cannot reach and says so.
+- **Cross-feature coupling.** Two features sharing a handler or a dependency: a change to one is a regression risk
+  for the other, and the PR comment can say "also touches Refunds through `orders.post.ts`".
+- **Drift over time.** Every edge carries first and last seen. Nodes that appeared with no reach are new surface;
+  nodes that vanished with tests still pointing at them make those tests orphans. Both are detectors above.
+- **Usage against test effort.** Usage counts sit on route and page nodes, test counts on the same nodes; a feature
+  with a large share of traffic and a small share of tests is the one card a product owner needs.
+
+**Storage and scale.** This is not a graph database. One `graph_edges` table in both dialects, typed endpoints, and
+recursive common table expressions for traversal, capped at a depth of six. A project with thousands of tests
+produces tens of thousands of edges; the surface inventory and the reach index become views over it, and the oracle
+ledger stays its own table because a probe row carries more than an edge. The MCP tool
+`get_feature_graph(feature | file | route | dependency, depth)` returns a neighborhood with the class of each node
+and the tests on each hop — the one call an agent needs before touching a handler.
 
 ## Delivery, and the learning loop
 
@@ -443,7 +582,8 @@ reach index but never trigger diff detectors, probes or PR feedback.
 
 ## Milestones
 
-- **M1 — the index, the diff, and the agent.** `test_reach`, `app_surface` (observed), `scenario_gaps`; detectors on
+- **M1 — the index, the diff, and the agent.** `test_reach`, `app_surface` (observed), `graph_edges` with the structural edges
+  (links, contains, triggers, loads, calls) and the reach index as a view, `scenario_gaps`; detectors on
   stored data (success only, single covering test, phantom, passed with errors, catalog method, incidental catch, fix
   did not hold, assertion-light as prior, changed/unreached, new error path, intent without a test); exposure without
   usage; the PR comment section per ticket; `get_change_coverage`, `list_scenario_gaps`, `draft_scenario` and the
@@ -456,7 +596,9 @@ reach index but never trigger diff detectors, probes or PR feedback.
 - **M3 — declared surface, the tab, and the loop.** Manifest from instrumentation, OpenAPI URL, committed JSON;
   documented error codes; escaped defects over the Jira binding; import edges; the Gaps tab grouped by feature with
   triage; the gaps inbox queue; the digest; precision per detector with self-muting; matrix detectors; healing
-  pre-flight wired to auto-heal.
+  pre-flight wired to auto-heal; server-side probes through a signed per-request header in both instrumentation
+  packages, the resilience signal and the *unhandled failure* class; the feature-graph view per feature and
+  `get_feature_graph`.
 - **M4 — usage and exploration.** Production route counts in both instrumentation packages and the upload endpoint;
   usage in exposure and the "most-used routes without a test" card; guided exploration from a scheduled job and the
   desktop.
@@ -477,6 +619,13 @@ reach index but never trigger diff detectors, probes or PR feedback.
 8. **How much of the PR comment.** Cap at five lines with a link, or a score threshold?
 9. **Strengthening versus adding.** A not-noticed probe suggests strengthening an existing test. This feature, or spec
    health?
+10. **Probe header trust.** A shared HMAC secret between reporter and instrumentation is one more secret to
+    provision. Is the reporter API key acceptable as the signing key, or does a staging environment need its own?
+11. **State-changing routes under dependency faults.** A failed payments call after an order row was written is
+    exactly the case worth seeing and exactly the case that dirties a shared staging database. Ephemeral database per
+    probe run, a per-project allowlist of routes, or both?
+12. **Trigger-edge confidence.** Two actions in quick succession share a request window. Is the share of executions
+    where the co-occurrence held enough, or does the reporter need to tag requests with the current step id?
 
 ## Prior art
 
@@ -490,6 +639,9 @@ reach index but never trigger diff detectors, probes or PR feedback.
 | [Octomind](https://octomind.dev/docs/advanced/octomind-bot), Checksum, Meticulous | crawl the app or record sessions, propose journeys, emit Playwright or replay | the draft ramp as a whole product; blind to the existing suite and its failures |
 | [Keploy](https://keploy.io/record-replay-testing), [Speedscale](https://docs.speedscale.com/concepts/replay/) | record production API traffic, replay as regression tests | the usage pillar taken to generation, APIs only |
 | [Restats](https://github.com/SeUniVr/restats) | REST coverage metrics from an OpenAPI spec and observed traffic | the declared-surface detectors, as an academic tool |
+| [Netflix FIT and ChAP](http://techblog.netflix.com/2014/10/fit-failure-injection-testing.html), [LinkedIn LinkedOut](https://engineering.linkedin.com/blog/2018/05/linkedout--a-request-level-failure-injection-framework) | request-scoped fault injection: a header or cookie carries the fault rule, library hooks or a request filter apply it | the exact mechanism of the server-side probe; they ask whether the system survives, not whether a test would notice |
+| [Gremlin ALFI](https://www.gremlin.com/blog/the-next-step-application-level-fault-injection/), [Istio and Envoy fault filters](https://istio.io/latest/docs/tasks/traffic-management/fault-injection/), [Toxiproxy](https://qaskills.sh/blog/toxiproxy-fault-injection-testing-guide-2026), [WireMock](https://wiremock.org/2.x/docs/simulating-faults/) | fault injection at the library, mesh, TCP and stub level | alternative application points; none joined to a test suite or a coverage map |
+| [chaosbringer](https://github.com/mizchi/chaosbringer), [playwright-network-chaos-mcp](https://glama.ai/mcp/servers/vola-trebla/playwright-network-chaos-mcp) | Playwright-level network and runtime fault injection with invariants, or under agent control | the client-side probe as a standalone tool; unaware of the suite |
 
 ## References
 
@@ -558,3 +710,25 @@ reach index but never trigger diff detectors, probes or PR feedback.
     screen transition graphs.* JSAI 2025. <https://arxiv.org/abs/2506.02529>.
 28. Ye, Yu, Xu, Peng, Yu. *AI agents for web testing: a case study in the wild.* arXiv 2025.
     <https://arxiv.org/abs/2509.05197>.
+29. Meiklejohn, Estrada, Song, Miller, Padhye. *Service-level fault injection testing.* SoCC 2021.
+    <https://dl.acm.org/doi/10.1145/3472883.3487005> — Filibuster; faults at every remote call of a passing
+    functional test; the search strategy and the dependency fault class.
+30. Schuler, Zeller. *Assessing oracle quality with checked coverage.* ICST 2011.
+    <https://dl.acm.org/doi/10.1109/ICST.2011.32> — oracle quality as the share of executed statements that influence
+    an assertion; the theoretical form of the checked axis.
+31. Petrović, Ivanković. *State of mutation testing at Google.* ICSE SEIP 2018.
+    <https://research.google.com/pubs/archive/46584.pdf> — 75 percent usefulness over 150,000 surfaced mutants by
+    strict selection; the rule for which probes to run and show.
+32. Praphamontripong, Offutt. *Applying mutation testing to web applications.* ICSTW 2010.
+    <https://www.albany.edu/faculty/offutt/research/papers/webmujava.pdf> — web-specific mutation operators.
+33. *Mutta: a novel tool for E2E web mutation testing.* Software Quality Journal 2023.
+    <https://link.springer.com/article/10.1007/s11219-023-09616-6>.
+34. Zhang, Monperrus and colleagues. *ChaosMachine, ChaosOrca, Phoebe: application-level chaos engineering.* KTH,
+    2019–2021. <https://github.com/ASSERT-KTH/royal-chaos> — chaos engineering evaluated as error-handling quality;
+    the resilience signal.
+35. Netflix. *FIT: failure injection testing* (2014) and *ChAP: chaos automation platform* (2017).
+    <http://techblog.netflix.com/2014/10/fit-failure-injection-testing.html> — a header carrying a fault rule on
+    tagged requests; the request-scoped probe mechanism.
+36. LinkedIn. *LinkedOut: a request-level failure injection framework.* 2018.
+    <https://engineering.linkedin.com/blog/2018/05/linkedout--a-request-level-failure-injection-framework> — error,
+    delay and timeout on one downstream call for one request; the dependency fault class.
