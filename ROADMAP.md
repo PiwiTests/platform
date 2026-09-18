@@ -116,6 +116,11 @@ Everything else — analytics, notifications, the CI gate, PR feedback, MCP, the
 
 ## Exploring
 
+- **Scenario gaps** — the tests that are missing, proposed from the history Piwi keeps: routes only ever seen
+  succeeding, controls no locator targets, page-object methods no test calls, bugs caught by accident, and the files a
+  pull request changed that no test reached, ranked by usage, risk and cost and handed back as a draft spec, a PR
+  comment section, a warn-only gate policy and MCP tools. Design record in
+  [proposals/scenario-gaps.md](proposals/scenario-gaps.md).
 - **Issue trackers, the rest** — automatic ticket creation behind conservative guards (a new cluster on the default
   branch, repeated occurrences, not flaky, under a daily cap; off by default), tickets for flaky tests and whole runs,
   investigation and run reports published to Confluence with in-place page updates, and the next trackers on the same
