@@ -1,6 +1,8 @@
 import { getDatabase } from '../../database';
+import { users } from '../../database/schema';
+import { eq } from 'drizzle-orm';
 import { updateUserRecord, toPublicUser } from '#shared/handlers/users';
-import { requireAuth, revokeUserSessions } from '../../utils/auth';
+import { requireAuth, revokeUserSessions, isAuthEnabled } from '../../utils/auth';
 import { Role } from '#shared/types';
 import { z } from 'zod';
 
@@ -9,7 +11,7 @@ defineRouteMeta({
     tags: ['Users'],
     summary: 'Update a user',
     description:
-      "Updates a user's name, email, or role. Admins can update any user; non-admins can only update their own name and email.",
+      "Updates a user's name, email, or role. Admins can update any user; non-admins can only update their own name and email. Demoting the last administrator is refused.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': ['administrator', 'reporter', 'user'],
   },
@@ -45,8 +47,22 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 403, message: 'Only administrators can change roles' });
   }
 
+  const db = await getDatabase();
+
+  // Guard against lockout: refuse demoting the last administrator (only
+  // meaningful when authentication is enabled).
+  if (isAuthEnabled(event) && parsed.data.role !== undefined && parsed.data.role !== Role.ADMINISTRATOR) {
+    const target = (await db.select().from(users).where(eq(users.id, id)))[0];
+    if (target?.role === Role.ADMINISTRATOR) {
+      const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, Role.ADMINISTRATOR));
+      if (admins.length <= 1) {
+        throw apiError({ statusCode: 400, message: 'Cannot demote the last administrator' });
+      }
+    }
+  }
+
   try {
-    const user = await updateUserRecord(await getDatabase(), id, parsed.data);
+    const user = await updateUserRecord(db, id, parsed.data);
     if (!user) throw apiError({ statusCode: 404, message: 'User not found' });
     // A role change takes effect immediately by revoking the user's sessions.
     if (parsed.data.role !== undefined) {

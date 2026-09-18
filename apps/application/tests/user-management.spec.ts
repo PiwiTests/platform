@@ -90,6 +90,26 @@ test.describe.serial('User Management Page Tests', () => {
     await expect(page.getByRole('cell', { name: 'testuser' })).toBeVisible();
   });
 
+  test('admin can change an existing user role from the table', async ({ page, request }) => {
+    await page.goto('/settings/users');
+    await waitForHydration(page);
+
+    // `testuser` was created as an administrator by the previous test; demote it
+    // to `user` through the inline role selector in the table.
+    const roleSelect = page.getByLabel('Change role for testuser');
+    await expect(roleSelect).toBeVisible();
+    await roleSelect.click();
+    await page.getByRole('option', { name: 'User', exact: true }).click();
+
+    await expect(page.getByText('Role updated', { exact: true })).toBeVisible({ timeout: 5000 });
+
+    // The change is persisted server-side.
+    const usersResponse = await request.get('/api/users');
+    const usersData = await usersResponse.json();
+    const updated = (usersData.items || []).find((u: { username: string }) => u.username === 'testuser');
+    expect(updated?.role).toBe('user');
+  });
+
   test('should display user in table after creation', async ({ page }) => {
     await page.goto('/settings/users');
     await waitForHydration(page);

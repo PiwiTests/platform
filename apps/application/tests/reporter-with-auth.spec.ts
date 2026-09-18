@@ -946,4 +946,48 @@ test.describe.serial('Reporter with authentication enabled', () => {
     // the route meta rejects the request with 403 (before the AI-config check).
     expect(streamRes.status()).toBe(403);
   });
+
+  // ---------------------------------------------------------------------------
+  // PATCH /api/users/:id — admins can reassign a role (the only way to promote
+  // an OAuth-provisioned account, which self-registers as `user`), but the last
+  // administrator can never be demoted into a lockout.
+  // ---------------------------------------------------------------------------
+
+  test('admin can reassign a role but cannot demote the last administrator', async ({ request }) => {
+    const loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
+      data: { username: 'admin', password: 'adminpassword123' },
+    });
+    expect(loginRes.ok()).toBeTruthy();
+
+    const usersRes = await request.get(`${AUTH_SERVER_URL}/api/users`);
+    const usersData = await usersRes.json();
+    const adminUser = usersData.items.find((u: { username: string }) => u.username === 'admin');
+    const targetUser = usersData.items.find((u: { username: string }) => u.username === 'ci-user');
+    expect(adminUser).toBeDefined();
+    expect(targetUser).toBeDefined();
+
+    // Promote ci-user (role: user) to reporter, then restore it.
+    const promote = await request.patch(`${AUTH_SERVER_URL}/api/users/${targetUser.id}`, {
+      data: { role: 'reporter' },
+    });
+    expect(promote.ok()).toBeTruthy();
+    expect((await promote.json()).user.role).toBe('reporter');
+
+    const restore = await request.patch(`${AUTH_SERVER_URL}/api/users/${targetUser.id}`, {
+      data: { role: 'user' },
+    });
+    expect(restore.ok()).toBeTruthy();
+
+    // `admin` is the only administrator, so demoting it is refused and the
+    // account keeps its role.
+    const demote = await request.patch(`${AUTH_SERVER_URL}/api/users/${adminUser.id}`, {
+      data: { role: 'user' },
+    });
+    expect(demote.status()).toBe(400);
+    expect((await demote.json()).message).toContain('last administrator');
+
+    const afterRes = await request.get(`${AUTH_SERVER_URL}/api/users`);
+    const afterData = await afterRes.json();
+    expect(afterData.items.find((u: { username: string }) => u.username === 'admin').role).toBe('administrator');
+  });
 });

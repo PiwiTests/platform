@@ -151,6 +151,34 @@ function getRoleBadgeColor(role: string) {
   }
 }
 
+// Change an existing user's role. Available to admins for every user, including
+// accounts provisioned through OAuth (which self-register with the `user` role).
+async function handleChangeRole(user: UserDetails, role: string) {
+  if (role === user.role) return;
+
+  try {
+    await $fetch(`/api/users/${user.id}`, { method: 'PATCH', body: { role } });
+
+    toast.add({
+      title: 'Role updated',
+      description: `${user.username} is now ${roleOptions.find((r) => r.value === role)?.label ?? role}`,
+      color: 'success',
+    });
+
+    await refresh();
+  } catch (error: unknown) {
+    const errorMessage =
+      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
+    toast.add({
+      title: 'Failed to update role',
+      description: errorMessage || 'An error occurred',
+      color: 'error',
+    });
+    // Revert the shown selection to the persisted value.
+    await refresh();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // API key management
 // ---------------------------------------------------------------------------
@@ -427,7 +455,16 @@ async function handleInviteUser(user: UserDetails) {
           </template>
 
           <template #role-cell="{ row }">
-            <UBadge :color="getRoleBadgeColor(row.original.role)" variant="subtle">
+            <USelect
+              v-if="isAdmin"
+              :model-value="row.original.role"
+              :items="roleOptions"
+              size="sm"
+              class="w-36"
+              :aria-label="`Change role for ${row.original.username}`"
+              @update:model-value="(value) => handleChangeRole(row.original, value as string)"
+            />
+            <UBadge v-else :color="getRoleBadgeColor(row.original.role)" variant="subtle">
               {{ row.original.role }}
             </UBadge>
           </template>
