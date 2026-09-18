@@ -329,6 +329,22 @@ export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'al
   return result.filter((run) => scope.has(run.projectId));
 }
 
+/**
+ * Currently-active runs (initializing / running / finalizing) across the scope,
+ * with their live counts — the snapshot the desktop shell seeds its OS
+ * progress from before it starts streaming deltas.
+ */
+export async function getActiveTestRuns(db: DrizzleDB, scope: ProjectScope = 'all') {
+  if (scope !== 'all' && scope.size === 0) return [];
+  const runs = await db
+    .select(RECENT_FIELDS)
+    .from(testRuns)
+    .innerJoin(projects, eq(testRuns.projectId, projects.id))
+    .where(or(...ACTIVE_STATUSES.map((s) => eq(testRuns.status, s))))
+    .orderBy(desc(testRuns.startTime));
+  return scope === 'all' ? runs : runs.filter((run) => scope.has(run.projectId));
+}
+
 // ─── getTestRunSummary — lightweight summary ─────────────────────────────────
 
 export async function getTestRunSummary(db: DrizzleDB, id: number) {

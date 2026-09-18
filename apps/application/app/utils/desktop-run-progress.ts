@@ -1,16 +1,16 @@
 /**
- * Aggregate the desktop shell's active local runs into a single progress
- * descriptor for the OS shell — the taskbar/Dock progress bar, the window title
- * and the tray tooltip. A window has one taskbar button, so many concurrent runs
- * collapse to one bar: the summed fraction across runs that have a countable
- * total, or an indeterminate bar while any active run is in a countless phase
- * (install / checkout / bisect, or a test run before Playwright has announced its
- * total). Pure and framework-free so it can be unit-tested; the client plugin
- * (`desktop-run-progress.client.ts`) watches the run store and feeds the result
- * to `desktop_set_run_progress`.
+ * Aggregate the in-flight test runs into a single progress descriptor for the
+ * OS shell — the taskbar/Dock progress bar, the window title and the tray
+ * tooltip/icon. A window has one taskbar button, so many concurrent runs
+ * collapse to one bar: the summed fraction across runs whose total is known, or
+ * an indeterminate bar while any active run has no total yet.
+ *
+ * Runs here are the app's *live* runs — every run reported into the app (from
+ * CI, a terminal, or the desktop's own "Run locally"), not just ones launched
+ * from the app. The desktop plugin (`desktop-run-progress.client.ts`) streams
+ * them from `/api/desktop/live-runs` and feeds the result to the shell's
+ * `desktop_set_run_progress` command. Pure and framework-free so it is unit-tested.
  */
-import type { LocalRun } from '~/composables/useDesktopLocalRuns';
-import { localRunProgressLabel } from '~/composables/useDesktopLocalRuns';
 
 /** Mirrors the shell's `desktop_set_run_progress` `state` argument. */
 export type RunProgressState = 'none' | 'indeterminate' | 'normal' | 'error' | 'paused';
@@ -23,37 +23,42 @@ export interface AggregatedRunProgress {
   label: string | null;
 }
 
+/** The completion tally + planned total of one run, as the counts aggregate needs them. */
+export interface RunCounts {
+  status: string;
+  /** Tests finished so far (passed + failed + skipped + did-not-run). */
+  done: number;
+  /** Planned suite size; `0`/unknown makes the run (and the bar) indeterminate. */
+  total: number;
+}
+
 /** The cleared state — no active runs, nothing on the shell. */
 export const NO_RUN_PROGRESS: AggregatedRunProgress = { state: 'none', fraction: null, label: null };
 
-/**
- * A run with no countable test total yet. Reproduce/bisect runs move through
- * phases (checkout · install · browser · test) whose progress the shell does not
- * total, and a plain test run is countless until Playwright's "Running N tests"
- * line sets `progressTotal`.
- */
-function isCountless(run: LocalRun): boolean {
-  if (run.kind !== 'tests') return true;
-  return !run.progressTotal;
-}
+/** Run statuses that count as in-flight (mirrors the server's ACTIVE_STATUSES). */
+export const ACTIVE_RUN_STATUSES: ReadonlySet<string> = new Set(['running', 'initializing', 'finalizing']);
 
 /**
- * Fold the runs into one progress descriptor. Only `running` runs count; a call
- * with none active returns the cleared state (the plugin decides whether to flash
- * a finished run's outcome first).
+ * Fold the in-flight runs into one progress descriptor. Only active runs count;
+ * with none active it returns the cleared state (the plugin decides whether to
+ * flash a finished run's outcome first).
  */
-export function aggregateRunProgress(runs: LocalRun[]): AggregatedRunProgress {
-  const active = runs.filter((r) => r.status === 'running');
+export function aggregateRunProgress(runs: readonly RunCounts[]): AggregatedRunProgress {
+  const active = runs.filter((r) => ACTIVE_RUN_STATUSES.has(r.status));
   if (active.length === 0) return NO_RUN_PROGRESS;
 
-  const done = active.reduce((sum, r) => sum + r.progressDone, 0);
-  const total = active.reduce((sum, r) => sum + (r.progressTotal ?? 0), 0);
-  const countless = active.some(isCountless);
+  const done = active.reduce((sum, r) => sum + Math.max(0, r.done), 0);
+  const total = active.reduce((sum, r) => sum + Math.max(0, r.total), 0);
+  // Indeterminate while any active run hasn't reported a total yet — a partial
+  // sum would make the bar jump backwards when that run's total lands.
+  const countless = active.some((r) => r.total <= 0);
   const fraction = countless || total <= 0 ? null : Math.min(done / total, 1);
 
   const label =
     active.length === 1
-      ? localRunProgressLabel(active[0]!)
+      ? fraction == null
+        ? 'Running…'
+        : `Running ${done}/${total}…`
       : fraction == null
         ? `Running ${active.length} runs…`
         : `Running ${done}/${total} · ${active.length} runs`;

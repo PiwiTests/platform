@@ -265,6 +265,17 @@ export default eventHandler(async (event) => {
         didNotRunTests: updatedRun.didNotRunTests,
       },
     });
+    // Also broadcast globally so the desktop shell can show OS progress for a
+    // run the user is watching (not just runs it launched itself).
+    runEventBus.publishRunProgress({
+      runId: id,
+      projectId,
+      totalTests: updatedRun.totalTests,
+      passedTests: updatedRun.passedTests,
+      failedTests: updatedRun.failedTests,
+      skippedTests: updatedRun.skippedTests,
+      didNotRunTests: updatedRun.didNotRunTests,
+    });
   }
 
   return {
