@@ -35,6 +35,22 @@ export interface GlobalRunEvent {
   status?: string;
 }
 
+/**
+ * A live progress tally for one run, broadcast globally so an app-wide consumer
+ * (the desktop shell's OS progress) can track every in-flight run's counts
+ * without opening a per-run stream. Kept on its own channel so the existing
+ * global lifecycle stream (`/api/stream`) is unaffected.
+ */
+export interface RunProgressBroadcast {
+  runId: number;
+  projectId: number;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  skippedTests: number;
+  didNotRunTests: number;
+}
+
 export interface RunState {
   streamToken: string;
   projectId: number;
@@ -169,6 +185,24 @@ class RunEventBus {
     this.globalEmitter.on('global', listener);
     return () => {
       this.globalEmitter.off('global', listener);
+    };
+  }
+
+  /**
+   * Broadcast a run's live progress tally to app-wide subscribers. On its own
+   * channel so it never reaches the lifecycle stream's subscribers.
+   */
+  publishRunProgress(progress: RunProgressBroadcast): void {
+    this.globalEmitter.emit('run-progress', progress);
+  }
+
+  /**
+   * Subscribe to global run-progress tallies. Returns an unsubscribe function.
+   */
+  subscribeRunProgress(listener: (progress: RunProgressBroadcast) => void): () => void {
+    this.globalEmitter.on('run-progress', listener);
+    return () => {
+      this.globalEmitter.off('run-progress', listener);
     };
   }
 
