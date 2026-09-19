@@ -1,11 +1,14 @@
 import { describe, test, expect } from 'vitest';
 import {
+  buildChangeCoverageStatus,
   buildCommitStatus,
   buildPrComment,
   DEFAULT_PR_FEEDBACK,
   PR_COMMENT_MARKER,
   PR_EXCERPT_MAX,
+  renderChangeCoverage,
   resolvePrFeedbackSettings,
+  type PrChangeCoverage,
   type PrFailureEntry,
   type PrSummaryInput,
 } from '#shared/pr-feedback';
@@ -315,5 +318,130 @@ describe('buildPrComment — failure headline', () => {
     expect(escaped).toContain('**Expected \\`a\\_b\\`, got \\*c\\* — toBe**');
     const plain = buildPrComment(summary({ failedTests: 1, newRegressions: [entry({ headline: null })] }));
     expect(plain).not.toContain('**Expected');
+  });
+});
+
+describe('change coverage section', () => {
+  function coverage(overrides: Partial<PrChangeCoverage> = {}): PrChangeCoverage {
+    return {
+      totalFiles: 7,
+      uncoveredFiles: 2,
+      reachedFiles: 5,
+      ticketCount: 1,
+      windowRuns: 30,
+      baseBranch: 'main',
+      tickets: [
+        {
+          ticket: 'PROJ-418',
+          files: [
+            {
+              filePath: 'server/api/orders/[id].patch.ts',
+              additions: 41,
+              deletions: 3,
+              reachedInRun: false,
+              reachedCountHistory: 0,
+              draftTitle: 'a scenario that exercises [id].patch.ts',
+            },
+            {
+              filePath: 'components/OrderRow.vue',
+              additions: 8,
+              deletions: 2,
+              reachedInRun: true,
+              reachedCountHistory: 4,
+            },
+          ],
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  test('lists uncovered files per ticket with observed-reach wording', () => {
+    const section = renderChangeCoverage(coverage());
+    expect(section).toContain('🟣 Uncovered changes · 2 of 7 files · 1 ticket');
+    expect(section).toContain('Observed reach, not instrumented coverage');
+    expect(section).toContain('**PROJ-418**');
+    expect(section).toContain('`server/api/orders/[id].patch.ts` · changed (+41 −3) · 0 tests in 30 runs');
+    // A reached file is not listed as uncovered.
+    expect(section).not.toContain('OrderRow.vue');
+    expect(section).toContain('warn');
+  });
+
+  test('reports a clean diff without listing files', () => {
+    const section = renderChangeCoverage(coverage({ uncoveredFiles: 0, reachedFiles: 7, tickets: [] }));
+    expect(section).toContain('All 7 changed files have observed reach');
+  });
+
+  test('caps the uncovered list across ticket groups and reports the remainder', () => {
+    const files = Array.from({ length: 40 }, (_, i) => ({
+      filePath: `src/file-${i}.ts`,
+      additions: 1,
+      deletions: 0,
+      reachedInRun: false,
+      reachedCountHistory: 0,
+    }));
+    const section = renderChangeCoverage(
+      coverage({
+        totalFiles: 40,
+        uncoveredFiles: 40,
+        reachedFiles: 0,
+        ticketCount: 1,
+        tickets: [{ ticket: 'PROJ-1', files }],
+      }),
+    )!;
+    const listed = (section.match(/ · changed \(\+/g) ?? []).length;
+    expect(listed).toBe(10);
+    expect(section).toContain('…and 30 more');
+  });
+
+  test('separates a file reached only in history from the uncovered list', () => {
+    const section = renderChangeCoverage(
+      coverage({
+        totalFiles: 2,
+        uncoveredFiles: 1,
+        reachedFiles: 1,
+        ticketCount: 1,
+        tickets: [
+          {
+            ticket: 'PROJ-1',
+            files: [
+              {
+                filePath: 'src/new.ts',
+                additions: 5,
+                deletions: 0,
+                reachedInRun: false,
+                reachedCountHistory: 0,
+                draftTitle: 'exercise new.ts',
+              },
+              {
+                filePath: 'src/old.ts',
+                additions: 2,
+                deletions: 0,
+                reachedInRun: false,
+                reachedCountHistory: 3,
+              },
+            ],
+          },
+        ],
+      }),
+    )!;
+    expect(section).toContain('`src/new.ts`');
+    // Reached only in history — not in the uncovered list, but its own line.
+    expect(section).not.toContain('`src/old.ts`');
+    expect(section).toContain('1 file reached only in the last 30 runs, not this run.');
+  });
+
+  test('embeds into the comment and drives an informational commit status', () => {
+    const body = buildPrComment(summary({ changeCoverage: coverage() }));
+    expect(body).toContain('Uncovered changes');
+
+    const status = buildChangeCoverageStatus(
+      coverage(),
+      'https://piwi.example.com/test-runs/42',
+      'piwi/tests/change-coverage',
+    );
+    expect(status.state).toBe('success');
+    expect(status.description).toContain('2 of 7');
+    expect(status.context).toBe('piwi/tests/change-coverage');
   });
 });

@@ -17,7 +17,7 @@ The MCP server is served from the same Nitro process as the dashboard. There is 
 
 ## What it provides
 
-The server exposes 46 tools — mostly read-only, plus a few write/triage tools — that cover the full diagnostic workflow, from browsing projects to inspecting the exact evidence behind a failure and closing the loop after a fix.
+The server exposes 47 tools — mostly read-only, plus a few write/triage tools — that cover the full diagnostic workflow, from browsing projects to inspecting the exact evidence behind a failure and closing the loop after a fix.
 
 **Projects & activity**
 
@@ -47,12 +47,12 @@ The server exposes 46 tools — mostly read-only, plus a few write/triage tools 
 | `get_test_stability_trend` | Flaky/pass rate and duration over time for one test — "is it getting flakier?" |
 | `get_slow_tests` / `get_performance_trend` | Slowest tests and run-duration/p90 time series |
 | `get_spec_health` | Per-spec-file pass rate, flaky rate, and failures — find unhealthy areas |
-| `get_test_run_case` | One execution record with full (untruncated) error, steps, console, web vitals, ARIA snapshot, and its deterministic [clues](/features/evidence#clues) (use `include` to select blobs) |
+| `get_test_run_case` | One execution record with the full (untruncated) error, steps, console, web vitals, ARIA snapshot and its deterministic [clues](/features/evidence#clues) (`include` selects blobs) |
 | `get_test_case_context` | Execution-scoped AI evidence for a single failure (steps, console, network, SCM diff) |
 | `get_locator_healing` | Ranked alternative locators for a failing case — the recommended durable fix plus full alternatives |
 | `list_case_traces` | Playwright trace files for an execution, with download paths |
 | `get_case_screenshots` | Screenshots for an execution — metadata by default, or base64 image data on request |
-| `explain_failure` | **One-call evidence bundle** for a failure: one-line headline + error + steps + console + deterministic [clues](/features/evidence#clues) + locator fix + [page diff](/features/evidence#page-diff) + diagnosis context |
+| `explain_failure` | **One-call evidence bundle** for a failure: headline, error, steps, console, deterministic [clues](/features/evidence#clues), locator fix, [page diff](/features/evidence#page-diff) and diagnosis context |
 | `list_links` | External links (Jira/PR/issue) attached to a run, execution, test case, or failure cluster |
 
 **Test selections** *([named, data-driven test subsets](/guide/test-selection))*
@@ -64,6 +64,7 @@ The server exposes 46 tools — mostly read-only, plus a few write/triage tools 
 | `preview_selection` | Resolve an ad-hoc selection definition without saving it — the builder's dry-run |
 | `suggest_selections` | Suggested `slow`/`feature` tags and a mined smoke suite (budgeted set cover over observed routes), each with its evidence |
 | `analyze_selections` | Per-selection health and drift (what each resolves to now vs. what its last run recorded) plus the tests no selection covers |
+| `get_change_coverage` | Changed files joined to the tests reaching them, grouped by ticket, by run id or base/head range |
 
 **Failure clusters**
 
@@ -72,7 +73,7 @@ The server exposes 46 tools — mostly read-only, plus a few write/triage tools 
 | `list_clusters` | Failure clusters grouped by error fingerprint |
 | `list_open_clusters` | Open clusters across *all* projects, ranked by occurrences — a triage queue; an optional `queue` filter focuses one inbox queue (regressions, fixes that didn't hold, quarantines ready, merge suggestions, or yours) |
 | `get_cluster` | Cluster detail with affected tests and diagnosis summary |
-| `get_fix_plan` | **One-call fix plan** for a cluster: diagnosis with its validated patch, ranked locator replacements with the file and line to edit, failing tests, owning team, the command that verifies the fix, a `reproduce` recipe (checkout, pinned install and the exact test command, in bash and PowerShell), a generated `bisect` script between the last green and the failing commit, and `fixedBefore` — the resolved clusters this one resembles, each with the resolving commit, how long it stayed open, the triage note and why it matched |
+| `get_fix_plan` | **One-call fix plan** for a cluster: diagnosis with its validated patch, ranked locator replacements with the file and line to edit, failing tests, owning team, the verify command, a `reproduce` recipe (checkout, pinned install and the test command, in bash and PowerShell), a generated `bisect` script between the last green and the failing commit, and `fixedBefore` — the resolved clusters this one resembles, each with its resolving commit and triage note |
 | `get_cluster_diagnosis` | Full AI diagnosis: root cause, evidence, suggested fix |
 | `get_cluster_context` | Full AI evidence context (errors, steps, console logs, SCM diff) — the same data the built-in diagnosis AI receives |
 

@@ -90,6 +90,8 @@ import {
 } from '#shared/handlers/selections';
 import { getSelectionSuggestions } from '#shared/handlers/selection-suggestions';
 import { getSelectionAnalytics } from '#shared/handlers/selection-analytics';
+import { computeScenarioGaps, listScenarioGaps } from '#shared/handlers/scenario-gaps';
+import { computeChangeCoverage } from '#shared/handlers/change-coverage';
 import {
   isBuiltinKey,
   parseRankBy,
@@ -1458,6 +1460,62 @@ const routes: RouteEntry[] = [
       const selection = await getSelection(await getDemoDb(), +m[1]!, decodeURIComponent(m[2]!));
       if (!selection) throw demoHttpError(404, `No selection "${decodeURIComponent(m[2]!)}" in this project`);
       return selection;
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/change-coverage$/,
+    handler: async (m, _b, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      // An absent `run` means "no run under inspection", not run 0 — parse it to
+      // null so the join reports history reach instead of marking every file
+      // uncovered against a run that never existed.
+      const runRaw = query?.get('run');
+      const runNum = runRaw != null && runRaw !== '' ? Number(runRaw) : null;
+      const runId = runNum != null && Number.isFinite(runNum) ? runNum : null;
+      // The demo has no SCM provider; show a small representative diff so the
+      // uncovered-changes join renders against the seeded reach.
+      return computeChangeCoverage(await getDemoDb(), +m[1]!, {
+        changedFiles: [
+          { filePath: 'src/api/orders.post.ts', additions: 41, deletions: 3 },
+          { filePath: 'src/components/OrderRow.vue', additions: 8, deletions: 2 },
+          { filePath: 'src/utils/rounding.ts', additions: 5, deletions: 1 },
+        ],
+        runId,
+        baseBranch: 'main',
+        tickets: ['PROJ-418'],
+        scmAvailable: true,
+      });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/recompute$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const gaps = await computeScenarioGaps(await getDemoDb(), +m[1]!);
+      return { success: true, runsProcessed: 0, gapsUpserted: gaps.upserted, gapsClosed: gaps.closed };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/gaps$/,
+    handler: async (m, _b, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const num = (v: string | null | undefined) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : undefined;
+      };
+      return {
+        items: await listScenarioGaps(await getDemoDb(), +m[1]!, {
+          kind: query?.get('kind') ?? undefined,
+          class: query?.get('class') ?? undefined,
+          detector: query?.get('detector') ?? undefined,
+          status: query?.get('status') ?? undefined,
+          prNumber: num(query?.get('pr')),
+          limit: num(query?.get('limit')),
+        }),
+      };
     },
   },
   {

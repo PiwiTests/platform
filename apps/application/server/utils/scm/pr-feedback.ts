@@ -26,6 +26,7 @@ import { verifyClusterFixes } from '../fix-verification';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { getProjectFlakyTests } from '#shared/handlers/projects';
 import {
+  buildChangeCoverageStatus,
   buildCommitStatus,
   buildPrComment,
   DEFAULT_PR_FEEDBACK,
@@ -33,10 +34,14 @@ import {
   PR_EXCERPT_MAX,
   PR_FEEDBACK_KEY,
   resolvePrFeedbackSettings,
+  type PrChangeCoverage,
   type PrFailureEntry,
   type PrFeedbackSettings,
   type PrSummaryInput,
 } from '#shared/pr-feedback';
+import { computeRunChangeCoverage } from './change-coverage';
+import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
+import { resolveRunBranchTagFromStored } from '../graph-ingest';
 import type { VerifiedFix } from '../fix-verification';
 import type { RunMetadata } from '../run-json-types';
 import type { DbClient } from '../../database';
@@ -304,6 +309,7 @@ export async function postRunPrFeedback(
   db: DbClient,
   runId: number,
   fixedClusters: VerifiedFix[] = [],
+  changeCoverage: PrChangeCoverage | null = null,
 ): Promise<{ posted: boolean; comment: boolean; status: boolean; reason?: string }> {
   const none = (reason: string) => ({ posted: false, comment: false, status: false, reason });
 
@@ -328,6 +334,7 @@ export async function postRunPrFeedback(
 
   const summary = await buildRunPrSummary(db, runId, siteUrl, fixedClusters);
   if (!summary) return none('could not build the run summary');
+  summary.changeCoverage = changeCoverage;
 
   // `onlyOnFailure` silences routine green runs, but a run that closed a
   // cluster is news — that is the answer somebody was waiting for.
@@ -350,6 +357,15 @@ export async function postRunPrFeedback(
   let statusPosted = false;
   if (settings.status && commit) {
     statusPosted = await provider.postCommitStatus(commit, buildCommitStatus(summary, settings.statusContext));
+    // A second, informational status for change coverage — warn-only.
+    if (changeCoverage) {
+      await provider
+        .postCommitStatus(
+          commit,
+          buildChangeCoverageStatus(changeCoverage, summary.runUrl, `${settings.statusContext}/change-coverage`),
+        )
+        .catch(() => false);
+    }
   }
 
   return { posted: commentPosted || statusPosted, comment: commentPosted, status: statusPosted };
@@ -363,16 +379,48 @@ export async function postRunPrFeedback(
  * this run just closed would be reporting the wrong news.
  */
 export function postRunPrFeedbackInBackground(db: DbClient, runId: number): void {
-  verifyClusterFixes(db, runId)
-    .catch((e) => {
+  // Recompute the project-wide scenario gaps off the request path, so success-
+  // only, single-covering-test and surface-drift gaps and their self-closing
+  // stay live on every finished run — not only from the manual recompute.
+  computeScenarioGapsForRun(db, runId).catch((e) => console.error('[scenario-gaps] computeScenarioGaps failed', e));
+
+  // Change coverage runs regardless of the comment opt-in: it writes the graph's
+  // `changes` edges and the changed-unreached gaps every instance with history
+  // and an SCM token gets for free. Its result also feeds the comment section.
+  Promise.all([
+    verifyClusterFixes(db, runId).catch((e) => {
       console.error('[fix-verification] verifyClusterFixes failed', e);
       return [] as VerifiedFix[];
-    })
-    .then((fixed) => postRunPrFeedback(db, runId, fixed))
+    }),
+    computeRunChangeCoverage(db, runId).catch((e) => {
+      console.error('[change-coverage] computeRunChangeCoverage failed', e);
+      return null;
+    }),
+  ])
+    .then(([fixed, change]) => postRunPrFeedback(db, runId, fixed, change?.pr ?? null))
     .then((result) => {
       if (!result.posted && result.reason && result.reason !== 'disabled') {
         console.warn(`[pr-feedback] nothing posted for run #${runId}: ${result.reason}`);
       }
     })
     .catch((e) => console.error('[pr-feedback] postRunPrFeedback failed', e));
+}
+
+/**
+ * Recompute a finished run's project-wide scenario gaps, scoped to the run's
+ * branch. The branch tag is resolved from stored project fields only, so this
+ * makes no SCM call; the nightly sweep re-resolves an unknown default branch.
+ */
+async function computeScenarioGapsForRun(db: DbClient, runId: number): Promise<void> {
+  const [run] = await db
+    .select({ projectId: testRuns.projectId, branch: testRuns.branch, metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(eq(testRuns.id, runId));
+  if (!run) return;
+  const [project] = await db
+    .select({ defaultBranch: projects.defaultBranch })
+    .from(projects)
+    .where(eq(projects.id, run.projectId));
+  const branch = project ? resolveRunBranchTagFromStored(project, run.metadata, run.branch) : null;
+  await computeScenarioGaps(db, run.projectId, { branch });
 }

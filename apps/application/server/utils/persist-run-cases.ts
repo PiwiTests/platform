@@ -1,4 +1,4 @@
-import { testCases, testRunsCases, testSuites, networkRequests } from '../database/schema';
+import { projects, testCases, testRuns, testRunsCases, testSuites, networkRequests } from '../database/schema';
 import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import {
   buildNetworkRequestItems,
@@ -35,6 +35,14 @@ import { testSuiteCache } from './test-suite-cache';
 import { SUITE_PATH_SEP, joinSuitePath } from '#shared/utils/suites';
 import { getOrCreateFailureClusters, type PendingCluster } from '#shared/handlers/failure-cluster-ops';
 import { upsertLocatorSnapshots } from './locator-healing';
+import {
+  ingestRunGraph,
+  collectRunGraphReaches,
+  resolveRunBranchTagFromStored,
+  runBaseUrls,
+  projectRouteOrigins,
+} from './graph-ingest';
+import { collectOwnOrigins, originsFromDocumentRequests } from '#shared/graph';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import type { DbClient as DB } from '../database';
 
@@ -582,6 +590,49 @@ export async function persistRunCases(
 
   await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
   await syncTestCaseMetadata(db, caseMetaSnapshots);
+
+  // Feed the feature graph from the same rows: route nodes from the network
+  // requests (own-origin only), page nodes from page state, and a `reaches` edge
+  // per test case, tagged with the run's branch. A graph failure must never
+  // break ingest, so it degrades to a warning.
+  try {
+    const [run] = await db
+      .select({ branch: testRuns.branch, metadata: testRuns.metadata })
+      .from(testRuns)
+      .where(eq(testRuns.id, testRunId));
+    const [project] = await db
+      .select({
+        id: projects.id,
+        defaultBranch: projects.defaultBranch,
+        routeOrigins: projects.routeOrigins,
+      })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+
+    let origins = collectOwnOrigins(runBaseUrls(run?.metadata), projectRouteOrigins(project?.routeOrigins));
+    // Older reporters recorded no Playwright baseURL; fall back to the origins of
+    // this batch's own document requests so route nodes still form from
+    // first-party traffic instead of keeping every third-party beacon.
+    if (origins.size === 0) {
+      origins = originsFromDocumentRequests(networkRequestBuilders.flatMap((b) => b.items));
+    }
+    // Resolved from stored project fields only — no SCM call on the ingest path.
+    const branch = project ? resolveRunBranchTagFromStored(project, run?.metadata, run?.branch) : null;
+
+    await ingestRunGraph(
+      db,
+      projectId,
+      testRunId,
+      collectRunGraphReaches(
+        runCasesRows.map((row) => ({ testCaseId: row.testCaseId, pageState: row.pageState })),
+        networkRequestBuilders,
+        { origins },
+      ),
+      { branch },
+    );
+  } catch (err) {
+    console.warn('[graph-ingest] failed to update the feature graph', err);
+  }
 
   return result;
 }

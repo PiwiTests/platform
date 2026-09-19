@@ -775,6 +775,21 @@ export const MCP_TOOL_DEFS = [
       required: ['projectId', 'name', 'kind', 'module', 'params', 'steps'],
     },
   },
+  {
+    name: 'get_change_coverage',
+    description:
+      'Change coverage for a pull request: the files a change touched joined to the tests that observably reach them, grouped by ticket, with the uncovered files that need a scenario. Pass a run id to diff it against its baseline, or an explicit base and head commit. Reach is observed reach, never instrumented coverage; "no test in this run" is paired with the count from recent history. Returns an empty result when no SCM token or diff is available.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        run: { type: 'number', description: 'Diff this run against its baseline (from get_project)' },
+        base: { type: 'string', description: 'Base commit SHA (use with head instead of run)' },
+        head: { type: 'string', description: 'Head commit SHA (use with base instead of run)' },
+      },
+      required: ['projectId'],
+    },
+  },
 ] as const satisfies readonly McpToolDef[];
 
 /**

@@ -73,7 +73,9 @@ export interface RunMetadata {
    */
   defaultBranch?: string | null;
   ci?: { provider?: string | null } | null;
-  htmlReport?: { projects?: Array<{ use?: { browserName?: string | null } | null }> } | null;
+  htmlReport?: {
+    projects?: Array<{ use?: { browserName?: string | null; baseURL?: string | null } | null }>;
+  } | null;
 }
 
 export type { BrowserConfig, ServerLogEntry, ServerSpanEntry };

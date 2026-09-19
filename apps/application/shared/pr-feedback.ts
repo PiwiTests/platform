@@ -120,6 +120,97 @@ export interface PrSummaryInput {
   splitLocks?: string[] | null;
   /** True when no previous green run existed to compare against. */
   hasBaseline: boolean;
+  /** Uncovered-changes section, when the run was pull-request-stamped with a diff. */
+  changeCoverage?: PrChangeCoverage | null;
+}
+
+// ── Change coverage ──────────────────────────────────────────────────────────
+
+/** One changed file in the uncovered-changes section. */
+export interface PrChangeCoverageFile {
+  filePath: string;
+  additions: number;
+  deletions: number;
+  reachedInRun: boolean;
+  reachedCountHistory: number;
+  /** A one-line suggestion for the scenario to write, when there is one. */
+  draftTitle?: string | null;
+}
+
+export interface PrChangeCoverageTicket {
+  ticket: string | null;
+  files: PrChangeCoverageFile[];
+}
+
+/** The pre-shaped uncovered-changes data the comment renders. */
+export interface PrChangeCoverage {
+  totalFiles: number;
+  uncoveredFiles: number;
+  reachedFiles: number;
+  ticketCount: number;
+  windowRuns: number;
+  baseBranch: string | null;
+  tickets: PrChangeCoverageTicket[];
+}
+
+/** Max uncovered files listed in the pull-request comment. */
+const MAX_UNCOVERED_LISTED = 10;
+
+/**
+ * Render the uncovered-changes section: the files this change touched that no
+ * test reaches, grouped by ticket, each with a draft suggestion. Returns null
+ * when there is nothing worth a section (no diff, or every file is reached).
+ */
+export function renderChangeCoverage(cc: PrChangeCoverage): string | null {
+  if (cc.totalFiles === 0) return null;
+  const base = cc.baseBranch ? `\`${escapeCell(cc.baseBranch)}\`` : 'the default branch';
+  const preface = `Observed reach, not instrumented coverage. Numbers from this run and the last ${cc.windowRuns} on ${base}.`;
+
+  if (cc.uncoveredFiles === 0) {
+    return `#### 🟣 Uncovered changes · 0 of ${cc.totalFiles} files\n${preface}\n\nAll ${cc.totalFiles} changed ${cc.totalFiles === 1 ? 'file has' : 'files have'} observed reach.`;
+  }
+
+  const header = `#### 🟣 Uncovered changes · ${cc.uncoveredFiles} of ${cc.totalFiles} files · ${cc.ticketCount} ${cc.ticketCount === 1 ? 'ticket' : 'tickets'}`;
+  const blocks: string[] = [header, preface];
+
+  // One definition of "uncovered" everywhere: no reach in this run and none in
+  // the recent window. A file reached only in history is a separate, lower line.
+  let listed = 0;
+  let historyOnly = 0;
+  for (const group of cc.tickets) {
+    const lines: string[] = [];
+    for (const file of group.files) {
+      if (file.reachedInRun) continue;
+      if (file.reachedCountHistory > 0) {
+        historyOnly++;
+        continue;
+      }
+      if (listed >= MAX_UNCOVERED_LISTED) continue;
+      listed++;
+      let line = `- \`${escapeCell(file.filePath)}\` · changed (+${file.additions} −${file.deletions}) · 0 tests in ${cc.windowRuns} runs`;
+      if (file.draftTitle) line += `\n  → *${escapeInline(file.draftTitle)}* · draft`;
+      lines.push(line);
+    }
+    if (lines.length === 0) continue;
+    const label = group.ticket ? `**${escapeCell(group.ticket)}**` : '**No ticket**';
+    blocks.push([label, ...lines].join('\n'));
+  }
+
+  const hidden = cc.uncoveredFiles - listed;
+  if (hidden > 0) blocks.push(`…and ${hidden} more`);
+  if (historyOnly > 0) {
+    blocks.push(
+      `${historyOnly} ${historyOnly === 1 ? 'file' : 'files'} reached only in the last ${cc.windowRuns} runs, not this run.`,
+    );
+  }
+  if (cc.reachedFiles > 0) {
+    blocks.push(
+      `${cc.reachedFiles} ${cc.reachedFiles === 1 ? 'file' : 'files'} reached. Gate \`maxUncoveredChanges\`: warn.`,
+    );
+  } else {
+    blocks.push('Gate `maxUncoveredChanges`: warn.');
+  }
+  return blocks.join('\n\n');
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
@@ -286,6 +377,11 @@ export function buildPrComment(input: PrSummaryInput): string {
     sections.push(`#### 🟢 Fixed by this change (${fixedClusters.length})\n${list}`);
   }
 
+  if (input.changeCoverage) {
+    const section = renderChangeCoverage(input.changeCoverage);
+    if (section) sections.push(section);
+  }
+
   if (!input.hasBaseline && input.failedTests > 0) {
     sections.push(
       '> No previous green run for this project, so failures could not be split into new and pre-existing.',
@@ -325,6 +421,23 @@ export function buildCommitStatus(input: PrSummaryInput, context: string): Commi
     state: failing ? 'failure' : 'success',
     description: parts.join(', ').slice(0, 140),
     targetUrl: input.runUrl,
+    context,
+  };
+}
+
+/**
+ * Build the informational commit status for change coverage. Warn-only in this
+ * release, so the state is always `success` — it reports, it never blocks.
+ */
+export function buildChangeCoverageStatus(cc: PrChangeCoverage, targetUrl: string, context: string): CommitStatusInput {
+  const description =
+    cc.uncoveredFiles > 0
+      ? `${cc.uncoveredFiles} of ${cc.totalFiles} changed files have no observed reach`
+      : `all ${cc.totalFiles} changed files have observed reach`;
+  return {
+    state: 'success',
+    description: description.slice(0, 140),
+    targetUrl,
     context,
   };
 }

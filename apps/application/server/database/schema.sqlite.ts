@@ -13,6 +13,7 @@ export const projects = sqliteTable(
     aiLanguage: text('ai_language'), // per-project AI response language override (e.g. "French")
     scmToken: text('scm_token'), // Per-project SCM token for GitHub/GitLab/Bitbucket API access
     defaultBranch: text('default_branch'), // Repository default branch; null = resolve from SCM provider, else 'main'
+    routeOrigins: text('route_origins', { mode: 'json' }), // string[] — extra own origins whose requests become graph route nodes, beyond the run's Playwright baseURL
     ciRerun: text('ci_rerun', { mode: 'json' }), // CiRerunSettings — provider-specific "re-run from the dashboard" target (off by default)
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
@@ -1196,6 +1197,153 @@ export const apiKeys = sqliteTable(
   }),
 );
 
+// Feature graph — nodes. One typed node per object a project's surface exposes.
+// A node's `key` is its stable identity within its `kind` (a route's
+// `METHOD /pattern`, a page's URL). Populated on every ingest from the same
+// evidence the suite already captures, and connected by `graph_edges`. Kept as
+// one table with typed endpoints rather than a graph database, so recursive
+// queries stay capped at a shallow depth. Route and page kinds are populated
+// today; the remaining kinds are reserved. Run ids are intentionally NOT
+// foreign keys — runs are pruned independently and a node must survive them.
+export const graphNodes = sqliteTable(
+  'graph_nodes',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'feature' | 'page' | 'control' | 'link' | 'route' | 'handler' | 'dependency' | 'file'
+    key: text('key').notNull(), // stable identity within kind
+    branch: text('branch'), // null = canonical (default-branch run); else the run's own branch
+    attrs: text('attrs', { mode: 'json' }), // kind-specific extras; a feature carries { url_patterns, source }
+    origin: text('origin').notNull().default('observed'), // 'observed' | 'manifest' | 'openapi' | 'convention' | 'import' | 'coverage' | 'usage' | 'manual'
+    usage30d: integer('usage_30d'), // daily hit count from production instrumentation; null until usage is wired
+    firstSeenRunId: integer('first_seen_run_id'),
+    lastSeenRunId: integer('last_seen_run_id'),
+    // Set when a staleness sweep removed the node's edges; the row is kept (a
+    // soft delete) so first_seen survives a later re-appearance and surface
+    // drift does not fire again. Cleared on the next ingest that sees the key.
+    prunedAt: integer('pruned_at', { mode: 'timestamp_ms' }),
+    lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  // The identity is (project, kind, key, branch). SQLite and PostgreSQL both
+  // treat NULL as distinct in a unique index, so canonical rows (branch null)
+  // are deduped by a partial index over (project, kind, key), and branch-tagged
+  // rows by the full tuple — one row per identity in either case.
+  (table) => ({
+    canonicalIdx: uniqueIndex('idx_graph_nodes_canonical')
+      .on(table.projectId, table.kind, table.key)
+      .where(sql`${table.branch} is null`),
+    branchIdx: uniqueIndex('idx_graph_nodes_branch')
+      .on(table.projectId, table.kind, table.key, table.branch)
+      .where(sql`${table.branch} is not null`),
+    projectKindIdx: index('idx_graph_nodes_project_kind').on(table.projectId, table.kind),
+    projectKindBranchIdx: index('idx_graph_nodes_project_kind_branch').on(table.projectId, table.kind, table.branch),
+    lastSeenAtIdx: index('idx_graph_nodes_last_seen_at').on(table.lastSeenAt),
+  }),
+);
+
+// Feature graph — edges. Each edge connects two typed endpoints; the endpoint
+// kinds are the node kinds above plus 'test', 'cluster', 'commit', 'ticket' and
+// 'owner', which are named by their id or key rather than stored as nodes.
+// `reaches` (test → route/page) and `changes` (commit or ticket → file) are
+// populated today; the remaining kinds are reserved. Upserted on every ingest,
+// never truncated. Run ids are not foreign keys, for the same reason as nodes.
+export const graphEdges = sqliteTable(
+  'graph_edges',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    fromKind: text('from_kind').notNull(),
+    fromKey: text('from_key').notNull(),
+    toKind: text('to_kind').notNull(),
+    toKey: text('to_key').notNull(),
+    kind: text('kind').notNull(), // 'links' | 'contains' | 'triggers' | 'loads' | 'handled-by' | 'calls' | 'imports' | 'groups' | 'reaches' | 'checks' | 'uses' | 'drives' | 'changes' | 'affects' | 'caused-by' | 'owns'
+    branch: text('branch'), // null = canonical (default-branch run); else the run's own branch
+    confidence: real('confidence'), // 0-1, how strongly the edge holds; null when unscored
+    origin: text('origin').notNull().default('observed'),
+    evidence: text('evidence', { mode: 'json' }), // edge-specific proof, e.g. { method, status }
+    firstSeenRunId: integer('first_seen_run_id'),
+    lastSeenRunId: integer('last_seen_run_id'),
+    lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  // The identity includes `branch`; canonical rows (branch null) dedupe by a
+  // partial index over the endpoint tuple, branch-tagged rows by the full tuple.
+  (table) => ({
+    canonicalIdx: uniqueIndex('idx_graph_edges_canonical')
+      .on(table.projectId, table.fromKind, table.fromKey, table.kind, table.toKind, table.toKey)
+      .where(sql`${table.branch} is null`),
+    branchUnique: uniqueIndex('idx_graph_edges_branch')
+      .on(table.projectId, table.fromKind, table.fromKey, table.kind, table.toKind, table.toKey, table.branch)
+      .where(sql`${table.branch} is not null`),
+    fromIdx: index('idx_graph_edges_from').on(table.projectId, table.fromKind, table.fromKey),
+    toIdx: index('idx_graph_edges_to').on(table.projectId, table.toKind, table.toKey),
+    kindIdx: index('idx_graph_edges_kind').on(table.projectId, table.kind),
+  }),
+);
+
+// Scenario gaps — a proposed test that does not exist yet (`kind = 'gap'`) or a
+// resilience finding (`kind = 'finding'`), each carrying its evidence lines,
+// exposure factors and a ranked score. A row's identity within its detector is
+// `key`, so recomputation upserts in place and triage survives it: open rows
+// persist, dismissed and accepted rows carry their verdict forward. Run ids are
+// not foreign keys, for the same reason as the graph tables.
+export const scenarioGaps = sqliteTable(
+  'scenario_gaps',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull().default('gap'), // 'gap' | 'finding'
+    detector: text('detector').notNull(), // detector id that produced the row
+    class: text('class').notNull(), // 'blind-spot' | 'false-comfort' | 'fragile' | 'unhandled' | 'degraded'
+    key: text('key').notNull(), // stable identity within (project, detector)
+    title: text('title').notNull(),
+    evidence: text('evidence', { mode: 'json' }), // string[] — human-readable evidence lines
+    factors: text('factors', { mode: 'json' }), // exposure factors: { churn, age, escapeHistory, priority }
+    score: real('score'), // exposure × (1 − protection); ranked descending
+    featureNodeId: integer('feature_node_id').references(() => graphNodes.id, { onDelete: 'set null' }),
+    ticket: text('ticket'), // ticket id joined at change time
+    testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'set null' }),
+    failureClusterId: integer('failure_cluster_id').references(() => failureClusters.id, { onDelete: 'set null' }),
+    testRunId: integer('test_run_id'), // the run that surfaced the gap
+    prNumber: integer('pr_number'), // the pull request the gap was reported on, at change time
+    status: text('status').notNull().default('open'), // 'open' | 'snoozed' | 'dismissed' | 'accepted' | 'closed'
+    dismissReason: text('dismiss_reason'), // 'not-worth-testing' | 'covered-elsewhere' | 'wrong'
+    assignedTo: text('assigned_to'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    closedAt: integer('closed_at', { mode: 'timestamp_ms' }),
+    closedByRunId: integer('closed_by_run_id'),
+  },
+  (table) => ({
+    detectorKeyIdx: uniqueIndex('idx_scenario_gaps_detector_key').on(table.projectId, table.detector, table.key),
+    projectStatusIdx: index('idx_scenario_gaps_project_status').on(table.projectId, table.status),
+    projectScoreIdx: index('idx_scenario_gaps_project_score').on(table.projectId, table.score),
+    prIdx: index('idx_scenario_gaps_pr').on(table.projectId, table.prNumber),
+    featureNodeIdx: index('idx_scenario_gaps_feature_node').on(table.featureNodeId),
+    testCaseIdx: index('idx_scenario_gaps_test_case').on(table.testCaseId),
+    clusterIdx: index('idx_scenario_gaps_cluster').on(table.failureClusterId),
+  }),
+);
+
 // Type exports for TypeScript
 export type TestSuite = typeof testSuites.$inferSelect;
 export type NewTestSuite = typeof testSuites.$inferInsert;
@@ -1267,3 +1415,9 @@ export type NewShareLink = typeof shareLinks.$inferInsert;
 export type NewTestFunction = typeof testFunctions.$inferInsert;
 export type TestSelection = typeof testSelections.$inferSelect;
 export type NewTestSelection = typeof testSelections.$inferInsert;
+export type GraphNode = typeof graphNodes.$inferSelect;
+export type NewGraphNode = typeof graphNodes.$inferInsert;
+export type GraphEdge = typeof graphEdges.$inferSelect;
+export type NewGraphEdge = typeof graphEdges.$inferInsert;
+export type ScenarioGap = typeof scenarioGaps.$inferSelect;
+export type NewScenarioGap = typeof scenarioGaps.$inferInsert;

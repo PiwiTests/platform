@@ -5,12 +5,21 @@ the application exposes, what the suite touches, what the suite would actually n
 about. A gap is always a suggestion with evidence and a next step — a draft spec, an MCP call, a line in the
 pull-request comment — never a verdict.
 
-**Status.** Proposed, third revision. Nothing is shipped. The first revision built two references (a reach index and
-a surface inventory) and listed the difference; the second added an oracle axis, an exposure score and a feature
-graph after a review of the products and research in this area ([Prior art](#prior-art),
-[References](#references)); the third made the graph the substrate, split resilience findings from suite gaps,
-thinned the first milestone to a spine and put an entry condition on everything after it
-([Revision history](#revision-history)).
+**Status.** Third revision; **M1 is implemented** on the `claude/test-map-m1` branch. M1 ships the graph substrate
+(`graph_nodes`, `graph_edges`, `scenario_gaps`) with route and page nodes and `reaches`/`changes` edges populated on
+every ingest, the four M1 detectors (changed-unreached, success-only, single-covering-test, surface-drift), exposure
+ranking over churn, age, escape history and priority, the uncovered-changes section and commit status in pull-request
+feedback, and the `gaps`, `gaps/change-coverage` and `gaps/recompute` endpoints with the `get_change_coverage` MCP
+tool. The M1 ingest path also holds the size-discipline rules that keep the graph proportional to a project's
+surface: page nodes keyed on the path pattern, route nodes only from the run's own origin (its Playwright `baseURL`
+plus a per-project allowlist), default-branch runs writing canonical rows while other branches write branch-tagged
+ones so a pull-request route never drifts onto the default branch, and a nightly graph sweep that prunes `changes`
+edges past ninety days, branch-tagged rows past thirty, and canonical nodes unseen for thirty runs once their
+surface-drift gap has closed. M2 and later remain proposed. The first revision built two references (a reach index and a surface inventory)
+and listed the difference; the second added an oracle axis, an exposure score and a feature graph after a review of
+the products and research in this area ([Prior art](#prior-art), [References](#references)); the third made the graph
+the substrate, split resilience findings from suite gaps, thinned the first milestone to a spine and put an entry
+condition on everything after it ([Revision history](#revision-history)).
 
 **Summary.** A missing test is only visible against a reference for what the application can do. Piwi already stores
 the pieces of that reference: the routes tests hit, the pages they end on, the controls they touch, the controls and
@@ -528,6 +537,13 @@ Observed reach, not instrumented coverage. Numbers from this run and the last 30
 The gate ([`gate.post.ts`](../apps/application/server/api/test-runs/%5Bid%5D/gate.post.ts)) gains
 `maxUncoveredChanges` in M2, off by default and **warn-only in its first release**; a blocking mode has an entry
 condition below. The desktop app runs the same join against the local working tree before anything is pushed.
+
+> **M1 TODO — desktop local-diff.** The change-coverage handler
+> ([`shared/handlers/change-coverage.ts`](../apps/application/shared/handlers/change-coverage.ts)) already takes the
+> changed files as input, so the desktop variant is a thin call once the shell can hand it a local `git diff`. That
+> plumbing — a Tauri command and a desktop-only route that gathers the working-tree diff — is not itself thin, so M1
+> ships only the server change-coverage path (a finished PR-stamped run, or `?base=&head=` on the API); the desktop
+> local-diff command is deferred rather than half-built.
 
 ## Delivery, and the learning loop
 
