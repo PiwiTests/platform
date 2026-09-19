@@ -8,11 +8,8 @@ import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-case
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runEventBus } from '../../utils/run-events';
-import { autoDiagnoseRun } from '../../utils/ai-diagnosis';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
-import { emitRunNotifications } from '../../utils/notifications/run-notifications';
-import { postRunPrFeedbackInBackground } from '../../utils/scm/pr-feedback';
-import { maybeEnqueueHealActionInBackground } from '../../utils/heal/policy';
+import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 
@@ -383,10 +380,7 @@ export default eventHandler(async (event) => {
 
   runEventBus.publishGlobal({ type: 'run-submitted', runId: testRun.id, projectId: project.id, status: body.status });
 
-  autoDiagnoseRun(db, project.id, testRun.id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
-  emitRunNotifications(db, testRun.id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));
-  postRunPrFeedbackInBackground(db, testRun.id);
-  maybeEnqueueHealActionInBackground(db, testRun.id);
+  runFinalizeSideEffects(db, testRun.id, { projectId: project.id, metadata: testRun.metadata });
 
   return {
     success: true,

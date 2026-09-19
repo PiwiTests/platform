@@ -14,13 +14,10 @@ import { rm, mkdir, readdir } from 'fs/promises';
 import { parseLocation } from '../../utils/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
 import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
-import { postRunPrFeedbackInBackground } from '../../utils/scm/pr-feedback';
-import { maybeEnqueueHealActionInBackground } from '../../utils/heal/policy';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runEventBus } from '../../utils/run-events';
-import { autoDiagnoseRun } from '../../utils/ai-diagnosis';
-import { computeRegressionSignals } from '../../utils/compute-regression-signals';
+import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
 import { resolveMaxUploadBytes } from '../../utils/upload-limits';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
@@ -212,6 +209,7 @@ export default eventHandler(async (event) => {
   let project: Project | undefined;
   let attachingToExistingRun = false;
   let existingRunStatus: string | undefined;
+  let existingRunMetadata: unknown;
 
   if (existingTestRunId) {
     const existingRunRows = await db.select().from(testRuns).where(eq(testRuns.id, existingTestRunId));
@@ -226,6 +224,7 @@ export default eventHandler(async (event) => {
     }
     attachingToExistingRun = true;
     existingRunStatus = existingRun.status;
+    existingRunMetadata = existingRun.metadata;
   }
 
   if (!project) {
@@ -439,14 +438,10 @@ export default eventHandler(async (event) => {
         status: finalStatus,
       });
 
-      computeRegressionSignals(db, existingTestRunId!).catch((e) =>
-        console.error('[regression-signals] computeRegressionSignals failed', e),
-      );
-      autoDiagnoseRun(db, testRun.projectId, existingTestRunId!).catch((e) =>
-        console.error('[ai-diagnosis] autoDiagnoseRun failed', e),
-      );
-      postRunPrFeedbackInBackground(db, existingTestRunId!);
-      maybeEnqueueHealActionInBackground(db, existingTestRunId!);
+      runFinalizeSideEffects(db, existingTestRunId!, {
+        projectId: testRun.projectId,
+        metadata: existingRunMetadata,
+      });
 
       // Cleanup event bus for this run
       runEventBus.cleanup(existingTestRunId!);
@@ -667,9 +662,10 @@ export default eventHandler(async (event) => {
     }
   }
 
-  // For new (non-streaming) runs, fire auto-diagnose after cases are persisted
+  // For new (non-streaming) runs, fire the finalize side effects after cases are
+  // persisted — probe-aware, so a probe-stamped upload stays silent.
   if (!attachingToExistingRun) {
-    autoDiagnoseRun(db, project.id, testRun.id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
+    runFinalizeSideEffects(db, testRun.id, { projectId: project.id, metadata: testRunData?.metadata });
   }
 
   return {
