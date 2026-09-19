@@ -28,6 +28,7 @@
     "app:test:unit": "cross-env NODE_OPTIONS=--expose-gc vitest run",
     "app:test:unit:coverage": "cross-env NODE_OPTIONS=--expose-gc vitest run --coverage",
     "app:test:ui": "playwright test --ui",
+    "app:test:desktop": "cross-env PIWI_DESKTOP_E2E=1 playwright test",
     "app:test:report": "playwright show-report",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

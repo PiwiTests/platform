@@ -5,6 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { PROJECT } from '#shared/test-project-names';
 import { buildZip, parseZip } from '../server/utils/trace-zip';
+import { resolveE2ETarget } from './desktop-target';
 
 /**
  * Tests for live per-case file uploads during a streaming run:
@@ -416,13 +417,20 @@ test.describe.serial('Reporter live upload end-to-end', () => {
     const reporterPath = resolve(process.cwd(), '..', '..', 'packages', 'reporter', 'dist', 'index.js');
     const testFilePath = join(process.cwd(), 'tests', 'live-e2e.spec.ts');
 
+    // Runs against the desktop app too when PIWI_DESKTOP_E2E is set: submit with
+    // its token as the reporter apiKey, and present it on the raw polling fetches.
+    const target = resolveE2ETarget();
+
     const { exitCode, stdout, stderr } = await runReporterScript(`
       const _mod = require(${JSON.stringify(reporterPath)}); const PiwiDashboardReporter = _mod.default ?? _mod;
-      const BASE = 'http://localhost:3000';
+      const BASE = ${JSON.stringify(target.baseUrl)};
+      const TOKEN = ${JSON.stringify(target.token ?? '')};
+      const AUTH = TOKEN ? { 'x-piwi-token': TOKEN } : {};
       const PROJECT_NAME = ${JSON.stringify(PROJECT.REPORTER_LIVE_UPLOAD)};
 
       const reporter = new PiwiDashboardReporter({
         serverUrl: BASE,
+        apiKey: TOKEN || undefined,
         projectName: PROJECT_NAME,
         streaming: true,
         liveFileUploads: true,
@@ -435,7 +443,7 @@ test.describe.serial('Reporter live upload end-to-end', () => {
       });
 
       async function getJSON(path) {
-        const res = await fetch(BASE + path);
+        const res = await fetch(BASE + path, { headers: AUTH });
         if (!res.ok) throw new Error(path + ' -> ' + res.status);
         return res.json();
       }
