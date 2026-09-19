@@ -54,6 +54,14 @@ More detectors — phantom coverage, passed-with-errors, an uncalled catalog met
 
 The graph also holds the **controls** and **links** each page exposes and the **handler** and **dependency** each route reaches. Control names are templated — a table of five hundred orders is one control — and a page keeps at most 200. Controls and links come from a **page inventory** the reporter records on passing runs (`capturePageInventory`, on by default, names and hrefs only); handler and dependency breadth comes from server spans instrumentation forwards.
 
+## Declared surface
+
+Beyond what tests observe, Piwi can hold what the application *declares* it exposes, so a route or page nothing reaches is named as a **declared, never hit** blind spot instead of being invisible. Three ramps, each independent, feed graph nodes with origin `manifest` or `openapi`:
+
+- **Instrumentation.** The Nitro and ASP.NET Core packages serve a route manifest at `/__piwi/manifest` outside production. The reporter's global setup fetches it once when a base URL is configured and the app's first response carries an instrumentation header, and uploads it with the run.
+- **A committed manifest.** A `piwi.manifest.json` next to your Playwright config (`{ routes: [...], pages: [...] }`) is uploaded whenever present.
+- **An OpenAPI URL.** Set one per project; Piwi fetches it server-side and records each route's documented response codes, so **success only** can name the error codes a route documents but never returned under test.
+
 ## Probing what a test would notice
 
 Reach says a test touched a route, not that it would fail if the route returned garbage — and many passing tests would not. `piwi probe` replays a passing test with a fault at the Playwright boundary (a 500, an empty body, a dropped field, a stale value or a slow response) and records whether it noticed:
@@ -63,6 +71,12 @@ npx @piwitests/reporter probe --project my-project
 ```
 
 It fetches the plan the dashboard ranked by exposure — never-probed pairs first, one fault per test, a budget — applies the faults, and posts the outcomes. A probe run never counts as a real run, and a route that stays green under a fault becomes a **not noticed** gap.
+
+### Server probes (level two)
+
+A client probe rewrites the response in the browser, so the server never runs its error path. A **server probe** signs a fault onto one request (`X-Piwi-Probe`, HMAC-signed with `PIWI_PROBE_SECRET`) and the instrumentation applies it inside the server — a thrown error, a status, a delay, a mutated response, or a failed dependency call — reporting the fault it actually applied so an un-honored probe is recorded as *inconclusive*, never a pass. Two signals come back: whether the test noticed (a `checks` edge), and whether the application degraded — a **resilience finding** (class `unhandled` or `degraded`, ranked by exposure × severity), plus the **unprobed dependency** and **not handled** detectors.
+
+The whole level stays behind a per-project flag that defaults **off**, honored only outside production, with fault classes and routes allow-listed per project and dependency faults on state-changing routes off by default. Turn it on once client probes report *not noticed* on at least one in ten probed pairs — the signal the suite has false comfort the network boundary cannot reveal.
 
 ## Exposure ranking
 
@@ -76,9 +90,19 @@ The graph stays proportional to your application's surface, not its data volume:
 - **Pages are path patterns.** `/orders/123` and `/orders/456` are one node, and the same path from staging and production lands on that one node.
 - **Branches stay separate.** A default-branch run writes the canonical graph; any other branch writes rows tagged with it, so a route added on a pull request never shows as surface drift on the default branch. Those rows drop when the pull request closes.
 
+## The Gaps tab and the graph view
+
+The project page has a **Gaps** tab: gaps and findings grouped by feature and ranked, each with its class, score factors and evidence, and the inbox verbs — **accept** (copies the draft skeleton to your clipboard), **snooze** (a day, a week, or until the node changes), **dismiss** with a reason (*not worth testing*, *covered elsewhere* — which records the covering test as a manual reaches edge — or *wrong*), and **covered by** without dismissing. The Home page lists accepted-but-unwritten gaps older than a week.
+
+Any node opens in the **feature graph** — a layered picture of tests, pages, controls, routes, handlers and dependencies, nodes colored by class and edges by kind, with a depth control; click a node to reselect it, hover to highlight its paths. Read it over the API with `GET /api/projects/{id}/graph?node=route:POST /api/orders&depth=2` or the [`get_feature_graph`](/features/mcp) MCP tool.
+
+## Precision, muting and the digest
+
+Every triage verdict is a labeled example: accepted and covered-by count *for* a detector, dismissed-as-wrong *against*. A detector below 60% precision on a project with at least twenty verdicts **mutes itself** there — its rows drop out of the pull-request comment first, and the Gaps tab and the admin **About** page say so. A weekly **digest** of the top new gaps per project can be delivered through your [notification channels](/features/notifications); it is off by default.
+
 ## Triage
 
-Gaps persist so triage survives recomputation: a dismissed gap keeps its verdict, and a gap **closes itself** when its node gains a trusted test — so "closed this month" is real. List them at `GET /api/projects/{id}/gaps`, or recompute with `POST /api/projects/{id}/gaps/recompute`.
+Gaps persist so triage survives recomputation: a dismissed gap keeps its verdict, and a gap **closes itself** when its node gains a trusted test — so "closed this month" is real. List them at `GET /api/projects/{id}/gaps`, triage one at `POST /api/projects/{id}/gaps/{gapId}/triage`, or recompute with `POST /api/projects/{id}/gaps/recompute`.
 
 ## What this is not
 

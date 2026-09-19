@@ -28,7 +28,23 @@ feature nodes with `groups` edges; the `list_scenario_gaps` and `draft_scenario`
 draft skeleton and the `write-the-missing-test` skill; and the `maxUncoveredChanges` gate policy, off by default and
 warn-only. The change-time detectors (new error path, new control, intent without a test, locator break ahead) ship
 as pure detectors pending the change-coverage path carrying hunk and title data, and the desktop local-diff command
-stays the M1 TODO. M3 and later remain proposed. The first revision built two references (a reach index and a surface inventory)
+stays the M1 TODO.
+
+**M3 is implemented** on the `claude/test-map-m3` branch. M3 adds the declared surface (route/page nodes with origin
+`manifest` or `openapi` from the instrumentation `/__piwi/manifest`, a committed `piwi.manifest.json` and a per-project
+OpenAPI URL, with the `AppManifest` shape in `shared/types.ts` and the `PUT/GET surface/manifest` endpoints), the
+`declared, never hit` detector, success-only strengthened by documented codes, and `imports` edges from a shallow SCM
+scan; the level-two server probes enabled end to end behind a per-project flag (the reporter signs `X-Piwi-Probe`, the
+Nitro plugin applies handler, dependency, data and pipeline faults and reports the applied fault in `X-Piwi-Trace`, the
+ASP.NET Core package applies the honest handler-level subset, an un-honored probe records inconclusive), resilience
+findings (`kind = finding`, class `unhandled`/`degraded`, ranked exposure × severity) and the `unprobed dependency` and
+`not handled` detectors; the Gaps tab grouped by feature with the inbox verbs, the gaps inbox queue on Home, the
+layered-SVG feature-graph view, the `GET /graph` endpoint and the `get_feature_graph` MCP tool; and the precision loop
+(per-detector precision from triage verdicts with self-muting below 60% over 20+ verdicts, shown on the admin page and
+the tab and dropping muted rows from the PR comment first). The matrix and escaped-defect detectors and the weekly
+digest ship as pure functions with the selection tested; wiring the matrix and escaped-defect loaders, the digest
+delivery task and the locator-break-ahead healing pre-flight waits on the same per-feature/tracker/hunk data the
+change-time detectors wait on. Later items remain proposed. The first revision built two references (a reach index and a surface inventory)
 and listed the difference; the second added an oracle axis, an exposure score and a feature graph after a review of
 the products and research in this area ([Prior art](#prior-art), [References](#references)); the third made the graph
 the substrate, split resilience findings from suite gaps, thinned the first milestone to a spine and put an entry
