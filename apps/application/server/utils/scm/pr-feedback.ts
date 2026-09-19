@@ -26,6 +26,7 @@ import { verifyClusterFixes } from '../fix-verification';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { getProjectFlakyTests } from '#shared/handlers/projects';
 import {
+  buildChangeCoverageStatus,
   buildCommitStatus,
   buildPrComment,
   DEFAULT_PR_FEEDBACK,
@@ -33,10 +34,12 @@ import {
   PR_EXCERPT_MAX,
   PR_FEEDBACK_KEY,
   resolvePrFeedbackSettings,
+  type PrChangeCoverage,
   type PrFailureEntry,
   type PrFeedbackSettings,
   type PrSummaryInput,
 } from '#shared/pr-feedback';
+import { computeRunChangeCoverage } from './change-coverage';
 import type { VerifiedFix } from '../fix-verification';
 import type { RunMetadata } from '../run-json-types';
 import type { DbClient } from '../../database';
@@ -304,6 +307,7 @@ export async function postRunPrFeedback(
   db: DbClient,
   runId: number,
   fixedClusters: VerifiedFix[] = [],
+  changeCoverage: PrChangeCoverage | null = null,
 ): Promise<{ posted: boolean; comment: boolean; status: boolean; reason?: string }> {
   const none = (reason: string) => ({ posted: false, comment: false, status: false, reason });
 
@@ -328,6 +332,7 @@ export async function postRunPrFeedback(
 
   const summary = await buildRunPrSummary(db, runId, siteUrl, fixedClusters);
   if (!summary) return none('could not build the run summary');
+  summary.changeCoverage = changeCoverage;
 
   // `onlyOnFailure` silences routine green runs, but a run that closed a
   // cluster is news — that is the answer somebody was waiting for.
@@ -350,6 +355,15 @@ export async function postRunPrFeedback(
   let statusPosted = false;
   if (settings.status && commit) {
     statusPosted = await provider.postCommitStatus(commit, buildCommitStatus(summary, settings.statusContext));
+    // A second, informational status for change coverage — warn-only.
+    if (changeCoverage) {
+      await provider
+        .postCommitStatus(
+          commit,
+          buildChangeCoverageStatus(changeCoverage, summary.runUrl, `${settings.statusContext}/change-coverage`),
+        )
+        .catch(() => false);
+    }
   }
 
   return { posted: commentPosted || statusPosted, comment: commentPosted, status: statusPosted };
@@ -363,12 +377,20 @@ export async function postRunPrFeedback(
  * this run just closed would be reporting the wrong news.
  */
 export function postRunPrFeedbackInBackground(db: DbClient, runId: number): void {
-  verifyClusterFixes(db, runId)
-    .catch((e) => {
+  // Change coverage runs regardless of the comment opt-in: it writes the graph's
+  // `changes` edges and the changed-unreached gaps every instance with history
+  // and an SCM token gets for free. Its result also feeds the comment section.
+  Promise.all([
+    verifyClusterFixes(db, runId).catch((e) => {
       console.error('[fix-verification] verifyClusterFixes failed', e);
       return [] as VerifiedFix[];
-    })
-    .then((fixed) => postRunPrFeedback(db, runId, fixed))
+    }),
+    computeRunChangeCoverage(db, runId).catch((e) => {
+      console.error('[change-coverage] computeRunChangeCoverage failed', e);
+      return null;
+    }),
+  ])
+    .then(([fixed, change]) => postRunPrFeedback(db, runId, fixed, change?.pr ?? null))
     .then((result) => {
       if (!result.posted && result.reason && result.reason !== 'disabled') {
         console.warn(`[pr-feedback] nothing posted for run #${runId}: ${result.reason}`);

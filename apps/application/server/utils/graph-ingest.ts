@@ -220,6 +220,41 @@ export async function ingestRunGraph(
 }
 
 /**
+ * Persist `changes` edges for a diff: the head commit and every ticket named in
+ * the pull request point at each changed file. Files are edge endpoints, not
+ * materialized nodes in this milestone. Upsert semantics, never truncate.
+ */
+export async function ingestChangesEdges(
+  db: DB,
+  projectId: number,
+  runId: number,
+  headSha: string,
+  tickets: string[],
+  files: string[],
+): Promise<void> {
+  if (files.length === 0) return;
+  const now = new Date();
+  const edges = new Map<string, PendingEdge>();
+  const add = (fromKind: string, fromKey: string, file: string) => {
+    const id = `${fromKind}\x00${fromKey}\x00changes\x00file\x00${file}`;
+    edges.set(id, {
+      fromKind,
+      fromKey,
+      toKind: 'file',
+      toKey: file,
+      kind: 'changes',
+      confidence: null,
+      evidence: null,
+    });
+  };
+  for (const file of files) {
+    if (headSha) add('commit', headSha, file);
+    for (const ticket of tickets) add('ticket', ticket, file);
+  }
+  await chunkedUpsertEdges(db, projectId, runId, now, [...edges.values()]);
+}
+
+/**
  * Rebuild a project's `route`/`page` nodes and `reaches` edges from its whole
  * stored history, oldest run first so first- and last-seen land in order. Upsert
  * semantics make it idempotent — running it twice changes nothing. This is the
