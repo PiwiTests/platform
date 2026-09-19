@@ -10,6 +10,7 @@ import { files } from '../database/schema';
 import { getStorage } from '../storage';
 import { ariaJsonToText } from '#shared/aria-json';
 import { parseZip, parseZipDirectory, decompressEntry, type ZipEntry } from './trace-zip';
+import { decodeResource } from './resource-compression';
 import { parseTraceTexts, traceFileRank, type ParsedTraceData } from './trace-events';
 import {
   buildActionCallsites,
@@ -116,7 +117,7 @@ async function loadTraceBundle(blobPath: string): Promise<TraceBundle | null> {
         resourceNameCandidates(name, []);
     for (const candidate of poolCandidates) {
       try {
-        return await storage.readFile(`${projectPrefix}/trace-resources/${candidate}`);
+        return decodeResource(await storage.readFile(`${projectPrefix}/trace-resources/${candidate}`));
       } catch {
         // Try the next candidate.
       }

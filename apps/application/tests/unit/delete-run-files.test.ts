@@ -86,6 +86,14 @@ describe('deleteFileRow — non-report, non-deduped files', () => {
     await deleteFileRow(fileRow({ type: 'trace', blobId: null, path: 'project-1/run-5/9-trace.zip' }));
     expect(ops).toEqual([{ op: 'deleteFile', path: 'project-1/run-5/9-trace.zip' }]);
   });
+
+  test('a deduplicated trace blob is left untouched — freed later by gcTraceBlobs', async () => {
+    // A blob is shared across runs/cases, so its storage can only be freed once
+    // the referencing rows are gone. deleteFileRow must not touch it (deleting it
+    // here would either leak it or remove one another run still needs).
+    await deleteFileRow(fileRow({ type: 'trace', blobId: 7, path: 'project-1/blobs/abc123.zip' }));
+    expect(ops).toEqual([]);
+  });
 });
 
 describe('deleteFileRow — error handling', () => {

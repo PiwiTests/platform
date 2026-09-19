@@ -1,5 +1,6 @@
 import { getStorage } from '../storage';
 import { parseZip, buildZip } from './trace-zip';
+import { decodeResource } from './resource-compression';
 
 /**
  * Reconstruct a full Playwright trace ZIP from a slim ZIP and its shared resource pool.
@@ -36,7 +37,7 @@ export async function reconstructTraceZip(
         batch.map(async (name) => {
           const resourcePath = `${projectPrefix}trace-resources/${name}`;
           try {
-            const data = await storage.readFile(resourcePath);
+            const data = decodeResource(await storage.readFile(resourcePath));
             return { name: `resources/${name}`, data };
           } catch {
             console.warn(`[TraceZip] Missing shared resource: ${resourcePath}`);

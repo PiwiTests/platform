@@ -131,6 +131,29 @@ Deleting runs removes rows and stored files, but giving the freed pages back to 
 
 The dashboard uses an abstraction layer that allows switching backends without any code changes. Files are stored using relative paths (e.g. `project-1/run-123/index.html`), making migration between backends straightforward.
 
+### Compression at rest
+
+Trace files are the largest evidence Piwi keeps, and most of their bytes are text — the trace event
+stream (`trace.trace`, `trace.network`, `trace.stacks`), the ARIA snapshots, and captured network bodies
+(HTML, CSS, JavaScript, JSON). These are compressed where they are stored:
+
+- The **slim events blob** — the part of each trace kept after the shared resources are split out —
+  deflates its text entries per file, leaving already-compressed entries (screen-snapshot PNGs, fonts)
+  stored as they are. The result is still an ordinary ZIP the Playwright trace viewer opens directly.
+- The **shared resource pool** gzip-compresses each text resource on the way in and restores it on the
+  way out; images, fonts and other already-compact resources are stored untouched. A resource is never
+  written larger than it arrived.
+
+Compression is transparent: reconstructed traces, the evidence views and offline exports all see the
+original bytes, and resources written before compression existed keep reading unchanged. It stacks on top
+of deduplication — a resource is stored once per project **and** compressed — and it needs no
+configuration.
+
+Shared resources are also **reference-counted**: each is freed as soon as no remaining trace references it,
+so deleting some of a project's runs reclaims the resources unique to them without waiting for the whole
+project to be removed. This applies automatically; evidence stored before an upgrade is enrolled by a
+one-time background pass, and a nightly sweep frees anything left unreferenced.
+
 ### Evidence payload deduplication
 
 Large failure evidence captured per execution — the page's ARIA snapshot, the failing test's source snippet, and its source stack frames — is stored content-addressed: each unique payload is written once per project (keyed by SHA-256) and executions reference it by id. A test that fails the same way across many runs, or across several browsers in one run, stores that evidence a single time instead of once per execution. Unreferenced payloads are garbage-collected when runs are deleted. Deduplication happens server-side at ingest, so it applies regardless of reporter version.

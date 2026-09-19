@@ -1,7 +1,21 @@
-import { inflateRaw, inflateRawSync } from 'zlib';
+import { inflateRaw, inflateRawSync, deflateRawSync } from 'zlib';
 import { promisify } from 'util';
 
 const inflateRawAsync = promisify(inflateRaw);
+
+/**
+ * Deflate level for {@link buildZip}'s optional per-entry compression. Level 6
+ * is zlib's default — most of the ratio for a fraction of level 9's CPU, which
+ * matters because the slim blob is built on the ingest hot path.
+ */
+const DEFLATE_LEVEL = 6;
+
+/**
+ * Entries below this many bytes are stored, never deflated: deflate's own
+ * overhead (a few bytes of block framing) can make a tiny payload grow, and the
+ * saving on it would be noise.
+ */
+const MIN_DEFLATE_BYTES = 64;
 
 /**
  * Upper bound on the decompressed size of a single ZIP entry. Deflate can
@@ -169,72 +183,104 @@ export async function parseZip(data: Buffer): Promise<ZipEntry[]> {
 }
 
 /**
- * Build a ZIP archive from a list of entries using stored compression (method 0).
- * This is appropriate for trace event entries which are small text-based files.
+ * Build a ZIP archive from a list of entries.
+ *
+ * Entries are stored uncompressed (method 0) by default — the right choice when
+ * the archive is reconstructed and served on demand and speed beats size. Pass
+ * `{ compress: true }` to deflate each entry that actually shrinks (method 8),
+ * leaving already-compressed payloads (PNG screen snapshots, fonts) stored so no
+ * CPU is spent growing them. A ZIP freely mixes the two methods per entry —
+ * exactly what Playwright's own traces do — so the trace viewer and
+ * {@link parseZip} read the result unchanged. Use it when the archive is written
+ * once and kept, such as the persisted slim trace blob.
  */
-export function buildZip(entries: ZipEntry[]): Buffer {
+export function buildZip(entries: ZipEntry[], options: { compress?: boolean } = {}): Buffer {
   const nameBuffers = entries.map((entry) => Buffer.from(entry.name, 'utf8'));
 
-  // Size the output in one pass, validating each entry against the cap first, so
-  // a length derived from decompressed data that is negative, non-integer or
-  // beyond the cap fails here rather than driving an unbounded allocation.
+  // Resolve each entry's on-disk payload and method up front: the CRC is always
+  // over the uncompressed data, so validate the raw size first (a negative,
+  // non-integer or absurd length must fail here, not drive an allocation), then
+  // deflate only when it wins. Sizing the output from the resolved payloads
+  // keeps the single allocation exact and bounded whether or not we compressed.
+  const payloads: Buffer[] = [];
+  const methods: number[] = [];
+  const crcs: number[] = [];
+
   let total = 22; // EOCD
   for (let i = 0; i < entries.length; i++) {
-    const size = entries[i]!.data.length;
-    if (!Number.isSafeInteger(size) || size < 0) {
+    const raw = entries[i]!.data;
+    if (!Number.isSafeInteger(raw.length) || raw.length < 0) {
       throw new Error(`Invalid entry size for "${entries[i]!.name}"`);
     }
-    total += 30 + nameBuffers[i]!.length + size + 46 + nameBuffers[i]!.length;
-    if (total > MAX_ZIP_BYTES) throw new Error(`ZIP exceeds ${MAX_ZIP_BYTES} bytes`);
+    // Reject against the cap using the raw length — the compressed payload can
+    // only be smaller — so a hostile or corrupt entry is refused before any CRC
+    // or deflate work touches its bytes.
+    if (total + 30 + nameBuffers[i]!.length + raw.length + 46 + nameBuffers[i]!.length > MAX_ZIP_BYTES) {
+      throw new Error(`ZIP exceeds ${MAX_ZIP_BYTES} bytes`);
+    }
+
+    crcs.push(crc32(raw));
+
+    let payload = raw;
+    let method = 0;
+    if (options.compress && raw.length >= MIN_DEFLATE_BYTES) {
+      const deflated = deflateRawSync(raw, { level: DEFLATE_LEVEL });
+      if (deflated.length < raw.length) {
+        payload = deflated;
+        method = 8;
+      }
+    }
+    payloads.push(payload);
+    methods.push(method);
+
+    total += 30 + nameBuffers[i]!.length + payload.length + 46 + nameBuffers[i]!.length;
   }
 
   const out = Buffer.allocUnsafe(total);
   const localOffsets: number[] = [];
-  const crcs: number[] = [];
   let pos = 0;
 
-  // Local file headers (30 bytes + filename) followed by the stored data.
+  // Local file headers (30 bytes + filename) followed by the entry payload.
   for (let i = 0; i < entries.length; i++) {
     const nameBytes = nameBuffers[i]!;
-    const data = entries[i]!.data;
-    const size = data.length;
-    const crc = crc32(data);
-    crcs.push(crc);
+    const payload = payloads[i]!;
+    const rawSize = entries[i]!.data.length;
     localOffsets.push(pos);
 
     out.writeUInt32LE(0x04034b50, pos); // signature
     out.writeUInt16LE(20, pos + 4); // version needed (2.0)
     out.writeUInt16LE(0, pos + 6); // flags
-    out.writeUInt16LE(0, pos + 8); // method: stored
+    out.writeUInt16LE(methods[i]!, pos + 8); // method: stored (0) or deflated (8)
     out.writeUInt16LE(0, pos + 10); // mod time
     out.writeUInt16LE(0, pos + 12); // mod date
-    out.writeUInt32LE(crc, pos + 14); // crc-32
-    out.writeUInt32LE(size, pos + 18); // compressed size
-    out.writeUInt32LE(size, pos + 22); // uncompressed size
+    out.writeUInt32LE(crcs[i]!, pos + 14); // crc-32 (over uncompressed data)
+    out.writeUInt32LE(payload.length, pos + 18); // compressed size
+    out.writeUInt32LE(rawSize, pos + 22); // uncompressed size
     out.writeUInt16LE(nameBytes.length, pos + 26); // filename length
     out.writeUInt16LE(0, pos + 28); // extra field length
     nameBytes.copy(out, pos + 30);
     pos += 30 + nameBytes.length;
-    data.copy(out, pos);
-    pos += size;
+    payload.copy(out, pos);
+    pos += payload.length;
   }
 
   // Central directory file headers (46 bytes + filename).
   const cdStart = pos;
   for (let i = 0; i < entries.length; i++) {
     const nameBytes = nameBuffers[i]!;
-    const size = entries[i]!.data.length;
+    const payload = payloads[i]!;
+    const rawSize = entries[i]!.data.length;
 
     out.writeUInt32LE(0x02014b50, pos); // signature
     out.writeUInt16LE(20, pos + 4); // version made by
     out.writeUInt16LE(20, pos + 6); // version needed
     out.writeUInt16LE(0, pos + 8); // flags
-    out.writeUInt16LE(0, pos + 10); // method: stored
+    out.writeUInt16LE(methods[i]!, pos + 10); // method: stored (0) or deflated (8)
     out.writeUInt16LE(0, pos + 12); // mod time
     out.writeUInt16LE(0, pos + 14); // mod date
     out.writeUInt32LE(crcs[i]!, pos + 16); // crc-32
-    out.writeUInt32LE(size, pos + 20); // compressed size
-    out.writeUInt32LE(size, pos + 24); // uncompressed size
+    out.writeUInt32LE(payload.length, pos + 20); // compressed size
+    out.writeUInt32LE(rawSize, pos + 24); // uncompressed size
     out.writeUInt16LE(nameBytes.length, pos + 28); // filename length
     out.writeUInt16LE(0, pos + 30); // extra field length
     out.writeUInt16LE(0, pos + 32); // file comment length
