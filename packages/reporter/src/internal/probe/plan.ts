@@ -16,7 +16,12 @@ export interface ProbePlanItem {
   /** Describe-block titles from the outermost down, breaking a title tie within one file. */
   suitePath: string[];
   routeKey: string;
-  fault: ProbeFault;
+  /** A client fault (applied at the Playwright boundary) or a server fault (signed onto the request). */
+  fault: ProbeFault | string;
+  /** `client` (default) mutates the response; `server` signs an X-Piwi-Probe header. */
+  level?: 'client' | 'server';
+  /** The dependency a server dependency fault targets. */
+  dependency?: string;
   nth: number;
 }
 

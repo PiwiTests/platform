@@ -6,8 +6,9 @@
  */
 
 import type { Page } from '@playwright/test';
-import { computeFault } from './faults.js';
+import { computeFault, type ProbeFault } from './faults.js';
 import { createProbeState, markNavigated, requestMatchesRoute, shouldMutate, type ProbePlanItem } from './plan.js';
+import { buildProbeHeader, type ServerProbeSpec } from './sign.js';
 
 /** Handle to the interception: whether the fault was actually applied. */
 export interface ProbeInterception {
@@ -23,6 +24,7 @@ export interface ProbeInterception {
 export async function installProbeInterception(page: Page, item: ProbePlanItem): Promise<ProbeInterception> {
   const state = createProbeState();
   let applied = false;
+  const probeSecret = process.env.PIWI_PROBE_SECRET;
 
   page.on('framenavigated', (frame) => {
     if (frame === page.mainFrame()) markNavigated(state);
@@ -34,10 +36,32 @@ export async function installProbeInterception(page: Page, item: ProbePlanItem):
       await route.fallback();
       return;
     }
+
+    // A server fault is signed onto the request and applied inside the server;
+    // the response is left alone. Without a shared secret it cannot be signed, so
+    // the request goes through unmodified and the probe records as not applied.
+    if (item.level === 'server') {
+      if (!probeSecret) {
+        await route.fallback();
+        return;
+      }
+      const spec: ServerProbeSpec = { route: item.routeKey, fault: item.fault, nth: item.nth };
+      if (item.dependency) spec.dependency = item.dependency;
+      try {
+        applied = true;
+        await route.continue({
+          headers: { ...request.headers(), 'x-piwi-probe': buildProbeHeader(probeSecret, spec) },
+        });
+      } catch {
+        await route.fallback();
+      }
+      return;
+    }
+
     try {
       const response = await route.fetch();
       const body = await response.text();
-      const out = computeFault(item.fault, {
+      const out = computeFault(item.fault as ProbeFault, {
         status: response.status(),
         body,
         contentType: response.headers()['content-type'] ?? null,
