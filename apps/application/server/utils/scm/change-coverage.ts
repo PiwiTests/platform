@@ -18,6 +18,7 @@ import { resolveDefaultBranch } from './default-branch';
 import { resolveFallbackBranch } from '#shared/handlers/baseline-scope';
 import { selectBaselineRun } from '../branch-baseline';
 import { createScmProvider } from './index';
+import { MAX_SCM_FILES } from './ScmProvider';
 import type { ScmProvider } from './ScmProvider';
 import {
   computeChangeCoverage,
@@ -34,7 +35,8 @@ import {
   type ExposureInputs,
   type FileExposure,
 } from '#shared/handlers/scenario-gaps';
-import { ingestChangesEdges, deleteBranchGraphRows } from '../graph-ingest';
+import { ingestChangesEdges, deleteBranchGraphRows, ingestImportEdges } from '../graph-ingest';
+import { extractImports, type ImportPair } from '#shared/graph';
 import type { PrChangeCoverage } from '#shared/pr-feedback';
 
 /** Recent commits scanned per run to estimate churn, age and escape history. */
@@ -173,6 +175,29 @@ async function buildFileTickets(
   return fileTickets;
 }
 
+/**
+ * A shallow one-level import scan at the run's ref: for each changed file no test
+ * reached, resolve its relative imports against the repository tree so a `changes`
+ * edge into an unreached file still connects to the files that import it. Capped
+ * by the SCM file budget; best-effort — a token-less or failing fetch yields no
+ * edges.
+ */
+async function scanImportEdges(provider: ScmProvider, ref: string, unreachedFiles: string[]): Promise<ImportPair[]> {
+  if (unreachedFiles.length === 0) return [];
+  const tree = await provider.fetchTree(ref).catch(() => null);
+  if (!tree || tree.length === 0) return [];
+  const knownFiles = new Set(tree.map((p) => p.replace(/\\/g, '/')));
+  const pairs: ImportPair[] = [];
+  for (const file of unreachedFiles.slice(0, MAX_SCM_FILES)) {
+    const content = await provider.fetchFileAtRef(file, ref).catch(() => null);
+    if (!content?.content) continue;
+    for (const to of extractImports(file, content.content, knownFiles)) {
+      pairs.push({ from: file, to });
+    }
+  }
+  return pairs;
+}
+
 /** A generic, honest draft suggestion for an uncovered changed file. */
 function draftTitleFor(filePath: string): string {
   const base = filePath.split('/').pop() || filePath;
@@ -299,6 +324,12 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
   }));
   const gaps = detectChangedUnreached(reaches, runId, coverage.windowRuns).map((g) => rankGap(g, exposure));
   await upsertScenarioGaps(db, run.projectId, gaps, { runId, prNumber }).catch(() => {});
+
+  // Import edges for the changed files no test reached, from a shallow scan at the
+  // run's ref — so an unreached file still connects to the files that import it.
+  const unreached = coverage.files.filter((f) => !f.reachedInRun && f.reachedCountHistory === 0).map((f) => f.filePath);
+  const importPairs = await scanImportEdges(provider, headSha, unreached).catch(() => []);
+  await ingestImportEdges(db, run.projectId, runId, importPairs, { branch: branchTag }).catch(() => {});
 
   return { coverage, pr: toPrChangeCoverage(coverage) };
 }

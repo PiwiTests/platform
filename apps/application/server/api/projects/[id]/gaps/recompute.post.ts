@@ -4,6 +4,7 @@ import { requireProjectAccess, requireRouteId } from '../../../../utils/project-
 import { getDatabase } from '../../../../database';
 import { projects, testRuns } from '../../../../database/schema';
 import { rebuildProjectGraph, resolveRunBranchTag } from '../../../../utils/graph-ingest';
+import { refreshOpenApiSurface } from '../../../../utils/surface-manifest';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
 
 defineRouteMeta({
@@ -33,10 +34,14 @@ export default eventHandler(async (event) => {
     .orderBy(desc(testRuns.id))
     .limit(1);
   const [project] = await db
-    .select({ id: projects.id, defaultBranch: projects.defaultBranch })
+    .select({ id: projects.id, defaultBranch: projects.defaultBranch, openApiUrl: projects.openApiUrl })
     .from(projects)
     .where(eq(projects.id, projectId));
   const branch = project && latest ? await resolveRunBranchTag(db, project, latest.metadata, latest.branch) : null;
+
+  // Refresh the declared surface from the project's OpenAPI URL before detectors
+  // run, so a documented-but-unreached route surfaces as a declared-never-hit gap.
+  if (project?.openApiUrl) await refreshOpenApiSurface(db, projectId, project.openApiUrl);
 
   const gaps = await computeScenarioGaps(db, projectId, { branch });
   return { success: true, runsProcessed: graph.runsProcessed, gapsUpserted: gaps.upserted, gapsClosed: gaps.closed };

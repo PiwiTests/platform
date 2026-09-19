@@ -6,7 +6,7 @@
  * RegExp patterns – the same routes the Nuxt server exposes.
  */
 
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import {
   users,
   files,
@@ -17,6 +17,7 @@ import {
   testRunsCases,
   failureClusters,
   failureDiagnoses,
+  graphNodes,
 } from '~~/server/database/schema.sqlite';
 import { Role } from '#shared/types';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
@@ -91,6 +92,9 @@ import {
 import { getSelectionSuggestions } from '#shared/handlers/selection-suggestions';
 import { getSelectionAnalytics } from '#shared/handlers/selection-analytics';
 import { computeScenarioGaps, listScenarioGaps } from '#shared/handlers/scenario-gaps';
+import { parseRouteNodeKey } from '#shared/graph';
+import { ingestProjectManifest } from '~~/server/utils/surface-manifest';
+import type { AppManifest, ManifestSource } from '#shared/types';
 import {
   buildProbePlan,
   recordProbeResults,
@@ -1501,6 +1505,49 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const gaps = await computeScenarioGaps(await getDemoDb(), +m[1]!);
       return { success: true, runsProcessed: 0, gapsUpserted: gaps.upserted, gapsClosed: gaps.closed };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/surface\/manifest$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const db = await getDemoDb();
+      const nodes = await db
+        .select({ kind: graphNodes.kind, key: graphNodes.key, origin: graphNodes.origin, attrs: graphNodes.attrs })
+        .from(graphNodes)
+        .where(and(eq(graphNodes.projectId, +m[1]!), inArray(graphNodes.origin, ['manifest', 'openapi'])));
+      const routes = nodes
+        .filter((n) => n.kind === 'route')
+        .map((n) => {
+          const { method, pattern } = parseRouteNodeKey(n.key);
+          return {
+            method,
+            pattern,
+            origin: n.origin,
+            responses: (n.attrs as { responses?: number[] } | null)?.responses ?? [],
+          };
+        });
+      const pages = nodes
+        .filter((n) => n.kind === 'page')
+        .map((n) => ({ pattern: n.key, origin: n.origin, name: (n.attrs as { name?: string } | null)?.name ?? null }));
+      return { openApiUrl: null, routes, pages };
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/projects\/(\d+)\/surface\/manifest$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const payload = (body ?? {}) as { source?: ManifestSource; manifest?: AppManifest };
+      const source: ManifestSource = payload.source ?? 'committed';
+      const manifest: AppManifest = payload.manifest ?? {};
+      const ingested = await ingestProjectManifest(await getDemoDb(), +m[1]!, manifest, source);
+      return {
+        success: ingested,
+        routes: manifest.routes?.length ?? 0,
+        pages: manifest.pages?.length ?? 0,
+      };
     },
   },
   {

@@ -263,3 +263,46 @@ export interface TestRunStartPayload {
   isFullRun?: boolean;
   filterDetails?: FilterDetails | null;
 }
+
+// ── Declared surface manifest (Test Map) ──────────────────────────────────────
+//
+// The declared-surface contract: what the application says it exposes, ahead of
+// any test reaching it. Three ramps produce it — the instrumentation package's
+// `/__piwi/manifest`, a committed `piwi.manifest.json` next to the Playwright
+// config, and a project's OpenAPI URL fetched server-side. All three reduce to
+// this one shape, uploaded through `PUT /api/projects/:id/surface/manifest` and
+// turned into `route`/`page` graph nodes with origin `manifest` or `openapi`.
+
+/** A declared route: its method, path pattern, handler file and documented codes. */
+export interface ManifestRoute {
+  /** HTTP method, upper-cased on ingest. */
+  method: string;
+  /** Path pattern, e.g. `/api/orders/:id`. */
+  pattern: string;
+  /** Handler source file, when the instrumentation knows it. */
+  handler?: string | null;
+  /** Documented response status codes (from OpenAPI), used to strengthen success-only. */
+  responses?: number[];
+}
+
+/** A declared page: its path pattern and an optional display name. */
+export interface ManifestPage {
+  /** Path pattern, e.g. `/orders/:id`. */
+  pattern: string;
+  name?: string | null;
+}
+
+/** The declared surface of an application: its routes and pages. */
+export interface AppManifest {
+  routes?: ManifestRoute[];
+  pages?: ManifestPage[];
+}
+
+/** Where a declared manifest came from — it decides the graph node origin. */
+export type ManifestSource = 'instrumentation' | 'committed' | 'openapi';
+
+/** The body of `PUT /api/projects/:id/surface/manifest`. */
+export interface SurfaceManifestUpload {
+  source: ManifestSource;
+  manifest: AppManifest;
+}

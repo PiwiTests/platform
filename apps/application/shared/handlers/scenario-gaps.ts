@@ -178,11 +178,15 @@ export interface RouteStat {
   count: number;
   statuses: number[];
   priority?: string | null;
+  /** Documented response codes from a declared manifest/OpenAPI, when known. */
+  documentedCodes?: number[];
 }
 
 /**
  * Success only — a route whose observed statuses are all 2xx/3xx, so its error
- * paths were never exercised. Blind spot.
+ * paths were never exercised. Blind spot. Strengthened when a declared manifest
+ * documents error codes the route never returned under test: the evidence names
+ * them and the next step is the error path per documented code.
  */
 export function detectSuccessOnly(routes: RouteStat[], windowRuns = HISTORY_WINDOW_RUNS): DetectedGap[] {
   const gaps: DetectedGap[] = [];
@@ -192,19 +196,70 @@ export function detectSuccessOnly(routes: RouteStat[], windowRuns = HISTORY_WIND
     if (statuses.length === 0) continue;
     if (!statuses.every((s) => s >= 200 && s < 400)) continue;
 
+    const observed = new Set(statuses);
+    const documentedErrors = [...new Set(route.documentedCodes ?? [])]
+      .filter((c) => c >= 400 && !observed.has(c))
+      .sort((a, b) => a - b);
+
     const range =
       statuses.length === 1 ? `always ${statuses[0]}` : `only ${statuses[0]}–${statuses[statuses.length - 1]}`;
+    const base = `Observed ${route.count} times over the last ${windowRuns} runs, ${range} — observed reach, no error path exercised.`;
+    const evidence =
+      documentedErrors.length > 0
+        ? [base, `Documents ${documentedErrors.join(', ')} — never returned under test.`]
+        : [base];
     gaps.push({
       detector: 'success-only',
       kind: 'gap',
       class: 'blind-spot',
       key: route.key,
-      title: `${route.method} ${route.pattern}: no error path under test`,
-      evidence: [
-        `Observed ${route.count} times over the last ${windowRuns} runs, ${range} — observed reach, no error path exercised.`,
-      ],
-      confidence: clamp01(route.count / (SUCCESS_ONLY_MIN_OBSERVATIONS * 4)),
+      title:
+        documentedErrors.length > 0
+          ? `${route.method} ${route.pattern}: documented ${documentedErrors.join('/')} never tested`
+          : `${route.method} ${route.pattern}: no error path under test`,
+      evidence,
+      confidence: clamp01(route.count / (SUCCESS_ONLY_MIN_OBSERVATIONS * 4) + (documentedErrors.length > 0 ? 0.3 : 0)),
       priority: route.priority ?? null,
+    });
+  }
+  return gaps;
+}
+
+/** A declared route/page node and how many tests reach it. */
+export interface DeclaredNode {
+  nodeKind: 'route' | 'page';
+  nodeKey: string;
+  origin: 'manifest' | 'openapi';
+  reachCount: number;
+  /** Documented response codes, for a route declared via OpenAPI. */
+  documentedCodes?: number[];
+  priority?: string | null;
+}
+
+/**
+ * Declared, never hit — a node the application declares (a manifest or OpenAPI
+ * route, a declared page) that no test reaches. Blind spot. The origin is named
+ * so "declared and never observed" is never confused with "never observed at
+ * all".
+ */
+export function detectDeclaredNeverHit(nodes: DeclaredNode[], windowRuns = HISTORY_WINDOW_RUNS): DetectedGap[] {
+  const gaps: DetectedGap[] = [];
+  for (const node of nodes) {
+    if (node.reachCount > 0) continue;
+    const where = node.origin === 'openapi' ? 'OpenAPI' : 'the manifest';
+    const codes =
+      node.nodeKind === 'route' && node.documentedCodes?.length
+        ? ` · documents ${[...new Set(node.documentedCodes)].sort((a, b) => a - b).join(', ')}`
+        : '';
+    gaps.push({
+      detector: 'declared-never-hit',
+      kind: 'gap',
+      class: 'blind-spot',
+      key: `${node.nodeKind}:${node.nodeKey}`,
+      title: `Declared ${node.nodeKind} ${node.nodeKey} — never reached`,
+      evidence: [`Declared in ${where} · 0 tests in ${windowRuns} runs${codes} — observed reach.`],
+      confidence: 0.7,
+      priority: node.priority ?? null,
     });
   }
   return gaps;
@@ -946,19 +1001,53 @@ export async function computeScenarioGaps(
     .select({
       kind: graphNodes.kind,
       key: graphNodes.key,
+      origin: graphNodes.origin,
+      attrs: graphNodes.attrs,
       firstSeenRunId: graphNodes.firstSeenRunId,
       lastSeenRunId: graphNodes.lastSeenRunId,
     })
     .from(graphNodes)
     .where(and(eq(graphNodes.projectId, projectId), nodeBranchScope, isNull(graphNodes.prunedAt)));
 
+  // Documented response codes a declared (manifest/OpenAPI) route carries in its attrs.
+  const documentedByRoute = new Map<string, number[]>();
+  for (const node of nodeRows) {
+    if (node.kind !== 'route') continue;
+    const responses = (node.attrs as { responses?: unknown } | null)?.responses;
+    if (Array.isArray(responses)) {
+      const codes = responses.filter((c): c is number => Number.isInteger(c));
+      if (codes.length > 0) documentedByRoute.set(node.key, codes);
+    }
+  }
+
   // Route patterns the graph holds as nodes — the own-origin set success-only reads.
   const routeNodeKeys = new Set(nodeRows.filter((n) => n.kind === 'route').map((n) => n.key));
   const routeStats = await loadRouteStats(db, recentIds, routeNodeKeys);
 
-  // Attach the priority observed around each route pattern.
+  // Attach the priority observed around each route pattern and any documented codes.
   for (const [key, stat] of routeStats) {
     stat.priority = maxPriority(reachByNode.get(`route\x00${key}`) ?? [], meta);
+    const documented = documentedByRoute.get(key);
+    if (documented) stat.documentedCodes = documented;
+  }
+
+  // Declared nodes (manifest/OpenAPI) with no test reaching them — the declared-
+  // never-hit blind spots. Origin sticks to a node's first write, so a declared
+  // route the suite later exercises keeps its origin but gains a reaches edge and
+  // is skipped here by reachCount.
+  const declaredNodes: DeclaredNode[] = [];
+  for (const node of nodeRows) {
+    if (node.kind !== 'route' && node.kind !== 'page') continue;
+    if (node.origin !== 'manifest' && node.origin !== 'openapi') continue;
+    const ids = reachByNode.get(`${node.kind}\x00${node.key}`) ?? new Set<number>();
+    declaredNodes.push({
+      nodeKind: node.kind,
+      nodeKey: node.key,
+      origin: node.origin,
+      reachCount: ids.size,
+      documentedCodes: documentedByRoute.get(node.key),
+      priority: maxPriority(ids, meta),
+    });
   }
 
   const nodeReach: NodeReach[] = [];
@@ -1127,6 +1216,7 @@ export async function computeScenarioGaps(
     ...detectNotNoticed(checkOutcomes),
     ...detectOrphanTest(testReachRecency),
     ...detectFixDidNotHold(regressedClusters),
+    ...detectDeclaredNeverHit(declaredNodes),
   ];
 
   const exposure = options.exposure ?? {};
@@ -1148,6 +1238,7 @@ export async function computeScenarioGaps(
       'not-noticed',
       'orphan-test',
       'fix-did-not-hold',
+      'declared-never-hit',
     ],
     scored,
     latestRunId,

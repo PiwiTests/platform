@@ -308,6 +308,7 @@ export async function updateProject(
     aiLanguage?: string | null;
     scmToken?: string | null;
     defaultBranch?: string | null;
+    openApiUrl?: string | null;
     ciRerun?: unknown;
     tagIds?: number[];
   },
@@ -322,6 +323,7 @@ export async function updateProject(
     aiLanguage,
     scmToken,
     defaultBranch,
+    openApiUrl,
     ciRerun,
     tagIds: dataTagIds,
   } = data;
@@ -336,6 +338,7 @@ export async function updateProject(
       aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
       scmToken: scmToken !== undefined ? scmToken : undefined,
       defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
+      openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
       ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
       updatedAt: new Date(),
     })

@@ -5,6 +5,7 @@
  * demo runs the same code in the browser.
  */
 
+import type { AppManifest, ManifestSource } from '#shared/types';
 import { normalizeRoute } from '#shared/utils/route';
 
 /** Node kinds. Route and page are populated today; the rest are reserved. */
@@ -621,4 +622,163 @@ export function buildTriggerEdges(executions: TriggerObservation[][]): GraphEdge
     confidence: triggerConfidence(e.count, total),
     evidence: { executions: total, held: e.count },
   }));
+}
+
+// ── Declared surface (manifest / OpenAPI) ────────────────────────────────────
+//
+// The declared surface says what the application exposes ahead of any test
+// reaching it. A route the manifest declares becomes a `route` node whose key is
+// aligned with the observed keys, so a declared route the suite later exercises
+// shares one node (and gains a `reaches` edge, dropping out of the declared-
+// never-hit detector). Documented response codes ride the node's attrs.
+
+/**
+ * Canonicalize a declared path pattern so it lines up with observed route keys.
+ * Framework placeholders — `:param`, `{param}`, `[param]` — collapse to `:uuid`
+ * when the name reads like a uuid/guid, otherwise `:id`, matching how
+ * {@link normalizeRoute} collapses numeric and uuid segments of a real request.
+ */
+export function normalizeManifestPattern(pattern: string): string {
+  const q = pattern.indexOf('?');
+  const path = q < 0 ? pattern : pattern.slice(0, q);
+  const withHost = path.startsWith('/') ? path : `/${path}`;
+  return (
+    '/' +
+    pathSegments(withHost)
+      .map((seg) => {
+        const placeholder = /^(?::.+|\{.+\}|\[.+\])$/.test(seg);
+        if (!placeholder) return seg;
+        const name = seg.replace(/^[:{[]+|[}\]]+$/g, '').toLowerCase();
+        return /uuid|guid/.test(name) ? ':uuid' : ':id';
+      })
+      .join('/')
+  );
+}
+
+/** The graph origin a manifest source maps to. */
+function manifestOrigin(source: ManifestSource): GraphOrigin {
+  return source === 'openapi' ? 'openapi' : 'manifest';
+}
+
+/**
+ * Build declared `route`/`page`/`handler` nodes and `handled-by` edges from a
+ * manifest. Route nodes carry the documented response codes in their attrs so
+ * the success-only detector can name the error codes a route documents but never
+ * returned under test. Pure — the ingest path upserts the returned specs.
+ */
+export function buildManifestGraph(
+  manifest: AppManifest,
+  source: ManifestSource,
+): { nodes: GraphNodeSpec[]; edges: GraphEdgeSpec[] } {
+  const origin = manifestOrigin(source);
+  const nodes = new Map<string, GraphNodeSpec>();
+  const edges = new Map<string, GraphEdgeSpec>();
+  const addNode = (spec: GraphNodeSpec) => {
+    nodes.set(`${spec.kind}\x00${spec.key}`, spec);
+  };
+  const addEdge = (spec: GraphEdgeSpec) => {
+    edges.set(`${spec.fromKind}\x00${spec.fromKey}\x00${spec.kind}\x00${spec.toKind}\x00${spec.toKey}`, spec);
+  };
+
+  for (const route of manifest.routes ?? []) {
+    if (!route?.method || !route?.pattern) continue;
+    const key = routeNodeKey(route.method, normalizeManifestPattern(route.pattern));
+    const responses = Array.isArray(route.responses)
+      ? [...new Set(route.responses.filter((c) => Number.isInteger(c)))].sort((a, b) => a - b)
+      : [];
+    addNode({ kind: 'route', key, origin, attrs: { declared: true, responses } });
+    const handler = route.handler?.trim();
+    if (handler) {
+      const handlerKey = handlerNodeKey(handler);
+      addNode({ kind: 'handler', key: handlerKey, origin, attrs: { declared: true } });
+      addEdge({ fromKind: 'route', fromKey: key, toKind: 'handler', toKey: handlerKey, kind: 'handled-by', origin });
+    }
+  }
+
+  for (const page of manifest.pages ?? []) {
+    if (!page?.pattern) continue;
+    const key = pageNodeKey(normalizeManifestPattern(page.pattern));
+    if (!key) continue;
+    addNode({ kind: 'page', key, origin, attrs: page.name ? { declared: true, name: page.name } : { declared: true } });
+  }
+
+  return { nodes: [...nodes.values()], edges: [...edges.values()] };
+}
+
+// ── Import edges (shallow scan) ──────────────────────────────────────────────
+//
+// A changed source file no test reaches may still be exercised through a file
+// that is reached, so a shallow one-level import scan at the run's ref connects
+// changed-but-unreached files to their importers. Only relative specifiers are
+// resolved; aliases and bare package names are out of scope.
+
+/** Resolve a relative import specifier against the importing file's directory. */
+function resolveRelativeImport(fromPath: string, specifier: string, knownFiles: Set<string>): string | null {
+  const fromDir = fromPath.replace(/\\/g, '/').split('/').slice(0, -1);
+  const parts = specifier.split('/');
+  const stack = [...fromDir];
+  for (const part of parts) {
+    if (part === '.' || part === '') continue;
+    if (part === '..') stack.pop();
+    else stack.push(part);
+  }
+  const base = stack.join('/');
+  const candidates = [
+    base,
+    ...['.ts', '.tsx', '.js', '.jsx', '.mjs', '.vue'].flatMap((ext) => [`${base}${ext}`, `${base}/index${ext}`]),
+  ];
+  for (const candidate of candidates) {
+    if (knownFiles.has(candidate)) return candidate;
+  }
+  return null;
+}
+
+const IMPORT_SPECIFIER_RE =
+  /(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|(?:import|require)\s*\(\s*['"]([^'"]+)['"]\s*\)|import\s*['"]([^'"]+)['"]/g;
+
+/**
+ * Extract the relative files a source file imports, resolved against the run's
+ * tree. Only `./` and `../` specifiers are resolved to a real known file; bare
+ * and aliased specifiers are dropped. Pure and dependency-free.
+ */
+export function extractImports(fromPath: string, content: string, knownFiles: Set<string>): string[] {
+  const out = new Set<string>();
+  for (const match of content.matchAll(IMPORT_SPECIFIER_RE)) {
+    const specifier = match[1] ?? match[2] ?? match[3];
+    if (!specifier || !specifier.startsWith('.')) continue;
+    const resolved = resolveRelativeImport(fromPath, specifier, knownFiles);
+    if (resolved && resolved !== fromPath) out.add(resolved);
+  }
+  return [...out];
+}
+
+/** One resolved import: the importing file and the file it imports. */
+export interface ImportPair {
+  from: string;
+  to: string;
+}
+
+/**
+ * Build `file` nodes and `imports` edges (file → imported file) from resolved
+ * import pairs, origin `import`. Pure — the ingest path upserts the specs.
+ */
+export function buildImportEdges(pairs: ImportPair[]): { nodes: GraphNodeSpec[]; edges: GraphEdgeSpec[] } {
+  const nodes = new Map<string, GraphNodeSpec>();
+  const edges = new Map<string, GraphEdgeSpec>();
+  for (const { from, to } of pairs) {
+    if (!from || !to || from === to) continue;
+    const fromKey = handlerNodeKey(from);
+    const toKey = handlerNodeKey(to);
+    nodes.set(`file\x00${fromKey}`, { kind: 'file', key: fromKey, origin: 'import' });
+    nodes.set(`file\x00${toKey}`, { kind: 'file', key: toKey, origin: 'import' });
+    edges.set(`${fromKey}\x00${toKey}`, {
+      fromKind: 'file',
+      fromKey,
+      toKind: 'file',
+      toKey,
+      kind: 'imports',
+      origin: 'import',
+    });
+  }
+  return { nodes: [...nodes.values()], edges: [...edges.values()] };
 }

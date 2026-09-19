@@ -574,6 +574,7 @@ const editState = ref({
   aiLanguage: '',
   scmToken: '',
   defaultBranch: '',
+  openApiUrl: '',
   ciRerun: {
     enabled: false,
     github: { workflow: '', ref: '', inputName: '' },
@@ -597,6 +598,7 @@ watch(
       aiLanguage: (p as { aiLanguage?: string }).aiLanguage || '',
       scmToken: '',
       defaultBranch: (p as { defaultBranch?: string }).defaultBranch || '',
+      openApiUrl: (p as { openApiUrl?: string }).openApiUrl || '',
       ciRerun: {
         enabled: ci?.enabled ?? false,
         github: {
@@ -625,6 +627,7 @@ async function handleSaveSettings() {
         aiLanguage: editState.value.aiLanguage || null,
         scmToken: editState.value.scmToken || null,
         defaultBranch: editState.value.defaultBranch || null,
+        openApiUrl: editState.value.openApiUrl || null,
         ciRerun: editState.value.ciRerun,
         tagIds: selectedTags.value.map((t) => t.id),
       },
@@ -1282,6 +1285,7 @@ const moreMenuItems = computed(() => {
                 v-model:aiLanguage="editState.aiLanguage"
                 v-model:scmToken="editState.scmToken"
                 v-model:defaultBranch="editState.defaultBranch"
+                v-model:openApiUrl="editState.openApiUrl"
                 v-model:ciRerun="editState.ciRerun"
                 v-model:tags="selectedTags"
                 :all-tags="allTags"

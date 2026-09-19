@@ -31,12 +31,16 @@ import {
   originsFromDocumentRequests,
   buildRequestGraph,
   buildPageInventoryGraph,
+  buildManifestGraph,
+  buildImportEdges,
   dependencyNodeKey,
   type GraphNodeSpec,
   type GraphEdgeSpec,
   type RequestSpansInput,
   type PageInventoryInput,
+  type ImportPair,
 } from '#shared/graph';
+import type { AppManifest, ManifestSource } from '#shared/types';
 import type { RunMetadata, ServerSpanEntry } from './run-json-types';
 import { resolveRunBranch } from './run-branch';
 import { resolveDefaultBranch, type DefaultBranchProject } from './scm/default-branch';
@@ -193,6 +197,9 @@ async function chunkedUpsertNodes(
         set: {
           lastSeenRunId: sql`excluded.last_seen_run_id`,
           lastSeenAt: sql`excluded.last_seen_at`,
+          // Keep the latest non-null attrs so a declared node's documented codes
+          // survive a later observed upsert (which carries null attrs for routes).
+          attrs: sql`coalesce(excluded.attrs, ${graphNodes.attrs})`,
           // A key that was soft-deleted by the staleness sweep and now reappears
           // is live again; first_seen is untouched, so it does not re-flag as drift.
           prunedAt: sql`null`,
@@ -464,6 +471,39 @@ export async function ingestPageInventoryGraph(
   const pages = collectPageInventories(cases, origins);
   if (pages.length === 0) return;
   await upsertGraphSpecs(db, projectId, runId, buildPageInventoryGraph(pages, { origins }), options);
+}
+
+/**
+ * Upsert the declared `route`/`page`/`handler` nodes a manifest describes. Rows
+ * are canonical (branch null) unless a branch is given — a declared surface is a
+ * project-level contract, not a per-run observation. A graph failure must never
+ * break the upload, so the caller wraps this in a try/catch.
+ */
+export async function ingestManifestGraph(
+  db: DB,
+  projectId: number,
+  runId: number,
+  manifest: AppManifest,
+  source: ManifestSource,
+  options: { branch?: string | null } = {},
+): Promise<void> {
+  await upsertGraphSpecs(db, projectId, runId, buildManifestGraph(manifest, source), options);
+}
+
+/**
+ * Upsert `file` nodes and `imports` edges from a shallow import scan. The pairs
+ * come from parsing the changed files' content at the run's ref through the SCM
+ * provider, capped by the provider's file budget.
+ */
+export async function ingestImportEdges(
+  db: DB,
+  projectId: number,
+  runId: number,
+  pairs: ImportPair[],
+  options: { branch?: string | null } = {},
+): Promise<void> {
+  if (pairs.length === 0) return;
+  await upsertGraphSpecs(db, projectId, runId, buildImportEdges(pairs), options);
 }
 
 /** The handler's source file from a root span, when the instrumentation carries it. */

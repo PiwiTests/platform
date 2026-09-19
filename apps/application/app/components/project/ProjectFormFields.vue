@@ -31,6 +31,7 @@ const diagnosisInstructions = defineModel<string>('diagnosisInstructions', { def
 const aiLanguage = defineModel<string>('aiLanguage', { default: '' });
 const scmToken = defineModel<string>('scmToken', { default: '' });
 const defaultBranch = defineModel<string>('defaultBranch', { default: '' });
+const openApiUrl = defineModel<string>('openApiUrl', { default: '' });
 const tags = defineModel<TagInfo[]>('tags', { default: () => [] });
 
 /** Full-shape CI re-run form state — the server drops empty targets on save. */
@@ -122,6 +123,14 @@ const ciRerun = defineModel<CiRerunForm>('ciRerun', {
         description="Baselines, flakiness and trends fall back to this branch. Leave empty to resolve it from the SCM provider (else 'main')."
       >
         <UInput v-model="defaultBranch" placeholder="e.g. main" class="w-full font-mono" />
+      </UFormField>
+
+      <UFormField
+        label="OpenAPI document URL"
+        name="openApiUrl"
+        description="Declared surface. Fetched server-side; its routes and documented response codes become declared graph nodes, so a route the spec documents but no test reaches is a gap. Leave empty to skip."
+      >
+        <UInput v-model="openApiUrl" placeholder="e.g. https://app.example.com/openapi.json" class="w-full font-mono" />
       </UFormField>
 
       <UFormField

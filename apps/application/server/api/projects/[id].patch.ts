@@ -30,6 +30,7 @@ const updateProjectSchema = z.object({
   aiLanguage: z.string().max(60).optional().nullable(),
   scmToken: z.string().optional().nullable(),
   defaultBranch: z.string().optional().nullable(),
+  openApiUrl: z.string().url().max(2000).optional().nullable().or(z.literal('')),
   ciRerun: ciRerunSchema.optional().nullable(),
   tagIds: z.array(z.number()).optional(),
 });
@@ -54,8 +55,17 @@ export default eventHandler(async (event) => {
     });
   }
 
-  const { label, description, diagnosisInstructions, aiLanguage, scmToken, defaultBranch, ciRerun, tagIds } =
-    validation.data;
+  const {
+    label,
+    description,
+    diagnosisInstructions,
+    aiLanguage,
+    scmToken,
+    defaultBranch,
+    openApiUrl,
+    ciRerun,
+    tagIds,
+  } = validation.data;
 
   // Encrypt SCM token before persisting; null/empty clears the stored value
   const encryptedScmToken =
@@ -77,6 +87,7 @@ export default eventHandler(async (event) => {
       aiLanguage,
       scmToken: encryptedScmToken,
       defaultBranch: defaultBranch != null ? defaultBranch.trim() || null : defaultBranch,
+      openApiUrl: openApiUrl != null ? openApiUrl.trim() || null : openApiUrl,
       ciRerun: resolvedCiRerun,
       tagIds,
     });

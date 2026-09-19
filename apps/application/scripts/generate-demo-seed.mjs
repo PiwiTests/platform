@@ -2806,6 +2806,19 @@ const GRAPH_NODES = [
     last_seen_at: BASE_START_MS,
     created_at: BASE_START_MS,
   },
+  // M3 declared surface: an OpenAPI-declared route with documented error codes
+  // that no test reaches — a "declared, never hit" blind spot.
+  {
+    project_id: 1,
+    kind: 'route',
+    key: 'DELETE /api/orders/:id',
+    attrs: { declared: true, responses: [200, 401, 404, 409] },
+    origin: 'openapi',
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
 ];
 
 const GRAPH_EDGES = [
@@ -2967,6 +2980,20 @@ const PROBES = [
 ];
 
 const SCENARIO_GAPS = [
+  {
+    project_id: 1,
+    kind: 'gap',
+    detector: 'declared-never-hit',
+    class: 'blind-spot',
+    key: 'route:DELETE /api/orders/:id',
+    title: 'Declared route DELETE /api/orders/:id — never reached',
+    evidence: ['Declared in OpenAPI · 0 tests in 30 runs · documents 200, 401, 404, 409 — observed reach.'],
+    factors: { churn: 0.4, age: 0.5, escapeHistory: 0.1, priority: 0.4 },
+    score: 0.0056,
+    status: 'open',
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  },
   {
     project_id: 1,
     kind: 'gap',
