@@ -1352,6 +1352,8 @@ export const scenarioGaps = pgTable(
     status: text('status').notNull().default('open'), // 'open' | 'snoozed' | 'dismissed' | 'accepted' | 'closed'
     dismissReason: text('dismiss_reason'), // 'not-worth-testing' | 'covered-elsewhere' | 'wrong'
     assignedTo: text('assigned_to'),
+    snoozedUntil: timestamp('snoozed_until', { mode: 'date' }), // a snoozed gap wakes at this time; null with status snoozed = until the node changes
+    acceptedAt: timestamp('accepted_at', { mode: 'date' }), // when a gap was accepted; feeds the accepted-but-unwritten inbox queue
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
