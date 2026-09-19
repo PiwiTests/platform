@@ -9,6 +9,7 @@
  */
 import { getStorage } from '../storage';
 import { parseZip, type ZipEntry } from './trace-zip';
+import { decodeResource } from './resource-compression';
 import { parseTraceTexts, parseResourceSnapshots, traceFileRank, type TraceResource } from './trace-events';
 import {
   DOM_SNAPSHOT_CAP_CHARS,
@@ -101,7 +102,7 @@ async function inlineCssAssets(
     const mime = assetMimeType(res, ref);
     if (!mime) continue;
     try {
-      const bytes = await storage.readFile(`${resourcesDir}/${res.sha1}`);
+      const bytes = decodeResource(await storage.readFile(`${resourcesDir}/${res.sha1}`));
       if (bytes.length === 0 || bytes.length > MAX_ASSET_BYTES || bytes.length > budget.value) continue;
       replacements[ref] = `data:${mime};base64,${bytes.toString('base64')}`;
       budget.value -= bytes.length;
@@ -146,7 +147,7 @@ async function inlineTraceStylesheets(
     const res = (abs ? urlToRes.get(abs) : undefined) ?? urlToRes.get(href);
     if (!res) continue;
     try {
-      const bytes = await storage.readFile(`${resourcesDir}/${res.sha1}`);
+      const bytes = decodeResource(await storage.readFile(`${resourcesDir}/${res.sha1}`));
       if (bytes.length === 0 || bytes.length > MAX_STYLESHEET_BYTES) continue;
       // Embed the sheet's own url() assets first, THEN mask token-shaped secrets
       // — masking last leaves the fresh base64 data URIs (and this sheet's

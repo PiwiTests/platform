@@ -2,6 +2,15 @@ import { defineConfig, devices, type ReporterDescription } from '@playwright/tes
 import PiwiDashboardReporter from '@piwitests/reporter';
 const { wrapConfig } = PiwiDashboardReporter;
 import { join } from 'path';
+import { resolveE2ETarget, targetAuthHeaders } from './tests/desktop-target';
+
+// Where the suite runs: the Playwright-managed server by default, or the Piwi
+// desktop app already running on this machine when PIWI_DESKTOP_E2E is set. In
+// desktop mode we adopt its loopback URL + access token, inject the token on
+// every request, and start no server of our own (see tests/desktop-target.ts).
+const e2eTarget = resolveE2ETarget();
+// Bridge the resolved base URL to specs that read PIWI_BASE_URL directly.
+if (e2eTarget.desktop) process.env.PIWI_BASE_URL = e2eTarget.baseUrl;
 
 // CI runs every test server from the production output built once by the
 // workflow; locally each server compiles on demand.
@@ -86,7 +95,12 @@ const baseConfig = defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: 'http://localhost:3000',
+    baseURL: e2eTarget.baseUrl,
+
+    // Present the desktop access token on every request the browser context and
+    // the `request` fixture make, so the loopback guard lets them through. Empty
+    // (and so a no-op) when not targeting the desktop.
+    extraHTTPHeaders: targetAuthHeaders(e2eTarget),
 
     /* Trace on failure, with per-action DOM, ARIA and screenshot snapshots so the
        evidence timeline can show the page at each step. See https://playwright.dev/docs/trace-viewer */
@@ -127,113 +141,119 @@ const baseConfig = defineConfig({
     */
   ],
 
-  /* Run your local dev server before starting the tests */
-  webServer: [
-    {
-      command: serverCommand,
-      url: 'http://localhost:3000',
-      reuseExistingServer: !process.env.CI,
-      timeout: 60 * 1000,
-    },
-    // Auth-enabled server used by reporter-with-auth.spec.ts.
-    // Only started in CI; the corresponding tests are skipped when CI is not set.
-    ...(process.env.CI
-      ? [
-          {
-            command: serverCommand,
-            url: 'http://localhost:3099/api/auth/me',
-            env: {
-              ...authServerEnv('test-auth-secret-key-for-reporter-tests'),
-              PIWI_DATABASE_PATH: join(process.cwd(), '.test-temp', 'auth-test.db'),
-              PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'auth-test-storage'),
-              NITRO_PORT: '3099',
-              PIWI_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-auth'),
-              // Pin to isolated SQLite + local storage so the CI storage/db matrix
-              // (inherited via process.env) can't repoint this server's backend.
-              PIWI_DATABASE_URL: '',
-              PIWI_STORAGE_TYPE: 'local',
-            },
-            reuseExistingServer: false,
-            timeout: 90 * 1000,
-          },
-          // Notifications server used by notifications.spec.ts.
-          // Auth-enabled, no SMTP (channel test endpoint verifies SMTP-not-configured path).
-          {
-            command: serverCommand,
-            url: 'http://localhost:3097/api/auth/me',
-            env: {
-              ...authServerEnv('test-auth-secret-key-for-notifications-tests'),
-              PIWI_DATABASE_PATH: join(process.cwd(), '.test-temp', 'notif-test.db'),
-              PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'notif-test-storage'),
-              NITRO_PORT: '3097',
-              PIWI_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-notif'),
-              // Pin to isolated SQLite + local storage so the CI storage/db matrix
-              // (inherited via process.env) can't repoint this server's backend.
-              PIWI_DATABASE_URL: '',
-              PIWI_STORAGE_TYPE: 'local',
-            },
-            reuseExistingServer: false,
-            timeout: 90 * 1000,
-          },
-        ]
-      : []),
-    // Auth+email server used by email-notifications.spec.ts.
-    // Requires a Mailpit instance (docker run -p 1025:1025 -p 8025:8025 axllent/mailpit).
-    // Set PIWI_MAILPIT_URL=http://localhost:8025 to opt in; tests are skipped otherwise.
-    ...(process.env.PIWI_MAILPIT_URL
-      ? [
-          {
-            command: serverCommand,
-            url: 'http://localhost:3098/api/auth/me',
-            env: {
-              ...authServerEnv('test-email-secret-key-for-mailpit-tests'),
-              PIWI_DATABASE_PATH: join(process.cwd(), '.test-temp', 'email-test.db'),
-              PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'email-test-storage'),
-              NITRO_PORT: '3098',
-              PIWI_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-email'),
-              PIWI_SMTP_HOST: 'localhost',
-              PIWI_SMTP_PORT: process.env.PIWI_MAILPIT_SMTP_PORT ?? '1025',
-              PIWI_SMTP_USER: 'test',
-              PIWI_SMTP_PASS: 'test',
-              PIWI_SMTP_FROM: 'noreply@piwi.test',
-              PIWI_SMTP_FROM_NAME: 'Piwi Test',
-              // Pin to isolated SQLite + local storage so the CI storage/db matrix
-              // (inherited via process.env) can't repoint this server's backend.
-              PIWI_DATABASE_URL: '',
-              PIWI_STORAGE_TYPE: 'local',
-            },
-            reuseExistingServer: !process.env.CI,
-            timeout: 90 * 1000,
-          },
-        ]
-      : []),
-    // PostgreSQL-backed server used by postgresql.spec.ts.
-    // Only started when PIWI_POSTGRES_TEST_URL is set; the corresponding tests are skipped otherwise.
-    ...(process.env.PIWI_POSTGRES_TEST_URL
-      ? [
-          {
-            command: serverCommand,
-            url: 'http://localhost:3101',
-            env: {
-              PIWI_DATABASE_URL: process.env.PIWI_POSTGRES_TEST_URL,
-              PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'pg-test-storage'),
-              NITRO_PORT: '3101',
-              // Keep this server on local storage regardless of the CI storage
-              // matrix; it exists to exercise the PostgreSQL backend in isolation.
-              PIWI_STORAGE_TYPE: 'local',
-            },
-            reuseExistingServer: false,
-            timeout: 90 * 1000,
-          },
-        ]
-      : []),
-  ],
+  /* Run your local dev server before starting the tests. In desktop mode the app
+     is already running (we adopt it), so Playwright starts no server of its own. */
+  webServer: e2eTarget.desktop
+    ? undefined
+    : [
+        {
+          command: serverCommand,
+          url: 'http://localhost:3000',
+          reuseExistingServer: !process.env.CI,
+          timeout: 60 * 1000,
+        },
+        // Auth-enabled server used by reporter-with-auth.spec.ts.
+        // Only started in CI; the corresponding tests are skipped when CI is not set.
+        ...(process.env.CI
+          ? [
+              {
+                command: serverCommand,
+                url: 'http://localhost:3099/api/auth/me',
+                env: {
+                  ...authServerEnv('test-auth-secret-key-for-reporter-tests'),
+                  PIWI_DATABASE_PATH: join(process.cwd(), '.test-temp', 'auth-test.db'),
+                  PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'auth-test-storage'),
+                  NITRO_PORT: '3099',
+                  PIWI_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-auth'),
+                  // Pin to isolated SQLite + local storage so the CI storage/db matrix
+                  // (inherited via process.env) can't repoint this server's backend.
+                  PIWI_DATABASE_URL: '',
+                  PIWI_STORAGE_TYPE: 'local',
+                },
+                reuseExistingServer: false,
+                timeout: 90 * 1000,
+              },
+              // Notifications server used by notifications.spec.ts.
+              // Auth-enabled, no SMTP (channel test endpoint verifies SMTP-not-configured path).
+              {
+                command: serverCommand,
+                url: 'http://localhost:3097/api/auth/me',
+                env: {
+                  ...authServerEnv('test-auth-secret-key-for-notifications-tests'),
+                  PIWI_DATABASE_PATH: join(process.cwd(), '.test-temp', 'notif-test.db'),
+                  PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'notif-test-storage'),
+                  NITRO_PORT: '3097',
+                  PIWI_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-notif'),
+                  // Pin to isolated SQLite + local storage so the CI storage/db matrix
+                  // (inherited via process.env) can't repoint this server's backend.
+                  PIWI_DATABASE_URL: '',
+                  PIWI_STORAGE_TYPE: 'local',
+                },
+                reuseExistingServer: false,
+                timeout: 90 * 1000,
+              },
+            ]
+          : []),
+        // Auth+email server used by email-notifications.spec.ts.
+        // Requires a Mailpit instance (docker run -p 1025:1025 -p 8025:8025 axllent/mailpit).
+        // Set PIWI_MAILPIT_URL=http://localhost:8025 to opt in; tests are skipped otherwise.
+        ...(process.env.PIWI_MAILPIT_URL
+          ? [
+              {
+                command: serverCommand,
+                url: 'http://localhost:3098/api/auth/me',
+                env: {
+                  ...authServerEnv('test-email-secret-key-for-mailpit-tests'),
+                  PIWI_DATABASE_PATH: join(process.cwd(), '.test-temp', 'email-test.db'),
+                  PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'email-test-storage'),
+                  NITRO_PORT: '3098',
+                  PIWI_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-email'),
+                  PIWI_SMTP_HOST: 'localhost',
+                  PIWI_SMTP_PORT: process.env.PIWI_MAILPIT_SMTP_PORT ?? '1025',
+                  PIWI_SMTP_USER: 'test',
+                  PIWI_SMTP_PASS: 'test',
+                  PIWI_SMTP_FROM: 'noreply@piwi.test',
+                  PIWI_SMTP_FROM_NAME: 'Piwi Test',
+                  // Pin to isolated SQLite + local storage so the CI storage/db matrix
+                  // (inherited via process.env) can't repoint this server's backend.
+                  PIWI_DATABASE_URL: '',
+                  PIWI_STORAGE_TYPE: 'local',
+                },
+                reuseExistingServer: !process.env.CI,
+                timeout: 90 * 1000,
+              },
+            ]
+          : []),
+        // PostgreSQL-backed server used by postgresql.spec.ts.
+        // Only started when PIWI_POSTGRES_TEST_URL is set; the corresponding tests are skipped otherwise.
+        ...(process.env.PIWI_POSTGRES_TEST_URL
+          ? [
+              {
+                command: serverCommand,
+                url: 'http://localhost:3101',
+                env: {
+                  PIWI_DATABASE_URL: process.env.PIWI_POSTGRES_TEST_URL,
+                  PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'pg-test-storage'),
+                  NITRO_PORT: '3101',
+                  // Keep this server on local storage regardless of the CI storage
+                  // matrix; it exists to exercise the PostgreSQL backend in isolation.
+                  PIWI_STORAGE_TYPE: 'local',
+                },
+                reuseExistingServer: false,
+                timeout: 90 * 1000,
+              },
+            ]
+          : []),
+      ],
 });
 
 export default process.env.CI
   ? baseConfig
   : wrapConfig(baseConfig, {
-      serverUrl: 'http://localhost:3000',
+      serverUrl: e2eTarget.baseUrl,
+      // Stream this suite's own results to the desktop app too, authenticated
+      // with its token. Left unset (and so no bearer) against the local server.
+      ...(e2eTarget.token ? { apiKey: e2eTarget.token } : {}),
       projectName: 'Piwi Dashboard',
       projectDescription: 'The Piwi Dashboard project',
       streaming: true,

@@ -176,6 +176,10 @@ To create additional users:
 2. Click **Add user**
 3. Set username, password, role, and optional display name
 
+### Changing a role
+
+Each row's **Role** column is an inline selector — pick a new role to reassign it immediately (the user's active sessions are revoked so the change takes effect at once). This is the only way to change an existing account's role, including accounts provisioned through [OAuth](#oauth-google-github), which always self-register with the **User** role. The **last remaining administrator cannot be demoted**, so an instance can never be left without one.
+
 ## Project access
 
 Administrators see every project. **Reporter** and **User** accounts see only the projects they are **assigned** to — so you can give each team its own slice of the dashboard.

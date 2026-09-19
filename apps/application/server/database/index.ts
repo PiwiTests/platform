@@ -29,6 +29,26 @@ export function getDialect(): 'postgres' | 'sqlite' {
   return databaseUrl ? 'postgres' : 'sqlite';
 }
 
+/**
+ * Kick off the trace-resource link backfill in the background. Detached on
+ * purpose: the first run after upgrade may read many trace manifests, and
+ * blocking startup on it would delay the first request. Per-resource cleanup
+ * keeps its safe whole-project fallback until a project is fully indexed, so
+ * running this lazily never risks a premature delete. Imported dynamically to
+ * avoid a module cycle (the util imports this file for `getDatabase`).
+ */
+function backfillTraceResourceLinks(): void {
+  void (async () => {
+    try {
+      const { backfillTraceBlobResources } = await import('../utils/trace-blobs');
+      const indexed = await backfillTraceBlobResources(db);
+      if (indexed > 0) console.log(`[Database] Trace-resource backfill indexed ${indexed} blob(s)`);
+    } catch (err) {
+      console.error('[Database] Trace-resource backfill failed:', err);
+    }
+  })();
+}
+
 export async function initDatabase() {
   if (!db) {
     if (databaseUrl) {
@@ -63,6 +83,7 @@ export async function initDatabase() {
           } catch (rcErr) {
             console.error('[Database] Failure-cluster re-fingerprinting failed:', rcErr);
           }
+          backfillTraceResourceLinks();
         } catch (error) {
           console.error('[Database] Migration error:', error);
           throw error;
@@ -120,6 +141,7 @@ export async function initDatabase() {
           } catch (rcErr) {
             console.error('[Database] Failure-cluster re-fingerprinting failed:', rcErr);
           }
+          backfillTraceResourceLinks();
         } catch (error) {
           console.error('[Database] Migration error:', error);
           throw error;

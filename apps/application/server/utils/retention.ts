@@ -20,7 +20,7 @@ import {
   testRuns,
   testRunsCases,
 } from '../database/schema';
-import { deleteFileRow, deleteRunStorageDir } from './delete-run-files';
+import { deleteFileRow, deleteRunStorageDir, gcTraceBlobs } from './delete-run-files';
 import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -40,27 +40,39 @@ export interface DeleteRunsResult {
 }
 
 /**
- * Delete all test runs older than the cutoff, including their stored files
- * and every dependent row.
+ * Delete a set of test runs by id, including their stored files, their
+ * deduplicated trace blobs (once nothing else references them) and every
+ * dependent row. The single deletion path shared by the per-run delete endpoint
+ * and the age-based sweep, so both behave identically.
  *
  * Child rows are deleted explicitly, in FK order, rather than relying on
  * ON DELETE actions: SQLite foreign-key enforcement is a per-connection
  * pragma (historically supplied only by a libsql driver default, not by
  * every client that opens the file), and file/blob cleanup needs the rows
  * before they disappear. The result is identical on both dialects.
+ *
+ * Trace-blob storage is freed by {@link gcTraceBlobs} AFTER the `files` rows are
+ * gone, so a blob shared by several deleted rows (or by another run) is counted
+ * correctly — a per-row refcount taken before deletion sees the not-yet-deleted
+ * siblings and leaks the blob.
  */
-export async function deleteRunsOlderThan(db: DbClient, olderThanDays: number): Promise<DeleteRunsResult> {
-  const cutoffDate = new Date(Date.now() - olderThanDays * MS_PER_DAY);
+export async function deleteRunsByIds(db: DbClient, runIds: number[]): Promise<DeleteRunsResult> {
+  if (runIds.length === 0) return { deletedRuns: 0, deletedCases: 0 };
 
-  const oldRuns = await db
-    .select({ id: testRuns.id, projectId: testRuns.projectId })
-    .from(testRuns)
-    .where(lt(testRuns.startTime, cutoffDate));
-  if (oldRuns.length === 0) return { deletedRuns: 0, deletedCases: 0 };
-  const runIds = oldRuns.map((r) => r.id);
+  const runs: { id: number; projectId: number }[] = [];
+  for (const batch of batches(runIds)) {
+    runs.push(
+      ...(await db
+        .select({ id: testRuns.id, projectId: testRuns.projectId })
+        .from(testRuns)
+        .where(inArray(testRuns.id, batch))),
+    );
+  }
+  if (runs.length === 0) return { deletedRuns: 0, deletedCases: 0 };
+  const presentRunIds = runs.map((r) => r.id);
 
   const runsCases: { id: number; failureClusterId: number | null }[] = [];
-  for (const batch of batches(runIds)) {
+  for (const batch of batches(presentRunIds)) {
     runsCases.push(
       ...(await db
         .select({ id: testRunsCases.id, failureClusterId: testRunsCases.failureClusterId })
@@ -92,27 +104,37 @@ export async function deleteRunsOlderThan(db: DbClient, olderThanDays: number): 
     }
   }
 
-  // Files first: storage objects (with trace-blob refcounting) need their rows.
+  // Files: delete each row's own storage, delete the rows, then GC any trace
+  // blob those rows were the last to reference. The blob ids are collected
+  // before deletion but reference-counted after, so the count is honest.
+  const candidateBlobIds: Array<number | null> = [];
   for (const batch of batches(caseIds)) {
     const caseFiles = await db.select().from(files).where(inArray(files.testRunsCaseId, batch));
-    for (const file of caseFiles) await deleteFileRow(file);
+    for (const file of caseFiles) {
+      candidateBlobIds.push(file.blobId);
+      await deleteFileRow(file);
+    }
     await db.delete(files).where(inArray(files.testRunsCaseId, batch));
   }
-  for (const batch of batches(runIds)) {
+  for (const batch of batches(presentRunIds)) {
     const runFiles = await db.select().from(files).where(inArray(files.testRunId, batch));
-    for (const file of runFiles) await deleteFileRow(file);
+    for (const file of runFiles) {
+      candidateBlobIds.push(file.blobId);
+      await deleteFileRow(file);
+    }
     await db.delete(files).where(inArray(files.testRunId, batch));
   }
+  await gcTraceBlobs(db, candidateBlobIds);
 
   // Sweep each run's storage directory to remove any run-scoped object not
   // tracked in `files` (or orphaned by an earlier failed cleanup). Shared
   // deduplicated blobs and trace resources live outside these directories.
-  for (const run of oldRuns) {
+  for (const run of runs) {
     await deleteRunStorageDir(run.projectId, run.id);
   }
 
   // Dependent rows of the doomed cases/runs.
-  for (const batch of batches(runIds)) {
+  for (const batch of batches(presentRunIds)) {
     await db.delete(networkRequests).where(inArray(networkRequests.testRunId, batch));
     await db.delete(entityLinks).where(inArray(entityLinks.testRunId, batch));
   }
@@ -140,17 +162,17 @@ export async function deleteRunsOlderThan(db: DbClient, olderThanDays: number): 
   }
 
   // Locator snapshots survive their run; only the pointer is cleared.
-  for (const batch of batches(runIds)) {
+  for (const batch of batches(presentRunIds)) {
     await db
       .update(locatorSnapshots)
       .set({ lastSeenRunId: null })
       .where(inArray(locatorSnapshots.lastSeenRunId, batch));
   }
 
-  for (const batch of batches(runIds)) {
+  for (const batch of batches(presentRunIds)) {
     await db.delete(testRunsCases).where(inArray(testRunsCases.testRunId, batch));
   }
-  for (const batch of batches(runIds)) {
+  for (const batch of batches(presentRunIds)) {
     await db.delete(testRuns).where(inArray(testRuns.id, batch));
   }
 
@@ -163,7 +185,20 @@ export async function deleteRunsOlderThan(db: DbClient, olderThanDays: number): 
     await recomputeClusterOccurrences(db, clusterId);
   }
 
-  return { deletedRuns: runIds.length, deletedCases: caseIds.length };
+  return { deletedRuns: presentRunIds.length, deletedCases: caseIds.length };
+}
+
+/**
+ * Delete all test runs older than the cutoff. Thin wrapper over
+ * {@link deleteRunsByIds}, which owns the full deletion.
+ */
+export async function deleteRunsOlderThan(db: DbClient, olderThanDays: number): Promise<DeleteRunsResult> {
+  const cutoffDate = new Date(Date.now() - olderThanDays * MS_PER_DAY);
+  const oldRuns = await db.select({ id: testRuns.id }).from(testRuns).where(lt(testRuns.startTime, cutoffDate));
+  return deleteRunsByIds(
+    db,
+    oldRuns.map((r) => r.id),
+  );
 }
 
 /**

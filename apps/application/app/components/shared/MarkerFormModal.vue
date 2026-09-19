@@ -38,9 +38,13 @@ function toLocalInput(value: string | Date): string {
 }
 
 // Populate the form whenever the modal opens (create → now, edit → marker).
+// `immediate` matters because the modal can be mounted already-open — the chart
+// marker-click flow sets the target marker and opens the modal in the same tick
+// the surrounding slide-over mounts, so `open` never transitions after mount.
+// Watching `marker` too keeps the form in sync if the target changes while open.
 watch(
-  () => props.open,
-  (isOpen) => {
+  [() => props.open, () => props.marker],
+  ([isOpen]) => {
     if (!isOpen) return;
     if (props.marker) {
       state.label = props.marker.label;
@@ -56,6 +60,7 @@ watch(
       state.description = '';
     }
   },
+  { immediate: true },
 );
 
 async function handleSave() {

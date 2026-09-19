@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "4eda7ad7-a58c-4f7e-8925-cd037d8859b5",
-  "prevId": "31e11a75-b644-4366-a958-03740f938503",
+  "id": "3d333d08-77cc-4999-b0a7-157514df46b3",
+  "prevId": "3421f9d2-a94e-4fe9-aca8-0042550bc919",
   "tables": {
     "account_tokens": {
       "name": "account_tokens",
@@ -1524,6 +1524,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "branch": {
+          "name": "branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "confidence": {
           "name": "confidence",
           "type": "real",
@@ -1576,10 +1583,17 @@
         }
       },
       "indexes": {
-        "idx_graph_edges_unique": {
-          "name": "idx_graph_edges_unique",
+        "idx_graph_edges_canonical": {
+          "name": "idx_graph_edges_canonical",
           "columns": ["project_id", "from_kind", "from_key", "kind", "to_kind", "to_key"],
-          "isUnique": true
+          "isUnique": true,
+          "where": "\"graph_edges\".\"branch\" is null"
+        },
+        "idx_graph_edges_branch": {
+          "name": "idx_graph_edges_branch",
+          "columns": ["project_id", "from_kind", "from_key", "kind", "to_kind", "to_key", "branch"],
+          "isUnique": true,
+          "where": "\"graph_edges\".\"branch\" is not null"
         },
         "idx_graph_edges_from": {
           "name": "idx_graph_edges_from",
@@ -1643,6 +1657,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "branch": {
+          "name": "branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "attrs": {
           "name": "attrs",
           "type": "text",
@@ -1679,6 +1700,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "pruned_at": {
+          "name": "pruned_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "last_seen_at": {
           "name": "last_seen_at",
           "type": "integer",
@@ -1695,14 +1723,26 @@
         }
       },
       "indexes": {
-        "idx_graph_nodes_project_kind_key": {
-          "name": "idx_graph_nodes_project_kind_key",
+        "idx_graph_nodes_canonical": {
+          "name": "idx_graph_nodes_canonical",
           "columns": ["project_id", "kind", "key"],
-          "isUnique": true
+          "isUnique": true,
+          "where": "\"graph_nodes\".\"branch\" is null"
+        },
+        "idx_graph_nodes_branch": {
+          "name": "idx_graph_nodes_branch",
+          "columns": ["project_id", "kind", "key", "branch"],
+          "isUnique": true,
+          "where": "\"graph_nodes\".\"branch\" is not null"
         },
         "idx_graph_nodes_project_kind": {
           "name": "idx_graph_nodes_project_kind",
           "columns": ["project_id", "kind"],
+          "isUnique": false
+        },
+        "idx_graph_nodes_project_kind_branch": {
+          "name": "idx_graph_nodes_project_kind_branch",
+          "columns": ["project_id", "kind", "branch"],
           "isUnique": false
         },
         "idx_graph_nodes_last_seen_at": {
@@ -3127,6 +3167,13 @@
         },
         "default_branch": {
           "name": "default_branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "route_origins": {
+          "name": "route_origins",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -5080,6 +5127,67 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "trace_blob_resources": {
+      "name": "trace_blob_resources",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "blob_id": {
+          "name": "blob_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "resource_id": {
+          "name": "resource_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_trace_blob_resources_blob_resource": {
+          "name": "idx_trace_blob_resources_blob_resource",
+          "columns": ["blob_id", "resource_id"],
+          "isUnique": true
+        },
+        "idx_trace_blob_resources_resource": {
+          "name": "idx_trace_blob_resources_resource",
+          "columns": ["resource_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "trace_blob_resources_blob_id_trace_blobs_id_fk": {
+          "name": "trace_blob_resources_blob_id_trace_blobs_id_fk",
+          "tableFrom": "trace_blob_resources",
+          "tableTo": "trace_blobs",
+          "columnsFrom": ["blob_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "trace_blob_resources_resource_id_trace_resources_id_fk": {
+          "name": "trace_blob_resources_resource_id_trace_resources_id_fk",
+          "tableFrom": "trace_blob_resources",
+          "tableTo": "trace_resources",
+          "columnsFrom": ["resource_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "trace_blobs": {
       "name": "trace_blobs",
       "columns": {
@@ -5117,6 +5225,14 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
+        },
+        "resources_indexed": {
+          "name": "resources_indexed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
         "created_at": {
           "name": "created_at",

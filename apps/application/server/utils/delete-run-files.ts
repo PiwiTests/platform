@@ -1,7 +1,7 @@
 import { posix } from 'path';
 import { getDatabase } from '../database';
-import { files, traceBlobs, traceResources } from '../database/schema';
-import { eq, count } from 'drizzle-orm';
+import { files, traceBlobs, traceResources, traceBlobResources } from '../database/schema';
+import { eq, and, count, isNull } from 'drizzle-orm';
 import { getStorage } from '../storage';
 import type { File } from '../database/schema';
 
@@ -11,17 +11,18 @@ function isProjectRoot(path: string): boolean {
 }
 
 /**
- * Delete a file from storage, with proper handling for shared resources.
+ * Delete a single file's own storage.
  *
  * - Reports: delete the whole report directory when the report has its own
  *   subdirectory; delete just the file when it is stored directly under the
  *   project root (a single-file report, e.g. a blob `.zip`), because deleting
  *   the project root would wipe every other run's storage.
- * - Traces with blobId: reference-counted — only deletes the shared blob
- *   from storage when no other row still references it. When the project's
- *   last blob is removed, also deletes trace-resource files and cleans up
- *   the now-empty blobs/ and trace-resources/ directories.
- * - Other files: single-file deletion
+ * - Deduplicated trace blobs (`blobId` set): NOT touched here. A blob is shared
+ *   across runs and cases, so its storage can only be freed once no surviving
+ *   `files` row references it — {@link gcTraceBlobs} does that after the rows are
+ *   deleted. Deleting it here, before the rows are gone, either leaks the blob
+ *   (when several deleted rows share it) or removes one another run still needs.
+ * - Other files: single-file deletion.
  *
  * Does NOT delete the database row — the caller manages that. Storage errors
  * are logged rather than thrown, so one unreachable object cannot abort the
@@ -29,7 +30,6 @@ function isProjectRoot(path: string): boolean {
  */
 export async function deleteFileRow(file: File): Promise<void> {
   const storage = getStorage();
-  const db = await getDatabase();
 
   try {
     if (file.type === 'report') {
@@ -46,67 +46,165 @@ export async function deleteFileRow(file: File): Promise<void> {
       } else {
         await storage.deleteDirectory(dirPath);
       }
-    } else if (file.type === 'trace' && file.blobId) {
-      // Deduplicated trace blob: only remove from storage when no other
-      // files row references the same blob.
-      const rows = await db.select({ count: count() }).from(files).where(eq(files.blobId, file.blobId));
-      const totalRefs = rows[0]?.count ?? 0;
-
-      if (totalRefs <= 1) {
-        // Last reference — delete the blob file and manifest
-        await storage.deleteFile(file.path);
-
-        const manifestPath = file.path.replace(/\.zip$/, '.manifest.json');
-        try {
-          await storage.deleteFile(manifestPath);
-        } catch {
-          // manifest may not exist
-        }
-
-        // Clean up trace_blobs row
-        await db.delete(traceBlobs).where(eq(traceBlobs.id, file.blobId));
-
-        // Derive project directory from path: project-{id}/blobs/{hash}.zip
-        const blobSepIndex = file.path.indexOf('/blobs/');
-        if (blobSepIndex !== -1) {
-          const projectPrefix = file.path.slice(0, blobSepIndex);
-          const projectIdMatch = projectPrefix.match(/^project-(\d+)$/);
-          if (projectIdMatch) {
-            const projectId = parseInt(projectIdMatch[1]!, 10);
-
-            // Only clean up trace resources once the project has no remaining blobs.
-            // Doing it earlier would remove resources still referenced by other blobs.
-            const remainingRows = await db
-              .select({ remaining: count() })
-              .from(traceBlobs)
-              .where(eq(traceBlobs.projectId, projectId));
-            const remaining = remainingRows[0]?.remaining ?? 0;
-
-            if (remaining === 0) {
-              // Delete all physical trace resource files
-              const resourceRows = await db
-                .select({ path: traceResources.path })
-                .from(traceResources)
-                .where(eq(traceResources.projectId, projectId));
-              for (const r of resourceRows) {
-                await storage.deleteFile(r.path);
-              }
-              await db.delete(traceResources).where(eq(traceResources.projectId, projectId));
-
-              // Clean up now-empty directories
-              await storage.deleteDirectory(`${projectPrefix}/trace-resources`);
-              await storage.deleteDirectory(`${projectPrefix}/blobs`);
-            }
-          }
-        }
-      }
+    } else if (file.blobId) {
+      // Deduplicated trace blob — deferred to gcTraceBlobs (see above).
+      return;
     } else {
-      // Non-deduped file — single file deletion
+      // Non-deduped file — single file deletion.
       await storage.deleteFile(file.path);
     }
   } catch (error) {
     console.warn(`[delete-run] Failed to remove storage for file #${file.id} (${file.path}):`, error);
   }
+}
+
+type Db = Awaited<ReturnType<typeof getDatabase>>;
+
+/** Delete a project's entire shared resource pool and empty its blob/resource dirs. */
+async function reclaimWholeProjectPool(db: Db, projectId: number): Promise<void> {
+  const storage = getStorage();
+  const resourceRows = await db
+    .select({ path: traceResources.path })
+    .from(traceResources)
+    .where(eq(traceResources.projectId, projectId));
+  try {
+    for (const r of resourceRows) await storage.deleteFile(r.path);
+    await storage.deleteDirectory(`project-${projectId}/trace-resources`);
+    await storage.deleteDirectory(`project-${projectId}/blobs`);
+  } catch (error) {
+    console.warn(`[delete-run] Failed to remove trace resources for project ${projectId}:`, error);
+  }
+  await db.delete(traceResources).where(eq(traceResources.projectId, projectId));
+}
+
+/**
+ * Reference-count and free deduplicated trace blobs — and now their individual
+ * shared resources — after the referencing `files` rows have been deleted.
+ *
+ * Runs AFTER the rows are gone so the count reflects only survivors: a blob is
+ * removed exactly when nothing else points at it, whether several rows in one
+ * delete batch shared it (which a per-row refcount got wrong — it saw the
+ * not-yet-deleted siblings) or it was the last reference across runs.
+ *
+ * Resources are reclaimed per blob via the `trace_blob_resources` join table: a
+ * resource goes as soon as no surviving blob references it, so deleting *some*
+ * runs frees the resources unique to them. The join table is only trusted for a
+ * project whose blobs are ALL indexed (`resources_indexed`); until backfill
+ * catches up, such a project keeps the safe whole-project rule — resources go
+ * only when its last blob does. A project with no blobs left always has its pool
+ * removed wholesale.
+ *
+ * Storage errors are logged, never thrown, so one unreachable object cannot
+ * abort the rest of a deletion.
+ */
+export async function gcTraceBlobs(db: Db, blobIds: Array<number | null | undefined>): Promise<void> {
+  const ids = [...new Set(blobIds.filter((id): id is number => typeof id === 'number'))];
+  if (ids.length === 0) return;
+  const storage = getStorage();
+  // Resources each removed blob referenced, grouped by project — the candidates
+  // for per-resource reclaim once the blobs (and their links) are gone.
+  const candidatesByProject = new Map<number, Set<number>>();
+
+  for (const blobId of ids) {
+    const refs = await db.select({ n: count() }).from(files).where(eq(files.blobId, blobId));
+    if ((refs[0]?.n ?? 0) > 0) continue; // a surviving row still needs it
+
+    const rows = await db.select().from(traceBlobs).where(eq(traceBlobs.id, blobId));
+    const blob = rows[0];
+    if (!blob) continue;
+
+    const links = await db
+      .select({ resourceId: traceBlobResources.resourceId })
+      .from(traceBlobResources)
+      .where(eq(traceBlobResources.blobId, blobId));
+    const candidates = candidatesByProject.get(blob.projectId) ?? new Set<number>();
+    for (const l of links) candidates.add(l.resourceId);
+    candidatesByProject.set(blob.projectId, candidates);
+
+    try {
+      await storage.deleteFile(blob.path);
+      await storage.deleteFile(blob.path.replace(/\.zip$/, '.manifest.json'));
+    } catch (error) {
+      console.warn(`[delete-run] Failed to remove trace blob storage (${blob.path}):`, error);
+    }
+    await db.delete(traceBlobResources).where(eq(traceBlobResources.blobId, blobId));
+    await db.delete(traceBlobs).where(eq(traceBlobs.id, blobId));
+  }
+
+  for (const [projectId, candidates] of candidatesByProject) {
+    const remaining = await db.select({ n: count() }).from(traceBlobs).where(eq(traceBlobs.projectId, projectId));
+    if ((remaining[0]?.n ?? 0) === 0) {
+      await reclaimWholeProjectPool(db, projectId);
+      continue;
+    }
+
+    // Only trust the join table once every blob in the project is indexed.
+    const unindexed = await db
+      .select({ n: count() })
+      .from(traceBlobs)
+      .where(and(eq(traceBlobs.projectId, projectId), eq(traceBlobs.resourcesIndexed, false)));
+    if ((unindexed[0]?.n ?? 0) > 0) continue; // partially indexed → keep resources (safe)
+
+    for (const resourceId of candidates) {
+      const stillUsed = await db
+        .select({ n: count() })
+        .from(traceBlobResources)
+        .where(eq(traceBlobResources.resourceId, resourceId));
+      if ((stillUsed[0]?.n ?? 0) > 0) continue; // another surviving blob needs it
+
+      const res = await db
+        .select({ path: traceResources.path })
+        .from(traceResources)
+        .where(eq(traceResources.id, resourceId));
+      const path = res[0]?.path;
+      if (!path) continue;
+      try {
+        await storage.deleteFile(path);
+      } catch (error) {
+        console.warn(`[delete-run] Failed to remove trace resource (${path}):`, error);
+      }
+      await db.delete(traceResources).where(eq(traceResources.id, resourceId));
+    }
+  }
+}
+
+/**
+ * Nightly mop-up: remove shared resources nothing references any more. Catches
+ * stragglers a per-delete pass could not — resources orphaned before
+ * refcounting existed, or left by a blob whose links were only just backfilled.
+ * Same safety gate as {@link gcTraceBlobs}: a resource is only removed when its
+ * project is fully indexed, so a not-yet-backfilled blob can never lose a
+ * resource it still needs. Returns how many resources it freed.
+ */
+export async function reclaimOrphanTraceResources(db: Db): Promise<number> {
+  const storage = getStorage();
+
+  // Projects with an un-indexed blob are not safe to reason about by join rows.
+  const unindexedRows = await db
+    .select({ projectId: traceBlobs.projectId })
+    .from(traceBlobs)
+    .where(eq(traceBlobs.resourcesIndexed, false));
+  const notReady = new Set(unindexedRows.map((r) => r.projectId));
+
+  // Resources with no join row at all (anti-join: no matching trace_blob_resources).
+  const orphans = await db
+    .select({ id: traceResources.id, path: traceResources.path, projectId: traceResources.projectId })
+    .from(traceResources)
+    .leftJoin(traceBlobResources, eq(traceBlobResources.resourceId, traceResources.id))
+    .where(isNull(traceBlobResources.id));
+
+  let removed = 0;
+  for (const r of orphans) {
+    if (notReady.has(r.projectId)) continue;
+    try {
+      await storage.deleteFile(r.path);
+    } catch (error) {
+      console.warn(`[delete-run] Failed to remove orphan trace resource (${r.path}):`, error);
+    }
+    await db.delete(traceResources).where(eq(traceResources.id, r.id));
+    removed++;
+  }
+  return removed;
 }
 
 /**
@@ -115,7 +213,7 @@ export async function deleteFileRow(file: File): Promise<void> {
  * videos, attachments and visual diffs. A trailing separator keeps the sweep
  * exact, so removing run 1 never touches run 10. Shared, deduplicated objects
  * (`project-{id}/blobs/`, `project-{id}/trace-resources/`) live outside this
- * directory and are reference-counted by `deleteFileRow`, so they are left
+ * directory and are reference-counted by {@link gcTraceBlobs}, so they are left
  * untouched here.
  *
  * This is a backstop for run deletion: it removes files that were orphaned by

@@ -1,1 +1,0 @@
-ALTER TABLE "graph_nodes" ADD COLUMN "pruned_at" timestamp;

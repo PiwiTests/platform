@@ -8,6 +8,7 @@ import {
   reclaimSpace,
   sweepOrphans,
 } from '../../utils/retention';
+import { reclaimOrphanTraceResources } from '../../utils/delete-run-files';
 
 function envInt(name: string): number | null {
   const raw = process.env[name];
@@ -37,6 +38,10 @@ export default defineTask({
     const orphans = await sweepOrphans(db);
     const orphanTotal = Object.values(orphans).reduce((a, b) => a + b, 0);
     if (orphanTotal > 0) result.orphansRemoved = orphanTotal;
+
+    // Free shared trace resources nothing references any more (in fully-indexed projects).
+    const orphanResources = await reclaimOrphanTraceResources(db);
+    if (orphanResources > 0) result.orphanResourcesRemoved = orphanResources;
 
     const notificationDays = envInt('PIWI_RETENTION_NOTIFICATION_DAYS') ?? 30;
     if (notificationDays > 0) {

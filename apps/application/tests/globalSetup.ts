@@ -1,7 +1,11 @@
+import { resolveE2ETarget, targetAuthHeaders } from './desktop-target';
+
 async function preCleanup() {
+  const target = resolveE2ETarget();
   try {
-    const response = await fetch('http://localhost:3000/api/tests/cleanup', {
+    const response = await fetch(`${target.baseUrl}/api/tests/cleanup`, {
       method: 'DELETE',
+      headers: targetAuthHeaders(target),
     });
     if (!response.ok) {
       console.warn(`[Setup Cleanup] Failed: ${response.status} ${await response.text()}`);

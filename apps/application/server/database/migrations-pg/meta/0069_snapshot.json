@@ -1,6 +1,6 @@
 {
-  "id": "e756a20a-c0fd-4d0f-a5ff-a526596c2529",
-  "prevId": "91177dd5-2cb9-4052-ab9a-008d21b55e7b",
+  "id": "48035b1a-ab17-4a8c-b9fb-894b5dd9d1eb",
+  "prevId": "80ba03a6-d17c-4381-909a-d97eb28bb829",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1727,6 +1727,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "branch": {
+          "name": "branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "confidence": {
           "name": "confidence",
           "type": "double precision",
@@ -1772,8 +1778,8 @@
         }
       },
       "indexes": {
-        "idx_graph_edges_unique": {
-          "name": "idx_graph_edges_unique",
+        "idx_graph_edges_canonical": {
+          "name": "idx_graph_edges_canonical",
           "columns": [
             {
               "expression": "project_id",
@@ -1813,6 +1819,59 @@
             }
           ],
           "isUnique": true,
+          "where": "\"graph_edges\".\"branch\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_graph_edges_branch": {
+          "name": "idx_graph_edges_branch",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "from_kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "from_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "to_kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "to_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "branch",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"graph_edges\".\"branch\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1938,6 +1997,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "branch": {
+          "name": "branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "attrs": {
           "name": "attrs",
           "type": "jsonb",
@@ -1969,6 +2034,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "pruned_at": {
+          "name": "pruned_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
         "last_seen_at": {
           "name": "last_seen_at",
           "type": "timestamp",
@@ -1983,8 +2054,8 @@
         }
       },
       "indexes": {
-        "idx_graph_nodes_project_kind_key": {
-          "name": "idx_graph_nodes_project_kind_key",
+        "idx_graph_nodes_canonical": {
+          "name": "idx_graph_nodes_canonical",
           "columns": [
             {
               "expression": "project_id",
@@ -2006,6 +2077,41 @@
             }
           ],
           "isUnique": true,
+          "where": "\"graph_nodes\".\"branch\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_graph_nodes_branch": {
+          "name": "idx_graph_nodes_branch",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "branch",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"graph_nodes\".\"branch\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2021,6 +2127,33 @@
             },
             {
               "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_graph_nodes_project_kind_branch": {
+          "name": "idx_graph_nodes_project_kind_branch",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "branch",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -3785,6 +3918,12 @@
         "default_branch": {
           "name": "default_branch",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "route_origins": {
+          "name": "route_origins",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -6149,6 +6288,93 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.trace_blob_resources": {
+      "name": "trace_blob_resources",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "blob_id": {
+          "name": "blob_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resource_id": {
+          "name": "resource_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "idx_trace_blob_resources_blob_resource": {
+          "name": "idx_trace_blob_resources_blob_resource",
+          "columns": [
+            {
+              "expression": "blob_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "resource_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_trace_blob_resources_resource": {
+          "name": "idx_trace_blob_resources_resource",
+          "columns": [
+            {
+              "expression": "resource_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "trace_blob_resources_blob_id_trace_blobs_id_fk": {
+          "name": "trace_blob_resources_blob_id_trace_blobs_id_fk",
+          "tableFrom": "trace_blob_resources",
+          "tableTo": "trace_blobs",
+          "columnsFrom": ["blob_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "trace_blob_resources_resource_id_trace_resources_id_fk": {
+          "name": "trace_blob_resources_resource_id_trace_resources_id_fk",
+          "tableFrom": "trace_blob_resources",
+          "tableTo": "trace_resources",
+          "columnsFrom": ["resource_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.trace_blobs": {
       "name": "trace_blobs",
       "schema": "",
@@ -6182,6 +6408,13 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "resources_indexed": {
+          "name": "resources_indexed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "created_at": {
           "name": "created_at",

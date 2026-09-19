@@ -629,12 +629,38 @@ export const traceBlobs = pgTable(
     hash: text('hash').notNull(), // SHA-256 hex digest of the trace file content
     path: text('path').notNull(), // content-addressed path: project-{id}/blobs/{hash}.zip
     size: integer('size').notNull(),
+    // True once this blob's trace_blob_resources rows exist (written at ingest, or
+    // backfilled from its manifest). Per-resource GC only trusts the join table
+    // for a project whose blobs are all indexed; false blobs keep the whole-project
+    // fallback until backfill catches up.
+    resourcesIndexed: boolean('resources_indexed').notNull().default(false),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
   },
   (table) => ({
     projectHashIdx: uniqueIndex('idx_trace_blobs_project_hash').on(table.projectId, table.hash),
+  }),
+);
+
+// Join table — which shared resources each trace blob references. Lets a partial
+// delete reclaim a resource as soon as no surviving blob references it, instead
+// of waiting for the project to lose its last blob. Both sides cascade so the
+// link disappears with either end.
+export const traceBlobResources = pgTable(
+  'trace_blob_resources',
+  {
+    id: serial('id').primaryKey(),
+    blobId: integer('blob_id')
+      .notNull()
+      .references(() => traceBlobs.id, { onDelete: 'cascade' }),
+    resourceId: integer('resource_id')
+      .notNull()
+      .references(() => traceResources.id, { onDelete: 'cascade' }),
+  },
+  (table) => ({
+    blobResourceIdx: uniqueIndex('idx_trace_blob_resources_blob_resource').on(table.blobId, table.resourceId),
+    resourceIdx: index('idx_trace_blob_resources_resource').on(table.resourceId),
   }),
 );
 
@@ -1363,6 +1389,8 @@ export type TraceBlob = typeof traceBlobs.$inferSelect;
 export type NewTraceBlob = typeof traceBlobs.$inferInsert;
 export type TraceResource = typeof traceResources.$inferSelect;
 export type NewTraceResource = typeof traceResources.$inferInsert;
+export type TraceBlobResource = typeof traceBlobResources.$inferSelect;
+export type NewTraceBlobResource = typeof traceBlobResources.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type ApiKey = typeof apiKeys.$inferSelect;

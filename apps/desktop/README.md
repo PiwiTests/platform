@@ -96,6 +96,13 @@ npm run e2e                                      # launches `tauri dev --feature
 CI runs this on macOS (real webview, no display server needed) on desktop
 changes — see `.github/workflows/desktop-e2e.yml`.
 
+This `e2e/` suite is a **shell smoke test** (the real webview calling native
+commands). To exercise the *dashboard's* full E2E suite against a running
+desktop app instead — the same server, driven through its loopback origin —
+launch the app and run `npm run app:test:desktop` from `apps/application/`
+(`PIWI_DESKTOP_E2E=1`); it adopts the app's URL + token from `~/.piwi/desktop.json`.
+See [`apps/application/tests/README.md`](../application/tests/README.md#against-the-running-desktop-app).
+
 ## Signing
 
 Installers are **unsigned** unless code-signing secrets are configured, in which

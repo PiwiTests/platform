@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "31e11a75-b644-4366-a958-03740f938503",
+  "id": "3421f9d2-a94e-4fe9-aca8-0042550bc919",
   "prevId": "6305eac7-8c44-40dd-8706-48f2a6564e93",
   "tables": {
     "account_tokens": {
@@ -1465,260 +1465,6 @@
           "columnsFrom": ["blob_id"],
           "columnsTo": ["id"],
           "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "graph_edges": {
-      "name": "graph_edges",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "from_kind": {
-          "name": "from_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "from_key": {
-          "name": "from_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "to_kind": {
-          "name": "to_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "to_key": {
-          "name": "to_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "confidence": {
-          "name": "confidence",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "origin": {
-          "name": "origin",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'observed'"
-        },
-        "evidence": {
-          "name": "evidence",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "first_seen_run_id": {
-          "name": "first_seen_run_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "last_seen_run_id": {
-          "name": "last_seen_run_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "last_seen_at": {
-          "name": "last_seen_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "idx_graph_edges_unique": {
-          "name": "idx_graph_edges_unique",
-          "columns": ["project_id", "from_kind", "from_key", "kind", "to_kind", "to_key"],
-          "isUnique": true
-        },
-        "idx_graph_edges_from": {
-          "name": "idx_graph_edges_from",
-          "columns": ["project_id", "from_kind", "from_key"],
-          "isUnique": false
-        },
-        "idx_graph_edges_to": {
-          "name": "idx_graph_edges_to",
-          "columns": ["project_id", "to_kind", "to_key"],
-          "isUnique": false
-        },
-        "idx_graph_edges_kind": {
-          "name": "idx_graph_edges_kind",
-          "columns": ["project_id", "kind"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "graph_edges_project_id_projects_id_fk": {
-          "name": "graph_edges_project_id_projects_id_fk",
-          "tableFrom": "graph_edges",
-          "tableTo": "projects",
-          "columnsFrom": ["project_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "graph_nodes": {
-      "name": "graph_nodes",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "attrs": {
-          "name": "attrs",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "origin": {
-          "name": "origin",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'observed'"
-        },
-        "usage_30d": {
-          "name": "usage_30d",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "first_seen_run_id": {
-          "name": "first_seen_run_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "last_seen_run_id": {
-          "name": "last_seen_run_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "last_seen_at": {
-          "name": "last_seen_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "idx_graph_nodes_project_kind_key": {
-          "name": "idx_graph_nodes_project_kind_key",
-          "columns": ["project_id", "kind", "key"],
-          "isUnique": true
-        },
-        "idx_graph_nodes_project_kind": {
-          "name": "idx_graph_nodes_project_kind",
-          "columns": ["project_id", "kind"],
-          "isUnique": false
-        },
-        "idx_graph_nodes_last_seen_at": {
-          "name": "idx_graph_nodes_last_seen_at",
-          "columns": ["last_seen_at"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "graph_nodes_project_id_projects_id_fk": {
-          "name": "graph_nodes_project_id_projects_id_fk",
-          "tableFrom": "graph_nodes",
-          "tableTo": "projects",
-          "columnsFrom": ["project_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -3297,237 +3043,6 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "scenario_gaps": {
-      "name": "scenario_gaps",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'gap'"
-        },
-        "detector": {
-          "name": "detector",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "class": {
-          "name": "class",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "evidence": {
-          "name": "evidence",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "factors": {
-          "name": "factors",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "score": {
-          "name": "score",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "feature_node_id": {
-          "name": "feature_node_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "ticket": {
-          "name": "ticket",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "test_case_id": {
-          "name": "test_case_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "failure_cluster_id": {
-          "name": "failure_cluster_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "test_run_id": {
-          "name": "test_run_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "pr_number": {
-          "name": "pr_number",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'open'"
-        },
-        "dismiss_reason": {
-          "name": "dismiss_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "assigned_to": {
-          "name": "assigned_to",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "closed_at": {
-          "name": "closed_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "closed_by_run_id": {
-          "name": "closed_by_run_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "idx_scenario_gaps_detector_key": {
-          "name": "idx_scenario_gaps_detector_key",
-          "columns": ["project_id", "detector", "key"],
-          "isUnique": true
-        },
-        "idx_scenario_gaps_project_status": {
-          "name": "idx_scenario_gaps_project_status",
-          "columns": ["project_id", "status"],
-          "isUnique": false
-        },
-        "idx_scenario_gaps_project_score": {
-          "name": "idx_scenario_gaps_project_score",
-          "columns": ["project_id", "score"],
-          "isUnique": false
-        },
-        "idx_scenario_gaps_pr": {
-          "name": "idx_scenario_gaps_pr",
-          "columns": ["project_id", "pr_number"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "scenario_gaps_project_id_projects_id_fk": {
-          "name": "scenario_gaps_project_id_projects_id_fk",
-          "tableFrom": "scenario_gaps",
-          "tableTo": "projects",
-          "columnsFrom": ["project_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "scenario_gaps_feature_node_id_graph_nodes_id_fk": {
-          "name": "scenario_gaps_feature_node_id_graph_nodes_id_fk",
-          "tableFrom": "scenario_gaps",
-          "tableTo": "graph_nodes",
-          "columnsFrom": ["feature_node_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "scenario_gaps_test_case_id_test_cases_id_fk": {
-          "name": "scenario_gaps_test_case_id_test_cases_id_fk",
-          "tableFrom": "scenario_gaps",
-          "tableTo": "test_cases",
-          "columnsFrom": ["test_case_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "scenario_gaps_failure_cluster_id_failure_clusters_id_fk": {
-          "name": "scenario_gaps_failure_cluster_id_failure_clusters_id_fk",
-          "tableFrom": "scenario_gaps",
-          "tableTo": "failure_clusters",
-          "columnsFrom": ["failure_cluster_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
     "share_links": {
       "name": "share_links",
       "columns": {
@@ -5065,6 +4580,67 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "trace_blob_resources": {
+      "name": "trace_blob_resources",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "blob_id": {
+          "name": "blob_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "resource_id": {
+          "name": "resource_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_trace_blob_resources_blob_resource": {
+          "name": "idx_trace_blob_resources_blob_resource",
+          "columns": ["blob_id", "resource_id"],
+          "isUnique": true
+        },
+        "idx_trace_blob_resources_resource": {
+          "name": "idx_trace_blob_resources_resource",
+          "columns": ["resource_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "trace_blob_resources_blob_id_trace_blobs_id_fk": {
+          "name": "trace_blob_resources_blob_id_trace_blobs_id_fk",
+          "tableFrom": "trace_blob_resources",
+          "tableTo": "trace_blobs",
+          "columnsFrom": ["blob_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "trace_blob_resources_resource_id_trace_resources_id_fk": {
+          "name": "trace_blob_resources_resource_id_trace_resources_id_fk",
+          "tableFrom": "trace_blob_resources",
+          "tableTo": "trace_resources",
+          "columnsFrom": ["resource_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "trace_blobs": {
       "name": "trace_blobs",
       "columns": {
@@ -5102,6 +4678,14 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
+        },
+        "resources_indexed": {
+          "name": "resources_indexed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
         "created_at": {
           "name": "created_at",
