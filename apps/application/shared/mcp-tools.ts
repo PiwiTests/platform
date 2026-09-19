@@ -823,6 +823,20 @@ export const MCP_TOOL_DEFS = [
       required: ['projectId', 'gapId'],
     },
   },
+  {
+    name: 'get_feature_graph',
+    description:
+      'The feature-graph neighborhood around a node: walk the typed graph (tests, pages, controls, routes, handlers, dependencies) outward from `node` to `depth` hops (capped at six), returning each node with its gap class and the tests that reach it, and the edges between them. Use it to see the blast radius of a change or what a test protects. `node` is "kind:key", e.g. route:POST /api/orders.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        node: { type: 'string', description: 'Seed node as kind:key, e.g. route:POST /api/orders or page:/checkout' },
+        depth: { type: 'number', description: 'Hops to walk outward (default 2, max 6)' },
+      },
+      required: ['projectId', 'node'],
+    },
+  },
 ] as const satisfies readonly McpToolDef[];
 
 /**

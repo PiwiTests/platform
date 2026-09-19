@@ -80,6 +80,7 @@ import { selectCaseScreenshots } from '../case-screenshots';
 import { createScmProvider } from '../scm';
 import { readChangeCoverage } from '../scm/change-coverage';
 import { listScenarioGaps, draftScenario } from '#shared/handlers/scenario-gaps';
+import { getFeatureGraph } from '../feature-graph';
 import { resolveAiConfig } from '../ai-provider';
 import { runClusterDiagnosis, isDiagnosisRunning } from '../ai-diagnosis';
 import {
@@ -2106,6 +2107,36 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       path: draft.path,
       catalogMethods: draft.catalogMethods.map((m) => `${m.module}#${m.name}`),
       draft: draft.text,
+    };
+  },
+
+  async get_feature_graph(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const nodeParam = typeof params.node === 'string' ? params.node.trim() : '';
+    const sep = nodeParam.indexOf(':');
+    if (sep <= 0) return { error: 'node must be "kind:key", e.g. route:POST /api/orders' };
+    const depth = params.depth != null ? numericParam(params.depth, 'depth') : 2;
+    const graph = await getFeatureGraph(
+      db,
+      projectId,
+      { kind: nodeParam.slice(0, sep), key: nodeParam.slice(sep + 1) },
+      depth,
+    );
+    return {
+      seed: `${graph.seed.kind}:${graph.seed.key}`,
+      depth: graph.depth,
+      nodes: graph.nodes.map((n) => ({
+        node: `${n.kind}:${n.key}`,
+        class: n.class,
+        depth: n.depth,
+        tests: n.tests.map((t) => t.title),
+      })),
+      edges: graph.edges.map((e) => ({
+        from: `${e.fromKind}:${e.fromKey}`,
+        to: `${e.toKind}:${e.toKey}`,
+        kind: e.kind,
+      })),
     };
   },
 };

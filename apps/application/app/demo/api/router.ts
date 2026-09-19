@@ -91,7 +91,8 @@ import {
 } from '#shared/handlers/selections';
 import { getSelectionSuggestions } from '#shared/handlers/selection-suggestions';
 import { getSelectionAnalytics } from '#shared/handlers/selection-analytics';
-import { computeScenarioGaps, listScenarioGaps } from '#shared/handlers/scenario-gaps';
+import { computeScenarioGaps, listScenarioGaps, triageGap, draftScenario } from '#shared/handlers/scenario-gaps';
+import { getFeatureGraph, MAX_GRAPH_DEPTH } from '~~/server/utils/feature-graph';
 import { parseRouteNodeKey } from '#shared/graph';
 import { ingestProjectManifest } from '~~/server/utils/surface-manifest';
 import type { AppManifest, ManifestSource } from '#shared/types';
@@ -1570,6 +1571,44 @@ const routes: RouteEntry[] = [
       const runId = typeof payload.runId === 'number' ? payload.runId : null;
       const { recorded } = await recordProbeResults(await getDemoDb(), +m[1]!, runId, results);
       return { success: true, recorded };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/(\d+)\/triage$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const result = await triageGap(await getDemoDb(), +m[1]!, +m[2]!, (body ?? {}) as any);
+      if (!result) throw demoHttpError(404, 'Gap not found');
+      return { success: true, status: result.status };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/(\d+)\/draft$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const draft = await draftScenario(await getDemoDb(), +m[1]!, +m[2]!);
+      if (!draft) throw demoHttpError(404, 'Gap not found');
+      return draft;
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/graph$/,
+    handler: async (m, _b, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const nodeParam = (query?.get('node') ?? '').trim();
+      const sep = nodeParam.indexOf(':');
+      if (sep <= 0) throw demoHttpError(400, 'node must be "kind:key"');
+      const rawDepth = Number(query?.get('depth'));
+      const depth = Number.isFinite(rawDepth) ? Math.min(MAX_GRAPH_DEPTH, Math.max(1, rawDepth)) : 2;
+      return getFeatureGraph(
+        await getDemoDb(),
+        +m[1]!,
+        { kind: nodeParam.slice(0, sep), key: nodeParam.slice(sep + 1) },
+        depth,
+      );
     },
   },
   {

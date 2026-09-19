@@ -8,7 +8,7 @@
  * from recent history, and the word used is *observed reach*, never coverage.
  */
 
-import { and, count, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import {
   failureClusters,
   graphEdges,
@@ -1649,12 +1649,48 @@ export interface ScenarioGapRow {
   factors: ExposureFactors | null;
   score: number | null;
   status: GapStatus;
+  dismissReason: string | null;
   ticket: string | null;
   prNumber: number | null;
   testCaseId: number | null;
   testRunId: number | null;
+  projectId: number;
+  snoozedUntil: number | null;
+  acceptedAt: number | null;
   createdAt: number;
   updatedAt: number;
+}
+
+/** Milliseconds from a stored timestamp column (Date in Postgres, epoch-ms in SQLite). */
+function toMs(v: unknown): number {
+  return v instanceof Date ? v.getTime() : Number(v);
+}
+
+/** Map a stored scenario_gaps row to the API {@link ScenarioGapRow}. */
+function mapGapRow(r: typeof scenarioGaps.$inferSelect): ScenarioGapRow {
+  return {
+    id: r.id,
+    kind: r.kind as GapKind,
+    detector: r.detector,
+    class: r.class as GapClass,
+    key: r.key,
+    subject: subjectFromGapKey(r.key),
+    title: r.title,
+    evidence: Array.isArray(r.evidence) ? (r.evidence as string[]) : [],
+    factors: (r.factors as ExposureFactors | null) ?? null,
+    score: r.score ?? null,
+    status: r.status as GapStatus,
+    dismissReason: r.dismissReason ?? null,
+    ticket: r.ticket ?? null,
+    prNumber: r.prNumber ?? null,
+    testCaseId: r.testCaseId ?? null,
+    testRunId: r.testRunId ?? null,
+    projectId: r.projectId,
+    snoozedUntil: r.snoozedUntil != null ? toMs(r.snoozedUntil) : null,
+    acceptedAt: r.acceptedAt != null ? toMs(r.acceptedAt) : null,
+    createdAt: toMs(r.createdAt),
+    updatedAt: toMs(r.updatedAt),
+  };
 }
 
 export interface GapFilters {
@@ -1691,25 +1727,176 @@ export async function listScenarioGaps(
     .orderBy(desc(scenarioGaps.score), desc(scenarioGaps.updatedAt))
     .limit(limit);
 
-  return rows.map((r) => ({
-    id: r.id,
-    kind: r.kind as GapKind,
-    detector: r.detector,
-    class: r.class as GapClass,
-    key: r.key,
-    subject: subjectFromGapKey(r.key),
-    title: r.title,
-    evidence: Array.isArray(r.evidence) ? (r.evidence as string[]) : [],
-    factors: (r.factors as ExposureFactors | null) ?? null,
-    score: r.score ?? null,
-    status: r.status as GapStatus,
-    ticket: r.ticket ?? null,
-    prNumber: r.prNumber ?? null,
-    testCaseId: r.testCaseId ?? null,
-    testRunId: r.testRunId ?? null,
-    createdAt: r.createdAt instanceof Date ? r.createdAt.getTime() : Number(r.createdAt),
-    updatedAt: r.updatedAt instanceof Date ? r.updatedAt.getTime() : Number(r.updatedAt),
-  }));
+  return rows.map(mapGapRow);
+}
+
+// ── Triage ───────────────────────────────────────────────────────────────────
+
+/** The inbox verbs a gap can be triaged with. */
+export type TriageVerb = 'accept' | 'snooze' | 'dismiss' | 'covered-by';
+export type SnoozeOption = '1-day' | '1-week' | 'until-node-changes';
+export type DismissReason = 'not-worth-testing' | 'covered-elsewhere' | 'wrong';
+
+/** What a triage action carries beyond its verb. */
+export interface TriageInput {
+  verb: TriageVerb;
+  snooze?: SnoozeOption;
+  reason?: DismissReason;
+  /** The covering test for a `covered-by`, or a `covered-elsewhere` dismissal — writes a manual reaches edge. */
+  coveringTestCaseId?: number | null;
+  assignedTo?: string | null;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The wake time a snooze option resolves to; null means "until the node changes". */
+function snoozeUntil(option: SnoozeOption | undefined, now: Date): Date | null {
+  if (option === '1-day') return new Date(now.getTime() + DAY_MS);
+  if (option === '1-week') return new Date(now.getTime() + 7 * DAY_MS);
+  return null;
+}
+
+/**
+ * Write a manual `reaches` edge from a covering test to a gap's subject node, so
+ * the node is now considered reached and the gap closes on the next recompute.
+ * Origin `manual` distinguishes it from an observed edge.
+ */
+async function writeManualReachesEdge(
+  db: DrizzleDB,
+  projectId: number,
+  subject: GapSubject,
+  testCaseId: number,
+): Promise<void> {
+  if (subject.kind === 'file') return; // a file node is not a reaches target here
+  const now = new Date();
+  await db
+    .insert(graphEdges)
+    .values({
+      projectId,
+      fromKind: 'test',
+      fromKey: String(testCaseId),
+      toKind: subject.kind,
+      toKey: subject.key,
+      kind: 'reaches',
+      branch: null,
+      confidence: 1,
+      origin: 'manual',
+      evidence: { manual: true } as any,
+      firstSeenRunId: null,
+      lastSeenRunId: null,
+      lastSeenAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [
+        graphEdges.projectId,
+        graphEdges.fromKind,
+        graphEdges.fromKey,
+        graphEdges.kind,
+        graphEdges.toKind,
+        graphEdges.toKey,
+      ],
+      targetWhere: isNull(graphEdges.branch),
+      set: {
+        origin: sql`excluded.origin`,
+        confidence: sql`excluded.confidence`,
+        lastSeenAt: sql`excluded.last_seen_at`,
+      },
+    });
+}
+
+/**
+ * Apply an inbox verb to a gap: accept, snooze (1-day / 1-week / until the node
+ * changes), dismiss with a reason (covered-elsewhere writes a manual reaches
+ * edge from the covering test), or covered-by (writes the edge without
+ * dismissing). Returns the gap's new status, or null when it does not exist.
+ */
+export async function triageGap(
+  db: DrizzleDB,
+  projectId: number,
+  gapId: number,
+  input: TriageInput,
+): Promise<{ status: GapStatus } | null> {
+  const [gap] = await db
+    .select({ id: scenarioGaps.id, key: scenarioGaps.key })
+    .from(scenarioGaps)
+    .where(and(eq(scenarioGaps.id, gapId), eq(scenarioGaps.projectId, projectId)));
+  if (!gap) return null;
+
+  const now = new Date();
+  const subject = subjectFromGapKey(gap.key);
+  const set: Record<string, unknown> = { updatedAt: now };
+
+  if (input.verb === 'accept') {
+    set.status = 'accepted';
+    set.acceptedAt = now;
+    if (input.assignedTo !== undefined) set.assignedTo = input.assignedTo;
+  } else if (input.verb === 'snooze') {
+    set.status = 'snoozed';
+    set.snoozedUntil = snoozeUntil(input.snooze, now);
+  } else if (input.verb === 'dismiss') {
+    set.status = 'dismissed';
+    set.dismissReason = input.reason ?? 'wrong';
+    if (input.reason === 'covered-elsewhere' && input.coveringTestCaseId != null) {
+      await writeManualReachesEdge(db, projectId, subject, input.coveringTestCaseId);
+    }
+  } else {
+    // covered-by: record the covering test without dismissing; the manual reaches
+    // edge closes the gap on the next recompute.
+    if (input.coveringTestCaseId != null) {
+      await writeManualReachesEdge(db, projectId, subject, input.coveringTestCaseId);
+    }
+  }
+
+  await db
+    .update(scenarioGaps)
+    .set(set as any)
+    .where(and(eq(scenarioGaps.id, gapId), eq(scenarioGaps.projectId, projectId)));
+  return { status: (set.status as GapStatus) ?? 'open' };
+}
+
+/**
+ * Wake snoozed gaps whose snooze has expired (snoozedUntil in the past). Called
+ * before listing so an expired snooze reappears without a recompute.
+ */
+export async function reopenExpiredSnoozes(db: DrizzleDB, projectId: number, now: Date = new Date()): Promise<number> {
+  const woken = await db
+    .update(scenarioGaps)
+    .set({ status: 'open', snoozedUntil: null, updatedAt: now })
+    .where(
+      and(
+        eq(scenarioGaps.projectId, projectId),
+        eq(scenarioGaps.status, 'snoozed'),
+        isNotNull(scenarioGaps.snoozedUntil),
+        lt(scenarioGaps.snoozedUntil, now),
+      ),
+    )
+    .returning({ id: scenarioGaps.id });
+  return woken.length;
+}
+
+/**
+ * Accepted-but-unwritten gaps older than a week: the Home `gaps` inbox queue.
+ * A gap the team accepted but whose node still has no trusted edge — the draft
+ * was never turned into a test.
+ */
+export async function listAcceptedUnwritten(
+  db: DrizzleDB,
+  projectIds: number[] | 'all',
+  now: Date = new Date(),
+): Promise<ScenarioGapRow[]> {
+  const cutoff = new Date(now.getTime() - 7 * DAY_MS);
+  const where = [eq(scenarioGaps.status, 'accepted'), lt(scenarioGaps.acceptedAt, cutoff)];
+  if (projectIds !== 'all') {
+    if (projectIds.length === 0) return [];
+    where.push(inArray(scenarioGaps.projectId, projectIds));
+  }
+  const rows = await db
+    .select()
+    .from(scenarioGaps)
+    .where(and(...where))
+    .orderBy(desc(scenarioGaps.score))
+    .limit(100);
+  return rows.map(mapGapRow);
 }
 
 // ── Deterministic draft (pure + loader) ──────────────────────────────────────
