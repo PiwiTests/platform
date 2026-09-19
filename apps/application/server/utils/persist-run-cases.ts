@@ -45,6 +45,7 @@ import {
   projectRouteOrigins,
 } from './graph-ingest';
 import { collectOwnOrigins, originsFromDocumentRequests } from '#shared/graph';
+import { isProbeRun } from '#shared/handlers/probes';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import type { DbClient as DB } from '../database';
 
@@ -563,11 +564,19 @@ export async function persistRunCases(
     row.pageInventoryPayloadId = p.inventory ? (payloadIds.get(p.inventory) ?? null) : null;
   });
 
-  const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters);
-  runCasesRows.forEach((row, i) => {
-    const fingerprint = rowFingerprints[i];
-    if (fingerprint) row.failureClusterId = clusterIds.get(fingerprint.fingerprint) ?? null;
-  });
+  // A probe run's failures are injected, not real: it never counts as a real
+  // run, so it forms no clusters (exactly as imports are silent).
+  const [probeCheck] = await db
+    .select({ metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(eq(testRuns.id, testRunId));
+  if (!isProbeRun(probeCheck?.metadata)) {
+    const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters);
+    runCasesRows.forEach((row, i) => {
+      const fingerprint = rowFingerprints[i];
+      if (fingerprint) row.failureClusterId = clusterIds.get(fingerprint.fingerprint) ?? null;
+    });
+  }
 
   const insertedCases = await db.insert(testRunsCases).values(runCasesRows).onConflictDoNothing().returning({
     id: testRunsCases.id,

@@ -186,7 +186,12 @@ export function serializeRun(payload: RunPayload, opts: SerializeRunOptions): Re
     didNotRunTests: payload.didNotRunTests ?? 0,
     environment: payload.environment ?? null,
     label: payload.label ?? null,
-    metadata: payload.metadata,
+    // A probe run is stamped so the dashboard never counts it as a real run
+    // (no clusters, regression signals, notifications or PR feedback).
+    metadata:
+      process.env.PIWI_PROBE === '1' || process.env.PIWI_PROBE === 'true'
+        ? { ...payload.metadata, piwiProbe: true }
+        : payload.metadata,
     instanceId: payload.instanceId,
     playwrightVersion: payload.playwrightVersion,
     reporterVersion: payload.reporterVersion,

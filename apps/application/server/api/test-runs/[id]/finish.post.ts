@@ -14,6 +14,25 @@ import { maybeEnqueueHealActionInBackground } from '../../../utils/heal/policy';
 import { computeRegressionSignals } from '../../../utils/compute-regression-signals';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
 import { sumFailedAndTimedOut, distinctRunCountsFromAttempts } from '#shared/utils/test-counts';
+import { isProbeRun } from '#shared/handlers/probes';
+
+/**
+ * The finalize side effects for a finished run: regression signals, auto
+ * markers, AI diagnosis, notifications, pull-request feedback and auto-heal. A
+ * probe run is stamped so it never counts as a real run — none of these fire for
+ * it, exactly as imports are silent.
+ */
+function runFinalizeSideEffects(db: DbClient, id: number, run: { projectId: number; metadata?: unknown }): void {
+  if (isProbeRun(run.metadata)) return;
+  computeRegressionSignals(db, id).catch((e) =>
+    console.error('[regression-signals] computeRegressionSignals failed', e),
+  );
+  syncAutoMarkersForRun(db, id).catch((e) => console.error('[markers] syncAutoMarkersForRun failed', e));
+  autoDiagnoseRun(db, run.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
+  emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));
+  postRunPrFeedbackInBackground(db, id);
+  maybeEnqueueHealActionInBackground(db, id);
+}
 
 /**
  * Distinct-test counters for a run, computed from its persisted attempt rows.
@@ -233,16 +252,7 @@ export default eventHandler(async (event) => {
         status: finalStatus,
       });
 
-      computeRegressionSignals(db, id).catch((e) =>
-        console.error('[regression-signals] computeRegressionSignals failed', e),
-      );
-      syncAutoMarkersForRun(db, id).catch((e) => console.error('[markers] syncAutoMarkersForRun failed', e));
-      autoDiagnoseRun(db, testRun.projectId, id).catch((e) =>
-        console.error('[ai-diagnosis] autoDiagnoseRun failed', e),
-      );
-      emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));
-      postRunPrFeedbackInBackground(db, id);
-      maybeEnqueueHealActionInBackground(db, id);
+      runFinalizeSideEffects(db, id, testRun);
 
       runEventBus.cleanup(id);
     } else {
@@ -361,14 +371,7 @@ export default eventHandler(async (event) => {
 
     runEventBus.publishGlobal({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
 
-    computeRegressionSignals(db, id).catch((e) =>
-      console.error('[regression-signals] computeRegressionSignals failed', e),
-    );
-    syncAutoMarkersForRun(db, id).catch((e) => console.error('[markers] syncAutoMarkersForRun failed', e));
-    autoDiagnoseRun(db, testRun.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
-    emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));
-    postRunPrFeedbackInBackground(db, id);
-    maybeEnqueueHealActionInBackground(db, id);
+    runFinalizeSideEffects(db, id, testRun);
 
     runEventBus.cleanup(id);
   }

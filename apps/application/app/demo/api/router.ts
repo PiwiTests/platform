@@ -91,6 +91,12 @@ import {
 import { getSelectionSuggestions } from '#shared/handlers/selection-suggestions';
 import { getSelectionAnalytics } from '#shared/handlers/selection-analytics';
 import { computeScenarioGaps, listScenarioGaps } from '#shared/handlers/scenario-gaps';
+import {
+  buildProbePlan,
+  recordProbeResults,
+  DEFAULT_PROBE_BUDGET,
+  type ProbeResultInput,
+} from '#shared/handlers/probes';
 import { computeChangeCoverage } from '#shared/handlers/change-coverage';
 import {
   isBuiltinKey,
@@ -1495,6 +1501,28 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const gaps = await computeScenarioGaps(await getDemoDb(), +m[1]!);
       return { success: true, runsProcessed: 0, gapsUpserted: gaps.upserted, gapsClosed: gaps.closed };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/probes\/plan$/,
+    handler: async (m, _b, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const rawBudget = query?.get('budget');
+      const budget = rawBudget != null && Number.isFinite(Number(rawBudget)) ? Number(rawBudget) : DEFAULT_PROBE_BUDGET;
+      return buildProbePlan(await getDemoDb(), +m[1]!, { budget });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/probes\/results$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const payload = (body ?? {}) as { runId?: number | null; results?: ProbeResultInput[] };
+      const results = Array.isArray(payload.results) ? payload.results : [];
+      const runId = typeof payload.runId === 'number' ? payload.runId : null;
+      const { recorded } = await recordProbeResults(await getDemoDb(), +m[1]!, runId, results);
+      return { success: true, recorded };
     },
   },
   {

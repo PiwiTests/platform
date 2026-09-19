@@ -1370,6 +1370,39 @@ export const scenarioGaps = pgTable(
   }),
 );
 
+// Probes — one row per (test, node, fault) probe outcome. A client probe
+// mutates a response at the Playwright route boundary; a server probe (M3) sends
+// a signed fault header. Each row writes or refreshes one `checks` edge from the
+// test to the node with its outcome.
+export const probes = pgTable(
+  'probes',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'set null' }),
+    nodeId: integer('node_id').references(() => graphNodes.id, { onDelete: 'set null' }),
+    routeKey: text('route_key'),
+    level: text('level').notNull().default('client'), // 'client' | 'server'
+    fault: text('fault').notNull(),
+    applied: boolean('applied').notNull().default(true),
+    outcome: text('outcome').notNull(), // 'noticed' | 'not-noticed' | 'inconclusive'
+    handled: text('handled').notNull().default('n/a'), // 'graceful' | 'degraded' | 'unhandled' | 'n/a'
+    runId: integer('run_id'),
+    evidence: jsonb('evidence'),
+    probedAt: timestamp('probed_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    pairIdx: uniqueIndex('idx_probes_pair').on(table.projectId, table.testCaseId, table.routeKey, table.fault),
+    projectIdx: index('idx_probes_project').on(table.projectId),
+    nodeIdx: index('idx_probes_node').on(table.nodeId),
+    testIdx: index('idx_probes_test').on(table.testCaseId),
+  }),
+);
+
 // Type exports for TypeScript
 export type TestSuite = typeof testSuites.$inferSelect;
 export type NewTestSuite = typeof testSuites.$inferInsert;

@@ -40,6 +40,9 @@ import {
 } from './locator-healing.js';
 import { ATTACHMENT_NAMES, LOCATOR_SUGGESTION_ANNOTATION, USER_PICK_ANNOTATION } from './attachments.js';
 import { capPageInventory, inventoryPageKey, type RawPageInventory } from './page-inventory.js';
+import { isProbeMode, probeItemForTest, recordProbeOutcome, outcomeFromStatus } from '../probe/mode.js';
+import { installProbeInterception, type ProbeInterception } from '../probe/interception.js';
+import type { ProbePlanItem } from '../probe/plan.js';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import { applyPickToSnapshots, deriveFailedLocator, runLocatorPicker, type UserPickResult } from './pick-on-failure.js';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
@@ -189,6 +192,10 @@ interface CaptureSink {
   // The controls and links present on the last active page at test end, stashed
   // for passing tests so the graph learns the suite's exposed surface.
   stashedPageInventory: RawPageInventory | null;
+  // The probe plan item for this test (probe mode only), and the interception
+  // handle once installed, so the outcome can be recorded at teardown.
+  probeItem: ProbePlanItem | null;
+  probeInterception: ProbeInterception | null;
   // The failure-time overlay was already offered once this test — several
   // close wrappers can fire for the same teardown.
   pickOffered: boolean;
@@ -213,6 +220,8 @@ function createSink(): CaptureSink {
     stashedAria: null,
     stashedAriaJson: null,
     stashedPageInventory: null,
+    probeItem: null,
+    probeInterception: null,
     pickOffered: false,
     userPick: null,
   };
@@ -1080,6 +1089,20 @@ function instrumentPage(page: Page): void {
   if (!page || INSTRUMENTED_PAGES.has(page)) return;
   INSTRUMENTED_PAGES.add(page);
 
+  // Probe mode: install the fault interception for this test's plan item on the
+  // first page, before the test navigates. Fire-and-forget — page.route
+  // registration resolves before the first request in practice.
+  const probeSink = currentSink;
+  if (probeSink?.probeItem && !probeSink.probeInterception) {
+    void installProbeInterception(page, probeSink.probeItem)
+      .then((interception) => {
+        probeSink.probeInterception = interception;
+      })
+      .catch(() => {
+        /* interception failed to install — the probe is recorded as not applied */
+      });
+  }
+
   // A page reached through the `page` fixture safety net may live in a context
   // the browser patch never saw — instrument it so its close is wrapped too.
   const ctx = pageContext(page);
@@ -1583,11 +1606,23 @@ export const piwiFixtures: Fixtures<
     async ({}, use: UseFn<void>, testInfo: TestInfo) => {
       const sink = createSink();
       sink.testInfo = testInfo;
+      if (isProbeMode()) sink.probeItem = probeItemForTest({ title: testInfo.title });
       currentSink = sink;
       try {
         await use();
       } finally {
         currentSink = null;
+        // Record the probe outcome (this test noticed the fault iff it failed)
+        // before flushing the rest of the capture.
+        if (sink.probeItem) {
+          recordProbeOutcome({
+            testCaseId: sink.probeItem.testCaseId,
+            routeKey: sink.probeItem.routeKey,
+            fault: sink.probeItem.fault,
+            applied: sink.probeInterception?.applied() ?? false,
+            outcome: outcomeFromStatus(testInfo.status, sink.probeInterception?.applied() ?? false),
+          });
+        }
         await flushSink(sink, testInfo);
       }
     },

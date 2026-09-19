@@ -498,6 +498,13 @@
       "when": 1789813462875,
       "tag": "0070_legal_white_tiger",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1789815329059,
+      "tag": "0071_slippery_galactus",
+      "breakpoints": true
     }
   ]
 }
