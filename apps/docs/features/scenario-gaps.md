@@ -57,6 +57,14 @@ Gaps are ranked by an explicit **exposure** score, not by a raw count, because a
 
 The score is exposure × the detector's confidence. A changed file with real churn and a fix history outranks a bare route gap by construction.
 
+## What the graph includes
+
+The graph stays proportional to your application's surface, not to how much data it has seen:
+
+- **Your own origin only.** Route nodes come from requests to the run's Playwright `baseURL` — analytics beacons and CDN assets never become nodes. Add extra first-party origins (an API subdomain, say) to a project's route-origin allowlist.
+- **Pages are path patterns.** `/orders/123` and `/orders/456` are one node, and the same path served from staging and production lands on that one node.
+- **Branches stay separate.** A run on the default branch writes the canonical graph; a run on any other branch writes rows tagged with that branch, so a route added on a pull request never shows up as surface drift on the default branch. Those tagged rows are dropped when the pull request closes, and swept after thirty days otherwise.
+
 ## Triage
 
 Gaps persist so triage survives recomputation: an open gap stays open, a dismissed one keeps its verdict, and a gap **closes itself** when its node gains a trusted test — so "closed this month" is a real number. List and filter them at `GET /api/projects/{id}/gaps`, or rebuild the graph and recompute with `POST /api/projects/{id}/gaps/recompute`.

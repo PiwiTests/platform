@@ -10,7 +10,12 @@ pull-request comment — never a verdict.
 every ingest, the four M1 detectors (changed-unreached, success-only, single-covering-test, surface-drift), exposure
 ranking over churn, age, escape history and priority, the uncovered-changes section and commit status in pull-request
 feedback, and the `gaps`, `gaps/change-coverage` and `gaps/recompute` endpoints with the `get_change_coverage` MCP
-tool. M2 and later remain proposed. The first revision built two references (a reach index and a surface inventory)
+tool. The M1 ingest path also holds the size-discipline rules that keep the graph proportional to a project's
+surface: page nodes keyed on the path pattern, route nodes only from the run's own origin (its Playwright `baseURL`
+plus a per-project allowlist), default-branch runs writing canonical rows while other branches write branch-tagged
+ones so a pull-request route never drifts onto the default branch, and a nightly graph sweep that prunes `changes`
+edges past ninety days, branch-tagged rows past thirty, and canonical nodes unseen for thirty runs once their
+surface-drift gap has closed. M2 and later remain proposed. The first revision built two references (a reach index and a surface inventory)
 and listed the difference; the second added an oracle axis, an exposure score and a feature graph after a review of
 the products and research in this area ([Prior art](#prior-art), [References](#references)); the third made the graph
 the substrate, split resilience findings from suite gaps, thinned the first milestone to a spine and put an entry
