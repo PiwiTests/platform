@@ -15,7 +15,20 @@ surface: page nodes keyed on the path pattern, route nodes only from the run's o
 plus a per-project allowlist), default-branch runs writing canonical rows while other branches write branch-tagged
 ones so a pull-request route never drifts onto the default branch, and a nightly graph sweep that prunes `changes`
 edges past ninety days, branch-tagged rows past thirty, and canonical nodes unseen for thirty runs once their
-surface-drift gap has closed. M2 and later remain proposed. The first revision built two references (a reach index and a surface inventory)
+surface-drift gap has closed.
+
+**M2 is implemented** on the `claude/test-map-m2` branch. M2 broadens the graph with `control`, `link`, `handler` and
+`dependency` nodes and the `contains`, `links`, `triggers`, `loads`, `handled-by` and `calls` edges (size rule 3 —
+templated control names and the 200-per-page cap — applied on ingest); the page inventory the reporter records on
+passing runs (`piwi-page-inventory`, stored through `case_payloads`); one instrumentation release carrying the root
+span's handler field and a signed `X-Piwi-Probe` header, honored outside production and flagged off; client probes
+with the `probes` table (named `probes`, not "oracle"), the `checks` edges, the `probes/plan` and `probes/results`
+endpoints and the `piwi probe` command; the M2 detectors wired into the automatic recompute; features from tags as
+feature nodes with `groups` edges; the `list_scenario_gaps` and `draft_scenario` MCP tools with the deterministic
+draft skeleton and the `write-the-missing-test` skill; and the `maxUncoveredChanges` gate policy, off by default and
+warn-only. The change-time detectors (new error path, new control, intent without a test, locator break ahead) ship
+as pure detectors pending the change-coverage path carrying hunk and title data, and the desktop local-diff command
+stays the M1 TODO. M3 and later remain proposed. The first revision built two references (a reach index and a surface inventory)
 and listed the difference; the second added an oracle axis, an exposure score and a feature graph after a review of
 the products and research in this area ([Prior art](#prior-art), [References](#references)); the third made the graph
 the substrate, split resilience findings from suite gaps, thinned the first milestone to a spine and put an entry

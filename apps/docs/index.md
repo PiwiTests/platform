@@ -117,7 +117,7 @@ Start from what you came here to do.
   how to [block a merge](/guide/ci#blocking-a-merge) on the analysis rather than the exit code.
 - **Running it for a team** — [Deployment](/operate/deployment), [Configuration](/reference/configuration),
   [Authentication](/operate/authentication), and [Privacy & data flow](/guide/privacy).
-- **Letting an agent do the reading** — the [MCP server](/features/mcp) gives a coding agent 47 tools over your
+- **Letting an agent do the reading** — the [MCP server](/features/mcp) gives a coding agent 49 tools over your
   test history, and [AI diagnosis](/features/ai-diagnosis) explains a cluster against your actual git diff with
   a provider you configure. Both optional; a local model works.
 

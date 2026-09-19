@@ -37,12 +37,15 @@ import { getOrCreateFailureClusters, type PendingCluster } from '#shared/handler
 import { upsertLocatorSnapshots } from './locator-healing';
 import {
   ingestRunGraph,
+  ingestRequestGraph,
+  ingestPageInventoryGraph,
   collectRunGraphReaches,
   resolveRunBranchTagFromStored,
   runBaseUrls,
   projectRouteOrigins,
 } from './graph-ingest';
 import { collectOwnOrigins, originsFromDocumentRequests } from '#shared/graph';
+import { isProbeRun } from '#shared/handlers/probes';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import type { DbClient as DB } from '../database';
 
@@ -92,6 +95,8 @@ export interface RunCaseInput {
   networkRequests?: unknown;
   webVitals?: unknown;
   pageState?: unknown;
+  /** Controls and links per visited page (passing runs) — stored through case_payloads. */
+  pageInventory?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -402,6 +407,7 @@ export async function persistRunCases(
     ariaJson: string | null;
     source: string | null;
     framesJson: string | null;
+    inventory: string | null;
   }> = [];
   const networkRequestBuilders: NetworkRequestBuilder[] = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
@@ -481,7 +487,14 @@ export async function persistRunCases(
     const ariaJson = capText(c.ariaSnapshotJson, limits.ariaSnapshotChars);
     const source = capText(c.testSource, limits.testSourceChars);
     const frames = capSourceFrames(c.testSourceFrames, limits);
-    rowPayloads.push({ aria, ariaJson, source, framesJson: frames != null ? JSON.stringify(frames) : null });
+    const inventory = c.pageInventory != null ? JSON.stringify(c.pageInventory) : null;
+    rowPayloads.push({
+      aria,
+      ariaJson,
+      source,
+      framesJson: frames != null ? JSON.stringify(frames) : null,
+      inventory,
+    });
 
     runCasesRows.push({
       testRunId,
@@ -540,7 +553,7 @@ export async function persistRunCases(
   const payloadIds = await upsertCasePayloads(
     db,
     projectId,
-    rowPayloads.flatMap((p) => [p.aria, p.ariaJson, p.source, p.framesJson]),
+    rowPayloads.flatMap((p) => [p.aria, p.ariaJson, p.source, p.framesJson, p.inventory]),
   );
   runCasesRows.forEach((row, i) => {
     const p = rowPayloads[i]!;
@@ -548,13 +561,22 @@ export async function persistRunCases(
     row.ariaSnapshotJsonPayloadId = p.ariaJson ? (payloadIds.get(p.ariaJson) ?? null) : null;
     row.testSourcePayloadId = p.source ? (payloadIds.get(p.source) ?? null) : null;
     row.testSourceFramesPayloadId = p.framesJson ? (payloadIds.get(p.framesJson) ?? null) : null;
+    row.pageInventoryPayloadId = p.inventory ? (payloadIds.get(p.inventory) ?? null) : null;
   });
 
-  const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters);
-  runCasesRows.forEach((row, i) => {
-    const fingerprint = rowFingerprints[i];
-    if (fingerprint) row.failureClusterId = clusterIds.get(fingerprint.fingerprint) ?? null;
-  });
+  // A probe run's failures are injected, not real: it never counts as a real
+  // run, so it forms no clusters (exactly as imports are silent).
+  const [probeCheck] = await db
+    .select({ metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(eq(testRuns.id, testRunId));
+  if (!isProbeRun(probeCheck?.metadata)) {
+    const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters);
+    runCasesRows.forEach((row, i) => {
+      const fingerprint = rowFingerprints[i];
+      if (fingerprint) row.failureClusterId = clusterIds.get(fingerprint.fingerprint) ?? null;
+    });
+  }
 
   const insertedCases = await db.insert(testRunsCases).values(runCasesRows).onConflictDoNothing().returning({
     id: testRunsCases.id,
@@ -630,6 +652,18 @@ export async function persistRunCases(
       ),
       { branch },
     );
+    // Handler and dependency breadth: `handled-by` and `calls` edges from the
+    // server spans forwarded with each request. A no-op for uninstrumented runs.
+    await ingestRequestGraph(db, projectId, testRunId, networkRequestBuilders, origins, { branch });
+
+    // Control, link and page-load breadth from the page inventory attached on
+    // passing runs. Builders align with runCasesRows; map each back to its input
+    // case for its inventory. A no-op when no case carried an inventory.
+    const inventoryCases = runCasesRows.map((_, k) => ({
+      pageInventory: cases[rowInputIndices[k]!]?.pageInventory,
+      networkItems: networkRequestBuilders[k]?.items ?? [],
+    }));
+    await ingestPageInventoryGraph(db, projectId, testRunId, inventoryCases, origins, { branch });
   } catch (err) {
     console.warn('[graph-ingest] failed to update the feature graph', err);
   }

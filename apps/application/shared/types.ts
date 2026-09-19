@@ -81,6 +81,8 @@ export interface TestCasePayload {
   networkRequests?: unknown;
   webVitals?: unknown;
   pageState?: unknown;
+  /** Page inventory: controls and links per visited page (passing runs). */
+  pageInventory?: unknown;
   /** AI-step usage manifest (`{ entries: string[] }`): committed AI-step artifacts this test replayed. */
   aiUsage?: unknown;
   consoleLogs?: unknown;
@@ -183,6 +185,7 @@ export interface StreamEventPayload {
   networkRequests?: unknown;
   webVitals?: unknown;
   pageState?: unknown;
+  pageInventory?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;

@@ -222,4 +222,17 @@ describe('formatGateResult', () => {
     expect(output).toContain('2 failing tests (limit 0)');
     expect(output).toContain('1 new failure cluster');
   });
+
+  test('renders warnings without failing the verdict', () => {
+    const result = {
+      ...evaluateGatePolicy(facts(), { maxFailed: 0 }),
+      warnings: ['3 uncovered changed files (threshold 1) — observed reach, warn-only.'],
+    };
+    const output = formatGateResult(result);
+    expect(output).toContain('✔ Piwi gate passed');
+    expect(output).toContain('⚠ 3 uncovered changed files (threshold 1)');
+    // The warning line sits before the run URL, and the run still passes.
+    expect(result.passed).toBe(true);
+    expect(output.trimEnd().endsWith('https://piwi.example.com/test-runs/42')).toBe(true);
+  });
 });

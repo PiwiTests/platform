@@ -459,6 +459,7 @@ export const testRunsCases = sqliteTable(
     ariaSnapshotJsonPayloadId: integer('aria_snapshot_json_payload_id').references(() => casePayloads.id),
     testSourcePayloadId: integer('test_source_payload_id').references(() => casePayloads.id),
     testSourceFramesPayloadId: integer('test_source_frames_payload_id').references(() => casePayloads.id),
+    pageInventoryPayloadId: integer('page_inventory_payload_id').references(() => casePayloads.id), // Content-addressed page inventory (controls + links per visited page), passing runs
     browser: text('browser', { mode: 'json' }), // Playwright project/browser config: { projectName, browserName, channel, viewport }
     browserName: text('browser_name'), // Scalar browser identity (projectName) for index efficiency
     testAnnotations: text('test_annotations', { mode: 'json' }), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
@@ -502,6 +503,9 @@ export const testRunsCases = sqliteTable(
     framesPayloadIdx: index('idx_trc_frames_payload')
       .on(table.testSourceFramesPayloadId)
       .where(sql`test_source_frames_payload_id IS NOT NULL`),
+    pageInventoryPayloadIdx: index('idx_trc_page_inventory_payload')
+      .on(table.pageInventoryPayloadId)
+      .where(sql`page_inventory_payload_id IS NOT NULL`),
   }),
 );
 
@@ -1344,6 +1348,40 @@ export const scenarioGaps = sqliteTable(
   }),
 );
 
+// Probes — one row per (test, node, fault) probe outcome. A client probe
+// mutates a response at the Playwright route boundary; a server probe (M3) sends
+// a signed fault header. Each row writes or refreshes one `checks` edge from the
+// test to the node with its outcome. Run ids are not foreign keys, matching the
+// graph tables; the node id references the graph node the probe targeted.
+export const probes = sqliteTable(
+  'probes',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'set null' }),
+    nodeId: integer('node_id').references(() => graphNodes.id, { onDelete: 'set null' }), // the route or dependency probed
+    routeKey: text('route_key'), // the route node key, kept for lookups when the node row is pruned
+    level: text('level').notNull().default('client'), // 'client' | 'server'
+    fault: text('fault').notNull(), // 'status-500' | 'empty-body' | 'drop-field' | 'stale-value' | 'slow' | 'throw' | …
+    applied: integer('applied', { mode: 'boolean' }).notNull().default(true), // client probes always true; server from X-Piwi-Trace
+    outcome: text('outcome').notNull(), // 'noticed' | 'not-noticed' | 'inconclusive'
+    handled: text('handled').notNull().default('n/a'), // 'graceful' | 'degraded' | 'unhandled' | 'n/a'
+    runId: integer('run_id'), // the probe run that produced the outcome
+    evidence: text('evidence', { mode: 'json' }), // { mutation, note } and any resilience signals
+    probedAt: integer('probed_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    pairIdx: uniqueIndex('idx_probes_pair').on(table.projectId, table.testCaseId, table.routeKey, table.fault),
+    projectIdx: index('idx_probes_project').on(table.projectId),
+    nodeIdx: index('idx_probes_node').on(table.nodeId),
+    testIdx: index('idx_probes_test').on(table.testCaseId),
+  }),
+);
+
 // Type exports for TypeScript
 export type TestSuite = typeof testSuites.$inferSelect;
 export type NewTestSuite = typeof testSuites.$inferInsert;
@@ -1421,3 +1459,5 @@ export type GraphEdge = typeof graphEdges.$inferSelect;
 export type NewGraphEdge = typeof graphEdges.$inferInsert;
 export type ScenarioGap = typeof scenarioGaps.$inferSelect;
 export type NewScenarioGap = typeof scenarioGaps.$inferInsert;
+export type Probe = typeof probes.$inferSelect;
+export type NewProbe = typeof probes.$inferInsert;

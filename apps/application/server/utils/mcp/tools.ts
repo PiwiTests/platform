@@ -49,7 +49,15 @@ import {
   type SelectionDefinition,
   type SelectionFormat,
 } from '#shared/selection';
-import { projects, testRuns, testRunsCases, testCases, failureClusters, failureDiagnoses } from '../../database/schema';
+import {
+  projects,
+  testRuns,
+  testRunsCases,
+  testCases,
+  failureClusters,
+  failureDiagnoses,
+  graphEdges,
+} from '../../database/schema';
 import { buildDiagnosisContext, buildClusterDiagnosisContext } from '../ai-context';
 import { stripAnsi } from '#shared/error-fingerprint';
 import { caseHeadline } from '#shared/failure-verdict';
@@ -71,6 +79,7 @@ import { inlineCasePayloads } from '../case-payloads';
 import { selectCaseScreenshots } from '../case-screenshots';
 import { createScmProvider } from '../scm';
 import { readChangeCoverage } from '../scm/change-coverage';
+import { listScenarioGaps, draftScenario } from '#shared/handlers/scenario-gaps';
 import { resolveAiConfig } from '../ai-provider';
 import { runClusterDiagnosis, isDiagnosisRunning } from '../ai-diagnosis';
 import {
@@ -2029,6 +2038,75 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         }),
       ),
     });
+  },
+
+  async list_scenario_gaps(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const gapClass = typeof params.class === 'string' ? params.class : undefined;
+    const feature = typeof params.feature === 'string' ? params.feature : undefined;
+    const minScore = params.minScore != null ? numericParam(params.minScore, 'minScore') : undefined;
+    const pr = params.pr != null ? numericParam(params.pr, 'pr') : undefined;
+    const limit = params.limit != null ? clampPageSize(params.limit) : 20;
+
+    let gaps = await listScenarioGaps(db, projectId, {
+      class: gapClass,
+      minScore,
+      prNumber: pr,
+      limit: feature ? 200 : limit,
+    });
+
+    // Feature filter: keep gaps whose subject node is grouped under the feature.
+    if (feature) {
+      const grouped = await db
+        .select({ toKind: graphEdges.toKind, toKey: graphEdges.toKey })
+        .from(graphEdges)
+        .where(
+          and(
+            eq(graphEdges.projectId, projectId),
+            eq(graphEdges.kind, 'groups'),
+            eq(graphEdges.fromKind, 'feature'),
+            eq(graphEdges.fromKey, feature),
+          ),
+        );
+      const groupedKeys = new Set(grouped.map((g) => `${g.toKind}:${g.toKey}`));
+      // Match on the gap's typed subject, not its raw dedupe key: a success-only
+      // gap keys on a bare route key, so comparing the key directly drops it.
+      gaps = gaps.filter((g) => groupedKeys.has(`${g.subject.kind}:${g.subject.key}`)).slice(0, limit);
+    }
+
+    return {
+      items: gaps.map((g) =>
+        dropNulls({
+          id: g.id,
+          detector: g.detector,
+          class: g.class,
+          title: g.title,
+          evidence: g.evidence,
+          score: g.score,
+          status: g.status,
+          ticket: g.ticket,
+          prNumber: g.prNumber,
+          testCaseId: g.testCaseId,
+        }),
+      ),
+    };
+  },
+
+  async draft_scenario(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const gapId = numericParam(params.gapId, 'gapId');
+    const draft = await draftScenario(db, projectId, gapId);
+    if (!draft) return { error: `No gap #${gapId} in project ${projectId}` };
+    return {
+      title: draft.gapTitle,
+      class: draft.gapClass,
+      annotations: draft.annotations,
+      path: draft.path,
+      catalogMethods: draft.catalogMethods.map((m) => `${m.module}#${m.name}`),
+      draft: draft.text,
+    };
   },
 };
 

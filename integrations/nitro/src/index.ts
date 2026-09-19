@@ -6,6 +6,16 @@ import { consola } from 'consola';
 // Nitro build, and this module must also load from node_modules when the
 // server bundle externalizes it (e.g. dev builds).
 import type { NitroAppPlugin } from 'nitropack';
+import { verifyProbeHeader, type PiwiProbeSpec } from './probe';
+
+export {
+  verifyProbeHeader,
+  signProbeMessage,
+  probeSigningMessage,
+  PROBE_TTL_MS,
+  type PiwiProbeSpec,
+  type SignedProbe,
+} from './probe';
 
 const MAX_ENTRIES = 50;
 const MAX_MSG_LENGTH = 500;
@@ -83,6 +93,8 @@ interface RequestStore {
   logs: PiwiTestLogEntry[];
   spans: PiwiServerSpan[];
   startMs: number;
+  /** A verified probe fault for this request, when one was signed and honored. */
+  probe?: PiwiProbeSpec;
 }
 
 // Links consola calls and recorded spans to the request being handled. The store
@@ -108,6 +120,29 @@ let reporterAdded = false;
 const TEST_LOGS_DISABLED =
   process.env.PIWI_TEST_LOGS_DISABLED === 'true' ||
   (process.env.NODE_ENV === 'production' && process.env.PIWI_TEST_LOGS_DISABLED !== 'false');
+
+/** The shared secret a probe run signs the `X-Piwi-Probe` header with. */
+const PROBE_SECRET = process.env.PIWI_PROBE_SECRET || undefined;
+
+/**
+ * Server probes stay off unless a project opts in. When off (the default in this
+ * milestone) a signed probe header is still verified and recorded, but no fault
+ * is applied — only the client-safe subset would ever be, and only once this is
+ * on.
+ */
+const SERVER_PROBES_ENABLED = process.env.PIWI_SERVER_PROBES === 'true';
+
+/**
+ * Best-effort source file of the matched route handler, for the root span's
+ * `piwi.handler` attribute. Nitro exposes the matched route on the event context
+ * on recent versions; when it carries no file, the attribute is omitted and the
+ * dashboard falls back to its file-routing convention.
+ */
+function resolveHandlerFile(event: any): string | undefined {
+  const matched = event?.context?.matchedRoute as { file?: unknown; filename?: unknown } | undefined;
+  const file = matched?.file ?? matched?.filename;
+  return typeof file === 'string' && file ? file : undefined;
+}
 
 const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
   if (TEST_LOGS_DISABLED) return;
@@ -140,6 +175,20 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
     const store: RequestStore = { logs: [], spans: [], startMs: Date.now() };
     event.context._piwiLogs = store.logs;
     event.context._piwiSpans = store.spans;
+
+    // Verify a signed probe header, honored only outside production (under the
+    // same guard as log capture) and only when a shared secret is configured.
+    // Nothing is applied in this milestone — the spec is recorded on the request
+    // scope for handlers to read, and a fault is applied only once server probes
+    // are turned on (and then only the client-safe subset).
+    const probe = verifyProbeHeader(event.node.req.headers['x-piwi-probe'], PROBE_SECRET, Date.now());
+    if (probe) {
+      store.probe = probe;
+      event.context._piwiProbe = probe;
+      event.context._piwiProbeApplied = false;
+      // SERVER_PROBES_ENABLED is off in this milestone; no fault is applied.
+      void SERVER_PROBES_ENABLED;
+    }
 
     // Patch res.end so the X-Piwi-Logs / X-Piwi-Trace headers are injected for
     // ALL responses, including H3 error responses where Nitro bypasses the
@@ -180,6 +229,7 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
         const statusCode = Number(res.statusCode) || 0;
         const traceId =
           parseTraceparent(event.node.req.headers['traceparent']) ?? randomBytes(16).toString('hex');
+        const handlerFile = resolveHandlerFile(event);
         const rootSpan: PiwiServerSpan = {
           id: randomBytes(8).toString('hex'),
           name: `${method} ${path}`.trim(),
@@ -188,7 +238,12 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
           durMs: Math.max(0, endMs - store.startMs),
           status: statusCode >= 500 ? 'error' : 'ok',
           traceId,
-          attrs: { 'http.method': method, 'http.route': path, 'http.status_code': statusCode },
+          attrs: {
+            'http.method': method,
+            'http.route': path,
+            'http.status_code': statusCode,
+            ...(handlerFile ? { 'piwi.handler': handlerFile } : {}),
+          },
         };
         for (const s of store.spans) if (!s.parentId) s.parentId = rootSpan.id;
         const spanPayload = [rootSpan, ...store.spans].slice(0, MAX_SPANS);

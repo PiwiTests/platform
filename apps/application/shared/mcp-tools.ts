@@ -790,6 +790,39 @@ export const MCP_TOOL_DEFS = [
       required: ['projectId'],
     },
   },
+  {
+    name: 'list_scenario_gaps',
+    description:
+      'Ranked scenario gaps for a project: tests that do not exist yet, each with its class (blind-spot, false-comfort, fragile), evidence lines and exposure score. Filter by class, feature, a minimum score, or a pull-request number. Every line is observed reach, never instrumented coverage. Pair with draft_scenario to turn a gap into a test skeleton.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        class: {
+          type: 'string',
+          description: 'Filter by gap class: blind-spot | false-comfort | fragile | unhandled | degraded',
+        },
+        feature: { type: 'string', description: 'Filter to a feature (the piwi:feature tag)' },
+        minScore: { type: 'number', description: 'Only gaps at or above this exposure score' },
+        pr: { type: 'number', description: 'Only gaps reported on this pull request' },
+        limit: { type: 'number', description: 'Max gaps to return (default 20)' },
+      },
+      required: ['projectId'],
+    },
+  },
+  {
+    name: 'draft_scenario',
+    description:
+      'A deterministic test skeleton for a scenario gap: a title from the gap, piwi: annotations from the nearest test, the graph path from a reached page to the gap as the step list, catalog page-object methods where they match, and a TODO assertion naming what to check. Delivered as text to paste or hand to an agent — nothing is committed. Pass the gap id from list_scenario_gaps.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        gapId: { type: 'number', description: 'The gap id from list_scenario_gaps' },
+      },
+      required: ['projectId', 'gapId'],
+    },
+  },
 ] as const satisfies readonly McpToolDef[];
 
 /**

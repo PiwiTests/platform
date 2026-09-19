@@ -1,0 +1,2 @@
+ALTER TABLE `test_runs_cases` ADD `page_inventory_payload_id` integer REFERENCES case_payloads(id);--> statement-breakpoint
+CREATE INDEX `idx_trc_page_inventory_payload` ON `test_runs_cases` (`page_inventory_payload_id`) WHERE page_inventory_payload_id IS NOT NULL;

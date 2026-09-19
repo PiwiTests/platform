@@ -69,6 +69,16 @@ export interface PiwiDashboardOptions {
    */
   capturePageState?: boolean;
   /**
+   * Capture a lightweight inventory of each visited page on *passing* runs — the
+   * interactive controls (role + accessible name) and links (name + href)
+   * present at test end — so the dashboard can tell which controls and links the
+   * suite exposes but never exercises. Only names and hrefs are captured, never
+   * values; a page is inventoried once per worker per run. Defaults to `true`;
+   * automatically disabled when `collectPerformanceMetrics` is `false`. Can also
+   * be forced off with `PIWI_CAPTURE_PAGE_INVENTORY=false`.
+   */
+  capturePageInventory?: boolean;
+  /**
    * Capture server-side spans for each API/document request the test makes,
    * read from the `X-Piwi-Trace` response header emitted by a Piwi
    * instrumentation plugin (e.g. `@piwitests/instrumentation-nitro`). The spans show

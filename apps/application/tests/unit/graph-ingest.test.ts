@@ -10,6 +10,7 @@ import { pageNodeKey, collectOwnOrigins, isOwnOriginRequest } from '../../shared
 delete process.env.PIWI_DATABASE_URL;
 const {
   collectRunGraphReaches,
+  collectPageInventories,
   ingestRunGraph,
   pruneChangesEdges,
   pruneStaleBranchGraphRows,
@@ -295,5 +296,77 @@ describe('ingestRunGraph', () => {
     const after = await db.select().from(schema.graphNodes).where(eq(schema.graphNodes.projectId, 1));
     expect(after).toHaveLength(2);
     expect(after.every((n) => n.firstSeenRunId === 1 && n.lastSeenRunId === 2)).toBe(true);
+  });
+});
+
+describe('collectPageInventories', () => {
+  const origins = new Set(['https://app.example.com']);
+
+  test('attributes each request to the page current when it started (two-page test)', () => {
+    // A test that signs in on /login then lands on /orders. Each page carries its
+    // settle time; the login POST fired while /login was current, the orders
+    // fetch after /orders settled.
+    const pages = collectPageInventories(
+      [
+        {
+          pageInventory: [
+            { url: 'https://app.example.com/login', controls: [], links: [], capturedAt: 1000 },
+            { url: 'https://app.example.com/orders', controls: [], links: [], capturedAt: 2000 },
+          ],
+          networkItems: [
+            {
+              method: 'POST',
+              normalizedUrl: '/api/login',
+              url: 'https://app.example.com/api/login',
+              resourceType: 'fetch',
+              startTime: 1500,
+            },
+            {
+              method: 'GET',
+              normalizedUrl: '/api/orders',
+              url: 'https://app.example.com/api/orders',
+              resourceType: 'fetch',
+              startTime: 2500,
+            },
+          ],
+        },
+      ],
+      origins,
+    );
+    const login = pages.find((p) => p.pageKey === '/login');
+    const orders = pages.find((p) => p.pageKey === '/orders');
+    // The login POST attaches to /login, not to the end-of-test /orders page.
+    expect(login?.loadsRouteKeys).toEqual(['POST /api/login']);
+    expect(orders?.loadsRouteKeys).toEqual(['GET /api/orders']);
+  });
+
+  test('writes no loads edge when a request cannot be placed', () => {
+    const pages = collectPageInventories(
+      [
+        {
+          pageInventory: [{ url: 'https://app.example.com/orders', controls: [], links: [], capturedAt: 2000 }],
+          networkItems: [
+            // Before the first settle — cannot be attributed.
+            {
+              method: 'GET',
+              normalizedUrl: '/api/early',
+              url: 'https://app.example.com/api/early',
+              resourceType: 'document',
+              startTime: 500,
+            },
+            // No start time — cannot be attributed.
+            {
+              method: 'GET',
+              normalizedUrl: '/api/untimed',
+              url: 'https://app.example.com/api/untimed',
+              resourceType: 'fetch',
+              startTime: null,
+            },
+          ],
+        },
+      ],
+      origins,
+    );
+    expect(pages.find((p) => p.pageKey === '/orders')?.loadsRouteKeys).toEqual([]);
   });
 });

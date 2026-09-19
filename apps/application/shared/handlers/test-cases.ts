@@ -17,6 +17,7 @@ import { buildFailureVerdict } from '../failure-verdict';
 import { buildSituation } from '../situation';
 import { computeNextStep } from '../next-step';
 import { getClusterPatchFacts } from './failure-clusters';
+import { isProbeRun } from './probes';
 import { buildFailureTimeline, type FailureTimeline, type TimelineCallsite } from '../failure-timeline';
 import {
   buildFailureClues,
@@ -153,7 +154,9 @@ export async function getTestCase(db: DrizzleDB, id: number) {
 }
 
 export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
-  return db
+  // Probe runs replay a test with an injected fault, so their executions never
+  // appear in a test's history.
+  const rows = await db
     .select({
       id: testRunsCases.id,
       runId: testRuns.id,
@@ -164,12 +167,14 @@ export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
       attempts: testRunsCases.attempts,
       startTime: testRuns.startTime,
       runStatus: testRuns.status,
+      runMetadata: testRuns.metadata,
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
     .where(eq(testRunsCases.testCaseId, testCaseId))
     .orderBy(desc(testRuns.startTime))
     .limit(50);
+  return rows.filter((r) => !isProbeRun(r.runMetadata)).map(({ runMetadata: _runMetadata, ...row }) => row);
 }
 
 export async function getTestRunCase(
@@ -1055,7 +1060,7 @@ export async function getTestCaseStabilityTrend(db: DrizzleDB, testCaseId: numbe
   const tcRows: any[] = await db.select({ id: testCases.id }).from(testCases).where(eq(testCases.id, testCaseId));
   if (tcRows.length === 0) throw new Error('Test case not found');
 
-  const rows: any[] = await db
+  const rawRows: any[] = await db
     .select({
       id: testRunsCases.id,
       status: testRunsCases.status,
@@ -1063,6 +1068,7 @@ export async function getTestCaseStabilityTrend(db: DrizzleDB, testCaseId: numbe
       retries: testRunsCases.retries,
       testRunId: testRunsCases.testRunId,
       startTime: testRuns.startTime,
+      runMetadata: testRuns.metadata,
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
@@ -1070,6 +1076,8 @@ export async function getTestCaseStabilityTrend(db: DrizzleDB, testCaseId: numbe
     .orderBy(desc(testRuns.startTime))
     .limit(200);
 
+  // Probe runs replay a test with an injected fault, so they never shape the trend.
+  const rows: any[] = rawRows.filter((r) => !isProbeRun(r.runMetadata));
   if (rows.length === 0) return { testCaseId, buckets: [] };
 
   rows.reverse();

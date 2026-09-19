@@ -1,5 +1,7 @@
 ﻿import type { FullResult } from '@playwright/test/reporter';
 import type { CollectedTestCase, WireTestCase } from '../../types.js';
+import { isProbeMode } from '../probe/mode.js';
+import { probeRunMetadata } from '../probe/plan.js';
 import type { RunPayload } from './uploader.js';
 
 /**
@@ -64,6 +66,7 @@ export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
     networkRequests: rest.networkRequests || null,
     webVitals: rest.webVitals || null,
     pageState: rest.pageState || null,
+    pageInventory: rest.pageInventory || null,
     aiUsage: rest.aiUsage || null,
     consoleLogs: rest.consoleLogs || null,
     dialogs: rest.dialogs || null,
@@ -185,7 +188,9 @@ export function serializeRun(payload: RunPayload, opts: SerializeRunOptions): Re
     didNotRunTests: payload.didNotRunTests ?? 0,
     environment: payload.environment ?? null,
     label: payload.label ?? null,
-    metadata: payload.metadata,
+    // A probe run is stamped so the dashboard never counts it as a real run
+    // (no clusters, regression signals, notifications or PR feedback).
+    metadata: isProbeMode() ? probeRunMetadata(payload.metadata) : payload.metadata,
     instanceId: payload.instanceId,
     playwrightVersion: payload.playwrightVersion,
     reporterVersion: payload.reporterVersion,

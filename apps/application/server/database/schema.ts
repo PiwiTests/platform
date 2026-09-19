@@ -51,6 +51,7 @@ export const {
   graphNodes,
   graphEdges,
   scenarioGaps,
+  probes,
 } = schema;
 
 // TypeScript type exports – always based on SQLite schema (the canonical reference)
@@ -131,4 +132,6 @@ export type {
   NewGraphEdge,
   ScenarioGap,
   NewScenarioGap,
+  Probe,
+  NewProbe,
 } from './schema.sqlite';

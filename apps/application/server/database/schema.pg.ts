@@ -493,6 +493,7 @@ export const testRunsCases = pgTable(
     ariaSnapshotJsonPayloadId: integer('aria_snapshot_json_payload_id').references(() => casePayloads.id),
     testSourcePayloadId: integer('test_source_payload_id').references(() => casePayloads.id),
     testSourceFramesPayloadId: integer('test_source_frames_payload_id').references(() => casePayloads.id),
+    pageInventoryPayloadId: integer('page_inventory_payload_id').references(() => casePayloads.id), // Content-addressed page inventory (controls + links per visited page), passing runs
     browser: jsonb('browser'), // Playwright project/browser config: { projectName, browserName, channel, viewport }
     browserName: text('browser_name'), // Scalar browser identity (projectName) for index efficiency
     testAnnotations: jsonb('test_annotations'), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
@@ -536,6 +537,9 @@ export const testRunsCases = pgTable(
     framesPayloadIdx: index('idx_trc_frames_payload')
       .on(table.testSourceFramesPayloadId)
       .where(sql`test_source_frames_payload_id IS NOT NULL`),
+    pageInventoryPayloadIdx: index('idx_trc_page_inventory_payload')
+      .on(table.pageInventoryPayloadId)
+      .where(sql`page_inventory_payload_id IS NOT NULL`),
   }),
 );
 
@@ -1363,6 +1367,39 @@ export const scenarioGaps = pgTable(
     featureNodeIdx: index('idx_scenario_gaps_feature_node').on(table.featureNodeId),
     testCaseIdx: index('idx_scenario_gaps_test_case').on(table.testCaseId),
     clusterIdx: index('idx_scenario_gaps_cluster').on(table.failureClusterId),
+  }),
+);
+
+// Probes — one row per (test, node, fault) probe outcome. A client probe
+// mutates a response at the Playwright route boundary; a server probe (M3) sends
+// a signed fault header. Each row writes or refreshes one `checks` edge from the
+// test to the node with its outcome.
+export const probes = pgTable(
+  'probes',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'set null' }),
+    nodeId: integer('node_id').references(() => graphNodes.id, { onDelete: 'set null' }),
+    routeKey: text('route_key'),
+    level: text('level').notNull().default('client'), // 'client' | 'server'
+    fault: text('fault').notNull(),
+    applied: boolean('applied').notNull().default(true),
+    outcome: text('outcome').notNull(), // 'noticed' | 'not-noticed' | 'inconclusive'
+    handled: text('handled').notNull().default('n/a'), // 'graceful' | 'degraded' | 'unhandled' | 'n/a'
+    runId: integer('run_id'),
+    evidence: jsonb('evidence'),
+    probedAt: timestamp('probed_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    pairIdx: uniqueIndex('idx_probes_pair').on(table.projectId, table.testCaseId, table.routeKey, table.fault),
+    projectIdx: index('idx_probes_project').on(table.projectId),
+    nodeIdx: index('idx_probes_node').on(table.nodeId),
+    testIdx: index('idx_probes_test').on(table.testCaseId),
   }),
 );
 
