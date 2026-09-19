@@ -1655,6 +1655,8 @@ export interface ScenarioGapRow {
   testCaseId: number | null;
   testRunId: number | null;
   projectId: number;
+  /** The feature (from a `groups` edge) the gap's subject belongs to, or null. */
+  feature: string | null;
   snoozedUntil: number | null;
   acceptedAt: number | null;
   createdAt: number;
@@ -1686,6 +1688,7 @@ function mapGapRow(r: typeof scenarioGaps.$inferSelect): ScenarioGapRow {
     testCaseId: r.testCaseId ?? null,
     testRunId: r.testRunId ?? null,
     projectId: r.projectId,
+    feature: null,
     snoozedUntil: r.snoozedUntil != null ? toMs(r.snoozedUntil) : null,
     acceptedAt: r.acceptedAt != null ? toMs(r.acceptedAt) : null,
     createdAt: toMs(r.createdAt),
@@ -1727,7 +1730,22 @@ export async function listScenarioGaps(
     .orderBy(desc(scenarioGaps.score), desc(scenarioGaps.updatedAt))
     .limit(limit);
 
-  return rows.map(mapGapRow);
+  const mapped = rows.map(mapGapRow);
+
+  // Resolve each gap's feature from the `groups` edges (feature → node), canonical.
+  const groupRows = await db
+    .select({ feature: graphEdges.fromKey, toKind: graphEdges.toKind, toKey: graphEdges.toKey })
+    .from(graphEdges)
+    .where(and(eq(graphEdges.projectId, projectId), eq(graphEdges.kind, 'groups'), isNull(graphEdges.branch)));
+  if (groupRows.length > 0) {
+    const featureByNode = new Map<string, string>();
+    for (const g of groupRows) featureByNode.set(`${g.toKind}\x00${g.toKey}`, g.feature);
+    for (const gap of mapped) {
+      gap.feature = featureByNode.get(`${gap.subject.kind}\x00${gap.subject.key}`) ?? null;
+    }
+  }
+
+  return mapped;
 }
 
 // ── Triage ───────────────────────────────────────────────────────────────────

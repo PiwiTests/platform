@@ -7,7 +7,7 @@ import { and, eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 
 delete process.env.PIWI_DATABASE_URL;
-const { triageGap, listScenarioGaps, listAcceptedUnwritten, reopenExpiredSnoozes, upsertScenarioGaps } =
+const { triageGap, listAcceptedUnwritten, reopenExpiredSnoozes, upsertScenarioGaps } =
   await import('../../shared/handlers/scenario-gaps');
 const { getFeatureGraph } = await import('../../server/utils/feature-graph');
 

@@ -197,7 +197,7 @@ function refreshFailureCounts() {
 useRunStream(() => Promise.all([refresh(), refreshFailureCounts()]));
 
 // === TABS ===
-const TABS = ['runs', 'tests', 'failures', 'performance', 'settings'] as const;
+const TABS = ['runs', 'tests', 'failures', 'gaps', 'performance', 'settings'] as const;
 type TabValue = (typeof TABS)[number];
 
 // Old ?tab= values (and the retired sub-routes) still land on the right tab.
@@ -264,6 +264,7 @@ const tabItems = computed(() => [
     icon: 'i-lucide-layers',
     value: 'failures' as const,
   },
+  { label: 'Gaps', icon: 'i-lucide-radar', value: 'gaps' as const },
   { label: 'Performance', icon: 'i-lucide-trending-up', value: 'performance' as const },
   { label: 'Settings', icon: 'i-lucide-settings', value: 'settings' as const },
 ]);
@@ -1142,6 +1143,11 @@ const moreMenuItems = computed(() => {
             hide-candidates
             @count="quarantineCount = $event"
           />
+        </div>
+
+        <!-- GAPS TAB -->
+        <div v-if="activeTab === 'gaps'">
+          <GapsPanel :project-id="Number(projectId)" />
         </div>
 
         <!-- PERFORMANCE TAB -->

@@ -37,6 +37,20 @@ const { data: openClusters, refresh: refreshOpenClusters } = useFetch('/api/fail
   transform: (r: { items: OpenFailureCluster[] }) => r.items,
 });
 
+// Accepted-but-unwritten scenario gaps older than a week — the Home gaps queue.
+interface InboxGap {
+  id: number;
+  projectId: number;
+  title: string;
+  class: string;
+  score: number | null;
+}
+const { data: inboxGaps } = useFetch('/api/gaps/inbox', {
+  lazy: true,
+  default: () => [] as InboxGap[],
+  transform: (r: { items: InboxGap[] }) => r.items,
+});
+
 useRunStream(() => Promise.all([refreshOverview(), refreshRecentRuns(), refreshOpenClusters()]));
 
 // True only before the first project-overview load resolves — drives the skeleton.
@@ -346,6 +360,27 @@ function statusBorderClass(status: string): string {
           :can-write="canWrite"
           @changed="refreshOpenClusters"
         />
+
+        <!-- Accepted-but-unwritten scenario gaps — the gaps inbox queue -->
+        <SectionCard
+          v-if="inboxGaps.length > 0"
+          data-shot="gaps-inbox"
+          icon="i-lucide-radar"
+          title="Accepted gaps not yet written"
+        >
+          <div class="divide-y divide-default text-sm">
+            <NuxtLink
+              v-for="gap in inboxGaps"
+              :key="gap.id"
+              :to="`/projects/${gap.projectId}?tab=gaps`"
+              class="flex items-center gap-3 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/60 rounded transition-colors"
+            >
+              <UBadge color="neutral" variant="subtle" size="sm">{{ gap.class }}</UBadge>
+              <span class="flex-1 min-w-0 truncate text-highlighted">{{ gap.title }}</span>
+              <span class="text-xs text-muted tabular-nums shrink-0">{{ (gap.score ?? 0).toFixed(3) }}</span>
+            </NuxtLink>
+          </div>
+        </SectionCard>
 
         <!-- Per-project trend table + Recent activity side by side on wide screens -->
         <div v-if="hasProjects || hasActivity" class="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">

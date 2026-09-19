@@ -91,7 +91,13 @@ import {
 } from '#shared/handlers/selections';
 import { getSelectionSuggestions } from '#shared/handlers/selection-suggestions';
 import { getSelectionAnalytics } from '#shared/handlers/selection-analytics';
-import { computeScenarioGaps, listScenarioGaps, triageGap, draftScenario } from '#shared/handlers/scenario-gaps';
+import {
+  computeScenarioGaps,
+  listScenarioGaps,
+  triageGap,
+  draftScenario,
+  listAcceptedUnwritten,
+} from '#shared/handlers/scenario-gaps';
 import { getFeatureGraph, MAX_GRAPH_DEPTH } from '~~/server/utils/feature-graph';
 import { parseRouteNodeKey } from '#shared/graph';
 import { ingestProjectManifest } from '~~/server/utils/surface-manifest';
@@ -1572,6 +1578,11 @@ const routes: RouteEntry[] = [
       const { recorded } = await recordProbeResults(await getDemoDb(), +m[1]!, runId, results);
       return { success: true, recorded };
     },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/gaps\/inbox$/,
+    handler: async () => ({ items: await listAcceptedUnwritten(await getDemoDb(), 'all') }),
   },
   {
     method: 'POST',
