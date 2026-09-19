@@ -10,6 +10,7 @@
 
 import { and, count, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
+  failureClusters,
   graphEdges,
   graphNodes,
   networkRequests,
@@ -48,6 +49,8 @@ export interface DetectedGap {
   confidence: number;
   testCaseId?: number | null;
   ticket?: string | null;
+  /** The failure cluster this gap is about, when it is cluster-shaped. */
+  failureClusterId?: number | null;
   /** Files whose churn/age/escape define exposure, when the gap is file-shaped. */
   files?: string[];
   /** `piwi:priority` observed around the subject, when known. */
@@ -319,6 +322,478 @@ export function detectChangedUnreached(
   return gaps;
 }
 
+// ── M2 detectors (pure) ──────────────────────────────────────────────────────
+
+/** A control node and how the suite touches it. */
+export interface ControlReach {
+  key: string;
+  /** Number of pages that contain this control. */
+  pageCount: number;
+  /** Distinct tests whose locators target it. */
+  reachCount: number;
+}
+
+/**
+ * Control nobody exercises — a control the suite has seen on a page but no
+ * locator ever targets. Blind spot.
+ */
+export function detectControlNobodyExercises(controls: ControlReach[]): DetectedGap[] {
+  const gaps: DetectedGap[] = [];
+  for (const c of controls) {
+    if (c.reachCount > 0) continue;
+    if (c.pageCount === 0) continue;
+    gaps.push({
+      detector: 'control-nobody-exercises',
+      kind: 'gap',
+      class: 'blind-spot',
+      key: `control:${c.key}`,
+      title: `No test exercises control ${c.key}`,
+      evidence: [`On ${c.pageCount} page${c.pageCount === 1 ? '' : 's'} · no locator targets it — observed reach.`],
+      confidence: clamp01(0.3 + Math.min(0.5, c.pageCount / 10)),
+    });
+  }
+  return gaps;
+}
+
+/** A page node, whether a test reached it, and how many pages link to it. */
+export interface PageLinkReach {
+  key: string;
+  reached: boolean;
+  linkedFrom: number;
+}
+
+/**
+ * Reachable, unvisited — a page linked from other pages that no test ever
+ * navigates to. Blind spot.
+ */
+export function detectReachableUnvisited(pages: PageLinkReach[]): DetectedGap[] {
+  const gaps: DetectedGap[] = [];
+  for (const p of pages) {
+    if (p.reached || p.linkedFrom === 0) continue;
+    gaps.push({
+      detector: 'reachable-unvisited',
+      kind: 'gap',
+      class: 'blind-spot',
+      key: `page:${p.key}`,
+      title: `${p.key} is linked but never visited`,
+      evidence: [
+        `Linked from ${p.linkedFrom} page${p.linkedFrom === 1 ? '' : 's'} · never navigated to — observed reach.`,
+      ],
+      confidence: clamp01(0.4 + Math.min(0.4, p.linkedFrom / 10)),
+    });
+  }
+  return gaps;
+}
+
+/** A route node, whether a test reaches it, and whether a control/page drives it. */
+export interface RouteEntryReach {
+  key: string;
+  reached: boolean;
+  hasTrigger: boolean;
+  hasLoad: boolean;
+}
+
+/**
+ * API-only route — a route the suite reaches only through request fixtures: no
+ * control triggers it and no page loads it. Blind spot (or headless by design).
+ */
+export function detectApiOnlyRoute(routes: RouteEntryReach[]): DetectedGap[] {
+  const gaps: DetectedGap[] = [];
+  for (const r of routes) {
+    if (!r.reached || r.hasTrigger || r.hasLoad) continue;
+    gaps.push({
+      detector: 'api-only-route',
+      kind: 'gap',
+      class: 'blind-spot',
+      key: `route:${r.key}`,
+      title: `${r.key} is reached only by request fixtures`,
+      evidence: [
+        `No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design.`,
+      ],
+      confidence: 0.35,
+    });
+  }
+  return gaps;
+}
+
+/** A checks edge's outcome for a node, with the node's exposure proxy. */
+export interface CheckOutcome {
+  routeKey: string;
+  outcome: string;
+  fault?: string | null;
+  /** Exposure proxy — how many tests reach the node. */
+  exposure: number;
+}
+
+/** A node must be at least this exposed for a not-noticed probe to be a gap. */
+const NOT_NOTICED_MIN_EXPOSURE = 1;
+
+/**
+ * Not noticed — a probe made a route return garbage and every test still passed.
+ * The most dangerous class: the catalog says it is covered. False comfort.
+ */
+export function detectNotNoticed(checks: CheckOutcome[]): DetectedGap[] {
+  const gaps: DetectedGap[] = [];
+  for (const c of checks) {
+    if (c.outcome !== 'not-noticed') continue;
+    if (c.exposure < NOT_NOTICED_MIN_EXPOSURE) continue;
+    const fault = c.fault ? ` (${c.fault})` : '';
+    gaps.push({
+      detector: 'not-noticed',
+      kind: 'gap',
+      class: 'false-comfort',
+      key: `route:${c.routeKey}`,
+      title: `Tests pass when ${c.routeKey} breaks`,
+      evidence: [
+        `A probe${fault} on ${c.routeKey} did not make any test fail — assert the effect the request should have.`,
+      ],
+      confidence: 0.8,
+    });
+  }
+  return gaps;
+}
+
+/** A test and the set of nodes it reaches, each with whether it was seen recently. */
+export interface TestReachRecency {
+  testCaseId: number;
+  title: string;
+  /** Nodes this test reaches; empty means it reaches nothing observable. */
+  reachedNodes: Array<{ seenRecently: boolean }>;
+  priority?: string | null;
+}
+
+/**
+ * Orphan test — a test whose every reached node vanished from the recent window.
+ * Fragile: it may be exercising surface that no longer exists.
+ */
+export function detectOrphanTest(tests: TestReachRecency[]): DetectedGap[] {
+  const gaps: DetectedGap[] = [];
+  for (const t of tests) {
+    if (t.reachedNodes.length === 0) continue;
+    if (t.reachedNodes.some((n) => n.seenRecently)) continue;
+    gaps.push({
+      detector: 'orphan-test',
+      kind: 'gap',
+      class: 'fragile',
+      key: `test:${t.testCaseId}`,
+      title: `${t.title} reaches only vanished surface`,
+      evidence: [
+        `All ${t.reachedNodes.length} node${t.reachedNodes.length === 1 ? '' : 's'} it reaches disappeared from recent runs — retire or repoint it.`,
+      ],
+      confidence: 0.4,
+      testCaseId: t.testCaseId,
+      priority: t.priority ?? null,
+    });
+  }
+  return gaps;
+}
+
+/** A failure cluster whose fix later regressed. */
+export interface RegressedCluster {
+  clusterId: number;
+  title: string;
+  fixCommit?: string | null;
+  daysSinceFix?: number | null;
+}
+
+/** Fix did not hold — a cluster that was fixed and then regressed. Fragile. */
+export function detectFixDidNotHold(clusters: RegressedCluster[]): DetectedGap[] {
+  return clusters.map((c) => ({
+    detector: 'fix-did-not-hold',
+    kind: 'gap' as const,
+    class: 'fragile' as const,
+    key: `cluster:${c.clusterId}`,
+    title: `A fix for "${c.title}" did not hold`,
+    evidence: [
+      c.fixCommit
+        ? `Fixed in ${c.fixCommit.slice(0, 7)}${c.daysSinceFix != null ? ` · regressed ${c.daysSinceFix} day${c.daysSinceFix === 1 ? '' : 's'} later` : ' · regressed since'} — a regression test would pin it.`
+        : `Fixed once and regressed — a regression test would pin it.`,
+    ],
+    confidence: 0.6,
+    failureClusterId: c.clusterId,
+  }));
+}
+
+/** A test's phantom status: skipped/fixme/did-not-run/blocked for how long. */
+export interface PhantomTest {
+  testCaseId: number;
+  title: string;
+  /** 'skipped' | 'didnotrun' | 'fixme' | 'blocked'. */
+  reason: string;
+  daysStale: number;
+}
+
+/** A phantom is only reported once it has been stale this long. */
+const PHANTOM_MIN_DAYS = 30;
+
+/**
+ * Phantom coverage — a test skipped, fixme, did-not-run or blocked for over a
+ * month. Fragile: it discounts every node it used to reach. Also lowers the
+ * reach factor of those nodes (handled by the caller).
+ */
+export function detectPhantomCoverage(tests: PhantomTest[]): DetectedGap[] {
+  const gaps: DetectedGap[] = [];
+  for (const t of tests) {
+    if (t.daysStale < PHANTOM_MIN_DAYS) continue;
+    gaps.push({
+      detector: 'phantom-coverage',
+      kind: 'gap',
+      class: 'fragile',
+      key: `test:${t.testCaseId}`,
+      title: `${t.title} has not really run in ${t.daysStale} days`,
+      evidence: [`${t.reason} ${t.daysStale} days · it no longer protects the nodes it used to reach.`],
+      confidence: clamp01(0.3 + Math.min(0.5, t.daysStale / 120)),
+      testCaseId: t.testCaseId,
+    });
+  }
+  return gaps;
+}
+
+/** A passing execution that logged an error the suite ignored. */
+export interface PassedWithError {
+  testCaseId: number;
+  title: string;
+  /** A short description of the error, e.g. 'POST /api/audit returned 500 in background'. */
+  detail: string;
+}
+
+/**
+ * Passed with errors — a test passed while a console error, a backend Error log
+ * or a background 5xx went unremarked. False comfort.
+ */
+export function detectPassedWithErrors(execs: PassedWithError[]): DetectedGap[] {
+  return execs.map((e) => ({
+    detector: 'passed-with-errors',
+    kind: 'gap' as const,
+    class: 'false-comfort' as const,
+    key: `test:${e.testCaseId}`,
+    title: `${e.title} passed with errors`,
+    evidence: [`Passed · ${e.detail} — assert no server errors occur during this flow.`],
+    confidence: 0.6,
+    testCaseId: e.testCaseId,
+  }));
+}
+
+/** A catalog method and whether any test calls it, plus whether its page is reached. */
+export interface CatalogMethodReach {
+  module: string;
+  name: string;
+  callCount: number;
+  pageReachedBy: number;
+}
+
+/**
+ * Catalog method, no test calls — a page-object method the catalog owns that no
+ * test calls, on a page the suite reaches. The cheapest gap: the steps exist.
+ */
+export function detectCatalogMethodNoTestCalls(methods: CatalogMethodReach[]): DetectedGap[] {
+  const gaps: DetectedGap[] = [];
+  for (const m of methods) {
+    if (m.callCount > 0) continue;
+    if (m.pageReachedBy === 0) continue;
+    gaps.push({
+      detector: 'catalog-method-no-test-calls',
+      kind: 'gap',
+      class: 'blind-spot',
+      key: `catalog:${m.module}#${m.name}`,
+      title: `${m.name} is never called`,
+      evidence: [
+        `${m.module} · ${m.name} · page reached by ${m.pageReachedBy}, called by 0 — the cheapest gap, its steps already exist.`,
+      ],
+      confidence: 0.5,
+    });
+  }
+  return gaps;
+}
+
+/** A cluster diagnosis and whether its cause maps to any affected test's identity. */
+export interface IncidentalCatchInput {
+  clusterId: number;
+  causeFile: string;
+  /** The test that caught it, for the evidence line. */
+  catcherTitle: string;
+  /** True when the cause file appears in an affected test's title, tags, feature or reach. */
+  causeInAffectedIdentity: boolean;
+}
+
+/**
+ * Incidental catch — a cluster's diagnosed cause is in a file none of the tests
+ * that failed are actually about; they caught it by accident. Fragile.
+ */
+export function detectIncidentalCatch(inputs: IncidentalCatchInput[]): DetectedGap[] {
+  const gaps: DetectedGap[] = [];
+  for (const i of inputs) {
+    if (i.causeInAffectedIdentity) continue;
+    gaps.push({
+      detector: 'incidental-catch',
+      kind: 'gap',
+      class: 'fragile',
+      key: `cluster:${i.clusterId}`,
+      title: `${i.causeFile} is caught only incidentally`,
+      evidence: [
+        `Cause ${i.causeFile} · caught by ${i.catcherTitle}, which is not about it — a targeted regression test would pin it.`,
+      ],
+      confidence: 0.45,
+      files: [i.causeFile],
+      failureClusterId: i.clusterId,
+    });
+  }
+  return gaps;
+}
+
+/** A page and its assertion strength: tests on it and how many assert on data. */
+export interface AssertionLightPage {
+  pageKey: string;
+  testCount: number;
+  /** Tests with a data (non-visibility) `expect` on this page. */
+  dataAssertions: number;
+}
+
+/**
+ * Assertion-light — tests reach a page but none makes a data assertion on it.
+ * The false-comfort prior before a probe runs.
+ */
+export function detectAssertionLight(pages: AssertionLightPage[]): DetectedGap[] {
+  const gaps: DetectedGap[] = [];
+  for (const p of pages) {
+    if (p.testCount === 0 || p.dataAssertions > 0) continue;
+    gaps.push({
+      detector: 'assertion-light',
+      kind: 'gap',
+      class: 'false-comfort',
+      key: `page:${p.pageKey}`,
+      title: `${p.pageKey} is asserted only by visibility`,
+      evidence: [
+        `${p.testCount} test${p.testCount === 1 ? '' : 's'}, 0 data assertions on this page — schedule a probe, or add one assertion.`,
+      ],
+      confidence: 0.4,
+    });
+  }
+  return gaps;
+}
+
+// ── M2 change-time detectors (pure) ──────────────────────────────────────────
+
+/** A commit or ticket intent and whether any test matches its words. */
+export interface IntentInput {
+  /** The intent text (commit/PR title). */
+  title: string;
+  ticket?: string | null;
+  /** True when a test title, tag or feature matched the intent's words. */
+  matchedByTest: boolean;
+  files?: string[];
+}
+
+/**
+ * Intent without a test — a commit or PR whose words match no test title, tag or
+ * feature. Blind spot, reported at change time.
+ */
+export function detectIntentWithoutTest(intents: IntentInput[]): DetectedGap[] {
+  const gaps: DetectedGap[] = [];
+  for (const i of intents) {
+    if (i.matchedByTest) continue;
+    gaps.push({
+      detector: 'intent-without-test',
+      kind: 'gap',
+      class: 'blind-spot',
+      key: `intent:${i.ticket ?? i.title}`,
+      title: `No test mentions "${i.title}"`,
+      evidence: [
+        `${i.title} · no test title, tag or feature matches — a regression test drafted from the diff and message.`,
+      ],
+      confidence: 0.4,
+      ticket: i.ticket ?? null,
+      files: i.files,
+    });
+  }
+  return gaps;
+}
+
+/** A hunk that adds a thrown error or status code to a route's handler. */
+export interface NewErrorPathInput {
+  routeKey: string;
+  addedStatus: number;
+  filePath: string;
+}
+
+/**
+ * New error path — a hunk adds a thrown error or a status to a handler with a
+ * route node, and that status was never observed. Blind spot.
+ */
+export function detectNewErrorPath(inputs: NewErrorPathInput[]): DetectedGap[] {
+  return inputs.map((i) => ({
+    detector: 'new-error-path',
+    kind: 'gap' as const,
+    class: 'blind-spot' as const,
+    key: `route:${i.routeKey}:${i.addedStatus}`,
+    title: `${i.routeKey} gains a ${i.addedStatus} nobody tests`,
+    evidence: [`Adds ${i.addedStatus} to ${i.routeKey} · never observed — a scenario for that code.`],
+    confidence: 0.55,
+    files: [i.filePath],
+  }));
+}
+
+/** A hunk that adds a control to a template whose page the suite reaches. */
+export interface NewControlInput {
+  pageKey: string;
+  control: string;
+  filePath: string;
+  pageReached: boolean;
+}
+
+/** New control — a hunk adds a field/button/menu item to a reached page. Blind spot. */
+export function detectNewControl(inputs: NewControlInput[]): DetectedGap[] {
+  const gaps: DetectedGap[] = [];
+  for (const i of inputs) {
+    if (!i.pageReached) continue;
+    gaps.push({
+      detector: 'new-control',
+      kind: 'gap',
+      class: 'blind-spot',
+      key: `control:${i.pageKey}:${i.control}`,
+      title: `New control ${i.control} on ${i.pageKey}`,
+      evidence: [`Adds ${i.control} on ${i.pageKey} · a scenario that exercises it.`],
+      confidence: 0.5,
+      files: [i.filePath],
+    });
+  }
+  return gaps;
+}
+
+/** A hunk that removes a locator anchor a control node's snapshot still relies on. */
+export interface LocatorBreakInput {
+  removedAttr: string;
+  filePath: string;
+  /** Call sites whose stored locator uses the removed attribute. */
+  callSites: string[];
+}
+
+/** A prediction handed to locator healing — not a gap. */
+export interface LocatorBreakPrediction {
+  detector: 'locator-break-ahead';
+  removedAttr: string;
+  filePath: string;
+  callSites: string[];
+  evidence: string;
+}
+
+/**
+ * Locator break ahead — a diff removes a testid/id/name a control node's stored
+ * locator relies on. A prediction handed to locator healing as a pre-flight, not
+ * a scenario gap.
+ */
+export function detectLocatorBreakAhead(inputs: LocatorBreakInput[]): LocatorBreakPrediction[] {
+  return inputs
+    .filter((i) => i.callSites.length > 0)
+    .map((i) => ({
+      detector: 'locator-break-ahead' as const,
+      removedAttr: i.removedAttr,
+      filePath: i.filePath,
+      callSites: i.callSites,
+      evidence: `Removes ${i.removedAttr} · ${i.callSites.length} call site${i.callSites.length === 1 ? '' : 's'} — heal before the run fails.`,
+    }));
+}
+
 // ── Loaders + orchestration (impure) ─────────────────────────────────────────
 
 const PRIORITY_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
@@ -446,7 +921,12 @@ export async function computeScenarioGaps(
   // Node first-seen for surface drift. Pruned (soft-deleted) nodes are excluded
   // so vanished surface neither reaches detectors nor re-flags as drift.
   const nodeRows = await db
-    .select({ kind: graphNodes.kind, key: graphNodes.key, firstSeenRunId: graphNodes.firstSeenRunId })
+    .select({
+      kind: graphNodes.kind,
+      key: graphNodes.key,
+      firstSeenRunId: graphNodes.firstSeenRunId,
+      lastSeenRunId: graphNodes.lastSeenRunId,
+    })
     .from(graphNodes)
     .where(and(eq(graphNodes.projectId, projectId), nodeBranchScope, isNull(graphNodes.prunedAt)));
 
@@ -481,25 +961,270 @@ export async function computeScenarioGaps(
     });
   }
 
+  // Breadth edges the M2 detectors read: contains (page → control), links
+  // (page → page), triggers/loads (into a route) and checks (probe outcomes).
+  const breadthEdges = await db
+    .select({
+      kind: graphEdges.kind,
+      fromKind: graphEdges.fromKind,
+      fromKey: graphEdges.fromKey,
+      toKind: graphEdges.toKind,
+      toKey: graphEdges.toKey,
+      evidence: graphEdges.evidence,
+    })
+    .from(graphEdges)
+    .where(
+      and(
+        eq(graphEdges.projectId, projectId),
+        inArray(graphEdges.kind, ['contains', 'links', 'triggers', 'loads', 'checks']),
+        edgeBranchScope,
+      ),
+    );
+
+  const pagesByControl = new Map<string, Set<string>>(); // control key → containing pages
+  const linkSourcesByPage = new Map<string, Set<string>>(); // target page → source pages
+  const triggeredRoutes = new Set<string>();
+  const loadedRoutes = new Set<string>();
+  const checksByRoute = new Map<string, { outcome: string; fault: string | null }>();
+  for (const e of breadthEdges) {
+    if (e.kind === 'contains' && e.toKind === 'control') {
+      const set = pagesByControl.get(e.toKey) ?? new Set<string>();
+      set.add(e.fromKey);
+      pagesByControl.set(e.toKey, set);
+    } else if (e.kind === 'links' && e.toKind === 'page') {
+      const set = linkSourcesByPage.get(e.toKey) ?? new Set<string>();
+      set.add(e.fromKey);
+      linkSourcesByPage.set(e.toKey, set);
+    } else if (e.kind === 'triggers' && e.toKind === 'route') {
+      triggeredRoutes.add(e.toKey);
+    } else if (e.kind === 'loads' && e.toKind === 'route') {
+      loadedRoutes.add(e.toKey);
+    } else if (e.kind === 'checks' && e.toKind === 'route') {
+      const ev = (e.evidence ?? {}) as { outcome?: string; fault?: string };
+      if (ev.outcome) checksByRoute.set(e.toKey, { outcome: ev.outcome, fault: ev.fault ?? null });
+    }
+  }
+
+  // Node recency for orphan tests: a node last seen inside the recent window.
+  const recentSet = new Set(recentIds);
+  const nodeSeenRecently = new Map<string, boolean>();
+  for (const node of nodeRows) {
+    nodeSeenRecently.set(`${node.kind}\x00${node.key}`, recentSet.has(node.lastSeenRunId ?? -1));
+  }
+
+  const controlReach: ControlReach[] = [];
+  const pageLinkReach: PageLinkReach[] = [];
+  const routeEntryReach: RouteEntryReach[] = [];
+  for (const node of nodeRows) {
+    const nodeKey = `${node.kind}\x00${node.key}`;
+    const reachCount = reachByNode.get(nodeKey)?.size ?? 0;
+    if (node.kind === 'control') {
+      controlReach.push({ key: node.key, pageCount: pagesByControl.get(node.key)?.size ?? 0, reachCount });
+    } else if (node.kind === 'page') {
+      pageLinkReach.push({
+        key: node.key,
+        reached: reachCount > 0,
+        linkedFrom: linkSourcesByPage.get(node.key)?.size ?? 0,
+      });
+    } else if (node.kind === 'route') {
+      routeEntryReach.push({
+        key: node.key,
+        reached: reachCount > 0,
+        hasTrigger: triggeredRoutes.has(node.key),
+        hasLoad: loadedRoutes.has(node.key),
+      });
+    }
+  }
+
+  const checkOutcomes: CheckOutcome[] = [...checksByRoute].map(([routeKey, v]) => ({
+    routeKey,
+    outcome: v.outcome,
+    fault: v.fault,
+    exposure: reachByNode.get(`route\x00${routeKey}`)?.size ?? 0,
+  }));
+
+  // Orphan tests: for each test, the recency of every node it reaches.
+  const reachedByTest = new Map<number, Array<{ seenRecently: boolean }>>();
+  for (const [nodeKey, ids] of reachByNode) {
+    const seenRecently = nodeSeenRecently.get(nodeKey) ?? false;
+    for (const id of ids) {
+      const list = reachedByTest.get(id) ?? [];
+      list.push({ seenRecently });
+      reachedByTest.set(id, list);
+    }
+  }
+  const testReachRecency: TestReachRecency[] = [...reachedByTest].map(([testCaseId, reachedNodes]) => ({
+    testCaseId,
+    title: meta.get(testCaseId)?.title ?? `test ${testCaseId}`,
+    reachedNodes,
+    priority: meta.get(testCaseId)?.priority ?? null,
+  }));
+
+  // Fix did not hold: clusters whose fix later regressed.
+  const regressedRows = await db
+    .select({
+      id: failureClusters.id,
+      title: failureClusters.title,
+      fixCommit: failureClusters.fixCommit,
+      fixLandedAt: failureClusters.fixLandedAt,
+    })
+    .from(failureClusters)
+    .where(and(eq(failureClusters.projectId, projectId), eq(failureClusters.fixVerification, 'regressed')));
+  const regressedClusters: RegressedCluster[] = regressedRows.map((c) => {
+    const landed = c.fixLandedAt instanceof Date ? c.fixLandedAt.getTime() : Number(c.fixLandedAt) || 0;
+    return {
+      clusterId: c.id,
+      title: c.title ?? 'a failure',
+      fixCommit: c.fixCommit ?? null,
+      daysSinceFix: landed > 0 ? Math.max(0, Math.round((Date.now() - landed) / 86_400_000)) : null,
+    };
+  });
+
   const detected = [
     ...detectSuccessOnly([...routeStats.values()]),
     ...detectSingleCoveringTest(nodeReach),
     ...detectSurfaceDrift(nodeDrift, latestRunId),
+    ...detectControlNobodyExercises(controlReach),
+    ...detectReachableUnvisited(pageLinkReach),
+    ...detectApiOnlyRoute(routeEntryReach),
+    ...detectNotNoticed(checkOutcomes),
+    ...detectOrphanTest(testReachRecency),
+    ...detectFixDidNotHold(regressedClusters),
   ];
 
   const exposure = options.exposure ?? {};
   const scored = detected.map((gap) => rankGap(gap, exposure));
 
+  await syncFeatureNodes(db, projectId, reachByNode, latestRunId);
+
   const upserted = await upsertScenarioGaps(db, projectId, scored, { runId: latestRunId });
   const closed = await closeMissingGaps(
     db,
     projectId,
-    ['success-only', 'single-covering-test', 'surface-drift'],
+    [
+      'success-only',
+      'single-covering-test',
+      'surface-drift',
+      'control-nobody-exercises',
+      'reachable-unvisited',
+      'api-only-route',
+      'not-noticed',
+      'orphan-test',
+      'fix-did-not-hold',
+    ],
     scored,
     latestRunId,
   );
   const closedChanged = await closeReachedChangedUnreached(db, projectId, latestRunId, reachByNode);
   return { upserted, closed: closed + closedChanged };
+}
+
+/**
+ * Build `feature` nodes and `groups` edges from the `piwi:feature` tag on tests:
+ * a feature groups the route and page nodes the tests carrying that tag reach.
+ * Features from the function catalog and URL clustering are lower-trust sources
+ * added later; the tag is the first. Canonical rows only — features are
+ * project-level. Upsert semantics, so a feature that loses its tag simply stops
+ * being refreshed.
+ */
+async function syncFeatureNodes(
+  db: DrizzleDB,
+  projectId: number,
+  reachByNode: Map<string, Set<number>>,
+  runId: number | null,
+): Promise<void> {
+  const testIds = new Set<number>();
+  for (const ids of reachByNode.values()) for (const id of ids) testIds.add(id);
+  if (testIds.size === 0) return;
+
+  const featureByTest = new Map<number, string>();
+  const ids = [...testIds];
+  for (let i = 0; i < ids.length; i += 200) {
+    const rows = await db
+      .select({ id: testCases.id, feature: testCases.feature })
+      .from(testCases)
+      .where(inArray(testCases.id, ids.slice(i, i + 200)));
+    for (const r of rows) if (r.feature?.trim()) featureByTest.set(r.id, r.feature.trim());
+  }
+  if (featureByTest.size === 0) return;
+
+  // feature → set of "kind\x00key" nodes its tests reach.
+  const groups = new Map<string, Set<string>>();
+  for (const [nodeKey, testSet] of reachByNode) {
+    const sep = nodeKey.indexOf('\x00');
+    const kind = nodeKey.slice(0, sep);
+    if (kind !== 'route' && kind !== 'page' && kind !== 'control') continue;
+    for (const testId of testSet) {
+      const feature = featureByTest.get(testId);
+      if (!feature) continue;
+      const set = groups.get(feature) ?? new Set<string>();
+      set.add(nodeKey);
+      groups.set(feature, set);
+    }
+  }
+  if (groups.size === 0) return;
+
+  const now = new Date();
+  for (const [feature, nodeKeys] of groups) {
+    await db
+      .insert(graphNodes)
+      .values({
+        projectId,
+        kind: 'feature',
+        key: feature,
+        branch: null,
+        attrs: { source: 'tag' } as any,
+        origin: 'observed',
+        firstSeenRunId: runId,
+        lastSeenRunId: runId,
+        lastSeenAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [graphNodes.projectId, graphNodes.kind, graphNodes.key],
+        targetWhere: isNull(graphNodes.branch),
+        set: {
+          lastSeenRunId: sql`excluded.last_seen_run_id`,
+          lastSeenAt: sql`excluded.last_seen_at`,
+          prunedAt: sql`null`,
+        },
+      });
+
+    const edgeValues = [...nodeKeys].map((nodeKey) => {
+      const sep = nodeKey.indexOf('\x00');
+      return {
+        projectId,
+        fromKind: 'feature',
+        fromKey: feature,
+        toKind: nodeKey.slice(0, sep),
+        toKey: nodeKey.slice(sep + 1),
+        kind: 'groups',
+        branch: null,
+        confidence: null,
+        origin: 'observed',
+        evidence: null as any,
+        firstSeenRunId: runId,
+        lastSeenRunId: runId,
+        lastSeenAt: now,
+      };
+    });
+    for (let i = 0; i < edgeValues.length; i += 100) {
+      await db
+        .insert(graphEdges)
+        .values(edgeValues.slice(i, i + 100))
+        .onConflictDoUpdate({
+          target: [
+            graphEdges.projectId,
+            graphEdges.fromKind,
+            graphEdges.fromKey,
+            graphEdges.kind,
+            graphEdges.toKind,
+            graphEdges.toKey,
+          ],
+          targetWhere: isNull(graphEdges.branch),
+          set: { lastSeenRunId: sql`excluded.last_seen_run_id`, lastSeenAt: sql`excluded.last_seen_at` },
+        });
+    }
+  }
 }
 
 /**
@@ -591,6 +1316,7 @@ export async function upsertScenarioGaps(
           factors: g.factors as any,
           score: g.score,
           testCaseId: g.testCaseId ?? null,
+          failureClusterId: g.failureClusterId ?? null,
           ticket: g.ticket ?? null,
           testRunId: ctx.runId ?? null,
           prNumber: ctx.prNumber ?? null,
@@ -609,6 +1335,7 @@ export async function upsertScenarioGaps(
           factors: sql`excluded.factors`,
           score: sql`excluded.score`,
           testCaseId: sql`excluded.test_case_id`,
+          failureClusterId: sql`excluded.failure_cluster_id`,
           ticket: sql`excluded.ticket`,
           testRunId: sql`excluded.test_run_id`,
           prNumber: sql`coalesce(excluded.pr_number, ${scenarioGaps.prNumber})`,
