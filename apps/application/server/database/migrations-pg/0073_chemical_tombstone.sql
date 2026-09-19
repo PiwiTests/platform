@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "server_probes" jsonb;

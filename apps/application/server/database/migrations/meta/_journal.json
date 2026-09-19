@@ -505,6 +505,13 @@
       "when": 1789828556452,
       "tag": "0071_pink_captain_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "6",
+      "when": 1789830086526,
+      "tag": "0072_absurd_krista_starr",
+      "breakpoints": true
     }
   ]
 }

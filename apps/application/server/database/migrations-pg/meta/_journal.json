@@ -512,6 +512,13 @@
       "when": 1789828557401,
       "tag": "0072_noisy_nemesis",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1789830087423,
+      "tag": "0073_chemical_tombstone",
+      "breakpoints": true
     }
   ]
 }

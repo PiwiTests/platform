@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `server_probes` text;
