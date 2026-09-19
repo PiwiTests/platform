@@ -11,7 +11,10 @@ import type { ProbeFault } from './faults.js';
 export interface ProbePlanItem {
   testCaseId: number;
   testTitle: string;
-  location: string | null;
+  /** Spec file relative to the project root, POSIX separators. Disambiguates a leaf title shared across files. */
+  filePath: string | null;
+  /** Describe-block titles from the outermost down, breaking a title tie within one file. */
+  suitePath: string[];
   routeKey: string;
   fault: ProbeFault;
   nth: number;
@@ -46,19 +49,32 @@ function patternToRegex(pattern: string): RegExp {
   return new RegExp(`^${escaped}$`);
 }
 
+/** True when two describe-block paths are equal element for element. */
+function suitePathEqual(a: string[] | undefined, b: string[] | undefined): boolean {
+  if (!a || !b || a.length !== b.length) return false;
+  return a.every((title, i) => title === b[i]);
+}
+
 /**
- * Match a running test to a plan item by location (preferred) or title. Returns
- * the first matching item, or null when none matches this test.
+ * Match a running test to a plan item on file path plus leaf title, so a title
+ * shared across specs never matches the wrong file. When several plan items
+ * share a file and title, the describe-block path breaks the tie. A plan item
+ * with no file path (older servers) falls back to a leaf-title match. Returns
+ * the matching item, or null when none matches this test.
  */
 export function matchProbeItem(
   plan: ProbePlan,
-  test: { location?: string | null; title?: string | null },
+  test: { filePath?: string | null; title?: string | null; suitePath?: string[] },
 ): ProbePlanItem | null {
-  for (const item of plan.items) {
-    if (item.location && test.location && item.location === test.location) return item;
+  const byFileTitle = plan.items.filter(
+    (item) => item.filePath && test.filePath && item.filePath === test.filePath && item.testTitle === test.title,
+  );
+  if (byFileTitle.length === 1) return byFileTitle[0]!;
+  if (byFileTitle.length > 1) {
+    return byFileTitle.find((item) => suitePathEqual(item.suitePath, test.suitePath)) ?? byFileTitle[0]!;
   }
   for (const item of plan.items) {
-    if (item.testTitle && test.title && item.testTitle === test.title) return item;
+    if (!item.filePath && item.testTitle && test.title && item.testTitle === test.title) return item;
   }
   return null;
 }

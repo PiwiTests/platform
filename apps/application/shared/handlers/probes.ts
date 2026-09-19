@@ -39,7 +39,10 @@ export function isProbeRun(metadata: unknown): boolean {
 export interface ProbePlanItem {
   testCaseId: number;
   testTitle: string;
-  location: string | null;
+  /** Spec file relative to the project root — disambiguates a leaf title shared across files. */
+  filePath: string | null;
+  /** Describe-block titles from the outermost down, breaking a title tie within one file. */
+  suitePath: string[];
   routeKey: string;
   fault: ProbeFault;
   /** Apply the fault only to the Nth matching request after the first navigation. */
@@ -67,7 +70,8 @@ export interface ProbeResultInput {
 export interface ProbeCandidate {
   testCaseId: number;
   testTitle: string;
-  location: string | null;
+  filePath: string | null;
+  suitePath: string[];
   routeKey: string;
   /** Exposure proxy — higher is probed first. */
   exposure: number;
@@ -103,7 +107,8 @@ export function selectProbePlan(candidates: ProbeCandidate[], options: { budget?
     items.push({
       testCaseId: c.testCaseId,
       testTitle: c.testTitle,
-      location: c.location,
+      filePath: c.filePath,
+      suitePath: c.suitePath,
       routeKey: c.routeKey,
       fault: PROBE_FAULTS[items.length % PROBE_FAULTS.length]!,
       nth: 1,
@@ -150,15 +155,23 @@ export async function buildProbePlan(
   }
 
   const testIds = [...new Set(reachRows.map((r) => Number(r.fromKey)).filter((n) => Number.isFinite(n)))];
-  const testMeta = new Map<number, { title: string; updatedAt: number }>();
+  const testMeta = new Map<number, { title: string; filePath: string; suitePath: string[]; updatedAt: number }>();
   for (let i = 0; i < testIds.length; i += 200) {
     const rows = await db
-      .select({ id: testCases.id, title: testCases.title, updatedAt: testCases.updatedAt })
+      .select({
+        id: testCases.id,
+        title: testCases.title,
+        filePath: testCases.filePath,
+        suitePath: testCases.suitePath,
+        updatedAt: testCases.updatedAt,
+      })
       .from(testCases)
       .where(inArray(testCases.id, testIds.slice(i, i + 200)));
     for (const r of rows) {
       const updated = r.updatedAt instanceof Date ? r.updatedAt.getTime() : Number(r.updatedAt) || 0;
-      testMeta.set(r.id, { title: r.title, updatedAt: updated });
+      // `suite_path` is stored as a \x1f-delimited string; split it back to the array the plan carries.
+      const suitePath = r.suitePath ? r.suitePath.split('\x1f').filter(Boolean) : [];
+      testMeta.set(r.id, { title: r.title, filePath: r.filePath, suitePath, updatedAt: updated });
     }
   }
 
@@ -186,7 +199,8 @@ export async function buildProbePlan(
     candidates.push({
       testCaseId,
       testTitle: meta.title,
-      location: null,
+      filePath: meta.filePath,
+      suitePath: meta.suitePath,
       routeKey: r.routeKey,
       exposure: routeReach.get(r.routeKey)?.size ?? 1,
       probed: lastProbe != null,

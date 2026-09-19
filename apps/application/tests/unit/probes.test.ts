@@ -10,7 +10,8 @@ import {
 const candidate = (over: Partial<ProbeCandidate>): ProbeCandidate => ({
   testCaseId: 1,
   testTitle: 't',
-  location: null,
+  filePath: 'tests/orders.spec.ts',
+  suitePath: [],
   routeKey: 'POST /api/orders',
   exposure: 1,
   probed: false,
@@ -53,6 +54,14 @@ describe('selectProbePlan', () => {
   test('defaults to the standard budget', () => {
     const plan = selectProbePlan([candidate({})]);
     expect(plan.budget).toBe(DEFAULT_PROBE_BUDGET);
+  });
+
+  test('carries the file path and suite path onto plan items so the reporter matches on file, not title alone', () => {
+    const plan = selectProbePlan([
+      candidate({ testCaseId: 1, filePath: 'tests/orders.spec.ts', suitePath: ['Orders'] }),
+    ]);
+    expect(plan.items[0]!.filePath).toBe('tests/orders.spec.ts');
+    expect(plan.items[0]!.suitePath).toEqual(['Orders']);
   });
 
   test('assigns a fault from the known set, spread across pairs', () => {

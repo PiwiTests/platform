@@ -70,21 +70,44 @@ describe('matchProbeItem', () => {
   const plan: ProbePlan = {
     budget: 50,
     items: [
-      { testCaseId: 1, testTitle: 'checkout › happy path', location: null, routeKey: 'POST /api/orders', fault: 'status-500', nth: 1 },
-      { testCaseId: 2, testTitle: 'cart › coupon', location: 'tests/cart.spec.ts:10:3', routeKey: 'POST /api/coupons', fault: 'empty-body', nth: 1 },
+      { testCaseId: 1, testTitle: 'checkout › happy path', filePath: 'tests/checkout.spec.ts', suitePath: [], routeKey: 'POST /api/orders', fault: 'status-500', nth: 1 },
+      { testCaseId: 2, testTitle: 'cart › coupon', filePath: 'tests/cart.spec.ts', suitePath: [], routeKey: 'POST /api/coupons', fault: 'empty-body', nth: 1 },
     ],
   };
 
-  it('matches by title', () => {
-    expect(matchProbeItem(plan, { title: 'checkout › happy path' })?.testCaseId).toBe(1);
+  it('matches on file path plus title', () => {
+    expect(matchProbeItem(plan, { title: 'cart › coupon', filePath: 'tests/cart.spec.ts' })?.testCaseId).toBe(2);
   });
 
-  it('matches by location when set', () => {
-    expect(matchProbeItem(plan, { title: 'x', location: 'tests/cart.spec.ts:10:3' })?.testCaseId).toBe(2);
+  it('never matches a shared title across a different file', () => {
+    // Two specs with the same leaf title: matching by title alone would be
+    // ambiguous, so the file path decides which plan item is the right one.
+    const shared: ProbePlan = {
+      budget: 50,
+      items: [
+        { testCaseId: 10, testTitle: 'loads', filePath: 'tests/orders.spec.ts', suitePath: [], routeKey: 'GET /api/orders', fault: 'status-500', nth: 1 },
+        { testCaseId: 20, testTitle: 'loads', filePath: 'tests/invoices.spec.ts', suitePath: [], routeKey: 'GET /api/invoices', fault: 'status-500', nth: 1 },
+      ],
+    };
+    expect(matchProbeItem(shared, { title: 'loads', filePath: 'tests/orders.spec.ts' })?.testCaseId).toBe(10);
+    expect(matchProbeItem(shared, { title: 'loads', filePath: 'tests/invoices.spec.ts' })?.testCaseId).toBe(20);
+    // A file the plan does not carry matches nothing, even on a known title.
+    expect(matchProbeItem(shared, { title: 'loads', filePath: 'tests/other.spec.ts' })).toBeNull();
+  });
+
+  it('breaks a same-file title tie on the suite path', () => {
+    const tie: ProbePlan = {
+      budget: 50,
+      items: [
+        { testCaseId: 30, testTitle: 'saves', filePath: 'tests/app.spec.ts', suitePath: ['Orders'], routeKey: 'POST /api/orders', fault: 'status-500', nth: 1 },
+        { testCaseId: 40, testTitle: 'saves', filePath: 'tests/app.spec.ts', suitePath: ['Invoices'], routeKey: 'POST /api/invoices', fault: 'status-500', nth: 1 },
+      ],
+    };
+    expect(matchProbeItem(tie, { title: 'saves', filePath: 'tests/app.spec.ts', suitePath: ['Invoices'] })?.testCaseId).toBe(40);
   });
 
   it('returns null when nothing matches', () => {
-    expect(matchProbeItem(plan, { title: 'no such test' })).toBeNull();
+    expect(matchProbeItem(plan, { title: 'no such test', filePath: 'tests/checkout.spec.ts' })).toBeNull();
   });
 });
 
@@ -100,7 +123,7 @@ describe('requestMatchesRoute', () => {
 });
 
 describe('shouldMutate (after first navigation, Nth match)', () => {
-  const item = { testCaseId: 1, testTitle: 't', location: null, routeKey: 'POST /api/orders', fault: 'status-500' as const, nth: 2 };
+  const item = { testCaseId: 1, testTitle: 't', filePath: null, suitePath: [], routeKey: 'POST /api/orders', fault: 'status-500' as const, nth: 2 };
 
   it('never mutates before the first navigation', () => {
     const state = createProbeState();

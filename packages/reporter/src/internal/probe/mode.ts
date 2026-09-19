@@ -7,6 +7,7 @@
  */
 
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { matchProbeItem, type ProbePlan, type ProbePlanItem } from './plan.js';
 
 let planCache: ProbePlan | null | undefined;
@@ -30,11 +31,23 @@ function loadPlan(): ProbePlan | null {
   return planCache;
 }
 
-/** The plan item for a running test, matched by title (or location when set). */
-export function probeItemForTest(test: { title: string; location?: string | null }): ProbePlanItem | null {
+/**
+ * The plan item for a running test, matched on the spec file and leaf title so a
+ * title shared across specs never matches the wrong file. The file is normalized
+ * to a project-root-relative POSIX path, the same shape the dashboard stores.
+ */
+export function probeItemForTest(test: {
+  title: string;
+  file?: string | null;
+  titlePath?: string[];
+}): ProbePlanItem | null {
   const plan = loadPlan();
   if (!plan) return null;
-  return matchProbeItem(plan, { title: test.title, location: test.location ?? null });
+  const filePath = test.file ? path.relative(process.cwd(), test.file).split(path.sep).join('/') : null;
+  // `titlePath` runs [file, ...describe titles, test title]; the describe titles
+  // are the suite path.
+  const suitePath = test.titlePath ? test.titlePath.slice(1, -1) : undefined;
+  return matchProbeItem(plan, { title: test.title, filePath, suitePath });
 }
 
 /** An outcome line appended to the results file, one per probed test. */
