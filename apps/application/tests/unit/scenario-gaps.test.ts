@@ -296,4 +296,57 @@ describe('computeScenarioGaps', () => {
     const closed = await gaps.listScenarioGaps(db, 1, { status: 'closed' });
     expect(closed.find((r) => r.detector === 'single-covering-test')).toBeTruthy();
   });
+
+  test('closes a changed-unreached gap once a test reaches the file’s route node', async () => {
+    await seedRun(1);
+    // An open changed-unreached gap for a route handler no test reached.
+    await db.insert(schema.scenarioGaps).values({
+      projectId: 1,
+      detector: 'changed-unreached',
+      class: 'blind-spot',
+      key: 'server/api/orders/[id].get.ts',
+      title: 'server/api/orders/[id].get.ts changed but not reached',
+      status: 'open',
+    });
+
+    // A later run's test reaches the route the handler serves.
+    await seedReach(1, 'route', 'GET /api/orders/:id', 1);
+    await gaps.computeScenarioGaps(db, 1);
+
+    const closed = await gaps.listScenarioGaps(db, 1, { status: 'closed' });
+    const row = closed.find((r) => r.detector === 'changed-unreached');
+    expect(row).toBeTruthy();
+    expect(row!.key).toBe('server/api/orders/[id].get.ts');
+  });
+
+  test('success-only reads only routes the graph holds, not third-party beacons', async () => {
+    await seedRun(1);
+    await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x' });
+    const [exec] = await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) })
+      .returning({ id: schema.testRunsCases.id });
+
+    // A first-party route the graph holds as a node, seen only with success.
+    await db.insert(schema.graphNodes).values({
+      projectId: 1,
+      kind: 'route',
+      key: 'GET /api/orders',
+      firstSeenRunId: 1,
+      lastSeenRunId: 1,
+      lastSeenAt: new Date(++clock),
+    });
+    // The route and a third-party beacon, both seen often with success only. The
+    // beacon has no route node, so it must not become a success-only gap.
+    for (let i = 0; i < 6; i++) {
+      await db.insert(schema.networkRequests).values([
+        { testRunsCaseId: exec!.id, testRunId: 1, method: 'GET', normalizedUrl: '/api/orders', status: 200 },
+        { testRunsCaseId: exec!.id, testRunId: 1, method: 'POST', normalizedUrl: '/collect', status: 204 },
+      ]);
+    }
+
+    await gaps.computeScenarioGaps(db, 1);
+    const list = await gaps.listScenarioGaps(db, 1, { detector: 'success-only' });
+    expect(list.map((r) => r.key)).toEqual(['GET /api/orders']);
+  });
 });

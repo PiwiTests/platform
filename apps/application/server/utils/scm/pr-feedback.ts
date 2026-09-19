@@ -40,6 +40,8 @@ import {
   type PrSummaryInput,
 } from '#shared/pr-feedback';
 import { computeRunChangeCoverage } from './change-coverage';
+import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
+import { resolveRunBranchTagFromStored } from '../graph-ingest';
 import type { VerifiedFix } from '../fix-verification';
 import type { RunMetadata } from '../run-json-types';
 import type { DbClient } from '../../database';
@@ -377,6 +379,11 @@ export async function postRunPrFeedback(
  * this run just closed would be reporting the wrong news.
  */
 export function postRunPrFeedbackInBackground(db: DbClient, runId: number): void {
+  // Recompute the project-wide scenario gaps off the request path, so success-
+  // only, single-covering-test and surface-drift gaps and their self-closing
+  // stay live on every finished run — not only from the manual recompute.
+  computeScenarioGapsForRun(db, runId).catch((e) => console.error('[scenario-gaps] computeScenarioGaps failed', e));
+
   // Change coverage runs regardless of the comment opt-in: it writes the graph's
   // `changes` edges and the changed-unreached gaps every instance with history
   // and an SCM token gets for free. Its result also feeds the comment section.
@@ -397,4 +404,23 @@ export function postRunPrFeedbackInBackground(db: DbClient, runId: number): void
       }
     })
     .catch((e) => console.error('[pr-feedback] postRunPrFeedback failed', e));
+}
+
+/**
+ * Recompute a finished run's project-wide scenario gaps, scoped to the run's
+ * branch. The branch tag is resolved from stored project fields only, so this
+ * makes no SCM call; the nightly sweep re-resolves an unknown default branch.
+ */
+async function computeScenarioGapsForRun(db: DbClient, runId: number): Promise<void> {
+  const [run] = await db
+    .select({ projectId: testRuns.projectId, branch: testRuns.branch, metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(eq(testRuns.id, runId));
+  if (!run) return;
+  const [project] = await db
+    .select({ defaultBranch: projects.defaultBranch })
+    .from(projects)
+    .where(eq(projects.id, run.projectId));
+  const branch = project ? resolveRunBranchTagFromStored(project, run.metadata, run.branch) : null;
+  await computeScenarioGaps(db, run.projectId, { branch });
 }

@@ -17,6 +17,7 @@ import {
   testCases,
   testRuns,
 } from '../../server/database/schema';
+import { fileRouteTarget, filePageTarget, routeKeyMatchesTarget, pageKeyMatchesTarget } from '../graph';
 import type { DrizzleDB } from './db';
 
 // ── Vocabulary ───────────────────────────────────────────────────────────────
@@ -275,13 +276,21 @@ export interface ChangedFileReach {
   deletions: number;
   reachedInRun: boolean;
   reachedCountHistory: number;
+  /**
+   * Whether reach is observable for this file. `no-evidence` means no route or
+   * page convention maps it and no test source touches it, so its unreached
+   * state is not a confident gap. Absent is treated as observable.
+   */
+  reachBasis?: 'reached' | 'observable-unreached' | 'no-evidence';
   ticket?: string | null;
 }
 
 /**
  * Changed, unreached — a changed source file no test reached in this run, paired
  * with its history count so a selection-narrowed run is never mistaken for a
- * gap. Blind spot, reported per ticket at change time.
+ * gap. Blind spot, reported per ticket at change time. A file the graph cannot
+ * observe (no route or page maps it, no test source touches it) is reported at
+ * low confidence and says so, rather than as a strong blind spot.
  */
 export function detectChangedUnreached(
   files: ChangedFileReach[],
@@ -291,16 +300,18 @@ export function detectChangedUnreached(
   const gaps: DetectedGap[] = [];
   for (const file of files) {
     if (file.reachedInRun) continue;
+    const noEvidence = file.reachBasis === 'no-evidence';
+    const base = `+${file.additions} −${file.deletions} · no test in run #${runId} · ${file.reachedCountHistory} in ${windowRuns} runs — observed reach.`;
     gaps.push({
       detector: 'changed-unreached',
       kind: 'gap',
       class: 'blind-spot',
       key: file.filePath,
       title: `${file.filePath} changed but not reached`,
-      evidence: [
-        `+${file.additions} −${file.deletions} · no test in run #${runId} · ${file.reachedCountHistory} in ${windowRuns} runs — observed reach.`,
-      ],
-      confidence: file.reachedCountHistory === 0 ? 0.9 : 0.5,
+      evidence: noEvidence
+        ? [base, 'No route or page maps this file and no test source touches it — no observed-reach evidence.']
+        : [base],
+      confidence: noEvidence ? 0.3 : file.reachedCountHistory === 0 ? 0.9 : 0.5,
       files: [file.filePath],
       ticket: file.ticket ?? null,
     });
@@ -351,10 +362,19 @@ async function loadTestMeta(
   return meta;
 }
 
-/** Observed route statuses over the recent window, one row per pattern. */
-async function loadRouteStats(db: DrizzleDB, runIds: number[]): Promise<Map<string, RouteStat>> {
+/**
+ * Observed route statuses over the recent window, one row per pattern, kept only
+ * for patterns the graph holds as route nodes. Route nodes are written on ingest
+ * from the run's own origin alone, so this reuses that own-origin filter and a
+ * third-party beacon's raw `network_requests` never becomes a success-only gap.
+ */
+async function loadRouteStats(
+  db: DrizzleDB,
+  runIds: number[],
+  routeNodeKeys: Set<string>,
+): Promise<Map<string, RouteStat>> {
   const stats = new Map<string, RouteStat>();
-  if (runIds.length === 0) return stats;
+  if (runIds.length === 0 || routeNodeKeys.size === 0) return stats;
   const rows = await db
     .select({
       method: networkRequests.method,
@@ -370,6 +390,7 @@ async function loadRouteStats(db: DrizzleDB, runIds: number[]): Promise<Map<stri
     if (!r.url) continue;
     const method = r.method.toUpperCase();
     const key = `${method} ${r.url}`;
+    if (!routeNodeKeys.has(key)) continue;
     const entry = stats.get(key) ?? { key, method, pattern: r.url, count: 0, statuses: [], priority: null };
     entry.count += Number(r.c);
     entry.statuses.push(r.status);
@@ -422,13 +443,16 @@ export async function computeScenarioGaps(
 
   const meta = await loadTestMeta(db, [...testIds]);
 
-  // Node first-seen for surface drift.
+  // Node first-seen for surface drift. Pruned (soft-deleted) nodes are excluded
+  // so vanished surface neither reaches detectors nor re-flags as drift.
   const nodeRows = await db
     .select({ kind: graphNodes.kind, key: graphNodes.key, firstSeenRunId: graphNodes.firstSeenRunId })
     .from(graphNodes)
-    .where(and(eq(graphNodes.projectId, projectId), nodeBranchScope));
+    .where(and(eq(graphNodes.projectId, projectId), nodeBranchScope, isNull(graphNodes.prunedAt)));
 
-  const routeStats = await loadRouteStats(db, recentIds);
+  // Route patterns the graph holds as nodes — the own-origin set success-only reads.
+  const routeNodeKeys = new Set(nodeRows.filter((n) => n.kind === 'route').map((n) => n.key));
+  const routeStats = await loadRouteStats(db, recentIds, routeNodeKeys);
 
   // Attach the priority observed around each route pattern.
   for (const [key, stat] of routeStats) {
@@ -474,7 +498,65 @@ export async function computeScenarioGaps(
     scored,
     latestRunId,
   );
-  return { upserted, closed };
+  const closedChanged = await closeReachedChangedUnreached(db, projectId, latestRunId, reachByNode);
+  return { upserted, closed: closed + closedChanged };
+}
+
+/**
+ * Close a changed-unreached gap once a test reaches the file's route or page
+ * node — the same self-closing the project-wide detectors get, so a changed file
+ * that later gains a test stops being reported. The file is resolved to its node
+ * through the file-routing convention and checked against this run's reach edges.
+ */
+async function closeReachedChangedUnreached(
+  db: DrizzleDB,
+  projectId: number,
+  runId: number | null,
+  reachByNode: Map<string, Set<number>>,
+): Promise<number> {
+  const open = await db
+    .select({ id: scenarioGaps.id, key: scenarioGaps.key })
+    .from(scenarioGaps)
+    .where(
+      and(
+        eq(scenarioGaps.projectId, projectId),
+        eq(scenarioGaps.detector, 'changed-unreached'),
+        inArray(scenarioGaps.status, ['open', 'snoozed']),
+      ),
+    );
+  if (open.length === 0) return 0;
+
+  // Route and page node keys a test reaches in this scope.
+  const reachedRoutes: string[] = [];
+  const reachedPages: string[] = [];
+  for (const [nodeKey, ids] of reachByNode) {
+    if (ids.size === 0) continue;
+    const sep = nodeKey.indexOf('\x00');
+    const kind = nodeKey.slice(0, sep);
+    const key = nodeKey.slice(sep + 1);
+    if (kind === 'route') reachedRoutes.push(key);
+    else if (kind === 'page') reachedPages.push(key);
+  }
+
+  const toClose: number[] = [];
+  for (const gap of open) {
+    const routeTarget = fileRouteTarget(gap.key);
+    const pageTarget = filePageTarget(gap.key);
+    const reached =
+      (routeTarget != null && reachedRoutes.some((k) => routeKeyMatchesTarget(routeTarget, k))) ||
+      (pageTarget != null && reachedPages.some((k) => pageKeyMatchesTarget(pageTarget, k)));
+    if (reached) toClose.push(gap.id);
+  }
+  if (toClose.length === 0) return 0;
+
+  const now = new Date();
+  for (let i = 0; i < toClose.length; i += 100) {
+    await db
+      .update(scenarioGaps)
+      .set({ status: 'closed', closedAt: now, closedByRunId: runId, updatedAt: now })
+      .where(inArray(scenarioGaps.id, toClose.slice(i, i + 100)));
+  }
+  return toClose.length;
 }
 
 /**
