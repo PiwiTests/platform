@@ -166,6 +166,7 @@ export default eventHandler(async (event) => {
             networkRequests: testCase.networkRequests,
             webVitals: testCase.webVitals,
             pageState: testCase.pageState,
+            pageInventory: testCase.pageInventory,
             aiUsage: testCase.aiUsage,
             consoleLogs: testCase.consoleLogs,
             dialogs: testCase.dialogs,
@@ -291,6 +292,7 @@ export default eventHandler(async (event) => {
         networkRequests?: unknown;
         webVitals?: unknown;
         pageState?: unknown;
+        pageInventory?: unknown;
         aiUsage?: unknown;
         consoleLogs?: unknown;
         dialogs?: unknown;
@@ -341,6 +343,7 @@ export default eventHandler(async (event) => {
           networkRequests: testCase.networkRequests,
           webVitals: testCase.webVitals,
           pageState: testCase.pageState,
+          pageInventory: testCase.pageInventory,
           aiUsage: testCase.aiUsage,
           consoleLogs: testCase.consoleLogs,
           dialogs: testCase.dialogs,

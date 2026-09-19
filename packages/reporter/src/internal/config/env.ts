@@ -15,6 +15,7 @@ const DEFAULTS: PiwiDashboardOptions = {
   collectPerformanceMetrics: true,
   captureLocators: true,
   capturePageState: true,
+  capturePageInventory: true,
   captureServerTraces: true,
   sampleAriaOnPass: true,
   defaultCapture: true,
@@ -55,6 +56,7 @@ export const PIWI_ENV_KEYS = {
   uploadReport: 'PIWI_UPLOAD_REPORT',
   captureLocators: 'PIWI_CAPTURE_LOCATORS',
   capturePageState: 'PIWI_CAPTURE_PAGE_STATE',
+  capturePageInventory: 'PIWI_CAPTURE_PAGE_INVENTORY',
   captureServerTraces: 'PIWI_CAPTURE_SERVER_TRACES',
   sampleAriaOnPass: 'PIWI_SAMPLE_ARIA_ON_PASS',
   defaultCapture: 'PIWI_DEFAULT_CAPTURE',
@@ -144,6 +146,7 @@ const ENV_FALLBACK_SPECS: ReadonlyArray<{
   { option: 'uploadReport', env: PIWI_ENV_KEYS.uploadReport, kind: 'bool' },
   { option: 'captureLocators', env: PIWI_ENV_KEYS.captureLocators, kind: 'bool' },
   { option: 'capturePageState', env: PIWI_ENV_KEYS.capturePageState, kind: 'bool' },
+  { option: 'capturePageInventory', env: PIWI_ENV_KEYS.capturePageInventory, kind: 'bool' },
   { option: 'captureServerTraces', env: PIWI_ENV_KEYS.captureServerTraces, kind: 'bool' },
   { option: 'sampleAriaOnPass', env: PIWI_ENV_KEYS.sampleAriaOnPass, kind: 'bool' },
   { option: 'defaultCapture', env: PIWI_ENV_KEYS.defaultCapture, kind: 'bool' },
@@ -243,6 +246,11 @@ export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   if (options.capturePageState === false || options.collectPerformanceMetrics === false)
     env[PIWI_ENV_KEYS.capturePageState] = 'false';
   else if (options.capturePageState === true) env[PIWI_ENV_KEYS.capturePageState] = 'true';
+  // Page-inventory capture (controls and links per visited page, passing runs
+  // only) follows the page-state bridge.
+  if (options.capturePageInventory === false || options.collectPerformanceMetrics === false)
+    env[PIWI_ENV_KEYS.capturePageInventory] = 'false';
+  else if (options.capturePageInventory === true) env[PIWI_ENV_KEYS.capturePageInventory] = 'true';
   // Server-trace capture rides the same bridge: off when either flag disables
   // it, explicit true otherwise (unset keeps the fixture's default-on).
   if (options.captureServerTraces === false || options.collectPerformanceMetrics === false)

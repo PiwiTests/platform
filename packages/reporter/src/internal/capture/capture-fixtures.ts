@@ -39,6 +39,7 @@ import {
   type FailedLocatorInfo,
 } from './locator-healing.js';
 import { ATTACHMENT_NAMES, LOCATOR_SUGGESTION_ANNOTATION, USER_PICK_ANNOTATION } from './attachments.js';
+import { capPageInventory, inventoryPageKey, type RawPageInventory } from './page-inventory.js';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import { applyPickToSnapshots, deriveFailedLocator, runLocatorPicker, type UserPickResult } from './pick-on-failure.js';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
@@ -185,6 +186,9 @@ interface CaptureSink {
   // the healing, clue and page-diff paths that read a tree; the YAML above feeds
   // the ARIA card.
   stashedAriaJson: string | null;
+  // The controls and links present on the last active page at test end, stashed
+  // for passing tests so the graph learns the suite's exposed surface.
+  stashedPageInventory: RawPageInventory | null;
   // The failure-time overlay was already offered once this test — several
   // close wrappers can fire for the same teardown.
   pickOffered: boolean;
@@ -208,6 +212,7 @@ function createSink(): CaptureSink {
     stashedPageState: null,
     stashedAria: null,
     stashedAriaJson: null,
+    stashedPageInventory: null,
     pickOffered: false,
     userPick: null,
   };
@@ -484,6 +489,109 @@ async function readPageState(page: Page): Promise<PageState | null> {
 }
 
 /**
+ * Page keys this worker has already inventoried this run, so a URL visited by
+ * many tests is inventoried once. Module-scoped: a worker process serves one
+ * run, and the set is a pure de-duplication cache.
+ */
+const inventoriedPageKeys = new Set<string>();
+
+/**
+ * The in-page safety bound: a pathological page cannot serialize more than this
+ * many entries. The authoritative per-page cap ({@link capPageInventory}) is
+ * applied on the Node side before the attachment is written.
+ */
+const PAGE_INVENTORY_IN_PAGE_CAP = 2000;
+
+/**
+ * Read the interactive controls (role + accessible name) and links (name +
+ * href) on the page. Values are never read — only names and hrefs. Runs a single
+ * in-page pass with a shared entry budget, so a table of hundreds of rows cannot
+ * blow up the payload. Returns null when the page cannot be read.
+ */
+async function readPageInventory(page: Page): Promise<RawPageInventory | null> {
+  try {
+    return await page.evaluate((maxEntries): RawPageInventory | null => {
+      const g = globalThis as any;
+      const doc = g.document;
+      if (!doc || !g.location) return null;
+      const clean = (s: string | null | undefined): string => (s || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+      const roleOf = (el: any): string => {
+        const explicit = el.getAttribute('role');
+        if (explicit) return explicit.toLowerCase();
+        const tag = (el.tagName || '').toLowerCase();
+        if (tag === 'a') return el.getAttribute('href') != null ? 'link' : 'generic';
+        if (tag === 'button') return 'button';
+        if (tag === 'select') return el.hasAttribute('multiple') ? 'listbox' : 'combobox';
+        if (tag === 'textarea') return 'textbox';
+        if (tag === 'input') {
+          const type = (el.getAttribute('type') || 'text').toLowerCase();
+          const map: Record<string, string> = {
+            checkbox: 'checkbox',
+            radio: 'radio',
+            button: 'button',
+            submit: 'button',
+            reset: 'button',
+            image: 'button',
+            range: 'slider',
+            search: 'searchbox',
+            email: 'textbox',
+            tel: 'textbox',
+            url: 'textbox',
+            number: 'spinbutton',
+          };
+          return map[type] || 'textbox';
+        }
+        return 'generic';
+      };
+      const nameOf = (el: any): string =>
+        clean(
+          el.getAttribute('aria-label') ||
+            el.textContent ||
+            el.getAttribute('placeholder') ||
+            el.getAttribute('title') ||
+            el.getAttribute('alt') ||
+            el.getAttribute('value'),
+        );
+
+      const controls: Array<{ role: string; name: string }> = [];
+      const links: Array<{ name: string; href: string }> = [];
+      const seenC = new Set<string>();
+      const seenL = new Set<string>();
+      let budget = maxEntries;
+
+      const controlSelector =
+        'button, [role="button"], input, select, textarea, [role="checkbox"], [role="radio"], [role="tab"], [role="menuitem"], [role="combobox"], [role="switch"], [role="slider"], [role="searchbox"], [role="spinbutton"], [role="textbox"], [role="listbox"]';
+      for (const el of Array.from(doc.querySelectorAll(controlSelector)) as any[]) {
+        if (budget <= 0) break;
+        const role = roleOf(el);
+        const name = nameOf(el);
+        if (!name) continue;
+        const key = `${role}\u0000${name}`;
+        if (seenC.has(key)) continue;
+        seenC.add(key);
+        controls.push({ role, name });
+        budget--;
+      }
+      for (const el of Array.from(doc.querySelectorAll('a[href]')) as any[]) {
+        if (budget <= 0) break;
+        const name = nameOf(el);
+        const href = el.getAttribute('href') || '';
+        if (!name) continue;
+        const key = `${name}\u0000${href}`;
+        if (seenL.has(key)) continue;
+        seenL.add(key);
+        links.push({ name, href });
+        budget--;
+      }
+
+      return { url: g.location.href, controls, links };
+    }, PAGE_INVENTORY_IN_PAGE_CAP);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Take the page-dependent teardown reads (web vitals; page state; ARIA
  * snapshot when the test failed) while the last active page is still open.
  * Called by the close wrappers just before a close that would take that page
@@ -523,6 +631,12 @@ async function stashPageState(sink: CaptureSink, closing: { page?: Page; context
     // Sample the green page while it is still open, for the tests the server
     // flagged as due a fresh snapshot this run.
     await sampleAria();
+  }
+
+  // Inventory the passing page's controls and links while it is still open.
+  if (status === 'passed' && process.env.PIWI_CAPTURE_PAGE_INVENTORY !== 'false') {
+    const inventory = await readPageInventory(page);
+    if (inventory) sink.stashedPageInventory = inventory;
   }
 }
 
@@ -1397,6 +1511,21 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
       await testInfo.attach(ATTACHMENT_NAMES.pageState, {
         contentType: 'application/json',
         body: Buffer.from(JSON.stringify(pageState)),
+      });
+    }
+  }
+
+  // Page inventory (controls and links) on passing runs only. Prefer a live read
+  // of a still-open page; otherwise the inventory stashed at test end. Skipped
+  // when this worker already inventoried the page this run.
+  if (testInfo.status === 'passed' && process.env.PIWI_CAPTURE_PAGE_INVENTORY !== 'false') {
+    const inventory = (pageReadable ? await readPageInventory(page) : null) ?? sink.stashedPageInventory;
+    const pageKey = inventory ? inventoryPageKey(inventory.url) : null;
+    if (inventory && pageKey && !inventoriedPageKeys.has(pageKey)) {
+      inventoriedPageKeys.add(pageKey);
+      await testInfo.attach(ATTACHMENT_NAMES.pageInventory, {
+        contentType: 'application/json',
+        body: Buffer.from(JSON.stringify([capPageInventory(inventory)])),
       });
     }
   }

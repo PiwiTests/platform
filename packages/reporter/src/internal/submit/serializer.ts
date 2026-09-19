@@ -64,6 +64,7 @@ export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
     networkRequests: rest.networkRequests || null,
     webVitals: rest.webVitals || null,
     pageState: rest.pageState || null,
+    pageInventory: rest.pageInventory || null,
     aiUsage: rest.aiUsage || null,
     consoleLogs: rest.consoleLogs || null,
     dialogs: rest.dialogs || null,

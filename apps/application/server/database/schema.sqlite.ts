@@ -459,6 +459,7 @@ export const testRunsCases = sqliteTable(
     ariaSnapshotJsonPayloadId: integer('aria_snapshot_json_payload_id').references(() => casePayloads.id),
     testSourcePayloadId: integer('test_source_payload_id').references(() => casePayloads.id),
     testSourceFramesPayloadId: integer('test_source_frames_payload_id').references(() => casePayloads.id),
+    pageInventoryPayloadId: integer('page_inventory_payload_id').references(() => casePayloads.id), // Content-addressed page inventory (controls + links per visited page), passing runs
     browser: text('browser', { mode: 'json' }), // Playwright project/browser config: { projectName, browserName, channel, viewport }
     browserName: text('browser_name'), // Scalar browser identity (projectName) for index efficiency
     testAnnotations: text('test_annotations', { mode: 'json' }), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
@@ -502,6 +503,9 @@ export const testRunsCases = sqliteTable(
     framesPayloadIdx: index('idx_trc_frames_payload')
       .on(table.testSourceFramesPayloadId)
       .where(sql`test_source_frames_payload_id IS NOT NULL`),
+    pageInventoryPayloadIdx: index('idx_trc_page_inventory_payload')
+      .on(table.pageInventoryPayloadId)
+      .where(sql`page_inventory_payload_id IS NOT NULL`),
   }),
 );
 

@@ -30,10 +30,12 @@ import {
   isOwnOriginRequest,
   originsFromDocumentRequests,
   buildRequestGraph,
+  buildPageInventoryGraph,
   dependencyNodeKey,
   type GraphNodeSpec,
   type GraphEdgeSpec,
   type RequestSpansInput,
+  type PageInventoryInput,
 } from '#shared/graph';
 import type { RunMetadata, ServerSpanEntry } from './run-json-types';
 import { resolveRunBranch } from './run-branch';
@@ -344,6 +346,83 @@ export async function upsertGraphSpecs(
 
   if (nodes.size > 0) await chunkedUpsertNodes(db, projectId, runId, now, branch, [...nodes.values()]);
   if (edges.size > 0) await chunkedUpsertEdges(db, projectId, runId, now, branch, [...edges.values()]);
+}
+
+/** A case with its parsed page inventory and the network items it recorded. */
+export interface PageInventoryCase {
+  /** The `piwi-page-inventory` payload: `[{ url, controls, links }]`. */
+  pageInventory?: unknown;
+  networkItems: Array<{ method: string; normalizedUrl: string; url?: string | null; resourceType?: string | null }>;
+}
+
+/** Load resource types that count as a page loading a route during settle. */
+const LOAD_RESOURCE_TYPES = new Set(['document', 'xhr', 'fetch']);
+
+/**
+ * Turn a run's cases into page inventories: one {@link PageInventoryInput} per
+ * visited page, with the own-origin routes the case loaded attached so `loads`
+ * edges form. Malformed inventory entries are skipped.
+ */
+export function collectPageInventories(cases: PageInventoryCase[], origins: Set<string>): PageInventoryInput[] {
+  const out: PageInventoryInput[] = [];
+  for (const c of cases) {
+    const inv = Array.isArray(c.pageInventory) ? (c.pageInventory as unknown[]) : null;
+    if (!inv || inv.length === 0) continue;
+
+    const loadRoutes = new Set<string>();
+    for (const item of c.networkItems) {
+      if (!item.normalizedUrl) continue;
+      if (!LOAD_RESOURCE_TYPES.has((item.resourceType ?? '').toLowerCase())) continue;
+      if (!isOwnOriginRequest(item.url, origins)) continue;
+      loadRoutes.add(routeNodeKey(item.method, item.normalizedUrl));
+    }
+    const loadsRouteKeys = [...loadRoutes];
+
+    for (const raw of inv) {
+      if (!raw || typeof raw !== 'object') continue;
+      const page = raw as { url?: unknown; controls?: unknown; links?: unknown };
+      if (typeof page.url !== 'string' || !page.url) continue;
+      const pageKey = pageNodeKey(page.url);
+      if (!pageKey) continue;
+      const controls = Array.isArray(page.controls)
+        ? (page.controls as unknown[])
+            .filter((x): x is { role?: unknown; name?: unknown } => !!x && typeof x === 'object')
+            .map((x) => ({
+              role: typeof x.role === 'string' ? x.role : null,
+              name: typeof x.name === 'string' ? x.name : '',
+            }))
+            .filter((x) => x.name)
+        : [];
+      const links = Array.isArray(page.links)
+        ? (page.links as unknown[])
+            .filter((x): x is { name?: unknown; href?: unknown } => !!x && typeof x === 'object')
+            .map((x) => ({
+              name: typeof x.name === 'string' ? x.name : '',
+              href: typeof x.href === 'string' ? x.href : null,
+            }))
+            .filter((x) => x.name)
+        : [];
+      out.push({ pageKey, controls, links, loadsRouteKeys });
+    }
+  }
+  return out;
+}
+
+/**
+ * Upsert the `control`/`link` nodes and `contains`/`links`/`loads` edges implied
+ * by a run's page inventories. A no-op when no case carried an inventory.
+ */
+export async function ingestPageInventoryGraph(
+  db: DB,
+  projectId: number,
+  runId: number,
+  cases: PageInventoryCase[],
+  origins: Set<string>,
+  options: { branch?: string | null } = {},
+): Promise<void> {
+  const pages = collectPageInventories(cases, origins);
+  if (pages.length === 0) return;
+  await upsertGraphSpecs(db, projectId, runId, buildPageInventoryGraph(pages, { origins }), options);
 }
 
 /** The handler's source file from a root span, when the instrumentation carries it. */
