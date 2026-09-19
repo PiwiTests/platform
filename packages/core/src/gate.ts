@@ -96,6 +96,8 @@ export interface GateResult {
   passed: boolean;
   violations: GateViolation[];
   facts: GateFacts;
+  /** Warn-only notices that never fail the gate (e.g. uncovered changed files). */
+  warnings?: string[];
 }
 
 /** True when the policy asks for nothing — used to reject an empty invocation. */
@@ -245,6 +247,7 @@ export function formatGateResult(result: GateResult): string {
     );
   }
   for (const violation of result.violations) lines.push(`  ✖ ${violation.message}`);
+  for (const warning of result.warnings ?? []) lines.push(`  ⚠ ${warning}`);
   lines.push(`  ${facts.runUrl}`);
   return lines.join('\n');
 }
