@@ -29,8 +29,13 @@ import {
   collectOwnOrigins,
   isOwnOriginRequest,
   originsFromDocumentRequests,
+  buildRequestGraph,
+  dependencyNodeKey,
+  type GraphNodeSpec,
+  type GraphEdgeSpec,
+  type RequestSpansInput,
 } from '#shared/graph';
-import type { RunMetadata } from './run-json-types';
+import type { RunMetadata, ServerSpanEntry } from './run-json-types';
 import { resolveRunBranch } from './run-branch';
 import { resolveDefaultBranch, type DefaultBranchProject } from './scm/default-branch';
 import { FALLBACK_DEFAULT_BRANCH } from './scm/git-url';
@@ -47,6 +52,7 @@ interface PendingNode {
   kind: string;
   key: string;
   attrs: unknown;
+  origin?: string;
 }
 
 interface PendingEdge {
@@ -57,6 +63,7 @@ interface PendingEdge {
   kind: string;
   confidence: number | null;
   evidence: unknown;
+  origin?: string;
 }
 
 /** Read the sanitized page URL off a persisted case's `pageState`. */
@@ -172,7 +179,7 @@ async function chunkedUpsertNodes(
           key: n.key,
           branch,
           attrs: (n.attrs ?? null) as any,
-          origin: 'observed',
+          origin: n.origin ?? 'observed',
           firstSeenRunId: runId,
           lastSeenRunId: runId,
           lastSeenAt: now,
@@ -216,7 +223,7 @@ async function chunkedUpsertEdges(
           kind: e.kind,
           branch,
           confidence: e.confidence,
-          origin: 'observed',
+          origin: e.origin ?? 'observed',
           evidence: (e.evidence ?? null) as any,
           firstSeenRunId: runId,
           lastSeenRunId: runId,
@@ -298,6 +305,122 @@ export async function ingestRunGraph(
 
   await chunkedUpsertNodes(db, projectId, runId, now, branch, [...nodes.values()]);
   await chunkedUpsertEdges(db, projectId, runId, now, branch, [...edges.values()]);
+}
+
+/**
+ * Upsert the node and edge specs a pure builder produced ({@link buildPageInventoryGraph},
+ * {@link buildRequestGraph}, {@link buildTriggerEdges}). Deduplicated per unique
+ * key before the batch, and tagged with the run's branch. A graph failure must
+ * never break ingest, so callers wrap this in a try/catch that degrades to a
+ * warning.
+ */
+export async function upsertGraphSpecs(
+  db: DB,
+  projectId: number,
+  runId: number,
+  specs: { nodes?: GraphNodeSpec[]; edges?: GraphEdgeSpec[] },
+  options: { branch?: string | null } = {},
+): Promise<void> {
+  const branch = options.branch ?? null;
+  const now = new Date();
+
+  const nodes = new Map<string, PendingNode>();
+  for (const n of specs.nodes ?? []) {
+    nodes.set(`${n.kind}\x00${n.key}`, { kind: n.kind, key: n.key, attrs: n.attrs ?? null, origin: n.origin });
+  }
+  const edges = new Map<string, PendingEdge>();
+  for (const e of specs.edges ?? []) {
+    edges.set(`${e.fromKind}\x00${e.fromKey}\x00${e.kind}\x00${e.toKind}\x00${e.toKey}`, {
+      fromKind: e.fromKind,
+      fromKey: e.fromKey,
+      toKind: e.toKind,
+      toKey: e.toKey,
+      kind: e.kind,
+      confidence: e.confidence ?? null,
+      evidence: e.evidence ?? null,
+      origin: e.origin,
+    });
+  }
+
+  if (nodes.size > 0) await chunkedUpsertNodes(db, projectId, runId, now, branch, [...nodes.values()]);
+  if (edges.size > 0) await chunkedUpsertEdges(db, projectId, runId, now, branch, [...edges.values()]);
+}
+
+/** The handler's source file from a root span, when the instrumentation carries it. */
+function handlerFileFromSpan(span: ServerSpanEntry | undefined): string | null {
+  const attrs = span?.attrs;
+  if (!attrs) return null;
+  for (const key of ['piwi.handler', 'piwi.handler.file', 'code.filepath', 'handler']) {
+    const v = attrs[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+/** A child span's dependency name — a peer service or database, else the span name. */
+function dependencyNameFromSpan(span: ServerSpanEntry): string | null {
+  const attrs = span.attrs ?? {};
+  for (const key of ['peer.service', 'db.system', 'net.peer.name', 'rpc.service']) {
+    const v = attrs[key];
+    if (typeof v === 'string' && v.trim()) return dependencyNodeKey(v);
+  }
+  return span.name?.trim() ? dependencyNodeKey(span.name) : null;
+}
+
+/**
+ * Extract per-route handler and dependency inputs from a run's network builders,
+ * own-origin routes with server spans only. A request without spans contributes
+ * nothing, so `handled-by` and `calls` edges form only for instrumented projects.
+ */
+export function collectRequestGraph(
+  builders: Array<{
+    items: Array<{ method: string; normalizedUrl: string; url?: string | null; serverTraces?: unknown }>;
+  }>,
+  origins: Set<string>,
+): RequestSpansInput[] {
+  const out = new Map<string, RequestSpansInput & { dependencies: string[] }>();
+  for (const b of builders) {
+    for (const item of b.items) {
+      if (!item.normalizedUrl) continue;
+      if (!isOwnOriginRequest(item.url, origins)) continue;
+      const spans = Array.isArray(item.serverTraces) ? (item.serverTraces as ServerSpanEntry[]) : [];
+      if (spans.length === 0) continue;
+      const routeKey = routeNodeKey(item.method, item.normalizedUrl);
+      const root = spans.find((s) => !s.parentId) ?? spans[0];
+      const handlerFile = handlerFileFromSpan(root);
+      const deps = spans
+        .filter((s) => s.parentId)
+        .map(dependencyNameFromSpan)
+        .filter((d): d is string => !!d);
+      const existing = out.get(routeKey);
+      if (existing) {
+        if (handlerFile && !existing.handlerFile) existing.handlerFile = handlerFile;
+        for (const d of deps) if (!existing.dependencies.includes(d)) existing.dependencies.push(d);
+      } else {
+        out.set(routeKey, { routeKey, handlerFile, dependencies: [...new Set(deps)] });
+      }
+    }
+  }
+  return [...out.values()];
+}
+
+/**
+ * Upsert the `handler`/`dependency` nodes and `handled-by`/`calls` edges implied
+ * by a run's request spans. A no-op when no request carried spans.
+ */
+export async function ingestRequestGraph(
+  db: DB,
+  projectId: number,
+  runId: number,
+  builders: Array<{
+    items: Array<{ method: string; normalizedUrl: string; url?: string | null; serverTraces?: unknown }>;
+  }>,
+  origins: Set<string>,
+  options: { branch?: string | null } = {},
+): Promise<void> {
+  const requests = collectRequestGraph(builders, origins);
+  if (requests.length === 0) return;
+  await upsertGraphSpecs(db, projectId, runId, buildRequestGraph(requests), options);
 }
 
 /**

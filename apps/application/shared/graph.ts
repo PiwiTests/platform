@@ -278,3 +278,343 @@ export function routeKeyMatchesTarget(target: ConventionTarget, routeKey: string
 export function pageKeyMatchesTarget(target: ConventionTarget, pageKey: string): boolean {
   return segmentsMatch(target, pathSegments(pageKey));
 }
+
+// ── Control and link keys (size rule 3) ──────────────────────────────────────
+//
+// A control or link node's key collapses the volatile parts of the accessible
+// name, so a table of five hundred orders is one control, not five hundred. The
+// key is project-global: the same control on many pages is one node reached by a
+// `contains` edge from each page.
+
+/**
+ * Collapse digits, dates and ids in an accessible name. ISO dates and UUIDs
+ * become named placeholders before bare digit runs do, so `Order 2026-01-02` and
+ * `Order 3f2c…` template to the same shape as `Order 5`. Whitespace is
+ * normalized and the result trimmed.
+ */
+export function templateAccessibleName(name: string): string {
+  return (name ?? '')
+    .replace(/\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?/g, '{date}')
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '{id}')
+    .replace(/\b[0-9a-f]{16,}\b/gi, '{id}')
+    .replace(/\d+/g, '{n}')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** A control node's key is `role:templated-name`; role defaults to `generic`. */
+export function controlNodeKey(role: string | null | undefined, name: string): string {
+  const r = (role || 'generic').toLowerCase();
+  return `${r}:${templateAccessibleName(name)}`;
+}
+
+/** A link node's key is `link:templated-name`. */
+export function linkNodeKey(name: string): string {
+  return `link:${templateAccessibleName(name)}`;
+}
+
+/** Size rule 3 — a page keeps at most this many distinct controls after templating. */
+export const MAX_CONTROLS_PER_PAGE = 200;
+
+/**
+ * Apply the per-page control cap: dedupe already-templated keys in order and keep
+ * at most {@link MAX_CONTROLS_PER_PAGE}. Templating collapses the bulk, and the
+ * cap bounds a pathological page that still exposes hundreds of distinct
+ * controls.
+ */
+export function capPageControlKeys(keys: Iterable<string>, max = MAX_CONTROLS_PER_PAGE): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const key of keys) {
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+// ── Handler and dependency keys ──────────────────────────────────────────────
+
+/** A handler node's key is its source file path, forward-slashed. */
+export function handlerNodeKey(filePath: string): string {
+  return filePath.replace(/\\/g, '/').trim();
+}
+
+/** A dependency node's key is a stable short name for the outbound call target. */
+export function dependencyNodeKey(name: string): string {
+  return name.trim();
+}
+
+/**
+ * Construct the conventional Nitro handler file for a route key, e.g.
+ * `POST /api/orders` → `server/api/orders.post.ts` and
+ * `PATCH /api/orders/:id` → `server/api/orders/[id].patch.ts`. `:id`/`:uuid`
+ * placeholders become `[id]`/`[uuid]` segments. Returns null for a root or
+ * empty path. The result is a convention, never an observation, and callers
+ * label the edge accordingly.
+ */
+export function conventionalHandlerFile(routeKey: string): string | null {
+  const { method, pattern } = parseRouteNodeKey(routeKey);
+  const q = pattern.indexOf('?');
+  const path = q < 0 ? pattern : pattern.slice(0, q);
+  const segs = pathSegments(path).map((s) => (s.startsWith(':') ? `[${s.slice(1)}]` : s));
+  if (segs.length === 0) return null;
+  // `server/api/**` mounts under `/api`; everything else is `server/routes/**`.
+  const underApi = segs[0] === 'api';
+  const dir = underApi ? 'server/api' : 'server/routes';
+  const body = underApi ? segs.slice(1) : segs;
+  if (body.length === 0) return null;
+  const leaf = body[body.length - 1]!;
+  const rest = body.slice(0, -1);
+  const methodSuffix = method ? `.${method.toLowerCase()}` : '';
+  return `${dir}/${[...rest, `${leaf}${methodSuffix}.ts`].join('/')}`;
+}
+
+// ── Trigger window (control → route) ─────────────────────────────────────────
+
+/** A request fired within this many ms of a step's window still counts as caused by it. */
+export const TRIGGER_WINDOW_PAD_MS = 50;
+
+/**
+ * True when a network request's start time falls inside an action step's window
+ * `[startedAt − pad, startedAt + duration + pad]`. The pad absorbs the small gap
+ * between the click resolving and the request leaving the browser.
+ */
+export function requestInStepWindow(
+  requestStart: number | null | undefined,
+  step: { startedAt: number; duration: number },
+  padMs = TRIGGER_WINDOW_PAD_MS,
+): boolean {
+  if (requestStart == null || !Number.isFinite(requestStart) || !Number.isFinite(step.startedAt)) return false;
+  const start = step.startedAt - padMs;
+  const end = step.startedAt + Math.max(0, step.duration || 0) + padMs;
+  return requestStart >= start && requestStart <= end;
+}
+
+/**
+ * The confidence of a `triggers` edge: the share of executions in which the
+ * control → route co-occurrence held. Clamped to `[0, 1]`; zero executions is
+ * zero confidence.
+ */
+export function triggerConfidence(heldIn: number, executions: number): number {
+  if (!executions || executions <= 0) return 0;
+  return Math.max(0, Math.min(1, heldIn / executions));
+}
+
+// ── Link target resolution (page → page) ─────────────────────────────────────
+
+/**
+ * Resolve a link's `href` to the `page` node key it targets. Fragment-only,
+ * `mailto:`, `tel:` and `javascript:` hrefs resolve to null. When origins are
+ * known, an absolute off-origin href resolves to null; a relative href is always
+ * kept. `base` anchors a relative href when given.
+ */
+export function linkTargetPageKey(
+  href: string | null | undefined,
+  origins: Set<string> = new Set(),
+  base?: string | null,
+): string | null {
+  if (!href) return null;
+  const trimmed = href.trim();
+  if (!trimmed || trimmed.startsWith('#') || /^(?:mailto|tel|javascript):/i.test(trimmed)) return null;
+  const anchorBase = base && /^[a-z][a-z0-9+.-]*:\/\//i.test(base) ? base : `http://${PATH_ANCHOR_HOST}`;
+  let absolute: string;
+  try {
+    absolute = new URL(trimmed, anchorBase).toString();
+  } catch {
+    return null;
+  }
+  const origin = urlOrigin(absolute);
+  const isAnchor = origin === `http://${PATH_ANCHOR_HOST}`;
+  if (origins.size > 0 && !isAnchor && origin != null && !origins.has(origin)) return null;
+  const key = pageNodeKey(absolute);
+  return key || null;
+}
+
+// ── Graph specs (pure descriptors upsert paths share) ────────────────────────
+
+/** A node to upsert, produced by a pure builder and mapped to a DB row by ingest. */
+export interface GraphNodeSpec {
+  kind: GraphNodeKind;
+  key: string;
+  attrs?: unknown;
+  origin?: GraphOrigin;
+}
+
+/** An edge to upsert, produced by a pure builder and mapped to a DB row by ingest. */
+export interface GraphEdgeSpec {
+  fromKind: GraphEndpointKind;
+  fromKey: string;
+  toKind: GraphEndpointKind;
+  toKey: string;
+  kind: GraphEdgeKind;
+  confidence?: number | null;
+  origin?: GraphOrigin;
+  evidence?: unknown;
+}
+
+/** A page's observed inventory: its controls, its links, and the routes it loads. */
+export interface PageInventoryInput {
+  /** The page's node key (already normalized, e.g. from {@link pageNodeKey}). */
+  pageKey: string;
+  controls: Array<{ role: string | null; name: string }>;
+  links: Array<{ name: string; href: string | null }>;
+  /** Routes the page loaded during navigation settle (document and XHR). */
+  loadsRouteKeys?: string[];
+}
+
+/**
+ * Build `control`/`link` nodes and `contains`/`links`/`loads` edges from one or
+ * more pages' inventories. Control names are templated and capped per page; link
+ * targets are resolved to page keys, own-origin only. Pure — the ingest path
+ * upserts the returned specs, and the demo runs the same builder.
+ */
+export function buildPageInventoryGraph(
+  pages: PageInventoryInput[],
+  options: { origins?: Set<string> } = {},
+): { nodes: GraphNodeSpec[]; edges: GraphEdgeSpec[] } {
+  const origins = options.origins ?? new Set<string>();
+  const nodes = new Map<string, GraphNodeSpec>();
+  const edges = new Map<string, GraphEdgeSpec>();
+  const addNode = (spec: GraphNodeSpec) => {
+    nodes.set(`${spec.kind}\x00${spec.key}`, spec);
+  };
+  const addEdge = (spec: GraphEdgeSpec) => {
+    edges.set(`${spec.fromKind}\x00${spec.fromKey}\x00${spec.kind}\x00${spec.toKind}\x00${spec.toKey}`, spec);
+  };
+
+  for (const page of pages) {
+    if (!page.pageKey) continue;
+    addNode({ kind: 'page', key: page.pageKey, attrs: null });
+
+    // Controls, templated and capped per page.
+    const controlKeys = capPageControlKeys(
+      page.controls.filter((c) => c.name?.trim()).map((c) => controlNodeKey(c.role, c.name)),
+    );
+    for (const key of controlKeys) {
+      const [role] = key.split(':', 1);
+      addNode({ kind: 'control', key, attrs: { role } });
+      addEdge({ fromKind: 'page', fromKey: page.pageKey, toKind: 'control', toKey: key, kind: 'contains' });
+    }
+
+    // Links: a `link` node and a `contains` edge, plus a `links` page → page edge
+    // when the href resolves to an own-origin page.
+    const linkKeys = capPageControlKeys(page.links.filter((l) => l.name?.trim()).map((l) => linkNodeKey(l.name)));
+    const linkKeySet = new Set(linkKeys);
+    for (const link of page.links) {
+      if (!link.name?.trim()) continue;
+      const key = linkNodeKey(link.name);
+      if (!linkKeySet.has(key)) continue;
+      addNode({ kind: 'link', key, attrs: link.href ? { href: link.href } : null });
+      addEdge({ fromKind: 'page', fromKey: page.pageKey, toKind: 'link', toKey: key, kind: 'contains' });
+      const targetPage = linkTargetPageKey(link.href, origins, page.pageKey);
+      if (targetPage && targetPage !== page.pageKey) {
+        addNode({ kind: 'page', key: targetPage, attrs: null });
+        addEdge({ fromKind: 'page', fromKey: page.pageKey, toKind: 'page', toKey: targetPage, kind: 'links' });
+      }
+    }
+
+    for (const routeKey of page.loadsRouteKeys ?? []) {
+      addNode({ kind: 'route', key: routeKey, attrs: null });
+      addEdge({ fromKind: 'page', fromKey: page.pageKey, toKind: 'route', toKey: routeKey, kind: 'loads' });
+    }
+  }
+
+  return { nodes: [...nodes.values()], edges: [...edges.values()] };
+}
+
+/** One request's route, its handler (observed or to be conventional) and its calls. */
+export interface RequestSpansInput {
+  routeKey: string;
+  /** The handler's source file from the root span, when the instrumentation carries it. */
+  handlerFile?: string | null;
+  /** Outbound dependency names from the child spans under the request's root span. */
+  dependencies?: string[];
+}
+
+/**
+ * Build `handler`/`dependency` nodes and `handled-by`/`calls` edges from a run's
+ * request spans. A handler comes from the root span's handler field when present
+ * (origin `observed`); otherwise the Nitro convention constructs it from the
+ * route (origin `convention`). Each child span's dependency becomes a `calls`
+ * edge from the handler. Pure.
+ */
+export function buildRequestGraph(requests: RequestSpansInput[]): {
+  nodes: GraphNodeSpec[];
+  edges: GraphEdgeSpec[];
+} {
+  const nodes = new Map<string, GraphNodeSpec>();
+  const edges = new Map<string, GraphEdgeSpec>();
+  const addNode = (spec: GraphNodeSpec) => {
+    nodes.set(`${spec.kind}\x00${spec.key}`, spec);
+  };
+  const addEdge = (spec: GraphEdgeSpec) => {
+    edges.set(`${spec.fromKind}\x00${spec.fromKey}\x00${spec.kind}\x00${spec.toKind}\x00${spec.toKey}`, spec);
+  };
+
+  for (const req of requests) {
+    if (!req.routeKey) continue;
+    const observed = req.handlerFile?.trim() || null;
+    const handlerFile = observed ?? conventionalHandlerFile(req.routeKey);
+    if (!handlerFile) continue;
+    const handlerKey = handlerNodeKey(handlerFile);
+    const origin: GraphOrigin = observed ? 'observed' : 'convention';
+    addNode({ kind: 'route', key: req.routeKey, attrs: null });
+    addNode({ kind: 'handler', key: handlerKey, attrs: null, origin });
+    addEdge({
+      fromKind: 'route',
+      fromKey: req.routeKey,
+      toKind: 'handler',
+      toKey: handlerKey,
+      kind: 'handled-by',
+      origin,
+    });
+    for (const dep of req.dependencies ?? []) {
+      const name = dependencyNodeKey(dep);
+      if (!name) continue;
+      addNode({ kind: 'dependency', key: name, attrs: null });
+      addEdge({ fromKind: 'handler', fromKey: handlerKey, toKind: 'dependency', toKey: name, kind: 'calls' });
+    }
+  }
+
+  return { nodes: [...nodes.values()], edges: [...edges.values()] };
+}
+
+/** One observed control → route co-occurrence within an execution. */
+export interface TriggerObservation {
+  controlKey: string;
+  routeKey: string;
+}
+
+/**
+ * Build `triggers` edges from per-execution co-occurrences. A pair is counted at
+ * most once per execution; the edge's confidence is the share of executions in
+ * which the pair held. Pure.
+ */
+export function buildTriggerEdges(executions: TriggerObservation[][]): GraphEdgeSpec[] {
+  const total = executions.length;
+  if (total === 0) return [];
+  const held = new Map<string, { controlKey: string; routeKey: string; count: number }>();
+  for (const exec of executions) {
+    const seen = new Set<string>();
+    for (const { controlKey, routeKey } of exec) {
+      if (!controlKey || !routeKey) continue;
+      const id = `${controlKey}\x00${routeKey}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const entry = held.get(id) ?? { controlKey, routeKey, count: 0 };
+      entry.count++;
+      held.set(id, entry);
+    }
+  }
+  return [...held.values()].map((e) => ({
+    fromKind: 'control' as const,
+    fromKey: e.controlKey,
+    toKind: 'route' as const,
+    toKey: e.routeKey,
+    kind: 'triggers' as const,
+    confidence: triggerConfidence(e.count, total),
+    evidence: { executions: total, held: e.count },
+  }));
+}

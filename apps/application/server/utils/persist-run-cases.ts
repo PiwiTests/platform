@@ -37,6 +37,7 @@ import { getOrCreateFailureClusters, type PendingCluster } from '#shared/handler
 import { upsertLocatorSnapshots } from './locator-healing';
 import {
   ingestRunGraph,
+  ingestRequestGraph,
   collectRunGraphReaches,
   resolveRunBranchTagFromStored,
   runBaseUrls,
@@ -630,6 +631,9 @@ export async function persistRunCases(
       ),
       { branch },
     );
+    // Handler and dependency breadth: `handled-by` and `calls` edges from the
+    // server spans forwarded with each request. A no-op for uninstrumented runs.
+    await ingestRequestGraph(db, projectId, testRunId, networkRequestBuilders, origins, { branch });
   } catch (err) {
     console.warn('[graph-ingest] failed to update the feature graph', err);
   }
