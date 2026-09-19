@@ -8,7 +8,7 @@
  * from recent history, and the word used is *observed reach*, never coverage.
  */
 
-import { and, count, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   failureClusters,
   graphEdges,
@@ -16,6 +16,7 @@ import {
   networkRequests,
   scenarioGaps,
   testCases,
+  testFunctions,
   testRuns,
 } from '../../server/database/schema';
 import { fileRouteTarget, filePageTarget, routeKeyMatchesTarget, pageKeyMatchesTarget } from '../graph';
@@ -1411,6 +1412,8 @@ export interface GapFilters {
   detector?: string;
   status?: string;
   prNumber?: number;
+  /** Keep only gaps at or above this exposure score. */
+  minScore?: number;
   limit?: number;
 }
 
@@ -1427,6 +1430,7 @@ export async function listScenarioGaps(
   if (filters.class) where.push(eq(scenarioGaps.class, filters.class));
   if (filters.detector) where.push(eq(scenarioGaps.detector, filters.detector));
   if (filters.prNumber != null) where.push(eq(scenarioGaps.prNumber, filters.prNumber));
+  if (filters.minScore != null) where.push(gte(scenarioGaps.score, filters.minScore));
 
   const limit = Math.min(200, Math.max(1, filters.limit ?? 100));
   const rows = await db
@@ -1454,4 +1458,221 @@ export async function listScenarioGaps(
     createdAt: r.createdAt instanceof Date ? r.createdAt.getTime() : Number(r.createdAt),
     updatedAt: r.updatedAt instanceof Date ? r.updatedAt.getTime() : Number(r.updatedAt),
   }));
+}
+
+// ── Deterministic draft (pure + loader) ──────────────────────────────────────
+
+/** The pieces a draft skeleton is rendered from. */
+export interface ScenarioDraftInput {
+  gapTitle: string;
+  gapClass: string;
+  subject: { kind: string; key: string };
+  nearestTest?: { title: string; feature?: string | null; priority?: string | null; location?: string | null } | null;
+  /** Human-readable path steps from a reached page to the gap. */
+  path: string[];
+  catalogMethods: Array<{ module: string; name: string; receiver?: string | null }>;
+  evidence: string[];
+}
+
+export interface ScenarioDraft extends ScenarioDraftInput {
+  /** The piwi: annotations carried into the skeleton, from the nearest test. */
+  annotations: Array<{ type: string; description?: string }>;
+  /** The rendered Playwright test skeleton, delivered as text. */
+  text: string;
+}
+
+/** A safe single-quoted string for the generated source. */
+function q(s: string): string {
+  return `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
+/** The TODO assertion a gap's class suggests. */
+function assertionForClass(gapClass: string, subjectKey: string): string {
+  switch (gapClass) {
+    case 'false-comfort':
+      return `TODO: assert the effect ${subjectKey} should have on the page — a probe showed a passing test does not notice it breaking.`;
+    case 'fragile':
+      return `TODO: assert the behavior a second scenario should protect.`;
+    default:
+      return `TODO: assert what ${subjectKey} should produce.`;
+  }
+}
+
+/**
+ * Render a deterministic test skeleton for a gap: a title, piwi: annotations
+ * from the nearest test, the graph path as the step list, catalog methods where
+ * they match, and a TODO assertion. No AI — the assertion is left for a human or
+ * an agent to fill.
+ */
+export function renderScenarioDraft(input: ScenarioDraftInput): ScenarioDraft {
+  const annotations: Array<{ type: string; description?: string }> = [];
+  if (input.nearestTest?.feature) annotations.push({ type: 'piwi:feature', description: input.nearestTest.feature });
+  if (input.nearestTest?.priority) annotations.push({ type: 'piwi:priority', description: input.nearestTest.priority });
+
+  const lines: string[] = [];
+  lines.push(`import { test, expect } from '@playwright/test';`);
+  lines.push('');
+  lines.push(`// Draft for a ${input.gapClass} gap: ${input.gapTitle}`);
+  for (const e of input.evidence) lines.push(`// ${e}`);
+  if (input.nearestTest?.location)
+    lines.push(`// Nearest test: ${input.nearestTest.title} (${input.nearestTest.location})`);
+  lines.push('');
+
+  const annotationArg =
+    annotations.length > 0
+      ? `, {\n  annotation: [${annotations.map((a) => `{ type: ${q(a.type)}, description: ${q(a.description ?? '')} }`).join(', ')}],\n}`
+      : '';
+  lines.push(`test(${q(input.gapTitle)}${annotationArg}, async ({ page }) => {`);
+
+  if (input.path.length > 0) {
+    lines.push('  // Path to the gap:');
+    for (const step of input.path) lines.push(`  ${step}`);
+  } else {
+    lines.push('  // No reached path to this gap — start from the nearest entry point.');
+  }
+
+  if (input.catalogMethods.length > 0) {
+    lines.push('  // Catalog methods that match this page:');
+    for (const m of input.catalogMethods) {
+      const recv = m.receiver ? `${m.receiver}.` : '';
+      lines.push(`  // await ${recv}${m.name}(); // from ${m.module}`);
+    }
+  }
+
+  lines.push(`  // ${assertionForClass(input.gapClass, input.subject.key)}`);
+  lines.push('});');
+  lines.push('');
+
+  return { ...input, annotations, text: lines.join('\n') };
+}
+
+/** Parse a gap key into its subject node kind and key. */
+function subjectFromGapKey(key: string): { kind: string; key: string } {
+  for (const kind of ['route', 'page', 'control', 'link', 'test', 'cluster', 'catalog', 'intent']) {
+    const prefix = `${kind}:`;
+    if (key.startsWith(prefix)) return { kind, key: key.slice(prefix.length) };
+  }
+  // M1 keys: a raw route key or a file path.
+  if (/^[A-Z]+\s/.test(key)) return { kind: 'route', key };
+  return { kind: 'file', key };
+}
+
+/**
+ * Load a gap and render its deterministic draft. Finds the nearest test (the
+ * gap's own, else one reaching the subject or a neighboring node), the reached
+ * page nearest the subject as the path, and the catalog methods whose url pattern
+ * matches. Returns null when the gap does not exist in the project.
+ */
+export async function draftScenario(db: DrizzleDB, projectId: number, gapId: number): Promise<ScenarioDraft | null> {
+  const [gap] = await db
+    .select()
+    .from(scenarioGaps)
+    .where(and(eq(scenarioGaps.projectId, projectId), eq(scenarioGaps.id, gapId)));
+  if (!gap) return null;
+
+  const subject = subjectFromGapKey(gap.key);
+  const evidence = Array.isArray(gap.evidence) ? (gap.evidence as string[]) : [];
+
+  // Nearest test: the gap's own, else a test reaching the subject node.
+  let nearestTestId = gap.testCaseId ?? null;
+  if (nearestTestId == null && (subject.kind === 'route' || subject.kind === 'page' || subject.kind === 'control')) {
+    const [edge] = await db
+      .select({ fromKey: graphEdges.fromKey })
+      .from(graphEdges)
+      .where(
+        and(
+          eq(graphEdges.projectId, projectId),
+          eq(graphEdges.kind, 'reaches'),
+          eq(graphEdges.toKind, subject.kind),
+          eq(graphEdges.toKey, subject.key),
+          isNull(graphEdges.branch),
+        ),
+      )
+      .limit(1);
+    if (edge) nearestTestId = Number(edge.fromKey) || null;
+  }
+
+  let nearestTest: ScenarioDraftInput['nearestTest'] = null;
+  if (nearestTestId != null) {
+    const [tc] = await db
+      .select({
+        title: testCases.title,
+        feature: testCases.feature,
+        priority: testCases.priority,
+        filePath: testCases.filePath,
+      })
+      .from(testCases)
+      .where(eq(testCases.id, nearestTestId));
+    if (tc) {
+      nearestTest = {
+        title: tc.title,
+        feature: tc.feature ?? null,
+        priority: tc.priority ?? null,
+        location: tc.filePath ?? null,
+      };
+    }
+  }
+
+  // Path: a reached page nearest the subject.
+  const path: string[] = [];
+  let pageForCatalog: string | null = null;
+  if (subject.kind === 'page') {
+    pageForCatalog = subject.key;
+    path.push(`await page.goto(${q(subject.key)});`);
+  } else if (subject.kind === 'control' || subject.kind === 'route') {
+    // A page that contains the control, or loads/triggers the route.
+    const [edge] = await db
+      .select({ pageKey: graphEdges.fromKey })
+      .from(graphEdges)
+      .where(
+        and(
+          eq(graphEdges.projectId, projectId),
+          inArray(graphEdges.kind, subject.kind === 'control' ? ['contains'] : ['loads', 'triggers']),
+          eq(graphEdges.fromKind, 'page'),
+          eq(graphEdges.toKind, subject.kind),
+          eq(graphEdges.toKey, subject.key),
+          isNull(graphEdges.branch),
+        ),
+      )
+      .limit(1);
+    if (edge?.pageKey) {
+      pageForCatalog = edge.pageKey;
+      path.push(`await page.goto(${q(edge.pageKey)});`);
+    }
+    if (subject.kind === 'control') {
+      const [role, ...nameParts] = subject.key.split(':');
+      const name = nameParts.join(':');
+      path.push(`await page.getByRole(${q(role ?? 'button')}, { name: ${q(name)} }).click();`);
+    }
+  }
+
+  // Catalog methods whose url pattern matches the page.
+  const catalogMethods: ScenarioDraftInput['catalogMethods'] = [];
+  if (pageForCatalog) {
+    const fns = await db
+      .select({
+        module: testFunctions.module,
+        name: testFunctions.name,
+        receiver: testFunctions.receiver,
+        urlPattern: testFunctions.urlPattern,
+      })
+      .from(testFunctions)
+      .where(eq(testFunctions.projectId, projectId));
+    for (const f of fns) {
+      if (!f.urlPattern || pageForCatalog.includes(f.urlPattern.replace(/\*+/g, ''))) {
+        catalogMethods.push({ module: f.module, name: f.name, receiver: f.receiver });
+      }
+      if (catalogMethods.length >= 5) break;
+    }
+  }
+
+  return renderScenarioDraft({
+    gapTitle: gap.title,
+    gapClass: gap.class,
+    subject,
+    nearestTest,
+    path,
+    catalogMethods,
+    evidence,
+  });
 }

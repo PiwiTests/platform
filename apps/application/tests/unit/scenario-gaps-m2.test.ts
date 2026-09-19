@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import {
+  renderScenarioDraft,
   detectControlNobodyExercises,
   detectReachableUnvisited,
   detectApiOnlyRoute,
@@ -187,5 +188,43 @@ describe('detectLocatorBreakAhead', () => {
     expect(preds).toHaveLength(1);
     expect(preds[0]!.detector).toBe('locator-break-ahead');
     expect(preds[0]!.evidence).toContain('2 call sites');
+  });
+});
+
+describe('renderScenarioDraft', () => {
+  test('renders a skeleton with annotations, path, catalog and a TODO', () => {
+    const draft = renderScenarioDraft({
+      gapTitle: 'Tests pass when POST /api/orders breaks',
+      gapClass: 'false-comfort',
+      subject: { kind: 'route', key: 'POST /api/orders' },
+      nearestTest: {
+        title: 'checkout › happy path',
+        feature: 'Checkout',
+        priority: 'high',
+        location: 'checkout.spec.ts',
+      },
+      path: ["await page.goto('/checkout');"],
+      catalogMethods: [{ module: './pages/CartPage', name: 'placeOrder', receiver: 'cartPage' }],
+      evidence: ['A probe (status-500) on POST /api/orders did not make any test fail.'],
+    });
+    expect(draft.text).toContain("import { test, expect } from '@playwright/test';");
+    expect(draft.text).toContain('piwi:feature');
+    expect(draft.text).toContain("await page.goto('/checkout');");
+    expect(draft.text).toContain('cartPage.placeOrder()');
+    expect(draft.text).toContain('TODO: assert the effect');
+    expect(draft.annotations).toContainEqual({ type: 'piwi:feature', description: 'Checkout' });
+  });
+
+  test('notes when there is no reachable path', () => {
+    const draft = renderScenarioDraft({
+      gapTitle: 'x',
+      gapClass: 'blind-spot',
+      subject: { kind: 'route', key: 'POST /api/x' },
+      nearestTest: null,
+      path: [],
+      catalogMethods: [],
+      evidence: [],
+    });
+    expect(draft.text).toContain('No reached path to this gap');
   });
 });

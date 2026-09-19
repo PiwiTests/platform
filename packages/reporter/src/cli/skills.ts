@@ -20,6 +20,7 @@ export const WORKFLOW_SKILLS = [
   'apply-locator-healing',
   'stabilize-flaky-tests',
   'run-the-right-tests',
+  'write-the-missing-test',
 ] as const;
 export const ALL_SKILLS = [SETUP_SKILL, ...WORKFLOW_SKILLS] as const;
 

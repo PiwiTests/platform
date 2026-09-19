@@ -17,7 +17,7 @@ The MCP server is served from the same Nitro process as the dashboard. There is 
 
 ## What it provides
 
-The server exposes 47 tools — mostly read-only, plus a few write/triage tools — that cover the full diagnostic workflow, from browsing projects to inspecting the exact evidence behind a failure and closing the loop after a fix.
+The server exposes 49 tools — mostly read-only, plus a few write/triage tools — covering the full diagnostic workflow, from browsing projects to the evidence behind a failure and closing the loop.
 
 **Projects & activity**
 
@@ -65,15 +65,17 @@ The server exposes 47 tools — mostly read-only, plus a few write/triage tools 
 | `suggest_selections` | Suggested `slow`/`feature` tags and a mined smoke suite (budgeted set cover over observed routes), each with its evidence |
 | `analyze_selections` | Per-selection health and drift (what each resolves to now vs. what its last run recorded) plus the tests no selection covers |
 | `get_change_coverage` | Changed files joined to the tests reaching them, grouped by ticket, by run id or base/head range |
+| `list_scenario_gaps` | Ranked scenario gaps (tests that don't exist yet) with class, evidence and score; filter by class, feature, score or PR |
+| `draft_scenario` | A deterministic test skeleton for a gap: title, annotations, the graph path, matching catalog methods and a TODO assertion |
 
 **Failure clusters**
 
 | Tool | Description |
 |------|-------------|
 | `list_clusters` | Failure clusters grouped by error fingerprint |
-| `list_open_clusters` | Open clusters across *all* projects, ranked by occurrences — a triage queue; an optional `queue` filter focuses one inbox queue (regressions, fixes that didn't hold, quarantines ready, merge suggestions, or yours) |
+| `list_open_clusters` | Open clusters across *all* projects, ranked by occurrences — a triage queue; an optional `queue` filter focuses one inbox queue |
 | `get_cluster` | Cluster detail with affected tests and diagnosis summary |
-| `get_fix_plan` | **One-call fix plan** for a cluster: diagnosis with its validated patch, ranked locator replacements with the file and line to edit, failing tests, owning team, the verify command, a `reproduce` recipe (checkout, pinned install and the test command, in bash and PowerShell), a generated `bisect` script between the last green and the failing commit, and `fixedBefore` — the resolved clusters this one resembles, each with its resolving commit and triage note |
+| `get_fix_plan` | **One-call fix plan** for a cluster: diagnosis with its validated patch, ranked locator replacements with the file and line, failing tests, owning team, the verify command, a `reproduce` recipe, a generated `bisect` script, and `fixedBefore` — resolved clusters this one resembles |
 | `get_cluster_diagnosis` | Full AI diagnosis: root cause, evidence, suggested fix |
 | `get_cluster_context` | Full AI evidence context (errors, steps, console logs, SCM diff) — the same data the built-in diagnosis AI receives |
 
@@ -121,7 +123,7 @@ When `PIWI_AUTH_ENABLED` is not set, any request is accepted without a key.
 
 ## Transport
 
-The server implements the **MCP Streamable HTTP transport**. On `initialize` it negotiates the protocol version, echoing the client's requested version when supported (`2025-06-18`, `2025-03-26`, `2024-11-05`) and otherwise replying with the latest it implements. Requests and responses are standard JSON-RPC 2.0 messages over `POST /mcp`. No SSE or WebSocket is required for these tools. (`GET /mcp` serves the human setup page, not a stream.)
+The server implements the **MCP Streamable HTTP transport**. On `initialize` it negotiates the protocol version, echoing the client's requested version when supported (`2025-06-18`, `2025-03-26`, `2024-11-05`) and otherwise replying with its latest. Requests and responses are standard JSON-RPC 2.0 messages over `POST /mcp`; no SSE or WebSocket is required. (`GET /mcp` serves the setup page, not a stream.)
 
 ---
 
@@ -283,7 +285,7 @@ npx @piwitests/reporter skills list         # see what each one does
 npx @piwitests/reporter skills add investigate-failure --dir .cursor/skills   # a specific one, elsewhere
 ```
 
-`npx @piwitests/reporter init` installs the four workflow skills automatically as part of setup. (Invoke the CLI through the package name so npx resolves *this* package, not an unrelated `piwi` on npm; a plain `npx piwi …` works once the reporter is a project dependency.)
+`npx @piwitests/reporter init` installs the workflow skills automatically as part of setup. (Invoke the CLI through the package name so npx resolves *this* package; a plain `npx piwi …` works once the reporter is a project dependency.)
 
 | Skill | What it does |
 |------|--------------|
@@ -291,6 +293,7 @@ npx @piwitests/reporter skills add investigate-failure --dir .cursor/skills   # 
 | `investigate-failure` | Investigate a failed run and propose a fix grounded in Piwi's evidence — error, steps, console, network, and the diff since the last green run. |
 | `apply-locator-healing` | Replace a brittle locator with Piwi's ranked healed selector at its call site, then re-run to confirm. |
 | `stabilize-flaky-tests` | Fix the root cause of the highest-impact flaky tests (never by adding retries), then verify with repeated runs. |
-| `run-the-right-tests` | Pick and run the right [selection](/guide/test-selection) for the task — smoke, recently-broken, a time budget — instead of always running the whole suite. |
+| `run-the-right-tests` | Pick and run the right [selection](/guide/test-selection) for the task — smoke, recently-broken, a time budget — instead of the whole suite. |
+| `write-the-missing-test` | Take the top [scenario gap](/features/scenario-gaps) in scope, draft it from the graph, finish the assertion and open it in the same change. |
 
-The skills are agent-agnostic Markdown — only the destination directory is tool-specific, so `--dir` points the install wherever your agent reads skills from. They pair with this MCP server: each one prefers a connected Piwi MCP tool (`explain_failure`, `get_locator_healing`, `list_flaky_tests`, …) and falls back to the dashboard UI when MCP is not connected.
+The skills are agent-agnostic Markdown — only the destination is tool-specific, so `--dir` points the install wherever your agent reads skills from. Each one prefers a connected Piwi MCP tool and falls back to the dashboard UI when MCP is not connected.
