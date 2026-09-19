@@ -7,6 +7,12 @@ import { consola } from 'consola';
 // server bundle externalizes it (e.g. dev builds).
 import type { NitroAppPlugin } from 'nitropack';
 import { verifyProbeHeader, type PiwiProbeSpec } from './probe';
+import {
+  buildRouteManifest,
+  recordObservedRoute,
+  collapsePathPattern,
+  type ManifestRouteEntry,
+} from './manifest';
 
 export {
   verifyProbeHeader,
@@ -16,6 +22,7 @@ export {
   type PiwiProbeSpec,
   type SignedProbe,
 } from './probe';
+export { buildRouteManifest, recordObservedRoute, collapsePathPattern, type RouteManifest } from './manifest';
 
 const MAX_ENTRIES = 50;
 const MAX_MSG_LENGTH = 500;
@@ -124,6 +131,15 @@ const TEST_LOGS_DISABLED =
 /** The shared secret a probe run signs the `X-Piwi-Probe` header with. */
 const PROBE_SECRET = process.env.PIWI_PROBE_SECRET || undefined;
 
+/** The declared-surface route path the plugin serves outside production. */
+const MANIFEST_PATH = '/__piwi/manifest';
+
+/**
+ * Routes the server has matched this process, accumulated for `/__piwi/manifest`.
+ * Nitro exposes no runtime route table, so the manifest is built from observation.
+ */
+const observedRoutes = new Map<string, ManifestRouteEntry>();
+
 /**
  * Server probes stay off unless a project opts in. When off (the default in this
  * milestone) a signed probe header is still verified and recorded, but no fault
@@ -172,6 +188,17 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
   // als.run() scope covers every hook, middleware, and route handler.
   const originalHandler = nitroApp.h3App.handler;
   nitroApp.h3App.handler = ((event) => {
+    // Serve the declared-surface manifest outside production (the plugin already
+    // returned early when log capture is disabled). Built from observed routes.
+    const requestPath = String(event.path ?? event.node.req.url ?? '').split('?')[0] ?? '';
+    if (requestPath === MANIFEST_PATH) {
+      const res = event.node.res as any;
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(buildRouteManifest(observedRoutes)));
+      return;
+    }
+
     const store: RequestStore = { logs: [], spans: [], startMs: Date.now() };
     event.context._piwiLogs = store.logs;
     event.context._piwiSpans = store.spans;
@@ -230,6 +257,13 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
         const traceId =
           parseTraceparent(event.node.req.headers['traceparent']) ?? randomBytes(16).toString('hex');
         const handlerFile = resolveHandlerFile(event);
+
+        // Record this route for the declared-surface manifest. Prefer the matched
+        // route's own pattern; fall back to collapsing the concrete path.
+        const matchedPattern = (event.context?.matchedRoute as { route?: unknown; path?: unknown } | undefined)?.route;
+        const pattern = typeof matchedPattern === 'string' && matchedPattern ? matchedPattern : collapsePathPattern(path);
+        recordObservedRoute(observedRoutes, { method, pattern, handler: handlerFile });
+
         const rootSpan: PiwiServerSpan = {
           id: randomBytes(8).toString('hex'),
           name: `${method} ${path}`.trim(),
