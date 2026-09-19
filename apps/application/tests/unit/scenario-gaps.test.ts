@@ -246,6 +246,41 @@ describe('computeScenarioGaps', () => {
     expect(row!.status).toBe('dismissed');
   });
 
+  test('a route added on a pull-request branch does not drift onto the default branch', async () => {
+    await seedRun(1);
+    await seedRun(2); // the latest run
+
+    // A canonical route first seen earlier — not drift.
+    await db.insert(schema.graphNodes).values({
+      projectId: 1,
+      kind: 'route',
+      key: 'GET /api/cart',
+      firstSeenRunId: 1,
+      lastSeenRunId: 2,
+      lastSeenAt: new Date(++clock),
+    });
+    // A route added on a pull-request branch in the latest run.
+    await db.insert(schema.graphNodes).values({
+      projectId: 1,
+      kind: 'route',
+      key: 'GET /api/new',
+      branch: 'pr-1',
+      firstSeenRunId: 2,
+      lastSeenRunId: 2,
+      lastSeenAt: new Date(++clock),
+    });
+
+    // On the default branch only canonical rows are read — the PR route is absent.
+    await gaps.computeScenarioGaps(db, 1);
+    let drift = await gaps.listScenarioGaps(db, 1, { detector: 'surface-drift' });
+    expect(drift.find((r) => r.key === 'route:GET /api/new')).toBeFalsy();
+
+    // Scoped to the pull-request branch, the new route surfaces as drift.
+    await gaps.computeScenarioGaps(db, 1, { branch: 'pr-1' });
+    drift = await gaps.listScenarioGaps(db, 1, { detector: 'surface-drift' });
+    expect(drift.find((r) => r.key === 'route:GET /api/new')).toBeTruthy();
+  });
+
   test('closes a gap whose condition no longer holds', async () => {
     await seedRun(1);
     await seedReach(1, 'page', '/checkout', 1);
