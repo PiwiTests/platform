@@ -99,6 +99,15 @@ export interface PiwiDashboardOptions {
    */
   sampleAriaOnPass?: boolean;
   /**
+   * Upload the application's declared surface at run start: a committed
+   * `piwi.manifest.json` next to the Playwright config, and — when the base URL's
+   * first response carries an instrumentation header — the instrumentation
+   * package's `/__piwi/manifest`. A route or page the manifest declares that no
+   * test reaches becomes a "declared, never hit" gap. Defaults to `true`; set to
+   * `false` (or `PIWI_UPLOAD_MANIFEST=false`) to never upload.
+   */
+  uploadManifest?: boolean;
+  /**
    * When installed via `wrapConfig`, default Playwright's own `screenshot` and
    * `trace` options on the top-level `use` block so a failing test keeps a
    * screenshot (`'only-on-failure'`) and a trace (`'retain-on-failure'`) even

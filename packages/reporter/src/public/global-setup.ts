@@ -10,6 +10,12 @@ import { detectCiRunLabel } from '../internal/support/ci.js';
 import { getSetupFilePath } from '../internal/support/setup-file.js';
 import { ariaSampleIdentity, clearAriaSampleFile, writeAriaSampleFile } from '../internal/support/aria-sampling.js';
 import { isUiMode, isListMode } from '../internal/support/run-mode.js';
+import {
+  readCommittedManifest,
+  fetchInstrumentationManifest,
+  configDirFromConfig,
+  baseUrlFromConfig,
+} from '../internal/manifest/collect.js';
 
 /**
  * Create a Playwright `globalSetup` function that registers a test run on the
@@ -139,26 +145,64 @@ export function createGlobalSetup(
         logger.debug(`Global setup: initializing run #${response.runId}`);
       }
 
-      // Ask the server which tests are due a fresh green ARIA sample this run
-      // and stash the answer for the worker fixtures. A prior run's set is
-      // always cleared first so a stale file never leaks in — even when sampling
-      // is off this run; an old server or a failed call then leaves no file, and
-      // the fixtures sample nothing.
+      // A prior run's ARIA sample set is always cleared first so a stale file
+      // never leaks in — even when sampling is off this run.
       if (opts.projectName) clearAriaSampleFile(opts.projectName);
-      if (opts.sampleAriaOnPass !== false && opts.projectName) {
+
+      // Determine what needs the project id before fetching the menu, so a run
+      // with neither ARIA sampling nor a manifest makes no extra request.
+      const wantsAria = opts.sampleAriaOnPass !== false && !!opts.projectName;
+      const committedManifest =
+        opts.uploadManifest !== false ? readCommittedManifest(configDirFromConfig(config)) : null;
+      const manifestBaseUrl = opts.uploadManifest !== false ? baseUrlFromConfig(config) : null;
+      const wantsManifest =
+        opts.uploadManifest !== false && !!opts.projectName && (!!committedManifest || !!manifestBaseUrl);
+
+      let projectId: number | undefined;
+      if ((wantsAria || wantsManifest) && opts.projectName) {
         const menu = await httpClient.getJSON('/api/projects/menu', auth);
-        const projectId = (menu?.items as Array<{ id: number; name: string }> | undefined)?.find(
+        projectId = (menu?.items as Array<{ id: number; name: string }> | undefined)?.find(
           (p) => p.name.toLowerCase() === opts.projectName!.toLowerCase(),
         )?.id;
-        if (projectId != null) {
-          const sampling = await httpClient.getJSON(`/api/projects/${projectId}/aria-sampling`, auth);
-          const tests = Array.isArray(sampling?.tests) ? (sampling.tests as Array<Record<string, unknown>>) : null;
-          if (tests) {
-            const identities = tests
-              .filter((t) => typeof t.filePath === 'string' && typeof t.title === 'string')
-              .map((t) => ariaSampleIdentity(t.filePath as string, t.title as string));
-            writeAriaSampleFile(opts.projectName, identities);
-            logger.debug(`Green ARIA sampling: ${identities.length} test(s) due a sample.`);
+      }
+
+      // Ask the server which tests are due a fresh green ARIA sample this run
+      // and stash the answer for the worker fixtures. An old server or a failed
+      // call leaves no file, and the fixtures then sample nothing.
+      if (wantsAria && projectId != null) {
+        const sampling = await httpClient.getJSON(`/api/projects/${projectId}/aria-sampling`, auth);
+        const tests = Array.isArray(sampling?.tests) ? (sampling.tests as Array<Record<string, unknown>>) : null;
+        if (tests) {
+          const identities = tests
+            .filter((t) => typeof t.filePath === 'string' && typeof t.title === 'string')
+            .map((t) => ariaSampleIdentity(t.filePath as string, t.title as string));
+          writeAriaSampleFile(opts.projectName!, identities);
+          logger.debug(`Green ARIA sampling: ${identities.length} test(s) due a sample.`);
+        }
+      }
+
+      // Declared surface: upload a committed `piwi.manifest.json` and, when the
+      // app under test carries an instrumentation header, its `/__piwi/manifest`.
+      if (wantsManifest && projectId != null) {
+        if (committedManifest) {
+          await httpClient
+            .putJSON(
+              `/api/projects/${projectId}/surface/manifest`,
+              { source: 'committed', manifest: committedManifest },
+              auth,
+            )
+            .catch((e: unknown) => logger.debug(`Manifest upload (committed) skipped: ${errorMessage(e)}`));
+        }
+        if (manifestBaseUrl) {
+          const declared = await fetchInstrumentationManifest(manifestBaseUrl);
+          if (declared) {
+            await httpClient
+              .putJSON(
+                `/api/projects/${projectId}/surface/manifest`,
+                { source: 'instrumentation', manifest: declared },
+                auth,
+              )
+              .catch((e: unknown) => logger.debug(`Manifest upload (instrumentation) skipped: ${errorMessage(e)}`));
           }
         }
       }
