@@ -309,6 +309,7 @@ export async function updateProject(
     scmToken?: string | null;
     defaultBranch?: string | null;
     openApiUrl?: string | null;
+    serverProbes?: unknown;
     ciRerun?: unknown;
     tagIds?: number[];
   },
@@ -324,6 +325,7 @@ export async function updateProject(
     scmToken,
     defaultBranch,
     openApiUrl,
+    serverProbes,
     ciRerun,
     tagIds: dataTagIds,
   } = data;
@@ -339,6 +341,7 @@ export async function updateProject(
       scmToken: scmToken !== undefined ? scmToken : undefined,
       defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
       openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
+      serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
       ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
       updatedAt: new Date(),
     })

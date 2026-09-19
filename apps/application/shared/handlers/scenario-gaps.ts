@@ -168,6 +168,22 @@ export function rankGap(gap: DetectedGap, inputs: ExposureInputs): ScoredGap {
   return { ...gap, factors, score: scoreGap(gap, factors) };
 }
 
+/**
+ * Rank a resilience finding by exposure × severity, never the protection
+ * formula. The finding carries its severity in `confidence` (unhandled 1.0,
+ * degraded 0.5); `exposure` is a proxy in [0.1, 1] (how much the route matters).
+ */
+export function rankFinding(gap: DetectedGap, exposure: number): ScoredGap {
+  const exposureFactor = clampFactor(exposure);
+  const factors: ExposureFactors = {
+    churn: FACTOR_FLOOR,
+    age: FACTOR_FLOOR,
+    escapeHistory: FACTOR_FLOOR,
+    priority: exposureFactor,
+  };
+  return { ...gap, factors, score: clamp01(gap.confidence) * exposureFactor };
+}
+
 // ── Detectors (pure) ─────────────────────────────────────────────────────────
 
 /** Observed statuses of one route pattern over the recent window. */
@@ -518,6 +534,80 @@ export function detectNotNoticed(checks: CheckOutcome[]): DetectedGap[] {
         `A probe${fault} on ${c.routeKey} did not make ${names} fail — assert the effect the request should have.`,
       ],
       confidence: 0.8,
+    });
+  }
+  return gaps;
+}
+
+/** A dependency node and how the suite probes it. */
+export interface DependencyProbeStatus {
+  dependencyKey: string;
+  /** Route keys whose handlers call this dependency. */
+  calledByRoutes: string[];
+  /** True when any test has a `checks` edge on this dependency. */
+  probed: boolean;
+}
+
+/**
+ * Unprobed dependency — a dependency a handler calls that no probe has ever
+ * checked. False comfort (a prior): the suite reaches the routes that call it,
+ * but no test has been shown to fail when the dependency does.
+ */
+export function detectUnprobedDependency(deps: DependencyProbeStatus[]): DetectedGap[] {
+  const gaps: DetectedGap[] = [];
+  for (const d of deps) {
+    if (d.probed || d.calledByRoutes.length === 0) continue;
+    gaps.push({
+      detector: 'unprobed-dependency',
+      kind: 'gap',
+      class: 'false-comfort',
+      key: `dependency:${d.dependencyKey}`,
+      title: `${d.dependencyKey} is never probed`,
+      evidence: [
+        `Called by ${d.calledByRoutes.length} route${d.calledByRoutes.length === 1 ? '' : 's'} · no probe has checked what happens when it fails — schedule a dependency probe.`,
+      ],
+      confidence: clamp01(0.3 + Math.min(0.4, d.calledByRoutes.length / 10)),
+    });
+  }
+  return gaps;
+}
+
+/** One server-probe resilience signal: what the app did while a fault was applied. */
+export interface ResilienceSignal {
+  routeKey: string;
+  dependency?: string | null;
+  handled: 'degraded' | 'unhandled';
+  testTitle: string;
+  testCaseId?: number | null;
+  /** How many tests reach the route — the exposure proxy the finding ranks by. */
+  exposure?: number;
+}
+
+/**
+ * Not handled — a resilience finding, not a suite gap: under a server-injected
+ * fault the application did not degrade gracefully (unhandled) or degraded
+ * visibly (degraded), whether or not a test noticed. Ranked by exposure ×
+ * severity, so `confidence` carries the severity (unhandled 1.0, degraded 0.5)
+ * and never the protection formula.
+ */
+export function detectNotHandled(signals: ResilienceSignal[]): DetectedGap[] {
+  const gaps: DetectedGap[] = [];
+  for (const s of signals) {
+    if (s.handled !== 'degraded' && s.handled !== 'unhandled') continue;
+    const target = s.dependency ? `${s.dependency} (via ${s.routeKey})` : s.routeKey;
+    const verb = s.handled === 'unhandled' ? 'did not handle' : 'degraded under';
+    gaps.push({
+      detector: 'not-handled',
+      kind: 'finding',
+      class: s.handled,
+      key: s.dependency ? `dependency:${s.dependency} @ ${s.routeKey}` : `route:${s.routeKey}`,
+      title: `${target}: ${s.handled} failure`,
+      evidence: [
+        `A server probe made ${target} fail; the application ${verb} it (${s.testTitle}) — an error-state scenario is missing.`,
+      ],
+      // Severity as confidence so the exposure × confidence score is exposure × severity.
+      confidence: s.handled === 'unhandled' ? 1 : 0.5,
+      testCaseId: s.testCaseId ?? null,
     });
   }
   return gaps;
@@ -1087,7 +1177,7 @@ export async function computeScenarioGaps(
     .where(
       and(
         eq(graphEdges.projectId, projectId),
-        inArray(graphEdges.kind, ['contains', 'links', 'triggers', 'loads', 'checks']),
+        inArray(graphEdges.kind, ['contains', 'links', 'triggers', 'loads', 'checks', 'calls', 'handled-by']),
         edgeBranchScope,
       ),
     );
@@ -1099,6 +1189,9 @@ export async function computeScenarioGaps(
   // Every checks edge per route, kept per probing test so opposite outcomes on
   // one route are reduced deterministically rather than overwriting each other.
   const checksByRoute = new Map<string, Array<{ testKey: string; outcome: string; fault: string | null }>>();
+  const routesByHandler = new Map<string, Set<string>>(); // handler key → routes handled by it
+  const dependenciesByHandler = new Map<string, Set<string>>(); // handler key → dependencies it calls
+  const probedDependencies = new Set<string>(); // dependency keys with any checks edge
   for (const e of breadthEdges) {
     if (e.kind === 'contains' && e.toKind === 'control') {
       const set = pagesByControl.get(e.toKey) ?? new Set<string>();
@@ -1112,6 +1205,16 @@ export async function computeScenarioGaps(
       triggeredRoutes.add(e.toKey);
     } else if (e.kind === 'loads' && e.toKind === 'route') {
       loadedRoutes.add(e.toKey);
+    } else if (e.kind === 'handled-by' && e.fromKind === 'route' && e.toKind === 'handler') {
+      const set = routesByHandler.get(e.toKey) ?? new Set<string>();
+      set.add(e.fromKey);
+      routesByHandler.set(e.toKey, set);
+    } else if (e.kind === 'calls' && e.fromKind === 'handler' && e.toKind === 'dependency') {
+      const set = dependenciesByHandler.get(e.fromKey) ?? new Set<string>();
+      set.add(e.toKey);
+      dependenciesByHandler.set(e.fromKey, set);
+    } else if (e.kind === 'checks' && e.toKind === 'dependency') {
+      probedDependencies.add(e.toKey);
     } else if (e.kind === 'checks' && e.toKind === 'route') {
       const ev = (e.evidence ?? {}) as { outcome?: string; fault?: string };
       if (ev.outcome) {
@@ -1121,6 +1224,23 @@ export async function computeScenarioGaps(
       }
     }
   }
+
+  // Dependency probe status: each dependency, the routes whose handlers call it,
+  // and whether any probe has checked it — the unprobed-dependency detector.
+  const routesByDependency = new Map<string, Set<string>>();
+  for (const [handler, deps] of dependenciesByHandler) {
+    const routes = routesByHandler.get(handler) ?? new Set<string>();
+    for (const dep of deps) {
+      const set = routesByDependency.get(dep) ?? new Set<string>();
+      for (const r of routes) set.add(r);
+      routesByDependency.set(dep, set);
+    }
+  }
+  const dependencyProbeStatus: DependencyProbeStatus[] = [...routesByDependency].map(([dependencyKey, routes]) => ({
+    dependencyKey,
+    calledByRoutes: [...routes],
+    probed: probedDependencies.has(dependencyKey),
+  }));
 
   // Node recency for orphan tests: a node last seen inside the recent window.
   const recentSet = new Set(recentIds);
@@ -1217,6 +1337,7 @@ export async function computeScenarioGaps(
     ...detectOrphanTest(testReachRecency),
     ...detectFixDidNotHold(regressedClusters),
     ...detectDeclaredNeverHit(declaredNodes),
+    ...detectUnprobedDependency(dependencyProbeStatus),
   ];
 
   const exposure = options.exposure ?? {};
@@ -1239,6 +1360,7 @@ export async function computeScenarioGaps(
       'orphan-test',
       'fix-did-not-hold',
       'declared-never-hit',
+      'unprobed-dependency',
     ],
     scored,
     latestRunId,

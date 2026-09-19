@@ -34,6 +34,18 @@ const defaultBranch = defineModel<string>('defaultBranch', { default: '' });
 const openApiUrl = defineModel<string>('openApiUrl', { default: '' });
 const tags = defineModel<TagInfo[]>('tags', { default: () => [] });
 
+/** Server-probe form state — the level-two probe gate, off by default. Faults and
+ * routes are comma-separated in the form and split to arrays on save. */
+export interface ServerProbesForm {
+  enabled: boolean;
+  faults: string;
+  routes: string;
+  dependencyOnStateChanging: boolean;
+}
+const serverProbes = defineModel<ServerProbesForm>('serverProbes', {
+  default: () => ({ enabled: false, faults: '', routes: '', dependencyOnStateChanging: false }),
+});
+
 /** Full-shape CI re-run form state — the server drops empty targets on save. */
 export interface CiRerunForm {
   enabled: boolean;
@@ -131,6 +143,32 @@ const ciRerun = defineModel<CiRerunForm>('ciRerun', {
         description="Declared surface. Fetched server-side; its routes and documented response codes become declared graph nodes, so a route the spec documents but no test reaches is a gap. Leave empty to skip."
       >
         <UInput v-model="openApiUrl" placeholder="e.g. https://app.example.com/openapi.json" class="w-full font-mono" />
+      </UFormField>
+
+      <UFormField
+        label="Server probes"
+        name="serverProbes"
+        description="Level-two probes inject a fault inside the server for one signed request, to check whether a passing test would notice. Off by default; turn it on once client probes report not-noticed on at least one in ten pairs. Needs a shared probe secret on the app under test and the probe runner, and a non-production target."
+      >
+        <div class="space-y-3">
+          <USwitch v-model="serverProbes.enabled" label="Enable server probes for this project" />
+          <div v-if="serverProbes.enabled" class="space-y-3">
+            <UInput
+              v-model="serverProbes.faults"
+              placeholder="allowed faults, comma-separated — e.g. throw, status, delay, dependency"
+              class="w-full font-mono"
+            />
+            <UInput
+              v-model="serverProbes.routes"
+              placeholder="allowed routes, comma-separated — blank allows every reached route"
+              class="w-full font-mono"
+            />
+            <USwitch
+              v-model="serverProbes.dependencyOnStateChanging"
+              label="Allow dependency faults on state-changing routes (needs an ephemeral or staging database)"
+            />
+          </div>
+        </div>
       </UFormField>
 
       <UFormField

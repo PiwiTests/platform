@@ -567,6 +567,16 @@ const storedCiRerun = computed(
     } | null,
 );
 
+const storedServerProbes = computed(
+  () =>
+    (project.value as { serverProbes?: unknown } | null)?.serverProbes as {
+      enabled?: boolean;
+      faults?: string[];
+      routes?: string[];
+      dependencyOnStateChanging?: boolean;
+    } | null,
+);
+
 const editState = ref({
   label: '',
   description: '',
@@ -575,6 +585,7 @@ const editState = ref({
   scmToken: '',
   defaultBranch: '',
   openApiUrl: '',
+  serverProbes: { enabled: false, faults: '', routes: '', dependencyOnStateChanging: false },
   ciRerun: {
     enabled: false,
     github: { workflow: '', ref: '', inputName: '' },
@@ -599,6 +610,12 @@ watch(
       scmToken: '',
       defaultBranch: (p as { defaultBranch?: string }).defaultBranch || '',
       openApiUrl: (p as { openApiUrl?: string }).openApiUrl || '',
+      serverProbes: {
+        enabled: storedServerProbes.value?.enabled ?? false,
+        faults: (storedServerProbes.value?.faults ?? []).join(', '),
+        routes: (storedServerProbes.value?.routes ?? []).join(', '),
+        dependencyOnStateChanging: storedServerProbes.value?.dependencyOnStateChanging ?? false,
+      },
       ciRerun: {
         enabled: ci?.enabled ?? false,
         github: {
@@ -615,6 +632,14 @@ watch(
   { immediate: true },
 );
 
+/** Split a comma/whitespace-separated form value into a trimmed, non-empty list. */
+function splitCommaList(value: string): string[] {
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 async function handleSaveSettings() {
   savingSettings.value = true;
   try {
@@ -628,6 +653,12 @@ async function handleSaveSettings() {
         scmToken: editState.value.scmToken || null,
         defaultBranch: editState.value.defaultBranch || null,
         openApiUrl: editState.value.openApiUrl || null,
+        serverProbes: {
+          enabled: editState.value.serverProbes.enabled,
+          faults: splitCommaList(editState.value.serverProbes.faults),
+          routes: splitCommaList(editState.value.serverProbes.routes),
+          dependencyOnStateChanging: editState.value.serverProbes.dependencyOnStateChanging,
+        },
         ciRerun: editState.value.ciRerun,
         tagIds: selectedTags.value.map((t) => t.id),
       },
@@ -1286,6 +1317,7 @@ const moreMenuItems = computed(() => {
                 v-model:scmToken="editState.scmToken"
                 v-model:defaultBranch="editState.defaultBranch"
                 v-model:openApiUrl="editState.openApiUrl"
+                v-model:serverProbes="editState.serverProbes"
                 v-model:ciRerun="editState.ciRerun"
                 v-model:tags="selectedTags"
                 :all-tags="allTags"

@@ -1,6 +1,8 @@
+import { eq } from 'drizzle-orm';
 import { Role } from '#shared/types';
 import { requireProjectAccess, requireRouteId } from '../../../../utils/project-access';
 import { getDatabase } from '../../../../database';
+import { projects } from '../../../../database/schema';
 import { buildProbePlan, DEFAULT_PROBE_BUDGET } from '#shared/handlers/probes';
 
 defineRouteMeta({
@@ -25,6 +27,10 @@ export default eventHandler(async (event) => {
   const budget = rawBudget != null && Number.isFinite(Number(rawBudget)) ? Number(rawBudget) : DEFAULT_PROBE_BUDGET;
 
   const db = await getDatabase();
-  const plan = await buildProbePlan(db, projectId, { budget });
+  const [project] = await db
+    .select({ serverProbes: projects.serverProbes })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  const plan = await buildProbePlan(db, projectId, { budget, serverProbes: project?.serverProbes });
   return plan;
 });
