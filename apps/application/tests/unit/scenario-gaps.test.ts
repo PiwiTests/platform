@@ -5,9 +5,17 @@ import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
+import { MCP_TOOLS } from '../../server/utils/mcp/tools';
 
 delete process.env.PIWI_DATABASE_URL;
 const gaps = await import('../../shared/handlers/scenario-gaps');
+
+const mcpCtx = { user: null, scope: 'all' as const };
+const mcpTool = (name: string) => {
+  const tool = MCP_TOOLS.find((t) => t.name === name);
+  if (!tool) throw new Error(`no MCP tool ${name}`);
+  return tool.handler;
+};
 
 // ── Pure detectors ─────────────────────────────────────────────────────────
 
@@ -348,5 +356,126 @@ describe('computeScenarioGaps', () => {
     await gaps.computeScenarioGaps(db, 1);
     const list = await gaps.listScenarioGaps(db, 1, { detector: 'success-only' });
     expect(list.map((r) => r.key)).toEqual(['GET /api/orders']);
+  });
+
+  test('a probe run’s injected 500 does not close a success-only gap', async () => {
+    await seedRun(1); // a real run
+    // A probe run stamped silent — its injected fault must never enter the window.
+    await db
+      .insert(schema.testRuns)
+      .values({ id: 2, projectId: 1, status: 'failed', startTime: new Date(++clock), metadata: { piwiProbe: true } });
+    await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x' });
+
+    const [realExec] = await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) })
+      .returning({ id: schema.testRunsCases.id });
+    const [probeExec] = await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: 2, testCaseId: 2, status: 'failed', createdAt: new Date(++clock) })
+      .returning({ id: schema.testRunsCases.id });
+
+    await db.insert(schema.graphNodes).values({
+      projectId: 1,
+      kind: 'route',
+      key: 'GET /api/orders',
+      firstSeenRunId: 1,
+      lastSeenRunId: 2,
+      lastSeenAt: new Date(++clock),
+    });
+
+    // The real run always saw success; the probe run injected a 500 on the route.
+    for (let i = 0; i < 6; i++) {
+      await db.insert(schema.networkRequests).values({
+        testRunsCaseId: realExec!.id,
+        testRunId: 1,
+        method: 'GET',
+        normalizedUrl: '/api/orders',
+        status: 200,
+      });
+    }
+    await db.insert(schema.networkRequests).values({
+      testRunsCaseId: probeExec!.id,
+      testRunId: 2,
+      method: 'GET',
+      normalizedUrl: '/api/orders',
+      status: 500,
+    });
+
+    await gaps.computeScenarioGaps(db, 1);
+    const list = await gaps.listScenarioGaps(db, 1, { detector: 'success-only' });
+    // The injected 500 is excluded, so the route still reads as success-only.
+    expect(list.map((r) => r.key)).toContain('GET /api/orders');
+  });
+
+  test('two tests with opposite outcomes on one route do not flip the gap', async () => {
+    await seedRun(1);
+    await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/b.spec.ts', title: 'b' });
+    // Two tests reach the route (exposure) and probe it with opposite outcomes.
+    await seedReach(1, 'route', 'POST /api/orders', 1);
+    await seedReach(2, 'route', 'POST /api/orders', 1);
+    const checks = (testCaseId: number, outcome: string) =>
+      db.insert(schema.graphEdges).values({
+        projectId: 1,
+        fromKind: 'test',
+        fromKey: String(testCaseId),
+        toKind: 'route',
+        toKey: 'POST /api/orders',
+        kind: 'checks',
+        evidence: { outcome, fault: 'status-500' },
+        lastSeenAt: new Date(++clock),
+      });
+    await checks(1, 'noticed');
+    await checks(2, 'not-noticed');
+
+    await gaps.computeScenarioGaps(db, 1);
+    // A route any test noticed is checked, so it is never a not-noticed gap —
+    // regardless of the order the edges came back from the database.
+    const list = await gaps.listScenarioGaps(db, 1, { detector: 'not-noticed' });
+    expect(list.find((r) => r.key === 'route:POST /api/orders')).toBeFalsy();
+  });
+
+  test('list_scenario_gaps keeps a success-only gap under a feature filter', async () => {
+    await seedRun(1);
+    await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x' });
+    const [exec] = await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) })
+      .returning({ id: schema.testRunsCases.id });
+    await db.insert(schema.graphNodes).values({
+      projectId: 1,
+      kind: 'route',
+      key: 'GET /api/orders',
+      firstSeenRunId: 1,
+      lastSeenRunId: 1,
+      lastSeenAt: new Date(++clock),
+    });
+    for (let i = 0; i < 6; i++) {
+      await db.insert(schema.networkRequests).values({
+        testRunsCaseId: exec!.id,
+        testRunId: 1,
+        method: 'GET',
+        normalizedUrl: '/api/orders',
+        status: 200,
+      });
+    }
+    // A feature groups that route.
+    await db.insert(schema.graphEdges).values({
+      projectId: 1,
+      fromKind: 'feature',
+      fromKey: 'Orders',
+      toKind: 'route',
+      toKey: 'GET /api/orders',
+      kind: 'groups',
+      lastSeenAt: new Date(++clock),
+    });
+
+    await gaps.computeScenarioGaps(db, 1);
+    const result = (await mcpTool('list_scenario_gaps')(db, { projectId: 1, feature: 'Orders' }, mcpCtx)) as {
+      items: Array<{ detector: string }>;
+    };
+    // The success-only gap keys on a raw route key; filtering must match on the
+    // typed subject, so it survives the feature filter.
+    expect(result.items.some((g) => g.detector === 'success-only')).toBe(true);
   });
 });

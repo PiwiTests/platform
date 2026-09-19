@@ -20,6 +20,7 @@ import {
   testRuns,
 } from '../../server/database/schema';
 import { fileRouteTarget, filePageTarget, routeKeyMatchesTarget, pageKeyMatchesTarget } from '../graph';
+import { isProbeRun } from './probes';
 import type { DrizzleDB } from './db';
 
 // ── Vocabulary ───────────────────────────────────────────────────────────────
@@ -30,6 +31,8 @@ export type GapStatus = 'open' | 'snoozed' | 'dismissed' | 'accepted' | 'closed'
 
 /** The window of recent runs every honest evidence line is measured against. */
 export const HISTORY_WINDOW_RUNS = 30;
+/** Extra recent runs fetched beyond the window so excluded probe runs don't shrink it. */
+const PROBE_RUN_WINDOW_BUFFER = 20;
 /** A route must be seen at least this many times before "always success" is a claim. */
 const SUCCESS_ONLY_MIN_OBSERVATIONS = 5;
 /** Each exposure factor is clamped here so a missing input can never zero a row. */
@@ -417,11 +420,18 @@ export function detectApiOnlyRoute(routes: RouteEntryReach[]): DetectedGap[] {
   return gaps;
 }
 
-/** A checks edge's outcome for a node, with the node's exposure proxy. */
+/**
+ * All probe outcomes for one route, aggregated across the tests that probed it.
+ * Several tests can probe one route with opposite outcomes, so the outcomes are
+ * kept per test and reduced deterministically rather than letting the last edge
+ * in database order decide.
+ */
 export interface CheckOutcome {
   routeKey: string;
-  outcome: string;
-  fault?: string | null;
+  /** True when at least one trusted test noticed a probe on this route. */
+  noticed: boolean;
+  /** The tests whose probe went unnoticed, each with the fault it saw. */
+  notNoticed: Array<{ testCaseId: number; title: string; fault: string | null }>;
   /** Exposure proxy — how many tests reach the node. */
   exposure: number;
 }
@@ -431,14 +441,18 @@ const NOT_NOTICED_MIN_EXPOSURE = 1;
 
 /**
  * Not noticed — a probe made a route return garbage and every test still passed.
- * The most dangerous class: the catalog says it is covered. False comfort.
+ * The most dangerous class: the catalog says it is covered. False comfort. A
+ * route that any trusted test noticed is checked, so it is never a gap even when
+ * another test did not notice; a gap names the tests that did not.
  */
 export function detectNotNoticed(checks: CheckOutcome[]): DetectedGap[] {
   const gaps: DetectedGap[] = [];
   for (const c of checks) {
-    if (c.outcome !== 'not-noticed') continue;
+    if (c.noticed || c.notNoticed.length === 0) continue;
     if (c.exposure < NOT_NOTICED_MIN_EXPOSURE) continue;
-    const fault = c.fault ? ` (${c.fault})` : '';
+    const tests = [...c.notNoticed].sort((a, b) => a.testCaseId - b.testCaseId);
+    const fault = tests[0]!.fault ? ` (${tests[0]!.fault})` : '';
+    const names = tests.map((t) => t.title).join(', ');
     gaps.push({
       detector: 'not-noticed',
       kind: 'gap',
@@ -446,7 +460,7 @@ export function detectNotNoticed(checks: CheckOutcome[]): DetectedGap[] {
       key: `route:${c.routeKey}`,
       title: `Tests pass when ${c.routeKey} breaks`,
       evidence: [
-        `A probe${fault} on ${c.routeKey} did not make any test fail — assert the effect the request should have.`,
+        `A probe${fault} on ${c.routeKey} did not make ${names} fail — assert the effect the request should have.`,
       ],
       confidence: 0.8,
     });
@@ -812,15 +826,22 @@ function maxPriority(
   return best;
 }
 
-/** Ids of a project's most recent runs, newest first. */
+/**
+ * Ids of a project's most recent real runs, newest first. Probe runs are
+ * excluded — their injected faults must never enter the detectors' history
+ * window — so a buffer beyond the window is fetched to keep it full.
+ */
 async function loadRecentRunIds(db: DrizzleDB, projectId: number, limit: number): Promise<number[]> {
   const rows = await db
-    .select({ id: testRuns.id })
+    .select({ id: testRuns.id, metadata: testRuns.metadata })
     .from(testRuns)
     .where(eq(testRuns.projectId, projectId))
     .orderBy(desc(testRuns.id))
-    .limit(limit);
-  return rows.map((r) => r.id);
+    .limit(limit + PROBE_RUN_WINDOW_BUFFER);
+  return rows
+    .filter((r) => !isProbeRun(r.metadata))
+    .slice(0, limit)
+    .map((r) => r.id);
 }
 
 /** Title + priority for a set of test cases. */
@@ -986,7 +1007,9 @@ export async function computeScenarioGaps(
   const linkSourcesByPage = new Map<string, Set<string>>(); // target page → source pages
   const triggeredRoutes = new Set<string>();
   const loadedRoutes = new Set<string>();
-  const checksByRoute = new Map<string, { outcome: string; fault: string | null }>();
+  // Every checks edge per route, kept per probing test so opposite outcomes on
+  // one route are reduced deterministically rather than overwriting each other.
+  const checksByRoute = new Map<string, Array<{ testKey: string; outcome: string; fault: string | null }>>();
   for (const e of breadthEdges) {
     if (e.kind === 'contains' && e.toKind === 'control') {
       const set = pagesByControl.get(e.toKey) ?? new Set<string>();
@@ -1002,7 +1025,11 @@ export async function computeScenarioGaps(
       loadedRoutes.add(e.toKey);
     } else if (e.kind === 'checks' && e.toKind === 'route') {
       const ev = (e.evidence ?? {}) as { outcome?: string; fault?: string };
-      if (ev.outcome) checksByRoute.set(e.toKey, { outcome: ev.outcome, fault: ev.fault ?? null });
+      if (ev.outcome) {
+        const list = checksByRoute.get(e.toKey) ?? [];
+        list.push({ testKey: e.fromKey, outcome: ev.outcome, fault: ev.fault ?? null });
+        checksByRoute.set(e.toKey, list);
+      }
     }
   }
 
@@ -1037,10 +1064,19 @@ export async function computeScenarioGaps(
     }
   }
 
-  const checkOutcomes: CheckOutcome[] = [...checksByRoute].map(([routeKey, v]) => ({
+  const checkOutcomes: CheckOutcome[] = [...checksByRoute].map(([routeKey, edges]) => ({
     routeKey,
-    outcome: v.outcome,
-    fault: v.fault,
+    noticed: edges.some((e) => e.outcome === 'noticed'),
+    notNoticed: edges
+      .filter((e) => e.outcome === 'not-noticed')
+      .map((e) => {
+        const id = Number(e.testKey);
+        return {
+          testCaseId: Number.isFinite(id) ? id : -1,
+          title: meta.get(id)?.title ?? `test ${e.testKey}`,
+          fault: e.fault,
+        };
+      }),
     exposure: reachByNode.get(`route\x00${routeKey}`)?.size ?? 0,
   }));
 
@@ -1393,6 +1429,8 @@ export interface ScenarioGapRow {
   detector: string;
   class: GapClass;
   key: string;
+  /** The graph node the gap is about, typed (kind + key), separate from the dedupe `key`. */
+  subject: GapSubject;
   title: string;
   evidence: string[];
   factors: ExposureFactors | null;
@@ -1446,6 +1484,7 @@ export async function listScenarioGaps(
     detector: r.detector,
     class: r.class as GapClass,
     key: r.key,
+    subject: subjectFromGapKey(r.key),
     title: r.title,
     evidence: Array.isArray(r.evidence) ? (r.evidence as string[]) : [],
     factors: (r.factors as ExposureFactors | null) ?? null,
@@ -1546,8 +1585,19 @@ export function renderScenarioDraft(input: ScenarioDraftInput): ScenarioDraft {
   return { ...input, annotations, text: lines.join('\n') };
 }
 
-/** Parse a gap key into its subject node kind and key. */
-function subjectFromGapKey(key: string): { kind: string; key: string } {
+/** A gap's subject node — the graph node the gap is about, as a typed (kind, key) pair. */
+export interface GapSubject {
+  kind: string;
+  key: string;
+}
+
+/**
+ * The subject node a gap is about, kept separate from its dedupe `key`: the
+ * dedupe key varies by detector (a typed `kind:key`, a raw route key, or a file
+ * path), so callers that need to join a gap to a graph node — the feature filter,
+ * the draft builder — read the subject, never the raw key.
+ */
+export function subjectFromGapKey(key: string): GapSubject {
   for (const kind of ['route', 'page', 'control', 'link', 'test', 'cluster', 'catalog', 'intent']) {
     const prefix = `${kind}:`;
     if (key.startsWith(prefix)) return { kind, key: key.slice(prefix.length) };

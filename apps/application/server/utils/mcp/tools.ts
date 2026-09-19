@@ -2070,7 +2070,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           ),
         );
       const groupedKeys = new Set(grouped.map((g) => `${g.toKind}:${g.toKey}`));
-      gaps = gaps.filter((g) => groupedKeys.has(g.key)).slice(0, limit);
+      // Match on the gap's typed subject, not its raw dedupe key: a success-only
+      // gap keys on a bare route key, so comparing the key directly drops it.
+      gaps = gaps.filter((g) => groupedKeys.has(`${g.subject.kind}:${g.subject.key}`)).slice(0, limit);
     }
 
     return {

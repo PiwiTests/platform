@@ -58,13 +58,59 @@ describe('detectApiOnlyRoute', () => {
 describe('detectNotNoticed', () => {
   test('flags a not-noticed probe on an exposed route', () => {
     const gaps = detectNotNoticed([
-      { routeKey: 'POST /api/orders', outcome: 'not-noticed', fault: 'status-500', exposure: 3 },
-      { routeKey: 'GET /api/a', outcome: 'noticed', fault: 'status-500', exposure: 3 },
-      { routeKey: 'GET /api/b', outcome: 'not-noticed', fault: 'empty-body', exposure: 0 },
+      {
+        routeKey: 'POST /api/orders',
+        noticed: false,
+        notNoticed: [{ testCaseId: 1, title: 'checkout', fault: 'status-500' }],
+        exposure: 3,
+      },
+      {
+        routeKey: 'GET /api/a',
+        noticed: true,
+        notNoticed: [],
+        exposure: 3,
+      },
+      {
+        routeKey: 'GET /api/b',
+        noticed: false,
+        notNoticed: [{ testCaseId: 2, title: 'b', fault: 'empty-body' }],
+        exposure: 0,
+      },
     ]);
     expect(gaps.map((g) => g.key)).toEqual(['route:POST /api/orders']);
     expect(gaps[0]!.class).toBe('false-comfort');
     expect(gaps[0]!.evidence[0]).toContain('status-500');
+  });
+
+  test('two tests with opposite outcomes on one route: the route is checked, so no gap', () => {
+    // A noticed and a not-noticed edge on the same route must not overwrite each
+    // other nondeterministically — any noticed test means the route is checked.
+    const gaps = detectNotNoticed([
+      {
+        routeKey: 'POST /api/orders',
+        noticed: true,
+        notNoticed: [{ testCaseId: 9, title: 'blind test', fault: 'status-500' }],
+        exposure: 4,
+      },
+    ]);
+    expect(gaps).toEqual([]);
+  });
+
+  test('a route no test noticed names the tests that did not', () => {
+    const gaps = detectNotNoticed([
+      {
+        routeKey: 'POST /api/orders',
+        noticed: false,
+        notNoticed: [
+          { testCaseId: 2, title: 'edits quantity', fault: 'status-500' },
+          { testCaseId: 1, title: 'places order', fault: 'status-500' },
+        ],
+        exposure: 4,
+      },
+    ]);
+    expect(gaps).toHaveLength(1);
+    // Named deterministically by ascending test id, independent of input order.
+    expect(gaps[0]!.evidence[0]).toContain('places order, edits quantity');
   });
 });
 
