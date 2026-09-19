@@ -8,7 +8,7 @@
  * or no SCM token yields no section and no gaps, never an error.
  */
 
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { projects, testRuns, failureClusters } from '../../database/schema';
 import type { DbClient } from '../../database';
 import type { RunMetadata } from '../run-json-types';
@@ -204,6 +204,102 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
   await upsertScenarioGaps(db, run.projectId, gaps, { runId, prNumber }).catch(() => {});
 
   return { coverage, pr: toPrChangeCoverage(coverage) };
+}
+
+/**
+ * Read change coverage on demand for the API, without persisting anything.
+ * `?run=` diffs a run against its baseline; `?base=&head=` diffs an explicit
+ * range, resolving the repository from the project's most recent run.
+ */
+export async function readChangeCoverage(
+  db: DbClient,
+  projectId: number,
+  query: { runId?: number | null; baseSha?: string | null; headSha?: string | null },
+): Promise<ChangeCoverage> {
+  const empty = (scmAvailable: boolean): ChangeCoverage => ({
+    runId: query.runId ?? null,
+    baseSha: query.baseSha ?? null,
+    headSha: query.headSha ?? null,
+    baseBranch: null,
+    windowRuns: 30,
+    files: [],
+    tickets: [],
+    reachedFiles: 0,
+    uncoveredFiles: 0,
+    scmAvailable,
+  });
+
+  let repositoryUrl: string | null = null;
+  let baseSha = query.baseSha ?? null;
+  let headSha = query.headSha ?? null;
+  let baseBranch: string | null = null;
+  let runId = query.runId ?? null;
+
+  if (runId != null) {
+    const [run] = await db.select().from(testRuns).where(eq(testRuns.id, runId));
+    if (!run || run.projectId !== projectId) return empty(false);
+    const meta = (run.metadata as RunMetadata | null) ?? null;
+    headSha = meta?.scm?.commit?.trim() || null;
+    repositoryUrl = normalizeGitUrl(meta?.scm?.remoteUrl ?? null);
+    const branch = run.branch ?? resolveRunBranch(meta);
+    const [project] = await db
+      .select({ id: projects.id, name: projects.name, defaultBranch: projects.defaultBranch })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+    const defaultBranch = project
+      ? await resolveDefaultBranch(db, project, meta).catch(() => FALLBACK_DEFAULT_BRANCH)
+      : FALLBACK_DEFAULT_BRANCH;
+    const fallback = resolveFallbackBranch(meta, defaultBranch);
+    baseBranch = fallback.branch;
+    const baseline = await selectBaselineRun(db, {
+      projectId,
+      before: run.startTime,
+      branch,
+      environment: run.environment ?? null,
+      fallbackBranch: fallback.branch,
+    });
+    baseSha = ((baseline?.run.metadata as RunMetadata | null)?.scm?.commit ?? null)?.trim() || null;
+  } else {
+    // Explicit range — resolve the repository from the latest run that carries one.
+    const runs = await db
+      .select({ metadata: testRuns.metadata })
+      .from(testRuns)
+      .where(eq(testRuns.projectId, projectId))
+      .orderBy(desc(testRuns.id))
+      .limit(50);
+    for (const r of runs) {
+      const url = normalizeGitUrl((r.metadata as RunMetadata | null)?.scm?.remoteUrl ?? null);
+      if (url) {
+        repositoryUrl = url;
+        break;
+      }
+    }
+  }
+
+  if (!repositoryUrl || !baseSha || !headSha || baseSha === headSha) return empty(false);
+
+  const provider = await createScmProvider(repositoryUrl, db, projectId);
+  if (!provider) return empty(false);
+
+  const changes = await provider.fetchChanges(baseSha, headSha).catch(() => null);
+  if (!changes) return empty(false);
+
+  const changedFiles = changes.files.map((f) => ({
+    filePath: f.filename,
+    additions: f.additions,
+    deletions: f.deletions,
+  }));
+  const tickets = extractTicketIds(baseBranch, ...changes.commits.map((c) => c.message));
+
+  return computeChangeCoverage(db, projectId, {
+    changedFiles,
+    runId,
+    baseSha,
+    headSha,
+    baseBranch,
+    tickets,
+    scmAvailable: true,
+  });
 }
 
 /** Shape the coverage for the pull-request comment builder. */

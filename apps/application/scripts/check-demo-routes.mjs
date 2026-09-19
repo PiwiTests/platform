@@ -50,6 +50,14 @@ const INTENTIONALLY_EXCLUDED = new Set([
   // Inbound Jira webhook: a public receiver an external Jira posts to. There is
   // no server in the browser demo, and it only ever refreshes a link.
   'POST /api/integrations/jira/webhook/:token',
+  // Local Claude CLI session: desktop-app only, drives a `claude` binary on the
+  // host. 404 everywhere else, including the demo, with nothing to script.
+  'GET /api/ai/claude-cli/status',
+  'POST /api/ai/claude-cli/login',
+  'POST /api/ai/claude-cli/logout',
+  // DOM-snapshot picker frame: serves a sandboxed HTML document over its own
+  // CSP, not JSON — the browser demo renders snapshots through its own handler.
+  'GET /api/test-run-cases/:id/dom-snapshot-frame',
 ]);
 
 // ── Derive all server routes from the file system ────────────────────────

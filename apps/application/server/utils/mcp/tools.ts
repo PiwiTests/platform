@@ -70,6 +70,7 @@ import { describePageDiff, formatPageDiffSummary } from '#shared/page-diff';
 import { inlineCasePayloads } from '../case-payloads';
 import { selectCaseScreenshots } from '../case-screenshots';
 import { createScmProvider } from '../scm';
+import { readChangeCoverage } from '../scm/change-coverage';
 import { resolveAiConfig } from '../ai-provider';
 import { runClusterDiagnosis, isDiagnosisRunning } from '../ai-diagnosis';
 import {
@@ -1992,6 +1993,42 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         message.toLowerCase().includes('unique') ? 'A function with this name already exists in this module' : message,
       );
     }
+  },
+
+  async get_change_coverage(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const runId = params.run != null ? numericParam(params.run, 'run') : null;
+    const base = typeof params.base === 'string' ? params.base : null;
+    const head = typeof params.head === 'string' ? params.head : null;
+
+    const coverage = await readChangeCoverage(db, projectId, { runId, baseSha: base, headSha: head });
+    return dropNulls({
+      runId: coverage.runId,
+      baseSha: coverage.baseSha,
+      headSha: coverage.headSha,
+      baseBranch: coverage.baseBranch,
+      windowRuns: coverage.windowRuns,
+      scmAvailable: coverage.scmAvailable,
+      totalFiles: coverage.files.length,
+      reachedFiles: coverage.reachedFiles,
+      uncoveredFiles: coverage.uncoveredFiles,
+      tickets: coverage.tickets.map((t) =>
+        dropNulls({
+          ticket: t.ticket,
+          files: t.files.map((f) =>
+            dropNulls({
+              filePath: f.filePath,
+              additions: f.additions,
+              deletions: f.deletions,
+              reachedInRun: f.reachedInRun,
+              reachedCountHistory: f.reachedCountHistory,
+              reachingTestCount: f.reachingTestCount,
+            }),
+          ),
+        }),
+      ),
+    });
   },
 };
 
