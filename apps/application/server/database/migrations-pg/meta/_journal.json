@@ -505,6 +505,13 @@
       "when": 1789815329059,
       "tag": "0071_slippery_galactus",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1789828557401,
+      "tag": "0072_noisy_nemesis",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "openapi_url" text;
