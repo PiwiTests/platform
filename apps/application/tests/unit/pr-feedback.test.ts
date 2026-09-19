@@ -372,6 +372,65 @@ describe('change coverage section', () => {
     expect(section).toContain('All 7 changed files have observed reach');
   });
 
+  test('caps the uncovered list across ticket groups and reports the remainder', () => {
+    const files = Array.from({ length: 40 }, (_, i) => ({
+      filePath: `src/file-${i}.ts`,
+      additions: 1,
+      deletions: 0,
+      reachedInRun: false,
+      reachedCountHistory: 0,
+    }));
+    const section = renderChangeCoverage(
+      coverage({
+        totalFiles: 40,
+        uncoveredFiles: 40,
+        reachedFiles: 0,
+        ticketCount: 1,
+        tickets: [{ ticket: 'PROJ-1', files }],
+      }),
+    )!;
+    const listed = (section.match(/ · changed \(\+/g) ?? []).length;
+    expect(listed).toBe(10);
+    expect(section).toContain('…and 30 more');
+  });
+
+  test('separates a file reached only in history from the uncovered list', () => {
+    const section = renderChangeCoverage(
+      coverage({
+        totalFiles: 2,
+        uncoveredFiles: 1,
+        reachedFiles: 1,
+        ticketCount: 1,
+        tickets: [
+          {
+            ticket: 'PROJ-1',
+            files: [
+              {
+                filePath: 'src/new.ts',
+                additions: 5,
+                deletions: 0,
+                reachedInRun: false,
+                reachedCountHistory: 0,
+                draftTitle: 'exercise new.ts',
+              },
+              {
+                filePath: 'src/old.ts',
+                additions: 2,
+                deletions: 0,
+                reachedInRun: false,
+                reachedCountHistory: 3,
+              },
+            ],
+          },
+        ],
+      }),
+    )!;
+    expect(section).toContain('`src/new.ts`');
+    // Reached only in history — not in the uncovered list, but its own line.
+    expect(section).not.toContain('`src/old.ts`');
+    expect(section).toContain('1 file reached only in the last 30 runs, not this run.');
+  });
+
   test('embeds into the comment and drives an informational commit status', () => {
     const body = buildPrComment(summary({ changeCoverage: coverage() }));
     expect(body).toContain('Uncovered changes');

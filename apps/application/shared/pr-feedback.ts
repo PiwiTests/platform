@@ -173,24 +173,36 @@ export function renderChangeCoverage(cc: PrChangeCoverage): string | null {
   const header = `#### 🟣 Uncovered changes · ${cc.uncoveredFiles} of ${cc.totalFiles} files · ${cc.ticketCount} ${cc.ticketCount === 1 ? 'ticket' : 'tickets'}`;
   const blocks: string[] = [header, preface];
 
+  // One definition of "uncovered" everywhere: no reach in this run and none in
+  // the recent window. A file reached only in history is a separate, lower line.
   let listed = 0;
+  let historyOnly = 0;
   for (const group of cc.tickets) {
-    const uncovered = group.files.filter((f) => !f.reachedInRun && listed < MAX_UNCOVERED_LISTED);
-    if (uncovered.length === 0) continue;
-    const label = group.ticket ? `**${escapeCell(group.ticket)}**` : '**No ticket**';
-    const lines = [label];
-    for (const file of uncovered) {
+    const lines: string[] = [];
+    for (const file of group.files) {
+      if (file.reachedInRun) continue;
+      if (file.reachedCountHistory > 0) {
+        historyOnly++;
+        continue;
+      }
+      if (listed >= MAX_UNCOVERED_LISTED) continue;
       listed++;
-      const reach = `${file.reachedCountHistory} ${file.reachedCountHistory === 1 ? 'test' : 'tests'} in ${cc.windowRuns} runs`;
-      let line = `- \`${escapeCell(file.filePath)}\` · changed (+${file.additions} −${file.deletions}) · ${reach}`;
+      let line = `- \`${escapeCell(file.filePath)}\` · changed (+${file.additions} −${file.deletions}) · 0 tests in ${cc.windowRuns} runs`;
       if (file.draftTitle) line += `\n  → *${escapeInline(file.draftTitle)}* · draft`;
       lines.push(line);
     }
-    blocks.push(lines.join('\n'));
+    if (lines.length === 0) continue;
+    const label = group.ticket ? `**${escapeCell(group.ticket)}**` : '**No ticket**';
+    blocks.push([label, ...lines].join('\n'));
   }
 
   const hidden = cc.uncoveredFiles - listed;
   if (hidden > 0) blocks.push(`…and ${hidden} more`);
+  if (historyOnly > 0) {
+    blocks.push(
+      `${historyOnly} ${historyOnly === 1 ? 'file' : 'files'} reached only in the last ${cc.windowRuns} runs, not this run.`,
+    );
+  }
   if (cc.reachedFiles > 0) {
     blocks.push(
       `${cc.reachedFiles} ${cc.reachedFiles === 1 ? 'file' : 'files'} reached. Gate \`maxUncoveredChanges\`: warn.`,
