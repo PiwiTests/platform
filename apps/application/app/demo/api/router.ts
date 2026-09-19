@@ -1467,7 +1467,12 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/gaps\/change-coverage$/,
     handler: async (m, _b, query, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const runId = Number(query?.get('run'));
+      // An absent `run` means "no run under inspection", not run 0 — parse it to
+      // null so the join reports history reach instead of marking every file
+      // uncovered against a run that never existed.
+      const runRaw = query?.get('run');
+      const runNum = runRaw != null && runRaw !== '' ? Number(runRaw) : null;
+      const runId = runNum != null && Number.isFinite(runNum) ? runNum : null;
       // The demo has no SCM provider; show a small representative diff so the
       // uncovered-changes join renders against the seeded reach.
       return computeChangeCoverage(await getDemoDb(), +m[1]!, {
@@ -1476,7 +1481,7 @@ const routes: RouteEntry[] = [
           { filePath: 'src/components/OrderRow.vue', additions: 8, deletions: 2 },
           { filePath: 'src/utils/rounding.ts', additions: 5, deletions: 1 },
         ],
-        runId: Number.isFinite(runId) ? runId : null,
+        runId,
         baseBranch: 'main',
         tickets: ['PROJ-418'],
         scmAvailable: true,
