@@ -1192,6 +1192,134 @@ export const apiKeys = pgTable(
   }),
 );
 
+// Feature graph — nodes. One typed node per object a project's surface exposes.
+// A node's `key` is its stable identity within its `kind` (a route's
+// `METHOD /pattern`, a page's URL). Populated on every ingest from the same
+// evidence the suite already captures, and connected by `graph_edges`. Kept as
+// one table with typed endpoints rather than a graph database, so recursive
+// queries stay capped at a shallow depth. Route and page kinds are populated
+// today; the remaining kinds are reserved. Run ids are intentionally NOT
+// foreign keys — runs are pruned independently and a node must survive them.
+export const graphNodes = pgTable(
+  'graph_nodes',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'feature' | 'page' | 'control' | 'link' | 'route' | 'handler' | 'dependency' | 'file'
+    key: text('key').notNull(), // stable identity within kind
+    attrs: jsonb('attrs'), // kind-specific extras; a feature carries { url_patterns, source }
+    origin: text('origin').notNull().default('observed'), // 'observed' | 'manifest' | 'openapi' | 'convention' | 'import' | 'coverage' | 'usage' | 'manual'
+    usage30d: integer('usage_30d'), // daily hit count from production instrumentation; null until usage is wired
+    firstSeenRunId: integer('first_seen_run_id'),
+    lastSeenRunId: integer('last_seen_run_id'),
+    lastSeenAt: timestamp('last_seen_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    projectKindKeyIdx: uniqueIndex('idx_graph_nodes_project_kind_key').on(table.projectId, table.kind, table.key),
+    projectKindIdx: index('idx_graph_nodes_project_kind').on(table.projectId, table.kind),
+    lastSeenAtIdx: index('idx_graph_nodes_last_seen_at').on(table.lastSeenAt),
+  }),
+);
+
+// Feature graph — edges. Each edge connects two typed endpoints; the endpoint
+// kinds are the node kinds above plus 'test', 'cluster', 'commit', 'ticket' and
+// 'owner', which are named by their id or key rather than stored as nodes.
+// `reaches` (test → route/page) and `changes` (commit or ticket → file) are
+// populated today; the remaining kinds are reserved. Upserted on every ingest,
+// never truncated. Run ids are not foreign keys, for the same reason as nodes.
+export const graphEdges = pgTable(
+  'graph_edges',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    fromKind: text('from_kind').notNull(),
+    fromKey: text('from_key').notNull(),
+    toKind: text('to_kind').notNull(),
+    toKey: text('to_key').notNull(),
+    kind: text('kind').notNull(), // 'links' | 'contains' | 'triggers' | 'loads' | 'handled-by' | 'calls' | 'imports' | 'groups' | 'reaches' | 'checks' | 'uses' | 'drives' | 'changes' | 'affects' | 'caused-by' | 'owns'
+    confidence: doublePrecision('confidence'), // 0-1, how strongly the edge holds; null when unscored
+    origin: text('origin').notNull().default('observed'),
+    evidence: jsonb('evidence'), // edge-specific proof, e.g. { method, status }
+    firstSeenRunId: integer('first_seen_run_id'),
+    lastSeenRunId: integer('last_seen_run_id'),
+    lastSeenAt: timestamp('last_seen_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    edgeUnique: uniqueIndex('idx_graph_edges_unique').on(
+      table.projectId,
+      table.fromKind,
+      table.fromKey,
+      table.kind,
+      table.toKind,
+      table.toKey,
+    ),
+    fromIdx: index('idx_graph_edges_from').on(table.projectId, table.fromKind, table.fromKey),
+    toIdx: index('idx_graph_edges_to').on(table.projectId, table.toKind, table.toKey),
+    kindIdx: index('idx_graph_edges_kind').on(table.projectId, table.kind),
+  }),
+);
+
+// Scenario gaps — a proposed test that does not exist yet (`kind = 'gap'`) or a
+// resilience finding (`kind = 'finding'`), each carrying its evidence lines,
+// exposure factors and a ranked score. A row's identity within its detector is
+// `key`, so recomputation upserts in place and triage survives it: open rows
+// persist, dismissed and accepted rows carry their verdict forward. Run ids are
+// not foreign keys, for the same reason as the graph tables.
+export const scenarioGaps = pgTable(
+  'scenario_gaps',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull().default('gap'), // 'gap' | 'finding'
+    detector: text('detector').notNull(), // detector id that produced the row
+    class: text('class').notNull(), // 'blind-spot' | 'false-comfort' | 'fragile' | 'unhandled' | 'degraded'
+    key: text('key').notNull(), // stable identity within (project, detector)
+    title: text('title').notNull(),
+    evidence: jsonb('evidence'), // string[] — human-readable evidence lines
+    factors: jsonb('factors'), // exposure factors: { churn, age, escapeHistory, priority }
+    score: doublePrecision('score'), // exposure × (1 − protection); ranked descending
+    featureNodeId: integer('feature_node_id').references(() => graphNodes.id, { onDelete: 'set null' }),
+    ticket: text('ticket'), // ticket id joined at change time
+    testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'set null' }),
+    failureClusterId: integer('failure_cluster_id').references(() => failureClusters.id, { onDelete: 'set null' }),
+    testRunId: integer('test_run_id'), // the run that surfaced the gap
+    prNumber: integer('pr_number'), // the pull request the gap was reported on, at change time
+    status: text('status').notNull().default('open'), // 'open' | 'snoozed' | 'dismissed' | 'accepted' | 'closed'
+    dismissReason: text('dismiss_reason'), // 'not-worth-testing' | 'covered-elsewhere' | 'wrong'
+    assignedTo: text('assigned_to'),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    closedAt: timestamp('closed_at', { mode: 'date' }),
+    closedByRunId: integer('closed_by_run_id'),
+  },
+  (table) => ({
+    detectorKeyIdx: uniqueIndex('idx_scenario_gaps_detector_key').on(table.projectId, table.detector, table.key),
+    projectStatusIdx: index('idx_scenario_gaps_project_status').on(table.projectId, table.status),
+    projectScoreIdx: index('idx_scenario_gaps_project_score').on(table.projectId, table.score),
+    prIdx: index('idx_scenario_gaps_pr').on(table.projectId, table.prNumber),
+  }),
+);
+
 // Type exports for TypeScript
 export type TestSuite = typeof testSuites.$inferSelect;
 export type NewTestSuite = typeof testSuites.$inferInsert;

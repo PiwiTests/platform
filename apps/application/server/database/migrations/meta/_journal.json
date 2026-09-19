@@ -470,6 +470,13 @@
       "when": 1789302650049,
       "tag": "0066_open_stepford_cuckoos",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "6",
+      "when": 1789802651665,
+      "tag": "0067_shallow_marauders",
+      "breakpoints": true
     }
   ]
 }
