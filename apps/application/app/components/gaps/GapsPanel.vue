@@ -34,12 +34,17 @@ const gaps = ref<Gap[]>([]);
 const loading = ref(false);
 const recomputing = ref(false);
 const graphSeed = ref<string | null>(null);
+const mutedDetectors = ref<string[]>([]);
 
 async function load() {
   loading.value = true;
   try {
     const res = await $fetch<{ items: Gap[] }>(`/api/projects/${props.projectId}/gaps` as `/api/projects/:id/gaps`);
     gaps.value = res.items ?? [];
+    const precision = await $fetch<{ items: Array<{ detector: string; muted: boolean }> }>(
+      `/api/projects/${props.projectId}/gaps/precision` as `/api/projects/:id/gaps/precision`,
+    );
+    mutedDetectors.value = (precision.items ?? []).filter((d) => d.muted).map((d) => d.detector);
   } catch {
     gaps.value = [];
   } finally {
@@ -191,6 +196,11 @@ async function recompute() {
         @click="recompute"
       />
     </div>
+
+    <p v-if="mutedDetectors.length > 0" class="text-xs text-muted">
+      Muted on this project (below 60% precision over 20+ verdicts, dropped from the PR comment):
+      <span class="font-mono">{{ mutedDetectors.join(', ') }}</span>
+    </p>
 
     <LoadingState v-if="loading && gaps.length === 0" />
     <EmptyState

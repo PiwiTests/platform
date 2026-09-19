@@ -99,6 +99,7 @@ import {
   listAcceptedUnwritten,
 } from '#shared/handlers/scenario-gaps';
 import { getFeatureGraph, MAX_GRAPH_DEPTH } from '~~/server/utils/feature-graph';
+import { loadDetectorPrecision } from '#shared/handlers/detector-precision';
 import { parseRouteNodeKey } from '#shared/graph';
 import { ingestProjectManifest } from '~~/server/utils/surface-manifest';
 import type { AppManifest, ManifestSource } from '#shared/types';
@@ -1583,6 +1584,28 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/gaps\/inbox$/,
     handler: async () => ({ items: await listAcceptedUnwritten(await getDemoDb(), 'all') }),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/gaps\/precision$/,
+    handler: async () => {
+      const db = await getDemoDb();
+      const rows = await db.select({ id: projects.id, name: projects.name }).from(projects);
+      const items = [];
+      for (const p of rows) {
+        const detectors = await loadDetectorPrecision(db, p.id);
+        if (detectors.length > 0) items.push({ projectId: p.id, projectName: p.name, detectors });
+      }
+      return { items };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/precision$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return { items: await loadDetectorPrecision(await getDemoDb(), +m[1]!) };
+    },
   },
   {
     method: 'POST',

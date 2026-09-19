@@ -36,6 +36,7 @@ import {
   type FileExposure,
 } from '#shared/handlers/scenario-gaps';
 import { ingestChangesEdges, deleteBranchGraphRows, ingestImportEdges } from '../graph-ingest';
+import { loadMutedDetectors } from '#shared/handlers/detector-precision';
 import { extractImports, type ImportPair } from '#shared/graph';
 import type { PrChangeCoverage } from '#shared/pr-feedback';
 
@@ -322,7 +323,12 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     reachBasis: f.reachBasis,
     ticket: f.ticket,
   }));
-  const gaps = detectChangedUnreached(reaches, runId, coverage.windowRuns).map((g) => rankGap(g, exposure));
+  // A detector that has muted itself on this project drops out of the pull-request
+  // comment first: its changed-unreached rows are neither persisted nor shown.
+  const muted = await loadMutedDetectors(db, run.projectId).catch(() => new Set<string>());
+  const gaps = detectChangedUnreached(reaches, runId, coverage.windowRuns)
+    .filter((g) => !muted.has(g.detector))
+    .map((g) => rankGap(g, exposure));
   await upsertScenarioGaps(db, run.projectId, gaps, { runId, prNumber }).catch(() => {});
 
   // Import edges for the changed files no test reached, from a shallow scan at the

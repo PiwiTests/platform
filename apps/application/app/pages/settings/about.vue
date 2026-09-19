@@ -4,6 +4,21 @@ const isDesktop = useIsDesktop();
 
 const { data: versionInfo } = await useFetch('/api/version');
 
+// Scenario-gap detector precision from triage verdicts, per detector per project.
+interface DetectorPrecisionRow {
+  detector: string;
+  for: number;
+  against: number;
+  verdicts: number;
+  precision: number | null;
+  muted: boolean;
+}
+const { data: precisionProjects } = await useFetch('/api/gaps/precision', {
+  default: () => [] as Array<{ projectId: number; projectName: string; detectors: DetectorPrecisionRow[] }>,
+  transform: (r: { items: Array<{ projectId: number; projectName: string; detectors: DetectorPrecisionRow[] }> }) =>
+    r.items,
+});
+
 const appVersion = config.public.appVersion as string;
 const buildSha = config.public.buildSha as string;
 const buildTime = config.public.buildTime as string;
@@ -31,6 +46,26 @@ const dbBackendLabel = computed(() => {
         <StatTile label="Database" :value="dbBackendLabel" />
         <StatTile label="Authentication" :value="authEnabled ? 'Enabled' : 'Disabled'" />
       </StatTileGrid>
+    </SectionCard>
+
+    <SectionCard v-if="precisionProjects.length > 0" icon="i-lucide-target" title="Scenario-gap detector precision">
+      <p class="mb-3 text-sm text-muted">
+        From triage verdicts: accepted and covered-by count for a detector, dismissed-as-wrong against. A detector below
+        60% over 20+ verdicts mutes itself on that project and drops out of the PR comment first.
+      </p>
+      <div v-for="proj in precisionProjects" :key="proj.projectId" class="mb-4">
+        <p class="text-xs font-medium text-muted">{{ proj.projectName }}</p>
+        <div class="mt-1 divide-y divide-default text-sm">
+          <div v-for="d in proj.detectors" :key="d.detector" class="flex items-center gap-3 py-1.5">
+            <span class="font-mono text-xs w-56 shrink-0">{{ d.detector }}</span>
+            <span class="tabular-nums w-16 text-right">{{
+              d.precision != null ? `${Math.round(d.precision * 100)}%` : '—'
+            }}</span>
+            <span class="text-xs text-muted">{{ d.for }} for · {{ d.against }} against</span>
+            <UBadge v-if="d.muted" color="warning" variant="subtle" size="sm">muted</UBadge>
+          </div>
+        </div>
+      </div>
     </SectionCard>
 
     <!-- Desktop shell only (renders nothing without the IPC bridge). Updates stay

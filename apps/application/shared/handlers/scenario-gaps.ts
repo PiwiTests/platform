@@ -613,6 +613,98 @@ export function detectNotHandled(signals: ResilienceSignal[]): DetectedGap[] {
   return gaps;
 }
 
+/** A feature's observed coverage across the test matrix. */
+export interface MatrixFeature {
+  feature: string;
+  priority?: string | null;
+  /** Observed browser names. */
+  browsers: string[];
+  /** Observed viewport classes (e.g. `desktop`, `mobile`). */
+  viewports: string[];
+  /** Observed environments. */
+  environments: string[];
+  /** Flag name → the states it was observed in (e.g. `['on']`). */
+  flags: Record<string, string[]>;
+}
+
+/** The project-wide dimensions a feature's coverage is judged against. */
+export interface MatrixContext {
+  browsers: string[];
+  viewports: string[];
+  environments: string[];
+}
+
+/**
+ * Matrix — a feature exercised on only one axis of a dimension the project
+ * covers elsewhere: one browser, one viewport class, one environment, or a flag
+ * seen in only one state. Fragile. Only critical and high-priority features are
+ * flagged, so the matrix does not drown a project in low-value combinations.
+ */
+export function detectMatrix(features: MatrixFeature[], ctx: MatrixContext): DetectedGap[] {
+  const gaps: DetectedGap[] = [];
+  for (const f of features) {
+    const rank = PRIORITY_RANK[(f.priority ?? '').toLowerCase()] ?? 0;
+    if (rank < PRIORITY_RANK.high!) continue; // critical/high only
+    const missing: string[] = [];
+    if (ctx.browsers.length > 1 && f.browsers.length === 1) missing.push(`${f.browsers[0]} only`);
+    if (ctx.viewports.length > 1 && f.viewports.length === 1) missing.push(`${f.viewports[0]} viewport only`);
+    if (ctx.environments.length > 1 && f.environments.length === 1)
+      missing.push(`${f.environments[0]} environment only`);
+    for (const [flag, states] of Object.entries(f.flags)) {
+      if (states.length === 1) missing.push(`flag ${flag} only ${states[0]}`);
+    }
+    if (missing.length === 0) continue;
+    gaps.push({
+      detector: 'matrix',
+      kind: 'gap',
+      class: 'fragile',
+      key: `feature:${f.feature}`,
+      title: `${f.feature}: thin test matrix`,
+      evidence: [`${f.priority ?? 'high'} · ${missing.join(' · ')} — add the missing Playwright project.`],
+      confidence: 0.5,
+      priority: f.priority ?? null,
+    });
+  }
+  return gaps;
+}
+
+/** A tracker bug and whether a failure cluster is already linked to it. */
+export interface EscapedDefectInput {
+  key: string;
+  title: string;
+  labels: string[];
+  /** True when a failure cluster already links this bug. */
+  hasLinkedCluster: boolean;
+  /** The feature the bug was matched to (by label, feature name or title words), if any. */
+  matchedFeature?: string | null;
+}
+
+/**
+ * Escaped defect — a tracker bug with no linked failure cluster: a defect that
+ * escaped the suite. Blind spot. Feeds escape history, so the area it names ranks
+ * higher next time. The matching (label / feature / title words) is done by the
+ * loader; this scores the unlinked ones.
+ */
+export function detectEscapedDefect(bugs: EscapedDefectInput[]): DetectedGap[] {
+  const gaps: DetectedGap[] = [];
+  for (const bug of bugs) {
+    if (bug.hasLinkedCluster) continue;
+    const feature = bug.matchedFeature ? ` · ${bug.matchedFeature}` : '';
+    gaps.push({
+      detector: 'escaped-defect',
+      kind: 'gap',
+      class: 'blind-spot',
+      key: `ticket:${bug.key}`,
+      title: `${bug.key} escaped the suite: ${bug.title}`,
+      evidence: [
+        `${bug.key} · no failure cluster links it${feature} — a scenario for this issue would catch it next time.`,
+      ],
+      confidence: 0.6,
+    });
+  }
+  return gaps;
+}
+
 /** A test and the set of nodes it reaches, each with whether it was seen recently. */
 export interface TestReachRecency {
   testCaseId: number;
