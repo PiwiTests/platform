@@ -35,6 +35,7 @@ import { testSuiteCache } from './test-suite-cache';
 import { SUITE_PATH_SEP, joinSuitePath } from '#shared/utils/suites';
 import { getOrCreateFailureClusters, type PendingCluster } from '#shared/handlers/failure-cluster-ops';
 import { upsertLocatorSnapshots } from './locator-healing';
+import { ingestRunGraph, collectRunGraphReaches } from './graph-ingest';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import type { DbClient as DB } from '../database';
 
@@ -582,6 +583,23 @@ export async function persistRunCases(
 
   await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
   await syncTestCaseMetadata(db, caseMetaSnapshots);
+
+  // Feed the feature graph from the same rows: route nodes from the network
+  // requests, page nodes from page state, and a `reaches` edge per test case.
+  // A graph failure must never break ingest, so it degrades to a warning.
+  try {
+    await ingestRunGraph(
+      db,
+      projectId,
+      testRunId,
+      collectRunGraphReaches(
+        runCasesRows.map((row) => ({ testCaseId: row.testCaseId, pageState: row.pageState })),
+        networkRequestBuilders,
+      ),
+    );
+  } catch (err) {
+    console.warn('[graph-ingest] failed to update the feature graph', err);
+  }
 
   return result;
 }
