@@ -61,7 +61,7 @@ The score is exposure × the detector's confidence. A changed file with real chu
 
 The graph stays proportional to your application's surface, not to how much data it has seen:
 
-- **Your own origin only.** Route nodes come from requests to the run's Playwright `baseURL` — analytics beacons and CDN assets never become nodes. Add extra first-party origins (an API subdomain, say) to a project's route-origin allowlist.
+- **Your own origin only.** Route nodes come from requests to the run's Playwright `baseURL` — analytics beacons and CDN assets never become nodes. Add extra first-party origins (an API subdomain, say) to a project's route-origin allowlist. Runs from reporters that predate the recorded `baseURL` fall back to the origins of their own document (navigation) requests, so their first-party routes are still captured rather than dropped.
 - **Pages are path patterns.** `/orders/123` and `/orders/456` are one node, and the same path served from staging and production lands on that one node.
 - **Branches stay separate.** A run on the default branch writes the canonical graph; a run on any other branch writes rows tagged with that branch, so a route added on a pull request never shows up as surface drift on the default branch. Those tagged rows are dropped when the pull request closes, and swept after thirty days otherwise.
 
