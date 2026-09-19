@@ -477,6 +477,13 @@
       "when": 1789802651665,
       "tag": "0067_shallow_marauders",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "6",
+      "when": 1789805250967,
+      "tag": "0068_lazy_franklin_storm",
+      "breakpoints": true
     }
   ]
 }

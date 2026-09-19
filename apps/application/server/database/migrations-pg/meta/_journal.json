@@ -484,6 +484,13 @@
       "when": 1789802653019,
       "tag": "0068_daily_marvel_apes",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1789805252199,
+      "tag": "0069_slimy_sasquatch",
+      "breakpoints": true
     }
   ]
 }

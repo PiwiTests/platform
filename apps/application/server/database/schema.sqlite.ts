@@ -1295,6 +1295,9 @@ export const scenarioGaps = sqliteTable(
     projectStatusIdx: index('idx_scenario_gaps_project_status').on(table.projectId, table.status),
     projectScoreIdx: index('idx_scenario_gaps_project_score').on(table.projectId, table.score),
     prIdx: index('idx_scenario_gaps_pr').on(table.projectId, table.prNumber),
+    featureNodeIdx: index('idx_scenario_gaps_feature_node').on(table.featureNodeId),
+    testCaseIdx: index('idx_scenario_gaps_test_case').on(table.testCaseId),
+    clusterIdx: index('idx_scenario_gaps_cluster').on(table.failureClusterId),
   }),
 );
 
