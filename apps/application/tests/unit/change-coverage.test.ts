@@ -6,7 +6,9 @@ import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 
 delete process.env.PIWI_DATABASE_URL;
-const { computeChangeCoverage, extractTicketIds } = await import('../../shared/handlers/change-coverage');
+const { computeChangeCoverage, extractTicketIds, pickPrimaryTicket } =
+  await import('../../shared/handlers/change-coverage');
+const { routeNodeKey, pageNodeKey } = await import('../../shared/graph');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 let caseSeq = 0;
@@ -29,6 +31,20 @@ async function seedRun(testCaseIds: number[]): Promise<number> {
       .values({ testRunId: runId, testCaseId, status: 'passed', createdAt: new Date(++clock) });
   }
   return runId;
+}
+
+/** A `reaches` edge from a test case into a graph node. */
+async function seedReachEdge(testCaseId: number, toKind: string, toKey: string): Promise<void> {
+  await db.insert(schema.graphEdges).values({
+    projectId: 1,
+    fromKind: 'test',
+    fromKey: String(testCaseId),
+    toKind,
+    toKey,
+    kind: 'reaches',
+    confidence: 1,
+    lastSeenAt: new Date(++clock),
+  });
 }
 
 /** A locator call site for a test case, pointing at a source file. */
@@ -56,14 +72,35 @@ beforeEach(async () => {
 
 describe('extractTicketIds', () => {
   test('pulls Jira/Linear-style ids from free text, deduped', () => {
-    expect(extractTicketIds('fix: PROJ-418 stale version', 'chore(ABC-9): retry', null, 'PROJ-418 again')).toEqual([
+    expect(extractTicketIds(['fix: PROJ-418 stale version', 'chore(ABC-9): retry', null, 'PROJ-418 again'])).toEqual([
       'PROJ-418',
       'ABC-9',
     ]);
   });
 
   test('is empty when nothing matches', () => {
-    expect(extractTicketIds('no tickets here', undefined)).toEqual([]);
+    expect(extractTicketIds(['no tickets here', undefined])).toEqual([]);
+  });
+
+  test('drops standards, hashes and acronyms that share the ticket shape', () => {
+    expect(
+      extractTicketIds(['bump to UTF-8, SHA-256 and ISO-8601', 'note COVID-19 and ES-2015', 'real PROJ-7']),
+    ).toEqual(['PROJ-7']);
+  });
+
+  test('keeps an id matching the project key even if its prefix is denylisted', () => {
+    expect(extractTicketIds(['ES-2015 spec work'], { ticketKey: 'ES' })).toEqual(['ES-2015']);
+  });
+});
+
+describe('pickPrimaryTicket', () => {
+  test('prefers an id matching the project tracker key', () => {
+    expect(pickPrimaryTicket(['ABC-1', 'PROJ-9'], 'PROJ')).toBe('PROJ-9');
+  });
+
+  test('falls back to the first id when none matches the key', () => {
+    expect(pickPrimaryTicket(['ABC-1', 'XYZ-2'], 'PROJ')).toBe('ABC-1');
+    expect(pickPrimaryTicket([], 'PROJ')).toBeNull();
   });
 });
 
@@ -120,6 +157,55 @@ describe('computeChangeCoverage', () => {
 
     expect(cc.files[0]!.reachedInRun).toBe(true);
     expect(cc.files[0]!.ticket).toBeNull();
+  });
+
+  test('a changed route handler is reached through its route node', async () => {
+    const orders = await seedCase('places an order', 'tests/orders.spec.ts');
+    const runId = await seedRun([orders]);
+    await seedReachEdge(orders, 'route', routeNodeKey('GET', '/api/orders/:id'));
+
+    const cc = await computeChangeCoverage(db, 1, {
+      changedFiles: [{ filePath: 'server/api/orders/[id].get.ts', additions: 4, deletions: 0 }],
+      runId,
+    });
+
+    const file = cc.files[0]!;
+    expect(file.reachedInRun).toBe(true);
+    expect(file.reachBasis).toBe('reached');
+    expect(cc.uncoveredFiles).toBe(0);
+  });
+
+  test('a changed page file is reached through its page node', async () => {
+    const checkout = await seedCase('checks out', 'tests/checkout.spec.ts');
+    const runId = await seedRun([checkout]);
+    await seedReachEdge(checkout, 'page', pageNodeKey('/orders/123'));
+
+    const cc = await computeChangeCoverage(db, 1, {
+      changedFiles: [{ filePath: 'app/pages/orders/[id].vue', additions: 2, deletions: 1 }],
+      runId,
+    });
+
+    expect(cc.files[0]!.reachedInRun).toBe(true);
+    expect(cc.files[0]!.reachBasis).toBe('reached');
+  });
+
+  test('an unreached route handler is observable, a bare component is not', async () => {
+    const orders = await seedCase('places an order', 'tests/orders.spec.ts');
+    const runId = await seedRun([orders]);
+
+    const cc = await computeChangeCoverage(db, 1, {
+      changedFiles: [
+        { filePath: 'server/api/refunds/[id].post.ts', additions: 10, deletions: 0 },
+        { filePath: 'app/components/OrderRow.vue', additions: 8, deletions: 2 },
+      ],
+      runId,
+    });
+
+    const handler = cc.files.find((f) => f.filePath === 'server/api/refunds/[id].post.ts')!;
+    const component = cc.files.find((f) => f.filePath === 'app/components/OrderRow.vue')!;
+    expect(handler.reachedInRun).toBe(false);
+    expect(handler.reachBasis).toBe('observable-unreached');
+    expect(component.reachBasis).toBe('no-evidence');
   });
 
   test('groups files by their primary ticket', async () => {

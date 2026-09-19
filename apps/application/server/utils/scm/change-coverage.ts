@@ -19,7 +19,13 @@ import { resolveFallbackBranch } from '#shared/handlers/baseline-scope';
 import { selectBaselineRun } from '../branch-baseline';
 import { createScmProvider } from './index';
 import type { ScmProvider } from './ScmProvider';
-import { computeChangeCoverage, extractTicketIds, type ChangeCoverage } from '#shared/handlers/change-coverage';
+import {
+  computeChangeCoverage,
+  extractTicketIds,
+  ticketPrefix,
+  type ChangeCoverage,
+} from '#shared/handlers/change-coverage';
+import { readProjectIntegration } from '../integrations/binding';
 import {
   detectChangedUnreached,
   rankGap,
@@ -36,8 +42,36 @@ const CHURN_COMMIT_SCAN = 12;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NINETY_DAYS_MS = 90 * DAY_MS;
 
-/** Per-head-commit exposure cache, so the finish path and the comment share one scan. */
+/**
+ * Exposure cache, so the finish path and the comment share one commit scan. Keyed
+ * by project, head commit and the file set, and bounded with least-recently-used
+ * eviction so it cannot grow without limit or serve one project's scan to another.
+ */
+const EXPOSURE_CACHE_MAX = 128;
 const exposureCache = new Map<string, Map<string, FileExposure>>();
+
+function exposureCacheKey(projectId: number, headSha: string, files: string[]): string {
+  return `${projectId}\x00${headSha}\x00${[...files].sort().join('\n')}`;
+}
+
+function exposureCacheGet(key: string): Map<string, FileExposure> | undefined {
+  const value = exposureCache.get(key);
+  if (value) {
+    // Touch: move to most-recently-used.
+    exposureCache.delete(key);
+    exposureCache.set(key, value);
+  }
+  return value;
+}
+
+function exposureCacheSet(key: string, value: Map<string, FileExposure>): void {
+  exposureCache.set(key, value);
+  while (exposureCache.size > EXPOSURE_CACHE_MAX) {
+    const oldest = exposureCache.keys().next().value;
+    if (oldest === undefined) break;
+    exposureCache.delete(oldest);
+  }
+}
 
 export interface RunChangeCoverage {
   coverage: ChangeCoverage;
@@ -63,7 +97,8 @@ async function computeFileExposure(
   baseBranch: string | null,
   files: string[],
 ): Promise<ExposureInputs> {
-  const cached = exposureCache.get(headSha);
+  const cacheKey = exposureCacheKey(projectId, headSha, files);
+  const cached = exposureCacheGet(cacheKey);
   if (cached) return { files: cached };
 
   const fixCommits = new Set<string>();
@@ -98,8 +133,44 @@ async function computeFileExposure(
     // Rate limit or a token-less repo — exposure degrades to the neutral floor.
   }
 
-  exposureCache.set(headSha, perFile);
+  exposureCacheSet(cacheKey, perFile);
   return { files: perFile };
+}
+
+/** Commits scanned to attach each changed file to the ticket that changed it. */
+const FILE_TICKET_COMMIT_SCAN = 20;
+
+/** A repo-relative path normalized for suffix matching. */
+function normalizeTicketPath(p: string): string {
+  return p.replace(/\\/g, '/').replace(/^\.\//, '').trim();
+}
+
+/**
+ * Map each changed file to the ticket named in the commit that changed it, so a
+ * pull request touching several tickets attributes files individually rather
+ * than lumping them all under the first id. A bounded per-commit diff scan,
+ * best-effort — an unresolved file falls back to the primary ticket. Only worth
+ * running when more than one ticket is in play.
+ */
+async function buildFileTickets(
+  provider: ScmProvider,
+  commits: Array<{ sha: string; message: string }>,
+  ticketKey: string | null,
+): Promise<Record<string, string>> {
+  const fileTickets: Record<string, string> = {};
+  for (const commit of commits.slice(0, FILE_TICKET_COMMIT_SCAN)) {
+    const ids = extractTicketIds([commit.message], { ticketKey });
+    if (ids.length === 0) continue;
+    const ticket = ticketKey ? (ids.find((t) => ticketPrefix(t) === ticketKey.toUpperCase()) ?? ids[0]!) : ids[0]!;
+    const diff = await provider.fetchCommitDiff(commit.sha).catch(() => null);
+    if (!diff) continue;
+    for (const f of diff.files) {
+      const path = normalizeTicketPath(f.filename);
+      // First commit that names a ticket wins, so the earliest attribution holds.
+      if (path && !(path in fileTickets)) fileTickets[path] = ticket;
+    }
+  }
+  return fileTickets;
 }
 
 /** A generic, honest draft suggestion for an uncovered changed file. */
@@ -156,12 +227,15 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     deletions: f.deletions,
   }));
 
+  const ticketKey = (await readProjectIntegration(db, run.projectId).catch(() => null))?.projectKey ?? null;
   const tickets = extractTicketIds(
-    branch,
-    fallback.branch,
-    ...changes.commits.map((c) => c.message),
-    prNumber != null ? `#${prNumber}` : null,
+    [branch, fallback.branch, ...changes.commits.map((c) => c.message), prNumber != null ? `#${prNumber}` : null],
+    { ticketKey },
   );
+
+  // Attribute files to the ticket that changed them only when several are in play.
+  const fileTickets =
+    tickets.length > 1 ? await buildFileTickets(provider, changes.commits, ticketKey).catch(() => ({})) : {};
 
   const coverage = await computeChangeCoverage(db, run.projectId, {
     changedFiles,
@@ -170,6 +244,8 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     headSha,
     baseBranch: fallback.branch,
     tickets,
+    ticketKey,
+    fileTickets,
     scmAvailable: true,
   });
 
@@ -218,6 +294,7 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     deletions: f.deletions,
     reachedInRun: f.reachedInRun,
     reachedCountHistory: f.reachedCountHistory,
+    reachBasis: f.reachBasis,
     ticket: f.ticket,
   }));
   const gaps = detectChangedUnreached(reaches, runId, coverage.windowRuns).map((g) => rankGap(g, exposure));
@@ -309,7 +386,8 @@ export async function readChangeCoverage(
     additions: f.additions,
     deletions: f.deletions,
   }));
-  const tickets = extractTicketIds(baseBranch, ...changes.commits.map((c) => c.message));
+  const ticketKey = (await readProjectIntegration(db, projectId).catch(() => null))?.projectKey ?? null;
+  const tickets = extractTicketIds([baseBranch, ...changes.commits.map((c) => c.message)], { ticketKey });
 
   return computeChangeCoverage(db, projectId, {
     changedFiles,
@@ -318,6 +396,7 @@ export async function readChangeCoverage(
     headSha,
     baseBranch,
     tickets,
+    ticketKey,
     scmAvailable: true,
   });
 }
