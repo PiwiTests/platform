@@ -73,6 +73,43 @@ Playwright test
                                 └─ visible in test-case detail + AI diagnosis
 ```
 
+## Server probes — the `X-Piwi-Probe` header
+
+The middleware can accept a signed fault instruction from a Piwi probe run (Test
+Map, level two). **In this release the header is only verified and recorded — no
+fault is applied**, and the middleware runs only in Development and Test
+environments (the same guard as log capture). A fault is applied only once a
+project turns server probes on (`PIWI_SERVER_PROBES=true`), which stays off by
+default, and even then only the client-safe subset.
+
+| Variable             | Effect                                                             |
+|----------------------|-------------------------------------------------------------------|
+| `PIWI_PROBE_SECRET`  | Shared HMAC secret. When unset, the probe header is ignored.      |
+| `PIWI_SERVER_PROBES` | `true` to apply verified faults. Off (unset) in this milestone.   |
+
+**Header format.** `X-Piwi-Probe` carries a base64-encoded JSON envelope, the
+same scheme as the Nitro package:
+
+```jsonc
+{
+  "nonce": "<hex, single use>",
+  "ts": 1700000000000,            // issued-at, Unix ms; honored within 60s
+  "specJson": "{\"route\":\"POST /api/orders\",\"fault\":\"status-500\",\"nth\":1}",
+  "sig": "<hex HMAC-SHA256>"      // over `${nonce}.${ts}.${specJson}` with PIWI_PROBE_SECRET
+}
+```
+
+A verified spec is stored in `HttpContext.Items["PiwiProbe"]`. Verification lives
+in `PiwiProbe.Verify`; `PiwiProbe.Sign` produces a matching signature.
+
+> **Scope note.** This package emits only the `X-Piwi-Logs` header today; it does
+> not yet emit server spans (`X-Piwi-Trace`), so the root-span handler-source
+> field the Nitro package adds does not apply here. The `X-Piwi-Probe` support
+> above is the minimal, forward-compatible piece of the M2 instrumentation
+> release for ASP.NET Core. It was authored but **not compiled in this
+> environment** (no .NET SDK available); build it with `dotnet build` before
+> release.
+
 ## License
 
 MIT

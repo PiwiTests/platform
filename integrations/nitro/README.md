@@ -71,6 +71,43 @@ The plugin wraps Nitro's root H3 handler and uses three mechanisms:
 2. **`AsyncLocalStorage.run()`** — scopes that buffer around the entire downstream chain (hooks, middleware, route handlers), so the process-global `consola` reporter always appends to the correct request's buffer.
 3. **A patched `res.end`** — the header is written just before the response goes out, which covers **every** response, including H3 error responses that bypass Nitro's `beforeResponse` hook. Right before writing, unhandled errors are drained from `event.context.nitro.errors`, so thrown errors appear even when nothing logged via consola.
 
+## Server probes — the `X-Piwi-Probe` header
+
+The plugin can accept a signed fault instruction from a Piwi probe run (Test Map,
+level two), so a passing test can be checked against the server's real error
+path. **In this release the header is only verified and recorded — no fault is
+applied.** A fault is applied only once a project turns server probes on
+(`PIWI_SERVER_PROBES=true`), which stays off by default, and even then only the
+client-safe subset.
+
+The header is honored only outside production, under the **same guard as log
+capture** (`PIWI_TEST_LOGS_DISABLED`), and only when a shared secret is set:
+
+| Variable             | Effect                                                             |
+|----------------------|-------------------------------------------------------------------|
+| `PIWI_PROBE_SECRET`  | Shared HMAC secret. When unset, the probe header is ignored.      |
+| `PIWI_SERVER_PROBES` | `true` to apply verified faults. Off (unset) in this milestone.   |
+
+**Header format.** `X-Piwi-Probe` carries a base64-encoded JSON envelope:
+
+```jsonc
+{
+  "nonce": "<hex, single use>",
+  "ts": 1700000000000,            // issued-at, Unix ms; honored within 60s
+  "specJson": "{\"route\":\"POST /api/orders\",\"fault\":\"status-500\",\"nth\":1}",
+  "sig": "<hex HMAC-SHA256>"      // over `${nonce}.${ts}.${specJson}` with PIWI_PROBE_SECRET
+}
+```
+
+`specJson` is the exact JSON string that was signed (the plugin re-parses it
+after the signature check, so no canonicalization is needed). A verified spec is
+exposed on `event.context._piwiProbe` for future handler use. The signing and
+verification helpers are exported (`signProbeMessage`, `verifyProbeHeader`).
+
+The root request span also carries the matched handler's source file as
+`attrs['piwi.handler']` when Nitro exposes it, so the dashboard can attribute a
+route to its handler by observation rather than by convention.
+
 ## Peer dependencies
 
 | Package     | Version   |
