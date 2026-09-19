@@ -10,6 +10,8 @@ export interface RawPageInventory {
   url: string;
   controls: Array<{ role: string; name: string }>;
   links: Array<{ name: string; href: string }>;
+  /** When this page settled (Unix ms), so a request can be attributed to the page current at its start. */
+  capturedAt?: number;
 }
 
 /** Total control + link entries kept per page before templating (size rule 3). */
@@ -23,7 +25,7 @@ export const PAGE_INVENTORY_MAX_ENTRIES = 500;
 export function capPageInventory(inventory: RawPageInventory, max = PAGE_INVENTORY_MAX_ENTRIES): RawPageInventory {
   const controls = inventory.controls.slice(0, Math.max(0, max));
   const links = inventory.links.slice(0, Math.max(0, max - controls.length));
-  return { url: inventory.url, controls, links };
+  return { url: inventory.url, controls, links, capturedAt: inventory.capturedAt };
 }
 
 /**

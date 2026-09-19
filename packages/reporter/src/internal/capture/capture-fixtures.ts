@@ -192,6 +192,10 @@ interface CaptureSink {
   // The controls and links present on the last active page at test end, stashed
   // for passing tests so the graph learns the suite's exposed surface.
   stashedPageInventory: RawPageInventory | null;
+  // One inventory per page the test settled on during the run, each stamped with
+  // its settle time, so the dashboard can attribute a request to the page that
+  // was current when it started rather than to the end-of-test page.
+  pageInventories: RawPageInventory[];
   // The probe plan item for this test (probe mode only), and the interception
   // handle once installed, so the outcome can be recorded at teardown.
   probeItem: ProbePlanItem | null;
@@ -220,6 +224,7 @@ function createSink(): CaptureSink {
     stashedAria: null,
     stashedAriaJson: null,
     stashedPageInventory: null,
+    pageInventories: [],
     probeItem: null,
     probeInterception: null,
     pickOffered: false,
@@ -519,7 +524,7 @@ const PAGE_INVENTORY_IN_PAGE_CAP = 2000;
  */
 async function readPageInventory(page: Page): Promise<RawPageInventory | null> {
   try {
-    return await page.evaluate((maxEntries): RawPageInventory | null => {
+    const inventory = await page.evaluate((maxEntries): RawPageInventory | null => {
       const g = globalThis as any;
       const doc = g.document;
       if (!doc || !g.location) return null;
@@ -552,14 +557,23 @@ async function readPageInventory(page: Page): Promise<RawPageInventory | null> {
         }
         return 'generic';
       };
+      const labelText = (el: any): string => {
+        const labels = el.labels;
+        if (!labels || labels.length === 0) return '';
+        let text = '';
+        for (const label of labels) text += ` ${label.textContent || ''}`;
+        return text;
+      };
+      // The accessible name never reads a control's `value`: form values are
+      // deliberately never shipped to the dashboard.
       const nameOf = (el: any): string =>
         clean(
           el.getAttribute('aria-label') ||
             el.textContent ||
+            labelText(el) ||
             el.getAttribute('placeholder') ||
             el.getAttribute('title') ||
-            el.getAttribute('alt') ||
-            el.getAttribute('value'),
+            el.getAttribute('alt'),
         );
 
       const controls: Array<{ role: string; name: string }> = [];
@@ -595,6 +609,9 @@ async function readPageInventory(page: Page): Promise<RawPageInventory | null> {
 
       return { url: g.location.href, controls, links };
     }, PAGE_INVENTORY_IN_PAGE_CAP);
+    // Stamp the settle time so a request can be attributed to the page current
+    // when it started, rather than to whichever page the test ended on.
+    return inventory ? { ...inventory, capturedAt: Date.now() } : null;
   } catch {
     return null;
   }
@@ -1165,6 +1182,23 @@ function instrumentPage(page: Page): void {
     }
   }
 
+  // Inventory each page as it settles, so the graph can attribute a request to
+  // the page current when it started. Best-effort: a failed read is skipped, and
+  // only passing runs keep the inventory (decided at teardown).
+  if (typeof page.on === 'function' && process.env.PIWI_CAPTURE_PAGE_INVENTORY !== 'false') {
+    page.on('load', () => {
+      const sink = currentSink;
+      if (!sink) return;
+      void readPageInventory(page)
+        .then((inventory) => {
+          if (inventory && currentSink === sink) sink.pageInventories.push(inventory);
+        })
+        .catch(() => {
+          /* an inventory read failure must never affect the test */
+        });
+    });
+  }
+
   page.on('console', (msg: ConsoleMessage) => {
     const sink = currentSink;
     if (!sink) return;
@@ -1538,17 +1572,27 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
     }
   }
 
-  // Page inventory (controls and links) on passing runs only. Prefer a live read
-  // of a still-open page; otherwise the inventory stashed at test end. Skipped
-  // when this worker already inventoried the page this run.
+  // Page inventory (controls and links) on passing runs only. Every page the
+  // test settled on is attached, each with its settle time, so the dashboard can
+  // attribute a request to the page current when it started. A live read of the
+  // still-open end page is preferred over its stashed copy. Skipped per URL when
+  // this worker already inventoried the page this run.
   if (testInfo.status === 'passed' && process.env.PIWI_CAPTURE_PAGE_INVENTORY !== 'false') {
-    const inventory = (pageReadable ? await readPageInventory(page) : null) ?? sink.stashedPageInventory;
-    const pageKey = inventory ? inventoryPageKey(inventory.url) : null;
-    if (inventory && pageKey && !inventoriedPageKeys.has(pageKey)) {
-      inventoriedPageKeys.add(pageKey);
+    const finalInventory = (pageReadable ? await readPageInventory(page) : null) ?? sink.stashedPageInventory;
+    // Earliest settle per URL wins, so a page's navigation window starts when it
+    // first settled; the entries stay in settle order for the dashboard.
+    const byUrl = new Map<string, RawPageInventory>();
+    for (const inv of [...sink.pageInventories, ...(finalInventory ? [finalInventory] : [])]) {
+      const key = inventoryPageKey(inv.url);
+      if (!key || byUrl.has(key)) continue;
+      byUrl.set(key, inv);
+    }
+    const entries = [...byUrl.entries()].filter(([key]) => !inventoriedPageKeys.has(key));
+    if (entries.length > 0) {
+      for (const [key] of entries) inventoriedPageKeys.add(key);
       await testInfo.attach(ATTACHMENT_NAMES.pageInventory, {
         contentType: 'application/json',
-        body: Buffer.from(JSON.stringify([capPageInventory(inventory)])),
+        body: Buffer.from(JSON.stringify(entries.map(([, inv]) => capPageInventory(inv)))),
       });
     }
   }
@@ -1606,7 +1650,12 @@ export const piwiFixtures: Fixtures<
     async ({}, use: UseFn<void>, testInfo: TestInfo) => {
       const sink = createSink();
       sink.testInfo = testInfo;
-      if (isProbeMode()) sink.probeItem = probeItemForTest({ title: testInfo.title });
+      if (isProbeMode())
+        sink.probeItem = probeItemForTest({
+          title: testInfo.title,
+          file: testInfo.file,
+          titlePath: testInfo.titlePath,
+        });
       currentSink = sink;
       try {
         await use();
