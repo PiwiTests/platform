@@ -190,15 +190,16 @@ What the graph answers that separate tables cannot:
 ```
 graph_nodes     id, project_id, kind ∈ feature|page|control|link|route|handler|dependency|file,
                 key, attrs JSON, origin ∈ observed|manifest|openapi|convention|import|coverage|usage|manual,
-                first_seen_run_id, last_seen_run_id, last_seen_at, usage_30d
-                unique (project_id, kind, key)
+                first_seen_run_id, last_seen_run_id, last_seen_at, usage_30d,
+                branch? (null = canonical, written by default-branch runs; set for other branches)
+                unique (project_id, kind, key, branch)
                 a feature node's attrs: { url_patterns, source ∈ tag|catalog|cluster|manual }
 
 graph_edges     id, project_id, from_kind, from_key, to_kind, to_key,
                 kind ∈ links|contains|triggers|loads|handled-by|calls|imports|groups|
                        reaches|checks|uses|drives|changes|affects|caused-by|owns,
-                confidence, origin, evidence JSON, first_seen_run_id, last_seen_run_id
-                unique (project_id, from_kind, from_key, kind, to_kind, to_key)
+                confidence, origin, evidence JSON, first_seen_run_id, last_seen_run_id, branch?
+                unique (project_id, from_kind, from_key, kind, to_kind, to_key, branch)
                 from/to kinds also name test cases, clusters, commits, tickets and owners
 
 oracle_probes   id, project_id, test_case_id, node_id (route or dependency), level ∈ client|server,
@@ -227,6 +228,29 @@ referencing pruned runs keep `last_seen_at` and age out after `PIWI_RETENTION_DA
 with the same window; open gaps never. Gaps persist because triage must survive recomputation, and a gap closes
 itself when its node gains a trusted edge, so "closed this month" is a real number. Imported runs feed the graph but
 never trigger diff detectors, probes or PR feedback.
+
+**Size discipline.** The upsert rule bounds growth per run, not the cardinality of what is upserted and not growth
+over time. Six rules keep a large application's graph proportional to its surface rather than to its data:
+
+1. **Pattern keys for pages.** Page nodes are keyed on the normalized path pattern, ids collapsed the way
+   `normalized_url` already does for routes, never on the host, so staging and production runs land on the same node.
+2. **Own-origin routes only.** Route nodes come only from requests to the Playwright `baseURL` origin plus a
+   per-project allowlist. Analytics beacons and CDN assets with cache-busting query strings never become nodes.
+3. **Templated control names.** Control and link keys collapse digits, dates and ids in the accessible name, and a
+   page keeps at most 200 distinct controls after templating. A table of five hundred orders is one control.
+4. **A ninety-day window on `changes` edges**, pruned on their own schedule, because churn needs no more and commits
+   are unique keys that would otherwise grow with history forever.
+5. **A staleness sweep of its own.** A node unseen for thirty runs is removed once its surface-drift gap has been
+   triaged, independently of `PIWI_RETENTION_DAYS`, which is opt-in and cannot be relied on.
+6. **Canonical writes from the default branch only.** Runs on other branches write nodes and edges tagged with their
+   branch. Change coverage reads both; branch-tagged rows are dropped when the pull request closes or merges, so a
+   route added in a PR never shows up as drift on the default branch.
+
+With those rules a large application — roughly three thousand routes, fifteen hundred pages and five thousand tests
+each reaching thirty routes and five pages — produces about 175,000 `reaches` edges, and on the order of half a
+million rows once M2 adds controls, links, triggers and calls. Both dialects handle that with indexes on both edge
+endpoints and project-scoped recursive queries under the depth cap. Rules 1, 2, 4, 5 and 6 belong to the M1 ingest
+path; rule 3 arrives with the page inventory in M2.
 
 ## What exists today
 
@@ -553,13 +577,15 @@ POST           /api/projects/:id/usage                       # production route 
 ## Milestones
 
 - **M1 — one honest paragraph in a pull request.** `graph_nodes` and `graph_edges` with route and page nodes,
-  `reaches` edges from network requests and page state, `changes` edges from the diff, first and last seen on both;
+  `reaches` edges from network requests and page state, `changes` edges from the diff, first and last seen on both; the size rules that touch ingest (pattern keys for pages,
+  own-origin routes, branch-tagged rows off the default branch, the ninety-day window on `changes`, the staleness
+  sweep);
   four detectors (changed unreached, success only, single covering test, surface drift); exposure from churn, age,
   escape history and priority; the uncovered-changes section per ticket in PR feedback and the commit status;
   `get_change_coverage`; the desktop local-diff command; demo handlers; docs. Zero setup on any instance with history
   and an SCM token. Success measure: the share of uncovered-changes lines that lead to a test in the same PR.
 - **M2 — the whole suite, and the first oracle.** Control, link, handler, dependency and file nodes; `contains`,
-  `links`, `triggers`, `loads`, `handled-by`, `calls` edges; page inventory on passing runs; one instrumentation
+  `links`, `triggers`, `loads`, `handled-by`, `calls` edges; page inventory on passing runs with templated control names and the per-page cap; one instrumentation
   release carrying the handler field and the probe header support, flagged off; client probes with `piwi probe` and
   the nightly budget; `checks` edges; the M2 detectors; features from tags and catalog; `list_scenario_gaps`,
   `draft_scenario`, the deterministic draft and the skill; `maxUncoveredChanges` warn-only. Success measure: the
