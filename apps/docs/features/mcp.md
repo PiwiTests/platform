@@ -17,7 +17,7 @@ The MCP server is served from the same Nitro process as the dashboard. There is 
 
 ## What it provides
 
-The server exposes 49 tools — mostly read-only, plus a few write/triage tools — covering the full diagnostic workflow, from browsing projects to the evidence behind a failure and closing the loop.
+The server exposes 50 tools — mostly read-only, plus a few write/triage tools — across the diagnostic workflow, from browsing projects to a failure's evidence.
 
 **Projects & activity**
 
@@ -65,8 +65,9 @@ The server exposes 49 tools — mostly read-only, plus a few write/triage tools 
 | `suggest_selections` | Suggested `slow`/`feature` tags and a mined smoke suite (budgeted set cover over observed routes), each with its evidence |
 | `analyze_selections` | Per-selection health and drift (what each resolves to now vs. what its last run recorded) plus the tests no selection covers |
 | `get_change_coverage` | Changed files joined to the tests reaching them, grouped by ticket, by run id or base/head range |
-| `list_scenario_gaps` | Ranked scenario gaps (tests that don't exist yet) with class, evidence and score; filter by class, feature, score or PR |
-| `draft_scenario` | A deterministic test skeleton for a gap: title, annotations, the graph path, matching catalog methods and a TODO assertion |
+| `list_scenario_gaps` | Ranked scenario gaps (tests that don't exist yet) with class, evidence and score; filter by class, feature, score, PR |
+| `draft_scenario` | A deterministic test skeleton for a gap: title, annotations, graph path, catalog methods and a TODO assertion |
+| `get_feature_graph` | The feature-graph neighborhood around a node — its gap class and reaching tests |
 
 **Failure clusters**
 
@@ -75,7 +76,7 @@ The server exposes 49 tools — mostly read-only, plus a few write/triage tools 
 | `list_clusters` | Failure clusters grouped by error fingerprint |
 | `list_open_clusters` | Open clusters across *all* projects, ranked by occurrences — a triage queue; an optional `queue` filter focuses one inbox queue |
 | `get_cluster` | Cluster detail with affected tests and diagnosis summary |
-| `get_fix_plan` | **One-call fix plan** for a cluster: diagnosis with its validated patch, ranked locator replacements with the file and line, failing tests, owning team, the verify command, a `reproduce` recipe, a generated `bisect` script, and `fixedBefore` — resolved clusters this one resembles |
+| `get_fix_plan` | **One-call fix plan** for a cluster: diagnosis with its validated patch, ranked locator replacements with the file and line, failing tests, owning team, the verify command, a `reproduce` recipe, a generated `bisect` script, and `fixedBefore` |
 | `get_cluster_diagnosis` | Full AI diagnosis: root cause, evidence, suggested fix |
 | `get_cluster_context` | Full AI evidence context (errors, steps, console logs, SCM diff) — the same data the built-in diagnosis AI receives |
 
