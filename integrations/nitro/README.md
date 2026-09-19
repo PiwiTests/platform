@@ -73,12 +73,11 @@ The plugin wraps Nitro's root H3 handler and uses three mechanisms:
 
 ## Server probes — the `X-Piwi-Probe` header
 
-The plugin can accept a signed fault instruction from a Piwi probe run (Test Map,
+The plugin accepts a signed fault instruction from a Piwi probe run (Test Map,
 level two), so a passing test can be checked against the server's real error
-path. **In this release the header is only verified and recorded — no fault is
-applied.** A fault is applied only once a project turns server probes on
-(`PIWI_SERVER_PROBES=true`), which stays off by default, and even then only the
-client-safe subset.
+path. A verified header is always recorded on the request scope
+(`event.context._piwiProbe`); a fault is **applied** only once a project turns
+server probes on (`PIWI_SERVER_PROBES=true`), which stays off by default.
 
 The header is honored only outside production, under the **same guard as log
 capture** (`PIWI_TEST_LOGS_DISABLED`), and only when a shared secret is set:
@@ -86,7 +85,19 @@ capture** (`PIWI_TEST_LOGS_DISABLED`), and only when a shared secret is set:
 | Variable             | Effect                                                             |
 |----------------------|-------------------------------------------------------------------|
 | `PIWI_PROBE_SECRET`  | Shared HMAC secret. When unset, the probe header is ignored.      |
-| `PIWI_SERVER_PROBES` | `true` to apply verified faults. Off (unset) in this milestone.   |
+| `PIWI_SERVER_PROBES` | `true` to apply verified faults on the Nth matching request.      |
+
+**Faults applied** (on the Nth matching request, gated per project on the
+dashboard side): `throw`, `status`/`auth` (run the server's error path with a
+500/401), `delay`/`slow`/`slow-first` (+5s), `extreme` (empty default),
+`data`/`drop-field`/`empty-body` (mutate the response before serialization), and
+`dependency` (fail one outbound `$fetch` the handler makes). The plugin reports
+the fault it actually applied in `X-Piwi-Trace` (root-span `piwi.probe.applied`),
+so a probe the server did not honor is recorded as **inconclusive**, never a pass.
+
+**Entry condition.** Turn this on when the client probes (level one) report
+"not-noticed" on at least one in ten probed pairs across your pilot projects —
+that is the signal the suite has false comfort the network boundary cannot reveal.
 
 **Header format.** `X-Piwi-Probe` carries a base64-encoded JSON envelope:
 

@@ -75,17 +75,24 @@ Playwright test
 
 ## Server probes — the `X-Piwi-Probe` header
 
-The middleware can accept a signed fault instruction from a Piwi probe run (Test
-Map, level two). **In this release the header is only verified and recorded — no
-fault is applied**, and the middleware runs only in Development and Test
-environments (the same guard as log capture). A fault is applied only once a
-project turns server probes on (`PIWI_SERVER_PROBES=true`), which stays off by
-default, and even then only the client-safe subset.
+The middleware accepts a signed fault instruction from a Piwi probe run (Test
+Map, level two). A verified header is recorded on `HttpContext.Items["PiwiProbe"]`;
+a fault is **applied** only once a project turns server probes on
+(`PIWI_SERVER_PROBES=true`), which stays off by default. The middleware runs only
+in Development and Test environments (the same guard as log capture).
 
 | Variable             | Effect                                                             |
 |----------------------|-------------------------------------------------------------------|
 | `PIWI_PROBE_SECRET`  | Shared HMAC secret. When unset, the probe header is ignored.      |
-| `PIWI_SERVER_PROBES` | `true` to apply verified faults. Off (unset) in this milestone.   |
+| `PIWI_SERVER_PROBES` | `true` to apply verified faults on the Nth matching request.      |
+
+**Faults applied — the honest subset for ASP.NET Core** (`PiwiProbeFaults`):
+handler-level faults only — `throw`, `status`/`auth` (500/401), `delay`/`slow`/
+`slow-first` (+5s) and `extreme` (empty 200), matched to the target route and its
+Nth request. Data mutation before serialization and dependency faults on outbound
+`HttpClient` calls are the Nitro package's fuller subset; they need response
+buffering and a delegating handler this package does not yet wire, so they are not
+applied here. The applied fault is recorded on `HttpContext.Items["PiwiProbeApplied"]`.
 
 **Header format.** `X-Piwi-Probe` carries a base64-encoded JSON envelope, the
 same scheme as the Nitro package:
@@ -104,11 +111,11 @@ in `PiwiProbe.Verify`; `PiwiProbe.Sign` produces a matching signature.
 
 > **Scope note.** This package emits only the `X-Piwi-Logs` header today; it does
 > not yet emit server spans (`X-Piwi-Trace`), so the root-span handler-source
-> field the Nitro package adds does not apply here. The `X-Piwi-Probe` support
-> above is the minimal, forward-compatible piece of the M2 instrumentation
-> release for ASP.NET Core. It was authored but **not compiled in this
-> environment** (no .NET SDK available); build it with `dotnet build` before
-> release.
+> field the Nitro package adds — and the applied-fault reporting the dashboard
+> reads to record an inconclusive probe — do not apply here yet. The handler-level
+> fault application above (`PiwiProbeFaults`) is the honest subset. Both it and the
+> `X-Piwi-Probe` verification were authored but **not compiled in this
+> environment** (no .NET SDK available); build with `dotnet build` before release.
 
 ## License
 

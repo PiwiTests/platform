@@ -34,9 +34,35 @@ public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
         if (probe is not null)
         {
             context.Items["PiwiProbe"] = probe;
-            // Server probes are off in this milestone, so nothing is applied.
             context.Items["PiwiProbeApplied"] = false;
-            _ = ServerProbesEnabled;
+            if (ServerProbesEnabled)
+            {
+                var method = context.Request.Method;
+                var path = context.Request.Path.Value ?? "";
+                if (PiwiProbeFaults.ShouldApply(probe.Route, probe.Fault, probe.Nth ?? 1, method, path))
+                {
+                    context.Items["PiwiProbeApplied"] = PiwiProbeFaults.AppliedLabel(probe);
+
+                    var delay = PiwiProbeFaults.FaultDelayMs(probe.Fault);
+                    if (delay > 0) await Task.Delay(delay);
+
+                    if (PiwiProbeFaults.IsThrowFault(probe.Fault))
+                        throw new InvalidOperationException("Piwi probe: injected error");
+
+                    var status = PiwiProbeFaults.FaultStatus(probe.Fault);
+                    if (status is not null)
+                    {
+                        context.Response.StatusCode = status.Value;
+                        return;
+                    }
+
+                    if (PiwiProbeFaults.IsExtremeFault(probe.Fault))
+                    {
+                        context.Response.StatusCode = 200;
+                        return;
+                    }
+                }
+            }
         }
 
         PiwiTestLoggerProvider.BeginCapture();

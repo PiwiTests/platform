@@ -25,6 +25,10 @@ public sealed class PiwiProbeSpec
     /// <summary>Apply only to the Nth matching request (1-based); default the first.</summary>
     [JsonPropertyName("nth")]
     public int? Nth { get; set; }
+
+    /// <summary>The dependency a dependency fault targets, when scoped to one.</summary>
+    [JsonPropertyName("dependency")]
+    public string? Dependency { get; set; }
 }
 
 internal sealed class SignedProbe
