@@ -28,7 +28,7 @@ import {
   type ExposureInputs,
   type FileExposure,
 } from '#shared/handlers/scenario-gaps';
-import { ingestChangesEdges } from '../graph-ingest';
+import { ingestChangesEdges, deleteBranchGraphRows } from '../graph-ingest';
 import type { PrChangeCoverage } from '#shared/pr-feedback';
 
 /** Recent commits scanned per run to estimate churn, age and escape history. */
@@ -173,6 +173,10 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     scmAvailable: true,
   });
 
+  // A run off the default branch tags its rows with its own branch; a
+  // default-branch run writes canonical rows (branch null).
+  const branchTag = branch && branch !== defaultBranch ? branch : null;
+
   // Persist the `changes` edges: the head commit and every ticket → each file.
   await ingestChangesEdges(
     db,
@@ -181,7 +185,23 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     headSha,
     tickets,
     changedFiles.map((f) => f.filePath),
+    { branch: branchTag },
   ).catch(() => {});
+
+  // When the SCM flow can see the pull request has closed or merged, drop this
+  // branch's tagged rows now instead of waiting for the thirty-day sweep, so its
+  // surface stops shadowing the default branch.
+  if (branchTag && prNumber != null) {
+    await provider
+      .fetchPullRequest(prNumber)
+      .then((pr) => {
+        if (pr && (pr.state === 'closed' || pr.state === 'merged')) {
+          return deleteBranchGraphRows(db, run.projectId, branchTag);
+        }
+        return 0;
+      })
+      .catch(() => 0);
+  }
 
   // Rank and persist the changed-unreached gaps.
   const exposure = await computeFileExposure(

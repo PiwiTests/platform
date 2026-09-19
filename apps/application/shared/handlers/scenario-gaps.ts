@@ -8,7 +8,7 @@
  * from recent history, and the word used is *observed reach*, never coverage.
  */
 
-import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   graphEdges,
   graphNodes,
@@ -387,16 +387,26 @@ async function loadRouteStats(db: DrizzleDB, runIds: number[]): Promise<Map<stri
 export async function computeScenarioGaps(
   db: DrizzleDB,
   projectId: number,
-  options: { exposure?: ExposureInputs } = {},
+  options: { exposure?: ExposureInputs; branch?: string | null } = {},
 ): Promise<{ upserted: number; closed: number }> {
   const recentIds = await loadRecentRunIds(db, projectId, HISTORY_WINDOW_RUNS);
   const latestRunId = recentIds[0] ?? null;
+
+  // Read canonical rows (branch null), plus the branch under inspection when one
+  // is given — so a route added on a pull-request branch never shows as surface
+  // drift on the default branch.
+  const nodeBranchScope = options.branch
+    ? or(isNull(graphNodes.branch), eq(graphNodes.branch, options.branch))
+    : isNull(graphNodes.branch);
+  const edgeBranchScope = options.branch
+    ? or(isNull(graphEdges.branch), eq(graphEdges.branch, options.branch))
+    : isNull(graphEdges.branch);
 
   // Reach edges → which test cases reach which nodes.
   const reachRows = await db
     .select({ toKind: graphEdges.toKind, toKey: graphEdges.toKey, fromKey: graphEdges.fromKey })
     .from(graphEdges)
-    .where(and(eq(graphEdges.projectId, projectId), eq(graphEdges.kind, 'reaches')));
+    .where(and(eq(graphEdges.projectId, projectId), eq(graphEdges.kind, 'reaches'), edgeBranchScope));
 
   const reachByNode = new Map<string, Set<number>>();
   const testIds = new Set<number>();
@@ -416,7 +426,7 @@ export async function computeScenarioGaps(
   const nodeRows = await db
     .select({ kind: graphNodes.kind, key: graphNodes.key, firstSeenRunId: graphNodes.firstSeenRunId })
     .from(graphNodes)
-    .where(eq(graphNodes.projectId, projectId));
+    .where(and(eq(graphNodes.projectId, projectId), nodeBranchScope));
 
   const routeStats = await loadRouteStats(db, recentIds);
 
