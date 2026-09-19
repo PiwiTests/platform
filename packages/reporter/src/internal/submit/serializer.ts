@@ -1,5 +1,7 @@
 ﻿import type { FullResult } from '@playwright/test/reporter';
 import type { CollectedTestCase, WireTestCase } from '../../types.js';
+import { isProbeMode } from '../probe/mode.js';
+import { probeRunMetadata } from '../probe/plan.js';
 import type { RunPayload } from './uploader.js';
 
 /**
@@ -188,10 +190,7 @@ export function serializeRun(payload: RunPayload, opts: SerializeRunOptions): Re
     label: payload.label ?? null,
     // A probe run is stamped so the dashboard never counts it as a real run
     // (no clusters, regression signals, notifications or PR feedback).
-    metadata:
-      process.env.PIWI_PROBE === '1' || process.env.PIWI_PROBE === 'true'
-        ? { ...payload.metadata, piwiProbe: true }
-        : payload.metadata,
+    metadata: isProbeMode() ? probeRunMetadata(payload.metadata) : payload.metadata,
     instanceId: payload.instanceId,
     playwrightVersion: payload.playwrightVersion,
     reporterVersion: payload.reporterVersion,
