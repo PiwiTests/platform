@@ -179,6 +179,24 @@ describe('buildPageInventoryGraph', () => {
       expect.objectContaining({ kind: 'loads', fromKey: '/cart', toKind: 'route', toKey: 'GET /api/cart' }),
     );
   });
+
+  test('resolves a relative href against the page’s real URL, not the placeholder root', () => {
+    const origins = new Set(['https://app.example.com']);
+    const { edges } = buildPageInventoryGraph(
+      [
+        {
+          pageKey: '/orders/:id',
+          pageUrl: 'https://app.example.com/orders/42',
+          controls: [],
+          links: [{ name: 'Details', href: 'details' }],
+        },
+      ],
+      { origins },
+    );
+    // `<a href="details">` on /orders/42 resolves under /orders, not to /details.
+    expect(edges.some((e) => e.kind === 'links' && e.toKey === '/orders/details')).toBe(true);
+    expect(edges.some((e) => e.kind === 'links' && e.toKey === '/details')).toBe(false);
+  });
 });
 
 describe('buildRequestGraph', () => {

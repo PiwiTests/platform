@@ -350,9 +350,16 @@ export async function upsertGraphSpecs(
 
 /** A case with its parsed page inventory and the network items it recorded. */
 export interface PageInventoryCase {
-  /** The `piwi-page-inventory` payload: `[{ url, controls, links }]`. */
+  /** The `piwi-page-inventory` payload: `[{ url, controls, links, capturedAt }]`. */
   pageInventory?: unknown;
-  networkItems: Array<{ method: string; normalizedUrl: string; url?: string | null; resourceType?: string | null }>;
+  networkItems: Array<{
+    method: string;
+    normalizedUrl: string;
+    url?: string | null;
+    resourceType?: string | null;
+    /** Request start (Unix ms), used to attribute the request to the page current at that time. */
+    startTime?: number | null;
+  }>;
 }
 
 /** Load resource types that count as a page loading a route during settle. */
@@ -369,18 +376,19 @@ export function collectPageInventories(cases: PageInventoryCase[], origins: Set<
     const inv = Array.isArray(c.pageInventory) ? (c.pageInventory as unknown[]) : null;
     if (!inv || inv.length === 0) continue;
 
-    const loadRoutes = new Set<string>();
-    for (const item of c.networkItems) {
-      if (!item.normalizedUrl) continue;
-      if (!LOAD_RESOURCE_TYPES.has((item.resourceType ?? '').toLowerCase())) continue;
-      if (!isOwnOriginRequest(item.url, origins)) continue;
-      loadRoutes.add(routeNodeKey(item.method, item.normalizedUrl));
-    }
-    const loadsRouteKeys = [...loadRoutes];
-
+    // One entry per page the case settled on, in settle order, each collecting
+    // only the routes attributed to it below.
+    const entries: Array<{
+      pageKey: string;
+      pageUrl: string;
+      capturedAt: number | null;
+      controls: Array<{ role: string | null; name: string }>;
+      links: Array<{ name: string; href: string | null }>;
+      loads: Set<string>;
+    }> = [];
     for (const raw of inv) {
       if (!raw || typeof raw !== 'object') continue;
-      const page = raw as { url?: unknown; controls?: unknown; links?: unknown };
+      const page = raw as { url?: unknown; controls?: unknown; links?: unknown; capturedAt?: unknown };
       if (typeof page.url !== 'string' || !page.url) continue;
       const pageKey = pageNodeKey(page.url);
       if (!pageKey) continue;
@@ -402,7 +410,40 @@ export function collectPageInventories(cases: PageInventoryCase[], origins: Set<
             }))
             .filter((x) => x.name)
         : [];
-      out.push({ pageKey, controls, links, loadsRouteKeys });
+      const capturedAt =
+        typeof page.capturedAt === 'number' && Number.isFinite(page.capturedAt) ? page.capturedAt : null;
+      entries.push({ pageKey, pageUrl: page.url, capturedAt, controls, links, loads: new Set<string>() });
+    }
+    if (entries.length === 0) continue;
+
+    // Attribute each own-origin document/xhr/fetch request to the page current
+    // when it started — the entry with the greatest settle time at or before the
+    // request start. A request with no start time, or before the first settle,
+    // cannot be placed, so it produces no `loads` edge rather than a wrong one.
+    const windows = entries.filter((e) => e.capturedAt != null).sort((a, b) => a.capturedAt! - b.capturedAt!);
+    for (const item of c.networkItems) {
+      if (!item.normalizedUrl) continue;
+      if (!LOAD_RESOURCE_TYPES.has((item.resourceType ?? '').toLowerCase())) continue;
+      if (!isOwnOriginRequest(item.url, origins)) continue;
+      const startTime = typeof item.startTime === 'number' && Number.isFinite(item.startTime) ? item.startTime : null;
+      if (startTime == null) continue;
+      let target: (typeof windows)[number] | null = null;
+      for (const w of windows) {
+        if (w.capturedAt! <= startTime) target = w;
+        else break;
+      }
+      if (!target) continue;
+      target.loads.add(routeNodeKey(item.method, item.normalizedUrl));
+    }
+
+    for (const e of entries) {
+      out.push({
+        pageKey: e.pageKey,
+        pageUrl: e.pageUrl,
+        controls: e.controls,
+        links: e.links,
+        loadsRouteKeys: [...e.loads],
+      });
     }
   }
   return out;

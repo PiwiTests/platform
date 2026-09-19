@@ -458,6 +458,8 @@ export interface GraphEdgeSpec {
 export interface PageInventoryInput {
   /** The page's node key (already normalized, e.g. from {@link pageNodeKey}). */
   pageKey: string;
+  /** The page's real URL, used to resolve relative link hrefs before normalizing. */
+  pageUrl?: string;
   controls: Array<{ role: string | null; name: string }>;
   links: Array<{ name: string; href: string | null }>;
   /** Routes the page loaded during navigation settle (document and XHR). */
@@ -508,7 +510,9 @@ export function buildPageInventoryGraph(
       if (!linkKeySet.has(key)) continue;
       addNode({ kind: 'link', key, attrs: link.href ? { href: link.href } : null });
       addEdge({ fromKind: 'page', fromKey: page.pageKey, toKind: 'link', toKey: key, kind: 'contains' });
-      const targetPage = linkTargetPageKey(link.href, origins, page.pageKey);
+      // Anchor a relative href against the page's real URL, not its bare path
+      // key, so `<a href="details">` on /orders/:id resolves under /orders.
+      const targetPage = linkTargetPageKey(link.href, origins, page.pageUrl ?? page.pageKey);
       if (targetPage && targetPage !== page.pageKey) {
         addNode({ kind: 'page', key: targetPage, attrs: null });
         addEdge({ fromKind: 'page', fromKey: page.pageKey, toKind: 'page', toKey: targetPage, kind: 'links' });
