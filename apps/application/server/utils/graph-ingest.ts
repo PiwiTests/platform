@@ -22,7 +22,14 @@ import {
   testRunsCases,
   networkRequests,
 } from '../database/schema';
-import { routeNodeKey, pageNodeKey, testEndpointKey, collectOwnOrigins, isOwnOriginRequest } from '#shared/graph';
+import {
+  routeNodeKey,
+  pageNodeKey,
+  testEndpointKey,
+  collectOwnOrigins,
+  isOwnOriginRequest,
+  originsFromDocumentRequests,
+} from '#shared/graph';
 import type { RunMetadata } from './run-json-types';
 import { resolveRunBranch } from './run-branch';
 import { resolveDefaultBranch, type DefaultBranchProject } from './scm/default-branch';
@@ -177,6 +184,9 @@ async function chunkedUpsertNodes(
         set: {
           lastSeenRunId: sql`excluded.last_seen_run_id`,
           lastSeenAt: sql`excluded.last_seen_at`,
+          // A key that was soft-deleted by the staleness sweep and now reappears
+          // is live again; first_seen is untouched, so it does not re-flag as drift.
+          prunedAt: sql`null`,
         },
       });
   }
@@ -332,6 +342,10 @@ export async function ingestChangesEdges(
  * The graph branch tag for a run: null when the run is on the project's default
  * branch (canonical rows), otherwise the run's own branch. An unknown branch is
  * treated as canonical, since it cannot be distinguished from the default.
+ *
+ * Resolves the default branch through the SCM provider, so it is for off-hot-path
+ * callers (the recompute endpoint, the backfill sweep). The ingest path uses
+ * {@link resolveRunBranchTagFromStored}, which never makes a network call.
  */
 export async function resolveRunBranchTag(
   db: DB,
@@ -342,6 +356,31 @@ export async function resolveRunBranchTag(
   const branch = (runBranch ?? resolveRunBranch(runMetadata))?.trim() || null;
   if (!branch) return null;
   const defaultBranch = await resolveDefaultBranch(db, project, runMetadata).catch(() => FALLBACK_DEFAULT_BRANCH);
+  return branch === defaultBranch ? null : branch;
+}
+
+/** Project fields the ingest-path branch tagger reads — all stored, no SCM call. */
+export interface StoredBranchProject {
+  defaultBranch?: string | null;
+}
+
+/**
+ * The graph branch tag resolved from the project's stored default branch alone —
+ * no SCM call, so it is safe on the ingest hot path and computed once per run
+ * rather than per events batch. The run's branch is canonical only when it equals
+ * the stored default branch; when that default is unknown the branch cannot be
+ * confirmed as canonical, so it is tagged and the nightly sweep backfills once the
+ * default branch resolves.
+ */
+export function resolveRunBranchTagFromStored(
+  project: StoredBranchProject,
+  runMetadata: unknown,
+  runBranch?: string | null,
+): string | null {
+  const branch = (runBranch ?? resolveRunBranch(runMetadata))?.trim() || null;
+  if (!branch) return null;
+  const defaultBranch = project.defaultBranch?.trim() || null;
+  if (!defaultBranch) return branch;
   return branch === defaultBranch ? null : branch;
 }
 
@@ -397,6 +436,7 @@ export async function rebuildProjectGraph(db: DB, projectId: number): Promise<{ 
         normalizedUrl: networkRequests.normalizedUrl,
         url: networkRequests.url,
         status: networkRequests.status,
+        resourceType: networkRequests.resourceType,
       })
       .from(networkRequests)
       .where(eq(networkRequests.testRunId, run.id));
@@ -412,7 +452,10 @@ export async function rebuildProjectGraph(db: DB, projectId: number): Promise<{ 
       byCase.set(r.testRunsCaseId, list);
     }
 
-    const origins = collectOwnOrigins(runBaseUrls(run.metadata), allowlist);
+    let origins = collectOwnOrigins(runBaseUrls(run.metadata), allowlist);
+    // Older reporters recorded no baseURL; fall back to this run's document
+    // request origins so route nodes still form from first-party traffic.
+    if (origins.size === 0) origins = originsFromDocumentRequests(requests);
     const branch = project ? await resolveRunBranchTag(db, project, run.metadata, run.branch) : null;
 
     const rows = cases.map((c) => ({ testCaseId: c.testCaseId, pageState: c.pageState }));
@@ -481,10 +524,14 @@ export async function pruneStaleBranchGraphRows(db: DB, now: Date = new Date()):
 }
 
 /**
- * Remove canonical nodes unseen for thirty runs whose surface-drift gap is no
- * longer open, independently of `PIWI_RETENTION_DAYS` (which is opt-in and
+ * Soft-delete canonical nodes unseen for thirty runs whose surface-drift gap is
+ * no longer open, independently of `PIWI_RETENTION_DAYS` (which is opt-in and
  * cannot be relied on). A node still carrying an open surface-drift gap is kept
  * so the triage keeps its subject.
+ *
+ * The node's row is kept but stamped `pruned_at` — the bulk (its `reaches` edges)
+ * is deleted, and keeping the row preserves `first_seen` so a re-appearance is
+ * not mistaken for new surface. Returns how many nodes were pruned.
  */
 export async function pruneStaleCanonicalNodes(db: DB): Promise<number> {
   const projectRows = await db.selectDistinct({ projectId: graphNodes.projectId }).from(graphNodes);
@@ -505,7 +552,12 @@ export async function pruneStaleCanonicalNodes(db: DB): Promise<number> {
       .select({ id: graphNodes.id, kind: graphNodes.kind, key: graphNodes.key })
       .from(graphNodes)
       .where(
-        and(eq(graphNodes.projectId, projectId), isNull(graphNodes.branch), lt(graphNodes.lastSeenRunId, windowFloor)),
+        and(
+          eq(graphNodes.projectId, projectId),
+          isNull(graphNodes.branch),
+          isNull(graphNodes.prunedAt),
+          lt(graphNodes.lastSeenRunId, windowFloor),
+        ),
       );
     if (stale.length === 0) continue;
 
@@ -522,12 +574,52 @@ export async function pruneStaleCanonicalNodes(db: DB): Promise<number> {
       );
     const openKeys = new Set(openGaps.map((g) => g.key));
 
-    const removable = stale.filter((n) => !openKeys.has(`${n.kind}:${n.key}`)).map((n) => n.id);
-    for (let i = 0; i < removable.length; i += 100) {
-      const slice = removable.slice(i, i + 100);
-      await db.delete(graphNodes).where(inArray(graphNodes.id, slice));
-      removed += slice.length;
+    const removable = stale.filter((n) => !openKeys.has(`${n.kind}:${n.key}`));
+    if (removable.length === 0) continue;
+
+    const now = new Date();
+    const ids = removable.map((n) => n.id);
+    for (let i = 0; i < ids.length; i += 100) {
+      await db
+        .update(graphNodes)
+        .set({ prunedAt: now })
+        .where(inArray(graphNodes.id, ids.slice(i, i + 100)));
     }
+
+    // Delete the pruned nodes' canonical edges — the bulk of the graph — by
+    // matching their endpoints, grouped by kind so keys batch together.
+    const keysByKind = new Map<string, string[]>();
+    for (const n of removable) {
+      const list = keysByKind.get(n.kind) ?? [];
+      list.push(n.key);
+      keysByKind.set(n.kind, list);
+    }
+    for (const [kind, keys] of keysByKind) {
+      for (let i = 0; i < keys.length; i += 100) {
+        const slice = keys.slice(i, i + 100);
+        await db
+          .delete(graphEdges)
+          .where(
+            and(
+              eq(graphEdges.projectId, projectId),
+              isNull(graphEdges.branch),
+              eq(graphEdges.toKind, kind),
+              inArray(graphEdges.toKey, slice),
+            ),
+          );
+        await db
+          .delete(graphEdges)
+          .where(
+            and(
+              eq(graphEdges.projectId, projectId),
+              isNull(graphEdges.branch),
+              eq(graphEdges.fromKind, kind),
+              inArray(graphEdges.fromKey, slice),
+            ),
+          );
+      }
+    }
+    removed += removable.length;
   }
   return removed;
 }

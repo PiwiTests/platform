@@ -172,16 +172,33 @@ describe('graph pruning', () => {
     expect(left.map((n) => n.key).sort()).toEqual(['GET /canon', 'GET /fresh']);
   });
 
-  test('pruneStaleCanonicalNodes removes a node unseen for thirty runs only once its surface-drift gap is closed', async () => {
+  test('pruneStaleCanonicalNodes soft-deletes a stale node and its edges, keeping an open-gap node', async () => {
     // Thirty-one runs, so the thirty-run window floor is run #2.
     for (let i = 1; i <= 31; i++) {
       await db.insert(schema.testRuns).values({ id: i, projectId: 1, status: 'passed', startTime: new Date(i) });
     }
     await db.insert(schema.graphNodes).values([
-      { projectId: 1, kind: 'route', key: 'GET /gone', lastSeenRunId: 1, lastSeenAt: daysAgo(1) },
-      { projectId: 1, kind: 'route', key: 'GET /kept', lastSeenRunId: 1, lastSeenAt: daysAgo(1) },
-      { projectId: 1, kind: 'route', key: 'GET /recent', lastSeenRunId: 31, lastSeenAt: daysAgo(1) },
+      { projectId: 1, kind: 'route', key: 'GET /gone', firstSeenRunId: 1, lastSeenRunId: 1, lastSeenAt: daysAgo(1) },
+      { projectId: 1, kind: 'route', key: 'GET /kept', firstSeenRunId: 1, lastSeenRunId: 1, lastSeenAt: daysAgo(1) },
+      {
+        projectId: 1,
+        kind: 'route',
+        key: 'GET /recent',
+        firstSeenRunId: 31,
+        lastSeenRunId: 31,
+        lastSeenAt: daysAgo(1),
+      },
     ]);
+    // A reaches edge into the stale node is deleted with it.
+    await db.insert(schema.graphEdges).values({
+      projectId: 1,
+      fromKind: 'test',
+      fromKey: '9',
+      toKind: 'route',
+      toKey: 'GET /gone',
+      kind: 'reaches',
+      lastSeenAt: daysAgo(1),
+    });
     // An open surface-drift gap protects its node from removal.
     await db.insert(schema.scenarioGaps).values({
       projectId: 1,
@@ -194,8 +211,42 @@ describe('graph pruning', () => {
 
     const removed = await pruneStaleCanonicalNodes(db);
     expect(removed).toBe(1);
-    const left = await db.select().from(schema.graphNodes).where(eq(schema.graphNodes.projectId, 1));
-    expect(left.map((n) => n.key).sort()).toEqual(['GET /kept', 'GET /recent']);
+
+    // The row is kept (soft delete) but stamped pruned_at; the others stay active.
+    const active = await db
+      .select()
+      .from(schema.graphNodes)
+      .where(and(eq(schema.graphNodes.projectId, 1), isNull(schema.graphNodes.prunedAt)));
+    expect(active.map((n) => n.key).sort()).toEqual(['GET /kept', 'GET /recent']);
+    const gone = await db.select().from(schema.graphNodes).where(eq(schema.graphNodes.key, 'GET /gone'));
+    expect(gone[0]!.prunedAt).not.toBeNull();
+    // Its reaches edge is gone.
+    const edges = await db.select().from(schema.graphEdges).where(eq(schema.graphEdges.projectId, 1));
+    expect(edges).toHaveLength(0);
+  });
+
+  test('a pruned node reappearing keeps its first-seen run and clears pruned_at', async () => {
+    await db.insert(schema.graphNodes).values({
+      projectId: 1,
+      kind: 'route',
+      key: 'GET /back',
+      firstSeenRunId: 3,
+      lastSeenRunId: 3,
+      lastSeenAt: daysAgo(60),
+      prunedAt: daysAgo(1),
+    });
+
+    await ingestRunGraph(db, 1, 40, [
+      { testCaseId: 5, routes: [{ method: 'GET', normalizedUrl: '/back', status: 200 }], pages: [] },
+    ]);
+
+    const [node] = await db
+      .select()
+      .from(schema.graphNodes)
+      .where(and(eq(schema.graphNodes.projectId, 1), eq(schema.graphNodes.key, 'GET /back')));
+    expect(node!.firstSeenRunId).toBe(3);
+    expect(node!.lastSeenRunId).toBe(40);
+    expect(node!.prunedAt).toBeNull();
   });
 });
 

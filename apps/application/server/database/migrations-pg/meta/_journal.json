@@ -498,6 +498,13 @@
       "when": 1789807384530,
       "tag": "0070_smiling_cerise",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1789810251214,
+      "tag": "0071_big_namor",
+      "breakpoints": true
     }
   ]
 }

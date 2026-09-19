@@ -38,11 +38,11 @@ import { upsertLocatorSnapshots } from './locator-healing';
 import {
   ingestRunGraph,
   collectRunGraphReaches,
-  resolveRunBranchTag,
+  resolveRunBranchTagFromStored,
   runBaseUrls,
   projectRouteOrigins,
 } from './graph-ingest';
-import { collectOwnOrigins } from '#shared/graph';
+import { collectOwnOrigins, originsFromDocumentRequests } from '#shared/graph';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import type { DbClient as DB } from '../database';
 
@@ -601,12 +601,23 @@ export async function persistRunCases(
       .from(testRuns)
       .where(eq(testRuns.id, testRunId));
     const [project] = await db
-      .select({ id: projects.id, defaultBranch: projects.defaultBranch, routeOrigins: projects.routeOrigins })
+      .select({
+        id: projects.id,
+        defaultBranch: projects.defaultBranch,
+        routeOrigins: projects.routeOrigins,
+      })
       .from(projects)
       .where(eq(projects.id, projectId));
 
-    const origins = collectOwnOrigins(runBaseUrls(run?.metadata), projectRouteOrigins(project?.routeOrigins));
-    const branch = project ? await resolveRunBranchTag(db, project, run?.metadata, run?.branch) : null;
+    let origins = collectOwnOrigins(runBaseUrls(run?.metadata), projectRouteOrigins(project?.routeOrigins));
+    // Older reporters recorded no Playwright baseURL; fall back to the origins of
+    // this batch's own document requests so route nodes still form from
+    // first-party traffic instead of keeping every third-party beacon.
+    if (origins.size === 0) {
+      origins = originsFromDocumentRequests(networkRequestBuilders.flatMap((b) => b.items));
+    }
+    // Resolved from stored project fields only — no SCM call on the ingest path.
+    const branch = project ? resolveRunBranchTagFromStored(project, run?.metadata, run?.branch) : null;
 
     await ingestRunGraph(
       db,

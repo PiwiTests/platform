@@ -1194,6 +1194,10 @@ export const graphNodes = sqliteTable(
     usage30d: integer('usage_30d'), // daily hit count from production instrumentation; null until usage is wired
     firstSeenRunId: integer('first_seen_run_id'),
     lastSeenRunId: integer('last_seen_run_id'),
+    // Set when a staleness sweep removed the node's edges; the row is kept (a
+    // soft delete) so first_seen survives a later re-appearance and surface
+    // drift does not fire again. Cleared on the next ingest that sees the key.
+    prunedAt: integer('pruned_at', { mode: 'timestamp_ms' }),
     lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' })
       .notNull()
       .$defaultFn(() => new Date()),

@@ -1,0 +1,1 @@
+ALTER TABLE `graph_nodes` ADD `pruned_at` integer;
