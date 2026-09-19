@@ -8,6 +8,7 @@ import { eq, and, desc, gt, inArray } from 'drizzle-orm';
 import { testCases, testRunsCases, testRuns, networkRequests } from '../../server/database/schema';
 import { classifyFlakyRootCause, type FlakyRootCause } from '../flaky-classify';
 import { getAttemptDiff } from './test-cases';
+import { isProbeRun } from './probes';
 import type { DrizzleDB } from './db';
 
 /** How many recent flaky executions to diff for the attempt-diff network vote. */
@@ -24,21 +25,26 @@ export async function classifyAndPersistFlakyRootCause(
     .where(and(eq(testCases.id, testCaseId), eq(testCases.projectId, projectId)));
   if (tcRows.length === 0) throw new Error('Test case not found');
 
-  const recentFailures = await db
-    .select({
-      id: testRunsCases.id,
-      status: testRunsCases.status,
-      error: testRunsCases.error,
-      duration: testRunsCases.duration,
-      steps: testRunsCases.steps,
-      browser: testRunsCases.browser,
-      testRunId: testRunsCases.testRunId,
-    })
-    .from(testRunsCases)
-    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(and(eq(testRunsCases.testCaseId, testCaseId), eq(testRuns.status, 'failed')))
-    .orderBy(desc(testRunsCases.createdAt))
-    .limit(50);
+  // Probe runs fail by design when they notice an injected fault, so their
+  // executions are excluded from the flaky root-cause evidence.
+  const recentFailures = (
+    await db
+      .select({
+        id: testRunsCases.id,
+        status: testRunsCases.status,
+        error: testRunsCases.error,
+        duration: testRunsCases.duration,
+        steps: testRunsCases.steps,
+        browser: testRunsCases.browser,
+        testRunId: testRunsCases.testRunId,
+        runMetadata: testRuns.metadata,
+      })
+      .from(testRunsCases)
+      .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+      .where(and(eq(testRunsCases.testCaseId, testCaseId), eq(testRuns.status, 'failed')))
+      .orderBy(desc(testRunsCases.createdAt))
+      .limit(50)
+  ).filter((r) => !isProbeRun(r.runMetadata));
 
   if (recentFailures.length === 0) {
     return { testCaseId, rootCause: 'other' };
@@ -87,14 +93,17 @@ export async function classifyAndPersistFlakyRootCause(
   // The sharpest network signal: a recent flaky execution whose failing attempt
   // had a request that failed (or 5xx'd) and the passing attempt did not.
   let attemptDiffNetworkVotes = 0;
-  const flakyExecutions = await db
-    .select({ id: testRunsCases.id })
-    .from(testRunsCases)
-    .where(
-      and(eq(testRunsCases.testCaseId, testCaseId), eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0)),
-    )
-    .orderBy(desc(testRunsCases.createdAt))
-    .limit(ATTEMPT_DIFF_SAMPLE);
+  const flakyExecutions = (
+    await db
+      .select({ id: testRunsCases.id, runMetadata: testRuns.metadata })
+      .from(testRunsCases)
+      .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+      .where(
+        and(eq(testRunsCases.testCaseId, testCaseId), eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0)),
+      )
+      .orderBy(desc(testRunsCases.createdAt))
+      .limit(ATTEMPT_DIFF_SAMPLE)
+  ).filter((r) => !isProbeRun(r.runMetadata));
   for (const exec of flakyExecutions) {
     const diff = await getAttemptDiff(db, exec.id);
     if (diff.differences.some((d) => d.kind === 'network' && d.only === 'failing')) {
