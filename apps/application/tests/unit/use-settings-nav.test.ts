@@ -12,9 +12,10 @@ import type { SettingsPageId } from '../../app/utils/settings-metadata';
  * Nuxt auto-imports are globals at runtime, so they are stubbed rather than
  * imported. `computed` is the real Vue one, so the returned ref behaves.
  */
-function stubNuxt(opts: { authEnabled?: boolean; isAdmin?: boolean; desktop?: boolean } = {}) {
+function stubNuxt(opts: { authEnabled?: boolean; isAdmin?: boolean; desktop?: boolean; declined?: Set<string> } = {}) {
   const authEnabled = opts.authEnabled ?? false;
   const isAdmin = ref(opts.isAdmin ?? false);
+  const declined = opts.declined ?? new Set<string>();
 
   vi.stubGlobal('computed', computed);
   vi.stubGlobal('useRuntimeConfig', () => ({ public: { authEnabled } }));
@@ -25,6 +26,7 @@ function stubNuxt(opts: { authEnabled?: boolean; isAdmin?: boolean; desktop?: bo
     isAdmin,
     canSeeAdmin: computed(() => !authEnabled || isAdmin.value),
   }));
+  vi.stubGlobal('useInstanceCapabilities', () => ({ isHidden: (id: string) => declined.has(id) }));
 }
 
 const pathsOf = (nav: { value: { to?: string | object }[][] }) => nav.value.flat().map((i) => i.to);
@@ -93,5 +95,13 @@ describe('useSettingsNav', () => {
 
     expect(sections.length).toBeGreaterThan(1);
     expect(sections.every((s) => s.length > 0)).toBe(true);
+  });
+
+  test('drops a settings page whose capability is declined', () => {
+    stubNuxt({ authEnabled: true, isAdmin: true, declined: new Set(['notifications']) });
+    const paths = pathsOf(useSettingsNav());
+
+    expect(paths).not.toContain('/settings/notifications');
+    expect(paths).toContain('/settings/ai');
   });
 });
