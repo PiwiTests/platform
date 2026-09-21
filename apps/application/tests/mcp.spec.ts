@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
+import { MCP_TOOL_DEFS } from '#shared/mcp-tools';
 
 function rpc(method: string, params?: Record<string, unknown>, id = 1) {
   return { jsonrpc: '2.0', id, method, params: params ?? {} };
@@ -91,7 +92,7 @@ test.describe.serial('MCP server', () => {
   test('tools/list — returns all tools', async ({ request }) => {
     const body = await mcp(request, 'tools/list');
     const tools: { name: string }[] = body.result.tools;
-    expect(tools.length).toBe(46);
+    expect(tools.length).toBe(MCP_TOOL_DEFS.length);
     const names = tools.map((t) => t.name);
     expect(names).toContain('list_projects');
     expect(names).toContain('get_run');
@@ -442,6 +443,49 @@ test.describe.serial('MCP server', () => {
     const ping = body.find((r: any) => r.id === 1);
     const list = body.find((r: any) => r.id === 2);
     expect(ping.result).toEqual({});
-    expect(list.result.tools.length).toBe(46);
+    expect(list.result.tools.length).toBe(MCP_TOOL_DEFS.length);
+  });
+
+  test('tools/list — ?modules=core narrows to the core module', async ({ request }) => {
+    const res = await request.post('/mcp?modules=core', { data: rpc('tools/list') });
+    expect(res.ok()).toBeTruthy();
+    const body = await res.json();
+    const names: string[] = body.result.tools.map((t: { name: string }) => t.name);
+    const coreNames = new Set(MCP_TOOL_DEFS.filter((t) => t.module === 'core').map((t) => t.name));
+    // Every listed tool belongs to the core module …
+    for (const name of names) expect(coreNames.has(name), `${name} should be a core-module tool`).toBe(true);
+    // … and a known tool from each other module is gone.
+    expect(names).not.toContain('get_locator_healing'); // healing
+    expect(names).not.toContain('create_issue'); // workflow
+    expect(names).not.toContain('get_cluster_diagnosis'); // agents
+  });
+
+  test('declining ai drops the diagnosis tools, and calling one is "Unknown tool"', async ({ request }) => {
+    const patch = await request.patch('/api/capabilities', { data: { decisions: { ai: 'declined' } } });
+    expect(patch.ok()).toBeTruthy();
+    const DIAGNOSIS = ['get_cluster_diagnosis', 'run_cluster_diagnosis', 'submit_diagnosis_feedback'];
+    try {
+      const caps = await (await request.get('/api/capabilities')).json();
+      const aiState = caps.items.find((i: { id: string }) => i.id === 'ai')?.state;
+      const names: string[] = (await mcp(request, 'tools/list')).result.tools.map((t: { name: string }) => t.name);
+      if (aiState === 'declined') {
+        // No AI evidence on this instance, so the decline drops the diagnosis tools.
+        for (const name of DIAGNOSIS) expect(names).not.toContain(name);
+        expect(names.length).toBe(MCP_TOOL_DEFS.length - DIAGNOSIS.length);
+        // A dropped tool answers the same "Unknown tool" error as any unknown name.
+        const call = await mcp(request, 'tools/call', {
+          name: 'get_cluster_diagnosis',
+          arguments: { clusterId: 1 },
+        });
+        expect(call.error).toBeDefined();
+        expect(call.error.code).toBe(-32602);
+      } else {
+        // A concurrent spec has AI configured; evidence wins over the decline, so
+        // the tools stay listed — the resolver's contract, exercised either way.
+        for (const name of DIAGNOSIS) expect(names).toContain(name);
+      }
+    } finally {
+      await request.patch('/api/capabilities', { data: { decisions: { ai: null } } });
+    }
   });
 });
