@@ -27,9 +27,15 @@ Grab the installer for your OS from the [latest release](https://github.com/Piwi
 
 | OS | Installer |
 |----|-----------|
-| **Windows** | `.msi` |
+| **Windows** | `.exe` (per-user, no admin) or `.msi` (per-machine) |
 | **macOS** (Apple silicon) | `.dmg` |
 | **Linux** (x86-64) | `.AppImage`, `.deb`, or `.rpm` |
+
+On Windows, the **`.exe`** installs just for you under `%LOCALAPPDATA%` and needs
+**no administrator rights**; the **`.msi`** installs for all users under
+`Program Files` and asks for elevation. Both are the same app and both
+auto-update in place, each in its own mode, so the per-user `.exe` never prompts
+for admin, not even on updates.
 
 On Linux, `.AppImage` runs anywhere (`chmod +x` and launch) and `.deb`/`.rpm`
 install through your package manager; all three need a system WebKitGTK
@@ -270,6 +276,10 @@ startup.
 
 **Settings → About → Updates** checks GitHub releases for a newer version,
 downloads it in the background, and applies it when you restart the app.
+
+On Windows the update matches how you installed: the **`.msi`** updates per
+machine and prompts for admin, the **`.exe`** updates per user with no admin
+prompt.
 
 Update support exists only in releases built with the project's update
 signing key — the app verifies every download against the matching public key
