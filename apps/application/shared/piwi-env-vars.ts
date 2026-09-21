@@ -348,18 +348,16 @@ export const PIWI_ENV_VARS = {
     requiredWhen: { PIWI_STORAGE_TYPE: 's3' },
   },
   PIWI_S3_ACCESS_KEY_ID: {
-    description: 'S3 access key id with write access to the bucket.',
+    description: 'Optional static S3 access key id. When omitted, the AWS SDK default credential chain is used.',
     category: 'storage',
     secret: true,
     relevantWhen: { PIWI_STORAGE_TYPE: 's3' },
-    requiredWhen: { PIWI_STORAGE_TYPE: 's3' },
   },
   PIWI_S3_SECRET_ACCESS_KEY: {
-    description: 'S3 secret access key.',
+    description: 'Optional static S3 secret access key. Set it together with PIWI_S3_ACCESS_KEY_ID.',
     category: 'storage',
     secret: true,
     relevantWhen: { PIWI_STORAGE_TYPE: 's3' },
-    requiredWhen: { PIWI_STORAGE_TYPE: 's3' },
   },
   PIWI_S3_ENDPOINT: {
     description: 'Custom endpoint for S3-compatible services (MinIO, R2, Spaces).',
