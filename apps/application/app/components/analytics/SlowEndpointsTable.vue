@@ -12,7 +12,7 @@ const {
 
 // The cross-project view follows the instance-level fixtures decision: declined
 // hides the block, undecided replaces the pitch with one naming line.
-const { state: capState } = useInstanceCapabilities();
+const { state: capState } = await useInstanceCapabilities();
 const fixturesDeclined = computed(() => capState('fixtures') === 'declined');
 const fixturesUndecided = computed(() => capState('fixtures') === 'undecided');
 

@@ -16,10 +16,10 @@ import { CAPABILITIES, type CapabilityId } from '#shared/capabilities';
  * getter); pass it to make the lock badges reactive. When omitted, no lock
  * badges are shown.
  */
-export function useSettingsNav(envManaged?: MaybeRefOrGetter<Record<SettingsPageId, boolean>>) {
+export async function useSettingsNav(envManaged?: MaybeRefOrGetter<Record<SettingsPageId, boolean>>) {
   const { canSeeAdmin } = useAuth();
   const isDesktop = useIsDesktop();
-  const { isHidden } = useInstanceCapabilities();
+  const { isHidden } = await useInstanceCapabilities();
 
   const declinedCapabilities = computed(() => {
     const set = new Set<CapabilityId>();

@@ -17,7 +17,7 @@ const props = defineProps<{
 // Slow endpoints ride on the capture fixtures. A project that declined them
 // drops the block; an undecided project gets one naming line instead of a pitch;
 // an active project falls through to the table or its plain empty state.
-const { state: capState } = useProjectCapabilities(Number(props.projectId));
+const { state: capState } = await useProjectCapabilities(Number(props.projectId));
 const fixturesDeclined = computed(() => capState('fixtures') === 'declined');
 const fixturesUndecided = computed(() => capState('fixtures') === 'undecided');
 

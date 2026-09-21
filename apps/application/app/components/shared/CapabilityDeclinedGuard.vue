@@ -14,7 +14,7 @@ const props = defineProps<{
   label: string;
 }>();
 
-const { state, canDecide } = useInstanceCapabilities();
+const { state, canDecide } = await useInstanceCapabilities();
 const declined = computed(() => state(props.capability) === 'declined');
 </script>
 

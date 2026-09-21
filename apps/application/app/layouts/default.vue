@@ -72,7 +72,7 @@ useNotificationStream();
 useDashboard();
 
 const { canSeeAdmin } = useAuth();
-const { isHidden: capHidden } = useInstanceCapabilities();
+const { isHidden: capHidden } = await useInstanceCapabilities();
 
 // Extract current project ID from route (if viewing a project page)
 const currentProjectId = computed(() => {

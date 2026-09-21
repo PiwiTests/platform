@@ -41,7 +41,7 @@ const {
 
 // A decision through the presets or a ladder control changes the shared instance
 // capabilities; re-read the setup status so the ladder regroups.
-const { capabilities: instanceCaps, canDecide, decide: decideInstance } = useInstanceCapabilities();
+const { capabilities: instanceCaps, canDecide, decide: decideInstance } = await useInstanceCapabilities();
 watch(instanceCaps, () => refresh(), { deep: true });
 
 const isLoading = computed(() => fetchStatus.value === 'pending' && !status.value?.capabilities.length);

@@ -289,7 +289,18 @@ const clusterLocatorHasData = computed(() => {
     !!(h.fromElementMatch?.length || h.fromPriorSuccess?.length || h.fromAriaSnapshot?.length)
   );
 });
-const { isHidden: clusterCapHidden } = useProjectCapabilities(cluster.value?.project?.id ?? 0);
+const {
+  state: clusterCapState,
+  isHidden: clusterCapHidden,
+  canDecide: canDecideClusterCap,
+  decide: decideClusterProjectCap,
+} = await useProjectCapabilities(cluster.value?.project?.id ?? 0);
+const { decide: decideClusterInstanceCap } = await useInstanceCapabilities();
+
+async function declineClusterFixtures(level: 'project' | 'instance') {
+  if (level === 'project') await decideClusterProjectCap('fixtures', 'declined');
+  else await decideClusterInstanceCap('fixtures', 'declined');
+}
 const showLocatorFix = computed(
   () => hasLocatorPanel.value && clusterLocatorHasData.value && !clusterCapHidden('locator-healing'),
 );
@@ -639,7 +650,10 @@ const breadcrumbItems = computed(() => [
             :traces="execTraces ?? []"
             :has-trace="hasTrace"
             :default-hint="defaultHint"
+            :fixtures-state="clusterCapState('fixtures')"
+            :can-decide-fixtures="canDecideClusterCap"
             help="case.evidence"
+            @decline-fixtures="declineClusterFixtures"
           />
         </div>
 

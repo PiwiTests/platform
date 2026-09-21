@@ -36,51 +36,49 @@ afterEach(() => {
 });
 
 describe('useSettingsNav', () => {
-  test('treats every visitor as an admin when auth is disabled', () => {
+  test('treats every visitor as an admin when auth is disabled', async () => {
     // The instance has no users at all, so gating admin pages would lock
     // everyone out of Storage, Tags and AI on a default self-hosted install.
     stubNuxt({ authEnabled: false, isAdmin: false });
 
-    expect(pathsOf(useSettingsNav())).toContain('/settings/storage');
+    expect(pathsOf(await useSettingsNav())).toContain('/settings/storage');
   });
 
-  test('hides admin pages from a non-admin once auth is enabled', () => {
+  test('hides admin pages from a non-admin once auth is enabled', async () => {
     stubNuxt({ authEnabled: true, isAdmin: false });
 
-    const visible = pathsOf(useSettingsNav());
+    const visible = pathsOf(await useSettingsNav());
     expect(visible).not.toContain('/settings/storage');
     expect(visible).toContain('/settings/account');
   });
 
-  test('shows admin pages to an admin when auth is enabled', () => {
+  test('shows admin pages to an admin when auth is enabled', async () => {
     stubNuxt({ authEnabled: true, isAdmin: true });
 
-    expect(pathsOf(useSettingsNav())).toContain('/settings/storage');
+    expect(pathsOf(await useSettingsNav())).toContain('/settings/storage');
   });
 
-  test('hides the auth-only pages in the desktop build', () => {
+  test('hides the auth-only pages in the desktop build', async () => {
     stubNuxt({ desktop: true });
 
-    const visible = pathsOf(useSettingsNav());
+    const visible = pathsOf(await useSettingsNav());
     expect(visible).not.toContain('/settings/account');
     expect(visible).not.toContain('/settings/users');
     expect(visible).toContain('/settings/storage');
   });
 
-  test('unwraps envManaged given as a ref', () => {
+  test('unwraps envManaged given as a ref', async () => {
     stubNuxt();
     const managed = ref({ ai: true } as Record<SettingsPageId, boolean>);
 
-    const item = useSettingsNav(managed)
-      .value.flat()
-      .find((i) => i.to === '/settings/ai');
+    const item = (await useSettingsNav(managed)).value.flat().find((i) => i.to === '/settings/ai');
     expect(item?.badge).toEqual({ icon: 'i-lucide-lock', color: 'neutral' });
   });
 
-  test('unwraps envManaged given as a getter, and tracks its changes', () => {
+  test('unwraps envManaged given as a getter, and tracks its changes', async () => {
     stubNuxt();
     const managed = ref({} as Record<SettingsPageId, boolean>);
-    const nav = useSettingsNav(() => managed.value);
+    const nav = await useSettingsNav(() => managed.value);
 
     const aiItem = () => nav.value.flat().find((i) => i.to === '/settings/ai');
     expect(aiItem()?.badge).toBeUndefined();
@@ -89,17 +87,17 @@ describe('useSettingsNav', () => {
     expect(aiItem()?.badge).toEqual({ icon: 'i-lucide-lock', color: 'neutral' });
   });
 
-  test('returns grouped sections, each non-empty', () => {
+  test('returns grouped sections, each non-empty', async () => {
     stubNuxt();
-    const sections = useSettingsNav().value;
+    const sections = (await useSettingsNav()).value;
 
     expect(sections.length).toBeGreaterThan(1);
     expect(sections.every((s) => s.length > 0)).toBe(true);
   });
 
-  test('drops a settings page whose capability is declined', () => {
+  test('drops a settings page whose capability is declined', async () => {
     stubNuxt({ authEnabled: true, isAdmin: true, declined: new Set(['notifications']) });
-    const paths = pathsOf(useSettingsNav());
+    const paths = pathsOf(await useSettingsNav());
 
     expect(paths).not.toContain('/settings/notifications');
     expect(paths).toContain('/settings/ai');

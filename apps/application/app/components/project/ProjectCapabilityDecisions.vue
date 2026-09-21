@@ -13,7 +13,7 @@ const props = defineProps<{
   initial?: Partial<Record<CapabilityId, ProjectDecision>> | null;
 }>();
 
-const { canDecide, decide } = useProjectCapabilities(props.projectId);
+const { canDecide, decide } = await useProjectCapabilities(props.projectId);
 const toast = useToast();
 
 /** Plain labels for the capabilities a project can override. */

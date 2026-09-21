@@ -33,7 +33,7 @@ const confirmDeleteRunId = ref<number | null>(null);
 const { isAdmin, isReporter } = useAuth();
 // Project-level capability states gate the bell, the Quarantine segment and the
 // Timeline's add-marker control.
-const { isHidden: projCapHidden } = useProjectCapabilities(Number(projectId));
+const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectId));
 const runtimeConfig = useRuntimeConfig();
 const { isDesktop, openReport } = useDesktopReportLink();
 const authEnabled = computed(() => Boolean(runtimeConfig.public.authEnabled));

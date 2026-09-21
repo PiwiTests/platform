@@ -161,7 +161,15 @@ const {
   isHidden: capHidden,
   canDecide: canDecideCap,
   decide: decideProjectCap,
-} = useProjectCapabilities(testCase.value?.testRun?.project?.id ?? 0);
+} = await useProjectCapabilities(testCase.value?.testRun?.project?.id ?? 0);
+const { decide: decideInstanceCap } = await useInstanceCapabilities();
+
+// The evidence footer's decline controls: both write a `declined` decision, one
+// per level, and the resolver hides the sources everywhere on the next read.
+async function declineFixtures(level: 'project' | 'instance') {
+  if (level === 'project') await decideProjectCap('fixtures', 'declined');
+  else await decideInstanceCap('fixtures', 'declined');
+}
 const isTimeoutFailure = computed(() => {
   const s = testCase.value?.status;
   return s === 'timedout' || s === 'timedOut';
@@ -711,7 +719,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               {{ verdict.detail }}
             </p>
             <!-- The capture-fixtures nudge, at the point where their absence is felt. -->
-            <p v-if="showFixturesNudge" data-shot="fixtures-nudge" class="mt-2 text-xs text-muted leading-relaxed">
+            <p v-if="showFixturesNudge" data-shot="fixtures-nudge" class="mt-2 text-xs text-muted">
               Capture fixtures would have recorded the network activity behind this failure.
               <button
                 type="button"
@@ -786,7 +794,10 @@ const { handle: handleNextStepAction } = useNextStepActions({
             :has-trace="hasTrace"
             :default-hint="defaultHint"
             :suppress-fixtures-footer="showFixturesNudge"
+            :fixtures-state="projectCapState('fixtures')"
+            :can-decide-fixtures="canDecideCap"
             help="case.evidence"
+            @decline-fixtures="declineFixtures"
           />
         </div>
 

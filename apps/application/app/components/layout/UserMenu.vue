@@ -9,7 +9,7 @@ const colorMode = useColorMode();
 const appConfig = useAppConfig();
 const config = useRuntimeConfig();
 const { authState, logout } = useAuth();
-const settingsNav = useSettingsNav();
+const settingsNav = await useSettingsNav();
 const { openSettings: openIdeSettings } = useOpenInIde();
 
 const colors = [

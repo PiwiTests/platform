@@ -35,23 +35,23 @@ const props = defineProps<{
    * headline, so the footer sentence stays off to avoid saying it twice.
    */
   suppressFixturesFooter?: boolean;
+  /** The project's resolved fixtures state, from the page's capability composable. */
+  fixturesState?: CapabilityState;
+  /** Whether the viewer may write the footer's decline decisions. */
+  canDecideFixtures?: boolean;
 }>();
+
+// The footer's decline controls are the page's to write (it owns the capability
+// composable); the strip and the fixture-backed tabs read the resolved state.
+const emit = defineEmits<{ 'decline-fixtures': [level: 'project' | 'instance'] }>();
 
 type TabValue = EvidenceTabValue;
 
 const runId = computed<number | null>(() => props.testCase?.testRun?.id ?? null);
 const projectKey = computed(() => props.testCase?.testRun?.project?.id ?? undefined);
 
-// The project's resolved capability states drive which fixture-backed tabs show
-// and whether the footer offers to decline the capture fixtures. The execution
-// arrives already fetched, so the project id is known at setup.
-const {
-  state: projectCapState,
-  canDecide,
-  decide: decideProject,
-} = useProjectCapabilities(props.testCase?.testRun?.project?.id ?? 0);
-const { decide: decideInstance } = useInstanceCapabilities();
-const fixturesState = computed<CapabilityState>(() => projectCapState('fixtures'));
+const fixturesState = computed<CapabilityState>(() => props.fixturesState ?? 'undecided');
+const canDecide = computed(() => props.canDecideFixtures ?? false);
 const projectName = computed(() => props.testCase?.testRun?.project?.name ?? undefined);
 const testRunsCaseId = computed<number>(() => Number(props.testCase?.id ?? props.testCase?.executionId ?? 0));
 const status = computed<string | null>(() => props.testCase?.status ?? null);
@@ -327,20 +327,6 @@ function revealSection(sectionId: string): boolean {
   return true;
 }
 
-// The footer's two decline controls; both write a `declined` decision, one per
-// level, and the resolver hides the sources everywhere on the next read.
-const deciding = ref(false);
-async function declineFixtures(level: 'project' | 'instance') {
-  if (deciding.value) return;
-  deciding.value = true;
-  try {
-    if (level === 'project') await decideProject('fixtures', 'declined');
-    else await decideInstance('fixtures', 'declined');
-  } finally {
-    deciding.value = false;
-  }
-}
-
 defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.value = t) });
 </script>
 
@@ -568,11 +554,11 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
         <template v-if="canDecide">
           <NuxtLink to="/setup" :class="SENTENCE_LINK_CLASS">Add fixtures</NuxtLink>
           <span aria-hidden="true"> · </span>
-          <button type="button" :class="SENTENCE_LINK_CLASS" :disabled="deciding" @click="declineFixtures('project')">
+          <button type="button" :class="SENTENCE_LINK_CLASS" @click="emit('decline-fixtures', 'project')">
             Not for this project
           </button>
           <span aria-hidden="true"> · </span>
-          <button type="button" :class="SENTENCE_LINK_CLASS" :disabled="deciding" @click="declineFixtures('instance')">
+          <button type="button" :class="SENTENCE_LINK_CLASS" @click="emit('decline-fixtures', 'instance')">
             Not for this instance
           </button>
         </template>
