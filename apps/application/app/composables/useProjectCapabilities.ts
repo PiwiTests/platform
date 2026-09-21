@@ -1,33 +1,35 @@
 import type { CapabilityId, CapabilityState, ProjectDecision } from '#shared/capabilities';
 import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/capabilities';
 
-const projectFetches = new Map<number, Promise<CapabilityStateItem[]>>();
-
 /**
  * The resolved state of every optional capability for one project: the
- * project's evidence and decision over the instance's. Fetched once per project
- * per page session. `state(id)` is the resolved state, `isHidden(id)` is true
- * when declined or not applicable, `canDecide` gates the controls to
- * administrators, and `decide` writes a project decision (`enabled` overrides an
- * instance decline; `null` clears it).
+ * project's evidence and decision over the instance's.
+ *
+ * Backed by `useAsyncData` keyed `capabilities-project-<id>`, so the states are
+ * fetched during SSR and hydrated from the payload rather than fetched only on
+ * the client. It is async: `await` it at the top of `<script setup>` (as
+ * `SubscribeBell.vue` does with `useFetch`), which resolves under the page's
+ * Suspense boundary so a declined capability's chrome is absent from the first
+ * render instead of flashing in and disappearing after hydration. Repeated calls
+ * for the same project share one fetch through the key.
+ *
+ * `state(id)` is the resolved state, `isHidden(id)` is true when declined or not
+ * applicable, `canDecide` gates the controls to administrators, `decide` writes
+ * one decision and `decideMany` writes several at once (`enabled` overrides an
+ * instance decline; `null` clears a decision). A read failure resolves to an
+ * empty list.
  */
-export function useProjectCapabilities(projectId: number) {
-  const items = useState<CapabilityStateItem[] | null>(`capabilities-project-${projectId}`, () => null);
+export async function useProjectCapabilities(projectId: number) {
   const { canSeeAdmin } = useAuth();
 
-  async function load() {
-    if (items.value !== null) return;
-    let pending = projectFetches.get(projectId);
-    if (!pending) {
-      pending = $fetch<CapabilityStates>(`/api/projects/${projectId}/capabilities`)
+  const { data: items } = await useAsyncData<CapabilityStateItem[]>(
+    `capabilities-project-${projectId}`,
+    () =>
+      $fetch<CapabilityStates>(`/api/projects/${projectId}/capabilities`)
         .then((r) => r.items)
-        .catch(() => []);
-      projectFetches.set(projectId, pending);
-    }
-    items.value = await pending;
-  }
-
-  if (import.meta.client) load();
+        .catch(() => []),
+    { default: () => [] },
+  );
 
   const stateMap = computed(() => {
     const map = new Map<CapabilityId, CapabilityState>();
@@ -38,14 +40,15 @@ export function useProjectCapabilities(projectId: number) {
   const state = (id: CapabilityId): CapabilityState => stateMap.value.get(id) ?? 'undecided';
   const isHidden = (id: CapabilityId): boolean => state(id) === 'declined' || state(id) === 'not-applicable';
 
-  async function decide(id: CapabilityId, decision: ProjectDecision | null) {
+  async function decideMany(decisions: Partial<Record<CapabilityId, ProjectDecision | null>>) {
     const res = await $fetch<CapabilityStates>(`/api/projects/${projectId}/capabilities`, {
       method: 'PATCH',
-      body: { decisions: { [id]: decision } },
+      body: { decisions },
     });
-    projectFetches.set(projectId, Promise.resolve(res.items));
     items.value = res.items;
   }
 
-  return { capabilities: items, state, isHidden, canDecide: canSeeAdmin, decide };
+  const decide = (id: CapabilityId, decision: ProjectDecision | null) => decideMany({ [id]: decision });
+
+  return { capabilities: items, state, isHidden, canDecide: canSeeAdmin, decide, decideMany };
 }
