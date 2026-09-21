@@ -136,7 +136,7 @@ async function decide(id: SetupCapabilityId, decision: 'declined' | null) {
              capabilities, which regroups the ladder below. -->
         <CapabilityPresets help="setup.presets" />
 
-        <UCard>
+        <UCard data-shot="setup-ladder">
           <template #header>
             <div class="flex items-center justify-between gap-3">
               <div class="flex items-center gap-3">

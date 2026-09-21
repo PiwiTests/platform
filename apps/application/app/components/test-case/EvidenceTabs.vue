@@ -345,7 +345,10 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
 </script>
 
 <template>
-  <section class="rounded-lg border border-default bg-default max-sm:rounded-none max-sm:border-x-0">
+  <section
+    data-shot="evidence-card"
+    class="rounded-lg border border-default bg-default max-sm:rounded-none max-sm:border-x-0"
+  >
     <!-- Header: the section title, its help, and the content-level tab strip -->
     <div class="p-3 sm:px-4 sm:py-3 border-b border-default">
       <div class="flex items-center gap-2 mb-2.5">
