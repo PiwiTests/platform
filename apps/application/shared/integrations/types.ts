@@ -1,7 +1,8 @@
 /**
- * Wire shapes the integration UI reads. Credentials never appear here — a
- * connection summary carries only a `hasCredentials` flag, and the test result
- * carries the resolved account, not the token that resolved it.
+ * Wire shapes the integration UI reads. Secret credentials never appear here — a
+ * connection summary carries a `hasCredentials` flag and its non-secret credential
+ * values (the account email), and the test result carries the resolved account,
+ * not the token that resolved it.
  */
 import type { IntegrationProviderName } from './registry';
 import type { IssueDocument } from './document';
@@ -24,6 +25,12 @@ export interface ConnectionSummary {
   managedBy: ConnectionManagedBy;
   /** True when the connection has stored credentials, without revealing them. */
   hasCredentials: boolean;
+  /**
+   * The non-secret credential values (e.g. the account email), so the settings UI
+   * can show the account and pre-fill the edit form. Secret fields such as the API
+   * token are never included.
+   */
+  credentialValues: Record<string, string>;
   /** True when an inbound-webhook token is set (the token itself is never returned). */
   hasWebhookToken: boolean;
   createdAt: string | null;

@@ -84,7 +84,9 @@ function openEdit(conn: ConnectionSummary) {
   form.editingId = conn.id;
   form.name = conn.name;
   form.baseUrl = conn.baseUrl;
-  form.credentials = {};
+  // Pre-fill the non-secret fields (the account email) so they show and survive
+  // an edit; secret fields stay blank and keep their stored value.
+  form.credentials = { ...conn.credentialValues };
   form.config = { ...((conn.config as Record<string, unknown> | null) ?? {}) };
   form.locale = (conn.config as { locale?: string } | null)?.locale === 'fr' ? 'fr' : 'en';
 }
@@ -219,6 +221,9 @@ function errorMessage(err: unknown): string {
               <EnvManagedBadge v-if="conn.managedBy === 'env'" :env-vars="ENV_VARS_BY_PROVIDER[provider.name]" />
             </div>
             <p class="text-xs text-muted font-mono break-all">{{ conn.baseUrl }}</p>
+            <p v-if="conn.credentialValues.email" class="text-xs text-muted break-all">
+              {{ conn.credentialValues.email }}
+            </p>
 
             <ErrorText v-if="conn.status === 'failed' && conn.lastError" :text="conn.lastError" />
             <p v-if="testResults[conn.id]?.ok" class="text-xs text-muted">
