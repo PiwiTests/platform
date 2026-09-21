@@ -31,12 +31,6 @@ Grab the installer for your OS from the [latest release](https://github.com/Piwi
 | **macOS** (Apple silicon) | `.dmg` |
 | **Linux** (x86-64) | `.AppImage`, `.deb`, or `.rpm` |
 
-On Windows, the **`.exe`** installs just for you under `%LOCALAPPDATA%` and needs
-**no administrator rights**; the **`.msi`** installs for all users under
-`Program Files` and asks for elevation. Both are the same app and both
-auto-update in place, each in its own mode, so the per-user `.exe` never prompts
-for admin, not even on updates.
-
 On Linux, `.AppImage` runs anywhere (`chmod +x` and launch) and `.deb`/`.rpm`
 install through your package manager; all three need a system WebKitGTK
 (`webkit2gtk-4.1`).
@@ -277,16 +271,13 @@ startup.
 **Settings → About → Updates** checks GitHub releases for a newer version,
 downloads it in the background, and applies it when you restart the app.
 
-On Windows the update matches how you installed: the **`.msi`** updates per
-machine and prompts for admin, the **`.exe`** updates per user with no admin
-prompt.
+On Windows, the **`.exe`** updates without admin; the **`.msi`** prompts for it.
 
-Update support exists only in releases built with the project's update
-signing key — the app verifies every download against the matching public key
-before installing anything. A build without that key (a dev build, or a
-release made before the key existed) says so on the card; update it by
-downloading the [latest release](https://github.com/PiwiTests/platform/releases/latest)
-installer, which keeps your data (the data folder lives outside the app).
+Updates work only in releases built with the project's signing key; the app
+verifies every download against the public key before installing. A build
+without it (a dev build, or one from before the key existed) says so on the
+card, update it by downloading the [latest release](https://github.com/PiwiTests/platform/releases/latest),
+which keeps your data.
 
 ## Building from source
 
