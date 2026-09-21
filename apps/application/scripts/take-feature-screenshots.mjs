@@ -918,7 +918,7 @@ const SCENES = [
     name: 'mcp-tool-modules',
     description: 'MCP page: the tool catalog grouped by module with the Core tools only switch',
     route: '/mcp',
-    viewport: { width: 1280, height: 2600 },
+    viewport: { width: 1280, height: 5300 },
     of: '[data-shot="mcp-tool-modules"]',
     pad: 12,
   },
