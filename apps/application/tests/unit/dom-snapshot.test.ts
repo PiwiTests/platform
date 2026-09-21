@@ -11,7 +11,12 @@ import {
 } from '~~/server/utils/dom-snapshot-render';
 import { resolveCaseDomSnapshot } from '~~/server/utils/dom-snapshot';
 import { renderAriaSnapshotHtml } from '~~/server/utils/dom-snapshot-aria';
-import { parseResourceSnapshots, type TraceFrameSnapshot, type ParsedTraceData } from '~~/server/utils/trace-events';
+import {
+  parseResourceSnapshots,
+  parseTraceTexts,
+  type TraceFrameSnapshot,
+  type ParsedTraceData,
+} from '~~/server/utils/trace-events';
 
 function snap(overrides: Partial<TraceFrameSnapshot>): TraceFrameSnapshot {
   return { frameId: 'frame@1', isMainFrame: true, html: ['HTML', {}], ...overrides };
@@ -250,6 +255,22 @@ describe('parseResourceSnapshots', () => {
     const text = [line('http://app/x.css', 'old.css'), line('http://app/x.css', 'new.css')].join('\n');
     expect(parseResourceSnapshots([text]).get('http://app/x.css')?.sha1).toBe('new.css');
   });
+
+  test('reads the v9 `_file` body ref (resources/-prefixed) as well as the v8 `_sha1`', () => {
+    // Playwright's current trace format renamed `_sha1` to `_file` and prefixes
+    // the ZIP directory; both must reduce to the same bare pool/zip filename.
+    const v9 = JSON.stringify({
+      type: 'resource-snapshot',
+      snapshot: {
+        request: { url: 'http://app/app.css' },
+        response: { content: { _file: 'resources/26b1a9ce.css', mimeType: 'text/css' } },
+      },
+    });
+    expect(parseResourceSnapshots([v9]).get('http://app/app.css')).toEqual({
+      sha1: '26b1a9ce.css',
+      mimeType: 'text/css',
+    });
+  });
 });
 
 describe('collectCssUrls / inlineCssUrls', () => {
@@ -465,5 +486,59 @@ describe('extractDomSnapshot — styled/lean two-pass', () => {
     expect(res.html).toContain('<style></style>'); // CSS dropped
     expect(res.html).not.toContain('.x{color:red}');
     expect(res.html).toContain('<button>Click me</button>'); // body preserved
+  });
+});
+
+describe('parseTraceTexts — v9 frame snapshots (callId + phase)', () => {
+  // Playwright's current trace format identifies a frame snapshot by callId +
+  // phase and no longer carries a `snapshotName`, nor snapshot pointers on the
+  // before/after events. The parser must rebuild the v8 `${phase}@${callId}`
+  // name so the failure-time DOM still renders.
+  const v9Trace = (): string[] => {
+    const events = [
+      { type: 'before', callId: 'call@8', startTime: 100, class: 'Frame', method: 'goto', pageId: 'p1' },
+      {
+        type: 'frame-snapshot',
+        snapshot: {
+          callId: 'call@8',
+          phase: 'after',
+          frameId: 'f1',
+          isMainFrame: true,
+          frameUrl: 'http://127.0.0.1:42103/',
+          html: ['HTML', {}, ['BODY', {}, ['H1', { class: 'headline' }, 'Styled']]],
+        },
+      },
+      { type: 'after', callId: 'call@8', endTime: 200 },
+      { type: 'before', callId: 'call@12', startTime: 300, class: 'Frame', method: 'click', pageId: 'p1' },
+      {
+        type: 'frame-snapshot',
+        snapshot: {
+          callId: 'call@12',
+          phase: 'before',
+          frameId: 'f1',
+          isMainFrame: true,
+          frameUrl: 'http://127.0.0.1:42103/',
+          html: ['HTML', {}, ['BODY', {}, ['BUTTON', { id: 'go' }, 'Go']]],
+        },
+      },
+      { type: 'after', callId: 'call@12', endTime: 900, error: { message: 'Timeout 800ms exceeded.' } },
+    ];
+    return [events.map((e) => JSON.stringify(e)).join('\n')];
+  };
+
+  test('synthesizes `${phase}@${callId}` snapshot names and before/after action pointers', () => {
+    const data = parseTraceTexts(v9Trace());
+    expect(data.frameSnapshots.map((s) => s.snapshotName)).toEqual(['after@call@8', 'before@call@12']);
+    expect(data.failingAction?.callId).toBe('call@12');
+    expect(data.failingAction?.beforeSnapshot).toBe('before@call@12');
+    expect(data.failingAction?.afterSnapshot).toBe('after@call@12');
+  });
+
+  test('extractDomSnapshot renders the failing action’s before-snapshot from a v9 trace', () => {
+    const res = extractDomSnapshot(parseTraceTexts(v9Trace()), 1_000_000);
+    expect(res.status).toBe('ok');
+    expect(res.snapshotName).toBe('before@call@12');
+    expect(res.html).toContain('<button id="go">Go</button>');
+    expect(res.frameUrl).toBe('http://127.0.0.1:42103/');
   });
 });
