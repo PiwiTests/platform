@@ -1,11 +1,24 @@
 <script setup lang="ts">
 import { docsUrl } from '#shared/docs';
 
+const props = withDefaults(
+  defineProps<{
+    /**
+     * Include the optional "What do you want Piwi for?" capability step. Only
+     * the Home placement sets this; the Setup page owns that question through
+     * its own presets card, so the wizard omits the step there.
+     */
+    showCapabilityStep?: boolean;
+  }>(),
+  { showCapabilityStep: false },
+);
+
 const config = useRuntimeConfig();
 const authEnabled = computed(() => !!config.public.authEnabled);
 const isDesktop = useIsDesktop();
-// The capability presets step, and the component itself, render only for
-// administrators (and everyone when auth is disabled).
+// The capability presets step renders only for administrators (and everyone
+// when auth is disabled) and only when `showCapabilityStep` is set — the Home
+// placement. The Setup page mounts its own presets card, so it leaves it off.
 const { canSeeAdmin } = useAuth();
 
 // Reflect the actual dashboard URL so the generated config snippet is correct
@@ -140,9 +153,10 @@ const steps = computed<Array<WizardStep & { id: number }>>(() => {
     },
   );
 
-  // One optional step, administrators only: which capability modules this team
-  // wants. Skipping stores nothing; it does not count toward the run-setup steps.
-  if (canSeeAdmin.value) {
+  // One optional step, administrators only, and only in the Home placement:
+  // which capability modules this team wants. Skipping stores nothing; it does
+  // not count toward the run-setup steps. On Setup the presets card owns this.
+  if (canSeeAdmin.value && props.showCapabilityStep) {
     list.push({
       title: 'What do you want Piwi for?',
       description:
@@ -234,7 +248,7 @@ const goFurtherOpen = ref(false);
           <!-- The optional capability step: its own titled presets card carries
                the heading, so no duplicate step title above it. -->
           <template v-if="step.action === 'capabilities'">
-            <div data-shot="wizard-capabilities">
+            <div>
               <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">{{ step.description }}</p>
               <CapabilityPresets />
             </div>
