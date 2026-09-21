@@ -31,6 +31,9 @@ const deletingRunId = ref<number | null>(null);
 const confirmDeleteRunId = ref<number | null>(null);
 
 const { isAdmin, isReporter } = useAuth();
+// Project-level capability states gate the bell, the Quarantine segment and the
+// Timeline's add-marker control.
+const { isHidden: projCapHidden } = useProjectCapabilities(Number(projectId));
 const runtimeConfig = useRuntimeConfig();
 const { isDesktop, openReport } = useDesktopReportLink();
 const authEnabled = computed(() => Boolean(runtimeConfig.public.authEnabled));
@@ -223,6 +226,26 @@ const ALIAS_SEGMENT: Record<string, FailureSegment> = {
 
 const activeTab = ref<TabValue>('runs');
 const failureSegment = ref<FailureSegment>('clusters');
+
+// The Quarantine segment follows the `quarantine` capability: a project that
+// declined it loses the segment button, and a stale `?tab=quarantine` link falls
+// back to Clusters.
+const failureSegments = computed(() => {
+  const segs: { key: FailureSegment; label: string; count: number }[] = [
+    { key: 'clusters', label: 'Clusters', count: clustersCount.value.total },
+    { key: 'flaky', label: 'Flaky', count: flakyCount.value ?? 0 },
+  ];
+  if (!projCapHidden('quarantine'))
+    segs.push({ key: 'quarantine', label: 'Quarantine', count: quarantineCount.value ?? 0 });
+  return segs;
+});
+watch(
+  () => projCapHidden('quarantine'),
+  (hidden) => {
+    if (hidden && failureSegment.value === 'quarantine') failureSegment.value = 'clusters';
+  },
+  { immediate: true },
+);
 
 function resolveTab(raw: unknown): TabValue | null {
   if (typeof raw !== 'string') return null;
@@ -686,7 +709,11 @@ const moreMenuItems = computed(() => {
         </template>
         <template #right>
           <div class="flex items-center gap-1.5 shrink-0">
-            <SubscribeBell :project-id="parseInt(projectId)" :project-label="project?.label || project?.name" />
+            <SubscribeBell
+              v-if="!projCapHidden('notifications')"
+              :project-id="parseInt(projectId)"
+              :project-label="project?.label || project?.name"
+            />
             <UButton
               v-if="canManage"
               label="Import"
@@ -809,6 +836,7 @@ const moreMenuItems = computed(() => {
           >
             <template #actions>
               <UButton
+                v-if="!projCapHidden('markers')"
                 size="xs"
                 color="neutral"
                 variant="outline"
@@ -1054,11 +1082,7 @@ const moreMenuItems = computed(() => {
           <div class="flex">
             <div class="inline-flex rounded-lg border border-default p-0.5 bg-elevated/40">
               <button
-                v-for="seg in [
-                  { key: 'clusters' as const, label: 'Clusters', count: clustersCount.total },
-                  { key: 'flaky' as const, label: 'Flaky', count: flakyCount ?? 0 },
-                  { key: 'quarantine' as const, label: 'Quarantine', count: quarantineCount ?? 0 },
-                ]"
+                v-for="seg in failureSegments"
                 :key="seg.key"
                 type="button"
                 class="px-3 py-1.5 text-sm font-medium rounded-md transition-colors"
@@ -1276,6 +1300,8 @@ const moreMenuItems = computed(() => {
               <ProjectFormFields
                 mode="edit"
                 :has-token="hasScmToken"
+                :project-id="Number(projectId)"
+                :capabilities="(project as any)?.capabilities ?? null"
                 v-model:label="editState.label"
                 v-model:description="editState.description"
                 v-model:diagnosisInstructions="editState.diagnosisInstructions"
