@@ -1301,7 +1301,7 @@ const moreMenuItems = computed(() => {
                 mode="edit"
                 :has-token="hasScmToken"
                 :project-id="Number(projectId)"
-                :capabilities="(project as any)?.capabilities ?? null"
+                :capabilities="project?.capabilities ?? null"
                 v-model:label="editState.label"
                 v-model:description="editState.description"
                 v-model:diagnosisInstructions="editState.diagnosisInstructions"

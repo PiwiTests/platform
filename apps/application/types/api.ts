@@ -353,6 +353,10 @@ export interface ProjectWithTestRuns {
   createdAt: Date;
   updatedAt: Date;
   testRuns: TestRunSummary[];
+  /** Stored per-project capability decisions, for the edit form's overrides. */
+  capabilities?: Partial<
+    Record<import('#shared/capabilities').CapabilityId, import('#shared/capabilities').ProjectDecision>
+  > | null;
 }
 
 /**
@@ -370,6 +374,10 @@ export interface ProjectDetails {
   ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
   color?: string | null;
   tags?: TagInfo[];
+  /** Stored per-project capability decisions, for the edit form's overrides. */
+  capabilities?: Partial<
+    Record<import('#shared/capabilities').CapabilityId, import('#shared/capabilities').ProjectDecision>
+  > | null;
 }
 
 // ============================================================================
