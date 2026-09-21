@@ -298,14 +298,14 @@ export interface TraceResourceSnapshot {
     url?: string;
     headers?: HarHeader[];
     bodySize?: number;
-    postData?: { mimeType?: string; text?: string; _sha1?: string };
+    postData?: { mimeType?: string; text?: string; _sha1?: string; _file?: string };
   };
   response?: {
     status?: number;
     statusText?: string;
     headers?: HarHeader[];
     bodySize?: number;
-    content?: { size?: number; mimeType?: string; _sha1?: string };
+    content?: { size?: number; mimeType?: string; _sha1?: string; _file?: string };
     _transferSize?: number;
     _failureText?: string;
   };
@@ -336,6 +336,21 @@ export function parseNetworkTexts(texts: string[]): TraceResourceSnapshot[] {
     }
   }
   return snapshots;
+}
+
+/**
+ * The stored resource name a network body carrier (`response.content` or
+ * `request.postData`) points at, or null when it holds none. Older v8 traces
+ * carry the bare content hash as `_sha1`; v9 traces (Playwright 1.63+) renamed
+ * it to `_file` and prefix it with `resources/`. Stripping that prefix yields
+ * the same bare name both readers key on (`project-<id>/trace-resources/<name>`
+ * in the server pool, `resources/<name>` in the demo ZIP), so this normalizes
+ * both spellings, exactly like `trace-events.ts` does for DOM-snapshot assets.
+ */
+function resourceBodyName(carrier: { _sha1?: string; _file?: string } | undefined): string | null {
+  if (carrier?._sha1) return carrier._sha1;
+  if (carrier?._file) return carrier._file.replace(/^resources\//, '');
+  return null;
 }
 
 /**
@@ -451,7 +466,7 @@ export function buildTraceNetwork(
       absStart <= (windowEndAbs ?? Number.POSITIVE_INFINITY) &&
       absStart + duration >= windowStartAbs;
 
-    const bodySha1 = content._sha1 ?? null;
+    const bodySha1 = resourceBodyName(content);
     const postDataText = request.postData?.text;
 
     return {
@@ -515,10 +530,10 @@ export function inferResourceType(mimeType: string | undefined): string | undefi
 }
 
 /**
- * Match a client-requested body id against the trace's own `_sha1` set —
- * request bodies can only address resources this trace's network stream
- * references, with or without the stored extension. Returns the stored
- * resource name plus its mimeType, or null.
+ * Match a client-requested body id against the resource names the trace's own
+ * network stream references (`_sha1` in v8 traces, `_file` in v9) — request
+ * bodies can only address resources this trace carries, with or without the
+ * stored extension. Returns the stored resource name plus its mimeType, or null.
  */
 export function matchNetworkBodySha1(
   snapshots: TraceResourceSnapshot[],
@@ -526,12 +541,12 @@ export function matchNetworkBodySha1(
 ): { name: string; mimeType?: string } | null {
   for (const snapshot of snapshots) {
     for (const carrier of [snapshot.response?.content, snapshot.request?.postData] as Array<
-      { _sha1?: string; mimeType?: string } | undefined
+      { _sha1?: string; _file?: string; mimeType?: string } | undefined
     >) {
-      const sha1 = carrier?._sha1;
-      if (!sha1) continue;
-      if (sha1 === requested || sha1.split('.')[0] === requested.split('.')[0]) {
-        return { name: sha1, mimeType: carrier?.mimeType };
+      const name = resourceBodyName(carrier);
+      if (!name) continue;
+      if (name === requested || name.split('.')[0] === requested.split('.')[0]) {
+        return { name, mimeType: carrier?.mimeType };
       }
     }
   }
