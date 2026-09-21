@@ -7,11 +7,9 @@ lang: en-US
 
 <Needs reporter />
 
-Piwi Dashboard exposes a built-in **Model Context Protocol (MCP) server** at `/mcp`. Any MCP-compatible AI client (Claude Code, Cursor, VS Code Copilot, Claude Desktop, Gemini CLI, Windsurf, Continue, …) can connect to it and query your test results, failure clusters, and AI diagnoses directly — with no extra deployment.
+Piwi Dashboard exposes a built-in **Model Context Protocol (MCP) server** at `/mcp`, served from the same Nitro process as the dashboard — nothing extra to install or run. Any MCP-compatible AI client (Claude Code, Cursor, VS Code Copilot, Claude Desktop, Gemini CLI, Windsurf, Continue, …) can connect to it and query your test results, failure clusters, and AI diagnoses directly.
 
-The MCP server is served from the same Nitro process as the dashboard. There is nothing extra to install or run.
-
-> **In-app setup page:** While the dashboard is running, open the **MCP server** page (sidebar → MCP server) for a live setup guide with auto-filled snippets for each client.
+> **In-app setup page:** open the **MCP server** page (sidebar → MCP server) for a live setup guide with auto-filled snippets.
 
 ---
 
@@ -52,7 +50,7 @@ The server exposes 46 tools — mostly read-only, plus a few write/triage tools 
 | `get_locator_healing` | Ranked alternative locators for a failing case — the recommended durable fix plus full alternatives |
 | `list_case_traces` | Playwright trace files for an execution, with download paths |
 | `get_case_screenshots` | Screenshots for an execution — metadata by default, or base64 image data on request |
-| `explain_failure` | **One-call evidence bundle** for a failure: one-line headline + error + steps + console + deterministic [clues](/features/evidence#clues) + locator fix + [page diff](/features/evidence#page-diff) + diagnosis context |
+| `explain_failure` | **One-call evidence bundle** for a failure: headline, error, steps, console, deterministic [clues](/features/evidence#clues), locator fix, [page diff](/features/evidence#page-diff) and diagnosis context |
 | `list_links` | External links (Jira/PR/issue) attached to a run, execution, test case, or failure cluster |
 
 **Test selections** *([named, data-driven test subsets](/guide/test-selection))*
@@ -62,17 +60,17 @@ The server exposes 46 tools — mostly read-only, plus a few write/triage tools 
 | `list_selections` | A project's saved selections plus the built-in `failed` / `quarantine-free` |
 | `resolve_selection` | Resolve a saved (or built-in) selection to its matching tests and a ready-to-run `playwright test` command — the verify command after a fix |
 | `preview_selection` | Resolve an ad-hoc selection definition without saving it — the builder's dry-run |
-| `suggest_selections` | Suggested `slow`/`feature` tags and a mined smoke suite (budgeted set cover over observed routes), each with its evidence |
-| `analyze_selections` | Per-selection health and drift (what each resolves to now vs. what its last run recorded) plus the tests no selection covers |
+| `suggest_selections` | Suggested `slow`/`feature` tags and a mined smoke suite, each with its evidence |
+| `analyze_selections` | Per-selection health and drift, plus the tests no selection covers |
 
 **Failure clusters**
 
 | Tool | Description |
 |------|-------------|
 | `list_clusters` | Failure clusters grouped by error fingerprint |
-| `list_open_clusters` | Open clusters across *all* projects, ranked by occurrences — a triage queue; an optional `queue` filter focuses one inbox queue (regressions, fixes that didn't hold, quarantines ready, merge suggestions, or yours) |
+| `list_open_clusters` | Open clusters across *all* projects, ranked by occurrences — a triage queue; an optional `queue` filter focuses one inbox queue |
 | `get_cluster` | Cluster detail with affected tests and diagnosis summary |
-| `get_fix_plan` | **One-call fix plan** for a cluster: diagnosis with its validated patch, ranked locator replacements with the file and line to edit, failing tests, owning team, the command that verifies the fix, a `reproduce` recipe (checkout, pinned install and the exact test command, in bash and PowerShell), a generated `bisect` script between the last green and the failing commit, and `fixedBefore` — the resolved clusters this one resembles, each with the resolving commit, how long it stayed open, the triage note and why it matched |
+| `get_fix_plan` | **One-call fix plan** for a cluster: diagnosis with its validated patch, ranked locator replacements with the file and line to edit, failing tests, owning team, the verify command, a `reproduce` recipe (bash and PowerShell), a generated `bisect` script, and `fixedBefore` — the resolved clusters this one resembles |
 | `get_cluster_diagnosis` | Full AI diagnosis: root cause, evidence, suggested fix |
 | `get_cluster_context` | Full AI evidence context (errors, steps, console logs, SCM diff) — the same data the built-in diagnosis AI receives |
 
@@ -84,7 +82,7 @@ The server exposes 46 tools — mostly read-only, plus a few write/triage tools 
 | `run_cluster_diagnosis` | Trigger an AI diagnosis and return the result |
 | `set_cluster_base_commit` | Pin the baseline commit for a cluster's SCM-diff context |
 | `submit_diagnosis_feedback` | Thumbs up/down on a diagnosis |
-| `create_test_function` | Register a page-object method or helper in a project's [test functions catalog](./test-functions) from source you (the calling agent) read yourself — no AI call happens on the server side, this only validates and persists |
+| `create_test_function` | Register a page-object method or helper in a project's [test functions catalog](./test-functions) from source you read yourself — the server only validates and persists |
 | `create_issue` | File a Jira issue from a cluster or execution ([issue tracking](/features/issue-tracking)) |
 
 **Source control** *(requires an SCM token — per-project or global)*
@@ -94,9 +92,19 @@ The server exposes 46 tools — mostly read-only, plus a few write/triage tools 
 | `get_repo_commits` | Recent commits for a project's repository (SHA, message, author, date) |
 | `get_repo_diff` | Changed files with patches for a single commit — inspect what a suspect commit changed |
 
-All tools return **token-optimized** compact JSON: null fields are omitted, errors are truncated, and large blobs (browser configs, metadata) are flattened to short strings. List tools return `{ items, nextCursor }` — pass `nextCursor` back (when non-null) to page.
+All tools return **token-optimized** compact JSON: null fields omitted, errors truncated, large blobs flattened to short strings. List tools return `{ items, nextCursor }` — pass `nextCursor` back (when non-null) to page.
 
 A tool that fails (bad argument, missing entity, out-of-scope access) returns a normal tool result with `isError: true` and a human-readable message in its text content — not a JSON-RPC protocol error. Protocol errors are reserved for transport-level problems (unknown method, unknown tool, malformed request).
+
+### Tool modules
+
+Every tool belongs to one **module** — `core`, `workflow`, `healing` or `agents` — the coarse groups Setup and the Home wizard ask about. Declining a module drops its tools from `tools/list` and `tools/call`; undecided and configured capabilities keep their tools, so an upgrade never removes one. Append `?modules=core` (a comma-separated set) to the MCP URL to narrow the list for a tighter token budget:
+
+```
+<your-piwi-url>/mcp?modules=core
+```
+
+Unknown module names are ignored, and narrowing never re-enables a declined tool. The `/mcp` page groups the catalog by module and offers a **Core tools only** switch that adds `?modules=core` to the URL and snippets; the core module is the set listed under it there.
 
 ### Access scope
 
@@ -120,7 +128,7 @@ When `PIWI_AUTH_ENABLED` is not set, any request is accepted without a key.
 
 ## Transport
 
-The server implements the **MCP Streamable HTTP transport**. On `initialize` it negotiates the protocol version, echoing the client's requested version when supported (`2025-06-18`, `2025-03-26`, `2024-11-05`) and otherwise replying with the latest it implements. Requests and responses are standard JSON-RPC 2.0 messages over `POST /mcp`. No SSE or WebSocket is required for these tools. (`GET /mcp` serves the human setup page, not a stream.)
+The server implements the **MCP Streamable HTTP transport**. On `initialize` it negotiates the protocol version, echoing the client's requested version when supported (`2025-06-18`, `2025-03-26`, `2024-11-05`), else the latest it implements. Requests and responses are standard JSON-RPC 2.0 messages over `POST /mcp`. No SSE or WebSocket is required for these tools. (`GET /mcp` serves the human setup page, not a stream.)
 
 ---
 
@@ -270,7 +278,7 @@ Alongside its tools, the server exposes an MCP **prompt** — a ready-made instr
 |--------|--------------|
 | `setup_piwi` | Generates a complete, ready-to-run setup for a Playwright project that is not yet reporting here. |
 
-`setup_piwi` is **server-aware**: because the dashboard builds it, it fills in *this* instance's real URL, whether authentication is required, and the projects that already exist — facts a static copy-paste prompt can't know. Pick it in your MCP client (optionally passing a `projectName`), and the agent gets a personalized plan: run `npx @piwitests/reporter init` against this dashboard, handle the API key if auth is on, rewire the specs, and verify a run lands. It pairs with the `setup-piwi` skill below — the prompt needs no install but requires the MCP connection; the skill works offline once installed.
+`setup_piwi` is **server-aware**: the dashboard fills in *this* instance's URL, whether authentication is required, and the projects that already exist — facts a static copy-paste prompt can't know. Pick it in your MCP client (optionally passing a `projectName`), and the agent gets a personalized plan: run `npx @piwitests/reporter init` against this dashboard, handle the API key if auth is on, rewire the specs, and verify a run lands. It pairs with the `setup-piwi` skill below — the prompt needs no install but requires the MCP connection; the skill works offline once installed.
 
 ## Agent skills
 
