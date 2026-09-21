@@ -166,6 +166,9 @@ const PROJECTS = [
     description: 'Mobile Safari browser compatibility tests',
     created_at: ts('2025-04-01'),
     updated_at: ts('2025-04-20T12:00:00'),
+    // A project-level decline with no evidence behind it, so the demo shows the
+    // `declined` state: the Timeline tab offers no "Add marker" control here.
+    capabilities: { markers: 'declined' },
   },
   {
     id: 5,
