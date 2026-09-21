@@ -14,6 +14,13 @@ const props = defineProps<{
   runs: TestRunSummary[];
 }>();
 
+// Slow endpoints ride on the capture fixtures. A project that declined them
+// drops the block; an undecided project gets one naming line instead of a pitch;
+// an active project falls through to the table or its plain empty state.
+const { state: capState } = useProjectCapabilities(Number(props.projectId));
+const fixturesDeclined = computed(() => capState('fixtures') === 'declined');
+const fixturesUndecided = computed(() => capState('fixtures') === 'undecided');
+
 const runId = defineModel<number | null>('runId', { default: null });
 
 // USelect wants number | undefined; the model is number | null.
@@ -49,7 +56,7 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
 </script>
 
 <template>
-  <UCard data-shot="slow-endpoints">
+  <UCard v-if="!fixturesDeclined" data-shot="slow-endpoints">
     <template #header>
       <div class="flex items-center justify-between gap-3 flex-wrap">
         <div>
@@ -157,12 +164,10 @@ const endpointColumns: TableColumn<EndpointSummary>[] = [
       </UTable>
     </TableScroller>
 
-    <FeatureUnavailable
-      v-else
-      icon="i-lucide-wifi-off"
-      title="No network requests captured"
-      text="Slow endpoints need the Piwi capture fixtures — extend your Playwright test with piwiFixtures and request timing rides along with every run."
-      doc="capture-fixtures"
-    />
+    <p v-else-if="fixturesUndecided" class="py-6 text-sm text-muted">
+      Network timing is not captured for this project.
+    </p>
+
+    <EmptyState v-else icon="i-lucide-wifi-off" text="No network requests captured for this run." />
   </UCard>
 </template>

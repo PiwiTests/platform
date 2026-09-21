@@ -6,6 +6,7 @@ import type { FailureCluesResult } from '#shared/handlers/test-cases';
 import type { ComponentPublicInstance } from 'vue';
 import type { FailureClusterDetail, TraceInfo } from '~~/types/api';
 import type { FixPlan } from '#shared/fix-plan.types';
+import type { LocatorHealingResult } from '#shared/locator-healing.types';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
 import type { FixSectionKey } from '~/components/shared/Toolbox.vue';
 import type { RerunInfo } from '~/composables/useCiRerun';
@@ -271,13 +272,34 @@ function refresh() {
 const hasLocatorPanel = computed(() =>
   Boolean(clusterVerdict.value?.isLocatorResolutionFailure && affectedCases.value[0]?.recentTestRunsCaseId),
 );
+
+// Hoist the healing fetch (shared with the panel by key) so the Locator fix
+// section appears only when there is something to show, and never when healing
+// is hidden for this project.
+const locatorCaseId = affectedCases.value[0]?.recentTestRunsCaseId ?? null;
+const { data: clusterLocatorHealing } = await useFetch<LocatorHealingResult>(
+  () => `/api/test-run-cases/${locatorCaseId}/locator-healing`,
+  { lazy: true, immediate: Boolean(locatorCaseId) && hasLocatorPanel.value, key: `locator-healing-${locatorCaseId}` },
+);
+const clusterLocatorHasData = computed(() => {
+  const h = clusterLocatorHealing.value;
+  return (
+    !!h &&
+    h.source !== 'none' &&
+    !!(h.fromElementMatch?.length || h.fromPriorSuccess?.length || h.fromAriaSnapshot?.length)
+  );
+});
+const { isHidden: clusterCapHidden } = useProjectCapabilities(cluster.value?.project?.id ?? 0);
+const showLocatorFix = computed(
+  () => hasLocatorPanel.value && clusterLocatorHasData.value && !clusterCapHidden('locator-healing'),
+);
 const showVerify = computed(() => Boolean(fixPlan.value?.verify?.command));
 const showReproduce = computed(() => Boolean(fixPlan.value?.reproduce?.steps?.length));
 const fixedBefore = computed(() => fixPlan.value?.fixedBefore ?? []);
 const fixSections = computed<FixSectionKey[]>(() => {
   const s: FixSectionKey[] = ['diagnosis'];
   if (fixedBefore.value.length) s.push('fixed-before');
-  if (hasLocatorPanel.value) s.push('locator-fix');
+  if (showLocatorFix.value) s.push('locator-fix');
   if (showVerify.value) s.push('verify');
   if (showReproduce.value) s.push('reproduce');
   if (fixPlan.value) s.push('fix-plan');

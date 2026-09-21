@@ -11,6 +11,7 @@
 import type { NetworkRequest, PerformanceStep, TraceInfo, WebVitals } from '~~/types/api';
 import { getPerformanceHints } from '~/utils/performance-hints';
 import { resolveEvidenceState, type EvidenceState } from '#shared/evidence-state';
+import type { CapabilityState } from '#shared/capabilities';
 import type { HelpTopicKey } from '~/utils/help-content';
 import { EVIDENCE_SECTION_TAB, type EvidenceTabValue } from '~/utils/evidence-sections';
 
@@ -29,12 +30,28 @@ const props = defineProps<{
   defaultHint?: { section: string | null; strength: 'strong' | 'medium' | 'weak' | null };
   /** Inline-help topic for the card header. */
   help?: HelpTopicKey;
+  /**
+   * The page's contextual nudge already offers the fixtures decision under the
+   * headline, so the footer sentence stays off to avoid saying it twice.
+   */
+  suppressFixturesFooter?: boolean;
 }>();
 
 type TabValue = EvidenceTabValue;
 
 const runId = computed<number | null>(() => props.testCase?.testRun?.id ?? null);
 const projectKey = computed(() => props.testCase?.testRun?.project?.id ?? undefined);
+
+// The project's resolved capability states drive which fixture-backed tabs show
+// and whether the footer offers to decline the capture fixtures. The execution
+// arrives already fetched, so the project id is known at setup.
+const {
+  state: projectCapState,
+  canDecide,
+  decide: decideProject,
+} = useProjectCapabilities(props.testCase?.testRun?.project?.id ?? 0);
+const { decide: decideInstance } = useInstanceCapabilities();
+const fixturesState = computed<CapabilityState>(() => projectCapState('fixtures'));
 const projectName = computed(() => props.testCase?.testRun?.project?.name ?? undefined);
 const testRunsCaseId = computed<number>(() => Number(props.testCase?.id ?? props.testCase?.executionId ?? 0));
 const status = computed<string | null>(() => props.testCase?.status ?? null);
@@ -76,6 +93,9 @@ const mk = (hasData: boolean, traced?: boolean) => ({
   hasData,
   source: traced ? ('trace' as const) : ('fixture' as const),
   fixturesActive: fixturesActive.value,
+  // The fixture-backed cards read the project's fixtures decision so a declined
+  // project names the decision rather than offering to switch it on.
+  capability: fixturesState.value,
 });
 const consoleState = computed(() =>
   resolveEvidenceState('console', mk(consoleLogs.value.length > 0, evidenceSources.value?.console === 'trace')),
@@ -122,40 +142,67 @@ interface TabDef {
   hasData: boolean;
   count: number | null;
 }
-const tabs = computed<TabDef[]>(() => [
-  { value: 'timeline', label: 'Timeline', icon: 'i-lucide-activity', hasData: timelineHasData.value, count: null },
-  {
-    value: 'attempts',
-    label: 'Attempts',
-    icon: 'i-lucide-repeat',
-    hasData: hasMultipleAttempts.value,
-    count: hasMultipleAttempts.value ? attemptsList.value.length : null,
-  },
-  { value: 'screen', label: 'Screen', icon: 'i-lucide-camera', hasData: screenHasData.value, count: null },
-  { value: 'source', label: 'Source', icon: 'i-lucide-file-code-2', hasData: sourceHasData.value, count: null },
-  {
-    value: 'network',
-    label: 'Network',
-    icon: 'i-lucide-arrow-left-right',
-    hasData: networkRequests.value.length > 0 || props.hasTrace,
-    count: networkRequests.value.length || null,
-  },
-  {
-    value: 'console',
-    label: 'Console',
-    icon: 'i-lucide-terminal',
-    hasData: consoleLogs.value.length > 0,
-    count: consoleLogs.value.length || null,
-  },
-  { value: 'state', label: 'State', icon: 'i-lucide-database', hasData: stateHasData.value, count: null },
-  {
-    value: 'performance',
-    label: 'Performance',
-    icon: 'i-lucide-gauge',
-    hasData: performanceHasData.value,
-    count: null,
-  },
-]);
+
+// A fixture-backed tab shows only when its evidence is present or the fixtures
+// ran and simply found nothing. A never-captured, declined or not-applicable
+// state removes the tab from the strip rather than dimming it — data always wins
+// in the resolver, so the tab returns on its own once evidence arrives.
+const FIXTURE_TAB_STATE: Partial<Record<TabValue, ComputedRef<EvidenceState>>> = {
+  network: networkState,
+  console: consoleState,
+  state: appStateState,
+  performance: webVitalsState,
+};
+function tabShown(value: TabValue): boolean {
+  const st = FIXTURE_TAB_STATE[value];
+  if (!st) return true;
+  return st.value.state === 'present' || st.value.state === 'nothing-happened';
+}
+
+const tabs = computed<TabDef[]>(() =>
+  (
+    [
+      { value: 'timeline', label: 'Timeline', icon: 'i-lucide-activity', hasData: timelineHasData.value, count: null },
+      {
+        value: 'attempts',
+        label: 'Attempts',
+        icon: 'i-lucide-repeat',
+        hasData: hasMultipleAttempts.value,
+        count: hasMultipleAttempts.value ? attemptsList.value.length : null,
+      },
+      { value: 'screen', label: 'Screen', icon: 'i-lucide-camera', hasData: screenHasData.value, count: null },
+      { value: 'source', label: 'Source', icon: 'i-lucide-file-code-2', hasData: sourceHasData.value, count: null },
+      {
+        value: 'network',
+        label: 'Network',
+        icon: 'i-lucide-arrow-left-right',
+        hasData: networkRequests.value.length > 0 || props.hasTrace,
+        count: networkRequests.value.length || null,
+      },
+      {
+        value: 'console',
+        label: 'Console',
+        icon: 'i-lucide-terminal',
+        hasData: consoleLogs.value.length > 0,
+        count: consoleLogs.value.length || null,
+      },
+      { value: 'state', label: 'State', icon: 'i-lucide-database', hasData: stateHasData.value, count: null },
+      {
+        value: 'performance',
+        label: 'Performance',
+        icon: 'i-lucide-gauge',
+        hasData: performanceHasData.value,
+        count: null,
+      },
+    ] satisfies TabDef[]
+  ).filter((tab) => tabShown(tab.value)),
+);
+
+// The footer names the sources the capture fixtures would add, shown only while
+// the project has not decided on them. A declined project drops it entirely (the
+// tabs are already gone), and the page's nudge suppresses it when it offers the
+// same decision under the headline.
+const showFixturesFooter = computed(() => !props.suppressFixturesFooter && fixturesState.value === 'undecided');
 
 function computeDefault(): TabValue {
   // A passing execution has no failure to lead with — open on the Timeline.
@@ -189,6 +236,14 @@ function computeDefault(): TabValue {
 }
 
 const activeTab = ref<TabValue>(computeDefault());
+
+// A fixture-backed default can be filtered out (the clue cited a source the
+// project never captured); fall back to the first tab that is actually shown.
+watch(tabs, (list) => {
+  if (!list.some((tab) => tab.value === activeTab.value)) {
+    activeTab.value = list[0]?.value ?? 'timeline';
+  }
+});
 
 // The Screen tab holds two views: the screenshot evidence and the structural
 // page diff. The toggle appears once either page-diff card signals it has a
@@ -270,6 +325,20 @@ function revealSection(sectionId: string): boolean {
     if (wrapKey) WRAP_REF[wrapKey]?.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
   return true;
+}
+
+// The footer's two decline controls; both write a `declined` decision, one per
+// level, and the resolver hides the sources everywhere on the next read.
+const deciding = ref(false);
+async function declineFixtures(level: 'project' | 'instance') {
+  if (deciding.value) return;
+  deciding.value = true;
+  try {
+    if (level === 'project') await decideProject('fixtures', 'declined');
+    else await decideInstance('fixtures', 'declined');
+  } finally {
+    deciding.value = false;
+  }
 }
 
 defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.value = t) });
@@ -482,6 +551,29 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           :state="webVitalsState"
         />
       </div>
+    </div>
+
+    <!-- One line naming the sources the capture fixtures would add, with the
+         decline controls for an administrator. Gone once the project decides. -->
+    <div
+      v-if="showFixturesFooter"
+      data-shot="evidence-fixtures-footer"
+      class="border-t border-default px-3 py-2.5 sm:px-4 text-xs text-muted"
+    >
+      <p class="leading-relaxed">
+        Network, console, state and performance are not captured for this project.
+        <template v-if="canDecide">
+          <NuxtLink to="/setup" :class="SENTENCE_LINK_CLASS">Add fixtures</NuxtLink>
+          <span aria-hidden="true"> · </span>
+          <button type="button" :class="SENTENCE_LINK_CLASS" :disabled="deciding" @click="declineFixtures('project')">
+            Not for this project
+          </button>
+          <span aria-hidden="true"> · </span>
+          <button type="button" :class="SENTENCE_LINK_CLASS" :disabled="deciding" @click="declineFixtures('instance')">
+            Not for this instance
+          </button>
+        </template>
+      </p>
     </div>
   </section>
 </template>
