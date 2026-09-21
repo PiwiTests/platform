@@ -11,6 +11,7 @@
  * can be bundled into the browser. Behavior (the handlers) lives next to the
  * server; only the pure data lives here.
  */
+import type { CapabilityId, CapabilityModule } from '#shared/capabilities';
 import { EXTRACT_SYSTEM_PROMPT } from './test-function-extract-prompt';
 
 export interface PaginatedResponse<T> {
@@ -21,6 +22,14 @@ export interface PaginatedResponse<T> {
 export interface McpToolDef {
   name: string;
   description: string;
+  /** The preset a tool belongs to; `?modules=` on the MCP URL narrows the list to a set of these. */
+  module: CapabilityModule;
+  /**
+   * The declinable capability a tool depends on, when it depends on one. The
+   * route drops a tool from `tools/list` and `tools/call` when this capability
+   * is declined at instance level; a tool with no `capability` is never dropped.
+   */
+  capability?: CapabilityId;
   // `required` is `readonly` so the catalog below can be declared `as const`
   // (needed to derive the `McpToolName` union) while still satisfying this type.
   inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: readonly string[] };
@@ -29,12 +38,14 @@ export interface McpToolDef {
 export const MCP_TOOL_DEFS = [
   {
     name: 'list_projects',
+    module: 'core',
     description:
       'List all projects with stats: total runs, test cases, latest run status and branch. Use this first to discover available projects and their IDs.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'get_project',
+    module: 'core',
     description:
       'Get project details and its recent test runs with pass/fail counts. Results are paginated — use pageSize and cursor for the runs list.',
     inputSchema: {
@@ -49,6 +60,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'list_runs',
+    module: 'core',
     description: 'List test runs for a project with filters.',
     inputSchema: {
       type: 'object',
@@ -68,6 +80,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_run',
+    module: 'core',
     description:
       'Get a test run summary plus its test cases (paginated), with status, truncated error text, and failure cluster IDs. Filter by status and page with pageSize/cursor.',
     inputSchema: {
@@ -88,6 +101,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'list_failed_cases',
+    module: 'core',
     description:
       'List failed and timed-out test cases across recent runs for a project. Each item carries a one-line headline explaining the failure ahead of the truncated error.',
     inputSchema: {
@@ -103,6 +117,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'list_flaky_tests',
+    module: 'core',
     description: 'List flaky tests for a project with flakiness scores.',
     inputSchema: {
       type: 'object',
@@ -120,6 +135,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_test_case',
+    module: 'core',
     description:
       'Get test case details including aggregated pass/fail stats, flakiness metrics, and recent executions (paginated). Use testCaseId (stable identity), not the per-run caseId.',
     inputSchema: {
@@ -140,6 +156,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'list_clusters',
+    module: 'core',
     description: 'List failure clusters for a project. Each cluster groups similar failures by error fingerprint.',
     inputSchema: {
       type: 'object',
@@ -158,6 +175,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_cluster',
+    module: 'core',
     description:
       'Get full details for a failure cluster including all affected test cases, a compact diagnosis summary, and locator healing suggestions for up to 5 affected cases. Each healing entry includes the failing locator, the recommended fix, and the number of alternatives available. Use get_cluster_diagnosis for the full diagnosis text, or get_cluster_context for the raw AI evidence.',
     inputSchema: {
@@ -170,6 +188,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_fix_plan',
+    module: 'core',
     description:
       'Everything needed to fix one failure cluster, in a single answer: the diagnosis and its validated patch, ranked locator replacements each with the exact file and line and a ready-to-apply `edit` (the rewritten line plus a unified diff `git apply` accepts), the failing tests, the owning team, the command that verifies the work, a `reproduce` recipe (checkout, pinned install, browser install and the exact test command as `{ bash, powershell }` steps), and a `bisect` script (`git bisect` between the last green and the failing commit, or `available: false` with a reason). `verify.expectation` states what the dashboard records once those tests pass, so you can confirm the fix landed rather than guessing. It also carries the `story`, the `situation` sentence and the computed `nextStep` for the cluster. Prefer this over assembling get_cluster + get_cluster_diagnosis + get_locator_healing yourself.',
     inputSchema: {
@@ -182,6 +201,8 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_cluster_diagnosis',
+    module: 'agents',
+    capability: 'ai',
     description:
       'Get the stored AI diagnosis for a failure cluster. Returns category, confidence, root cause, evidence, and suggested fix. Returns null if no diagnosis has been run yet.',
     inputSchema: {
@@ -194,6 +215,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_test_case_context',
+    module: 'core',
     description:
       'Get the AI evidence context for a specific test-run-case (execution scope). Use this when debugging a single test failure — it provides the execution-scoped evidence including steps, console, network, and SCM diff.',
     inputSchema: {
@@ -206,6 +228,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_case_screenshots',
+    module: 'core',
     description:
       'Get screenshots for a test-run-case. By default returns metadata only (name, type, size). Set content=true to include base64-encoded image data (max 3, capped at ~100 KB each). Call metadata-only first to discover what exists, then request content for the ones you need.',
     inputSchema: {
@@ -219,6 +242,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_cluster_context',
+    module: 'core',
     description:
       'Get the full AI evidence context for a failure cluster — the same data sent to the diagnosis AI. Includes error samples, stack traces, test steps, console logs, network failures, ARIA snapshots, SCM diff (changed files since last green run), and a per-section breakdown with char counts and truncation flags. This is the richest available evidence for debugging a failure.',
     inputSchema: {
@@ -240,6 +264,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'search_test_cases',
+    module: 'core',
     description:
       "Search test cases by title or file path within a project. Accepts a free-text query and returns matching test cases with basic stats. Use this to find a test case when you don't know its ID.",
     inputSchema: {
@@ -255,6 +280,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_test_run_case',
+    module: 'core',
     description:
       'Get a single test-run-case execution record with a one-line failure headline, the full (untruncated) error text plus steps, console logs, web vitals, and ARIA snapshot. Use include to fetch only the blobs you need. The ID is the executionId from get_run.cases or testRunsCaseId from get_cluster.affectedTestCases.',
     inputSchema: {
@@ -277,6 +303,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'list_recent_activity',
+    module: 'core',
     description:
       'List the most recent test runs across all projects. No projectId required — returns a cross-project view of recent CI activity. Paginated by startTime descending.',
     inputSchema: {
@@ -289,6 +316,8 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_repo_commits',
+    module: 'core',
+    capability: 'scm',
     description:
       "List recent commits for a project's repository. Requires SCM token configuration (per-project or global). Returns commit details (SHA, message, author, date).",
     inputSchema: {
@@ -303,6 +332,8 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_repo_diff',
+    module: 'core',
+    capability: 'scm',
     description:
       "Get the diff (changed files with patches) for a single commit in a project's repository. Requires SCM token configuration (per-project or global). Useful for inspecting what code changed in a specific commit suspected of causing a failure.",
     inputSchema: {
@@ -316,6 +347,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_run_insights',
+    module: 'core',
     description:
       'Compare a run to its baseline: pass-rate delta, new regressions, recurrences, recovered tests, new flaky tests, biggest perf improvements/regressions, worker imbalance, and newly opened clusters. The baseline is the last passing run in the same environment, on the same branch, else the branch it forked from, else any; `baseline` names why it was chosen. Use this to answer "what changed?" and "did my fix work?".',
     inputSchema: {
@@ -333,6 +365,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_spec_health',
+    module: 'core',
     description:
       'Per-spec-file health for a project: pass rate, flaky rate, failure count, test count, and average duration grouped by spec-file prefix over the last N days. Use to find which areas of the suite are unhealthy.',
     inputSchema: {
@@ -346,6 +379,8 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_slow_tests',
+    module: 'core',
+    capability: 'fixtures',
     description:
       'Slowest test cases in a project by average duration, with max/min and trend direction across recent runs. Use to target performance work.',
     inputSchema: {
@@ -359,6 +394,8 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_performance_trend',
+    module: 'core',
+    capability: 'fixtures',
     description:
       'Time series of run duration, average test duration, and p90 test duration for a project. Use to answer "is the suite getting slower?".',
     inputSchema: {
@@ -372,6 +409,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_test_stability_trend',
+    module: 'core',
     description:
       'Time-series stability for a single test case: flaky rate, pass rate, and average duration bucketed over its recent execution history. Use to answer "is this test getting flakier?".',
     inputSchema: {
@@ -385,6 +423,8 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_network_requests',
+    module: 'core',
+    capability: 'fixtures',
     description:
       "A run's network requests aggregated by method + normalized route, sorted by average duration, with status codes and captured backend server logs. Use to pin a UI failure on a slow or failing endpoint.",
     inputSchema: {
@@ -395,6 +435,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_failure_groups',
+    module: 'core',
     description:
       "One run's failures grouped by failure cluster, with per-group affected cases and worker correlation. Run-scoped counterpart to list_clusters.",
     inputSchema: {
@@ -405,6 +446,8 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_locator_healing',
+    module: 'healing',
+    capability: 'locator-healing',
     description:
       'Ranked alternative locators for a failing test-run-case: the failing locator, the recommended durable fix, and the full alternative lists (from prior success, element match, and ARIA snapshot). Includes `location` (file:line:col), the failing `sourceLine`, and a ready-to-apply `edit` — the rewritten line plus a unified diff `git apply` accepts. Returns `{ applicable: false, reason }` when the locator resolved and the failure came after (or the error is a navigation error) — do not rewrite the selector then. Use when fixing a broken selector.',
     inputSchema: {
@@ -415,6 +458,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'search',
+    module: 'core',
     description:
       'Global search across all in-scope projects, runs (by label or numeric id), and test cases (by title). Use to find a run by its label or locate an entity across projects.',
     inputSchema: {
@@ -425,6 +469,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'list_case_traces',
+    module: 'core',
     description:
       'List Playwright trace files for a test-run-case, with a download path for each. Fetch the bytes via GET /api/files/<path>.',
     inputSchema: {
@@ -435,6 +480,8 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'list_links',
+    module: 'workflow',
+    capability: 'integrations',
     description:
       'List external entity links (Jira, GitHub PR/issue, etc.) attached to a run, test-run-case, test case, or failure cluster, with provider and unfurled status.',
     inputSchema: {
@@ -452,6 +499,8 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'create_issue',
+    module: 'workflow',
+    capability: 'integrations',
     description:
       "File a Jira issue from a failure cluster or a failing execution, with the fix plan as its body — the same ticket the dashboard's Create issue button produces. The issue is deduped by cluster, so calling twice for the same cluster returns the existing action rather than a second ticket. Returns the issue { key, url } and any `existing` issues that already track the cluster (a pinned link, a matching label, or a fixed-before match) so you can link instead of filing again. Requires a Jira connection and a project binding (project key and issue type). Reporter or administrator access.",
     inputSchema: {
@@ -480,11 +529,14 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'list_tags',
+    module: 'core',
+    capability: 'tags',
     description: 'List every tag defined on this instance (id, text, color). Tags are instance-wide, not per-project.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'get_project_test_catalog',
+    module: 'workflow',
     description:
       'The full test-case catalog for a project with aggregated pass/fail/flaky counts, average duration, and last status per test. Offset-paginated bulk companion to get_test_case.',
     inputSchema: {
@@ -514,6 +566,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'list_selections',
+    module: 'workflow',
     description:
       "A project's saved test selections plus the built-in ones (failed, quarantine-free). A selection is a named, declarative subset of the suite resolved from run history. Use resolve_selection to turn one into the tests to run.",
     inputSchema: {
@@ -524,6 +577,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'resolve_selection',
+    module: 'workflow',
     description:
       'Resolve a saved (or built-in) selection to the tests it currently matches and a ready-to-run `playwright test` command. Just landed a fix? Resolve the relevant selection to get the exact command that verifies it.',
     inputSchema: {
@@ -543,6 +597,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'preview_selection',
+    module: 'workflow',
     description:
       'Resolve an ad-hoc selection definition without saving it — the dry-run behind the builder. Supply a definition (include/exclude predicate groups, pins, budget, limit) and get back the matching tests, an estimate, warnings and a command. An unknown predicate is an error, not ignored.',
     inputSchema: {
@@ -565,6 +620,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'suggest_selections',
+    module: 'workflow',
     description:
       'Suggest tags and a smoke suite for a project from observed history (suggest-only, with evidence). Returns `slow` tags for duration outliers, `feature` tags from the route families tests hit, and a mined smoke suite — a budgeted set cover over observed routes, each pick buying fewer new routes than the last. The smoke suite lists any `splitLocks` (locks held by more than one pick), which plain `playwright test --shard` could split across shards — run it with `piwi run --shard` (lock-aware) instead. `budgetMs` caps the smoke suite (default 5 min).',
     inputSchema: {
@@ -578,6 +634,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'analyze_selections',
+    module: 'workflow',
     description:
       'Health and drift for a project\'s selections. For each: what it resolves to now (count, quarantined members, duration, warnings — including a `split-lock` warning when a lock is shared by more than one test, which Playwright\'s own `--shard` could split across shards) and whether that differs from what its most recent stamped run recorded — a silent drift a green build can hide. Plus coverage: how many tests are matched by no stored selection (the "unselected" gap), with a sample. Read-only.',
     inputSchema: {
@@ -588,6 +645,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'list_open_clusters',
+    module: 'core',
     description:
       'Open failure clusters across all in-scope projects, ranked by occurrences — a cross-project triage queue, the same one the dashboard failure inbox shows. Filter by status, or by an inbox `queue` to focus (regressions on the default branch, fixes that did not hold, quarantines ready for release, merge suggestions awaiting a decision, the ones needing a ticket, or the ones assigned to you). A `queue` filter implies open clusters and excludes snoozed ones. Paginate with pageSize/cursor.',
     inputSchema: {
@@ -606,12 +664,14 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'get_instance_stats',
+    module: 'core',
     description:
       'Instance-wide counts (projects, runs, test cases, executions, files) and total storage size. Admin only.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'explain_failure',
+    module: 'core',
     description:
       'One-call evidence bundle for a single failing execution: a one-line headline, the error, steps, console, ARIA snapshot, the recommended locator fix, the structural page diff against the last green sample, a screenshot count, and the AI diagnosis context. It also carries the `story` (the clues chained into one sentence when a known combination matches), the `situation` sentence (since when, on which commit, in how many tests, who owns it) and the computed `nextStep`. Prefer this over chaining get_test_run_case + get_locator_healing + get_test_case_context.',
     inputSchema: {
@@ -622,6 +682,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'set_cluster_status',
+    module: 'core',
     description:
       'Triage a failure cluster: set its status to open, resolved, or ignored with an optional note. Requires reporter or admin access. Use after fixing the underlying issue.',
     inputSchema: {
@@ -636,6 +697,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'set_cluster_base_commit',
+    module: 'core',
     description:
       'Pin the baseline commit SHA a cluster uses for its SCM-diff diagnosis context, so "what changed since green" is accurate. Requires reporter or admin access.',
     inputSchema: {
@@ -649,6 +711,8 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'submit_diagnosis_feedback',
+    module: 'agents',
+    capability: 'ai',
     description:
       'Record thumbs up/down feedback on a stored diagnosis, with an optional note. Requires reporter or admin access.',
     inputSchema: {
@@ -663,6 +727,8 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'run_cluster_diagnosis',
+    module: 'agents',
+    capability: 'ai',
     description:
       'Trigger an AI diagnosis for a failure cluster and return the result (category, confidence, root cause, suggested fix). Returns the existing completed diagnosis unless force is set. Requires reporter or admin access and a configured AI provider.',
     inputSchema: {
@@ -677,6 +743,7 @@ export const MCP_TOOL_DEFS = [
   },
   {
     name: 'create_test_function',
+    module: 'workflow',
     description: `Register a page-object method or helper in a project's test-function catalog, so the Piwi Picker browser extension (and its recorder) can match a live page or a recorded session against it and substitute a call to your own code instead of raw locator lines. This tool does not call an AI itself — you (the calling agent) read the function's real source in your own context and fill in these fields directly; the tool only validates the shape and persists it. Follow these extraction rules when deciding the field values:\n\n${EXTRACT_SYSTEM_PROMPT}\n\nThe fields below map onto that guidance one-for-one, plus "module" and "urlPattern", which no amount of code-reading can infer — supply them from where the function actually lives and, optionally, which page it applies to. Requires reporter or administrator access.`,
     inputSchema: {
       type: 'object',
@@ -802,6 +869,7 @@ export type McpToolName = (typeof MCP_TOOL_DEFS)[number]['name'];
 export const DESKTOP_MCP_TOOL_DEFS = [
   {
     name: 'import_local_report',
+    module: 'core',
     description:
       'Desktop app only. Import a Playwright blob report or trace .zip straight from a path on THIS machine into a Piwi project — the local server reads the file itself, nothing is uploaded. Use after a local or CI run to pull its results in for analysis (a hosted Piwi cannot read your disk). Idempotent by content hash: re-importing the same archive is a no-op. Returns the created/updated run.',
     inputSchema: {
@@ -817,6 +885,7 @@ export const DESKTOP_MCP_TOOL_DEFS = [
   },
   {
     name: 'read_local_source',
+    module: 'core',
     description:
       'Desktop app only. Read a source file from THIS machine — the current on-disk code, not the snippet Piwi captured at failure time, so you can fix against the real file. Pass a line to get a window around it (default ±40 lines); omit it to read the whole file (capped at ~256 KB). Returns the path, the 1-based line range and the text.',
     inputSchema: {
@@ -834,6 +903,8 @@ export const DESKTOP_MCP_TOOL_DEFS = [
   },
   {
     name: 'apply_locator_fix',
+    module: 'healing',
+    capability: 'locator-healing',
     description:
       "Desktop app only. Apply Piwi's recommended locator fix for a failing execution to the file on THIS machine. Resolves the healing recommendation for executionId, finds the failing line under repoRoot, and rewrites just that one locator call. Previews by default (apply=false): returns the file, line, the old and new line, and a unified diff, changing nothing. Set apply=true to write it. Refuses when the on-disk line no longer matches what Piwi recorded (the file drifted) and hands back the diff so you can place it by hand.",
     inputSchema: {
