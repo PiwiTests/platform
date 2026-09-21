@@ -57,7 +57,7 @@ const prompts = MCP_PROMPT_DEFS;
 // The instance's resolved capability states, so the catalog matches what the
 // server actually serves: a tool whose capability is declined is not listed
 // here either. No decline controls live on this page — they belong on Setup.
-const { state } = useInstanceCapabilities();
+const { state } = await useInstanceCapabilities();
 const isDeclined = (tool: McpToolDef) => (tool.capability ? state(tool.capability) === 'declined' : false);
 
 const MODULE_LABELS: Record<CapabilityModule, string> = {
