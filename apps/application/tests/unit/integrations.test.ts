@@ -22,6 +22,7 @@ const {
   createTracker,
   defaultTrackerConnection,
   ensureEnvManagedConnections,
+  testConnection,
 } = await import('../../server/utils/integrations/connections');
 const { detectProviderWithConnections } = await import('../../server/utils/integrations/link-resolve');
 
@@ -110,6 +111,47 @@ describe('JiraClient', () => {
     // A different host is not this connection's issue.
     expect(client.parseIssueUrl('https://other.atlassian.net/browse/PROJ-1')).toBeNull();
     expect(client.parseIssueUrl('https://acme.atlassian.net/wiki/spaces/DOC/pages/123')).toBeNull();
+  });
+
+  test('a scoped token is detected on a 401 and retried through the api.atlassian.com gateway', async () => {
+    const scoped = new JiraClient({ baseUrl: 'https://scoped.atlassian.net', email: 's@acme.io', apiToken: 'stok' });
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ message: 'Client must be authenticated' }, false, 401)) // site /myself
+      .mockResolvedValueOnce(jsonResponse({ cloudId: 'cloud-abc' })) // _edge/tenant_info
+      .mockResolvedValueOnce(jsonResponse({ accountId: 'a1', displayName: 'Ada' })); // gateway /myself
+    expect(await scoped.whoAmI()).toEqual({ id: 'a1', displayName: 'Ada' });
+
+    const urls = fetchMock.mock.calls.map((c) => c[0]);
+    expect(urls[0]).toBe('https://scoped.atlassian.net/rest/api/3/myself');
+    expect(urls[1]).toBe('https://scoped.atlassian.net/_edge/tenant_info');
+    expect(urls[2]).toBe('https://api.atlassian.com/ex/jira/cloud-abc/rest/api/3/myself');
+    // The resolved cloud id is offered for the connection layer to persist.
+    expect(scoped.detectedConfig()).toEqual({ cloudId: 'cloud-abc' });
+    // Browse links stay on the site host, not the gateway.
+    expect(scoped.issueUrl('PROJ-3')).toBe('https://scoped.atlassian.net/browse/PROJ-3');
+  });
+
+  test('a known cloud id routes straight through the gateway, with no probe', async () => {
+    const scoped = new JiraClient({
+      baseUrl: 'https://preset.atlassian.net',
+      email: 'p@acme.io',
+      apiToken: 'ptok',
+      cloudId: 'preset-cloud',
+    });
+    fetchMock.mockResolvedValueOnce(jsonResponse({ accountId: 'a2', displayName: 'Bo' }));
+    await scoped.whoAmI();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]![0]).toBe('https://api.atlassian.com/ex/jira/preset-cloud/rest/api/3/myself');
+  });
+
+  test('a 401 with no resolvable cloud id surfaces the auth error (self-hosted, no gateway)', async () => {
+    const selfHosted = new JiraClient({ baseUrl: 'https://jira.company.com', email: 'u@co', apiToken: 'x' });
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({}, false, 401)) // site /myself → 401
+      .mockResolvedValueOnce(jsonResponse({}, false, 404)); // _edge/tenant_info → no cloud id
+    await expect(selfHosted.whoAmI()).rejects.toMatchObject({ status: 401 });
+    expect(fetchMock).toHaveBeenCalledTimes(2); // no gateway retry
+    expect(selfHosted.detectedConfig()).toBeNull();
   });
 });
 
@@ -322,5 +364,30 @@ describe('connections and link resolution', () => {
     list = await listConnections(dbc);
     expect(list).toHaveLength(1);
     expect(list[0]!.baseUrl).toBe('https://two.atlassian.net');
+  });
+
+  test('testConnection resolves a scoped token and persists its cloud id on the connection', async () => {
+    const created = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Scoped',
+      baseUrl: 'https://scoped-conn.atlassian.net',
+      credentials: { email: 'sc@team.io', apiToken: 'sc-tok' },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({}, false, 401)) // site /myself → scoped token rejected
+      .mockResolvedValueOnce(jsonResponse({ cloudId: 'conn-cloud-1' })) // _edge/tenant_info
+      .mockResolvedValueOnce(jsonResponse({ accountId: 'acct-9', displayName: 'Zoe' })); // gateway /myself
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const result = await testConnection(dbc, created.id);
+      expect(result).toMatchObject({ ok: true, account: { id: 'acct-9' } });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    const row = await getConnectionRow(dbc, created.id);
+    expect((row?.config as Record<string, unknown> | null)?.cloudId).toBe('conn-cloud-1');
+    expect(row?.status).toBe('ok');
   });
 });

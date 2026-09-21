@@ -36,10 +36,10 @@ badge (colored by the issue's status category), and refreshes through the connec
 
 ## Permissions the token needs
 
-The API token must be a **classic Atlassian token**, used over HTTP Basic (`email:apiToken`). It is **not scoped**:
-it acts with the full permissions of the account it belongs to. There is nothing to set on the token itself.
-What matters is the Jira permissions of that account, granted **per project** in Jira's permission scheme, on
-every project you bind to a Piwi project.
+An API token, used over HTTP Basic (`email:apiToken`), acts within the permissions of the **account** it belongs to.
+So what matters is the Jira permissions of that account, granted **per project** in Jira's permission scheme, on every
+project you bind to a Piwi project. Both a **classic** and a **scoped** token work, see
+[Classic or scoped token](#classic-or-scoped-token) for the difference.
 
 **Test connection** (`GET /rest/api/3/myself`) needs only a valid token. Every other call maps to one standard
 Jira project permission:
@@ -64,12 +64,17 @@ project, or by the **Browse users and groups** global permission (`USER_PICKER`)
 The [inbound webhook](#registering-the-inbound-webhook) does **not** use this token. A Jira admin registers it in
 Jira, and it can only ever refresh a link, so it needs no permission from the Piwi account.
 
-> **Use a classic token, not a scoped one.** Piwi calls the site URL directly
-> (`https://your-team.atlassian.net/rest/api/3/…`), and a **scoped** ("granular") API token is rejected there with a
-> `401`: scoped tokens authenticate only through Atlassian's `https://api.atlassian.com/ex/jira/{cloudId}` gateway, which
-> this connection does not use. On [id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens) pick
-> **Create API token**, not *Create API token with scopes*. (Were scoped tokens ever supported, they would need
-> `read:jira-work`, `write:jira-work` and `read:jira-user`, plus the gateway routing above.)
+### Classic or scoped token
+
+Both work. A **classic** token authenticates directly against your site (`https://your-team.atlassian.net`). A
+**scoped** ("granular") token authenticates only through Atlassian's `https://api.atlassian.com/ex/jira/{cloudId}`
+gateway, so Piwi detects that on the first `401`, resolves your site's cloud id from its public `_edge/tenant_info`
+endpoint, and routes REST calls through the gateway from then on, with no extra configuration (browse links and link
+detection keep using the site URL). The resolved cloud id is stored on the connection when you **Test connection**.
+
+A scoped token must additionally carry the scopes **`read:jira-work`** (unfurl, sync, search, the pickers),
+**`write:jira-work`** (create, comment, transition, attach) and **`read:jira-user`** (the account check and the
+assignable-user picker), on top of the account permissions above.
 
 ## Environment-managed vs dashboard-managed
 

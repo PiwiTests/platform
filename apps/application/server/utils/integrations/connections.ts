@@ -249,12 +249,19 @@ export async function createTracker(db: DbClient, connectionId: number): Promise
   return trackerForRow(row);
 }
 
+/** The scoped-token cloud id stored on the connection, or null. */
+function cloudIdFromConfig(row: IntegrationConnection): string | null {
+  const config = row.config as Record<string, unknown> | null;
+  const cloudId = config?.cloudId;
+  return typeof cloudId === 'string' && cloudId.length > 0 ? cloudId : null;
+}
+
 /** Build a tracker client from an already-loaded connection row. */
 export function trackerForRow(row: IntegrationConnection): IssueTracker | null {
   if (row.provider !== 'jira') return null;
   const credentials = resolveTrackerCredentials(row);
   if (!credentials) return null;
-  return JiraClient.fromCredentials(row.baseUrl, credentials);
+  return JiraClient.fromCredentials(row.baseUrl, credentials, cloudIdFromConfig(row));
 }
 
 /**
@@ -333,7 +340,7 @@ export async function getProjectBinding(
 export async function resolveJiraUnfurlConfig(
   db: DbClient,
   url: string,
-): Promise<{ baseUrl: string; email: string; apiToken: string } | null> {
+): Promise<{ baseUrl: string; email: string; apiToken: string; cloudId: string | null } | null> {
   let host: string;
   try {
     host = new URL(url).host;
@@ -352,7 +359,12 @@ export async function resolveJiraUnfurlConfig(
     if (rowHost !== host) continue;
     const credentials = resolveTrackerCredentials(row);
     if (credentials) {
-      return { baseUrl: row.baseUrl, email: credentials.email, apiToken: credentials.apiToken };
+      return {
+        baseUrl: row.baseUrl,
+        email: credentials.email,
+        apiToken: credentials.apiToken,
+        cloudId: cloudIdFromConfig(row),
+      };
     }
   }
   return null;
@@ -368,9 +380,22 @@ export async function testConnection(db: DbClient, id: number): Promise<Connecti
   }
   try {
     const account = await tracker.whoAmI();
+    // A scoped token resolves a cloud id while verifying; persist it so later
+    // clients route through the gateway without re-detecting.
+    const detected = tracker.detectedConfig?.() ?? null;
+    const config =
+      detected && Object.keys(detected).length > 0
+        ? { ...((row.config as Record<string, unknown> | null) ?? {}), ...detected }
+        : null;
     await db
       .update(integrationConnections)
-      .set({ status: 'ok', lastCheckedAt: new Date(), lastError: null, updatedAt: new Date() })
+      .set({
+        status: 'ok',
+        lastCheckedAt: new Date(),
+        lastError: null,
+        updatedAt: new Date(),
+        ...(config ? { config } : {}),
+      })
       .where(eq(integrationConnections.id, id));
     return { ok: true, account };
   } catch (err) {

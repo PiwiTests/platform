@@ -13,13 +13,49 @@ import type {
   TrackerUser,
 } from '../types';
 import { statusColorForCategory, toStatusCategory } from '../types';
+import { createHash } from 'node:crypto';
 
 const JIRA_TIMEOUT_MS = 10_000;
+
+/** The Atlassian API gateway a scoped ("granular") API token must go through. */
+const ATLASSIAN_API_GATEWAY = 'https://api.atlassian.com/ex/jira';
+
+/**
+ * Cloud ids resolved for scoped-token credentials, so only the first request for
+ * a given credential pays the detection cost. Keyed by site URL plus a hash of the
+ * credential: a classic token never triggers detection, so it is never routed
+ * through the gateway, even against a site a scoped token also reaches.
+ */
+const scopedCloudIds = new Map<string, string>();
+
+/**
+ * A Jira Cloud site's tenant (cloud) id, read from the public `_edge/tenant_info`
+ * endpoint. Returns null for a self-hosted host or any failure, so the caller
+ * stays on the site URL.
+ */
+async function resolveCloudId(siteBaseUrl: string, timeoutMs: number): Promise<string | null> {
+  try {
+    const response = await fetch(`${siteBaseUrl}/_edge/tenant_info`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { cloudId?: string };
+    return typeof data.cloudId === 'string' && data.cloudId.length > 0 ? data.cloudId : null;
+  } catch {
+    return null;
+  }
+}
 
 export interface JiraClientConfig {
   baseUrl: string;
   email: string;
   apiToken: string;
+  /**
+   * Set when the connection is known to use a scoped token: REST calls then route
+   * through the api.atlassian.com gateway instead of the site URL. Left unset for a
+   * classic token, and auto-detected on the first 401 otherwise.
+   */
+  cloudId?: string | null;
+  /** Request timeout in ms; unfurl passes a shorter budget than the default. */
+  timeoutMs?: number;
 }
 
 interface JiraStatus {
@@ -64,21 +100,67 @@ export class JiraError extends Error {
 export class JiraClient implements IssueTracker {
   readonly provider = 'jira' as const;
   private readonly baseUrl: string;
+  private readonly timeoutMs: number;
+  /** Set once REST calls are known to need the gateway (a scoped token). */
+  private cloudId: string | null;
 
   constructor(private readonly config: JiraClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
+    this.timeoutMs = config.timeoutMs ?? JIRA_TIMEOUT_MS;
+    this.cloudId = config.cloudId ?? scopedCloudIds.get(this.credentialKey()) ?? null;
   }
 
-  static fromCredentials(baseUrl: string, credentials: TrackerCredentials): JiraClient {
-    return new JiraClient({ baseUrl, email: credentials.email, apiToken: credentials.apiToken });
+  static fromCredentials(baseUrl: string, credentials: TrackerCredentials, cloudId?: string | null): JiraClient {
+    return new JiraClient({
+      baseUrl,
+      email: credentials.email,
+      apiToken: credentials.apiToken,
+      cloudId: cloudId ?? null,
+    });
   }
 
   private authHeader(): string {
     return `Basic ${Buffer.from(`${this.config.email}:${this.config.apiToken}`).toString('base64')}`;
   }
 
+  /** A cache key tying a resolved cloud id to this exact credential and site. */
+  private credentialKey(): string {
+    const hash = createHash('sha256').update(`${this.config.email}\n${this.config.apiToken}`).digest('hex');
+    return `${this.baseUrl}\n${hash}`;
+  }
+
+  /** The REST base: the gateway once a scoped token is detected, else the site URL. */
+  private apiBase(): string {
+    return this.cloudId ? `${ATLASSIAN_API_GATEWAY}/${this.cloudId}` : this.baseUrl;
+  }
+
+  /**
+   * Fetch a REST path, building the request fresh for each attempt. A scoped
+   * ("granular") API token is refused on the site URL with a 401 and works only
+   * through the api.atlassian.com gateway, so on that first 401 we resolve the
+   * site's cloud id and retry there once; a classic token never takes this path.
+   */
+  private async apiFetch(path: string, build: () => RequestInit): Promise<Response> {
+    let response = await fetch(`${this.apiBase()}${path}`, build());
+    if (response.status === 401 && !this.cloudId) {
+      const key = this.credentialKey();
+      const cloudId = scopedCloudIds.get(key) ?? (await resolveCloudId(this.baseUrl, this.timeoutMs));
+      if (cloudId) {
+        this.cloudId = cloudId;
+        scopedCloudIds.set(key, cloudId);
+        response = await fetch(`${this.apiBase()}${path}`, build());
+      }
+    }
+    return response;
+  }
+
+  /** Provider config discovered while making calls (a resolved scoped-token cloud id). */
+  detectedConfig(): Record<string, unknown> | null {
+    return this.cloudId ? { cloudId: this.cloudId } : null;
+  }
+
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${path}`, {
+    const response = await this.apiFetch(path, () => ({
       ...init,
       headers: {
         Authorization: this.authHeader(),
@@ -86,8 +168,8 @@ export class JiraClient implements IssueTracker {
         ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
         ...init?.headers,
       },
-      signal: AbortSignal.timeout(JIRA_TIMEOUT_MS),
-    });
+      signal: AbortSignal.timeout(this.timeoutMs),
+    }));
     if (!response.ok) {
       if (response.status === 429) {
         const header = response.headers.get('retry-after');
@@ -240,18 +322,22 @@ export class JiraClient implements IssueTracker {
     if (file.bytes.byteLength > DEFAULT_EXPORT_MAX_INLINE_BYTES) {
       throw new JiraError(413, `attachment '${file.name}' exceeds the ${DEFAULT_EXPORT_MAX_INLINE_BYTES}-byte cap`);
     }
-    const form = new FormData();
-    form.append('file', new Blob([file.bytes as unknown as BlobPart], { type: file.mime }), file.name);
-    const response = await fetch(`${this.baseUrl}/rest/api/3/issue/${encodeURIComponent(key)}/attachments`, {
-      method: 'POST',
-      headers: {
-        Authorization: this.authHeader(),
-        Accept: 'application/json',
-        'X-Atlassian-Token': 'no-check',
-      },
-      body: form,
-      signal: AbortSignal.timeout(JIRA_TIMEOUT_MS),
-    });
+    // Rebuilt per attempt: the 401 gateway retry in apiFetch resends the body.
+    const build = (): RequestInit => {
+      const form = new FormData();
+      form.append('file', new Blob([file.bytes as unknown as BlobPart], { type: file.mime }), file.name);
+      return {
+        method: 'POST',
+        headers: {
+          Authorization: this.authHeader(),
+          Accept: 'application/json',
+          'X-Atlassian-Token': 'no-check',
+        },
+        body: form,
+        signal: AbortSignal.timeout(this.timeoutMs),
+      };
+    };
+    const response = await this.apiFetch(`/rest/api/3/issue/${encodeURIComponent(key)}/attachments`, build);
     if (!response.ok) {
       if (response.status === 429) {
         const header = response.headers.get('retry-after');
