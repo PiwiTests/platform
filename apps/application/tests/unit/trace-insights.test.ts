@@ -301,6 +301,26 @@ describe('buildTraceNetwork', () => {
     expect(result.requests![0]!.requestHeaders).toEqual([{ name: 'Authorization', value: '[masked]' }]);
   });
 
+  test('resolves the response body of a v9 trace whose ref is `_file: resources/<name>`', () => {
+    // Playwright 1.63 writes `content._file = "resources/<sha1>.<ext>"` instead
+    // of the older `content._sha1`. The stored file name (what the pool / ZIP is
+    // keyed on) is that value with its `resources/` prefix stripped.
+    const hash = 'f'.repeat(40);
+    const result = buildTraceNetwork(null, [
+      snapshot({
+        response: {
+          status: 200,
+          headers: [],
+          content: { size: 20, mimeType: 'application/json', _file: `resources/${hash}.json` },
+        },
+      }),
+    ]);
+    expect(result.requests![0]).toMatchObject({
+      bodySha1: `${hash}.json`,
+      bodyPreviewable: true,
+    });
+  });
+
   test('returns empty for a trace without network entries', () => {
     expect(buildTraceNetwork(null, []).status).toBe('empty');
   });
@@ -319,6 +339,26 @@ describe('matchNetworkBodySha1', () => {
     });
     expect(matchNetworkBodySha1(snapshots, hash)).toEqual({ name: `${hash}.json`, mimeType: 'application/json' });
     expect(matchNetworkBodySha1(snapshots, 'c'.repeat(40))).toBeNull();
+  });
+
+  test('matches a v9 `_file` ref by its bare name (prefix stripped), for response and request bodies', () => {
+    const respHash = 'd'.repeat(40);
+    const reqHash = 'e'.repeat(40);
+    const v9: TraceResourceSnapshot[] = [
+      {
+        request: { method: 'POST', url: 'https://x.test/api', postData: { _file: `resources/${reqHash}.dat` } },
+        response: { content: { _file: `resources/${respHash}.json`, mimeType: 'application/json' } },
+      },
+    ];
+    // The `resources/` prefix is stripped, so the returned name matches the
+    // stored spelling; both the exact ref and the bare hash resolve.
+    expect(matchNetworkBodySha1(v9, `${respHash}.json`)).toEqual({
+      name: `${respHash}.json`,
+      mimeType: 'application/json',
+    });
+    expect(matchNetworkBodySha1(v9, respHash)).toEqual({ name: `${respHash}.json`, mimeType: 'application/json' });
+    expect(matchNetworkBodySha1(v9, `${reqHash}.dat`)).toMatchObject({ name: `${reqHash}.dat` });
+    expect(matchNetworkBodySha1(v9, 'a'.repeat(40))).toBeNull();
   });
 });
 
