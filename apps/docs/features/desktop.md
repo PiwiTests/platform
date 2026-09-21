@@ -27,7 +27,7 @@ Grab the installer for your OS from the [latest release](https://github.com/Piwi
 
 | OS | Installer |
 |----|-----------|
-| **Windows** | `.msi` |
+| **Windows** | `.exe` (per-user, no admin) or `.msi` (per-machine) |
 | **macOS** (Apple silicon) | `.dmg` |
 | **Linux** (x86-64) | `.AppImage`, `.deb`, or `.rpm` |
 
@@ -271,12 +271,13 @@ startup.
 **Settings → About → Updates** checks GitHub releases for a newer version,
 downloads it in the background, and applies it when you restart the app.
 
-Update support exists only in releases built with the project's update
-signing key — the app verifies every download against the matching public key
-before installing anything. A build without that key (a dev build, or a
-release made before the key existed) says so on the card; update it by
-downloading the [latest release](https://github.com/PiwiTests/platform/releases/latest)
-installer, which keeps your data (the data folder lives outside the app).
+On Windows, the **`.exe`** updates without admin; the **`.msi`** prompts for it.
+
+Updates work only in releases built with the project's signing key; the app
+verifies every download against the public key before installing. A build
+without it (a dev build, or one from before the key existed) says so on the
+card, update it by downloading the [latest release](https://github.com/PiwiTests/platform/releases/latest),
+which keeps your data.
 
 ## Building from source
 

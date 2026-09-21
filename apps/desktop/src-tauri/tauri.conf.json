@@ -28,6 +28,7 @@
     "active": true,
     "targets": [
       "msi",
+      "nsis",
       "dmg",
       "deb",
       "rpm",
@@ -66,6 +67,9 @@
     "windows": {
       "wix": {
         "language": "en-US"
+      },
+      "nsis": {
+        "installMode": "currentUser"
       }
     }
   }

@@ -5,8 +5,11 @@ shipped as the Docker image and `@piwitests/server`, and runs it locally. No
 Docker, no `npx`, no server to set up — double-click and go. Everything binds
 `127.0.0.1`; your data lives under the OS app-data directory.
 
-Targets: **Windows (`.msi`)**, **macOS (`.dmg`)**, and **Linux (`.deb` / `.rpm` /
-`.AppImage`)**.
+Targets: **Windows (`.msi` and `.exe`)**, **macOS (`.dmg`)**, and **Linux (`.deb` /
+`.rpm` / `.AppImage`)**. The Windows **`.exe`** is an NSIS **per-user** installer
+(`%LOCALAPPDATA%`, no admin to install or update); the **`.msi`** installs **per
+machine** (`Program Files`) and needs elevation. Each keeps its own auto-update
+channel, so a per-user install pulls a per-user update.
 
 ## How it works
 
@@ -60,7 +63,7 @@ npx tauri icon ../application/public/logo.svg   # generate icons (once)
 # 3. Run in dev, or build an installer
 npm run dev                 # launches the app against the staged server
 npm run build               # produces the installer for this OS under src-tauri/target
-                            # (.msi on Windows, .dmg on macOS, .deb/.rpm/.AppImage on Linux)
+                            # (.msi + .exe on Windows, .dmg on macOS, .deb/.rpm/.AppImage on Linux)
 ```
 
 > The Node sidecar (`src-tauri/binaries/`), the staged server
@@ -115,13 +118,19 @@ Off until the updater keypair exists; releases build exactly as before without
 it. To enable:
 
 1. `npx tauri signer generate` (keep the private key + password secret).
-2. Put the **public** key into `src-tauri/tauri.updater.conf.json`.
+2. Put the **public** key into both `src-tauri/tauri.updater.conf.json` (the
+   `.msi` channel) and `src-tauri/tauri.updater.nsis.conf.json` (the `.exe`
+   channel). Same key, one endpoint each.
 3. Add `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as
    repository secrets.
 
-With the secret present, `desktop-release.yml` applies the
-`tauri.updater.conf.json` overlay: bundles gain signed update artifacts,
-tauri-action uploads `latest.json` to the release, and the app (whose compiled
-config now contains the updater entry) exposes Check for updates in
-Settings → About. Builds without the overlay report updates as unsupported —
-the plugin is not even registered there (see `src-tauri/src/updates.rs`).
+With the secret present, `desktop-release.yml` applies each leg's overlay:
+bundles gain signed update artifacts, and the app (whose compiled config now
+contains the updater entry) exposes Check for updates in Settings → About.
+Windows ships **two update channels** so each installer updates itself in its own
+mode: the `.msi` reads `latest.json` (per machine, prompts for admin), the `.exe`
+reads `latest-nsis.json` (per user, no admin). tauri-action uploads `latest.json`
+for the `.msi`, macOS and Linux legs; the `.exe` leg sets `uploadUpdaterJson`
+false and a later workflow step publishes `latest-nsis.json` pointing at the NSIS
+`-setup.exe`. Builds without the overlay report updates as unsupported, the plugin
+is not even registered there (see `src-tauri/src/updates.rs`).

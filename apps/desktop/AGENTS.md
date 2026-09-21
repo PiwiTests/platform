@@ -9,8 +9,12 @@ build prerequisites and the release flow.
 A [Tauri](https://tauri.app) window around **the same Nuxt/Nitro server** shipped as the Docker image and
 `@piwitests/server`. On launch the Rust shell picks a free loopback port, resolves a per-user data dir, spawns the
 bundled server as a **Node sidecar**, polls `GET /api/health` until the database is migrated, then points the window at
-it through a one-time token bootstrap (`/__piwi/session`). Targets are Windows (`.msi`), macOS (`.dmg`) and Linux
-(`.deb` / `.rpm` / `.AppImage`) — all three feature-equivalent and built from the same shell.
+it through a one-time token bootstrap (`/__piwi/session`). Targets are Windows (`.msi` and `.exe`), macOS (`.dmg`) and
+Linux (`.deb` / `.rpm` / `.AppImage`), all three feature-equivalent and built from the same shell. The two Windows
+installers ship side by side: the `.msi` installs per machine (admin); the NSIS `.exe` installs per user
+(`installMode: currentUser`, no admin) and updates from its own manifest (`latest-nsis.json`, not the `.msi`'s
+`latest.json`), so a per-user install never updates into the per-machine one (see `desktop-release.yml` and the two
+`tauri.updater*.conf.json` overlays).
 
 ## Rules
 
