@@ -90,6 +90,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
       { id: 'account.email', label: 'Email address', help: 'account.email' },
       { id: 'account.connected-accounts', label: 'Connected accounts', help: 'account.connected-accounts' },
       { id: 'account.password', label: 'Password', help: 'account.password' },
+      { id: 'account.api-keys', label: 'API keys', help: 'settings.api-keys' },
       { id: 'account.auth-toggle', label: 'Authentication', help: 'settings.auth-toggle', envOnly: true },
     ],
   },

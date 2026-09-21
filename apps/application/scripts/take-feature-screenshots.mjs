@@ -297,6 +297,21 @@ const SCENES = [
       await shoot(undefined, { of: '[data-shot="storage-analysis"]', pad: 12 });
     },
   },
+  {
+    name: 'user-api-keys',
+    description: 'The API keys manager (shared ApiKeysManager) — here in the Users admin modal',
+    route: '/settings/users',
+    viewport: { width: 1100, height: 1000 },
+    async run({ page, shoot, settle }) {
+      // The screenshot server runs with auth off, so every user's keys are
+      // manageable; open the first user's modal. The same component backs the
+      // Account page (Settings → Account → API keys), which needs auth enabled.
+      await page.getByRole('button', { name: 'Manage API keys' }).first().click();
+      await page.getByRole('dialog').waitFor();
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  },
 
   // ── Docs illustrations (committed) ────────────────────────────────────────
   {
