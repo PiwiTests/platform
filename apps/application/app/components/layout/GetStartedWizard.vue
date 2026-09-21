@@ -4,6 +4,9 @@ import { docsUrl } from '#shared/docs';
 const config = useRuntimeConfig();
 const authEnabled = computed(() => !!config.public.authEnabled);
 const isDesktop = useIsDesktop();
+// The capability presets step, and the component itself, render only for
+// administrators (and everyone when auth is disabled).
+const { canSeeAdmin } = useAuth();
 
 // Reflect the actual dashboard URL so the generated config snippet is correct
 const serverUrl = ref('http://localhost:3000');
@@ -90,8 +93,10 @@ interface WizardStep {
   done?: boolean;
   code?: string | null;
   lang?: string;
+  /** An extra, skippable step that does not count toward "send your first run". */
+  optional?: boolean;
   /** Renders an inline call-to-action instead of (or alongside) a code block. */
-  action?: 'create-api-key';
+  action?: 'create-api-key' | 'capabilities';
 }
 
 const steps = computed<Array<WizardStep & { id: number }>>(() => {
@@ -135,11 +140,26 @@ const steps = computed<Array<WizardStep & { id: number }>>(() => {
     },
   );
 
+  // One optional step, administrators only: which capability modules this team
+  // wants. Skipping stores nothing; it does not count toward the run-setup steps.
+  if (canSeeAdmin.value) {
+    list.push({
+      title: 'What do you want Piwi for?',
+      description:
+        'Optional. Tell Piwi which features your team will use and it hides the rest. Skip it and nothing is stored — you can decide any time on Setup.',
+      optional: true,
+      action: 'capabilities',
+    });
+  }
+
   return list.map((step, index) => ({ id: index + 1, ...step }));
 });
 
 const STEP_COUNT_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six'];
-const stepCountWord = computed(() => STEP_COUNT_WORDS[steps.value.length] ?? String(steps.value.length));
+// The subtitle counts only the steps that send a first run — the optional
+// capability step is not one of them.
+const setupStepCount = computed(() => steps.value.filter((step) => !step.optional).length);
+const stepCountWord = computed(() => STEP_COUNT_WORDS[setupStepCount.value] ?? String(setupStepCount.value));
 
 // The one-command setup from the reporter CLI. Not shown on desktop: `init`
 // writes a serverUrl into the project, which would suppress the reporter's
@@ -197,10 +217,13 @@ const goFurtherOpen = ref(false);
             :class="
               step.done
                 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                : 'bg-primary/10 text-primary'
+                : step.optional
+                  ? 'bg-elevated text-muted'
+                  : 'bg-primary/10 text-primary'
             "
           >
             <UIcon v-if="step.done" name="i-lucide-check" class="size-4" />
+            <UIcon v-else-if="step.optional" name="i-lucide-sparkles" class="size-4" />
             <span v-else>{{ step.id }}</span>
           </div>
           <div v-if="index < steps.length - 1" class="w-px flex-1 mt-2 min-h-6 bg-gray-200 dark:bg-gray-700" />
@@ -208,21 +231,31 @@ const goFurtherOpen = ref(false);
 
         <!-- Step content -->
         <div class="flex-1 pb-6">
-          <div class="flex items-center gap-2 mb-1">
-            <h3 class="font-medium">{{ step.title }}</h3>
-            <UBadge v-if="step.done" color="success" variant="subtle" size="xs">Done</UBadge>
-          </div>
-          <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">{{ step.description }}</p>
-          <UButton
-            v-if="step.action === 'create-api-key'"
-            to="/settings/users"
-            icon="i-lucide-key-round"
-            size="sm"
-            variant="soft"
-          >
-            Create an API key
-          </UButton>
-          <CodeBlock v-if="step.code" :code="step.code" :lang="step.lang" />
+          <!-- The optional capability step: its own titled presets card carries
+               the heading, so no duplicate step title above it. -->
+          <template v-if="step.action === 'capabilities'">
+            <div data-shot="wizard-capabilities">
+              <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">{{ step.description }}</p>
+              <CapabilityPresets />
+            </div>
+          </template>
+          <template v-else>
+            <div class="flex items-center gap-2 mb-1">
+              <h3 class="font-medium">{{ step.title }}</h3>
+              <UBadge v-if="step.done" color="success" variant="subtle" size="xs">Done</UBadge>
+            </div>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">{{ step.description }}</p>
+            <UButton
+              v-if="step.action === 'create-api-key'"
+              to="/settings/users"
+              icon="i-lucide-key-round"
+              size="sm"
+              variant="soft"
+            >
+              Create an API key
+            </UButton>
+            <CodeBlock v-if="step.code" :code="step.code" :lang="step.lang" />
+          </template>
         </div>
       </div>
 

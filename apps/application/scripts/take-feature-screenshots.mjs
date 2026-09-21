@@ -914,6 +914,28 @@ const SCENES = [
     of: '[data-shot="mcp-desktop-tools"]',
     pad: 12,
   },
+  {
+    name: 'mcp-tool-modules',
+    description: 'MCP page: the tool catalog grouped by module with the Core tools only switch',
+    route: '/mcp',
+    viewport: { width: 1280, height: 2600 },
+    of: '[data-shot="mcp-tool-modules"]',
+    pad: 12,
+  },
+  {
+    name: 'wizard-capabilities',
+    description: 'Home wizard: the optional "What do you want Piwi for?" capability presets step',
+    // The Setup page mounts the wizard unconditionally, so it renders with seeded
+    // data too; auth is off there, so the administrator-only step shows.
+    route: '/setup',
+    viewport: { width: 1280, height: 1600 },
+    async run({ page, shoot, settle }) {
+      const step = page.locator('[data-shot="wizard-capabilities"]');
+      await step.waitFor({ timeout: 15000 }).catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[data-shot="wizard-capabilities"]', pad: 12 });
+    },
+  },
 
   // ── Failure headline (report artifacts) ──────────────────────────────────
   {
