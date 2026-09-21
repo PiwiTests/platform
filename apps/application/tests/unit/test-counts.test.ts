@@ -145,6 +145,37 @@ describe('distinctRunCountsFromAttempts', () => {
     expect(counts.totalTests).toBe(2);
     expect(counts.passedTests).toBe(2);
   });
+
+  test("a flaky test's failed attempt is not counted as a failure (3 hard + 4 flaky, not 7 failed)", () => {
+    // Per-attempt rows as the streaming events endpoint persists them: 3 tests
+    // that only ever failed, and 4 that failed once then passed on retry. Seven
+    // rows carry status 'failed', so a naive per-attempt tally reports 7
+    // failures — but only 3 tests actually failed.
+    const rows = [
+      { testCaseId: 1, browserName: 'chromium', retries: 0, status: 'failed' },
+      { testCaseId: 2, browserName: 'chromium', retries: 0, status: 'failed' },
+      { testCaseId: 3, browserName: 'chromium', retries: 0, status: 'failed' },
+      { testCaseId: 4, browserName: 'chromium', retries: 0, status: 'failed' },
+      { testCaseId: 4, browserName: 'chromium', retries: 1, status: 'passed' },
+      { testCaseId: 5, browserName: 'chromium', retries: 0, status: 'failed' },
+      { testCaseId: 5, browserName: 'chromium', retries: 1, status: 'passed' },
+      { testCaseId: 6, browserName: 'chromium', retries: 0, status: 'failed' },
+      { testCaseId: 6, browserName: 'chromium', retries: 1, status: 'passed' },
+      { testCaseId: 7, browserName: 'chromium', retries: 0, status: 'failed' },
+      { testCaseId: 7, browserName: 'chromium', retries: 1, status: 'passed' },
+    ];
+    expect(rows.filter((r) => r.status === 'failed').length).toBe(7);
+
+    const counts = distinctRunCountsFromAttempts(rows);
+    expect(counts.totalTests).toBe(7);
+    expect(counts.failedTests).toBe(3);
+    expect(counts.passedTests).toBe(4);
+    expect(counts.flakyTests).toBe(4);
+    // The buckets reconcile per test, ignoring the extra attempt rows.
+    expect(counts.passedTests + counts.failedTests + counts.skippedTests + counts.didNotRunTests).toBe(
+      counts.totalTests,
+    );
+  });
 });
 
 describe('normalizeTestCaseStatus', () => {
