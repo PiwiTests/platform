@@ -423,7 +423,7 @@ function statusBorderClass(status: string): string {
         <!-- Empty instance: the setup wizard is the one actionable step. Once
              projects exist it moves to /setup, which stays reachable from the
              sidebar — the steps past "install the reporter" must not vanish. -->
-        <GetStartedWizard v-if="!hasProjects" />
+        <GetStartedWizard v-if="!hasProjects" show-capability-step />
       </div>
     </template>
   </UDashboardPanel>
