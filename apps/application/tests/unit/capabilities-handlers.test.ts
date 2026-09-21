@@ -95,6 +95,22 @@ describe('instance decisions', () => {
     const items = (await getInstanceCapabilities(db)).items;
     expect(stateOf(items, 'mcp')).toBe('available');
   });
+
+  test('a whole decisions map is applied in one write, and a later null clears one', async () => {
+    await db.insert(schema.projects).values({ id: 1, name: 'p' });
+
+    // The shape the composables' decideMany sends: several ids at once.
+    await setInstanceDecisions(db, { notifications: 'declined', tags: 'declined' });
+    let items = (await getInstanceCapabilities(db)).items;
+    expect(stateOf(items, 'notifications')).toBe('declined');
+    expect(stateOf(items, 'tags')).toBe('declined');
+
+    // Clearing one leaves the other in place.
+    await setInstanceDecisions(db, { notifications: null });
+    items = (await getInstanceCapabilities(db)).items;
+    expect(stateOf(items, 'notifications')).toBe('undecided');
+    expect(stateOf(items, 'tags')).toBe('declined');
+  });
 });
 
 describe('project decisions', () => {
