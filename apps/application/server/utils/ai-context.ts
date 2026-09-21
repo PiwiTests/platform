@@ -16,6 +16,7 @@ import { stepLabel, orderedStepParams } from '@piwitests/core/step-analysis';
 import { condenseErrorText, maskVolatile, stripAnsi } from '#shared/error-fingerprint';
 import { DIAGNOSIS_SECTIONS } from '#shared/diagnosis-sections';
 import { evidenceAbsenceReason } from '#shared/evidence-state';
+import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { durationStats } from '#shared/utils/stats';
 import { computeRegressionContext } from './regression-context';
 import { normalizeGitUrl } from './scm/git-url';
@@ -388,6 +389,7 @@ async function loadExecutionRow(db: DbClient, where: SQL) {
       testCaseId: testRunsCases.testCaseId,
       browserName: testRunsCases.browserName,
       startedAt: testRunsCases.startedAt,
+      projectId: testCases.projectId,
       testTitle: testCases.title,
       testFilePath: testCases.filePath,
       testSuitePath: testCases.suitePath,
@@ -2902,20 +2904,48 @@ export async function buildDiagnosisContext(
     sectionIds.has('webVitals') ||
     (Boolean(rep?.ariaSnapshot) && evidenceSrc.aria !== 'trace') ||
     Boolean(rep?.aiUsage);
+
+  // Resolved capability states for the execution's project, so a source a team
+  // declined reads "declined for this project" rather than "not captured".
+  const projectId = cluster?.projectId ?? rep?.projectId ?? null;
+  const capabilityStates = projectId != null ? await resolveProjectStates(db, projectId) : null;
+  const fixturesState = capabilityStates?.fixtures;
+  const backendLogsState = capabilityStates?.['backend-logs'];
+
   if (!sectionIds.has('console')) {
-    absentReasons.console = evidenceAbsenceReason('console', { hasData: false, fixturesActive })!;
+    absentReasons.console = evidenceAbsenceReason('console', {
+      hasData: false,
+      fixturesActive,
+      capability: fixturesState,
+    })!;
   }
   if (!sectionIds.has('networkRequests')) {
-    absentReasons.networkRequests = evidenceAbsenceReason('network', { hasData: false, fixturesActive })!;
+    absentReasons.networkRequests = evidenceAbsenceReason('network', {
+      hasData: false,
+      fixturesActive,
+      capability: fixturesState,
+    })!;
   }
   if (!sectionIds.has('serverTraces')) {
-    absentReasons.serverTraces = evidenceAbsenceReason('backendLogs', { hasData: false, fixturesActive })!;
+    absentReasons.serverTraces = evidenceAbsenceReason('backendLogs', {
+      hasData: false,
+      fixturesActive,
+      capability: backendLogsState,
+    })!;
   }
   if (!sectionIds.has('serverLogs')) {
-    absentReasons.serverLogs = evidenceAbsenceReason('backendLogs', { hasData: false, fixturesActive })!;
+    absentReasons.serverLogs = evidenceAbsenceReason('backendLogs', {
+      hasData: false,
+      fixturesActive,
+      capability: backendLogsState,
+    })!;
   }
   if (!sectionIds.has('webVitals')) {
-    absentReasons.webVitals = evidenceAbsenceReason('webVitals', { hasData: false, fixturesActive })!;
+    absentReasons.webVitals = evidenceAbsenceReason('webVitals', {
+      hasData: false,
+      fixturesActive,
+      capability: fixturesState,
+    })!;
   }
   if (!sectionIds.has('environmentDiff')) {
     absentReasons.environmentDiff = 'no passing baseline execution recorded for this test to compare against';
@@ -2929,7 +2959,11 @@ export async function buildDiagnosisContext(
       'no DOM snapshot — requires an uploaded trace containing frame snapshots (enable trace recording and uploadTraces)';
   }
   if (!sectionIds.has('appState')) {
-    absentReasons.appState = evidenceAbsenceReason('appState', { hasData: false, fixturesActive })!;
+    absentReasons.appState = evidenceAbsenceReason('appState', {
+      hasData: false,
+      fixturesActive,
+      capability: fixturesState,
+    })!;
   }
 
   const coverageBlock = buildCoverageBlock(contextSections, {
