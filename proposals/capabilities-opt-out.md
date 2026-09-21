@@ -200,3 +200,7 @@ Three pull requests. A lands first; B and C start from A's branch and run in par
 - Per-project probes run on the execution page. They are `limit(1)` through indexed columns; the composable caches one fetch per project per page session. Measure on the seeded instance before adding a server-side cache.
 - `tests/unit/docs-drift.test.ts` pins every "N tools" claim to the full catalog; C3 must keep the core count out of that regex.
 - The stack of the app under test is unknown today; D4's per-stack copy waits for a reporter or project field.
+
+## 9. Deviations during implementation
+
+- **A9 demo seed.** The seed now declines a capability at project level (`markers` on `mobile-safari`, a capability with no evidence there, so it resolves to `declined`). The "one project without fixture evidence" half is deferred to B: every seeded project carries network evidence through the shared `failure-stories.mjs` fixtures (the flagship story on `mobile-safari` adds requests through `failingNetwork`), so removing fixture evidence from one project would mean editing those drift-guarded fixtures and stripping that project's slow-endpoint and performance demo data. B owns the demo screenshot scenes and can add a fixtures-free project alongside them.
