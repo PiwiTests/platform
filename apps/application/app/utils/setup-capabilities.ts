@@ -12,6 +12,22 @@
  * so it is the order the page renders within each group.
  */
 import type { SetupCapabilityId } from '#shared/handlers/setup-status';
+import type { CapabilityState } from '#shared/capabilities';
+
+/** The four groups the Setup ladder sorts capabilities into. */
+export type LadderGroup = 'active' | 'available' | 'notset' | 'declined';
+
+/**
+ * Which ladder group a capability's resolved state belongs to. Undecided and
+ * not-applicable both fall under "not set up" — a stack without a backend
+ * package reads the same as one that has not been switched on.
+ */
+export function ladderGroupOf(state: CapabilityState): LadderGroup {
+  if (state === 'active') return 'active';
+  if (state === 'declined') return 'declined';
+  if (state === 'available') return 'available';
+  return 'notset';
+}
 
 export interface SetupCapabilityCopy {
   id: SetupCapabilityId;

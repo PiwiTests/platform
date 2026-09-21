@@ -12,7 +12,7 @@
 import type { SetupStatus, SetupCapabilityId } from '#shared/handlers/setup-status';
 import type { CapabilityId, CapabilityState } from '#shared/capabilities';
 import type { AdminStats } from '~~/types/api';
-import { SETUP_CAPABILITIES, type SetupCapabilityCopy } from '~/utils/setup-capabilities';
+import { SETUP_CAPABILITIES, ladderGroupOf, type SetupCapabilityCopy } from '~/utils/setup-capabilities';
 
 useHead({ title: 'Setup — Piwi Dashboard' });
 
@@ -74,24 +74,18 @@ const rows = computed<LadderRow[]>(() =>
 
 const activeCount = computed(() => rows.value.filter((r) => r.active).length);
 
-type GroupId = 'active' | 'available' | 'notset';
-function groupOf(row: LadderRow): GroupId | 'declined' {
-  if (row.state === 'active') return 'active';
-  if (row.state === 'declined') return 'declined';
-  if (row.state === 'available') return 'available';
-  return 'notset';
-}
-
-const GROUPS: { id: GroupId; label: string }[] = [
+const GROUPS: { id: 'active' | 'available' | 'notset'; label: string }[] = [
   { id: 'active', label: 'Active' },
   { id: 'available', label: 'Available' },
   { id: 'notset', label: 'Not set up' },
 ];
 
 const groups = computed(() =>
-  GROUPS.map((g) => ({ ...g, rows: rows.value.filter((r) => groupOf(r) === g.id) })).filter((g) => g.rows.length > 0),
+  GROUPS.map((g) => ({ ...g, rows: rows.value.filter((r) => ladderGroupOf(r.state) === g.id) })).filter(
+    (g) => g.rows.length > 0,
+  ),
 );
-const declinedRows = computed(() => rows.value.filter((r) => groupOf(r) === 'declined'));
+const declinedRows = computed(() => rows.value.filter((r) => ladderGroupOf(r.state) === 'declined'));
 const declinedOpen = ref(false);
 
 const busy = ref(false);
