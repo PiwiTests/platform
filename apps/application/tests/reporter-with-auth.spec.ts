@@ -930,6 +930,24 @@ test.describe.serial('Reporter with authentication enabled', () => {
     expect(res.status()).toBe(403);
   });
 
+  test('PATCH /api/capabilities applies several decisions in one request', async ({ request }) => {
+    await loginAs(request, 'admin', 'adminpassword123');
+    const stateOf = (items: Array<{ id: string; state: string }>, id: string) => items.find((i) => i.id === id)?.state;
+
+    const res = await request.patch(`${AUTH_SERVER_URL}/api/capabilities`, {
+      data: { decisions: { notifications: 'declined', tags: 'declined' } },
+    });
+    expect(res.ok()).toBeTruthy();
+    const body = (await res.json()) as { items: Array<{ id: string; state: string }> };
+    expect(stateOf(body.items, 'notifications')).toBe('declined');
+    expect(stateOf(body.items, 'tags')).toBe('declined');
+
+    // Restore a clean slate for later tests.
+    await request.patch(`${AUTH_SERVER_URL}/api/capabilities`, {
+      data: { decisions: { notifications: null, tags: null } },
+    });
+  });
+
   test('a project enable overrides an instance decline', async ({ request }) => {
     await loginAs(request, 'admin', 'adminpassword123');
 
