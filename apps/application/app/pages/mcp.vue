@@ -21,8 +21,14 @@ const bearerToken = computed(() => reporterConfig.value?.token ?? apiKeyPlacehol
 
 const requestUrl = useRequestURL();
 const mcpUrl = computed(() => {
-  const base = reporterConfig.value?.url ?? (config.public.siteUrl as string) ?? requestUrl.origin;
-  return `${base}/mcp`;
+  // Prefer the reporter-provided URL (desktop), then an explicitly configured
+  // site URL (stable behind a reverse proxy), else the current browser origin.
+  // `config.public.siteUrl` defaults to '' when PIWI_SITE_URL is unset, so use
+  // `||`, not `??`: an empty string must fall through to the origin, otherwise
+  // the displayed URL would be just `/mcp` without a domain. Trailing slashes
+  // are stripped to avoid `//mcp`, matching the server's resolvePublicBaseUrl.
+  const base = reporterConfig.value?.url || (config.public.siteUrl as string) || requestUrl.origin;
+  return `${base.replace(/\/+$/, '')}/mcp`;
 });
 
 useHead({ title: 'MCP server — Piwi Dashboard' });
