@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS } from '#shared/mcp-tools';
 import { MCP_PROMPT_DEFS } from '#shared/mcp-prompts';
+import { CAPABILITY_MODULES, type CapabilityId, type CapabilityModule } from '#shared/capabilities';
 
 const config = useRuntimeConfig();
 const isDemo = config.public.demoMode;
@@ -19,6 +20,12 @@ const { data: reporterConfig } = await useFetch<{ url: string; token: string } |
 const apiKeyPlaceholder = 'pd_YOUR_API_KEY';
 const bearerToken = computed(() => reporterConfig.value?.token ?? apiKeyPlaceholder);
 
+// "Core tools only" appends ?modules=core to the URL and every client snippet,
+// so a client can connect with just the core module's tools for a tighter token
+// budget. It only narrows what the server lists; it never re-enables a tool an
+// instance has declined.
+const coreOnly = ref(false);
+
 const requestUrl = useRequestURL();
 const mcpUrl = computed(() => {
   // Prefer the reporter-provided URL (desktop), then an explicitly configured
@@ -28,7 +35,8 @@ const mcpUrl = computed(() => {
   // the displayed URL would be just `/mcp` without a domain. Trailing slashes
   // are stripped to avoid `//mcp`, matching the server's resolvePublicBaseUrl.
   const base = reporterConfig.value?.url || (config.public.siteUrl as string) || requestUrl.origin;
-  return `${base.replace(/\/+$/, '')}/mcp`;
+  const url = `${base.replace(/\/+$/, '')}/mcp`;
+  return coreOnly.value ? `${url}?modules=core` : url;
 });
 
 useHead({ title: 'MCP server — Piwi Dashboard' });
@@ -45,6 +53,38 @@ const desktopTools = DESKTOP_MCP_TOOL_DEFS;
 // Same for the prompts the server exposes over `prompts/list`
 // (see shared/mcp-prompts.ts).
 const prompts = MCP_PROMPT_DEFS;
+
+// The instance's resolved capability states, so the catalog matches what the
+// server actually serves: a tool whose capability is declined is not listed
+// here either. No decline controls live on this page — they belong on Setup.
+const { state } = useInstanceCapabilities();
+const isDeclined = (tool: { capability?: CapabilityId }) =>
+  tool.capability ? state(tool.capability) === 'declined' : false;
+
+const MODULE_LABELS: Record<CapabilityModule, string> = {
+  core: 'Core',
+  workflow: 'Workflow',
+  healing: 'Healing',
+  agents: 'Agents',
+};
+
+// The catalog grouped by module, in registry order, with declined tools removed
+// and the count kept per group so the header can show it.
+const toolGroups = computed(() =>
+  CAPABILITY_MODULES.map((module) => ({
+    module,
+    label: MODULE_LABELS[module],
+    tools: tools.filter((t) => t.module === module && !isDeclined(t)),
+  })).filter((group) => group.tools.length > 0),
+);
+const listedDesktopTools = computed(() => desktopTools.filter((t) => !isDeclined(t)));
+
+// Tools an instance has declined: shown, folded, so the page stays honest about
+// what exists without listing tools the server will not serve.
+const notListedTools = computed(() => [
+  ...tools.filter(isDeclined),
+  ...(isDesktop ? desktopTools.filter(isDeclined) : []),
+]);
 
 const clientItems = [
   { label: 'Claude Code', slot: 'claude-code' },
@@ -347,21 +387,64 @@ const windsurfSnippet = computed(() =>
 
         <!-- What it is -->
         <SectionCard icon="i-lucide-bot" title="What it provides" help="mcp.tools">
-          <div class="flex flex-col gap-1.5">
-            <div
-              v-for="t in tools"
-              :key="t.name"
-              class="flex items-start gap-3 px-3 py-2.5 rounded-md bg-elevated/50 border border-default hover:bg-elevated transition-colors"
-            >
-              <UIcon name="i-lucide-wrench" class="size-4 mt-0.5 shrink-0 text-primary" />
-              <div class="min-w-0">
-                <p class="text-sm font-mono font-semibold text-foreground">{{ t.name }}</p>
-                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ t.description }}</p>
+          <div class="flex items-start justify-between gap-3 mb-4">
+            <p class="text-sm text-gray-500 dark:text-gray-400">
+              Tools are grouped by module. Turn on <strong>Core tools only</strong> to connect a client with just the
+              core module — the URL and every snippet above narrow to
+              <code class="font-mono text-xs">?modules=core</code>.
+            </p>
+            <USwitch v-model="coreOnly" label="Core tools only" class="shrink-0" />
+          </div>
+
+          <div data-shot="mcp-tool-modules" class="flex flex-col gap-5">
+            <div v-for="group in toolGroups" :key="group.module">
+              <div class="flex items-center gap-2 mb-2">
+                <h3 class="text-xs font-medium text-muted">{{ group.label }}</h3>
+                <span class="text-xs text-muted">{{ group.tools.length }}</span>
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <div
+                  v-for="t in group.tools"
+                  :key="t.name"
+                  class="flex items-start gap-3 px-3 py-2.5 rounded-md bg-elevated/50 border border-default hover:bg-elevated transition-colors"
+                >
+                  <UIcon name="i-lucide-wrench" class="size-4 mt-0.5 shrink-0 text-primary" />
+                  <div class="min-w-0">
+                    <p class="text-sm font-mono font-semibold text-foreground">{{ t.name }}</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ t.description }}</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          <div v-if="isDesktop" data-shot="mcp-desktop-tools">
+          <!-- Declined capabilities' tools: named, folded, never served. -->
+          <div v-if="notListedTools.length" class="mt-5">
+            <details class="rounded-md border border-default bg-elevated/30 px-3 py-2.5">
+              <summary class="cursor-pointer text-xs font-medium text-muted">
+                Not listed on this instance ({{ notListedTools.length }})
+              </summary>
+              <p class="text-xs text-muted mt-2">
+                Their capability is declined on Setup, so the MCP server does not serve them. An administrator can
+                reconsider on the Setup page.
+              </p>
+              <div class="flex flex-col gap-1.5 mt-3">
+                <div
+                  v-for="t in notListedTools"
+                  :key="t.name"
+                  class="flex items-start gap-3 px-3 py-2 rounded-md border border-default"
+                >
+                  <UIcon name="i-lucide-wrench" class="size-4 mt-0.5 shrink-0 text-muted" />
+                  <div class="min-w-0">
+                    <p class="text-sm font-mono text-muted">{{ t.name }}</p>
+                    <p class="text-xs text-muted mt-0.5">{{ t.description }}</p>
+                  </div>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <div v-if="isDesktop && listedDesktopTools.length" data-shot="mcp-desktop-tools">
             <p class="text-sm text-highlighted leading-relaxed mt-5">
               Because it runs on this machine, the desktop app registers as
               <code class="font-mono">piwi-desktop</code> and adds tools that reach the disk — things a hosted instance
@@ -369,7 +452,7 @@ const windsurfSnippet = computed(() =>
             </p>
             <div class="flex flex-col gap-1.5 mt-3">
               <div
-                v-for="t in desktopTools"
+                v-for="t in listedDesktopTools"
                 :key="t.name"
                 class="flex items-start gap-3 px-3 py-2.5 rounded-md bg-elevated/50 border border-default hover:bg-elevated transition-colors"
               >
