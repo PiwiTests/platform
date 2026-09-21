@@ -57,8 +57,13 @@ const prompts = MCP_PROMPT_DEFS;
 // The instance's resolved capability states, so the catalog matches what the
 // server actually serves: a tool whose capability is declined is not listed
 // here either. No decline controls live on this page — they belong on Setup.
-const { state } = await useInstanceCapabilities();
+const { state, canDecide } = await useInstanceCapabilities();
 const isDeclined = (tool: McpToolDef) => (tool.capability ? state(tool.capability) === 'declined' : false);
+
+// When the whole `mcp` capability is declined the page still answers its URL,
+// with one line instead of the setup content (D5): administrators get a link
+// back to Setup to reconsider, everyone else a plain statement.
+const mcpDeclined = computed(() => state('mcp') === 'declined');
 
 const MODULE_LABELS: Record<CapabilityModule, string> = {
   core: 'Core',
@@ -209,7 +214,15 @@ const windsurfSnippet = computed(() =>
     </template>
 
     <template #body>
-      <div class="max-w-3xl mx-auto p-6 space-y-6">
+      <div v-if="mcpDeclined" class="max-w-3xl mx-auto p-6">
+        <p class="text-sm text-muted">
+          <template v-if="canDecide"
+            >Declined on Setup · <NuxtLink to="/setup" :class="SENTENCE_LINK_CLASS">Reconsider</NuxtLink></template
+          >
+          <template v-else>MCP server is turned off for this instance.</template>
+        </p>
+      </div>
+      <div v-else class="max-w-3xl mx-auto p-6 space-y-6">
         <UAlert
           v-if="isDemo"
           color="info"
