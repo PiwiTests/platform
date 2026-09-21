@@ -54,6 +54,7 @@ export const projects = pgTable(
     scmToken: text('scm_token'), // Per-project SCM token for GitHub/GitLab/Bitbucket API access
     defaultBranch: text('default_branch'), // Repository default branch; null = resolve from SCM provider, else 'main'
     ciRerun: jsonb('ci_rerun'), // CiRerunSettings — provider-specific "re-run from the dashboard" target (off by default)
+    capabilities: jsonb('capabilities'), // Partial<Record<CapabilityId, 'declined' | 'enabled'>> — per-project capability decisions
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
