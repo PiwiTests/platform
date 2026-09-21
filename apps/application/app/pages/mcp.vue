@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS } from '#shared/mcp-tools';
+import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS, type McpToolDef } from '#shared/mcp-tools';
 import { MCP_PROMPT_DEFS } from '#shared/mcp-prompts';
-import { CAPABILITY_MODULES, type CapabilityId, type CapabilityModule } from '#shared/capabilities';
+import { CAPABILITY_MODULES, type CapabilityModule } from '#shared/capabilities';
 
 const config = useRuntimeConfig();
 const isDemo = config.public.demoMode;
@@ -58,8 +58,7 @@ const prompts = MCP_PROMPT_DEFS;
 // server actually serves: a tool whose capability is declined is not listed
 // here either. No decline controls live on this page — they belong on Setup.
 const { state } = useInstanceCapabilities();
-const isDeclined = (tool: { capability?: CapabilityId }) =>
-  tool.capability ? state(tool.capability) === 'declined' : false;
+const isDeclined = (tool: McpToolDef) => (tool.capability ? state(tool.capability) === 'declined' : false);
 
 const MODULE_LABELS: Record<CapabilityModule, string> = {
   core: 'Core',
