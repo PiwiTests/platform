@@ -7,10 +7,11 @@ import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/cap
  *
  * Backed by `useAsyncData` keyed `capabilities-project-<id>`, so the states are
  * fetched during SSR and hydrated from the payload rather than fetched only on
- * the client. Call it at the top of `<script setup>` (and `await` it, as
- * `SubscribeBell.vue` does with `useFetch`) so a declined capability's chrome is
- * absent from the first render instead of flashing in and disappearing after
- * hydration. Repeated calls for the same project share one fetch through the key.
+ * the client. It is async: `await` it at the top of `<script setup>` (as
+ * `SubscribeBell.vue` does with `useFetch`), which resolves under the page's
+ * Suspense boundary so a declined capability's chrome is absent from the first
+ * render instead of flashing in and disappearing after hydration. Repeated calls
+ * for the same project share one fetch through the key.
  *
  * `state(id)` is the resolved state, `isHidden(id)` is true when declined or not
  * applicable, `canDecide` gates the controls to administrators, `decide` writes
@@ -18,10 +19,10 @@ import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/cap
  * instance decline; `null` clears a decision). A read failure resolves to an
  * empty list.
  */
-export function useProjectCapabilities(projectId: number) {
+export async function useProjectCapabilities(projectId: number) {
   const { canSeeAdmin } = useAuth();
 
-  const { data: items } = useAsyncData<CapabilityStateItem[]>(
+  const { data: items } = await useAsyncData<CapabilityStateItem[]>(
     `capabilities-project-${projectId}`,
     () =>
       $fetch<CapabilityStates>(`/api/projects/${projectId}/capabilities`)

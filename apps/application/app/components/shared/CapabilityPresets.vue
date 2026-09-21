@@ -18,7 +18,7 @@ defineProps<{
   help?: HelpTopicKey;
 }>();
 
-const { state, canDecide, decideMany } = useInstanceCapabilities();
+const { state, canDecide, decideMany } = await useInstanceCapabilities();
 
 const busy = ref(false);
 
