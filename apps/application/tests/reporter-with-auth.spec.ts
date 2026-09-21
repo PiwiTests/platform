@@ -3,6 +3,7 @@ import { spawn } from 'child_process';
 import { join, resolve } from 'path';
 import { existsSync, rmSync } from 'fs';
 import { PROJECT } from '#shared/test-project-names';
+import { waitForHydration } from './utils';
 
 function safeRmSync(path: string, options?: Parameters<typeof rmSync>[1]) {
   try {
@@ -1076,5 +1077,51 @@ test.describe.serial('Reporter with authentication enabled', () => {
     const afterRes = await request.get(`${AUTH_SERVER_URL}/api/users`);
     const afterData = await afterRes.json();
     expect(afterData.items.find((u: { username: string }) => u.username === 'admin').role).toBe('administrator');
+  });
+
+  // ---------------------------------------------------------------------------
+  // D11 in the browser: a "user" sees the effect of an undecided capability (the
+  // one naming line) but none of the decline controls, and cannot reach Setup.
+  // Reuses ci-user, who already has access to a fixtureless failing run in
+  // PROJECT.AUTH_ROLE_CHECKS from an earlier test in this serial suite.
+  // ---------------------------------------------------------------------------
+
+  test('a "user" sees the evidence footer sentence with no decline controls, and Setup is unreachable', async ({
+    page,
+    request,
+  }) => {
+    await loginAs(request, 'admin', 'adminpassword123');
+    // The capture fixtures are undecided for this project, so the footer names the
+    // missing sources — clear any stored decision to be sure.
+    await request.patch(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`, {
+      data: { decisions: { fixtures: null } },
+    });
+    const detail = (await (await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}`)).json()) as {
+      testRuns: Array<{ id: number }>;
+    };
+    const run = (await (await request.get(`${AUTH_SERVER_URL}/api/test-runs/${detail.testRuns[0]!.id}`)).json()) as {
+      testCases: Array<{ status: string; executionId: number }>;
+    };
+    const execId = run.testCases.find((c) => c.status === 'failed')!.executionId;
+
+    // Sign in as the "user"-role account in the browser.
+    await page.goto(`${AUTH_SERVER_URL}/login`);
+    await page.getByRole('textbox', { name: 'Username*' }).fill('ci-user');
+    await page.getByRole('textbox', { name: 'Password*', exact: true }).fill('userpassword123');
+    await page.getByRole('button', { name: 'Login' }).click();
+    await page.waitForURL(`${AUTH_SERVER_URL}/`);
+
+    // The footer names the missing sources but offers no decline controls.
+    await page.goto(`${AUTH_SERVER_URL}/test-run-cases/${execId}`);
+    await waitForHydration(page);
+    const footer = page.locator('[data-shot="evidence-fixtures-footer"]');
+    await expect(footer).toContainText('not captured for this project');
+    await expect(footer.getByRole('button', { name: 'Not for this project' })).toHaveCount(0);
+    await expect(footer.getByRole('button', { name: 'Not for this instance' })).toHaveCount(0);
+    await expect(footer.getByRole('link', { name: 'Add fixtures' })).toHaveCount(0);
+
+    // Setup is administrator-only: the user is redirected away from it.
+    await page.goto(`${AUTH_SERVER_URL}/setup`);
+    await expect(page).not.toHaveURL(`${AUTH_SERVER_URL}/setup`);
   });
 });

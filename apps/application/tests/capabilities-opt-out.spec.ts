@@ -103,4 +103,16 @@ test.describe.serial('Capabilities opt-out', () => {
     await waitForHydration(page);
     await expect(page.locator('[data-shot="evidence-fixtures-footer"]')).toBeVisible();
   });
+
+  test('a stored project decision is preselected in the edit form', async ({ page, request }) => {
+    // A stored decline must round-trip: the project payload carries it, so the
+    // form's tri-state opens on it rather than the instance default.
+    await request.patch(`/api/projects/${projectId}/capabilities`, { data: { decisions: { fixtures: 'declined' } } });
+
+    await page.goto(`/projects/${projectId}?tab=settings`);
+    await waitForHydration(page);
+    await expect(page.getByLabel('Capture fixtures for this project')).toContainText('Declined for this project');
+
+    await request.patch(`/api/projects/${projectId}/capabilities`, { data: { decisions: { fixtures: null } } });
+  });
 });
