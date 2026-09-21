@@ -32,16 +32,18 @@ PIWI_STORAGE_TYPE=s3
 
 PIWI_S3_BUCKET=your-bucket-name
 PIWI_S3_REGION=us-east-1
+
+# Optional: static credentials and a custom endpoint for S3-compatible services
 PIWI_S3_ACCESS_KEY_ID=your-access-key
 PIWI_S3_SECRET_ACCESS_KEY=your-secret-key
-
-# Optional: custom endpoint for S3-compatible services
 PIWI_S3_ENDPOINT=https://s3.example.com
 ```
 
 ### AWS S3
 
-Obtain credentials from **AWS Console → IAM → Users → Create user → Create access key**.
+When the static credential variables are omitted, Piwi uses the AWS SDK default credential chain. This supports ECS
+task roles, EC2 instance roles, environment credentials and shared AWS configuration without storing access keys in
+Piwi. If either static credential variable is set, both are required.
 
 Minimum required IAM permissions:
 
