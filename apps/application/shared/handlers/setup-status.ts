@@ -28,9 +28,12 @@ import {
   quarantinedTests,
   failureClusters,
   testRunsCases,
+  integrationConnections,
 } from '../../server/database/schema';
 import { and, eq, isNotNull, or } from 'drizzle-orm';
 import { getAppSetting, setAppSetting } from '../../server/utils/app-settings';
+import { PR_FEEDBACK_KEY } from '#shared/pr-feedback';
+import { AUTO_HEAL_KEY } from '#shared/auto-heal';
 import { compareVersions } from '#shared/piwi-env-vars';
 import {
   CAPABILITIES,
@@ -118,6 +121,9 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     hasMarkers,
     hasQuarantine,
     hasGreenSamples,
+    hasPrFeedback,
+    hasAutoHeal,
+    hasIntegrations,
   ] = await Promise.all([
     exists(
       db,
@@ -223,6 +229,14 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
             )
             .limit(1),
     ),
+    // Pull-request feedback and auto-heal read active from their stored settings
+    // (the `enabled` flag the full getters resolve, read here directly so this
+    // handler stays free of the SCM providers those getters pull in); issue
+    // integrations from a single connection row. None has a project dimension, so
+    // these stay instance-wide even when a project is scoped.
+    getAppSetting<{ enabled?: boolean }>(db, PR_FEEDBACK_KEY).then((s) => s?.enabled === true),
+    getAppSetting<{ enabled?: boolean }>(db, AUTO_HEAL_KEY).then((s) => s?.enabled === true),
+    exists(db, db.select({ id: integrationConnections.id }).from(integrationConnections).limit(1)),
   ]);
 
   // AI also counts as active when pinned by environment — an env-configured
@@ -238,14 +252,13 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     'backend-logs': hasServerTraces,
     clustering: hasClusters,
     ai: hasAiSetting || aiFromEnv,
-    // No evidence probe yet: MCP is always available, and pull-request feedback,
-    // auto-heal and issue integrations are read from their instance settings, so
-    // the resolver reports them from their decision (available/undecided/declined).
+    // MCP has no evidence probe — it is always available, so the resolver marks
+    // it configured rather than active.
     mcp: false,
     notifications: hasChannels,
-    'pr-feedback': false,
-    'auto-heal': false,
-    integrations: false,
+    'pr-feedback': hasPrFeedback,
+    'auto-heal': hasAutoHeal,
+    integrations: hasIntegrations,
     scm: hasScm,
     tags: hasTags,
     markers: hasMarkers,

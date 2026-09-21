@@ -168,3 +168,29 @@ describe('first-run version and the New marker', () => {
     expect(await getAppSetting<string>(db, 'first-run-version')).toBeNull();
   });
 });
+
+describe('settings-backed capabilities', () => {
+  test('pull-request feedback is active once its setting is enabled', async () => {
+    expect((await activeIds(db)).has('pr-feedback')).toBe(false);
+    await setAppSetting(db, 'pr_feedback', { enabled: true });
+    expect((await activeIds(db)).has('pr-feedback')).toBe(true);
+  });
+
+  test('auto-heal is active once its setting is enabled', async () => {
+    expect((await activeIds(db)).has('auto-heal')).toBe(false);
+    await setAppSetting(db, 'auto_heal', { enabled: true });
+    expect((await activeIds(db)).has('auto-heal')).toBe(true);
+  });
+
+  test('issue integrations are active once a connection exists', async () => {
+    expect((await activeIds(db)).has('integrations')).toBe(false);
+    await db.insert(schema.integrationConnections).values({
+      provider: 'jira',
+      name: 'Jira',
+      baseUrl: 'https://example.atlassian.net',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    expect((await activeIds(db)).has('integrations')).toBe(true);
+  });
+});
