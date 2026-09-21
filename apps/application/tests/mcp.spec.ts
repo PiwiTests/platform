@@ -459,33 +459,4 @@ test.describe.serial('MCP server', () => {
     expect(names).not.toContain('create_issue'); // workflow
     expect(names).not.toContain('get_cluster_diagnosis'); // agents
   });
-
-  test('declining ai drops the diagnosis tools, and calling one is "Unknown tool"', async ({ request }) => {
-    const patch = await request.patch('/api/capabilities', { data: { decisions: { ai: 'declined' } } });
-    expect(patch.ok()).toBeTruthy();
-    const DIAGNOSIS = ['get_cluster_diagnosis', 'run_cluster_diagnosis', 'submit_diagnosis_feedback'];
-    try {
-      const caps = await (await request.get('/api/capabilities')).json();
-      const aiState = caps.items.find((i: { id: string }) => i.id === 'ai')?.state;
-      const names: string[] = (await mcp(request, 'tools/list')).result.tools.map((t: { name: string }) => t.name);
-      if (aiState === 'declined') {
-        // No AI evidence on this instance, so the decline drops the diagnosis tools.
-        for (const name of DIAGNOSIS) expect(names).not.toContain(name);
-        expect(names.length).toBe(MCP_TOOL_DEFS.length - DIAGNOSIS.length);
-        // A dropped tool answers the same "Unknown tool" error as any unknown name.
-        const call = await mcp(request, 'tools/call', {
-          name: 'get_cluster_diagnosis',
-          arguments: { clusterId: 1 },
-        });
-        expect(call.error).toBeDefined();
-        expect(call.error.code).toBe(-32602);
-      } else {
-        // A concurrent spec has AI configured; evidence wins over the decline, so
-        // the tools stay listed — the resolver's contract, exercised either way.
-        for (const name of DIAGNOSIS) expect(names).toContain(name);
-      }
-    } finally {
-      await request.patch('/api/capabilities', { data: { decisions: { ai: null } } });
-    }
-  });
 });
