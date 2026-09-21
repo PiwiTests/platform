@@ -69,6 +69,15 @@ class RunEventBus {
    * Populated by start/begin endpoints; cleared when the run finishes.
    */
   private runStates = new Map<number, RunState>();
+  /**
+   * The begin payloads of test cases that have started but not yet completed,
+   * keyed by run ID then by a stable case key. Only completed cases get a DB
+   * row, so a client that connects or refreshes mid-run has nothing to show a
+   * running case from; the stream catch-up replays these as `test-begin`
+   * events. A case is dropped when it completes; the whole run's set goes on
+   * cleanup.
+   */
+  private runningCases = new Map<number, Map<string, Record<string, unknown>>>();
 
   constructor() {
     // Allow many concurrent listeners (one per SSE connection)
@@ -161,6 +170,27 @@ class RunEventBus {
     if (state?.shardTokens?.size === 0) state.shardTokens = undefined;
   }
 
+  /** Remember a case that has begun so the stream catch-up can replay it. */
+  recordRunningCase(runId: number, key: string, data: Record<string, unknown>): void {
+    let cases = this.runningCases.get(runId);
+    if (!cases) {
+      cases = new Map();
+      this.runningCases.set(runId, cases);
+    }
+    cases.set(key, data);
+  }
+
+  /** Drop a running case once it completes. */
+  clearRunningCase(runId: number, key: string): void {
+    this.runningCases.get(runId)?.delete(key);
+  }
+
+  /** The begin payloads of every case still running for a run. */
+  getRunningCases(runId: number): Record<string, unknown>[] {
+    const cases = this.runningCases.get(runId);
+    return cases ? [...cases.values()] : [];
+  }
+
   /**
    * Clean up all in-memory state for a finished run.
    */
@@ -168,6 +198,7 @@ class RunEventBus {
     this.sequences.delete(runId);
     this.finalStatuses.delete(runId);
     this.runStates.delete(runId);
+    this.runningCases.delete(runId);
   }
 
   /**
