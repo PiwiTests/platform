@@ -463,6 +463,117 @@ test.describe.serial('Streaming API Tests', () => {
   });
 });
 
+// ── /stream catch-up for still-running cases ────────────────────────────────
+
+/**
+ * A case that has begun but not completed has no DB row, so a client that
+ * connects (or refreshes) mid-run must still see it: the stream catch-up
+ * replays every still-running case as a `test-begin` event, and stops once the
+ * case completes (it is then replayed as `test-completed` from the DB row).
+ */
+test.describe.serial('Streaming catch-up for running cases', () => {
+  let runId: number;
+  let streamToken: string;
+
+  const runningCase = { title: 'in-progress case', location: 'tests/running.spec.ts:7:3' };
+
+  // Read the SSE stream's catch-up until `predicate` matches a parsed event or
+  // the byte cap is hit, then abort. Posting the begin/complete BEFORE opening
+  // the stream is the mid-run-refresh scenario: the client connects late.
+  async function findCatchUpEvent(
+    baseURL: string,
+    predicate: (e: { type?: string; data?: Record<string, unknown> }) => boolean,
+  ): Promise<{ type?: string; data?: Record<string, unknown> } | null> {
+    const controller = new AbortController();
+    const response = await fetch(`${baseURL}/api/test-runs/${runId}/stream`, { signal: controller.signal });
+    expect(response.ok).toBeTruthy();
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    let match: { type?: string; data?: Record<string, unknown> } | null = null;
+    try {
+      while (match === null) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+        for (const chunk of text.split('\n\n')) {
+          const line = chunk.split('\n').find((l) => l.startsWith('data:'));
+          if (!line) continue;
+          try {
+            const parsed = JSON.parse(line.slice('data:'.length).trim());
+            if (predicate(parsed)) match = parsed;
+          } catch {
+            continue;
+          }
+        }
+        // Hard cap so a regression cannot hang the suite
+        if (text.length > 65536) break;
+      }
+    } finally {
+      reader.releaseLock();
+      controller.abort();
+    }
+    return match;
+  }
+
+  test.beforeAll(async ({ request }) => {
+    const startResp = await request.post('/api/test-runs/start', {
+      data: { projectName: PROJECT.STREAMING_RUNNING_CATCHUP, startTime: new Date().toISOString(), totalTests: 1 },
+    });
+    expect(startResp.ok()).toBeTruthy();
+    const data = await startResp.json();
+    runId = data.runId;
+    streamToken = data.streamToken;
+  });
+
+  test('a begun-but-unfinished case is not in the REST payload yet', async ({ request }) => {
+    const beginResp = await request.post(`/api/test-runs/${runId}/events`, {
+      data: { streamToken, testCases: [{ type: 'begin', ...runningCase, workerIndex: 0 }] },
+    });
+    expect(beginResp.ok()).toBeTruthy();
+
+    // The run's REST payload only carries persisted (completed) cases, so the
+    // running case is absent — this is exactly why the stream must replay it.
+    const run = await (await request.get(`/api/test-runs/${runId}`)).json();
+    expect(run.testCases.find((tc: { title: string }) => tc.title === runningCase.title)).toBeUndefined();
+  });
+
+  test('the stream catch-up replays the running case as test-begin', async ({ baseURL }) => {
+    const event = await findCatchUpEvent(
+      baseURL!,
+      (e) => e.type === 'test-begin' && e.data?.title === runningCase.title,
+    );
+    expect(event, 'running case should be replayed on connect, not wait for the next live event').not.toBeNull();
+    expect(event!.data!.location).toBe(runningCase.location);
+  });
+
+  test('once the case completes it is replayed as test-completed, not test-begin', async ({ request, baseURL }) => {
+    const completeResp = await request.post(`/api/test-runs/${runId}/events`, {
+      data: {
+        streamToken,
+        testCases: [{ type: 'complete', ...runningCase, status: 'passed', duration: 900, retries: 0 }],
+      },
+    });
+    expect(completeResp.ok()).toBeTruthy();
+
+    // The case now has a DB row, so the catch-up serves it as test-completed and
+    // no longer as a running-case test-begin.
+    const completed = await findCatchUpEvent(
+      baseURL!,
+      (e) => e.data?.title === runningCase.title && (e.type === 'test-completed' || e.type === 'test-begin'),
+    );
+    expect(completed).not.toBeNull();
+    expect(completed!.type).toBe('test-completed');
+    expect(completed!.data!.status).toBe('passed');
+  });
+
+  test.afterAll(async ({ request }) => {
+    await request.post(`/api/test-runs/${runId}/finish`, {
+      data: { streamToken, status: 'passed', duration: 1000, totalTests: 1, passedTests: 1, failedTests: 0 },
+    });
+  });
+});
+
 // ── /heartbeat ────────────────────────────────────────────────────────────────
 
 test.describe.serial('Heartbeat API Tests', () => {

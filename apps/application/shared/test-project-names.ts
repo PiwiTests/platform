@@ -137,6 +137,7 @@ export const PROJECT = {
   STORAGE_TEST: 'storage-test-project',
   STREAMING_DURATION: 'streaming-duration-test',
   STREAMING_FLAKY: 'streaming-flaky-test',
+  STREAMING_RUNNING_CATCHUP: 'streaming-running-catchup-test',
   STREAMING_TEST: 'streaming-test-project',
   TAG_ASSIGNMENT: 'tag-assignment-test-project',
   TEST_API: 'test-api-project',
