@@ -888,6 +888,75 @@ test.describe.serial('Reporter with authentication enabled', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Capability endpoints — reads open to any signed-in user with access, writes
+  // administrator-only, and a project decision overriding the instance default.
+  // ---------------------------------------------------------------------------
+
+  async function loginAs(request: import('@playwright/test').APIRequestContext, username: string, password: string) {
+    const res = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, { data: { username, password } });
+    expect(res.ok()).toBeTruthy();
+  }
+
+  test('GET /api/capabilities is readable by a "user" role', async ({ request }) => {
+    await loginAs(request, 'ci-user', 'userpassword123');
+    const res = await request.get(`${AUTH_SERVER_URL}/api/capabilities`);
+    expect(res.ok()).toBeTruthy();
+    const body = (await res.json()) as { items: Array<{ id: string; module: string; state: string }> };
+    expect(Array.isArray(body.items)).toBe(true);
+    expect(body.items.length).toBeGreaterThan(0);
+  });
+
+  test('PATCH /api/capabilities is rejected for a "user" role', async ({ request }) => {
+    await loginAs(request, 'ci-user', 'userpassword123');
+    const res = await request.patch(`${AUTH_SERVER_URL}/api/capabilities`, {
+      data: { decisions: { notifications: 'declined' } },
+    });
+    expect(res.status()).toBe(403);
+  });
+
+  test('GET /api/projects/:id/capabilities is readable by a member "user" role', async ({ request }) => {
+    await loginAs(request, 'ci-user', 'userpassword123');
+    const res = await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`);
+    expect(res.ok()).toBeTruthy();
+    const body = (await res.json()) as { items: Array<{ id: string }> };
+    expect(body.items.some((i) => i.id === 'fixtures')).toBe(true);
+  });
+
+  test('PATCH /api/projects/:id/capabilities is rejected for a "user" role', async ({ request }) => {
+    await loginAs(request, 'ci-user', 'userpassword123');
+    const res = await request.patch(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`, {
+      data: { decisions: { quarantine: 'declined' } },
+    });
+    expect(res.status()).toBe(403);
+  });
+
+  test('a project enable overrides an instance decline', async ({ request }) => {
+    await loginAs(request, 'admin', 'adminpassword123');
+
+    const stateOf = (items: Array<{ id: string; state: string }>, id: string) => items.find((i) => i.id === id)?.state;
+
+    // Decline quarantine instance-wide; the project sees it declined.
+    await request.patch(`${AUTH_SERVER_URL}/api/capabilities`, { data: { decisions: { quarantine: 'declined' } } });
+    let res = await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`);
+    let body = (await res.json()) as { items: Array<{ id: string; state: string }> };
+    expect(stateOf(body.items, 'quarantine')).toBe('declined');
+
+    // Enable it for this project; the override lifts the decline.
+    await request.patch(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`, {
+      data: { decisions: { quarantine: 'enabled' } },
+    });
+    res = await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`);
+    body = (await res.json()) as { items: Array<{ id: string; state: string }> };
+    expect(stateOf(body.items, 'quarantine')).not.toBe('declined');
+
+    // Restore a clean slate for later tests.
+    await request.patch(`${AUTH_SERVER_URL}/api/capabilities`, { data: { decisions: { quarantine: null } } });
+    await request.patch(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`, {
+      data: { decisions: { quarantine: null } },
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // POST /api/failure-clusters/:id/diagnose/stream — required-role enforcement.
   //
   // The route declares `x-required-roles: ['administrator', 'reporter']`, which
