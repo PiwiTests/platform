@@ -9,27 +9,50 @@ import { resolvePublicBaseUrl } from '../utils/oauth-helpers';
 import { ok, rpcErr, RPC, mcpServerInfo, negotiateProtocolVersion } from '../utils/mcp/protocol';
 import type { JsonRpcRequest } from '../utils/mcp/protocol';
 import { MCP_PROMPT_DEFS } from '#shared/mcp-prompts';
-import { resolveInstanceStates } from '#shared/handlers/setup-status';
+import { resolveInstanceStates, getInstanceDecisions } from '#shared/handlers/setup-status';
 import { CAPABILITY_MODULES, type CapabilityModule } from '#shared/capabilities';
+import { filterServeableTools, narrowToolsByModule } from '../utils/mcp/filter';
 
 // The desktop app's bundled server (launched with PIWI_DESKTOP_TOKEN) advertises
 // the shared catalog plus the desktop-only tools that read and write files on the
 // machine it runs on; a hosted/Docker/npx server serves the shared catalog only.
 const IS_DESKTOP = !!process.env.PIWI_DESKTOP_TOKEN;
 const ACTIVE_TOOLS = IS_DESKTOP ? [...MCP_TOOLS, ...DESKTOP_MCP_TOOLS] : MCP_TOOLS;
+const TOOL_BY_NAME = new Map(ACTIVE_TOOLS.map((t) => [t.name, t]));
 const MAX_BODY_BYTES = 1_048_576; // 1 MB — reject oversized batches early
 
 const KNOWN_MODULES = new Set<CapabilityModule>(CAPABILITY_MODULES);
+
+/** True when any capability carries a stored instance decline. */
+function hasDecline(decisions: Record<string, unknown>): boolean {
+  return Object.values(decisions).some((v) => v === 'declined');
+}
 
 /**
  * The tools this instance serves: the full active catalog minus every tool whose
  * capability is declined at instance level. Undecided, available and active
  * capabilities all keep their tools, so an upgrade never silently shrinks the
  * list — only an explicit decline drops one.
+ *
+ * A tool can only be dropped when a decline is stored, so the cheap settings
+ * read comes first and the twelve evidence probes run only when one exists.
  */
 async function serveableTools(db: DbClient): Promise<McpTool[]> {
-  const states = await resolveInstanceStates(db);
-  return ACTIVE_TOOLS.filter((t) => !(t.capability && states[t.capability] === 'declined'));
+  if (!hasDecline(await getInstanceDecisions(db))) return [...ACTIVE_TOOLS];
+  return filterServeableTools(ACTIVE_TOOLS, await resolveInstanceStates(db));
+}
+
+/**
+ * The tool a `tools/call` may run, or null when the name is unknown or its
+ * capability is declined. A tool with no capability needs no query; a tool with
+ * one needs the evidence probes only when its capability carries a stored
+ * decline, since evidence still wins over a decline.
+ */
+async function serveableTool(db: DbClient, name: string | undefined): Promise<McpTool | null> {
+  const tool = name ? TOOL_BY_NAME.get(name) : undefined;
+  if (!tool || !tool.capability) return tool ?? null;
+  if ((await getInstanceDecisions(db))[tool.capability] !== 'declined') return tool;
+  return (await resolveInstanceStates(db))[tool.capability] === 'declined' ? null : tool;
 }
 
 /**
@@ -152,7 +175,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
     // ── Tool listing ─────────────────────────────────────────────────────────
     case 'tools/list': {
       const modules = parseModules(getRequestURL(event).searchParams.get('modules'));
-      const tools = (await serveableTools(db)).filter((t) => !modules || modules.has(t.module));
+      const tools = narrowToolsByModule(await serveableTools(db), modules);
       return ok(id, {
         tools: tools.map((t) => ({
           name: t.name,
@@ -168,7 +191,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
       // A tool whose capability is declined is dropped from the served set, so it
       // is "Unknown tool" here too — same answer the list gives. `?modules=` only
       // narrows the advertised list, so it does not block a call.
-      const tool = p?.name ? (await serveableTools(db)).find((t) => t.name === p.name) : null;
+      const tool = await serveableTool(db, p?.name);
       if (!tool) {
         return rpcErr(id, RPC.INVALID_PARAMS, `Unknown tool: ${p?.name}`);
       }
