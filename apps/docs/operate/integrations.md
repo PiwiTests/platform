@@ -34,6 +34,48 @@ Once connected, a Jira link — `https://your-team.atlassian.net/browse/PROJ-123
 host once its connection exists — is recognized as a Jira issue, unfurls with the summary and a status
 badge (colored by the issue's status category), and refreshes through the connection.
 
+## Permissions the token needs
+
+An API token, used over HTTP Basic (`email:apiToken`), acts within the permissions of the **account** it belongs to.
+So what matters is the Jira permissions of that account, granted **per project** in Jira's permission scheme, on every
+project you bind to a Piwi project. Both a **classic** and a **scoped** token work, see
+[Classic or scoped token](#classic-or-scoped-token) for the difference.
+
+**Test connection** (`GET /rest/api/3/myself`) needs only a valid token. Every other call maps to one standard
+Jira project permission:
+
+| Atlassian permission | Permission key | What it enables in Piwi |
+|---|---|---|
+| Browse Projects | `BROWSE_PROJECTS` | Unfurl a link, sync a tracked issue's status, title and assignee, list projects and issue types in the pickers, and search (JQL) to dedupe before filing. Prerequisite for everything below. |
+| Create Issues | `CREATE_ISSUES` | **Create issue** from a failure cluster. |
+| Add Comments | `ADD_COMMENTS` | The write-back policies (fix landed, regressed, still failing, merged). |
+| Transition Issues | `TRANSITION_ISSUES` | The *transition on fix* and *reopen* policies. |
+| Assign Issues | `ASSIGN_ISSUES` | Set the assignee on a created issue, and list assignable users in the picker. |
+| Create Attachments | `CREATE_ATTACHMENTS` | Attach the failure screenshot when its toggle is on. |
+
+For the **full integration**, grant all six on each bound project. You can drop the ones whose feature you do not
+use: `CREATE_ATTACHMENTS` if you never attach a screenshot, `ASSIGN_ISSUES` if you never set an assignee,
+`ADD_COMMENTS` and `TRANSITION_ISSUES` if the [write-back policies](/features/issue-tracking#keep-the-ticket-honest)
+stay off. `BROWSE_PROJECTS` on its own is enough for read-only unfurl and status sync.
+
+The assignable-user picker (`GET /rest/api/3/user/assignable/search`) is satisfied by `ASSIGN_ISSUES` on the
+project, or by the **Browse users and groups** global permission (`USER_PICKER`).
+
+The [inbound webhook](#registering-the-inbound-webhook) does **not** use this token. A Jira admin registers it in
+Jira, and it can only ever refresh a link, so it needs no permission from the Piwi account.
+
+### Classic or scoped token
+
+Both work. A **classic** token authenticates directly against your site (`https://your-team.atlassian.net`). A
+**scoped** ("granular") token authenticates only through Atlassian's `https://api.atlassian.com/ex/jira/{cloudId}`
+gateway, so Piwi detects that on the first `401`, resolves your site's cloud id from its public `_edge/tenant_info`
+endpoint, and routes REST calls through the gateway from then on, with no extra configuration (browse links and link
+detection keep using the site URL). The resolved cloud id is stored on the connection when you **Test connection**.
+
+A scoped token must additionally carry the scopes **`read:jira-work`** (unfurl, sync, search, the pickers),
+**`write:jira-work`** (create, comment, transition, attach) and **`read:jira-user`** (the account check and the
+assignable-user picker), on top of the account permissions above.
+
 ## Environment-managed vs dashboard-managed
 
 A connection can live in either place:

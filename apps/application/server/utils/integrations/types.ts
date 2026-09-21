@@ -84,6 +84,12 @@ export interface IssueTracker {
   attach?(key: string, file: { name: string; bytes: Uint8Array; mime: string }): Promise<void>;
   issueUrl(key: string): string;
   parseIssueUrl(url: string): { key: string } | null;
+  /**
+   * Provider config discovered while making calls (e.g. a Jira cloud id resolved
+   * for a scoped token), for the connection layer to persist. Null until a call
+   * has needed it.
+   */
+  detectedConfig?(): Record<string, unknown> | null;
 }
 
 /** The credential shape a tracker client is constructed with. */
