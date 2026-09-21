@@ -72,6 +72,7 @@ useNotificationStream();
 useDashboard();
 
 const { canSeeAdmin } = useAuth();
+const { isHidden: capHidden } = useInstanceCapabilities();
 
 // Extract current project ID from route (if viewing a project page)
 const currentProjectId = computed(() => {
@@ -156,14 +157,18 @@ const links = computed(() => {
       target: '_blank',
     },
   ];
-  bottomLinks.unshift({
-    label: 'MCP server',
-    icon: 'i-lucide-bot',
-    to: '/mcp',
-    onSelect: () => {
-      open.value = false;
-    },
-  });
+  // The MCP server link follows the `mcp` capability: a declined instance drops
+  // it from the sidebar and the command palette alike.
+  if (!capHidden('mcp')) {
+    bottomLinks.unshift({
+      label: 'MCP server',
+      icon: 'i-lucide-bot',
+      to: '/mcp',
+      onSelect: () => {
+        open.value = false;
+      },
+    });
+  }
   // Setup is admin-only: it configures how results reach this instance and, in
   // the desktop build, exposes the local access token. Hiding the link also
   // removes it from the command palette, which is built from these same items.

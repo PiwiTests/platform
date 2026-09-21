@@ -1,6 +1,7 @@
 import type { NavigationMenuItem } from '@nuxt/ui';
 import { toValue, type MaybeRefOrGetter } from 'vue';
 import { buildSettingsNavSections, type SettingsPageId } from '~/utils/settings-metadata';
+import { CAPABILITIES, type CapabilityId } from '#shared/capabilities';
 
 /**
  * Reactive wrapper around `buildSettingsNavSections`.
@@ -18,12 +19,20 @@ import { buildSettingsNavSections, type SettingsPageId } from '~/utils/settings-
 export function useSettingsNav(envManaged?: MaybeRefOrGetter<Record<SettingsPageId, boolean>>) {
   const { canSeeAdmin } = useAuth();
   const isDesktop = useIsDesktop();
+  const { isHidden } = useInstanceCapabilities();
+
+  const declinedCapabilities = computed(() => {
+    const set = new Set<CapabilityId>();
+    for (const cap of CAPABILITIES) if (isHidden(cap.id)) set.add(cap.id);
+    return set;
+  });
 
   return computed<NavigationMenuItem[][]>(() =>
     buildSettingsNavSections({
       canSeeAdmin: canSeeAdmin.value,
       isDesktop,
       envManaged: envManaged ? toValue(envManaged) : undefined,
+      declinedCapabilities: declinedCapabilities.value,
     }),
   );
 }
