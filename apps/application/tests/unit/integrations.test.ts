@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,6 +16,7 @@ process.env.PIWI_SECRET_KEY = 'unit-test-secret-key-not-for-production';
 const { JiraClient } = await import('../../server/utils/integrations/jira/client');
 const {
   createConnection,
+  updateConnection,
   listConnections,
   getConnectionRow,
   createTracker,
@@ -172,6 +174,78 @@ describe('connections and link resolution', () => {
     expect(tracker!.provider).toBe('jira');
   });
 
+  test('the summary exposes the non-secret account email but never the API token', async () => {
+    const created = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Team Jira',
+      baseUrl: 'https://team.atlassian.net',
+      credentials: { email: 'me@team.io', apiToken: 'secret-token' },
+    });
+    expect(created.credentialValues).toEqual({ email: 'me@team.io' });
+    expect(JSON.stringify(created)).not.toContain('secret-token');
+
+    const [listed] = await listConnections(dbc);
+    expect(listed!.credentialValues.email).toBe('me@team.io');
+    expect(JSON.stringify(listed)).not.toContain('secret-token');
+  });
+
+  test('rotating only the API token keeps the stored account email', async () => {
+    const created = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Team Jira',
+      baseUrl: 'https://team.atlassian.net',
+      credentials: { email: 'me@team.io', apiToken: 'secret-token' },
+    });
+
+    // The edit form resubmits only the token; the email field is left blank.
+    const updated = await updateConnection(dbc, created.id, { credentials: { apiToken: 'rotated-token' } });
+    expect(updated?.credentialValues.email).toBe('me@team.io');
+    expect(updated?.status).toBe('unverified');
+
+    // Both fields survived, so the connection still resolves a tracker.
+    const tracker = await createTracker(dbc, created.id);
+    expect(tracker).not.toBeNull();
+  });
+
+  test('correcting only the account email keeps the stored API token', async () => {
+    const created = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Team Jira',
+      baseUrl: 'https://team.atlassian.net',
+      credentials: { email: 'typo@team.io', apiToken: 'secret-token' },
+    });
+
+    const updated = await updateConnection(dbc, created.id, { credentials: { email: 'correct@team.io' } });
+    expect(updated?.credentialValues.email).toBe('correct@team.io');
+
+    // The token was not resubmitted but still resolves a tracker (needs both fields).
+    const tracker = await createTracker(dbc, created.id);
+    expect(tracker).not.toBeNull();
+  });
+
+  test('resubmitting the same account email keeps a verified connection verified', async () => {
+    const created = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Team Jira',
+      baseUrl: 'https://team.atlassian.net',
+      credentials: { email: 'me@team.io', apiToken: 'secret-token' },
+    });
+    // Mark it verified as a successful `test connection` would.
+    await db
+      .update(schema.integrationConnections)
+      .set({ status: 'ok' })
+      .where(eq(schema.integrationConnections.id, created.id));
+
+    // Rename the connection while echoing back the pre-filled, unchanged email.
+    const updated = await updateConnection(dbc, created.id, {
+      name: 'Renamed',
+      credentials: { email: 'me@team.io' },
+    });
+    expect(updated?.name).toBe('Renamed');
+    expect(updated?.status).toBe('ok'); // an unchanged credential must not re-flag as unverified
+    expect(updated?.credentialValues.email).toBe('me@team.io');
+  });
+
   test('env vars create a read-only env-managed connection, removed when unset', async () => {
     process.env.PIWI_JIRA_BASE_URL = 'https://env.atlassian.net';
     process.env.PIWI_JIRA_EMAIL = 'env@acme.io';
@@ -182,6 +256,9 @@ describe('connections and link resolution', () => {
     expect(list[0]!.managedBy).toBe('env');
     expect(list[0]!.hasCredentials).toBe(true);
     expect(list[0]!.baseUrl).toBe('https://env.atlassian.net');
+    // The account email comes from the environment and is shown, never the token.
+    expect(list[0]!.credentialValues.email).toBe('env@acme.io');
+    expect(JSON.stringify(list[0])).not.toContain('env-token');
 
     // The env-managed connection resolves a tracker from the environment.
     const tracker = await createTracker(dbc, list[0]!.id);

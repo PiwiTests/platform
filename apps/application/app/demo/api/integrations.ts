@@ -6,6 +6,7 @@ import type {
   ExistingIssueCandidate,
   IssueDraft,
 } from '#shared/integrations/types';
+import { nonSecretCredentials } from '#shared/integrations/registry';
 import { renderMarkdown } from '#shared/integrations/render-markdown';
 import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
 import { resolveProjectIntegration, type ResolvedProjectIntegration } from '#shared/integrations/binding';
@@ -30,6 +31,7 @@ const DEMO_CONNECTION: ConnectionSummary = {
   lastError: null,
   managedBy: 'db',
   hasCredentials: true,
+  credentialValues: { email: 'demo@example.com' },
   hasWebhookToken: false,
   createdAt: DEMO_TIME,
   updatedAt: DEMO_TIME,
@@ -54,6 +56,7 @@ export function createDemoConnection(body: ConnectionInput): { connection: Conne
       config: body.config ?? { flavor: 'cloud' },
       status: 'unverified',
       hasCredentials: !!body.credentials && Object.keys(body.credentials).length > 0,
+      credentialValues: nonSecretCredentials(body.provider, body.credentials),
     },
   };
 }
@@ -65,6 +68,8 @@ export function updateDemoConnection(id: number, body: Partial<ConnectionInput>)
       id,
       name: body.name ?? DEMO_CONNECTION.name,
       baseUrl: body.baseUrl ?? DEMO_CONNECTION.baseUrl,
+      // Mirror the server's merge: submitted non-secret fields override the stored ones.
+      credentialValues: { ...DEMO_CONNECTION.credentialValues, ...nonSecretCredentials('jira', body.credentials) },
     },
   };
 }
