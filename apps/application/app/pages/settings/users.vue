@@ -20,14 +20,24 @@ const isAdmin = computed(() => {
 // Current user id (for showing own API keys)
 const currentUserId = computed(() => authState.value.user?.id ?? null);
 
-// Define columns with proper typing
+// Define columns with proper typing.
+//
+// The table uses a fixed layout (see the `table-fixed w-full` UI class below) so
+// it always fits the settings card instead of overflowing into a horizontal
+// scrollbar. The role, created and actions columns get fixed widths sized to
+// their content; the three text columns (username, name, email) share the
+// remaining width and truncate long values.
 const columns: TableColumn<UserDetails>[] = [
   { accessorKey: 'username', header: createSortHeader<UserDetails>('Username') },
   { accessorKey: 'name', header: createSortHeader<UserDetails>('Name') },
   { accessorKey: 'email', header: createSortHeader<UserDetails>('Email') },
-  { accessorKey: 'role', header: createSortHeader<UserDetails>('Role') },
-  { accessorKey: 'createdAt', header: createSortHeader<UserDetails>('Created') },
-  { accessorKey: 'actions', header: '' },
+  { accessorKey: 'role', header: createSortHeader<UserDetails>('Role'), meta: { class: { th: 'w-44', td: 'w-44' } } },
+  {
+    accessorKey: 'createdAt',
+    header: createSortHeader<UserDetails>('Created'),
+    meta: { class: { th: 'w-28', td: 'w-28' } },
+  },
+  { accessorKey: 'actions', header: '', meta: { class: { th: 'w-40', td: 'w-40' } } },
 ];
 
 // Add user modal
@@ -301,23 +311,36 @@ async function handleInviteUser(user: UserDetails) {
         />
       </template>
 
-      <TableScroller min-width="44rem" :bleed="false">
-        <UTable :data="users" :columns="columns" sticky class="max-h-[32rem]">
+      <!-- From `lg` up, the settings card is capped at `max-w-4xl`, so the table
+           switches to a fixed layout (`lg:table-fixed lg:w-full`) that fits the
+           card instead of forcing a horizontal scrollbar; long text columns
+           truncate. Below `lg` the card is full width, so the table keeps its
+           natural auto layout and the scroller handles narrow screens. -->
+      <TableScroller min-width="36rem" :bleed="false">
+        <UTable
+          :data="users"
+          :columns="columns"
+          sticky
+          class="max-h-[32rem]"
+          :ui="{ base: 'lg:table-fixed lg:w-full' }"
+        >
           <template #username-cell="{ row }">
-            {{ row.original.username }}
+            <span class="block truncate" :title="row.original.username">{{ row.original.username }}</span>
           </template>
 
           <template #name-cell="{ row }">
-            <span class="text-muted">{{ row.original.name || '-' }}</span>
+            <span class="block truncate text-muted" :title="row.original.name || undefined">{{
+              row.original.name || '-'
+            }}</span>
           </template>
 
           <template #email-cell="{ row }">
-            <span v-if="row.original.email" class="flex items-center gap-1 text-sm">
-              {{ row.original.email }}
+            <span v-if="row.original.email" class="flex items-center gap-1 text-sm min-w-0">
+              <span class="truncate" :title="row.original.email">{{ row.original.email }}</span>
               <UIcon
                 v-if="row.original.emailVerified"
                 name="i-lucide-circle-check-big"
-                class="size-3.5 text-success-500"
+                class="size-3.5 shrink-0 text-success-500"
                 title="Email verified"
               />
             </span>
@@ -330,7 +353,7 @@ async function handleInviteUser(user: UserDetails) {
               :model-value="row.original.role"
               :items="roleOptions"
               size="sm"
-              class="w-36"
+              class="w-full"
               :aria-label="`Change role for ${row.original.username}`"
               @update:model-value="(value) => handleChangeRole(row.original, value as string)"
             />
