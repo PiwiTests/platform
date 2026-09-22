@@ -41,14 +41,19 @@ async function load() {
   try {
     const res = await $fetch<{ items: Gap[] }>(`/api/projects/${props.projectId}/gaps` as `/api/projects/:id/gaps`);
     gaps.value = res.items ?? [];
+  } catch {
+    gaps.value = [];
+  } finally {
+    loading.value = false;
+  }
+  // Precision is secondary — its failure must not wipe the gaps list.
+  try {
     const precision = await $fetch<{ items: Array<{ detector: string; muted: boolean }> }>(
       `/api/projects/${props.projectId}/gaps/precision` as `/api/projects/:id/gaps/precision`,
     );
     mutedDetectors.value = (precision.items ?? []).filter((d) => d.muted).map((d) => d.detector);
   } catch {
-    gaps.value = [];
-  } finally {
-    loading.value = false;
+    mutedDetectors.value = [];
   }
 }
 
@@ -275,7 +280,14 @@ async function recompute() {
 
     <SectionCard v-if="graphSeed" title="Feature graph">
       <template #actions>
-        <UButton size="xs" color="neutral" variant="ghost" icon="i-lucide-x" @click="graphSeed = null" />
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-x"
+          aria-label="Close feature graph"
+          @click="graphSeed = null"
+        />
       </template>
       <FeatureGraphView
         :project-id="projectId"
@@ -291,7 +303,9 @@ async function recompute() {
             Enter the test case id that covers this. A manual reaches edge is written so the gap closes on the next
             recompute<span v-if="coveredDismiss"> and the gap is dismissed</span>.
           </p>
-          <UInput v-model="coveredTestId" type="number" placeholder="test case id" class="w-full" />
+          <UFormField label="Covering test case id">
+            <UInput v-model="coveredTestId" type="number" placeholder="test case id" class="w-full" />
+          </UFormField>
           <div class="flex justify-end gap-2">
             <UButton color="neutral" variant="ghost" label="Cancel" @click="coveredOpen = false" />
             <UButton color="primary" label="Save" @click="submitCovered" />
