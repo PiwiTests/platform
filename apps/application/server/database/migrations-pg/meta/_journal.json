@@ -526,6 +526,13 @@
       "when": 1789831728172,
       "tag": "0074_workable_shaman",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1790059197333,
+      "tag": "0075_handy_avengers",
+      "breakpoints": true
     }
   ]
 }

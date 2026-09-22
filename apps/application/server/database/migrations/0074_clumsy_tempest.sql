@@ -1,0 +1,1 @@
+ALTER TABLE `scenario_gaps` ADD `snoozed_at_run_id` integer;

@@ -519,6 +519,13 @@
       "when": 1789831727098,
       "tag": "0073_curvy_cassandra_nova",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "6",
+      "when": 1790059191987,
+      "tag": "0074_clumsy_tempest",
+      "breakpoints": true
     }
   ]
 }

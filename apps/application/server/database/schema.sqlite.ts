@@ -1331,6 +1331,7 @@ export const scenarioGaps = sqliteTable(
     dismissReason: text('dismiss_reason'), // 'not-worth-testing' | 'covered-elsewhere' | 'wrong'
     assignedTo: text('assigned_to'),
     snoozedUntil: integer('snoozed_until', { mode: 'timestamp_ms' }), // a snoozed gap wakes at this time; null with status snoozed = until the node changes
+    snoozedAtRunId: integer('snoozed_at_run_id'), // the subject node's last-seen run when snoozed "until the node changes"; wakes once the node is seen in a later run
     acceptedAt: integer('accepted_at', { mode: 'timestamp_ms' }), // when a gap was accepted; feeds the accepted-but-unwritten inbox queue
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
