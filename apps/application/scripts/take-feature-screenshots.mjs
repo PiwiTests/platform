@@ -282,6 +282,54 @@ const READY_INSPECTION = {
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
+    name: 'scenario-gaps-tab',
+    description: 'Gaps tab: gaps and findings grouped by feature, ranked, with class, factors and inbox verbs',
+    route: '/projects/1?tab=gaps',
+    viewport: { width: 1280, height: 1500 },
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="gaps-panel"]')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[data-shot="gaps-panel"]', pad: 12 });
+    },
+  },
+  {
+    name: 'scenario-gaps-graph',
+    description: 'Feature-graph view: the neighborhood around a gap node, colored by class, edges by kind',
+    route: '/projects/1?tab=gaps',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="gaps-panel"]')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      // Open the graph from the first gap's "view in the graph" button.
+      await page.locator('[data-shot^="gap-"]').first().getByRole('button', { name: 'View', exact: false }).click();
+      await page
+        .locator('[data-shot="feature-graph"] svg')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[data-shot="feature-graph"]', pad: 12 });
+    },
+  },
+  {
+    name: 'scenario-gaps-home-inbox',
+    description: 'Home: the accepted-but-unwritten scenario-gaps inbox queue',
+    route: '/',
+    viewport: { width: 1280, height: 1400 },
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="gaps-inbox"]')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[data-shot="gaps-inbox"]', pad: 12 });
+    },
+  },
+  {
     name: 'storage-analysis',
     description: 'Settings → Storage: usage KPIs, storage over time, by file kind and top projects',
     route: '/settings/storage',
