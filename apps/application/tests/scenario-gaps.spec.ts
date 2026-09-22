@@ -3,12 +3,21 @@ import { waitForHydration, retryPost } from './utils';
 import { PROJECT } from '#shared/test-project-names';
 
 /**
- * The Gaps tab: its triage verbs and the feature-graph view. A run reaching one
- * route seeds a single-covering-test gap after a recompute; the spec then drives
- * the tab against it.
+ * The Gaps tab: its triage verbs and the feature-graph view. A run reaching a
+ * route seeds a single-covering-test gap after a recompute. The tests share one
+ * project but each owns a distinct route (and therefore a distinct gap), and run
+ * serially, so mutating one test's gap never disturbs another's.
  */
 test.describe('Scenario gaps tab', () => {
+  test.describe.configure({ mode: 'serial' });
   test.setTimeout(90000);
+
+  // One distinct route per test, so each test triages its own gap.
+  const ROUTE = {
+    graph: 'POST /api/orders-graph',
+    accept: 'POST /api/orders-accept',
+    snooze: 'POST /api/orders-snooze',
+  };
 
   let projectId: number;
 
@@ -19,20 +28,21 @@ test.describe('Scenario gaps tab', () => {
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 3000,
-        totalTests: 1,
-        passedTests: 1,
+        totalTests: 3,
+        passedTests: 3,
         failedTests: 0,
         skippedTests: 0,
-        testCases: [
-          {
-            title: 'places an order',
+        testCases: Object.entries(ROUTE).map(([name, routeKey]) => {
+          const url = `https://app.test${routeKey.slice(routeKey.indexOf(' ') + 1)}`;
+          return {
+            title: `places an order (${name})`,
             status: 'passed',
             duration: 1200,
-            location: 'tests/orders.spec.ts:10:5',
+            location: `tests/orders-${name}.spec.ts:10:5`,
             retries: 0,
-            networkRequests: [{ method: 'POST', url: 'https://app.test/api/orders', status: 201 }],
-          },
-        ],
+            networkRequests: [{ method: 'POST', url, status: 201 }],
+          };
+        }),
       },
       timeout: 20000,
     });
@@ -46,43 +56,52 @@ test.describe('Scenario gaps tab', () => {
     expect(gaps.items.length).toBeGreaterThan(0);
   });
 
-  test('lists gaps and opens the feature-graph view', async ({ page }) => {
+  /** The open gap whose subject is the given route key, or null. */
+  async function gapIdForRoute(request: import('@playwright/test').APIRequestContext, routeKey: string) {
+    const res = await (await request.get(`/api/projects/${projectId}/gaps`)).json();
+    const gap = (res.items as Array<{ id: number; subject: { kind: string; key: string } }>).find(
+      (g) => g.subject.kind === 'route' && g.subject.key === routeKey,
+    );
+    return gap?.id ?? null;
+  }
+
+  test('lists gaps and opens the feature-graph view', async ({ page, request }) => {
+    const id = await gapIdForRoute(request, ROUTE.graph);
+    expect(id).not.toBeNull();
     await page.goto(`/projects/${projectId}?tab=gaps`);
     await waitForHydration(page);
 
     await expect(page.locator('[data-shot="gaps-panel"]')).toBeVisible();
-    const firstGap = page.locator('[data-shot^="gap-"]').first();
-    await expect(firstGap).toBeVisible();
+    const gap = page.locator(`[data-shot="gap-${id}"]`);
+    await expect(gap).toBeVisible();
 
     // Open the graph view from the gap's graph button, and expect the SVG.
-    await firstGap.getByRole('button', { name: 'View', exact: false }).click();
+    await gap.getByRole('button', { name: 'View', exact: false }).click();
     await expect(page.locator('svg').last()).toBeVisible();
   });
 
-  test('accepting a gap removes it from the open list', async ({ page }) => {
+  test('accepting a gap removes it from the open list', async ({ page, request }) => {
+    const id = await gapIdForRoute(request, ROUTE.accept);
+    expect(id).not.toBeNull();
     await page.goto(`/projects/${projectId}?tab=gaps`);
     await waitForHydration(page);
 
-    const rows = page.locator('[data-shot^="gap-"]');
-    const before = await rows.count();
-    expect(before).toBeGreaterThan(0);
-
-    await rows.first().getByRole('button', { name: 'Accept' }).click();
-    await expect(async () => {
-      expect(await rows.count()).toBeLessThan(before);
-    }).toPass({ timeout: 10000 });
+    const gap = page.locator(`[data-shot="gap-${id}"]`);
+    await expect(gap).toBeVisible();
+    await gap.getByRole('button', { name: 'Accept' }).click();
+    await expect(gap).toBeHidden({ timeout: 10000 });
   });
 
-  test('snoozing a gap removes it from the open list', async ({ page }) => {
+  test('snoozing a gap removes it from the open list', async ({ page, request }) => {
+    const id = await gapIdForRoute(request, ROUTE.snooze);
+    expect(id).not.toBeNull();
     await page.goto(`/projects/${projectId}?tab=gaps`);
     await waitForHydration(page);
 
-    const rows = page.locator('[data-shot^="gap-"]');
-    const before = await rows.count();
-    await rows.first().getByRole('button', { name: 'Snooze' }).click();
+    const gap = page.locator(`[data-shot="gap-${id}"]`);
+    await expect(gap).toBeVisible();
+    await gap.getByRole('button', { name: 'Snooze' }).click();
     await page.getByRole('menuitem', { name: 'For 1 week' }).click();
-    await expect(async () => {
-      expect(await rows.count()).toBeLessThan(before);
-    }).toPass({ timeout: 10000 });
+    await expect(gap).toBeHidden({ timeout: 10000 });
   });
 });
