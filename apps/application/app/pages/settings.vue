@@ -6,7 +6,7 @@ const { envManaged } = useSettingsEnvState();
 // Already grouped (Instance / Analysis / meta) and rendered as the tab bar.
 // Documentation is not a settings page — it lives in Settings → About →
 // Resources and behind every inline-help "Learn more" link.
-const navItems = useSettingsNav(envManaged);
+const navItems = await useSettingsNav(envManaged);
 </script>
 
 <template>

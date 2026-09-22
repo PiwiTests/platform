@@ -187,173 +187,177 @@ function errorMessage(err: unknown): string {
 </script>
 
 <template>
-  <div class="space-y-6" data-shot="integrations-settings">
-    <SectionCard
-      v-for="provider in INTEGRATION_PROVIDER_LIST"
-      :key="provider.name"
-      :icon="provider.icon"
-      :title="provider.label"
-      help="settings.integrations"
-    >
-      <template #subtitle>
-        Connect {{ provider.label }} so pinned links unfurl with a title and status, and refresh through the connection.
-      </template>
+  <CapabilityDeclinedGuard capability="integrations" label="Integrations">
+    <div class="space-y-6" data-shot="integrations-settings">
+      <SectionCard
+        v-for="provider in INTEGRATION_PROVIDER_LIST"
+        :key="provider.name"
+        :icon="provider.icon"
+        :title="provider.label"
+        help="settings.integrations"
+      >
+        <template #subtitle>
+          Connect {{ provider.label }} so pinned links unfurl with a title and status, and refresh through the
+          connection.
+        </template>
 
-      <div class="space-y-4">
-        <!-- Existing connections -->
-        <EmptyState
-          v-if="connectionsFor(provider.name).length === 0 && form.provider !== provider.name"
-          icon="i-lucide-plug-zap"
-          :text="`No ${provider.label} connection yet.`"
-        />
-
-        <ul v-else class="space-y-3">
-          <li
-            v-for="conn in connectionsFor(provider.name)"
-            :key="conn.id"
-            class="rounded-lg border border-default p-3 sm:p-4 space-y-3"
-          >
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span class="text-sm font-medium text-highlighted">{{ conn.name }}</span>
-              <UBadge :color="statusColor(conn.status)" variant="subtle" size="sm">{{
-                statusLabel(conn.status)
-              }}</UBadge>
-              <EnvManagedBadge v-if="conn.managedBy === 'env'" :env-vars="ENV_VARS_BY_PROVIDER[provider.name]" />
-            </div>
-            <p class="text-xs text-muted font-mono break-all">{{ conn.baseUrl }}</p>
-            <p v-if="conn.credentialValues.email" class="text-xs text-muted break-all">
-              {{ conn.credentialValues.email }}
-            </p>
-
-            <ErrorText v-if="conn.status === 'failed' && conn.lastError" :text="conn.lastError" />
-            <p v-if="testResults[conn.id]?.ok" class="text-xs text-muted">
-              Resolved account: {{ testResults[conn.id]?.account?.displayName }}
-            </p>
-            <ErrorText
-              v-else-if="testResults[conn.id] && !testResults[conn.id]?.ok"
-              :text="testResults[conn.id]?.error ?? 'Test failed'"
-            />
-
-            <div class="flex flex-wrap items-center gap-2">
-              <UButton
-                color="neutral"
-                variant="outline"
-                size="sm"
-                icon="i-lucide-plug"
-                :loading="testing === conn.id"
-                label="Test connection"
-                @click="testConnection(conn)"
-              />
-              <template v-if="conn.managedBy === 'db'">
-                <UButton
-                  color="neutral"
-                  variant="ghost"
-                  size="sm"
-                  icon="i-lucide-pencil"
-                  label="Edit"
-                  @click="openEdit(conn)"
-                />
-                <UButton
-                  color="neutral"
-                  variant="ghost"
-                  size="sm"
-                  icon="i-lucide-trash-2"
-                  label="Remove"
-                  :loading="deleting === conn.id"
-                  @click="removeConnection(conn)"
-                />
-              </template>
-              <UButton
-                v-if="provider.name === 'jira'"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                icon="i-lucide-webhook"
-                :label="conn.hasWebhookToken ? 'Regenerate webhook' : 'Enable webhook'"
-                :loading="webhooking === conn.id"
-                @click="generateWebhook(conn)"
-              />
-            </div>
-
-            <!-- The webhook URL, shown once after generating. -->
-            <div v-if="webhookUrls[conn.id]" class="rounded-lg border border-default p-2 space-y-1 text-xs">
-              <p class="text-muted">
-                Register this URL in Jira for <span class="font-medium">issue updated</span> events (shown once):
-              </p>
-              <CodeBlock :code="webhookUrls[conn.id]!" language="text" />
-            </div>
-
-            <IntegrationActivityList :connection-id="conn.id" />
-          </li>
-        </ul>
-
-        <!-- Connect / edit form -->
-        <form
-          v-if="form.provider === provider.name"
-          class="rounded-lg border border-default p-3 sm:p-4 space-y-4"
-          @submit.prevent="submit"
-        >
-          <p class="text-sm font-medium text-highlighted">
-            {{ isEditing ? 'Edit connection' : `Connect ${provider.label}` }}
-            <HelpHint topic="settings.integrations.connection" />
-          </p>
-
-          <UFormField label="Name" description="A label for this connection.">
-            <UInput v-model="form.name" placeholder="Team Jira" class="w-full max-w-md" />
-          </UFormField>
-
-          <UFormField label="Base URL" description="The system’s address, e.g. https://your-team.atlassian.net.">
-            <UInput v-model="form.baseUrl" placeholder="https://your-team.atlassian.net" class="w-full max-w-md" />
-          </UFormField>
-
-          <UFormField
-            v-for="field in credentialFieldsFor(provider.name)"
-            :key="field.key"
-            :label="field.label"
-            :description="field.help"
-          >
-            <UInput
-              v-model="form.credentials[field.key]"
-              :type="field.type === 'password' ? 'password' : 'text'"
-              :placeholder="isEditing && field.secret ? 'Leave blank to keep the stored value' : field.placeholder"
-              class="w-full max-w-md"
-            />
-          </UFormField>
-
-          <UFormField
-            v-if="provider.kind === 'tracker'"
-            label="Default language"
-            description="The language issues are written in, unless a project overrides it."
-          >
-            <USelect v-model="form.locale" :items="LOCALE_ITEMS" value-key="value" class="w-full max-w-md" />
-          </UFormField>
-
-          <div class="flex items-center gap-2">
-            <UButton type="submit" color="primary" :loading="saving" icon="i-lucide-save">
-              {{ isEditing ? 'Save' : 'Connect' }}
-            </UButton>
-            <UButton type="button" color="neutral" variant="ghost" label="Cancel" @click="cancel" />
-          </div>
-        </form>
-
-        <div v-else-if="form.provider === null">
-          <UButton
-            color="neutral"
-            variant="outline"
-            size="sm"
-            icon="i-lucide-plus"
-            :label="`Connect ${provider.label}`"
-            @click="openCreate(provider.name)"
+        <div class="space-y-4">
+          <!-- Existing connections -->
+          <EmptyState
+            v-if="connectionsFor(provider.name).length === 0 && form.provider !== provider.name"
+            icon="i-lucide-plug-zap"
+            :text="`No ${provider.label} connection yet.`"
           />
-        </div>
-      </div>
 
-      <template #footer>
-        <p class="text-xs text-muted">
-          A connection base URL is administrator-supplied and trusted, so a self-hosted tracker on a private host works.
-          <HelpHint topic="settings.integrations.private-host" />
-        </p>
-      </template>
-    </SectionCard>
-  </div>
+          <ul v-else class="space-y-3">
+            <li
+              v-for="conn in connectionsFor(provider.name)"
+              :key="conn.id"
+              class="rounded-lg border border-default p-3 sm:p-4 space-y-3"
+            >
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span class="text-sm font-medium text-highlighted">{{ conn.name }}</span>
+                <UBadge :color="statusColor(conn.status)" variant="subtle" size="sm">{{
+                  statusLabel(conn.status)
+                }}</UBadge>
+                <EnvManagedBadge v-if="conn.managedBy === 'env'" :env-vars="ENV_VARS_BY_PROVIDER[provider.name]" />
+              </div>
+              <p class="text-xs text-muted font-mono break-all">{{ conn.baseUrl }}</p>
+              <p v-if="conn.credentialValues.email" class="text-xs text-muted break-all">
+                {{ conn.credentialValues.email }}
+              </p>
+
+              <ErrorText v-if="conn.status === 'failed' && conn.lastError" :text="conn.lastError" />
+              <p v-if="testResults[conn.id]?.ok" class="text-xs text-muted">
+                Resolved account: {{ testResults[conn.id]?.account?.displayName }}
+              </p>
+              <ErrorText
+                v-else-if="testResults[conn.id] && !testResults[conn.id]?.ok"
+                :text="testResults[conn.id]?.error ?? 'Test failed'"
+              />
+
+              <div class="flex flex-wrap items-center gap-2">
+                <UButton
+                  color="neutral"
+                  variant="outline"
+                  size="sm"
+                  icon="i-lucide-plug"
+                  :loading="testing === conn.id"
+                  label="Test connection"
+                  @click="testConnection(conn)"
+                />
+                <template v-if="conn.managedBy === 'db'">
+                  <UButton
+                    color="neutral"
+                    variant="ghost"
+                    size="sm"
+                    icon="i-lucide-pencil"
+                    label="Edit"
+                    @click="openEdit(conn)"
+                  />
+                  <UButton
+                    color="neutral"
+                    variant="ghost"
+                    size="sm"
+                    icon="i-lucide-trash-2"
+                    label="Remove"
+                    :loading="deleting === conn.id"
+                    @click="removeConnection(conn)"
+                  />
+                </template>
+                <UButton
+                  v-if="provider.name === 'jira'"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  icon="i-lucide-webhook"
+                  :label="conn.hasWebhookToken ? 'Regenerate webhook' : 'Enable webhook'"
+                  :loading="webhooking === conn.id"
+                  @click="generateWebhook(conn)"
+                />
+              </div>
+
+              <!-- The webhook URL, shown once after generating. -->
+              <div v-if="webhookUrls[conn.id]" class="rounded-lg border border-default p-2 space-y-1 text-xs">
+                <p class="text-muted">
+                  Register this URL in Jira for <span class="font-medium">issue updated</span> events (shown once):
+                </p>
+                <CodeBlock :code="webhookUrls[conn.id]!" language="text" />
+              </div>
+
+              <IntegrationActivityList :connection-id="conn.id" />
+            </li>
+          </ul>
+
+          <!-- Connect / edit form -->
+          <form
+            v-if="form.provider === provider.name"
+            class="rounded-lg border border-default p-3 sm:p-4 space-y-4"
+            @submit.prevent="submit"
+          >
+            <p class="text-sm font-medium text-highlighted">
+              {{ isEditing ? 'Edit connection' : `Connect ${provider.label}` }}
+              <HelpHint topic="settings.integrations.connection" />
+            </p>
+
+            <UFormField label="Name" description="A label for this connection.">
+              <UInput v-model="form.name" placeholder="Team Jira" class="w-full max-w-md" />
+            </UFormField>
+
+            <UFormField label="Base URL" description="The system’s address, e.g. https://your-team.atlassian.net.">
+              <UInput v-model="form.baseUrl" placeholder="https://your-team.atlassian.net" class="w-full max-w-md" />
+            </UFormField>
+
+            <UFormField
+              v-for="field in credentialFieldsFor(provider.name)"
+              :key="field.key"
+              :label="field.label"
+              :description="field.help"
+            >
+              <UInput
+                v-model="form.credentials[field.key]"
+                :type="field.type === 'password' ? 'password' : 'text'"
+                :placeholder="isEditing && field.secret ? 'Leave blank to keep the stored value' : field.placeholder"
+                class="w-full max-w-md"
+              />
+            </UFormField>
+
+            <UFormField
+              v-if="provider.kind === 'tracker'"
+              label="Default language"
+              description="The language issues are written in, unless a project overrides it."
+            >
+              <USelect v-model="form.locale" :items="LOCALE_ITEMS" value-key="value" class="w-full max-w-md" />
+            </UFormField>
+
+            <div class="flex items-center gap-2">
+              <UButton type="submit" color="primary" :loading="saving" icon="i-lucide-save">
+                {{ isEditing ? 'Save' : 'Connect' }}
+              </UButton>
+              <UButton type="button" color="neutral" variant="ghost" label="Cancel" @click="cancel" />
+            </div>
+          </form>
+
+          <div v-else-if="form.provider === null">
+            <UButton
+              color="neutral"
+              variant="outline"
+              size="sm"
+              icon="i-lucide-plus"
+              :label="`Connect ${provider.label}`"
+              @click="openCreate(provider.name)"
+            />
+          </div>
+        </div>
+
+        <template #footer>
+          <p class="text-xs text-muted">
+            A connection base URL is administrator-supplied and trusted, so a self-hosted tracker on a private host
+            works.
+            <HelpHint topic="settings.integrations.private-host" />
+          </p>
+        </template>
+      </SectionCard>
+    </div>
+  </CapabilityDeclinedGuard>
 </template>

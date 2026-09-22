@@ -16,7 +16,7 @@
  * here needs no await. The template is only what a client sees in the gap
  * before navigation commits.
  */
-const navItems = useSettingsNav();
+const navItems = await useSettingsNav();
 
 // `replace` so Back returns to wherever the user came from rather than bouncing
 // them through this redirect again.

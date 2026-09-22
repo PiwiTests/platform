@@ -250,6 +250,17 @@ export const HELP_TOPICS = {
     text: 'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the screenshot and video with the visual and page diffs, the test source, the network requests, the console output, the app state at the end, and the browser performance. The tab opens on the view the story points at; the raw page structure — the accessibility tree and the failure-time DOM — folds behind Page structure at the bottom of the Screen tab. An empty tab says whether the evidence was never captured, captured with nothing to show, or does not apply.',
     doc: 'features/evidence#one-execution-diagnosis-first',
   },
+  // ── Setup & capabilities ──────────────────────────────────────────────
+  'setup.presets': {
+    title: 'What you want Piwi for',
+    text: 'The coarse choice of which capability groups this instance uses. Unchecking a group declines its capabilities everywhere — the pages, panels, settings and MCP tools they own stop showing until you reconsider on this page. Seeing why tests fail is always on.',
+    doc: 'guide/getting-started',
+  },
+  'project.capabilities': {
+    title: 'Capabilities',
+    text: 'Override the instance default for this project. Leave a capability on the instance default, decline it for this project, or enable it here even when the instance declined it. A declined capability drops its evidence tabs, panels and actions for this project.',
+    doc: 'guide/getting-started',
+  },
   'fix.toolbox': {
     title: 'More ways to fix',
     text: 'Every other way to fix, verify or reproduce this failure, each folded to one line: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan as Markdown (the same plan get_fix_plan returns to an AI agent via the MCP server). The section the next step points at opens with the page; open the others as you need them.',

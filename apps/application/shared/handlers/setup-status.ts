@@ -28,11 +28,16 @@ import {
   quarantinedTests,
   failureClusters,
   testRunsCases,
+  integrationConnections,
 } from '../../server/database/schema';
 import { and, eq, isNotNull, or } from 'drizzle-orm';
-import { getAppSetting } from '../../server/utils/app-settings';
+import { getAppSetting, setAppSetting } from '../../server/utils/app-settings';
+import { PR_FEEDBACK_KEY } from '#shared/pr-feedback';
+import { AUTO_HEAL_KEY } from '#shared/auto-heal';
+import { compareVersions } from '#shared/piwi-env-vars';
 import {
   CAPABILITIES,
+  CAPABILITY_BY_ID,
   CAPABILITIES_SETTING_KEY,
   parseInstanceDecisions,
   resolveCapabilities,
@@ -52,7 +57,11 @@ export type SetupCapabilityId =
   | 'backend-logs'
   | 'clustering'
   | 'ai'
+  | 'mcp'
   | 'notifications'
+  | 'pr-feedback'
+  | 'auto-heal'
+  | 'integrations'
   | 'scm'
   | 'tags'
   | 'markers'
@@ -67,11 +76,16 @@ export interface SetupCapability {
   state: CapabilityState;
   /** The stored instance decision, or `null` when nothing is stored. */
   decision: InstanceDecision | null;
+  /** True when the capability's release is newer than the instance's first run. */
+  isNew: boolean;
 }
 
 export interface SetupStatus {
   capabilities: SetupCapability[];
 }
+
+/** `app_settings` key holding the app version recorded at the instance's first Setup read. */
+export const FIRST_RUN_VERSION_KEY = 'first-run-version';
 
 /** Evidence for every detection id, `true` when at least one row exists. */
 export type CapabilityEvidence = Record<SetupCapabilityId, boolean>;
@@ -107,6 +121,9 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     hasMarkers,
     hasQuarantine,
     hasGreenSamples,
+    hasPrFeedback,
+    hasAutoHeal,
+    hasIntegrations,
   ] = await Promise.all([
     exists(
       db,
@@ -212,6 +229,14 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
             )
             .limit(1),
     ),
+    // Pull-request feedback and auto-heal read active from their stored settings
+    // (the `enabled` flag the full getters resolve, read here directly so this
+    // handler stays free of the SCM providers those getters pull in); issue
+    // integrations from a single connection row. None has a project dimension, so
+    // these stay instance-wide even when a project is scoped.
+    getAppSetting<{ enabled?: boolean }>(db, PR_FEEDBACK_KEY).then((s) => s?.enabled === true),
+    getAppSetting<{ enabled?: boolean }>(db, AUTO_HEAL_KEY).then((s) => s?.enabled === true),
+    exists(db, db.select({ id: integrationConnections.id }).from(integrationConnections).limit(1)),
   ]);
 
   // AI also counts as active when pinned by environment — an env-configured
@@ -227,7 +252,13 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     'backend-logs': hasServerTraces,
     clustering: hasClusters,
     ai: hasAiSetting || aiFromEnv,
+    // MCP has no evidence probe — it is always available, so the resolver marks
+    // it configured rather than active.
+    mcp: false,
     notifications: hasChannels,
+    'pr-feedback': hasPrFeedback,
+    'auto-heal': hasAutoHeal,
+    integrations: hasIntegrations,
     scm: hasScm,
     tags: hasTags,
     markers: hasMarkers,
@@ -251,7 +282,11 @@ const SETUP_LADDER_ORDER: SetupCapabilityId[] = [
   'backend-logs',
   'clustering',
   'ai',
+  'mcp',
   'notifications',
+  'pr-feedback',
+  'auto-heal',
+  'integrations',
   'scm',
   'tags',
   'markers',
@@ -294,18 +329,52 @@ export async function resolveInstanceStates(db: DrizzleDB): Promise<Record<Capab
   return resolveCapabilities(buildInstanceFacts(evidence, decisions));
 }
 
-export async function getSetupStatus(db: DrizzleDB): Promise<SetupStatus> {
+/**
+ * The Setup ladder for every capability, plus the two core rows.
+ *
+ * `appVersion` is the running app version; the first time it is supplied on an
+ * instance the version is recorded under {@link FIRST_RUN_VERSION_KEY}, and every
+ * later read marks a row `isNew` when its release is newer than that recorded
+ * version, so a capability added after the instance started is flagged once.
+ */
+export async function getSetupStatus(db: DrizzleDB, appVersion?: string): Promise<SetupStatus> {
   const evidence = await getCapabilityEvidence(db);
   const decisions = await getInstanceDecisions(db);
   const states = resolveCapabilities(buildInstanceFacts(evidence, decisions));
 
+  const firstRunVersion = await resolveFirstRunVersion(db, appVersion);
+  const isNewSince = (since: string | null): boolean =>
+    Boolean(since && firstRunVersion && compareVersions(since, firstRunVersion) > 0);
+
   const capabilities: SetupCapability[] = SETUP_LADDER_ORDER.map((id) => {
     const active = evidence[id];
     if (CORE_LADDER_IDS.has(id)) {
-      return { id, active, state: active ? 'active' : 'undecided', decision: null };
+      return { id, active, state: active ? 'active' : 'undecided', decision: null, isNew: false };
     }
-    return { id, active, state: states[id as CapabilityId], decision: decisions[id as CapabilityId] ?? null };
+    const def = CAPABILITY_BY_ID[id as CapabilityId];
+    return {
+      id,
+      active,
+      state: states[id as CapabilityId],
+      decision: decisions[id as CapabilityId] ?? null,
+      isNew: isNewSince(def?.since ?? null),
+    };
   });
 
   return { capabilities };
+}
+
+/**
+ * Read the recorded first-run version, writing the current one the first time an
+ * instance is asked. Returns the version to compare `since` against, or null
+ * when none is known yet (a fresh instance with no version supplied).
+ */
+async function resolveFirstRunVersion(db: DrizzleDB, appVersion?: string): Promise<string | null> {
+  const recorded = await getAppSetting<string>(db, FIRST_RUN_VERSION_KEY);
+  if (recorded) return recorded;
+  if (appVersion) {
+    await setAppSetting(db, FIRST_RUN_VERSION_KEY, appVersion);
+    return appVersion;
+  }
+  return null;
 }

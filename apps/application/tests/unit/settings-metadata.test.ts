@@ -115,4 +115,32 @@ describe('buildSettingsNavSections', () => {
         .every((i) => i.badge === undefined),
     ).toBe(true);
   });
+
+  test('a declined capability drops its settings page', () => {
+    const visible = paths({ ...WEB_ADMIN, declinedCapabilities: new Set(['notifications']) });
+    expect(visible).not.toContain('/settings/notifications');
+    // Pages without a capability, and undeclined ones, are untouched.
+    expect(visible).toContain('/settings/ai');
+    expect(visible).toContain('/settings/storage');
+  });
+
+  test('declining several capabilities drops each of their pages', () => {
+    const declined = new Set(['ai', 'tags', 'integrations', 'pr-feedback', 'auto-heal'] as const);
+    const visible = paths({ ...WEB_ADMIN, declinedCapabilities: declined });
+    for (const to of [
+      '/settings/ai',
+      '/settings/tags',
+      '/settings/integrations',
+      '/settings/pr-feedback',
+      '/settings/auto-heal',
+    ]) {
+      expect(visible).not.toContain(to);
+    }
+    // Storage carries no capability, so it survives.
+    expect(visible).toContain('/settings/storage');
+  });
+
+  test('an empty declined set changes nothing', () => {
+    expect(paths({ ...WEB_ADMIN, declinedCapabilities: new Set() }).sort()).toEqual(paths(WEB_ADMIN).sort());
+  });
 });

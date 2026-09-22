@@ -16,6 +16,7 @@
  */
 import { Role } from '#shared/types';
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
+import type { CapabilityId } from '#shared/capabilities';
 import { helpEnvVars, type HelpTopicKey } from './help-content';
 
 export type SettingsPageId =
@@ -75,6 +76,12 @@ export interface SettingsPageMeta {
   fields: SettingFieldMeta[];
   /** Topic key for a page-level intro hint shown under the nav. */
   introHelp?: HelpTopicKey;
+  /**
+   * The optional capability this page configures. When that capability is
+   * declined, the nav drops the page and the page itself shows the reconsider
+   * line instead of its settings.
+   */
+  capability?: CapabilityId;
 }
 
 export const SETTINGS_PAGES: SettingsPageMeta[] = [
@@ -114,6 +121,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     icon: 'i-lucide-bell',
     to: '/settings/notifications',
     group: 'instance',
+    capability: 'notifications',
     fields: [
       { id: 'notifications.smtp', label: 'SMTP email delivery', help: 'settings.smtp', envOnly: true },
       { id: 'notifications.test-email', label: 'Send test email', help: 'notifications.test-email' },
@@ -129,6 +137,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     group: 'analysis',
     roles: [Role.ADMINISTRATOR],
     introHelp: 'settings.tags',
+    capability: 'tags',
     fields: [{ id: 'tags.list', label: 'Tags', help: 'settings.tags' }],
   },
   {
@@ -139,6 +148,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     group: 'instance',
     roles: [Role.ADMINISTRATOR],
     introHelp: 'settings.integrations',
+    capability: 'integrations',
     fields: [
       { id: 'integrations.connections', label: 'Connections', help: 'settings.integrations' },
       { id: 'integrations.connection', label: 'Connect a system', help: 'settings.integrations.connection' },
@@ -177,6 +187,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     group: 'analysis',
     roles: [Role.ADMINISTRATOR],
     introHelp: 'settings.pr-feedback',
+    capability: 'pr-feedback',
     fields: [{ id: 'pr-feedback.settings', label: 'Pull-request feedback', help: 'settings.pr-feedback' }],
   },
   {
@@ -187,6 +198,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     group: 'analysis',
     roles: [Role.ADMINISTRATOR],
     introHelp: 'settings.auto-heal',
+    capability: 'auto-heal',
     fields: [{ id: 'auto-heal.settings', label: 'Auto-heal pull requests', help: 'settings.auto-heal' }],
   },
   {
@@ -196,6 +208,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     to: '/settings/ai',
     group: 'analysis',
     roles: [Role.ADMINISTRATOR],
+    capability: 'ai',
     fields: [
       { id: 'ai.diagnosis', label: 'Diagnosis model', help: 'settings.ai-provider' },
       { id: 'ai.research', label: 'Research model', help: 'settings.ai-research' },
@@ -274,6 +287,8 @@ export interface SettingsNavContext {
   isDesktop: boolean;
   /** Pages currently pinned by env, which get a trailing lock badge. */
   envManaged?: Partial<Record<SettingsPageId, boolean>>;
+  /** Capabilities declined at instance level; their pages drop out of the nav. */
+  declinedCapabilities?: Set<CapabilityId>;
 }
 
 /**
@@ -288,7 +303,10 @@ export interface SettingsNavContext {
  */
 export function buildSettingsNavSections(ctx: SettingsNavContext): SettingsNavItem[][] {
   const visible = SETTINGS_PAGES.filter(
-    (page) => (!page.roles || ctx.canSeeAdmin) && !(ctx.isDesktop && page.authOnly),
+    (page) =>
+      (!page.roles || ctx.canSeeAdmin) &&
+      !(ctx.isDesktop && page.authOnly) &&
+      !(page.capability && ctx.declinedCapabilities?.has(page.capability)),
   );
 
   const toItem = (page: SettingsPageMeta): SettingsNavItem => ({
