@@ -7,6 +7,7 @@ import { HttpClient } from '../internal/transport/http-client.js';
 import { Logger } from '../internal/support/logger.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
 import { detectCiRunLabel } from '../internal/support/ci.js';
+import { resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { getSetupFilePath } from '../internal/support/setup-file.js';
 import { ariaSampleIdentity, clearAriaSampleFile, writeAriaSampleFile } from '../internal/support/aria-sampling.js';
 import { isUiMode, isListMode } from '../internal/support/run-mode.js';
@@ -184,11 +185,14 @@ export function createGlobalSetup(
       // Declared surface: upload a committed `piwi.manifest.json` and, when the
       // app under test carries an instrumentation header, its `/__piwi/manifest`.
       if (wantsManifest && projectId != null) {
+        // The run's branch, so the dashboard tags a route added on a pull-request
+        // branch instead of writing it to the default-branch surface.
+        const branch = resolveScmBranch(process.env) ?? null;
         if (committedManifest) {
           await httpClient
             .putJSON(
               `/api/projects/${projectId}/surface/manifest`,
-              { source: 'committed', manifest: committedManifest },
+              { source: 'committed', branch, manifest: committedManifest },
               auth,
             )
             .catch((e: unknown) => logger.debug(`Manifest upload (committed) skipped: ${errorMessage(e)}`));
@@ -199,7 +203,7 @@ export function createGlobalSetup(
             await httpClient
               .putJSON(
                 `/api/projects/${projectId}/surface/manifest`,
-                { source: 'instrumentation', manifest: declared },
+                { source: 'instrumentation', branch, manifest: declared },
                 auth,
               )
               .catch((e: unknown) => logger.debug(`Manifest upload (instrumentation) skipped: ${errorMessage(e)}`));
