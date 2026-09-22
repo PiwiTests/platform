@@ -3172,6 +3172,24 @@ const SCENARIO_GAPS = [
     created_at: BASE_START_MS,
     updated_at: BASE_START_MS,
   },
+  {
+    // Accepted a while ago but no test was written — the Home "accepted gaps not
+    // yet written" inbox queue. Its subject route has no reaches edge, so it
+    // stays in the queue until the test lands.
+    project_id: 1,
+    kind: 'gap',
+    detector: 'single-covering-test',
+    class: 'fragile',
+    key: 'route:GET /api/orders/:id/receipt',
+    title: 'Only one test reaches route GET /api/orders/:id/receipt',
+    evidence: ['Only views an order receipt reaches this — observed reach. A second scenario would make it resilient.'],
+    factors: { churn: 0.3, age: 0.4, escapeHistory: 0.1, priority: 0.4 },
+    score: 0.03,
+    status: 'accepted',
+    accepted_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  },
 ];
 
 // ── Assemble SQL ───────────────────────────────────────────────────────────
