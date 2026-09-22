@@ -11,6 +11,7 @@ import * as schema from '../../server/database/schema.sqlite';
 delete process.env.PIWI_DATABASE_URL;
 const { getSetupStatus } = await import('../../shared/handlers/setup-status');
 const { SETUP_CAPABILITIES } = await import('../../app/utils/setup-capabilities');
+const { getAppSetting, setAppSetting } = await import('../../server/utils/app-settings');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -138,5 +139,58 @@ describe('setup capability copy', () => {
       expect(capability.how.length).toBeGreaterThan(0);
       expect(capability.summary.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('first-run version and the New marker', () => {
+  test('records the running version on first read and marks nothing new', async () => {
+    const first = await getSetupStatus(db, '0.35.0');
+    expect(first.capabilities.every((c) => c.isNew === false)).toBe(true);
+
+    // The recorded version sticks: a later, higher version does not re-anchor it.
+    const recorded = await getAppSetting<string>(db, 'first-run-version');
+    expect(recorded).toBe('0.35.0');
+    const again = await getSetupStatus(db, '0.99.0');
+    expect(again.capabilities.every((c) => c.isNew === false)).toBe(true);
+  });
+
+  test('marks capabilities whose release is newer than the first-run version', async () => {
+    await setAppSetting(db, 'first-run-version', '0.20.0');
+    const { capabilities } = await getSetupStatus(db, '0.35.0');
+    const newIds = new Set(capabilities.filter((c) => c.isNew).map((c) => c.id));
+    // auto-heal (0.26) and integrations (0.29) landed after 0.20; pr-feedback (0.19) did not.
+    expect(newIds).toEqual(new Set(['auto-heal', 'integrations']));
+  });
+
+  test('records nothing and marks nothing when no version is supplied', async () => {
+    const { capabilities } = await getSetupStatus(db);
+    expect(capabilities.every((c) => c.isNew === false)).toBe(true);
+    expect(await getAppSetting<string>(db, 'first-run-version')).toBeNull();
+  });
+});
+
+describe('settings-backed capabilities', () => {
+  test('pull-request feedback is active once its setting is enabled', async () => {
+    expect((await activeIds(db)).has('pr-feedback')).toBe(false);
+    await setAppSetting(db, 'pr_feedback', { enabled: true });
+    expect((await activeIds(db)).has('pr-feedback')).toBe(true);
+  });
+
+  test('auto-heal is active once its setting is enabled', async () => {
+    expect((await activeIds(db)).has('auto-heal')).toBe(false);
+    await setAppSetting(db, 'auto_heal', { enabled: true });
+    expect((await activeIds(db)).has('auto-heal')).toBe(true);
+  });
+
+  test('issue integrations are active once a connection exists', async () => {
+    expect((await activeIds(db)).has('integrations')).toBe(false);
+    await db.insert(schema.integrationConnections).values({
+      provider: 'jira',
+      name: 'Jira',
+      baseUrl: 'https://example.atlassian.net',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    expect((await activeIds(db)).has('integrations')).toBe(true);
   });
 });

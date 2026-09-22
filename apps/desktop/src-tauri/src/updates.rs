@@ -1,11 +1,12 @@
 // In-app updates via the Tauri updater.
 //
-// Only release builds made with the signing key support updates: CI applies
-// `tauri.updater.conf.json` (updater artifacts + pubkey + endpoint) when the
-// key secret is configured, and that config is what compiles the updater
-// plugin config into the app. Everything here degrades to `unsupported` when
-// the config is absent — dev builds and unsigned releases keep working with
-// the whole update surface hidden.
+// Only release builds made with the signing key support updates: CI applies an
+// updater overlay (`tauri.updater.conf.json` for the .msi channel,
+// `tauri.updater.nsis.conf.json` for the per-user .exe channel) when the key
+// secret is configured, and that config is what compiles the updater plugin
+// config into the app. Everything here degrades to `unsupported` when the
+// config is absent, so dev builds and unsigned releases keep working with the
+// whole update surface hidden.
 //
 // Flow: `desktop_check_update` asks the endpoint and parks the found update in
 // state; `desktop_install_update` downloads + installs it, streaming progress

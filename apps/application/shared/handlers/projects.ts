@@ -23,6 +23,7 @@ import {
   type TimeoutOpportunity,
   type TimeoutThresholds,
 } from '../analytics/timeout-hygiene';
+import { parseProjectDecisions } from '#shared/capabilities';
 
 type ProjectScope = 'all' | Set<number>;
 
@@ -252,6 +253,9 @@ export async function getProject(db: DrizzleDB, id: number, options?: { runLimit
   return {
     ...project,
     hasScmToken: !!project.scmToken,
+    // Validated per-project capability decisions, so the edit form preselects a
+    // stored "declined"/"enabled" rather than always reading "instance default".
+    capabilities: parseProjectDecisions(project.capabilities ?? null),
     tags: projectTagRows.map((r: any) => r.tag),
     testRuns: runs.map((r: any) => {
       // Slim the wide metadata JSON down to just the SCM branch/commit shown in the run list

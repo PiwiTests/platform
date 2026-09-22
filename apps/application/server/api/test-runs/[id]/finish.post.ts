@@ -1,8 +1,8 @@
 import { sql, eq } from 'drizzle-orm';
 import { getDatabase } from '../../../database';
-import type { DbClient } from '../../../database';
-import { testRuns, testRunsCases } from '../../../database/schema';
+import { testRuns } from '../../../database/schema';
 import { runEventBus } from '../../../utils/run-events';
+import { computeRunCountsFromRows } from '../../../utils/run-counts';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { validateAndReviveRun } from '../../../utils/revive-run';
@@ -13,26 +13,7 @@ import { postRunPrFeedbackInBackground } from '../../../utils/scm/pr-feedback';
 import { maybeEnqueueHealActionInBackground } from '../../../utils/heal/policy';
 import { computeRegressionSignals } from '../../../utils/compute-regression-signals';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
-import { sumFailedAndTimedOut, distinctRunCountsFromAttempts } from '#shared/utils/test-counts';
-
-/**
- * Distinct-test counters for a run, computed from its persisted attempt rows.
- * A sharded run's counters come from the streamed events (per attempt), so the
- * final tally is recomputed here — the final attempt per test decides its
- * outcome, and a flaky-only run reads as passed with zero failures.
- */
-async function computeRunCounts(db: DbClient, runId: number) {
-  const rows = await db
-    .select({
-      testCaseId: testRunsCases.testCaseId,
-      browserName: testRunsCases.browserName,
-      retries: testRunsCases.retries,
-      status: testRunsCases.status,
-    })
-    .from(testRunsCases)
-    .where(eq(testRunsCases.testRunId, runId));
-  return distinctRunCountsFromAttempts(rows);
-}
+import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 
 defineRouteMeta({
   openAPI: {
@@ -174,7 +155,7 @@ export default eventHandler(async (event) => {
       // All shards done — recompute distinct-test counters from the persisted
       // rows (the per-shard events counted attempts) and derive the final status
       // from them, so a flaky-only sharded run reads as passed with no failures.
-      const counts = await computeRunCounts(db, id);
+      const counts = await computeRunCountsFromRows(db, id);
       finalStatus = counts.failedTests > 0 ? 'failed' : 'passed';
 
       if (allDurations.length > 0) {

@@ -272,8 +272,6 @@ const filterItems = computed(() => [
   { label: `With logs (${totals.value.withLogs})`, value: 'logs' as const, disabled: totals.value.withLogs === 0 },
 ]);
 
-const hasBackendLogs = computed(() => totals.value.withLogs > 0);
-
 /** Accent border for a request row based on the worst signal it carries. */
 function rowAccent(r: DecoratedRequest): string {
   if (r.errorLogCount > 0 || r.status >= 500) return 'border-l-2 border-l-red-400 dark:border-l-red-600';
@@ -495,16 +493,6 @@ function rowAccent(r: DecoratedRequest): string {
         </div>
       </div>
     </div>
-
-    <p
-      v-if="view === 'captured' && !hasBackendLogs"
-      class="mt-3 flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500"
-    >
-      <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />
-      No backend server logs captured — install
-      <DocLink to="guide/backend-logs" no-icon class="underline">a Piwi backend integration</DocLink>
-      to see server-side warnings and errors under each request.
-    </p>
 
     <p v-if="!hasTrace" class="mt-3 flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
       <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />

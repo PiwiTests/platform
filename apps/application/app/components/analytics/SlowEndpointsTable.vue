@@ -10,6 +10,12 @@ const {
   refresh,
 } = await useAnalyticsWidget<AnalyticsSlowEndpoints>('slow-endpoints', () => props.query);
 
+// The cross-project view follows the instance-level fixtures decision: declined
+// hides the block, undecided replaces the pitch with one naming line.
+const { state: capState } = await useInstanceCapabilities();
+const fixturesDeclined = computed(() => capState('fixtures') === 'declined');
+const fixturesUndecided = computed(() => capState('fixtures') === 'undecided');
+
 function latencyClass(ms: number): string {
   if (ms >= 1000) return 'text-red-600 dark:text-red-400';
   if (ms >= 500) return 'text-amber-600 dark:text-amber-400';
@@ -30,6 +36,7 @@ function methodColor(method: string): 'success' | 'info' | 'warning' | 'error' |
 
 <template>
   <SectionCard
+    v-if="!fixturesDeclined"
     icon="i-lucide-gauge"
     title="Slow endpoints"
     :count="slow?.endpoints.length || undefined"
@@ -44,12 +51,13 @@ function methodColor(method: string): 'success' | 'info' | 'warning' | 'error' |
         </UButton>
       </template>
     </ErrorState>
-    <FeatureUnavailable
+    <p v-else-if="(!slow || slow.endpoints.length === 0) && fixturesUndecided" class="py-6 text-sm text-muted">
+      Network timing is not captured on this instance.
+    </p>
+    <EmptyState
       v-else-if="!slow || slow.endpoints.length === 0"
       icon="i-lucide-network"
-      title="No network requests captured in this period"
-      text="Slow endpoints need the Piwi capture fixtures — extend your Playwright test with piwiFixtures and request timing rides along with every run."
-      doc="capture-fixtures"
+      text="No network requests captured in this period."
     />
     <template v-else>
       <!-- Mobile: card list -->

@@ -66,6 +66,8 @@ export interface TraceNetworkRequest {
 export interface TraceFrameSnapshot {
   callId?: string;
   snapshotName?: string;
+  /** v9 traces key a snapshot by `callId` + `phase` (`before`/`action`/`after`) instead of `snapshotName`. */
+  phase?: string;
   pageId?: string;
   frameId?: string;
   frameUrl?: string;
@@ -161,21 +163,34 @@ export function parseTraceTexts(texts: string[]): ParsedTraceData {
   return extractFromEvents(events);
 }
 
-/** A captured response body: the content hash naming its stored file, plus its recorded MIME type. */
+/** A captured response body: the filename naming its stored body, plus its recorded MIME type. */
 export interface TraceResource {
-  /** The `_sha1` filename in the project's shared `trace-resources` pool. */
+  /** The resource filename in the project's shared `trace-resources` pool (the ZIP's `resources/` entry name, prefix stripped). */
   sha1: string;
   /** The recorded `Content-Type` (`response.content.mimeType`), when known — names the data: URI. */
   mimeType?: string;
 }
 
+/** The bare `resources/` filename a response body is stored under, from either trace format. */
+function resourceBodyName(content: { _sha1?: unknown; _file?: unknown } | undefined): string | null {
+  // Trace format v8 names the stored body `_sha1` (a bare filename such as
+  // `<hash>.css`); v9 — Playwright's current format — renamed it to `_file` and
+  // prefixes it with `resources/`. Both name the same on-disk file: reduce either
+  // to the bare filename the pool (`trace-resources/<name>`) and the demo ZIP
+  // (`resources/<name>`) are keyed by.
+  const ref =
+    typeof content?._sha1 === 'string' ? content._sha1 : typeof content?._file === 'string' ? content._file : '';
+  const name = ref.replace(/^resources\//, '');
+  return name || null;
+}
+
 /**
  * Map every resource URL captured in a trace's `.network` stream to the stored
- * body naming it (`_sha1`) and its MIME type. Used to inline a DOM snapshot's
- * external assets: a `<link href>` (or a CSS `url(...)`) resolves to a URL here,
- * whose `_sha1` names the file in the project's shared `trace-resources` pool.
+ * body naming it and its MIME type. Used to inline a DOM snapshot's external
+ * assets: a `<link href>` (or a CSS `url(...)`) resolves to a URL here, whose
+ * filename names the body in the project's shared `trace-resources` pool.
  * Later snapshots win on duplicate URLs. Node-free (shared with the browser
- * demo, which reads `resources/<sha1>` straight from the ZIP). Unparseable lines
+ * demo, which reads `resources/<name>` straight from the ZIP). Unparseable lines
  * are skipped.
  */
 export function parseResourceSnapshots(texts: string[]): Map<string, TraceResource> {
@@ -192,11 +207,12 @@ export function parseResourceSnapshots(texts: string[]): Map<string, TraceResour
       if (!evt || evt.type !== 'resource-snapshot') continue;
       const snapshot = evt.snapshot as Record<string, unknown> | undefined;
       const request = snapshot?.request as { url?: unknown } | undefined;
-      const content = (snapshot?.response as { content?: { _sha1?: unknown; mimeType?: unknown } } | undefined)
-        ?.content;
+      const content = (
+        snapshot?.response as { content?: { _sha1?: unknown; _file?: unknown; mimeType?: unknown } } | undefined
+      )?.content;
       const url = request?.url;
-      const sha1 = content?._sha1;
-      if (typeof url === 'string' && url && typeof sha1 === 'string' && sha1) {
+      const sha1 = resourceBodyName(content);
+      if (typeof url === 'string' && url && sha1) {
         map.set(url, { sha1, mimeType: typeof content?.mimeType === 'string' ? content.mimeType : undefined });
       }
     }
@@ -243,7 +259,12 @@ function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
       const callId = evt.callId as string;
       if (!callId) continue;
       const pointers = (evt.pointers ?? {}) as Record<string, string>;
-      const beforeSnapshot = (evt.beforeSnapshot as string) || pointers.beforeSnapshot;
+      // v8 `before` events carry the snapshot name; v9 omits it and instead emits a
+      // standalone `frame-snapshot` with `phase: 'before'`, named `before@${callId}`
+      // above. Fall back to that name so the failing action still points at its
+      // before-snapshot; a name with no matching snapshot is simply skipped by
+      // extractDomSnapshot, so this is safe when an action captured none.
+      const beforeSnapshot = (evt.beforeSnapshot as string) || pointers.beforeSnapshot || `before@${callId}`;
       if (beforeSnapshot) beforeSnapshots.set(callId, beforeSnapshot);
       const cls = evt.class as string | undefined;
       const method = evt.method as string | undefined;
@@ -268,8 +289,12 @@ function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
         if (typeof evt.endTime === 'number') action.endTime = evt.endTime;
         const error = unwrapAfterError(evt.error);
         if (error) action.error = error;
+        // Same v8/v9 split as the `before` event: v9 omits the pointer and emits a
+        // `frame-snapshot` with `phase: 'after'`, named `after@${callId}` above.
         const afterSnapshot =
-          (evt.afterSnapshot as string) || ((evt.pointers as Record<string, string> | undefined)?.afterSnapshot ?? '');
+          (evt.afterSnapshot as string) ||
+          ((evt.pointers as Record<string, string> | undefined)?.afterSnapshot ?? '') ||
+          `after@${callId}`;
         if (afterSnapshot) {
           action.afterSnapshot = afterSnapshot;
           afterSnapshots.set(callId, afterSnapshot);
@@ -293,7 +318,15 @@ function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
     }
 
     if (type === 'frame-snapshot' && evt.snapshot && typeof evt.snapshot === 'object') {
-      frameSnapshots.push(evt.snapshot as TraceFrameSnapshot);
+      const snapshot = evt.snapshot as TraceFrameSnapshot;
+      // Trace format v9 (Playwright's current format) dropped `snapshotName` and
+      // identifies a frame snapshot by `callId` + `phase` instead. Rebuild the v8
+      // `${phase}@${callId}` name so the existing name-based matching keeps working
+      // (renderSnapshotHtml, extractDomSnapshot, and the action pointers below).
+      if (!snapshot.snapshotName && snapshot.callId && snapshot.phase) {
+        snapshot.snapshotName = `${snapshot.phase}@${snapshot.callId}`;
+      }
+      frameSnapshots.push(snapshot);
     }
 
     // 1.63 aria / screen snapshots: one file per action per phase, keyed to the

@@ -97,7 +97,9 @@ const {
   error,
 } = useFetch<LocatorHealingResult & { healAction?: HealActionChip | null }>(
   () => `/api/test-run-cases/${props.testRunsCaseId}/locator-healing`,
-  { lazy: true },
+  // A stable key lets the host page share this one fetch when it hoists the
+  // same request to decide whether the Toolbox section has anything to show.
+  { lazy: true, key: `locator-healing-${props.testRunsCaseId}` },
 );
 
 const hasData = computed(

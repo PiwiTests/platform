@@ -3,6 +3,7 @@ import { spawn } from 'child_process';
 import { join, resolve } from 'path';
 import { existsSync, rmSync } from 'fs';
 import { PROJECT } from '#shared/test-project-names';
+import { waitForHydration } from './utils';
 
 function safeRmSync(path: string, options?: Parameters<typeof rmSync>[1]) {
   try {
@@ -888,6 +889,93 @@ test.describe.serial('Reporter with authentication enabled', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Capability endpoints — reads open to any signed-in user with access, writes
+  // administrator-only, and a project decision overriding the instance default.
+  // ---------------------------------------------------------------------------
+
+  async function loginAs(request: import('@playwright/test').APIRequestContext, username: string, password: string) {
+    const res = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, { data: { username, password } });
+    expect(res.ok()).toBeTruthy();
+  }
+
+  test('GET /api/capabilities is readable by a "user" role', async ({ request }) => {
+    await loginAs(request, 'ci-user', 'userpassword123');
+    const res = await request.get(`${AUTH_SERVER_URL}/api/capabilities`);
+    expect(res.ok()).toBeTruthy();
+    const body = (await res.json()) as { items: Array<{ id: string; module: string; state: string }> };
+    expect(Array.isArray(body.items)).toBe(true);
+    expect(body.items.length).toBeGreaterThan(0);
+  });
+
+  test('PATCH /api/capabilities is rejected for a "user" role', async ({ request }) => {
+    await loginAs(request, 'ci-user', 'userpassword123');
+    const res = await request.patch(`${AUTH_SERVER_URL}/api/capabilities`, {
+      data: { decisions: { notifications: 'declined' } },
+    });
+    expect(res.status()).toBe(403);
+  });
+
+  test('GET /api/projects/:id/capabilities is readable by a member "user" role', async ({ request }) => {
+    await loginAs(request, 'ci-user', 'userpassword123');
+    const res = await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`);
+    expect(res.ok()).toBeTruthy();
+    const body = (await res.json()) as { items: Array<{ id: string }> };
+    expect(body.items.some((i) => i.id === 'fixtures')).toBe(true);
+  });
+
+  test('PATCH /api/projects/:id/capabilities is rejected for a "user" role', async ({ request }) => {
+    await loginAs(request, 'ci-user', 'userpassword123');
+    const res = await request.patch(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`, {
+      data: { decisions: { quarantine: 'declined' } },
+    });
+    expect(res.status()).toBe(403);
+  });
+
+  test('PATCH /api/capabilities applies several decisions in one request', async ({ request }) => {
+    await loginAs(request, 'admin', 'adminpassword123');
+    const stateOf = (items: Array<{ id: string; state: string }>, id: string) => items.find((i) => i.id === id)?.state;
+
+    const res = await request.patch(`${AUTH_SERVER_URL}/api/capabilities`, {
+      data: { decisions: { notifications: 'declined', tags: 'declined' } },
+    });
+    expect(res.ok()).toBeTruthy();
+    const body = (await res.json()) as { items: Array<{ id: string; state: string }> };
+    expect(stateOf(body.items, 'notifications')).toBe('declined');
+    expect(stateOf(body.items, 'tags')).toBe('declined');
+
+    // Restore a clean slate for later tests.
+    await request.patch(`${AUTH_SERVER_URL}/api/capabilities`, {
+      data: { decisions: { notifications: null, tags: null } },
+    });
+  });
+
+  test('a project enable overrides an instance decline', async ({ request }) => {
+    await loginAs(request, 'admin', 'adminpassword123');
+
+    const stateOf = (items: Array<{ id: string; state: string }>, id: string) => items.find((i) => i.id === id)?.state;
+
+    // Decline quarantine instance-wide; the project sees it declined.
+    await request.patch(`${AUTH_SERVER_URL}/api/capabilities`, { data: { decisions: { quarantine: 'declined' } } });
+    let res = await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`);
+    let body = (await res.json()) as { items: Array<{ id: string; state: string }> };
+    expect(stateOf(body.items, 'quarantine')).toBe('declined');
+
+    // Enable it for this project; the override lifts the decline.
+    await request.patch(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`, {
+      data: { decisions: { quarantine: 'enabled' } },
+    });
+    res = await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`);
+    body = (await res.json()) as { items: Array<{ id: string; state: string }> };
+    expect(stateOf(body.items, 'quarantine')).not.toBe('declined');
+
+    // Restore a clean slate for later tests.
+    await request.patch(`${AUTH_SERVER_URL}/api/capabilities`, { data: { decisions: { quarantine: null } } });
+    await request.patch(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`, {
+      data: { decisions: { quarantine: null } },
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // POST /api/failure-clusters/:id/diagnose/stream — required-role enforcement.
   //
   // The route declares `x-required-roles: ['administrator', 'reporter']`, which
@@ -989,5 +1077,51 @@ test.describe.serial('Reporter with authentication enabled', () => {
     const afterRes = await request.get(`${AUTH_SERVER_URL}/api/users`);
     const afterData = await afterRes.json();
     expect(afterData.items.find((u: { username: string }) => u.username === 'admin').role).toBe('administrator');
+  });
+
+  // ---------------------------------------------------------------------------
+  // D11 in the browser: a "user" sees the effect of an undecided capability (the
+  // one naming line) but none of the decline controls, and cannot reach Setup.
+  // Reuses ci-user, who already has access to a fixtureless failing run in
+  // PROJECT.AUTH_ROLE_CHECKS from an earlier test in this serial suite.
+  // ---------------------------------------------------------------------------
+
+  test('a "user" sees the evidence footer sentence with no decline controls, and Setup is unreachable', async ({
+    page,
+    request,
+  }) => {
+    await loginAs(request, 'admin', 'adminpassword123');
+    // The capture fixtures are undecided for this project, so the footer names the
+    // missing sources — clear any stored decision to be sure.
+    await request.patch(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`, {
+      data: { decisions: { fixtures: null } },
+    });
+    const detail = (await (await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}`)).json()) as {
+      testRuns: Array<{ id: number }>;
+    };
+    const run = (await (await request.get(`${AUTH_SERVER_URL}/api/test-runs/${detail.testRuns[0]!.id}`)).json()) as {
+      testCases: Array<{ status: string; executionId: number }>;
+    };
+    const execId = run.testCases.find((c) => c.status === 'failed')!.executionId;
+
+    // Sign in as the "user"-role account in the browser.
+    await page.goto(`${AUTH_SERVER_URL}/login`);
+    await page.getByRole('textbox', { name: 'Username*' }).fill('ci-user');
+    await page.getByRole('textbox', { name: 'Password*', exact: true }).fill('userpassword123');
+    await page.getByRole('button', { name: 'Login' }).click();
+    await page.waitForURL(`${AUTH_SERVER_URL}/`);
+
+    // The footer names the missing sources but offers no decline controls.
+    await page.goto(`${AUTH_SERVER_URL}/test-run-cases/${execId}`);
+    await waitForHydration(page);
+    const footer = page.locator('[data-shot="evidence-fixtures-footer"]');
+    await expect(footer).toContainText('not captured for this project');
+    await expect(footer.getByRole('button', { name: 'Not for this project' })).toHaveCount(0);
+    await expect(footer.getByRole('button', { name: 'Not for this instance' })).toHaveCount(0);
+    await expect(footer.getByRole('link', { name: 'Add fixtures' })).toHaveCount(0);
+
+    // Setup is administrator-only: the user is redirected away from it.
+    await page.goto(`${AUTH_SERVER_URL}/setup`);
+    await expect(page).not.toHaveURL(`${AUTH_SERVER_URL}/setup`);
   });
 });

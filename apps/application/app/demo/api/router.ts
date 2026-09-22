@@ -199,6 +199,12 @@ import {
 } from '#shared/handlers/users';
 import { searchProjectsTestRunsCases } from '#shared/handlers/search';
 import { getSetupStatus } from '#shared/handlers/setup-status';
+import {
+  getInstanceCapabilities,
+  getProjectCapabilities,
+  setInstanceDecisions,
+  setProjectDecisions,
+} from '#shared/handlers/capabilities';
 import { getAriaSampling } from '#shared/handlers/aria-sampling';
 import {
   apiSetupTestRun,
@@ -1835,6 +1841,41 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/setup-status$/,
     handler: async () => getSetupStatus(await getDemoDb()),
+  },
+
+  // Capability states and decisions — the same resolver as the server, over the
+  // in-browser DB, so declines persist like everything else in the demo.
+  {
+    method: 'GET',
+    pattern: /^\/api\/capabilities$/,
+    handler: async () => getInstanceCapabilities(await getDemoDb()),
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/capabilities$/,
+    handler: async (_, body) => {
+      const db = await getDemoDb();
+      await setInstanceDecisions(db, (body as { decisions?: Record<string, unknown> })?.decisions ?? {});
+      return getInstanceCapabilities(db);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/capabilities$/,
+    handler: async (m, _, __, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return getProjectCapabilities(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/projects\/(\d+)\/capabilities$/,
+    handler: async (m, body, __, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const db = await getDemoDb();
+      await setProjectDecisions(db, +m[1]!, (body as { decisions?: Record<string, unknown> })?.decisions ?? {});
+      return getProjectCapabilities(db, +m[1]!);
+    },
   },
 
   // Version — demo runs entirely client-side (sql.js in the browser, no Node

@@ -21,5 +21,6 @@ export default eventHandler(async (event) => {
   // is disabled.
   await requireAuth(event);
   const db = await getDatabase();
-  return getSetupStatus(db);
+  const appVersion = useRuntimeConfig(event).public.appVersion as string | undefined;
+  return getSetupStatus(db, appVersion);
 });
