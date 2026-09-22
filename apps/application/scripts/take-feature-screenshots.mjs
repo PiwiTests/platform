@@ -302,6 +302,24 @@ const SCENES = [
     },
   },
   {
+    name: 'localization-settings',
+    description:
+      'Settings → Localization: the per-viewer format override and the admin instance default, with a live preview',
+    route: '/settings/localization',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, shoot, settle }) {
+      // Both cards fetch the instance default client-side; wait for the preview
+      // line to resolve before capturing.
+      await page
+        .getByText('Preview:')
+        .first()
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[data-shot="localization-settings"]', pad: 12 });
+    },
+  },
+  {
     name: 'user-api-keys',
     description: 'The API keys manager (shared ApiKeysManager) — here in the Users admin modal',
     route: '/settings/users',

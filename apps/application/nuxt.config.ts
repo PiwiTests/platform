@@ -179,6 +179,12 @@ export default defineNuxtConfig({
     },
     public: {
       siteUrl: process.env.PIWI_SITE_URL || '',
+      // Instance-default date/time formatting, read on the client. Empty means
+      // "not pinned by env" — the client then layers the stored app setting and
+      // the per-viewer override on top (see app/plugins/locale.client.ts). A
+      // non-empty value here locks the admin setting in the UI.
+      dateLocale: process.env.PIWI_LOCALE || '',
+      dateTimeZone: process.env.PIWI_TIME_ZONE || '',
       // Auth is always "on" in the demo so role-based UI (admin-only controls,
       // project affectation, members) engages for the selected "act as" user.
       authEnabled: process.env.PIWI_AUTH_ENABLED === 'true' || isDemo,

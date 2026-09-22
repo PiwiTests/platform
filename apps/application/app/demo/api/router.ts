@@ -241,6 +241,8 @@ import {
   apiPutAutoHeal,
   apiGetHealActions,
   apiPutPrFeedback,
+  apiGetLocale,
+  apiPutLocale,
 } from './settings';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
@@ -961,6 +963,14 @@ const routes: RouteEntry[] = [
     handler: (_, body) => apiPutAiLimits(body),
   },
   { method: 'POST', pattern: /^\/api\/settings\/ai\/models$/, handler: (_, body) => apiListAiModels(body) },
+
+  // Date & time localization
+  { method: 'GET', pattern: /^\/api\/settings\/locale$/, handler: () => apiGetLocale() },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/settings\/locale$/,
+    handler: (_, body) => apiPutLocale(body as Parameters<typeof apiPutLocale>[0]),
+  },
 
   // Test-run streaming (no-op in demo mode; only terminal-status runs exist)
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/stream$/, handler: () => Promise.resolve({ ok: true }) },

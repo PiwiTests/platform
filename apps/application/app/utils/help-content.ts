@@ -461,6 +461,23 @@ export const HELP_TOPICS = {
       'PIWI_AI_MAX_TRACE_NETWORK_REQUESTS',
     ],
   },
+  'settings.localization': {
+    title: 'Localization',
+    text: 'Set how dates and times are formatted and which time zone they show in. Each viewer can pick their own format for their browser; administrators set the instance default everyone else gets.',
+    doc: 'operate/localization',
+  },
+  'settings.locale': {
+    title: 'Date & time format',
+    text: 'The locale that decides how dates and times read: day/month order and 12-hour vs 24-hour time (for example fr-FR shows 22/09/2026 14:30). "Automatic" follows the browser.',
+    doc: 'operate/localization#date-and-time-format',
+    envVars: ['PIWI_LOCALE'],
+  },
+  'settings.time-zone': {
+    title: 'Time zone',
+    text: 'The time zone absolute times are shown in. "Automatic" uses each viewer\'s own browser time zone, which is the default.',
+    doc: 'operate/localization#time-zone',
+    envVars: ['PIWI_TIME_ZONE'],
+  },
   'settings.users': {
     title: 'Users & roles',
     text: 'Manage accounts and their role. Administrators control everything; reporters submit results; users have read-only access.',

@@ -30,6 +30,7 @@ interface WastedSettings {
 export function useSettingsEnvState() {
   const envManaged = ref<Record<SettingsPageId, boolean>>({
     account: false,
+    localization: false,
     users: false,
     notifications: false,
     tags: false,
@@ -78,6 +79,16 @@ export function useSettingsEnvState() {
         .then((s) => {
           // Integrations is env-managed when a connection comes from the environment.
           envManaged.value.integrations = (s.connections ?? []).some((c) => c.managedBy === 'env');
+        })
+        .catch(() => {}),
+    );
+
+    tasks.push(
+      $fetch<{ localeEnvManaged: boolean; timeZoneEnvManaged: boolean }>('/api/settings/locale')
+        .then((s) => {
+          // Localization is env-managed when either the locale or the time zone
+          // is pinned by an env var.
+          envManaged.value.localization = Boolean(s.localeEnvManaged || s.timeZoneEnvManaged);
         })
         .catch(() => {}),
     );

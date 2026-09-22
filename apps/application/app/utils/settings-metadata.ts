@@ -21,6 +21,7 @@ import { helpEnvVars, type HelpTopicKey } from './help-content';
 
 export type SettingsPageId =
   | 'account'
+  | 'localization'
   | 'users'
   | 'notifications'
   | 'tags'
@@ -99,6 +100,18 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
       { id: 'account.password', label: 'Password', help: 'account.password' },
       { id: 'account.api-keys', label: 'API keys', help: 'settings.api-keys' },
       { id: 'account.auth-toggle', label: 'Authentication', help: 'settings.auth-toggle', envOnly: true },
+    ],
+  },
+  {
+    id: 'localization',
+    label: 'Localization',
+    icon: 'i-lucide-languages',
+    to: '/settings/localization',
+    group: 'instance',
+    introHelp: 'settings.localization',
+    fields: [
+      { id: 'localization.format', label: 'Date & time format', help: 'settings.locale' },
+      { id: 'localization.time-zone', label: 'Time zone', help: 'settings.time-zone' },
     ],
   },
   {
