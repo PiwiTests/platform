@@ -7,7 +7,7 @@ import { consola } from 'consola';
 // server bundle externalizes it (e.g. dev builds).
 import type { NitroAppPlugin } from 'nitropack';
 import { createError } from 'h3';
-import { verifyProbeHeader, type PiwiProbeSpec } from './probe';
+import { verifyProbeHeader, ProbeNonceCache, type PiwiProbeSpec } from './probe';
 import {
   buildRouteManifest,
   recordObservedRoute,
@@ -22,6 +22,7 @@ import {
   isExtremeFault,
   isDataFault,
   isDependencyFault,
+  dependencyCallMatches,
   mutateResponseBody,
   appliedFaultLabel,
 } from './faults';
@@ -117,15 +118,14 @@ interface RequestStore {
   probe?: PiwiProbeSpec;
   /** The fault label the server actually applied, reported back in X-Piwi-Trace. */
   probeApplied?: string;
+  /** A dependency fault is pending: it applies once a matching outbound call fires. */
+  probeDependencyPending?: boolean;
   /** True once a dependency fault has failed one outbound call for this request. */
   probeDependencyConsumed?: boolean;
 }
 
-/**
- * Per-spec count of matching requests this process, so a probe's `nth` selector
- * applies the fault to the right occurrence rather than the first.
- */
-const probeMatchCounts = new Map<string, number>();
+/** Signed probe nonces already honored this process, so a header is single-use. */
+const probeNonces = new ProbeNonceCache();
 
 // Links consola calls and recorded spans to the request being handled. The store
 // is scoped with als.run() around the whole downstream handler chain —
@@ -230,7 +230,7 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
     // same guard as log capture) and only when a shared secret is configured.
     // The spec is recorded on the request scope, and a fault is applied only when
     // server probes are turned on for the project and this is the Nth match.
-    const probe = verifyProbeHeader(event.node.req.headers['x-piwi-probe'], PROBE_SECRET, Date.now());
+    const probe = verifyProbeHeader(event.node.req.headers['x-piwi-probe'], PROBE_SECRET, Date.now(), undefined, probeNonces);
     if (probe) {
       store.probe = probe;
       event.context._piwiProbe = probe;
@@ -238,11 +238,15 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
       if (SERVER_PROBES_ENABLED) {
         const method = String(event.method ?? event.node.req.method ?? 'GET');
         const reqPath = String(event.path ?? event.node.req.url ?? '').split('?')[0] ?? '';
+        // The reporter signs the header onto exactly the request it wants faulted
+        // (it already chose the Nth match), so a route match is the whole
+        // selector; the header's single-use nonce keeps it from applying twice.
         if (routeMatchesRequest(probe, method, reqPath)) {
-          const key = `${probe.route ?? ''}\x00${probe.fault}`;
-          const count = (probeMatchCounts.get(key) ?? 0) + 1;
-          probeMatchCounts.set(key, count);
-          if (count === (probe.nth ?? 1)) {
+          if (isDependencyFault(probe.fault)) {
+            // A dependency fault only applies once a matching outbound call fires,
+            // so it is marked applied there, not here.
+            store.probeDependencyPending = true;
+          } else {
             store.probeApplied = appliedFaultLabel(probe);
             event.context._piwiProbeApplied = store.probeApplied;
           }
@@ -340,7 +344,11 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
           throw createError({ statusCode: status, statusMessage: `Piwi probe: injected ${status}` });
         }
         if (isExtremeFault(applied.fault)) {
-          (event.node.res as any).statusCode = 200;
+          // Send the empty response ourselves: h3's toNodeListener ignores the
+          // handler's return value, so returning '' here would never end the
+          // node response and the probed request would hang until its timeout.
+          res.statusCode = 200;
+          res.end('');
           return '';
         }
       }
@@ -358,7 +366,9 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
   });
 
   // Dependency faults fail one outbound call the handler makes through the
-  // instrumented `$fetch`, so the handler's own error handling runs.
+  // instrumented `$fetch`, so the handler's own error handling runs. The fault
+  // targets the call whose URL names `spec.dependency`; when no outbound call
+  // matches, nothing is applied and the probe records inconclusive.
   if (SERVER_PROBES_ENABLED) {
     const g = globalThis as any;
     if (typeof g.$fetch === 'function' && !g.$fetch.__piwiProbePatched) {
@@ -366,12 +376,14 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
       const patched = (...args: unknown[]) => {
         const store = als.getStore();
         if (
-          store?.probeApplied &&
+          store?.probeDependencyPending &&
           store.probe &&
           isDependencyFault(store.probe.fault) &&
-          !store.probeDependencyConsumed
+          !store.probeDependencyConsumed &&
+          dependencyCallMatches(store.probe.dependency, outboundCallTarget(args))
         ) {
           store.probeDependencyConsumed = true;
+          store.probeApplied = appliedFaultLabel(store.probe);
           return Promise.reject(new Error('Piwi probe: injected dependency failure'));
         }
         return original(...args);
@@ -381,5 +393,17 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
     }
   }
 };
+
+/** The request target of an outbound `$fetch` call, for dependency-fault matching. */
+function outboundCallTarget(args: unknown[]): string {
+  const first = args[0];
+  if (typeof first === 'string') return first;
+  if (first instanceof URL) return first.toString();
+  if (first && typeof first === 'object') {
+    const url = (first as { url?: unknown; href?: unknown }).url ?? (first as { href?: unknown }).href;
+    if (typeof url === 'string') return url;
+  }
+  return '';
+}
 
 export default piwiTestLogs;

@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Concurrent;
-using System.Linq;
 
 namespace PiwiTests.Instrumentation.AspNetCore;
 
@@ -14,9 +12,6 @@ namespace PiwiTests.Instrumentation.AspNetCore;
 public static class PiwiProbeFaults
 {
     private const int DelayMs = 5000;
-
-    // Per-spec count of matching requests this process, honoring the nth selector.
-    private static readonly ConcurrentDictionary<string, int> MatchCounts = new();
 
     /// <summary>The HTTP status a fault forces, or null when it forces none.</summary>
     public static int? FaultStatus(string fault) => fault switch
@@ -59,16 +54,12 @@ public static class PiwiProbeFaults
     }
 
     /// <summary>
-    /// True when this request is the spec's nth match. Advances the per-spec
-    /// counter, so it returns true exactly once per (route, fault, nth).
+    /// True when this request is the fault's target. The reporter signs the
+    /// header onto exactly the request it wants faulted (it already chose the Nth
+    /// match), so a route match is the whole selector; the header's single-use
+    /// nonce keeps it from applying twice.
     /// </summary>
-    public static bool ShouldApply(string? route, string fault, int nth, string method, string path)
-    {
-        if (!RouteMatches(route, method, path)) return false;
-        var key = $"{route}\u0000{fault}";
-        var count = MatchCounts.AddOrUpdate(key, 1, (_, v) => v + 1);
-        return count == Math.Max(1, nth);
-    }
+    public static bool ShouldApply(string? route, string method, string path) => RouteMatches(route, method, path);
 
     /// <summary>The label reported for the fault the server actually applied.</summary>
     public static string AppliedLabel(PiwiProbeSpec spec) =>

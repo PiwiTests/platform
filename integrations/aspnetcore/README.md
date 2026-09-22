@@ -84,12 +84,14 @@ in Development and Test environments (the same guard as log capture).
 | Variable             | Effect                                                             |
 |----------------------|-------------------------------------------------------------------|
 | `PIWI_PROBE_SECRET`  | Shared HMAC secret. When unset, the probe header is ignored.      |
-| `PIWI_SERVER_PROBES` | `true` to apply verified faults on the Nth matching request.      |
+| `PIWI_SERVER_PROBES` | `true` to apply verified faults to the signed request.            |
 
 **Faults applied — the honest subset for ASP.NET Core** (`PiwiProbeFaults`):
 handler-level faults only — `throw`, `status`/`auth` (500/401), `delay`/`slow`/
-`slow-first` (+5s) and `extreme` (empty 200), matched to the target route and its
-Nth request. Data mutation before serialization and dependency faults on outbound
+`slow-first` (+5s) and `extreme` (empty 200), matched to the target route. The
+reporter picks the Nth match and signs that one request, so the fault applies to
+any request the header matches and the single-use nonce keeps it from repeating.
+Data mutation before serialization and dependency faults on outbound
 `HttpClient` calls are the Nitro package's fuller subset; they need response
 buffering and a delegating handler this package does not yet wire, so they are not
 applied here. The applied fault is recorded on `HttpContext.Items["PiwiProbeApplied"]`.

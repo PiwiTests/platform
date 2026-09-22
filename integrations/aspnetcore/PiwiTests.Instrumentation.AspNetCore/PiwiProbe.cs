@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -45,12 +46,36 @@ internal sealed class SignedProbe
 /// <c>sig</c> is a hex HMAC-SHA256 over <c>{nonce}.{ts}.{specJson}</c> with a
 /// secret shared between the reporter and the instrumentation.
 /// </summary>
+/// <summary>
+/// A TTL-bounded set of probe nonces already honored, so a signed header is
+/// single-use: a replay within the TTL is rejected. Entries prune lazily on each
+/// use, bounding memory to the probes seen within one TTL window.
+/// </summary>
+public sealed class ProbeNonceCache
+{
+    private readonly ConcurrentDictionary<string, long> _seen = new();
+    private readonly long _ttlMs;
+
+    public ProbeNonceCache(long ttlMs = PiwiProbe.TtlMs) => _ttlMs = ttlMs;
+
+    /// <summary>Record a nonce as used; returns false when it was already used within the TTL.</summary>
+    public bool Use(string nonce, long nowMs)
+    {
+        foreach (var kv in _seen)
+            if (kv.Value <= nowMs) _seen.TryRemove(kv.Key, out _);
+        return _seen.TryAdd(nonce, nowMs + _ttlMs);
+    }
+}
+
 public static class PiwiProbe
 {
     /// <summary>Default probe header lifetime in milliseconds.</summary>
     public const long TtlMs = 60_000;
 
     private static readonly JsonSerializerOptions SpecOptions = new() { PropertyNameCaseInsensitive = true };
+
+    // Signed probe nonces already honored this process, so a header is single-use.
+    private static readonly ProbeNonceCache DefaultNonces = new();
 
     /// <summary>The message signed and verified for a probe.</summary>
     public static string SigningMessage(string nonce, long ts, string specJson) => $"{nonce}.{ts}.{specJson}";
@@ -67,7 +92,8 @@ public static class PiwiProbe
     /// Verify a signed probe header and return its fault spec, or null when the
     /// header is absent, malformed, past its TTL, or fails the signature check.
     /// </summary>
-    public static PiwiProbeSpec? Verify(string? headerValue, string? secret, long nowMs, long ttlMs = TtlMs)
+    public static PiwiProbeSpec? Verify(string? headerValue, string? secret, long nowMs, long ttlMs = TtlMs,
+        ProbeNonceCache? seen = null)
     {
         if (string.IsNullOrEmpty(secret) || string.IsNullOrEmpty(headerValue)) return null;
 
@@ -93,15 +119,20 @@ public static class PiwiProbe
         var expected = Sign(secret, envelope.Nonce, envelope.Ts, envelope.SpecJson);
         if (!FixedTimeHexEquals(envelope.Sig, expected)) return null;
 
+        PiwiProbeSpec? spec;
         try
         {
-            var spec = JsonSerializer.Deserialize<PiwiProbeSpec>(envelope.SpecJson, SpecOptions);
-            return spec is null || string.IsNullOrEmpty(spec.Fault) ? null : spec;
+            spec = JsonSerializer.Deserialize<PiwiProbeSpec>(envelope.SpecJson, SpecOptions);
         }
         catch
         {
             return null;
         }
+        if (spec is null || string.IsNullOrEmpty(spec.Fault)) return null;
+
+        // Single-use: reject a replay of a nonce already honored within the TTL.
+        if (!(seen ?? DefaultNonces).Use(envelope.Nonce, nowMs)) return null;
+        return spec;
     }
 
     private static bool FixedTimeHexEquals(string a, string b)

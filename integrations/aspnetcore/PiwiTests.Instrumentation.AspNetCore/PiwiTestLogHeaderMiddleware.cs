@@ -39,7 +39,7 @@ public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
             {
                 var method = context.Request.Method;
                 var path = context.Request.Path.Value ?? "";
-                if (PiwiProbeFaults.ShouldApply(probe.Route, probe.Fault, probe.Nth ?? 1, method, path))
+                if (PiwiProbeFaults.ShouldApply(probe.Route, method, path))
                 {
                     context.Items["PiwiProbeApplied"] = PiwiProbeFaults.AppliedLabel(probe);
 

@@ -8,7 +8,7 @@ import {
   isDependencyFault,
   mutateResponseBody,
   routeMatchesRequest,
-  faultAppliesToRequest,
+  dependencyCallMatches,
   appliedFaultLabel,
 } from '../src/faults';
 
@@ -49,7 +49,7 @@ describe('mutateResponseBody', () => {
   });
 });
 
-describe('route matching and nth selection', () => {
+describe('route matching (the whole server-side selector)', () => {
   const spec = { route: 'POST /api/orders/:id', fault: 'status', nth: 2 };
 
   it('matches method and pattern with params', () => {
@@ -62,9 +62,28 @@ describe('route matching and nth selection', () => {
     expect(routeMatchesRequest({ fault: 'throw' }, 'GET', '/anything')).toBe(true);
   });
 
-  it('applies only on the nth match', () => {
-    expect(faultAppliesToRequest(spec, 'POST', '/api/orders/42', 1)).toBe(false);
-    expect(faultAppliesToRequest(spec, 'POST', '/api/orders/42', 2)).toBe(true);
+  it('does not re-count nth: a matching request is the target regardless of nth', () => {
+    // The reporter signs the header onto the one request it already chose as the
+    // Nth match, so the server applies to any matching request without counting.
+    expect(routeMatchesRequest(spec, 'POST', '/api/orders/1')).toBe(true);
+    expect(routeMatchesRequest(spec, 'POST', '/api/orders/2')).toBe(true);
+  });
+});
+
+describe('dependencyCallMatches', () => {
+  it('matches an outbound call whose URL or host names the dependency', () => {
+    expect(dependencyCallMatches('payments-svc', 'http://payments-svc/charge')).toBe(true);
+    expect(dependencyCallMatches('payments-svc', 'https://payments-svc.internal/v1')).toBe(true);
+    expect(dependencyCallMatches('payments-svc', '/api/orders')).toBe(false);
+  });
+
+  it('an unscoped dependency fault matches the first outbound call', () => {
+    expect(dependencyCallMatches(undefined, 'http://anything/x')).toBe(true);
+    expect(dependencyCallMatches('', 'http://anything/x')).toBe(true);
+  });
+
+  it('a scoped fault never matches an empty target', () => {
+    expect(dependencyCallMatches('payments-svc', '')).toBe(false);
   });
 });
 

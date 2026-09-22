@@ -85,13 +85,17 @@ capture** (`PIWI_TEST_LOGS_DISABLED`), and only when a shared secret is set:
 | Variable             | Effect                                                             |
 |----------------------|-------------------------------------------------------------------|
 | `PIWI_PROBE_SECRET`  | Shared HMAC secret. When unset, the probe header is ignored.      |
-| `PIWI_SERVER_PROBES` | `true` to apply verified faults on the Nth matching request.      |
+| `PIWI_SERVER_PROBES` | `true` to apply verified faults to the signed request.            |
 
-**Faults applied** (on the Nth matching request, gated per project on the
-dashboard side): `throw`, `status`/`auth` (run the server's error path with a
+**Faults applied** (to the one request the probe run signs — the reporter picks
+the Nth match and signs that request, so the plugin applies the fault to any
+request the header matches and the single-use nonce keeps it from repeating;
+gated per project on the dashboard side): `throw`, `status`/`auth` (run the
+server's error path with a
 500/401), `delay`/`slow`/`slow-first` (+5s), `extreme` (empty default),
 `data`/`drop-field`/`empty-body` (mutate the response before serialization), and
-`dependency` (fail one outbound `$fetch` the handler makes). The plugin reports
+`dependency` (fail one outbound `$fetch` whose URL names the targeted
+dependency; when no call matches, nothing is applied). The plugin reports
 the fault it actually applied in `X-Piwi-Trace` (root-span `piwi.probe.applied`),
 so a probe the server did not honor is recorded as **inconclusive**, never a pass.
 

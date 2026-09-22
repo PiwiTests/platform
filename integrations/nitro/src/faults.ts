@@ -97,9 +97,10 @@ function pathMatchesPattern(pattern: string, path: string): boolean {
 }
 
 /**
- * True when a probe spec's route targets this request, ignoring the `nth`
- * selector. An unscoped spec (no route) matches every request. The plugin uses
- * this to count matches; {@link faultAppliesToRequest} adds the `nth` check.
+ * True when a probe spec's route targets this request. An unscoped spec (no
+ * route) matches every request. The reporter signs the header onto exactly the
+ * request it wants faulted, so a route match is the whole selector server-side —
+ * the `nth` occurrence is chosen by the reporter, never re-counted here.
  */
 export function routeMatchesRequest(spec: ProbeFaultSpec, method: string, path: string): boolean {
   if (!spec.route) return true;
@@ -108,13 +109,18 @@ export function routeMatchesRequest(spec: ProbeFaultSpec, method: string, path: 
   return pathMatchesPattern(pattern, path);
 }
 
-/**
- * True when a probe spec targets this request at its `nth` matching occurrence.
- * The caller tracks the per-spec match count.
- */
-export function faultAppliesToRequest(spec: ProbeFaultSpec, method: string, path: string, matchCount: number): boolean {
-  if (!routeMatchesRequest(spec, method, path)) return false;
-  return matchCount === (spec.nth ?? 1);
+/** True when an outbound call's target names the dependency a fault is scoped to. */
+export function dependencyCallMatches(dependency: string | undefined, target: string): boolean {
+  if (!dependency) return true;
+  if (!target) return false;
+  const needle = dependency.toLowerCase();
+  const hay = target.toLowerCase();
+  if (hay.includes(needle)) return true;
+  try {
+    return new URL(target).host.toLowerCase().includes(needle);
+  } catch {
+    return false;
+  }
 }
 
 /** The label reported in X-Piwi-Trace for the fault the server actually applied. */

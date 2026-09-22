@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { verifyProbeHeader, signProbeMessage, PROBE_TTL_MS, type PiwiProbeSpec } from '../src/probe';
+import { verifyProbeHeader, signProbeMessage, ProbeNonceCache, PROBE_TTL_MS, type PiwiProbeSpec } from '../src/probe';
 
 const SECRET = 'shared-probe-secret';
 
@@ -58,5 +58,26 @@ describe('verifyProbeHeader', () => {
   it('takes the first value of a repeated header', () => {
     const header = signHeader(spec, { ts: now });
     expect(verifyProbeHeader([header, 'ignored'], SECRET, now)).toEqual(spec);
+  });
+
+  it('rejects a replay of a nonce already honored within the TTL', () => {
+    const seen = new ProbeNonceCache();
+    const header = signHeader(spec, { ts: now, nonce: 'once' });
+    expect(verifyProbeHeader(header, SECRET, now, PROBE_TTL_MS, seen)).toEqual(spec);
+    // Same signed header again: the single-use nonce is rejected.
+    expect(verifyProbeHeader(header, SECRET, now, PROBE_TTL_MS, seen)).toBeNull();
+    // A fresh nonce still verifies.
+    const other = signHeader(spec, { ts: now, nonce: 'twice' });
+    expect(verifyProbeHeader(other, SECRET, now, PROBE_TTL_MS, seen)).toEqual(spec);
+  });
+});
+
+describe('ProbeNonceCache', () => {
+  it('accepts a nonce once, then rejects it until the TTL lapses', () => {
+    const cache = new ProbeNonceCache(1000);
+    expect(cache.use('n1', 0)).toBe(true);
+    expect(cache.use('n1', 500)).toBe(false);
+    // Past the TTL the entry is pruned, so the nonce is accepted again.
+    expect(cache.use('n1', 2000)).toBe(true);
   });
 });

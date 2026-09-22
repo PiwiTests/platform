@@ -17,6 +17,8 @@ export interface PiwiProbeSpec {
   fault: string;
   /** Apply only to the Nth matching request (1-based); default the first. */
   nth?: number;
+  /** Dependency name a dependency fault targets, when scoped to one. */
+  dependency?: string;
 }
 
 /** The signed envelope carried in the `X-Piwi-Probe` header (base64 JSON). */
@@ -44,6 +46,25 @@ export function signProbeMessage(secret: string, nonce: string, ts: number, spec
   return createHmac('sha256', secret).update(probeSigningMessage(nonce, ts, specJson)).digest('hex');
 }
 
+/**
+ * A TTL-bounded set of probe nonces already honored, so a signed header is
+ * single-use: a replay within the TTL is rejected. Entries prune lazily on each
+ * use, bounding memory to the probes seen within one TTL window.
+ */
+export class ProbeNonceCache {
+  private readonly seen = new Map<string, number>();
+
+  constructor(private readonly ttlMs: number = PROBE_TTL_MS) {}
+
+  /** Record a nonce as used; returns false when it was already used within the TTL. */
+  use(nonce: string, nowMs: number): boolean {
+    for (const [n, expiry] of this.seen) if (expiry <= nowMs) this.seen.delete(n);
+    if (this.seen.has(nonce)) return false;
+    this.seen.set(nonce, nowMs + this.ttlMs);
+    return true;
+  }
+}
+
 /** Constant-time hex-signature comparison; false on any length or format mismatch. */
 function signaturesEqual(a: string, b: string): boolean {
   if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
@@ -64,6 +85,7 @@ export function verifyProbeHeader(
   secret: string | undefined,
   nowMs: number,
   ttlMs: number = PROBE_TTL_MS,
+  seen?: ProbeNonceCache,
 ): PiwiProbeSpec | null {
   if (!secret) return null;
   const raw = Array.isArray(headerValue) ? headerValue[0] : headerValue;
@@ -86,11 +108,15 @@ export function verifyProbeHeader(
   const expected = signProbeMessage(secret, nonce, ts, specJson);
   if (!signaturesEqual(sig, expected)) return null;
 
+  let spec: PiwiProbeSpec;
   try {
-    const spec = JSON.parse(specJson) as PiwiProbeSpec;
-    if (!spec || typeof spec !== 'object' || typeof spec.fault !== 'string') return null;
-    return spec;
+    spec = JSON.parse(specJson) as PiwiProbeSpec;
   } catch {
     return null;
   }
+  if (!spec || typeof spec !== 'object' || typeof spec.fault !== 'string') return null;
+
+  // Single-use: reject a replay of a nonce already honored within the TTL.
+  if (seen && !seen.use(nonce, nowMs)) return null;
+  return spec;
 }
