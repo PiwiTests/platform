@@ -116,6 +116,14 @@ Everything else — analytics, notifications, the CI gate, PR feedback, MCP, the
 
 ## Exploring
 
+- **Quality reports and trends over time** — a periodic, plain-language report of a suite's health for people who
+  do not open the dashboard (pass rate and its movement, wasted CI time and what it costs, open failure causes and
+  how long they take to fix, what changed and what is being done), generated from the same numbers the Analytics
+  page shows, downloadable as HTML, PDF, Markdown or CSV, delivered on a schedule by email, Slack or webhook, and
+  readable by agents through MCP. Underneath: daily rollups that keep long-term trends after retention prunes the
+  runs, custom periods and period comparison, the default branch as the default scope, per-project targets, and
+  trend widgets for suite growth, flaky debt, time to fix and ownership. Design record in
+  [proposals/analytics-and-reporting.md](proposals/analytics-and-reporting.md).
 - **Scenario gaps** — the tests that are missing, from one model of what the application exposes, what the suite
   touches, what the suite would actually notice (probe runs that mutate responses at the Playwright route boundary)
   and what is worth caring about (usage, churn, age, escape history). Delivered first as a per-ticket section in the
