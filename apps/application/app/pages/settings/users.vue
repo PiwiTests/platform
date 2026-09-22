@@ -1,19 +1,10 @@
 <script setup lang="ts">
 import { z } from 'zod';
 import type { TableColumn } from '@nuxt/ui';
-import type {
-  UserDetails,
-  UsersResponse,
-  ApiKeySummary,
-  ApiKeysResponse,
-  CreateApiKeyResponse,
-  UserProjectAssignments,
-  ProjectMenuItem,
-} from '~~/types/api';
+import type { UserDetails, UsersResponse, UserProjectAssignments, ProjectMenuItem } from '~~/types/api';
 
 const { data: usersData, refresh } = await useFetch<UsersResponse>('/api/users');
 const toast = useToast();
-const { copy } = useCopy();
 const { authState } = useAuth();
 const config = useRuntimeConfig();
 
@@ -29,14 +20,24 @@ const isAdmin = computed(() => {
 // Current user id (for showing own API keys)
 const currentUserId = computed(() => authState.value.user?.id ?? null);
 
-// Define columns with proper typing
+// Define columns with proper typing.
+//
+// The table uses a fixed layout (see the `table-fixed w-full` UI class below) so
+// it always fits the settings card instead of overflowing into a horizontal
+// scrollbar. The role, created and actions columns get fixed widths sized to
+// their content; the three text columns (username, name, email) share the
+// remaining width and truncate long values.
 const columns: TableColumn<UserDetails>[] = [
   { accessorKey: 'username', header: createSortHeader<UserDetails>('Username') },
   { accessorKey: 'name', header: createSortHeader<UserDetails>('Name') },
   { accessorKey: 'email', header: createSortHeader<UserDetails>('Email') },
-  { accessorKey: 'role', header: createSortHeader<UserDetails>('Role') },
-  { accessorKey: 'createdAt', header: createSortHeader<UserDetails>('Created') },
-  { accessorKey: 'actions', header: '' },
+  { accessorKey: 'role', header: createSortHeader<UserDetails>('Role'), meta: { class: { th: 'w-44', td: 'w-44' } } },
+  {
+    accessorKey: 'createdAt',
+    header: createSortHeader<UserDetails>('Created'),
+    meta: { class: { th: 'w-28', td: 'w-28' } },
+  },
+  { accessorKey: 'actions', header: '', meta: { class: { th: 'w-40', td: 'w-40' } } },
 ];
 
 // Add user modal
@@ -180,138 +181,17 @@ async function handleChangeRole(user: UserDetails, role: string) {
 }
 
 // ---------------------------------------------------------------------------
-// API key management
+// API key management — the list, create form and revoke flow live in the
+// reusable <ApiKeysManager> (also used by the Account page); this page only
+// owns which user the modal targets.
 // ---------------------------------------------------------------------------
 
-// Which user's API keys are being viewed/managed
 const selectedUserForKeys = ref<UserDetails | null>(null);
 const isApiKeysModalOpen = ref(false);
 
-const apiKeysList = ref<ApiKeySummary[]>([]);
-
-async function openApiKeysModal(user: UserDetails) {
+function openApiKeysModal(user: UserDetails) {
   selectedUserForKeys.value = user;
   isApiKeysModalOpen.value = true;
-  await loadApiKeys(user.id);
-}
-
-async function loadApiKeys(userId: number) {
-  try {
-    const data = await $fetch<ApiKeysResponse>(`/api/users/${userId}/api-keys`);
-    apiKeysList.value = data.items;
-  } catch {
-    apiKeysList.value = [];
-  }
-}
-
-async function refreshApiKeys() {
-  if (selectedUserForKeys.value) {
-    await loadApiKeys(selectedUserForKeys.value.id);
-  }
-}
-
-// Create API key (inline in the API keys modal)
-const isCreatingKey = ref(false);
-const newKeyName = ref('');
-const newKeyExpiry = ref('');
-const createdKeyValue = ref<string | null>(null);
-
-// SSR-safe origin for the ready-to-paste reporter snippet shown after creating a key
-const serverOrigin = ref('http://localhost:3000');
-onMounted(() => {
-  serverOrigin.value = window.location.origin;
-});
-const apiKeyUsageSnippet = computed(
-  () => `['@piwitests/reporter', {
-  serverUrl: '${serverOrigin.value}',
-  apiKey: '${createdKeyValue.value ?? ''}', // or set PIWI_API_KEY and use apiKey: process.env.PIWI_API_KEY
-}]`,
-);
-
-function startCreateKey() {
-  newKeyName.value = '';
-  newKeyExpiry.value = '';
-  createdKeyValue.value = null;
-  isCreatingKey.value = true;
-}
-
-function cancelCreateKey() {
-  isCreatingKey.value = false;
-  createdKeyValue.value = null;
-}
-
-async function handleCreateApiKey() {
-  if (!selectedUserForKeys.value) return;
-
-  try {
-    const body: { name: string; expiresAt?: string } = { name: newKeyName.value };
-    if (newKeyExpiry.value) {
-      body.expiresAt = new Date(newKeyExpiry.value).toISOString();
-    }
-
-    const result = await $fetch<CreateApiKeyResponse>(`/api/users/${selectedUserForKeys.value.id}/api-keys`, {
-      method: 'POST',
-      body,
-    });
-
-    createdKeyValue.value = result.key;
-    await refreshApiKeys();
-  } catch (error: unknown) {
-    const errorMessage =
-      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
-    toast.add({
-      title: 'Failed to create API key',
-      description: errorMessage || 'An error occurred',
-      color: 'error',
-    });
-  }
-}
-
-function copyKey() {
-  copy(createdKeyValue.value, { toast: 'API key copied to clipboard' });
-}
-
-function dismissCreatedKey() {
-  createdKeyValue.value = null;
-  isCreatingKey.value = false;
-}
-
-// Revoke API key confirmation
-const isRevokeKeyConfirmOpen = ref(false);
-const keyToRevoke = ref<ApiKeySummary | null>(null);
-
-function confirmRevokeApiKey(key: ApiKeySummary) {
-  keyToRevoke.value = key;
-  isRevokeKeyConfirmOpen.value = true;
-}
-
-async function handleRevokeApiKey() {
-  if (!selectedUserForKeys.value || !keyToRevoke.value) return;
-  const key = keyToRevoke.value;
-  isRevokeKeyConfirmOpen.value = false;
-  keyToRevoke.value = null;
-
-  try {
-    await $fetch(`/api/users/${selectedUserForKeys.value.id}/api-keys/${key.id}`, {
-      method: 'DELETE',
-    });
-
-    toast.add({
-      title: 'API key revoked',
-      description: `Key "${key.name}" has been revoked`,
-      color: 'success',
-    });
-
-    await refreshApiKeys();
-  } catch (error: unknown) {
-    const errorMessage =
-      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
-    toast.add({
-      title: 'Failed to revoke API key',
-      description: errorMessage || 'An error occurred',
-      color: 'error',
-    });
-  }
 }
 
 function canManageApiKeys(user: UserDetails): boolean {
@@ -431,23 +311,36 @@ async function handleInviteUser(user: UserDetails) {
         />
       </template>
 
-      <TableScroller min-width="44rem" :bleed="false">
-        <UTable :data="users" :columns="columns" sticky class="max-h-[32rem]">
+      <!-- From `lg` up, the settings card is capped at `max-w-4xl`, so the table
+           switches to a fixed layout (`lg:table-fixed lg:w-full`) that fits the
+           card instead of forcing a horizontal scrollbar; long text columns
+           truncate. Below `lg` the card is full width, so the table keeps its
+           natural auto layout and the scroller handles narrow screens. -->
+      <TableScroller min-width="36rem" :bleed="false">
+        <UTable
+          :data="users"
+          :columns="columns"
+          sticky
+          class="max-h-[32rem]"
+          :ui="{ base: 'lg:table-fixed lg:w-full' }"
+        >
           <template #username-cell="{ row }">
-            {{ row.original.username }}
+            <span class="block truncate" :title="row.original.username">{{ row.original.username }}</span>
           </template>
 
           <template #name-cell="{ row }">
-            <span class="text-muted">{{ row.original.name || '-' }}</span>
+            <span class="block truncate text-muted" :title="row.original.name || undefined">{{
+              row.original.name || '-'
+            }}</span>
           </template>
 
           <template #email-cell="{ row }">
-            <span v-if="row.original.email" class="flex items-center gap-1 text-sm">
-              {{ row.original.email }}
+            <span v-if="row.original.email" class="flex items-center gap-1 text-sm min-w-0">
+              <span class="truncate" :title="row.original.email">{{ row.original.email }}</span>
               <UIcon
                 v-if="row.original.emailVerified"
                 name="i-lucide-circle-check-big"
-                class="size-3.5 text-success-500"
+                class="size-3.5 shrink-0 text-success-500"
                 title="Email verified"
               />
             </span>
@@ -460,7 +353,7 @@ async function handleInviteUser(user: UserDetails) {
               :model-value="row.original.role"
               :items="roleOptions"
               size="sm"
-              class="w-36"
+              class="w-full"
               :aria-label="`Change role for ${row.original.username}`"
               @update:model-value="(value) => handleChangeRole(row.original, value as string)"
             />
@@ -580,18 +473,13 @@ async function handleInviteUser(user: UserDetails) {
     </UModal>
   </ClientOnly>
 
-  <!-- API Keys Modal (single panel with inline create form) -->
+  <!-- API Keys Modal — delegates to the shared <ApiKeysManager>. -->
   <ClientOnly>
     <UModal
       :open="isApiKeysModalOpen"
       :title="`API keys – ${selectedUserForKeys?.username}`"
       size="xl"
-      @update:open="
-        (v) => {
-          isApiKeysModalOpen = v;
-          if (!v) cancelCreateKey();
-        }
-      "
+      @update:open="isApiKeysModalOpen = $event"
     >
       <template #title>
         <span class="inline-flex items-center gap-1">
@@ -600,114 +488,11 @@ async function handleInviteUser(user: UserDetails) {
         </span>
       </template>
       <template #body>
-        <div class="space-y-4">
-          <p class="text-sm text-muted">
-            API keys allow the Playwright reporter (and other CI tools) to submit test results without a
-            username/password login. Each key is shown <strong>only once</strong> at creation time — store it in a CI
-            secret immediately.
-          </p>
-
-          <!-- Inline Create Key Form -->
-          <div v-if="isCreatingKey" class="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-4">
-            <!-- Show new key after creation -->
-            <div v-if="createdKeyValue" class="space-y-4">
-              <UAlert
-                icon="i-lucide-triangle-alert"
-                color="warning"
-                variant="subtle"
-                title="Save your API key now"
-                description="This key will never be shown again. Copy it and store it in your CI secret manager immediately."
-              />
-              <div class="rounded-lg bg-elevated p-3 font-mono text-sm break-all select-all">
-                {{ createdKeyValue }}
-              </div>
-              <div class="flex gap-2">
-                <UButton
-                  label="Copy to clipboard"
-                  icon="i-lucide-clipboard"
-                  color="primary"
-                  size="sm"
-                  @click="copyKey"
-                />
-                <UButton label="Done" variant="ghost" size="sm" @click="dismissCreatedKey" />
-              </div>
-
-              <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-muted mb-2">
-                  Use it in your reporter config
-                </p>
-                <CodeBlock :code="apiKeyUsageSnippet" lang="typescript" />
-              </div>
-            </div>
-
-            <!-- Key creation form -->
-            <div v-else class="space-y-3">
-              <h4 class="font-medium text-sm">Create new API key</h4>
-              <UFormField label="Key name" name="name" required>
-                <UInput v-model="newKeyName" placeholder="e.g. GitHub Actions CI" size="sm" />
-              </UFormField>
-
-              <UFormField label="Expires at (optional)" name="expiresAt">
-                <UInput v-model="newKeyExpiry" type="date" size="sm" :min="new Date().toISOString().split('T')[0]" />
-              </UFormField>
-
-              <div class="flex gap-2">
-                <UButton
-                  label="Generate key"
-                  icon="i-lucide-key"
-                  size="sm"
-                  :disabled="!newKeyName.trim()"
-                  @click="handleCreateApiKey"
-                />
-                <UButton color="neutral" variant="ghost" label="Cancel" size="sm" @click="cancelCreateKey" />
-              </div>
-            </div>
-          </div>
-
-          <!-- Key list -->
-          <div v-if="apiKeysList.length > 0" class="space-y-2">
-            <div
-              v-for="key in apiKeysList"
-              :key="key.id"
-              class="flex items-center justify-between rounded-lg border border-default px-4 py-3"
-            >
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2">
-                  <UIcon name="i-lucide-key" class="text-muted shrink-0" />
-                  <span class="font-medium truncate">{{ key.name }}</span>
-                </div>
-                <div class="text-xs text-muted mt-1 flex flex-wrap gap-x-4">
-                  <span
-                    >Prefix: <code class="font-mono">pd_{{ key.keyPrefix }}…</code></span
-                  >
-                  <span>Created: <ClientDate :date="key.createdAt" date-only /></span>
-                  <span v-if="key.lastUsedAt">Last used: <ClientDate :date="key.lastUsedAt" date-only /></span>
-                  <span v-else class="italic">Never used</span>
-                  <span v-if="key.expiresAt" :class="new Date(key.expiresAt) < new Date() ? 'text-error' : ''">
-                    Expires: <ClientDate :date="key.expiresAt" date-only />
-                  </span>
-                </div>
-              </div>
-              <UButton
-                icon="i-lucide-trash-2"
-                color="error"
-                variant="ghost"
-                size="sm"
-                title="Revoke key"
-                @click="confirmRevokeApiKey(key)"
-              />
-            </div>
-          </div>
-
-          <div v-else-if="!isCreatingKey" class="text-center text-muted py-6 text-sm">
-            No API keys yet. Create one to allow CI access.
-          </div>
-        </div>
+        <ApiKeysManager v-if="selectedUserForKeys" :user-id="selectedUserForKeys.id" />
       </template>
 
       <template #footer>
         <UButton color="neutral" variant="ghost" label="Close" @click="isApiKeysModalOpen = false" />
-        <UButton v-if="!isCreatingKey" label="Create API key" icon="i-lucide-plus" @click="startCreateKey" />
       </template>
     </UModal>
   </ClientOnly>
@@ -725,23 +510,6 @@ async function handleInviteUser(user: UserDetails) {
       <template #footer>
         <UButton color="neutral" variant="ghost" label="Cancel" @click="isDeleteUserConfirmOpen = false" />
         <UButton color="error" label="Delete user" icon="i-lucide-trash-2" @click="confirmDeleteUser" />
-      </template>
-    </UModal>
-  </ClientOnly>
-
-  <!-- Revoke API Key Confirmation Modal -->
-  <ClientOnly>
-    <UModal :open="isRevokeKeyConfirmOpen" title="Revoke API key" @update:open="isRevokeKeyConfirmOpen = $event">
-      <template #body>
-        <p>
-          Revoke API key <strong>"{{ keyToRevoke?.name }}"</strong>? Any CI pipeline using it will stop working
-          immediately.
-        </p>
-      </template>
-
-      <template #footer>
-        <UButton color="neutral" variant="ghost" label="Cancel" @click="isRevokeKeyConfirmOpen = false" />
-        <UButton color="error" label="Revoke" icon="i-lucide-trash-2" @click="handleRevokeApiKey" />
       </template>
     </UModal>
   </ClientOnly>

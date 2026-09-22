@@ -10,6 +10,8 @@
  * active for this execution) and get back the state plus the copy to show.
  */
 
+import type { CapabilityState } from '#shared/capabilities';
+
 /** Evidence cards that fold away when empty and now show one of three states. */
 export type EvidenceCardId = 'console' | 'network' | 'appState' | 'ariaSnapshot' | 'backendLogs' | 'webVitals';
 
@@ -30,11 +32,15 @@ export interface EvidenceStateInput {
   source?: 'fixture' | 'trace';
   /** Whether Piwi's capture fixtures were active for this execution (any fixture field present). */
   fixturesActive: boolean;
+  /** Resolved state of the capability backing this card, when the caller knows it. */
+  capability?: CapabilityState;
 }
 
 export type EvidenceState =
   /** Data is present; `derivedFromTrace` drives the "derived from the trace" chip. */
   | { state: 'present'; derivedFromTrace: boolean }
+  /** The capability behind this card is declined for this project. */
+  | { state: 'declined'; title: string; description: string }
   /** The fixtures were never switched on for this project — the card links to `/setup`. */
   | { state: 'not-captured'; title: string; description: string; to: string; toLabel: string }
   /** The fixtures were active and this run simply produced nothing. */
@@ -99,6 +105,12 @@ export function resolveEvidenceState(id: EvidenceCardId, input: EvidenceStateInp
 
   const copy = CARD_COPY[id];
 
+  // A declined capability is gone, not empty: data still wins above, but with no
+  // data the card names the decision rather than offering to switch it on.
+  if (input.capability === 'declined') {
+    return { state: 'declined', title: copy.title, description: `${copy.title} is declined for this project.` };
+  }
+
   // Backend logs ride on the fixtures but need instrumentation on the app under
   // test. With the fixtures active and still nothing, the missing piece is the
   // backend integration, not the fixtures.
@@ -138,6 +150,8 @@ export function evidenceAbsenceReason(id: EvidenceCardId, input: EvidenceStateIn
   switch (resolved.state) {
     case 'present':
       return null;
+    case 'declined':
+      return 'declined for this project';
     case 'not-captured':
       return 'not captured — capture fixtures not active for this project';
     case 'nothing-happened':

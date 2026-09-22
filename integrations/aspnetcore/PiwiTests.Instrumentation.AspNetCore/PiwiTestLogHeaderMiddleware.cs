@@ -9,7 +9,6 @@ namespace PiwiTests.Instrumentation.AspNetCore;
 
 public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
 {
-    private const int MaxEntries = 50;
     private const string HeaderName = "X-Piwi-Logs";
     private const string ProbeHeaderName = "X-Piwi-Probe";
 
@@ -65,18 +64,18 @@ public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
             }
         }
 
-        PiwiTestLoggerProvider.BeginCapture();
+        PiwiTestLogCapture.Begin();
         try
         {
             await next(context);
         }
         finally
         {
-            var logs = PiwiTestLoggerProvider.StopCapture();
+            // The level filter, entry cap and message truncation are applied by PiwiTestLogCapture.TryAdd.
+            var logs = PiwiTestLogCapture.Stop();
             if (logs is { Count: > 0 } && !context.Response.HasStarted)
             {
-                var payload = logs.Count > MaxEntries ? logs[..MaxEntries] : logs;
-                var json = JsonSerializer.SerializeToUtf8Bytes(payload);
+                var json = JsonSerializer.SerializeToUtf8Bytes(logs);
 
                 using var ms = new MemoryStream();
                 await using (var gz = new GZipStream(ms, CompressionLevel.Fastest, leaveOpen: true))

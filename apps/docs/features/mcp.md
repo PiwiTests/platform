@@ -7,11 +7,9 @@ lang: en-US
 
 <Needs reporter />
 
-Piwi Dashboard exposes a built-in **Model Context Protocol (MCP) server** at `/mcp`. Any MCP-compatible AI client (Claude Code, Cursor, VS Code Copilot, Claude Desktop, Gemini CLI, Windsurf, Continue, …) can connect to it and query your test results, failure clusters, and AI diagnoses directly — with no extra deployment.
+Piwi Dashboard exposes a built-in **Model Context Protocol (MCP) server** at `/mcp`, served from the dashboard's own Nitro process — nothing extra to install. Any MCP-compatible client (Claude Code, Cursor, VS Code Copilot, Claude Desktop, Gemini CLI, Windsurf, Continue, …) can query your test results, failure clusters and AI diagnoses.
 
-The MCP server is served from the same Nitro process as the dashboard. There is nothing extra to install or run.
-
-> **In-app setup page:** While the dashboard is running, open the **MCP server** page (sidebar → MCP server) for a live setup guide with auto-filled snippets for each client.
+> **In-app setup page:** open the **MCP server** page (sidebar → MCP server) for a live setup guide with auto-filled snippets.
 
 ---
 
@@ -47,7 +45,7 @@ The server exposes 50 tools — mostly read-only, plus a few write/triage tools 
 | `get_test_stability_trend` | Flaky/pass rate and duration over time for one test — "is it getting flakier?" |
 | `get_slow_tests` / `get_performance_trend` | Slowest tests and run-duration/p90 time series |
 | `get_spec_health` | Per-spec-file pass rate, flaky rate, and failures — find unhealthy areas |
-| `get_test_run_case` | One execution record with the full (untruncated) error, steps, console, web vitals, ARIA snapshot and its deterministic [clues](/features/evidence#clues) (`include` selects blobs) |
+| `get_test_run_case` | One execution record with full (untruncated) error, steps, console, web vitals, ARIA snapshot, and its deterministic [clues](/features/evidence#clues) (use `include` to select blobs) |
 | `get_test_case_context` | Execution-scoped AI evidence for a single failure (steps, console, network, SCM diff) |
 | `get_locator_healing` | Ranked alternative locators for a failing case — the recommended durable fix plus full alternatives |
 | `list_case_traces` | Playwright trace files for an execution, with download paths |
@@ -62,12 +60,12 @@ The server exposes 50 tools — mostly read-only, plus a few write/triage tools 
 | `list_selections` | A project's saved selections plus the built-in `failed` / `quarantine-free` |
 | `resolve_selection` | Resolve a saved (or built-in) selection to its matching tests and a ready-to-run `playwright test` command — the verify command after a fix |
 | `preview_selection` | Resolve an ad-hoc selection definition without saving it — the builder's dry-run |
-| `suggest_selections` | Suggested `slow`/`feature` tags and a mined smoke suite (budgeted set cover over observed routes), each with its evidence |
-| `analyze_selections` | Per-selection health and drift (what each resolves to now vs. what its last run recorded) plus the tests no selection covers |
-| `get_change_coverage` | Changed files joined to the tests reaching them, grouped by ticket, by run id or base/head range |
-| `list_scenario_gaps` | Ranked scenario gaps (tests that don't exist yet) with class, evidence and score; filter by class, feature, score, PR |
-| `draft_scenario` | A deterministic test skeleton for a gap: title, annotations, graph path, catalog methods and a TODO assertion |
-| `get_feature_graph` | The feature-graph neighborhood around a node — its gap class and reaching tests |
+| `suggest_selections` | Suggested `slow`/`feature` tags and a mined smoke suite, each with its evidence |
+| `analyze_selections` | Per-selection health and drift, plus the uncovered tests |
+| `get_change_coverage` | Changed files joined to the tests reaching them |
+| `list_scenario_gaps` | Ranked scenario gaps with class, evidence and score; filter by class, feature or PR |
+| `draft_scenario` | A deterministic test skeleton for a gap: title, annotations, graph path, catalog methods, TODO assertion |
+| `get_feature_graph` | A node's feature-graph neighborhood, with gap class and reaching tests |
 
 **Failure clusters**
 
@@ -76,9 +74,9 @@ The server exposes 50 tools — mostly read-only, plus a few write/triage tools 
 | `list_clusters` | Failure clusters grouped by error fingerprint |
 | `list_open_clusters` | Open clusters across *all* projects, ranked by occurrences — a triage queue; an optional `queue` filter focuses one inbox queue |
 | `get_cluster` | Cluster detail with affected tests and diagnosis summary |
-| `get_fix_plan` | **One-call fix plan** for a cluster: diagnosis with its validated patch, ranked locator replacements with the file and line, failing tests, owning team, the verify command, a `reproduce` recipe, a generated `bisect` script, and `fixedBefore` |
-| `get_cluster_diagnosis` | Full AI diagnosis: root cause, evidence, suggested fix |
-| `get_cluster_context` | Full AI evidence context (errors, steps, console logs, SCM diff) — the same data the built-in diagnosis AI receives |
+| `get_fix_plan` | **One-call fix plan** for a cluster: diagnosis with its validated patch, ranked locator replacements with file and line, failing tests, owning team, the verify command, a `reproduce` recipe (bash and PowerShell), a `bisect` script, and `fixedBefore` — the resolved clusters it resembles |
+| `get_cluster_diagnosis` | Full AI diagnosis: root cause, evidence, fix |
+| `get_cluster_context` | Full AI evidence context (errors, steps, console logs, SCM diff), as the built-in diagnosis receives it |
 
 **Triage & write** *(require reporter or admin access)*
 
@@ -88,7 +86,7 @@ The server exposes 50 tools — mostly read-only, plus a few write/triage tools 
 | `run_cluster_diagnosis` | Trigger an AI diagnosis and return the result |
 | `set_cluster_base_commit` | Pin the baseline commit for a cluster's SCM-diff context |
 | `submit_diagnosis_feedback` | Thumbs up/down on a diagnosis |
-| `create_test_function` | Register a page-object method or helper in a project's [test functions catalog](./test-functions) from source you (the calling agent) read yourself — no AI call happens on the server side, this only validates and persists |
+| `create_test_function` | Register a page-object method or helper in a project's [test functions catalog](./test-functions) from source you read yourself — the server only validates and persists |
 | `create_issue` | File a Jira issue from a cluster or execution ([issue tracking](/features/issue-tracking)) |
 
 **Source control** *(requires an SCM token — per-project or global)*
@@ -98,13 +96,23 @@ The server exposes 50 tools — mostly read-only, plus a few write/triage tools 
 | `get_repo_commits` | Recent commits for a project's repository (SHA, message, author, date) |
 | `get_repo_diff` | Changed files with patches for a single commit — inspect what a suspect commit changed |
 
-All tools return **token-optimized** compact JSON: null fields are omitted, errors are truncated, and large blobs (browser configs, metadata) are flattened to short strings. List tools return `{ items, nextCursor }` — pass `nextCursor` back (when non-null) to page.
+All tools return **token-optimized** compact JSON: null fields omitted, errors truncated, large blobs flattened to short strings. List tools return `{ items, nextCursor }` — pass `nextCursor` back (when non-null) to page.
 
 A tool that fails (bad argument, missing entity, out-of-scope access) returns a normal tool result with `isError: true` and a human-readable message in its text content — not a JSON-RPC protocol error. Protocol errors are reserved for transport-level problems (unknown method, unknown tool, malformed request).
 
+### Tool modules
+
+Every tool belongs to one **module** — `core`, `workflow`, `healing` or `agents` — the coarse groups Setup and the Home wizard ask about. Declining a module drops its tools from `tools/list` and `tools/call`; undecided and configured capabilities keep theirs, so an upgrade never removes one. Append `?modules=core` (comma-separated) to the MCP URL to narrow the list:
+
+```
+<your-piwi-url>/mcp?modules=core
+```
+
+Unknown module names are ignored, and narrowing never re-enables a declined tool. The `/mcp` page groups the catalog by module and offers a **Core tools only** switch that adds `?modules=core` to the URL and snippets; the core module is the set listed under it there.
+
 ### Access scope
 
-The MCP server honors the same **project-assignment** rules as the REST API. When authentication is enabled, a non-admin API key can only read the projects it is assigned to; project- and entity-scoped tools return an access error for anything out of scope, and cross-project feeds (`list_recent_activity`, `list_open_clusters`, `search`) are filtered to the caller's projects. Write/triage tools additionally require the **reporter** or **administrator** role.
+The MCP server honors the REST API's **project-assignment** rules. With authentication enabled, a non-admin API key reads only its assigned projects; scoped tools return an access error for anything else, and cross-project feeds (`list_recent_activity`, `list_open_clusters`, `search`) are filtered to the caller's projects. Write/triage tools additionally require the **reporter** or **administrator** role.
 
 ---
 
@@ -124,7 +132,7 @@ When `PIWI_AUTH_ENABLED` is not set, any request is accepted without a key.
 
 ## Transport
 
-The server implements the **MCP Streamable HTTP transport**. On `initialize` it negotiates the protocol version, echoing the client's requested version when supported (`2025-06-18`, `2025-03-26`, `2024-11-05`) and otherwise replying with its latest. Requests and responses are standard JSON-RPC 2.0 messages over `POST /mcp`; no SSE or WebSocket is required. (`GET /mcp` serves the setup page, not a stream.)
+The server implements the **MCP Streamable HTTP transport**. On `initialize` it negotiates the protocol version, echoing the client's requested version when supported (`2025-06-18`, `2025-03-26`, `2024-11-05`) and otherwise replying with its latest. Requests and responses are JSON-RPC 2.0 messages over `POST /mcp`; no SSE or WebSocket is needed (`GET /mcp` serves the setup page, not a stream).
 
 ---
 
@@ -274,11 +282,11 @@ Alongside its tools, the server exposes an MCP **prompt** — a ready-made instr
 |--------|--------------|
 | `setup_piwi` | Generates a complete, ready-to-run setup for a Playwright project that is not yet reporting here. |
 
-`setup_piwi` is **server-aware**: because the dashboard builds it, it fills in *this* instance's real URL, whether authentication is required, and the projects that already exist — facts a static copy-paste prompt can't know. Pick it in your MCP client (optionally passing a `projectName`), and the agent gets a personalized plan: run `npx @piwitests/reporter init` against this dashboard, handle the API key if auth is on, rewire the specs, and verify a run lands. It pairs with the `setup-piwi` skill below — the prompt needs no install but requires the MCP connection; the skill works offline once installed.
+`setup_piwi` is **server-aware**: the dashboard fills in *this* instance's URL, whether authentication is required and the existing projects — facts a static prompt can't know. Pick it in your MCP client (optionally with a `projectName`) and the agent gets a personalized plan: run `npx @piwitests/reporter init` against this dashboard, handle the API key if auth is on, rewire the specs, and verify a run lands. It pairs with the `setup-piwi` skill below: the prompt needs no install but requires MCP; the skill works offline.
 
 ## Agent skills
 
-The MCP server gives an agent read access to your results; **skills** tell it what to *do* with them. A skill is a single `SKILL.md` file — the portable open format (a small front-matter block plus Markdown instructions) that Claude Code and other agents pick up from a project's skills directory. Piwi ships five, installed with the reporter's CLI:
+The MCP server gives an agent read access to your results; **skills** tell it what to *do* with them. A skill is a single `SKILL.md` file — the portable open format (front matter plus Markdown instructions) that Claude Code and other agents read from a project's skills directory. Piwi ships five, installed with the reporter's CLI:
 
 ```bash
 npx @piwitests/reporter skills add          # install all of them into .claude/skills/

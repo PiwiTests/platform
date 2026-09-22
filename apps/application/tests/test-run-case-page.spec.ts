@@ -62,6 +62,39 @@ test.describe('Test-run-case page', () => {
                 params: { locator: "getByRole('button', { name: 'Pay' })" },
               },
             ],
+            // Benign capture-fixtures data — successful, fast requests, a plain
+            // log line, the page state on the expected route and Web Vitals — so
+            // the fixture-backed evidence tabs have content and none of it trips a
+            // failure clue. It keeps this an ordinary fixture-instrumented failure.
+            networkRequests: [
+              {
+                method: 'GET',
+                url: 'http://localhost:3000/checkout',
+                status: 200,
+                duration: 180,
+                resourceType: 'document',
+              },
+              {
+                method: 'GET',
+                url: 'http://localhost:3000/api/cart',
+                status: 200,
+                duration: 90,
+                resourceType: 'fetch',
+              },
+            ],
+            consoleLogs: [{ type: 'log', text: 'checkout page ready', timestamp: startTime + 500 }],
+            pageState: { url: 'http://localhost:3000/checkout' },
+            webVitals: {
+              navigation: {
+                url: 'http://localhost:3000/checkout',
+                ttfb: 60,
+                domInteractive: 320,
+                domContentLoaded: 420,
+                loadComplete: 900,
+                transferSize: 60000,
+              },
+              paint: { firstPaint: 210, firstContentfulPaint: 360 },
+            },
           },
           {
             title: 'homepage loads',
@@ -171,7 +204,9 @@ test.describe('Test-run-case page', () => {
     await performanceTab.click();
     // The tab is the heading now; the block no longer repeats "Browser performance".
     await expect(performanceTab).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByText(/Web Vitals/i).first()).toBeVisible();
+    // The captured Web Vitals render as metric tiles (the tab shows only when it
+    // has data — a fixtureless execution has no Performance tab at all).
+    await expect(page.getByText('TTFB', { exact: true })).toBeVisible();
   });
 
   test('GET /api/test-run-cases/:id/timeline places the steps and marks the failure', async ({ request }) => {

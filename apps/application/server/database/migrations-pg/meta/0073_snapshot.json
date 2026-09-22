@@ -1,6 +1,6 @@
 {
-  "id": "bac25083-8d1d-43be-a5e1-0b6d31587dad",
-  "prevId": "421f88ab-88e9-4804-9d75-099097df1182",
+  "id": "90279648-a93c-41fb-b0d9-0cc2c0c85167",
+  "prevId": "9aad21f4-08be-4d17-983e-0f36176ab993",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4146,6 +4146,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "capabilities": {
+          "name": "capabilities",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -4461,6 +4467,24 @@
         "assigned_to": {
           "name": "assigned_to",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "snoozed_until": {
+          "name": "snoozed_until",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "snoozed_at_run_id": {
+          "name": "snoozed_at_run_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "accepted_at": {
+          "name": "accepted_at",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },

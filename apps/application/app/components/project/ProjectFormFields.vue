@@ -11,13 +11,18 @@
  * Shared in both: label, description, tags.
  */
 import type { TagInfo } from '~~/types/api';
+import type { CapabilityId, ProjectDecision } from '#shared/capabilities';
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     mode: 'create' | 'edit';
     allTags: TagInfo[];
     /** Edit mode: whether a SCM token is already stored (adjusts placeholder/help). */
     hasToken?: boolean;
+    /** Edit mode: the project id, for the per-project capability overrides. */
+    projectId?: number;
+    /** Edit mode: the project's stored capability decisions, seeding the overrides. */
+    capabilities?: Partial<Record<CapabilityId, ProjectDecision>> | null;
   }>(),
   { hasToken: false },
 );
@@ -218,6 +223,8 @@ const ciRerun = defineModel<CiRerunForm>('ciRerun', {
           </div>
         </div>
       </UFormField>
+
+      <ProjectCapabilityDecisions v-if="projectId" :project-id="projectId" :initial="capabilities" />
     </template>
 
     <UFormField

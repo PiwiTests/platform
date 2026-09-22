@@ -279,6 +279,10 @@ const READY_INSPECTION = {
  *   importableRuns — desktop mode: archives `desktop_find_importable_runs` reports (default [])
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
  */
+// The evidence-footer scene seeds its own fixtures-free project; `prepare`
+// records the execution id it submits so `run` can open that page.
+let footerExecId = 0;
+
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
@@ -343,6 +347,21 @@ const SCENES = [
         .catch(() => {});
       await settle();
       await shoot(undefined, { of: '[data-shot="storage-analysis"]', pad: 12 });
+    },
+  },
+  {
+    name: 'user-api-keys',
+    description: 'The API keys manager (shared ApiKeysManager) — here in the Users admin modal',
+    route: '/settings/users',
+    viewport: { width: 1100, height: 1000 },
+    async run({ page, shoot, settle }) {
+      // The screenshot server runs with auth off, so every user's keys are
+      // manageable; open the first user's modal. The same component backs the
+      // Account page (Settings → Account → API keys), which needs auth enabled.
+      await page.getByRole('button', { name: 'Manage API keys' }).first().click();
+      await page.getByRole('dialog').waitFor();
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
     },
   },
 
@@ -947,6 +966,14 @@ const SCENES = [
     of: '[data-shot="mcp-desktop-tools"]',
     pad: 12,
   },
+  {
+    name: 'mcp-tool-modules',
+    description: 'MCP page: the tool catalog grouped by module with the Core tools only switch',
+    route: '/mcp',
+    viewport: { width: 1280, height: 5300 },
+    of: '[data-shot="mcp-tool-modules"]',
+    pad: 12,
+  },
 
   // ── Failure headline (report artifacts) ──────────────────────────────────
   {
@@ -1216,6 +1243,74 @@ const SCENES = [
       await page.getByText('Browser notifications').waitFor();
       await settle();
       await shoot('bell');
+    },
+  },
+  // ── Capabilities opt-out ─────────────────────────────────────────────────
+  {
+    name: 'setup-ladder-declined',
+    description: 'Setup ladder grouped by state, with a declined capability folded under Declined',
+    // Decline one instance capability so the folded Declined group appears.
+    async prepare({ base, request }) {
+      await request.patch(`${base}/api/capabilities`, { data: { decisions: { notifications: 'declined' } } });
+    },
+    route: '/setup',
+    viewport: { width: 1280, height: 1600 },
+    async run({ page, shoot, settle }) {
+      // Open the folded Declined group so the reconsider control shows.
+      await page
+        .getByRole('button', { name: /^Declined \(/ })
+        .first()
+        .click()
+        .catch(() => {});
+      await settle();
+      await shoot('wide', { of: '[data-shot="setup-ladder"]', pad: 12 });
+      await page.setViewportSize({ width: 400, height: 1800 });
+      await settle();
+      await shoot('narrow', { of: '[data-shot="setup-ladder"]', pad: 8 });
+    },
+  },
+  {
+    name: 'evidence-fixtures-footer',
+    description: 'Execution page evidence card for a project with no captured fixtures: the footer names them',
+    // Seed a fixtures-free failing run so the footer (undecided) shows.
+    async prepare({ base, request }) {
+      await request.post(`${base}/api/test-runs/submit`, {
+        data: {
+          projectName: 'capability-demo-fixtures-free',
+          status: 'failed',
+          startTime: new Date().toISOString(),
+          duration: 2000,
+          totalTests: 1,
+          passedTests: 0,
+          failedTests: 1,
+          skippedTests: 0,
+          testCases: [
+            {
+              title: 'cart totals the line items',
+              status: 'failed',
+              duration: 800,
+              location: 'tests/cart.spec.ts:8:3',
+              error:
+                'Error: expect(received).toBe(expected)\n\nExpected: 3\nReceived: 2\n    at tests/cart.spec.ts:8:20',
+            },
+          ],
+        },
+      });
+      const { items } = await (await request.get(`${base}/api/projects`)).json();
+      const project = items.find((p) => p.name === 'capability-demo-fixtures-free');
+      const detail = await (await request.get(`${base}/api/projects/${project.id}`)).json();
+      const run = await (await request.get(`${base}/api/test-runs/${detail.testRuns[0].id}`)).json();
+      footerExecId = run.testCases.find((c) => c.status === 'failed').executionId;
+    },
+    route: '/',
+    viewport: { width: 1280, height: 1400 },
+    async run({ page, shoot, settle, goto }) {
+      await goto(`/test-run-cases/${footerExecId}`);
+      await settle();
+      await shoot('wide', { of: '[data-shot="evidence-card"]', pad: 12 });
+      await page.setViewportSize({ width: 400, height: 1600 });
+      await settle();
+      await shoot('narrow', { of: '[data-shot="evidence-card"]', pad: 8 });
     },
   },
 ];

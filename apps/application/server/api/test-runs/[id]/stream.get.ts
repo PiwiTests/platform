@@ -120,6 +120,21 @@ export default eventHandler(async (event) => {
           };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(caseEvent)}\n\n`));
         }
+
+        // Replay cases that have begun but not yet completed. They have no DB
+        // row, so a client that connects or refreshes mid-run would otherwise
+        // not see them until their next live event. Enqueued after the
+        // completed cases so a rare key collision (a retry re-running a
+        // finished case) keeps the finished row.
+        for (const running of runEventBus.getRunningCases(id)) {
+          const beginEvent = {
+            type: 'test-begin',
+            data: running,
+            seq: 0, // Catch-up events have seq 0
+            timestamp: Date.now(),
+          };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(beginEvent)}\n\n`));
+        }
       } catch {
         // Ignore errors during catch-up
       }

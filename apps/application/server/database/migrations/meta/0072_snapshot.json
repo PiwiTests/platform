@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "66989e20-467d-4b10-851f-b1e8380ab0ae",
-  "prevId": "3bce6726-b2d5-426a-8c94-c947fe9d85c8",
+  "id": "d2c27341-f38d-4f97-93b6-c2da5e7061b1",
+  "prevId": "9678b9db-091d-4ce4-9f55-d549b27d5155",
   "tables": {
     "account_tokens": {
       "name": "account_tokens",
@@ -3353,6 +3353,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "capabilities": {
+          "name": "capabilities",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -3645,6 +3652,27 @@
         "assigned_to": {
           "name": "assigned_to",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "snoozed_until": {
+          "name": "snoozed_until",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "snoozed_at_run_id": {
+          "name": "snoozed_at_run_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "accepted_at": {
+          "name": "accepted_at",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

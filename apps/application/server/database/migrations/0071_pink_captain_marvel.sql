@@ -1,1 +1,0 @@
-ALTER TABLE `projects` ADD `openapi_url` text;

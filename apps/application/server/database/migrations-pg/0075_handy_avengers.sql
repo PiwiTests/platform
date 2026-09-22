@@ -1,1 +1,0 @@
-ALTER TABLE "scenario_gaps" ADD COLUMN "snoozed_at_run_id" integer;

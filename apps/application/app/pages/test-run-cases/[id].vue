@@ -15,6 +15,8 @@ import type { FixedBeforeMatch, FixPlan } from '#shared/fix-plan.types';
 import type { Situation, SituationPart } from '#shared/situation';
 import type { NextStep } from '#shared/next-step';
 import { commitUrl } from '#shared/scm-urls';
+import { shouldNudgeFixtures } from '#shared/capability-nudge';
+import type { LocatorHealingResult } from '#shared/locator-healing.types';
 
 const route = useRoute();
 const testCaseId = route.params.id;
@@ -149,9 +151,71 @@ const isProblem = computed(() => {
 
 const blockedTests = computed(() => (testCase.value as { blockedTests?: BlockedCaseRef[] } | null)?.blockedTests ?? []);
 
+// The capture-fixtures nudge: one contextual line under the headline that offers
+// to decline the fixtures, shown only to an administrator, only where fixtures
+// are undecided for the project, and only when the leading clue (or a timeout)
+// would have used what the fixtures capture. It replaces the evidence footer's
+// naming line on this page.
+const {
+  state: projectCapState,
+  isHidden: capHidden,
+  canDecide: canDecideCap,
+  decide: decideProjectCap,
+} = await useProjectCapabilities(testCase.value?.testRun?.project?.id ?? 0);
+const { decide: decideInstanceCap } = await useInstanceCapabilities();
+
+// The evidence footer's decline controls: both write a `declined` decision, one
+// per level, and the resolver hides the sources everywhere on the next read.
+async function declineFixtures(level: 'project' | 'instance') {
+  if (level === 'project') await decideProjectCap('fixtures', 'declined');
+  else await decideInstanceCap('fixtures', 'declined');
+}
+const isTimeoutFailure = computed(() => {
+  const s = testCase.value?.status;
+  return s === 'timedout' || s === 'timedOut';
+});
+const showFixturesNudge = computed(
+  () =>
+    canDecideCap.value &&
+    shouldNudgeFixtures({
+      clueSection: defaultHint.value.section,
+      isTimeout: isTimeoutFailure.value,
+      fixturesState: projectCapState('fixtures'),
+    }),
+);
+const nudgeDeciding = ref(false);
+async function declineFixturesForProject() {
+  if (nudgeDeciding.value) return;
+  nudgeDeciding.value = true;
+  try {
+    await decideProjectCap('fixtures', 'declined');
+  } finally {
+    nudgeDeciding.value = false;
+  }
+}
+
 /** A locator-resolution failure — the only case the Locator fix section applies to. */
 const isLocatorFailure = computed(() =>
   Boolean(verdict.value?.isLocatorResolutionFailure && testCase.value?.testRun?.id),
+);
+
+// The Locator fix section rides on the healing data. Hoisting the same fetch the
+// panel makes (shared by key) lets the toolbox add the section only when there
+// is something to show — and never when healing is hidden for this project.
+const { data: locatorHealingData } = await useFetch<LocatorHealingResult>(
+  () => `/api/test-run-cases/${testCaseId}/locator-healing`,
+  { lazy: true, immediate: isLocatorFailure.value, key: `locator-healing-${testCaseId}` },
+);
+const locatorHealingHasData = computed(() => {
+  const h = locatorHealingData.value;
+  return (
+    !!h &&
+    h.source !== 'none' &&
+    !!(h.fromElementMatch?.length || h.fromPriorSuccess?.length || h.fromAriaSnapshot?.length)
+  );
+});
+const showLocatorFix = computed(
+  () => isLocatorFailure.value && locatorHealingHasData.value && !capHidden('locator-healing'),
 );
 
 // CI re-run for the cluster this failure belongs to, for the Verify section.
@@ -207,7 +271,7 @@ const showReproduce = computed(() => Boolean(verdict.value) && Boolean(reproduce
 /** The Fix card's sections, in the order the card renders them. */
 const fixSections = computed<FixSectionKey[]>(() => {
   const s: FixSectionKey[] = [];
-  if (isLocatorFailure.value) s.push('locator-fix');
+  if (showLocatorFix.value) s.push('locator-fix');
   if (failureCluster.value) s.push('fix-plan');
   s.push('diagnosis');
   if (fixedBefore.value.length) s.push('fixed-before');
@@ -654,6 +718,18 @@ const { handle: handleNextStepAction } = useNextStepActions({
             >
               {{ verdict.detail }}
             </p>
+            <!-- The capture-fixtures nudge, at the point where their absence is felt. -->
+            <p v-if="showFixturesNudge" data-shot="fixtures-nudge" class="mt-2 text-xs text-muted">
+              Capture fixtures would have recorded the network activity behind this failure.
+              <button
+                type="button"
+                :class="SENTENCE_LINK_CLASS"
+                :disabled="nudgeDeciding"
+                @click="declineFixturesForProject"
+              >
+                Not for this project
+              </button>
+            </p>
           </template>
 
           <!-- Line 3: most likely — the story line, with every clue folded under it -->
@@ -717,7 +793,11 @@ const { handle: handleNextStepAction } = useNextStepActions({
             :traces="(traceData as TraceInfo[]) ?? []"
             :has-trace="hasTrace"
             :default-hint="defaultHint"
+            :suppress-fixtures-footer="showFixturesNudge"
+            :fixtures-state="projectCapState('fixtures')"
+            :can-decide-fixtures="canDecideCap"
             help="case.evidence"
+            @decline-fixtures="declineFixtures"
           />
         </div>
 

@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "3bce6726-b2d5-426a-8c94-c947fe9d85c8",
-  "prevId": "131b1193-a13f-47ea-81a9-e278f63024ba",
+  "id": "9678b9db-091d-4ce4-9f55-d549b27d5155",
+  "prevId": "4eecf715-97c7-4830-a2c7-271182c77f14",
   "tables": {
     "account_tokens": {
       "name": "account_tokens",
@@ -3325,13 +3325,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "openapi_url": {
-          "name": "openapi_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "route_origins": {
           "name": "route_origins",
           "type": "text",
@@ -3341,6 +3334,13 @@
         },
         "ci_rerun": {
           "name": "ci_rerun",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "capabilities": {
+          "name": "capabilities",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

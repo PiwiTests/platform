@@ -104,6 +104,10 @@ function isActive(status: string): boolean {
       />
     </div>
     <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span class="inline-flex items-center gap-1.5 text-xs font-medium px-1 py-0.5">
+        <span class="tabular-nums">{{ total }}</span>
+        <span class="text-muted">tests</span>
+      </span>
       <button
         v-for="seg in segments"
         :key="seg.key"

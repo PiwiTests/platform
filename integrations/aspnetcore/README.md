@@ -28,9 +28,60 @@ app.UsePiwiTestLogs();
 app.Run();
 ```
 
-`AddPiwiTestLogs()` registers an `ILoggerProvider` that intercepts Warning and Error entries and stores them in an `AsyncLocal` buffer scoped to the current HTTP request.
+`AddPiwiTestLogs()` registers an `ILoggerProvider` that feeds Warning and Error entries into a per-request capture buffer (`PiwiTestLogCapture`), scoped to the current HTTP request with `AsyncLocal`.
 
-`UsePiwiTestLogs()` adds middleware that serializes the buffer to JSON, gzip-compresses it, and writes the result (Base64-encoded) to the `X-Piwi-Logs` response header before the response is sent — but only when the environment is Development or Test.
+`UsePiwiTestLogs()` adds middleware that serializes the buffer to JSON, gzip-compresses it, and writes the result (Base64-encoded) to the `X-Piwi-Logs` response header before the response is sent, but only when the environment is Development or Test.
+
+## Serilog or the classic Generic Host + `Startup` model
+
+The capture buffer is decoupled from any single logging front-end, so the integration is not limited to minimal hosting or to the Microsoft.Extensions.Logging pipeline.
+
+Hosting-agnostic overloads are available for `Startup`-based apps:
+
+```csharp
+public void ConfigureServices(IServiceCollection services)
+{
+    services.AddPiwiTestLogs();   // also available on ILoggingBuilder
+}
+
+public void Configure(IApplicationBuilder app, IHostEnvironment env)
+{
+    app.UsePiwiTestLogs();        // environment auto-resolved from services, or pass it explicitly
+}
+```
+
+When logging is routed through **Serilog** (with the default `writeToProviders: false`), other `ILoggerProvider`s are never called, so `AddPiwiTestLogs()` alone captures nothing. Feed the buffer from a small Serilog sink instead. `PiwiTestLogCapture` is public and self-guards the level, so the sink only needs to map an event and call `TryAdd`:
+
+```csharp
+using Serilog.Core;
+using Serilog.Events;
+using PiwiTests.Instrumentation.AspNetCore;
+
+sealed class PiwiTestLogSink : ILogEventSink
+{
+    public void Emit(LogEvent e) => PiwiTestLogCapture.TryAdd(
+        level: e.Level switch
+        {
+            LogEventLevel.Warning => LogLevel.Warning,
+            LogEventLevel.Error => LogLevel.Error,
+            LogEventLevel.Fatal => LogLevel.Critical,
+            _ => LogLevel.Information, // dropped by TryAdd's level self-guard
+        },
+        category: e.Properties.TryGetValue("SourceContext", out var c) ? c.ToString().Trim('"') : "",
+        message: e.RenderMessage(),
+        exception: e.Exception);
+}
+```
+
+```csharp
+// Serilog configuration
+loggerConfiguration.WriteTo.Sink(new PiwiTestLogSink());
+
+// Startup.Configure
+app.UsePiwiTestLogs();
+```
+
+`TryAdd` centralizes the level filter (Warning and above), the 50-entry cap, and the 500-character message truncation, so no feeding path can over-capture, even one that bypasses `IsEnabled`.
 
 ## What gets captured
 

@@ -37,6 +37,16 @@ defineRouteMeta({
 
 const MAX_EVENT_BATCH_BYTES = 10 * 1024 * 1024; // 10 MB
 
+/**
+ * Stable identity for a test case within a run, used to match a `begin` event
+ * to its later `complete`. Mirrors the key the run page builds client-side
+ * (title + location + browser), so recording on begin and clearing on complete
+ * target the same running-case entry.
+ */
+function runningCaseKey(tc: { title?: string; location?: string | null; browser?: unknown }): string {
+  return `${tc.title}\x1f${tc.location ?? ''}\x1f${JSON.stringify(tc.browser ?? null)}`;
+}
+
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0');
 
@@ -81,19 +91,20 @@ export default eventHandler(async (event) => {
   for (const tc of beginEvents) {
     const loc = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null };
     const filePath = loc.filePath;
-    runEventBus.publish(id, {
-      type: 'test-begin',
-      data: {
-        title: tc.title,
-        filePath,
-        suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
-        location: tc.location,
-        workerIndex: tc.workerIndex ?? null,
-        shardIndex: tc.shardIndex ?? null,
-        startedAt: tc.startedAt ?? null,
-        browser: tc.browser ?? null,
-      },
-    });
+    const beginData = {
+      title: tc.title,
+      filePath,
+      suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
+      location: tc.location,
+      workerIndex: tc.workerIndex ?? null,
+      shardIndex: tc.shardIndex ?? null,
+      startedAt: tc.startedAt ?? null,
+      browser: tc.browser ?? null,
+    };
+    runEventBus.publish(id, { type: 'test-begin', data: beginData });
+    // A running case has no DB row until it completes, so remember its begin
+    // payload for the stream catch-up; the matching complete event clears it.
+    runEventBus.recordRunningCase(id, runningCaseKey(tc), beginData);
   }
 
   // --- Handle step-begin events ---
@@ -228,6 +239,9 @@ export default eventHandler(async (event) => {
 
   for (const [index, tc] of parsedEvents.entries()) {
     const persisted = persistedByInputIndex.get(index);
+    // The case now has a DB row, so the catch-up will replay it as
+    // `test-completed` — drop the running-case entry that stood in for it.
+    runEventBus.clearRunningCase(id, runningCaseKey(tc));
     runEventBus.publish(id, {
       type: 'test-completed',
       data: {

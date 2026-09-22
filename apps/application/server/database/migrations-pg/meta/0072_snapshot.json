@@ -1,6 +1,6 @@
 {
-  "id": "421f88ab-88e9-4804-9d75-099097df1182",
-  "prevId": "82c4e20b-434b-4b59-a58d-b0c8390e02cc",
+  "id": "9aad21f4-08be-4d17-983e-0f36176ab993",
+  "prevId": "f915acd8-d810-4940-a2d6-2e4c37a9a98d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4122,12 +4122,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "openapi_url": {
-          "name": "openapi_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "route_origins": {
           "name": "route_origins",
           "type": "jsonb",
@@ -4136,6 +4130,12 @@
         },
         "ci_rerun": {
           "name": "ci_rerun",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capabilities": {
+          "name": "capabilities",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
