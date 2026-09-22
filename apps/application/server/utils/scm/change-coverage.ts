@@ -178,10 +178,11 @@ async function buildFileTickets(
 
 /**
  * A shallow one-level import scan at the run's ref: for each changed file no test
- * reached, resolve its relative imports against the repository tree so a `changes`
- * edge into an unreached file still connects to the files that import it. Capped
- * by the SCM file budget; best-effort — a token-less or failing fetch yields no
- * edges.
+ * reached, resolve its relative imports against the repository tree and record an
+ * `imports` edge from the changed file to each file it imports, so an unreached
+ * changed file is still connected into the graph through its own dependencies.
+ * Capped by the SCM file budget; best-effort — a token-less or failing fetch
+ * yields no edges.
  */
 async function scanImportEdges(provider: ScmProvider, ref: string, unreachedFiles: string[]): Promise<ImportPair[]> {
   if (unreachedFiles.length === 0) return [];

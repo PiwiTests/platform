@@ -138,8 +138,8 @@ export function selectProbePlan(candidates: ProbeCandidate[], options: { budget?
  * Choose server-level probe items from the same candidates, gated by the
  * project's server-probe settings: only enabled projects, only allow-listed
  * fault classes and routes, one fault per test, capped at the budget. Dependency
- * faults are left to the plan builder (they need a call-site) — this picks a
- * response-level server fault (status/data/…) allowed for the route.
+ * faults need a call-site and are planned by {@link selectDependencyProbeItems} —
+ * this picks a response-level server fault (status/data/…) allowed for the route.
  */
 export function selectServerProbeItems(
   candidates: ProbeCandidate[],
@@ -168,6 +168,51 @@ export function selectServerProbeItems(
       routeKey: c.routeKey,
       fault: fault as ServerProbeFault,
       level: 'server',
+      nth: 1,
+    });
+  }
+  return items;
+}
+
+/**
+ * Choose dependency-fault probe items: a `dependency` server fault for a test
+ * reaching a route whose handler calls a dependency (`routeDependencies`), gated
+ * by the project's settings — `serverProbeAllowed` enforces the fault allow-list,
+ * the route allow-list and the state-changing opt-in. One fault per test, capped
+ * at the budget, so the `unprobed-dependency` detector can actually clear.
+ */
+export function selectDependencyProbeItems(
+  candidates: ProbeCandidate[],
+  routeDependencies: Map<string, string[]>,
+  settings: ServerProbeSettings,
+  options: { budget?: number; exclude?: Set<number> } = {},
+): ProbePlanItem[] {
+  if (!settings.enabled || !settings.faults.includes('dependency')) return [];
+  const budget = Math.max(0, options.budget ?? DEFAULT_PROBE_BUDGET);
+  const exclude = options.exclude ?? new Set<number>();
+  const eligible = candidates.filter(
+    (c) => (!c.probed || c.changed) && (routeDependencies.get(c.routeKey)?.length ?? 0) > 0,
+  );
+  eligible.sort((a, b) => (a.probed !== b.probed ? (a.probed ? 1 : -1) : b.exposure - a.exposure));
+
+  const seen = new Set<number>();
+  const items: ProbePlanItem[] = [];
+  for (const c of eligible) {
+    if (items.length >= budget) break;
+    if (exclude.has(c.testCaseId) || seen.has(c.testCaseId)) continue;
+    if (!serverProbeAllowed(settings, c.routeKey, 'dependency')) continue;
+    const dependency = routeDependencies.get(c.routeKey)?.[0];
+    if (!dependency) continue;
+    seen.add(c.testCaseId);
+    items.push({
+      testCaseId: c.testCaseId,
+      testTitle: c.testTitle,
+      filePath: c.filePath,
+      suitePath: c.suitePath,
+      routeKey: c.routeKey,
+      fault: 'dependency',
+      level: 'server',
+      dependency,
       nth: 1,
     });
   }
@@ -321,7 +366,60 @@ export async function buildProbePlan(
     budget: clientPlan.budget - clientPlan.items.length,
     exclude: claimed,
   });
-  return { budget: clientPlan.budget, items: [...clientPlan.items, ...serverItems] };
+
+  // Dependency probes for routes whose handler calls a dependency (handled-by →
+  // handler → calls → dependency), so the unprobed-dependency detector can clear.
+  const routeDependencies = await loadRouteDependencies(db, projectId);
+  const alreadyClaimed = new Set([...claimed, ...serverItems.map((i) => i.testCaseId)]);
+  const dependencyItems = selectDependencyProbeItems(candidates, routeDependencies, settings, {
+    budget: clientPlan.budget - clientPlan.items.length - serverItems.length,
+    exclude: alreadyClaimed,
+  });
+
+  return { budget: clientPlan.budget, items: [...clientPlan.items, ...serverItems, ...dependencyItems] };
+}
+
+/**
+ * Map each route to the dependencies its handler calls, from the canonical
+ * `handled-by` (route → handler) and `calls` (handler → dependency) edges.
+ */
+async function loadRouteDependencies(db: DrizzleDB, projectId: number): Promise<Map<string, string[]>> {
+  const rows = await db
+    .select({
+      kind: graphEdges.kind,
+      fromKind: graphEdges.fromKind,
+      fromKey: graphEdges.fromKey,
+      toKind: graphEdges.toKind,
+      toKey: graphEdges.toKey,
+    })
+    .from(graphEdges)
+    .where(
+      and(
+        eq(graphEdges.projectId, projectId),
+        inArray(graphEdges.kind, ['handled-by', 'calls']),
+        isNull(graphEdges.branch),
+      ),
+    );
+  const handlersByRoute = new Map<string, Set<string>>();
+  const depsByHandler = new Map<string, Set<string>>();
+  for (const e of rows) {
+    if (e.kind === 'handled-by' && e.fromKind === 'route' && e.toKind === 'handler') {
+      const set = handlersByRoute.get(e.fromKey) ?? new Set<string>();
+      set.add(e.toKey);
+      handlersByRoute.set(e.fromKey, set);
+    } else if (e.kind === 'calls' && e.fromKind === 'handler' && e.toKind === 'dependency') {
+      const set = depsByHandler.get(e.fromKey) ?? new Set<string>();
+      set.add(e.toKey);
+      depsByHandler.set(e.fromKey, set);
+    }
+  }
+  const routeDependencies = new Map<string, string[]>();
+  for (const [route, handlers] of handlersByRoute) {
+    const deps = new Set<string>();
+    for (const h of handlers) for (const d of depsByHandler.get(h) ?? []) deps.add(d);
+    if (deps.size > 0) routeDependencies.set(route, [...deps]);
+  }
+  return routeDependencies;
 }
 
 /**

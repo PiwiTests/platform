@@ -1,11 +1,13 @@
 import { describe, test, expect } from 'vitest';
 import {
   selectProbePlan,
+  selectDependencyProbeItems,
   isProbeRun,
   PROBE_FAULTS,
   DEFAULT_PROBE_BUDGET,
   type ProbeCandidate,
 } from '../../shared/handlers/probes';
+import type { ServerProbeSettings } from '../../shared/server-probes';
 
 const candidate = (over: Partial<ProbeCandidate>): ProbeCandidate => ({
   testCaseId: 1,
@@ -72,6 +74,66 @@ describe('selectProbePlan', () => {
     );
     expect(new Set(plan.items.map((i) => i.fault)).size).toBe(PROBE_FAULTS.length);
     for (const item of plan.items) expect(PROBE_FAULTS).toContain(item.fault);
+  });
+});
+
+describe('selectDependencyProbeItems', () => {
+  const settings = (over: Partial<ServerProbeSettings> = {}): ServerProbeSettings => ({
+    enabled: true,
+    faults: ['dependency'],
+    routes: [],
+    dependencyOnStateChanging: false,
+    ...over,
+  });
+
+  test('emits a dependency fault for a route whose handler calls a dependency', () => {
+    const items = selectDependencyProbeItems(
+      [candidate({ testCaseId: 1, routeKey: 'GET /api/orders' })],
+      new Map([['GET /api/orders', ['payments-svc']]]),
+      settings(),
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ fault: 'dependency', level: 'server', dependency: 'payments-svc' });
+  });
+
+  test('skips routes whose handler calls no dependency', () => {
+    const items = selectDependencyProbeItems(
+      [candidate({ testCaseId: 1, routeKey: 'GET /api/orders' })],
+      new Map(),
+      settings(),
+    );
+    expect(items).toHaveLength(0);
+  });
+
+  test('honors the state-changing opt-in gate', () => {
+    const deps = new Map([['POST /api/orders', ['payments-svc']]]);
+    // A state-changing route needs the extra opt-in for a dependency fault.
+    expect(selectDependencyProbeItems([candidate({ routeKey: 'POST /api/orders' })], deps, settings())).toHaveLength(0);
+    expect(
+      selectDependencyProbeItems(
+        [candidate({ routeKey: 'POST /api/orders' })],
+        deps,
+        settings({ dependencyOnStateChanging: true }),
+      ),
+    ).toHaveLength(1);
+  });
+
+  test('emits nothing when the level or the dependency fault is disabled', () => {
+    const deps = new Map([['GET /api/orders', ['payments-svc']]]);
+    expect(selectDependencyProbeItems([candidate({})], deps, settings({ enabled: false }))).toHaveLength(0);
+    expect(selectDependencyProbeItems([candidate({})], deps, settings({ faults: ['status'] as never }))).toHaveLength(
+      0,
+    );
+  });
+
+  test('excludes tests another plan already claimed', () => {
+    const items = selectDependencyProbeItems(
+      [candidate({ testCaseId: 1, routeKey: 'GET /api/orders' })],
+      new Map([['GET /api/orders', ['payments-svc']]]),
+      settings(),
+      { exclude: new Set([1]) },
+    );
+    expect(items).toHaveLength(0);
   });
 });
 
