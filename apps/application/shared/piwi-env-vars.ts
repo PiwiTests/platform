@@ -40,6 +40,7 @@ import {
 
 export type PiwiEnvVarCategory =
   | 'general'
+  | 'localization'
   | 'database'
   | 'storage'
   | 'auth'
@@ -135,6 +136,13 @@ export interface PiwiEnvVarCategoryMeta {
 /** Display metadata for every category, driving the generated reference page. */
 export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryMeta> = {
   general: { title: 'General', order: 1 },
+  localization: {
+    title: 'Localization',
+    order: 1.5,
+    intro:
+      'Controls how dates and times are formatted (day/month order, 12h vs 24h) and which time zone they display in. When set, these lock the instance-default fields in **Settings → Localization**; each viewer can still pick their own format there, overriding the instance default in their own browser.',
+    note: "Values are a BCP-47 locale (e.g. `fr-FR`) or an IANA time zone (e.g. `Europe/Paris`); the keyword `auto` follows the viewer's browser. See [Localization](/operate/localization).",
+  },
   database: {
     title: 'Database',
     order: 2,
@@ -256,6 +264,28 @@ export const PIWI_ENV_VARS = {
     notes:
       "Falls back to an insecure built-in development key (with a startup warning in production). Generate one with `node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\"`.",
   },
+  // ── Localization ─────────────────────────────────────────────────────────
+  PIWI_LOCALE: {
+    description:
+      'Instance-default BCP-47 locale for formatting dates and times (e.g. "fr-FR" → 22/09/2026 14:30). The keyword "auto" follows each viewer\'s browser. Unset keeps the built-in en-US format.',
+    category: 'localization',
+    example: 'fr-FR',
+    since: '0.36.0',
+    docs: 'operate/localization',
+    notes:
+      'When set, the instance-default locale is locked in Settings → Localization (read-only), but each viewer can still override the format for their own browser. Any valid BCP-47 tag works, not only the ones the settings dropdown lists.',
+  },
+  PIWI_TIME_ZONE: {
+    description:
+      'Instance-default IANA time zone dates and times are shown in (e.g. "Europe/Paris"). The keyword "auto" (the default) uses each viewer\'s own browser time zone.',
+    category: 'localization',
+    example: 'Europe/Paris',
+    since: '0.36.0',
+    docs: 'operate/localization',
+    notes:
+      'When set, the instance-default time zone is locked in Settings → Localization (read-only), but each viewer can still override it for their own browser.',
+  },
+
   PIWI_BUILD_DIR: {
     description: 'Overrides the Nuxt build output directory. Used by the test harness to isolate parallel builds.',
     category: 'build',

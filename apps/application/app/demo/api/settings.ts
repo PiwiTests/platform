@@ -26,6 +26,17 @@ import {
   type PrFeedbackSettings,
 } from '#shared/pr-feedback';
 import { AUTO_HEAL_KEY, DEFAULT_AUTO_HEAL, resolveAutoHealSettings, type AutoHealSettings } from '#shared/auto-heal';
+import {
+  AUTO,
+  BUILTIN_LOCALE,
+  LOCALE_SETTING_KEY,
+  TIME_ZONE_SETTING_KEY,
+  coerceLocale,
+  coerceTimeZone,
+  resolveInstanceLocale,
+  resolveInstanceTimeZone,
+} from '#shared/i18n/locale-format';
+import { demoHttpError } from './http-error';
 
 /** GET /api/settings/wasted-waits */
 export async function apiGetWastedWaits() {
@@ -147,4 +158,56 @@ export async function apiPutAutoHeal(body: { settings?: Partial<AutoHealSettings
  */
 export async function apiGetHealActions() {
   return { actions: [] as never[] };
+}
+
+/**
+ * Date & time localization settings, mirroring
+ * server/api/settings/locale.{get,put}.ts minus the env layer — the browser has
+ * no `useRuntimeConfig`, so the demo is always `envManaged: false`.
+ */
+async function readLocaleSettings() {
+  const db = await getDemoDb();
+  const storedLocale = (await getAppSetting<{ value: string }>(db, LOCALE_SETTING_KEY))?.value;
+  const storedTimeZone = (await getAppSetting<{ value: string }>(db, TIME_ZONE_SETTING_KEY))?.value;
+  const loc = resolveInstanceLocale(null, storedLocale);
+  const tz = resolveInstanceTimeZone(null, storedTimeZone);
+  return {
+    locale: loc.locale,
+    timeZone: tz.timeZone,
+    localeEnvManaged: false,
+    timeZoneEnvManaged: false,
+    defaults: { locale: BUILTIN_LOCALE, timeZone: AUTO },
+  };
+}
+
+/** GET /api/settings/locale */
+export async function apiGetLocale() {
+  return readLocaleSettings();
+}
+
+/** PUT /api/settings/locale */
+export async function apiPutLocale(body: { locale?: string | null; timeZone?: string | null }) {
+  const db = await getDemoDb();
+
+  if (body.locale !== undefined) {
+    if (body.locale === null) {
+      await deleteAppSetting(db, LOCALE_SETTING_KEY);
+    } else {
+      const locale = coerceLocale(body.locale);
+      if (!locale) throw demoHttpError(400, `Invalid locale: ${body.locale}`);
+      await setAppSetting(db, LOCALE_SETTING_KEY, { value: locale });
+    }
+  }
+
+  if (body.timeZone !== undefined) {
+    if (body.timeZone === null) {
+      await deleteAppSetting(db, TIME_ZONE_SETTING_KEY);
+    } else {
+      const timeZone = coerceTimeZone(body.timeZone);
+      if (!timeZone) throw demoHttpError(400, `Invalid time zone: ${body.timeZone}`);
+      await setAppSetting(db, TIME_ZONE_SETTING_KEY, { value: timeZone });
+    }
+  }
+
+  return readLocaleSettings();
 }

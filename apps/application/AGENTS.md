@@ -225,6 +225,14 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
 - **Absolute timestamps render client-only**: `prettyDateFormat` output never appears in SSR'd markup (the server host
   and the browser rarely share a time zone). Render the date with `ClientDate`, and wrap title-tooltip spans that bind
   `prettyDateFormat` in `ClientOnly`.
+- **Date/time formatting is locale-aware — never hardcode a format.** `prettyDateFormat` and `formatRelativeTime` read
+  the viewer's effective locale and time zone from the active prefs holder (`app/utils/locale-format.ts`), set by
+  `app/plugins/locale.client.ts` from three layers: the per-browser override (Settings → Localization), then
+  `PIWI_LOCALE` / `PIWI_TIME_ZONE`, then the stored instance default, then the built-in `en-US`. Call sites need no
+  change — use `ClientDate` / `prettyDateFormat` / `formatRelativeTime` and they localize automatically. The pure
+  formatter and the resolution/validation helpers live in `#shared/i18n/locale-format`; format via `Intl`
+  (`formatAbsolute`), never a hand-written `M/d/yyyy`. `en-US` output is byte-identical to the historical format, so it
+  is the safe default for screenshots and tests.
 - **Page-level tab strips MUST match the Settings header**: `UDashboardToolbar` + `UNavigationMenu` with
   `highlight` (`settings.vue` is the reference). `DetailPageLayout` already renders it — pages using
   `DetailPageLayout` never touch the strip themselves, and no other page-level strip (UTabs pill, hand-rolled
