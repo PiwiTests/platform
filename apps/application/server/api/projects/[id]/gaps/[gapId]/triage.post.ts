@@ -37,6 +37,9 @@ export default eventHandler(async (event) => {
   }
 
   const result = await triageGap(db, projectId, gapId, validation.data);
-  if (!result) throw apiError({ statusCode: 404, message: 'Gap not found' });
+  if ('error' in result) {
+    if (result.error === 'gap-not-found') throw apiError({ statusCode: 404, message: 'Gap not found' });
+    throw apiError({ statusCode: 400, message: 'Covering test not found in this project' });
+  }
   return { success: true, status: result.status };
 });

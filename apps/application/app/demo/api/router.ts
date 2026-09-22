@@ -1613,7 +1613,10 @@ const routes: RouteEntry[] = [
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const result = await triageGap(await getDemoDb(), +m[1]!, +m[2]!, (body ?? {}) as any);
-      if (!result) throw demoHttpError(404, 'Gap not found');
+      if ('error' in result) {
+        if (result.error === 'gap-not-found') throw demoHttpError(404, 'Gap not found');
+        throw demoHttpError(400, 'Covering test not found in this project');
+      }
       return { success: true, status: result.status };
     },
   },

@@ -7,8 +7,14 @@ import { and, eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 
 delete process.env.PIWI_DATABASE_URL;
-const { triageGap, listAcceptedUnwritten, reopenExpiredSnoozes, upsertScenarioGaps } =
-  await import('../../shared/handlers/scenario-gaps');
+const {
+  triageGap,
+  listAcceptedUnwritten,
+  listScenarioGaps,
+  computeScenarioGaps,
+  reopenExpiredSnoozes,
+  upsertScenarioGaps,
+} = await import('../../shared/handlers/scenario-gaps');
 const { getFeatureGraph } = await import('../../server/utils/feature-graph');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
@@ -49,7 +55,7 @@ describe('triageGap', () => {
   test('accept marks accepted and stamps acceptedAt', async () => {
     const id = await seedGap();
     const result = await triageGap(db, 1, id, { verb: 'accept' });
-    expect(result?.status).toBe('accepted');
+    expect(result).toEqual({ status: 'accepted' });
     const [row] = await db.select().from(schema.scenarioGaps).where(eq(schema.scenarioGaps.id, id));
     expect(row!.status).toBe('accepted');
     expect(row!.acceptedAt).not.toBeNull();
@@ -73,6 +79,7 @@ describe('triageGap', () => {
 
   test('covered-by writes a manual reaches edge without dismissing', async () => {
     const id = await seedGap();
+    await db.insert(schema.testCases).values({ id: 42, projectId: 1, title: 'covers cart', filePath: 'cart.spec.ts' });
     await triageGap(db, 1, id, { verb: 'covered-by', coveringTestCaseId: 42 });
     const [row] = await db.select().from(schema.scenarioGaps).where(eq(schema.scenarioGaps.id, id));
     expect(row!.status).toBe('open');
@@ -85,8 +92,22 @@ describe('triageGap', () => {
     expect(edges[0]!.toKey).toBe('GET /api/cart');
   });
 
-  test('a missing gap returns null', async () => {
-    expect(await triageGap(db, 1, 999, { verb: 'accept' })).toBeNull();
+  test('a covering test from another project is rejected and writes no edge', async () => {
+    const id = await seedGap();
+    await db.insert(schema.projects).values({ id: 2, name: 'other-project' });
+    await db
+      .insert(schema.testCases)
+      .values({ id: 77, projectId: 2, title: 'someone else', filePath: 'other.spec.ts' });
+    const result = await triageGap(db, 1, id, { verb: 'covered-by', coveringTestCaseId: 77 });
+    expect(result).toEqual({ error: 'covering-test-not-found' });
+    const edges = await db.select().from(schema.graphEdges).where(eq(schema.graphEdges.kind, 'reaches'));
+    expect(edges).toHaveLength(0);
+    const [row] = await db.select().from(schema.scenarioGaps).where(eq(schema.scenarioGaps.id, id));
+    expect(row!.status).toBe('open'); // unchanged
+  });
+
+  test('a missing gap returns a gap-not-found error', async () => {
+    expect(await triageGap(db, 1, 999, { verb: 'accept' })).toEqual({ error: 'gap-not-found' });
   });
 });
 
@@ -107,6 +128,88 @@ describe('reopenExpiredSnoozes / listAcceptedUnwritten', () => {
     const rows = await listAcceptedUnwritten(db, [1]);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.status).toBe('accepted');
+  });
+
+  test('an accepted gap whose subject gained a trusted edge drops out of the queue', async () => {
+    await seedGap({ status: 'accepted', acceptedAt: new Date(Date.now() - 8 * 24 * 3600 * 1000) });
+    // A canonical reaches edge to the gap's subject node means the test was written.
+    await db.insert(schema.graphEdges).values({
+      projectId: 1,
+      fromKind: 'test',
+      fromKey: '9',
+      toKind: 'route',
+      toKey: 'GET /api/cart',
+      kind: 'reaches',
+      branch: null,
+      origin: 'manual',
+      confidence: 1,
+      lastSeenAt: new Date(),
+    });
+    expect(await listAcceptedUnwritten(db, [1])).toHaveLength(0);
+  });
+
+  test('listScenarioGaps reopens an expired snooze before listing', async () => {
+    await seedGap({ status: 'snoozed', snoozedUntil: new Date(Date.now() - 1000) });
+    const open = await listScenarioGaps(db, 1, {}); // defaults to open only
+    expect(open.map((g) => g.key)).toContain('GET /api/cart');
+  });
+});
+
+describe('computeScenarioGaps snooze + accepted lifecycle', () => {
+  test('an "until the node changes" snooze reopens once the node is seen in a later run', async () => {
+    // A finding on a route node last seen in run 5.
+    await db.insert(schema.graphNodes).values({
+      projectId: 1,
+      kind: 'route',
+      key: 'GET /api/cart',
+      origin: 'observed',
+      lastSeenRunId: 5,
+      lastSeenAt: new Date(),
+    });
+    await upsertScenarioGaps(
+      db,
+      1,
+      [
+        {
+          detector: 'not-handled', // not in the close list, so it survives the recompute
+          kind: 'finding',
+          class: 'unhandled',
+          key: 'route:GET /api/cart',
+          title: 'GET /api/cart: unhandled failure',
+          evidence: ['x'],
+          confidence: 1,
+          factors: null as never,
+          score: 0.5,
+        },
+      ],
+      {},
+    );
+    const [gap] = await db
+      .select({ id: schema.scenarioGaps.id })
+      .from(schema.scenarioGaps)
+      .where(eq(schema.scenarioGaps.detector, 'not-handled'));
+    await triageGap(db, 1, gap!.id, { verb: 'snooze', snooze: 'until-node-changes' });
+    let [row] = await db.select().from(schema.scenarioGaps).where(eq(schema.scenarioGaps.id, gap!.id));
+    expect(row!.status).toBe('snoozed');
+    expect(row!.snoozedAtRunId).toBe(5);
+
+    // The node is exercised again in a later run.
+    await db
+      .update(schema.graphNodes)
+      .set({ lastSeenRunId: 6 })
+      .where(and(eq(schema.graphNodes.kind, 'route'), eq(schema.graphNodes.key, 'GET /api/cart')));
+    await computeScenarioGaps(db, 1);
+    [row] = await db.select().from(schema.scenarioGaps).where(eq(schema.scenarioGaps.id, gap!.id));
+    expect(row!.status).toBe('open');
+    expect(row!.snoozedAtRunId).toBeNull();
+  });
+
+  test('an accepted gap no longer detected closes so the inbox drains', async () => {
+    await seedGap({ status: 'accepted', acceptedAt: new Date(Date.now() - 1000) });
+    // No route stats seed the success-only detector, so the gap is not re-detected.
+    await computeScenarioGaps(db, 1);
+    const [row] = await db.select().from(schema.scenarioGaps).where(eq(schema.scenarioGaps.detector, 'success-only'));
+    expect(row!.status).toBe('closed');
   });
 });
 

@@ -1147,6 +1147,10 @@ export async function computeScenarioGaps(
   const recentIds = await loadRecentRunIds(db, projectId, HISTORY_WINDOW_RUNS);
   const latestRunId = recentIds[0] ?? null;
 
+  // Wake timed snoozes whose wake time has passed before detecting, so a lapsed
+  // snooze re-enters detection this run rather than hiding the gap forever.
+  await reopenExpiredSnoozes(db, projectId);
+
   // Read canonical rows (branch null), plus the branch under inspection when one
   // is given — so a route added on a pull-request branch never shows as surface
   // drift on the default branch.
@@ -1232,6 +1236,12 @@ export async function computeScenarioGaps(
     });
   }
 
+  // Wake "until the node changes" snoozes whose subject node has been re-observed
+  // in a later run than the one they were snoozed at.
+  const nodeLastSeen = new Map<string, number | null>();
+  for (const node of nodeRows) nodeLastSeen.set(`${node.kind}\x00${node.key}`, node.lastSeenRunId ?? null);
+  await reopenChangedNodeSnoozes(db, projectId, nodeLastSeen);
+
   const nodeReach: NodeReach[] = [];
   const nodeDrift: NodeDrift[] = [];
   for (const node of nodeRows) {
@@ -1245,13 +1255,18 @@ export async function computeScenarioGaps(
         priority: meta.get(id)?.priority ?? null,
       })),
     });
-    nodeDrift.push({
-      nodeKind: node.kind,
-      nodeKey: node.key,
-      firstSeenRunId: node.firstSeenRunId ?? null,
-      reachCount: ids.size,
-      priority: maxPriority(ids, meta),
-    });
+    // Declared nodes (manifest/OpenAPI) carry their own "declared, never hit"
+    // detector and are stamped with the latest run on ingest, so they must never
+    // feed surface drift — a newly documented route is not drift.
+    if (node.origin !== 'manifest' && node.origin !== 'openapi') {
+      nodeDrift.push({
+        nodeKind: node.kind,
+        nodeKey: node.key,
+        firstSeenRunId: node.firstSeenRunId ?? null,
+        reachCount: ids.size,
+        priority: maxPriority(ids, meta),
+      });
+    }
   }
 
   // Breadth edges the M2 detectors read: contains (page → control), links
@@ -1690,9 +1705,11 @@ export async function upsertScenarioGaps(
 }
 
 /**
- * Close open/snoozed gaps of the given detectors whose key was not re-detected:
- * a gap whose node gained a trusted edge, or whose route now sees an error path,
- * closes itself so "closed this month" is a real number.
+ * Close open/snoozed/accepted gaps of the given detectors whose key was not
+ * re-detected: a gap whose node gained a trusted edge, or whose route now sees an
+ * error path, closes itself so "closed this month" is a real number. Accepted
+ * gaps close too — once a team wrote the test, the node is reached and the gap
+ * stops being detected, so the Home inbox drains.
  */
 async function closeMissingGaps(
   db: DrizzleDB,
@@ -1709,7 +1726,7 @@ async function closeMissingGaps(
       and(
         eq(scenarioGaps.projectId, projectId),
         inArray(scenarioGaps.detector, detectors),
-        inArray(scenarioGaps.status, ['open', 'snoozed']),
+        inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted']),
       ),
     );
 
@@ -1805,6 +1822,10 @@ export async function listScenarioGaps(
   projectId: number,
   filters: GapFilters = {},
 ): Promise<ScenarioGapRow[]> {
+  // Wake any timed snooze whose wake time has passed, so an expired snooze
+  // reappears in the list without waiting for a recompute.
+  await reopenExpiredSnoozes(db, projectId);
+
   const where = [eq(scenarioGaps.projectId, projectId)];
   if (filters.status && filters.status !== 'all') where.push(eq(scenarioGaps.status, filters.status));
   else if (!filters.status) where.push(eq(scenarioGaps.status, 'open'));
@@ -1914,23 +1935,63 @@ async function writeManualReachesEdge(
     });
 }
 
+/** The subject node's current last-seen run (canonical row), or null when it has none. */
+async function subjectNodeLastSeenRunId(db: DrizzleDB, projectId: number, subject: GapSubject): Promise<number | null> {
+  const [node] = await db
+    .select({ lastSeenRunId: graphNodes.lastSeenRunId })
+    .from(graphNodes)
+    .where(
+      and(
+        eq(graphNodes.projectId, projectId),
+        eq(graphNodes.kind, subject.kind),
+        eq(graphNodes.key, subject.key),
+        isNull(graphNodes.branch),
+      ),
+    )
+    .limit(1);
+  return node?.lastSeenRunId ?? null;
+}
+
+/** True when a test case belongs to the project — a covering test may only be one of its own. */
+async function testCaseInProject(db: DrizzleDB, projectId: number, testCaseId: number): Promise<boolean> {
+  const [row] = await db
+    .select({ id: testCases.id })
+    .from(testCases)
+    .where(and(eq(testCases.id, testCaseId), eq(testCases.projectId, projectId)))
+    .limit(1);
+  return !!row;
+}
+
+/** The outcome of a triage action: the new status, or why it could not be applied. */
+export type TriageResult = { status: GapStatus } | { error: 'gap-not-found' | 'covering-test-not-found' };
+
 /**
  * Apply an inbox verb to a gap: accept, snooze (1-day / 1-week / until the node
  * changes), dismiss with a reason (covered-elsewhere writes a manual reaches
  * edge from the covering test), or covered-by (writes the edge without
- * dismissing). Returns the gap's new status, or null when it does not exist.
+ * dismissing). A covering test must belong to the same project. Returns the
+ * gap's new status, or an error when the gap or the covering test is not found.
  */
 export async function triageGap(
   db: DrizzleDB,
   projectId: number,
   gapId: number,
   input: TriageInput,
-): Promise<{ status: GapStatus } | null> {
+): Promise<TriageResult> {
   const [gap] = await db
     .select({ id: scenarioGaps.id, key: scenarioGaps.key })
     .from(scenarioGaps)
     .where(and(eq(scenarioGaps.id, gapId), eq(scenarioGaps.projectId, projectId)));
-  if (!gap) return null;
+  if (!gap) return { error: 'gap-not-found' };
+
+  // A covering test is written as a manual reaches edge; it must be one of this
+  // project's own test cases, never a cross-project id.
+  const writesEdge = input.verb === 'covered-by' || (input.verb === 'dismiss' && input.reason === 'covered-elsewhere');
+  if (writesEdge && input.coveringTestCaseId != null) {
+    if (!(await testCaseInProject(db, projectId, input.coveringTestCaseId))) {
+      return { error: 'covering-test-not-found' };
+    }
+  }
 
   const now = new Date();
   const subject = subjectFromGapKey(gap.key);
@@ -1942,7 +2003,11 @@ export async function triageGap(
     if (input.assignedTo !== undefined) set.assignedTo = input.assignedTo;
   } else if (input.verb === 'snooze') {
     set.status = 'snoozed';
-    set.snoozedUntil = snoozeUntil(input.snooze, now);
+    const until = snoozeUntil(input.snooze, now);
+    set.snoozedUntil = until;
+    // "Until the node changes" has no wake time; record the subject node's
+    // current last-seen run so the gap wakes once the node is seen in a later run.
+    set.snoozedAtRunId = until == null ? await subjectNodeLastSeenRunId(db, projectId, subject) : null;
   } else if (input.verb === 'dismiss') {
     set.status = 'dismissed';
     set.dismissReason = input.reason ?? 'wrong';
@@ -1985,6 +2050,44 @@ export async function reopenExpiredSnoozes(db: DrizzleDB, projectId: number, now
 }
 
 /**
+ * Wake "until the node changes" snoozes (snoozedUntil null) whose subject node
+ * has been seen in a run later than the one recorded when they were snoozed —
+ * the node has been exercised again, so the gap is worth re-evaluating.
+ */
+async function reopenChangedNodeSnoozes(
+  db: DrizzleDB,
+  projectId: number,
+  nodeLastSeen: Map<string, number | null>,
+  now: Date = new Date(),
+): Promise<number> {
+  const snoozed = await db
+    .select({ id: scenarioGaps.id, key: scenarioGaps.key, snoozedAtRunId: scenarioGaps.snoozedAtRunId })
+    .from(scenarioGaps)
+    .where(
+      and(
+        eq(scenarioGaps.projectId, projectId),
+        eq(scenarioGaps.status, 'snoozed'),
+        isNull(scenarioGaps.snoozedUntil),
+        isNotNull(scenarioGaps.snoozedAtRunId),
+      ),
+    );
+  const toWake: number[] = [];
+  for (const gap of snoozed) {
+    const subject = subjectFromGapKey(gap.key);
+    const lastSeen = nodeLastSeen.get(`${subject.kind}\x00${subject.key}`);
+    if (lastSeen != null && gap.snoozedAtRunId != null && lastSeen > gap.snoozedAtRunId) toWake.push(gap.id);
+  }
+  if (toWake.length === 0) return 0;
+  for (let i = 0; i < toWake.length; i += 100) {
+    await db
+      .update(scenarioGaps)
+      .set({ status: 'open', snoozedAtRunId: null, updatedAt: now })
+      .where(inArray(scenarioGaps.id, toWake.slice(i, i + 100)));
+  }
+  return toWake.length;
+}
+
+/**
  * Accepted-but-unwritten gaps older than a week: the Home `gaps` inbox queue.
  * A gap the team accepted but whose node still has no trusted edge — the draft
  * was never turned into a test.
@@ -2006,7 +2109,31 @@ export async function listAcceptedUnwritten(
     .where(and(...where))
     .orderBy(desc(scenarioGaps.score))
     .limit(100);
-  return rows.map(mapGapRow);
+  const mapped = rows.map(mapGapRow);
+  if (mapped.length === 0) return mapped;
+
+  // "Unwritten" means the subject node still has no trusted `reaches` edge: a gap
+  // whose test was actually written gains one and drops out of the queue.
+  const byProject = new Map<number, ScenarioGapRow[]>();
+  for (const gap of mapped) {
+    const list = byProject.get(gap.projectId) ?? [];
+    list.push(gap);
+    byProject.set(gap.projectId, list);
+  }
+  const reachedSubjects = new Set<string>();
+  for (const [projectId, gaps] of byProject) {
+    const edges = await db
+      .select({ toKind: graphEdges.toKind, toKey: graphEdges.toKey })
+      .from(graphEdges)
+      .where(and(eq(graphEdges.projectId, projectId), eq(graphEdges.kind, 'reaches'), isNull(graphEdges.branch)));
+    const reached = new Set(edges.map((e) => `${e.toKind}\x00${e.toKey}`));
+    for (const gap of gaps) {
+      if (reached.has(`${gap.subject.kind}\x00${gap.subject.key}`)) {
+        reachedSubjects.add(`${gap.projectId}\x00${gap.subject.kind}\x00${gap.subject.key}`);
+      }
+    }
+  }
+  return mapped.filter((gap) => !reachedSubjects.has(`${gap.projectId}\x00${gap.subject.kind}\x00${gap.subject.key}`));
 }
 
 // ── Deterministic draft (pure + loader) ──────────────────────────────────────
@@ -2108,7 +2235,25 @@ export interface GapSubject {
  * the draft builder — read the subject, never the raw key.
  */
 export function subjectFromGapKey(key: string): GapSubject {
-  for (const kind of ['route', 'page', 'control', 'link', 'test', 'cluster', 'catalog', 'intent']) {
+  // The not-handled finding keys its subject as `dependency:<dep> @ <route>`; the
+  // subject node is the dependency, so drop the ` @ <route>` locator.
+  if (key.startsWith('dependency:')) {
+    const dep = key.slice('dependency:'.length).split(' @ ')[0]!;
+    return { kind: 'dependency', key: dep };
+  }
+  for (const kind of [
+    'route',
+    'page',
+    'control',
+    'link',
+    'test',
+    'cluster',
+    'catalog',
+    'intent',
+    'feature',
+    'ticket',
+    'handler',
+  ]) {
     const prefix = `${kind}:`;
     if (key.startsWith(prefix)) return { kind, key: key.slice(prefix.length) };
   }

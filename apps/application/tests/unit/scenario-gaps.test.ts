@@ -92,6 +92,33 @@ describe('detectSurfaceDrift', () => {
   });
 });
 
+describe('subjectFromGapKey', () => {
+  test('resolves the M3 gap-key prefixes to their graph node', () => {
+    expect(gaps.subjectFromGapKey('dependency:payments-svc')).toEqual({ kind: 'dependency', key: 'payments-svc' });
+    // The not-handled finding's composite key resolves to the dependency subject.
+    expect(gaps.subjectFromGapKey('dependency:payments-svc @ POST /api/orders')).toEqual({
+      kind: 'dependency',
+      key: 'payments-svc',
+    });
+    expect(gaps.subjectFromGapKey('feature:Checkout')).toEqual({ kind: 'feature', key: 'Checkout' });
+    expect(gaps.subjectFromGapKey('ticket:JIRA-42')).toEqual({ kind: 'ticket', key: 'JIRA-42' });
+    expect(gaps.subjectFromGapKey('handler:src/api/orders.post.ts')).toEqual({
+      kind: 'handler',
+      key: 'src/api/orders.post.ts',
+    });
+  });
+
+  test('keeps the existing prefixes and raw-key fallbacks', () => {
+    expect(gaps.subjectFromGapKey('route:GET /api/cart')).toEqual({ kind: 'route', key: 'GET /api/cart' });
+    expect(gaps.subjectFromGapKey('page:/checkout')).toEqual({ kind: 'page', key: '/checkout' });
+    expect(gaps.subjectFromGapKey('GET /api/cart')).toEqual({ kind: 'route', key: 'GET /api/cart' });
+    expect(gaps.subjectFromGapKey('server/api/orders.post.ts')).toEqual({
+      kind: 'file',
+      key: 'server/api/orders.post.ts',
+    });
+  });
+});
+
 describe('detectChangedUnreached', () => {
   test('pairs "no test in this run" with the history count and says observed reach', () => {
     const [gap] = gaps.detectChangedUnreached(
@@ -287,6 +314,28 @@ describe('computeScenarioGaps', () => {
     await gaps.computeScenarioGaps(db, 1, { branch: 'pr-1' });
     drift = await gaps.listScenarioGaps(db, 1, { detector: 'surface-drift' });
     expect(drift.find((r) => r.key === 'route:GET /api/new')).toBeTruthy();
+  });
+
+  test('a newly documented (manifest/openapi) route does not also fire surface drift', async () => {
+    await seedRun(1);
+    // A declared route stamped with the latest run on ingest: it is a
+    // declared-never-hit candidate, never surface drift.
+    await db.insert(schema.graphNodes).values({
+      projectId: 1,
+      kind: 'route',
+      key: 'GET /api/documented',
+      origin: 'manifest',
+      firstSeenRunId: 1,
+      lastSeenRunId: 1,
+      lastSeenAt: new Date(++clock),
+    });
+
+    await gaps.computeScenarioGaps(db, 1);
+    const drift = await gaps.listScenarioGaps(db, 1, { detector: 'surface-drift', status: 'all' });
+    expect(drift.find((r) => r.key === 'route:GET /api/documented')).toBeFalsy();
+    // It is still eligible for the declared-never-hit detector.
+    const declared = await gaps.listScenarioGaps(db, 1, { detector: 'declared-never-hit', status: 'all' });
+    expect(declared.find((r) => r.subject.key === 'GET /api/documented')).toBeTruthy();
   });
 
   test('closes a gap whose condition no longer holds', async () => {

@@ -135,7 +135,7 @@ export async function getFeatureGraph(
     const rows = await db
       .select({ id: testCases.id, title: testCases.title })
       .from(testCases)
-      .where(inArray(testCases.id, allTestIds.slice(i, i + 200)));
+      .where(and(eq(testCases.projectId, projectId), inArray(testCases.id, allTestIds.slice(i, i + 200))));
     for (const r of rows) titleById.set(r.id, r.title);
   }
 
