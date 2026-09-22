@@ -9,6 +9,7 @@
 import { desc, eq } from 'drizzle-orm';
 import { testRuns } from '../database/schema';
 import { ingestManifestGraph } from './graph-ingest';
+import { safeFetch } from './safe-fetch';
 import { parseOpenApiSpec } from '#shared/openapi';
 import type { AppManifest, ManifestSource } from '#shared/types';
 import type { DrizzleDB } from '#shared/handlers/db';
@@ -33,23 +34,52 @@ export async function latestRunId(db: DB, projectId: number): Promise<number> {
 }
 
 /**
- * Fetch and parse an OpenAPI document into a manifest. Best-effort: a network
- * failure, a non-2xx response, an oversized body or unparseable JSON all return
- * null rather than throwing, so a declared-surface refresh never breaks ingest.
+ * Read a response body up to `maxBytes`, returning null when it overruns. Reads
+ * the stream in chunks and aborts past the cap so a lying `content-length` (or
+ * none at all) cannot buffer an unbounded body into memory.
+ */
+async function readBoundedText(res: Response, maxBytes: number): Promise<string | null> {
+  const declared = Number(res.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) return null;
+  if (!res.body) {
+    const text = await res.text();
+    return text.length > maxBytes ? null : text;
+  }
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+/**
+ * Fetch and parse an OpenAPI document into a manifest. The admin-supplied URL
+ * goes through the SSRF guard (`safeFetch` validates the target and every
+ * redirect hop against `assertPublicHttpUrl`) and the body is read under a size
+ * cap. Best-effort: a blocked host, a network failure, a non-2xx response, an
+ * oversized body or unparseable JSON all return null rather than throwing, so a
+ * declared-surface refresh never breaks ingest.
  */
 export async function fetchOpenApiManifest(url: string): Promise<AppManifest | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), OPENAPI_FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(url, { signal: controller.signal, headers: { Accept: 'application/json' } });
+    const res = await safeFetch(url, { headers: { Accept: 'application/json' } }, 3, OPENAPI_FETCH_TIMEOUT_MS);
     if (!res.ok) return null;
-    const text = await res.text();
-    if (text.length > OPENAPI_MAX_BYTES) return null;
+    const text = await readBoundedText(res, OPENAPI_MAX_BYTES);
+    if (text == null) return null;
     return parseOpenApiSpec(JSON.parse(text));
   } catch {
     return null;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -63,10 +93,11 @@ export async function ingestProjectManifest(
   projectId: number,
   manifest: AppManifest,
   source: ManifestSource,
+  options: { branch?: string | null } = {},
 ): Promise<boolean> {
   try {
     const runId = await latestRunId(db, projectId);
-    await ingestManifestGraph(db as DbClient, projectId, runId, manifest, source);
+    await ingestManifestGraph(db as DbClient, projectId, runId, manifest, source, { branch: options.branch ?? null });
     return true;
   } catch {
     return false;
