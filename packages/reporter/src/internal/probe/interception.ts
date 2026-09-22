@@ -5,6 +5,7 @@
  * `faults.ts` and `plan.ts`.
  */
 
+import { gunzipSync } from 'node:zlib';
 import type { Page } from '@playwright/test';
 import { computeFault, type ProbeFault } from './faults.js';
 import { createProbeState, markNavigated, requestMatchesRoute, shouldMutate, type ProbePlanItem } from './plan.js';
@@ -13,6 +14,26 @@ import { buildProbeHeader, type ServerProbeSpec } from './sign.js';
 /** Handle to the interception: whether the fault was actually applied. */
 export interface ProbeInterception {
   applied: () => boolean;
+}
+
+/**
+ * True when a server response's `X-Piwi-Trace` header carries a root span the
+ * instrumentation stamped with `piwi.probe.applied` — the only proof the server
+ * honored the signed fault. A signed request the server ignored (probes off,
+ * wrong secret, route mismatch, or a package that emits no trace) carries no
+ * such marker, so the probe records inconclusive rather than a false gap.
+ */
+export function traceMarksProbeApplied(traceHeader: string | undefined): boolean {
+  if (!traceHeader) return false;
+  try {
+    const spans = JSON.parse(gunzipSync(Buffer.from(traceHeader, 'base64')).toString('utf8'));
+    if (!Array.isArray(spans)) return false;
+    return spans.some(
+      (s) => s && typeof s === 'object' && !s.parentId && s.attrs && s.attrs['piwi.probe.applied'] != null,
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -39,7 +60,9 @@ export async function installProbeInterception(page: Page, item: ProbePlanItem):
 
     // A server fault is signed onto the request and applied inside the server;
     // the response is left alone. Without a shared secret it cannot be signed, so
-    // the request goes through unmodified and the probe records as not applied.
+    // the request goes through unmodified and the probe records inconclusive.
+    // The fault counts as applied only when the server proves it honored it by
+    // stamping the response's trace with `piwi.probe.applied`.
     if (item.level === 'server') {
       if (!probeSecret) {
         await route.fallback();
@@ -48,11 +71,13 @@ export async function installProbeInterception(page: Page, item: ProbePlanItem):
       const spec: ServerProbeSpec = { route: item.routeKey, fault: item.fault, nth: item.nth };
       if (item.dependency) spec.dependency = item.dependency;
       try {
-        applied = true;
-        await route.continue({
+        const response = await route.fetch({
           headers: { ...request.headers(), 'x-piwi-probe': buildProbeHeader(probeSecret, spec) },
         });
+        applied = traceMarksProbeApplied(response.headers()['x-piwi-trace']);
+        await route.fulfill({ response });
       } catch {
+        applied = false;
         await route.fallback();
       }
       return;
@@ -76,6 +101,7 @@ export async function installProbeInterception(page: Page, item: ProbePlanItem):
     } catch {
       // A fetch or fulfill failure must not wedge the test — let the real
       // request through, recorded as not applied.
+      applied = false;
       await route.fallback();
     }
   });

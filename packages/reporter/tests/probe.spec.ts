@@ -1,5 +1,7 @@
+import { gzipSync } from 'node:zlib';
 import { describe, it, expect } from 'vitest';
 import { computeFault, SLOW_FAULT_DELAY_MS } from '../src/internal/probe/faults.js';
+import { traceMarksProbeApplied } from '../src/internal/probe/interception.js';
 import {
   matchProbeItem,
   requestMatchesRoute,
@@ -63,6 +65,31 @@ describe('probe run stamp', () => {
     // An unapplied fault is inconclusive regardless of status.
     expect(outcomeFromStatus('passed', false)).toBe('inconclusive');
     expect(outcomeFromStatus('failed', false)).toBe('inconclusive');
+  });
+});
+
+describe('traceMarksProbeApplied (server honored the signed fault)', () => {
+  const header = (spans: unknown[]): string => gzipSync(Buffer.from(JSON.stringify(spans))).toString('base64');
+
+  it('is true only when a root span carries piwi.probe.applied', () => {
+    expect(traceMarksProbeApplied(header([{ id: 'a', attrs: { 'piwi.probe.applied': 'throw' } }]))).toBe(true);
+  });
+
+  it('is false when the server signed but did not honor the probe', () => {
+    // A root span with no applied marker: the request was verified but the fault
+    // was not applied (probes off, route mismatch), so the probe is inconclusive.
+    expect(traceMarksProbeApplied(header([{ id: 'a', attrs: { 'piwi.probe': 'throw' } }]))).toBe(false);
+  });
+
+  it('ignores the marker on a non-root (child) span', () => {
+    expect(traceMarksProbeApplied(header([{ id: 'c', parentId: 'a', attrs: { 'piwi.probe.applied': 'throw' } }]))).toBe(
+      false,
+    );
+  });
+
+  it('is false with no header or a malformed one', () => {
+    expect(traceMarksProbeApplied(undefined)).toBe(false);
+    expect(traceMarksProbeApplied('not-base64-gzip')).toBe(false);
   });
 });
 
