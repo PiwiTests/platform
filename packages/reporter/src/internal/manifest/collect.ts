@@ -118,22 +118,28 @@ export function baseUrlFromConfig(config: {
 /** A fetch-shaped function, so the instrumentation fetch is testable without a server. */
 export type FetchLike = (
   url: string,
+  init?: { signal?: AbortSignal },
 ) => Promise<{ ok: boolean; status: number; headers: Record<string, unknown> | Headers; text(): Promise<string> }>;
+
+/** How long each instrumentation-manifest request may run before it is aborted. */
+export const INSTRUMENTATION_FETCH_TIMEOUT_MS = 5000;
 
 /**
  * Fetch the instrumentation manifest from a base URL: probe the base URL once,
  * and only when its response carries an instrumentation header fetch and parse
- * `/__piwi/manifest`. Best-effort — any failure returns null.
+ * `/__piwi/manifest`. Both requests are bounded by a timeout so the reporter
+ * never hangs a run on a slow or unresponsive base URL. Best-effort — any
+ * failure (including a timeout) returns null.
  */
 export async function fetchInstrumentationManifest(
   baseUrl: string,
   fetchImpl: FetchLike = fetch as unknown as FetchLike,
 ): Promise<ReporterManifest | null> {
   try {
-    const probe = await fetchImpl(baseUrl);
+    const probe = await fetchImpl(baseUrl, { signal: AbortSignal.timeout(INSTRUMENTATION_FETCH_TIMEOUT_MS) });
     if (!hasInstrumentationHeader(probe.headers)) return null;
     const manifestUrl = new URL(INSTRUMENTATION_MANIFEST_PATH, baseUrl).toString();
-    const res = await fetchImpl(manifestUrl);
+    const res = await fetchImpl(manifestUrl, { signal: AbortSignal.timeout(INSTRUMENTATION_FETCH_TIMEOUT_MS) });
     if (!res.ok) return null;
     return parseManifestJson(await res.text());
   } catch {

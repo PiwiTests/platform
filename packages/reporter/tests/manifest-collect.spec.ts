@@ -73,4 +73,25 @@ describe('fetchInstrumentationManifest', () => {
     const fetchImpl: FetchLike = async () => ({ ok: true, status: 200, headers: {}, text: async () => '' });
     expect(await fetchInstrumentationManifest('https://app.test', fetchImpl)).toBeNull();
   });
+
+  it('passes an abort signal so a slow base URL never hangs the run', async () => {
+    const signals: Array<AbortSignal | undefined> = [];
+    const fetchImpl: FetchLike = async (url, init) => {
+      signals.push(init?.signal);
+      if (url.endsWith('/__piwi/manifest')) {
+        return { ok: true, status: 200, headers: {}, text: async () => JSON.stringify({ routes: [{ method: 'GET', pattern: '/api/cart' }] }) };
+      }
+      return { ok: true, status: 200, headers: { 'x-piwi-trace': 'abc' }, text: async () => '' };
+    };
+    await fetchInstrumentationManifest('https://app.test', fetchImpl);
+    expect(signals).toHaveLength(2);
+    expect(signals.every((s) => s instanceof AbortSignal)).toBe(true);
+  });
+
+  it('returns null when a request rejects (e.g. an aborted timeout)', async () => {
+    const fetchImpl: FetchLike = async () => {
+      throw new DOMException('The operation was aborted.', 'TimeoutError');
+    };
+    expect(await fetchInstrumentationManifest('https://app.test', fetchImpl)).toBeNull();
+  });
 });
