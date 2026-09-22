@@ -41,12 +41,6 @@ internal sealed class SignedProbe
 }
 
 /// <summary>
-/// Verifies the signed <c>X-Piwi-Probe</c> request header. The scheme mirrors the
-/// Nitro package: a base64 JSON envelope <c>{ nonce, ts, specJson, sig }</c> whose
-/// <c>sig</c> is a hex HMAC-SHA256 over <c>{nonce}.{ts}.{specJson}</c> with a
-/// secret shared between the reporter and the instrumentation.
-/// </summary>
-/// <summary>
 /// A TTL-bounded set of probe nonces already honored, so a signed header is
 /// single-use: a replay within the TTL is rejected. Entries prune lazily on each
 /// use, bounding memory to the probes seen within one TTL window.
@@ -67,6 +61,12 @@ public sealed class ProbeNonceCache
     }
 }
 
+/// <summary>
+/// Verifies the signed <c>X-Piwi-Probe</c> request header. The scheme mirrors the
+/// Nitro package: a base64 JSON envelope <c>{ nonce, ts, specJson, sig }</c> whose
+/// <c>sig</c> is a hex HMAC-SHA256 over <c>{nonce}.{ts}.{specJson}</c> with a
+/// secret shared between the reporter and the instrumentation.
+/// </summary>
 public static class PiwiProbe
 {
     /// <summary>Default probe header lifetime in milliseconds.</summary>
