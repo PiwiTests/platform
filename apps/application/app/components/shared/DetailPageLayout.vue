@@ -100,7 +100,7 @@ const activeTabHelp = computed(() => props.tabItems.find((t) => t.value === acti
           :items="navItems"
           highlight
           class="-mx-1 flex-1"
-          :ui="{ list: 'overflow-x-auto', root: 'min-w-0' }"
+          :ui="{ list: 'overflow-x-auto', root: 'min-w-0', item: 'shrink-0' }"
         >
           <template #item-label="{ item }">
             <span>{{ item.label }}</span>

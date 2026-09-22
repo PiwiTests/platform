@@ -231,7 +231,12 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
   tablist) may be introduced. Content-level tab switches inside a card (e.g. an mcp code-client picker) are
   free to differ. The strip is a navigation menu, not an ARIA tablist: panels carry **no** `tabpanel` role,
   the active item carries `aria-current`, and inline `HelpHint`s render beside the strip for the active tab
-  (never inside a navigation trigger's label — that nests buttons).
+  (never inside a navigation trigger's label — that nests buttons). The strip carries
+  `:ui="{ list: 'overflow-x-auto', root: 'min-w-0', item: 'shrink-0' }"` so it scrolls as one row when the
+  tabs overflow instead of shrinking every label to an ellipsis, and **below `sm` it is replaced by a
+  full-width `USelect`** (the strip is `hidden sm:flex`) — the horizontal row collapses to unreadable icons
+  on a phone. `DetailPageLayout` does both already; a route-driven strip like `settings.vue` binds the select
+  to the current route (grouped by the same sections, one `{ type: 'label' }` row per group).
 - Add a `title` attribute to any control whose purpose is not obvious from its label.
 - **Clickable source paths**: render any repo-relative path or `file:line[:col]` with `OpenInIdeLink`, never a bare
   `<span>`/`<code>`. Pass `filePath` (+ `line`/`column`) or `location`, and thread `projectKey` (the Piwi project **id**)

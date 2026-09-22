@@ -820,7 +820,7 @@ const moreMenuItems = computed(() => {
             :items="tabNavItems"
             highlight
             class="-mx-1 flex-1"
-            :ui="{ list: 'overflow-x-auto', root: 'min-w-0' }"
+            :ui="{ list: 'overflow-x-auto', root: 'min-w-0', item: 'shrink-0' }"
           />
         </UDashboardToolbar>
 
