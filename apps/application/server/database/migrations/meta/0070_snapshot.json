@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "131b1193-a13f-47ea-81a9-e278f63024ba",
-  "prevId": "896a717e-39c3-4ae3-a518-035f945680e9",
+  "id": "4eecf715-97c7-4830-a2c7-271182c77f14",
+  "prevId": "41ab68f6-b008-4e37-bdad-3206b53b1cb2",
   "tables": {
     "account_tokens": {
       "name": "account_tokens",
@@ -2803,159 +2803,6 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "probes": {
-      "name": "probes",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "test_case_id": {
-          "name": "test_case_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "node_id": {
-          "name": "node_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "route_key": {
-          "name": "route_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "level": {
-          "name": "level",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'client'"
-        },
-        "fault": {
-          "name": "fault",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "applied": {
-          "name": "applied",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": true
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "handled": {
-          "name": "handled",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'n/a'"
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "evidence": {
-          "name": "evidence",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "probed_at": {
-          "name": "probed_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "idx_probes_pair": {
-          "name": "idx_probes_pair",
-          "columns": ["project_id", "test_case_id", "route_key", "fault"],
-          "isUnique": true
-        },
-        "idx_probes_project": {
-          "name": "idx_probes_project",
-          "columns": ["project_id"],
-          "isUnique": false
-        },
-        "idx_probes_node": {
-          "name": "idx_probes_node",
-          "columns": ["node_id"],
-          "isUnique": false
-        },
-        "idx_probes_test": {
-          "name": "idx_probes_test",
-          "columns": ["test_case_id"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "probes_project_id_projects_id_fk": {
-          "name": "probes_project_id_projects_id_fk",
-          "tableFrom": "probes",
-          "tableTo": "projects",
-          "columnsFrom": ["project_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "probes_test_case_id_test_cases_id_fk": {
-          "name": "probes_test_case_id_test_cases_id_fk",
-          "tableFrom": "probes",
-          "tableTo": "test_cases",
-          "columnsFrom": ["test_case_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "probes_node_id_graph_nodes_id_fk": {
-          "name": "probes_node_id_graph_nodes_id_fk",
-          "tableFrom": "probes",
-          "tableTo": "graph_nodes",
-          "columnsFrom": ["node_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
     "project_assignments": {
       "name": "project_assignments",
       "columns": {
@@ -3334,6 +3181,13 @@
         },
         "ci_rerun": {
           "name": "ci_rerun",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "capabilities": {
+          "name": "capabilities",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -4867,13 +4721,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "page_inventory_payload_id": {
-          "name": "page_inventory_payload_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "browser": {
           "name": "browser",
           "type": "text",
@@ -5017,12 +4864,6 @@
           "columns": ["test_source_frames_payload_id"],
           "isUnique": false,
           "where": "test_source_frames_payload_id IS NOT NULL"
-        },
-        "idx_trc_page_inventory_payload": {
-          "name": "idx_trc_page_inventory_payload",
-          "columns": ["page_inventory_payload_id"],
-          "isUnique": false,
-          "where": "page_inventory_payload_id IS NOT NULL"
         }
       },
       "foreignKeys": {
@@ -5085,15 +4926,6 @@
           "tableFrom": "test_runs_cases",
           "tableTo": "case_payloads",
           "columnsFrom": ["test_source_frames_payload_id"],
-          "columnsTo": ["id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "test_runs_cases_page_inventory_payload_id_case_payloads_id_fk": {
-          "name": "test_runs_cases_page_inventory_payload_id_case_payloads_id_fk",
-          "tableFrom": "test_runs_cases",
-          "tableTo": "case_payloads",
-          "columnsFrom": ["page_inventory_payload_id"],
           "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"

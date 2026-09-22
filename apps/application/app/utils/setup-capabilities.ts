@@ -9,9 +9,25 @@
  * Ordered deliberately: the ladder runs from "results arriving at all" through
  * the capabilities that build on each other (fixtures → locator healing) to
  * the optional extras. That order is the answer to "what should I do next?",
- * so it is the order the page renders.
+ * so it is the order the page renders within each group.
  */
 import type { SetupCapabilityId } from '#shared/handlers/setup-status';
+import type { CapabilityState } from '#shared/capabilities';
+
+/** The four groups the Setup ladder sorts capabilities into. */
+export type LadderGroup = 'active' | 'available' | 'notset' | 'declined';
+
+/**
+ * Which ladder group a capability's resolved state belongs to. Undecided and
+ * not-applicable both fall under "not set up" — a stack without a backend
+ * package reads the same as one that has not been switched on.
+ */
+export function ladderGroupOf(state: CapabilityState): LadderGroup {
+  if (state === 'active') return 'active';
+  if (state === 'declined') return 'declined';
+  if (state === 'available') return 'available';
+  return 'notset';
+}
 
 export interface SetupCapabilityCopy {
   id: SetupCapabilityId;
@@ -27,8 +43,6 @@ export interface SetupCapabilityCopy {
   to?: string;
   /** Label for `to`. */
   toLabel?: string;
-  /** Shown instead of "Not active yet" — some capabilities are genuinely optional. */
-  optional?: boolean;
 }
 
 export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
@@ -72,10 +86,9 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     title: 'Backend logs',
     summary:
       'Server-side warnings, errors and spans captured during each test and shown next to the network request that triggered them.',
-    how: 'Install a Piwi instrumentation package in the app under test — @piwitests/instrumentation-nitro on npm, or PiwiTests.Instrumentation.AspNetCore on NuGet.',
+    how: 'Needs a backend package in the app under test; available today for Nitro and ASP.NET Core.',
     icon: 'i-lucide-server',
     doc: 'guide/backend-logs',
-    optional: true,
   },
   {
     id: 'clustering',
@@ -95,7 +108,57 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     doc: 'features/ai-diagnosis',
     to: '/settings/ai',
     toLabel: 'Configure AI',
-    optional: true,
+  },
+  {
+    id: 'mcp',
+    title: 'MCP server',
+    summary: 'A local MCP endpoint so agents like Claude can query your results, failures and fix plans.',
+    how: 'Always available — open the MCP server page for the URL and one-click setup for every client.',
+    icon: 'i-lucide-bot',
+    doc: 'features/mcp',
+    to: '/mcp',
+    toLabel: 'Open MCP setup',
+  },
+  {
+    id: 'notifications',
+    title: 'Notifications',
+    summary: 'Email, Slack, webhook and browser channels, with per-project subscriptions and digests.',
+    how: 'Add a channel in Settings, then subscribe the projects you care about.',
+    icon: 'i-lucide-bell',
+    doc: 'features/notifications',
+    to: '/settings/notifications',
+    toLabel: 'Add a channel',
+  },
+  {
+    id: 'pr-feedback',
+    title: 'Pull-request feedback',
+    summary: 'When a run finishes on a branch with an open pull request, the result posted back to it.',
+    how: 'Configure it in Settings — needs a repository access token.',
+    icon: 'i-lucide-git-pull-request',
+    doc: 'guide/ci',
+    to: '/settings/pr-feedback',
+    toLabel: 'Configure',
+  },
+  {
+    id: 'auto-heal',
+    title: 'Auto-heal',
+    summary:
+      'When a locator breaks on the default branch and healing is confident, Piwi opens the fix as a pull request.',
+    how: 'Configure it in Settings — needs a repository token and an AI provider.',
+    icon: 'i-lucide-bandage',
+    doc: 'features/auto-heal',
+    to: '/settings/auto-heal',
+    toLabel: 'Configure',
+  },
+  {
+    id: 'integrations',
+    title: 'Issue tracking',
+    summary: 'Create and link issues in Jira, GitHub or GitLab straight from a failure cluster.',
+    how: 'Connect a system in Settings.',
+    icon: 'i-lucide-plug',
+    doc: 'features/issue-tracking',
+    to: '/settings/integrations',
+    toLabel: 'Connect a system',
   },
   {
     id: 'scm',
@@ -107,28 +170,6 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     doc: 'features/ai-diagnosis',
     to: '/settings/ai',
     toLabel: 'Add a token',
-    optional: true,
-  },
-  {
-    id: 'notifications',
-    title: 'Notifications',
-    summary: 'Email, Slack, webhook and browser channels, with per-project subscriptions and digests.',
-    how: 'Add a channel in Settings, then subscribe the projects you care about.',
-    icon: 'i-lucide-bell',
-    doc: 'features/notifications',
-    to: '/settings/notifications',
-    toLabel: 'Add a channel',
-    optional: true,
-  },
-  {
-    id: 'quarantine',
-    title: 'Quarantine',
-    summary:
-      'A known-bad test keeps running and reporting, but stops failing the CI gate — and earns its way out on a passing streak.',
-    how: "Quarantine a test from its test-case page, or from the project's Quarantine tab.",
-    icon: 'i-lucide-shield-alert',
-    doc: 'features/flaky-tests',
-    optional: true,
   },
   {
     id: 'tags',
@@ -140,7 +181,6 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     doc: 'guide/reporter',
     to: '/settings/tags',
     toLabel: 'Manage tags',
-    optional: true,
   },
   {
     id: 'markers',
@@ -149,6 +189,14 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     how: "Add a marker from a project's Timeline tab.",
     icon: 'i-lucide-git-commit-horizontal',
     doc: 'features/timeline-markers',
-    optional: true,
+  },
+  {
+    id: 'quarantine',
+    title: 'Quarantine',
+    summary:
+      'A known-bad test keeps running and reporting, but stops failing the CI gate — and earns its way out on a passing streak.',
+    how: "Quarantine a test from its test-case page, or from the project's Quarantine tab.",
+    icon: 'i-lucide-shield-alert',
+    doc: 'features/flaky-tests',
   },
 ];

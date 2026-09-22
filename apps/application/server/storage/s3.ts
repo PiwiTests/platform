@@ -19,12 +19,17 @@ export class S3StorageAdapter implements StorageAdapter {
 
   constructor(config: S3Config) {
     this.config = config;
+    const credentials =
+      this.config.accessKeyId && this.config.secretAccessKey
+        ? {
+            accessKeyId: this.config.accessKeyId,
+            secretAccessKey: this.config.secretAccessKey,
+          }
+        : undefined;
+
     this.s3Client = new S3Client({
       region: this.config.region,
-      credentials: {
-        accessKeyId: this.config.accessKeyId,
-        secretAccessKey: this.config.secretAccessKey,
-      },
+      ...(credentials && { credentials }),
       ...(this.config.endpoint && { endpoint: this.config.endpoint }),
       // Default to path-style when a custom endpoint is set (required for MinIO, LocalStack, etc.)
       forcePathStyle: this.config.forcePathStyle ?? !!this.config.endpoint,

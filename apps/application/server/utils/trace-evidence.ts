@@ -129,9 +129,11 @@ async function loadTraceBundle(blobPath: string): Promise<TraceBundle | null> {
 }
 
 /**
- * Resolve the stored spellings a resource may have: exact, and — because
- * `_sha1` refs sometimes include the file extension and sometimes don't —
- * the bare-hash / extension-bearing variants from a known-names listing.
+ * Resolve the stored spellings a resource may have: exact, and — because a body
+ * ref (`_sha1` in v8 traces, `_file` in v9, already stripped of its `resources/`
+ * prefix by `matchNetworkBodySha1`) sometimes includes the file extension and
+ * sometimes not — the bare-hash / extension-bearing variants from a known-names
+ * listing.
  */
 function resourceNameCandidates(requested: string, knownNames: Iterable<string>): string[] {
   const candidates = [requested];

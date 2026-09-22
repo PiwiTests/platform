@@ -1,22 +1,73 @@
 import { getRequestURL, type H3Event } from 'h3';
 import { requireAuth, isAuthEnabled } from '../utils/auth';
-import { getDatabase } from '../database';
+import { getDatabase, type DbClient } from '../database';
 import { MCP_TOOLS, DESKTOP_MCP_TOOLS, toContent } from '../utils/mcp/tools';
-import type { McpContext } from '../utils/mcp/tools';
+import type { McpContext, McpTool } from '../utils/mcp/tools';
 import { getPrompt, isKnownPrompt } from '../utils/mcp/prompts';
 import { getProjectScope } from '../utils/project-access';
 import { resolvePublicBaseUrl } from '../utils/oauth-helpers';
 import { ok, rpcErr, RPC, mcpServerInfo, negotiateProtocolVersion } from '../utils/mcp/protocol';
 import type { JsonRpcRequest } from '../utils/mcp/protocol';
 import { MCP_PROMPT_DEFS } from '#shared/mcp-prompts';
+import { resolveInstanceStates, getInstanceDecisions } from '#shared/handlers/setup-status';
+import { CAPABILITY_MODULES, type CapabilityModule } from '#shared/capabilities';
+import { filterServeableTools, narrowToolsByModule } from '../utils/mcp/filter';
 
 // The desktop app's bundled server (launched with PIWI_DESKTOP_TOKEN) advertises
 // the shared catalog plus the desktop-only tools that read and write files on the
 // machine it runs on; a hosted/Docker/npx server serves the shared catalog only.
 const IS_DESKTOP = !!process.env.PIWI_DESKTOP_TOKEN;
 const ACTIVE_TOOLS = IS_DESKTOP ? [...MCP_TOOLS, ...DESKTOP_MCP_TOOLS] : MCP_TOOLS;
-const TOOL_MAP = new Map(ACTIVE_TOOLS.map((t) => [t.name, t]));
+const TOOL_BY_NAME = new Map(ACTIVE_TOOLS.map((t) => [t.name, t]));
 const MAX_BODY_BYTES = 1_048_576; // 1 MB — reject oversized batches early
+
+const KNOWN_MODULES = new Set<CapabilityModule>(CAPABILITY_MODULES);
+
+/** True when any capability carries a stored instance decline. */
+function hasDecline(decisions: Record<string, unknown>): boolean {
+  return Object.values(decisions).some((v) => v === 'declined');
+}
+
+/**
+ * The tools this instance serves: the full active catalog minus every tool whose
+ * capability is declined at instance level. Undecided, available and active
+ * capabilities all keep their tools, so an upgrade never silently shrinks the
+ * list — only an explicit decline drops one.
+ *
+ * A tool can only be dropped when a decline is stored, so the cheap settings
+ * read comes first and the twelve evidence probes run only when one exists.
+ */
+async function serveableTools(db: DbClient): Promise<McpTool[]> {
+  if (!hasDecline(await getInstanceDecisions(db))) return [...ACTIVE_TOOLS];
+  return filterServeableTools(ACTIVE_TOOLS, await resolveInstanceStates(db));
+}
+
+/**
+ * The tool a `tools/call` may run, or null when the name is unknown or its
+ * capability is declined. A tool with no capability needs no query; a tool with
+ * one needs the evidence probes only when its capability carries a stored
+ * decline, since evidence still wins over a decline.
+ */
+async function serveableTool(db: DbClient, name: string | undefined): Promise<McpTool | null> {
+  const tool = name ? TOOL_BY_NAME.get(name) : undefined;
+  if (!tool || !tool.capability) return tool ?? null;
+  if ((await getInstanceDecisions(db))[tool.capability] !== 'declined') return tool;
+  return (await resolveInstanceStates(db))[tool.capability] === 'declined' ? null : tool;
+}
+
+/**
+ * Parse the `?modules=core,healing` narrowing on the MCP URL. Unknown values are
+ * ignored; an absent, empty or all-unknown value means no narrowing. Narrowing
+ * only hides tools from the list, it never re-enables a declined one.
+ */
+function parseModules(raw: string | null): Set<CapabilityModule> | null {
+  if (!raw) return null;
+  const picked = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s): s is CapabilityModule => KNOWN_MODULES.has(s as CapabilityModule));
+  return picked.length > 0 ? new Set(picked) : null;
+}
 
 // ── MCP Streamable HTTP endpoint ─────────────────────────────────────────────
 //
@@ -60,7 +111,7 @@ export default eventHandler(async (event) => {
   const body = await readBody<JsonRpcRequest | JsonRpcRequest[]>(event);
   const requests = Array.isArray(body) ? body : [body];
 
-  const responses = await Promise.all(requests.map((req) => handleRequest(ctx, req, event)));
+  const responses = await Promise.all(requests.map((req) => handleRequest(ctx, req, event, db)));
 
   // Notifications (no id) have no response — filter them out.
   const toSend = responses.filter((r) => r !== null);
@@ -69,7 +120,7 @@ export default eventHandler(async (event) => {
   return Array.isArray(body) ? toSend : (toSend[0] ?? null);
 });
 
-async function handleRequest(ctx: McpContext, req: JsonRpcRequest, event: H3Event) {
+async function handleRequest(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db: DbClient) {
   if (!req || req.jsonrpc !== '2.0' || !req.method) {
     return rpcErr(req?.id, RPC.INVALID_REQUEST, 'Invalid JSON-RPC request');
   }
@@ -81,7 +132,7 @@ async function handleRequest(ctx: McpContext, req: JsonRpcRequest, event: H3Even
   }
 
   try {
-    return await dispatch(ctx, req, event);
+    return await dispatch(ctx, req, event, db);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[MCP] error handling', req.method, message);
@@ -91,7 +142,7 @@ async function handleRequest(ctx: McpContext, req: JsonRpcRequest, event: H3Even
 
 // ── JSON-RPC dispatcher ───────────────────────────────────────────────────────
 
-async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event) {
+async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db: DbClient) {
   const { id, method, params } = req;
 
   switch (method) {
@@ -109,6 +160,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event) {
           'IDs: testCaseId = stable test identity; executionId/testRunsCaseId = one per-run execution. ' +
           'Errors are truncated; use get_test_run_case for full error text and explain_failure for a one-call evidence bundle. ' +
           'Write/triage tools (set_cluster_status, run_cluster_diagnosis, set_cluster_base_commit, submit_diagnosis_feedback) require reporter or admin access. ' +
+          'Tools belong to four modules (core, workflow, healing, agents); an instance can decline a module and its tools then disappear from this list, and appending ?modules=core (a comma-separated set) to the MCP URL narrows the list to those modules. ' +
           'The setup_piwi prompt (prompts/get) generates a ready-to-run setup for a Playwright project not yet reporting here.' +
           (IS_DESKTOP
             ? ' This is the local desktop app, running on your machine: it adds tools that reach the disk — import_local_report (pull a local blob/trace .zip into a project), read_local_source (read the current on-disk source) and apply_locator_fix (apply a recommended locator fix to the real file).'
@@ -122,8 +174,10 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event) {
 
     // ── Tool listing ─────────────────────────────────────────────────────────
     case 'tools/list': {
+      const modules = parseModules(getRequestURL(event).searchParams.get('modules'));
+      const tools = narrowToolsByModule(await serveableTools(db), modules);
       return ok(id, {
-        tools: ACTIVE_TOOLS.map((t) => ({
+        tools: tools.map((t) => ({
           name: t.name,
           description: t.description,
           inputSchema: t.inputSchema,
@@ -134,12 +188,14 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event) {
     // ── Tool execution ───────────────────────────────────────────────────────
     case 'tools/call': {
       const p = params as { name?: string; arguments?: Record<string, unknown> };
-      const tool = p?.name ? TOOL_MAP.get(p.name) : null;
+      // A tool whose capability is declined is dropped from the served set, so it
+      // is "Unknown tool" here too — same answer the list gives. `?modules=` only
+      // narrows the advertised list, so it does not block a call.
+      const tool = await serveableTool(db, p?.name);
       if (!tool) {
         return rpcErr(id, RPC.INVALID_PARAMS, `Unknown tool: ${p?.name}`);
       }
 
-      const db = await getDatabase();
       const args = p?.arguments ?? {};
       try {
         const data = await tool.handler(db, args, ctx);
@@ -170,7 +226,6 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event) {
       if (!p?.name || !isKnownPrompt(p.name)) {
         return rpcErr(id, RPC.INVALID_PARAMS, `Unknown prompt: ${p?.name}`);
       }
-      const db = await getDatabase();
       // The URL the client used to reach this dashboard is the URL its reporter
       // should point at; PIWI_SITE_URL overrides it when set (reverse proxy).
       const requestUrl = getRequestURL(event);

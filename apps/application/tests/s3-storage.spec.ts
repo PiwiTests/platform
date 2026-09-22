@@ -104,6 +104,36 @@ test.describe('S3 storage', () => {
       expect(result.toString()).toBe('updated');
     });
 
+    test('should use the AWS default credential chain when static config is omitted', async () => {
+      const previousAccessKeyId = process.env.AWS_ACCESS_KEY_ID;
+      const previousSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+      const previousSessionToken = process.env.AWS_SESSION_TOKEN;
+      process.env.AWS_ACCESS_KEY_ID = S3_ACCESS_KEY_ID;
+      process.env.AWS_SECRET_ACCESS_KEY = S3_SECRET_ACCESS_KEY;
+      delete process.env.AWS_SESSION_TOKEN;
+
+      const defaultCredentialsAdapter = new S3StorageAdapter({
+        bucket: S3_BUCKET,
+        region: S3_REGION,
+        endpoint: S3_ENDPOINT,
+      });
+      const path = `${keyPrefix}/default-credentials.txt`;
+
+      try {
+        await defaultCredentialsAdapter.writeFile(path, Buffer.from('default credentials'));
+        const result = await defaultCredentialsAdapter.readFile(path);
+        expect(result.toString()).toBe('default credentials');
+      } finally {
+        await defaultCredentialsAdapter.deleteFile(path);
+        if (previousAccessKeyId === undefined) delete process.env.AWS_ACCESS_KEY_ID;
+        else process.env.AWS_ACCESS_KEY_ID = previousAccessKeyId;
+        if (previousSecretAccessKey === undefined) delete process.env.AWS_SECRET_ACCESS_KEY;
+        else process.env.AWS_SECRET_ACCESS_KEY = previousSecretAccessKey;
+        if (previousSessionToken === undefined) delete process.env.AWS_SESSION_TOKEN;
+        else process.env.AWS_SESSION_TOKEN = previousSessionToken;
+      }
+    });
+
     test('mkdir should be a no-op (S3 has no real directories)', async () => {
       await expect(adapter.mkdir(`${keyPrefix}/some/directory`)).resolves.toBeUndefined();
     });

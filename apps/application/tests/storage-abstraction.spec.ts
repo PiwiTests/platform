@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { LocalStorageAdapter } from '../server/storage/local';
+import { S3StorageAdapter } from '../server/storage/s3';
 import { getStorage, resetStorage } from '../server/storage';
 import { existsSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
@@ -128,6 +129,26 @@ test.describe('Storage Abstraction Tests', () => {
       delete process.env.PIWI_S3_SECRET_ACCESS_KEY;
 
       expect(() => getStorage()).toThrow(/S3 storage requires/);
+    });
+
+    test('should allow the AWS default credential chain for S3', () => {
+      process.env.PIWI_STORAGE_TYPE = 's3';
+      process.env.PIWI_S3_BUCKET = 'test-bucket';
+      process.env.PIWI_S3_REGION = 'us-east-1';
+      delete process.env.PIWI_S3_ACCESS_KEY_ID;
+      delete process.env.PIWI_S3_SECRET_ACCESS_KEY;
+
+      expect(getStorage()).toBeInstanceOf(S3StorageAdapter);
+    });
+
+    test('should require static S3 credentials to be set as a pair', () => {
+      process.env.PIWI_STORAGE_TYPE = 's3';
+      process.env.PIWI_S3_BUCKET = 'test-bucket';
+      process.env.PIWI_S3_REGION = 'us-east-1';
+      process.env.PIWI_S3_ACCESS_KEY_ID = 'access-key';
+      delete process.env.PIWI_S3_SECRET_ACCESS_KEY;
+
+      expect(() => getStorage()).toThrow(/must be set together/);
     });
   });
 

@@ -99,3 +99,66 @@ describe('getTraceDomSnapshot — stylesheet + asset inlining', () => {
     expect(res.html).toContain('<link rel="stylesheet" href="/app.css">');
   });
 });
+
+/**
+ * The same inlining path over a Playwright v9 trace: the frame snapshot is keyed
+ * by `callId` + `phase` (no `snapshotName`) and the `.network` resource body is
+ * named by `_file` (`resources/`-prefixed) instead of `_sha1`. This is the exact
+ * shape that left the picker unstyled before the format was supported.
+ */
+function buildV9TraceZip(): Buffer {
+  const before = { type: 'before', callId: 'call@8', startTime: 1, class: 'Frame', method: 'goto', pageId: 'p1' };
+  const frameSnapshot = {
+    type: 'frame-snapshot',
+    snapshot: {
+      callId: 'call@8',
+      phase: 'after',
+      frameId: 'f1',
+      isMainFrame: true,
+      frameUrl: 'http://app.local/page',
+      doctype: 'html',
+      viewport: { width: 800, height: 600 },
+      html: [
+        'HTML',
+        {},
+        ['HEAD', {}, ['LINK', { rel: 'stylesheet', href: '/app.css' }]],
+        ['BODY', {}, ['DIV', { class: 'logo' }, 'hi']],
+      ],
+    },
+  };
+  const after = { type: 'after', callId: 'call@8', endTime: 2 };
+  const resourceSnap = (url: string, file: string, mimeType: string) => ({
+    type: 'resource-snapshot',
+    snapshot: { request: { url }, response: { content: { _file: `resources/${file}`, mimeType } } },
+  });
+  const network = [
+    resourceSnap('http://app.local/app.css', 'css1', 'text/css'),
+    resourceSnap('http://app.local/img/logo.png', 'img1', 'image/png'),
+  ]
+    .map((e) => JSON.stringify(e))
+    .join('\n');
+  return buildZip([
+    {
+      name: '0-trace.trace',
+      data: Buffer.from([before, frameSnapshot, after].map((e) => JSON.stringify(e)).join('\n'), 'utf8'),
+    },
+    { name: '0-trace.network', data: Buffer.from(network, 'utf8') },
+  ]);
+}
+
+describe('getTraceDomSnapshot — Playwright v9 trace format', () => {
+  beforeEach(() => {
+    storageFiles.set(BLOB, buildV9TraceZip());
+  });
+
+  test('renders the v9 snapshot and inlines its stylesheet + url() asset', async () => {
+    const res = await getTraceDomSnapshot(BLOB, 1_000_000, { inlineStyles: true });
+    expect(res.status).toBe('ok');
+    // The callId+phase frame snapshot rendered despite carrying no snapshotName.
+    expect(res.html).toContain('<div class="logo">hi</div>');
+    // The `_file`-named stylesheet inlined, image embedded as a data URI.
+    expect(res.html).toContain('<style>');
+    expect(res.html).not.toContain('<link rel="stylesheet"');
+    expect(res.html).toContain(`url("data:image/png;base64,${PNG.toString('base64')}")`);
+  });
+});

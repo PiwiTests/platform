@@ -1133,9 +1133,10 @@ pub fn run() {
     let context = tauri::generate_context!();
 
     // Update support exists only in builds made with the signing key: CI then
-    // applies tauri.updater.conf.json, which is what puts an `updater` entry in
-    // the compiled config. Without it the plugin stays out entirely and the
-    // update commands report "unsupported".
+    // applies an updater overlay (tauri.updater.conf.json for .msi,
+    // tauri.updater.nsis.conf.json for the per-user .exe), which is what puts an
+    // `updater` entry in the compiled config. Without it the plugin stays out
+    // entirely and the update commands report "unsupported".
     let updater_supported = context.config().plugins.0.contains_key("updater");
     if updater_supported {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());

@@ -73,3 +73,25 @@ export const INTEGRATION_PROVIDER_LIST = Object.entries(INTEGRATION_PROVIDERS).m
 export function isIntegrationProvider(value: string): value is IntegrationProviderName {
   return Object.prototype.hasOwnProperty.call(INTEGRATION_PROVIDERS, value);
 }
+
+/**
+ * The subset of a credential map that is safe to reveal: the provider's declared
+ * non-secret fields with a non-empty value (e.g. the Jira account email). Secret
+ * fields such as the API token are always dropped, and undeclared keys are ignored.
+ * Both the server (after decrypting the stored blob) and the demo use this, so the
+ * settings UI can show the account and pre-fill the edit form without leaking a secret.
+ */
+export function nonSecretCredentials(
+  provider: IntegrationProviderName,
+  credentials: Record<string, string> | null | undefined,
+): Record<string, string> {
+  if (!credentials) return {};
+  const out: Record<string, string> = {};
+  const fields = INTEGRATION_PROVIDERS[provider].credentialFields as readonly CredentialField[];
+  for (const field of fields) {
+    if (field.secret) continue;
+    const value = credentials[field.key];
+    if (typeof value === 'string' && value !== '') out[field.key] = value;
+  }
+  return out;
+}

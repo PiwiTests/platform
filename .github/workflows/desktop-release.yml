@@ -1,8 +1,10 @@
 name: Desktop Release
 
-# Builds the Tauri desktop app (Windows .msi + macOS .dmg + Linux .deb/.rpm/.AppImage)
+# Builds the Tauri desktop app (Windows .msi + .exe + macOS .dmg + Linux .deb/.rpm/.AppImage)
 # and attaches the installers to the GitHub Release release-please created for the
 # tag, so they publish alongside the Docker image and npm packages (see publish.yml).
+# The Windows .exe is the NSIS installer in per-user mode (no admin prompt); the
+# .msi installs per machine and needs elevation.
 on:
   push:
     tags:
@@ -49,18 +51,34 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Per-machine installer (into Program Files, so it needs admin). It
+          # owns the default updater channel (latest.json), which every existing
+          # install already points at, so this leg stays exactly as before.
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             bundles: msi
+            updaterConfig: src-tauri/tauri.updater.conf.json
+          # Per-user installer (into %LOCALAPPDATA%, installMode "currentUser",
+          # so no admin prompt to install OR to update). It updates from its own
+          # manifest (latest-nsis.json, published by the step near the end), so a
+          # per-user install pulls a per-user update and never the .msi. The
+          # tauri-action step sets uploadUpdaterJson false for this leg so it
+          # leaves the shared latest.json (the .msi channel) untouched.
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+            updaterConfig: src-tauri/tauri.updater.nsis.conf.json
           - runner: macos-14
             target: aarch64-apple-darwin
             bundles: dmg
+            updaterConfig: src-tauri/tauri.updater.conf.json
           # Ubuntu 22.04 (not latest): AppImage bundles the host's glibc, so
           # building on the oldest supported runner keeps the installer usable on
           # older distros. 22.04 is also the last runner carrying webkit2gtk-4.1.
           - runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             bundles: deb,rpm,appimage
+            updaterConfig: src-tauri/tauri.updater.conf.json
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -155,11 +173,13 @@ jobs:
           #
           # In-app updates are opt-in and OFF until the updater keypair exists.
           # To enable them: run `npx tauri signer generate` locally, put the
-          # public key into src-tauri/tauri.updater.conf.json, and add the
-          # private key (+ its password) as the two secrets below. The config
-          # overlay is applied only when the secret is present, so releases
-          # without it build exactly as before — installers with no update
-          # artifacts, and apps that report updates as unsupported.
+          # public key into BOTH src-tauri/tauri.updater.conf.json (the .msi
+          # channel) and src-tauri/tauri.updater.nsis.conf.json (the .exe
+          # channel), and add the private key (+ its password) as the two secrets
+          # below. Each leg's overlay (matrix.updaterConfig) is applied only when
+          # the secret is present, so releases without it build exactly as
+          # before, installers with no update artifacts and apps that report
+          # updates as unsupported.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
@@ -169,21 +189,74 @@ jobs:
           # enabled each job pushes more/larger assets, so one flaky upload fails
           # the whole leg. This re-tries the upload instead.
           retryAttempts: 3
-          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && '--config src-tauri/tauri.updater.conf.json' || '' }}
+          # The .exe (nsis) leg owns a separate manifest (latest-nsis.json), so
+          # it must NOT write the shared latest.json, the step near the end
+          # publishes its manifest instead. Every other leg keeps the default.
+          uploadUpdaterJson: ${{ matrix.bundles == 'nsis' && 'false' || 'true' }}
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && format('--config {0}', matrix.updaterConfig) || '' }}
           # Attach to the release release-please already made for this tag. On a
           # manual dispatch (no tag) tagName is empty, so tauri-action just builds.
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
           releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
 
+      # Publish the per-user (.exe) updater manifest. tauri-action uploaded the
+      # NSIS -setup.exe and its .sig but not a JSON (uploadUpdaterJson is false
+      # for that leg), so the shared latest.json stays the .msi channel. This
+      # writes latest-nsis.json pointing at the -setup.exe, which the .exe build
+      # reads from tauri.updater.nsis.conf.json, so a per-user install updates
+      # itself per-user, with no admin prompt. Skips itself on keyless builds
+      # (no .sig produced), matching the .msi channel's "updates unsupported".
+      - name: Publish NSIS updater manifest (latest-nsis.json)
+        if: ${{ matrix.bundles == 'nsis' && startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const tag = context.ref.replace('refs/tags/', '');
+            const bundleDir = path.join(
+              'apps/desktop/src-tauri/target', '${{ matrix.target }}', 'release/bundle/nsis',
+            );
+            const sig = fs.existsSync(bundleDir)
+              ? fs.readdirSync(bundleDir).find((f) => f.endsWith('-setup.exe.sig'))
+              : undefined;
+            if (!sig) {
+              core.info('No NSIS updater signature (updater key absent); skipping latest-nsis.json');
+              return;
+            }
+            const signature = fs.readFileSync(path.join(bundleDir, sig), 'utf8');
+            const { owner, repo } = context.repo;
+            const release = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+            const setup = release.data.assets.find((a) => a.name.endsWith('-setup.exe'));
+            if (!setup) throw new Error('tauri-action did not upload the NSIS -setup.exe');
+            const manifest = {
+              version: tag.replace(/^v/, ''),
+              pub_date: new Date().toISOString(),
+              platforms: { 'windows-x86_64': { signature, url: setup.browser_download_url } },
+            };
+            const name = 'latest-nsis.json';
+            const prior = release.data.assets.find((a) => a.name === name);
+            if (prior) {
+              await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: prior.id });
+            }
+            await github.rest.repos.uploadReleaseAsset({
+              owner, repo, release_id: release.data.id, name,
+              data: JSON.stringify(manifest, null, 2),
+            });
+            core.info(`Published ${name} -> ${setup.browser_download_url}`);
+
       # Dry-run only: make the built installers downloadable as a workflow artifact
-      # (they are not attached to any release unless this was a tag build).
+      # (they are not attached to any release unless this was a tag build). The
+      # two Windows legs share a target triple, so the bundle set goes in the
+      # artifact name to keep them from colliding.
       - name: Upload installers (dry-run)
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v7
         with:
-          name: piwi-desktop-${{ matrix.target }}
+          name: piwi-desktop-${{ matrix.target }}-${{ matrix.bundles }}
           path: |
             apps/desktop/src-tauri/target/**/release/bundle/**/*.msi
+            apps/desktop/src-tauri/target/**/release/bundle/**/*-setup.exe
             apps/desktop/src-tauri/target/**/release/bundle/**/*.dmg
             apps/desktop/src-tauri/target/**/release/bundle/**/*.deb
             apps/desktop/src-tauri/target/**/release/bundle/**/*.rpm

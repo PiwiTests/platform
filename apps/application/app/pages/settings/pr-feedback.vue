@@ -82,68 +82,71 @@ async function resetToDefaults() {
 </script>
 
 <template>
-  <div class="space-y-6">
-    <SectionCard icon="i-lucide-git-pull-request" title="Pull-request feedback" help="settings.pr-feedback">
-      <template #subtitle>
-        When a run finishes on a branch with an open pull request, post the result back to it — new failures separated
-        from pre-existing ones, the failure clusters behind them, and the locator to use instead of the one that broke.
-      </template>
+  <CapabilityDeclinedGuard capability="pr-feedback" label="Pull-request feedback">
+    <div class="space-y-6">
+      <SectionCard icon="i-lucide-git-pull-request" title="Pull-request feedback" help="settings.pr-feedback">
+        <template #subtitle>
+          When a run finishes on a branch with an open pull request, post the result back to it — new failures separated
+          from pre-existing ones, the failure clusters behind them, and the locator to use instead of the one that
+          broke.
+        </template>
 
-      <UAlert
-        v-if="response && !response.siteUrlConfigured"
-        color="warning"
-        variant="soft"
-        icon="i-lucide-triangle-alert"
-        title="PIWI_SITE_URL is not set"
-        description="Nothing is posted until it is — every link in the comment is built from it, and a comment full of unreachable links is worse than no comment."
-        class="mb-4"
-      />
+        <UAlert
+          v-if="response && !response.siteUrlConfigured"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-triangle-alert"
+          title="PIWI_SITE_URL is not set"
+          description="Nothing is posted until it is — every link in the comment is built from it, and a comment full of unreachable links is worse than no comment."
+          class="mb-4"
+        />
 
-      <div class="space-y-4">
-        <USwitch v-model="values.enabled" label="Post feedback to pull requests" />
+        <div class="space-y-4">
+          <USwitch v-model="values.enabled" label="Post feedback to pull requests" />
 
-        <div class="space-y-4 pl-1" :class="!values.enabled && 'opacity-50 pointer-events-none'">
-          <UFormField
-            v-for="toggle in toggles"
-            :key="toggle.key"
-            :label="toggle.label"
-            :description="toggle.description"
-          >
-            <USwitch v-model="values[toggle.key]" />
-          </UFormField>
+          <div class="space-y-4 pl-1" :class="!values.enabled && 'opacity-50 pointer-events-none'">
+            <UFormField
+              v-for="toggle in toggles"
+              :key="toggle.key"
+              :label="toggle.label"
+              :description="toggle.description"
+            >
+              <USwitch v-model="values[toggle.key]" />
+            </UFormField>
 
-          <UFormField
-            label="Commit status context"
-            description="The name shown next to the status in the pull request’s checks list."
-            :hint="`default ${response?.defaults.statusContext ?? ''}`"
-          >
-            <UInput
-              v-model="values.statusContext"
-              :placeholder="response?.defaults.statusContext"
-              class="w-full max-w-sm"
-            />
-          </UFormField>
-        </div>
-      </div>
-
-      <template #footer>
-        <div class="flex items-center justify-between gap-2">
-          <p class="text-xs text-muted">
-            Needs an SCM token with write access to the repository — set it globally, or per project in the project’s
-            edit page.
-          </p>
-          <div class="flex items-center gap-2 shrink-0">
-            <UButton
-              variant="ghost"
-              color="neutral"
-              :disabled="saving"
-              label="Reset to defaults"
-              @click="resetToDefaults"
-            />
-            <UButton color="primary" :loading="saving" icon="i-lucide-save" @click="save">Save</UButton>
+            <UFormField
+              label="Commit status context"
+              description="The name shown next to the status in the pull request’s checks list."
+              :hint="`default ${response?.defaults.statusContext ?? ''}`"
+            >
+              <UInput
+                v-model="values.statusContext"
+                :placeholder="response?.defaults.statusContext"
+                class="w-full max-w-sm"
+              />
+            </UFormField>
           </div>
         </div>
-      </template>
-    </SectionCard>
-  </div>
+
+        <template #footer>
+          <div class="flex items-center justify-between gap-2">
+            <p class="text-xs text-muted">
+              Needs an SCM token with write access to the repository — set it globally, or per project in the project’s
+              edit page.
+            </p>
+            <div class="flex items-center gap-2 shrink-0">
+              <UButton
+                variant="ghost"
+                color="neutral"
+                :disabled="saving"
+                label="Reset to defaults"
+                @click="resetToDefaults"
+              />
+              <UButton color="primary" :loading="saving" icon="i-lucide-save" @click="save">Save</UButton>
+            </div>
+          </div>
+        </template>
+      </SectionCard>
+    </div>
+  </CapabilityDeclinedGuard>
 </template>

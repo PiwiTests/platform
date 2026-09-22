@@ -42,9 +42,11 @@ app.UsePiwiTestLogs();
 app.Run();
 ```
 
-`AddPiwiTestLogs()` registers an `ILoggerProvider` that intercepts Warning and Error log entries and buffers them per HTTP request using `AsyncLocal<T>`.
+`AddPiwiTestLogs()` registers an `ILoggerProvider` that feeds Warning and Error log entries into a per-request capture buffer (`PiwiTestLogCapture`, `AsyncLocal<T>`-scoped).
 
-`UsePiwiTestLogs()` adds middleware that writes the buffer to the `X-Piwi-Logs` response header before the response is sent — only when the environment is Development or Test.
+`UsePiwiTestLogs()` adds middleware that writes the buffer to the `X-Piwi-Logs` response header before the response is sent, only when the environment is Development or Test.
+
+The capture buffer is decoupled from the logging front-end, so it also works outside minimal hosting. Apps on the classic **Generic Host + `Startup`** model use the hosting-agnostic overloads (`services.AddPiwiTestLogs()` or `ILoggingBuilder.AddPiwiTestLogs()`, and `app.UsePiwiTestLogs()` on `IApplicationBuilder`). Apps that route logging through **Serilog** feed the same buffer from a small `ILogEventSink` that calls `PiwiTestLogCapture.TryAdd(...)`; see the [package README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.AspNetCore#serilog-or-the-classic-generic-host--startup-model) for the sink. `TryAdd` self-guards the level (Warning and above), so no feeding path over-captures.
 
 **Requirements:** .NET 8, 9, or 10.
 

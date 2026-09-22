@@ -1,6 +1,6 @@
 {
-  "id": "82c4e20b-434b-4b59-a58d-b0c8390e02cc",
-  "prevId": "800a09c9-c52a-43bc-be0b-c6b416b222c6",
+  "id": "f915acd8-d810-4940-a2d6-2e4c37a9a98d",
+  "prevId": "d52ac80b-62e7-4a30-87e8-754a26a1179c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3471,207 +3471,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.probes": {
-      "name": "probes",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "test_case_id": {
-          "name": "test_case_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "node_id": {
-          "name": "node_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "route_key": {
-          "name": "route_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "level": {
-          "name": "level",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'client'"
-        },
-        "fault": {
-          "name": "fault",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "applied": {
-          "name": "applied",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "handled": {
-          "name": "handled",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'n/a'"
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "evidence": {
-          "name": "evidence",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "probed_at": {
-          "name": "probed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "idx_probes_pair": {
-          "name": "idx_probes_pair",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "test_case_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "route_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "fault",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_probes_project": {
-          "name": "idx_probes_project",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_probes_node": {
-          "name": "idx_probes_node",
-          "columns": [
-            {
-              "expression": "node_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_probes_test": {
-          "name": "idx_probes_test",
-          "columns": [
-            {
-              "expression": "test_case_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "probes_project_id_projects_id_fk": {
-          "name": "probes_project_id_projects_id_fk",
-          "tableFrom": "probes",
-          "tableTo": "projects",
-          "columnsFrom": ["project_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "probes_test_case_id_test_cases_id_fk": {
-          "name": "probes_test_case_id_test_cases_id_fk",
-          "tableFrom": "probes",
-          "tableTo": "test_cases",
-          "columnsFrom": ["test_case_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "probes_node_id_graph_nodes_id_fk": {
-          "name": "probes_node_id_graph_nodes_id_fk",
-          "tableFrom": "probes",
-          "tableTo": "graph_nodes",
-          "columnsFrom": ["node_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.project_assignments": {
       "name": "project_assignments",
       "schema": "",
@@ -4130,6 +3929,12 @@
         },
         "ci_rerun": {
           "name": "ci_rerun",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capabilities": {
+          "name": "capabilities",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
@@ -5938,12 +5743,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "page_inventory_payload_id": {
-          "name": "page_inventory_payload_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "browser": {
           "name": "browser",
           "type": "jsonb",
@@ -6177,22 +5976,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "idx_trc_page_inventory_payload": {
-          "name": "idx_trc_page_inventory_payload",
-          "columns": [
-            {
-              "expression": "page_inventory_payload_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "page_inventory_payload_id IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -6255,15 +6038,6 @@
           "tableFrom": "test_runs_cases",
           "tableTo": "case_payloads",
           "columnsFrom": ["test_source_frames_payload_id"],
-          "columnsTo": ["id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "test_runs_cases_page_inventory_payload_id_case_payloads_id_fk": {
-          "name": "test_runs_cases_page_inventory_payload_id_case_payloads_id_fk",
-          "tableFrom": "test_runs_cases",
-          "tableTo": "case_payloads",
-          "columnsFrom": ["page_inventory_payload_id"],
           "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"

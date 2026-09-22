@@ -438,18 +438,22 @@ watch(
   { immediate: true },
 );
 
-// Display progress: while live it is derived from the de-duplicated cases (so
-// the header counts, the bar and the grouped list are computed from one source
-// and cannot disagree), with the planned suite size the reporter reports at
-// /start as the denominator (right from the first render). Once finished it
-// comes from the persisted run totals, which the reporter now counts per test.
-// A flaky test passed on a retry, so it counts as passed — as the list treats
-// it — instead of inflating the failures via its earlier failed attempt.
+// Display progress: the header counts, the count bar and the grouped list are
+// all derived from the same de-duplicated case list (one row per test, its
+// final attempt), so they cannot disagree — clicking a bar segment always lands
+// on exactly that many rows. A flaky test passed on a retry, so it counts as
+// passed and as flaky, never as a failure via its earlier failed attempt. While
+// live the planned suite size the reporter reports at /start is the denominator
+// (right from the first render); once finished the persisted case list is
+// complete. The stored run columns are only a fallback for a run whose cases are
+// not loaded.
 const displayProgress = computed(() => {
-  if (isLive.value) {
-    const s = summarizeRunCases(dedupedDisplayCases.value);
+  if (!testRun.value) return null;
+  const cases = dedupedDisplayCases.value;
+  if (isLive.value || cases.length > 0) {
+    const s = summarizeRunCases(cases);
     return {
-      totalTests: Math.max(testRun.value?.totalTests ?? 0, s.total),
+      totalTests: Math.max(testRun.value.totalTests ?? 0, s.total),
       passedTests: s.passed,
       failedTests: s.failed,
       skippedTests: s.skipped,
@@ -457,7 +461,6 @@ const displayProgress = computed(() => {
       flakyTests: s.flaky,
     };
   }
-  if (!testRun.value) return null;
   return {
     totalTests: testRun.value.totalTests,
     passedTests: testRun.value.passedTests,
@@ -492,14 +495,21 @@ function buildRunSummary(): string {
     run.status === 'passed' ? '✅' : run.status === 'failed' ? '❌' : run.status === 'running' ? '🔄' : '⚠️';
   const label = run.label ? ` — ${run.label}` : '';
   const project = run.project?.label ?? run.project?.name ?? '';
-  const flaky = run.flakyTests ?? 0;
-  const didNotRun = run.didNotRunTests ?? 0;
+  // Count from the same source as the header so the copied summary matches what
+  // is on screen; fall back to the stored columns when the cases aren't loaded.
+  const p = displayProgress.value;
+  const total = p?.totalTests ?? run.totalTests ?? 0;
+  const passed = p?.passedTests ?? run.passedTests ?? 0;
+  const failed = p?.failedTests ?? run.failedTests ?? 0;
+  const skipped = p?.skippedTests ?? run.skippedTests ?? 0;
+  const flaky = p?.flakyTests ?? run.flakyTests ?? 0;
+  const didNotRun = p?.didNotRunTests ?? run.didNotRunTests ?? 0;
   const flakyPart = flaky > 0 ? ` · ${flaky} passed on retry` : '';
   const didNotRunPart = didNotRun > 0 ? ` · ${didNotRun} didn't run` : '';
   return [
     `*Run #${run.id}*${label}`,
     `Status: ${statusEmoji} ${run.status} | Project: ${project}`,
-    `Tests: ${run.totalTests ?? 0} total · ${run.passedTests ?? 0} passed · ${run.failedTests ?? 0} failed · ${run.skippedTests ?? 0} skipped${didNotRunPart}${flakyPart}`,
+    `Tests: ${total} total · ${passed} passed · ${failed} failed · ${skipped} skipped${didNotRunPart}${flakyPart}`,
     `Duration: ${formatDuration(run.duration)}`,
   ].join('\n');
 }

@@ -151,149 +151,151 @@ async function handleDeleteTag() {
 </script>
 
 <template>
-  <div class="space-y-6">
-    <!-- Tags table -->
-    <SectionCard v-if="allTags.length > 0" title="Tags" :count="allTags.length" help="settings.tags">
-      <template #actions>
-        <UButton v-if="isAdmin" label="Add tag" icon="i-lucide-tag" size="sm" @click="isAddTagModalOpen = true" />
-      </template>
-
-      <UTable :data="allTags" :columns="columns">
-        <template #text-cell="{ row }">
-          <TagBadge :text="row.original.text" :color="row.original.color" />
+  <CapabilityDeclinedGuard capability="tags" label="Tags">
+    <div class="space-y-6">
+      <!-- Tags table -->
+      <SectionCard v-if="allTags.length > 0" title="Tags" :count="allTags.length" help="settings.tags">
+        <template #actions>
+          <UButton v-if="isAdmin" label="Add tag" icon="i-lucide-tag" size="sm" @click="isAddTagModalOpen = true" />
         </template>
 
-        <template #color-cell="{ row }">
-          <div class="flex items-center gap-2">
-            <span
-              class="inline-block w-4 h-4 rounded-full border border-black/10"
-              :style="{ backgroundColor: row.original.color }"
-            />
-            <span class="text-sm font-mono text-muted">{{ row.original.color }}</span>
+        <UTable :data="allTags" :columns="columns">
+          <template #text-cell="{ row }">
+            <TagBadge :text="row.original.text" :color="row.original.color" />
+          </template>
+
+          <template #color-cell="{ row }">
+            <div class="flex items-center gap-2">
+              <span
+                class="inline-block w-4 h-4 rounded-full border border-black/10"
+                :style="{ backgroundColor: row.original.color }"
+              />
+              <span class="text-sm font-mono text-muted">{{ row.original.color }}</span>
+            </div>
+          </template>
+
+          <template #createdAt-cell="{ row }">
+            <ClientDate :date="row.original.createdAt" date-only class="text-sm text-muted" />
+          </template>
+
+          <template #actions-cell="{ row }">
+            <div class="flex gap-1 justify-end">
+              <UButton
+                v-if="isAdmin"
+                icon="i-lucide-pencil"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                @click="openEditTag(row.original)"
+              />
+              <UButton
+                v-if="isAdmin"
+                icon="i-lucide-trash-2"
+                color="error"
+                variant="ghost"
+                size="sm"
+                @click="confirmDeleteTag(row.original)"
+              />
+            </div>
+          </template>
+        </UTable>
+      </SectionCard>
+
+      <!-- Empty state -->
+      <SectionCard v-else title="Tags" :count="0" help="settings.tags">
+        <div class="text-center py-12">
+          <div class="flex justify-center mb-4">
+            <UIcon name="i-lucide-tags" class="text-4xl text-muted" />
           </div>
-        </template>
-
-        <template #createdAt-cell="{ row }">
-          <ClientDate :date="row.original.createdAt" date-only class="text-sm text-muted" />
-        </template>
-
-        <template #actions-cell="{ row }">
-          <div class="flex gap-1 justify-end">
-            <UButton
-              v-if="isAdmin"
-              icon="i-lucide-pencil"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              @click="openEditTag(row.original)"
-            />
-            <UButton
-              v-if="isAdmin"
-              icon="i-lucide-trash-2"
-              color="error"
-              variant="ghost"
-              size="sm"
-              @click="confirmDeleteTag(row.original)"
-            />
-          </div>
-        </template>
-      </UTable>
-    </SectionCard>
-
-    <!-- Empty state -->
-    <SectionCard v-else title="Tags" :count="0" help="settings.tags">
-      <div class="text-center py-12">
-        <div class="flex justify-center mb-4">
-          <UIcon name="i-lucide-tags" class="text-4xl text-muted" />
+          <h3 class="text-lg font-semibold mb-2">No tags yet</h3>
+          <p class="text-muted mb-4">Create tags to categorize and filter your projects</p>
+          <UButton v-if="isAdmin" label="Add tag" icon="i-lucide-tag" @click="isAddTagModalOpen = true" />
         </div>
-        <h3 class="text-lg font-semibold mb-2">No tags yet</h3>
-        <p class="text-muted mb-4">Create tags to categorize and filter your projects</p>
-        <UButton v-if="isAdmin" label="Add tag" icon="i-lucide-tag" @click="isAddTagModalOpen = true" />
-      </div>
-    </SectionCard>
-  </div>
+      </SectionCard>
+    </div>
 
-  <!-- Add Tag Modal -->
-  <ClientOnly>
-    <UModal :open="isAddTagModalOpen" title="Add new tag" @update:open="isAddTagModalOpen = $event">
-      <template #body>
-        <UForm :schema="addTagSchema" :state="newTag">
-          <UFormField label="Tag text" name="text" required class="mb-4">
-            <UInput v-model="newTag.text" placeholder="Enter tag name" />
-          </UFormField>
+    <!-- Add Tag Modal -->
+    <ClientOnly>
+      <UModal :open="isAddTagModalOpen" title="Add new tag" @update:open="isAddTagModalOpen = $event">
+        <template #body>
+          <UForm :schema="addTagSchema" :state="newTag">
+            <UFormField label="Tag text" name="text" required class="mb-4">
+              <UInput v-model="newTag.text" placeholder="Enter tag name" />
+            </UFormField>
 
-          <UFormField label="Color" name="color" required class="mb-4">
-            <div class="flex items-center gap-3">
-              <input
-                v-model="newTag.color"
-                type="color"
-                class="w-10 h-10 rounded cursor-pointer border border-default"
-                aria-label="Pick tag color"
-              />
-              <UInput v-model="newTag.color" class="flex-1 font-mono" placeholder="#6366f1" />
+            <UFormField label="Color" name="color" required class="mb-4">
+              <div class="flex items-center gap-3">
+                <input
+                  v-model="newTag.color"
+                  type="color"
+                  class="w-10 h-10 rounded cursor-pointer border border-default"
+                  aria-label="Pick tag color"
+                />
+                <UInput v-model="newTag.color" class="flex-1 font-mono" placeholder="#6366f1" />
+              </div>
+            </UFormField>
+
+            <div v-if="newTag.text" class="mt-2">
+              <span class="text-sm text-muted mr-2">Preview:</span>
+              <TagBadge :text="newTag.text" :color="newTag.color || DEFAULT_TAG_COLOR" />
             </div>
-          </UFormField>
+          </UForm>
+        </template>
 
-          <div v-if="newTag.text" class="mt-2">
-            <span class="text-sm text-muted mr-2">Preview:</span>
-            <TagBadge :text="newTag.text" :color="newTag.color || DEFAULT_TAG_COLOR" />
-          </div>
-        </UForm>
-      </template>
+        <template #footer>
+          <UButton type="button" color="neutral" variant="ghost" label="Cancel" @click="isAddTagModalOpen = false" />
+          <UButton type="submit" label="Create tag" icon="i-lucide-tag" @click="handleAddTag" />
+        </template>
+      </UModal>
 
-      <template #footer>
-        <UButton type="button" color="neutral" variant="ghost" label="Cancel" @click="isAddTagModalOpen = false" />
-        <UButton type="submit" label="Create tag" icon="i-lucide-tag" @click="handleAddTag" />
-      </template>
-    </UModal>
+      <!-- Edit Tag Modal -->
+      <UModal :open="isEditTagModalOpen" title="Edit tag" @update:open="isEditTagModalOpen = $event">
+        <template #body>
+          <UForm :schema="addTagSchema" :state="editTagState">
+            <UFormField label="Tag text" name="text" required class="mb-4">
+              <UInput v-model="editTagState.text" placeholder="Enter tag name" />
+            </UFormField>
 
-    <!-- Edit Tag Modal -->
-    <UModal :open="isEditTagModalOpen" title="Edit tag" @update:open="isEditTagModalOpen = $event">
-      <template #body>
-        <UForm :schema="addTagSchema" :state="editTagState">
-          <UFormField label="Tag text" name="text" required class="mb-4">
-            <UInput v-model="editTagState.text" placeholder="Enter tag name" />
-          </UFormField>
+            <UFormField label="Color" name="color" required class="mb-4">
+              <div class="flex items-center gap-3">
+                <input
+                  v-model="editTagState.color"
+                  type="color"
+                  class="w-10 h-10 rounded cursor-pointer border border-default"
+                  aria-label="Pick tag color"
+                />
+                <UInput v-model="editTagState.color" class="flex-1 font-mono" placeholder="#6366f1" />
+              </div>
+            </UFormField>
 
-          <UFormField label="Color" name="color" required class="mb-4">
-            <div class="flex items-center gap-3">
-              <input
-                v-model="editTagState.color"
-                type="color"
-                class="w-10 h-10 rounded cursor-pointer border border-default"
-                aria-label="Pick tag color"
-              />
-              <UInput v-model="editTagState.color" class="flex-1 font-mono" placeholder="#6366f1" />
+            <div v-if="editTagState.text" class="mt-2">
+              <span class="text-sm text-muted mr-2">Preview:</span>
+              <TagBadge :text="editTagState.text" :color="editTagState.color || DEFAULT_TAG_COLOR" />
             </div>
-          </UFormField>
+          </UForm>
+        </template>
 
-          <div v-if="editTagState.text" class="mt-2">
-            <span class="text-sm text-muted mr-2">Preview:</span>
-            <TagBadge :text="editTagState.text" :color="editTagState.color || DEFAULT_TAG_COLOR" />
-          </div>
-        </UForm>
-      </template>
+        <template #footer>
+          <UButton type="button" color="neutral" variant="ghost" label="Cancel" @click="isEditTagModalOpen = false" />
+          <UButton type="submit" label="Save changes" icon="i-lucide-check" @click="handleEditTag" />
+        </template>
+      </UModal>
 
-      <template #footer>
-        <UButton type="button" color="neutral" variant="ghost" label="Cancel" @click="isEditTagModalOpen = false" />
-        <UButton type="submit" label="Save changes" icon="i-lucide-check" @click="handleEditTag" />
-      </template>
-    </UModal>
+      <!-- Delete Tag Confirmation Modal -->
+      <UModal :open="isDeleteTagConfirmOpen" title="Delete tag" @update:open="isDeleteTagConfirmOpen = $event">
+        <template #body>
+          <p>
+            Are you sure you want to delete tag
+            <TagBadge v-if="tagToDelete" :text="tagToDelete.text" :color="tagToDelete.color" class="inline-flex" />? It
+            will be removed from all projects.
+          </p>
+        </template>
 
-    <!-- Delete Tag Confirmation Modal -->
-    <UModal :open="isDeleteTagConfirmOpen" title="Delete tag" @update:open="isDeleteTagConfirmOpen = $event">
-      <template #body>
-        <p>
-          Are you sure you want to delete tag
-          <TagBadge v-if="tagToDelete" :text="tagToDelete.text" :color="tagToDelete.color" class="inline-flex" />? It
-          will be removed from all projects.
-        </p>
-      </template>
-
-      <template #footer>
-        <UButton color="neutral" variant="ghost" label="Cancel" @click="isDeleteTagConfirmOpen = false" />
-        <UButton color="error" label="Delete" icon="i-lucide-trash-2" @click="handleDeleteTag" />
-      </template>
-    </UModal>
-  </ClientOnly>
+        <template #footer>
+          <UButton color="neutral" variant="ghost" label="Cancel" @click="isDeleteTagConfirmOpen = false" />
+          <UButton color="error" label="Delete" icon="i-lucide-trash-2" @click="handleDeleteTag" />
+        </template>
+      </UModal>
+    </ClientOnly>
+  </CapabilityDeclinedGuard>
 </template>
