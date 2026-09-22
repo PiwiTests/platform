@@ -12,6 +12,10 @@ const authEnabled = config.public.authEnabled as boolean;
 
 const shortSha = computed(() => (buildSha ? buildSha.slice(0, 7) : null));
 
+// The wordmark carries its own dark background, so it reads on either theme.
+// Prefixing the base URL keeps it resolvable when the demo is served from /demo/.
+const logoSrc = `${(config.app?.baseURL ?? '/').replace(/\/$/, '')}/logo-wide.svg`;
+
 const dbBackendLabel = computed(() => {
   const backend = versionInfo.value?.dbBackend;
   if (backend === 'postgresql') return 'PostgreSQL';
@@ -22,11 +26,30 @@ const dbBackendLabel = computed(() => {
 
 <template>
   <div class="space-y-6">
+    <!-- Header: the brand mark with the version and build date beside it on
+         desktop, stacked and centered on phones. -->
+    <div
+      class="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-center sm:justify-between sm:text-left"
+    >
+      <img :src="logoSrc" alt="Piwi Dashboard" class="h-14 sm:h-16 rounded-xl shrink-0" />
+      <div class="text-sm text-muted">
+        <p>
+          <span class="font-mono text-highlighted">v{{ appVersion }}</span>
+          <template v-if="shortSha">
+            ·
+            <span class="font-mono" :title="buildSha">{{ shortSha }}</span>
+          </template>
+        </p>
+        <p v-if="buildTime" class="mt-0.5">
+          <ClientOnly fallback-tag="span" :fallback="`Built ${formatRelativeTime(buildTime)}`">
+            <span :title="prettyDateFormat(buildTime)">Built {{ formatRelativeTime(buildTime) }}</span>
+          </ClientOnly>
+        </p>
+      </div>
+    </div>
+
     <SectionCard icon="i-lucide-info" title="Application">
       <StatTileGrid>
-        <StatTile label="Version" :value="`v${appVersion}`" />
-        <StatTile v-if="shortSha" label="Build" :value="shortSha" :hint="buildSha" />
-        <StatTile v-if="buildTime" label="Built" :value="formatRelativeTime(buildTime)" :hint="buildTime" />
         <StatTile label="Node.js" :value="nodeVersion" />
         <StatTile label="Database" :value="dbBackendLabel" />
         <StatTile label="Authentication" :value="authEnabled ? 'Enabled' : 'Disabled'" />
