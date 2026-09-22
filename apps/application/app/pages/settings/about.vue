@@ -13,7 +13,9 @@ interface DetectorPrecisionRow {
   precision: number | null;
   muted: boolean;
 }
-const { data: precisionProjects } = await useFetch('/api/gaps/precision', {
+// Lazy so the precision query never blocks the About page's first paint.
+const { data: precisionProjects } = useFetch('/api/gaps/precision', {
+  lazy: true,
   default: () => [] as Array<{ projectId: number; projectName: string; detectors: DetectorPrecisionRow[] }>,
   transform: (r: { items: Array<{ projectId: number; projectName: string; detectors: DetectorPrecisionRow[] }> }) =>
     r.items,
