@@ -2122,10 +2122,18 @@ export async function listAcceptedUnwritten(
   }
   const reachedSubjects = new Set<string>();
   for (const [projectId, gaps] of byProject) {
+    const subjectKeys = [...new Set(gaps.map((g) => g.subject.key))];
     const edges = await db
       .select({ toKind: graphEdges.toKind, toKey: graphEdges.toKey })
       .from(graphEdges)
-      .where(and(eq(graphEdges.projectId, projectId), eq(graphEdges.kind, 'reaches'), isNull(graphEdges.branch)));
+      .where(
+        and(
+          eq(graphEdges.projectId, projectId),
+          eq(graphEdges.kind, 'reaches'),
+          isNull(graphEdges.branch),
+          inArray(graphEdges.toKey, subjectKeys),
+        ),
+      );
     const reached = new Set(edges.map((e) => `${e.toKind}\x00${e.toKey}`));
     for (const gap of gaps) {
       if (reached.has(`${gap.subject.kind}\x00${gap.subject.key}`)) {
