@@ -98,7 +98,7 @@ Any node opens in the **feature graph** — a layered picture of tests, pages, c
 
 ## Precision, muting and the digest
 
-Every triage verdict is a labeled example: accepted and covered-by count *for* a detector, dismissed-as-wrong *against*. A detector below 60% precision on a project with at least twenty verdicts **mutes itself** there — its rows drop out of the pull-request comment first, and the Gaps tab and the admin **About** page say so. A weekly **digest** of the top new gaps per project can be delivered through your [notification channels](/features/notifications); it is off by default.
+Every triage verdict is a labeled example: accepted and covered-by count *for* a detector, dismissed-as-wrong *against*. A detector below 60% precision on a project with at least twenty verdicts **mutes itself** there — its rows drop out of the pull-request comment first, and the Gaps tab and the admin **About** page say so. A weekly **digest** of the top new gaps per project is **planned** — the selection ships today, but delivery through your [notification channels](/features/notifications) is not yet wired.
 
 ## Triage
 
