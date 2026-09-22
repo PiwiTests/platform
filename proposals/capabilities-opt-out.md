@@ -1,6 +1,6 @@
 # Capabilities you can say no to
 
-**Status:** design record, implementation in progress (2026-09-21) · **Scope:** every place the dashboard shows or offers an optional capability a team has not switched on: evidence tabs, empty panels, settings navigation, sidebar, project actions, the Setup ladder, the MCP tool list · **Builds on:** [`failure-experience-audit.md`](failure-experience-audit.md) §10 and [`ui-simplification.md`](ui-simplification.md) rule 9
+**Status:** shipped 2026-09-22 in #601 (foundation), #603 and #605 (MCP modules, wizard step), #604 (surfaces); the open remainder is the fixtures-free demo project described in section 9 · **Scope:** every place the dashboard shows or offers an optional capability a team has not switched on: evidence tabs, empty panels, settings navigation, sidebar, project actions, the Setup ladder, the MCP tool list · **Builds on:** [`failure-experience-audit.md`](failure-experience-audit.md) §10 and [`ui-simplification.md`](ui-simplification.md) rule 9
 
 **Goal:** an instance shows only the capabilities it uses or has chosen. Every unused optional capability can be declined once, at project or instance level, and the dashboard remembers the answer everywhere: UI, Setup, MCP, the model's context.
 
