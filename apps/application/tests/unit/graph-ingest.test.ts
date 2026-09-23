@@ -15,7 +15,12 @@ const {
   pruneChangesEdges,
   pruneStaleBranchGraphRows,
   pruneStaleCanonicalNodes,
+  pruneStaleReachesEdges,
+  hardDeletePrunedNodes,
+  deleteGraphRowsForRuns,
   deleteBranchGraphRows,
+  resolveRunBranchTagFromStored,
+  rebuildProjectGraph,
 } = await import('../../server/utils/graph-ingest');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
@@ -38,6 +43,33 @@ describe('pageNodeKey', () => {
   test('drops the host, query and fragment — a page is its path pattern', () => {
     expect(pageNodeKey('https://staging.example.com/orders/9#tab')).toBe('/orders/:id');
     expect(pageNodeKey('https://prod.example.com/orders/9?ref=x')).toBe('/orders/:id');
+  });
+
+  test('returns null for non-http(s) URLs so they never become page nodes', () => {
+    expect(pageNodeKey('about:blank')).toBeNull();
+    expect(pageNodeKey('chrome-error://chromewebdata/')).toBeNull();
+    expect(pageNodeKey('data:text/html,<p>x</p>')).toBeNull();
+    expect(pageNodeKey('blob:https://app.test/abc')).toBeNull();
+  });
+
+  test('collapses token-like page segments so a page is not re-minted every run', () => {
+    expect(pageNodeKey('/reset/01ARZ3NDEKTSV4RRFFQ69G5FAV')).toBe('/reset/:ulid');
+  });
+});
+
+describe('own-origin page filtering', () => {
+  test('a third-party redirect page is not collected as a page node', () => {
+    const origins = collectOwnOrigins(['https://app.test'], []);
+    const reaches = collectRunGraphReaches(
+      [
+        { testCaseId: 1, pageState: { url: 'https://app.test/checkout' } },
+        { testCaseId: 2, pageState: { url: 'https://checkout.stripe.com/pay/cs_test_123' } },
+      ],
+      [{ items: [] }, { items: [] }],
+      { origins },
+    );
+    const pages = reaches.flatMap((r) => r.pages);
+    expect(pages).toEqual(['https://app.test/checkout']);
   });
 });
 
@@ -248,6 +280,219 @@ describe('graph pruning', () => {
     expect(node!.firstSeenRunId).toBe(3);
     expect(node!.lastSeenRunId).toBe(40);
     expect(node!.prunedAt).toBeNull();
+  });
+
+  test('thirty pull-request runs without a default-branch run never prune the canonical graph', async () => {
+    await db.update(schema.projects).set({ defaultBranch: 'main' }).where(eq(schema.projects.id, 1));
+    // One default-branch run seeds the canonical node, then thirty PR runs pile up.
+    await db
+      .insert(schema.testRuns)
+      .values({ id: 1, projectId: 1, status: 'passed', startTime: new Date(1), branch: 'main' });
+    for (let i = 2; i <= 31; i++) {
+      await db
+        .insert(schema.testRuns)
+        .values({ id: i, projectId: 1, status: 'passed', startTime: new Date(i), branch: 'pr-9' });
+    }
+    await db.insert(schema.graphNodes).values({
+      projectId: 1,
+      kind: 'route',
+      key: 'GET /canonical',
+      firstSeenRunId: 1,
+      lastSeenRunId: 1,
+      lastSeenAt: daysAgo(1),
+    });
+    // An accepted gap on the node — the sweep must never strip its subject either.
+    await db.insert(schema.scenarioGaps).values({
+      projectId: 1,
+      detector: 'single-covering-test',
+      class: 'fragile',
+      key: 'route:GET /canonical',
+      title: 'one test',
+      status: 'accepted',
+    });
+
+    const removed = await pruneStaleCanonicalNodes(db);
+    expect(removed).toBe(0);
+    const [node] = await db.select().from(schema.graphNodes).where(eq(schema.graphNodes.key, 'GET /canonical'));
+    expect(node!.prunedAt).toBeNull();
+  });
+
+  test('a node backing a snoozed gap is never pruned even past the window', async () => {
+    for (let i = 1; i <= 31; i++) {
+      await db.insert(schema.testRuns).values({ id: i, projectId: 1, status: 'passed', startTime: new Date(i) });
+    }
+    await db.insert(schema.graphNodes).values({
+      projectId: 1,
+      kind: 'route',
+      key: 'GET /snoozed',
+      firstSeenRunId: 1,
+      lastSeenRunId: 1,
+      lastSeenAt: daysAgo(1),
+    });
+    await db.insert(schema.scenarioGaps).values({
+      projectId: 1,
+      detector: 'success-only',
+      class: 'false-comfort',
+      key: 'route:GET /snoozed',
+      title: 'only 2xx',
+      status: 'snoozed',
+    });
+    expect(await pruneStaleCanonicalNodes(db)).toBe(0);
+  });
+});
+
+describe('probe runs never feed the canonical graph', () => {
+  test('rebuildProjectGraph skips probe runs', async () => {
+    // A real run and a probe run, each with a page-visiting case.
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'passed', startTime: new Date(1) });
+    await db
+      .insert(schema.testRuns)
+      .values({ id: 2, projectId: 1, status: 'passed', startTime: new Date(2), metadata: { piwiProbe: true } });
+    await db.insert(schema.testCases).values([
+      { id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'real' },
+      { id: 2, projectId: 1, filePath: 'b.spec.ts', title: 'probe' },
+    ]);
+    await db.insert(schema.testRunsCases).values([
+      { testRunId: 1, testCaseId: 1, status: 'passed', pageState: { url: 'https://app.test/real' } },
+      { testRunId: 2, testCaseId: 2, status: 'passed', pageState: { url: 'https://app.test/probe' } },
+    ]);
+
+    await rebuildProjectGraph(db, 1);
+    const pages = await db
+      .select()
+      .from(schema.graphNodes)
+      .where(and(eq(schema.graphNodes.projectId, 1), eq(schema.graphNodes.kind, 'page')));
+    expect(pages.map((n) => n.key)).toEqual(['/real']);
+  });
+});
+
+describe('last_seen never moves backwards', () => {
+  test('an older run re-ingested does not lower last_seen_run_id', async () => {
+    const reach = [{ testCaseId: 5, routes: [{ method: 'GET', normalizedUrl: '/x', status: 200 }], pages: [] }];
+    await ingestRunGraph(db, 1, 10, reach);
+    await ingestRunGraph(db, 1, 5, reach); // older run, must not win
+    const [node] = await db.select().from(schema.graphNodes).where(eq(schema.graphNodes.key, 'GET /x'));
+    expect(node!.lastSeenRunId).toBe(10);
+  });
+});
+
+describe('graph growth retention', () => {
+  test('pruneStaleReachesEdges drops reaches unseen past the window, keeps recent', async () => {
+    await db.insert(schema.graphEdges).values([
+      {
+        projectId: 1,
+        fromKind: 'test',
+        fromKey: '1',
+        toKind: 'route',
+        toKey: 'GET /old',
+        kind: 'reaches',
+        lastSeenAt: daysAgo(200),
+      },
+      {
+        projectId: 1,
+        fromKind: 'test',
+        fromKey: '2',
+        toKind: 'route',
+        toKey: 'GET /new',
+        kind: 'reaches',
+        lastSeenAt: daysAgo(1),
+      },
+    ]);
+    expect(await pruneStaleReachesEdges(db)).toBe(1);
+    const left = await db.select().from(schema.graphEdges).where(eq(schema.graphEdges.projectId, 1));
+    expect(left.map((e) => e.toKey)).toEqual(['GET /new']);
+  });
+
+  test('hardDeletePrunedNodes removes long-pruned nodes but keeps grace-period and gap-backed ones', async () => {
+    await db.insert(schema.graphNodes).values([
+      {
+        projectId: 1,
+        kind: 'route',
+        key: 'GET /a',
+        firstSeenRunId: 1,
+        lastSeenRunId: 1,
+        lastSeenAt: daysAgo(90),
+        prunedAt: daysAgo(40),
+      },
+      {
+        projectId: 1,
+        kind: 'route',
+        key: 'GET /b',
+        firstSeenRunId: 1,
+        lastSeenRunId: 1,
+        lastSeenAt: daysAgo(90),
+        prunedAt: daysAgo(5),
+      },
+      {
+        projectId: 1,
+        kind: 'route',
+        key: 'GET /c',
+        firstSeenRunId: 1,
+        lastSeenRunId: 1,
+        lastSeenAt: daysAgo(90),
+        prunedAt: daysAgo(40),
+      },
+    ]);
+    // A live gap protects /c even though it is long-pruned.
+    await db.insert(schema.scenarioGaps).values({
+      projectId: 1,
+      detector: 'surface-drift',
+      class: 'blind-spot',
+      key: 'route:GET /c',
+      title: 'kept',
+      status: 'open',
+    });
+    expect(await hardDeletePrunedNodes(db)).toBe(1);
+    const left = await db.select().from(schema.graphNodes).where(eq(schema.graphNodes.projectId, 1));
+    expect(left.map((n) => n.key).sort()).toEqual(['GET /b', 'GET /c']);
+  });
+
+  test('deleteGraphRowsForRuns removes rows whose last-seen run was deleted', async () => {
+    await db.insert(schema.graphNodes).values([
+      { projectId: 1, kind: 'route', key: 'GET /gone', firstSeenRunId: 1, lastSeenRunId: 7, lastSeenAt: daysAgo(1) },
+      { projectId: 1, kind: 'route', key: 'GET /live', firstSeenRunId: 1, lastSeenRunId: 9, lastSeenAt: daysAgo(1) },
+    ]);
+    await db.insert(schema.graphEdges).values({
+      projectId: 1,
+      fromKind: 'test',
+      fromKey: '1',
+      toKind: 'route',
+      toKey: 'GET /gone',
+      kind: 'reaches',
+      lastSeenRunId: 7,
+      lastSeenAt: daysAgo(1),
+    });
+    const removed = await deleteGraphRowsForRuns(db, 1, [7]);
+    expect(removed).toBe(2);
+    const nodes = await db.select().from(schema.graphNodes).where(eq(schema.graphNodes.projectId, 1));
+    expect(nodes.map((n) => n.key)).toEqual(['GET /live']);
+  });
+});
+
+describe('resolveRunBranchTagFromStored keeps canonical rows through the fallback chain', () => {
+  test('the stored default branch is canonical', async () => {
+    expect(await resolveRunBranchTagFromStored(db, { id: 1, defaultBranch: 'main' }, null, 'main')).toBeNull();
+    expect(await resolveRunBranchTagFromStored(db, { id: 1, defaultBranch: 'main' }, null, 'pr-3')).toBe('pr-3');
+  });
+
+  test('with no stored default, the most common branch among runs is canonical', async () => {
+    for (let i = 1; i <= 3; i++) {
+      await db
+        .insert(schema.testRuns)
+        .values({ id: i, projectId: 1, status: 'passed', startTime: new Date(i), branch: 'develop' });
+    }
+    await db
+      .insert(schema.testRuns)
+      .values({ id: 4, projectId: 1, status: 'passed', startTime: new Date(4), branch: 'feature-x' });
+    expect(await resolveRunBranchTagFromStored(db, { id: 1, defaultBranch: null }, null, 'develop')).toBeNull();
+    expect(await resolveRunBranchTagFromStored(db, { id: 1, defaultBranch: null }, null, 'feature-x')).toBe(
+      'feature-x',
+    );
+  });
+
+  test('with no default and no runs, main is the canonical fallback', async () => {
+    expect(await resolveRunBranchTagFromStored(db, { id: 1, defaultBranch: null }, null, 'main')).toBeNull();
+    expect(await resolveRunBranchTagFromStored(db, { id: 1, defaultBranch: null }, null, 'topic')).toBe('topic');
   });
 });
 

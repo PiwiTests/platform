@@ -2,12 +2,15 @@ import { desc, eq, isNull, or } from 'drizzle-orm';
 import { getDatabase } from '../../database';
 import { projects, testRuns } from '../../database/schema';
 import {
+  hardDeletePrunedNodes,
   pruneChangesEdges,
   pruneStaleBranchGraphRows,
   pruneStaleCanonicalNodes,
+  pruneStaleReachesEdges,
   rebuildProjectGraph,
 } from '../../utils/graph-ingest';
 import { resolveDefaultBranch } from '../../utils/scm/default-branch';
+import { withProjectGraphLock } from '../../utils/project-graph-lock';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
 
 /**
@@ -40,7 +43,7 @@ async function backfillDefaultBranches(db: Awaited<ReturnType<typeof getDatabase
       .from(projects)
       .where(eq(projects.id, project.id));
     if (after?.defaultBranch) {
-      await rebuildProjectGraph(db, project.id).catch(() => null);
+      await withProjectGraphLock(project.id, () => rebuildProjectGraph(db, project.id)).catch(() => null);
       rebuilt++;
     }
   }
@@ -63,8 +66,16 @@ export default defineTask({
     const branchRowsPruned = await pruneStaleBranchGraphRows(db);
     if (branchRowsPruned > 0) result.branchRowsPruned = branchRowsPruned;
 
+    const reachesEdgesPruned = await pruneStaleReachesEdges(db);
+    if (reachesEdgesPruned > 0) result.reachesEdgesPruned = reachesEdgesPruned;
+
     const staleNodesPruned = await pruneStaleCanonicalNodes(db);
     if (staleNodesPruned > 0) result.staleNodesPruned = staleNodesPruned;
+
+    // Hard-delete nodes that have been soft-deleted past their grace window, so
+    // pruned rows do not accumulate forever.
+    const prunedNodesDeleted = await hardDeletePrunedNodes(db);
+    if (prunedNodesDeleted > 0) result.prunedNodesDeleted = prunedNodesDeleted;
 
     const defaultBranchesBackfilled = await backfillDefaultBranches(db);
     if (defaultBranchesBackfilled > 0) result.defaultBranchesBackfilled = defaultBranchesBackfilled;
@@ -75,7 +86,12 @@ export default defineTask({
     let gapsClosed = 0;
     const allProjects = await db.select({ id: projects.id }).from(projects);
     for (const project of allProjects) {
-      const gaps = await computeScenarioGaps(db, project.id).catch(() => ({ upserted: 0, closed: 0 }));
+      // Background recompute: never close a snoozed or accepted gap — only a run
+      // that re-covers the subject retires a team's verdict. Serialized per project
+      // so it never races a run's own recompute.
+      const gaps = await withProjectGraphLock(project.id, () =>
+        computeScenarioGaps(db, project.id, { closeTriaged: false }),
+      ).catch(() => ({ upserted: 0, closed: 0 }));
       gapsUpserted += gaps.upserted;
       gapsClosed += gaps.closed;
     }
