@@ -281,7 +281,7 @@ describe('computeScenarioGaps', () => {
     expect(row!.status).toBe('dismissed');
   });
 
-  test('a route added on a pull-request branch does not drift onto the default branch', async () => {
+  test('a branch recompute never writes the project-wide ledger', async () => {
     await seedRun(1);
     await seedRun(2); // the latest run
 
@@ -307,13 +307,30 @@ describe('computeScenarioGaps', () => {
 
     // On the default branch only canonical rows are read — the PR route is absent.
     await gaps.computeScenarioGaps(db, 1);
-    let drift = await gaps.listScenarioGaps(db, 1, { detector: 'surface-drift' });
+    const drift = await gaps.listScenarioGaps(db, 1, { detector: 'surface-drift', status: 'all' });
     expect(drift.find((r) => r.key === 'route:GET /api/new')).toBeFalsy();
 
-    // Scoped to the pull-request branch, the new route surfaces as drift.
-    await gaps.computeScenarioGaps(db, 1, { branch: 'pr-1' });
-    drift = await gaps.listScenarioGaps(db, 1, { detector: 'surface-drift' });
-    expect(drift.find((r) => r.key === 'route:GET /api/new')).toBeTruthy();
+    // A canonical open gap that a PR's reach must not be able to close.
+    await db.insert(schema.scenarioGaps).values({
+      projectId: 1,
+      detector: 'single-covering-test',
+      class: 'fragile',
+      key: 'route:GET /api/cart',
+      title: 'single',
+      status: 'open',
+    });
+    const before = await gaps.listScenarioGaps(db, 1, { status: 'all' });
+
+    // The shared ledger has no branch dimension, so a branch recompute is a
+    // ledger no-op: it creates no PR-only gap and closes no canonical gap.
+    const result = await gaps.computeScenarioGaps(db, 1, { branch: 'pr-1' });
+    expect(result).toEqual({ upserted: 0, closed: 0 });
+
+    const after = await gaps.listScenarioGaps(db, 1, { status: 'all' });
+    expect(after.map((r) => `${r.detector}:${r.key}:${r.status}`).sort()).toEqual(
+      before.map((r) => `${r.detector}:${r.key}:${r.status}`).sort(),
+    );
+    expect(after.find((r) => r.key === 'route:GET /api/new')).toBeFalsy();
   });
 
   test('a newly documented (manifest/openapi) route does not also fire surface drift', async () => {

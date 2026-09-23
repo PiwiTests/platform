@@ -14,10 +14,12 @@ import {
   graphEdges,
   graphNodes,
   networkRequests,
+  quarantinedTests,
   scenarioGaps,
   testCases,
   testFunctions,
   testRuns,
+  testRunsCases,
 } from '../../server/database/schema';
 import { fileRouteTarget, filePageTarget, routeKeyMatchesTarget, pageKeyMatchesTarget } from '../graph';
 import { isProbeRun } from './probes';
@@ -156,9 +158,16 @@ export function exposureFactorsFor(gap: DetectedGap, inputs: ExposureInputs): Ex
   };
 }
 
-/** exposure = churn × age × escape × priority; gap score = exposure × confidence. */
+/**
+ * exposure = geometric mean of the four factors; gap score = exposure ×
+ * confidence. The geometric mean keeps the documented factors but reads on the
+ * same scale as one factor (`[0.1, 1]`), so a score no longer collapses toward
+ * `0.1⁴` and `minScore` stays meaningful. It is a monotonic transform of the raw
+ * product, so ranking among gaps of equal confidence is unchanged.
+ */
 export function scoreGap(gap: DetectedGap, factors: ExposureFactors): number {
-  const exposure = factors.churn * factors.age * factors.escapeHistory * factors.priority;
+  const product = factors.churn * factors.age * factors.escapeHistory * factors.priority;
+  const exposure = product <= 0 ? 0 : Math.pow(product, 1 / 4);
   return clamp01(gap.confidence) * exposure;
 }
 
@@ -285,19 +294,26 @@ export function detectDeclaredNeverHit(nodes: DeclaredNode[], windowRuns = HISTO
 export interface NodeReach {
   nodeKind: string;
   nodeKey: string;
-  /** Distinct test cases reaching this node, each with its display title. */
-  tests: Array<{ testCaseId: number; title: string; priority?: string | null }>;
+  /**
+   * Distinct test cases reaching this node, each with its display title.
+   * `trusted` is false for a flaky, quarantined or currently-skipped test;
+   * absent counts as trusted, so pure callers need not set it.
+   */
+  tests: Array<{ testCaseId: number; title: string; priority?: string | null; trusted?: boolean }>;
 }
 
 /**
- * Single covering test — a node reached by exactly one test. Fragile: one flaky
- * or quarantined test away from no coverage at all.
+ * Single covering test — a node reached by exactly one *trusted* test. Fragile:
+ * one flaky test away from no coverage at all. Flaky, quarantined and skipped
+ * tests are not trusted reach, so a node they alone reach still counts as
+ * single-covered — and a trusted test plus a flaky one is single, not double.
  */
 export function detectSingleCoveringTest(nodes: NodeReach[]): DetectedGap[] {
   const gaps: DetectedGap[] = [];
   for (const node of nodes) {
-    if (node.tests.length !== 1) continue;
-    const only = node.tests[0]!;
+    const trustedTests = node.tests.filter((t) => t.trusted !== false);
+    if (trustedTests.length !== 1) continue;
+    const only = trustedTests[0]!;
     gaps.push({
       detector: 'single-covering-test',
       kind: 'gap',
@@ -410,9 +426,12 @@ export interface ControlReach {
 
 /**
  * Control nobody exercises — a control the suite has seen on a page but no
- * locator ever targets. Blind spot.
+ * locator ever targets. Blind spot. Requires the project to have some control
+ * reach at all: with no test→control edge anywhere, every inventoried control
+ * would flag, so the detector stays silent until reach exists to compare against.
  */
 export function detectControlNobodyExercises(controls: ControlReach[]): DetectedGap[] {
+  if (!controls.some((c) => c.reachCount > 0)) return [];
   const gaps: DetectedGap[] = [];
   for (const c of controls) {
     if (c.reachCount > 0) continue;
@@ -1096,6 +1115,64 @@ async function loadTestMeta(
   return meta;
 }
 
+/** The most recent per-case execution status for each of the given test cases. */
+async function latestExecutionStatus(db: DrizzleDB, ids: number[]): Promise<Map<number, string>> {
+  const status = new Map<number, string>();
+  if (ids.length === 0) return status;
+  for (let i = 0; i < ids.length; i += 200) {
+    const slice = ids.slice(i, i + 200);
+    const maxRows = await db
+      .select({ testCaseId: testRunsCases.testCaseId, maxId: sql<number>`max(${testRunsCases.id})` })
+      .from(testRunsCases)
+      .where(inArray(testRunsCases.testCaseId, slice))
+      .groupBy(testRunsCases.testCaseId);
+    const maxIds = maxRows.map((r) => Number(r.maxId)).filter((n) => Number.isFinite(n));
+    if (maxIds.length === 0) continue;
+    const rows = await db
+      .select({ id: testRunsCases.id, testCaseId: testRunsCases.testCaseId, status: testRunsCases.status })
+      .from(testRunsCases)
+      .where(inArray(testRunsCases.id, maxIds));
+    for (const r of rows) if (r.testCaseId != null) status.set(r.testCaseId, r.status.toLowerCase());
+  }
+  return status;
+}
+
+/**
+ * Test cases whose reach is not trusted: a flaky test (a classified root cause),
+ * a quarantined test (an active quarantine), or one whose most recent execution
+ * was skipped or did-not-run. Such a test is a fragile single cover, never a
+ * second trusted one, so single-covering-test discounts it.
+ */
+async function loadUntrustedTestIds(db: DrizzleDB, projectId: number, ids: number[]): Promise<Set<number>> {
+  const untrusted = new Set<number>();
+  if (ids.length === 0) return untrusted;
+  for (let i = 0; i < ids.length; i += 200) {
+    const slice = ids.slice(i, i + 200);
+    const flaky = await db
+      .select({ id: testCases.id })
+      .from(testCases)
+      .where(
+        and(eq(testCases.projectId, projectId), inArray(testCases.id, slice), isNotNull(testCases.flakyRootCause)),
+      );
+    for (const r of flaky) untrusted.add(r.id);
+    const quarantined = await db
+      .select({ id: quarantinedTests.testCaseId })
+      .from(quarantinedTests)
+      .where(
+        and(
+          eq(quarantinedTests.projectId, projectId),
+          inArray(quarantinedTests.testCaseId, slice),
+          isNull(quarantinedTests.releasedAt),
+        ),
+      );
+    for (const r of quarantined) untrusted.add(r.id);
+  }
+  for (const [id, status] of await latestExecutionStatus(db, ids)) {
+    if (status === 'skipped' || status === 'didnotrun' || status === 'didnot-run') untrusted.add(id);
+  }
+  return untrusted;
+}
+
 /**
  * Observed route statuses over the recent window, one row per pattern, kept only
  * for patterns the graph holds as route nodes. Route nodes are written on ingest
@@ -1138,12 +1215,21 @@ async function loadRouteStats(
  * surface-drift) from the graph and history, rank them by exposure, and upsert
  * the ledger — preserving triage and closing gaps that no longer hold. Change-
  * time detectors (changed-unreached) run in the change-coverage path instead.
+ *
+ * The `scenario_gaps` ledger is project-wide and has no branch dimension, so a
+ * branch recompute must never write to it: a pull request's reach could
+ * otherwise close a canonical gap permanently, and a PR-only node could become a
+ * project-wide gap. A branch recompute is therefore a ledger no-op — the
+ * canonical ledger reflects the default branch alone, and the pull-request
+ * surfaces (the "Uncovered changes" section) read branch reach without
+ * persisting it into this ledger.
  */
 export async function computeScenarioGaps(
   db: DrizzleDB,
   projectId: number,
   options: { exposure?: ExposureInputs; branch?: string | null } = {},
 ): Promise<{ upserted: number; closed: number }> {
+  if (options.branch) return { upserted: 0, closed: 0 };
   const recentIds = await loadRecentRunIds(db, projectId, HISTORY_WINDOW_RUNS);
   const latestRunId = recentIds[0] ?? null;
 
@@ -1151,15 +1237,11 @@ export async function computeScenarioGaps(
   // snooze re-enters detection this run rather than hiding the gap forever.
   await reopenExpiredSnoozes(db, projectId);
 
-  // Read canonical rows (branch null), plus the branch under inspection when one
-  // is given — so a route added on a pull-request branch never shows as surface
-  // drift on the default branch.
-  const nodeBranchScope = options.branch
-    ? or(isNull(graphNodes.branch), eq(graphNodes.branch, options.branch))
-    : isNull(graphNodes.branch);
-  const edgeBranchScope = options.branch
-    ? or(isNull(graphEdges.branch), eq(graphEdges.branch, options.branch))
-    : isNull(graphEdges.branch);
+  // Canonical rows only (branch null): the branch guard above already returned,
+  // so a project-wide recompute reads the default-branch graph and never a pull
+  // request's branch-tagged nodes or edges.
+  const nodeBranchScope = isNull(graphNodes.branch);
+  const edgeBranchScope = isNull(graphEdges.branch);
 
   // Reach edges → which test cases reach which nodes.
   const reachRows = await db
@@ -1180,6 +1262,7 @@ export async function computeScenarioGaps(
   }
 
   const meta = await loadTestMeta(db, [...testIds]);
+  const untrustedTests = await loadUntrustedTestIds(db, projectId, [...testIds]);
 
   // Node first-seen for surface drift. Pruned (soft-deleted) nodes are excluded
   // so vanished surface neither reaches detectors nor re-flags as drift.
@@ -1236,11 +1319,9 @@ export async function computeScenarioGaps(
     });
   }
 
-  // Wake "until the node changes" snoozes whose subject node has been re-observed
-  // in a later run than the one they were snoozed at.
-  const nodeLastSeen = new Map<string, number | null>();
-  for (const node of nodeRows) nodeLastSeen.set(`${node.kind}\x00${node.key}`, node.lastSeenRunId ?? null);
-  await reopenChangedNodeSnoozes(db, projectId, nodeLastSeen);
+  // Wake "until the node changes" snoozes whose subject node's edge shape has
+  // changed since they were snoozed.
+  await reopenChangedNodeSnoozes(db, projectId);
 
   const nodeReach: NodeReach[] = [];
   const nodeDrift: NodeDrift[] = [];
@@ -1253,6 +1334,7 @@ export async function computeScenarioGaps(
         testCaseId: id,
         title: meta.get(id)?.title ?? `test ${id}`,
         priority: meta.get(id)?.priority ?? null,
+        trusted: !untrustedTests.has(id),
       })),
     });
     // Declared nodes (manifest/OpenAPI) carry their own "declared, never hit"
@@ -1642,9 +1724,30 @@ async function closeReachedChangedUnreached(
 }
 
 /**
+ * Deduplicate detected gaps by `(detector, key)`, keeping the highest-scoring
+ * row. Two tests reporting `unhandled` on one route, or a recompute that reads
+ * both the canonical and the branch row of a node, otherwise send the same
+ * `(detector, key)` twice in one batch — which PostgreSQL rejects with
+ * `ON CONFLICT DO UPDATE command cannot affect row a second time` (SQLite quietly
+ * accepts it, which is why the libSQL unit tests never caught it).
+ */
+export function dedupeScoredGaps(gaps: ScoredGap[]): ScoredGap[] {
+  const byKey = new Map<string, ScoredGap>();
+  for (const g of gaps) {
+    const k = `${g.detector}\x00${g.key}`;
+    const prev = byKey.get(k);
+    if (!prev || (g.score ?? 0) > (prev.score ?? 0)) byKey.set(k, g);
+  }
+  return [...byKey.values()];
+}
+
+/**
  * Upsert scored gaps into the ledger. A row's evidence, factors and score are
- * refreshed; its triage columns (`status`, `dismiss_reason`, `assigned_to`) are
- * never touched, so a dismissed or accepted gap keeps its verdict.
+ * refreshed; its triage columns (`dismiss_reason`, `assigned_to`) are never
+ * touched, and a dismissed, accepted or snoozed gap keeps its status. A *closed*
+ * gap detected again reopens, so a gap the sweep closed and the graph then
+ * re-surfaces returns to the inbox rather than staying closed forever. Rows are
+ * deduped by `(detector, key)` first, so the batch is safe on PostgreSQL.
  */
 export async function upsertScenarioGaps(
   db: DrizzleDB,
@@ -1652,13 +1755,14 @@ export async function upsertScenarioGaps(
   gaps: ScoredGap[],
   ctx: { runId?: number | null; prNumber?: number | null } = {},
 ): Promise<number> {
-  if (gaps.length === 0) return 0;
+  const deduped = dedupeScoredGaps(gaps);
+  if (deduped.length === 0) return 0;
   const now = new Date();
   const CHUNK = 100;
   let written = 0;
 
-  for (let i = 0; i < gaps.length; i += CHUNK) {
-    const slice = gaps.slice(i, i + CHUNK);
+  for (let i = 0; i < deduped.length; i += CHUNK) {
+    const slice = deduped.slice(i, i + CHUNK);
     await db
       .insert(scenarioGaps)
       .values(
@@ -1697,6 +1801,11 @@ export async function upsertScenarioGaps(
           testRunId: sql`excluded.test_run_id`,
           prNumber: sql`coalesce(excluded.pr_number, ${scenarioGaps.prNumber})`,
           updatedAt: sql`excluded.updated_at`,
+          // Reopen a closed gap that is detected again; every other status keeps
+          // its verdict. Clear the close bookkeeping only on that reopen.
+          status: sql`case when ${scenarioGaps.status} = 'closed' then 'open' else ${scenarioGaps.status} end`,
+          closedAt: sql`case when ${scenarioGaps.status} = 'closed' then null else ${scenarioGaps.closedAt} end`,
+          closedByRunId: sql`case when ${scenarioGaps.status} = 'closed' then null else ${scenarioGaps.closedByRunId} end`,
         },
       });
     written += slice.length;
@@ -1876,15 +1985,24 @@ export interface TriageInput {
   /** The covering test for a `covered-by`, or a `covered-elsewhere` dismissal — writes a manual reaches edge. */
   coveringTestCaseId?: number | null;
   assignedTo?: string | null;
+  /** The user who gave the verdict, recorded on the gap; null when auth is off. */
+  triagedByUserId?: number | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** The fixed length a snooze defaults to when no option (or `1-week`) is given. */
+const DEFAULT_SNOOZE_MS = 7 * DAY_MS;
 
-/** The wake time a snooze option resolves to; null means "until the node changes". */
+/**
+ * The wake time a snooze option resolves to. `until-node-changes` returns null —
+ * it has no timed wake and is tracked by the node's edge signature instead —
+ * while an absent option falls back to the fixed default length, never to
+ * "until the node changes".
+ */
 function snoozeUntil(option: SnoozeOption | undefined, now: Date): Date | null {
   if (option === '1-day') return new Date(now.getTime() + DAY_MS);
-  if (option === '1-week') return new Date(now.getTime() + 7 * DAY_MS);
-  return null;
+  if (option === 'until-node-changes') return null;
+  return new Date(now.getTime() + DEFAULT_SNOOZE_MS);
 }
 
 /**
@@ -1935,21 +2053,45 @@ async function writeManualReachesEdge(
     });
 }
 
-/** The subject node's current last-seen run (canonical row), or null when it has none. */
-async function subjectNodeLastSeenRunId(db: DrizzleDB, projectId: number, subject: GapSubject): Promise<number | null> {
-  const [node] = await db
-    .select({ lastSeenRunId: graphNodes.lastSeenRunId })
-    .from(graphNodes)
+/** Subject kinds that are graph nodes with incident edges we can fingerprint. */
+const SIGNATURE_SUBJECT_KINDS = new Set(['route', 'page', 'control', 'dependency', 'handler', 'feature']);
+
+/**
+ * A stable fingerprint of a subject node's canonical incident edges — every
+ * `reaches`, `checks`, `contains`, `links`, `groups` … edge into or out of the
+ * node, sorted. "Snooze until the node changes" wakes when this fingerprint
+ * changes (an edge added or removed, a confidence rescored), so a mere
+ * re-observation of the unchanged node does not wake it. Returns null when the
+ * subject is not a trackable node (a `test:`, `cluster:`, `file:`, `ticket:`,
+ * `intent:` or `catalog:` subject): those cannot use the mechanism, so the caller
+ * falls back to a fixed-length snooze rather than one that would never wake.
+ */
+async function subjectEdgeSignature(db: DrizzleDB, projectId: number, subject: GapSubject): Promise<string | null> {
+  if (!SIGNATURE_SUBJECT_KINDS.has(subject.kind)) return null;
+  const rows = await db
+    .select({
+      fromKind: graphEdges.fromKind,
+      fromKey: graphEdges.fromKey,
+      toKind: graphEdges.toKind,
+      toKey: graphEdges.toKey,
+      kind: graphEdges.kind,
+      confidence: graphEdges.confidence,
+    })
+    .from(graphEdges)
     .where(
       and(
-        eq(graphNodes.projectId, projectId),
-        eq(graphNodes.kind, subject.kind),
-        eq(graphNodes.key, subject.key),
-        isNull(graphNodes.branch),
+        eq(graphEdges.projectId, projectId),
+        isNull(graphEdges.branch),
+        or(
+          and(eq(graphEdges.fromKind, subject.kind), eq(graphEdges.fromKey, subject.key)),
+          and(eq(graphEdges.toKind, subject.kind), eq(graphEdges.toKey, subject.key)),
+        ),
       ),
-    )
-    .limit(1);
-  return node?.lastSeenRunId ?? null;
+    );
+  const parts = rows
+    .map((r) => `${r.kind}|${r.fromKind}:${r.fromKey}>${r.toKind}:${r.toKey}|${r.confidence ?? ''}`)
+    .sort();
+  return `${parts.length}\n${parts.join('\n')}`;
 }
 
 /** True when a test case belongs to the project — a covering test may only be one of its own. */
@@ -1995,7 +2137,8 @@ export async function triageGap(
 
   const now = new Date();
   const subject = subjectFromGapKey(gap.key);
-  const set: Record<string, unknown> = { updatedAt: now };
+  // Record who gave the verdict on every triage action (null when auth is off).
+  const set: Record<string, unknown> = { updatedAt: now, triagedBy: input.triagedByUserId ?? null };
 
   if (input.verb === 'accept') {
     set.status = 'accepted';
@@ -2003,11 +2146,23 @@ export async function triageGap(
     if (input.assignedTo !== undefined) set.assignedTo = input.assignedTo;
   } else if (input.verb === 'snooze') {
     set.status = 'snoozed';
-    const until = snoozeUntil(input.snooze, now);
-    set.snoozedUntil = until;
-    // "Until the node changes" has no wake time; record the subject node's
-    // current last-seen run so the gap wakes once the node is seen in a later run.
-    set.snoozedAtRunId = until == null ? await subjectNodeLastSeenRunId(db, projectId, subject) : null;
+    if (input.snooze === 'until-node-changes') {
+      // Record the subject node's edge signature; the gap wakes when it changes.
+      const signature = await subjectEdgeSignature(db, projectId, subject);
+      if (signature == null) {
+        // Not a trackable node (a test/cluster/file gap): use a fixed length
+        // rather than a snooze that could never wake.
+        set.snoozedUntil = snoozeUntil(undefined, now);
+        set.snoozedAtSignature = null;
+      } else {
+        set.snoozedUntil = null;
+        set.snoozedAtSignature = signature;
+      }
+    } else {
+      set.snoozedUntil = snoozeUntil(input.snooze, now);
+      set.snoozedAtSignature = null;
+    }
+    set.snoozedAtRunId = null;
   } else if (input.verb === 'dismiss') {
     set.status = 'dismissed';
     set.dismissReason = input.reason ?? 'wrong';
@@ -2016,7 +2171,10 @@ export async function triageGap(
     }
   } else {
     // covered-by: record the covering test without dismissing; the manual reaches
-    // edge closes the gap on the next recompute.
+    // edge closes the gap on the next recompute. `coveredAt` is a durable per-gap
+    // "for" verdict, so precision credits only this gap — not every detector that
+    // happens to share the subject node.
+    set.coveredAt = now;
     if (input.coveringTestCaseId != null) {
       await writeManualReachesEdge(db, projectId, subject, input.coveringTestCaseId);
     }
@@ -2050,38 +2208,39 @@ export async function reopenExpiredSnoozes(db: DrizzleDB, projectId: number, now
 }
 
 /**
- * Wake "until the node changes" snoozes (snoozedUntil null) whose subject node
- * has been seen in a run later than the one recorded when they were snoozed —
- * the node has been exercised again, so the gap is worth re-evaluating.
+ * Wake "until the node changes" snoozes (snoozedUntil null) whose subject node's
+ * edge signature no longer matches the one recorded when they were snoozed — the
+ * node's observed shape changed (a new edge, a removed edge, a rescored one), so
+ * the gap is worth re-evaluating. A node merely re-observed with the same shape
+ * does not wake.
  */
-async function reopenChangedNodeSnoozes(
+export async function reopenChangedNodeSnoozes(
   db: DrizzleDB,
   projectId: number,
-  nodeLastSeen: Map<string, number | null>,
   now: Date = new Date(),
 ): Promise<number> {
   const snoozed = await db
-    .select({ id: scenarioGaps.id, key: scenarioGaps.key, snoozedAtRunId: scenarioGaps.snoozedAtRunId })
+    .select({ id: scenarioGaps.id, key: scenarioGaps.key, snoozedAtSignature: scenarioGaps.snoozedAtSignature })
     .from(scenarioGaps)
     .where(
       and(
         eq(scenarioGaps.projectId, projectId),
         eq(scenarioGaps.status, 'snoozed'),
         isNull(scenarioGaps.snoozedUntil),
-        isNotNull(scenarioGaps.snoozedAtRunId),
+        isNotNull(scenarioGaps.snoozedAtSignature),
       ),
     );
   const toWake: number[] = [];
   for (const gap of snoozed) {
     const subject = subjectFromGapKey(gap.key);
-    const lastSeen = nodeLastSeen.get(`${subject.kind}\x00${subject.key}`);
-    if (lastSeen != null && gap.snoozedAtRunId != null && lastSeen > gap.snoozedAtRunId) toWake.push(gap.id);
+    const current = await subjectEdgeSignature(db, projectId, subject);
+    if (current != null && current !== gap.snoozedAtSignature) toWake.push(gap.id);
   }
   if (toWake.length === 0) return 0;
   for (let i = 0; i < toWake.length; i += 100) {
     await db
       .update(scenarioGaps)
-      .set({ status: 'open', snoozedAtRunId: null, updatedAt: now })
+      .set({ status: 'open', snoozedAtSignature: null, updatedAt: now })
       .where(inArray(scenarioGaps.id, toWake.slice(i, i + 100)));
   }
   return toWake.length;
@@ -2315,7 +2474,7 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
         filePath: testCases.filePath,
       })
       .from(testCases)
-      .where(eq(testCases.id, nearestTestId));
+      .where(and(eq(testCases.id, nearestTestId), eq(testCases.projectId, projectId)));
     if (tc) {
       nearestTest = {
         title: tc.title,
