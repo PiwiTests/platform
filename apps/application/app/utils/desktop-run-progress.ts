@@ -32,6 +32,11 @@ export interface RunCounts {
   total: number;
 }
 
+/** An in-flight run as the desktop plugin tracks it: its counts and its project. */
+export interface LiveRun extends RunCounts {
+  projectId: number | null;
+}
+
 /** The cleared state — no active runs, nothing on the shell. */
 export const NO_RUN_PROGRESS: AggregatedRunProgress = { state: 'none', fraction: null, label: null };
 
@@ -64,4 +69,49 @@ export function aggregateRunProgress(runs: readonly RunCounts[]): AggregatedRunP
         : `Running ${done}/${total} · ${active.length} runs`;
 
   return { state: fraction == null ? 'indeterminate' : 'normal', fraction, label };
+}
+
+/** How long a finished run's outcome stays on the shell before the bar clears. */
+export const PASS_FLASH_MS = 3000;
+export const FAIL_FLASH_MS = 5000;
+
+export interface FinishedRunFlash {
+  progress: AggregatedRunProgress;
+  durationMs: number;
+}
+
+/**
+ * What the shell shows once the last active run ends with `status`, and for how
+ * long, or `null` to clear the bar at once. A pass flashes green, an
+ * interrupted run (stopped, or its reporter lost) amber, any other failure red;
+ * a cancelled run clears without a flash.
+ */
+export function finishedRunFlash(status: string): FinishedRunFlash | null {
+  switch (status) {
+    case 'passed':
+      return { progress: { state: 'normal', fraction: 1, label: 'Run passed' }, durationMs: PASS_FLASH_MS };
+    case 'interrupted':
+      return { progress: { state: 'paused', fraction: 1, label: 'Run interrupted' }, durationMs: FAIL_FLASH_MS };
+    case 'cancelled':
+      return null;
+    default:
+      return { progress: { state: 'error', fraction: 1, label: 'Run failed' }, durationMs: FAIL_FLASH_MS };
+  }
+}
+
+/**
+ * The tracked runs a stopped local process produced: the runs of its project
+ * numbered above `baseline`, the project's newest run id when the process was
+ * spawned. The shell kills the process, so its reporter never reports the end.
+ */
+export function runsOfStoppedLocalRun(
+  active: ReadonlyMap<number, LiveRun>,
+  projectId: string,
+  baseline: number,
+): number[] {
+  const ids: number[] = [];
+  for (const [id, run] of active) {
+    if (id > baseline && run.projectId != null && String(run.projectId) === projectId) ids.push(id);
+  }
+  return ids;
 }

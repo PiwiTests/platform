@@ -12,7 +12,8 @@
  * the window is hidden, where background timers are throttled to ~1/min. The
  * active runs are aggregated (`aggregateRunProgress`) and fed to the shell's
  * `desktop_set_run_progress` command; when the last run finishes the outcome
- * flashes (green pass / red fail) briefly before clearing.
+ * flashes (green pass / amber interrupted / red fail) briefly before clearing.
+ * A local run stopped from the app leaves the bar at once.
  *
  * Activates only inside the shell (the IPC bridge is present); the shared web
  * build has no bridge and this no-ops.
@@ -28,6 +29,7 @@ interface LiveRunMessage {
     | 'run-cancelled'
     | 'run-submitted';
   runId?: number;
+  projectId?: number;
   status?: string;
   totalTests?: number;
   passedTests?: number;
@@ -36,6 +38,7 @@ interface LiveRunMessage {
   didNotRunTests?: number;
   runs?: Array<{
     id: number;
+    projectId?: number;
     status: string;
     totalTests?: number;
     passedTests?: number;
@@ -56,12 +59,8 @@ export default defineNuxtPlugin(() => {
   const core = tauriCore();
   if (!core) return; // not running inside the desktop shell
 
-  // How long the finished-outcome bar lingers before it clears.
-  const PASS_FLASH_MS = 3000;
-  const FAIL_FLASH_MS = 5000;
-
   // runId → its current counts; only in-flight runs are kept.
-  const active = new Map<number, RunCounts>();
+  const active = new Map<number, LiveRun>();
   let clearTimer: ReturnType<typeof setTimeout> | null = null;
   let lastSent = '';
   let lastFinishedStatus: string | null = null;
@@ -87,12 +86,10 @@ export default defineNuxtPlugin(() => {
       return;
     }
     // Nothing in flight — flash the last finished run's outcome, then clear.
-    if (lastFinishedStatus === 'passed') {
-      send('normal', 1, 'Run passed');
-      clearTimer = setTimeout(() => send('none', null, null), PASS_FLASH_MS);
-    } else if (lastFinishedStatus && lastFinishedStatus !== 'cancelled') {
-      send('error', 1, 'Run failed');
-      clearTimer = setTimeout(() => send('none', null, null), FAIL_FLASH_MS);
+    const flash = lastFinishedStatus ? finishedRunFlash(lastFinishedStatus) : null;
+    if (flash) {
+      send(flash.progress.state, flash.progress.fraction, flash.progress.label);
+      clearTimer = setTimeout(() => send('none', null, null), flash.durationMs);
     } else {
       send('none', null, null);
     }
@@ -105,7 +102,12 @@ export default defineNuxtPlugin(() => {
         active.clear();
         for (const r of msg.runs ?? []) {
           if (ACTIVE_RUN_STATUSES.has(r.status)) {
-            active.set(r.id, { status: r.status, done: doneOf(r), total: r.totalTests ?? 0 });
+            active.set(r.id, {
+              status: r.status,
+              done: doneOf(r),
+              total: r.totalTests ?? 0,
+              projectId: r.projectId ?? null,
+            });
           }
         }
         pushUpdate();
@@ -113,7 +115,12 @@ export default defineNuxtPlugin(() => {
       }
       case 'run-progress': {
         if (msg.runId == null) break;
-        active.set(msg.runId, { status: 'running', done: doneOf(msg), total: msg.totalTests ?? 0 });
+        active.set(msg.runId, {
+          status: 'running',
+          done: doneOf(msg),
+          total: msg.totalTests ?? 0,
+          projectId: msg.projectId ?? null,
+        });
         pushUpdate();
         break;
       }
@@ -121,7 +128,7 @@ export default defineNuxtPlugin(() => {
       case 'run-initializing': {
         // Known to be in flight but no counts yet → indeterminate until progress.
         if (msg.runId != null && !active.has(msg.runId)) {
-          active.set(msg.runId, { status: 'running', done: 0, total: 0 });
+          active.set(msg.runId, { status: 'running', done: 0, total: 0, projectId: msg.projectId ?? null });
           pushUpdate();
         }
         break;
@@ -129,7 +136,9 @@ export default defineNuxtPlugin(() => {
       case 'run-finished':
       case 'run-cancelled':
       case 'run-submitted': {
-        if (msg.runId != null) active.delete(msg.runId);
+        // Only a run still on the bar has an outcome to show — one already
+        // dropped (a stopped local run the server reaps later) changes nothing.
+        if (msg.runId == null || !active.delete(msg.runId)) break;
         lastFinishedStatus = msg.type === 'run-finished' ? (msg.status ?? 'passed') : 'cancelled';
         pushUpdate();
         break;
@@ -155,11 +164,14 @@ export default defineNuxtPlugin(() => {
   }
   connect();
 
-  // The Windows taskbar thumbnail toolbar's "Stop" button reaches the dashboard
-  // as this event. Only local ("Run locally") runs can be stopped from here, so
-  // this is best-effort and must never break the progress stream above.
+  // Local ("Run locally") runs are driven from the app, so they are the only
+  // ones it can stop — best-effort, and never allowed to break the progress
+  // stream above.
   try {
     const { runs, stopRun } = useDesktopLocalRuns();
+
+    // The Windows taskbar thumbnail toolbar's "Stop" button reaches the
+    // dashboard as this event.
     tauriEvent()
       ?.listen('piwi:taskbar-stop', () => {
         for (const run of runs.value) {
@@ -167,6 +179,26 @@ export default defineNuxtPlugin(() => {
         }
       })
       .catch(() => {});
+
+    // A stopped local process never reports its end, and the server marks its
+    // runs interrupted only after the stale timeout, so drop them from the bar
+    // as soon as the stop lands.
+    const dropped = new Set<number>();
+    watch(
+      () => runs.value.map((run) => run.status),
+      () => {
+        let changed = false;
+        for (const run of runs.value) {
+          if (run.status !== 'stopped' || run.piwiRunBaseline == null || dropped.has(run.key)) continue;
+          dropped.add(run.key);
+          for (const id of runsOfStoppedLocalRun(active, run.projectId, run.piwiRunBaseline)) {
+            active.delete(id);
+            changed = true;
+          }
+        }
+        if (changed) pushUpdate();
+      },
+    );
   } catch {
     // Local-run store unavailable at init — progress still works.
   }
