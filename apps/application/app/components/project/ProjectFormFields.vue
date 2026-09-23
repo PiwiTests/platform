@@ -23,8 +23,12 @@ const props = withDefaults(
     projectId?: number;
     /** Edit mode: the project's stored capability decisions, seeding the overrides. */
     capabilities?: Partial<Record<CapabilityId, ProjectDecision>> | null;
+    /** Edit mode: hide the OpenAPI field when `test-map` is declined or not applicable. */
+    hideOpenApi?: boolean;
+    /** Edit mode: hide the server-probes group when `server-probes` is declined or not applicable. */
+    hideServerProbes?: boolean;
   }>(),
-  { hasToken: false },
+  { hasToken: false, hideOpenApi: false, hideServerProbes: false },
 );
 
 const emit = defineEmits<{ 'tag-created': [] }>();
@@ -143,6 +147,7 @@ const ciRerun = defineModel<CiRerunForm>('ciRerun', {
       </UFormField>
 
       <UFormField
+        v-if="!hideOpenApi"
         label="OpenAPI document URL"
         name="openApiUrl"
         description="Declared surface. Fetched server-side; its routes and documented response codes become declared graph nodes, so a route the spec documents but no test reaches is a gap. Leave empty to skip."
@@ -151,6 +156,7 @@ const ciRerun = defineModel<CiRerunForm>('ciRerun', {
       </UFormField>
 
       <UFormField
+        v-if="!hideServerProbes"
         label="Server probes"
         name="serverProbes"
         description="Level-two probes inject a fault inside the server for one signed request, to check whether a passing test would notice. Off by default; turn it on once client probes report not-noticed on at least one in ten pairs. Needs a shared probe secret on the app under test and the probe runner, and a non-production target."

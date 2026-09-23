@@ -104,6 +104,32 @@ test.describe.serial('Capabilities opt-out', () => {
     await expect(page.locator('[data-shot="evidence-fixtures-footer"]')).toBeVisible();
   });
 
+  test('declining the Test Map hides the Gaps tab, reconsidering brings it back', async ({ page, request }) => {
+    // The opt-out project reaches no routes, so no graph rows exist and the Test
+    // Map is undecided — its Gaps tab shows. (Data would win: a project with graph
+    // rows reads active and the tab stays whatever the decision.)
+    await request.patch(`/api/projects/${projectId}/capabilities`, { data: { decisions: { 'test-map': null } } });
+    const caps = await (await request.get(`/api/projects/${projectId}/capabilities`)).json();
+    const testMap = (caps.items as Array<{ id: string; state: string }>).find((i) => i.id === 'test-map');
+    expect(testMap?.state).toBe('undecided');
+
+    await page.goto(`/projects/${projectId}?tab=runs`);
+    await waitForHydration(page);
+    await expect(page.getByRole('button', { name: 'Gaps', exact: true })).toBeVisible();
+
+    // Decline at project level → the tab disappears.
+    await request.patch(`/api/projects/${projectId}/capabilities`, { data: { decisions: { 'test-map': 'declined' } } });
+    await page.reload();
+    await waitForHydration(page);
+    await expect(page.getByRole('button', { name: 'Gaps', exact: true })).toHaveCount(0);
+
+    // Reconsider (clear the decision) → the tab returns.
+    await request.patch(`/api/projects/${projectId}/capabilities`, { data: { decisions: { 'test-map': null } } });
+    await page.reload();
+    await waitForHydration(page);
+    await expect(page.getByRole('button', { name: 'Gaps', exact: true })).toBeVisible();
+  });
+
   test('a stored project decision is preselected in the edit form', async ({ page, request }) => {
     // A stored decline must round-trip: the project payload carries it, so the
     // form's tri-state opens on it rather than the instance default.

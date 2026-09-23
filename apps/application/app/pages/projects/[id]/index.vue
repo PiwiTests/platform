@@ -31,8 +31,8 @@ const deletingRunId = ref<number | null>(null);
 const confirmDeleteRunId = ref<number | null>(null);
 
 const { isAdmin, isReporter } = useAuth();
-// Project-level capability states gate the bell, the Quarantine segment and the
-// Timeline's add-marker control.
+// Project-level capability states gate the bell, the Quarantine segment, the
+// Gaps tab and the Timeline's add-marker control.
 const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectId));
 const runtimeConfig = useRuntimeConfig();
 const { isDesktop, openReport } = useDesktopReportLink();
@@ -253,8 +253,18 @@ function resolveTab(raw: unknown): TabValue | null {
   return TAB_ALIASES[raw] ?? null;
 }
 
+// The Gaps tab follows the `test-map` capability: a project that declined it
+// loses the tab, and a stale `?tab=gaps` link falls back to Runs.
+watch(
+  () => projCapHidden('test-map'),
+  (hidden) => {
+    if (hidden && activeTab.value === 'gaps') activeTab.value = 'runs';
+  },
+  { immediate: true },
+);
+
 const initialTab = resolveTab(route.query.tab);
-if (initialTab) {
+if (initialTab && !(initialTab === 'gaps' && projCapHidden('test-map'))) {
   activeTab.value = initialTab;
   if (typeof route.query.tab === 'string' && ALIAS_SEGMENT[route.query.tab])
     failureSegment.value = ALIAS_SEGMENT[route.query.tab]!;
@@ -275,22 +285,24 @@ onMounted(() => {
 
 const failuresCount = computed(() => clustersCount.value.open + (flakyCount.value ?? 0) + (quarantineCount.value ?? 0));
 
-const tabItems = computed(() => [
-  { label: `Runs (${filteredRuns.value.length})`, icon: 'i-lucide-play-circle', value: 'runs' as const },
-  {
-    label: `Tests${testCasesTotal.value != null ? ` (${testCasesTotal.value})` : ''}`,
-    icon: 'i-lucide-flask-conical',
-    value: 'tests' as const,
-  },
-  {
-    label: `Failures${failuresCount.value > 0 ? ` (${failuresCount.value})` : ''}`,
-    icon: 'i-lucide-layers',
-    value: 'failures' as const,
-  },
-  { label: 'Gaps', icon: 'i-lucide-radar', value: 'gaps' as const },
-  { label: 'Performance', icon: 'i-lucide-trending-up', value: 'performance' as const },
-  { label: 'Settings', icon: 'i-lucide-settings', value: 'settings' as const },
-]);
+const tabItems = computed(() =>
+  [
+    { label: `Runs (${filteredRuns.value.length})`, icon: 'i-lucide-play-circle', value: 'runs' as const },
+    {
+      label: `Tests${testCasesTotal.value != null ? ` (${testCasesTotal.value})` : ''}`,
+      icon: 'i-lucide-flask-conical',
+      value: 'tests' as const,
+    },
+    {
+      label: `Failures${failuresCount.value > 0 ? ` (${failuresCount.value})` : ''}`,
+      icon: 'i-lucide-layers',
+      value: 'failures' as const,
+    },
+    { label: 'Gaps', icon: 'i-lucide-radar', value: 'gaps' as const },
+    { label: 'Performance', icon: 'i-lucide-trending-up', value: 'performance' as const },
+    { label: 'Settings', icon: 'i-lucide-settings', value: 'settings' as const },
+  ].filter((item) => item.value !== 'gaps' || !projCapHidden('test-map')),
+);
 
 const tabNavItems = computed(() =>
   tabItems.value.map((item) => ({
@@ -1342,6 +1354,8 @@ const moreMenuItems = computed(() => {
                 :has-token="hasScmToken"
                 :project-id="Number(projectId)"
                 :capabilities="project?.capabilities ?? null"
+                :hide-open-api="projCapHidden('test-map')"
+                :hide-server-probes="projCapHidden('server-probes')"
                 v-model:label="editState.label"
                 v-model:description="editState.description"
                 v-model:diagnosisInstructions="editState.diagnosisInstructions"

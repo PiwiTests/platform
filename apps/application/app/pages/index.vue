@@ -38,6 +38,10 @@ const { data: openClusters, refresh: refreshOpenClusters } = useFetch('/api/fail
 });
 
 // Accepted-but-unwritten scenario gaps older than a week — the Home gaps queue.
+// The queue follows the instance `test-map` state: an instance that declined it
+// hides the card and never fetches it.
+const { isHidden: instCapHidden } = await useInstanceCapabilities();
+const gapsHidden = computed(() => instCapHidden('test-map'));
 interface InboxGap {
   id: number;
   projectId: number;
@@ -47,6 +51,7 @@ interface InboxGap {
 }
 const { data: inboxGaps } = useFetch('/api/gaps/inbox', {
   lazy: true,
+  immediate: !gapsHidden.value,
   default: () => [] as InboxGap[],
   transform: (r: { items: InboxGap[] }) => r.items,
 });
@@ -363,7 +368,7 @@ function statusBorderClass(status: string): string {
 
         <!-- Accepted-but-unwritten scenario gaps — the gaps inbox queue -->
         <SectionCard
-          v-if="inboxGaps.length > 0"
+          v-if="!gapsHidden && inboxGaps.length > 0"
           data-shot="gaps-inbox"
           icon="i-lucide-radar"
           title="Accepted gaps not yet written"

@@ -10,9 +10,10 @@
  */
 
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { graphEdges, graphNodes, probes, testCases } from '../../server/database/schema';
+import { graphEdges, graphNodes, probes, projects, testCases } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import { detectNotHandled, rankFinding, upsertScenarioGaps, type ResilienceSignal } from './scenario-gaps';
+import { resolveProjectStates } from './capabilities';
 import {
   resolveServerProbeSettings,
   serverProbeAllowed,
@@ -377,6 +378,30 @@ export async function buildProbePlan(
   });
 
   return { budget: clientPlan.budget, items: [...clientPlan.items, ...serverItems, ...dependencyItems] };
+}
+
+/**
+ * The probe plan for a project's `GET /probes/plan`, with the level-two server
+ * items gated on the project's resolved `server-probes` state: a project that
+ * declined the capability, or has no backend for it to be applicable, gets the
+ * client plan only. The reporter is not a surface, so the plan itself keeps
+ * working whatever the decisions — this only withholds the server items.
+ */
+export async function buildProbePlanForProject(
+  db: DrizzleDB,
+  projectId: number,
+  options: { budget?: number } = {},
+): Promise<ProbePlan> {
+  const [project] = await db
+    .select({ serverProbes: projects.serverProbes })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  const serverProbesState = (await resolveProjectStates(db, projectId))['server-probes'];
+  const serverProbesOff = serverProbesState === 'declined' || serverProbesState === 'not-applicable';
+  return buildProbePlan(db, projectId, {
+    budget: options.budget,
+    serverProbes: serverProbesOff ? undefined : project?.serverProbes,
+  });
 }
 
 /**

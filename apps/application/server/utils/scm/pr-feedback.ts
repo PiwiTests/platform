@@ -41,6 +41,7 @@ import {
 } from '#shared/pr-feedback';
 import { computeRunChangeCoverage } from './change-coverage';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
+import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { resolveRunBranchTagFromStored } from '../graph-ingest';
 import type { VerifiedFix } from '../fix-verification';
 import type { RunMetadata } from '../run-json-types';
@@ -334,7 +335,14 @@ export async function postRunPrFeedback(
 
   const summary = await buildRunPrSummary(db, runId, siteUrl, fixedClusters);
   if (!summary) return none('could not build the run summary');
-  summary.changeCoverage = changeCoverage;
+
+  // The Test Map surfaces (the "Uncovered changes" section and its commit
+  // status) are dropped when the project declined `test-map`. The graph and its
+  // `changes` edges are still written on ingest — a declined capability that
+  // receives data reads active — this only withholds the PR surfaces.
+  const testMapDeclined = (await resolveProjectStates(db, run.projectId))['test-map'] === 'declined';
+  const effectiveChangeCoverage = testMapDeclined ? null : changeCoverage;
+  summary.changeCoverage = effectiveChangeCoverage;
 
   // `onlyOnFailure` silences routine green runs, but a run that closed a
   // cluster is news — that is the answer somebody was waiting for.
@@ -358,11 +366,15 @@ export async function postRunPrFeedback(
   if (settings.status && commit) {
     statusPosted = await provider.postCommitStatus(commit, buildCommitStatus(summary, settings.statusContext));
     // A second, informational status for change coverage — warn-only.
-    if (changeCoverage) {
+    if (effectiveChangeCoverage) {
       await provider
         .postCommitStatus(
           commit,
-          buildChangeCoverageStatus(changeCoverage, summary.runUrl, `${settings.statusContext}/change-coverage`),
+          buildChangeCoverageStatus(
+            effectiveChangeCoverage,
+            summary.runUrl,
+            `${settings.statusContext}/change-coverage`,
+          ),
         )
         .catch(() => false);
     }

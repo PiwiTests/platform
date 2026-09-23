@@ -4,6 +4,11 @@ const isDesktop = useIsDesktop();
 
 const { data: versionInfo } = await useFetch('/api/version');
 
+// The detector-precision block follows the instance `test-map` state: an
+// instance that declined it hides the block and never fetches it.
+const { isHidden: instCapHidden } = await useInstanceCapabilities();
+const precisionHidden = computed(() => instCapHidden('test-map'));
+
 // Scenario-gap detector precision from triage verdicts, per detector per project.
 interface DetectorPrecisionRow {
   detector: string;
@@ -16,6 +21,7 @@ interface DetectorPrecisionRow {
 // Lazy so the precision query never blocks the About page's first paint.
 const { data: precisionProjects } = useFetch('/api/gaps/precision', {
   lazy: true,
+  immediate: !precisionHidden.value,
   default: () => [] as Array<{ projectId: number; projectName: string; detectors: DetectorPrecisionRow[] }>,
   transform: (r: { items: Array<{ projectId: number; projectName: string; detectors: DetectorPrecisionRow[] }> }) =>
     r.items,
@@ -50,7 +56,11 @@ const dbBackendLabel = computed(() => {
       </StatTileGrid>
     </SectionCard>
 
-    <SectionCard v-if="precisionProjects.length > 0" icon="i-lucide-target" title="Scenario-gap detector precision">
+    <SectionCard
+      v-if="!precisionHidden && precisionProjects.length > 0"
+      icon="i-lucide-target"
+      title="Scenario-gap detector precision"
+    >
       <p class="mb-3 text-sm text-muted">
         From triage verdicts: accepted and covered-by count for a detector, dismissed-as-wrong against. A detector below
         60% over 20+ verdicts mutes itself on that project and drops out of the PR comment first.
