@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@piwitests/instrumentation-nitro": "0.36.0",
-    "@piwitests/reporter": "0.36.0",
+    "@piwitests/instrumentation-nitro": "0.37.0",
+    "@piwitests/reporter": "0.37.0",
     "@playwright/test": "^1.56.1",
     "consola": "^3.4.2",
     "h3": "^1.15.11",
