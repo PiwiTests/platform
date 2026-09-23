@@ -79,6 +79,7 @@ import { inlineCasePayloads } from '../case-payloads';
 import { selectCaseScreenshots } from '../case-screenshots';
 import { createScmProvider } from '../scm';
 import { readChangeCoverage } from '../scm/change-coverage';
+import { isValidGitRef } from '../scm/refs';
 import { listScenarioGaps, draftScenario } from '#shared/handlers/scenario-gaps';
 import { getFeatureGraph } from '../feature-graph';
 import { resolveAiConfig } from '../ai-provider';
@@ -2011,6 +2012,10 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const runId = params.run != null ? numericParam(params.run, 'run') : null;
     const base = typeof params.base === 'string' ? params.base : null;
     const head = typeof params.head === 'string' ? params.head : null;
+    // Refs reach SCM API URLs with the project's token — reject traversal.
+    if ((base != null && !isValidGitRef(base)) || (head != null && !isValidGitRef(head))) {
+      throw new Error('Invalid base or head ref');
+    }
 
     const coverage = await readChangeCoverage(db, projectId, { runId, baseSha: base, headSha: head });
     return dropNulls({

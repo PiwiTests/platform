@@ -1,4 +1,11 @@
-import { ScmProvider, truncatePatch, MAX_SCM_FILES, MAX_FILE_BYTES, FETCH_TIMEOUT_MS } from './ScmProvider';
+import {
+  ScmProvider,
+  truncatePatch,
+  MAX_SCM_FILES,
+  MAX_SCM_FILES_TOTAL,
+  MAX_FILE_BYTES,
+  FETCH_TIMEOUT_MS,
+} from './ScmProvider';
 import type {
   ScmCommitDetail,
   ScmCommitAuthor,
@@ -12,6 +19,7 @@ import type {
   CreatePullRequestInput,
 } from './ScmProvider';
 import { TtlCache } from './cache';
+import { isValidGitRef, encodeGitRef } from './refs';
 import type { CiRerunSettings } from '#shared/ci-rerun';
 
 /** Turn a non-2xx GitLab response into an Error carrying the API's own message. */
@@ -107,13 +115,14 @@ export class GitLabProvider extends ScmProvider {
   }
 
   async fetchChanges(fromSha: string, toSha: string): Promise<ScmChanges | null> {
+    if (!isValidGitRef(fromSha) || !isValidGitRef(toSha)) return null;
     const key = `${this.keyPrefix}:${this.hostname}:${this.repoPath}:${fromSha}:${toSha}`;
     const hit = fetchChangesCache.get(key);
     if (hit !== undefined) return hit;
 
     const projectPath = encodeURIComponent(this.repoPath);
     const res = await fetch(
-      `https://${this.hostname}/api/v4/projects/${projectPath}/repository/compare?from=${fromSha}&to=${toSha}`,
+      `https://${this.hostname}/api/v4/projects/${projectPath}/repository/compare?from=${encodeURIComponent(fromSha)}&to=${encodeURIComponent(toSha)}`,
       { headers: this.makeHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
     );
     if (!res.ok) return null;
@@ -128,9 +137,10 @@ export class GitLabProvider extends ScmProvider {
         renamed_file: boolean;
       }>;
     };
+    const allDiffs = data.diffs ?? [];
     const result: ScmChanges = {
       commits: (data.commits ?? []).map((c) => ({ sha: c.id.slice(0, 7), message: c.message.split('\n')[0] ?? '' })),
-      files: (data.diffs ?? []).slice(0, MAX_SCM_FILES).map((f) => {
+      files: allDiffs.slice(0, MAX_SCM_FILES_TOTAL).map((f) => {
         const { additions, deletions } = countDiffLines(f.diff ?? '');
         return {
           filename: f.new_path || f.old_path,
@@ -140,21 +150,27 @@ export class GitLabProvider extends ScmProvider {
           patch: f.diff ? truncatePatch(f.diff) : undefined,
         };
       }),
+      filesTruncated: allDiffs.length > MAX_SCM_FILES_TOTAL,
+      totalChangedFiles: allDiffs.length,
     };
     fetchChangesCache.set(key, result);
     return result;
   }
 
   async fetchCommitDiff(sha: string): Promise<ScmChanges | null> {
+    if (!isValidGitRef(sha)) return null;
     const key = `${this.keyPrefix}:${this.hostname}:${this.repoPath}:${sha}`;
     const hit = fetchCommitDiffCache.get(key);
     if (hit !== undefined) return hit;
 
     const projectPath = encodeURIComponent(this.repoPath);
-    const res = await fetch(`https://${this.hostname}/api/v4/projects/${projectPath}/repository/commits/${sha}/diff`, {
-      headers: this.makeHeaders(),
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
+    const res = await fetch(
+      `https://${this.hostname}/api/v4/projects/${projectPath}/repository/commits/${encodeURIComponent(sha)}/diff`,
+      {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      },
+    );
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { message?: string };
       throw new Error(body.message ?? `GitLab API error ${res.status}`);
@@ -185,7 +201,7 @@ export class GitLabProvider extends ScmProvider {
   }
 
   async getCommitAuthor(sha: string): Promise<ScmCommitAuthor | null> {
-    if (!sha) return null;
+    if (!isValidGitRef(sha)) return null;
     const key = `${this.keyPrefix}:author:${this.hostname}:${this.repoPath}:${sha}`;
     const hit = commitAuthorCache.get(key);
     if (hit !== undefined) return hit;
@@ -280,6 +296,7 @@ export class GitLabProvider extends ScmProvider {
   }
 
   async fetchFileAtRef(path: string, ref: string): Promise<ScmFileContent | null> {
+    if (!isValidGitRef(ref)) return null;
     const cleanPath = path.replace(/^\//, '');
     const key = `${this.keyPrefix}:file:${this.hostname}:${this.repoPath}:${ref}:${cleanPath}`;
     const hit = fetchFileCache.get(key);
@@ -306,6 +323,7 @@ export class GitLabProvider extends ScmProvider {
   }
 
   async fetchTree(ref: string): Promise<string[] | null> {
+    if (!isValidGitRef(ref)) return null;
     const key = `${this.keyPrefix}:tree:${this.hostname}:${this.repoPath}:${ref}`;
     const hit = fetchTreeCache.get(key);
     if (hit !== undefined) return hit;
@@ -425,12 +443,14 @@ export class GitLabProvider extends ScmProvider {
   }
 
   override async postCommitStatus(sha: string, status: ScmCommitStatus): Promise<boolean> {
-    if (!this.token || !sha) return false;
+    if (!this.token || !isValidGitRef(sha)) return false;
     try {
       // GitLab has no `error` state; it splits GitHub's `failure` into
       // `failed` and `canceled`. Map both non-success states onto `failed`.
       const state = status.state === 'success' ? 'success' : status.state === 'pending' ? 'pending' : 'failed';
-      const url = new URL(`https://${this.hostname}/api/v4/projects/${this.projectPath()}/statuses/${sha}`);
+      const url = new URL(
+        `https://${this.hostname}/api/v4/projects/${this.projectPath()}/statuses/${encodeGitRef(sha)}`,
+      );
       url.searchParams.set('state', state);
       url.searchParams.set('name', status.context);
       url.searchParams.set('description', status.description);

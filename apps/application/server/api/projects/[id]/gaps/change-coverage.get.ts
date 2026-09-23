@@ -1,6 +1,7 @@
 import { requireProjectAccess, requireRouteId } from '../../../../utils/project-access';
 import { getDatabase } from '../../../../database';
 import { readChangeCoverage } from '../../../../utils/scm/change-coverage';
+import { isValidGitRef } from '../../../../utils/scm/refs';
 
 defineRouteMeta({
   openAPI: {
@@ -29,6 +30,12 @@ export default eventHandler(async (event) => {
 
   if (!Number.isFinite(runId) && !(base && head)) {
     throw apiError({ statusCode: 400, message: 'Pass ?run=<id> or ?base=<sha>&head=<sha>' });
+  }
+
+  // Refs go into SCM API URLs with the project's token, so reject anything that
+  // is not a plausible SHA or ref before it can climb out of the repo path.
+  if ((base != null && !isValidGitRef(base)) || (head != null && !isValidGitRef(head))) {
+    throw apiError({ statusCode: 400, message: 'Invalid base or head ref' });
   }
 
   const db = await getDatabase();
