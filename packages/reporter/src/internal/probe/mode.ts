@@ -8,19 +8,20 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { PIWI_PROBE_ENV } from '../config/env.js';
 import { matchProbeItem, type ProbePlan, type ProbePlanItem } from './plan.js';
 
 let planCache: ProbePlan | null | undefined;
 
 /** True when this Playwright run is a probe run. */
 export function isProbeMode(): boolean {
-  return process.env.PIWI_PROBE === '1' || process.env.PIWI_PROBE === 'true';
+  return process.env[PIWI_PROBE_ENV.flag] === '1' || process.env[PIWI_PROBE_ENV.flag] === 'true';
 }
 
 function loadPlan(): ProbePlan | null {
   if (planCache !== undefined) return planCache;
   planCache = null;
-  const path = process.env.PIWI_PROBE_PLAN;
+  const path = process.env[PIWI_PROBE_ENV.plan];
   if (path) {
     try {
       planCache = JSON.parse(fs.readFileSync(path, 'utf8')) as ProbePlan;
@@ -57,6 +58,32 @@ export interface ProbeOutcomeLine {
   fault: string;
   applied: boolean;
   outcome: 'noticed' | 'not-noticed' | 'inconclusive';
+  /** `client` (mutated at the Playwright boundary) or `server` (signed onto the request). */
+  level: 'client' | 'server';
+  /** The dependency a server dependency fault targeted, so its `checks` edge can fire. */
+  dependency: string | null;
+  /** How the application handled a server fault, for resilience findings; `n/a` for client faults. */
+  handled: string;
+}
+
+/** The resilience signals the probe collected while a server fault was applied. */
+export interface ProbeResilienceSignals {
+  /** Console errors logged during the probed test. */
+  consoleErrors: number;
+  /** Dialogs (alert/confirm/prompt) opened during the probed test. */
+  dialogs: number;
+  /** A backend error (5xx / error root span) rode back in the probe response's trace. */
+  backendError: boolean;
+}
+
+/**
+ * Classify how the application handled a server fault from the signals the probe
+ * collected: a visible degradation (a console error, a dialog, or a backend
+ * error) is `degraded`, anything else `graceful`. Client faults never reach here
+ * — their line records `n/a`.
+ */
+export function classifyProbeHandled(signals: ProbeResilienceSignals): 'graceful' | 'degraded' {
+  return signals.consoleErrors > 0 || signals.dialogs > 0 || signals.backendError ? 'degraded' : 'graceful';
 }
 
 /**
@@ -71,7 +98,7 @@ export function outcomeFromStatus(status: string | undefined, applied: boolean):
 
 /** Append one probe outcome to the results file, best-effort (JSON lines). */
 export function recordProbeOutcome(line: ProbeOutcomeLine): void {
-  const path = process.env.PIWI_PROBE_RESULTS;
+  const path = process.env[PIWI_PROBE_ENV.results];
   if (!path) return;
   try {
     fs.appendFileSync(path, `${JSON.stringify(line)}\n`);

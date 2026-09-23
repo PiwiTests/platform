@@ -144,8 +144,12 @@ reporter picks the Nth match and signs that one request, so the fault applies to
 any request the header matches and the single-use nonce keeps it from repeating.
 Data mutation before serialization and dependency faults on outbound
 `HttpClient` calls are the Nitro package's fuller subset; they need response
-buffering and a delegating handler this package does not yet wire, so they are not
-applied here. The applied fault is recorded on `HttpContext.Items["PiwiProbeApplied"]`.
+buffering and a delegating handler this package does not yet wire, so they are
+**not applied here and never marked applied** — a probe naming one records as
+inconclusive rather than a false gap. A fault is marked applied
+(`HttpContext.Items["PiwiProbeApplied"]`) only once it actually takes effect, and
+that label is reported to the reporter on the response's `X-Piwi-Trace` root span
+(`piwi.probe.applied`), which the reporter compares with the fault it asked for.
 
 **Header format.** `X-Piwi-Probe` carries a base64-encoded JSON envelope, the
 same scheme as the Nitro package:
@@ -162,13 +166,18 @@ same scheme as the Nitro package:
 A verified spec is stored in `HttpContext.Items["PiwiProbe"]`. Verification lives
 in `PiwiProbe.Verify`; `PiwiProbe.Sign` produces a matching signature.
 
-> **Scope note.** This package emits only the `X-Piwi-Logs` header today; it does
-> not yet emit server spans (`X-Piwi-Trace`), so the root-span handler-source
-> field the Nitro package adds — and the applied-fault reporting the dashboard
-> reads to record an inconclusive probe — do not apply here yet. The handler-level
-> fault application above (`PiwiProbeFaults`) is the honest subset. Both it and the
-> `X-Piwi-Probe` verification were authored but **not compiled in this
-> environment** (no .NET SDK available); build with `dotnet build` before release.
+> **Single-use nonces are tracked per process** (`ProbeNonceCache`), so the replay
+> guard is exact only against one server instance — a header replayed to a
+> different instance behind a load balancer, or after a restart, is bounded only
+> by the signature and the 60s TTL. Probe runs target a single instance, so this
+> is not a concern in practice.
+
+> **Scope note.** For a verified probe request this package emits an `X-Piwi-Trace`
+> header whose root span names the applied fault (`piwi.probe.applied`), alongside
+> `X-Piwi-Logs`. It does not yet apply data mutation or dependency faults (see the
+> honest subset above). The middleware and `X-Piwi-Probe` verification are authored
+> but **not compiled in this environment** (no .NET SDK available); build with
+> `dotnet build` before release.
 
 ## License
 

@@ -382,3 +382,24 @@ jobs:
       # only way base-path, worker-scope and demo-handler breakage shows up.
       - name: Check the built demo actually runs
         run: npm run app:check:demo:runtime
+
+  aspnet:
+    name: Build ASP.NET instrumentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.x'
+
+      # Compile-only. The NuGet package is packed and published from a release
+      # tag by publish-nuget.yml; this proves the instrumentation still compiles
+      # on every pull request without paying for a pack.
+      - name: Build
+        working-directory: ./integrations/aspnetcore/PiwiTests.Instrumentation.AspNetCore
+        run: dotnet build -c Release

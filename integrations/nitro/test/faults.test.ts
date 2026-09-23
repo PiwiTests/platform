@@ -47,6 +47,16 @@ describe('mutateResponseBody', () => {
     expect(mutateResponseBody('data', 5)).toBe(5);
     expect(mutateResponseBody('drop-field', {})).toEqual({});
   });
+
+  it('returns the same reference for a no-op, so the plugin can detect it did nothing', () => {
+    // `data` cannot null a field of an array, so the body is returned unchanged.
+    // The plugin marks the fault applied only when the reference actually changes,
+    // so this no-op records as inconclusive rather than a false gap.
+    const arr = [{ a: 1 }];
+    expect(mutateResponseBody('data', arr)).toBe(arr);
+    const empty = {};
+    expect(mutateResponseBody('drop-field', empty)).toBe(empty);
+  });
 });
 
 describe('route matching (the whole server-side selector)', () => {

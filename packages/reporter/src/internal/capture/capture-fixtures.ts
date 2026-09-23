@@ -39,8 +39,19 @@ import {
   type FailedLocatorInfo,
 } from './locator-healing.js';
 import { ATTACHMENT_NAMES, LOCATOR_SUGGESTION_ANNOTATION, USER_PICK_ANNOTATION } from './attachments.js';
-import { capPageInventory, inventoryPageKey, type RawPageInventory } from './page-inventory.js';
-import { isProbeMode, probeItemForTest, recordProbeOutcome, outcomeFromStatus } from '../probe/mode.js';
+import {
+  capPageInventory,
+  collectPageInventoryInPage,
+  inventoryPageKey,
+  type RawPageInventory,
+} from './page-inventory.js';
+import {
+  isProbeMode,
+  probeItemForTest,
+  recordProbeOutcome,
+  outcomeFromStatus,
+  classifyProbeHandled,
+} from '../probe/mode.js';
 import { installProbeInterception, type ProbeInterception } from '../probe/interception.js';
 import type { ProbePlanItem } from '../probe/plan.js';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
@@ -189,12 +200,10 @@ interface CaptureSink {
   // the healing, clue and page-diff paths that read a tree; the YAML above feeds
   // the ARIA card.
   stashedAriaJson: string | null;
-  // The controls and links present on the last active page at test end, stashed
-  // for passing tests so the graph learns the suite's exposed surface.
-  stashedPageInventory: RawPageInventory | null;
-  // One inventory per page the test settled on during the run, each stamped with
-  // its settle time, so the dashboard can attribute a request to the page that
-  // was current when it started rather than to the end-of-test page.
+  // One window per URL the test navigated to, each stamped with its settle time,
+  // so the dashboard can attribute a request to the page that was current when it
+  // started rather than to the end-of-test page. Controls/links are filled at
+  // most once per page key per worker; revisits keep a content-less window.
   pageInventories: RawPageInventory[];
   // The probe plan item for this test (probe mode only), and the interception
   // handle once installed, so the outcome can be recorded at teardown.
@@ -223,7 +232,6 @@ function createSink(): CaptureSink {
     stashedPageState: null,
     stashedAria: null,
     stashedAriaJson: null,
-    stashedPageInventory: null,
     pageInventories: [],
     probeItem: null,
     probeInterception: null,
@@ -516,105 +524,86 @@ const inventoriedPageKeys = new Set<string>();
  */
 const PAGE_INVENTORY_IN_PAGE_CAP = 2000;
 
+/** How long the in-page inventory read may run before it is abandoned. */
+const PAGE_INVENTORY_EVAL_TIMEOUT_MS = 2000;
+
+/**
+ * The most page windows kept per test. Windows are recorded on every URL change,
+ * so a navigation-heavy SPA test cannot grow the attachment without bound.
+ */
+const MAX_PAGE_INVENTORY_WINDOWS = 64;
+
+/** Reject a promise after `ms` so a hung in-page read never wedges the capture. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('page inventory read timed out')), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 /**
  * Read the interactive controls (role + accessible name) and links (name +
- * href) on the page. Values are never read — only names and hrefs. Runs a single
- * in-page pass with a shared entry budget, so a table of hundreds of rows cannot
- * blow up the payload. Returns null when the page cannot be read.
+ * href) on the page. Values are never read — only names and hrefs (see
+ * {@link collectPageInventoryInPage}). Runs a single in-page pass with a shared
+ * entry budget and a timeout, so a table of hundreds of rows or a hung page
+ * cannot blow up or stall the capture. Returns null when the page cannot be read.
  */
 async function readPageInventory(page: Page): Promise<RawPageInventory | null> {
   try {
-    const inventory = await page.evaluate((maxEntries): RawPageInventory | null => {
-      const g = globalThis as any;
-      const doc = g.document;
-      if (!doc || !g.location) return null;
-      const clean = (s: string | null | undefined): string => (s || '').replace(/\s+/g, ' ').trim().slice(0, 120);
-      const roleOf = (el: any): string => {
-        const explicit = el.getAttribute('role');
-        if (explicit) return explicit.toLowerCase();
-        const tag = (el.tagName || '').toLowerCase();
-        if (tag === 'a') return el.getAttribute('href') != null ? 'link' : 'generic';
-        if (tag === 'button') return 'button';
-        if (tag === 'select') return el.hasAttribute('multiple') ? 'listbox' : 'combobox';
-        if (tag === 'textarea') return 'textbox';
-        if (tag === 'input') {
-          const type = (el.getAttribute('type') || 'text').toLowerCase();
-          const map: Record<string, string> = {
-            checkbox: 'checkbox',
-            radio: 'radio',
-            button: 'button',
-            submit: 'button',
-            reset: 'button',
-            image: 'button',
-            range: 'slider',
-            search: 'searchbox',
-            email: 'textbox',
-            tel: 'textbox',
-            url: 'textbox',
-            number: 'spinbutton',
-          };
-          return map[type] || 'textbox';
-        }
-        return 'generic';
-      };
-      const labelText = (el: any): string => {
-        const labels = el.labels;
-        if (!labels || labels.length === 0) return '';
-        let text = '';
-        for (const label of labels) text += ` ${label.textContent || ''}`;
-        return text;
-      };
-      // The accessible name never reads a control's `value`: form values are
-      // deliberately never shipped to the dashboard.
-      const nameOf = (el: any): string =>
-        clean(
-          el.getAttribute('aria-label') ||
-            el.textContent ||
-            labelText(el) ||
-            el.getAttribute('placeholder') ||
-            el.getAttribute('title') ||
-            el.getAttribute('alt'),
-        );
-
-      const controls: Array<{ role: string; name: string }> = [];
-      const links: Array<{ name: string; href: string }> = [];
-      const seenC = new Set<string>();
-      const seenL = new Set<string>();
-      let budget = maxEntries;
-
-      const controlSelector =
-        'button, [role="button"], input, select, textarea, [role="checkbox"], [role="radio"], [role="tab"], [role="menuitem"], [role="combobox"], [role="switch"], [role="slider"], [role="searchbox"], [role="spinbutton"], [role="textbox"], [role="listbox"]';
-      for (const el of Array.from(doc.querySelectorAll(controlSelector)) as any[]) {
-        if (budget <= 0) break;
-        const role = roleOf(el);
-        const name = nameOf(el);
-        if (!name) continue;
-        const key = `${role}\u0000${name}`;
-        if (seenC.has(key)) continue;
-        seenC.add(key);
-        controls.push({ role, name });
-        budget--;
-      }
-      for (const el of Array.from(doc.querySelectorAll('a[href]')) as any[]) {
-        if (budget <= 0) break;
-        const name = nameOf(el);
-        const href = el.getAttribute('href') || '';
-        if (!name) continue;
-        const key = `${name}\u0000${href}`;
-        if (seenL.has(key)) continue;
-        seenL.add(key);
-        links.push({ name, href });
-        budget--;
-      }
-
-      return { url: g.location.href, controls, links };
-    }, PAGE_INVENTORY_IN_PAGE_CAP);
+    const inventory = await withTimeout(
+      page.evaluate(collectPageInventoryInPage, PAGE_INVENTORY_IN_PAGE_CAP),
+      PAGE_INVENTORY_EVAL_TIMEOUT_MS,
+    );
     // Stamp the settle time so a request can be attributed to the page current
     // when it started, rather than to whichever page the test ended on.
     return inventory ? { ...inventory, capturedAt: Date.now() } : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Record the page current on a URL change as an attribution window. The window's
+ * settle time is always kept, so a request can be attributed to the page current
+ * when it started. The expensive controls/links read runs at most once per page
+ * key per worker ({@link inventoriedPageKeys}); a revisited or already-inventoried
+ * page records a content-less window, which still cuts the attribution boundary.
+ */
+async function recordPageWindow(sink: CaptureSink, page: Page): Promise<void> {
+  if (sink.pageInventories.length >= MAX_PAGE_INVENTORY_WINDOWS) return;
+  let url: string;
+  try {
+    url = page.url();
+  } catch {
+    return;
+  }
+  if (!url || url.startsWith('about:')) return;
+  const key = inventoryPageKey(url);
+  const capturedAt = Date.now();
+
+  if (sink.pageInventories.length >= MAX_PAGE_INVENTORY_WINDOWS) return;
+  if (key && !inventoriedPageKeys.has(key)) {
+    inventoriedPageKeys.add(key);
+    const content = await readPageInventory(page);
+    if (sink.pageInventories.length >= MAX_PAGE_INVENTORY_WINDOWS) return;
+    sink.pageInventories.push({
+      url: content?.url ?? url,
+      controls: content?.controls ?? [],
+      links: content?.links ?? [],
+      capturedAt,
+    });
+    return;
+  }
+  sink.pageInventories.push({ url, controls: [], links: [], capturedAt });
 }
 
 /**
@@ -659,10 +648,10 @@ async function stashPageState(sink: CaptureSink, closing: { page?: Page; context
     await sampleAria();
   }
 
-  // Inventory the passing page's controls and links while it is still open.
-  if (status === 'passed' && process.env.PIWI_CAPTURE_PAGE_INVENTORY !== 'false') {
-    const inventory = await readPageInventory(page);
-    if (inventory) sink.stashedPageInventory = inventory;
+  // Record the passing page as a final attribution window while it is still open,
+  // in case the test closed it before teardown could read it.
+  if (status === 'passed' && process.env.PIWI_CAPTURE_PAGE_INVENTORY === 'true') {
+    await recordPageWindow(sink, page);
   }
 }
 
@@ -1182,20 +1171,19 @@ function instrumentPage(page: Page): void {
     }
   }
 
-  // Inventory each page as it settles, so the graph can attribute a request to
-  // the page current when it started. Best-effort: a failed read is skipped, and
-  // only passing runs keep the inventory (decided at teardown).
-  if (typeof page.on === 'function' && process.env.PIWI_CAPTURE_PAGE_INVENTORY !== 'false') {
-    page.on('load', () => {
+  // Cut an attribution window on every URL change, so the graph can attribute a
+  // request to the page current when it started. `framenavigated` fires on both
+  // full loads and same-document (SPA) navigations, where the `load` event never
+  // fires — so a client-routed page still gets its own window. Off by default:
+  // the reporter opts in via PIWI_CAPTURE_PAGE_INVENTORY=true. Best-effort: a
+  // failed read is skipped, and only passing runs keep the inventory (teardown).
+  if (typeof page.on === 'function' && process.env.PIWI_CAPTURE_PAGE_INVENTORY === 'true') {
+    page.on('framenavigated', (frame) => {
       const sink = currentSink;
-      if (!sink) return;
-      void readPageInventory(page)
-        .then((inventory) => {
-          if (inventory && currentSink === sink) sink.pageInventories.push(inventory);
-        })
-        .catch(() => {
-          /* an inventory read failure must never affect the test */
-        });
+      if (!sink || frame !== page.mainFrame()) return;
+      void recordPageWindow(sink, page).catch(() => {
+        /* an inventory read failure must never affect the test */
+      });
     });
   }
 
@@ -1572,27 +1560,20 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
     }
   }
 
-  // Page inventory (controls and links) on passing runs only. Every page the
-  // test settled on is attached, each with its settle time, so the dashboard can
-  // attribute a request to the page current when it started. A live read of the
-  // still-open end page is preferred over its stashed copy. Skipped per URL when
-  // this worker already inventoried the page this run.
-  if (testInfo.status === 'passed' && process.env.PIWI_CAPTURE_PAGE_INVENTORY !== 'false') {
-    const finalInventory = (pageReadable ? await readPageInventory(page) : null) ?? sink.stashedPageInventory;
-    // Earliest settle per URL wins, so a page's navigation window starts when it
-    // first settled; the entries stay in settle order for the dashboard.
-    const byUrl = new Map<string, RawPageInventory>();
-    for (const inv of [...sink.pageInventories, ...(finalInventory ? [finalInventory] : [])]) {
-      const key = inventoryPageKey(inv.url);
-      if (!key || byUrl.has(key)) continue;
-      byUrl.set(key, inv);
-    }
-    const entries = [...byUrl.entries()].filter(([key]) => !inventoriedPageKeys.has(key));
-    if (entries.length > 0) {
-      for (const [key] of entries) inventoriedPageKeys.add(key);
+  // Page inventory (controls and links) on passing runs only. Every window the
+  // test recorded is attached in settle order, each with its settle time, so the
+  // dashboard can attribute a request to the page current when it started — a
+  // revisited page keeps its own window rather than being deduped away. The
+  // still-open end page is recorded once more so a no-navigation test (and the
+  // final page state) is captured; its controls/links are read at most once per
+  // page key per worker.
+  if (testInfo.status === 'passed' && process.env.PIWI_CAPTURE_PAGE_INVENTORY === 'true') {
+    if (pageReadable) await recordPageWindow(sink, page);
+    const windows = sink.pageInventories.slice(0, MAX_PAGE_INVENTORY_WINDOWS).map((inv) => capPageInventory(inv));
+    if (windows.length > 0) {
       await testInfo.attach(ATTACHMENT_NAMES.pageInventory, {
         contentType: 'application/json',
-        body: Buffer.from(JSON.stringify(entries.map(([, inv]) => capPageInventory(inv)))),
+        body: Buffer.from(JSON.stringify(windows)),
       });
     }
   }
@@ -1664,12 +1645,29 @@ export const piwiFixtures: Fixtures<
         // Record the probe outcome (this test noticed the fault iff it failed)
         // before flushing the rest of the capture.
         if (sink.probeItem) {
+          const applied = sink.probeInterception?.applied() ?? false;
+          const level = sink.probeItem.level ?? 'client';
+          // `handled` classifies a server fault for the resilience findings, from
+          // the console/dialog signals this test collected plus the backend error
+          // the probe response's trace carried. Client faults never reach the
+          // server, so they record `n/a`.
+          const handled =
+            level === 'server'
+              ? classifyProbeHandled({
+                  consoleErrors: sink.consoleEntries.filter((e) => e.type === 'error').length,
+                  dialogs: sink.dialogs.length,
+                  backendError: sink.probeInterception?.serverError() ?? false,
+                })
+              : 'n/a';
           recordProbeOutcome({
             testCaseId: sink.probeItem.testCaseId,
             routeKey: sink.probeItem.routeKey,
             fault: sink.probeItem.fault,
-            applied: sink.probeInterception?.applied() ?? false,
-            outcome: outcomeFromStatus(testInfo.status, sink.probeInterception?.applied() ?? false),
+            applied,
+            outcome: outcomeFromStatus(testInfo.status, applied),
+            level,
+            dependency: sink.probeItem.dependency ?? null,
+            handled,
           });
         }
         await flushSink(sink, testInfo);

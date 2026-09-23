@@ -4,9 +4,9 @@ Nitro / Nuxt server plugin for [Piwi Dashboard](https://piwitests.dev) — captu
 
 During a Playwright test run, the reporter reads this header from every response and stores the entries alongside the network request. The entries are then available in the Piwi Dashboard test-case view and are included in the AI diagnosis context.
 
-**Active outside production by default.** Capture is controlled by the `PIWI_TEST_LOGS_DISABLED` environment variable:
+**Active in development and test only, by default.** Capture and probe verification run only outside production, using the same Development/Test allow-list as the ASP.NET package. Controlled by the `PIWI_TEST_LOGS_DISABLED` environment variable:
 
-- unset — capture is on, except when `NODE_ENV === 'production'`
+- unset — capture is on when `NODE_ENV` is unset, `development`, or `test`; off for any other value (`production`, `staging`, `prod`, …)
 - `PIWI_TEST_LOGS_DISABLED=true` — capture is off everywhere
 - `PIWI_TEST_LOGS_DISABLED=false` — capture is on even in production builds (useful for a production-mode test deployment)
 
@@ -118,6 +118,13 @@ that is the signal the suite has false comfort the network boundary cannot revea
 after the signature check, so no canonicalization is needed). A verified spec is
 exposed on `event.context._piwiProbe` for future handler use. The signing and
 verification helpers are exported (`signProbeMessage`, `verifyProbeHeader`).
+
+> **Single-use nonces are tracked per process.** The plugin remembers honored
+> nonces in memory to reject replays within the 60s TTL, so a header replayed to a
+> *different* instance behind a load balancer — or after a restart — is not
+> caught by the nonce check (the TTL and signature still bound it). Probe runs
+> target a single instance, so this is not a concern in practice; run the probed
+> server as one instance if you need the replay guard to be exact.
 
 The root request span also carries the matched handler's source file as
 `attrs['piwi.handler']` when Nitro exposes it, so the dashboard can attribute a

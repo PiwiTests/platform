@@ -29,6 +29,12 @@ export function signProbeMessage(secret: string, nonce: string, ts: number, spec
  * Build the base64 `X-Piwi-Probe` header value for a spec, signed with the shared
  * secret. Each call uses a fresh nonce and the current timestamp, so the header
  * is single-use and short-lived (the instrumentation enforces a 60s TTL).
+ *
+ * Single-use is enforced by a per-process nonce cache in the instrumentation, so
+ * the replay guard is exact only against one server instance: a header replayed
+ * to a different instance (behind a load balancer) or after a restart is bounded
+ * only by the signature and the TTL. Probe runs target a single instance, so
+ * this is not a concern in practice.
  */
 export function buildProbeHeader(secret: string, spec: ServerProbeSpec, now: number = Date.now()): string {
   const nonce = randomBytes(8).toString('hex');

@@ -56,6 +56,12 @@ Some data is skipped at the source, so it never exists to leak:
 
 - **Input values.** The [capture fixtures](./capture-fixtures) record what an element *is* — role,
   accessible name, test id — never what was typed into it. A password field's value is never captured.
+- **Page-inventory field contents.** The optional [page inventory](./reporter#configuration-options)
+  (`capturePageInventory`, **off by default**) records the names of a page's controls and links so the
+  dashboard can tell which the suite never exercises. The name of a control that holds user input — a
+  textbox, `select`, `textarea` or contenteditable editor — is never read from its content, so a
+  recovery code, a draft, or a set of options never leaves the browser; link hrefs are stripped of their
+  query and hash, which can carry signed tokens.
 - **Storage and cookie values.** Page state records the *names* of `localStorage` /`sessionStorage`
   keys and their value lengths, and cookie names with their flags. Never the values.
 - **Sensitive headers.** `Authorization`, `Cookie` and friends are masked server-side in the trace

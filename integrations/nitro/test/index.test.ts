@@ -1,7 +1,20 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { gunzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp, eventHandler, toNodeListener } from 'h3';
+
+/** Decode the root-span `piwi.probe.applied` attribute from an X-Piwi-Trace header. */
+function appliedFaultFromTrace(header: string | null): string | undefined {
+  if (!header) return undefined;
+  const spans = JSON.parse(gunzipSync(Buffer.from(header, 'base64')).toString('utf8')) as Array<{
+    parentId?: string;
+    attrs?: Record<string, unknown>;
+  }>;
+  const root = spans.find((s) => !s.parentId);
+  const applied = root?.attrs?.['piwi.probe.applied'];
+  return applied != null ? String(applied) : undefined;
+}
 
 /**
  * Drive the wrapped h3 handler the way Nitro's node entry does — through
@@ -97,6 +110,53 @@ describe('piwiTestLogs wrapped handler (through toNodeListener)', () => {
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ items: 1 });
       expect(res.headers.get('x-piwi-trace')).toBeTruthy();
+    });
+  });
+
+  it('names the applied fault on the trace when a status fault takes effect', async () => {
+    const mod = await loadWithEnv({
+      PIWI_PROBE_SECRET: SECRET,
+      PIWI_SERVER_PROBES: 'true',
+      PIWI_TEST_LOGS_DISABLED: 'false',
+      NODE_ENV: 'test',
+    });
+    const app = createApp();
+    app.use(
+      '/api/orders',
+      eventHandler(() => ({ ok: true })),
+    );
+    mod.default({ h3App: app, hooks: { hook: () => {} } } as never);
+
+    await withServer(app, async (base) => {
+      const header = signHeader(mod, { route: 'POST /api/orders', fault: 'status' }, Date.now(), 'status-nonce');
+      const res = await fetch(`${base}/api/orders`, { method: 'POST', headers: { 'x-piwi-probe': header } });
+      expect(res.status).toBe(500);
+      expect(appliedFaultFromTrace(res.headers.get('x-piwi-trace'))).toBe('status');
+    });
+  });
+
+  it('does not mark an unimplemented (replay) fault applied', async () => {
+    const mod = await loadWithEnv({
+      PIWI_PROBE_SECRET: SECRET,
+      PIWI_SERVER_PROBES: 'true',
+      PIWI_TEST_LOGS_DISABLED: 'false',
+      NODE_ENV: 'test',
+    });
+    const app = createApp();
+    app.use(
+      '/api/orders',
+      eventHandler(() => ({ ok: true })),
+    );
+    mod.default({ h3App: app, hooks: { hook: () => {} } } as never);
+
+    await withServer(app, async (base) => {
+      const header = signHeader(mod, { route: 'POST /api/orders', fault: 'replay' }, Date.now(), 'replay-nonce');
+      const res = await fetch(`${base}/api/orders`, { method: 'POST', headers: { 'x-piwi-probe': header } });
+      // The route matched but `replay` is not implemented: the request passes
+      // through unchanged and the trace carries no applied marker (inconclusive).
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true });
+      expect(appliedFaultFromTrace(res.headers.get('x-piwi-trace'))).toBeUndefined();
     });
   });
 });

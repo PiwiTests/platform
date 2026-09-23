@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import type { PlaywrightTestConfig } from '@playwright/test';
 import { applyOptionsToEnv, readBool, PIWI_ENV_KEYS, PIWI_DEFAULTED_CAPTURE_ENV } from '../internal/config/env.js';
+import { isProbeMode } from '../internal/probe/mode.js';
 import type { PiwiDashboardOptions } from './options.js';
 
 const PIWI_MODULE = '@piwitests/reporter';
@@ -186,6 +187,11 @@ export function wrapConfig<T extends PlaywrightTestConfig>(config: T, piwiOption
   const forwarded: Record<string, unknown> = {};
   const failOnFlaky = piwiOptions?.failOnFlakyTests ?? readBool(process.env[PIWI_ENV_KEYS.failOnFlakyTests]);
   if (failOnFlaky === true) forwarded.failOnFlakyTests = true;
+
+  // A probe run replays each passing test once to see whether it notices an
+  // injected fault. A retry would re-run the test after it "noticed" (failed),
+  // muddying the outcome and doubling the run, so retries are forced off.
+  if (isProbeMode()) forwarded.retries = 0;
 
   // Default the Playwright capture options that unlock trace-derived evidence
   // without the fixtures. `use` is only overridden when a default was actually

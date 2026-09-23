@@ -15,7 +15,9 @@ const DEFAULTS: PiwiDashboardOptions = {
   collectPerformanceMetrics: true,
   captureLocators: true,
   capturePageState: true,
-  capturePageInventory: true,
+  // Off by default: the page inventory reads control and link names from every
+  // visited page, so it stays opt-in until a project turns it on.
+  capturePageInventory: false,
   captureServerTraces: true,
   sampleAriaOnPass: true,
   uploadManifest: true,
@@ -101,6 +103,22 @@ export const PIWI_SELECTION_ENV = {
   version: 'PIWI_SELECTION_VERSION',
   hash: 'PIWI_SELECTION_HASH',
   count: 'PIWI_SELECTION_COUNT',
+} as const;
+
+/**
+ * Env vars a `piwi probe` run sets on the Playwright child process so the
+ * capture fixtures run in probe mode. Not options — the probe CLI writes them and
+ * the probe module reads them directly:
+ *  - `flag` marks the run as a probe run;
+ *  - `plan` / `results` point at the plan file and the JSONL outcomes file;
+ *  - `secret` is the shared HMAC secret a server-level fault signs the
+ *    `X-Piwi-Probe` header with.
+ */
+export const PIWI_PROBE_ENV = {
+  flag: 'PIWI_PROBE',
+  plan: 'PIWI_PROBE_PLAN',
+  results: 'PIWI_PROBE_RESULTS',
+  secret: 'PIWI_PROBE_SECRET',
 } as const;
 
 export function readBool(val: string | undefined): boolean | undefined {
