@@ -26,7 +26,7 @@ use tauri_plugin_shell::ShellExt as _;
 
 use crate::node_path;
 use crate::runner::{
-    linked_folder, resolve_playwright_cli, validate_args, Job, LinkRecord, LocalRuns,
+    linked_folder, resolve_playwright_cli, validate_args, Job, JobChild, LinkRecord, LocalRuns,
     RunEventPayload, RUN_EVENT,
 };
 
@@ -532,7 +532,14 @@ fn run_std_streaming(
             return None;
         }
     };
-    record_pid(app, id, Some(child.id()));
+    record_child(
+        app,
+        id,
+        Some(JobChild {
+            pid: child.id(),
+            interruptible: false,
+        }),
+    );
 
     if let Some(out) = child.stdout.take() {
         let app = app.clone();
@@ -553,7 +560,7 @@ fn run_std_streaming(
         });
     }
     let code = child.wait().ok().and_then(|s| s.code());
-    record_pid(app, id, None);
+    record_child(app, id, None);
     code
 }
 
@@ -585,7 +592,14 @@ async fn run_sidecar_streaming(
             return None;
         }
     };
-    record_pid(app, id, Some(child.pid()));
+    record_child(
+        app,
+        id,
+        Some(JobChild {
+            pid: child.pid(),
+            interruptible: true,
+        }),
+    );
     let mut code = None;
     while let Some(event) = rx.recv().await {
         match event {
@@ -609,15 +623,15 @@ async fn run_sidecar_streaming(
             _ => {}
         }
     }
-    record_pid(app, id, None);
+    record_child(app, id, None);
     code
 }
 
-/// Record (or clear) the pid of the child currently running for a job, so stop
-/// and app-quit can tree-kill exactly what is live.
-fn record_pid(app: &AppHandle, id: u32, pid: Option<u32>) {
+/// Record (or clear) the child currently running for a job, so stop and
+/// app-quit reach exactly what is live.
+fn record_child(app: &AppHandle, id: u32, child: Option<JobChild>) {
     if let Some(runs) = app.try_state::<LocalRuns>() {
-        runs.set_job_pid(id, pid);
+        runs.set_job_child(id, child);
     }
 }
 
@@ -711,7 +725,7 @@ pub async fn desktop_reproduce_here(
         id,
         Job {
             stop: stop.clone(),
-            pid: Arc::new(Mutex::new(None)),
+            child: Arc::new(Mutex::new(None)),
             cleanup: Cleanup {
                 git: git.clone(),
                 folder: folder.clone(),
@@ -839,7 +853,7 @@ pub async fn desktop_bisect_here(
         id,
         Job {
             stop: stop.clone(),
-            pid: Arc::new(Mutex::new(None)),
+            child: Arc::new(Mutex::new(None)),
             cleanup: Cleanup {
                 git: git.clone(),
                 folder: folder.clone(),

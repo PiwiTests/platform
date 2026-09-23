@@ -133,6 +133,7 @@ const PHASE_LABEL: Record<LocalRunPhase, string> = {
 
 /** Live label for a running run — test counts when Playwright announced them. */
 export function localRunProgressLabel(run: LocalRun): string {
+  if (run.stopRequested) return 'Stopping…';
   if (run.kind === 'bisect' && run.bisect) {
     const { step, stepsEstimate, candidates } = run.bisect;
     const current = candidates.findLast((c) => c.verdict === 'testing');
@@ -188,6 +189,11 @@ interface LocalRunEventPayload {
 
 /** Output lines kept per run — a soak run can produce hundreds of thousands. */
 const MAX_LINES = 2000;
+/**
+ * How long after a stop request a run's step counts as over even with no exit
+ * event: the shell's grace period before it kills the process, plus a margin.
+ */
+const STOP_EXIT_FALLBACK_MS = 15_000;
 /** Finished runs kept in the tray; running ones are never dropped. */
 const MAX_FINISHED = 15;
 const OPTIONS_STORAGE_KEY = 'piwi:desktop-local-run-options';
@@ -741,6 +747,12 @@ export function useDesktopLocalRuns() {
     });
   }
 
+  /**
+   * Stop a run as Ctrl+C would: the shell asks the process to wind down, so
+   * Playwright reports the run as interrupted, and kills it after a grace
+   * period. The run stays `running` (labelled "Stopping…") until the process
+   * exits; calling this again kills it at once.
+   */
   async function stopRun(run: LocalRun) {
     if (run.status !== 'running') return;
     run.stopRequested = true;
@@ -750,10 +762,10 @@ export function useDesktopLocalRuns() {
       try {
         await core.invoke('desktop_stop_local_tests', { runId: shellId });
       } catch {
-        // The process already exited between the check and the kill.
+        // The process already exited between the check and the stop.
       }
-      // Unblock the awaited step even if no exit event follows the kill.
-      exitResolvers.get(shellId)?.(null);
+      // Unblock the awaited step even if no exit event ever arrives.
+      setTimeout(() => exitResolvers.get(shellId)?.(null), STOP_EXIT_FALLBACK_MS);
     }
   }
 

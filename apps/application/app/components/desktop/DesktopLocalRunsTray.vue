@@ -44,7 +44,7 @@ function duration(run: LocalRun): string {
 function badge(run: LocalRun): { label: string; color: 'info' | 'success' | 'error' | 'neutral' } {
   switch (run.status) {
     case 'running':
-      return { label: localRunProgressLabel(run), color: 'info' };
+      return { label: localRunProgressLabel(run), color: run.stopRequested ? 'neutral' : 'info' };
     case 'passed':
       return { label: 'Passed', color: 'success' };
     case 'failed':
@@ -108,8 +108,13 @@ const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'
               {{ run.steps[run.stepIndex]?.display }}
             </code>
             <span class="text-xs text-muted tabular-nums shrink-0">{{ duration(run) }}</span>
+            <UTooltip v-if="run.status === 'running' && run.stopRequested" text="Kill the process without waiting">
+              <UButton size="xs" color="error" variant="solid" icon="i-lucide-square" @click="store.stopRun(run)">
+                Force stop
+              </UButton>
+            </UTooltip>
             <UButton
-              v-if="run.status === 'running'"
+              v-else-if="run.status === 'running'"
               size="xs"
               color="error"
               variant="soft"
