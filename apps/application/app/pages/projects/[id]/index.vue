@@ -772,7 +772,7 @@ const moreMenuItems = computed(() => {
             <button
               type="button"
               class="hover:underline tabular-nums"
-              :class="clustersCount.open > 0 ? 'text-red-600 dark:text-red-400' : ''"
+              :class="clustersCount.open > 0 ? STATUS_PALETTE.failed.text : ''"
               @click="goToTab('failures', 'clusters')"
             >
               {{ clustersCount.open }} open {{ clustersCount.open === 1 ? 'cluster' : 'clusters' }}
@@ -781,7 +781,7 @@ const moreMenuItems = computed(() => {
             <button
               type="button"
               class="hover:underline tabular-nums"
-              :class="(flakyCount ?? 0) > 0 ? 'text-amber-600 dark:text-amber-400' : ''"
+              :class="(flakyCount ?? 0) > 0 ? STATUS_PALETTE.flaky.text : ''"
               @click="goToTab('failures', 'flaky')"
             >
               {{ flakyCount ?? 0 }} flaky

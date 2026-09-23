@@ -9,7 +9,7 @@
  * Runs here are the app's *live* runs — every run reported into the app (from
  * CI, a terminal, or the desktop's own "Run locally"), not just ones launched
  * from the app. The desktop plugin (`desktop-run-progress.client.ts`) streams
- * them from `/api/desktop/live-runs` and feeds the result to the shell's
+ * them from `/api/desktop/events` and feeds the result to the shell's
  * `desktop_set_run_progress` command. Pure and framework-free so it is unit-tested.
  */
 

@@ -8,12 +8,10 @@ const props = withDefaults(
   { height: 28, maxBars: 20 },
 );
 
+/** A passed run with flaky tests reads as flaky; every other run takes its status color. */
 function barColorClass(run: { status: string; flakyTests: number }): string {
-  if (['running', 'initializing', 'finalizing'].includes(run.status)) return 'bg-blue-400 dark:bg-blue-500';
-  if (run.flakyTests > 0 && run.status === 'passed') return 'bg-amber-400 dark:bg-amber-400';
-  if (run.status === 'passed') return 'bg-green-500';
-  if (['failed', 'timedout', 'interrupted'].includes(run.status)) return 'bg-red-500';
-  return 'bg-gray-300 dark:bg-gray-600';
+  if (run.flakyTests > 0 && run.status === 'passed') return STATUS_PALETTE.flaky.bg;
+  return statusPalette(run.status).bg;
 }
 
 function barTitle(run: {

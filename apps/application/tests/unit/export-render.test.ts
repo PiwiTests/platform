@@ -97,11 +97,16 @@ describe('renderExportHtml', () => {
     expect(html).toContain('https://piwi.example.com/test-run-cases/1');
   });
 
-  it('colors a timed-out case as a warning, matching the dashboard', () => {
-    const html = renderExportHtml(bundle({ cases: [exportCase({ status: 'timedout' })] }), noAssets);
+  it('colors a timed-out case as a failure and a case that did not run as a warning, matching the dashboard', () => {
+    const html = renderExportHtml(
+      bundle({ cases: [exportCase({ status: 'timedout' }), exportCase({ status: 'didnotrun' })] }),
+      noAssets,
+    );
     expect(html).toContain('class="badge s-timedout"');
-    // getStatusColor maps timedout to warning; the export must not call it a failure.
-    expect(html).toMatch(/\.s-timedout[^}]*var\(--warn\)/);
+    expect(html).toContain('class="badge s-didnotrun"');
+    // getStatusColor maps timedout to error and didnotrun to warning.
+    expect(html).toMatch(/\.s-timedout[^}]*var\(--fail\)/);
+    expect(html).toMatch(/\.s-didnotrun[^}]*var\(--warn\)/);
   });
 
   it('carries a restrictive content security policy', () => {

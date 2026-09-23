@@ -23,6 +23,8 @@ export interface TimelineItem {
   parentTitle?: string | null;
   /** Lock names this execution held — test bars only (best effort). */
   locks?: string[] | null;
+  /** Retries the execution needed — test bars only; a pass after a retry reads as flaky. */
+  retries?: number | null;
   /** Reporter step category (`action`, `assertion`, `hook`, …) — step items only. */
   category?: string;
   /** Nesting depth within the expanded test (1 = top level) — step items only. */
@@ -332,6 +334,7 @@ export function useTimelineModel(props: TimelineModelInput): {
           duration,
           rowIndex: baseLane,
           locks: tc.locks ?? null,
+          retries: tc.retries ?? null,
           expanded: expanded?.has(tc.executionId) ?? false,
         });
         cursor = start + duration;

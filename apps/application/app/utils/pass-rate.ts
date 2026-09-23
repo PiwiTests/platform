@@ -1,0 +1,76 @@
+/**
+ * Pass-rate bands: one threshold set and one color scale for every pass rate
+ * the dashboard colors (percentages in tables and headers, gauges, heatmap
+ * cells). The bands use the semantic colors of `app.config.ts` (success,
+ * warning, error), so good and poor are the same emerald and rose as passed
+ * and failed tests.
+ */
+import { STATUS_PALETTE } from './status-palette';
+
+/** Lowest percentage that reads as good. */
+export const PASS_RATE_GOOD = 90;
+/** Lowest percentage that reads as fair; anything below is poor. */
+export const PASS_RATE_FAIR = 50;
+
+export type PassRateTone = 'good' | 'fair' | 'poor';
+
+export interface PassRateToneEntry {
+  /** Text utility for a percentage in this band. */
+  text: string;
+  /** Background utility for a gauge fill. */
+  bg: string;
+  /** CSS color for inline styles (heatmap cells, legends). */
+  color: string;
+}
+
+export const PASS_RATE_TONES: Record<PassRateTone, PassRateToneEntry> = {
+  good: { text: STATUS_PALETTE.passed.text, bg: STATUS_PALETTE.passed.bg, color: STATUS_PALETTE.passed.color },
+  fair: { text: 'text-amber-700 dark:text-amber-400', bg: 'bg-amber-500', color: 'var(--color-amber-500)' },
+  poor: { text: STATUS_PALETTE.failed.text, bg: STATUS_PALETTE.failed.bg, color: STATUS_PALETTE.failed.color },
+};
+
+/** Band of a pass rate given as a percentage (0–100). */
+export function passRateTone(percent: number): PassRateTone {
+  if (percent >= PASS_RATE_GOOD) return 'good';
+  if (percent >= PASS_RATE_FAIR) return 'fair';
+  return 'poor';
+}
+
+/** Text utility for a percentage; muted when there is no rate. */
+export function passRateTextClass(percent: number | null | undefined): string {
+  return percent == null ? 'text-muted' : PASS_RATE_TONES[passRateTone(percent)].text;
+}
+
+export interface PassRateStep {
+  /** Lowest percentage in the step. */
+  min: number;
+  tone: PassRateTone;
+  /** Legend label. */
+  label: string;
+  /** Fill: the band color mixed with transparency. */
+  color: string;
+  /** Text utility for a value printed on the fill (white on the two strongest steps). */
+  text: string;
+}
+
+function mix(tone: PassRateTone, strength: number): string {
+  return `color-mix(in oklab, ${PASS_RATE_TONES[tone].color} ${strength}%, transparent)`;
+}
+
+/**
+ * The five cell shades of the heatmap and the browser matrix, best first: each
+ * band split in two so a perfect period and a near-failing one stand out. The
+ * band edges are `PASS_RATE_GOOD` and `PASS_RATE_FAIR`.
+ */
+export const PASS_RATE_STEPS: readonly PassRateStep[] = [
+  { min: 99.5, tone: 'good', label: '100%', color: mix('good', 85), text: 'text-white' },
+  { min: PASS_RATE_GOOD, tone: 'good', label: `≥ ${PASS_RATE_GOOD}%`, color: mix('good', 45), text: '' },
+  { min: 75, tone: 'fair', label: '≥ 75%', color: mix('fair', 45), text: '' },
+  { min: PASS_RATE_FAIR, tone: 'fair', label: `≥ ${PASS_RATE_FAIR}%`, color: mix('fair', 75), text: '' },
+  { min: -Infinity, tone: 'poor', label: `< ${PASS_RATE_FAIR}%`, color: mix('poor', 75), text: 'text-white' },
+];
+
+/** Cell shade for a percentage (0–100). */
+export function passRateStep(percent: number): PassRateStep {
+  return PASS_RATE_STEPS.find((step) => percent >= step.min)!;
+}

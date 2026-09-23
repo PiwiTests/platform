@@ -7,14 +7,13 @@
  * can be watched with the window minimised or closed to the tray. A failed test
  * turns the status dot (and a determinate bar) red while the run goes on.
  *
- * Runs are streamed from `/api/desktop/live-runs`: a `snapshot` of the runs
- * already in flight when the shell connects, then live lifecycle + progress
- * deltas. An EventSource is used (not polling) because it keeps delivering while
- * the window is hidden, where background timers are throttled to ~1/min. The
- * active runs are aggregated (`aggregateRunProgress`) and fed to the shell's
- * `desktop_set_run_progress` command; when the last run finishes the outcome
- * flashes (green pass / amber interrupted / red fail) briefly before clearing.
- * A local run stopped from the app leaves the bar once its process is gone.
+ * Runs arrive on the desktop event stream (`subscribeDesktopEvents`): a
+ * `snapshot` of the runs already in flight when the shell connects, then live
+ * lifecycle + progress deltas. The active runs are aggregated
+ * (`aggregateRunProgress`) and fed to the shell's `desktop_set_run_progress`
+ * command; when the last run finishes the outcome flashes (green pass / amber
+ * interrupted / red fail) briefly before clearing. A local run stopped from the
+ * app leaves the bar once its process is gone.
  *
  * Activates only inside the shell (the IPC bridge is present); the shared web
  * build has no bridge and this no-ops.
@@ -150,22 +149,9 @@ export default defineNuxtPlugin(() => {
     }
   }
 
-  function connect() {
-    // Server resends a fresh snapshot on (re)connect, so EventSource's automatic
-    // reconnection re-seeds `active` without extra work here.
-    const source = new EventSource('/api/desktop/live-runs');
-    source.onmessage = (event) => {
-      try {
-        handle(JSON.parse(event.data) as LiveRunMessage);
-      } catch {
-        // Non-JSON keep-alive comment, or a malformed frame — ignore.
-      }
-    };
-    source.onerror = () => {
-      // EventSource reconnects on its own; the next snapshot corrects the state.
-    };
-  }
-  connect();
+  // The server resends a fresh snapshot on each (re)connection, which re-seeds
+  // `active` without extra work here.
+  subscribeDesktopEvents((message) => handle(message as unknown as LiveRunMessage));
 
   // Local ("Run locally") runs are driven from the app, so they are the only
   // ones it can stop — best-effort, and never allowed to break the progress

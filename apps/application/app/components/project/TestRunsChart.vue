@@ -44,6 +44,7 @@ const chartData = computed(() => {
       passed: Math.max(0, passed - flaky),
       failed: run.failedTests || 0,
       skipped: run.skippedTests || 0,
+      didNotRun: run.didNotRunTests || 0,
       flaky,
       total: run.totalTests || 0,
       status: run.status,
@@ -53,7 +54,9 @@ const chartData = computed(() => {
 
 type DataPoint = (typeof chartData)['value'][number];
 
-const yMax = computed(() => Math.max(1, ...chartData.value.map((d) => d.passed + d.failed + d.skipped + d.flaky)));
+const yMax = computed(() =>
+  Math.max(1, ...chartData.value.map((d) => d.passed + d.failed + d.skipped + d.didNotRun + d.flaky)),
+);
 
 const dates = computed(() => chartData.value.map((d) => d.date));
 
@@ -102,7 +105,7 @@ const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip
           :y="segment.y"
           :width="bar.barWidth"
           :height="segment.height"
-          :fill="segment.color"
+          :style="{ fill: segment.color }"
         />
       </template>
 
@@ -157,10 +160,9 @@ const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip
       </div>
       <div class="capitalize mb-1">Status: {{ tooltipData.status }}</div>
       <div class="space-y-0.5">
-        <div><span class="text-red-500 dark:text-red-400">&#9679;</span> Failed: {{ tooltipData.failed }}</div>
-        <div><span class="text-purple-500 dark:text-purple-400">&#9679;</span> Flaky: {{ tooltipData.flaky }}</div>
-        <div><span class="text-orange-500 dark:text-orange-400">&#9679;</span> Skipped: {{ tooltipData.skipped }}</div>
-        <div><span class="text-green-500 dark:text-green-400">&#9679;</span> Passed: {{ tooltipData.passed }}</div>
+        <div v-for="s in RUN_STATUS_SERIES" :key="s.key">
+          <span :style="{ color: s.color }">&#9679;</span> {{ s.label }}: {{ tooltipData[s.key] }}
+        </div>
         <div class="font-medium mt-1">Total: {{ tooltipData.total }}</div>
       </div>
       <div class="text-gray-400 dark:text-gray-500 text-xs mt-1">Click to view run details</div>

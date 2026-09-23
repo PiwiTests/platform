@@ -820,6 +820,26 @@ fn desktop_open_in_ide(
     }
 }
 
+/// Restore, show and focus `window`. Focusing alone does nothing on a minimized
+/// or hidden window. On Windows, `set_focus` gets past the focus-stealing
+/// prevention that refuses a background app the foreground (tao simulates a key
+/// press when `SetForegroundWindow` is refused).
+fn bring_to_front(window: &tauri::WebviewWindow) {
+    let _ = window.unminimize();
+    let _ = window.show();
+    let _ = window.set_focus();
+}
+
+/// Bring the dashboard window to the front. The dashboard calls it once it has
+/// navigated to a page the user opened in the system browser (a dashboard link
+/// clicked in a terminal), so the page shows up where they are looking.
+#[tauri::command]
+fn desktop_bring_to_front(app: tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        bring_to_front(&w);
+    }
+}
+
 /// Unique label for each runtime-created auxiliary window (Tauri requires labels
 /// to be distinct for the life of the app).
 static AUX_WINDOW_SEQ: AtomicU32 = AtomicU32::new(0);
@@ -1124,8 +1144,7 @@ pub fn run() {
             // server) — and forwards any archives it was asked to open.
             queue_open_files(app, collect_zip_args(args.iter().skip(1).map(String::as_str), Some(Path::new(&cwd))));
             if let Some(w) = app.get_webview_window("main") {
-                let _ = w.show();
-                let _ = w.set_focus();
+                bring_to_front(&w);
             }
         }))
         .plugin(tauri_plugin_shell::init())
@@ -1166,6 +1185,7 @@ pub fn run() {
             desktop_open_external,
             desktop_open_in_ide,
             desktop_open_window,
+            desktop_bring_to_front,
             desktop_notify,
             desktop_log,
             desktop_save_download,
@@ -1386,16 +1406,14 @@ pub fn run() {
                     } = event
                     {
                         if let Some(w) = tray.app_handle().get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
+                            bring_to_front(&w);
                         }
                     }
                 })
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "open" => {
                         if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
+                            bring_to_front(&w);
                         }
                     }
                     "open_folder" => {
@@ -1552,8 +1570,7 @@ pub fn run() {
                     .collect();
                 queue_open_files(app_handle, paths);
                 if let Some(w) = app_handle.get_webview_window("main") {
-                    let _ = w.show();
-                    let _ = w.set_focus();
+                    bring_to_front(&w);
                 }
             }
             _ => {}

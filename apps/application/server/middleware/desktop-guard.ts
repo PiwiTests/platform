@@ -13,7 +13,7 @@
 // Combined with the loopback-only bind, this keeps the bundled server reachable
 // only by the app itself and by tools the user has given the token to — not by
 // other local processes or web pages open in the user's browser.
-import { timingSafeEqualStr } from '../utils/timing-safe';
+import { presentsDesktopToken } from '../utils/desktop-access';
 
 export default defineEventHandler((event) => {
   const token = process.env.PIWI_DESKTOP_TOKEN;
@@ -25,10 +25,7 @@ export default defineEventHandler((event) => {
   // has a cookie) and exposes nothing sensitive — leave it open.
   if (path === '/api/health') return;
 
-  const authz = getRequestHeader(event, 'authorization');
-  const bearer = authz && authz.startsWith('Bearer ') ? authz.slice('Bearer '.length) : undefined;
-  const presented = getCookie(event, 'piwi_token') || getRequestHeader(event, 'x-piwi-token') || bearer;
-  if (presented && timingSafeEqualStr(presented, token)) return;
+  if (presentsDesktopToken(event, token)) return;
 
   throw apiError({ statusCode: 401, statusMessage: 'Desktop access token required' });
 });

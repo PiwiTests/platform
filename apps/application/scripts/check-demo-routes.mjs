@@ -35,6 +35,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'GET /api/desktop/reporter-config', // desktop build only; returns null everywhere else, including the demo
   'POST /api/desktop/import-local', // desktop build only; reads local files, 404 everywhere else
   'POST /api/failure-clusters/:id/bisect', // desktop build only; the shell records a bisect result, 404 everywhere else
+  'GET /api/desktop/events', // desktop build only; the desktop window's run progress and page requests, read only inside the shell
   'POST /api/projects/:id/test-functions/extract', // AI code-to-pattern extraction — unlike diagnosis (a fixed, curated set of seeded clusters a scripted response can convincingly cover), this takes arbitrary pasted code with no server or real LLM to analyze it against in the demo; the "Paste from code (AI)" section is hidden client-side in demo mode instead of faking an understanding of whatever the visitor pastes
   'POST /api/ai/step-resolution', // AI-step authoring — resolves an arbitrary page snapshot against a natural-language prompt; no server or real LLM in the demo, and the reporter only calls it in resolve/heal mode (never a normal run), so there is nothing to script
   // Share links: capability tokens for anonymous viewers. The demo has no

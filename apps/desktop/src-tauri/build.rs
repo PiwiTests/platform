@@ -19,6 +19,7 @@ fn main() {
             "desktop_open_external",
             "desktop_open_in_ide",
             "desktop_open_window",
+            "desktop_bring_to_front",
             "desktop_notify",
             "desktop_log",
             "desktop_save_download",

@@ -1,0 +1,67 @@
+import { describe, test, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { STATUS_PALETTE, statusPalette, statusPaletteKey } from '../../app/utils/status-palette';
+import { formatExecutionStatus } from '../../app/utils/index';
+
+describe('statusPaletteKey', () => {
+  test('maps each outcome to its own palette entry', () => {
+    expect(statusPaletteKey('passed')).toBe('passed');
+    expect(statusPaletteKey('failed')).toBe('failed');
+    expect(statusPaletteKey('flaky')).toBe('flaky');
+    expect(statusPaletteKey('skipped')).toBe('skipped');
+    expect(statusPaletteKey('didnotrun')).toBe('didnotrun');
+  });
+
+  test('counts timed-out and interrupted as failed', () => {
+    expect(statusPaletteKey('timedout')).toBe('failed');
+    expect(statusPaletteKey('timedOut')).toBe('failed');
+    expect(statusPaletteKey('interrupted')).toBe('failed');
+  });
+
+  test('gives the three in-flight statuses one entry', () => {
+    expect(statusPaletteKey('running')).toBe('running');
+    expect(statusPaletteKey('initializing')).toBe('running');
+    expect(statusPaletteKey('finalizing')).toBe('running');
+  });
+
+  test('reads a pass that needed a retry as flaky', () => {
+    expect(statusPaletteKey('passed', 1)).toBe('flaky');
+    expect(statusPaletteKey('passed', 0)).toBe('passed');
+    expect(statusPaletteKey('passed', null)).toBe('passed');
+    expect(statusPaletteKey('failed', 2)).toBe('failed');
+  });
+
+  test('falls back to the neutral skipped entry', () => {
+    expect(statusPaletteKey('cancelled')).toBe('skipped');
+    expect(statusPaletteKey('never-run')).toBe('skipped');
+    expect(statusPaletteKey(null)).toBe('skipped');
+  });
+});
+
+describe('STATUS_PALETTE', () => {
+  test('backs every entry with its CSS token', () => {
+    for (const [key, entry] of Object.entries(STATUS_PALETTE)) {
+      expect(entry.color).toBe(`var(--color-status-${key})`);
+      expect(entry.bg).toBe(`bg-status-${key}`);
+      expect(entry.ring).toBe(`ring-status-${key}`);
+    }
+  });
+
+  test('every entry has its token defined in main.css', () => {
+    const css = readFileSync(new URL('../../app/assets/css/main.css', import.meta.url), 'utf8');
+    for (const key of Object.keys(STATUS_PALETTE)) expect(css).toContain(`--color-status-${key}:`);
+  });
+
+  test('statusPalette returns the entry for a raw status', () => {
+    expect(statusPalette('timedout')).toBe(STATUS_PALETTE.failed);
+    expect(statusPalette('passed', 1)).toBe(STATUS_PALETTE.flaky);
+  });
+});
+
+describe('formatExecutionStatus', () => {
+  test('names a pass that needed a retry', () => {
+    expect(formatExecutionStatus('passed', 2)).toBe('passed on retry');
+    expect(formatExecutionStatus('passed', 0)).toBe('passed');
+    expect(formatExecutionStatus('timedout')).toBe('timed out');
+  });
+});
